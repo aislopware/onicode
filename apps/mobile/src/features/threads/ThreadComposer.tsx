@@ -50,8 +50,11 @@ import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { themeColorWithAlpha } from "../../lib/mobileTheme";
 import { scopedThreadKey } from "../../lib/scopedEntities";
 import {
+  composerDraftSendSettings,
   getComposerDraftSnapshot,
   setComposerDraftText,
+  type ComposerDraftSendSettings,
+  type ComposerSendPress,
   composerContextImportsAtom,
   countComposerDraftAttachmentsAfterSelection,
   useComposerDraft,
@@ -207,6 +210,7 @@ export interface ThreadComposerProps {
     followUp?: ActiveTurnComposerAction,
     stillSendable?: () => boolean,
     approvalIdsAtPress?: ReadonlyArray<RuntimeRequestId>,
+    press?: ComposerSendPress,
   ) => Promise<MessageId | null>;
   readonly onShowUsageLimits: (report: UsageLimitsReport | null) => void;
   readonly canSwitchProvider: boolean;
@@ -604,6 +608,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
   const handleSend = async (
     followUp: ActiveTurnComposerAction | undefined,
     approvalIdsAtPress: ReadonlyArray<RuntimeRequestId>,
+    settingsAtPress: ComposerDraftSendSettings | undefined,
   ) => {
     if (isSubmissionLocked || sendBlockedReason !== null) return;
     if (pendingPastedTextAttachmentCountRef.current > 0) return;
@@ -635,8 +640,15 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
         )
       );
     };
+    const settings = settingsAtPress ?? composerDraftSendSettings(draftAtSend);
+    const press: ComposerSendPress = {
+      ...settings,
+      flushInput: async () => {
+        await inputRef.current?.flushPendingInput();
+      },
+    };
     const sent = await settlePromise(() =>
-      onSendMessage(followUp, stillSendable, approvalIdsAtPress),
+      onSendMessage(followUp, stillSendable, approvalIdsAtPress, press),
     );
     inFlightThreadIdsRef.current.delete(threadKey);
     if (AsyncResult.isFailure(sent)) {
@@ -651,14 +663,16 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
     blocked: isSubmissionLocked || sendBlockedReason !== null,
     approvalIds: props.pendingApprovalIds,
     onPasteImages: onNativePasteImages,
-    onSubmit: (followUp, approvalIdsAtPress) => void handleSend(followUp, approvalIdsAtPress),
+    onSubmit: (followUp, approvalIdsAtPress, settingsAtPress) =>
+      void handleSend(followUp, approvalIdsAtPress, settingsAtPress),
   });
   // Kept out of handleSend: a reference to the hook declared after it stops the compiler caching it.
   const sendOrDefer = (followUp?: ActiveTurnComposerAction) => {
     if (isSubmissionLocked || sendBlockedReason !== null) return;
     // Sending now would leave a still-converting pasted image out of the turn, so wait for it.
-    if (nativeImageSubmit.deferSend(followUp)) return;
-    void handleSend(followUp, props.pendingApprovalIds);
+    const settings = composerDraftSendSettings(getComposerDraftSnapshot(composerDraftKey));
+    if (nativeImageSubmit.deferSend(followUp, settings)) return;
+    void handleSend(followUp, props.pendingApprovalIds, settings);
   };
 
   const lockedProviderInstanceId = props.canSwitchProvider

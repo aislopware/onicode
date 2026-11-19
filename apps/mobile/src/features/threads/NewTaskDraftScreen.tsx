@@ -64,6 +64,7 @@ import {
   getComposerDraftSnapshot,
   updateComposerDraftSettings,
   scheduleUnusedComposerAttachmentCleanup,
+  type ComposerSendPress,
 } from "../../state/use-composer-drafts";
 import { useEnvironmentServerConfig, useProjects } from "../../state/entities";
 import { useProjectClone } from "../../state/projectClones";
@@ -585,7 +586,13 @@ export function NewTaskDraftScreen(props: {
     locked: isComposerInteractionLocked,
   });
 
-  async function handleStart(): Promise<import("@onicode/contracts").MessageId | null> {
+  async function handleStart(
+    _followUp?: unknown,
+    _beforeDispatch?: unknown,
+    _onWillEnqueue?: unknown,
+    _approvalsAsSeen?: unknown,
+    press?: ComposerSendPress,
+  ): Promise<import("@onicode/contracts").MessageId | null> {
     const selectedProject = flow.selectedProject;
     const draftKey = flow.draftKey;
     if (
@@ -606,10 +613,11 @@ export function NewTaskDraftScreen(props: {
     }
     const draft = getComposerDraftSnapshot(draftKey);
     if (appAtomRegistry.get(composerContextImportsAtom)[draftKey]) return null;
+    // A start held for a pasted image goes with the mode and model set when Send was pressed.
     const modelSelection =
       resolveSelectableModelSelection(
         selectedEnvironmentServerConfig,
-        draft.modelSelection ?? null,
+        (press ?? draft).modelSelection ?? null,
         selectedProject.id,
       ) ?? flow.selectedModel;
     const workspaceSelection = flow.resolveWorkspaceSelection(draft.workspaceSelection);
@@ -685,6 +693,7 @@ export function NewTaskDraftScreen(props: {
 
     const message = flow.buildPendingTaskMessage(creationMetadata, {
       currentCheckoutBranch: queuesInsteadOfStarting ? null : flow.currentCheckoutBranchName,
+      ...(press ? { settingsAtPress: press } : {}),
     });
     if (!message) {
       return null;

@@ -29,8 +29,8 @@ function setup() {
       blocked,
       approvalIds,
       onPasteImages,
-      onSubmit: (action, shownApprovalIds) => {
-        if (!blocked) onSubmit(action, shownApprovalIds);
+      onSubmit: (action, shownApprovalIds, settings) => {
+        if (!blocked) onSubmit(action, shownApprovalIds, settings);
       },
     });
     useLayoutEffect(() => {
@@ -138,7 +138,7 @@ it("waits for other attachment preparation and sends once after all images join 
   await Promise.all([first, second]);
   expect(state.onSubmit).not.toHaveBeenCalled();
   state.setBlocked(false);
-  expect(state.onSubmit).toHaveBeenCalledExactlyOnceWith("steer", []);
+  expect(state.onSubmit).toHaveBeenCalledExactlyOnceWith("steer", [], undefined);
   state.setBlocked(true);
   state.setBlocked(false);
   expect(state.onSubmit).toHaveBeenCalledOnce();
@@ -157,18 +157,19 @@ it("holds a released send again for an image pasted while it waited on another b
   expect(state.onSubmit).not.toHaveBeenCalled();
   await state.finish(true);
   await second;
-  expect(state.onSubmit).toHaveBeenCalledExactlyOnceWith(undefined, []);
+  expect(state.onSubmit).toHaveBeenCalledExactlyOnceWith(undefined, [], undefined);
 });
 
-it("sends with the approvals shown when Send was pressed, not those shown since", async () => {
+it("sends with the approvals, mode and model of the press, not those shown since", async () => {
   using state = setup();
   state.setApprovalIds(["seen"]);
   const paste = state.queue.pasteImages(["image"]);
-  state.queue.deferSend("steer");
+  const settings = { runtimeMode: "approval-required" as const, modelSelection: undefined };
+  state.queue.deferSend("steer", settings);
   state.setApprovalIds(["seen", "unseen"]);
   await state.finish(true);
   await paste;
-  expect(state.onSubmit).toHaveBeenCalledExactlyOnceWith("steer", ["seen"]);
+  expect(state.onSubmit).toHaveBeenCalledExactlyOnceWith("steer", ["seen"], settings);
 });
 
 it("does not hold a send for a paste into the draft the composer left", async () => {

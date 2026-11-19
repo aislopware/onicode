@@ -61,6 +61,7 @@ import {
   updateComposerDraftSettings,
   useComposerDraft,
   useStickyComposerModelSelection,
+  type ComposerDraftSendSettings,
 } from "../../state/use-composer-drafts";
 import {
   rememberModelOptions,
@@ -201,6 +202,7 @@ type NewTaskFlowContextValue = {
     metadata: TurnCommandMetadata,
     options?: {
       readonly currentCheckoutBranch?: string | null;
+      readonly settingsAtPress?: ComposerDraftSendSettings;
     },
   ) => QueuedThreadMessage | null;
   readonly setPrompt: (value: string) => void;
@@ -735,17 +737,21 @@ export function NewTaskFlowProvider(
 
   const buildPendingTaskMessage = (
     metadata: TurnCommandMetadata,
-    options?: { readonly currentCheckoutBranch?: string | null },
+    options?: {
+      readonly currentCheckoutBranch?: string | null;
+      readonly settingsAtPress?: ComposerDraftSendSettings;
+    },
   ): QueuedThreadMessage | null => {
     if (!selectedProject || !selectedProjectDraftKey) {
       return null;
     }
     const draft = getComposerDraftSnapshot(selectedProjectDraftKey);
+    const settings = options?.settingsAtPress ?? draft;
     const text = draft.text.trim();
     const draftModelSelection =
       resolveSelectableModelSelection(
         selectedEnvironmentServerConfig,
-        draft.modelSelection ?? null,
+        settings.modelSelection ?? null,
         selectedProject.id,
       ) ?? selectedModel;
     if ((text.length === 0 && draft.attachments.length === 0) || !draftModelSelection) {
@@ -773,7 +779,7 @@ export function NewTaskFlowProvider(
       context: draft.context,
       modelSelection: draftModelSelection,
       runtimeMode: resolveNewThreadRuntimeMode(
-        draft.runtimeMode,
+        settings.runtimeMode,
         defaultRuntimeMode,
         managedPolicy,
       ),

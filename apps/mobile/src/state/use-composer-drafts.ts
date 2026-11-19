@@ -446,6 +446,21 @@ export interface ComposerDraft {
   readonly project?: ComposerDraftProject;
 }
 
+/** The draft's mode and model when Send was pressed; a send that waits goes with these. */
+export interface ComposerDraftSendSettings {
+  readonly runtimeMode: RuntimeMode | undefined;
+  readonly modelSelection: ModelSelection | undefined;
+}
+
+export function composerDraftSendSettings(draft: ComposerDraft): ComposerDraftSendSettings {
+  return { runtimeMode: draft.runtimeMode, modelSelection: draft.modelSelection };
+}
+
+/** What a send read at the press, and how to bring in an edit iOS has not reported yet. */
+export interface ComposerSendPress extends ComposerDraftSendSettings {
+  readonly flushInput: () => Promise<void>;
+}
+
 export interface ComposerDraftProject {
   readonly environmentId: EnvironmentId;
   readonly projectId: ProjectId;
