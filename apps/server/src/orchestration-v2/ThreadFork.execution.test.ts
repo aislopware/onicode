@@ -1639,6 +1639,8 @@ it.effect.each<{
     readonly continuesRun?: number;
     readonly text?: string;
   }>;
+  /** Runs of the grandparent before the one the parent forked from. */
+  readonly grandparentRuns?: ReadonlyArray<{ readonly scheduled?: boolean; readonly text: string }>;
   readonly kept: ReadonlyArray<string>;
   readonly dropped: ReadonlyArray<string>;
 }>([
@@ -1695,6 +1697,19 @@ it.effect.each<{
     kept: ["PARENT_RUN_1_MARKER", "SCHEDULED_REPORT_39 "],
     dropped: ["SCHEDULED_REPORT_0 "],
   },
+  {
+    name: "in its first turn whose inherited schedule output outgrew the digest",
+    grandparentRuns: [
+      { text: "GRANDPARENT_FIRST_MARKER" },
+      ...Array.from({ length: 40 }, (_, index) => ({
+        scheduled: true,
+        text: `INHERITED_REPORT_${index} ${"x".repeat(300)}`,
+      })),
+    ],
+    runs: [{ stable: false }],
+    kept: ["GRANDPARENT_FIRST_MARKER", "GRANDPARENT_MARKER", "PARENT_RUN_1_MARKER"],
+    dropped: ["INHERITED_REPORT_0 "],
+  },
 ])("a side chat of a parent $name starts from the parent's main thread", (testCase) =>
   Effect.gen(function* () {
     const orchestrator = yield* Orchestrator.OrchestratorV2;
@@ -1704,10 +1719,22 @@ it.effect.each<{
     const parentId = ThreadId.make(`${prefix}-parent`);
     const sideChatId = ThreadId.make(`${prefix}-child`);
     yield* createParent(grandparentId);
+    const earlierGrandparentRuns = testCase.grandparentRuns ?? [];
+    for (const [index, { scheduled, text }] of earlierGrandparentRuns.entries()) {
+      yield* writeParentRun({
+        threadId: grandparentId,
+        runId: RunId.make(`${prefix}-grandparent-run-${index + 1}`),
+        ordinal: index + 1,
+        status: "completed",
+        text,
+        stable: true,
+        ...(scheduled === true ? { freshContext: true, scheduled: true } : {}),
+      });
+    }
     yield* writeParentRun({
       threadId: grandparentId,
       runId: grandparentRunId,
-      ordinal: 1,
+      ordinal: earlierGrandparentRuns.length + 1,
       status: "completed",
       text: "GRANDPARENT_MARKER",
       stable: true,

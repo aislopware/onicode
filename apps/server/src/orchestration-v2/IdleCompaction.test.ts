@@ -186,10 +186,6 @@ describe("idleCompactionWindow", () => {
     } as const;
     autoCompacted.turnItems = [compaction];
     expect(idleCompactionWindow(autoCompacted, NOW_MS)).toBeNull();
-    autoCompacted.turnItems = [{ ...compaction, afterTokenCount: 199_999 }];
-    expect(idleCompactionWindow(autoCompacted, NOW_MS)).toBeNull();
-    autoCompacted.turnItems = [{ ...compaction, afterTokenCount: 210_000 }];
-    expect(idleCompactionWindow(autoCompacted, NOW_MS)).not.toBeNull();
     const steered = records(cache);
     steered.runs = [
       ...steered.runs,

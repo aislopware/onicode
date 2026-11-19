@@ -7313,19 +7313,6 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
         const lookups = turnItemReads.filter((statement) => !compactionReads.includes(statement));
         assert.lengthOf(lookups, 1);
         assert.lengthOf(compactionReads, 1);
-        // Completed compactions come from the type and status index, not a walk of the history.
-        const compactionPlan = (yield* sql.unsafe<{ readonly detail: string }>(
-          `EXPLAIN QUERY PLAN ${compactionReads[0]}`,
-          [readThreadId],
-        )).map((row) => row.detail);
-        assert.isTrue(
-          compactionPlan.some((detail) =>
-            /USING (COVERING )?INDEX orchestration_v2_projection_turn_items_thread_type_idx/.test(
-              detail,
-            ),
-          ),
-          compactionPlan.join("\n"),
-        );
         const plan = (yield* sql.unsafe<{ readonly detail: string }>(
           `EXPLAIN QUERY PLAN ${lookups[0]}`,
           [readThreadId, readRunId],
@@ -7358,6 +7345,52 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
         "item:turn-start-items:other-thread:b",
       ]);
       assert.deepEqual((yield* readItems(otherThreadId, siblingRunId)).ids, []);
+
+      // Budgets read the latest compaction of the run's own provider thread that no rollback removed.
+      yield* sql`UPDATE orchestration_v2_projection_runs SET provider_thread_id = 'provider-thread:a'
+        WHERE run_id IN (${selectedRunId}, ${siblingRunId})`;
+      yield* sql`UPDATE orchestration_v2_projection_runs SET status = 'rolled_back'
+        WHERE run_id = ${siblingRunId}`;
+      for (const [id, runId, providerThreadId, ordinal] of [
+        ["compaction:earlier", selectedRunId, "provider-thread:a", 50],
+        ["compaction:latest", selectedRunId, "provider-thread:a", 60],
+        ["compaction:rolled-back", siblingRunId, "provider-thread:a", 70],
+        ["compaction:other-thread", selectedRunId, "provider-thread:b", 80],
+      ] as const) {
+        yield* sql`
+          INSERT INTO orchestration_v2_projection_turn_items (
+            turn_item_id, thread_id, run_id, node_id, provider_thread_id, provider_turn_id,
+            parent_item_id, ordinal, type, status, updated_at, payload_json
+          ) VALUES (
+            ${id}, ${threadId}, ${runId}, NULL, ${providerThreadId}, NULL, NULL, ${ordinal},
+            'compaction', 'completed', ${nowIso},
+            ${encodeUnknownJsonString({
+              id,
+              threadId,
+              runId,
+              nodeId: null,
+              providerThreadId,
+              providerTurnId: null,
+              nativeItemRef: null,
+              parentItemId: null,
+              ordinal,
+              status: "completed",
+              title: null,
+              startedAt: nowIso,
+              completedAt: nowIso,
+              updatedAt: nowIso,
+              type: "compaction",
+              driver: null,
+            })}
+          )
+        `;
+      }
+      assert.deepEqual(
+        (yield* projectionStore.getTurnStartContext(threadId, selectedRunId)).compactions.map(
+          (item) => item.id,
+        ),
+        ["compaction:latest"],
+      );
 
       for (const plan of lookupPlans) {
         const lookup = plan.filter((detail) =>

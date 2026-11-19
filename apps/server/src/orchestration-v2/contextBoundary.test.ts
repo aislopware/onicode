@@ -3,7 +3,7 @@ import { assert, it } from "vite-plus/test";
 
 import {
   contextBoundaryOrdinal,
-  runContextBoundaryOrdinal,
+  conversationRuns,
   scheduledFreshRunOrdinals,
 } from "./contextBoundary.ts";
 
@@ -83,7 +83,7 @@ it("ignores fresh runs that never reached a provider, also after a rollback rewo
   assert.equal(boundary([run(2, "rolled_back", "2026-11-19T00:00:00.000Z")]), 2);
 });
 
-it("starts a scheduled fresh session's conversation, its wakes included, at the schedule's run", () => {
+it("keeps a scheduled fresh session's conversation to its own runs, its wakes included", () => {
   const run = (ordinal: number, providerThreadId: string, freshContext = false) => ({
     id: `run-${ordinal}`,
     ordinal,
@@ -100,6 +100,8 @@ it("starts a scheduled fresh session's conversation, its wakes included, at the 
     run(4, "main"),
     // A background task of the schedule's session settled and woke it.
     run(5, "schedule"),
+    // A steer moved a later wake to another provider.
+    run(6, "schedule-moved"),
   ];
   const turnItems = runs.map((source) => ({
     type: "user_message",
@@ -108,15 +110,25 @@ it("starts a scheduled fresh session's conversation, its wakes included, at the 
     messageId: source.userMessageId,
     ...(source.ordinal === 3 ? { scheduledTaskId: "task-hourly" } : {}),
   }));
-  const projection = { runs, turnItems } as unknown as Projection;
-  const boundaryAt = (ordinal: number) =>
-    runContextBoundaryOrdinal(
+  const providerThreads = [
+    { id: "main", firstRunOrdinal: 1 },
+    { id: "schedule", firstRunOrdinal: 3 },
+    { id: "schedule-moved", firstRunOrdinal: 3 },
+  ];
+  const projection = { runs, turnItems, providerThreads } as unknown as Parameters<
+    typeof conversationRuns
+  >[0];
+  const conversationAt = (ordinal: number) => {
+    const conversation = conversationRuns(
       projection,
       projection.runs.find((source) => source.ordinal === ordinal),
     );
+    return [conversation.boundary, [...conversation.runIds].toSorted()];
+  };
 
-  assert.equal(boundaryAt(5), 3);
-  assert.equal(boundaryAt(3), 3);
+  assert.deepEqual(conversationAt(3), [3, ["run-3"]]);
+  assert.deepEqual(conversationAt(5), [3, ["run-3", "run-5"]]);
+  assert.deepEqual(conversationAt(6), [3, ["run-3", "run-5", "run-6"]]);
   // The main conversation continues past the schedule from its own start.
-  assert.equal(boundaryAt(4), 0);
+  assert.deepEqual(conversationAt(4), [0, ["run-1", "run-2", "run-3", "run-4"]]);
 });

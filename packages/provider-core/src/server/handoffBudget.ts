@@ -65,7 +65,10 @@ export function latestNativeContextUsage(
   return latest;
 }
 
-/** The latest completed compaction on `providerThreadId` after `reportedAt`: it replaced the context that report measured. */
+/**
+ * The latest completed compaction on `providerThreadId` since `reportedAt`: it replaced the context
+ * that report measured. One in the same millisecond counts, as the safer reading.
+ */
 export function compactionSinceUsage(
   turnItems: ReadonlyArray<OrchestrationV2TurnItem>,
   providerThreadId: OrchestrationV2ProviderThread["id"],
@@ -78,7 +81,7 @@ export function compactionSinceUsage(
       item.providerThreadId === providerThreadId,
   );
   return compaction?.completedAt != null &&
-    DateTime.toEpochMillis(compaction.completedAt) > Date.parse(reportedAt)
+    DateTime.toEpochMillis(compaction.completedAt) >= Date.parse(reportedAt)
     ? compaction
     : undefined;
 }

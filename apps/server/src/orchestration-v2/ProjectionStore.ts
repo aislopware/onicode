@@ -711,7 +711,7 @@ export interface ProjectionStoreV2Shape {
       | "turnItems"
     > & {
       readonly hasConversation: boolean;
-      /** The thread's completed compactions, oldest first. */
+      /** The latest completed compaction on the run's provider thread that no rollback removed. */
       readonly compactions: ReadonlyArray<
         Extract<OrchestrationV2TurnItem, { readonly type: "compaction" }>
       >;
@@ -5516,12 +5516,23 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
               WHERE bindings.thread_id = ${threadId}
               ORDER BY sessions.updated_at ASC, sessions.provider_session_id ASC
             `.pipe(Effect.flatMap(decodeRows(decodeProviderSessionPayload, threadId)));
+            // The run's own native conversation's latest one a rollback kept is all budgets read.
             const compactions = yield* sql<PayloadRow>`
-              SELECT payload_json FROM orchestration_v2_projection_turn_items
+              SELECT items.payload_json FROM orchestration_v2_projection_turn_items AS items
               -- A thread has few compactions; the ordinal index would walk its whole history.
               INDEXED BY orchestration_v2_projection_turn_items_thread_type_idx
-              WHERE thread_id = ${threadId} AND type = 'compaction' AND status = 'completed'
-              ORDER BY ordinal ASC, turn_item_id ASC
+              WHERE items.thread_id = ${threadId} AND items.type = 'compaction'
+                AND items.status = 'completed'
+                AND items.provider_thread_id = (
+                  SELECT provider_thread_id FROM orchestration_v2_projection_runs
+                  WHERE run_id = ${runId}
+                )
+                AND NOT EXISTS (
+                  SELECT 1 FROM orchestration_v2_projection_runs AS runs
+                  WHERE runs.run_id = items.run_id AND runs.status = 'rolled_back'
+                )
+              ORDER BY items.ordinal DESC, items.turn_item_id DESC
+              LIMIT 1
             `.pipe(
               Effect.flatMap(decodeRows(decodeTurnItemPayload, threadId)),
               Effect.map((items) =>
