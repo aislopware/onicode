@@ -52,6 +52,33 @@ describe("summarizeOniToolCalls", () => {
     expect(summarizeOniToolCalls("unlink-pr", [uncounted]).label).toBe("Unlinked pull requests");
   });
 
+  it("tells opened and merged pull requests from found ones and auto-merges", () => {
+    const create = (created: boolean) => completed({ title: "t" }, { number: 1, created });
+    expect(summarizeOniToolCalls("create-pr", [create(true)]).label).toBe("Opened 1 pull request");
+    expect(summarizeOniToolCalls("create-pr", [create(false)]).label).toBe(
+      "Found 1 open pull request",
+    );
+    expect(summarizeOniToolCalls("create-pr", [create(true), create(false)]).label).toBe(
+      "Opened 1 pull request, found 1 open",
+    );
+    const merge = (auto: boolean, state: string) => completed({ auto }, { number: 1, state });
+    expect(summarizeOniToolCalls("merge-pr", [merge(false, "merged")]).label).toBe(
+      "Merged 1 pull request",
+    );
+    expect(summarizeOniToolCalls("merge-pr", [merge(false, "open")]).label).toBe(
+      "Queued 1 pull request to merge",
+    );
+    expect(summarizeOniToolCalls("merge-pr", [merge(true, "open")]).label).toBe(
+      "Queued 1 pull request to merge",
+    );
+    expect(
+      summarizeOniToolCalls("merge-pr", [merge(true, "merged"), merge(true, "open")]).label,
+    ).toBe("Merged 1 pull request, queued 1");
+    expect(summarizeOniToolCalls("review-pr", [completed({ verdict: "approve" }, {})]).label).toBe(
+      "Reviewed 1 pull request",
+    );
+  });
+
   it("excludes failed and unfinished sends even if the provider reports completed", () => {
     const calls: OniToolSummaryCall[] = [
       completed({ threadId: "success" }, { messageId: "ok", threadId: "success" }),
