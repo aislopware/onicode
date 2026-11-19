@@ -625,7 +625,11 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
     if (alertIfSideChatStarting(threadKey)) return;
     if (inFlightThreadIdsRef.current.has(threadKey)) return;
     inFlightThreadIdsRef.current.add(threadKey);
-    await inputRef.current?.flushPendingInput();
+    // A paste iOS recorded has not reached the draft yet; sending now would leave it out.
+    if ((await inputRef.current?.flushPendingInput()) === false) {
+      inFlightThreadIdsRef.current.delete(threadKey);
+      return;
+    }
     const draftAtSend = getComposerDraftSnapshot(composerDraftKey);
     const stillSendable = () => {
       const draft = getComposerDraftSnapshot(composerDraftKey);
