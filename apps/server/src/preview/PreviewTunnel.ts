@@ -21,6 +21,11 @@ import { requestUrl } from "../requestUrl.ts";
 import { declineSocketCompression } from "../socketCompression.ts";
 
 const PREVIEW_TUNNEL_ROUTE = "/api/preview/tunnel";
+/**
+ * Marks a refusal about the port itself, so the iOS app can tell "nothing listens there" from a
+ * proxy in front of the environment answering 502 because the environment is down.
+ */
+export const PREVIEW_TUNNEL_PORT_REFUSED_HEADER = "x-oni-tunnel-port-refused";
 
 const CONNECT_TIMEOUT = "5 seconds";
 
@@ -164,11 +169,17 @@ const handler = Effect.gen(function* () {
     Effect.scoped,
     Effect.catchTags({
       PreviewTunnelPortRefusedError: (error) =>
-        Effect.succeed(HttpServerResponse.text(error.message, { status: 403 })),
+        Effect.succeed(
+          HttpServerResponse.text(error.message, { status: 403, headers: PORT_REFUSED_HEADERS }),
+        ),
       PreviewTunnelConnectError: (error) =>
-        Effect.succeed(HttpServerResponse.text(error.message, { status: 502 })),
+        Effect.succeed(
+          HttpServerResponse.text(error.message, { status: 502, headers: PORT_REFUSED_HEADERS }),
+        ),
     }),
   );
 });
+
+const PORT_REFUSED_HEADERS = { [PREVIEW_TUNNEL_PORT_REFUSED_HEADER]: "1" };
 
 export const routeLayer = HttpRouter.add("GET", PREVIEW_TUNNEL_ROUTE, handler);
