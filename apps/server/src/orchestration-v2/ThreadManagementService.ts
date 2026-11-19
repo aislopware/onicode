@@ -1037,6 +1037,24 @@ const make = Effect.gen(function* () {
         isTerminalRunStatus(run.status) && (yield* orchestrator.restartContinuationPending(run));
       return { run, pending, settled: isTerminalRunStatus(run.status) && !pending };
     });
+    // A steer the provider never read stays pending on its ended run until the run-end reaction
+    // moves its message to a run of its own. Stop drops it instead, so its run is the answer.
+    const unreadSteerAwaitsRequeue = (runId: RunId, messageId: MessageId) =>
+      getProjectThreadRecords(input, ["turnItems"], {
+        turnItemTypes: ["user_message", "run_interrupt_request"],
+        turnItemRunIds: [runId],
+      }).pipe(
+        Effect.map(
+          ({ turnItems }) =>
+            !turnItems.some((item) => item.type === "run_interrupt_request") &&
+            turnItems.some(
+              (item) =>
+                item.type === "user_message" &&
+                item.messageId === messageId &&
+                item.status === "pending",
+            ),
+        ),
+      );
     const outcome = Effect.fnUntraced(function* (
       snapshot: ReadonlyArray<OrchestrationV2Run>,
       // The read after the timeout reports what is there; it must not wait again.
@@ -1072,10 +1090,15 @@ const make = Effect.gen(function* () {
         // No steer was in flight between two reads that agree, so the owner did not move.
         const confirmed = yield* readOwner;
         if (confirmed.messages[0]?.runId === owner) {
-          return yield* pastRestarts(
-            confirmed.runs,
-            confirmed.runs.find((candidate) => candidate.id === owner) ?? selected,
-          );
+          const ownerRun = confirmed.runs.find((candidate) => candidate.id === owner) ?? selected;
+          if (
+            ownerRun !== selected &&
+            isTerminalRunStatus(ownerRun.status) &&
+            (yield* unreadSteerAwaitsRequeue(ownerRun.id, selected.userMessageId))
+          ) {
+            return { run: ownerRun, pending: false, settled: false };
+          }
+          return yield* pastRestarts(confirmed.runs, ownerRun);
         }
         taken = confirmed;
       }

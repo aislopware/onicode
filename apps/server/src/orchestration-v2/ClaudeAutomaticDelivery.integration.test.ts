@@ -1075,6 +1075,7 @@ it.effect.each([
   "the Claude process exits",
   "the server restarts",
   "Claude cancels it and the user stops",
+  "a later steer lands before the run-end reaction",
 ] as const)("handles an unread steer when %s", (outcome) =>
   Effect.gen(function* () {
     const cwd = yield* checkpointWorkspace("claude-unread-steer");
@@ -1296,6 +1297,32 @@ it.effect.each([
           [MessageId.make("after"), true],
         ]);
         assert.equal(offers.length, 2);
+        return;
+      }
+
+      if (outcome === "a later steer lands before the run-end reaction") {
+        // The reaction skips reconcile writes, so the turn ends unseen by it.
+        const now = yield* DateTime.now;
+        yield* (yield* EventSink.EventSinkV2).write({
+          commandId: CommandId.make("command:runtime-reconcile:late-steer"),
+          events: [
+            {
+              id: EventId.make("late-steer-parent-completed"),
+              type: "run.updated" as const,
+              threadId,
+              runId: parent.id,
+              occurredAt: now,
+              payload: { ...parent, status: "completed" as const, completedAt: now },
+            },
+          ],
+        });
+        yield* send("late", { type: "steer_active", targetRunId: parent.id });
+        // The steer Claude never read keeps its place ahead of the later one.
+        assert.deepEqual(yield* queuedOrder, [
+          [steerId, false],
+          [MessageId.make("after"), false],
+          [MessageId.make("late"), false],
+        ]);
         return;
       }
 

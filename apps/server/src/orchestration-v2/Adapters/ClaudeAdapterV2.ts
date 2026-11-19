@@ -3292,9 +3292,12 @@ const reserveClaudePdfBudget = (
       bytes: 0,
       delivered: false,
       refunded: false,
+      // Delivered while compaction ran, so outside the history it removes.
+      afterCompactionStart: false,
       commit() {
         if (this.delivered) return;
         this.delivered = true;
+        this.afterCompactionStart = budget.compacting !== null;
         budget.pending.pages -= this.pages;
         budget.pending.bytes -= this.bytes;
         budget.committed.pages += this.pages;
@@ -5467,8 +5470,8 @@ interface ActiveClaudeTurnContext {
       readonly text: string;
       readonly liveQuery: ClaudeLiveQueryContext;
       readonly pdfReservation: Effect.Success<ReturnType<typeof reserveClaudePdfBudget>>;
-      // Set when Claude takes the offer: the turn's notes after it, and before it to restore.
-      appContextOffered: ReadonlyMap<string, string> | undefined;
+      // Set when Claude takes the offer: the notes it sent, and the history's notes before it.
+      appContextSent: ReadonlyMap<string, string> | undefined;
       appContextBefore: ReadonlyMap<string, string> | undefined;
     }
   >;
@@ -7473,16 +7476,17 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           }),
         });
 
+        const itemOrdinal = (context: ActiveClaudeTurnContext, nativeItemId: string) => {
+          const existing = context.itemOrdinals.get(nativeItemId);
+          if (existing !== undefined) {
+            return existing;
+          }
+          const ordinal = context.input.providerTurnOrdinal * 100 + context.itemOrdinals.size + 1;
+          context.itemOrdinals.set(nativeItemId, ordinal);
+          return ordinal;
+        };
         const resolveItemOrdinal = (context: ActiveClaudeTurnContext, nativeItemId: string) =>
-          Effect.sync(() => {
-            const existing = context.itemOrdinals.get(nativeItemId);
-            if (existing !== undefined) {
-              return existing;
-            }
-            const ordinal = context.input.providerTurnOrdinal * 100 + context.itemOrdinals.size + 1;
-            context.itemOrdinals.set(nativeItemId, ordinal);
-            return ordinal;
-          });
+          Effect.sync(() => itemOrdinal(context, nativeItemId));
 
         const providerTurnPayload = (input: {
           readonly context: ActiveClaudeTurnContext;
@@ -9729,6 +9733,8 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           if (context.heldResult === undefined) return;
           const { assistant } = context;
           if (assistant.fallbackText.length > 0) {
+            // Placed now, so the reply sorts before the steer's answer.
+            itemOrdinal(context, assistant.fallbackNativeItemId);
             assistant.earlierFallbackText = joinFallbackText(
               assistant.earlierFallbackText,
               assistant.fallbackText,
@@ -9775,21 +9781,28 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               : undefined;
           if (dropped === undefined || lifecycle === null) return;
           context.pendingSteers.delete(lifecycle.uuid);
-          // The follow-up turn sends the same files and notes again.
-          if (
-            dropped.appContextOffered !== undefined &&
-            context.appContextOffered === dropped.appContextOffered
-          ) {
-            context.appContextOffered = dropped.appContextBefore;
+          // The follow-up turn sends the same files and notes again. A later steer or a
+          // compaction may have replaced a note since, so only notes still as sent go back.
+          if (dropped.appContextSent !== undefined && context.appContextOffered !== undefined) {
+            const offered = new Map(context.appContextOffered);
+            for (const [key, text] of dropped.appContextSent) {
+              if (offered.get(key) !== text) continue;
+              const before = dropped.appContextBefore?.get(key);
+              if (before === undefined) offered.delete(key);
+              else offered.set(key, before);
+            }
+            context.appContextOffered = offered;
           }
           if (dropped.pdfReservation.delivered && !dropped.pdfReservation.refunded) {
             dropped.pdfReservation.refund();
             yield* persistAttachmentBudget(context.nativeThreadId);
           }
           if (context.pendingSteers.size === 0 && context.heldResult !== undefined) {
+            // Stop cancels the steers Claude still holds.
+            const interrupted = (yield* Ref.get(interruptedTurns)).has(context.providerTurnId);
             yield* finalizeActiveTurn({
               context,
-              status: "completed",
+              status: interrupted ? "interrupted" : "completed",
               completedAt: yield* DateTime.now,
               result: context.heldResult,
             });
@@ -9915,11 +9928,15 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             subagentToolCalls.delete(toolCall.nativeItemId);
           }
 
-          const fallbackText = joinFallbackText(
-            input.context.assistant.earlierFallbackText,
-            input.context.assistant.fallbackText,
-          );
-          if (input.context.assistant.emittedNativeItemIds.size === 0 && fallbackText.length > 0) {
+          // A steer's streamed answer does not replace the result-only replies before it.
+          const fallbackText =
+            input.context.assistant.emittedNativeItemIds.size === 0
+              ? joinFallbackText(
+                  input.context.assistant.earlierFallbackText,
+                  input.context.assistant.fallbackText,
+                )
+              : input.context.assistant.earlierFallbackText;
+          if (fallbackText.length > 0) {
             const ordinal = yield* resolveItemOrdinal(
               input.context,
               input.context.assistant.fallbackNativeItemId,
@@ -11637,6 +11654,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 context.compaction = null;
                 const budget = pdfBudgets.get(context.nativeThreadId);
                 if (budget !== undefined) budget.compacting = null;
+                for (const steer of context.pendingSteers.values()) {
+                  steer.pdfReservation.afterCompactionStart = false;
+                }
               }
             }
           }
@@ -11710,6 +11730,16 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 const compacted = budget.compacting ?? { ...budget.committed };
                 budget.committed.pages -= compacted.pages;
                 budget.committed.bytes -= compacted.bytes;
+                // Their charge left with the history; a later drop has nothing to refund.
+                for (const steer of context.pendingSteers.values()) {
+                  const reservation = steer.pdfReservation;
+                  if (reservation.delivered && !reservation.afterCompactionStart) {
+                    reservation.refunded = true;
+                  }
+                }
+              }
+              for (const steer of context.pendingSteers.values()) {
+                steer.pdfReservation.afterCompactionStart = false;
               }
               budget.compacting = null;
               yield* persistAttachmentBudget(context.nativeThreadId);
@@ -14538,7 +14568,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               text: turnInput.message.text,
               liveQuery: existing,
               pdfReservation,
-              appContextOffered: undefined as ReadonlyMap<string, string> | undefined,
+              appContextSent: undefined as ReadonlyMap<string, string> | undefined,
               appContextBefore: undefined as ReadonlyMap<string, string> | undefined,
             };
             currentTurn.pendingSteers.set(steerUuid, pendingSteer);
@@ -14567,9 +14597,13 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               offerCommitted = true;
               pdfReservation.commit();
               if (userMessage !== steerMessage) {
-                pendingSteer.appContextBefore = currentTurn.appContextOffered;
+                pendingSteer.appContextBefore =
+                  currentTurn.appContextOffered ??
+                  deliveredAppContext.get(currentTurn.nativeThreadId);
+                pendingSteer.appContextSent = new Map(
+                  unsentAppContext.map((entry) => [entry.key, entry.text] as const),
+                );
                 recordAppContextOffer(currentTurn, unsentAppContext);
-                pendingSteer.appContextOffered = currentTurn.appContextOffered;
               }
             };
             yield* Effect.uninterruptibleMask((restore) =>
