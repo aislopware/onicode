@@ -1,5 +1,6 @@
 // No Onicode imports inside the string; resolve Pi and typebox from the user's Pi install.
 import { ONICODE_CODE_ORCHESTRATION_INSTRUCTIONS } from "@onicode/provider-core/server/orchestrationInstructions";
+import { PULL_REQUEST_LINKING_INSTRUCTIONS } from "@onicode/provider-core/server/runtimeInstructions";
 
 export const PI_ONI_MCP_EXTENSION_FILENAME = "pi-oni-mcp-extension.ts";
 
@@ -27,6 +28,7 @@ const RUNTIME_MODE_ENV = ${JSON.stringify(ONICODE_PI_RUNTIME_MODE_ENV)};
 const EXTENSION_PATH_ENV = ${JSON.stringify(ONICODE_PI_MCP_EXTENSION_PATH_ENV)};
 const STDIO_ENV = ${JSON.stringify(ONICODE_STDIO_MCP_ENV)};
 const ORCHESTRATION_INSTRUCTIONS = ${JSON.stringify(ONICODE_CODE_ORCHESTRATION_INSTRUCTIONS.trim())};
+const PULL_REQUEST_LINKING_INSTRUCTIONS = ${JSON.stringify(PULL_REQUEST_LINKING_INSTRUCTIONS)};
 const SERVICE_TIER_COMMAND = ${JSON.stringify(PI_ONI_SERVICE_TIER_COMMAND)};
 const PROTOCOL = "2025-06-18";
 const READ_ONLY_TOOLS = new Set(["read", "grep", "find", "ls"]);
@@ -519,13 +521,14 @@ export default async function oniMcpExtension(pi: ExtensionAPI) {
   // Keep guidance in the system prompt so leading slash commands still expand.
   pi.on("before_agent_start", (event, ctx) => {
     reconcileDiscovery(ctx);
+    const instructions = ORCHESTRATION_INSTRUCTIONS + "\\n\\n" + PULL_REQUEST_LINKING_INSTRUCTIONS;
     const sections = event.systemPromptOptions?.sections;
     if (sections && typeof sections === "object" && event.systemPromptOptions?.forceSystemPrompt === undefined) {
       // A full prompt override bypasses Pi's later section rendering.
-      sections.oni_code_orchestration = ORCHESTRATION_INSTRUCTIONS;
+      sections.oni_code_orchestration = instructions;
       return undefined;
     }
-    return { systemPrompt: event.systemPrompt + "\\n\\n" + ORCHESTRATION_INSTRUCTIONS };
+    return { systemPrompt: event.systemPrompt + "\\n\\n" + instructions };
   });
 }
 `;

@@ -2755,3 +2755,4 @@ eb62a37150	take	atomic saves keep modes and fsync; telemetry Identify test left 
 1a51984153	take	fix(web): a tool call's diff names its files relative to the workspace (#32697)
 c3e82a93fe	skip	T3 Connect cloudflared minimum version (relayClient), removed in Onicode; Onicode does not run cloudflared
 56b0777774	take	GPT evals use the configured Codex provider and CODEX_HOME; test-signal README left out
+54038e14ec	take	fix(pi): Pi agents get Onicode's pull request linking rules (#31727)
