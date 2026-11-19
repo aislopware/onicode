@@ -1637,6 +1637,30 @@ it.effect("refuses a merge whose head moved past expectedHeadSha and pins the ho
   }),
 );
 
+it.effect("re-reads the diff after a refused merge that already moved the head", () =>
+  Effect.gen(function* () {
+    let patch = "reviewed patch";
+    const service = yield* makeService({
+      projects: [project({ id: "p1", title: "web", workspaceRoot: "/a", repository: "acme/web" })],
+      providers: [
+        fakePullRequestProvider(SourceControlProviderKind.make("github"), {
+          getDiff: () => Effect.sync(() => ({ patch, truncated: false, nextCursor: null })),
+          // A GitLab rebase merge can rebase the branch and then refuse to merge the new head.
+          runAction: () =>
+            Effect.suspend(() => {
+              patch = "rebased patch";
+              return Effect.fail(requestFailed);
+            }),
+        }),
+      ],
+    });
+    const reference = { projectId: "p1" as ProjectId, repository: "acme/web", number: 1 };
+    assert.strictEqual((yield* service.diff(reference)).patch, "reviewed patch");
+    yield* service.runAction({ ...reference, action: "merge" }).pipe(Effect.ignore);
+    assert.strictEqual((yield* service.diff(reference)).patch, "rebased patch");
+  }),
+);
+
 it.effect("publishes a merge for immediate settlement only after host confirmation", () =>
   Effect.gen(function* () {
     const mergedAt = "2026-09-03T02:00:00.000Z";
