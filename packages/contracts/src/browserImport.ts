@@ -67,6 +67,8 @@ export const DesktopPreviewImportCookiesInputSchema = Schema.Struct({
   sourceId: BrowserImportSourceId,
   sourceProfileDirectory: TrimmedNonEmptyString,
   targetProfileId: BrowserProfileId,
+  /** The environment's previews tunnel loopback, so they use its tunnelled partition. */
+  tunnelLoopback: Schema.optional(Schema.Boolean),
 });
 
 export const BrowserImportResult = Schema.Struct({

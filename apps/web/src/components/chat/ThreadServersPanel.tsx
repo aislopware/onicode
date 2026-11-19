@@ -80,10 +80,10 @@ function ThreadServersList(props: ThreadServersPanelProps) {
 
   const open = async (server: DiscoveredLocalServer, event: MouseEvent<HTMLElement>) => {
     if (event.button > 1) return;
-    // Like links: modified and middle clicks go to the system browser.
-    if (event.metaKey || event.ctrlKey || event.button === 1) {
+    // Like links: modified and middle clicks go to the system browser, when it can reach the server.
+    const url = resolveExternalServerUrl(props.environmentId, server.url);
+    if (url !== null && (event.metaKey || event.ctrlKey || event.button === 1)) {
       event.preventDefault();
-      const url = resolveExternalServerUrl(props.environmentId, server.url);
       await readLocalApi()
         ?.shell.openExternal(url)
         .catch((error: unknown) => reportFailure(gt("Unable to open in browser"), error));

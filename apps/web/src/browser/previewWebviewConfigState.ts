@@ -77,18 +77,23 @@ const parseConfigKey = (key: string): { environmentId: EnvironmentId; profileId?
   };
 };
 
+/** Whether the desktop tunnels an environment's loopback; undefined until the catalog knows it. */
+export const previewTunnelLoopbackAtom = Atom.family((environmentId: EnvironmentId) =>
+  Atom.make((get) =>
+    tunnelsEnvironmentLoopback(
+      get(environmentCatalog.catalogValueAtom).entries.get(environmentId)?.target,
+    ),
+  ).pipe(Atom.withLabel(`preview:tunnel-loopback:${environmentId}`)),
+);
+
 const previewWebviewConfigAtom = Atom.family((key: string) => {
   const { environmentId, profileId } = parseConfigKey(key);
-  // The catalog knows the target before the environment connects, and a change re-routes the partition.
-  return Atom.make((get) =>
-    loadPreviewWebviewConfig(
-      environmentId,
-      profileId,
-      tunnelsEnvironmentLoopback(
-        get(environmentCatalog.catalogValueAtom).entries.get(environmentId)?.target,
-      ),
-    ),
-  ).pipe(
+  return Atom.make((get) => {
+    const tunnelLoopback = get(previewTunnelLoopbackAtom(environmentId));
+    // A guess would load the wrong machine's localhost, then remount the tab in another partition.
+    if (tunnelLoopback === undefined) return Effect.never;
+    return loadPreviewWebviewConfig(environmentId, profileId, tunnelLoopback);
+  }).pipe(
     Atom.swr({
       staleTime: PREVIEW_CONFIG_STALE_TIME_MS,
       revalidateOnMount: true,

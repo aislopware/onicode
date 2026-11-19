@@ -11,6 +11,8 @@ interface Props {
   description: string;
   onReload: () => void;
   move?: { readonly label: string; readonly onMove: () => void };
+  /** The URL went through the desktop's loopback tunnel to another environment. */
+  tunnelled?: boolean;
 }
 
 export function PreviewFileNotShown({
@@ -22,7 +24,8 @@ export function PreviewFileNotShown({
   url: string;
   fileName: string;
   downloadUrl: string | null;
-  onOpen: () => void;
+  /** Absent when the system browser has no route to the page. */
+  onOpen: (() => void) | undefined;
 }) {
   const host = safeHost(url) ?? url;
   return (
@@ -42,9 +45,11 @@ export function PreviewFileNotShown({
         </p>
         <div className="mt-auto flex items-center gap-2 pt-8">
           <div className="flex-1" />
-          <Button type="button" variant="outline" size="sm" onClick={onOpen}>
-            <T>Open in browser</T>
-          </Button>
+          {onOpen ? (
+            <Button type="button" variant="outline" size="sm" onClick={onOpen}>
+              <T>Open in browser</T>
+            </Button>
+          ) : null}
           {downloadUrl ? (
             <Button type="button" size="sm" render={<a href={downloadUrl} download={fileName} />}>
               <T context="verb">Download</T>
@@ -56,12 +61,19 @@ export function PreviewFileNotShown({
   );
 }
 
-export function PreviewUnreachable({ url, code, description, onReload, move }: Props) {
+export function PreviewUnreachable({
+  url,
+  code,
+  description,
+  onReload,
+  move,
+  tunnelled = false,
+}: Props) {
   const gt = useGT();
   const m = useMessages();
   const [showDetails, setShowDetails] = useState(false);
   const host = safeHost(url) ?? url;
-  const friendly = describePreviewError(description, m);
+  const friendly = describePreviewError(description, m, tunnelled);
   const errorLabel = description.length > 0 ? description : `ERR_${Math.abs(code) || "FAILED"}`;
 
   return (

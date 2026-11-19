@@ -139,4 +139,15 @@ describe("preview IPC methods", () => {
       namespace: "profile",
     });
   });
+
+  it("keeps a tunnelled environment's storage apart from what this machine's localhost set", () => {
+    // Loopback cookies, storage and service workers are shared by every port of a host.
+    for (const profileId of [undefined, "work", INCOGNITO_BROWSER_PROFILE_ID]) {
+      const direct = PreviewIpc.resolvePartitionScope("environment", profileId, false);
+      const tunnelled = PreviewIpc.resolvePartitionScope("environment", profileId, true);
+      expect(tunnelled.namespace).toBe("tunnel");
+      expect(direct.namespace).not.toBe("tunnel");
+      expect(tunnelled.persistent).toBe(direct.persistent);
+    }
+  });
 });

@@ -47,7 +47,9 @@ import { useRef, useState } from "react";
 import { msg, T, useGT, useMessages, Var } from "gt-react";
 import { m as resolveNow, type MessageResolver } from "../../i18n/messages";
 
+import { previewTunnelLoopbackAtom } from "~/browser/previewWebviewConfigState";
 import { ScreenRotationIcon } from "~/browser/ScreenRotationIcon";
+import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { resolveEnvironmentOptionLabel } from "~/components/BranchToolbar.logic";
 import { previewBridge } from "~/components/preview/previewBridge";
 import { cn, randomUUID } from "~/lib/utils";
@@ -220,6 +222,7 @@ async function importBrowserCookiesIntoTarget(
       sourceId: source.id,
       sourceProfileDirectory: input.sourceProfileDirectory,
       targetProfileId: input.target.profileId,
+      tunnelLoopback: appAtomRegistry.get(previewTunnelLoopbackAtom(environmentId)) === true,
     });
     if (
       input.target.kind === "existing" &&

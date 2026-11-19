@@ -21,6 +21,7 @@ import {
   type PreviewAdjustInput,
 } from "@onicode/contracts";
 import {
+  isLoopbackHost,
   normalizePreviewUrl,
   isPreviewUrlNormalizationError,
   resolveAddressBarInput,
@@ -92,6 +93,7 @@ import { revealInFileExplorerLabel } from "./fileExplorerLabel";
 import { Badge } from "~/components/ui/badge";
 import { BrowserSurfaceSlot } from "~/browser/BrowserSurfaceSlot";
 import { alternatePreviewRuntime, useRendersServerTabNatively } from "~/browser/previewRuntime";
+import { previewTunnelLoopbackAtom } from "~/browser/previewWebviewConfigState";
 import { ServerBrowserSurface, type ServerBrowserHandle } from "~/browser/ServerBrowserSurface";
 import { cn } from "~/lib/utils";
 import { useBrowserSurfaceStore } from "~/browser/browserSurfaceStore";
@@ -133,6 +135,12 @@ function previewProfileName(
 
 const localApi = typeof window === "undefined" ? null : ensureLocalApi();
 
+/** Undefined when the system browser has no route to the page, so no control offers it. */
+const openExternally = (externalUrl: string | null) =>
+  localApi && externalUrl
+    ? () => void localApi.shell.openExternal(externalUrl).catch(() => undefined)
+    : undefined;
+
 function ServerTabFileNotShown(props: {
   readonly threadRef: ScopedThreadRef;
   readonly tabId: string;
@@ -152,7 +160,7 @@ function ServerTabFileNotShown(props: {
             )
           : null
       }
-      onOpen={() => void localApi?.shell.openExternal(props.url).catch(() => undefined)}
+      onOpen={openExternally(resolveExternalServerUrl(props.threadRef.environmentId, props.url))}
     />
   );
 }
@@ -223,6 +231,7 @@ export function PreviewView({
   const snapshot = tabId ? (previewState.sessions[tabId] ?? null) : null;
   const nativeServerTab = useRendersServerTabNatively(threadRef.environmentId, snapshot);
   const isServerTab = snapshot?.runtime === "server" && !nativeServerTab;
+  const tunnelsLoopback = useAtomValue(previewTunnelLoopbackAtom(threadRef.environmentId)) === true;
   const serverOwnsRendering = snapshot?.runtime === "server";
   const serverSurfaceRef = useRef<ServerBrowserHandle | null>(null);
   const serverSurfaceBoxRef = useRef<HTMLDivElement | null>(null);
@@ -328,7 +337,7 @@ export function PreviewView({
       const resolved =
         isServerTab || !previewBridge
           ? normalizePreviewUrl(next)
-          : resolveDiscoveredServerUrl(threadRef.environmentId, next);
+          : resolveDiscoveredServerUrl(next);
       if (isHistoryProfile(await navigateToResolvedUrl(resolved))) {
         recordVisitForThread(threadRef, next);
       }
@@ -453,12 +462,10 @@ export function PreviewView({
     else if (previewBridge && runtimeTabId) void previewBridge.goForward(runtimeTabId);
   };
 
-  const handleOpenInBrowser = () => {
-    if (!localApi || !url) return;
-    // A desktop tab's localhost is the environment's; the system browser needs its own route there.
-    const externalUrl = isServerTab ? url : resolveExternalServerUrl(threadRef.environmentId, url);
-    void localApi.shell.openExternal(externalUrl).catch(() => undefined);
-  };
+  // A tab's localhost is the environment's; the system browser needs its own route there.
+  const handleOpenInBrowser = url
+    ? openExternally(resolveExternalServerUrl(threadRef.environmentId, url))
+    : undefined;
 
   const moveTarget = alternatePreviewRuntime(
     threadRef.environmentId,
@@ -479,10 +486,7 @@ export function PreviewView({
       threadRef,
       ...(url
         ? {
-            url:
-              moveTarget === "desktop"
-                ? resolveDiscoveredServerUrl(threadRef.environmentId, url)
-                : url,
+            url: moveTarget === "desktop" ? resolveDiscoveredServerUrl(url) : url,
           }
         : {}),
       viewport,
@@ -1187,6 +1191,11 @@ export function PreviewView({
               code={navStatus.code}
               description={navStatus.description}
               onReload={handleRefresh}
+              tunnelled={
+                tunnelsLoopback &&
+                !isServerTab &&
+                isLoopbackHost(URL.parse(navStatus.url)?.hostname ?? "")
+              }
               {...(moveTarget === "server"
                 ? { move: { label: moveLabel, onMove: () => void handleMoveTab() } }
                 : {})}

@@ -8,6 +8,7 @@ import { readLocalApi } from "~/localApi";
 import { previewEnvironment } from "~/state/preview";
 import { useAtomCommand } from "~/state/use-atom-command";
 
+import { resolveExternalServerUrl } from "./browserTargetResolver";
 import {
   canOpenLinksInApp,
   resolveBrowserLinkTargetPreference,
@@ -40,7 +41,11 @@ export function useOpenLink(threadRef: ScopedThreadRef | null | undefined): (
       preference: await resolveBrowserLinkTargetPreference(),
       canOpenInApp: canOpenLinksInApp(targetThreadRef),
     });
-    if (target === "app" && targetThreadRef) {
+    // Null when the system browser would reach a different server on this computer.
+    const externalUrl = targetThreadRef
+      ? resolveExternalServerUrl(targetThreadRef.environmentId, url)
+      : url;
+    if ((target === "app" || externalUrl === null) && targetThreadRef) {
       const result = await openUrlInPreview({ threadRef: targetThreadRef, url, openPreview });
       if (isAtomCommandInterrupted(result)) return;
       if (result._tag === "Success") {
@@ -52,7 +57,7 @@ export function useOpenLink(threadRef: ScopedThreadRef | null | undefined): (
       console.error(result.cause);
     }
     const api = readLocalApi();
-    if (!api) throw new Error(m(msg("Link opening is unavailable.")));
-    await api.shell.openExternal(url);
+    if (!api || externalUrl === null) throw new Error(m(msg("Link opening is unavailable.")));
+    await api.shell.openExternal(externalUrl);
   };
 }

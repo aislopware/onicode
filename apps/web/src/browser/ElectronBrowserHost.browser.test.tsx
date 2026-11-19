@@ -25,6 +25,23 @@ vi.mock(import("~/state/session"), async (original) => ({
   useEnvironmentScope: () => true,
 }));
 
+// Webviews wait until the catalog knows whether the environment's loopback is tunnelled.
+vi.mock(import("~/connection/catalog"), async (original) => {
+  const actual = await original();
+  const { Atom } = await import("effect/reactivity");
+  const target = { _tag: "BearerConnectionTarget", connectionId: "saved:remote" };
+  return {
+    ...actual,
+    environmentCatalog: {
+      ...actual.environmentCatalog,
+      catalogValueAtom: Atom.make({
+        isReady: true,
+        entries: new Map([["host-webview-order", { target }]]),
+      }) as unknown as typeof actual.environmentCatalog.catalogValueAtom,
+    },
+  };
+});
+
 vi.mock(import("~/localApi"), async (original) => {
   const actual = await original();
   return {

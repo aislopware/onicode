@@ -38,6 +38,7 @@ import * as NodeURL from "node:url";
 
 import * as ElectronWindow from "../../electron/ElectronWindow.ts";
 import * as BrowserImport from "../../preview/BrowserImport/BrowserImport.ts";
+import type * as BrowserSession from "../../preview/BrowserSession.ts";
 import * as LoopbackTunnel from "../../preview/LoopbackTunnel.ts";
 import * as PreviewManager from "../../preview/Manager.ts";
 import { normalizeCaptureFailure } from "../../preview/captureErrors.ts";
@@ -316,11 +317,21 @@ const clearCache = DesktopIpc.makeIpcMethod({
 export function resolvePartitionScope(
   environmentId: string,
   profileId: string | undefined,
+  tunnelled = false,
 ): {
   readonly scope: string;
   readonly persistent: boolean;
-  readonly namespace?: "profile";
+  readonly namespace?: BrowserSession.BrowserSessionPartitionNamespace;
 } {
+  // A page this machine served on localhost shares an origin with one the tunnel brings from the
+  // environment, so their cookies, storage and service workers never share a partition.
+  if (tunnelled) {
+    return {
+      scope: JSON.stringify([environmentId, profileId ?? DEFAULT_BROWSER_PROFILE_ID]),
+      persistent: profileId !== INCOGNITO_BROWSER_PROFILE_ID,
+      namespace: "tunnel",
+    };
+  }
   if (profileId === undefined || profileId === DEFAULT_BROWSER_PROFILE_ID) {
     return { scope: environmentId, persistent: true };
   }
@@ -332,17 +343,25 @@ export function resolvePartitionScope(
   };
 }
 
-/** Omitting a profile clears every partition; a named profile clears only its own partition. */
+/** Omitting a profile clears every partition; a named profile clears only its own partitions. */
 const resolveClearPartitions = Effect.fn("desktop.ipc.preview.resolveClearPartitions")(function* (
   manager: PreviewManager.PreviewManager["Service"],
   environmentId: string,
   profileId: string | undefined,
 ) {
   if (profileId === undefined) return undefined;
-  const { scope, persistent, namespace } = resolvePartitionScope(environmentId, profileId);
-  // getBrowserSession registers the partition; deriving its name alone leaves unopened profiles uncleared.
-  yield* manager.getBrowserSession(scope, persistent, namespace);
-  return [yield* manager.getBrowserPartition(scope, persistent, namespace)];
+  return yield* Effect.forEach([false, true], (tunnelled) =>
+    Effect.gen(function* () {
+      const { scope, persistent, namespace } = resolvePartitionScope(
+        environmentId,
+        profileId,
+        tunnelled,
+      );
+      // getBrowserSession registers the partition; deriving its name alone leaves unopened profiles uncleared.
+      yield* manager.getBrowserSession(scope, persistent, namespace);
+      return yield* manager.getBrowserPartition(scope, persistent, namespace);
+    }),
+  );
 });
 
 const getPreviewConfig = DesktopIpc.makeIpcMethod({
@@ -356,11 +375,16 @@ const getPreviewConfig = DesktopIpc.makeIpcMethod({
   }) {
     const manager = yield* PreviewManager.PreviewManager;
     const tunnel = yield* LoopbackTunnel.LoopbackTunnel;
-    const { scope, persistent, namespace } = resolvePartitionScope(environmentId, profileId);
+    const tunnelled = tunnelLoopback === true;
+    const { scope, persistent, namespace } = resolvePartitionScope(
+      environmentId,
+      profileId,
+      tunnelled,
+    );
     // Session creation installs UA and permission handlers before a guest can attach.
     const session = yield* manager.getBrowserSession(scope, persistent, namespace);
     // Routed before the renderer learns the partition, so no guest loads loopback directly.
-    yield* tunnel.route({ environmentId, session, tunnelled: tunnelLoopback === true });
+    if (tunnelled) yield* tunnel.route({ environmentId, session });
     return {
       partition: yield* manager.getBrowserPartition(scope, persistent, namespace),
       webPreferences: PREVIEW_WEBVIEW_PREFERENCES,
@@ -395,12 +419,14 @@ export const importBrowserCookies = DesktopIpc.makeIpcMethod({
   result: BrowserImportResult,
   handler: Effect.fn("desktop.ipc.preview.importBrowserCookies")(function* ({
     environmentId,
+    tunnelLoopback,
     ...importInput
   }) {
     const browserImport = yield* BrowserImport.BrowserImport;
     const { scope, persistent, namespace } = resolvePartitionScope(
       environmentId,
       importInput.targetProfileId,
+      tunnelLoopback === true,
     );
     return yield* browserImport.importCookies({
       input: importInput,
