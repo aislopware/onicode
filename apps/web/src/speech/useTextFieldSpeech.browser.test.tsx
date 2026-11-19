@@ -39,6 +39,14 @@ function Field() {
       <textarea aria-label="Draft" ref={textareaRef} />
       <input aria-label="Elsewhere" />
       <button type="button">Plain</button>
+      <div
+        ref={(host) => {
+          if (host === null || host.shadowRoot !== null) return;
+          const input = document.createElement("input");
+          input.ariaLabel = "Shadow";
+          host.attachShadow({ mode: "open" }).append(input);
+        }}
+      />
     </>
   );
 }
@@ -64,6 +72,15 @@ it("returns focus to the field after dictation only while the user has not moved
   speech.commit!("Dictated", { start: 8, end: 8 }, null);
   vi.advanceTimersToNextFrame();
   expect(document.activeElement).toBe(draft.element());
+
+  // A field inside a shadow root, like a file editor's Find, keeps its focus.
+  const shadow = screen.getByRole("textbox", { name: "Shadow" }).element() as HTMLInputElement;
+  shadow.focus();
+  speech.commit!("Dictated", { start: 8, end: 8 }, null);
+  vi.advanceTimersToNextFrame();
+  expect(shadow.getRootNode()).not.toBe(document);
+  expect((shadow.getRootNode() as ShadowRoot).activeElement).toBe(shadow);
+  expect(document.activeElement).not.toBe(draft.element());
 
   // A plain button, as when a shortcut started dictation, yields like the composer does.
   screen.getByRole("button", { name: "Plain" }).element().focus();
