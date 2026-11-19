@@ -1,3 +1,4 @@
+import * as NodeUtil from "node:util";
 import {
   CommandId,
   type OrchestrationProjectShell,
@@ -9,6 +10,7 @@ import {
   type ThreadId,
 } from "@onicode/contracts";
 import * as KeyedLock from "@onicode/shared/KeyedLock";
+import { resolveProjectScripts } from "@onicode/shared/projectScripts";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -414,17 +416,42 @@ export const make = Effect.gen(function* () {
       ProjectUpdatePayload,
       "defaultModelSelection" | "defaultThreadEnvMode" | "scripts" | "autoPull"
     >,
+    previousScripts?: ProjectStore.ProjectRow["scripts"],
   ) => {
-    // Null, like empty scripts on the legacy record, falls back to the environment default.
-    const changes = {
-      defaultModelSelection: input.defaultModelSelection,
-      defaultThreadEnvMode: input.defaultThreadEnvMode,
-      defaultProjectScripts: input.scripts?.length === 0 ? null : input.scripts,
-      defaultAutoPull: input.autoPull,
-    };
-    if (Object.values(changes).every((value) => value === undefined)) return undefined;
-    return serverSettings.updateProjectSettingsOverride(projectId, changes).pipe(
-      Effect.asVoid,
+    if (
+      input.defaultModelSelection === undefined &&
+      input.defaultThreadEnvMode === undefined &&
+      input.scripts === undefined &&
+      input.autoPull === undefined
+    )
+      return undefined;
+    return Effect.gen(function* () {
+      const { scripts } = input;
+      // Empty own scripts read the same whether the project inherits or chose none, so a
+      // caller echoing what it read must not flip one into the other.
+      const echoesOwnScripts =
+        scripts !== undefined &&
+        previousScripts !== undefined &&
+        NodeUtil.isDeepStrictEqual(
+          scripts,
+          resolveProjectScripts(
+            { ...(yield* serverSettings.getSettings), defaultProjectScripts: [] },
+            { id: projectId, scripts: previousScripts },
+          ),
+        );
+      yield* serverSettings.updateProjectSettingsOverride(projectId, {
+        defaultModelSelection: input.defaultModelSelection,
+        defaultThreadEnvMode: input.defaultThreadEnvMode,
+        // Like empty scripts on the legacy record, an empty list uses the environment's.
+        defaultProjectScripts:
+          scripts === undefined || echoesOwnScripts
+            ? undefined
+            : scripts.length === 0
+              ? null
+              : scripts,
+        defaultAutoPull: input.autoPull,
+      });
+    }).pipe(
       Effect.mapError(
         (cause) =>
           new ProjectOperationError({ operation: "write-project-settings", projectId, cause }),
@@ -498,7 +525,7 @@ export const make = Effect.gen(function* () {
           ...(input.pinned === undefined ? {} : { pinned: input.pinned }),
           ...(input.archived === undefined ? {} : { archived: input.archived }),
         },
-        writeProjectSettings(input.projectId, input),
+        writeProjectSettings(input.projectId, input, existing.value.scripts),
       );
       if (workspaceRoot !== previousRoot || input.faviconPath !== undefined) {
         yield* projectEnrichment.invalidate([previousRoot, workspaceRoot]);

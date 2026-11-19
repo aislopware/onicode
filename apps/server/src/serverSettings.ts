@@ -1,3 +1,4 @@
+import * as NodeUtil from "node:util";
 import {
   DEFAULT_SERVER_SETTINGS,
   ModelSelection,
@@ -261,14 +262,16 @@ function projectOverridePatches(
   current: ServerSettings,
   projectId: ProjectId,
   changes: ProjectSettingsOverrideChanges,
-): { readonly apply: ServerSettingsPatch; readonly vet: ServerSettingsPatch } {
-  const entry: Record<string, unknown> = { ...current.projectSettingsOverrides[projectId] };
+): { readonly apply: ServerSettingsPatch; readonly vet: ServerSettingsPatch } | null {
+  const stored = current.projectSettingsOverrides[projectId];
+  const entry: Record<string, unknown> = { ...stored };
   const set: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(changes)) {
     if (value === undefined) continue;
     if (value === null) delete entry[key];
     else entry[key] = set[key] = value;
   }
+  if (NodeUtil.isDeepStrictEqual(entry, { ...stored })) return null;
   const next = Object.keys(entry).length === 0 ? null : (entry as ProjectSettingsOverrides);
   return {
     apply: { projectSettingsOverrides: { [projectId]: next } },
@@ -373,7 +376,7 @@ const makeTest = Effect.fn("serverSettings.makeTest")(function* (
         Effect.succeed(
           applyServerSettingsPatch(
             currentSettings,
-            projectOverridePatches(currentSettings, projectId, changes).apply,
+            projectOverridePatches(currentSettings, projectId, changes)?.apply ?? {},
           ),
         ),
       ),
@@ -1234,7 +1237,7 @@ const make = Effect.gen(function* () {
       | ((current: ServerSettings) => {
           readonly apply: ServerSettingsPatch;
           readonly vet: ServerSettingsPatch;
-        }),
+        } | null),
     update: (
       current: ServerSettings,
       patch: ServerSettingsPatch,
@@ -1250,8 +1253,11 @@ const make = Effect.gen(function* () {
             cause: parseFailure.value,
           });
         }
-        const { apply: patch, vet: vetPatch } =
+        const patches =
           typeof patchFor === "function" ? patchFor(current) : { apply: patchFor, vet: patchFor };
+        // Nothing to change: skip the file write and the change broadcast.
+        if (patches === null) return yield* getMaterializedSettings;
+        const { apply: patch, vet: vetPatch } = patches;
         // An older client echoes a reference as the redacted marker; restore it before vetting so
         // a removed provider's reference is cleared below rather than restored by persistence.
         const updated = withoutRedirectedSimlockTokens(
