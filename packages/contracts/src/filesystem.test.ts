@@ -43,6 +43,8 @@ describe("FilesystemBrowseResult", () => {
     );
 
     expect(result.parentPath).toBe("/workspace/foo ");
+    // Clients browse into a row by its name.
+    expect(result.entries[0]?.name).toBe("bar ");
     expect(result.entries[0]?.fullPath).toBe("/workspace/foo /bar ");
   });
 });
