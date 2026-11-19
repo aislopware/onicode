@@ -168,7 +168,8 @@ internal class SocksListener(private val requestAccess: () -> String?) {
     val host = if (isSocks4a) {
       readCString(input).loopbackHost()
     } else {
-      InetAddress.getByAddress(address).loopbackHost()
+      // Plain SOCKS4 names no host, so Chromium sends `localhost` already resolved to 127.0.0.1.
+      InetAddress.getByAddress(address).loopbackHost()?.let { if (it == "127.0.0.1") "" else it }
     }
     val refused = byteArrayOf(0, 0x5b, 0, 0, 0, 0, 0, 0)
     if (command != 1 || host == null) return Handshake.Refuse(refused)

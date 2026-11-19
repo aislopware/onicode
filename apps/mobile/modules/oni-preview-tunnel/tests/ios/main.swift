@@ -79,8 +79,68 @@ expect(
 // After an upgrade the bytes are WebSocket frames, not HTTP.
 let upgrade = "GET /hmr HTTP/1.1\r\nHost: onil.test:5173\r\nUpgrade: websocket\r\n\r\n"
 let switched = "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\n\r\n"
-expect(exchange([upgrade, "onil.test"], []).server, upgrade.replacingOccurrences(of: "onil.test", with: "localhost") + "onil.test", "upgraded request")
 expect(exchange([upgrade], [switched + "localhost"]).page, switched + "localhost", "upgraded response")
+
+// A match split across HTTP chunks is still one match in the body.
+let chunkedHead = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nTransfer-Encoding: chunked\r\n\r\n"
+let splitChunks = "5\r\nlocal\r\n4\r\nhost\r\n0\r\n\r\n"
+for pieces in splits(chunkedHead + splitChunks) {
+  expect(
+    exchange([get], pieces).page,
+    chunkedHead + "5\r\nonil.\r\n4\r\ntest\r\n0\r\n\r\n",
+    "match across chunks split at \(pieces[0].utf8.count)"
+  )
+}
+let runOn = "9\r\n127.0.0.1\r\n1\r\n2\r\n0\r\n\r\n"
+expect(exchange([get], [chunkedHead + runOn]).page, chunkedHead + runOn, "address runs on into the next chunk")
+
+// Repeated identical lengths are one length; anything else unreadable is not HTTP to rewrite.
+let twice = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 9\r\nContent-Length: 9\r\n\r\nlocalhost"
+expect(exchange([get, get], [twice + binary]).page, twice.replacingOccurrences(of: "\nlocalhost", with: "\nonil.test") + binary, "repeated content length")
+let unreadable = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 9, 8\r\n\r\nlocalhost"
+expect(exchange([get, get], [unreadable + binary]).page, unreadable + binary, "unreadable content length")
+
+// Head bytes other than the swaps are kept, even when they are not UTF-8.
+let latin = Data("HTTP/1.1 200 OK\r\nContent-Disposition: attachment; filename=\"caf".utf8) + Data([0xE9])
+  + Data("\"\r\nContent-Length: 0\r\n\r\n".utf8)
+expect(OniHttpRewriter.pair().toPage.feed(latin).base64EncodedString(), latin.base64EncodedString(), "non-UTF-8 head")
+
+// `localhost` inside a longer name is another host.
+let names = "mylocalhost.dev localhost_x localhost:1 app.localhost/"
+expect(
+  exchange([get], [ip + names]).page,
+  ip + "mylocalhost.dev localhost_x onil.test:1 app.onil.test/",
+  "localhost inside a name"
+)
+
+// Only text types are rewritten, not types that merely mention one, nor transfer-coded bodies.
+for type in ["application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/jsonx-binary"] {
+  let office = "HTTP/1.1 200 OK\r\nContent-Type: \(type)\r\nContent-Length: 9\r\n\r\nlocalhost"
+  expect(exchange([get], [office]).page, office, "\(type) passes unchanged")
+}
+let gzipped = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nTransfer-Encoding: gzip, chunked\r\n\r\n9\r\nlocalhost\r\n0\r\n\r\n"
+expect(exchange([get], [gzipped]).page, gzipped, "transfer-coded body passes unchanged")
+let svg = "HTTP/1.1 200 OK\r\nContent-Type: image/svg+xml; charset=utf-8\r\nContent-Length: 9\r\n\r\nlocalhost"
+expect(exchange([get], [svg]).page, svg.replacingOccurrences(of: "\nlocalhost", with: "\nonil.test"), "+xml type is text")
+
+// A chunk size that is not one leaves the rest unread rather than trusted.
+let negative = chunkedHead + "-5\r\nlocalhost"
+expect(exchange([get], [negative]).page, negative, "negative chunk size")
+
+/// Sends each piece to the server (true) or the page (false), in order, like a real connection.
+func converse(_ steps: [(Bool, String)]) -> (server: String, page: String) {
+  let (toServer, toPage) = OniHttpRewriter.pair()
+  var server = Data(), page = Data()
+  for (up, piece) in steps {
+    if up { server += toServer.feed(Data(piece.utf8)) } else { page += toPage.feed(Data(piece.utf8)) }
+  }
+  return (String(decoding: server, as: UTF8.self), String(decoding: page, as: UTF8.self))
+}
+// Only a server's 101 ends HTTP on a connection; a declined upgrade leaves it HTTP both ways.
+let declined = converse([(true, upgrade), (false, "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n"), (true, get)])
+expect(declined.server, (upgrade + get).replacingOccurrences(of: "onil.test", with: "localhost"), "declined upgrade")
+let accepted = converse([(true, upgrade), (false, switched), (true, "onil.test")])
+expect(accepted.server, upgrade.replacingOccurrences(of: "onil.test", with: "localhost") + "onil.test", "accepted upgrade")
 
 func standIn(_ url: String) -> String { OniLoopback.standIn(URL(string: url)!).absoluteString }
 func shown(_ url: String) -> String { OniLoopback.shown(URL(string: url)!).absoluteString }
