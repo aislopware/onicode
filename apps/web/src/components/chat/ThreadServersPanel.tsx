@@ -105,12 +105,15 @@ function ThreadServersList(props: ThreadServersPanelProps) {
     const directUrl = resolveExternalServerUrl(props.environmentId, server.url);
     if (external && (forwarding || directUrl !== null)) {
       event.preventDefault();
+      // A server the system browser reaches directly still opens when the forward fails.
       const url = forwarding
         ? await forwardPort(props.environmentId, server.port).then(
             (forward) => forwardedUrl(forward, server.url),
             (error: unknown) => {
-              reportFailure(gt("Could not forward port {port}", { port: server.port }), error);
-              return null;
+              if (directUrl === null) {
+                reportFailure(gt("Could not forward port {port}", { port: server.port }), error);
+              }
+              return directUrl;
             },
           )
         : directUrl;
