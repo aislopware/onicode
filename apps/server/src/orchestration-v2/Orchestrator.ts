@@ -87,7 +87,7 @@ import { modelSwitchSince } from "./modelSwitch.ts";
 import {
   contextBoundaryOrdinal,
   readFreshRunUserMessages,
-  runContextBoundaryOrdinal,
+  conversationRuns,
   scheduledConversationStart,
   scheduledConversationStarts,
   scheduledFreshRunOrdinals,
@@ -1446,7 +1446,7 @@ function conversationProviderThread(
 
 /** Runs of scheduled fresh sessions, apart from the one `anchorRun` belongs to. */
 function sideConversationRunIds(
-  projection: Pick<OrchestrationV2ThreadProjection, "runs" | "turnItems">,
+  projection: Pick<OrchestrationV2ThreadProjection, "runs" | "turnItems" | "providerThreads">,
   anchorRun: OrchestrationV2Run | null,
 ): ReadonlySet<RunId> {
   const starts = scheduledConversationStarts(projection);
@@ -2904,7 +2904,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                 strategy: handoffStrategy,
                 items: [
                   ...(needsFullContext && contextBoundary === 0
-                    ? yield* readInheritedItems(projection.thread)
+                    ? (yield* readInheritedItems(projection.thread)).items
                     : []),
                   ...(needsFullContext && latestCompletedRun !== undefined
                     ? legacyImportItems
@@ -6581,9 +6581,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           strategy: "full_thread_summary",
         }),
       );
-      // A scheduled fresh run moves to a provider thread of its own, as it started on one.
+      // A scheduled fresh session's run moves to a provider thread of its own, which records the
+      // session's first run like the thread the session started on.
+      const scheduledSessionStart = scheduledConversationStart(input.projection, targetRun);
       const existingTargetProviderThread =
-        scheduledConversationStart(input.projection, targetRun) === targetRun.ordinal
+        scheduledSessionStart !== undefined
           ? undefined
           : rootProviderThreadsForProvider(input.projection, input.modelSelection.instanceId).find(
               (candidate) => candidate.id !== providerThread.id,
@@ -6612,7 +6614,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
               nativeThreadRef: null,
               nativeConversationHeadRef: null,
               status: "not_loaded",
-              firstRunOrdinal: targetRun.ordinal,
+              firstRunOrdinal: scheduledSessionStart ?? targetRun.ordinal,
               lastRunOrdinal: targetRun.ordinal,
               handoffIds: [],
               forkedFrom: null,
@@ -6632,7 +6634,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           type: "provider_handoff",
         }),
       );
-      const contextBoundary = runContextBoundaryOrdinal(input.projection, targetRun);
+      const conversation = conversationRuns(input.projection, targetRun);
+      const contextBoundary = conversation.boundary;
       restartHandoff = yield* contextHandoffService
         .prepareProviderHandoff({
           threadId: input.command.threadId,
@@ -6646,11 +6649,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           strategy: "full_thread_summary",
           items: yield* readHandoffItems(
             input.command.threadId,
-            contextBoundary === 0
-              ? undefined
-              : input.projection.runs
-                  .filter((run) => run.ordinal >= contextBoundary)
-                  .map((run) => run.id),
+            contextBoundary === 0 ? undefined : [...conversation.runIds],
           ),
           runs: input.projection.runs,
           createdAt: now,
@@ -8707,6 +8706,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     // A side chat never carries what the parent's fresh session discarded.
     const sideChatParentContext = {
       runs: sourceProjection?.runs ?? [],
+      providerThreads: sourceProjection?.providerThreads ?? [],
       turnItems:
         !sideChatFork || sourceProjection === null
           ? []
@@ -8959,13 +8959,18 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ? [null]
         : []),
     ];
+    const sideChatInherited =
+      sideChatFork &&
+      sourceProjection !== null &&
+      sideChatWithoutSource &&
+      sideChatParentBoundary === 0
+        ? yield* readInheritedItems(sourceProjection.thread)
+        : undefined;
     const sideChatParentItems =
       !sideChatFork || sourceProjection === null
         ? []
         : [
-            ...(sideChatWithoutSource && sideChatParentBoundary === 0
-              ? yield* readInheritedItems(sourceProjection.thread)
-              : []),
+            ...(sideChatInherited?.items ?? []),
             ...(sideChatParentRunIds.length === 0
               ? []
               : visibleConversationItems(
@@ -8989,7 +8994,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
               toProviderInstanceId: modelSelection.instanceId,
               coveredRunOrdinals: visibleDeltaRunOrdinals(sourceProjection, sideChatParentItems),
               parentItems: sideChatParentItems,
-              sideConversationRunIds: sideConversationRunIds(sideChatParentContext, anchorRun),
+              sideConversationRunIds: new Set([
+                ...sideConversationRunIds(sideChatParentContext, anchorRun),
+                ...(sideChatInherited?.sideRunIds ?? []),
+              ]),
               createdAt: now,
             })
             .pipe(mapDispatchError(command));
@@ -9019,7 +9027,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ? []
         : [
             ...(providerSwitchNeedsFullContext && contextBoundary === 0
-              ? yield* readInheritedItems(projection.thread)
+              ? (yield* readInheritedItems(projection.thread)).items
               : []),
             ...(latestCompletedRun !== undefined && providerSwitchNeedsFullContext
               ? legacyImportItems

@@ -4934,7 +4934,9 @@ describe("orchestration v2 provider switching", () => {
             responseByRunOrdinal: {},
             capturedTurns,
             // Claude queues a steer that switches provider; Codex restarts its turn for one.
-            ...(path === "return" ? {} : { holdFirstTurn: started, holdRunOrdinal: 2 }),
+            ...(path === "return"
+              ? {}
+              : { holdFirstTurn: started, holdRunOrdinal: path === "steer" ? 3 : 2 }),
           }),
           makeTestAdapter({
             instanceId: alternateSelection.instanceId,
@@ -5048,8 +5050,13 @@ describe("orchestration v2 provider switching", () => {
             const back = yield* turnFor("back-on-claude");
             // The schedule's native session never saw the user's first message.
             assert.equal(back.nativeThreadId, (yield* turnFor("user-first")).nativeThreadId);
-            assert.include(back.text, "on-codex");
+            assert.include(back.text, "]\non-codex");
             return;
+          }
+          // The steer's target already holds the user's conversation.
+          if (path === "steer") {
+            yield* dispatch("user-on-claude-first", CLAUDE_MODEL_SELECTION);
+            yield* settle;
           }
           yield* dispatch("scheduled", home, {
             ...scheduled,
@@ -5142,6 +5149,10 @@ describe("orchestration v2 provider switching", () => {
             assert.isFalse(yield* Ref.get(failResumeOnce));
             return;
           }
+          assert.notEqual(
+            restarted.providerThreadId,
+            (yield* turnFor("user-on-claude-first")).providerThreadId,
+          );
           // The user's next Claude message continues their conversation, not the schedule's.
           yield* dispatch("user-on-claude", CLAUDE_MODEL_SELECTION);
           yield* settle;
@@ -5279,7 +5290,7 @@ describe("orchestration v2 provider switching", () => {
           back.nativeThreadId,
           turns.find((turn) => turn.text.endsWith("claude-first"))!.nativeThreadId,
         );
-        assert.include(back.text, "on-codex");
+        assert.include(back.text, "]\non-codex");
         const projection = yield* orchestrator.getThreadProjection(threadId);
         assert.isNull(
           projection.providerThreads.find((thread) => thread.id === run.providerThreadId)!

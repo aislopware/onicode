@@ -809,19 +809,20 @@ describe("ThreadTitleRegenerationService", () => {
         const source = yield* threads.getThreadRecords(sourceThreadId, ["runs"]);
         const run = source.runs.find((run) => run.id === forkRunId);
         assert.isDefined(run);
+        // The rollback also rewinds the queued run cancelled before it started.
+        const cancelled = source.runs.find((candidate) => candidate.status === "cancelled");
+        assert.isDefined(cancelled);
         const now = yield* DateTime.now;
         const eventSink = yield* EventSink.EventSinkV2;
         yield* eventSink.write({
-          events: [
-            {
-              id: EventId.make("source:rollback"),
-              type: "run.updated",
-              threadId: sourceThreadId,
-              runId: run.id,
-              occurredAt: now,
-              payload: { ...run, status: "rolled_back", completedAt: now },
-            },
-          ],
+          events: [run, cancelled].map((rewound) => ({
+            id: EventId.make(`source:rollback:${rewound.id}`),
+            type: "run.updated" as const,
+            threadId: sourceThreadId,
+            runId: rewound.id,
+            occurredAt: now,
+            payload: { ...rewound, status: "rolled_back" as const, completedAt: now },
+          })),
         });
         const requestId = yield* armRegeneration({
           command: "rollback:request",
@@ -836,6 +837,7 @@ describe("ThreadTitleRegenerationService", () => {
         assert.include(call?.forkSource?.history, "Move session storage from Redis to Postgres");
         assert.include(call?.forkSource?.history, "Rolled back attempt");
         assert.notInclude(call?.forkSource?.history, "Later work the fork never saw");
+        assert.notInclude(call?.forkSource?.history, "Queued message removed before it started");
         const fork = yield* threads.getThreadRecords(forkThreadId, []);
         assert.equal(fork.thread.title, "Generated title");
       }).pipe(Effect.provide(harness.layer));

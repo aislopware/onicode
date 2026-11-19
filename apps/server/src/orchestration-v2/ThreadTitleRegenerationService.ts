@@ -6,6 +6,7 @@ import {
   type MessageId,
   type OrchestrationV2AppThread,
   type OrchestrationV2ConversationMessage,
+  type OrchestrationV2ProviderThread,
   type OrchestrationV2Run,
   type RunId,
   type ServerSettingsError,
@@ -25,11 +26,11 @@ import * as Schema from "effect/Schema";
 import * as ServerSettings from "../serverSettings.ts";
 import * as TextGeneration from "../textGeneration/TextGeneration.ts";
 import {
+  conversationRuns,
   forkContextSuperseded,
   readFreshRunUserMessages,
-  runContextBoundaryOrdinal,
 } from "./contextBoundary.ts";
-import { cancelledBeforeStart } from "./RestartBackgroundNote.ts";
+import { neverStarted } from "./RestartBackgroundNote.ts";
 import type { OrchestratorV2Error } from "./Orchestrator.ts";
 import * as ProjectStore from "./ProjectStore.ts";
 import { forkInheritedRunOrdinals, ProjectionStoreThreadNotFoundError } from "./ProjectionStore.ts";
@@ -38,6 +39,17 @@ import * as ThreadManagementService from "./ThreadManagementService.ts";
 import { formatThreadTitleContext } from "@onicode/provider-core/server/threadTitleContext";
 import { NEW_THREAD_TITLE } from "@onicode/shared/threadTitles";
 export { formatThreadTitleContext } from "@onicode/provider-core/server/threadTitleContext";
+
+// A queued message cancelled before it started never joined the conversation, also once a
+// rollback rewound its run.
+const unjoinedRunIds = (runs: ReadonlyArray<OrchestrationV2Run>): ReadonlySet<RunId> =>
+  new Set(
+    runs.flatMap((run) =>
+      neverStarted(run) && (run.status === "cancelled" || run.status === "rolled_back")
+        ? [run.id]
+        : [],
+    ),
+  );
 
 export class ThreadTitleRegenerationService extends Context.Service<
   ThreadTitleRegenerationService,
@@ -127,44 +139,43 @@ const make = Effect.gen(function* () {
       })
       .pipe(Effect.asVoid);
 
-  const readBoundary = (
+  const readConversation = (
     threadId: ThreadId,
     runs: ReadonlyArray<OrchestrationV2Run>,
+    providerThreads: ReadonlyArray<OrchestrationV2ProviderThread>,
     forkRun?: OrchestrationV2Run,
   ) =>
     readFreshRunUserMessages(threads, threadId, runs).pipe(
-      Effect.map((turnItems) => runContextBoundaryOrdinal({ runs, turnItems }, forkRun)),
+      Effect.map((turnItems) => conversationRuns({ runs, turnItems, providerThreads }, forkRun)),
     );
 
   const messagesThroughRun = Effect.fn("ThreadTitleRegenerationService.messagesThroughRun")(
     function* (threadId: ThreadId, runId: RunId, forkCreatedAt: DateTime.Utc) {
       const source = yield* threads.getThreadRecords(
         threadId,
-        ["messages", "runs", "contextTransfers"],
+        ["messages", "runs", "contextTransfers", "providerThreads"],
         { messageRoles: ["user", "assistant"] },
       );
       const ordinals = forkInheritedRunOrdinals(source.runs, forkCreatedAt);
       const forkOrdinal = ordinals.get(runId);
       if (forkOrdinal === undefined) return undefined;
-      const boundary = yield* readBoundary(
+      const conversation = yield* readConversation(
         threadId,
         source.runs.filter((run) => run.ordinal <= forkOrdinal),
+        source.providerThreads,
         source.runs.find((run) => run.id === runId),
       );
-      // A queued message cancelled before it started never joined the conversation.
-      const cancelledRunIds = new Set(
-        source.runs.flatMap((run) => (cancelledBeforeStart(run) ? [run.id] : [])),
-      );
+      const unjoined = unjoinedRunIds(source.runs);
       const messages = source.messages.filter((message) => {
         if (message.streaming) return false;
         if (message.runId === null) {
-          return boundary === 0 && source.thread.historyOrigin === "v1_import";
+          return conversation.boundary === 0 && source.thread.historyOrigin === "v1_import";
         }
-        if (cancelledRunIds.has(message.runId)) return false;
+        if (unjoined.has(message.runId)) return false;
         const ordinal = ordinals.get(message.runId) ?? Infinity;
-        return ordinal >= boundary && ordinal <= forkOrdinal;
+        return conversation.runIds.has(message.runId) && ordinal <= forkOrdinal;
       });
-      return { ...source, messages, boundary };
+      return { ...source, messages, boundary: conversation.boundary };
     },
   );
 
@@ -175,7 +186,7 @@ const make = Effect.gen(function* () {
   ) {
     if (thread.forkedFrom?.type !== "run" || thread.lineage.sideChat === true) return undefined;
     const own = yield* threads.getThreadRecords(thread.id, ["runs", "contextTransfers"]);
-    if ((yield* readBoundary(thread.id, own.runs)) > 0) return undefined;
+    if ((yield* readConversation(thread.id, own.runs, [])).boundary > 0) return undefined;
     let title: string | undefined;
     const history: Array<ReadonlyArray<OrchestrationV2ConversationMessage>> = [];
     const seen = new Set([thread.id]);

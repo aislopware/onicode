@@ -26,7 +26,11 @@ import {
 } from "@onicode/provider-core/server/handoffBudget";
 import * as IdAllocator from "@onicode/provider-core/server/IdAllocator";
 import { createOrchestrationV2TurnItemVisibility } from "@onicode/shared/orchestrationV2Timeline";
-import { forkContextSuperseded, runContextBoundaryOrdinal } from "./contextBoundary.ts";
+import {
+  conversationRuns,
+  forkContextSuperseded,
+  scheduledConversationStarts,
+} from "./contextBoundary.ts";
 import type { ProjectionStoreV2Shape } from "./ProjectionStore.ts";
 
 export class ContextHandoffPrepareError extends Schema.TaggedError<ContextHandoffPrepareError>()(
@@ -149,11 +153,15 @@ export function visibleConversationItems(
   return items.filter(visible);
 }
 
-type ForkHistorySource = Pick<OrchestrationV2ThreadProjection, "thread" | "runs" | "attempts">;
+type ForkHistorySource = Pick<
+  OrchestrationV2ThreadProjection,
+  "thread" | "runs" | "attempts" | "providerThreads"
+>;
 
 /**
- * Visible rows of `source`'s own runs through `throughRun`, from its latest fresh session on,
- * plus its v1 imported rows when no fresh session dropped them. `boundary` is 0 without one.
+ * Visible rows of the conversation `throughRun` continues in `source`, plus its v1 imported rows
+ * when no fresh session dropped them. `boundary` is 0 without one. `sideRunIds` are the kept runs
+ * of scheduled fresh sessions beside that conversation.
  */
 const readOwnHistoryItems = Effect.fn("orchestrationV2.contextHandoff.readOwnHistoryItems")(
   function* (
@@ -168,26 +176,38 @@ const readOwnHistoryItems = Effect.fn("orchestrationV2.contextHandoff.readOwnHis
         ...(source.thread.historyOrigin === "v1_import" ? [null] : []),
       ],
     });
-    const boundary = runContextBoundaryOrdinal(
-      { runs, turnItems },
+    const projection = { runs, turnItems, providerThreads: source.providerThreads };
+    const conversation = conversationRuns(
+      projection,
       runs.find((run) => run.ordinal === throughRun.ordinal),
     );
-    const keptRunIds = new Set(runs.filter((run) => run.ordinal >= boundary).map((run) => run.id));
     const kept = turnItems.filter((item) =>
-      item.runId === null ? boundary === 0 : keptRunIds.has(item.runId),
+      item.runId === null ? conversation.boundary === 0 : conversation.runIds.has(item.runId),
     );
-    return { items: visibleConversationItems(source, kept), boundary };
+    const sideRunIds = new Set(
+      Array.from(scheduledConversationStarts(projection)).flatMap(([runId, start]) =>
+        start !== conversation.boundary && conversation.runIds.has(runId) ? [runId] : [],
+      ),
+    );
+    return {
+      items: visibleConversationItems(source, kept),
+      boundary: conversation.boundary,
+      sideRunIds,
+    };
   },
 );
 
-/** History `thread` shows from its fork ancestors, oldest first. Side chats inherit no rows. */
+/**
+ * History `thread` shows from its fork ancestors, oldest first, with the ancestor runs of scheduled
+ * fresh sessions among it. Side chats inherit no rows.
+ */
 export const readInheritedHandoffItems = Effect.fn(
   "orchestrationV2.contextHandoff.readInheritedHandoffItems",
 )(function* (
   projectionStore: Pick<ProjectionStoreV2Shape, "getThreadRecords">,
   thread: OrchestrationV2AppThread,
 ) {
-  const readRecords = <K extends "runs" | "attempts" | "contextTransfers">(
+  const readRecords = <K extends "runs" | "attempts" | "contextTransfers" | "providerThreads">(
     threadId: ThreadId,
     fields: ReadonlyArray<K>,
   ) =>
@@ -195,6 +215,7 @@ export const readInheritedHandoffItems = Effect.fn(
       .getThreadRecords(threadId, fields)
       .pipe(Effect.catchTags({ ProjectionStoreThreadNotFoundError: () => Effect.succeed(null) }));
   const segments: Array<ReadonlyArray<OrchestrationV2TurnItem>> = [];
+  const sideRunIds = new Set<RunId>();
   const seen = new Set([thread.id]);
   let current = thread;
   let contextTransfers =
@@ -209,17 +230,23 @@ export const readInheritedHandoffItems = Effect.fn(
   ) {
     const { threadId, runId } = current.forkedFrom;
     seen.add(threadId);
-    const source = yield* readRecords(threadId, ["runs", "attempts", "contextTransfers"]);
+    const source = yield* readRecords(threadId, [
+      "runs",
+      "attempts",
+      "contextTransfers",
+      "providerThreads",
+    ]);
     const forkRun = source?.runs.find((run) => run.id === runId);
     if (source === null || forkRun === undefined) break;
     const own = yield* readOwnHistoryItems(projectionStore, source, forkRun);
     segments.unshift(own.items);
+    for (const runId of own.sideRunIds) sideRunIds.add(runId);
     // A fresh session at or before the fork run left the older context behind.
     if (own.boundary > 0) break;
     current = source.thread;
     contextTransfers = source.contextTransfers;
   }
-  return segments.flat();
+  return { items: segments.flat(), sideRunIds };
 });
 
 /** What a portable fork from `throughRun` of `source` carries: inherited rows, then its own. */
@@ -233,7 +260,7 @@ export const readForkHistoryItems = Effect.fn(
   const own = yield* readOwnHistoryItems(projectionStore, source, throughRun);
   return own.boundary > 0
     ? own.items
-    : [...(yield* readInheritedHandoffItems(projectionStore, source.thread)), ...own.items];
+    : [...(yield* readInheritedHandoffItems(projectionStore, source.thread)).items, ...own.items];
 });
 
 function summarizeDeltaItem(item: OrchestrationV2TurnItem): string | null {

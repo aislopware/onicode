@@ -46,10 +46,9 @@ import * as EventSink from "./EventSink.ts";
 import * as ContextHandoffService from "./ContextHandoffService.ts";
 import { canForkBusySourceNatively, isActiveRun } from "./CommandPolicy.ts";
 import {
-  contextBoundaryOrdinal,
+  conversationRuns,
   isScheduledFreshRun,
   readFreshRunUserMessages,
-  runContextBoundaryOrdinal,
   scheduledFreshRunOrdinals,
   startedFreshRun,
 } from "./contextBoundary.ts";
@@ -1054,7 +1053,12 @@ export const layer: Layer.Layer<
                 providerThread.id,
                 measuredContext.reportedAt,
               );
-        const usageEstimated = compaction !== undefined && compaction.afterTokenCount === undefined;
+        // A count of 0 measured nothing.
+        const compactedTokens =
+          compaction?.afterTokenCount !== undefined && compaction.afterTokenCount > 0
+            ? compaction.afterTokenCount
+            : undefined;
+        const usageEstimated = compaction !== undefined && compactedTokens === undefined;
         const previousSelection =
           measuredContext?.modelSelection ??
           projection.runs.findLast(
@@ -1074,9 +1078,7 @@ export const layer: Layer.Layer<
           ? {
               ...threadUsage,
               ...measuredContext.usage,
-              ...(compaction?.afterTokenCount === undefined
-                ? {}
-                : { usedTokens: compaction.afterTokenCount }),
+              ...(compactedTokens === undefined ? {} : { usedTokens: compactedTokens }),
             }
           : threadUsage;
         const reuseTelemetry =
@@ -1144,6 +1146,11 @@ export const layer: Layer.Layer<
             .map((source) => source.id),
         );
         // Row identity survives recovery; only accepted native input and delivered history occupy the new session.
+        // A provider that keeps the compaction's summary as its item still carries that text.
+        const compactionSummaryTokens =
+          usageEstimated && compaction.summary !== undefined
+            ? estimateTextTokens(compaction.summary)
+            : 0;
         const nativeContextEstimate = Effect.gen(function* () {
           return sameNativeThread
             ? (yield* projectionStore.getTurnStartHistory(input.threadId)).reduce((sum, item) => {
@@ -1170,7 +1177,7 @@ export const layer: Layer.Layer<
                   (historical === null ? 0 : estimateTextTokens(historical.text)) +
                   nativeAttachments
                 );
-              }, 0)
+              }, compactionSummaryTokens)
             : 0;
         });
         const modelContextWindow =
@@ -1292,11 +1299,24 @@ export const layer: Layer.Layer<
           });
           const createdAt = yield* DateTime.now;
           const history = yield* projectionStore.getTurnStartHistory(input.threadId);
-          const boundary = runContextBoundaryOrdinal(
-            { runs: projection.runs, turnItems: history },
+          const conversation = conversationRuns(
+            {
+              runs: projection.runs,
+              turnItems: history,
+              providerThreads: projection.providerThreads,
+            },
             run,
           );
-          const from = Math.max(1, boundary);
+          const from = Math.max(1, conversation.boundary);
+          const coveredRunIds = new Set(
+            projection.runs.flatMap((source) =>
+              conversation.runIds.has(source.id) &&
+              source.ordinal < run.ordinal &&
+              source.status !== "rolled_back"
+                ? [source.id]
+                : [],
+            ),
+          );
           // A steering restart's earlier attempt received the run's own prompt; only the steer is new.
           const restarted = attempt.reason === "steering_restart";
           const handoff = yield* contextHandoffService.prepareProviderHandoff({
@@ -1314,25 +1334,19 @@ export const layer: Layer.Layer<
             strategy: "full_thread_summary",
             runs: projection.runs,
             items: [
-              ...(boundary === 0
-                ? yield* ContextHandoffService.readInheritedHandoffItems(
+              ...(conversation.boundary === 0
+                ? (yield* ContextHandoffService.readInheritedHandoffItems(
                     projectionStore,
                     projection.thread,
-                  )
+                  )).items
                 : []),
               ...history.filter((item) =>
                 item.runId === null
-                  ? boundary === 0
+                  ? conversation.boundary === 0
                   : item.runId === run.id
                     ? restarted &&
                       !(item.type === "user_message" && item.messageId === run.userMessageId)
-                    : projection.runs.some(
-                        (source) =>
-                          source.id === item.runId &&
-                          source.ordinal >= boundary &&
-                          source.ordinal < run.ordinal &&
-                          source.status !== "rolled_back",
-                      ),
+                    : coveredRunIds.has(item.runId),
               ),
             ],
             createdAt,

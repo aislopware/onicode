@@ -370,6 +370,7 @@ it.effect("a portable fork carries no context its source discarded for a fresh s
       thread,
       runs: runs.map(({ run }) => run),
       attempts: [],
+      providerThreads: [],
       turnItems: runs.map(({ item }) => item),
       contextTransfers,
     });
@@ -429,7 +430,7 @@ it.effect("inherited history stops at a missing fork ancestor", () =>
       threadId: ThreadId.make("thread:missing-ancestor"),
       runId: RunId.make("run:missing-ancestor"),
     });
-    const items = yield* ContextHandoffService.readInheritedHandoffItems(
+    const { items } = yield* ContextHandoffService.readInheritedHandoffItems(
       {
         getThreadRecords: (missing) =>
           Effect.fail(new ProjectionStoreThreadNotFoundError({ threadId: missing })),

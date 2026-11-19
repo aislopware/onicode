@@ -73,64 +73,78 @@ export function contextBoundaryOrdinal(
   return boundary;
 }
 
+type ConversationSource = Pick<
+  OrchestrationV2ThreadProjection,
+  "runs" | "turnItems" | "providerThreads"
+>;
+
 /**
- * The first run of the scheduled fresh session `run` belongs to: the run itself, or the schedule's
- * run when `run` is a wake on that session's provider thread. Undefined for the main conversation.
+ * The first run of the scheduled fresh session `run` belongs to, or undefined for the main
+ * conversation. Every provider thread of a session records that run as its first.
  */
 export function scheduledConversationStart(
-  projection: Pick<OrchestrationV2ThreadProjection, "runs" | "turnItems">,
-  run: Pick<OrchestrationV2Run, "ordinal" | "providerThreadId">,
+  projection: ConversationSource,
+  run: Pick<OrchestrationV2Run, "providerThreadId">,
 ): number | undefined {
   if (run.providerThreadId === null) return undefined;
-  let first: OrchestrationV2Run | undefined;
-  for (const candidate of projection.runs) {
-    if (
-      candidate.providerThreadId === run.providerThreadId &&
-      candidate.ordinal <= run.ordinal &&
-      (first === undefined || candidate.ordinal < first.ordinal)
-    ) {
-      first = candidate;
-    }
-  }
-  return first !== undefined &&
-    startedFreshRun(first) &&
-    scheduledRunIds(projection.turnItems).has(first.id)
-    ? first.ordinal
-    : undefined;
+  const first = projection.providerThreads.find(
+    (candidate) => candidate.id === run.providerThreadId,
+  )?.firstRunOrdinal;
+  return first != null && scheduledFreshRunOrdinals(projection).has(first) ? first : undefined;
 }
 
-/** For every run of a scheduled fresh session's conversation, that session's first run ordinal. */
+/** For every run of a scheduled fresh session, that session's first run ordinal. */
 export function scheduledConversationStarts(
-  projection: Pick<OrchestrationV2ThreadProjection, "runs" | "turnItems">,
+  projection: ConversationSource,
 ): ReadonlyMap<RunId, number> {
-  const first = new Map<string, OrchestrationV2Run>();
-  for (const run of projection.runs) {
-    if (run.providerThreadId === null) continue;
-    const held = first.get(run.providerThreadId);
-    if (held === undefined || run.ordinal < held.ordinal) first.set(run.providerThreadId, run);
+  const scheduled = scheduledFreshRunOrdinals(projection);
+  if (scheduled.size === 0) return new Map();
+  const sessionStarts = new Map<string, number>();
+  for (const providerThread of projection.providerThreads) {
+    const first = providerThread.firstRunOrdinal;
+    if (first !== null && scheduled.has(first)) sessionStarts.set(providerThread.id, first);
   }
-  const scheduled = scheduledRunIds(projection.turnItems);
   const starts = new Map<RunId, number>();
   for (const run of projection.runs) {
-    const start = run.providerThreadId === null ? undefined : first.get(run.providerThreadId);
-    if (start !== undefined && startedFreshRun(start) && scheduled.has(start.id)) {
-      starts.set(run.id, start.ordinal);
-    }
+    const start =
+      run.providerThreadId === null ? undefined : sessionStarts.get(run.providerThreadId);
+    if (start !== undefined) starts.set(run.id, start);
   }
   return starts;
 }
 
 /**
- * Where the conversation `run` continues starts. A started fresh run saw nothing before itself, and
- * a scheduled fresh session's conversation, its wakes included, nothing before the schedule's run.
+ * The runs through `run` of the conversation it continues, and where that conversation starts: a
+ * scheduled fresh session's own runs, a started fresh run alone, or the main conversation since
+ * its latest fresh start.
  */
-export function runContextBoundaryOrdinal(
-  projection: Pick<OrchestrationV2ThreadProjection, "runs" | "turnItems">,
+export function conversationRuns(
+  projection: ConversationSource,
   run: OrchestrationV2Run | undefined,
-): number {
-  if (run === undefined) return contextBoundaryOrdinal(projection);
-  if (startedFreshRun(run)) return run.ordinal;
-  return scheduledConversationStart(projection, run) ?? contextBoundaryOrdinal(projection);
+): { readonly boundary: number; readonly runIds: ReadonlySet<RunId> } {
+  const through = run?.ordinal ?? Number.POSITIVE_INFINITY;
+  const start = run === undefined ? undefined : scheduledConversationStart(projection, run);
+  if (start !== undefined) {
+    const starts = scheduledConversationStarts(projection);
+    return {
+      boundary: start,
+      runIds: new Set(
+        projection.runs.flatMap((candidate) =>
+          candidate.ordinal <= through && starts.get(candidate.id) === start ? [candidate.id] : [],
+        ),
+      ),
+    };
+  }
+  const boundary =
+    run !== undefined && startedFreshRun(run) ? run.ordinal : contextBoundaryOrdinal(projection);
+  return {
+    boundary,
+    runIds: new Set(
+      projection.runs.flatMap((candidate) =>
+        candidate.ordinal >= boundary && candidate.ordinal <= through ? [candidate.id] : [],
+      ),
+    ),
+  };
 }
 
 /** The user messages of fresh runs: all the boundary and schedule checks read. */
