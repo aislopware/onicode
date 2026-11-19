@@ -1428,9 +1428,10 @@ const make = Effect.gen(function* () {
       );
       // Settling the target can promote a queued follow-up onto the same session; that run is
       // not Force stop's to end. Only a newer run bound to a provider thread on this session
-      // counts, including an unheld queued one the run-end reaction has not promoted yet. An
-      // unreadable thread counts as one, so its sessions are kept.
+      // counts, including an unheld queued one when this stop ended the target: the run-end
+      // reaction may not have promoted it yet. An unreadable thread counts as one.
       const throughRunOrdinal = target?.ordinal ?? 0;
+      const endedActiveTarget = target !== undefined && isActiveRun(target);
       const laterRunActive = (providerSessionId: ProviderSessionId) =>
         orchestrator.getThreadRecords(input.threadId, ["runs", "providerThreads"]).pipe(
           Effect.map(({ runs, providerThreads }) => {
@@ -1442,7 +1443,8 @@ const make = Effect.gen(function* () {
             return runs.some(
               (run) =>
                 run.ordinal > throughRunOrdinal &&
-                (isActiveRun(run) || (run.status === "queued" && run.queueHeld !== true)) &&
+                (isActiveRun(run) ||
+                  (endedActiveTarget && run.status === "queued" && run.queueHeld !== true)) &&
                 run.providerThreadId !== null &&
                 onSession.has(run.providerThreadId),
             );
