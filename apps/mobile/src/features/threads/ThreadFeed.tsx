@@ -1332,7 +1332,8 @@ function ArtifactTemplateCard(props: {
 const AssistantMarkdownContent = memo(function AssistantMarkdownContent(props: {
   readonly markdown: string;
   readonly environmentId: EnvironmentId;
-  readonly citationSource?: Pick<AssistantCitation, "threadId" | "messageId">;
+  readonly threadId?: ThreadId;
+  readonly messageId?: MessageId;
   readonly onCiteAssistantText?: (citation: AssistantCitation) => void;
   readonly markdownStyles: MarkdownStyleSet;
   readonly linkHandlers: MarkdownLinkHandlers;
@@ -1342,6 +1343,7 @@ const AssistantMarkdownContent = memo(function AssistantMarkdownContent(props: {
   readonly skills?: ReadonlyArray<SelectableMarkdownSkill> | undefined;
 }) {
   const gt = useGT();
+  const { mathRenderingEnabled } = useAppearancePreferences();
   const liveMarkdown = useLiveThreadLinkLabels(props.markdown, props.environmentId);
   const [quoteSelection, setQuoteSelection] = useState<{
     markdown: string;
@@ -1350,12 +1352,13 @@ const AssistantMarkdownContent = memo(function AssistantMarkdownContent(props: {
   if (quoteSelection !== null && quoteSelection.markdown !== liveMarkdown) setQuoteSelection(null);
   const quoteChoices = quoteSelection?.selectors ?? [];
   const cite = ({ selector }: (typeof quoteChoices)[number]) => {
-    if (!props.citationSource || !props.onCiteAssistantText) return;
+    if (!props.onCiteAssistantText || !props.threadId || !props.messageId) return;
     setQuoteSelection(null);
     props.onCiteAssistantText({
       version: 1,
       environmentId: props.environmentId,
-      ...props.citationSource,
+      threadId: props.threadId,
+      messageId: props.messageId,
       ...selector,
     });
   };
@@ -1378,7 +1381,7 @@ const AssistantMarkdownContent = memo(function AssistantMarkdownContent(props: {
       <AssistantMarkdownBlocks
         markdown={liveMarkdown}
         onCiteText={
-          props.onCiteAssistantText && props.citationSource
+          props.onCiteAssistantText && props.threadId && props.messageId
             ? (text, path) => {
                 if (!text.trim()) return;
                 if (text.length > ASSISTANT_CITATION_MAX_TEXT_LENGTH) {
@@ -1390,7 +1393,12 @@ const AssistantMarkdownContent = memo(function AssistantMarkdownContent(props: {
                   );
                   return;
                 }
-                const selectors = collectMobileAssistantTextSelectors(liveMarkdown, path, text);
+                const selectors = collectMobileAssistantTextSelectors(
+                  liveMarkdown,
+                  path,
+                  text,
+                  mathRenderingEnabled,
+                );
                 if (selectors.length === 0) {
                   Dialog.alert(
                     gt("Unable to locate quote"),
@@ -2660,7 +2668,8 @@ function renderFeedEntry(
             <AssistantMarkdownContent
               markdown={renderedText}
               environmentId={props.environmentId}
-              citationSource={{ threadId: props.threadId, messageId: message.id }}
+              threadId={props.threadId}
+              messageId={message.id}
               onCiteAssistantText={props.onCiteAssistantText}
               markdownStyles={styles}
               linkHandlers={props.markdownLinkHandlers}

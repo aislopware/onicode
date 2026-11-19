@@ -40,8 +40,9 @@ function renderedText(node: MarkdownNode, restoreMath: (value: string) => string
   return node.type === "break" ? "\n" : "";
 }
 
-function citationText(markdown: string): string {
-  const formulas = markdownMathRanges(markdown);
+// Mirrors md4c's latexMath flag: with math off, formulas render as their literal markdown.
+function citationText(markdown: string, mathRenderingEnabled: boolean): string {
+  const formulas = mathRenderingEnabled ? markdownMathRanges(markdown) : [];
   let marker = "\ue000t3math";
   while (markdown.includes(marker)) marker += "_";
   const tokens = formulas.map((_, index) => `${marker}${index}\ue001`);
@@ -63,12 +64,13 @@ function citationText(markdown: string): string {
 
 function citationSegments(
   markdown: string,
+  mathRenderingEnabled: boolean,
   path = "",
   definitions = markdownReferenceDefinitions(markdown),
 ): Array<{ path: string; text: string }> {
   return splitMarkdownDetails(markdown).flatMap((block, index) => {
     if (block.kind === "details")
-      return citationSegments(block.body, `${path}${index}/`, definitions);
+      return citationSegments(block.body, mathRenderingEnabled, `${path}${index}/`, definitions);
     return splitCodexArtifactTemplateMarkdown(block.markdown).flatMap((segment, segmentIndex) =>
       segment.kind === "markdown"
         ? [
@@ -78,6 +80,7 @@ function citationSegments(
                 renderCodexInlineDirectivesAsMarkdown(
                   withReferenceDefinitions(segment.markdown, definitions),
                 ),
+                mathRenderingEnabled,
               ),
             },
           ]
@@ -93,11 +96,18 @@ function occurrences(text: string, quote: string): number[] {
   return result;
 }
 
-export function collectMobileAssistantTextSelectors(markdown: string, path: string, text: string) {
+export function collectMobileAssistantTextSelectors(
+  markdown: string,
+  path: string,
+  text: string,
+  mathRenderingEnabled: boolean,
+) {
   if (!text.trim()) return [];
   const normalize = (value: string) => value.replace(/\s+/g, " ");
   const quote = normalize(text);
-  const segments = citationSegments(markdown).filter((segment) => segment.text.trim().length > 0);
+  const segments = citationSegments(markdown, mathRenderingEnabled).filter(
+    (segment) => segment.text.trim().length > 0,
+  );
   const segmentIndex = segments.findIndex((segment) => segment.path === path);
   const segment = segments[segmentIndex];
   if (!segment) return [];
