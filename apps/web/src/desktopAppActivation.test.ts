@@ -408,6 +408,50 @@ describe("desktop app activation", () => {
     await expect(activation).resolves.toMatchObject({ ok: true, projectId: createdProjectId });
   });
 
+  it("keeps a later folder of an older drop from replacing a newer open that showed", async () => {
+    const deps = dependencies();
+    const dropOrder = reserveDesktopAppActivationOrder();
+    await handleDesktopAppActivationRequest(request, deps, dropOrder);
+    await expect(
+      handleDesktopAppActivationRequest({ ...request, requestId: "request-2" }, deps),
+    ).resolves.toMatchObject({ ok: true });
+
+    await expect(
+      handleDesktopAppActivationRequest({ ...request, requestId: "request-3" }, deps, dropOrder),
+    ).resolves.toBeNull();
+    expect(deps.openThread).toHaveBeenCalledTimes(2);
+  });
+
+  it("ranks an activation by when the page received it, not when it was claimed", async () => {
+    let grant: (claimed: boolean) => void = () => undefined;
+    let claimRequested: () => void = () => undefined;
+    const claimed = new Promise<void>((resolve) => {
+      claimRequested = resolve;
+    });
+    const harness = receiverHarness(
+      () =>
+        new Promise<boolean>((resolve) => {
+          grant = resolve;
+          claimRequested();
+        }),
+    );
+    const orders: Array<number | undefined> = [];
+    harness.receiver.setHandler(async (input, order) => {
+      orders.push(order);
+      return success(input.requestId);
+    });
+    const completed = harness.nextCompletion();
+    harness.deliver();
+    await claimed;
+    // A drop made while the claim is in flight.
+    const dropOrder = reserveDesktopAppActivationOrder();
+    grant(true);
+    await completed;
+
+    expect(orders).toHaveLength(1);
+    expect(orders[0]).toBeLessThan(dropOrder);
+  });
+
   it("lets an older open show its thread when a newer one fails before it could", async () => {
     let projectAppeared: () => void = () => undefined;
     const createProject = vi
