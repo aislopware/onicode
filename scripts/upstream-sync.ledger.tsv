@@ -2652,3 +2652,4 @@ f2aa99694b	take	taken as is; scenario ported
 0c1cf54cd7	take	taken as is
 55b14ac51d	take	adapted: T3 Connect device parts stripped (connect-device CLI, connectDevicesShowingCode, device-bound revokeClient); session revoke goes through the running server's revokeClient endpoint, locally revokeSession; pair.test imports kept on Onicode's service/ paths
 51e5ba694e	take	adapted: T3 Connect device approve (connectRequestsShowingCode, connect-device CLI) and MISSING cli/connect.ts dropped; pairing revoke and project add/remove go through the running server; serverClient stays unexported (only connect.ts used it); deferredImports test keeps Onicode's dev:false runtime config
+047c4d7599	take	taken as is; Claude/Codex adapters already use PortDiscovery directly, the optional host trackAgent only adds it for driver-based providers
