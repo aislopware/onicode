@@ -2548,3 +2548,4 @@ ba640037e8	take	taken as is; geolocation now asks per origin like clipboard read
 cbae97f620	take	adapted: route registered beside Onicode's PreviewCdpBridge, no static/dev UI route; session invalidation without DPoP thumbprint (Onicode has none); test mock drops cookie fields Onicode's SessionStore lacks
 0226239a41	take	adopted upstream's local rendering of other environments' localhost tabs over Onicode's host streaming for desktop tabs (keeps devtools/picker/annotations local; works over every connection). Adapted: no isElectron (Onicode's renderer is always desktop), so in-app tabs always tunnel and system-browser links use resolveExternalServerUrl; mintMediaTicket without relay DPoP signer; remote.md drops the hosted-web section; user doc names only mobile as streaming
 20668e8ece	take	taken as is
+a7522ff02f	skip	relay monitoring dashboard only (infra/relay); relay is a removed surface
