@@ -1,7 +1,11 @@
 import type { OrchestrationV2ThreadProjection } from "@onicode/contracts";
 import { assert, it } from "vite-plus/test";
 
-import { contextBoundaryOrdinal, scheduledFreshRunOrdinals } from "./contextBoundary.ts";
+import {
+  contextBoundaryOrdinal,
+  runContextBoundaryOrdinal,
+  scheduledFreshRunOrdinals,
+} from "./contextBoundary.ts";
 
 type Projection = Pick<OrchestrationV2ThreadProjection, "runs" | "turnItems">;
 
@@ -77,4 +81,42 @@ it("ignores fresh runs that never reached a provider, also after a rollback rewo
   assert.equal(boundary([run(2, "cancelled", null)]), 0);
   assert.equal(boundary([run(2, "rolled_back", null)]), 0);
   assert.equal(boundary([run(2, "rolled_back", "2026-11-19T00:00:00.000Z")]), 2);
+});
+
+it("starts a scheduled fresh session's conversation, its wakes included, at the schedule's run", () => {
+  const run = (ordinal: number, providerThreadId: string, freshContext = false) => ({
+    id: `run-${ordinal}`,
+    ordinal,
+    status: "completed",
+    startedAt: "2026-11-19T00:00:00.000Z",
+    providerThreadId,
+    userMessageId: `message-${ordinal}`,
+    ...(freshContext ? { freshContext: true } : {}),
+  });
+  const runs = [
+    run(1, "main"),
+    run(2, "main"),
+    run(3, "schedule", true),
+    run(4, "main"),
+    // A background task of the schedule's session settled and woke it.
+    run(5, "schedule"),
+  ];
+  const turnItems = runs.map((source) => ({
+    type: "user_message",
+    runId: source.id,
+    ordinal: source.ordinal * 10,
+    messageId: source.userMessageId,
+    ...(source.ordinal === 3 ? { scheduledTaskId: "task-hourly" } : {}),
+  }));
+  const projection = { runs, turnItems } as unknown as Projection;
+  const boundaryAt = (ordinal: number) =>
+    runContextBoundaryOrdinal(
+      projection,
+      projection.runs.find((source) => source.ordinal === ordinal),
+    );
+
+  assert.equal(boundaryAt(5), 3);
+  assert.equal(boundaryAt(3), 3);
+  // The main conversation continues past the schedule from its own start.
+  assert.equal(boundaryAt(4), 0);
 });

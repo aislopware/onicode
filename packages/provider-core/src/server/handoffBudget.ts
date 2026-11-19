@@ -10,6 +10,7 @@ import type {
 } from "@onicode/contracts";
 
 import * as Config from "effect/Config";
+import * as DateTime from "effect/DateTime";
 
 export const DEFAULT_HANDOFF_TOKEN_CAP = 16_000;
 const HANDOFF_BYTE_CAP = 64_000;
@@ -62,6 +63,24 @@ export function latestNativeContextUsage(
     };
   }
   return latest;
+}
+
+/** The latest completed compaction on `providerThreadId` after `reportedAt`: it replaced the context that report measured. */
+export function compactionSinceUsage(
+  turnItems: ReadonlyArray<OrchestrationV2TurnItem>,
+  providerThreadId: OrchestrationV2ProviderThread["id"],
+  reportedAt: string,
+): Extract<OrchestrationV2TurnItem, { readonly type: "compaction" }> | undefined {
+  const compaction = turnItems.findLast(
+    (item): item is Extract<OrchestrationV2TurnItem, { readonly type: "compaction" }> =>
+      item.type === "compaction" &&
+      item.status === "completed" &&
+      item.providerThreadId === providerThreadId,
+  );
+  return compaction?.completedAt != null &&
+    DateTime.toEpochMillis(compaction.completedAt) > Date.parse(reportedAt)
+    ? compaction
+    : undefined;
 }
 
 /** Native occupancy survives selection changes; the previous model window and compaction threshold do not. */

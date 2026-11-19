@@ -7304,10 +7304,28 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
         const context = yield* projectionStore
           .getTurnStartContext(readThreadId, readRunId)
           .pipe(Effect.withTracer(tracer));
-        const lookups = statements.filter((statement) =>
+        const turnItemReads = statements.filter((statement) =>
           statement.includes("FROM orchestration_v2_projection_turn_items"),
         );
+        const compactionReads = turnItemReads.filter((statement) =>
+          statement.includes("type = 'compaction'"),
+        );
+        const lookups = turnItemReads.filter((statement) => !compactionReads.includes(statement));
         assert.lengthOf(lookups, 1);
+        assert.lengthOf(compactionReads, 1);
+        // Completed compactions come from the type and status index, not a walk of the history.
+        const compactionPlan = (yield* sql.unsafe<{ readonly detail: string }>(
+          `EXPLAIN QUERY PLAN ${compactionReads[0]}`,
+          [readThreadId],
+        )).map((row) => row.detail);
+        assert.isTrue(
+          compactionPlan.some((detail) =>
+            /USING (COVERING )?INDEX orchestration_v2_projection_turn_items_thread_type_idx/.test(
+              detail,
+            ),
+          ),
+          compactionPlan.join("\n"),
+        );
         const plan = (yield* sql.unsafe<{ readonly detail: string }>(
           `EXPLAIN QUERY PLAN ${lookups[0]}`,
           [readThreadId, readRunId],

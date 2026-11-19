@@ -26,7 +26,7 @@ import {
 } from "@onicode/provider-core/server/handoffBudget";
 import * as IdAllocator from "@onicode/provider-core/server/IdAllocator";
 import { createOrchestrationV2TurnItemVisibility } from "@onicode/shared/orchestrationV2Timeline";
-import { forkContextBoundaryOrdinal, forkContextSuperseded } from "./contextBoundary.ts";
+import { forkContextSuperseded, runContextBoundaryOrdinal } from "./contextBoundary.ts";
 import type { ProjectionStoreV2Shape } from "./ProjectionStore.ts";
 
 export class ContextHandoffPrepareError extends Schema.TaggedError<ContextHandoffPrepareError>()(
@@ -99,6 +99,8 @@ export interface ContextHandoffServiceV2Shape {
     readonly toProviderInstanceId: ProviderInstanceId;
     readonly coveredRunOrdinals: OrchestrationV2ContextHandoff["coveredRunOrdinals"];
     readonly parentItems: ReadonlyArray<OrchestrationV2TurnItem>;
+    /** Scheduled fresh sessions beside the parent's conversation: they get what it leaves. */
+    readonly sideConversationRunIds?: ReadonlySet<RunId>;
     readonly createdAt: DateTime.Utc;
   }) => Effect.Effect<OrchestrationV2ContextHandoff, ContextHandoffServiceV2Error>;
 }
@@ -166,7 +168,7 @@ const readOwnHistoryItems = Effect.fn("orchestrationV2.contextHandoff.readOwnHis
         ...(source.thread.historyOrigin === "v1_import" ? [null] : []),
       ],
     });
-    const boundary = forkContextBoundaryOrdinal(
+    const boundary = runContextBoundaryOrdinal(
       { runs, turnItems },
       runs.find((run) => run.ordinal === throughRun.ordinal),
     );
@@ -276,32 +278,47 @@ function makeForkDeltaSummary(input: {
 
 const SIDE_CHAT_CONTEXT_MAX_CHARS = 8_000;
 
-/** Oldest first; raw parent items are summarized only until the context cap is reached. */
+/**
+ * Oldest first; raw parent items are summarized only until the context cap is reached. The newest
+ * items of the parent's own conversation come first, then those of `sideConversationRunIds`.
+ */
 export function makeSideChatContext(input: {
   readonly parentThreadId: ThreadId;
   readonly digest: ReadonlyArray<string | OrchestrationV2TurnItem>;
+  readonly sideConversationRunIds?: ReadonlySet<RunId>;
 }): string {
   const framing =
     "You are in a side chat beside the main thread. The main thread may still be running in the same worktree. Answer the user's questions; do not continue or redo the main thread's task.";
   const header = "Main thread activity since this side chat's starting point:";
   const truncated = "- Earlier items truncated.";
   const footer = `Use oni_thread_read on thread ${input.parentThreadId} to see the main thread's live state.`;
-  const kept: Array<string> = [];
+  const lines = new Map<number, string>();
   let omitted = false;
   // The cap covers the whole block, so the fixed lines are reserved before any digest line.
   let remaining =
     SIDE_CHAT_CONTEXT_MAX_CHARS - [framing, "", header, truncated, "", footer].join("\n").length;
-  for (let index = input.digest.length - 1; index >= 0; index--) {
-    const item = input.digest[index]!;
-    const line = typeof item === "string" ? item : summarizeDeltaItem(item);
-    if (line === null) continue;
-    if (line.length + 1 > remaining) {
-      omitted = true;
-      break;
+  const isSide = (item: string | OrchestrationV2TurnItem) =>
+    typeof item !== "string" &&
+    item.runId !== null &&
+    input.sideConversationRunIds?.has(item.runId) === true;
+  for (const side of [false, true]) {
+    if (side && input.sideConversationRunIds === undefined) break;
+    for (let index = input.digest.length - 1; index >= 0; index--) {
+      const item = input.digest[index]!;
+      if (isSide(item) !== side) continue;
+      const line = typeof item === "string" ? item : summarizeDeltaItem(item);
+      if (line === null) continue;
+      if (line.length + 1 > remaining) {
+        omitted = true;
+        break;
+      }
+      lines.set(index, line);
+      remaining -= line.length + 1;
     }
-    kept.unshift(line);
-    remaining -= line.length + 1;
   }
+  const kept = Array.from(lines)
+    .toSorted(([left], [right]) => left - right)
+    .map(([, line]) => line);
   return [
     framing,
     ...(kept.length === 0 ? [] : ["", header, ...(omitted ? [truncated] : []), ...kept]),
@@ -658,6 +675,9 @@ const makeContextHandoffService = Effect.fn("orchestrationV2.ContextHandoffServi
         summaryText: makeSideChatContext({
           parentThreadId: input.parentThreadId,
           digest: input.parentItems,
+          ...(input.sideConversationRunIds === undefined
+            ? {}
+            : { sideConversationRunIds: input.sideConversationRunIds }),
         }),
         createdByProviderInstanceId: null,
         createdAt: input.createdAt,
