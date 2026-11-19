@@ -16,6 +16,13 @@ export const Architecture = Context.Reference<NodeJS.Architecture>(
   },
 );
 
+export const KernelRelease = Context.Reference<string>(
+  "@onicode/shared/HostProcess/KernelRelease",
+  {
+    defaultValue: () => NodeOS.release(),
+  },
+);
+
 export const LinuxLibc = Context.Reference<"gnu" | "musl">(
   "@onicode/shared/HostProcess/LinuxLibc",
   {
