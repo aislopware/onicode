@@ -122,7 +122,7 @@ query OniWorkspace {
 query OniIssues($first: Int!, $after: String, $filter: IssueFilter!, $orderBy: PaginationOrderBy!) {
   issues(first: $first, after: $after, filter: $filter, orderBy: $orderBy) {
     nodes {
-      ...LinearIssue
+      ...LinearIssueSummary
     }
     pageInfo {
       ...LinearPageInfo
