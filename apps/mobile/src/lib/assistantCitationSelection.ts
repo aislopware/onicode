@@ -50,6 +50,19 @@ const ATTACHMENT = "\ufffc";
 // Stands in for display math md4c moves to its own view, which no text selection can include.
 const DETACHED = "\ue002";
 const EXPANDED = /[\ufffc\ue002]/g;
+// Marks an expansion whose preceding line break only the native view shows.
+const NATIVE_BREAK = "\ue003";
+
+// The web's text for a native one: attachments expand, and native-only breaks drop.
+function expandAttachments(text: string, expansions: readonly string[], from = 0): string {
+  let index = from;
+  return text.replace(/\n?[\ufffc\ue002]/g, (match) => {
+    const expansion = expansions[index++]!;
+    return expansion.startsWith(NATIVE_BREAK)
+      ? expansion.slice(NATIVE_BREAK.length)
+      : match.slice(0, -1) + expansion;
+  });
+}
 
 type NativePlatform = "ios" | "android";
 
@@ -172,19 +185,43 @@ function citationText(
   const fenced = formulas.map((formula) => /^[ \t]*(?:`{3,}|~{3,})/.test(formula.source));
   for (const [index, fence] of fenced.entries())
     if (fence && !listed.has(index)) detached.add(index);
-  // md4c lifts display math out of a tight list item's text, and Android ends that text with a
-  // line break before it.
-  const breaksBefore = new Set<number>();
+  // md4c lifts a tight list item's own display math out of its text, and Android ends the text
+  // run before it with a line break; true when no whitespace precedes, so the web has none.
+  const breaksBefore = new Map<number, boolean>();
   // A paragraph holding only an image, outside lists, is its own native view.
   const ownViews = new Set<MarkdownNode>();
-  const visitBlocks = (node: MarkdownNode) => {
+  const visitBlocks = (node: MarkdownNode, inList: boolean) => {
     if (node.type === "list" && !node.spread && node.children.every((item) => !item.spread))
       for (const item of node.children)
-        for (const child of item.children)
-          if (child.type === "paragraph")
-            for (const match of renderedText(child, (value) => value).matchAll(tokenPattern))
-              breaksBefore.add(Number(match[1]));
-    if (node.type === "root" || node.type === "blockquote")
+        for (const child of item.children) {
+          if (child.type !== "paragraph") continue;
+          let run = false;
+          let spaced = false;
+          const read = (text: string) => {
+            if (/\S/.test(text)) run = true;
+            if (text) spaced = /\s$/.test(text);
+          };
+          for (const inline of child.children) {
+            if (inline.type !== "text") {
+              run ||= inline.type !== "break";
+              spaced = inline.type === "break";
+              continue;
+            }
+            let cursor = 0;
+            for (const match of inline.value.matchAll(tokenPattern)) {
+              read(inline.value.slice(cursor, match.index));
+              cursor = match.index + match[0].length;
+              const index = Number(match[1]);
+              if (!formulas[index]!.display) read("x");
+              else {
+                if (run) breaksBefore.set(index, !spaced);
+                run = false;
+              }
+            }
+            read(inline.value.slice(cursor));
+          }
+        }
+    if (!inList && (node.type === "root" || node.type === "blockquote"))
       for (const child of node.children)
         if (
           child.type === "paragraph" &&
@@ -192,9 +229,10 @@ function citationText(
           (child.children[0]!.type === "image" || child.children[0]!.type === "imageReference")
         )
           ownViews.add(child.children[0]!);
-    if ("children" in node) node.children.forEach(visitBlocks);
+    if ("children" in node)
+      for (const child of node.children) visitBlocks(child, inList || node.type === "list");
   };
-  visitBlocks(tree);
+  visitBlocks(tree, false);
   const expansions: string[] = [];
   let authoredDetached = false;
   const text = renderedText(
@@ -210,11 +248,12 @@ function citationText(
           }
           const formula = formulas[Number(index)]!;
           const tex = formula.tex.trim();
-          expansions.push(formula.display ? `\\[\n${tex}\n\\]` : `\\(${tex}\\)`);
+          const broken = platform === "android" ? breaksBefore.get(Number(index)) : undefined;
+          expansions.push(
+            (broken ? NATIVE_BREAK : "") + (formula.display ? `\\[\n${tex}\n\\]` : `\\(${tex}\\)`),
+          );
           if (detached.has(Number(index))) return DETACHED;
-          return platform === "android" && formula.display && breaksBefore.has(Number(index))
-            ? `\n${ATTACHMENT}`
-            : ATTACHMENT;
+          return broken === undefined ? ATTACHMENT : `\n${ATTACHMENT}`;
         },
       ),
     // The web shows neither images nor rules as text.
@@ -251,8 +290,7 @@ function citationText(
       UNCERTAIN_PROSE.test(withoutCodeBlocks(tree, nativeProse)));
   // Without a reliable native form, match the web's text as before formulas were selectable.
   if (uncertainAttachments) {
-    let index = 0;
-    const webText = text.replace(EXPANDED, () => expansions[index++]!);
+    const webText = expandAttachments(text, expansions);
     return {
       text: webText,
       expansions: [...webText.matchAll(EXPANDED)].map((match) => match[0]),
@@ -327,13 +365,24 @@ export function collectMobileAssistantTextSelectors(
   const fullOffsets: number[] = [];
   let fullText = "";
   let expansionIndex = 0;
+  let position = 0;
   for (const char of matchText) {
     for (let unit = 0; unit < char.length; unit += 1) fullOffsets.push(fullText.length);
-    fullText +=
-      char === ATTACHMENT || char === DETACHED ? normalize(expansions[expansionIndex++]!) : char;
+    const expansion = expansions[expansionIndex];
+    if (char === ATTACHMENT || char === DETACHED)
+      fullText += normalize(expansions[expansionIndex++]!.replace(NATIVE_BREAK, ""));
+    else if (
+      !(
+        char === " " &&
+        matchText[position + 1] === ATTACHMENT &&
+        expansion?.startsWith(NATIVE_BREAK)
+      )
+    )
+      fullText += char;
+    position += char.length;
   }
   fullOffsets.push(fullText.length);
-  // Each segment is its own native view, so a match never spans two of them.
+  // A native selection never spans two segments.
   const segmentMatches = segments.map((entry, index) => {
     const through = segments
       .slice(0, index + 1)
@@ -345,14 +394,24 @@ export function collectMobileAssistantTextSelectors(
   const matches = segmentMatches.flat();
   const localMatches = segmentMatches[segmentIndex]!;
   if (localMatches.length > 20) return [];
-  return localMatches.flatMap((start) => {
-    const index = matches.indexOf(start);
-    const fullStart = fullOffsets[start]!;
-    const fullEnd = fullOffsets[start + quote.length]!;
-    const selector = createAssistantTextSelector(fullText, fullStart, fullEnd);
-    if (!selector) return [];
-    let quotedIndex = matchText.slice(0, start).match(EXPANDED)?.length ?? 0;
-    const quoted = text.replace(EXPANDED, () => expansions[quotedIndex++]!);
-    return [{ selector: { ...selector, text: quoted }, index, count: matches.length }];
+  const choices = localMatches.map((start) => {
+    const selector = createAssistantTextSelector(
+      fullText,
+      fullOffsets[start]!,
+      fullOffsets[start + quote.length]!,
+    );
+    if (!selector) return null;
+    const quoted = expandAttachments(
+      text,
+      expansions,
+      matchText.slice(0, start).match(EXPANDED)?.length ?? 0,
+    );
+    return {
+      selector: { ...selector, text: quoted },
+      index: matches.indexOf(start),
+      count: matches.length,
+    };
   });
+  // A passage with no web text, such as an image alone, cannot say which choice was meant.
+  return choices.every((choice) => choice !== null) ? choices : [];
 }

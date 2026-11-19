@@ -168,8 +168,9 @@ function observeAssistantCitationSource({
     const index = state.indexByKey(itemKey);
     if (index === undefined || !(state.sizeAtIndex(index) > 0)) return;
     const range = resolveAssistantCitationRange(root, request.citation);
-    // Opening the fold resizes the root, which schedules the next pass.
-    if (range && revealAssistantCitationFolds(root, range)) return;
+    // Opening the fold resizes the root, which schedules the next pass. Once the quote is in
+    // view, a fold the user closes stays closed.
+    if (range && !activation.scrolled && revealAssistantCitationFolds(root, range)) return;
     const rect = (range ?? root).getBoundingClientRect();
     if (rect.height <= 0 || scrollNode.clientHeight <= 0) {
       clear();

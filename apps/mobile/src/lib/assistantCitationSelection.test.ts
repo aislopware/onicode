@@ -352,9 +352,28 @@ it("uses the web math representation around a selected passage", () => {
     { start: 0, end: 8 },
     { start: 10, end: 24 },
   ]);
-  // md4c lifts display math out of a tight list item, and Android breaks the line before it.
-  expect(texts("- A\\[x\\]B\n- C", "A\n\uFFFCB", "android")).toEqual(["A\n\\[\nx\n\\]B"]);
+  // Selecting only an image cites no text, so it never falls through to a formula.
+  expect(texts("Use ![i](x.png) then $x$.", "\uFFFC")).toEqual([]);
+  // md4c lifts display math out of a tight list item, and Android breaks the line before it
+  // after text only. The web has no such break.
+  const [lifted] = collectMobileAssistantTextSelectors(
+    "- A\\[x\\]B\n- C",
+    "0:0",
+    "A\n\uFFFCB",
+    true,
+    "android",
+  );
+  expect(lifted?.selector.text).toBe("A\\[\nx\n\\]B");
+  expect(findAssistantCitationText("A\\[\nx\n\\]B\nC", lifted!.selector)).toEqual({
+    start: 0,
+    end: 9,
+  });
+  expect(texts("- \\[x\\]\\[y\\]\n- C", "\uFFFC\uFFFC", "android")).toEqual([
+    "\\[\nx\n\\]\\[\ny\n\\]",
+  ]);
   expect(texts("- A\\[x\\]B\n- C", "A\uFFFCB", "ios")).toEqual(["A\\[\nx\n\\]B"]);
+  // Display math inside emphasis stays in the item's text, so Android adds no break before it.
+  expect(texts("- *A\\[x\\]B*\n- C", "A\uFFFCB", "android")).toEqual(["A\\[\nx\n\\]B"]);
 });
 
 it("cites formulas as the literal text shown when math rendering is off", () => {
@@ -413,4 +432,14 @@ it("cites formulas as the literal text shown when math rendering is off", () => 
       end: web.replace(/\s+/g, " ").length,
     });
   }
+  // Inside a list, even an image alone in a quote stays in the text.
+  expect(
+    collectMobileAssistantTextSelectors(
+      "- A\n  > ![i](x.png)\n- B",
+      "0:0",
+      "A\n\uFFFC",
+      false,
+      "ios",
+    ).map((choice) => choice.selector.text),
+  ).toEqual(["A\n"]);
 });
