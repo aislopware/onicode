@@ -2737,3 +2737,4 @@ d32df2d34c	take	fix(server): native session replacement fails honestly when the 
 6d05c5f496	take	fix(server): HTML reports in dot-prefixed folders no longer open as Not Found (#38210); scenario ported to the desktop target (ControlOrMeta+p)
 0f32645852	take	fix(dev): avoid dependency-triggered server restarts on Windows (#38870); adopted upstream over Onicode's node --watch-path=../../packages: on macOS it also restarted the dev server on writes under packages/*/node_modules (vitest cache, vp i); upstream's watcher watches only src and package.json. Reverses the earlier skip after review
 1d3932570c	take	fix(themes): keep escaped quotes in CSS text (#39296)
+dbee5a0af0	take	saves report their own outcome; relay registration, managedAuth and crash-report (telemetry) hunks left out
