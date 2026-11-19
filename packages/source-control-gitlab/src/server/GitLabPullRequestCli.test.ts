@@ -760,6 +760,59 @@ layer("GitLabPullRequestCli.layer", (it) => {
       );
       expect(refused._tag).toBe("GitLabMutationRefusedError");
       expect(mockedExecute.mock.calls.map(([call]) => call.args[1])).not.toContain("rebase");
+
+      // A rebase that moves the reviewed head merges nothing: the new commits need a review.
+      let head = "reviewed-head";
+      mockedExecute.mockClear();
+      mockedExecute.mockImplementation(({ args }) =>
+        Effect.sync(() => {
+          if (args[1] === "rebase") head = "rebased-head";
+          return output(
+            args[0] === "api"
+              ? mergeRequestJson({
+                  diff_refs: { base_sha: "base", head_sha: head, start_sha: "start" },
+                })
+              : "",
+          );
+        }),
+      );
+      const moved = yield* Effect.flip(
+        cli.runMergeRequestAction({
+          cwd: "/w",
+          repository: "acme/web",
+          number: 7,
+          action: "merge",
+          mergeMethod: "rebase",
+          expectedHeadSha: "reviewed-head",
+        }),
+      );
+      expect(moved._tag).toBe("GitLabMutationRefusedError");
+      expect(String(moved)).toContain("rebased-head");
+      expect(mockedExecute.mock.calls.map(([call]) => call.args[1])).not.toContain("merge");
+
+      // An already rebased branch keeps its head and merges pinned to it.
+      head = "reviewed-head";
+      mockedExecute.mockImplementation(({ args }) =>
+        Effect.succeed(
+          output(
+            args[0] === "api"
+              ? mergeRequestJson({
+                  diff_refs: { base_sha: "base", head_sha: head, start_sha: "start" },
+                })
+              : "",
+          ),
+        ),
+      );
+      yield* cli.runMergeRequestAction({
+        cwd: "/w",
+        repository: "acme/web",
+        number: 7,
+        action: "merge",
+        mergeMethod: "rebase",
+        expectedHeadSha: "reviewed-head",
+      });
+      const pinned = mockedExecute.mock.calls.at(-1)?.[0].args ?? [];
+      expect(pinned[pinned.indexOf("--sha") + 1]).toBe("reviewed-head");
     }),
   );
 
