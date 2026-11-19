@@ -2613,3 +2613,4 @@ ab43269d55	take	adapted: stale-mount pattern matches Onicode's AppImage (/tmp/.m
 b39eb755aa	skip	T3 Connect CloudLink only; Onicode removed Connect
 32f93dab3d	take	taken as is
 1167eb10ab	take	taken as is
+04bb52f108	skip	T3's AUR packages and release script; Onicode ships no AUR package (Linux x64 AppImage/deb via better-update and the APT proxy)
