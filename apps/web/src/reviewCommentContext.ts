@@ -124,7 +124,7 @@ function buildDiffReviewLines(
     for (let offset = firstOffset; offset <= lastOffset; offset += 1) {
       rows.push({
         change: "context",
-        oldLineNumber: oldStart + offset,
+        oldLineNumber: oldStart + offset < 1 ? null : oldStart + offset,
         newLineNumber: newStart + offset,
         content: stripTrailingNewline(fileDiff.additionLines[newStart + offset - 1] ?? ""),
       });
@@ -136,8 +136,9 @@ function buildDiffReviewLines(
     if (includeExpandedContext) {
       const oldHunkStart = hunk.deletionStart + (hunk.deletionCount === 0 ? 1 : 0);
       const newHunkStart = hunk.additionStart + (hunk.additionCount === 0 ? 1 : 0);
-      const contextLines = Math.min(oldHunkStart - oldContextStart, newHunkStart - newContextStart);
-      // A gap ends at its hunk, as the diff view draws it; a guide excerpt's old side can be shorter.
+      // The diff view sizes a gap by its new side and ends it at the hunk. Only a guide excerpt's
+      // stand-in old side can be shorter, leaving its first lines without an old number.
+      const contextLines = newHunkStart - newContextStart;
       pushContextGap(oldHunkStart - contextLines, newHunkStart - contextLines, contextLines);
     }
 
@@ -273,10 +274,7 @@ function findDiffReviewLineIndex(
       if (includeExpandedContext) {
         const oldContextEnd = hunk.deletionStart + (hunk.deletionCount === 0 ? 1 : 0);
         const newContextEnd = hunk.additionStart + (hunk.additionCount === 0 ? 1 : 0);
-        const contextLines = Math.min(
-          oldContextEnd - oldContextStart,
-          newContextEnd - newContextStart,
-        );
+        const contextLines = newContextEnd - newContextStart;
         const contextIndex = findContextIndex(
           oldContextEnd - contextLines,
           newContextEnd - contextLines,

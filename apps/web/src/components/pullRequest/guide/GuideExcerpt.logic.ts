@@ -36,7 +36,7 @@ function hunkOf(file: FileDiffMetadata, side: SelectionSide | undefined, line: n
 // The review anchor comes from the pull request's diff. A selection can also reach unchanged
 // lines the view loaded into `drawn`, which that diff lacks. The pull request's diff goes first
 // because an expanded excerpt draws the changed lines around it as context, but only within one
-// hunk: a missing line would match the same number on the other side.
+// hunk. A diff without a selected line would match the same number on the other side.
 export function commentDraftFor(input: {
   readonly path: string;
   readonly file: FileDiffMetadata;
@@ -60,11 +60,16 @@ export function commentDraftFor(input: {
       range,
       text: "",
     });
+  const endSide = range.endSide ?? range.side;
   const hunk = hunkOf(file, range.side, range.start);
+  const drawn = input.drawn;
   const context =
-    (hunk >= 0 && hunkOf(file, range.endSide ?? range.side, range.end) === hunk
+    hunk >= 0 && hunkOf(file, endSide, range.end) === hunk
       ? contextFrom(file)
-      : null) ?? contextFrom(input.drawn);
+      : !drawn.isPartial ||
+          (hunkOf(drawn, range.side, range.start) >= 0 && hunkOf(drawn, endSide, range.end) >= 0)
+        ? contextFrom(drawn)
+        : null;
   return context === null && !input.canComment ? null : { range, ...anchor, context };
 }
 
