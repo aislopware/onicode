@@ -54,6 +54,7 @@ import * as EventStore from "../EventStore.ts";
 import * as LegacyV1ThreadImporter from "../legacy/LegacyV1ThreadImporter.ts";
 import * as Orchestrator from "../Orchestrator.ts";
 import * as EffectWorker from "../EffectWorker.ts";
+import { isTerminalRunStatus } from "../ThreadManagementService.ts";
 import * as EffectOutbox from "../EffectOutbox.ts";
 import * as ProjectionReplay from "./ProjectionReplay.ts";
 import * as ProjectionStore from "../ProjectionStore.ts";
@@ -2742,9 +2743,10 @@ describe("orchestration v2 provider switching", () => {
         yield* Deferred.await(started);
         yield* Fiber.join(toolCallRunning);
 
-        // The handoff itself is not a failure: the run completes once the session closes.
+        // The handoff itself is not a failure: the run completes once the session closes. Not
+        // `waiting`: the harness's own worker may still be capturing the checkpoint after `drain`.
         const runSettled = yield* awaitEvent(
-          (event) => event.type === "run.updated" && event.payload.status === "waiting",
+          (event) => event.type === "run.updated" && isTerminalRunStatus(event.payload.status),
         );
         yield* orchestrator.dispatch({
           type: "thread.metadata.update",
