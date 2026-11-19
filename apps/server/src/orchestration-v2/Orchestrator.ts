@@ -15982,21 +15982,36 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
 
     // The run-end release can lag behind a new send, or a steer that reaches an ended run and so
     // starts as one: place that run's unread steers and start the queue first, so it waits behind.
-    // A restart continuation resumes the ended run and must not be overtaken by the queue; a steer
-    // follow-up takes its place first and starts the queue after it commits.
+    // A restart goes first, as it would have while its run ran, and a restart continuation resumes
+    // the ended run; a steer follow-up takes its place first and starts the queue after it commits.
+    let decided = command;
     if (
       command.type === "message.dispatch" &&
       command.restartContinuationOfRunId === undefined &&
-      command.steerFollowUpOfRunId === undefined
+      command.steerFollowUpOfRunId === undefined &&
+      command.dispatchMode.type !== "restart_active" &&
+      command.deliveryIntent !== "restart"
     ) {
+      // With no run active the steer resolves as a send, not into the run the queue starts here.
+      const steerLapsed =
+        command.deliveryIntent === "steer" &&
+        !(yield* projectionStore
+          .getThreadRecords(command.threadId, ["runs"], {
+            runStatuses: ["preparing", "starting", "running", "waiting"],
+          })
+          .pipe(mapDispatchError(command))).runs.some(isActiveRun);
       yield* mapDispatchError(command)(
         requeueUnreadSteers(command.threadId).pipe(
           Effect.andThen(startNextQueuedRun(command.threadId, { latestRunEnded: true })),
         ),
       );
+      if (steerLapsed) {
+        const { deliveryIntent: _steer, ...asSend } = command;
+        decided = asSend;
+      }
     }
 
-    const plan = yield* dispatchOnce(command, sideChatIds).pipe(
+    const plan = yield* dispatchOnce(decided, sideChatIds).pipe(
       Effect.tap((planned) => refuseAboveRuntimeModeCeiling(command, planned.events)),
       Effect.filterOrFail(
         (planned) =>

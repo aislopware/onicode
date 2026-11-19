@@ -406,6 +406,10 @@ it.effect.each([
   { steer: "dropped" },
   // Stop drops the unread steer instead, so the stopped run answers.
   { steer: "stopped" },
+  // The user cancels the run the dropped message moved to before it starts.
+  { steer: "requeue cancelled" },
+  // The move commits right after the wait sees the message on the ended run.
+  { steer: "requeued meanwhile" },
 ] as const)(
   "waitForThread follows a queued message steered into the running turn, $steer",
   ({ steer }) =>
@@ -436,8 +440,9 @@ it.effect.each([
                     Stream.concat(Stream.fromQueue(events)),
                   )
                 : Stream.never,
-            getThreadRecords: (_threadId, fields) =>
+            getThreadRecords: (_threadId, fields, filter) =>
               Effect.sync(() => {
+                const activeEnded = activeStatus === "completed";
                 const records = {
                   thread: { id: threadId, projectId, deletedAt: null },
                   runs: [
@@ -461,18 +466,28 @@ it.effect.each([
                   turnItems: [
                     {
                       type: "user_message",
-                      runId: activeId,
+                      runId: requeued === undefined ? activeId : requeuedId,
                       messageId,
-                      status: steer !== "read" && requeued === undefined ? "pending" : "completed",
+                      inputIntent:
+                        requeued === undefined ? "promoted_queued_to_steer" : "queued_turn",
+                      status:
+                        steer === "read" || requeued === "completed" ? "completed" : "pending",
                     },
                     ...(steer === "stopped"
                       ? [{ type: "run_interrupt_request", runId: activeId }]
                       : []),
-                  ],
+                  ].filter((item) => filter?.turnItemRunIds?.includes(item.runId) ?? true),
                 } as unknown as OrchestrationV2ThreadProjection;
                 // The turn ends right after the wait learns which run took the message.
                 if (promoted && fields.some((field) => field === "messages"))
                   activeStatus = "completed";
+                if (
+                  steer === "requeued meanwhile" &&
+                  activeEnded &&
+                  requeued === undefined &&
+                  !fields.some((field) => field === "turnItems")
+                )
+                  requeued = "running";
                 if (fields.some((field) => field === "turnItems"))
                   Queue.offerUnsafe(steerItemReads, undefined);
                 return records;
@@ -504,25 +519,27 @@ it.effect.each([
             }) as unknown as OrchestrationV2StoredEvent,
         ),
       );
-      if (steer === "dropped") {
+      if (steer !== "read" && steer !== "stopped") {
         yield* Effect.raceFirst(Queue.take(steerItemReads), Fiber.await(fiber));
-        requeued = "completed";
+        requeued = steer === "requeue cancelled" ? "cancelled" : "completed";
         yield* Queue.offer(events, {
           sequence: 3,
           event: {
             threadId,
             type: "run.updated",
-            payload: { id: requeuedId, status: "completed" },
+            payload: { id: requeuedId, status: requeued },
           },
         } as unknown as OrchestrationV2StoredEvent);
+        // A wait that missed the end reports a timeout instead of hanging the test.
+        if (steer === "requeue cancelled") yield* TestClock.adjust(Duration.hours(1));
       }
 
       expect(yield* Fiber.join(fiber)).toMatchObject({
         timedOut: false,
         run:
-          steer === "dropped"
-            ? { id: requeuedId, status: "completed" }
-            : { id: activeId, status: "completed" },
+          steer === "read" || steer === "stopped"
+            ? { id: activeId, status: "completed" }
+            : { id: requeuedId, status: requeued },
       });
     }),
 );

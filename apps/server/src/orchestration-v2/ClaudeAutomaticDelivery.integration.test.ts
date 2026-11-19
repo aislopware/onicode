@@ -1076,6 +1076,9 @@ it.effect.each([
   "the server restarts",
   "Claude cancels it and the user stops",
   "a later steer lands before the run-end reaction",
+  "a later client steer lands before the run-end reaction",
+  "a later restart lands before the run-end reaction",
+  "a later client restart lands before the run-end reaction",
 ] as const)("handles an unread steer when %s", (outcome) =>
   Effect.gen(function* () {
     const cwd = yield* checkpointWorkspace("claude-unread-steer");
@@ -1204,8 +1207,9 @@ it.effect.each([
         id: string,
         dispatchMode:
           | { readonly type: "start_immediately" | "queue_after_active" }
-          | { readonly type: "steer_active"; readonly targetRunId: RunId },
+          | { readonly type: "steer_active" | "restart_active"; readonly targetRunId: RunId },
         model?: string,
+        deliveryIntent?: "steer" | "restart",
       ) =>
         orchestrator.dispatch({
           type: "message.dispatch",
@@ -1215,6 +1219,7 @@ it.effect.each([
           text: `Message ${id}`,
           attachments: [],
           ...(model === undefined ? {} : { modelSelection: { ...modelSelection, model } }),
+          ...(deliveryIntent === undefined ? {} : { deliveryIntent }),
           dispatchMode,
           createdBy: "user",
           creationSource: "web",
@@ -1300,7 +1305,7 @@ it.effect.each([
         return;
       }
 
-      if (outcome === "a later steer lands before the run-end reaction") {
+      if (outcome.startsWith("a later")) {
         // The reaction skips reconcile writes, so the turn ends unseen by it.
         const now = yield* DateTime.now;
         yield* (yield* EventSink.EventSinkV2).write({
@@ -1316,13 +1321,33 @@ it.effect.each([
             },
           ],
         });
-        yield* send("late", { type: "steer_active", targetRunId: parent.id });
-        // The steer Claude never read keeps its place ahead of the later one.
-        assert.deepEqual(yield* queuedOrder, [
-          [steerId, false],
-          [MessageId.make("after"), false],
-          [MessageId.make("late"), false],
-        ]);
+        // Clients send a steer or restart as a start, with the run picked under the lock.
+        const client = outcome.includes("client");
+        if (outcome.includes("restart")) {
+          yield* client
+            ? send("late", { type: "start_immediately" }, undefined, "restart")
+            : send("late", { type: "restart_active", targetRunId: parent.id });
+          // A restart starts ahead of the queue, as it would have while the turn ran.
+          assert.deepEqual(yield* queuedOrder, [
+            [MessageId.make("before"), false],
+            [MessageId.make("after"), false],
+          ]);
+          return;
+        }
+        yield* client
+          ? send("late", { type: "start_immediately" }, undefined, "steer")
+          : send("late", { type: "steer_active", targetRunId: parent.id });
+        // The steer Claude never read keeps its place ahead of the later one, which is not
+        // steered into the run the queue started.
+        const behind = yield* queued;
+        assert.deepEqual(
+          behind.map((run) => [run.userMessageId, run.queueHeld === true, run.steerWhenReadyRunId]),
+          [
+            [steerId, false, undefined],
+            [MessageId.make("after"), false, undefined],
+            [MessageId.make("late"), false, undefined],
+          ],
+        );
         return;
       }
 

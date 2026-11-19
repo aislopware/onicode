@@ -1039,21 +1039,17 @@ const make = Effect.gen(function* () {
     });
     // A steer the provider never read stays pending on its ended run until the run-end reaction
     // moves its message to a run of its own. Stop drops it instead, so its run is the answer.
-    const unreadSteerAwaitsRequeue = (runId: RunId, messageId: MessageId) =>
-      getProjectThreadRecords(input, ["turnItems"], {
-        turnItemTypes: ["user_message", "run_interrupt_request"],
-        turnItemRunIds: [runId],
-      }).pipe(
-        Effect.map(
-          ({ turnItems }) =>
-            !turnItems.some((item) => item.type === "run_interrupt_request") &&
-            turnItems.some(
-              (item) =>
-                item.type === "user_message" &&
-                item.messageId === messageId &&
-                item.status === "pending",
-            ),
-        ),
+    const unreadSteerAwaitsRequeue = (
+      turnItems: ReadonlyArray<OrchestrationV2TurnItem>,
+      messageId: MessageId,
+    ) =>
+      !turnItems.some((item) => item.type === "run_interrupt_request") &&
+      turnItems.some(
+        (item) =>
+          item.type === "user_message" &&
+          item.messageId === messageId &&
+          item.status === "pending" &&
+          (item.inputIntent === "steer" || item.inputIntent === "promoted_queued_to_steer"),
       );
     const outcome = Effect.fnUntraced(function* (
       snapshot: ReadonlyArray<OrchestrationV2Run>,
@@ -1089,18 +1085,31 @@ const make = Effect.gen(function* () {
         }
         // No steer was in flight between two reads that agree, so the owner did not move.
         const confirmed = yield* readOwner;
-        if (confirmed.messages[0]?.runId === owner) {
-          const ownerRun = confirmed.runs.find((candidate) => candidate.id === owner) ?? selected;
-          if (
-            ownerRun !== selected &&
-            isTerminalRunStatus(ownerRun.status) &&
-            (yield* unreadSteerAwaitsRequeue(ownerRun.id, selected.userMessageId))
-          ) {
-            return { run: ownerRun, pending: false, settled: false };
-          }
+        if (confirmed.messages[0]?.runId !== owner) {
+          taken = confirmed;
+          continue;
+        }
+        const ownerRun = confirmed.runs.find((candidate) => candidate.id === owner) ?? selected;
+        if (ownerRun.id === selected.id || !isTerminalRunStatus(ownerRun.status)) {
           return yield* pastRestarts(confirmed.runs, ownerRun);
         }
-        taken = confirmed;
+        // Read with the message, so a requeue that moves both in between is seen.
+        const ended = yield* getProjectThreadRecords(input, ["runs", "messages", "turnItems"], {
+          messageIds: [selected.userMessageId],
+          turnItemTypes: ["user_message", "run_interrupt_request"],
+          turnItemRunIds: [ownerRun.id],
+        });
+        if (ended.messages[0]?.runId !== owner) {
+          taken = ended;
+          continue;
+        }
+        if (unreadSteerAwaitsRequeue(ended.turnItems, selected.userMessageId)) {
+          return { run: ownerRun, pending: false, settled: false };
+        }
+        return yield* pastRestarts(
+          ended.runs,
+          ended.runs.find((candidate) => candidate.id === owner) ?? ownerRun,
+        );
       }
     });
     const untilDelegatedWorkSettled = input.untilDelegatedWorkSettled === true;
