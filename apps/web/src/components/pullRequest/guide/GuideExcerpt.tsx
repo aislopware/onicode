@@ -231,6 +231,7 @@ function ExcerptDiff({
       drawn: slice.fileDiff,
       range,
       ranged: commenting.rangeComments,
+      canComment: commenting.canComment,
     });
     if (next !== null) setDraft(next);
   };
@@ -345,10 +346,11 @@ export function GuideCommentDraft({
 }) {
   const gt = useGT();
   const onAskAgent = commenting.onAskAgent;
+  const context = draft.context;
   const askAgent = (request: string) => {
-    if (onAskAgent === null) return;
+    if (onAskAgent === null || context === null) return;
     onClose();
-    onAskAgent({ ...draft.context, text: request.trim() }, request);
+    onAskAgent({ ...context, text: request.trim() }, request);
   };
   return (
     <DiffCommentAnnotation
@@ -360,7 +362,7 @@ export function GuideCommentDraft({
         commenting.canComment ? gt("Add a comment…") : gt("Ask the agent about these lines…")
       }
       submitLabel={commenting.canComment ? gt("Add to review") : gt("Ask agent")}
-      {...(commenting.canComment && onAskAgent !== null
+      {...(commenting.canComment && onAskAgent !== null && context !== null
         ? {
             secondaryAction: {
               label: gt("Ask agent"),

@@ -82,6 +82,7 @@ export function GuideFileDiff({
       drawn: expandable,
       range,
       ranged: commenting.rangeComments,
+      canComment: commenting.canComment,
     });
     if (next !== null) setDraft(next);
   };
