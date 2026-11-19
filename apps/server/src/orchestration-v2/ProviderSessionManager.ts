@@ -3101,7 +3101,7 @@ export const layerWithOptions = (
       const sessionScopes = yield* Scope.make("parallel");
       const shutdown = Effect.gen(function* () {
         const activeSessions = [...(yield* Ref.get(sessions)).values()];
-        yield* Effect.forEach(
+        const releaseLive = Effect.forEach(
           activeSessions,
           (entry) =>
             releaseEntry({
@@ -3118,8 +3118,15 @@ export const layerWithOptions = (
           { concurrency: "unbounded", discard: true },
         );
         // A release its caller stopped waiting for still writes records; persistence closes next.
-        yield* FiberSet.awaitEmpty(releasesInFlight).pipe(
-          Effect.timeoutOption(RELEASE_SCOPE_CLOSE_TIMEOUT_MS),
+        // Waited alongside the live releases, so it adds no time of its own to the deadline.
+        yield* Effect.all(
+          [
+            releaseLive,
+            FiberSet.awaitEmpty(releasesInFlight).pipe(
+              Effect.timeoutOption(RELEASE_SCOPE_CLOSE_TIMEOUT_MS),
+            ),
+          ],
+          { concurrency: "unbounded", discard: true },
         );
       }).pipe(Effect.withSpan("ProviderSessionManager.shutdown"));
       yield* Effect.addFinalizer(() =>

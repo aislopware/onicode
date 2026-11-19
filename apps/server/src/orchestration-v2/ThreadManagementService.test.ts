@@ -1183,6 +1183,17 @@ it.effect.each([
     teardown: ["keep"],
   },
   {
+    name: "detaches from a busy sibling's process while the follow-up is still queued",
+    others: ["thread:thread-management:force-stop:other"],
+    killed: false,
+    followUp: "queued",
+    expected: {
+      outcome: "shared",
+      sharedWithThreadIds: ["thread:thread-management:force-stop:other"],
+    },
+    teardown: ["detach"],
+  },
+  {
     name: "keeps a busy sibling's process when the follow-up it was kept for ends first",
     others: ["thread:thread-management:force-stop:other"],
     killed: false,
