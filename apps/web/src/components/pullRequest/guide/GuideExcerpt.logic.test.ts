@@ -179,6 +179,35 @@ it("keeps the lines drawn after a hunk that changes the line count for Ask agent
     ].join("\n"),
   );
 
+  // Above the earlier insertion, the excerpt's old side runs out before its new side does.
+  const fromTop = commentDraftFor({
+    path: "file.ts",
+    file,
+    drawn,
+    range: { start: 5, side: "additions", end: 30, endSide: "additions" },
+    ranged: true,
+    canComment: true,
+  });
+  expect(fromTop?.context?.diff.split("\n").slice(1)).toEqual([
+    " line 5",
+    ...Array.from({ length: 10 }, (_, index) => ` inserted ${index + 1}`),
+    ...Array.from({ length: 14 }, (_, index) => ` line ${index + 6}`),
+    "-line 20",
+    "+line 20 changed",
+  ]);
+
+  // A diff replaced before its lines loaded has no rows for them, so there is nothing to ask.
+  const unloaded = commentDraftFor({
+    path: "file.ts",
+    file,
+    drawn: file,
+    range: { start: 20, side: "additions", end: 30, endSide: "additions" },
+    ranged: true,
+    canComment: true,
+  });
+  expect(unloaded?.position).toEqual({ kind: "added", newLine: 30 });
+  expect(unloaded?.context).toBeNull();
+
   // Across hunks, the pull request's diff lacks the unchanged lines loaded between them.
   const loaded = hydratePartialDiff("clone", file, await loaderFor(original, changed)(file));
   const acrossHunks = commentDraftFor({
