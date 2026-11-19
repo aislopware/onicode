@@ -174,9 +174,8 @@ export function enrichedModelLinkRegex(models?: ReadonlyArray<SelectableMarkdown
     .map((model) => model.source)
     .sort((a, b) => b.length - a.length)
     .map((source) => source.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
-  // LRM and RLM can open a paragraph whose first word runs against the text direction.
   return new RegExp(
-    `(?<![^\\s,(\\["'\\u200E\\u200F])(?:${alternatives.join("|")})(?=$|[\\s,"']|[.;:!?\\)\\]]+(?=$|[\\s,"']))`,
+    `(?<![^\\s,(\\["'])(?:${alternatives.join("|")})(?=$|[\\s,"']|[.;:!?\\)\\]]+(?=$|[\\s,"']))`,
     "u",
   );
 }
