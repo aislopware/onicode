@@ -41,7 +41,7 @@ const buttonVariants = cva(
       },
       variant: {
         default:
-          "border-[color-mix(in_oklch,var(--primary)_80%,black)] bg-primary text-primary-foreground shadow-[inset_0_1px_oklch(100%_0_0/12%),var(--plate-shadow)] [--focus-ring:var(--primary-foreground)] [:disabled,:active,[data-pressed]]:shadow-none [:hover,[data-pressed]]:bg-[color-mix(in_oklch,var(--primary)_92%,black)]",
+          "border-[color-mix(in_oklch,var(--primary)_80%,black)] bg-primary text-primary-foreground shadow-[inset_0_1px_oklch(100%_0_0/12%),var(--plate-shadow)] [--focus-ring:var(--primary-foreground)] [:disabled,:active,[data-pressed]]:shadow-none [:hover,[data-pressed]]:bg-(--primary-hover)",
         destructive:
           "border-[color-mix(in_oklch,var(--destructive)_80%,black)] bg-destructive text-white shadow-[inset_0_1px_oklch(100%_0_0/12%),var(--plate-shadow)] [--focus-ring:white] [:disabled,:active,[data-pressed]]:shadow-none [:hover,[data-pressed]]:bg-[color-mix(in_oklch,var(--destructive)_92%,black)]",
         "destructive-outline":

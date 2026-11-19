@@ -986,10 +986,10 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(oni-mobi
   /* The track of a switch that is off, a solid step under the canvas. */
   --switch-track: oklch(93.2% 0.0028 290);
   /* Text steps down from the foreground toward the sidebar ground: 62% for muted, 48% for
-     subtle (the description under a row's title), 36% for a placeholder. */
+     subtle (the description under a row's title). A placeholder reads at the subtle step. */
   --muted-foreground: oklch(51.1% 0.0033 290);
   --subtle-foreground: oklch(61.3% 0.0031 290);
-  --placeholder: oklch(70% 0.003 290);
+  --placeholder: var(--subtle-foreground);
   --secondary-label: var(--muted-foreground);
   --icon-muted: var(--muted-foreground);
   /* One step past the accent, so a user turn stands off the near-white canvas. */
@@ -1016,6 +1016,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(oni-mobi
   --border-3: oklch(0% 0 0 / 15%);
   --input: var(--border-2);
   --ring: color-mix(in oklch, var(--primary) 92%, black);
+  --primary-hover: color-mix(in oklch, var(--primary) 92%, black);
   --plate-shadow: 0 1px 2px oklch(0% 0 0 / 5%);
   --card-shadow: 0 0 0 0.5px var(--contrast-border-2);
   /* A card's own border: none in light, where the ring above outlines it. */
@@ -1066,10 +1067,10 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(oni-mobi
     --secondary-foreground: var(--foreground);
     --muted: oklch(100% 0 0 / 3.5%);
     --switch-track: oklch(32.93% 0.0017 286.3);
-    /* 68%, 52% and 38% of the foreground here. */
+    /* 68% and 52% of the foreground here. */
     --muted-foreground: oklch(68.4% 0.0016 286.3);
     --subtle-foreground: oklch(55.6% 0.0017 286.3);
-    --placeholder: oklch(44.4% 0.0018 286.3);
+    --placeholder: var(--subtle-foreground);
     --accent: --alpha(var(--color-white) / 6%);
     --accent-foreground: var(--color-neutral-100);
     /* A user turn sits above the composer tone, level with the selected sidebar row. */
@@ -1229,6 +1230,7 @@ html[data-theme-id]:not([data-theme-id=""]) {
   --message-action: var(--app-theme-message-action);
   --message-action-foreground: var(--app-theme-message-action-foreground);
   --message-action-hover: var(--app-theme-message-action-hover);
+  --primary-hover: var(--app-theme-message-action-hover);
   --error: var(--app-theme-error);
   --error-foreground: var(--app-theme-error-foreground);
   --tool-error-icon: var(--error-foreground);

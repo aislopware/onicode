@@ -7,8 +7,11 @@ import { observeResize } from "~/lib/observeResize";
 import { cn } from "~/lib/utils";
 import { Toggle as ToggleComponent, type toggleVariants } from "~/components/ui/toggle";
 
-const ToggleGroupContext = React.createContext<VariantProps<typeof toggleVariants>>({
+const ToggleGroupContext = React.createContext<
+  VariantProps<typeof toggleVariants> & { sliding: boolean }
+>({
   size: "default",
+  sliding: false,
   variant: "default",
 });
 
@@ -17,12 +20,15 @@ function ToggleGroup({
   variant = "segmented",
   size: sizeProp,
   orientation = "horizontal",
+  multiple,
   children,
   ...props
 }: ToggleGroupPrimitive.Props & VariantProps<typeof toggleVariants>) {
   const size =
     sizeProp === undefined ? (variant === "segmented" ? "segmented" : "default") : sizeProp;
-  const value = { size, variant };
+  // One surface can mark one item: a group that allows several keeps a surface on each.
+  const sliding = variant === "segmented" && !multiple;
+  const value = { size, sliding, variant };
   return (
     <ToggleGroupPrimitive
       className={cn(
@@ -42,11 +48,12 @@ function ToggleGroup({
       data-size={size}
       data-slot="toggle-group"
       data-variant={variant}
+      multiple={multiple}
       orientation={orientation}
       {...props}
     >
       <ToggleGroupContext value={value}>{children}</ToggleGroupContext>
-      {variant === "segmented" ? <SegmentedIndicator /> : null}
+      {sliding ? <SegmentedIndicator /> : null}
     </ToggleGroupPrimitive>
   );
 }
@@ -66,10 +73,16 @@ function SegmentedIndicator() {
       if (pressed === null) return;
       const from = group.getBoundingClientRect();
       const to = pressed.getBoundingClientRect();
-      indicator.style.setProperty("--pressed-left", `${to.left - from.left - group.clientLeft}px`);
-      indicator.style.setProperty("--pressed-top", `${to.top - from.top - group.clientTop}px`);
-      indicator.style.setProperty("--pressed-width", `${to.width}px`);
-      indicator.style.setProperty("--pressed-height", `${to.height}px`);
+      // A dialog opens scaled: rects are in screen pixels, the indicator is laid out unscaled.
+      const laidOut = getComputedStyle(group);
+      const scaleX = from.width / Number.parseFloat(laidOut.width) || 1;
+      const scaleY = from.height / Number.parseFloat(laidOut.height) || 1;
+      const left = (to.left - from.left) / scaleX - group.clientLeft;
+      const top = (to.top - from.top) / scaleY - group.clientTop;
+      indicator.style.setProperty("--pressed-left", `${left}px`);
+      indicator.style.setProperty("--pressed-top", `${top}px`);
+      indicator.style.setProperty("--pressed-width", `${to.width / scaleX}px`);
+      indicator.style.setProperty("--pressed-height", `${to.height / scaleY}px`);
     };
     place();
     // Read the placed box before motion is allowed, so the first placement does not slide in.
@@ -79,6 +92,7 @@ function SegmentedIndicator() {
     pressedChanges.observe(group, {
       attributeFilter: ["data-pressed"],
       attributes: true,
+      characterData: true,
       childList: true,
       subtree: true,
     });
@@ -115,7 +129,8 @@ function Toggle({
     <ToggleComponent
       // The group's indicator is the selected surface here, so the item keeps only its text colour.
       className={cn(
-        resolvedVariant === "segmented" &&
+        context.sliding &&
+          resolvedVariant === "segmented" &&
           "data-pressed:bg-transparent data-pressed:shadow-none data-pressed:hover:bg-transparent dark:data-pressed:bg-transparent dark:data-pressed:hover:bg-transparent",
         className,
       )}

@@ -31,7 +31,7 @@ export function NumberFieldGroup({
   return (
     <NumberFieldPrimitive.Group
       className={cn(
-        "relative flex w-full justify-between rounded-(--control-radius) border border-input bg-card text-base text-foreground transition-colors duration-100 focus-within:outline-ring-inset has-aria-invalid:border-destructive has-aria-invalid:[--focus-ring:var(--destructive)] has-autofill:bg-foreground/4 data-disabled:pointer-events-none data-disabled:opacity-55 sm:text-ui dark:has-autofill:bg-foreground/8",
+        "relative flex h-9 w-full justify-between rounded-(--control-radius) border border-input bg-card in-data-[size=lg]:h-10 in-data-[size=sm]:h-8 sm:h-8 sm:in-data-[size=lg]:h-9 sm:in-data-[size=sm]:h-7 text-base text-foreground transition-colors duration-100 focus-within:outline-ring-inset has-aria-invalid:border-destructive has-aria-invalid:[--focus-ring:var(--destructive)] has-autofill:bg-foreground/4 data-disabled:pointer-events-none data-disabled:opacity-55 sm:text-ui dark:has-autofill:bg-foreground/8",
         className,
       )}
       data-slot="number-field-group"
@@ -83,7 +83,7 @@ export function NumberFieldInput({
   return (
     <NumberFieldPrimitive.Input
       className={cn(
-        "h-8.5 in-data-[size=lg]:h-9.5 in-data-[size=sm]:h-7.5 w-full min-w-0 grow bg-transparent in-data-[size=sm]:px-2 px-2.5 text-center tabular-nums in-data-[size=lg]:leading-9.5 in-data-[size=sm]:leading-7.5 leading-8.5 outline-none [transition:background-color_5000000s_ease-in-out_0s] sm:h-7.5 sm:in-data-[size=lg]:h-8.5 sm:in-data-[size=sm]:h-6.5 sm:in-data-[size=lg]:leading-8.5 sm:in-data-[size=sm]:leading-8.5 sm:leading-7.5",
+        "w-full min-w-0 grow bg-transparent in-data-[size=sm]:px-2 px-2.5 text-center tabular-nums outline-none [transition:background-color_5000000s_ease-in-out_0s]",
         className,
       )}
       data-slot="number-field-input"

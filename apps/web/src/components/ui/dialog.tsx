@@ -234,7 +234,7 @@ function DialogTitle({ className, ...props }: DialogPrimitive.Title.Props) {
 function DialogDescription({ className, ...props }: DialogPrimitive.Description.Props) {
   return (
     <DialogPrimitive.Description
-      className={cn("text-pretty text-subtle-foreground text-sm sm:text-ui", className)}
+      className={cn("text-pretty text-muted-foreground text-sm sm:text-ui", className)}
       data-slot="dialog-description"
       {...props}
     />

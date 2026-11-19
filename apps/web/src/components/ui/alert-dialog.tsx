@@ -138,7 +138,7 @@ function AlertDialogDescription({ className, ...props }: AlertDialogPrimitive.De
   return (
     <AlertDialogPrimitive.Description
       className={cn(
-        "wrap-anywhere max-h-[min(24rem,60dvh)] min-h-0 overflow-y-auto overscroll-contain text-pretty text-subtle-foreground text-sm select-text sm:text-ui",
+        "wrap-anywhere max-h-[min(24rem,60dvh)] min-h-0 overflow-y-auto overscroll-contain text-pretty text-muted-foreground text-sm select-text sm:text-ui",
         className,
       )}
       data-slot="alert-dialog-description"
