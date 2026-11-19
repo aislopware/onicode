@@ -1,5 +1,5 @@
 diff --git a/dist/bundled/index.js b/dist/bundled/index.js
-index b080b573cfa0d2ebf3953bc25ed9611a49169df2..fdda80766aed9bc1d85f771222600efc25c8796d 100644
+index b080b573cfa0d2ebf3953bc25ed9611a49169df2..9cecbd465c681e515943351bd2b48a9c98e9ec3d 100644
 --- a/dist/bundled/index.js
 +++ b/dist/bundled/index.js
 @@ -172,7 +172,7 @@ ${X}
@@ -63,7 +63,7 @@ index e027f4cfecdfb2be8aefcd7a2de7f97bd6ecd3b0..dd13515bda95ced477222c6cdac9bb27
  export interface GetUsageOptions {
      /**
 diff --git a/dist/cjs/index.js b/dist/cjs/index.js
-index dc7a668481203933b7fd32e2a5cf20b53f9b7fc1..abc5855a62ac3003d15b320ab5ea46bb16a89cf1 100644
+index dc7a668481203933b7fd32e2a5cf20b53f9b7fc1..8abadf66de26952a8815436fb9a9a0331c430ed3 100644
 --- a/dist/cjs/index.js
 +++ b/dist/cjs/index.js
 @@ -1 +1 @@
@@ -98,7 +98,7 @@ index e027f4cfecdfb2be8aefcd7a2de7f97bd6ecd3b0..dd13515bda95ced477222c6cdac9bb27
  export interface GetUsageOptions {
      /**
 diff --git a/dist/esm/index.js b/dist/esm/index.js
-index 72e0be3fb3410136a55a04b495359fd88ecea209..e860d81338d3bfdffc26c800b7bedc70a11d8d4c 100644
+index 72e0be3fb3410136a55a04b495359fd88ecea209..f2061132b4bcc009547030bda312d0f8a46babfe 100644
 --- a/dist/esm/index.js
 +++ b/dist/esm/index.js
 @@ -1 +1 @@
