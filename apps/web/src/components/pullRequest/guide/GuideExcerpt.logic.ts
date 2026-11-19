@@ -17,26 +17,33 @@ import {
   type ReviewCommentContext,
 } from "~/reviewCommentContext";
 
-import { isLineInFileDiff } from "../pullRequestDiff.logic";
-
 export interface CommentDraft {
   readonly range: SelectedLineRange;
   readonly position: PullRequestReviewPosition;
   readonly startPosition?: PullRequestReviewPosition;
   /** What Ask agent sends, taken from the lines as they were drawn when selected. */
-  readonly context: ReviewCommentContext;
+  readonly context: ReviewCommentContext | null;
+}
+
+function hunkOf(file: FileDiffMetadata, side: SelectionSide | undefined, line: number): number {
+  return file.hunks.findIndex((hunk) =>
+    side === "deletions"
+      ? line >= hunk.deletionStart && line < hunk.deletionStart + hunk.deletionCount
+      : line >= hunk.additionStart && line < hunk.additionStart + hunk.additionCount,
+  );
 }
 
 // The review anchor comes from the pull request's diff. A selection can also reach unchanged
 // lines the view loaded into `drawn`, which that diff lacks. The pull request's diff goes first
-// because an expanded excerpt draws the changed lines around it as context, but only when it
-// holds both ends: a missing line would match the same number on the other side.
+// because an expanded excerpt draws the changed lines around it as context, but only within one
+// hunk: a missing line would match the same number on the other side.
 export function commentDraftFor(input: {
   readonly path: string;
   readonly file: FileDiffMetadata;
   readonly drawn: FileDiffMetadata;
   readonly range: SelectedLineRange | null;
   readonly ranged: boolean;
+  readonly canComment: boolean;
 }): CommentDraft | null {
   const { path, file, range } = input;
   if (range === null) return null;
@@ -53,13 +60,12 @@ export function commentDraftFor(input: {
       range,
       text: "",
     });
-  const inFile = (side: SelectionSide | undefined, line: number) =>
-    isLineInFileDiff(file, side === "deletions" ? "left" : "right", line);
+  const hunk = hunkOf(file, range.side, range.start);
   const context =
-    (inFile(range.side, range.start) && inFile(range.endSide ?? range.side, range.end)
+    (hunk >= 0 && hunkOf(file, range.endSide ?? range.side, range.end) === hunk
       ? contextFrom(file)
       : null) ?? contextFrom(input.drawn);
-  return context === null ? null : { range, ...anchor, context };
+  return context === null && !input.canComment ? null : { range, ...anchor, context };
 }
 
 // Other hunks shift old-side context; expand against an excerpt-matching old side.

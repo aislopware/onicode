@@ -102,15 +102,27 @@ it("keeps the lines a draft selected from expanded context for Ask agent", () =>
     drawn,
     range: { start: 7, side: "additions", end: 10, endSide: "additions" },
     ranged: true,
+    canComment: true,
   });
 
   expect(draft?.position).toEqual({ kind: "added", newLine: 10 });
-  expect(draft?.context.diff).toBe(
+  expect(draft?.context?.diff).toBe(
     ["@@ -7,4 +7,4 @@", " line 7", " line 8", " line 9", "-line 10", "+line 10 changed"].join("\n"),
   );
+  // A diff replaced before its lines loaded still opens the review comment, without Ask agent.
+  const unloaded = commentDraftFor({
+    path: "file.ts",
+    file,
+    drawn: file,
+    range: { start: 7, side: "additions", end: 10, endSide: "additions" },
+    ranged: true,
+    canComment: true,
+  });
+  expect(unloaded?.position).toEqual({ kind: "added", newLine: 10 });
+  expect(unloaded?.context).toBeNull();
 });
 
-it("keeps the lines an expanded excerpt draws above its change for Ask agent", async () => {
+it("keeps the lines drawn after a hunk that changes the line count for Ask agent", async () => {
   const original = Array.from({ length: 40 }, (_, index) => `line ${index + 1}`);
   const changed = original.map((line, index) => (index === 19 ? "line 20 changed" : line));
   changed.splice(5, 0, ...Array.from({ length: 10 }, (_, index) => `inserted ${index + 1}`));
@@ -154,13 +166,33 @@ it("keeps the lines an expanded excerpt draws above its change for Ask agent", a
     drawn,
     range: { start: 22, side: "additions", end: 30, endSide: "additions" },
     ranged: true,
+    canComment: true,
   });
 
   expect(draft?.position).toEqual({ kind: "added", newLine: 30 });
-  expect(draft?.context.diff).toBe(
+  expect(draft?.context?.diff).toBe(
     [
       "@@ -12,9 +22,9 @@",
       ...Array.from({ length: 8 }, (_, index) => ` line ${index + 12}`),
+      "-line 20",
+      "+line 20 changed",
+    ].join("\n"),
+  );
+
+  // Across hunks, the pull request's diff lacks the unchanged lines loaded between them.
+  const loaded = hydratePartialDiff("clone", file, await loaderFor(original, changed)(file));
+  const acrossHunks = commentDraftFor({
+    path: "file.ts",
+    file,
+    drawn: loaded,
+    range: { start: 17, side: "additions", end: 30, endSide: "additions" },
+    ranged: true,
+    canComment: true,
+  });
+  expect(acrossHunks?.context?.diff).toBe(
+    [
+      "@@ -7,14 +17,14 @@",
+      ...Array.from({ length: 13 }, (_, index) => ` line ${index + 7}`),
       "-line 20",
       "+line 20 changed",
     ].join("\n"),
