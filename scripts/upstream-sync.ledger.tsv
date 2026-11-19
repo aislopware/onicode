@@ -2626,3 +2626,4 @@ c4dc9ed55b	take	taken as is
 292a8e448b	take	taken as is
 23c339e8be	take	adapted: dropped the settledRuns assertion from the new rollback test; that harness field is upstream's telemetry run reporter (b92c8f4739), which Onicode does not have
 ae3c7a68b4	take	taken as is
+94245bc8ec	take	CONFLICT in contextBoundary.ts: kept Onicode's one-pass scheduledMessageIds/startedFreshRun (from #404/#405) and only took upstream's updated comment; the narrowed command read still loads every fresh-context run's prompt, which that code needs. Onicode-only compactionHoldsSteer does its own turn-item read, so it is unaffected
