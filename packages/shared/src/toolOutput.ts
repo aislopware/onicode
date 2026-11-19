@@ -152,8 +152,8 @@ export function compactDynamicToolOutput(value: unknown): CompactToolOutput | un
     }
     if (
       typeof data.sentMessage === "string" &&
-      data.sentMessage.trim() !== "" &&
-      data.sentMessage.length <= SEND_TO_USER_MAX_LENGTH
+      data.sentMessage.length <= SEND_TO_USER_MAX_LENGTH &&
+      data.sentMessage.trim() !== ""
     ) {
       output.sentMessage = data.sentMessage;
     }

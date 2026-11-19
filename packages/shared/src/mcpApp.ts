@@ -207,7 +207,7 @@ const STORED_CSP =
 
 /**
  * Rebuilds a snapshot's stored policy from the domains it declared, so policy changes reach old
- * snapshots. Domain validation drops the policy's own keywords; no stored policy gets the strictest.
+ * snapshots. A policy Onicode did not write stays, under the strictest host policy.
  */
 export function refreshMcpAppCsp(html: string): string {
   const stored = STORED_CSP.exec(html);
@@ -224,6 +224,13 @@ export function refreshMcpAppCsp(html: string): string {
     frameDomains: directives.get("frame-src"),
     baseUriDomains: directives.get("base-uri"),
   });
+  const current = mcpAppContentSecurityPolicy(csp);
+  // Snapshots captured before blob: frames were allowed.
+  const legacy = current.replace(
+    /frame-src blob:( [^;]+)?/,
+    (_, domains: string | undefined) => `frame-src ${domains?.trim() ?? "'none'"}`,
+  );
+  if (stored[2] !== current && stored[2] !== legacy) return injectMcpAppCsp(html, undefined);
   return injectMcpAppCsp(`${stored[1]}${html.slice(stored[0].length)}`, csp);
 }
 
