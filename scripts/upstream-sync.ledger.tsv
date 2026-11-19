@@ -2747,3 +2747,4 @@ f6881ceba0	take	fix(acp-registry): keep managed npm commands out of user PATH (#
 314a11498e	skip	T3 Connect relay cloudAccountService, removed in Onicode
 a2a463a32e	take	fix(server): gh credential lookups no longer leak D-Bus daemons (#23824)
 eb62a37150	take	atomic saves keep modes and fsync; telemetry Identify test left out
+5478e44cc9	take	fix(claude): every repeated --plugin-dir launch argument loads its plugin (#38634)
