@@ -2633,3 +2633,4 @@ d530ef339b	take	taken as is
 e0f5acd178	take	taken as is (Sidebar.logic.ts only; Sidebar.tsx hook order untouched)
 94baff19c6	take	taken as is
 00200bd412	take	Antigravity thread-session slash commands now land in the session cwd's snapshot; onSessionEvent gets cwd. Clean.
+43b37b6d3c	take	Antigravity 1.5.x flat invoke_subagent input parsed; subagentsOutlivingPrompt flavor hook idles subagents agy no longer runs. Clean apply.
