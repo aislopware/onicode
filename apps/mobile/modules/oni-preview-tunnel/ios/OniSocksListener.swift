@@ -85,12 +85,7 @@ private func socksReply(_ code: UInt8) -> Data { Data([5, code, 0, 1, 0, 0, 0, 0
 
 // The webview names the host as typed, so IP literals can also arrive as domain names.
 private func isLoopbackName(_ name: String) -> Bool {
-  let name = name.lowercased()
-  if name == "localhost" || name.hasSuffix(".localhost") { return true }
-  if name == OniLoopback.standInHost { return true }
-  if let address = IPv4Address(name) { return address.rawValue.first == 127 }
-  if let address = IPv6Address(name) { return address.isLoopback }
-  return false
+  OniLoopback.isStandIn(name) || OniLoopback.isLoopbackHost(name)
 }
 
 private enum SocksRequest {
@@ -133,9 +128,9 @@ private final class OniSocksConnection {
   private var greeted = false
   private var tunnel: URLSessionWebSocketTask?
   private var closed = false
-  // Plain HTTP only: the page names the stand-in host, the environment's servers expect localhost.
-  private var toServer = OniHostSwap(from: OniLoopback.standInHost, to: "localhost")
-  private var toPage = OniHostSwap(from: "localhost", to: OniLoopback.standInHost)
+  // Plain HTTP only, decided by the page's first bytes; nil for TLS.
+  private var decided = false
+  private var rewriters: (toServer: OniHttpRewriter, toPage: OniHttpRewriter)?
 
   init(
     connection: NWConnection,
@@ -243,7 +238,7 @@ private final class OniSocksConnection {
         if !self.received.isEmpty {
           let early = Data(self.received)
           self.received = []
-          tunnel.send(.data(self.swapToServer(early))) { _ in }
+          tunnel.send(.data(self.rewriteToServer(early))) { _ in }
         }
         self.pumpToTunnel(tunnel)
         self.pumpFromTunnel(tunnel)
@@ -252,13 +247,12 @@ private final class OniSocksConnection {
   }
 
   /// The page's first bytes decide: a TLS handshake is left alone, anything else is plain HTTP.
-  private func swapToServer(_ data: Data) -> Data {
-    if !toServer.isDecided {
-      let plain = data.first != 0x16
-      toServer.decide(plain)
-      toPage.decide(plain)
+  private func rewriteToServer(_ data: Data) -> Data {
+    if !decided {
+      decided = true
+      rewriters = data.first == 0x16 ? nil : OniHttpRewriter.pair()
     }
-    return toServer.isEnabled ? toServer.apply(data) : data
+    return rewriters?.toServer.feed(data) ?? data
   }
 
   // Each direction asks for the next chunk only after the previous one is written, so a slow
@@ -268,7 +262,9 @@ private final class OniSocksConnection {
       [weak self] data, _, isComplete, error in
       guard let self, !closed else { return }
       if let data, !data.isEmpty {
-        let data = swapToServer(data)
+        let data = rewriteToServer(data)
+        // A partial head waits for the rest before anything reaches the environment.
+        if data.isEmpty { return isComplete ? close() : pumpToTunnel(tunnel) }
         tunnel.send(.data(data)) { [weak self] error in
           self?.queue.async {
             guard let self, !self.closed else { return }
@@ -292,7 +288,8 @@ private final class OniSocksConnection {
         switch result {
         case .failure:
           // The environment closed its side; flush what the page has not read yet.
-          self.finish(nil)
+          let rest = self.rewriters?.toPage.finish()
+          self.finish(rest?.isEmpty == false ? rest : nil)
         case .success(let message):
           let data: Data
           switch message {
@@ -300,8 +297,10 @@ private final class OniSocksConnection {
           case .string(let text): data = Data(text.utf8)
           @unknown default: data = Data()
           }
+          let rewritten = self.rewriters?.toPage.feed(data) ?? data
+          if rewritten.isEmpty { return self.pumpFromTunnel(tunnel) }
           self.connection.send(
-            content: self.toPage.isEnabled ? self.toPage.apply(data) : data,
+            content: rewritten,
             completion: .contentProcessed { [weak self] error in
               self?.queue.async {
                 guard let self, !self.closed else { return }
@@ -312,41 +311,6 @@ private final class OniSocksConnection {
         }
       }
     }
-  }
-}
-
-/// Swaps one string for another of the same length within each chunk. Holding back a partial
-/// match could stall a reply ending in its first letters, so one split across chunks is missed;
-/// the Host header always arrives whole.
-struct OniHostSwap {
-  private let from: [UInt8]
-  private let to: [UInt8]
-  private(set) var isDecided = false
-  private(set) var isEnabled = false
-
-  init(from: String, to: String) {
-    self.from = Array(from.utf8)
-    self.to = Array(to.utf8)
-    precondition(self.from.count == self.to.count, "a swap must keep message lengths")
-  }
-
-  mutating func decide(_ enabled: Bool) {
-    isDecided = true
-    isEnabled = enabled
-  }
-
-  func apply(_ data: Data) -> Data {
-    var bytes = [UInt8](data)
-    var index = 0
-    while index + from.count <= bytes.count {
-      if bytes[index..<(index + from.count)].elementsEqual(from) {
-        bytes.replaceSubrange(index..<(index + from.count), with: to)
-        index += from.count
-      } else {
-        index += 1
-      }
-    }
-    return Data(bytes)
   }
 }
 

@@ -22,17 +22,33 @@ private const val HANDSHAKE_TIMEOUT_MS = 10_000
 // Browsers open about six connections per host; this leaves room for several hosts and sockets.
 private const val MAX_CONNECTIONS = 64
 private const val MAX_SOCKS4_STRING = 255
+private val IPV4_LITERAL = Regex("""\d{1,3}(\.\d{1,3}){3}""")
 
 private val client = OkHttpClient.Builder().readTimeout(0, TimeUnit.MILLISECONDS).build()
 
 // The webview names the host as typed, so IP literals can also arrive as domain names.
 private fun isLoopbackName(name: String): Boolean {
   val host = name.lowercase().removeSuffix(".")
-  val literal = host.removePrefix("[").removeSuffix("]")
-  val isIpLiteral = literal.all { it.isDigit() || it == '.' || it == ':' || it in 'a'..'f' }
-  val isLoopbackIp = isIpLiteral &&
-    runCatching { InetAddress.getByName(literal).isLoopbackAddress }.getOrDefault(false)
-  return host == "localhost" || host.endsWith(".localhost") || isLoopbackIp
+  return host == "localhost" || host.endsWith(".localhost") || loopbackIp(host) != null
+}
+
+/** The loopback address `name` spells, which the environment must dial exactly, or null. */
+private fun loopbackIp(name: String): String? {
+  val literal = name.lowercase().removeSuffix(".").removePrefix("[").removeSuffix("]")
+  // Anything else would make getByName look the name up.
+  val isIpLiteral = IPV4_LITERAL.matches(literal) ||
+    (':' in literal && literal.all { it.isDigit() || it == '.' || it == ':' || it in 'a'..'f' })
+  if (!isIpLiteral) return null
+  return runCatching { InetAddress.getByName(literal) }.getOrNull()?.loopbackHost()
+}
+
+/** A loopback address to dial exactly, "" for a `localhost` name, or null when not loopback. */
+private fun String.loopbackHost() = loopbackIp(this) ?: "".takeIf { isLoopbackName(this) }
+
+private fun InetAddress.loopbackHost(): String? = when {
+  !isLoopbackAddress -> null
+  address.size == 4 -> hostAddress
+  else -> "::1"
 }
 
 /**
@@ -75,7 +91,9 @@ internal class SocksListener(private val requestAccess: () -> String?) {
   }
 
   private sealed interface Handshake {
-    data class Connect(val port: Int, val reply: (Boolean) -> ByteArray) : Handshake
+    /** `host` is a loopback address the page named; null means the environment's `localhost`. */
+    data class Connect(val port: Int, val host: String?, val reply: (Boolean) -> ByteArray) :
+      Handshake
     data class Refuse(val reply: ByteArray) : Handshake
   }
 
@@ -127,16 +145,17 @@ internal class SocksListener(private val requestAccess: () -> String?) {
     val version = input.readUnsignedByte()
     val command = input.readUnsignedByte()
     input.readUnsignedByte()
-    val loopback = when (input.readUnsignedByte()) {
-      1 -> ByteArray(4).also { input.readFully(it) }[0] == 127.toByte()
-      4 -> InetAddress.getByAddress(ByteArray(16).also { input.readFully(it) }).isLoopbackAddress
-      3 -> isLoopbackName(String(ByteArray(input.readUnsignedByte()).also { input.readFully(it) }))
+    // Null when the destination is not loopback; an empty host means the name `localhost`.
+    val host = when (input.readUnsignedByte()) {
+      1 -> InetAddress.getByAddress(ByteArray(4).also { input.readFully(it) }).loopbackHost()
+      4 -> InetAddress.getByAddress(ByteArray(16).also { input.readFully(it) }).loopbackHost()
+      3 -> String(ByteArray(input.readUnsignedByte()).also { input.readFully(it) }).loopbackHost()
       else -> return Handshake.Refuse(socks5Reply(8))
     }
     val port = input.readUnsignedShort()
     if (version != 5 || command != 1) return Handshake.Refuse(socks5Reply(7))
-    if (!loopback) return Handshake.Refuse(socks5Reply(2))
-    return Handshake.Connect(port) { ok -> socks5Reply(if (ok) 0 else 1) }
+    if (host == null) return Handshake.Refuse(socks5Reply(2))
+    return Handshake.Connect(port, host.ifEmpty { null }) { ok -> socks5Reply(if (ok) 0 else 1) }
   }
 
   private fun readSocks4(input: DataInputStream): Handshake {
@@ -146,15 +165,15 @@ internal class SocksListener(private val requestAccess: () -> String?) {
     readCString(input)
     // SOCKS4a: 0.0.0.x means a host name follows the user id.
     val isSocks4a = address.take(3).all { it == 0.toByte() } && address[3] != 0.toByte()
-    val loopback = if (isSocks4a) {
-      isLoopbackName(readCString(input))
+    val host = if (isSocks4a) {
+      readCString(input).loopbackHost()
     } else {
-      address[0] == 127.toByte()
+      InetAddress.getByAddress(address).loopbackHost()
     }
     val refused = byteArrayOf(0, 0x5b, 0, 0, 0, 0, 0, 0)
-    if (command != 1 || !loopback) return Handshake.Refuse(refused)
+    if (command != 1 || host == null) return Handshake.Refuse(refused)
     val granted = byteArrayOf(0, 0x5a, 0, 0, 0, 0, 0, 0)
-    return Handshake.Connect(port) { ok -> if (ok) granted else refused }
+    return Handshake.Connect(port, host.ifEmpty { null }) { ok -> if (ok) granted else refused }
   }
 
   private fun readCString(input: DataInputStream): String {
@@ -178,7 +197,10 @@ internal class SocksListener(private val requestAccess: () -> String?) {
     handshake: Handshake.Connect
   ) {
     val url = base.replaceFirst(Regex("^ws"), "http").toHttpUrlOrNull()
-      ?.newBuilder()?.addQueryParameter("port", handshake.port.toString())?.build()
+      ?.newBuilder()?.addQueryParameter("port", handshake.port.toString())
+      // A name is the environment's `localhost`; an address must reach that exact address there.
+      ?.apply { handshake.host?.let { addQueryParameter("host", it) } }
+      ?.build()
     if (url == null) {
       output.write(handshake.reply(false))
       return

@@ -24,10 +24,10 @@ import kotlin.math.abs
  * A webview whose loopback is another environment's: `localhost` requests go to a SOCKS listener
  * in this process, which carries each connection over the environment's tunnel.
  *
- * Android's proxy override applies to every WebView in the app, so it is set while this view is
- * attached and cleared when it detaches. Other webviews here never load loopback pages. Each
- * environment gets its own WebView profile, so one environment's localhost cookies and storage
- * never reach another's.
+ * Android's proxy override applies to every WebView in the app, so it is set while any tunnel view
+ * is attached (see [TunnelProxy]). Other webviews here never load loopback pages. Each environment
+ * gets its own WebView profile, so one environment's localhost cookies and storage never reach
+ * another's.
  */
 @SuppressLint("SetJavaScriptEnabled")
 class OniTunnelWebView(context: Context, appContext: AppContext) : ExpoView(context, appContext) {
@@ -39,11 +39,11 @@ class OniTunnelWebView(context: Context, appContext: AppContext) : ExpoView(cont
   private val onPageScroll by EventDispatcher()
   private val main = Handler(Looper.getMainLooper())
   private var webView: WebView? = null
-  private var listener: SocksListener? = null
   private var proxied = false
   private var pendingUrl: String? = null
   private var loading = false
-  private var environmentId: String? = null
+  internal var environmentId: String? = null
+    private set
   private var reportedScrollY = 0f
 
   fun setEnvironment(environmentId: String) {
@@ -114,50 +114,23 @@ class OniTunnelWebView(context: Context, appContext: AppContext) : ExpoView(cont
 
   override fun onAttachedToWindow() {
     super.onAttachedToWindow()
-    if (!WebViewFeature.isFeatureSupported(WebViewFeature.PROXY_OVERRIDE)) {
-      fail("This WebView cannot route localhost.")
-      return
-    }
-    val listener = SocksListener {
-      TunnelAccess.request { requestId ->
-        main.post { onAccessRequest(mapOf("requestId" to requestId)) }
-      }
-    }
-    this.listener = listener
-    val onSet = Runnable {
-      main.post {
-        // Detached before the override applied; onDetachedFromWindow already cleared it.
-        if (this.listener !== listener) return@post
-        proxied = true
-        pendingUrl?.let { loadUrl(it) }
-      }
-    }
-    // `*` loads everything directly, and the implicit-rule removal after it takes loopback back
-    // out of that bypass, the same split the desktop app makes with `*,<-loopback>`.
-    // Older WebViews reject `socks5://`; their `socks://` is SOCKS4, which the listener speaks too.
-    for (scheme in listOf("socks5", "socks")) {
-      val config = ProxyConfig.Builder()
-        .addProxyRule("$scheme://127.0.0.1:${listener.port}")
-        .addBypassRule("*")
-        .removeImplicitRules()
-        .build()
-      val set = runCatching {
-        ProxyController.getInstance().setProxyOverride(config, { it.run() }, onSet)
-      }
-      if (set.isSuccess) return
-    }
-    fail("This WebView cannot route localhost.")
+    val supported = WebViewFeature.isFeatureSupported(WebViewFeature.PROXY_OVERRIDE)
+    if (!supported || !TunnelProxy.attach(this)) fail("This WebView cannot route localhost.")
   }
 
   override fun onDetachedFromWindow() {
     super.onDetachedFromWindow()
-    // Cleared even when the override has not applied yet, so it never outlives this view.
-    if (listener != null) {
-      ProxyController.getInstance().clearProxyOverride({ it.run() }) {}
-    }
-    listener?.close()
-    listener = null
     proxied = false
+    TunnelProxy.detach(this)
+  }
+
+  internal fun onProxyReady() {
+    proxied = true
+    pendingUrl?.let { loadUrl(it) }
+  }
+
+  internal fun requestAccess(requestId: String) {
+    onAccessRequest(mapOf("requestId" to requestId))
   }
 
   /** Called when React removes the view; a detach alone keeps the page for a reattach. */
@@ -186,5 +159,79 @@ class OniTunnelWebView(context: Context, appContext: AppContext) : ExpoView(cont
 
   private companion object {
     const val SCROLL_STEP_DP = 24f
+  }
+}
+
+/**
+ * The process-wide proxy override every attached tunnel view shares, set when the first attaches
+ * and cleared when the last detaches, so a view leaving (a pane giving way to its maximized copy,
+ * in either order) never unroutes one still showing. A connection can't name the view it came
+ * from, so it is refused while views of two environments are attached, rather than sent to the
+ * wrong host. Main thread only.
+ */
+internal object TunnelProxy {
+  private val main = Handler(Looper.getMainLooper())
+  private val views = mutableListOf<OniTunnelWebView>()
+  private var listener: SocksListener? = null
+  private var applied = false
+
+  /** False when this WebView cannot take a proxy override. */
+  fun attach(view: OniTunnelWebView): Boolean {
+    views.remove(view)
+    views.add(view)
+    listener = listener ?: startOverride()
+    if (listener == null) {
+      views.remove(view)
+      return false
+    }
+    if (applied) view.onProxyReady()
+    return true
+  }
+
+  private fun startOverride(): SocksListener? {
+    val listener = SocksListener {
+      TunnelAccess.request { requestId ->
+        main.post {
+          val newest = views.lastOrNull()
+          if (newest == null || views.any { it.environmentId != newest.environmentId }) {
+            TunnelAccess.resolve(requestId, null)
+          } else {
+            newest.requestAccess(requestId)
+          }
+        }
+      }
+    }
+    val onSet = Runnable {
+      main.post {
+        // Cleared, and maybe set again, before this override applied.
+        if (this.listener !== listener) return@post
+        applied = true
+        for (attached in views.toList()) attached.onProxyReady()
+      }
+    }
+    // `*` loads everything directly, and the implicit-rule removal after it takes loopback back
+    // out of that bypass, the same split the desktop app makes with `*,<-loopback>`.
+    // Older WebViews reject `socks5://`; their `socks://` is SOCKS4, which the listener speaks too.
+    val set = listOf("socks5", "socks").any { scheme ->
+      val config = ProxyConfig.Builder()
+        .addProxyRule("$scheme://127.0.0.1:${listener.port}")
+        .addBypassRule("*")
+        .removeImplicitRules()
+        .build()
+      runCatching {
+        ProxyController.getInstance().setProxyOverride(config, { it.run() }, onSet)
+      }.isSuccess
+    }
+    if (!set) listener.close()
+    return listener.takeIf { set }
+  }
+
+  fun detach(view: OniTunnelWebView) {
+    if (!views.remove(view) || views.isNotEmpty()) return
+    // Cleared even when the override has not applied yet, so it never outlives the last view.
+    ProxyController.getInstance().clearProxyOverride({ it.run() }) {}
+    listener?.close()
+    listener = null
+    applied = false
   }
 }
