@@ -18,7 +18,8 @@ export type { IssueListTarget };
 
 export const issueEnvironment = createIssueEnvironmentAtoms(connectionAtomRuntime);
 
-export function useLinkedIssueDetail(
+/** A linked issue's live row: the summary, not the conversation a detail carries. */
+export function useLinkedIssueSummary(
   environmentId: EnvironmentId,
   link: ThreadIssueLink | undefined,
   mountScope?: "sidebar" | "thread-details" | "linked-items" | "sidebar-tooltip",
@@ -33,7 +34,7 @@ export function useLinkedIssueDetail(
   };
   return useEnvironmentQuery(
     input && configs.get(environmentId)?.environment.capabilities.issues === true
-      ? issueEnvironment.detail({ environmentId, input }, mountScope)
+      ? issueEnvironment.summary({ environmentId, input }, mountScope)
       : null,
   ).data;
 }
