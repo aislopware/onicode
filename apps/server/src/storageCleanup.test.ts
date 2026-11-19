@@ -2477,7 +2477,7 @@ describe("orphan worktree reports", () => {
       ),
   );
 
-  it.live("retains the last orphan size on a failed refresh and can refresh it later", () =>
+  it.live("retries a failed orphan measurement and keeps the last size on a failed refresh", () =>
     runCleanupTest(
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
@@ -2504,6 +2504,9 @@ describe("orphan worktree reports", () => {
           fixture.service.runNow,
           (report) => report.entries.find((entry) => entry.path === orphan)?.bytes,
         );
+        unreadable = build;
+        expect(yield* orphanBytes).toBeNull();
+        unreadable = undefined;
         expect(yield* orphanBytes).toBe(size);
         yield* fs.remove(bundle);
         unreadable = build;

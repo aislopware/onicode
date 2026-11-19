@@ -658,7 +658,7 @@ const make = Effect.gen(function* () {
     }
     for (const [key, bytes] of refresh) {
       const orphan = reported.get(key);
-      if (orphan === undefined || bytes === null) continue;
+      if (orphan === undefined) continue;
       const remaining = measurementDeadline - (yield* Clock.currentTimeMillis);
       if (remaining <= 0) break;
       const measured = yield* measureWorktree(orphan.path).pipe(Effect.timeoutOption(remaining));
