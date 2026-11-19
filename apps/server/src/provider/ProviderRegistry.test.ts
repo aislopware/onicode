@@ -1359,6 +1359,20 @@ it.layer(
         ProviderRegistry.mergeProviderSnapshot(previousProvider, refreshedProvider).models,
         [previousProvider.models[0]],
       );
+
+      // A snapshot from before sub-providers lists the same models flat, under other slugs.
+      const flatProvider = {
+        ...previousProvider,
+        models: [{ slug: "b", name: "b", isCustom: false, capabilities: null }],
+      } satisfies ServerProvider;
+      const { subProviders: _, ...withoutSubProviders } = flatProvider;
+      assert.deepStrictEqual(
+        ProviderRegistry.mergeProviderSnapshot(withoutSubProviders, {
+          ...refreshedProvider,
+          models: [previousProvider.models[0]],
+        }).models,
+        [previousProvider.models[0]],
+      );
     });
 
     it("retains ACP Registry models while discovery has not completed", () => {

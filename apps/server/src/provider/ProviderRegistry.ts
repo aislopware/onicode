@@ -269,11 +269,14 @@ const mergeProviderModels = (
       subProvider.unavailableReason === undefined ? [] : [subProvider.name],
     ),
   );
+  // Models outside every sub-provider predate them (fx renamed them `<backend>:<id>`).
+  const groupsBySubProvider = (provider.subProviders?.length ?? 0) > 0;
   const retainablePreviousModels = previousModels.filter(
     (model) =>
       !model.isCustom &&
       !updateRequiredSlugs.has(model.slug) &&
-      !unavailableSubProviders.has(model.subProvider ?? ""),
+      (!groupsBySubProvider ||
+        (model.subProvider !== undefined && !unavailableSubProviders.has(model.subProvider))),
   );
 
   if (shouldRetainMissingModels && nextModels.length === 0 && retainablePreviousModels.length > 0) {

@@ -901,12 +901,17 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   const scrollToSection = (direction: 1 | -1) => {
     // A section with no model to pick is passed by: the highlight could not follow the view there.
     // So is Recent, which repeats models the provider sections hold.
-    const headers = headerIndices?.filter((index) => {
-      const next = rows[index + 1];
-      return (
-        rows[index]?.key !== RECENT_SECTION_KEY && next !== undefined && isHighlightableRow(next)
-      );
-    });
+    const firstPickable = (headerIndex: number) => {
+      for (let index = headerIndex + 1; index < rows.length; index++) {
+        const row = rows[index]!;
+        if (row.kind === "header") return undefined;
+        if (isHighlightableRow(row)) return row;
+      }
+      return undefined;
+    };
+    const headers = headerIndices?.filter(
+      (index) => rows[index]?.key !== RECENT_SECTION_KEY && firstPickable(index) !== undefined,
+    );
     if (!headers || headers.length === 0) return;
     const highlightedIndex = highlightedModelKeyRef.current
       ? (rowIndexByKey.get(highlightedModelKeyRef.current) ?? -1)
@@ -924,7 +929,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     const headerIndex = headers[next]!;
     const header = rows[headerIndex];
     if (header?.kind === "header") announce(header.label, "model-picker");
-    const firstKey = rows[headerIndex + 1]?.key;
+    const firstKey = firstPickable(headerIndex)?.key;
     sectionCursorRef.current = next;
     void Promise.resolve(
       modelListRef.current?.scrollToIndex({ index: headerIndex, animated: false }),
