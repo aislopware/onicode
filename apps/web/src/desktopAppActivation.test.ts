@@ -270,8 +270,47 @@ describe("desktop app activation", () => {
     expect(harness.completions).toEqual([success("request-2")]);
   });
 
+  it("claims again when the handler stayed away past the claim", async () => {
+    let grant: (claimed: boolean) => void = () => undefined;
+    let claimRequested: () => void = () => undefined;
+    const claimed = new Promise<void>((resolve) => {
+      claimRequested = resolve;
+    });
+    let calls = 0;
+    const harness = receiverHarness((requestId) => {
+      if (requestId !== request.requestId) return true;
+      calls += 1;
+      if (calls > 1) return false;
+      return new Promise<boolean>((resolve) => {
+        grant = resolve;
+        claimRequested();
+      });
+    });
+    const unmounted = vi.fn(async () => success("request-1"));
+    const remounted = vi.fn(async (input: DesktopAppActivationRequest) => success(input.requestId));
+    harness.receiver.setHandler(unmounted);
+    harness.deliver();
+    await claimed;
+    harness.receiver.setHandler(null);
+    grant(true);
+    // Lets the receiver see the claim with no handler set; the desktop app then times it out.
+    vi.useFakeTimers();
+    try {
+      await vi.runAllTimersAsync();
+    } finally {
+      vi.useRealTimers();
+    }
+    const completed = harness.nextCompletion();
+    harness.receiver.setHandler(remounted);
+    harness.deliver({ ...request, requestId: "request-2" });
+    await completed;
+
+    expect(unmounted).not.toHaveBeenCalled();
+    expect(remounted.mock.calls.map(([input]) => input.requestId)).toEqual(["request-2"]);
+    expect(harness.claims).toEqual(["request-1", "request-2", "request-1"]);
+  });
+
   it("keeps an older open that finishes late from replacing a newer one", async () => {
-    const harness = receiverHarness();
     let projectAppeared: () => void = () => undefined;
     const deps = dependencies({
       findProject: (_environmentId, workspaceRoot) =>
@@ -285,23 +324,19 @@ describe("desktop app activation", () => {
           }),
       ),
     });
-    harness.receiver.setHandler((input, signal) =>
-      handleDesktopAppActivationRequest(input, deps, signal),
-    );
-    let completed = harness.nextCompletion();
-    harness.deliver();
-    harness.deliver({ ...request, requestId: "request-2", workspaceRoot: "/workspace/other" });
-    await completed;
-    completed = harness.nextCompletion();
+    // An activation still adding its project, then a sidebar drop of a known folder.
+    const older = handleDesktopAppActivationRequest(request, deps);
+    await expect(
+      handleDesktopAppActivationRequest(
+        { ...request, requestId: "request-2", workspaceRoot: "/workspace/other" },
+        deps,
+      ),
+    ).resolves.toMatchObject({ ok: true });
     projectAppeared();
-    await completed;
 
+    await expect(older).resolves.toMatchObject({ ok: false, code: "thread-open-failed" });
     expect(vi.mocked(deps.openThread).mock.calls.map(([projectRef]) => projectRef)).toEqual([
       { environmentId, projectId: existingProjectId },
-    ]);
-    expect(harness.completions.map((response) => response.requestId)).toEqual([
-      "request-2",
-      "request-1",
     ]);
   });
 

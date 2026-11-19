@@ -33,7 +33,8 @@ import { makeComponentLogger } from "./DesktopObservability.ts";
 
 const MAX_REQUEST_BYTES = 64 * 1024;
 const REQUEST_TIMEOUT_MS = 15_000;
-const isDesktopAppActivationRequest = Schema.is(DesktopAppActivationRequest);
+// Decoded, not just checked: the completion IPC decodes (trims) ids, and the two must agree.
+const decodeDesktopAppActivationRequest = Schema.decodeUnknownOption(DesktopAppActivationRequest);
 
 export class DesktopAppActivationStartError extends Schema.TaggedError<DesktopAppActivationStartError>()(
   "DesktopAppActivationStartError",
@@ -151,7 +152,8 @@ export async function startDesktopAppControlServer(input: {
         return;
       }
 
-      if (!isDesktopAppActivationRequest(parsed)) {
+      const decoded = decodeDesktopAppActivationRequest(parsed);
+      if (Option.isNone(decoded)) {
         pipe(
           requestIdFromUnknown(parsed),
           (requestId) => invalidResponse(requestId, "The desktop app request is invalid."),
@@ -159,10 +161,11 @@ export async function startDesktopAppControlServer(input: {
         );
         return;
       }
-      activeRequestId = parsed.requestId;
-      void input.handle(parsed).then(finish, () => {
+      const request = decoded.value;
+      activeRequestId = request.requestId;
+      void input.handle(request).then(finish, () => {
         finish(
-          invalidResponse(parsed.requestId, "Onicode could not process the desktop app request."),
+          invalidResponse(request.requestId, "Onicode could not process the desktop app request."),
         );
       });
     });

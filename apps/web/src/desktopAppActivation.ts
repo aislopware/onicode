@@ -36,7 +36,7 @@ export interface DesktopAppActivationDependencies {
   readonly waitForProject: (projectRef: ScopedProjectRef) => Promise<void>;
   readonly openThread: (
     projectRef: ScopedProjectRef,
-    signal: AbortSignal | undefined,
+    signal: AbortSignal,
   ) => Promise<{ readonly threadId: ThreadId } | null>;
 }
 
@@ -95,12 +95,17 @@ function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message.trim().length > 0 ? error.message : fallback;
 }
 
-/** Once `signal` aborts, a newer open has taken over and this one stops before it shows a thread. */
+let latestOpen: AbortController | null = null;
+
+/** The newest open wins: an older one still running stops before it shows a thread. */
 export async function handleDesktopAppActivationRequest(
   request: DesktopAppActivationRequest,
   dependencies: DesktopAppActivationDependencies,
-  signal?: AbortSignal,
 ): Promise<DesktopAppActivationResponse> {
+  latestOpen?.abort();
+  const open = new AbortController();
+  latestOpen = open;
+  const { signal } = open;
   const target = dependencies.getTarget();
   if (target === null) {
     return failure(
@@ -133,7 +138,7 @@ export async function handleDesktopAppActivationRequest(
     }
   }
 
-  if (signal?.aborted) {
+  if (signal.aborted) {
     return failure(request.requestId, "thread-open-failed", "A newer open replaced this one.");
   }
   try {
@@ -166,7 +171,6 @@ export async function handleDesktopAppActivationRequest(
 
 type DesktopAppActivationHandler = (
   request: DesktopAppActivationRequest,
-  signal: AbortSignal,
 ) => Promise<DesktopAppActivationResponse>;
 
 /**
@@ -177,7 +181,6 @@ export function createDesktopAppActivationReceiver(
   activation: Pick<DesktopBridge["appActivation"], "onRequest" | "claim" | "complete">,
 ) {
   let handler: DesktopAppActivationHandler | null = null;
-  let latestOpen: AbortController | null = null;
   const waiters = new Set<() => void>();
   const awaitHandler = async () => {
     while (handler === null) {
@@ -187,17 +190,17 @@ export function createDesktopAppActivationReceiver(
   };
   activation.onRequest((request) => {
     void (async () => {
-      await awaitHandler();
-      // The command already has its answer; opening the folder now would surprise the user.
-      if (!(await activation.claim(request.requestId))) return;
-      // The handler may have remounted during the claim.
-      const handle = await awaitHandler();
-      latestOpen?.abort();
-      const open = new AbortController();
-      latestOpen = open;
+      let handle: DesktopAppActivationHandler | null = null;
+      // A handler that left during the claim may come back after the command timed out.
+      while (handle === null) {
+        await awaitHandler();
+        // The command already has its answer; opening the folder now would surprise the user.
+        if (!(await activation.claim(request.requestId))) return;
+        handle = handler;
+      }
       let response: DesktopAppActivationResponse;
       try {
-        response = await handle(request, open.signal);
+        response = await handle(request);
       } catch (error) {
         response = failure(
           request.requestId,
