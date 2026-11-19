@@ -10,7 +10,11 @@ import { nextTerminalId } from "@onicode/shared/terminalLabels";
 import { useComposerDraftStore } from "../../composerDraftStore";
 import { useStableCallback } from "../../hooks/useStableCallback";
 import { randomUUID } from "~/lib/utils";
-import { selectThreadRightPanelState, useRightPanelStore } from "../../rightPanelStore";
+import {
+  selectThreadRightPanelState,
+  terminalIdsClaimedByPanel,
+  useRightPanelStore,
+} from "../../rightPanelStore";
 import { useProject, useQuietThreadShell } from "../../state/entities";
 import { readEnvironmentScope } from "../../state/session";
 import { terminalEnvironment } from "../../state/terminal";
@@ -60,9 +64,7 @@ export function useThreadTerminalActions(threadRef: ScopedThreadRef | null) {
     const ids = new Set([
       ...(knownSessions ?? []).map((session) => session.target.terminalId),
       ...drawerTerminalIds,
-      ...panelSurfaces.flatMap((surface) =>
-        surface.kind === "terminal" ? surface.terminalIds : [],
-      ),
+      ...terminalIdsClaimedByPanel(panelSurfaces),
       ...(threadRef ? closingTerminalIds(threadRef) : []),
     ]);
     const canReuse =

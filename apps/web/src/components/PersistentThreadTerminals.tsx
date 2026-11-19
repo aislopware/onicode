@@ -5,11 +5,12 @@ import {
   type ScopedThreadRef,
   type ThreadId,
 } from "@onicode/contracts";
-import { scopeProjectRef } from "@onicode/client-runtime/environment";
+import { parseScopedThreadKey, scopeProjectRef } from "@onicode/client-runtime/environment";
 import { projectScriptCwd, projectScriptRuntimeEnv } from "@onicode/shared/projectScripts";
 import { resolveTerminalSessionLabel } from "@onicode/shared/terminalLabelsCopy";
 import { useMessages } from "gt-react";
 import { memo, useEffect } from "react";
+import { useShallow } from "zustand/react/shallow";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { useStableCallback } from "../hooks/useStableCallback";
 import type { TerminalContextSelection } from "../lib/terminalContext";
@@ -24,6 +25,7 @@ import { useProject, useQuietThreadShell } from "../state/entities";
 import { useEnvironmentScope } from "../state/session";
 import { useKnownTerminalSessions, useTerminalDrawerSessions } from "../state/terminalSessions";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
+import { closingTerminalIds } from "./terminal/closingTerminals";
 import { useThreadTerminalActions } from "./terminal/useThreadTerminalActions";
 import ThreadTerminalDrawer from "./ThreadTerminalDrawer";
 import { resolveTerminalWorktreePath } from "./ChatView.logic";
@@ -82,9 +84,10 @@ export const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerm
     selectThreadTerminalUiState(state.terminalUiStateByThreadKey, threadRef),
   );
   const visible = active && terminalUiState.terminalOpen;
-  const metadata = useTerminalDrawerSessions(threadRef.environmentId, threadId);
-  const knownTerminalSessions = metadata?.sessions;
-  const snapshotId = metadata?.snapshotId;
+  const knownTerminalSessions = useKnownTerminalSessions({
+    environmentId: threadRef.environmentId,
+    threadId,
+  });
   const panelSurfaces = useRightPanelStore(
     (state) => selectThreadRightPanelState(state.byThreadKey, threadRef).surfaces,
   );
@@ -127,13 +130,6 @@ export const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerm
   const storeNewTerminal = useTerminalUiStateStore((state) => state.newTerminal);
   const storeSetActiveTerminal = useTerminalUiStateStore((state) => state.setActiveTerminal);
   const storeCloseTerminal = useTerminalUiStateStore((state) => state.closeTerminal);
-  const reconcileTerminalIds = useTerminalUiStateStore((state) => state.reconcileTerminalIds);
-
-  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- feeds the server's terminal list into the terminal UI store, which owns how local ids follow it
-  useEffect(() => {
-    if (snapshotId === undefined) return;
-    reconcileTerminalIds(threadRef, serverOrderedTerminalIds, snapshotId);
-  }, [reconcileTerminalIds, serverOrderedTerminalIds, snapshotId, threadRef]);
   const worktreePath = serverThread?.worktreePath ?? draftThread?.worktreePath ?? null;
   const effectiveWorktreePath = launchContext !== null ? launchContext.worktreePath : worktreePath;
   const cwd =
@@ -242,6 +238,40 @@ export const PersistentThreadTerminalDrawer = memo(function PersistentThreadTerm
     </div>
   );
 });
+
+/** Feeds the server's terminal list into the drawer and right panel tabs of one thread. */
+export function ThreadTerminalReconciler({ threadKey }: { readonly threadKey: string }) {
+  const threadRef = parseScopedThreadKey(threadKey);
+  if (!threadRef) return null;
+  return <ThreadTerminalReconcile threadRef={threadRef} />;
+}
+
+function ThreadTerminalReconcile({ threadRef }: { readonly threadRef: ScopedThreadRef }) {
+  const metadata = useTerminalDrawerSessions(threadRef.environmentId, threadRef.threadId);
+  const panelTerminalIds = useRightPanelStore(
+    useShallow((state) =>
+      selectThreadRightPanelState(state.byThreadKey, threadRef).surfaces.flatMap((surface) =>
+        surface.kind === "terminal" ? surface.terminalIds : [],
+      ),
+    ),
+  );
+  const reconcileTerminalIds = useTerminalUiStateStore((state) => state.reconcileTerminalIds);
+  const dropPanelTerminals = useRightPanelStore((state) => state.dropTerminals);
+
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- feeds the server's terminal list into the terminal UI stores, which own how local ids follow it
+  useEffect(() => {
+    if (!metadata) return;
+    const closedIds = reconcileTerminalIds(
+      threadRef,
+      metadata.sessions.map((session) => session.target.terminalId),
+      metadata.snapshotId,
+      { panelTerminalIds, closingTerminalIds: closingTerminalIds(threadRef) },
+    );
+    const closedPanelIds = closedIds.filter((id) => panelTerminalIds.includes(id));
+    if (closedPanelIds.length > 0) dropPanelTerminals(threadRef, closedPanelIds);
+  }, [dropPanelTerminals, metadata, panelTerminalIds, reconcileTerminalIds, threadRef]);
+  return null;
+}
 
 export interface PersistentThreadTerminalPanelProps {
   visible: boolean;

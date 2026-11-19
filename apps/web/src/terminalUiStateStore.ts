@@ -453,11 +453,12 @@ function reconcileThreadTerminalSessionIds(
   state: ThreadTerminalUiState,
   serverIds: string[],
   previousServerIds: readonly string[],
+  panelTerminalIds: ReadonlySet<string>,
 ): ThreadTerminalUiState {
   const normalized = normalizeThreadTerminalUiState(state);
   const serverIdSet = new Set(serverIds);
   const localIdSet = new Set(normalized.terminalIds);
-  const added = serverIds.filter((id) => !localIdSet.has(id));
+  const added = serverIds.filter((id) => !localIdSet.has(id) && !panelTerminalIds.has(id));
   let next =
     added.length === 0
       ? normalized
@@ -584,11 +585,17 @@ interface TerminalUiStateStoreState {
   ) => void;
   setActiveTerminal: (threadRef: ScopedThreadRef, terminalId: string) => void;
   closeTerminal: (threadRef: ScopedThreadRef, terminalId: string) => void;
+  /** Returns the ids the server has confirmed closed, so the right panel can drop them too. */
   reconcileTerminalIds: (
     threadRef: ScopedThreadRef,
     serverIds: string[],
     snapshotId?: string | symbol,
-  ) => void;
+    local?: {
+      readonly panelTerminalIds?: readonly string[];
+      /** Ids whose close command is still pending; they stay hidden even if not yet listed. */
+      readonly closingTerminalIds?: readonly string[];
+    },
+  ) => string[];
   clearTerminalUiState: (threadRef: ScopedThreadRef) => void;
   removeTerminalUiState: (threadRef: ScopedThreadRef) => void;
   removeOrphanedTerminalUiStates: (activeThreadKeys: Set<string>) => void;
@@ -721,12 +728,28 @@ export const useTerminalUiStateStore = create<TerminalUiStateStoreState>()(
             terminalId,
             suppressed: true,
           }),
-        reconcileTerminalIds: (threadRef, serverIds, snapshotId) => {
-          if (threadRef.threadId.length === 0) return;
+        reconcileTerminalIds: (threadRef, serverIds, snapshotId, local) => {
+          if (threadRef.threadId.length === 0) return [];
           const threadKey = terminalThreadKey(threadRef);
           const state = get();
           const previous = state.serverObservationsByThreadKey[threadKey];
-          const suppressedIds = new Set(state.suppressedTerminalIdsByThreadKey[threadKey]);
+          const suppressed = state.suppressedTerminalIdsByThreadKey[threadKey] ?? [];
+          const suppressedIds = new Set(suppressed);
+          const panelIds = new Set(local?.panelTerminalIds);
+          const serverIdSet = new Set(serverIds);
+          const localIds = new Set([
+            ...selectThreadTerminalUiState(state.terminalUiStateByThreadKey, threadRef).terminalIds,
+            ...panelIds,
+          ]);
+          // A different manager can start empty before old sessions reattach. A server without
+          // manager ids looks new on every reconnect; one reporting a terminal this client lacks
+          // has kept running, so its missing terminals closed.
+          const sameManager =
+            previous?.snapshotId === snapshotId ||
+            (typeof snapshotId === "symbol" &&
+              serverIds.some((id) => !localIds.has(id) && !suppressedIds.has(id)));
+          const previousServerIds = sameManager ? (previous?.ids ?? []) : [];
+          const closedIds = previousServerIds.filter((id) => !serverIdSet.has(id));
           const terminalUiStateByThreadKey = updateTerminalUiStateByThreadKey(
             state.terminalUiStateByThreadKey,
             threadRef,
@@ -734,10 +757,22 @@ export const useTerminalUiStateStore = create<TerminalUiStateStoreState>()(
               reconcileThreadTerminalSessionIds(
                 terminalState,
                 serverIds.filter((id) => !suppressedIds.has(id)),
-                // A different manager can start empty before old sessions reattach.
-                previous?.snapshotId === snapshotId ? (previous?.ids ?? []) : [],
+                previousServerIds,
+                panelIds,
               ),
           );
+          // A close this client made stops hiding the id once the server no longer reports it.
+          // A pending close the server has not listed yet may still be preceded by its open.
+          const closingIds = new Set(local?.closingTerminalIds);
+          const remainingSuppressed = suppressed.filter(
+            (id) => serverIdSet.has(id) || (closingIds.has(id) && !previousServerIds.includes(id)),
+          );
+          const suppressedTerminalIdsByThreadKey =
+            remainingSuppressed.length === suppressed.length
+              ? state.suppressedTerminalIdsByThreadKey
+              : remainingSuppressed.length === 0
+                ? removeRecordEntry(state.suppressedTerminalIdsByThreadKey, threadKey)
+                : { ...state.suppressedTerminalIdsByThreadKey, [threadKey]: remainingSuppressed };
           // Metadata is ordered by activity, which does not change which terminals were seen.
           const observedIds = [...serverIds].sort();
           let serverObservationsByThreadKey = state.serverObservationsByThreadKey;
@@ -758,10 +793,16 @@ export const useTerminalUiStateStore = create<TerminalUiStateStoreState>()(
           }
           if (
             terminalUiStateByThreadKey !== state.terminalUiStateByThreadKey ||
-            serverObservationsByThreadKey !== state.serverObservationsByThreadKey
+            serverObservationsByThreadKey !== state.serverObservationsByThreadKey ||
+            suppressedTerminalIdsByThreadKey !== state.suppressedTerminalIdsByThreadKey
           ) {
-            set({ terminalUiStateByThreadKey, serverObservationsByThreadKey });
+            set({
+              terminalUiStateByThreadKey,
+              serverObservationsByThreadKey,
+              suppressedTerminalIdsByThreadKey,
+            });
           }
+          return closedIds;
         },
         clearTerminalUiState: removeTerminalUiState,
         removeTerminalUiState,

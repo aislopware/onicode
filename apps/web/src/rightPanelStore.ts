@@ -201,6 +201,8 @@ interface RightPanelStoreState {
   ) => void;
   activateTerminal: (ref: ScopedThreadRef, surfaceId: string, terminalId: string) => void;
   closeTerminal: (ref: ScopedThreadRef, surfaceId: string, terminalId: string) => void;
+  /** Server-confirmed closes, so not a user action. */
+  dropTerminals: (ref: ScopedThreadRef, terminalIds: readonly string[]) => void;
   activateSurface: (ref: ScopedThreadRef, surfaceId: string) => void;
   /** Agent-driven activation. Not a user action, so it does not move keyboard focus. */
   revealSurface: (ref: ScopedThreadRef, surfaceId: string) => void;
@@ -531,6 +533,55 @@ const userActionOnThread = (
       }
     : {}),
 });
+
+function withoutTerminal(
+  current: ThreadRightPanelState,
+  surfaceId: string,
+  terminalId: string,
+): ThreadRightPanelState {
+  const surface = current.surfaces.find(
+    (entry) => entry.id === surfaceId && entry.kind === "terminal",
+  );
+  if (!surface || surface.kind !== "terminal") return current;
+  const terminalIds = surface.terminalIds.filter((id) => id !== terminalId);
+  if (terminalIds.length === 0) {
+    const index = current.surfaces.findIndex((entry) => entry.id === surfaceId);
+    const surfaces = current.surfaces.filter((entry) => entry.id !== surfaceId);
+    const fallback = surfaces[Math.min(index, surfaces.length - 1)] ?? null;
+    return {
+      ...current,
+      isOpen: surfaces.length > 0 && current.isOpen,
+      surfaces,
+      activeSurfaceId:
+        current.activeSurfaceId === surfaceId ? (fallback?.id ?? null) : current.activeSurfaceId,
+    };
+  }
+  return {
+    ...current,
+    surfaces: current.surfaces.map((entry) =>
+      entry.id === surfaceId && entry.kind === "terminal"
+        ? {
+            ...entry,
+            terminalIds,
+            activeTerminalId:
+              entry.activeTerminalId === terminalId
+                ? (terminalIds.at(-1) ?? terminalIds[0]!)
+                : entry.activeTerminalId,
+          }
+        : entry,
+    ),
+  };
+}
+
+/**
+ * Ids a new terminal must not take: the panel's panes and the ids its tabs are named after,
+ * which outlive a split's closed first pane.
+ */
+export function terminalIdsClaimedByPanel(surfaces: readonly RightPanelSurface[]): string[] {
+  return surfaces.flatMap((surface) =>
+    surface.kind === "terminal" ? [surface.resourceId, ...surface.terminalIds] : [],
+  );
+}
 
 const activated = (current: ThreadRightPanelState, surfaceId: string): ThreadRightPanelState =>
   current.surfaces.some((surface) => surface.id === surfaceId)
@@ -1028,41 +1079,22 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
         ),
       closeTerminal: (ref, surfaceId, terminalId) =>
         set((state) =>
-          closeAction(state, scopedThreadKey(ref), (current) => {
-            const surface = current.surfaces.find(
-              (entry) => entry.id === surfaceId && entry.kind === "terminal",
-            );
-            if (!surface || surface.kind !== "terminal") return current;
-            const terminalIds = surface.terminalIds.filter((id) => id !== terminalId);
-            if (terminalIds.length === 0) {
-              const index = current.surfaces.findIndex((entry) => entry.id === surfaceId);
-              const surfaces = current.surfaces.filter((entry) => entry.id !== surfaceId);
-              const fallback = surfaces[Math.min(index, surfaces.length - 1)] ?? null;
-              return {
-                ...current,
-                isOpen: surfaces.length > 0 && current.isOpen,
-                surfaces,
-                activeSurfaceId:
-                  current.activeSurfaceId === surfaceId
-                    ? (fallback?.id ?? null)
-                    : current.activeSurfaceId,
-              };
+          closeAction(state, scopedThreadKey(ref), (current) =>
+            withoutTerminal(current, surfaceId, terminalId),
+          ),
+        ),
+      dropTerminals: (ref, terminalIds) =>
+        set((state) =>
+          automaticUpdate(state, scopedThreadKey(ref), (current) => {
+            let next = current;
+            for (const surface of current.surfaces) {
+              if (surface.kind !== "terminal") continue;
+              for (const terminalId of surface.terminalIds) {
+                if (terminalIds.includes(terminalId))
+                  next = withoutTerminal(next, surface.id, terminalId);
+              }
             }
-            return {
-              ...current,
-              surfaces: current.surfaces.map((entry) =>
-                entry.id === surfaceId && entry.kind === "terminal"
-                  ? {
-                      ...entry,
-                      terminalIds,
-                      activeTerminalId:
-                        entry.activeTerminalId === terminalId
-                          ? (terminalIds.at(-1) ?? terminalIds[0]!)
-                          : entry.activeTerminalId,
-                    }
-                  : entry,
-              ),
-            };
+            return next;
           }),
         ),
       activateSurface: (ref, surfaceId) =>

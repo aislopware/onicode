@@ -189,6 +189,97 @@ describe("terminalUiStateStore actions", () => {
     ).toEqual(["term-2", "term-1"]);
   });
 
+  it("shows a terminal another client opens under an id this client closed", () => {
+    const store = useTerminalUiStateStore.getState();
+    store.setTerminalOpen(THREAD_REF, true);
+    store.newTerminal(THREAD_REF, "term-2");
+    store.reconcileTerminalIds(THREAD_REF, [DEFAULT_THREAD_TERMINAL_ID, "term-2"], "manager-1");
+    store.closeTerminal(THREAD_REF, "term-2");
+    store.reconcileTerminalIds(THREAD_REF, [DEFAULT_THREAD_TERMINAL_ID, "term-2"], "manager-1");
+    expect(layout().terminalIds).toEqual([DEFAULT_THREAD_TERMINAL_ID]);
+
+    // The server reports the close before the close command returns.
+    store.reconcileTerminalIds(THREAD_REF, [DEFAULT_THREAD_TERMINAL_ID], "manager-1", {
+      closingTerminalIds: ["term-2"],
+    });
+    store.reconcileTerminalIds(THREAD_REF, [DEFAULT_THREAD_TERMINAL_ID, "term-2"], "manager-1");
+
+    expect(layout().terminalIds).toEqual([DEFAULT_THREAD_TERMINAL_ID, "term-2"]);
+  });
+
+  it("keeps hiding a terminal closed before the server listed it until the close lands", () => {
+    const store = useTerminalUiStateStore.getState();
+    store.setTerminalOpen(THREAD_REF, true);
+    store.newTerminal(THREAD_REF, "term-2");
+    store.closeTerminal(THREAD_REF, "term-2");
+    const closing = { closingTerminalIds: ["term-2"] };
+
+    store.reconcileTerminalIds(THREAD_REF, [DEFAULT_THREAD_TERMINAL_ID], "manager-1", closing);
+    store.reconcileTerminalIds(
+      THREAD_REF,
+      [DEFAULT_THREAD_TERMINAL_ID, "term-2"],
+      "manager-1",
+      closing,
+    );
+
+    expect(layout().terminalIds).toEqual([DEFAULT_THREAD_TERMINAL_ID]);
+  });
+
+  it("keeps hiding a closing terminal that a restarted server reattaches", () => {
+    const store = useTerminalUiStateStore.getState();
+    store.setTerminalOpen(THREAD_REF, true);
+    store.newTerminal(THREAD_REF, "term-2");
+    store.reconcileTerminalIds(THREAD_REF, [DEFAULT_THREAD_TERMINAL_ID, "term-2"], "manager-1");
+    store.closeTerminal(THREAD_REF, "term-2");
+    const closing = { closingTerminalIds: ["term-2"] };
+
+    store.reconcileTerminalIds(THREAD_REF, [], "manager-2", closing);
+    store.reconcileTerminalIds(
+      THREAD_REF,
+      [DEFAULT_THREAD_TERMINAL_ID, "term-2"],
+      "manager-2",
+      closing,
+    );
+
+    expect(layout().terminalIds).toEqual([DEFAULT_THREAD_TERMINAL_ID]);
+  });
+
+  it("follows a server without manager ids across reconnects but keeps tabs through its restart", () => {
+    const store = useTerminalUiStateStore.getState();
+    store.setTerminalOpen(THREAD_REF, true);
+    store.newTerminal(THREAD_REF, "term-2");
+    store.setActiveTerminal(THREAD_REF, DEFAULT_THREAD_TERMINAL_ID);
+    store.reconcileTerminalIds(THREAD_REF, [DEFAULT_THREAD_TERMINAL_ID, "term-2"], Symbol());
+
+    store.reconcileTerminalIds(THREAD_REF, [DEFAULT_THREAD_TERMINAL_ID, "term-3"], Symbol());
+    expect(layout().terminalIds).toEqual([DEFAULT_THREAD_TERMINAL_ID, "term-3"]);
+
+    store.reconcileTerminalIds(THREAD_REF, [], Symbol());
+    expect(layout().terminalIds).toEqual([DEFAULT_THREAD_TERMINAL_ID, "term-3"]);
+  });
+
+  it("leaves panel terminals to the panel and reports the ones the server closed", () => {
+    const store = useTerminalUiStateStore.getState();
+    store.setTerminalOpen(THREAD_REF, true);
+    const panel = { panelTerminalIds: ["panel"] };
+    expect(
+      store.reconcileTerminalIds(
+        THREAD_REF,
+        [DEFAULT_THREAD_TERMINAL_ID, "panel"],
+        "manager-1",
+        panel,
+      ),
+    ).toEqual([]);
+    expect(layout().terminalIds).toEqual([DEFAULT_THREAD_TERMINAL_ID]);
+
+    expect(
+      store.reconcileTerminalIds(THREAD_REF, [DEFAULT_THREAD_TERMINAL_ID], "manager-1", panel),
+    ).toEqual(["panel"]);
+    expect(
+      store.reconcileTerminalIds(THREAD_REF, [DEFAULT_THREAD_TERMINAL_ID], "manager-1", panel),
+    ).toEqual([]);
+  });
+
   it("drops terminals the server stops reporting but keeps ones it has not reported yet", () => {
     const store = useTerminalUiStateStore.getState();
     store.setTerminalOpen(THREAD_REF, true);
