@@ -45,7 +45,13 @@ import { makeRestoreMissingWorktree } from "../workspace/restoreMissingWorktree.
 import * as EventSink from "./EventSink.ts";
 import * as ContextHandoffService from "./ContextHandoffService.ts";
 import { canForkBusySourceNatively, isActiveRun } from "./CommandPolicy.ts";
-import { contextBoundaryOrdinal, isScheduledFreshRun } from "./contextBoundary.ts";
+import {
+  contextBoundaryOrdinal,
+  isScheduledFreshRun,
+  readFreshRunUserMessages,
+  scheduledFreshRunOrdinals,
+  startedFreshRun,
+} from "./contextBoundary.ts";
 import {
   DEFAULT_HANDOFF_TOKEN_CAP,
   handoffTokenCapConfig,
@@ -563,14 +569,43 @@ export const layer: Layer.Layer<
           (handoff.transferId == null || !subagentResultTransfers.has(handoff.transferId)) &&
           isPendingForRun(handoff),
       );
-      // Carried forward until a provider turn accepts them, also after a provider switch. A fresh
-      // session starts without them, and an unscheduled fresh run retires them. A schedule's fresh
-      // run is a side conversation, so the thread's next turn still gets them.
-      const carriedSideChatHandoffs = projection.contextHandoffs.filter(
+      const pendingSideChatHandoffs = projection.contextHandoffs.filter(
         (handoff) =>
           isSideChatHandoff(handoff) &&
           handoff.delivery === undefined &&
           isPendingForRun(handoff, true),
+      );
+      // Fresh runs that started after a digest's target without retiring it, as before turn starts
+      // retired digests. Their prompts are read only then, to leave scheduled ones out.
+      const unretiringFreshRuns = (handoff: OrchestrationV2ContextHandoff) => {
+        const target = projection.runs.find((candidate) => candidate.id === handoff.targetRunId);
+        return target === undefined
+          ? []
+          : projection.runs.filter(
+              (candidate) =>
+                candidate.ordinal > target.ordinal &&
+                candidate.ordinal < run.ordinal &&
+                startedFreshRun(candidate),
+            );
+      };
+      const unretiredFreshRuns = [...new Set(pendingSideChatHandoffs.flatMap(unretiringFreshRuns))];
+      const scheduledOrdinals =
+        unretiredFreshRuns.length === 0
+          ? new Set<number>()
+          : scheduledFreshRunOrdinals({
+              runs: unretiredFreshRuns,
+              turnItems: yield* readFreshRunUserMessages(
+                projectionStore,
+                projection.thread.id,
+                unretiredFreshRuns,
+                // Unread prompts count as the thread's own fresh session, which drops the digest.
+              ).pipe(Effect.orElseSucceed(() => [])),
+            });
+      // Carried forward until a provider turn accepts them, also after a provider switch. A fresh
+      // session starts without them, and an unscheduled fresh run retires them. A schedule's fresh
+      // run is a side conversation, so the thread's next turn still gets them.
+      const carriedSideChatHandoffs = pendingSideChatHandoffs.filter((handoff) =>
+        unretiringFreshRuns(handoff).every((fresh) => scheduledOrdinals.has(fresh.ordinal)),
       );
       const sideChatHandoff = run.freshContext === true ? undefined : carriedSideChatHandoffs[0];
       const nativeForkTransfer = projection.contextTransfers.find(
@@ -595,7 +630,7 @@ export const layer: Layer.Layer<
         });
       }
       if (
-        carriedSideChatHandoffs.length > 0 &&
+        pendingSideChatHandoffs.length > 0 &&
         run.freshContext === true &&
         !isScheduledFreshRun(run, projection.turnItems)
       ) {
@@ -605,7 +640,7 @@ export const layer: Layer.Layer<
           runId,
           activeAttemptId: attempt.id,
           expectedStatus: "starting",
-          events: yield* Effect.forEach(carriedSideChatHandoffs, (handoff) =>
+          events: yield* Effect.forEach(pendingSideChatHandoffs, (handoff) =>
             Effect.map(idAllocator.allocate.event({ threadId: projection.thread.id }), (id) => ({
               id,
               type: "context-handoff.updated" as const,

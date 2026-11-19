@@ -11,7 +11,7 @@ import * as Effect from "effect/Effect";
 import { cancelledBeforeStart, neverStarted } from "./RestartBackgroundNote.ts";
 
 /** A fresh run that never reached a provider discarded nothing, also once a rollback rewound it. */
-function startedFreshRun(run: OrchestrationV2Run): boolean {
+export function startedFreshRun(run: OrchestrationV2Run): boolean {
   return (
     run.freshContext === true &&
     run.status !== "queued" &&
