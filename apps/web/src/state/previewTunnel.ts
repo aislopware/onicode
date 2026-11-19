@@ -21,8 +21,7 @@ const previewTunnelAccessAtom = Atom.family((environmentId: EnvironmentId) =>
       const prepared = Option.getOrNull(
         get(environmentSession.preparedConnectionValueAtom(environmentId)),
       );
-      // Desktop main cannot send this window's cookies, so only ticketed connections tunnel.
-      if (prepared === null || prepared.httpAuthorization === null) return Effect.succeed(null);
+      if (prepared === null) return Effect.succeed(null);
       return mintMediaTicket(prepared).pipe(
         Effect.map((ticket) => {
           const url = new URL(
