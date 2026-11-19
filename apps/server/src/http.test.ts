@@ -21,7 +21,7 @@ import {
   MCP_APP_MAX_HTML_BYTES,
 } from "@onicode/shared/mcpApp";
 import { ORCHESTRATION_PROTOCOL_HEADER } from "@onicode/contracts";
-import { FILE_PREVIEW_SCROLL_SCRIPT } from "@onicode/shared/htmlRender";
+import { FILE_PREVIEW_SCROLL_SCRIPT, injectHtmlRenderBootstrap } from "@onicode/shared/htmlRender";
 
 import * as ServerConfig from "./config.ts";
 
@@ -121,6 +121,54 @@ describe("workspace page preview responses", () => {
       expect(yield* read({ path: page, renderIntent: "file-preview", download: true })).toBe(html);
       expect(yield* read({ path: page })).toBe(html);
       expect(yield* read({ path: style, renderIntent: "file-preview" })).toBe("body{}");
+    }).pipe(Effect.provide(layerFileResponse)),
+  );
+});
+
+describe("HTML render responses", () => {
+  it.effect("serve a render published with an older bootstrap with the current one", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const directory = yield* fs.makeTempDirectoryScoped({ prefix: "oni-html-render-" });
+      const file = path.join(directory, "render.html");
+      const read = (
+        asset: Parameters<typeof assetFileResponse>[0],
+        range?: string,
+        method: "GET" | "HEAD" = "GET",
+      ) =>
+        assetFileResponse(asset, range, undefined, method).pipe(
+          Effect.map(HttpServerResponse.toWeb),
+          Effect.flatMap((response) =>
+            Effect.promise(async () => ({ response, body: await response.text() })),
+          ),
+        );
+      const render = { path: file, mimeType: "text/html", renderIntent: "html-render" } as const;
+      // The longer page outgrows the scanned head, so its tail streams from the file.
+      for (const content of ["☃", "☃".repeat(600_000)]) {
+        const current = injectHtmlRenderBootstrap(
+          `<!-- ☃ --><html><head><title>Ünïcode</title></head><body>${content}</body></html>`,
+        );
+        for (const id of ["oni-theme", "t3-theme"]) {
+          const stored = current.replace(
+            /<style id="oni-theme">[\s\S]*?<\/script>/,
+            `<style id="${id}">:root{}</style><script>(function(){var s=document.getElementById("${id}"),n=0;})();</script>`,
+          );
+          expect(stored).not.toBe(current);
+          yield* fs.writeFileString(file, stored);
+          for (const method of ["GET", "HEAD"] as const) {
+            const { response, body } = yield* read(render, undefined, method);
+            expect(body).toBe(method === "HEAD" ? "" : current);
+            expect(response.headers.get("content-length")).toBe(
+              String(new TextEncoder().encode(current).byteLength),
+            );
+          }
+          expect((yield* read(render, "bytes=0-1")).response.status).toBe(200);
+          expect((yield* read({ path: file, mimeType: "text/html" })).body).toBe(stored);
+        }
+        yield* fs.writeFileString(file, current);
+        expect((yield* read(render, "bytes=0-1")).response.status).toBe(206);
+      }
     }).pipe(Effect.provide(layerFileResponse)),
   );
 });

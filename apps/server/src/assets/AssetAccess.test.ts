@@ -1331,7 +1331,7 @@ describe("AssetAccess", () => {
     }).pipe(Effect.provide(layerTest)),
   );
 
-  it.effect("signs MCP render intent only for inline HTML attachments", () =>
+  it.effect("resolves render intents only for inline HTML attachments", () =>
     Effect.gen(function* () {
       const config = yield* ServerConfig.ServerConfig;
       const fs = yield* FileSystem.FileSystem;
@@ -1343,13 +1343,18 @@ describe("AssetAccess", () => {
           path.join(config.attachmentsDir, `${attachmentId}.${extension}`),
           "capture",
         );
-        for (const disposition of ["inline", "attachment"] as const) {
+        for (const [disposition, renderIntent] of [
+          ["inline", "mcp-app"],
+          ["attachment", "mcp-app"],
+          ["inline", undefined],
+          ["attachment", undefined],
+        ] as const) {
           const result = yield* issueAssetUrl({
             resource: {
               _tag: "attachment",
               attachmentId,
               disposition,
-              renderIntent: "mcp-app",
+              ...(renderIntent ? { renderIntent } : {}),
             },
           });
           const suffix = result.relativeUrl.slice(`${ASSET_ROUTE_PREFIX}/`.length);
@@ -1360,7 +1365,9 @@ describe("AssetAccess", () => {
           );
           if (asset?.kind !== "file") throw new Error("Expected attachment file");
           expect("renderIntent" in asset ? asset.renderIntent : undefined).toBe(
-            extension === "html" && disposition === "inline" ? "mcp-app" : undefined,
+            extension === "html" && disposition === "inline"
+              ? (renderIntent ?? "html-render")
+              : undefined,
           );
           const token = suffix.slice(0, separator);
           const [payload, signature] = token.split(".");
