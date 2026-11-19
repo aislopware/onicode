@@ -202,6 +202,10 @@ const NOT_WAL = "ERR_SQLITE_NOT_WAL";
 const ENDS_TRANSACTION = /^\s*(?:COMMIT|END|ROLLBACK)(?:\s+TRANSACTION)?\s*;?\s*$/i;
 const BEGINS_TRANSACTION = /^\s*BEGIN\b/i;
 const ROLLED_BACK = "The transaction was rolled back by an earlier error: ";
+// A ROLLBACK or ROLLBACK TO that fails leaves writes its caller meant to undo, so the transaction
+// must not commit; its statements fail until a ROLLBACK ends it.
+const ROLLBACK_FAILED = "The transaction cannot commit after a rollback failed: ";
+const ROLLS_BACK = /^\s*ROLLBACK\b/i;
 // SQLITE_ABORT_ROLLBACK, so no caller mistakes a refused statement for the original failure.
 const ROLLED_BACK_CODES = {
   code: "ERR_SQLITE_ERROR",
@@ -249,10 +253,11 @@ try {
 const statements = new Map();
 const endsTransaction = new RegExp(${JSON.stringify(ENDS_TRANSACTION.source)}, "i");
 const beginsTransaction = new RegExp(${JSON.stringify(BEGINS_TRANSACTION.source)}, "i");
+const rollsBack = new RegExp(${JSON.stringify(ROLLS_BACK.source)}, "i");
 // Keeps the original error as the cause, so its code, such as SQLITE_FULL, still reaches the user.
-const rolledBack = (error) => {
+const rolledBack = (error, message = ${JSON.stringify(ROLLED_BACK)}) => {
   const cause = describe(error);
-  return Object.assign(new Error(${JSON.stringify(ROLLED_BACK)} + cause.message), ${JSON.stringify(ROLLED_BACK_CODES)}, { cause });
+  return Object.assign(new Error(message + cause.message), ${JSON.stringify(ROLLED_BACK_CODES)}, { cause });
 };
 // SQLite can roll back a whole transaction on an error, as SQLITE_FULL may. Later statements fail
 // until the caller ends it, so none, a queued savepoint included, runs outside it.
@@ -327,8 +332,13 @@ parentPort.on("message", (request) => {
       }
       // A savepoint whose FTS5 flush fails, as on SQLITE_FULL, can roll back the transaction too.
       if (wasOpen && !db.isTransaction) lost = rolledBack(error ?? scopes.at(-1)?.error);
+      else if (error !== undefined && db.isTransaction && rollsBack.test(savepoint)) {
+        lost = rolledBack(error, ${JSON.stringify(ROLLBACK_FAILED)});
+      }
     }
-    if (lost !== undefined && !beginsTransaction.test(sql)) {
+    if (lost !== undefined && db.isTransaction) {
+      if (!rollsBack.test(sql) || !endsTransaction.test(sql)) throw lost;
+    } else if (lost !== undefined && !beginsTransaction.test(sql)) {
       const error = lost;
       if (!endsTransaction.test(sql)) throw error;
       lost = undefined;
@@ -388,14 +398,16 @@ parentPort.on("message", (request) => {
       reply({ id, rows: raw ? result : [] });
     }
   } catch (error) {
-    if (open && !db.isTransaction && !endsTransaction.test(sql)) lost = rolledBack(error);
+    const transaction = db !== undefined && db.isTransaction;
+    if (transaction && rollsBack.test(sql)) lost ??= rolledBack(error, ${JSON.stringify(ROLLBACK_FAILED)});
+    else if (open && !transaction && !endsTransaction.test(sql)) lost = rolledBack(error);
     // A step that throws leaves its statement active; an active write blocks every later COMMIT.
     try {
       iterator?.return();
     } catch {}
     // A failed iterator can report its previous SQLite error when the statement is reused.
     statements.delete(sql);
-    reply({ id, error: { operation, ...describe(error) } });
+    reply({ id, error: { operation, ...describe(error), transaction } });
   } finally {
     if (db !== undefined && !db.isTransaction) scopes.length = 0;
   }
@@ -412,6 +424,8 @@ interface WorkerRequest {
 
 interface WorkerFailure {
   readonly message: string;
+  /** Whether the worker's connection is still in a transaction after the failure. */
+  readonly transaction?: boolean;
   readonly code?: unknown;
   readonly errcode?: unknown;
   readonly errstr?: unknown;
@@ -447,6 +461,16 @@ const failedWith = (
     workerFailureMessages[operation],
     operation,
   );
+
+const isRollback = (sql: string) => ROLLS_BACK.test(sql) && ENDS_TRANSACTION.test(sql);
+// Connections a failed ROLLBACK left in a transaction; their next user retries it first, or any
+// write would join a transaction that never ends.
+const rollbackPending = new WeakSet<Connection>();
+const settleRollback = (connection: Connection, sql: string, transaction: boolean) => {
+  if (!isRollback(sql)) return;
+  if (transaction) rollbackPending.add(connection);
+  else rollbackPending.delete(connection);
+};
 
 // Read-transaction cleanup succeeds after worker exit because it can no longer change anything.
 const endsReadTransaction = (sql: string) => /^\s*ROLLBACK\b|^\s*COMMIT\b/i.test(sql);
@@ -625,12 +649,14 @@ const makeWorkerConnection = Effect.fnUntraced(function* (options: {
             endsTransaction,
             received,
             rows: [],
-            resume: (reply) =>
+            resume: (reply) => {
+              settleRollback(connection, input.sql, "error" in reply && !!reply.error.transaction);
               resume(
                 "rows" in reply
                   ? Effect.succeed(reply.rows)
                   : Effect.fail(failedWith(reply.error, reply.error.operation)),
-              ),
+              );
+            },
           });
           if (pending.size === 1) worker.ref();
           if (Atomics.wait(replied, 0, seen, replyWaitMs) === "timed-out") return;
@@ -1060,9 +1086,14 @@ const make = Effect.fn("makeWithDatabase")(function* (
     // As the writer worker does: after SQLite rolls back a whole transaction on a statement's
     // error, later statements fail until the caller ends it, so none runs outside it.
     let lost: SqlError | undefined;
-    const guarded = (sql: string, effect: Effect.Effect<ReadonlyArray<any>, SqlError>) =>
+    const guarded = (
+      sql: string,
+      effect: Effect.Effect<ReadonlyArray<any>, SqlError>,
+    ): Effect.Effect<ReadonlyArray<any>, SqlError> =>
       Effect.suspend(() => {
-        if (lost !== undefined && !BEGINS_TRANSACTION.test(sql)) {
+        if (lost !== undefined && db.isTransaction) {
+          if (!isRollback(sql)) return Effect.fail(lost);
+        } else if (lost !== undefined && !BEGINS_TRANSACTION.test(sql)) {
           const error = lost;
           if (!ENDS_TRANSACTION.test(sql)) return Effect.fail(error);
           lost = undefined;
@@ -1072,18 +1103,27 @@ const make = Effect.fn("makeWithDatabase")(function* (
         const open = db.isTransaction;
         return Effect.tapError(effect, (error) =>
           Effect.sync(() => {
-            if (!open || db.isTransaction || ENDS_TRANSACTION.test(sql)) return;
+            const rollbackFailed = db.isTransaction && ROLLS_BACK.test(sql);
+            if (!rollbackFailed && (!open || db.isTransaction || ENDS_TRANSACTION.test(sql))) {
+              return;
+            }
             const cause = error.reason.cause;
             const message = cause instanceof Error ? cause.message : error.message;
             lost = failedWith(
-              { message: ROLLED_BACK + message, ...ROLLED_BACK_CODES, cause },
+              {
+                message: (rollbackFailed ? ROLLBACK_FAILED : ROLLED_BACK) + message,
+                ...ROLLED_BACK_CODES,
+                cause,
+              },
               "execute",
             );
           }),
         );
-      });
+      }).pipe(
+        Effect.ensuring(Effect.sync(() => settleRollback(connection, sql, db.isTransaction))),
+      );
 
-    return identity<Connection>({
+    const connection: Connection = identity<Connection>({
       execute(sql, params, rowTransform) {
         const effect = guarded(sql, run(sql, params));
         return rowTransform ? Effect.map(effect, rowTransform) : effect;
@@ -1113,6 +1153,7 @@ const make = Effect.fn("makeWithDatabase")(function* (
         return Stream.die(new UnsupportedNodeSqliteOperationError());
       },
     });
+    return connection;
   });
 
   const semaphore = yield* Semaphore.make(1);
@@ -1214,6 +1255,12 @@ const make = Effect.fn("makeWithDatabase")(function* (
       );
     });
 
+  // Runs under the connection's lock, before its next user's first statement.
+  const finishRollback = (connection: Connection) =>
+    rollbackPending.has(connection)
+      ? Effect.asVoid(connection.executeUnprepared("ROLLBACK", [], undefined))
+      : Effect.void;
+
   const acquired = (
     target: { readonly name: Acquired["connection"] },
     clock: Clock.Clock,
@@ -1242,7 +1289,7 @@ const make = Effect.fn("makeWithDatabase")(function* (
     target: Target,
     use: (connection: Connection) => Effect.Effect<A, E, R>,
     start: bigint,
-  ): Effect.Effect<A, E, R> =>
+  ): Effect.Effect<A, E | SqlError, R> =>
     Effect.withFiber((fiber) => {
       const clock = fiber.getRef(Clock.Clock);
       const ownerAtWaitStart = target.name === "writer" ? activeWriter : undefined;
@@ -1255,7 +1302,7 @@ const make = Effect.fn("makeWithDatabase")(function* (
         ) {
           annotateAcquired(fiber, acquired(target, clock, start), ownerAtWaitStart);
         }
-        return use(target.connection);
+        return Effect.andThen(finishRollback(target.connection), () => use(target.connection));
       });
       const useOwnedConnection =
         target.name === "writer"
@@ -1295,10 +1342,10 @@ const make = Effect.fn("makeWithDatabase")(function* (
             }).pipe(Effect.andThen(target.lock.release(1))),
           );
         });
-        return Effect.as(
-          // A scheduler yield after taking the permit must not precede its release finalizer.
-          Effect.provideService(acquire, Scheduler.PreventSchedulerYield, true),
-          target.connection,
+        // A scheduler yield after taking the permit must not precede its release finalizer.
+        return Effect.provideService(acquire, Scheduler.PreventSchedulerYield, true).pipe(
+          Effect.andThen(finishRollback(target.connection)),
+          Effect.as(target.connection),
         );
       });
     }),

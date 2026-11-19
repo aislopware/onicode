@@ -32,11 +32,54 @@ const failingWorkers = vi.hoisted(() => ({ message: undefined as string | undefi
 const checkpointWorkers = vi.hoisted((): Array<NodeWorkerThreads.Worker> => []);
 const replyBatches = vi.hoisted((): Array<ReadonlyArray<unknown>> => []);
 const workerReplied = vi.hoisted(() => new WeakMap<NodeWorkerThreads.Worker, Int32Array>());
+// Fails the writer's next `count` ROLLBACK statements, ROLLBACK TO included, as an I/O error would.
+const failingRollbacks = vi.hoisted(() => ({
+  count: new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT)),
+  // The writer worker runs it from its source, so it uses only its arguments.
+  fail: (count: Int32Array, sql: string) => {
+    if (/^\s*ROLLBACK\b/i.test(sql) && Atomics.load(count, 0) > 0) {
+      Atomics.sub(count, 0, 1);
+      throw Object.assign(new Error("disk I/O error"), {
+        code: "ERR_SQLITE_ERROR",
+        errcode: 10,
+        errstr: "disk I/O error",
+      });
+    }
+  },
+}));
+
+vi.mock("node:sqlite", async (importOriginal) => {
+  const actual = await importOriginal<typeof NodeSqlite>();
+  class DatabaseSync extends actual.DatabaseSync {
+    override prepare(...args: Parameters<NodeSqlite.DatabaseSync["prepare"]>) {
+      failingRollbacks.fail(failingRollbacks.count, args[0]);
+      return super.prepare(...args);
+    }
+  }
+  return { ...actual, DatabaseSync };
+});
 
 vi.mock("node:worker_threads", async (importOriginal) => {
   const actual = await importOriginal<typeof NodeWorkerThreads>();
   class RecordedWorker extends actual.Worker {
     constructor(...args: ConstructorParameters<typeof actual.Worker>) {
+      const workerData = args[1]?.workerData;
+      if (workerData?.replied !== undefined && workerData.requireWal === false) {
+        workerData.failingRollbacks = failingRollbacks.count;
+        args[0] = `{
+          const { failingRollbacks } = require("node:worker_threads").workerData;
+          const { DatabaseSync } = require("node:sqlite");
+          const fail = ${String(failingRollbacks.fail)};
+          for (const method of ["prepare", "exec"]) {
+            const original = DatabaseSync.prototype[method];
+            DatabaseSync.prototype[method] = function (sql, ...rest) {
+              fail(failingRollbacks, sql);
+              return original.call(this, sql, ...rest);
+            };
+          }
+        }
+        ${String(args[0])}`;
+      }
       super(
         ...((silentWorkers.on
           ? ["setInterval(() => {}, 1 << 30);", { eval: true }]
@@ -358,24 +401,22 @@ it.effect.each([false, true])(
         yield* Effect.exit(sql`ROLLBACK TO SAVEPOINT effect_sql_9`.unprepared);
         yield* sql`ROLLBACK`.unprepared;
         assert.equal(value(), 1);
-        // A caller's release reports it like any other statement.
+        // A rollback that fails, here to a savepoint that does not exist, leaves the writes it was
+        // to undo, so the statements after it fail until a ROLLBACK. The worker reports it with the next one.
         yield* sql`BEGIN`.unprepared;
         yield* sql`SAVEPOINT effect_sql_1`.unprepared;
         yield* sql`UPDATE counters SET value = 2 WHERE id = 1`;
-        const missing = yield* Effect.exit(sql`ROLLBACK TO SAVEPOINT effect_sql_9`.unprepared);
-        const released = yield* Effect.exit(sql`RELEASE SAVEPOINT effect_sql_1`.unprepared);
-        assert.notEqual(Exit.isFailure(missing), Exit.isFailure(released));
+        yield* Effect.exit(sql`ROLLBACK TO SAVEPOINT effect_sql_9`.unprepared);
+        for (const statement of [
+          "RELEASE SAVEPOINT effect_sql_1",
+          "ROLLBACK TO SAVEPOINT effect_sql_1",
+          "UPDATE counters SET value = 7 WHERE id = 1",
+          "COMMIT",
+        ]) {
+          const refused = yield* Effect.flip(sql.unsafe(statement));
+          assert.match(String(refused.reason.cause), /cannot commit after a rollback failed/);
+        }
         yield* sql`ROLLBACK`.unprepared;
-        assert.equal(value(), 1);
-        // Nor the savepoint statements after it from running. The worker reports it with the next one.
-        yield* sql`BEGIN`.unprepared;
-        const unknown = yield* Effect.exit(sql`ROLLBACK TO SAVEPOINT effect_sql_9`.unprepared);
-        yield* sql`SAVEPOINT effect_sql_1`.unprepared;
-        const next = yield* Effect.exit(sql`UPDATE counters SET value = 7 WHERE id = 1`);
-        assert.notEqual(Exit.isFailure(unknown), Exit.isFailure(next));
-        yield* sql`UPDATE counters SET value = 7 WHERE id = 1`;
-        yield* sql`ROLLBACK TO SAVEPOINT effect_sql_1`.unprepared;
-        yield* sql`COMMIT`.unprepared;
         assert.equal(value(), 1);
         // A savepoint the worker never saw queued still rolls back.
         yield* sql`BEGIN`.unprepared;
@@ -406,6 +447,20 @@ it.effect.each([false, true])(
           ),
         );
         assert.isTrue(Exit.isFailure(uncommitted));
+        yield* sql.withTransaction(sql`UPDATE counters SET value = 4 WHERE id = 1`);
+        assert.equal(value(), 4);
+        assert.deepEqual(yield* sql`SELECT counter FROM links`, []);
+        // If that ROLLBACK fails too, the next user of the writer retries it before anything else,
+        // so later writes cannot join the transaction that never ends.
+        Atomics.store(failingRollbacks.count, 0, 2);
+        const stuck = yield* Effect.exit(sql.withTransaction(sql`INSERT INTO links VALUES (2)`));
+        assert.isTrue(Exit.isFailure(stuck) && Cause.hasDies(stuck.cause));
+        const retried = yield* Effect.flip(
+          sql.withTransaction(sql`UPDATE counters SET value = 5 WHERE id = 1`),
+        );
+        assert.match(String(retried.reason.cause), /disk I\/O error/);
+        yield* sql`UPDATE counters SET value = 5 WHERE id = 1`;
+        assert.equal(value(), 5);
         yield* sql.withTransaction(sql`UPDATE counters SET value = 4 WHERE id = 1`);
         assert.equal(value(), 4);
         assert.deepEqual(yield* sql`SELECT counter FROM links`, []);
@@ -591,6 +646,31 @@ it.effect.each([false, true])(
         assert.nestedPropertyVal(full.reason.cause, "cause.errcode", 13);
         assert.equal(value(), 4);
         assert.deepEqual(yield* sql`SELECT id FROM counters WHERE id = 50`, []);
+        // A nested transaction whose rollback fails leaves writes its parent must not commit, even
+        // a parent that carries on past it as the provider commit batch does.
+        for (const carriesOn of [false, true]) {
+          const unrolled = yield* Effect.flip(
+            sql.withTransaction(
+              Effect.gen(function* () {
+                yield* sql.withTransaction(sql`UPDATE counters SET value = 9 WHERE id = 1`);
+                Atomics.store(failingRollbacks.count, 0, 1);
+                yield* Effect.exit(
+                  sql.withTransaction(
+                    sql`INSERT INTO counters VALUES (51, 0)`.pipe(
+                      Effect.andThen(Effect.fail("no")),
+                    ),
+                  ),
+                );
+                if (carriesOn) {
+                  yield* Effect.exit(sql.withTransaction(sql`INSERT INTO counters VALUES (52, 0)`));
+                }
+              }),
+            ),
+          );
+          assert.match(String(unrolled.reason.cause), /disk I\/O error/);
+          assert.equal(value(), 4);
+          assert.deepEqual(yield* sql`SELECT id FROM counters WHERE id IN (51, 52)`, []);
+        }
         // A savepoint issued while END is still in flight starts a transaction of its own.
         yield* Effect.scoped(
           Effect.gen(function* () {
