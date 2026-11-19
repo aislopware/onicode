@@ -91,10 +91,13 @@ test(
       };
       const registryModule = "/src/rpc/atomRegistry.ts";
       const projectsModule = "/src/state/projects.ts";
-      const reactModule = performance
-        .getEntriesByType("resource")
-        .find(({ name }) => /\/\.vite\/deps\/react\.js(?:\?|$)/.test(name))?.name;
-      if (!reactModule) throw new Error("The app's React module has not loaded");
+      // The desktop window's onicode-dev:// scheme records no resource timing, so the app's React
+      // module URL is rebuilt from the hash Vite stamps on every prebundled dependency.
+      // @effect-diagnostics-next-line globalFetch:off - runs in the window, outside any Effect
+      const metadata = await fetch("/node_modules/.vite/deps/_metadata.json");
+      const { browserHash } = (await metadata.json()) as { browserHash?: string };
+      if (!browserHash) throw new Error("The app's React module has not loaded");
+      const reactModule = `/node_modules/.vite/deps/react.js?v=${browserHash}`;
       const [{ appAtomRegistry }, { projectEnvironment }, { default: react }] = await Promise.all([
         import(registryModule) as Promise<{
           appAtomRegistry: Pick<AtomRegistry.AtomRegistry, "subscribe">;
@@ -112,7 +115,7 @@ test(
         }>,
       ]);
       const atom = projectEnvironment.searchEntries({
-        environmentId: location.pathname.split("/")[1] as EnvironmentId,
+        environmentId: location.hash.split("/")[1] as EnvironmentId,
         input: test.citationInput,
       });
       // Wait for the query used by the citation and flush React before reading the selected tab.
