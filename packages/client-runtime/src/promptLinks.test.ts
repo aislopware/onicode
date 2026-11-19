@@ -200,5 +200,11 @@ describe("resolvePromptLinkModelSelection", () => {
     expect(
       resolvePromptLinkModelSelection(providers, { provider: "codex", model: "small" }),
     ).toEqual({ selection: { instanceId: "codex", model: "small" }, exact: true });
+    expect(
+      resolvePromptLinkModelSelection([...providers, provider("work", "codex", "warning")], {
+        provider: "codex",
+        model: "small",
+      })?.selection.instanceId,
+    ).toBe("work");
   });
 });
