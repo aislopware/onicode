@@ -2534,3 +2534,4 @@ a5090a7576	take	fix(web): Default effort no longer shows as the lowest bar
 b6a0fd6d62	take	feat(issues): an issue shows every thread it is linked to; kept Onicode's threadTitleText in the shared picker and mobile list
 052ca497cf	take	fix(web,mobile): side chats keep your attachments and context
 c350ee7e15	take	feat(web): filter the issues list by project
+2e3d9fccdd	take	feat(web): show linked issues beside thread pull requests; dropped the Share with guest catalog key (removed surface), kept desktop-only wording in docs
