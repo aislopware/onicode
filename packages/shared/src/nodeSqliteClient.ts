@@ -132,13 +132,14 @@ const checkNodeSqliteCompat = Effect.fn("checkNodeSqliteCompat")(function () {
   const parts = process.versions.node.split(".").map(Number);
   const major = parts[0] ?? 0;
   const minor = parts[1] ?? 0;
-  const supported = (major === 22 && minor >= 16) || (major === 23 && minor >= 11) || major >= 24;
+  // Node 23 never gained DatabaseSync.isTransaction, which the writer needs to track savepoints.
+  const supported = (major === 22 && minor >= 16) || major >= 24;
 
   if (!supported) {
     return Effect.die(
       new UnsupportedNodeSqliteVersionError({
         nodeVersion: process.versions.node,
-        requirement: "Node.js >=22.16, >=23.11, or >=24",
+        requirement: "Node.js 22.16 or later 22.x, or >=24",
       }),
     );
   }
@@ -198,6 +199,16 @@ const hasLargeBinding = (params: ReadonlyArray<unknown>): boolean => {
 // A reader refuses a database outside WAL mode with this code; retrying cannot change that.
 const NOT_WAL = "ERR_SQLITE_NOT_WAL";
 
+const ENDS_TRANSACTION = /^\s*(?:COMMIT|END|ROLLBACK)(?:\s+TRANSACTION)?\s*;?\s*$/i;
+const BEGINS_TRANSACTION = /^\s*BEGIN\b/i;
+const ROLLED_BACK = "The transaction was rolled back by an earlier error: ";
+// SQLITE_ABORT_ROLLBACK, so no caller mistakes a refused statement for the original failure.
+const ROLLED_BACK_CODES = {
+  code: "ERR_SQLITE_ERROR",
+  errcode: 516,
+  errstr: "abort due to ROLLBACK",
+};
+
 // Inline worker source also runs in bundles and single-executable builds without module files.
 const workerSource = `
 const { parentPort, workerData } = require("node:worker_threads");
@@ -214,6 +225,7 @@ const describe = (error) => ({
   code: error && error.code,
   errcode: error && error.errcode,
   errstr: error && error.errstr,
+  cause: error && error.cause,
 });
 let db;
 try {
@@ -235,7 +247,16 @@ try {
   parentPort.postMessage({ type: "unavailable", ...describe(error) });
 }
 const statements = new Map();
-const endsTransaction = /^\\s*(?:COMMIT|END|ROLLBACK)(?:\\s+TRANSACTION)?\\s*;?\\s*$/i;
+const endsTransaction = new RegExp(${JSON.stringify(ENDS_TRANSACTION.source)}, "i");
+const beginsTransaction = new RegExp(${JSON.stringify(BEGINS_TRANSACTION.source)}, "i");
+// Keeps the original error as the cause, so its code, such as SQLITE_FULL, still reaches the user.
+const rolledBack = (error) => {
+  const cause = describe(error);
+  return Object.assign(new Error(${JSON.stringify(ROLLED_BACK)} + cause.message), ${JSON.stringify(ROLLED_BACK_CODES)}, { cause });
+};
+// SQLite can roll back a whole transaction on an error, as SQLITE_FULL may. Later statements fail
+// until the caller ends it, so none, a queued savepoint included, runs outside it.
+let lost;
 // The savepoints the parent deferred, with the error of one that could not open. Statements in
 // such a scope fail with that error, as a direct connection never runs them, until it ends.
 // Effect's release is a comment, so it only ends a scope here; SQLite keeps the savepoint, as direct.
@@ -286,18 +307,36 @@ parentPort.on("message", (request) => {
   const { id, sql, params, cached, values, raw, safeIntegers, received, savepoints } = request;
   let operation = "open";
   let iterator;
+  let open = false;
   try {
     if (db === undefined) throw new Error("database connection is unavailable");
     operation = "execute";
     let failure;
-    let lost;
+    let released;
     for (const savepoint of savepoints) {
+      if (lost !== undefined) break;
+      const wasOpen = db.isTransaction;
+      let error;
       try {
-        lost ??= control(savepoint);
-      } catch (error) {
-        failure ??= error;
+        // Every control runs, even after an empty scope reported its savepoint's failure.
+        const releasedError = control(savepoint);
+        released ??= releasedError;
+      } catch (cause) {
+        error = cause;
+        failure ??= cause;
       }
+      // A savepoint whose FTS5 flush fails, as on SQLITE_FULL, can roll back the transaction too.
+      if (wasOpen && !db.isTransaction) lost = rolledBack(error ?? scopes.at(-1)?.error);
     }
+    if (lost !== undefined && !beginsTransaction.test(sql)) {
+      const error = lost;
+      if (!endsTransaction.test(sql)) throw error;
+      lost = undefined;
+      // Nothing is left to roll back, but a commit must not report the lost writes as saved.
+      if (/^\\s*ROLLBACK/i.test(sql)) return reply({ id, rows: [] });
+      throw error;
+    }
+    lost = undefined;
     // A transaction's end still runs, so a failed control cannot keep it open.
     if (!endsTransaction.test(sql)) {
       // A caller's release is not queued, since it can commit, but ends its scopes here too.
@@ -308,10 +347,11 @@ parentPort.on("message", (request) => {
       } else if (release === null) {
         const failed = scopes.filter((scope) => scope.error !== undefined);
         for (const scope of failed) scope.reported = true;
-        failure ??= lost ?? failed.at(-1)?.error;
+        failure ??= released ?? failed.at(-1)?.error;
       }
       if (failure !== undefined) throw failure;
     }
+    open = db.isTransaction;
     operation = "prepare";
     const statement = prepare(sql, cached);
     operation = "execute";
@@ -348,6 +388,7 @@ parentPort.on("message", (request) => {
       reply({ id, rows: raw ? result : [] });
     }
   } catch (error) {
+    if (open && !db.isTransaction && !endsTransaction.test(sql)) lost = rolledBack(error);
     // A step that throws leaves its statement active; an active write blocks every later COMMIT.
     try {
       iterator?.return();
@@ -374,6 +415,7 @@ interface WorkerFailure {
   readonly code?: unknown;
   readonly errcode?: unknown;
   readonly errstr?: unknown;
+  readonly cause?: unknown;
 }
 
 type WorkerStartup =
@@ -397,11 +439,11 @@ const failed = (cause: unknown, message: string, operation: string) =>
   new SqlError({ reason: classifyError(cause, message, operation) });
 
 const failedWith = (
-  { message, code, errcode, errstr }: WorkerFailure,
+  { message, code, errcode, errstr, cause }: WorkerFailure,
   operation: keyof typeof workerFailureMessages,
 ) =>
   failed(
-    Object.assign(new Error(message), { code, errcode, errstr }),
+    Object.assign(new Error(message, { cause }), { code, errcode, errstr }),
     workerFailureMessages[operation],
     operation,
   );
@@ -1015,24 +1057,55 @@ const make = Effect.fn("makeWithDatabase")(function* (
         runStatement(statement, params, "values"),
       );
 
+    // As the writer worker does: after SQLite rolls back a whole transaction on a statement's
+    // error, later statements fail until the caller ends it, so none runs outside it.
+    let lost: SqlError | undefined;
+    const guarded = (sql: string, effect: Effect.Effect<ReadonlyArray<any>, SqlError>) =>
+      Effect.suspend(() => {
+        if (lost !== undefined && !BEGINS_TRANSACTION.test(sql)) {
+          const error = lost;
+          if (!ENDS_TRANSACTION.test(sql)) return Effect.fail(error);
+          lost = undefined;
+          return /^\s*ROLLBACK/i.test(sql) ? Effect.succeed([]) : Effect.fail(error);
+        }
+        lost = undefined;
+        const open = db.isTransaction;
+        return Effect.tapError(effect, (error) =>
+          Effect.sync(() => {
+            if (!open || db.isTransaction || ENDS_TRANSACTION.test(sql)) return;
+            const cause = error.reason.cause;
+            const message = cause instanceof Error ? cause.message : error.message;
+            lost = failedWith(
+              { message: ROLLED_BACK + message, ...ROLLED_BACK_CODES, cause },
+              "execute",
+            );
+          }),
+        );
+      });
+
     return identity<Connection>({
       execute(sql, params, rowTransform) {
-        return rowTransform ? Effect.map(run(sql, params), rowTransform) : run(sql, params);
+        const effect = guarded(sql, run(sql, params));
+        return rowTransform ? Effect.map(effect, rowTransform) : effect;
       },
       executeRaw(sql, params) {
-        return run(sql, params, true);
+        return guarded(sql, run(sql, params, true));
       },
       executeValues(sql, params) {
-        return runValues(sql, params);
+        return guarded(sql, runValues(sql, params));
       },
       executeValuesUnprepared(sql, params) {
-        return Effect.flatMap(prepare(sql), (statement) =>
-          runStatement(statement, params ?? [], "values"),
+        return guarded(
+          sql,
+          Effect.flatMap(prepare(sql), (statement) =>
+            runStatement(statement, params ?? [], "values"),
+          ),
         );
       },
       executeUnprepared(sql, params, rowTransform) {
-        const effect = prepare(sql).pipe(
-          Effect.flatMap((statement) => runStatement(statement, params ?? [])),
+        const effect = guarded(
+          sql,
+          prepare(sql).pipe(Effect.flatMap((statement) => runStatement(statement, params ?? []))),
         );
         return rowTransform ? Effect.map(effect, rowTransform) : effect;
       },
@@ -1239,6 +1312,17 @@ const make = Effect.fn("makeWithDatabase")(function* (
     transactionAcquirer,
     // BEGIN IMMEDIATE avoids read-then-write SQLITE_BUSY_SNAPSHOT, which busy_timeout cannot resolve.
     beginTransaction: options.readonly === true ? "BEGIN" : "BEGIN IMMEDIATE",
+    // A COMMIT can fail and leave the transaction open, as on a deferred foreign key violation;
+    // every later write would then join it and never commit.
+    onCommitFailure: (connection) =>
+      connection.executeUnprepared("ROLLBACK", [], undefined).pipe(
+        Effect.asVoid,
+        // SQLite may have rolled it back itself.
+        Effect.catchIf(
+          (error) => /no transaction is active/i.test(String(error.reason.cause)),
+          () => Effect.void,
+        ),
+      ),
     // Tells the writer worker that a nested scope ended, so a savepoint that could not open stops
     // mattering. A comment, so it never commits or flushes anything a direct connection would not.
     releaseSavepoint: writerWorker ? (name) => `-- release ${name}` : undefined,

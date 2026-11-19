@@ -268,10 +268,14 @@ it.effect.each([false, true])(
         yield* sql`END`.unprepared;
         yield* sql`SAVEPOINT effect_sql_1`.unprepared;
         yield* sql`COMMIT`.unprepared;
+        // A statement that rolls back the whole transaction, as SQLITE_FULL can, fails the ones
+        // after it until the caller's ROLLBACK, so none of them commits on its own.
         yield* sql`BEGIN`.unprepared;
         yield* Effect.flip(sql`INSERT OR ROLLBACK INTO counters VALUES (1, 0)`);
-        yield* sql`SAVEPOINT effect_sql_1`.unprepared;
-        yield* sql`COMMIT`.unprepared;
+        yield* sql`SAVEPOINT effect_sql_1`.unprepared.pipe(Effect.exit);
+        yield* Effect.flip(sql`UPDATE counters SET value = 9 WHERE id = 1`);
+        yield* sql`ROLLBACK`.unprepared;
+        assert.equal(value(), 0);
         yield* sql`SAVEPOINT effect_sql_1`.unprepared;
         yield* sql`ROLLBACK TO SAVEPOINT effect_sql_1`.unprepared;
         yield* sql`UPDATE counters SET value = 1 WHERE id = 1`;
@@ -393,6 +397,18 @@ it.effect.each([false, true])(
         yield* sql`DELETE FROM links`;
         yield* sql`COMMIT`.unprepared;
         assert.equal(value(), 4);
+        // In Effect's own transactions it rolls back, so the next transaction can begin.
+        const uncommitted = yield* Effect.exit(
+          sql.withTransaction(
+            sql`INSERT INTO links VALUES (2)`.pipe(
+              Effect.andThen(sql`UPDATE counters SET value = 3 WHERE id = 1`),
+            ),
+          ),
+        );
+        assert.isTrue(Exit.isFailure(uncommitted));
+        yield* sql.withTransaction(sql`UPDATE counters SET value = 4 WHERE id = 1`);
+        assert.equal(value(), 4);
+        assert.deepEqual(yield* sql`SELECT counter FROM links`, []);
         // A savepoint that cannot open, here for FTS5's pending writes, must not keep the
         // transaction's end from running.
         yield* sql`CREATE VIRTUAL TABLE docs USING fts5(body)`;
@@ -457,6 +473,26 @@ it.effect.each([false, true])(
         yield* sql`PRAGMA query_only = OFF`;
         assert.isTrue(Exit.isFailure(failed));
         assert.deepEqual(yield* sql`SELECT id FROM counters WHERE id = 39`, []);
+        // A nested transaction that fails after an empty one whose savepoint could not open still
+        // rolls back its writes when its parent carries on.
+        yield* sql.withTransaction(
+          Effect.gen(function* () {
+            yield* Effect.exit(
+              sql.withTransaction(
+                Effect.gen(function* () {
+                  yield* sql`INSERT INTO counters VALUES (38, 0)`;
+                  yield* sql`INSERT INTO docs VALUES ('undone')`;
+                  yield* sql`PRAGMA query_only = ON`;
+                  yield* sql.withTransaction(Effect.void);
+                  return yield* Effect.fail("job failed");
+                }),
+              ),
+            );
+            yield* Effect.exit(sql`SELECT 1`);
+            yield* sql`PRAGMA query_only = OFF`;
+          }),
+        );
+        assert.deepEqual(yield* sql`SELECT id FROM counters WHERE id = 38`, []);
         // An empty nested transaction still opens its savepoint, which saves FTS5's pending writes.
         yield* sql.withTransaction(
           Effect.gen(function* () {
@@ -510,6 +546,51 @@ it.effect.each([false, true])(
           { id: 44 },
           { id: 46 },
         ]);
+        // A nested statement that rolls back the whole transaction fails its parent, even one that
+        // carries on past failed nested transactions as the provider commit batch does. A later
+        // savepoint must not start a transaction that commits without the lost writes.
+        const rolledBack = yield* Effect.flip(
+          sql.withTransaction(
+            Effect.gen(function* () {
+              yield* sql.withTransaction(sql`UPDATE counters SET value = 9 WHERE id = 1`);
+              yield* Effect.exit(
+                sql.withTransaction(sql`INSERT OR ROLLBACK INTO counters VALUES (1, 0)`),
+              );
+              yield* Effect.exit(sql.withTransaction(sql`INSERT INTO counters VALUES (49, 0)`));
+              yield* Effect.exit(sql.withTransaction(sql`INSERT INTO counters VALUES (50, 0)`));
+            }),
+          ),
+        );
+        assert.match(String(rolledBack.reason.cause), /rolled back by an earlier error/);
+        assert.equal(value(), 4);
+        assert.deepEqual(yield* sql`SELECT id FROM counters WHERE id IN (49, 50)`, []);
+        // So does a savepoint whose FTS5 flush finds the disk full, which also rolls back the whole
+        // transaction, even when the worker runs it queued ahead of other statements.
+        const full = yield* Effect.flip(
+          sql.withTransaction(
+            Effect.gen(function* () {
+              yield* sql.withTransaction(sql`UPDATE counters SET value = 9 WHERE id = 1`);
+              yield* sql.withTransaction(
+                Effect.gen(function* () {
+                  for (let row = 0; row < 200; row++) {
+                    const body = Array.from({ length: 50 }, (_, word) => `w${row * 50 + word}`);
+                    yield* sql`INSERT INTO docs VALUES (${body.join(" ")})`;
+                  }
+                  const [pages] = yield* sql<{ page_count: number }>`PRAGMA page_count`;
+                  yield* sql.unsafe(`PRAGMA max_page_count = ${pages?.page_count}`);
+                }),
+              );
+              yield* Effect.exit(sql.withTransaction(sql`SELECT 1`));
+              yield* Effect.exit(sql.withTransaction(sql`INSERT INTO counters VALUES (50, 0)`));
+            }),
+          ),
+        );
+        yield* sql`PRAGMA max_page_count = 2147483646`;
+        assert.match(String(full.reason.cause), /rolled back by an earlier error/);
+        // SQLITE_FULL, so the user still learns the disk is full.
+        assert.nestedPropertyVal(full.reason.cause, "cause.errcode", 13);
+        assert.equal(value(), 4);
+        assert.deepEqual(yield* sql`SELECT id FROM counters WHERE id = 50`, []);
         // A savepoint issued while END is still in flight starts a transaction of its own.
         yield* Effect.scoped(
           Effect.gen(function* () {
