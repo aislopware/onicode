@@ -10,12 +10,14 @@ import type {
   DesktopPreviewTunnelAccessRequest,
   EnvironmentId,
 } from "@onicode/contracts";
+import * as HostProcess from "@onicode/shared/HostProcess";
 import type { NonEmptyReadonlyArray } from "effect/Array";
 import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as NetAddress from "effect/net/NetAddress";
 import * as Option from "effect/Option";
@@ -279,6 +281,46 @@ const dialDestination = Effect.fn("LoopbackTunnel.dialDestination")(function* (
   };
 });
 
+const TCP_TABLES = ["/proc/net/tcp", "/proc/net/tcp6"];
+
+// Rows read `sl local_address rem_address st queues timer retransmits uid ...`, with addresses
+// as HEXIP:HEXPORT and IPv4 bytes in little-endian order; tcp6 holds IPv4 as ::ffff:a.b.c.d.
+const procAddresses = (ip: string, port: number) => {
+  const octets = ip
+    .replace(/^::ffff:/i, "")
+    .split(".")
+    .map(Number);
+  const v4 = octets
+    .reverse()
+    .map((octet) => octet.toString(16).padStart(2, "0"))
+    .join("")
+    .toUpperCase();
+  const hexPort = port.toString(16).padStart(4, "0").toUpperCase();
+  return [`${v4}:${hexPort}`, `0000000000000000FFFF0000${v4}:${hexPort}`];
+};
+
+/** The owner of the row whose local end is the client and remote end is the listener. */
+const connectionOwner = (
+  tables: ReadonlyArray<string>,
+  client: { readonly address: string; readonly port: number },
+  listener: { readonly address: string; readonly port: number },
+) => {
+  const clientEnds = procAddresses(client.address, client.port);
+  const listenerEnds = procAddresses(listener.address, listener.port);
+  for (const line of tables.flatMap((table) => table.split("\n").slice(1))) {
+    const [, local, remote, , , , , uid] = line.trim().split(/\s+/);
+    if (
+      local !== undefined &&
+      remote !== undefined &&
+      clientEnds.includes(local.toUpperCase()) &&
+      listenerEnds.includes(remote.toUpperCase())
+    ) {
+      return Number(uid);
+    }
+  }
+  return undefined;
+};
+
 const pump =
   /* Runs for the life of the connection; a span per direction adds no diagnostic value. */
   Effect.fnUntraced(function* (
@@ -370,6 +412,9 @@ interface Listener {
 const make = Effect.gen(function* () {
   const electronApp = yield* ElectronApp.ElectronApp;
   const electronWindow = yield* ElectronWindow.ElectronWindow;
+  const fileSystem = yield* FileSystem.FileSystem;
+  const platform = yield* HostProcess.Platform;
+  const userId = yield* HostProcess.UserId;
   const random = yield* SecureRandom.SecureRandom;
   const listenerScope = yield* Effect.scope;
   const routing = yield* Semaphore.make(1);
@@ -526,6 +571,26 @@ const make = Effect.gen(function* () {
       (effect) => Effect.ignoreCause(effect),
     );
 
+  // A forward is plain TCP with no credentials to check, so on Linux it serves only clients of
+  // this OS user; macOS can't name a socket's owner, and any app there may reach a forward.
+  const isOwnConnection = Effect.fn("LoopbackTunnel.isOwnConnection")(function* () {
+    if (platform !== "linux") return true;
+    const connection = yield* Effect.serviceOption(NodeSocket.NetSocket);
+    if (Option.isNone(connection)) return false;
+    const { remoteAddress, remotePort, localAddress, localPort } = connection.value;
+    if (!remoteAddress || !remotePort || !localAddress || !localPort) return false;
+    const tables = yield* Effect.forEach(TCP_TABLES, (path) =>
+      fileSystem.readFileString(path).pipe(Effect.orElseSucceed(() => "")),
+    );
+    return (
+      connectionOwner(
+        tables,
+        { address: remoteAddress, port: remotePort },
+        { address: localAddress, port: localPort },
+      ) === userId
+    );
+  });
+
   /** Serves one connection to a forwarded port; closes it when the environment is out of reach. */
   const serveForward = (environmentId: string, port: number) => {
     let active = 0;
@@ -538,6 +603,7 @@ const make = Effect.gen(function* () {
         if (active >= MAX_FORWARD_CONNECTIONS) return;
         active++;
         yield* Effect.addFinalizer(() => Effect.sync(() => active--));
+        if (!(yield* isOwnConnection())) return;
         const tunnelUrl = yield* requestAccess(environmentId);
         if (tunnelUrl === null) return;
         const destination = yield* dialDestination(tunnelUrl, { host: "localhost", port });

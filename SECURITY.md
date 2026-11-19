@@ -89,7 +89,7 @@ once it has one.
 - Files and assets: [`workspace/WorkspaceFileSystem.ts`](apps/server/src/workspace/WorkspaceFileSystem.ts), [`assets/AssetAccess.ts`](apps/server/src/assets/AssetAccess.ts)
 - Managed policy: [`apps/server/src/policy`](apps/server/src/policy)
 - Desktop preview isolation: [`preview/WebviewPreferences.ts`](apps/desktop/src/preview/WebviewPreferences.ts)
-- Desktop preview tunnel: [`preview/LoopbackTunnel.ts`](apps/desktop/src/preview/LoopbackTunnel.ts) refuses local clients without the run's proxy credentials, except on ports the user forwarded, which any local client may reach by design; [`preview/PreviewTunnel.ts`](apps/server/src/preview/PreviewTunnel.ts) requires `terminal:operate` and dials loopback only
+- Desktop preview tunnel: [`preview/LoopbackTunnel.ts`](apps/desktop/src/preview/LoopbackTunnel.ts) refuses local clients without the run's proxy credentials, except on ports the user forwarded, which any of the user's apps may reach by design (on Linux only this OS user's; on macOS any local user's); [`preview/PreviewTunnel.ts`](apps/server/src/preview/PreviewTunnel.ts) requires `terminal:operate` and dials loopback only
 
 ## How to audit and triage
 

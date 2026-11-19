@@ -298,8 +298,9 @@ browser.
 A forwarded port behaves like a server running on your computer: anything on
 your computer can reach it, including web pages open in your browser, so a
 forwarded service is exposed the same way a local dev server is. Forwards
-listen only on your computer's loopback, never on your network, but other users
-signed in to the same computer can reach them too.
+listen only on your computer's loopback, never on your network. On Linux they
+accept only apps running as your user; on macOS, other users signed in to the
+same computer can reach them too.
 
 On iPhone, iPad, and Android, a tab showing one of the host's `localhost` pages
 has **Open on this device** in its menu. So does a long press on a `localhost`

@@ -1,5 +1,7 @@
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import * as NodeWS from "@effect/platform-node/NodeWS";
 import { EnvironmentId } from "@onicode/contracts";
+import * as HostProcess from "@onicode/shared/HostProcess";
 import { expect, it } from "@effect/vitest";
 import * as NodeNet from "node:net";
 import * as Context from "effect/Context";
@@ -125,6 +127,7 @@ const challenge = (login: LoginListener, authInfo: Partial<Electron.AuthInfo>) =
 const makeTunnel = (
   /** A function answers each access request with its current value. */
   tunnelUrl: string | null | (() => string | null),
+  host: Layer.Layer<never> = Layer.empty,
 ) =>
   Effect.gen(function* () {
     const accessRequests = yield* Queue.unbounded<string>();
@@ -147,6 +150,8 @@ const makeTunnel = (
                 }),
             }),
             SecureRandom.layerWebCrypto,
+            NodeFileSystem.layer,
+            host,
             Layer.mock(ElectronWindow.ElectronWindow, {
               currentMainOrFirst: Effect.succeedSome(window as unknown as Electron.BrowserWindow),
             }),
@@ -590,6 +595,37 @@ it.effect("forwards a port over the tunnel on the same local port until stopped"
     expect(yield* refusesConnections(remotePort)).toBe(true);
     expect(yield* tunnel.forwards).toEqual([]);
     expect(announced).toEqual([[remotePort], []]);
+  }),
+);
+
+it.effect("closes another OS user's connection to a forward without tunnelling it", () =>
+  Effect.gen(function* () {
+    const endpoint = yield* listenEndpoint();
+    const { tunnel } = yield* makeTunnel(
+      `ws://127.0.0.1:${addressPort(endpoint.server)}/api/preview/tunnel`,
+      // This process owns the client, so a different user id here makes it another user's.
+      Layer.mergeAll(
+        Layer.succeed(HostProcess.Platform, "linux"),
+        Layer.succeed(HostProcess.UserId, (process.getuid?.() ?? 0) + 1),
+      ),
+    );
+    const forward = yield* tunnel.forward({
+      environmentId: EnvironmentId.make("remote"),
+      remotePort: yield* unusedPort,
+    });
+    const probes = endpoint.requests.length;
+    const closed = yield* Effect.promise(
+      () =>
+        new Promise<boolean>((resolve) => {
+          const socket = NodeNet.connect(forward.localPort, "127.0.0.1");
+          socket.on("error", () => undefined);
+          socket.on("close", () => resolve(true));
+          socket.on("data", () => resolve(false));
+          socket.write(Uint8Array.of(3));
+        }),
+    );
+    expect(closed).toBe(true);
+    expect(endpoint.requests.length).toBe(probes);
   }),
 );
 
