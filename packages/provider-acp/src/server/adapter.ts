@@ -587,7 +587,7 @@ export interface AcpAdapterV2Flavor {
   readonly isProviderWakeNotification?: (
     notification: EffectAcpSchema.SessionNotification,
   ) => boolean;
-  readonly deferFinalizeForBackgroundWork?: boolean;
+  readonly deferFinalizeForBackgroundWork?: AcpNegotiatedFlag;
   readonly assertComplete?: Effect.Effect<void, EffectAcpErrors.AcpError>;
   /** Interrupt the local prompt fiber before `session/cancel` (Grok wedged prompts). */
   readonly interruptPromptOnCancel?: boolean;
@@ -619,7 +619,7 @@ export interface AcpAdapterV2Flavor {
   readonly restartRuntimeOnEveryInterrupt?: boolean;
   readonly terminateRuntimeProcessGroupOnInterrupt?: boolean;
   readonly preserveRuntimeOnSettledInterrupt?: boolean;
-  readonly enablePostSettleContinuation?: boolean;
+  readonly enablePostSettleContinuation?: AcpNegotiatedFlag;
   /** Settle on native idle after the accepted user echo, only on negotiated ACP v2. */
   readonly followAgentWorkState?: boolean;
   /**
@@ -636,6 +636,19 @@ export interface AcpAdapterV2Flavor {
     initializeResult: EffectAcpSchema.InitializeResponse,
   ) => boolean;
 }
+
+/**
+ * A flavor flag that is either fixed, or read from the agent's `initialize` result for
+ * agents identified only there, such as one launched through a wrapper command.
+ */
+type AcpNegotiatedFlag =
+  | boolean
+  | ((initializeResult: EffectAcpSchema.InitializeResponse) => boolean);
+
+const readNegotiatedFlag = (
+  flag: AcpNegotiatedFlag | undefined,
+  initializeResult: EffectAcpSchema.InitializeResponse,
+) => (typeof flag === "function" ? flag(initializeResult) : flag === true);
 
 function acpSupportsImagePrompts(input: {
   readonly flavorSupportsImagePrompts?: boolean | undefined;
@@ -1864,8 +1877,6 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           );
   const driver = flavor.driver;
   const continuationRequests = options.continuationRequests;
-  const postSettleContinuationEnabled =
-    flavor.enablePostSettleContinuation === true && continuationRequests !== undefined;
 
   const readCapabilities = Effect.gen(function* () {
     if (flavor.supportsNativeGoals === undefined) return flavor.capabilities;
@@ -2072,6 +2083,8 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
         };
         let pendingStopCloseTurn: ActiveAcpTurn | null = null;
         let followsAgentWorkState = false;
+        let postSettleContinuationEnabled = false;
+        let defersFinalizeForBackgroundWork = false;
         let agentWork: Extract<
           EffectAcpSchema.SessionUpdate,
           { sessionUpdate: "state_update" }
@@ -2112,6 +2125,13 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             flavor.followAgentWorkState === true &&
             continuationRequests !== undefined &&
             setup.initializeResult.protocolVersion === 2;
+          postSettleContinuationEnabled =
+            continuationRequests !== undefined &&
+            readNegotiatedFlag(flavor.enablePostSettleContinuation, setup.initializeResult);
+          defersFinalizeForBackgroundWork = readNegotiatedFlag(
+            flavor.deferFinalizeForBackgroundWork,
+            setup.initializeResult,
+          );
           agentWork = null;
           rootForegroundWork = undefined;
           agentRequests.clear();
@@ -4068,7 +4088,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
         const rearmDeferredFinalize =
           /* Provider events include streaming deltas; avoid a span for each update. */
           Effect.fnUntraced(function* (context: ActiveAcpTurn) {
-            if (!flavor.deferFinalizeForBackgroundWork) return;
+            if (!defersFinalizeForBackgroundWork) return;
             if (!context.promptSettled || context.finalized) return;
             if (hasDeferredBackgroundWork(context)) return;
             yield* scheduleDeferredFinalize(context);
@@ -8304,7 +8324,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
         });
 
         scheduleDeferredFinalize = Effect.fn("scheduleDeferredFinalize")(function* (context) {
-          if (!flavor.deferFinalizeForBackgroundWork) return;
+          if (!defersFinalizeForBackgroundWork) return;
           if (!context.promptSettled || context.finalized || context.interrupted) return;
           if (hasDeferredBackgroundWork(context)) return;
           context.backgroundFinalizeGeneration += 1;
@@ -8892,7 +8912,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
               context.promptSettled = true;
               context.promptSettledStatus = "completed";
               if (drainedWakeCount === 0) {
-                if (continuationWasRequested && flavor.deferFinalizeForBackgroundWork === true) {
+                if (continuationWasRequested && defersFinalizeForBackgroundWork) {
                   if (hasDeferredBackgroundWork(context)) {
                     yield* rearmDeferredFinalize(context);
                   } else {
@@ -9026,7 +9046,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                             ? "interrupted"
                             : "cancelled"
                           : "completed";
-                    if (flavor.deferFinalizeForBackgroundWork === true && !context.interrupted) {
+                    if (defersFinalizeForBackgroundWork && !context.interrupted) {
                       context.promptSettled = true;
                       context.promptSettledStatus = status;
                       for (const [taskId, completion] of context.backgroundCommands) {
@@ -9047,7 +9067,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                       return;
                     }
                     if (
-                      flavor.deferFinalizeForBackgroundWork === true &&
+                      defersFinalizeForBackgroundWork &&
                       !context.interrupted &&
                       hasDeferredBackgroundWork(context)
                     ) {
@@ -9193,6 +9213,10 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           }),
         );
 
+        // A replacement agent can negotiate capabilities the initial agent did not have.
+        const canReportBackgroundWork =
+          continuationRequests !== undefined &&
+          (flavor.followAgentWorkState === true || Boolean(flavor.enablePostSettleContinuation));
         const sessionRuntime: ProviderAdapter.ProviderAdapterV2SessionRuntime = {
           instanceId: options.instanceId,
           driver,
@@ -9210,9 +9234,10 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                     : flavor.getModelContextWindow?.(selection, session);
                 },
               }),
-          ...(postSettleContinuationEnabled || followsAgentWorkState
+          ...(canReportBackgroundWork
             ? {
                 hasPendingBackgroundWork: Effect.gen(function* () {
+                  if (!postSettleContinuationEnabled && !followsAgentWorkState) return false;
                   const rootSessionId = yield* Ref.get(activeSessionId);
                   if (
                     followsAgentWorkState &&
