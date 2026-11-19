@@ -1089,8 +1089,8 @@ const make = Effect.fn("makeWithDatabase")(function* (
     const guarded = (
       sql: string,
       effect: Effect.Effect<ReadonlyArray<any>, SqlError>,
-    ): Effect.Effect<ReadonlyArray<any>, SqlError> =>
-      Effect.suspend(() => {
+    ): Effect.Effect<ReadonlyArray<any>, SqlError> => {
+      const guardedEffect = Effect.suspend(() => {
         if (lost !== undefined && db.isTransaction) {
           if (!isRollback(sql)) return Effect.fail(lost);
         } else if (lost !== undefined && !BEGINS_TRANSACTION.test(sql)) {
@@ -1119,9 +1119,15 @@ const make = Effect.fn("makeWithDatabase")(function* (
             );
           }),
         );
-      }).pipe(
-        Effect.ensuring(Effect.sync(() => settleRollback(connection, sql, db.isTransaction))),
-      );
+      });
+      // Only a ROLLBACK changes whether the connection owes one; other statements skip the step.
+      return isRollback(sql)
+        ? Effect.ensuring(
+            guardedEffect,
+            Effect.sync(() => settleRollback(connection, sql, db.isTransaction)),
+          )
+        : guardedEffect;
+    };
 
     const connection: Connection = identity<Connection>({
       execute(sql, params, rowTransform) {
