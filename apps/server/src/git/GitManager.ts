@@ -2462,6 +2462,20 @@ export const make = Effect.gen(function* () {
     });
   });
 
+  // Exit 1 means HEAD is not in the ref. A push remote without a fetch refspec has no ref to check.
+  const remoteRefLacksHead = (cwd: string, remoteRef: string) =>
+    gitCore
+      .execute({
+        operation: "GitManager.openPrFromBranch.pushedHead",
+        cwd,
+        args: ["merge-base", "--is-ancestor", "HEAD", `refs/remotes/${remoteRef}`],
+        allowNonZeroExit: true,
+      })
+      .pipe(
+        Effect.map((result) => result.exitCode === 1),
+        Effect.orElseSucceed(() => false),
+      );
+
   const openPrFromBranch = Effect.fn("openPrFromBranch")(function* <E>(
     cwd: string,
     fallbackBranch: string | null,
@@ -2497,9 +2511,22 @@ export const make = Effect.gen(function* () {
 
     // A configured push remote receives the commits while the branch keeps
     // tracking its upstream, so the PR head is the push remote's branch.
+    const pushTarget =
+      pushRemoteRef ??
+      (yield* gitCore.resolvePushTarget(cwd, { branch, hasUpstream: true }).pipe(
+        Effect.map((target) =>
+          target?.viaPushRemote
+            ? {
+                remoteName: target.remoteName,
+                upstreamRef: `${target.remoteName}/${target.branchName}`,
+              }
+            : undefined,
+        ),
+        Effect.orElseSucceed(() => undefined),
+      ));
     const headContext = yield* resolveBranchHeadContext(
       cwd,
-      pushRemoteRef ? { branch, ...pushRemoteRef } : { branch, upstreamRef: details.upstreamRef },
+      pushTarget ? { branch, ...pushTarget } : { branch, upstreamRef: details.upstreamRef },
     );
 
     const existing = yield* findOpenPr(cwd, headContext);
@@ -2514,13 +2541,20 @@ export const make = Effect.gen(function* () {
       };
     }
 
-    // A PR opened from the remote branch would leave out commits not pushed yet. A push
-    // remote just received HEAD; aheadCount measures the tracked upstream instead.
-    if (pushRemoteRef === undefined && details.aheadCount > 0) {
+    // A PR opened from the remote branch would leave out commits not pushed yet. With a push
+    // remote, aheadCount measures the tracked upstream instead.
+    if (pushTarget === undefined && details.aheadCount > 0) {
       return yield* new GitManagerError({
         operation: "runPrStep",
         cwd,
         detail: `The branch has ${details.aheadCount} unpushed commit${details.aheadCount === 1 ? "" : "s"}. Push before opening the PR.`,
+      });
+    }
+    if (pushTarget !== undefined && (yield* remoteRefLacksHead(cwd, pushTarget.upstreamRef))) {
+      return yield* new GitManagerError({
+        operation: "runPrStep",
+        cwd,
+        detail: `The branch has commits not pushed to ${pushTarget.remoteName}. Push before opening the PR.`,
       });
     }
     const resolved = yield* resolvePrBase(cwd, branch, details.upstreamRef, headContext);
@@ -2688,7 +2722,7 @@ export const make = Effect.gen(function* () {
       if (key === null) return false;
       const ref = { projectId: input.projectId, ...key };
       // A created PR is a draft already where the host opened it as one.
-      const isDraft = (yield* pullRequests.summary({ ...ref, allowStale: false })).isDraft;
+      const isDraft = (yield* pullRequests.summary(ref, { bypassCache: true })).isDraft;
       if (!isDraft) yield* pullRequests.runAction({ ...ref, action: "draft" });
       return true;
     },

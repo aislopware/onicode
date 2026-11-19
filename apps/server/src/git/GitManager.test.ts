@@ -4480,12 +4480,14 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       });
       expect(found).toMatchObject({ status: "opened_existing", number: 7 });
 
-      // A retry after a failed draft finds the open PR and still drafts it.
+      // A retry after a failed draft finds the open PR and still drafts it, even where a
+      // cached summary still says draft after someone marked it ready on the host.
       const actions: Array<PullRequestActionInput> = [];
       const retried = yield* makeManager({
         providerScenario: { prListSequence: [[open]] },
         pullRequests: {
-          summary: () => Effect.succeed({ isDraft: false } as never),
+          summary: (_input, options) =>
+            Effect.succeed({ isDraft: options?.bypassCache !== true } as never),
           runAction: (action) => Effect.sync(() => void actions.push(action)),
         },
       });
@@ -5165,6 +5167,98 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       expect(created(providerCalls)).toEqual([
         { baseRefName: "main", headSelector: "octocat:topic" },
       ]);
+    }),
+  );
+
+  it.effect("createPullRequest opens a PR from a fork push remote that holds HEAD", () =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("onicode-git-manager-");
+      yield* initRepo(repoDir);
+      const originDir = yield* createBareRemote();
+      const forkDir = yield* createBareRemote();
+      yield* runGit(repoDir, ["remote", "add", "origin", originDir]);
+      yield* runGit(repoDir, ["remote", "add", "fork", forkDir]);
+      yield* runGit(repoDir, ["push", "origin", "main"]);
+      yield* runGit(repoDir, ["checkout", "-b", "topic"]);
+      yield* runGit(repoDir, ["push", "-u", "origin", "topic"]);
+      yield* configureVisibleRemoteUrlWithLocalRewrite(
+        repoDir,
+        "origin",
+        "git@github.com:aislopware/sample-app.git",
+        originDir,
+      );
+      yield* configureVisibleRemoteUrlWithLocalRewrite(
+        repoDir,
+        "fork",
+        "git@github.com:octocat/sample-app.git",
+        forkDir,
+      );
+      yield* runGit(repoDir, ["config", "branch.topic.pushRemote", "fork"]);
+      NodeFS.writeFileSync(NodePath.join(repoDir, "fork-change.txt"), "change\n");
+      yield* runGit(repoDir, ["add", "fork-change.txt"]);
+      yield* runGit(repoDir, ["commit", "-m", "Fork change"]);
+      // The commit reaches the fork; the tracked origin/topic stays behind. A fork with no
+      // fetch refspec gets no fork/topic ref to check against.
+      yield* runGit(repoDir, ["config", "--unset-all", "remote.fork.fetch"]);
+      yield* runGit(repoDir, ["push", "fork", "topic"]);
+      const { manager, providerCalls } = yield* makeManager();
+
+      const result = yield* manager.createPullRequest({
+        cwd: repoDir,
+        projectId: ProjectId.make("project-1"),
+        title: "Fork change",
+        body: "Body",
+      });
+
+      expect(result.status).toBe("created");
+      expect(created(providerCalls)).toEqual([
+        { baseRefName: "main", headSelector: "octocat:topic" },
+      ]);
+    }),
+  );
+
+  it.effect("a PR to a fork refuses when HEAD moved past what the fork received", () =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("onicode-git-manager-");
+      yield* initRepo(repoDir);
+      const originDir = yield* createBareRemote();
+      const forkDir = yield* createBareRemote();
+      yield* runGit(repoDir, ["remote", "add", "origin", originDir]);
+      yield* runGit(repoDir, ["remote", "add", "fork", forkDir]);
+      yield* runGit(repoDir, ["push", "origin", "main"]);
+      yield* runGit(repoDir, ["checkout", "-b", "topic"]);
+      yield* runGit(repoDir, ["push", "-u", "origin", "topic"]);
+      yield* configureVisibleRemoteUrlWithLocalRewrite(
+        repoDir,
+        "origin",
+        "git@github.com:aislopware/sample-app.git",
+        originDir,
+      );
+      yield* configureVisibleRemoteUrlWithLocalRewrite(
+        repoDir,
+        "fork",
+        "git@github.com:octocat/sample-app.git",
+        forkDir,
+      );
+      yield* runGit(repoDir, ["config", "branch.topic.pushRemote", "fork"]);
+      NodeFS.writeFileSync(NodePath.join(repoDir, "fork-change.txt"), "change\n");
+      const gate = { started: yield* Deferred.make<void>(), release: yield* Deferred.make<void>() };
+      const { manager, providerCalls } = yield* makeManager({
+        providerScenario: { prListGate: gate },
+      });
+
+      const action = yield* Effect.forkChild(
+        Effect.flip(runStackedAction(manager, { cwd: repoDir, action: "commit_push_pr" })),
+      );
+      // Another commit lands after the push to the fork and before the PR opens.
+      yield* Deferred.await(gate.started);
+      NodeFS.writeFileSync(NodePath.join(repoDir, "late.txt"), "late\n");
+      yield* runGit(repoDir, ["add", "late.txt"]);
+      yield* runGit(repoDir, ["commit", "-m", "Late commit"]);
+      yield* Deferred.succeed(gate.release, undefined);
+
+      expect((yield* Fiber.join(action)).message).toContain("not pushed to fork");
+      expect(created(providerCalls)).toEqual([]);
     }),
   );
 
