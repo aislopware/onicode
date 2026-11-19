@@ -467,6 +467,9 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
         assert.equal(yield* homeFor("~someone/oni-dev"), path.resolve("~someone/oni-dev"));
         assert.equal(yield* homeFor("relative/oni-dev"), path.resolve("relative/oni-dev"));
         assert.equal(yield* homeFor("/tmp/oni-dev"), path.resolve("/tmp/oni-dev"));
+        // An explicit ~/.onicode would put state in the live userdata; leaving it implicit selects ~/.onicode/dev.
+        assert.equal(yield* homeFor("~/.onicode"), undefined);
+        assert.equal(yield* homeFor("/home/dev/.onicode/"), undefined);
       }),
     );
 
@@ -534,7 +537,7 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
             Effect.provideService(HostProcess.Platform, "linux"),
             Effect.provideService(HostProcess.WorkingDirectory, input.cwd),
             // No ~/.onicode here, so these runs never seed from this machine's install.
-            Effect.provideService(HostProcess.HomeDirectory, input.cwd),
+            Effect.provideService(HostProcess.HomeDirectory, NodePath.join(input.cwd, "home")),
             Effect.provideService(
               HostProcess.Environment,
               input.ambientHome === undefined ? {} : { ONICODE_HOME: input.ambientHome },

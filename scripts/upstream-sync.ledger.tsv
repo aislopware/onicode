@@ -2750,3 +2750,4 @@ eb62a37150	take	atomic saves keep modes and fsync; telemetry Identify test left 
 5478e44cc9	take	fix(claude): every repeated --plugin-dir launch argument loads its plugin (#38634)
 6d6c4614aa	take	fix(server): request_secret opens a new card when a later run reuses a clientRequestId (#38167)
 47583f8682	take	fix(server): Codex goal turns after a server restart are paused instead of running unseen (#25935)
+4c099280f6	take	dev runner never points a dev server at the live ~/.onicode/userdata; AGENTS.md keeps Onicode's dev lines
