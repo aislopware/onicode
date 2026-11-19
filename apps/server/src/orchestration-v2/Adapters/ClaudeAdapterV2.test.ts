@@ -866,7 +866,12 @@ describe("ClaudeAdapterV2 native protocol logging", () => {
     assert.include(systemPrompt.append ?? "", "call `oni_background_wait`");
     assert.notInclude(systemPrompt.append ?? "", "## Onicode devices");
     assert.deepEqual(options.disallowedTools, [
-      ...ClaudeAdapterV2.CLAUDE_TOOLS_UNUSED_UNDER_ONICODE,
+      "ListAgents",
+      "ReportFindings",
+      "ScheduleWakeup",
+      "CronCreate",
+      "CronDelete",
+      "CronList",
     ]);
     assert.deepEqual(options.env, { CLAUDE_CODE_DISABLE_CRON: "1" });
     const withoutOnicodeTools = ClaudeAdapterV2.makeClaudeQueryOptions({
