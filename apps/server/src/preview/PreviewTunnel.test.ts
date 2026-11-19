@@ -88,12 +88,18 @@ const openTunnel = (url: string) =>
     (socket) => Effect.sync(() => socket.terminate()),
   );
 
-/** The status the route turned a tunnel down with. */
+/** How the route turned down a tunnel: its status, and whether it marked the port as the reason. */
 const refusal = (client: NodeWS.WebSocket) =>
   Effect.promise(
     () =>
-      new Promise<number | undefined>((resolve, reject) => {
-        client.on("unexpected-response", (_request, response) => resolve(response.statusCode));
+      new Promise<{ status: number | undefined; portRefused: boolean }>((resolve, reject) => {
+        client.on("unexpected-response", (_request, response) =>
+          resolve({
+            status: response.statusCode,
+            portRefused:
+              response.headers[PreviewTunnel.PREVIEW_TUNNEL_PORT_REFUSED_HEADER] !== undefined,
+          }),
+        );
         client.on("open", () => reject(new Error("tunnel opened")));
         client.on("error", reject);
       }),
@@ -128,9 +134,14 @@ it.effect("pipes bytes both ways between the WebSocket and the loopback port", (
 );
 
 it.effect.each([
-  { case: "the server's own port", target: "self", ticket: "operator" },
-  { case: "a session without terminal:operate", target: "listed", ticket: "reader" },
-] as const)("refuses $case with 403 before dialling", ({ target, ticket }) =>
+  { case: "the server's own port", target: "self", ticket: "operator", portRefused: true },
+  {
+    case: "a session without terminal:operate",
+    target: "listed",
+    ticket: "reader",
+    portRefused: false,
+  },
+] as const)("refuses $case with 403 before dialling", ({ target, ticket, portRefused }) =>
   Effect.gen(function* () {
     let dialled = 0;
     const countDial = (socket: NodeNet.Socket) => {
@@ -143,12 +154,12 @@ it.effect.each([
     const client = yield* openTunnel(
       `${tunnel.origin}/api/preview/tunnel?port=${port}&wsTicket=${ticket}`,
     );
-    expect(yield* refusal(client)).toBe(403);
+    expect(yield* refusal(client)).toEqual({ status: 403, portRefused });
     expect(dialled).toBe(0);
   }),
 );
 
-it.effect("answers a port nothing listens on with 502", () =>
+it.effect("answers a port nothing listens on with 502, marked as about the port", () =>
   Effect.gen(function* () {
     const closed = yield* Effect.promise(
       () =>
@@ -162,7 +173,7 @@ it.effect("answers a port nothing listens on with 502", () =>
     );
     const tunnel = yield* serveTunnel();
     const client = yield* openTunnel(`${tunnel.origin}/api/preview/tunnel?port=${closed}`);
-    expect(yield* refusal(client)).toBe(502);
+    expect(yield* refusal(client)).toEqual({ status: 502, portRefused: true });
   }),
 );
 
@@ -182,7 +193,7 @@ it.effect.each([
       const client = yield* openTunnel(
         `${tunnel.origin}/api/preview/tunnel?port=${listed.port}&host=${encodeURIComponent(host)}`,
       );
-      expect(yield* refusal(client)).toBe(status);
+      expect((yield* refusal(client)).status).toBe(status);
       expect(dialled).toBe(0);
     }),
 );
