@@ -1002,8 +1002,10 @@ it("/side sends the draft's attachments and context, and keeps them until it sta
   await sentMessage({
     context: expect.objectContaining({ records: [expect.objectContaining({ kind: "response" })] }),
   });
-  // The draft clears once the start finished; until then `/side` refuses another side chat.
-  await expect.element(editor).not.toHaveTextContent("/side");
+  // The tab opens once the start finished; until then `/side` refuses another side chat.
+  await expect
+    .element(page.getByRole("button", { name: "Side chat", exact: true }))
+    .toHaveLength(2);
 
   // While the upload runs the draft keeps showing it. The side chat takes the mode the
   // composer had at Send, and starts from its thread after the user leaves.

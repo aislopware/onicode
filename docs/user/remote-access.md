@@ -269,7 +269,7 @@ host cannot be reached, the tab shows a connection error; a `localhost`,
 Other names that point at your computer, such as `/etc/hosts` entries, still
 do. These tabs ignore your system proxy settings, so they can't reach a host
 you connect to only through a proxy or over HTTPS with a privately issued
-certificate. The mobile app keeps streaming.
+certificate. The mobile app always streams tabs from the host.
 
 The first tab downloads a headless Chrome, about 120 MB, into the Onicode home. It
 is the same browser [HTML renders](html-renders.md) use, so a host downloads it
