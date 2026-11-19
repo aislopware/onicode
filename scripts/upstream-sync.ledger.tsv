@@ -2697,3 +2697,4 @@ e37e45fd5b	take	adapted: LinearApi.graphql.ts CONFLICT (generated); Onicode alre
 f03ce68691	take	fix(server): self-settle survives a delegated wake cancelled before it started
 78d74598d4	take	taken; supportsNativeResume optional in contracts (old mobile safe); acp-registry inherits ACP's false, Grok/Kiro/Antigravity/fx left unset as upstream (Resume still offered)
 22f006c8d7	take	fix(web): zoom shortcuts zoom the app from the PR, Diff and Files panes
+a73cdc4df1	take	fix(provider-acp-registry): a failed terminal sign-in shows what the login command printed
