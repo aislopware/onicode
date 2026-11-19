@@ -26,8 +26,13 @@ import {
 import { resolvePastedPath } from "@onicode/shared/path";
 import { scheduleTimeZoneLabel } from "@onicode/client-runtime/scheduled-task-time-zone";
 import type { MessageResolver } from "../../i18n/messages";
-import { useRef, useState, type ReactNode } from "react";
-import { useFocusEffect, useNavigation, usePreventRemove } from "@react-navigation/native";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useFocusEffect,
+  useNavigation,
+  usePreventRemove,
+  type NavigationAction,
+} from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { AppState, Platform, Pressable, TextInput as RNTextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -75,6 +80,8 @@ import {
 import {
   discardScheduledTaskEditor,
   markScheduledTaskEditorSaved,
+  isScheduledTaskEditorSaving,
+  scheduledTaskEditorBlocksRemoval,
 } from "./scheduled-task-editor-state";
 import {
   formatNextScheduledTaskRun,
@@ -471,12 +478,12 @@ function SettingsScheduledTaskEditorScreen({ title }: { readonly title: string }
     disabled: saving,
   });
   const preventRemove = hasChanges || saving;
-  usePreventRemove(preventRemove, ({ data }) => {
+  const guardRemoval = (action: NavigationAction) => {
     if (saved.current) {
-      navigation.dispatch(data.action);
+      navigation.dispatch(action);
       return;
     }
-    if (saving) {
+    if (isScheduledTaskEditorSaving()) {
       Dialog.alert(gt("Saving task"), gt("Wait for the task to finish saving before leaving."));
       return;
     }
@@ -488,11 +495,28 @@ function SettingsScheduledTaskEditorScreen({ title }: { readonly title: string }
         onPress: () => {
           if (voiceInput.isBusy) voiceInput.cancel();
           discardScheduledTaskEditor();
-          navigation.dispatch(data.action);
+          navigation.dispatch(action);
         },
       },
     ]);
+  };
+  usePreventRemove(preventRemove, ({ data }) => guardRemoval(data.action));
+  const latestGuard = useRef({ preventRemove, guardRemoval });
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- usePreventRemove swaps its guard in a layout effect; this one swaps with it so only one of them answers.
+  useLayoutEffect(() => {
+    latestGuard.current = { preventRemove, guardRemoval };
   });
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- subscribes to navigation removal: a link landing in Save's or an edit's batch beats the guard above to render.
+  useEffect(
+    () =>
+      navigation.addListener("beforeRemove", (event) => {
+        const guard = latestGuard.current;
+        if (guard.preventRemove || saved.current || !scheduledTaskEditorBlocksRemoval()) return;
+        event.preventDefault();
+        guard.guardRemoval(event.data.action);
+      }),
+    [navigation],
+  );
   return (
     <SettingsScreen
       title={title}
@@ -546,8 +570,9 @@ function SettingsScheduledTaskEditorScreen({ title }: { readonly title: string }
                 );
             }}
             onSaved={() => {
+              // An edit made while the save ran keeps the editor open with it unsaved.
+              if (!markScheduledTaskEditorSaved(editor)) return;
               saved.current = true;
-              markScheduledTaskEditorSaved();
               if (navigation.isFocused()) navigation.goBack();
             }}
             onChangeEnvironment={(target) => {

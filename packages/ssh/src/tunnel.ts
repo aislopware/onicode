@@ -595,8 +595,20 @@ const REMOTE_MANAGED_SERVER_RUNNING_SCRIPT = `managed_server_running() {
 
 // NFS-shared homes can link ~/.onicode to a directory that does not exist yet, and
 // mkdir -p fails with EEXIST on a dangling symlink, so create its target first.
+// Follows the whole link chain: mkdir on a link that dangles to another link fails with EEXIST.
 const REMOTE_ENSURE_ONI_HOME_SCRIPT = `if [ -L "$HOME/.onicode" ] && [ ! -e "$HOME/.onicode" ]; then
-  (cd "$HOME" && mkdir -p "$(readlink .onicode)")
+  (
+    unset CDPATH
+    cd -P "$HOME" || exit 1
+    ONI_LINK=.onicode
+    ONI_HOPS=0
+    while [ -L "$ONI_LINK" ] && [ "$ONI_HOPS" -lt 40 ]; do
+      case "$ONI_LINK" in */*) cd -P "\${ONI_LINK%/*}/" || exit 1; ONI_LINK="\${ONI_LINK##*/}" ;; esac
+      ONI_LINK="$(readlink "$ONI_LINK")" || exit 1
+      ONI_HOPS=$((ONI_HOPS + 1))
+    done
+    mkdir -p "$ONI_LINK"
+  )
 fi`;
 
 const REMOTE_LAUNCH_SCRIPT = `set -eu

@@ -61,7 +61,14 @@ function PdfPage(props: {
   const canvas = useRef<HTMLCanvasElement>(null);
   const text = useRef<HTMLDivElement>(null);
   const painted = useRef<PDFDocumentProxy>(null);
+  // In PDF units: pdf.js sizes the text layer from raw page dimensions, without `/UserUnit`.
+  const rawWidth = useRef(0);
   const { document: pdf, index, width, onSize, onError } = props;
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- Scale the pdf.js text layer with the CSS-stretched canvas until the debounced repaint.
+  useLayoutEffect(() => {
+    if (rawWidth.current > 0)
+      text.current?.style.setProperty("--total-scale-factor", String(width / rawWidth.current));
+  }, [width]);
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- Render the PDF page canvas and text layer, cancelling tasks and releasing pdf.js page resources on cleanup.
   useEffect(() => {
     let cancelled = false;
@@ -80,6 +87,7 @@ function PdfPage(props: {
         return;
       }
       const natural = page.getViewport({ scale: 1 });
+      rawWidth.current = natural.width / natural.userUnit;
       onSize(index, natural.height / natural.width);
       const viewport = page.getViewport({ scale: width / natural.width });
       const ratio = Math.min(
@@ -98,7 +106,10 @@ function PdfPage(props: {
         background: "white",
       });
       text.current.replaceChildren();
-      text.current.style.setProperty("--total-scale-factor", String(viewport.scale));
+      text.current.style.setProperty(
+        "--total-scale-factor",
+        String(viewport.scale * viewport.userUnit),
+      );
       layer = new TextLayer({
         container: text.current,
         viewport,
