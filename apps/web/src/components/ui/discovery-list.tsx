@@ -24,7 +24,7 @@ export function DiscoveryListRow({
     <button
       type="button"
       {...props}
-      className="group flex w-full items-center gap-3 px-3 py-3 text-left hover:bg-accent/60 focus-visible:outline-none focus-visible:outline-ring-inset disabled:pointer-events-none disabled:opacity-55"
+      className="group flex w-full items-center gap-3 px-3 py-3 text-left hover:bg-accent/60 focus-visible:outline-ring-inset disabled:pointer-events-none disabled:opacity-55"
     >
       {icon}
       <div className="flex min-w-0 flex-1 flex-col">

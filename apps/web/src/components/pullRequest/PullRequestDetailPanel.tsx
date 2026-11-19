@@ -42,6 +42,7 @@ import {
   Suspense,
   useEffect,
   useEffectEvent,
+  useId,
   useLayoutEffect,
   useRef,
   useState,
@@ -91,6 +92,8 @@ import {
   PullRequestChecksStatusLine,
   PullRequestDetailHeaderBody,
   PullRequestDetailTabBar,
+  pullRequestTabId,
+  pullRequestTabPanelId,
 } from "./PullRequestDetailLayout";
 import { PullRequestDetailGhost, PullRequestTimelineGhost } from "./PullRequestGhosts";
 import { PullRequestCopyableCode } from "./PullRequestCopyableCode";
@@ -460,6 +463,7 @@ export function PullRequestDetailPanel({
     (value !== "guide" || reviewGuidesEnabled);
   // An unavailable tab falls back without overwriting the saved selection.
   const tab = isTabAvailable(requestedTab) ? requestedTab : "summary";
+  const tabPanelsId = useId();
   const selectTab = (next: PullRequestDetailTab) => {
     if (tabOnPage) useGuideRunStore.getState().showPageDetailTab(guideKey, next);
     else setTab(next);
@@ -1894,6 +1898,7 @@ export function PullRequestDetailPanel({
             tabs={visibleTabs}
             value={tab}
             onValueChange={selectTab}
+            panels={tabPanelsId}
             onTabIntent={(item) => {
               if (item !== "code") return;
               void loadCodeTab();
@@ -2079,7 +2084,12 @@ export function PullRequestDetailPanel({
         ) : detail ? (
           <PullRequestMarkdownContext value={markdownContext}>
             {mountedTabs.has("summary") ? (
-              <div className={cn("absolute inset-0", tab !== "summary" && "invisible")}>
+              <div
+                className={cn("absolute inset-0", tab !== "summary" && "invisible")}
+                role="tabpanel"
+                id={pullRequestTabPanelId(tabPanelsId, "summary")}
+                aria-labelledby={pullRequestTabId(tabPanelsId, "summary")}
+              >
                 <PullRequestSummaryTab
                   scrollerRef={scrollerRefs.summary}
                   revealUrl={tab === "summary" ? revealUrl : undefined}
@@ -2104,6 +2114,9 @@ export function PullRequestDetailPanel({
             {mountedTabs.has("guide") ? (
               <div
                 className={cn("absolute inset-0", tab !== "guide" && "invisible")}
+                role="tabpanel"
+                id={pullRequestTabPanelId(tabPanelsId, "guide")}
+                aria-labelledby={pullRequestTabId(tabPanelsId, "guide")}
                 // Read by the guide run notifier, which stays quiet for a guide on screen.
                 data-guide-shown={tab === "guide" ? guideKey : undefined}
               >
@@ -2135,7 +2148,12 @@ export function PullRequestDetailPanel({
               </div>
             ) : null}
             {mountedTabs.has("timeline") ? (
-              <div className={cn("absolute inset-0", tab !== "timeline" && "invisible")}>
+              <div
+                className={cn("absolute inset-0", tab !== "timeline" && "invisible")}
+                role="tabpanel"
+                id={pullRequestTabPanelId(tabPanelsId, "timeline")}
+                aria-labelledby={pullRequestTabId(tabPanelsId, "timeline")}
+              >
                 {activityPending ? (
                   <PullRequestTimelineGhost />
                 ) : activityError ? (
@@ -2162,7 +2180,12 @@ export function PullRequestDetailPanel({
               </div>
             ) : null}
             {mountedTabs.has("code") ? (
-              <div className={cn("absolute inset-0", tab !== "code" && "invisible")}>
+              <div
+                className={cn("absolute inset-0", tab !== "code" && "invisible")}
+                role="tabpanel"
+                id={pullRequestTabPanelId(tabPanelsId, "code")}
+                aria-labelledby={pullRequestTabId(tabPanelsId, "code")}
+              >
                 <Suspense
                   fallback={
                     <DiffPanelLoadingState

@@ -67,11 +67,20 @@ export function PullRequestDetailTitleRow({ className, ...props }: ComponentProp
   );
 }
 
+export function pullRequestTabId(panels: string, tab: string): string {
+  return `${panels}-tab-${tab}`;
+}
+
+export function pullRequestTabPanelId(panels: string, tab: string): string {
+  return `${panels}-panel-${tab}`;
+}
+
 export function PullRequestDetailTabBar<Tab extends string>({
   tabs,
   value,
   onValueChange,
   onTabIntent,
+  panels,
   inert,
   children,
 }: {
@@ -79,6 +88,8 @@ export function PullRequestDetailTabBar<Tab extends string>({
   value: Tab;
   onValueChange?: (tab: Tab) => void;
   onTabIntent?: (tab: Tab) => void;
+  /** Id prefix shared with the tab panels, so each tab names the panel it shows. */
+  panels?: string;
   inert?: boolean;
   children?: ReactNode;
 }) {
@@ -89,7 +100,8 @@ export function PullRequestDetailTabBar<Tab extends string>({
   useEffect(() => () => clearTimeout(pointerIntent.current), []);
   return (
     <nav
-      className="col-span-2 flex min-w-0 items-end gap-4 border-t border-border px-4"
+      // Reversed wrap: actions that do not fit move above the tabs, and `items-start` is the bottom edge.
+      className="col-span-2 flex min-w-0 flex-wrap-reverse items-start gap-x-4 border-t border-border px-4"
       aria-label={gt("Pull request tabs")}
       inert={inert}
     >
@@ -106,6 +118,8 @@ export function PullRequestDetailTabBar<Tab extends string>({
             <TabsTab
               key={tab.value}
               value={tab.value}
+              id={panels ? pullRequestTabId(panels, tab.value) : undefined}
+              aria-controls={panels ? pullRequestTabPanelId(panels, tab.value) : undefined}
               onPointerEnter={
                 onTabIntent
                   ? () => {
@@ -122,9 +136,7 @@ export function PullRequestDetailTabBar<Tab extends string>({
           ))}
         </TabsList>
       </Tabs>
-      <div className="flex min-h-9 min-w-0 flex-1 flex-wrap items-center gap-2 py-1.5">
-        {children}
-      </div>
+      <div className="flex min-h-9 grow flex-wrap items-center gap-2 py-1.5">{children}</div>
     </nav>
   );
 }

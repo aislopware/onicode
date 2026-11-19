@@ -64,7 +64,7 @@ export const ChangedFilesCard = memo(function ChangedFilesCard(props: {
     >
       <div
         data-changed-files-header=""
-        className="sticky top-2 z-10 flex items-center justify-between gap-2 rounded-t-lg bg-secondary px-3 py-2 dark:bg-background dark:bg-linear-to-b dark:from-input/20 dark:to-input/20"
+        className="sticky top-2 z-10 flex items-center justify-between gap-2 rounded-t-lg bg-background bg-linear-to-b from-secondary to-secondary px-3 py-2 dark:from-input/20 dark:to-input/20"
       >
         <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs font-medium text-foreground">
           <span>
