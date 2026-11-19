@@ -7265,19 +7265,22 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     }
 
     // The service checked idleness before this command; a run or a delegated result that landed
-    // since makes the thread busy, and that turn refreshes the cache anyway.
+    // since makes the thread busy, and that turn refreshes the cache anyway. It measured the active
+    // session, so skip when the next message resumes another one (after a scheduled fresh run).
     if (
       command.idleCompaction === "beforeCacheExpires" &&
-      projection.runs.some(
-        (run) =>
-          run.status === "queued" ||
-          isActiveRun(run) ||
-          (run.delegatedCompletion?.disposition === "open" &&
-            run.delegatedCompletion.delivery !== null &&
-            !projection.messages.some(
-              (message) => message.id === run.delegatedCompletion?.delivery?.messageId,
-            )),
-      )
+      (conversationProviderThread(projection, contextBoundaryOrdinal(projection))?.id !==
+        projection.thread.activeProviderThreadId ||
+        projection.runs.some(
+          (run) =>
+            run.status === "queued" ||
+            isActiveRun(run) ||
+            (run.delegatedCompletion?.disposition === "open" &&
+              run.delegatedCompletion.delivery !== null &&
+              !projection.messages.some(
+                (message) => message.id === run.delegatedCompletion?.delivery?.messageId,
+              )),
+        ))
     ) {
       yield* emit(
         events,

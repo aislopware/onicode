@@ -5,6 +5,7 @@ import {
   CommandId,
   type ChatAttachment,
   EventId,
+  IDLE_COMPACTION_TEXT,
   MessageId,
   type ModelSelection,
   type OrchestrationV2Command,
@@ -5096,6 +5097,28 @@ describe("orchestration v2 provider switching", () => {
           projection.contextHandoffs.find((handoff) => handoff.targetRunId === recoveredRun.id)!
             .coveredRunOrdinals.from,
           1,
+        );
+
+        // Idle compaction measured the scheduled session, but the next message resumes the main one.
+        yield* send("scheduled-last", true);
+        yield* worker.drain();
+        yield* waitForIdle(threadId);
+        yield* orchestrator.dispatch({
+          type: "message.dispatch",
+          createdBy: "agent",
+          creationSource: "server",
+          commandId: CommandId.make("command:scheduled-fresh-user-chat:idle-compact"),
+          threadId,
+          messageId: MessageId.make("message:scheduled-fresh-user-chat:idle-compact"),
+          text: IDLE_COMPACTION_TEXT,
+          attachments: [],
+          idleCompaction: "beforeCacheExpires",
+          dispatchMode: { type: "start_immediately" },
+        });
+        yield* worker.drain();
+        yield* waitForIdle(threadId);
+        assert.isFalse(
+          (yield* Ref.get(capturedTurns)).some((turn) => turn.text.includes(IDLE_COMPACTION_TEXT)),
         );
       }).pipe(
         Effect.provide(
