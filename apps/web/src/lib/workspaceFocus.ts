@@ -56,13 +56,6 @@ export function workspaceFocusTargetFor(element: HTMLElement): WorkspaceFocusTar
   return { area: names.at(-1), within: names.slice(0, -1), returnTo: element };
 }
 
-/** Whether `element` sits inside `host`'s shadow tree, as a file tree's focused row does. */
-function insideShadowOf(host: Element, element: Element) {
-  for (let root = element.getRootNode(); root instanceof ShadowRoot; root = root.host.getRootNode())
-    if (root.host === host) return true;
-  return false;
-}
-
 function isWorkspaceElementVisible(element: HTMLElement): boolean {
   if (
     !element.isConnected ||
@@ -153,13 +146,16 @@ function targetArea(doc: Document, { area: name, within, returnTo }: WorkspaceFo
 /** Whether the page shows where `target` leads: its control outside any area, or its area. */
 export function isWorkspaceFocusTargetShown(target: WorkspaceFocusTarget) {
   const { returnTo } = target;
-  if (returnTo?.isConnected && !workspaceArea(returnTo)) return isWorkspaceElementVisible(returnTo);
+  if (returnTo?.isConnected && !workspaceArea(returnTo))
+    return isWorkspaceElementVisible(returnTo) && !returnTo.matches(":disabled");
   return targetArea(document, target) !== undefined;
 }
 
 /** Keeps area focus local, like VS Code's layout service focusPart/visible-neighbour actions. */
 export function createWorkspaceFocusController(doc: Document) {
-  const lastFocused = new Map<string, HTMLElement>();
+  // A control inside a shadow tree is remembered with its host: a file tree empties its shadow
+  // root when it unmounts, so the row alone no longer leads back to the tree it was in.
+  const lastFocused = new Map<string, { element: HTMLElement; host?: HTMLElement }>();
   let lastArea: string[] | undefined;
   // An area that took focus itself from the keyboard, or the non-tabbable default (the
   // conversation's scroller) standing in for it. Chromium's :focus-visible also matches a
@@ -192,7 +188,12 @@ export function createWorkspaceFocusController(doc: Document) {
     lastFocused.delete(key);
     // Custom file trees retarget focusin to their nonfocusable shadow host.
     const target = event.composedPath().find((element) => element instanceof HTMLElement);
-    lastFocused.set(key, target instanceof HTMLElement ? target : event.target);
+    lastFocused.set(
+      key,
+      target instanceof HTMLElement && target !== event.target
+        ? { element: target, host: event.target }
+        : { element: event.target },
+    );
     // Surface history must not retain an unbounded number of detached panel trees.
     if (lastFocused.size > 64) lastFocused.delete(lastFocused.keys().next().value!);
   };
@@ -202,10 +203,8 @@ export function createWorkspaceFocusController(doc: Document) {
     const key = area.dataset.workspaceFocusKey ?? areaNames(area).join(" ");
     const remembered = restore ? lastFocused.get(key) : undefined;
     // The page reports a file tree's shadow host as focused; the row inside it is remembered.
-    const previous =
-      returnTo && remembered && insideShadowOf(returnTo, remembered)
-        ? remembered
-        : (returnTo ?? remembered);
+    const previous = !returnTo || remembered?.host === returnTo ? remembered?.element : returnTo;
+    const shadowHost = previous === remembered?.element ? remembered?.host : undefined;
     const usable = (element: HTMLElement) =>
       isWorkspaceElementVisible(element) && !element.matches(":disabled");
     const belongs = (element: HTMLElement) => workspaceArea(element) === area && usable(element);
@@ -225,10 +224,9 @@ export function createWorkspaceFocusController(doc: Document) {
     // Panel surfaces may unmount when hidden. Recover the same named control when
     // it mounts again, without sharing focus history between different surface tabs.
     // A file tree's rows sit in its host's shadow root, and a remounted tree has a new one.
-    const previousRoot = previous?.getRootNode();
     const candidates = (): HTMLElement[] =>
-      previousRoot instanceof ShadowRoot
-        ? Array.from(area.querySelectorAll(previousRoot.host.localName)).flatMap((host) =>
+      shadowHost
+        ? Array.from(area.querySelectorAll(shadowHost.localName)).flatMap((host) =>
             Array.from(host.shadowRoot?.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR) ?? []),
           )
         : Array.from(area.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
@@ -238,6 +236,8 @@ export function createWorkspaceFocusController(doc: Document) {
             (element) =>
               belongs(element) &&
               element.tagName === previous.tagName &&
+              // A file tree's sticky copy of a folder row has the row's path but not its role.
+              element.getAttribute("role") === previous.getAttribute("role") &&
               // A tree row's name repeats across folders; its path does not.
               (previous.dataset.itemPath === undefined ||
                 element.dataset.itemPath === previous.dataset.itemPath) &&

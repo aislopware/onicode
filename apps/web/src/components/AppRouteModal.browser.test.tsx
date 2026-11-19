@@ -196,9 +196,10 @@ describe("AppRouteModal", () => {
   });
 
   it.each([
-    { key: "Tab", shortcut: false },
-    { key: "F6", shortcut: true },
-  ])("keeps focus that $key moved on while it was closing", async ({ key, shortcut }) => {
+    { key: "Tab", shortcut: false, when: "while it was closing" },
+    { key: "F6", shortcut: true, when: "while it was closing" },
+    { key: "F6", shortcut: true, when: "once it closed" },
+  ])("keeps focus that $key moved on $when", async ({ key, shortcut, when }) => {
     using _styles = appStyles();
     const view = (background: boolean, modal: ReactNode = null) => (
       <>
@@ -216,11 +217,17 @@ describe("AppRouteModal", () => {
 
     await screen.rerender(view(true, usageModal));
     await expect.element(page.getByRole("dialog", { name: "Usage" })).toHaveFocus();
-    closeThenPress(key, elsewhere);
-    if (!shortcut) elsewhere.focus();
-    await expect.element(page.getByRole("dialog", { name: "Usage" })).not.toBeInTheDocument();
+    if (when === "once it closed") {
+      await closeWithEsc();
+      // The route has not closed yet, so the thread is still inert.
+      window.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
+    } else {
+      closeThenPress(key, elsewhere);
+      if (!shortcut) elsewhere.focus();
+      await expect.element(page.getByRole("dialog", { name: "Usage" })).not.toBeInTheDocument();
+    }
+    await screen.rerender(view(false));
 
-    // The thread is still inert; a restore asked for now would take focus once it is usable.
     expect(requestWorkspaceFocus).not.toHaveBeenCalled();
     await expect.element(screen.getByRole("button", { name: "Elsewhere" })).toHaveFocus();
   });
@@ -444,6 +451,11 @@ describe("AppRouteModal", () => {
       closeThenPress("F6", document.body, closedBy);
       await vi.waitFor(() =>
         expect(screen.router!.state.resolvedLocation?.pathname).toBe("/pull-requests"),
+      );
+      await screen.rerender(
+        <Sidebar>
+          <PullRequests />
+        </Sidebar>,
       );
 
       await expect.element(screen.getByRole("button", { name: "Sidebar control" })).toHaveFocus();
