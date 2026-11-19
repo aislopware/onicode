@@ -2765,3 +2765,4 @@ ebb3dd0b76	take	fix(source-control-github): sign out an app sign-in GitHub refus
 767f194fd9	take	Codex thread name follows Onicode thread renames; kept Onicode's keep-steered-notes capacity-retry case
 c8b214158e	take	fix(server): Antigravity 1.5 temporary setup and text-helper sessions clean up their files (#39275)
 ae268d9350	take	fix(server): a provider CLI that dies at startup names its exit and EPERM (#39299)
+c5badf4e40	take	fix(web): scope Git controls to the active checkout (#39305)
