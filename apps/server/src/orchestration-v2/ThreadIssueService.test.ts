@@ -97,6 +97,7 @@ describe("ThreadIssueService", () => {
           source: "agent",
         }),
       ).toEqual({ alreadyLinked: false });
+      // The shell stays as given: only acme's ENG-7 is linked, so othercorp's is not.
       expect(yield* service.unlink({ threadId: THREAD_ID, key: othercorp })).toEqual({
         wasLinked: false,
       });

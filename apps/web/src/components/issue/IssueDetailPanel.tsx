@@ -583,7 +583,13 @@ export function IssueDetailPanel({
               variant="ghost"
               aria-label={gt("Refresh issue")}
               disabled={detailQuery.isPending}
-              onClick={() => void pager.refresh(registry, detailQuery.refresh)}
+              onClick={() =>
+                void pager.refresh(registry, () => {
+                  // The tab icon and linked rows read the summary.
+                  registry.refresh(issueEnvironment.summary({ environmentId, input: reference }));
+                  return detailQuery.refresh();
+                })
+              }
             >
               <RefreshIcon size="sm" refreshing={detailQuery.isPending} />
             </Button>

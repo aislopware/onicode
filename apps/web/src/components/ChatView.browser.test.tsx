@@ -234,7 +234,10 @@ it.each([{ issueSummaries: false }, { issueSummaries: true }])(
       };
       return Effect.succeed(summary);
     });
+    let panelOpened = false;
     using _detail = answerRpc(WS_METHODS.issuesDetail, (input: IssueRef) => {
+      // With summaries, only the issue panel reads the full detail.
+      if (issueSummaries) expect(panelOpened).toBe(true);
       expect(input).toEqual(readRef);
       return Effect.succeed(liveDetail);
     });
@@ -273,9 +276,20 @@ it.each([{ issueSummaries: false }, { issueSummaries: true }])(
     await expect.element(issueRow.getByRole("img", { name: "3 comments" })).toBeVisible();
     await expect.element(issueRow.getByRole("img", { name: "Linear" })).toBeVisible();
     await expect.element(issueRow.getByText(issue.scope, { exact: true })).toBeVisible();
+    panelOpened = true;
     await userEvent.click(issueRow);
     expect(router.history.location.pathname).toBe(`/${ENVIRONMENT_ID}/${linked.id}`);
     await expect.element(page.getByRole("heading", { name: liveTitle })).toBeVisible();
+    // Closed elsewhere: refreshing the panel also refreshes the state its tab shows.
+    Object.assign(liveDetail, { state: { category: "closed", name: "Shipped" } });
+    await userEvent.click(page.getByRole("button", { name: "Refresh issue" }));
+    await expect
+      .element(
+        page
+          .getByRole("button", { name: /^Close / })
+          .getByRole("img", { name: "Shipped", exact: true }),
+      )
+      .toBeVisible();
     await act(() => useRightPanelStore.getState().close(scopeThreadRef(ENVIRONMENT_ID, linked.id)));
     await expect
       .element(
