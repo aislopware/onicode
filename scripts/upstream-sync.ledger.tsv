@@ -2559,3 +2559,4 @@ eb46038e3a	take	taken; import conflict merged with Onicode's backgroundWorkTextP
 6845207825	skip	relay only (infra/relay managed endpoints); relay is a removed surface
 7bae751d89	take	taken as is; scenario runs on the desktop target unchanged
 b6d6717df6	take	taken as is
+5b265f8eb7	take	taken; ONICODE_TELEMETRY_ENABLED dropped (telemetry removed); contract field optional
