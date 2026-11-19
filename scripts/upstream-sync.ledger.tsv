@@ -2776,3 +2776,4 @@ b5481adcd8	take	scheduled tasks start from the project's default branch; webhook
 3cd98dcbae	take	fix(server): a secret card closes after the steering restart that supersedes it (#34634)
 40c1e861ee	take	fix(web): keep sidebar update control readable when narrow
 f0f9de46c6	take	fix(web): localize compact restart countdown
+98af8803fe	take	refactor(web): share restart countdown seconds in update capsule
