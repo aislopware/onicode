@@ -5380,6 +5380,8 @@ interface ActiveClaudeTurnContext {
     earlierFallbackText: string;
     fallbackNativeItemId: string;
     emittedNativeItemIds: Set<string>;
+    // How many had streamed when the current segment began; a reply streamed since is its own.
+    streamedBefore: number;
     // Text blocks stream as `${message.id}:text:${n}`; the block's snapshot has its own uuid.
     readonly streamBlocks: Map<number, string>;
     readonly nextBlockIndex: Map<string, number>;
@@ -5461,6 +5463,8 @@ interface ActiveClaudeTurnContext {
   appContextOffered?: ReadonlyMap<string, string> | undefined;
   // Keys of every note the prompt and steers sent, forgotten as delivered if the turn stops.
   appContextSentKeys?: ReadonlySet<string> | undefined;
+  // The steer whose note stands for each key, if a steer sent it.
+  appContextWriters?: ReadonlyMap<string, string> | undefined;
   promptStarted: boolean;
   nativeWakeStarted: boolean;
   gatedFramesBeforeEcho: number;
@@ -5475,9 +5479,11 @@ interface ActiveClaudeTurnContext {
       readonly text: string;
       readonly liveQuery: ClaudeLiveQueryContext;
       readonly pdfReservation: Effect.Success<ReturnType<typeof reserveClaudePdfBudget>>;
-      // Set when Claude takes the offer: the notes it sent, and the history's notes before it.
+      // Set when Claude takes the offer: the notes it sent, the history's notes before it, and
+      // the steers whose notes it replaced.
       appContextSent: ReadonlyMap<string, string> | undefined;
       appContextBefore: ReadonlyMap<string, string> | undefined;
+      appContextFrom: ReadonlyMap<string, string> | undefined;
     }
   >;
   // Claude may settle a turn with a result that echoes only a steer's uuid.
@@ -6365,14 +6371,16 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
         const pdfBudgets = new Map<string, ReturnType<typeof makeClaudeAttachmentBudget>>();
         // MCP app notes already in each native session's history, by key. Cleared when it compacts.
         const deliveredAppContext = new Map<string, ReadonlyMap<string, string>>();
-        // Records an offer's notes on top of the history as it stands when Claude takes the offer.
         // The history lost the notes pending steers sent, so a drop has none to take back.
         const forgetSteerNotes = (context: ActiveClaudeTurnContext) => {
+          context.appContextWriters = undefined;
           for (const steer of context.pendingSteers.values()) {
             steer.appContextSent = undefined;
             steer.appContextBefore = undefined;
+            steer.appContextFrom = undefined;
           }
         };
+        // Records an offer's notes on top of the history as it stands when Claude takes the offer.
         const recordAppContextOffer = (
           context: ActiveClaudeTurnContext,
           sent: NonNullable<ProviderAdapter.ProviderAdapterV2TurnInput["appContext"]>,
@@ -9739,15 +9747,14 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             status,
           });
 
-        // A held result's usage joins the steered segments once another result settles the turn.
-        // Its reply shows now, since the sink places items as first seen; finalize updates it.
-        // Untraced: it runs inside the frame handlers' own work.
-        const absorbHeldResult = Effect.fnUntraced(function* (context: ActiveClaudeTurnContext) {
-          const heldResult = context.heldResult;
-          if (heldResult === undefined) return;
-          context.heldResult = undefined;
+        // A held result ends a segment. Its result-only reply shows now, before anything the next
+        // segment streams, since the sink places items as first seen; a later result-only reply
+        // joins that item unless a reply streamed in between. Untraced: per held result.
+        const endReplySegment = Effect.fnUntraced(function* (context: ActiveClaudeTurnContext) {
           const { assistant } = context;
-          if (assistant.fallbackText.length > 0) {
+          if (assistant.emittedNativeItemIds.size > assistant.streamedBefore) {
+            assistant.earlierFallbackText = "";
+          } else if (assistant.fallbackText.length > 0) {
             assistant.earlierFallbackText = joinFallbackText(
               assistant.earlierFallbackText,
               assistant.fallbackText,
@@ -9762,12 +9769,20 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               completedAt: yield* DateTime.now,
             });
           }
+          assistant.streamedBefore = assistant.emittedNativeItemIds.size;
+        });
+
+        // A held result's usage joins the steered segments once another result settles the turn.
+        const absorbHeldResult = (context: ActiveClaudeTurnContext) => {
+          const heldResult = context.heldResult;
+          if (heldResult === undefined) return;
+          context.heldResult = undefined;
           context.steeredSegmentUsage.push(heldResult.usage);
           context.steeredLedgerUsage = addClaudeLedgerUsage(
             context.steeredLedgerUsage,
             resultLedgerUsage.get(heldResult),
           );
-        });
+        };
 
         const markSteersAccepted = Effect.fnUntraced(function* (
           context: ActiveClaudeTurnContext,
@@ -9787,7 +9802,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             if (steer === undefined) continue;
             context.pendingSteers.delete(uuid);
             // Claude now answers this steer, and that answer's result ends the turn.
-            yield* absorbHeldResult(context);
+            absorbHeldResult(context);
             yield* emitSteerStatus(context, steer.messageId, "completed");
           }
           // Claude removed the steer before reading it. Its item stays pending, so the orchestrator
@@ -9800,28 +9815,33 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               ? context.pendingSteers.get(lifecycle.uuid)
               : undefined;
           if (dropped === undefined || lifecycle === null) return;
-          const steers = [...context.pendingSteers.values()];
-          const later = steers.slice(steers.indexOf(dropped) + 1);
-          context.pendingSteers.delete(lifecycle.uuid);
-          // The follow-up turn sends the same files and notes again. Only notes still as sent go
-          // back, and a later steer that replaced one now counts from what this steer replaced.
-          const restored = (notes: ReadonlyMap<string, string>, key: string) => {
+          const droppedUuid = lifecycle.uuid;
+          context.pendingSteers.delete(droppedUuid);
+          // The follow-up turn sends the same files and notes again. Only notes this steer still
+          // holds go back, and a steer that replaced one now replaced what this steer did.
+          const withNote = (
+            notes: ReadonlyMap<string, string> | undefined,
+            key: string,
+            value: string | undefined,
+          ) => {
             const next = new Map(notes);
-            const before = dropped.appContextBefore?.get(key);
-            if (before === undefined) next.delete(key);
-            else next.set(key, before);
+            if (value === undefined) next.delete(key);
+            else next.set(key, value);
             return next;
           };
-          for (const [key, text] of dropped.appContextSent ?? []) {
-            for (const steer of later) {
-              const notes = steer.appContextBefore;
-              if (notes !== undefined && notes.get(key) === text) {
-                steer.appContextBefore = restored(notes, key);
-              }
+          for (const key of dropped.appContextSent?.keys() ?? []) {
+            const before = dropped.appContextBefore?.get(key);
+            const from = dropped.appContextFrom?.get(key);
+            for (const steer of context.pendingSteers.values()) {
+              if (steer.appContextFrom?.get(key) !== droppedUuid) continue;
+              steer.appContextBefore = withNote(steer.appContextBefore, key, before);
+              steer.appContextFrom = withNote(steer.appContextFrom, key, from);
             }
-            const offered = context.appContextOffered;
-            if (offered !== undefined && offered.get(key) === text) {
-              context.appContextOffered = restored(offered, key);
+            if (context.appContextWriters?.get(key) === droppedUuid) {
+              context.appContextWriters = withNote(context.appContextWriters, key, from);
+              if (context.appContextOffered !== undefined) {
+                context.appContextOffered = withNote(context.appContextOffered, key, before);
+              }
             }
           }
           if (dropped.pdfReservation.delivered && !dropped.pdfReservation.refunded) {
@@ -9909,6 +9929,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 updatedAt: input.completedAt,
               },
             });
+            // No boundary will release the snapshot it took.
+            const budget = pdfBudgets.get(input.context.nativeThreadId);
+            if (budget !== undefined) budget.compacting = null;
           }
           input.context.compaction = null;
           if (input.status !== "completed") {
@@ -9959,14 +9982,15 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             subagentToolCalls.delete(toolCall.nativeItemId);
           }
 
-          // A steer's streamed answer does not replace the result-only replies before it.
+          // A reply streamed in the last segment stands on its own after the earlier ones.
           const fallbackText =
-            input.context.assistant.emittedNativeItemIds.size === 0
+            input.context.assistant.emittedNativeItemIds.size ===
+            input.context.assistant.streamedBefore
               ? joinFallbackText(
                   input.context.assistant.earlierFallbackText,
                   input.context.assistant.fallbackText,
                 )
-              : input.context.assistant.earlierFallbackText;
+              : "";
           if (fallbackText.length > 0) {
             const ordinal = yield* resolveItemOrdinal(
               input.context,
@@ -11743,6 +11767,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               // Offers made while compaction runs are outside the history it
               // removes. Pending reservations must survive its boundary too.
               if (budget !== undefined) budget.compacting = { ...budget.committed };
+              for (const steer of context.pendingSteers.values()) {
+                steer.pdfReservation.afterCompactionStart = false;
+              }
               context.compaction = compaction;
               yield* emitProviderEvent({
                 type: "turn_item.updated",
@@ -12563,7 +12590,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               message.subtype === "success" &&
               message.local_command === "compact"
             ) &&
-            context.assistant.emittedNativeItemIds.size === 0 &&
+            context.assistant.emittedNativeItemIds.size === context.assistant.streamedBefore &&
             context.assistant.fallbackText.length === 0 &&
             resultText !== null &&
             resultText.text.length > 0 &&
@@ -12589,7 +12616,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             const completedAt = yield* DateTime.now;
             const interrupted = (yield* Ref.get(interruptedTurns)).has(context.providerTurnId);
             const wasSteered = (yield* Ref.get(steeredTurns)).has(context.providerTurnId);
-            yield* absorbHeldResult(context);
+            absorbHeldResult(context);
             if (!interrupted && wasSteered && isClaudeActiveSteeringAbortResult(message)) {
               const cutOffReply = context.assistant.lastReply;
               context.assistant.lastReply = null;
@@ -12718,6 +12745,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               claudeEchoedPromptUuids(message).length > 0
             ) {
               context.heldResult = message;
+              yield* endReplySegment(context);
               return;
             }
             yield* finalizeActiveTurn({
@@ -14049,6 +14077,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 earlierFallbackText: "",
                 fallbackNativeItemId: `assistant:${turnInput.runId}`,
                 emittedNativeItemIds: new Set(),
+                streamedBefore: 0,
                 streamBlocks: new Map(),
                 nextBlockIndex: new Map(),
                 snapshotBlockIndex: new Map(),
@@ -14606,6 +14635,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               pdfReservation,
               appContextSent: undefined as ReadonlyMap<string, string> | undefined,
               appContextBefore: undefined as ReadonlyMap<string, string> | undefined,
+              appContextFrom: undefined as ReadonlyMap<string, string> | undefined,
             };
             currentTurn.pendingSteers.set(steerUuid, pendingSteer);
             yield* Ref.update(steeredTurns, (current) => {
@@ -14639,6 +14669,16 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 pendingSteer.appContextSent = new Map(
                   unsentAppContext.map((entry) => [entry.key, entry.text] as const),
                 );
+                pendingSteer.appContextFrom = new Map(
+                  unsentAppContext.flatMap((entry) => {
+                    const writer = currentTurn.appContextWriters?.get(entry.key);
+                    return writer === undefined ? [] : [[entry.key, writer] as const];
+                  }),
+                );
+                currentTurn.appContextWriters = new Map([
+                  ...(currentTurn.appContextWriters ?? []),
+                  ...unsentAppContext.map((entry) => [entry.key, steerUuid] as const),
+                ]);
                 recordAppContextOffer(currentTurn, unsentAppContext);
               }
             };
