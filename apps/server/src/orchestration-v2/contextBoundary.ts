@@ -1,5 +1,4 @@
 import type {
-  MessageId,
   OrchestrationV2ContextTransfer,
   OrchestrationV2Run,
   OrchestrationV2ThreadProjection,
@@ -23,12 +22,19 @@ export function startedFreshRun(run: OrchestrationV2Run): boolean {
 
 // Collected in one pass: an hourly fresh-session schedule leaves thousands of fresh runs to check.
 // A compacted thread's command read loads the prompts of every fresh-context run.
-function scheduledMessageIds(
+// A run's first message decides: a steering restart points the run at the steer instead.
+function scheduledRunIds(
   turnItems: OrchestrationV2ThreadProjection["turnItems"],
-): ReadonlySet<MessageId> {
+): ReadonlySet<RunId> {
+  const first = new Map<RunId, OrchestrationV2TurnItem>();
+  for (const item of turnItems) {
+    if (item.type !== "user_message" || item.runId === null) continue;
+    const held = first.get(item.runId);
+    if (held === undefined || item.ordinal < held.ordinal) first.set(item.runId, item);
+  }
   return new Set(
-    turnItems.flatMap((item) =>
-      item.type === "user_message" && item.scheduledTaskId !== undefined ? [item.messageId] : [],
+    Array.from(first).flatMap(([runId, item]) =>
+      item.type === "user_message" && item.scheduledTaskId !== undefined ? [runId] : [],
     ),
   );
 }
@@ -39,22 +45,20 @@ export function scheduledFreshRunOrdinals(
 ): ReadonlySet<number> {
   const freshRuns = projection.runs.filter((run) => run.freshContext === true);
   if (freshRuns.length === 0) return new Set();
-  const messageIds = scheduledMessageIds(projection.turnItems);
-  return new Set(
-    freshRuns.flatMap((run) => (messageIds.has(run.userMessageId) ? [run.ordinal] : [])),
-  );
+  const runIds = scheduledRunIds(projection.turnItems);
+  return new Set(freshRuns.flatMap((run) => (runIds.has(run.id) ? [run.ordinal] : [])));
 }
 
 /** Ordinal of the latest started fresh-context run. Runs before it never reach a provider again. */
 export function contextBoundaryOrdinal(
   projection: Pick<OrchestrationV2ThreadProjection, "runs" | "turnItems">,
 ): number {
-  let scheduled: ReadonlySet<MessageId> | undefined;
+  let scheduled: ReadonlySet<RunId> | undefined;
   let boundary = 0;
   for (const run of projection.runs) {
     if (!startedFreshRun(run) || run.ordinal <= boundary) continue;
-    scheduled ??= scheduledMessageIds(projection.turnItems);
-    if (!scheduled.has(run.userMessageId)) {
+    scheduled ??= scheduledRunIds(projection.turnItems);
+    if (!scheduled.has(run.id)) {
       boundary = run.ordinal;
     }
   }
