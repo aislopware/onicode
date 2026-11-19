@@ -2701,3 +2701,4 @@ a73cdc4df1	take	fix(provider-acp-registry): a failed terminal sign-in shows what
 8edefc8818	take	fix(desktop): Edit, Window, and context menu items follow the UI language
 3b4041a97a	take	fix(shared): theme CSS saves with escaped quotes and quoted comment markers
 803f21f6a5	take	taken; CONFLICT in PullRequestCodeTab.browser.test.tsx resolved keeping Onicode's singlePage refresh mock beside upstream's testFileDiffAtom/shortPages; scenario ported on the desktop (WEB) target
+106a1e03b7	take	adapted: same cache-miss refetch applied to Onicode's @cursor/sdk 1.4.0 patch (upstream patches 1.3.1)
