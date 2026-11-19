@@ -279,6 +279,19 @@ function projectOverridePatches(
   };
 }
 
+/** Vetting reads a write's paths as stored, so per-key sets count as the project keys they set. */
+function projectOverrideKeysAsStored(patch: ServerSettingsPatch): ServerSettingsPatch {
+  const { projectSettingsOverrideKeys: keys, ...rest } = patch;
+  if (keys === undefined) return patch;
+  const entries: Record<string, ProjectSettingsOverrides | null> = {
+    ...rest.projectSettingsOverrides,
+  };
+  for (const [projectId, { set }] of Object.entries(keys)) {
+    entries[projectId] = { ...entries[projectId], ...set };
+  }
+  return { ...rest, projectSettingsOverrides: entries };
+}
+
 export class ServerSettingsService extends Context.Service<
   ServerSettingsService,
   {
@@ -1254,7 +1267,9 @@ const make = Effect.gen(function* () {
           });
         }
         const patches =
-          typeof patchFor === "function" ? patchFor(current) : { apply: patchFor, vet: patchFor };
+          typeof patchFor === "function"
+            ? patchFor(current)
+            : { apply: patchFor, vet: projectOverrideKeysAsStored(patchFor) };
         // Nothing to change: skip the file write and the change broadcast.
         if (patches === null) return yield* getMaterializedSettings;
         const { apply: patch, vet: vetPatch } = patches;

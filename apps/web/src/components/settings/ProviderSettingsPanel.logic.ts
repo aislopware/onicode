@@ -3,12 +3,13 @@ import {
   AuthProvidersManageScope,
   type EnvironmentId,
   type ProjectId,
-  type ProjectSettingsOverrides,
   type ProviderInstanceId,
   sessionGrantsScope,
   type ServerSettings,
+  type ServerSettingsPatch,
   type SessionGrantInput,
 } from "@onicode/contracts";
+import { projectOverridesPatch } from "@onicode/shared/projectSettings";
 
 export interface ProviderEnvironmentOptionLike {
   readonly environmentId: EnvironmentId;
@@ -89,23 +90,30 @@ export function buildProviderInstanceOverridePatch(
   projectIds: readonly ProjectId[],
   instanceId: ProviderInstanceId,
   value: boolean | undefined,
-): Record<ProjectId, ProjectSettingsOverrides | null> {
-  const patch: Record<ProjectId, ProjectSettingsOverrides | null> = {};
-  for (const projectId of projectIds) {
-    const current = settings.projectSettingsOverrides[projectId];
-    const instances = { ...current?.providerInstances };
-    const instance = { ...instances[instanceId] };
-    if (value === undefined) delete instance.enabled;
-    else instance.enabled = value;
-    if (Object.keys(instance).length > 0) instances[instanceId] = instance;
-    else delete instances[instanceId];
+  perKey: boolean,
+): ServerSettingsPatch {
+  return projectOverridesPatch(
+    projectIds.map((projectId) => {
+      const current = settings.projectSettingsOverrides[projectId];
+      const instances = { ...current?.providerInstances };
+      const instance = { ...instances[instanceId] };
+      if (value === undefined) delete instance.enabled;
+      else instance.enabled = value;
+      if (Object.keys(instance).length > 0) instances[instanceId] = instance;
+      else delete instances[instanceId];
 
-    const { providerInstances: _omit, ...rest } = current ?? {};
-    const nextEntry: ProjectSettingsOverrides = { ...rest, providerInstances: instances };
-    patch[projectId] =
-      Object.keys(rest).length === 0 && Object.keys(instances).length === 0 ? null : nextEntry;
-  }
-  return patch;
+      const { providerInstances: _omit, ...rest } = current ?? {};
+      return {
+        projectId,
+        keys: ["providerInstances"],
+        next:
+          Object.keys(rest).length === 0 && Object.keys(instances).length === 0
+            ? null
+            : { ...rest, providerInstances: instances },
+      };
+    }),
+    perKey,
+  );
 }
 
 export function classifyProviderEnvironmentAccess(input: {

@@ -17,6 +17,7 @@ import {
 } from "@onicode/client-runtime/state/runtime";
 import type { EnvironmentProject } from "@onicode/client-runtime/state/shell";
 import { resolveProjectScripts } from "@onicode/shared/projectScripts";
+import { projectOverridesPatch } from "@onicode/shared/projectSettings";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/reactivity";
 import { useStableCallback } from "../../hooks/useStableCallback";
@@ -99,14 +100,19 @@ export function useProjectScriptEditing(input: {
         input: {
           patch:
             serverConfig?.environment.capabilities.projectSettingsOverrides === true
-              ? {
-                  projectSettingsOverrides: {
-                    [input.projectId]: {
-                      ...settings.projectSettingsOverrides[input.projectId],
-                      defaultProjectScripts: input.nextScripts,
+              ? projectOverridesPatch(
+                  [
+                    {
+                      projectId: input.projectId,
+                      keys: ["defaultProjectScripts"],
+                      next: {
+                        ...settings.projectSettingsOverrides[input.projectId],
+                        defaultProjectScripts: input.nextScripts,
+                      },
                     },
-                  },
-                }
+                  ],
+                  serverConfig.environment.capabilities.projectSettingsOverrideKeys === true,
+                )
               : {
                   projectScriptOverrides: {
                     [input.projectId]: input.nextScripts,

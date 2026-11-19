@@ -24,12 +24,31 @@ describe("buildProviderInstanceOverridePatch", () => {
     };
 
     expect(
-      buildProviderInstanceOverridePatch(settings, [projectId, siblingId], instanceId, false),
+      buildProviderInstanceOverridePatch(
+        settings,
+        [projectId, siblingId],
+        instanceId,
+        false,
+        false,
+      ),
     ).toEqual({
-      [projectId]: { providerInstances: { [instanceId]: { enabled: false } } },
-      [siblingId]: {
-        newWorktreesStartFromOrigin: true,
-        providerInstances: { [instanceId]: { enabled: false } },
+      projectSettingsOverrides: {
+        [projectId]: { providerInstances: { [instanceId]: { enabled: false } } },
+        [siblingId]: {
+          newWorktreesStartFromOrigin: true,
+          providerInstances: { [instanceId]: { enabled: false } },
+        },
+      },
+    });
+    // A server that merges per key gets only providerInstances, leaving the other keys it stores.
+    expect(
+      buildProviderInstanceOverridePatch(settings, [siblingId], instanceId, false, true),
+    ).toEqual({
+      projectSettingsOverrideKeys: {
+        [siblingId]: {
+          set: { providerInstances: { [instanceId]: { enabled: false } } },
+          unset: [],
+        },
       },
     });
   });
@@ -42,8 +61,8 @@ describe("buildProviderInstanceOverridePatch", () => {
     };
 
     expect(
-      buildProviderInstanceOverridePatch(settings, [projectId], instanceId, undefined),
-    ).toEqual({ [projectId]: null });
+      buildProviderInstanceOverridePatch(settings, [projectId], instanceId, undefined, false),
+    ).toEqual({ projectSettingsOverrides: { [projectId]: null } });
   });
 
   it("sends providerInstances: {} explicitly when clearing the last instance override leaves other keys", () => {
@@ -57,9 +76,11 @@ describe("buildProviderInstanceOverridePatch", () => {
     };
 
     expect(
-      buildProviderInstanceOverridePatch(settings, [projectId], instanceId, undefined),
+      buildProviderInstanceOverridePatch(settings, [projectId], instanceId, undefined, false),
     ).toEqual({
-      [projectId]: { newWorktreesStartFromOrigin: true, providerInstances: {} },
+      projectSettingsOverrides: {
+        [projectId]: { newWorktreesStartFromOrigin: true, providerInstances: {} },
+      },
     });
   });
 });

@@ -36,6 +36,7 @@ function environment(
     connected?: boolean;
     loaded?: boolean;
     settings?: Partial<ServerSettings>;
+    perKeyOverrides?: boolean;
   } = {},
 ) {
   return {
@@ -49,6 +50,9 @@ function environment(
         ? null
         : {
             settings: { ...DEFAULT_SERVER_SETTINGS, ...options.settings },
+            environment: {
+              capabilities: { projectSettingsOverrideKeys: options.perKeyOverrides === true },
+            },
           },
   };
 }
@@ -676,6 +680,26 @@ describe("scoped settings writes", () => {
         );
       },
     );
+
+    it("keeps another device's key when this device saves from a copy that predates it", async () => {
+      const host = saving(DEFAULT_SERVER_SETTINGS);
+      const deviceWrite = (patch: ServerSettingsPatch) =>
+        persistScopedSettingsPatch(
+          planScopedSettingsPatch(
+            checkout,
+            [environment("Server", { settings: DEFAULT_SERVER_SETTINGS, perKeyOverrides: true })],
+            patch,
+          ),
+          host.persistServer,
+          vi.fn(),
+        );
+      await deviceWrite({ defaultThreadEnvMode: "worktree" });
+      await deviceWrite({ defaultAutoPull: true });
+      expect(host.stored().projectSettingsOverrides[projectId]).toEqual({
+        defaultThreadEnvMode: "worktree",
+        defaultAutoPull: true,
+      });
+    });
 
     it("plans from a copy that changed after the last save, and saves again after a failure", async () => {
       let copy: ServerSettings = DEFAULT_SERVER_SETTINGS;

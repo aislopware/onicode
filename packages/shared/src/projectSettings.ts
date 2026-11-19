@@ -10,6 +10,7 @@ import {
   resolveTextGenerationSelectionEnabled,
   type ResolvedServerSettings,
   type ServerSettings,
+  type ServerSettingsPatch,
   type OniProjectFile,
   type ThreadEnvMode,
   type WorktreeCleanupRules,
@@ -224,6 +225,48 @@ export function clearProjectSettingsOverrides(
   const next = { ...current };
   for (const key of keys) delete next[key];
   return Object.keys(next).length === 0 ? null : next;
+}
+
+export interface ProjectOverrideWrite {
+  readonly projectId: ProjectId;
+  /** The project's entry after the write, built from this client's copy; null when empty. */
+  readonly next: ProjectSettingsOverrides | null;
+  /** The keys the write changes. */
+  readonly keys: readonly string[];
+}
+
+/**
+ * Servers that merge per key get only the changed keys, so a write from a stale copy cannot
+ * restore a key another device changed meanwhile. Older servers get whole entries.
+ */
+export function projectOverridesPatch(
+  writes: readonly ProjectOverrideWrite[],
+  perKey: boolean,
+): ServerSettingsPatch {
+  if (!perKey) {
+    return {
+      projectSettingsOverrides: Object.fromEntries(
+        writes.map(({ projectId, next }) => [projectId, next]),
+      ),
+    };
+  }
+  const stored = (next: ProjectSettingsOverrides | null, key: string) =>
+    next !== null && Object.hasOwn(next, key);
+  return {
+    projectSettingsOverrideKeys: Object.fromEntries(
+      writes.map(({ projectId, next, keys }) => [
+        projectId,
+        {
+          set: Object.fromEntries(
+            keys.flatMap((key) =>
+              stored(next, key) ? [[key, next?.[key as keyof ProjectSettingsOverrides]]] : [],
+            ),
+          ) as ProjectSettingsOverrides,
+          unset: keys.filter((key) => !stored(next, key)),
+        },
+      ]),
+    ),
+  };
 }
 
 export function resolveWorktreeCleanup(

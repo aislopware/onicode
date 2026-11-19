@@ -591,6 +591,10 @@ export function EnvironmentProviderSettings({
     serverEnvironment.configValueAtom(environmentId),
     (config) => config?.environment.capabilities.projectProviderInstanceOverrides === true,
   );
+  const supportsPerKeyOverrides = useAtomValue(
+    serverEnvironment.configValueAtom(environmentId),
+    (config) => config?.environment.capabilities.projectSettingsOverrideKeys === true,
+  );
   const refreshServerProviders = useAtomCommand(serverEnvironment.refreshProviders, {
     reportFailure: false,
   });
@@ -947,14 +951,15 @@ export function EnvironmentProviderSettings({
 
   const writeProjectOverride = useStableCallback(
     (instanceId: ProviderInstanceId, next: boolean | undefined) => {
-      updateSettings({
-        projectSettingsOverrides: buildProviderInstanceOverridePatch(
+      updateSettings(
+        buildProviderInstanceOverridePatch(
           settings,
           projectIds,
           instanceId,
           next,
+          supportsPerKeyOverrides,
         ),
-      });
+      );
     },
   );
 

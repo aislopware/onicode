@@ -15,7 +15,10 @@ import {
   type ServerSettings,
 } from "@onicode/contracts";
 import { resolveProjectScripts } from "@onicode/shared/projectScripts";
-import { clearProjectSettingsOverrides } from "@onicode/shared/projectSettings";
+import {
+  clearProjectSettingsOverrides,
+  projectOverridesPatch,
+} from "@onicode/shared/projectSettings";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/reactivity";
 import { msg } from "gt-react";
@@ -59,6 +62,7 @@ export function useProjectScriptSettings(
     settings: ServerSettings;
     keybindings: ResolvedKeybindingsConfig;
     project?: { id: ProjectId; scripts: readonly ProjectScript[] };
+    perKeyOverrides?: boolean;
   }[],
 ) {
   const projects = useProjects();
@@ -117,7 +121,7 @@ export function useProjectScriptSettings(
     scriptId: string | undefined,
     keybinding: string | null | undefined,
   ): Promise<AtomCommandResult<void, unknown>> {
-    for (const { environmentId, settings, keybindings, project } of targets) {
+    for (const { environmentId, settings, keybindings, project, perKeyOverrides } of targets) {
       const current = project
         ? resolveProjectScripts(settings, project)
         : settings.defaultProjectScripts;
@@ -127,19 +131,24 @@ export function useProjectScriptSettings(
         environmentId,
         input: {
           patch: project
-            ? {
-                projectSettingsOverrides: {
-                  [project.id]:
-                    nextScripts === null
-                      ? clearProjectSettingsOverrides(settings, project.id, [
-                          "defaultProjectScripts",
-                        ])
-                      : {
-                          ...settings.projectSettingsOverrides[project.id],
-                          defaultProjectScripts: nextScripts,
-                        },
-                },
-              }
+            ? projectOverridesPatch(
+                [
+                  {
+                    projectId: project.id,
+                    keys: ["defaultProjectScripts"],
+                    next:
+                      nextScripts === null
+                        ? clearProjectSettingsOverrides(settings, project.id, [
+                            "defaultProjectScripts",
+                          ])
+                        : {
+                            ...settings.projectSettingsOverrides[project.id],
+                            defaultProjectScripts: nextScripts,
+                          },
+                  },
+                ],
+                perKeyOverrides === true,
+              )
             : { defaultProjectScripts: nextScripts ?? [] },
         },
       });
