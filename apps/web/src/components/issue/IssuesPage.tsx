@@ -55,7 +55,7 @@ import {
 import { m, type MessageResolver } from "~/i18n/messages";
 import { resolveFilterOptions } from "../pullRequest/pullRequestListOptions";
 import { IssueFiltersMenu } from "./IssueListFilterPickers";
-import { issueFilterProjects } from "./issuesSearch.logic";
+import { issueFilterProjects, issueProjectScope } from "./issuesSearch.logic";
 import { ISSUE_SAVED_VIEWS } from "./issueSavedViews";
 import { SavedViewsMenu } from "~/components/SavedViewsMenu";
 import { PullRequestCompactFilterMenu } from "../pullRequest/PullRequestCompactFilterMenu";
@@ -92,7 +92,7 @@ import {
 } from "~/rightPanelStore";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { squashAtomCommandFailure } from "@onicode/client-runtime/state/runtime";
-import { useProjects } from "~/state/entities";
+import { useAllEnvironmentShellsBootstrapped, useProjects } from "~/state/entities";
 import { useEnvironments, useIssuesSupported } from "~/state/environments";
 import { issueEnvironment, useIssueList, type IssueListTarget } from "~/state/issues";
 import { useDebouncedValue } from "~/state/queries";
@@ -191,6 +191,7 @@ export function IssuesPage() {
   const search = useSearch({ from: "/_chat/issues" });
   const { environments } = useEnvironments();
   const projects = useProjects();
+  const projectsKnown = useAllEnvironmentShellsBootstrapped();
   const issuesSupported = useIssuesSupported();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
 
@@ -209,13 +210,7 @@ export function IssuesPage() {
       ? { environmentId: search.issueServer, projectId: search.issueProject }
       : undefined;
   // A saved or linked filter can name a project whose environment is gone; it reads nothing.
-  const scopedProjectUnavailable =
-    scopedProject !== undefined &&
-    !filterProjects.some(
-      (project) =>
-        project.id === scopedProject.projectId &&
-        project.environmentId === scopedProject.environmentId,
-    );
+  const projectScope = issueProjectScope(scopedProject, filterProjects, projectsKnown);
 
   const debouncedQuery = useDebouncedValue(search.q ?? "", 300);
   const listInput: IssueListInput = {
@@ -483,7 +478,7 @@ export function IssuesPage() {
       title={gt("Issues unavailable")}
       error={gt("Update this environment's Onicode server to browse issues.")}
     />
-  ) : noneAnswered && list.isPending ? (
+  ) : (noneAnswered && list.isPending) || projectScope === "pending" ? (
     <PullRequestListGhost />
   ) : noneAnswered && list.error ? (
     <PullRequestsUnavailableState
@@ -491,7 +486,7 @@ export function IssuesPage() {
       onRetry={list.refresh}
       refreshing={list.isPending}
     />
-  ) : groups.length === 0 && scopedProjectUnavailable ? (
+  ) : groups.length === 0 && projectScope === "unavailable" ? (
     <Empty>
       <EmptyMedia variant="icon">
         <IssueGlyph.issue />

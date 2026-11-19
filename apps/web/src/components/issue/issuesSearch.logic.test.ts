@@ -3,7 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 import type { EnvironmentProject } from "@onicode/client-runtime/state/models";
 import { EnvironmentId, ProjectId } from "@onicode/contracts";
 
-import { issueFilterProjects, issuesSearchFromUrl } from "./issuesSearch.logic";
+import { issueFilterProjects, issueProjectScope, issuesSearchFromUrl } from "./issuesSearch.logic";
 
 describe("issuesSearchFromUrl", () => {
   it("replaces a malformed filter instead of letting the raw value through", () => {
@@ -29,7 +29,7 @@ describe("issuesSearchFromUrl", () => {
       selectedEnvironmentId: ` ${long("selected-server")} `,
       selectedProjectId: long("selected-project"),
       selectedHost: long("host"),
-      tracker: long("tracker"),
+      tracker: `tracker-${"x".repeat(50)}`,
       scope: long("group/subgroup"),
       key: long("key"),
     };
@@ -62,5 +62,21 @@ describe("issueFilterProjects", () => {
       ["main", "onicode · laptop · /work/main"],
       ["worktree", "onicode · laptop · /work/worktree"],
     ]);
+  });
+});
+
+describe("issueProjectScope", () => {
+  it("calls a project filter unavailable only once every environment's projects are known", () => {
+    const listed = {
+      environmentId: EnvironmentId.make("laptop"),
+      projectId: ProjectId.make("app"),
+    };
+    const gone = { environmentId: EnvironmentId.make("removed"), projectId: ProjectId.make("app") };
+    const projects = [{ id: listed.projectId, environmentId: listed.environmentId }];
+    expect(issueProjectScope(undefined, projects, false)).toBe("all");
+    expect(issueProjectScope(listed, projects, false)).toBe("listed");
+    // A remote environment still connecting has not listed its projects yet.
+    expect(issueProjectScope(gone, projects, false)).toBe("pending");
+    expect(issueProjectScope(gone, projects, true)).toBe("unavailable");
   });
 });

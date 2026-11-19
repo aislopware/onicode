@@ -49,3 +49,20 @@ export const issueFilterProjects = (
       .map((project) => ({ ...project, repositoryIdentity: null })),
     environmentLabels,
   );
+
+/** Whether the page's project filter names a project it can read. */
+export const issueProjectScope = (
+  scoped: { readonly environmentId: EnvironmentId; readonly projectId: ProjectId } | undefined,
+  listed: ReadonlyArray<{ readonly id: ProjectId; readonly environmentId: EnvironmentId }>,
+  projectsKnown: boolean,
+): "all" | "listed" | "pending" | "unavailable" =>
+  scoped === undefined
+    ? "all"
+    : listed.some(
+          (project) =>
+            project.id === scoped.projectId && project.environmentId === scoped.environmentId,
+        )
+      ? "listed"
+      : projectsKnown
+        ? "unavailable"
+        : "pending";

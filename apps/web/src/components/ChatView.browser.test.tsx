@@ -282,23 +282,30 @@ it("reads only the linked issues a thread shows", async () => {
   document.head.append(style);
   using _style = { [Symbol.dispose]: () => style.remove() };
   const many = threadWithHistory("issue-many", 1);
-  const issues = Array.from({ length: 100 }, (_, index): ThreadIssueLink => {
-    const key = String(index + 1);
-    return {
-      projectId: PROJECT_ID,
-      tracker: IssueTrackerKind.make("github"),
-      host: "github.com",
-      scope: "owner/repo",
-      key,
-      url: `https://github.com/owner/repo/issues/${key}`,
-      source: "agent",
-      linkedAt: "2026-01-01T00:00:00.000Z",
-      displayKey: `#${key}`,
-      title: `Issue number ${key}`,
-    };
-  });
-  using _environment = installFakeEnvironment([{ ...many, issues }]);
+  const few = threadWithHistory("issue-few", 1);
+  const issueLinks = (count: number) =>
+    Array.from({ length: count }, (_, index): ThreadIssueLink => {
+      const key = String(index + 1);
+      return {
+        projectId: PROJECT_ID,
+        tracker: IssueTrackerKind.make("github"),
+        host: "github.com",
+        scope: "owner/repo",
+        key,
+        url: `https://github.com/owner/repo/issues/${key}`,
+        source: "agent",
+        linkedAt: "2026-01-01T00:00:00.000Z",
+        displayKey: `#${key}`,
+        title: `Issue number ${key}`,
+      };
+    });
+  const issues = issueLinks(100);
+  using _environment = installFakeEnvironment([
+    { ...many, issues },
+    { ...few, issues: issueLinks(5) },
+  ]);
   await emitShellThread(many.id);
+  await emitShellThread(few.id);
   const read = new Set<string>();
   // Left pending: a row reading its summary is the cost under test.
   using _summary = answerRpc(WS_METHODS.issuesSummary, (input: IssueRef) => {
@@ -319,23 +326,44 @@ it("reads only the linked issues a thread shows", async () => {
     router: false,
   });
   const details = page.getByRole("region", { name: "Thread details" });
+  const detailsIssues = details.getByRole("link", { name: /^Issue #/ });
   await expect
     .element(details.getByRole("link", { name: "Issue #1: Issue number 1" }))
     .toBeVisible();
   await expect.element(details.getByRole("button", { name: "Show 97 more" })).toBeVisible();
-  expect(details.getByRole("link", { name: /^Issue #/ }).elements()).toHaveLength(3);
+  expect(detailsIssues.elements()).toHaveLength(3);
 
   await act(() =>
     useRightPanelStore.getState().open(scopeThreadRef(ENVIRONMENT_ID, many.id), "pull-requests"),
   );
   const linkedItems = page.getByRole("region", { name: "Linked items" });
-  await expect
-    .element(linkedItems.getByRole("link", { name: "Issue #1: Issue number 1" }))
-    .toBeVisible();
-  const mounted = linkedItems.getByRole("link", { name: /^Issue #/ }).elements().length;
-  expect(mounted).toBeGreaterThan(3);
-  expect(mounted).toBeLessThan(issues.length);
+  const linkedIssues = linkedItems.getByRole("link", { name: /^Issue #/ });
+  await vi.waitFor(() => expect(linkedIssues.elements().length).toBeGreaterThan(3));
+  expect(linkedIssues.elements().length).toBeLessThan(issues.length);
   expect(read.size).toBeLessThan(issues.length);
+  const scroller = [...linkedItems.element().querySelectorAll("div")].find(
+    (element) => element.scrollHeight > element.clientHeight,
+  )!;
+  await act(() => scroller.scrollTo({ top: scroller.scrollHeight }));
+  await expect
+    .element(linkedItems.getByRole("link", { name: "Issue #100: Issue number 100" }))
+    .toBeVisible();
+  await act(() => useRightPanelStore.getState().close(scopeThreadRef(ENVIRONMENT_ID, many.id)));
+
+  // Expanding one thread's issues leaves the next thread's collapsed.
+  await userEvent.click(details.getByRole("button", { name: "Show 97 more" }));
+  await vi.waitFor(() => expect(detailsIssues.elements()).toHaveLength(100));
+  await act(() => router.navigate({ to: `/${ENVIRONMENT_ID}/${few.id}` }));
+  await expect.element(details.getByRole("button", { name: "Show 2 more" })).toBeVisible();
+  expect(detailsIssues.elements()).toHaveLength(3);
+
+  // Expanding the sidebar badge's preview stays on the open thread.
+  await userEvent.hover(page.getByRole("button", { name: "100 linked issues" }));
+  await userEvent.click(page.getByRole("button", { name: "Show 97 more" }));
+  await expect
+    .element(page.getByRole("link", { name: "Issue #100: Issue number 100" }))
+    .toBeVisible();
+  expect(router.history.location.pathname).toBe(`/${ENVIRONMENT_ID}/${few.id}`);
 });
 
 it("a machine chip stashed in one thread restores with its machine in another", async () => {
