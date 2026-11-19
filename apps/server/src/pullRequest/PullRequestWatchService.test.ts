@@ -171,7 +171,8 @@ describe("PullRequestWatchService", () => {
       const cases: ReadonlyArray<readonly [HarnessOptions, boolean | undefined]> = [
         [{ readChecksState: "pending" }, true],
         [{ readChecksState: "failing" }, false],
-        [{}, false],
+        [{}, undefined],
+        [{ readChecksState: null }, true],
         [
           {
             readFailure: new PullRequestOperationError({

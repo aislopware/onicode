@@ -5282,9 +5282,16 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                       // Watching again must not repeat check or conflict news the last watch told.
                       ...(existing.endedWatch && {
                         headSha: existing.endedWatch.headSha,
-                        failedChecks: existing.endedWatch.failedChecks,
-                        passed: existing.endedWatch.passed,
-                        passedChecks: existing.endedWatch.passedChecks,
+                        // A fresh read found CI running with nothing failing, so what the last
+                        // watch told about checks is history: a rerun on this head is news.
+                        ...(command.type === "thread.pull-request.watch" &&
+                        command.checksPending === true
+                          ? { failedChecks: [], passed: false, passedChecks: [] }
+                          : {
+                              failedChecks: existing.endedWatch.failedChecks,
+                              passed: existing.endedWatch.passed,
+                              passedChecks: existing.endedWatch.passedChecks,
+                            }),
                         conflicting: existing.endedWatch.conflicting,
                         rebaseRequired: existing.endedWatch.rebaseRequired,
                       }),

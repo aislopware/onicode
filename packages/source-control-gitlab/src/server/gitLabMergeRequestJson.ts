@@ -1588,7 +1588,8 @@ export function decodeMergeMessagesJson(
 /** What a listed merge request needs beyond REST: its approval, reviewer and pipeline state. */
 const LIST_STATE_GRAPHQL_FIELDS = `iid approved approvedBy(first: 1) { nodes { username } }
   reviewers(first: 20) { nodes { username mergeRequestInteraction { reviewState } } }
-  headPipeline { status }`;
+  headPipeline { status failed: jobs(retried: false, statuses: [FAILED], first: 20) {
+    count nodes { allowFailure } } }`;
 
 export const LIST_STATES_GRAPHQL_QUERY = `query($fullPath: ID!, $iids: [String!]) {
   metadata { enterprise }
@@ -1636,7 +1637,29 @@ const RawListStateFields = {
     ),
   ),
   headPipeline: Schema.optional(
-    Schema.NullOr(Schema.Struct({ status: Schema.optional(Schema.NullOr(Schema.String)) })),
+    Schema.NullOr(
+      Schema.Struct({
+        status: Schema.optional(Schema.NullOr(Schema.String)),
+        failed: Schema.optional(
+          Schema.NullOr(
+            Schema.Struct({
+              count: Schema.optional(Schema.NullOr(Schema.Number)),
+              nodes: Schema.optional(
+                Schema.NullOr(
+                  Schema.Array(
+                    Schema.NullOr(
+                      Schema.Struct({
+                        allowFailure: Schema.optional(Schema.NullOr(Schema.Boolean)),
+                      }),
+                    ),
+                  ),
+                ),
+              ),
+            }),
+          ),
+        ),
+      }),
+    ),
   ),
 };
 
@@ -1665,9 +1688,22 @@ export interface GitLabMergeRequestListState {
   readonly checksState: PullRequestChecksState | null;
 }
 
-function toChecksState(pipelineStatus: string | null | undefined): PullRequestChecksState | null {
-  if (pipelineStatus == null) return null;
-  switch (toPipelineStatus(pipelineStatus)) {
+function toChecksState(
+  pipeline: (typeof RawListStateNodeSchema.Type)["headPipeline"],
+): PullRequestChecksState | null {
+  if (pipeline?.status == null) return null;
+  const status = toPipelineStatus(pipeline.status);
+  // A running pipeline can already hold a failed job; as on GitHub, a failure outranks pending.
+  // Failed jobs past the listed page count too, since any of them could fail the pipeline.
+  const listed = pipeline.failed?.nodes ?? [];
+  if (
+    status === "pending" &&
+    (listed.some((job) => job !== null && job.allowFailure !== true) ||
+      (pipeline.failed?.count ?? 0) > listed.length)
+  ) {
+    return "failing";
+  }
+  switch (status) {
     case "success":
       return "passing";
     case "failure":
@@ -1690,7 +1726,7 @@ function toListState(
   node: typeof RawListStateNodeSchema.Type,
   enterprise: boolean | null | undefined,
 ): GitLabMergeRequestListState {
-  const checksState = toChecksState(node.headPipeline?.status);
+  const checksState = toChecksState(node.headPipeline);
   if (
     node.reviewers?.nodes?.some(
       (reviewer) => reviewer?.mergeRequestInteraction?.reviewState === "REQUESTED_CHANGES",

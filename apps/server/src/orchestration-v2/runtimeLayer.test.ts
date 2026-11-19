@@ -4314,6 +4314,29 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         watching: true,
       });
       assert.isTrue((yield* watchOf)?.checksPending);
+      // Only the link says CI runs, and it may predate what the last watch told.
+      assert.deepEqual((yield* watchOf)?.failedChecks, ["lint"]);
+
+      // A fresh read of a rerun on the same head: its result is news.
+      yield* orchestrator.dispatch({
+        type: "thread.pull-request.watch",
+        commandId: CommandId.make("pr-watch-client-stop"),
+        threadId,
+        ...key,
+        watching: false,
+      });
+      yield* orchestrator.dispatch({
+        type: "thread.pull-request.watch",
+        commandId: CommandId.make("pr-watch-rerun-start"),
+        threadId,
+        ...key,
+        watching: true,
+        checksPending: true,
+      });
+      const rerun = yield* watchOf;
+      assert.equal(rerun?.headSha, "abc123");
+      assert.deepEqual(rerun?.failedChecks, []);
+      assert.isTrue(rerun?.checksPending);
     }),
   );
 
