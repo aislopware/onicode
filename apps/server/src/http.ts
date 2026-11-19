@@ -5,7 +5,10 @@ import {
   EnvironmentHttpApi,
 } from "@onicode/contracts";
 import { injectMcpAppCookieBootstrap, injectMcpAppThemeBootstrap } from "@onicode/shared/mcpApp";
-import { FILE_PREVIEW_SCROLL_SCRIPT } from "@onicode/shared/htmlRender";
+import {
+  FILE_PREVIEW_SCROLL_SCRIPT,
+  findStoredHtmlRenderBootstrap,
+} from "@onicode/shared/htmlRender";
 import { decodeOtlpTraceRecords } from "@onicode/shared/observability";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -152,6 +155,9 @@ function assetByteRange(header: string, size: bigint) {
   };
 }
 
+// A render's bootstrap follows its <head> tag, so it sits in the leading bytes.
+const HTML_RENDER_BOOTSTRAP_SCAN_BYTES = 1024 * 1024;
+
 export const assetFileResponse = Effect.fn("assetFileResponse")(function* (
   asset: {
     readonly path: string;
@@ -159,7 +165,7 @@ export const assetFileResponse = Effect.fn("assetFileResponse")(function* (
     readonly fileName?: string;
     readonly mimeType?: string;
     readonly file?: OpenMediaFile;
-    readonly renderIntent?: "mcp-app" | "file-preview";
+    readonly renderIntent?: "mcp-app" | "file-preview" | "html-render";
   },
   rangeHeader?: string,
   ifRangeHeader?: string,
@@ -202,6 +208,34 @@ export const assetFileResponse = Effect.fn("assetFileResponse")(function* (
       return method === "HEAD"
         ? HttpServerResponse.empty({ status: 200, headers })
         : HttpServerResponse.uint8Array(body, { headers });
+    }
+  }
+  // Attachments are written once, so reading by path again cannot mix two versions.
+  if (
+    asset.renderIntent === "html-render" &&
+    !asset.download &&
+    headers["Content-Type"] === "text/html; charset=utf-8"
+  ) {
+    const fs = yield* FileSystem.FileSystem;
+    const head = Buffer.concat(
+      yield* Stream.runCollect(
+        fs.stream(asset.path, { bytesToRead: HTML_RENDER_BOOTSTRAP_SCAN_BYTES }),
+      ),
+    );
+    const stored = findStoredHtmlRenderBootstrap(head.toString("latin1"));
+    if (stored !== undefined) {
+      const whole = head.byteLength < HTML_RENDER_BOOTSTRAP_SCAN_BYTES;
+      const size = whole ? head.byteLength : Number((yield* fs.stat(asset.path)).size);
+      const current = Buffer.from(stored.current);
+      headers["Content-Length"] = String(size - (stored.end - stored.start) + current.byteLength);
+      if (method === "HEAD") return HttpServerResponse.empty({ status: 200, headers });
+      const swapped = Stream.succeed(
+        Buffer.concat([head.subarray(0, stored.start), current, head.subarray(stored.end)]),
+      );
+      const body = whole
+        ? swapped
+        : Stream.concat(swapped, fs.stream(asset.path, { offset: head.byteLength }));
+      return HttpServerResponse.stream(body, { headers });
     }
   }
   const mediaFile = asset.file;

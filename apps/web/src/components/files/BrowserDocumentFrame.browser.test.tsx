@@ -216,6 +216,100 @@ it.each([
   },
 );
 
+// A click gives the page user activation, which lets focus() scroll across the frame boundary. The page's
+// own scrollIntoView, which calls focus(), would recurse if the contained versions called it. The field is
+// slotted into a component's scroll panel, which only the flat tree reaches.
+it.each(["focus()", "scrollIntoViewIfNeeded()"])(
+  "keeps the chat in place when a click in a contained frame reveals a far field with %s",
+  async (call) => {
+    const html = injectHtmlRenderBootstrap(`<!doctype html><html><head><style>
+      .fill { height: 1400px; }
+    </style></head><body>
+      <scroll-panel><input id="far"><input id="gone" hidden></scroll-panel>
+      <div class="fill"></div>
+      <button id="reveal">Reveal</button>
+    <script>
+      Element.prototype.scrollIntoView = function() { this.focus(); };
+      customElements.define("scroll-panel", class extends HTMLElement {
+        constructor() {
+          super();
+          this.attachShadow({ mode: "open" }).innerHTML =
+            '<div style="height: 120px; overflow: auto"><div style="height: 600px"></div><slot></slot></div>';
+        }
+      });
+      document.getElementById("reveal").addEventListener("click", function() {
+        var far = document.getElementById("far");
+        var panel = document.querySelector("scroll-panel").shadowRoot.firstElementChild;
+        panel.scrollTop = 300;
+        document.getElementById("gone").scrollIntoViewIfNeeded();
+        var kept = panel.scrollTop;
+        panel.scrollTop = 0;
+        far.${call};
+        var revealed = panel.scrollTop;
+        panel.scrollTop = 0;
+        far.${call};
+        parent.postMessage({
+          type: "revealed",
+          focused: document.activeElement === far,
+          panel: revealed,
+          again: panel.scrollTop,
+          kept: kept,
+        }, "*");
+      });
+    </script></body></html>`);
+    const src = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+    using _url = { [Symbol.dispose]: () => URL.revokeObjectURL(src) };
+    const scroller = document.createElement("div");
+    scroller.style.cssText = "height: 400px; overflow: auto; width: 728px;";
+    const revealed = vi.fn();
+    const messages = new AbortController();
+    using _messages = { [Symbol.dispose]: () => messages.abort() };
+    window.addEventListener(
+      "message",
+      (event) => {
+        if (event.data?.type === "revealed") revealed(event.data);
+      },
+      { signal: messages.signal },
+    );
+    const contentHeight = vi.fn((height: number) => {
+      scroller.style.setProperty("--content-height", `${height}px`);
+    });
+    await using screen = await render(
+      <>
+        <style>{`iframe[title="Reveal"] {
+        display: block; width: 100%; height: var(--content-height, 300px); border: 0;
+      }`}</style>
+        <div style={{ height: 600 }} />
+        <HtmlRenderDocument
+          src={src}
+          title="Reveal"
+          containScroll
+          onContentHeight={contentHeight}
+        />
+        <div style={{ height: 100 }} />
+      </>,
+      { container: scroller },
+    );
+
+    const frame = screen.getByTitle("Reveal").element() as HTMLIFrameElement;
+    await vi.waitFor(() => expect(frame.getBoundingClientRect().height).toBeGreaterThan(1400));
+    scroller.scrollTop = scroller.scrollHeight;
+    const scrollTop = scroller.scrollTop;
+
+    await page.frameLocator(screen.getByTitle("Reveal")).getByText("Reveal").click();
+
+    await vi.waitFor(() => expect(revealed).toHaveBeenCalled());
+    const result = revealed.mock.lastCall?.[0];
+    expect(result.panel).toBeGreaterThan(0);
+    // A field with no box has nothing to reveal, as natively.
+    expect(result.kept).toBe(300);
+    // Like native focus(), focusing the focused field again leaves its scroller alone.
+    if (call === "focus()") expect(result).toMatchObject({ focused: true, again: 0 });
+    else expect(result.again).toBe(result.panel);
+    expect(scroller.scrollTop).toBe(scrollTop);
+  },
+);
+
 it("keeps the first and last selected card rings inside the fitted renderer frame", async () => {
   const html = injectHtmlRenderBootstrap(`<!doctype html><html><head><style>
     main { display: grid; gap: 12px; }

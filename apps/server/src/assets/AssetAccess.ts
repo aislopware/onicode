@@ -214,7 +214,7 @@ export type ResolvedAsset =
       readonly fileName?: string;
       readonly mimeType?: string;
       readonly file?: OpenMediaFile;
-      readonly renderIntent?: "mcp-app" | "file-preview";
+      readonly renderIntent?: "mcp-app" | "file-preview" | "html-render";
     }
   | {
       readonly kind: "bytes";
@@ -968,7 +968,11 @@ export const resolveAsset = Effect.fn("AssetAccess.resolveAsset")(function* (
           ...(claims.download ? { download: true } : {}),
           ...(claims.fileName !== undefined ? { fileName: claims.fileName } : {}),
           ...(claims.mimeType !== undefined ? { mimeType: claims.mimeType } : {}),
-          ...(claims.renderIntent === "mcp-app" ? { renderIntent: "mcp-app" as const } : {}),
+          ...(claims.renderIntent === "mcp-app"
+            ? { renderIntent: "mcp-app" as const }
+            : claims.mimeType === "text/html" && !claims.download
+              ? { renderIntent: "html-render" as const }
+              : {}),
         } satisfies ResolvedAsset)
       : null;
   }

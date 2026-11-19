@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  findStoredHtmlRenderBootstrap,
   injectHtmlRenderBootstrap,
   readHtmlRenderImageRequest,
   readHtmlRenderLinkRequest,
@@ -76,6 +77,45 @@ describe("injectHtmlRenderBootstrap", () => {
       injected.indexOf("<html><head>"),
     );
     expect(injected).toContain('<meta name="viewport" content="width=device-width');
+  });
+});
+
+describe("findStoredHtmlRenderBootstrap", () => {
+  const injected = injectHtmlRenderBootstrap("<head>");
+  const current = injected.slice(injected.indexOf("<style"));
+  const older = (id: string) =>
+    `<style id="${id}">:root{}</style><script>(function(){var s=document.getElementById("${id}"),n=0;})();</script>`;
+
+  it.each([
+    "<!doctype html><html><head><title>Report</title></head><body>x</body></html>",
+    "<p>fragment without a head</p>",
+    `<!-- an older render pasted here: ${older("oni-theme")} --><html><head></head><body>x</body></html>`,
+  ])("locates only the bootstrap the publisher wrote after the head tag: %s", (page) => {
+    const published = injectHtmlRenderBootstrap(page);
+    const at = published.lastIndexOf(current);
+    expect(findStoredHtmlRenderBootstrap(published)).toBeUndefined();
+    for (const id of ["oni-theme", "t3-theme"]) {
+      const stored = published.slice(0, at) + older(id) + published.slice(at + current.length);
+      expect(findStoredHtmlRenderBootstrap(stored)).toEqual({
+        start: at,
+        end: at + older(id).length,
+        current,
+      });
+    }
+  });
+
+  it("ignores a bootstrap that is page content", () => {
+    expect(
+      findStoredHtmlRenderBootstrap(
+        `<html><head><title>Tutorial</title></head><body><textarea>${older("oni-theme")}</textarea></body></html>`,
+      ),
+    ).toBeUndefined();
+    expect(
+      findStoredHtmlRenderBootstrap(`<textarea><head>${older("oni-theme")}</textarea>`),
+    ).toBeUndefined();
+    expect(
+      findStoredHtmlRenderBootstrap(`<head><meta content='x>${older("oni-theme")}'></head>`),
+    ).toBeUndefined();
   });
 });
 
