@@ -517,8 +517,9 @@ describe("question answer paths", () => {
         ],
       });
       NodeFS.writeFileSync(path, notebook);
-      // An older extractor wrote this unversioned sidecar without the raw cell label.
+      // Older extractors wrote these sidecars without the raw cell label or with terminal styling.
       NodeFS.writeFileSync(`${path}.txt`, `## Cell 3\n${rawSource}`);
+      NodeFS.writeFileSync(`${path}.v2.txt`, "Output:\n\u001b[32m301\u001b[0m\n");
       const answers = yield* appendUserInputAttachmentPaths({
         answers: { q: "Read this" },
         attachmentsDir: config.attachmentsDir,
@@ -527,6 +528,7 @@ describe("question answer paths", () => {
       const sidecar = DocumentText.extractedTextPath(path);
       expect(answers.q).toContain(`text extracted to: ${JSON.stringify(sidecar)}`);
       expect(NodeFS.existsSync(`${path}.txt`)).toBe(false);
+      expect(NodeFS.existsSync(`${path}.v2.txt`)).toBe(false);
       const extracted = NodeFS.readFileSync(sidecar, "utf8");
       expect(extracted).toContain("Vessel: Larkspur");
       expect(extracted).toContain("Output:\n301\n");
