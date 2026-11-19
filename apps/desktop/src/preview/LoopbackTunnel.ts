@@ -420,7 +420,11 @@ const make = Effect.gen(function* () {
             const response = yield* readHead(target.pull, received);
             // Unread, it would desynchronise every later response; a close shows as a failure.
             const status = response.head === undefined ? Number.NaN : statusCode(response.head);
-            if (response.head === undefined || Number.isNaN(status)) return;
+            // Unread, it would desynchronise every later response. Nothing of it has reached
+            // Chromium, and a bare close would make Chromium send the request again.
+            if (response.head === undefined || Number.isNaN(status)) {
+              return yield* writer.write(refusal(502));
+            }
             if (status >= 100 && status < 200 && status !== 101) {
               yield* writer.write(Buffer.from(`${response.head}\r\n\r\n`, "latin1"));
               received = response.rest;

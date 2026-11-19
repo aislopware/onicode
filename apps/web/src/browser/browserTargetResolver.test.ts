@@ -49,9 +49,15 @@ describe("browser target resolver", () => {
     for (const url of ["magnet:?xt=urn:btih:abc", "itms-apps:?id=1", "mailto:a@example.com"]) {
       expect(resolveExternalLinkUrl(EnvironmentId.make("environment-1"), url)).toBe(url);
     }
-    expect(
-      resolveExternalLinkUrl(EnvironmentId.make("environment-1"), "http://localhost:5173/"),
-    ).toBeNull();
+    // Loose spellings the system browser still reads as this computer's localhost.
+    for (const url of [
+      "http://localhost:5173/",
+      "http:localhost:5173",
+      "http:/localhost:5173",
+      " http://localhost:5173",
+    ]) {
+      expect(resolveExternalLinkUrl(EnvironmentId.make("environment-1"), url)).toBeNull();
+    }
   });
 
   it("normalizes schemeless localhost server-picker values", async () => {

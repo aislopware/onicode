@@ -44,12 +44,14 @@ const listenDecoy = Effect.acquireRelease(
 /**
  * Stands in for the environment's /api/preview/tunnel. Echoes each frame behind a 0xee byte, or
  * sends `reply.text` once what it received contains `reply.after`, then closes unless `keepOpen`.
- * With `keepOpen` it answers each further `after` again.
+ * With `keepOpen` it answers each further `after` again, with the next of `frames` when given.
  */
 const listenEndpoint = (reply?: {
   readonly text: string;
   readonly after?: string;
   readonly keepOpen?: boolean;
+  /** Each answer in turn, as the frames it is sent in. */
+  readonly frames?: ReadonlyArray<ReadonlyArray<string>>;
 }) =>
   Effect.acquireRelease(
     Effect.promise(
@@ -73,10 +75,13 @@ const listenEndpoint = (reply?: {
                   (replied === 0 || reply.keepOpen) &&
                   received.join("").split(reply.after ?? "").length - 1 > replied
                 ) {
+                  const frames = reply.frames?.[replied] ?? [reply.text];
                   replied++;
-                  socket.send(Buffer.from(reply.text, "latin1"), () => {
-                    if (!reply.keepOpen) socket.close();
-                  });
+                  frames.forEach((frame, index) =>
+                    socket.send(Buffer.from(frame, "latin1"), () => {
+                      if (index === frames.length - 1 && !reply.keepOpen) socket.close();
+                    }),
+                  );
                 }
               });
             });
@@ -256,10 +261,11 @@ it.effect.each([
     head: "HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0",
   },
   {
-    // Passed on unread, it would desynchronise the next request's response.
+    // Passed on unread it would desynchronise later responses; a bare close would make Chromium
+    // send the request again.
     case: "a response head over the size limit",
     reply: `HTTP/1.1 200 OK\r\nX-Padding: ${"a".repeat(300_000)}\r\nContent-Length: 0\r\n\r\n`,
-    head: "",
+    head: "HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close",
   },
 ])(
   "forwards a plain http request in origin form, answering $case",
@@ -348,9 +354,14 @@ it.effect("keeps a connection to one server for Chromium's next request", () =>
   Effect.gen(function* () {
     // A dev server's page loads hundreds of modules; a tunnel each would cost round trips.
     const endpoint = yield* listenEndpoint({
-      text: "HTTP/1.1 100 Continue\r\n\r\n" + "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok",
+      text: "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok",
       after: "\r\n\r\n",
       keepOpen: true,
+      // A body after its head, then a later response whose head must still be read.
+      frames: [
+        ["HTTP/1.1 100 Continue\r\n\r\nHTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n", "ok"],
+        ['HTTP/1.1 407 Nope\r\nProxy-Authenticate: Basic realm="x"\r\nContent-Length: 2\r\n\r\nno'],
+      ],
     });
     const { proxyPort, authorization } = yield* routeThroughTunnel(
       `ws://127.0.0.1:${addressPort(endpoint.server)}/api/preview/tunnel`,
@@ -359,9 +370,12 @@ it.effect("keeps a connection to one server for Chromium's next request", () =>
       `GET http://${authority}${path} HTTP/1.1\r\nHost: ${authority}\r\n` +
       `Proxy-Authorization: ${authorization}\r\n\r\n`;
     const connection = yield* openProxyConnection(proxyPort);
-    const response = "HTTP/1.1 100 Continue\r\n\r\nHTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok";
-    expect(yield* connection.send(get("localhost:5173", "/first"), "\r\n\r\nok")).toBe(response);
-    expect(yield* connection.send(get("localhost:5173", "/second"), "\r\n\r\nok")).toBe(response);
+    expect(yield* connection.send(get("localhost:5173", "/first"), "\r\n\r\nok")).toBe(
+      "HTTP/1.1 100 Continue\r\n\r\nHTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok",
+    );
+    expect(yield* connection.send(get("localhost:5173", "/second"), "\r\n\r\nno")).toBe(
+      "HTTP/1.1 502 Bad Gateway\r\nContent-Length: 2\r\n\r\nno",
+    );
     // Each request on the connection is checked again.
     const anonymous = "GET http://localhost:5173/third HTTP/1.1\r\nHost: localhost:5173\r\n\r\n";
     expect(yield* connection.closed(anonymous)).toMatch(/^HTTP\/1\.1 407 /);
