@@ -2773,3 +2773,4 @@ e7b61491a3	take	fix(server): a delivered handoff of a failed run is not re-sent 
 b5481adcd8	take	scheduled tasks start from the project's default branch; webhook parts left out
 4b697be849	take	fix(web): keep deleted ACP sessions out of pending listings (#39331)
 9d0d00656f	take	fix(server): keep Antigravity thread cwd in workspace by omitting attachmentsDir from additionalDirectories (#37997)
+3cd98dcbae	take	fix(server): a secret card closes after the steering restart that supersedes it (#34634)
