@@ -31,6 +31,7 @@ import * as EventSink from "./EventSink.ts";
 import * as Orchestrator from "./Orchestrator.ts";
 import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
 import * as ProviderReplayHarness from "./testkit/ProviderReplayHarness.ts";
+import { isTerminalRunStatus } from "./ThreadManagementService.ts";
 import { checkpointWorkspace } from "@onicode/provider-testing/replayWorkspace";
 import * as ProviderAdapter from "@onicode/provider-core/server/ProviderAdapter";
 
@@ -527,24 +528,27 @@ it.live.each(["pooled", "exclusive"] as const)(
         yield* Fiber.join(running);
         yield* worker.drain();
 
-        const settled = yield* eventSink
-          .stream({
-            threadId,
-            afterSequence: yield* eventSink.latestSequence({ threadId }),
-          })
-          .pipe(
-            Stream.map((stored) => stored.event),
-            Stream.filter(
-              (event) =>
-                event.type === "run.updated" &&
-                event.payload.status !== "running" &&
-                event.payload.status !== "queued" &&
-                event.payload.status !== "starting",
-            ),
-            Stream.take(1),
-            Stream.runDrain,
-            Effect.forkScoped,
-          );
+        // `waiting` is not settled: checkpoint capture, which may be running on the harness's own
+        // worker where `drain` does not wait for it, completes the run.
+        const afterHandoff = yield* eventSink.latestSequence({ threadId });
+        const settled = yield* eventSink.stream({ threadId, afterSequence: afterHandoff }).pipe(
+          Stream.map((stored) => stored.event),
+          Stream.filter(
+            (event) => event.type === "run.updated" && isTerminalRunStatus(event.payload.status),
+          ),
+          Stream.take(1),
+          Stream.runCollect,
+          Effect.forkScoped,
+        );
+        const continued = yield* eventSink.stream({ threadId, afterSequence: afterHandoff }).pipe(
+          Stream.map((stored) => stored.event),
+          Stream.filter(
+            (event) => event.type === "provider-turn.updated" && event.payload.status === "running",
+          ),
+          Stream.take(1),
+          Stream.runDrain,
+          Effect.forkScoped,
+        );
         // What oni_worktree_handoff dispatches while the calling turn is still running.
         const bound = yield* orchestrator.dispatch({
           type: "thread.metadata.update",
@@ -564,8 +568,10 @@ it.live.each(["pooled", "exclusive"] as const)(
           ),
           ["queued"],
         );
-        yield* Fiber.join(settled);
-        yield* worker.drain();
+        const [run] = yield* Fiber.join(settled);
+        // A failed handoff never starts the continuation, so check before waiting for it.
+        assert.equal(run?.type === "run.updated" ? run.payload.status : undefined, "completed");
+        yield* Fiber.join(continued);
         return yield* orchestrator.getThreadProjection(threadId);
       }).pipe(
         Effect.provide(
