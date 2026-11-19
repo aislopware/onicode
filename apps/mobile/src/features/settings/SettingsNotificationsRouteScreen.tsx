@@ -15,7 +15,8 @@ import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScroll
 import { makePermissionStatusAtom } from "../../lib/permissionStatusAtom";
 import type { AgentNotificationPreferences } from "../../persistence/mobile-preferences";
 import { useEnvironments } from "../../state/environments";
-import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
+import { mobilePreferencesAtom, saveMobilePreferences } from "../../state/preferences";
+import { useAtomCommand } from "../../state/use-atom-command";
 import {
   agentAwarenessStatusAtom,
   DEFAULT_AGENT_NOTIFICATION_PREFERENCES,
@@ -146,7 +147,7 @@ export function SettingsNotificationsRouteScreen() {
   const m = useMessages();
   const insets = useSafeAreaInsets();
   const preferencesResult = useAtomValue(mobilePreferencesAtom);
-  const savePreferences = useAtomSet(updateMobilePreferencesAtom);
+  const savePreferences = useAtomCommand(saveMobilePreferences);
   const permission = useAtomValue(notificationPermissionAtom);
   const setPermission = useAtomSet(notificationPermissionAtom);
   const status = useAtomValue(agentAwarenessStatusAtom);
@@ -164,7 +165,7 @@ export function SettingsNotificationsRouteScreen() {
 
   const handleEnabledChange = (next: boolean) => {
     if (!next) {
-      save({ enabled: false });
+      void save({ enabled: false });
       return;
     }
     void Effect.runPromise(
@@ -174,7 +175,7 @@ export function SettingsNotificationsRouteScreen() {
     ).then((result) => {
       if (result.type === "granted") {
         setPermission("granted");
-        save({ enabled: true });
+        void save({ enabled: true });
         return;
       }
       setPermission(result.type === "denied" && !result.canAskAgain ? "denied" : "ask");
@@ -218,7 +219,7 @@ export function SettingsNotificationsRouteScreen() {
             subtitle={gt("Shows running agents on the Lock Screen.")}
             disabled={!available || !ready}
             value={preferences.activity}
-            onValueChange={(activity) => save({ activity })}
+            onValueChange={(activity) => void save({ activity })}
           />
           {supportsAndroidLiveUpdateSettings() ? (
             <SettingsRow
@@ -237,7 +238,7 @@ export function SettingsNotificationsRouteScreen() {
               subtitle={m(kind.subtitle)}
               disabled={!available || !ready}
               value={preferences[kind.key]}
-              onValueChange={(value) => save({ [kind.key]: value })}
+              onValueChange={(value) => void save({ [kind.key]: value })}
             />
           ))}
         </SettingsSection>
