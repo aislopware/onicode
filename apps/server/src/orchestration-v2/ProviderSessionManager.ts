@@ -1409,14 +1409,19 @@ export const layerWithOptions = (
       const closeScopeWithin = Effect.fn("ProviderSessionManager.closeScopeWithin")(function* (
         scope: Scope.Closeable,
         annotations: { readonly providerSessionId?: ProviderSessionId; readonly reason: string },
+        onTimeout: Effect.Effect<void> = Effect.void,
       ) {
         const closeFiber = yield* Scope.close(scope, Exit.void).pipe(
           Effect.exit,
           Effect.forkDetach({ startImmediately: true }),
         );
-        const closeExit = yield* Fiber.join(closeFiber).pipe(
+        // Detached so onTimeout still runs when the caller is interrupted during the wait.
+        const boundedFiber = yield* Fiber.join(closeFiber).pipe(
           Effect.timeoutOption(RELEASE_SCOPE_CLOSE_TIMEOUT_MS),
+          Effect.tap((exit) => (Option.isNone(exit) ? onTimeout : Effect.void)),
+          Effect.forkDetach({ startImmediately: true }),
         );
+        const closeExit = yield* Fiber.join(boundedFiber);
         if (Option.isNone(closeExit)) {
           yield* Effect.logWarning("orchestration-v2.provider-session-scope-close-timeout", {
             ...annotations,
@@ -1493,13 +1498,12 @@ export const layerWithOptions = (
                       input.detachedThreadId,
                     );
                   }
-                  const closeExit = yield* closeScopeWithin(entry.scope, {
-                    providerSessionId: input.providerSessionId,
-                    reason: input.reason,
-                  });
-                  // A wedged adapter finalizer never reaches the scope's own signal.
-                  if (Option.isNone(closeExit))
-                    yield* Deferred.done(entry.sessionClosed, Exit.void);
+                  const closeExit = yield* closeScopeWithin(
+                    entry.scope,
+                    { providerSessionId: input.providerSessionId, reason: input.reason },
+                    // A wedged adapter finalizer never reaches the scope's own signal.
+                    Deferred.done(entry.sessionClosed, Exit.void).pipe(Effect.asVoid),
+                  );
                   const records = {
                     entry,
                     reason: input.reason,
@@ -2871,7 +2875,7 @@ export const layerWithOptions = (
         return {
           track: trackProviderRetry,
           // Runs for every provider event; spans would be per-event noise. Timers are children
-          // of the pump fiber, so a released session takes them down.
+          // of the pump's drain fiber, so a released session takes them down.
           update: Effect.fnUntraced(function* (tracked: ReturnType<typeof trackProviderRetry>) {
             const item = tracked.armed;
             if (item === undefined) {
@@ -3024,7 +3028,7 @@ export const layerWithOptions = (
         // Several adapters never end their event stream, and a parked pump retains the whole session.
         // Racing the whole drain keeps per-event cost flat (Stream.interruptWhen hands off every chunk);
         // the uninterruptible handler lets the event in flight at close finish. The drain is forked
-        // first so it still subscribes, and drains, when the session closed before the pump started.
+        // first so it subscribes even when the session closed before the pump started.
         return Effect.raceFirst(
           Stream.runForEach(entry.runtime.events, (nativeEvent) =>
             Effect.uninterruptible(handleEvent(nativeEvent)),
