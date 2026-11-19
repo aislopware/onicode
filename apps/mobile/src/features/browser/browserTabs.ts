@@ -1,5 +1,5 @@
 import type { PreviewSessionSnapshot } from "@onicode/contracts";
-import { isLoopbackHost } from "@onicode/shared/preview";
+import { isLocalLoopbackHost, normalizeHostname } from "@onicode/shared/hostClassification";
 import { msg } from "gt-react-native";
 
 import { m, type MessageResolver } from "../../i18n/messages";
@@ -32,8 +32,11 @@ export function loopbackUrlForDevice(value: string): string | null {
     if (!/^https?:$/.test(url.protocol)) return null;
     // The unspecified address would name this device's own interfaces, so use localhost instead.
     if (url.hostname === "0.0.0.0" || url.hostname === "[::]") url.hostname = "localhost";
-    if (!isLoopbackHost(url.hostname)) return null;
-    return url.toString();
+    // One trailing dot, as the native tunnels and the desktop app's read it.
+    const loopback =
+      !url.hostname.endsWith("..") &&
+      (isLocalLoopbackHost(url.hostname) || normalizeHostname(url.hostname).endsWith(".localhost"));
+    return loopback ? url.toString() : null;
   } catch {
     return null;
   }

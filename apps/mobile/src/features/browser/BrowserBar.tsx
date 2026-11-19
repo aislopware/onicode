@@ -62,11 +62,20 @@ export function BrowserChrome(props: {
   const duo = isDuoDevice(useDeviceType());
   const hidesStatusBar = !props.inPane && duo;
   const navigation = useNavigation();
+  const { themeVariables } = useAppearancePreferences();
+  // A full screen browser is its own view controller, which iOS asks for the status bar's ink.
+  const statusBarStyle =
+    Platform.OS === "ios" && !props.inPane
+      ? isDarkThemeColor(props.bar.pageColor || themeVariables["--color-sheet-solid"])
+        ? "light"
+        : "dark"
+      : undefined;
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- the status bar is a native screen option
   useEffect(() => {
+    if (statusBarStyle) navigation.setOptions({ statusBarStyle });
     if (!hidesStatusBar) return;
     navigation.setOptions({ statusBarHidden: compact, statusBarAnimation: "fade" });
-  }, [navigation, hidesStatusBar, compact]);
+  }, [navigation, hidesStatusBar, compact, statusBarStyle]);
   // The page stays inset by the whole bar, so the bar shrinking never moves it, like Safari's.
   const fullBarHeight = useBrowserBarLayout(props.inPane === true).height;
   const [barHeight, setBarHeight] = useState(fullBarHeight);

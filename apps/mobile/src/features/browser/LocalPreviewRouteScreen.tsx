@@ -15,6 +15,7 @@ import { useAppearancePreferences } from "../settings/appearance/AppearancePrefe
 import { BrowserChrome } from "./BrowserBar";
 import { loopbackUrlForDevice } from "./browserTabs";
 import { TunnelWebView, type TunnelNavigation, type TunnelWebViewRef } from "./TunnelWebView";
+import { useLocalPreviewBlocker } from "./useOpenLocalPreview";
 
 type LocalPreviewRouteScreenProps = StaticScreenProps<{
   readonly environmentId: string;
@@ -55,7 +56,9 @@ export function LocalPreviewScreen(props: {
   const [failed, setFailed] = useState(false);
   const [disconnected, setDisconnected] = useState(false);
   const [debug, setDebug] = useState<string | undefined>(undefined);
-  const [unsupported, setUnsupported] = useState<string | null>(null);
+  const [unsupported, setUnsupported] = useState(false);
+  // A chat link, a deep link or a remembered pane can land here when the page can't open.
+  const blocker = useLocalPreviewBlocker(environmentId);
   // After a failed load the webview reports no URL, so the address stays on the one asked for.
   const current = (!failed && page?.url) || requested;
 
@@ -76,7 +79,7 @@ export function LocalPreviewScreen(props: {
   };
   const back = () => void webView.current?.goBack();
   const canGoBack = page?.canGoBack ?? false;
-  const pageColor = failed || unsupported !== null ? null : page?.pageColor || null;
+  const pageColor = failed || unsupported || blocker ? null : page?.pageColor || null;
 
   return (
     // Full screen spans the Duo's rail, so it insets its own sides; the pane is inset already.
@@ -90,7 +93,7 @@ export function LocalPreviewScreen(props: {
         holdExpanded={failed}
         bar={{
           url: current,
-          editable: true,
+          editable: blocker === null,
           canGoBack,
           onClose: props.onClose,
           onBack: back,
@@ -100,87 +103,109 @@ export function LocalPreviewScreen(props: {
           pageColor,
         }}
       >
-        {({ topInset, onScrollDirection }) => (
-          <>
-            <TunnelWebView
-              key={environmentId}
-              ref={webView}
-              className="flex-1"
-              environmentId={environmentId}
-              url={initialUrl}
-              topInset={topInset}
-              onNavigationChange={(next) => {
-                if (next.loading) setFailed(false);
-                setPage(next);
-              }}
-              onScrollDirection={onScrollDirection}
-              onAccess={(available) => setDisconnected(!available)}
-              onLoadError={(failure) => {
-                if (failure.unsupported) return setUnsupported(failure.description);
-                // A link to another port fails with that port's address, not the one typed earlier.
-                if (failure.url) setRequested(failure.url);
-                setDebug(failure.debug);
-                // Android reports no cause, so a refused tunnel request stands in for it there.
-                if (failure.cause) setDisconnected(failure.cause === "environment");
-                setFailed(true);
-              }}
-            />
-            {unsupported !== null ? (
-              <View
-                className="absolute inset-0 items-center justify-center"
-                style={{ backgroundColor: themeVariables["--color-sheet-solid"] }}
-              >
-                <View className="w-full max-w-md">
-                  <EmptyState
-                    variant="plain"
-                    title={gt("This device can't open localhost pages")}
-                    detail={gt("{reason} You can still use the streamed browser for this tab.", {
-                      reason: unsupported,
-                    })}
-                  />
-                </View>
+        {({ topInset, onScrollDirection }) =>
+          blocker ? (
+            <View className="flex-1 items-center justify-center">
+              <View className="w-full max-w-md">
+                <EmptyState
+                  variant="plain"
+                  title={gt("Can't open {environment}’s localhost pages here", {
+                    environment: environmentLabel,
+                  })}
+                  detail={
+                    blocker === "update"
+                      ? gt("Update Onicode on {environment} to open them on this device.", {
+                          environment: environmentLabel,
+                        })
+                      : gt(
+                          "This connection needs the Use terminals permission. Pair again using a new link with the permissions you need.",
+                        )
+                  }
+                />
               </View>
-            ) : failed ? (
-              // Opaque, so the webview's own error page never shows through the sheet color.
-              <View
-                className="absolute inset-0 items-center justify-center"
-                style={{ backgroundColor: themeVariables["--color-sheet-solid"] }}
-              >
-                <View className="w-full max-w-md">
-                  <EmptyState
-                    variant="plain"
-                    title={
-                      disconnected
-                        ? gt("Not connected to {environment}", { environment: environmentLabel })
-                        : gt("Can't reach {host}", { host: hostOf(current) })
-                    }
-                    detail={
-                      disconnected
-                        ? gt(
-                            "Pages on {environment}’s localhost load through its connection. Try again once it reconnects.",
-                            { environment: environmentLabel },
-                          )
-                        : gt(
-                            "Nothing is listening on port {port} on {environment}. Start the server there, then try again.",
-                            { port: portOf(current), environment: environmentLabel },
-                          )
-                    }
-                    actionLabel={gt("Try again")}
-                    onAction={retry}
-                  />
-                  {debug ? (
-                    <AppText
-                      selectable
-                      className="px-6 text-center font-mono text-xs text-foreground-muted"
-                    >
-                      {debug}
-                    </AppText>
-                  ) : null}
+            </View>
+          ) : (
+            <>
+              <TunnelWebView
+                key={environmentId}
+                ref={webView}
+                className="flex-1"
+                environmentId={environmentId}
+                url={initialUrl}
+                topInset={topInset}
+                onNavigationChange={(next) => {
+                  if (next.loading) setFailed(false);
+                  setPage(next);
+                }}
+                onScrollDirection={onScrollDirection}
+                onAccess={(available) => setDisconnected(!available)}
+                onLoadError={(failure) => {
+                  if (failure.unsupported) return setUnsupported(true);
+                  // A link to another port fails with that port's address, not the one typed earlier.
+                  if (failure.url) setRequested(failure.url);
+                  setDebug(failure.debug);
+                  // Android reports no cause, so a refused tunnel request stands in for it there.
+                  if (failure.cause) setDisconnected(failure.cause === "environment");
+                  setFailed(true);
+                }}
+              />
+              {unsupported ? (
+                <View
+                  className="absolute inset-0 items-center justify-center"
+                  style={{ backgroundColor: themeVariables["--color-sheet-solid"] }}
+                >
+                  <View className="w-full max-w-md">
+                    <EmptyState
+                      variant="plain"
+                      title={gt("This device can't open localhost pages")}
+                      detail={gt(
+                        "Update Android System WebView to open them here. You can still use the streamed browser for this tab.",
+                      )}
+                    />
+                  </View>
                 </View>
-              </View>
-            ) : null}
-          </>
-        )}
+              ) : failed ? (
+                // Opaque, so the webview's own error page never shows through the sheet color.
+                <View
+                  className="absolute inset-0 items-center justify-center"
+                  style={{ backgroundColor: themeVariables["--color-sheet-solid"] }}
+                >
+                  <View className="w-full max-w-md">
+                    <EmptyState
+                      variant="plain"
+                      title={
+                        disconnected
+                          ? gt("Not connected to {environment}", { environment: environmentLabel })
+                          : gt("Can't reach {host}", { host: hostOf(current) })
+                      }
+                      detail={
+                        disconnected
+                          ? gt(
+                              "Pages on {environment}’s localhost load through its connection. Try again once it reconnects.",
+                              { environment: environmentLabel },
+                            )
+                          : gt(
+                              "Nothing is listening on port {port} on {environment}. Start the server there, then try again.",
+                              { port: portOf(current), environment: environmentLabel },
+                            )
+                      }
+                      actionLabel={gt("Try again")}
+                      onAction={retry}
+                    />
+                    {debug ? (
+                      <AppText
+                        selectable
+                        className="px-6 text-center font-mono text-xs text-foreground-muted"
+                      >
+                        {debug}
+                      </AppText>
+                    ) : null}
+                  </View>
+                </View>
+              ) : null}
+            </>
+          )
+        }
       </BrowserChrome>
     </SafeAreaView>
   );

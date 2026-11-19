@@ -1,7 +1,7 @@
 import type { BrowserSearchEngine } from "@onicode/contracts";
 import * as Schema from "effect/Schema";
 
-import { isLocalLoopbackHost } from "./hostClassification.ts";
+import { isLocalLoopbackHost, normalizeHostname } from "./hostClassification.ts";
 
 const TAB_ID_PREFIX = "tab_";
 let nextPreviewTabSequence = 0;
@@ -215,7 +215,10 @@ export function normalizePreviewUrl(rawUrl: string): string {
     });
   }
   // Re-parse rather than swap the protocol so an explicit :443 survives as a non-default HTTP port.
-  if (!hasExplicitScheme && !useHttp && isLocalLoopbackHost(parsed.hostname)) {
+  const loopback =
+    isLocalLoopbackHost(parsed.hostname) ||
+    normalizeHostname(parsed.hostname).endsWith(".localhost");
+  if (!hasExplicitScheme && !useHttp && loopback) {
     return new URL(`http://${trimmed}`).href;
   }
   return parsed.href;

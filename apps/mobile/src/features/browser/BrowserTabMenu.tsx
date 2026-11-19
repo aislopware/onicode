@@ -18,8 +18,8 @@ import { Menu } from "../../components/ui/Menu";
 import { m } from "../../i18n/messages";
 import { previewEnvironment } from "../../state/preview";
 import { useAtomCommand } from "../../state/use-atom-command";
-import { browserTabUrl, loopbackUrlForDevice } from "./browserTabs";
-import { useOpenLocalPreview } from "./useOpenLocalPreview";
+import { browserTabUrl } from "./browserTabs";
+import { useLocalPreviewUrl, useOpenLocalPreview } from "./useOpenLocalPreview";
 
 const APPEARANCES = [
   {
@@ -55,16 +55,20 @@ export function BrowserTabMenu({
   environmentId,
   tab,
   streaming,
+  onForward,
   onPaste,
   onReleaseControl,
 }: {
   readonly environmentId: EnvironmentId;
   readonly tab: PreviewSessionSnapshot;
   readonly streaming: boolean;
+  /** The bar has Back only, like Safari's, so Forward lives here. */
+  readonly onForward?: () => void;
   readonly onPaste?: () => void;
   readonly onReleaseControl?: () => void;
 }) {
   const openLocalPreview = useOpenLocalPreview();
+  const localPreviewUrl = useLocalPreviewUrl(environmentId);
   const adjust = useAtomCommand(previewEnvironment.adjust, "browser tab change");
   const resize = useAtomCommand(previewEnvironment.resize, "browser viewport change");
   const close = useAtomCommand(previewEnvironment.close, "browser tab close");
@@ -92,13 +96,22 @@ export function BrowserTabMenu({
     image: "xmark",
     attributes: { destructive: true, disabled: !canClose },
   };
-  const deviceUrl = loopbackUrlForDevice(browserTabUrl(tab));
+  const deviceUrl = localPreviewUrl(browserTabUrl(tab));
   // The device preview has its own webview and tunnel, so it doesn't wait for the stream.
   const openOnDevice: MenuAction[] = deviceUrl
     ? [{ id: "open-on-device", title: gt("Open on this device"), image: "iphone" }]
     : [];
   const actions: MenuAction[] = [
     ...openOnDevice,
+    ...(onForward
+      ? [
+          {
+            id: "forward",
+            title: gt("Forward", { $context: "browser history" }),
+            image: "chevron.forward",
+          },
+        ]
+      : []),
     ...(onPaste
       ? [{ id: "paste", title: gt("Paste", { $context: "verb" }), image: "doc.on.clipboard" }]
       : []),
@@ -163,6 +176,7 @@ export function BrowserTabMenu({
     if (id === "open-on-device" && deviceUrl) {
       return openLocalPreview({ environmentId, threadId: tab.threadId }, deviceUrl);
     }
+    if (id === "forward") return onForward?.();
     if (id === "paste") return onPaste?.();
     if (id === "release-control") return onReleaseControl?.();
     if (id === "hard-reload") return void run({ hardReload: true });
