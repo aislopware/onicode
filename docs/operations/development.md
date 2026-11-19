@@ -31,10 +31,19 @@ Running `vp run dev` through an agent's own shell tool does not attach it to thi
 ### State and ports
 
 Linked worktrees default to their own `.onicode/userdata`, even when `ONICODE_HOME` is set.
-The main checkout defaults to `~/.onicode/dev`. An explicit `--home-dir` wins in both cases.
+Any other checkout, including the main checkout and every plain `git clone`, uses
+`ONICODE_HOME` when it is set and otherwise `~/.onicode/dev`, with default ports. Checkouts on
+`~/.onicode/dev` share one database, settings, and secrets, and only one of their servers can run
+at a time. An explicit `--home-dir` wins in both cases. It and `ONICODE_HOME` store state in
+`<home>/userdata`.
+A home of `~/.onicode`, from either source, still selects `~/.onicode/dev`, because `~/.onicode/userdata` is
+the live install.
 The first start in a worktree seeds its empty database from a read-only copy of
 `~/.onicode/userdata/statev2.sqlite` if the source is at most 500 MiB. Larger sources warn
 and dev starts with an empty database. `--no-seed` or `ONICODE_DEV_SEED=0` skips seeding.
+Seeding targets only a worktree's own `.onicode`, so a plain clone or a `--home-dir` outside the
+worktree starts empty. To give a clone its own seeded state, run
+`vp run migrate-dev-db --base-dir <clone>/.onicode` and then `vp run dev --home-dir <clone>/.onicode`.
 To copy a larger source, run `vp run migrate-dev-db` with dev stopped. It may use
 substantial disk space before pruning.
 The first start in any checkout also builds the native resource monitor with Cargo when
