@@ -204,9 +204,11 @@ it("opens a linked Linear issue from an inactive thread's sidebar badge", async 
     events: [],
     linkedPullRequests: [],
   } satisfies IssueDetail;
-  // Rows read the light summary; the panel the row opens reads the detail.
+  // Rows read the light summary; the panel the row opens reads the detail. Both keep the
+  // workspace the linked URL names, so another workspace's WEB-123 is never read in its place.
+  const readRef = { ...issueRef, workspace: "example" };
   using _summary = answerRpc(WS_METHODS.issuesSummary, (input: IssueRef) => {
-    expect(input).toEqual(issueRef);
+    expect(input).toEqual(readRef);
     const summary: IssueSummary = {
       tracker: liveDetail.tracker,
       host: liveDetail.host,
@@ -227,7 +229,7 @@ it("opens a linked Linear issue from an inactive thread's sidebar badge", async 
     return Effect.succeed(summary);
   });
   using _detail = answerRpc(WS_METHODS.issuesDetail, (input: IssueRef) => {
-    expect(input).toEqual(issueRef);
+    expect(input).toEqual(readRef);
     return Effect.succeed(liveDetail);
   });
   __setClientSettingsForTests({
