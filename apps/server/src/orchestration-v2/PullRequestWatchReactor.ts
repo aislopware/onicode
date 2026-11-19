@@ -3,6 +3,7 @@ import {
   isOrchestrationV2WorkActive,
   MessageId,
   type OrchestrationV2Notification,
+  type OrchestrationV2TurnItem,
   type PullRequestActivity,
   type PullRequestComment,
   type PullRequestDetail,
@@ -12,6 +13,7 @@ import {
   type ThreadId,
   type ThreadPullRequestWatch,
 } from "@onicode/contracts";
+import { resolveOniMcpToolId } from "@onicode/shared/oniMcpToolPresentation";
 import { commandIndicatesFailure } from "@onicode/shared/toolOutput";
 import {
   changeRequestsClosedBy,
@@ -243,6 +245,26 @@ export class PullRequestWatchReactor extends Context.Service<
 >()("onicode/orchestration-v2/PullRequestWatchReactor") {}
 
 /** @public */
+/** A `gh`/`glab` close command, or Onicode's own merge or close tool, ends a watch without a wake. */
+function changeRequestsClosedByItem(
+  item: OrchestrationV2TurnItem,
+): ReadonlySet<number> | "any" | undefined {
+  if (item.type === "command_execution") {
+    return isChangeRequestCloseCommand(item.input) ? changeRequestsClosedBy(item.input) : undefined;
+  }
+  if (item.type !== "dynamic_tool") return undefined;
+  const tool = resolveOniMcpToolId(item.toolName);
+  const input =
+    typeof item.input === "object" && item.input !== null
+      ? (item.input as Readonly<Record<string, unknown>>)
+      : {};
+  const closes =
+    (tool === "pull_request_merge" && input.auto !== true) ||
+    (tool === "pull_request_update" && input.state === "closed");
+  if (!closes) return undefined;
+  return typeof input.number === "number" ? new Set([input.number]) : "any";
+}
+
 export const make = Effect.gen(function* () {
   const engine = yield* Orchestrator.OrchestratorV2;
   const projections = yield* ProjectionStore.ProjectionStoreV2;
@@ -918,16 +940,11 @@ export const make = Effect.gen(function* () {
         }
         if (event.type !== "turn-item.updated") return Effect.void;
         const item = event.payload;
-        if (
-          item.type !== "command_execution" ||
-          finished.has(item.id) ||
-          !isChangeRequestCloseCommand(item.input)
-        ) {
-          return Effect.void;
-        }
+        const closes = finished.has(item.id) ? undefined : changeRequestsClosedByItem(item);
+        if (closes === undefined) return Effect.void;
         const commands = agentEnds.get(event.threadId) ?? new Map();
         agentEnds.set(event.threadId, commands);
-        commands.set(item.id, changeRequestsClosedBy(item.input));
+        commands.set(item.id, closes);
         if (isOrchestrationV2WorkActive(item.status)) return Effect.void;
         finished.add(item.id);
         const done = Effect.sync(() => {
@@ -938,7 +955,10 @@ export const make = Effect.gen(function* () {
         });
         // Some providers report a command that failed as completed.
         return Effect.andThen(
-          item.status === "completed" && !commandIndicatesFailure(item) ? Effect.void : done,
+          item.status === "completed" &&
+            (item.type !== "command_execution" || !commandIndicatesFailure(item))
+            ? Effect.void
+            : done,
           FiberMap.run(
             agentReads,
             item.id,

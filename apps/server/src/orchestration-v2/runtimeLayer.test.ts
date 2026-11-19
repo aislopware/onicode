@@ -4757,6 +4757,13 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
   it.effect.each([
     // The agent's merge of #19 needs no wake, but its command did not close #20.
     { name: "completed", status: "completed", wakes: ["#20: closed, stopped watching"] },
+    // Onicode's own merge tool counts as the agent's merge, whatever the provider names it.
+    {
+      name: "merge-tool",
+      status: "completed",
+      tool: "mcp__onicode__pull_request_merge",
+      wakes: ["#20: closed, stopped watching"],
+    },
     // A merge command that failed ended nothing itself.
     {
       name: "failed",
@@ -4777,7 +4784,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
     },
   ] as const)(
     "ends a watch without a wake when the thread's own agent merged it ($name)",
-    ({ name: key, status: ended, wakes: expected, ...result }) =>
+    ({ name: key, status: ended, wakes: expected, tool, ...result }) =>
       Effect.gen(function* () {
         const orchestrator = yield* Orchestrator.OrchestratorV2;
         const threadId = ThreadId.make(`runtime-pull-request-watch-own-merge-${key}`);
@@ -4898,9 +4905,17 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
               startedAt: at,
               completedAt: status === "completed" ? at : null,
               updatedAt: at,
-              type: "command_execution",
-              input: "gh pr merge 19 --squash",
-              ...(status === "running" ? {} : result),
+              ...(tool === undefined
+                ? {
+                    type: "command_execution" as const,
+                    input: "gh pr merge 19 --squash",
+                    ...(status === "running" ? {} : result),
+                  }
+                : {
+                    type: "dynamic_tool" as const,
+                    toolName: tool,
+                    input: { number: 19, method: "squash" },
+                  }),
             },
           }));
         const reactor = yield* PullRequestWatchReactor.make.pipe(Effect.provide(host));
