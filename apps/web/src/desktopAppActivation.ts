@@ -96,23 +96,29 @@ function errorMessage(error: unknown, fallback: string): string {
 }
 
 let nextOpenOrder = 0;
-const runningOpens = new Map<number, AbortController>();
+const runningOpens = new Set<{ readonly order: number; readonly abort: AbortController }>();
+
+/** Opens ordered by one call (the folders of a drop) rank by that moment, not their own start. */
+export function reserveDesktopAppActivationOrder(): number {
+  return nextOpenOrder++;
+}
 
 /**
  * The newest open that reaches its thread wins: older ones still running stop before they show
- * theirs and resolve to null, as there is nothing left to report.
+ * theirs and resolve to null, so a drop stops instead of opening its next folder over the winner.
  */
 export async function handleDesktopAppActivationRequest(
   request: DesktopAppActivationRequest,
   dependencies: DesktopAppActivationDependencies,
+  order = reserveDesktopAppActivationOrder(),
 ): Promise<DesktopAppActivationResponse | null> {
-  const order = nextOpenOrder++;
-  const open = new AbortController();
-  runningOpens.set(order, open);
+  const open = { order, abort: new AbortController() };
+  runningOpens.add(open);
   try {
-    return await openWorkspace(request, dependencies, order, open.signal);
+    const response = await openWorkspace(request, dependencies, order, open.abort.signal);
+    return open.abort.signal.aborted ? null : response;
   } finally {
-    runningOpens.delete(order);
+    runningOpens.delete(open);
   }
 }
 
@@ -154,8 +160,8 @@ async function openWorkspace(
     }
   }
 
-  for (const [otherOrder, other] of runningOpens) {
-    if (otherOrder < order) other.abort();
+  for (const other of runningOpens) {
+    if (other.order < order) other.abort.abort();
   }
   if (signal.aborted) return null;
   try {
@@ -164,7 +170,6 @@ async function openWorkspace(
       signal,
     );
     if (opened === null) {
-      if (signal.aborted) return null;
       return failure(
         request.requestId,
         "thread-open-failed",
