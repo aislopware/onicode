@@ -1333,6 +1333,7 @@ export interface DesktopPreviewBridge {
     readonly sourceId: BrowserImportSourceId;
     readonly sourceProfileDirectory: string;
     readonly targetProfileId: string;
+    readonly tunnelLoopback?: boolean;
   }) => Promise<BrowserImportResult>;
   setAnnotationTheme: (theme: DesktopPreviewAnnotationTheme) => Promise<void>;
   setAnnotationSendEnabled: (tabId: string, enabled: boolean) => Promise<void>;

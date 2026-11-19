@@ -176,4 +176,40 @@ describe("BrowserImport.writeCookies", () => {
       assert.deepEqual(result, { imported: 2, skipped: 0, skippedDomains: [] });
     }),
   );
+
+  it.effect("keeps this machine's localhost cookies out of a tunnelled partition", () =>
+    Effect.gen(function* () {
+      const written: Array<string> = [];
+      const loopback = [
+        "http://localhost/",
+        "http://127.0.0.1/",
+        "http://[::1]/",
+        "http://app.localhost/",
+      ];
+      const result = yield* BrowserImport.writeCookies(
+        {
+          cookies: {
+            set: ({ url }) => {
+              written.push(url);
+              return Promise.resolve();
+            },
+            flushStore: () => Promise.resolve(),
+          },
+        },
+        {
+          cookies: [cookie, ...loopback.map((url) => ({ ...cookie, url }))],
+          undecryptable: 0,
+          undecryptableHosts: [],
+        },
+        { tunnelled: true },
+      );
+
+      assert.deepEqual(written, [cookie.url]);
+      assert.deepEqual(result, {
+        imported: 1,
+        skipped: 4,
+        skippedDomains: ["localhost", "127.0.0.1", "[::1]", "app.localhost"],
+      });
+    }),
+  );
 });

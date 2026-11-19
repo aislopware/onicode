@@ -267,9 +267,12 @@ over the connection the app already has, whichever way you connected. If the
 host cannot be reached, the tab shows a connection error; a `localhost`,
 `127.0.0.1`, or `[::1]` address never opens a server on your own computer.
 Other names that point at your computer, such as `/etc/hosts` entries, still
-do. These tabs ignore your system proxy settings, so they can't reach a host
-you connect to only through a proxy or over HTTPS with a privately issued
-certificate. The mobile app streams tabs from the host.
+do. These tabs keep their own cookies and site data, apart from anything your
+own `localhost` servers set. They ignore your system proxy settings, so they
+can't reach a host you connect to only through a proxy or over HTTPS with a
+privately issued certificate. Over SSH or a relay, your system browser can't
+reach the host's `localhost`, so Open in browser isn't offered for those pages.
+The mobile app streams tabs from the host.
 
 On iPhone, iPad, and Android, a tab showing one of the host's `localhost` pages
 has **Open on this device** in its menu. So does a long press on a `localhost`

@@ -24,7 +24,7 @@ export function useDiscoveredLocalServers(
   return mergeServers({
     scanner: scannerState.servers.map((server) => ({
       ...server,
-      url: resolveDiscoveredServerUrl(input.environmentId, server.url),
+      url: resolveDiscoveredServerUrl(server.url),
       requestedUrl: server.url,
     })),
     configuredUrls: input.configuredUrls ?? [],

@@ -306,7 +306,7 @@ export function useChatTerminalActions(input: ChatTerminalActionsInput) {
     ) {
       const previewResult = await openUrlInPreview({
         threadRef: activeThreadRef,
-        url: resolveDiscoveredServerUrl(activeThreadRef.environmentId, script.previewUrl),
+        url: resolveDiscoveredServerUrl(script.previewUrl),
         openPreview,
       });
       if (previewResult._tag === "Failure" && !isAtomCommandInterrupted(previewResult)) {

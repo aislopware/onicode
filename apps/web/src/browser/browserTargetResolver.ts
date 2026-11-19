@@ -13,12 +13,6 @@ import { readPreparedConnection } from "~/state/session";
 
 export { normalizeHostname, isLocalLoopbackHost } from "@onicode/shared/hostClassification";
 
-const readEnvironmentUrl = (environmentId: EnvironmentId): URL => {
-  const connection = readPreparedConnection(environmentId);
-  if (!connection) throw new Error(`Environment ${environmentId} is not connected.`);
-  return new URL(connection.httpBaseUrl);
-};
-
 const resolveEnvironmentPortTarget = (
   environmentId: EnvironmentId,
   target: Extract<BrowserNavigationTarget, { readonly kind: "environment-port" }>,
@@ -61,21 +55,44 @@ const resolveEnvironmentPortTarget = (
 const reachesEnvironmentLoopback = (target: ConnectionTarget): boolean =>
   target._tag === "PrimaryConnectionTarget" || isDesktopLocalConnectionTarget(target);
 
-/** Desktop carries every other environment's loopback traffic through the preview tunnel. */
-export const tunnelsEnvironmentLoopback = (target: ConnectionTarget | undefined): boolean =>
-  !(target !== undefined && reachesEnvironmentLoopback(target));
+/**
+ * Desktop carries every other environment's loopback traffic through the preview tunnel. Undefined
+ * until the catalog knows the environment's target.
+ */
+export const tunnelsEnvironmentLoopback = (
+  target: ConnectionTarget | undefined,
+): boolean | undefined => (target === undefined ? undefined : !reachesEnvironmentLoopback(target));
 
-const resolveLoopbackUrl = (
+/** The URL an in-app tab loads. A desktop webview keeps localhost; its partition reaches the environment. */
+export const resolveDiscoveredServerUrl = (rawUrl: string): string => {
+  try {
+    return normalizePreviewUrl(rawUrl);
+  } catch {
+    return rawUrl;
+  }
+};
+
+/**
+ * The URL for the system browser, which has no tunnel: null when it has no route to the
+ * environment's loopback, since localhost there would be a different server on this computer.
+ */
+export const resolveExternalServerUrl = (
   environmentId: EnvironmentId,
   rawUrl: string,
-  tunnelled: boolean,
-): string => {
+): string | null => {
+  let parsed: URL;
   try {
-    const normalizedUrl = normalizePreviewUrl(rawUrl);
-    const parsed = new URL(normalizedUrl);
-    if (tunnelled || !isLoopbackHost(parsed.hostname)) return normalizedUrl;
-    const target = readPreparedConnection(environmentId)?.target;
-    if (target && reachesEnvironmentLoopback(target)) return normalizedUrl;
+    parsed = new URL(normalizePreviewUrl(rawUrl));
+  } catch {
+    return rawUrl;
+  }
+  if (!isLoopbackHost(parsed.hostname)) return parsed.toString();
+  const connection = readPreparedConnection(environmentId);
+  if (!connection) return null;
+  if (reachesEnvironmentLoopback(connection.target)) return parsed.toString();
+  // An SSH forward's loopback address is this computer, not the environment.
+  if (connection.target._tag === "SshConnectionTarget") return null;
+  try {
     return resolveEnvironmentPortTarget(
       environmentId,
       {
@@ -84,19 +101,11 @@ const resolveLoopbackUrl = (
         protocol: parsed.protocol === "https:" ? "https" : "http",
         path: `${parsed.pathname}${parsed.search}${parsed.hash}`,
       },
-      readEnvironmentUrl(environmentId),
+      new URL(connection.httpBaseUrl),
       rawUrl,
       parsed,
     ).resolvedUrl;
   } catch {
-    return rawUrl;
+    return null;
   }
 };
-
-/** The URL an in-app tab loads. A desktop webview keeps localhost; its partition reaches the environment. */
-export const resolveDiscoveredServerUrl = (environmentId: EnvironmentId, rawUrl: string): string =>
-  resolveLoopbackUrl(environmentId, rawUrl, true);
-
-/** The URL for the system browser, which has no tunnel and needs an address it can reach itself. */
-export const resolveExternalServerUrl = (environmentId: EnvironmentId, rawUrl: string): string =>
-  resolveLoopbackUrl(environmentId, rawUrl, false);

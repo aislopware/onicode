@@ -213,27 +213,41 @@ came from. A stamp without the access, from before it was recorded, is fenced.
 
 A desktop webview for another environment keeps `localhost` URLs and reaches the environment's
 loopback through `/api/preview/tunnel`, one WebSocket per TCP connection, on the same origin as
-every other request. That is why it works over any connection method. Four choices are easy to
+every other request. That is why it works over any connection method. These choices are easy to
 undo by accident:
 
 - **Fixed proxy, not PAC.** Chromium never consults a PAC script for loopback hosts, even with
-  `<-loopback>`. The partition uses a fixed SOCKS5 proxy with the bypass list
+  `<-loopback>`. The partition uses a fixed HTTP proxy with the bypass list
   `*,<-loopback>,169.254.0.0/16,fe80::/10`, in that order, since the last matching rule wins:
   everything is direct except loopback. `<-loopback>` also takes link-local addresses, so the last
   two rules hand them back to the direct route. A fixed proxy also has no
   direct retry, so a failed tunnel is a connection error and never the reviewer's own localhost.
   The rule matches hostnames, not resolved addresses, so a custom name that resolves to loopback
-  still goes direct.
+  still goes direct. The cost is that the rest of the partition skips the system proxy: one
+  session has one proxy mode, and passing the rest on to the system proxy would mean chaining to
+  it, authentication included.
+- **HTTP, so it can authenticate.** Any local process can reach the listener's port. Chromium
+  can't authenticate to a SOCKS proxy, but answers an HTTP proxy's 407 through Electron's `login`
+  event, so the listener refuses every client without this run's random credentials, which main
+  hands only to Chromium. Plain http arrives in absolute form; the listener forwards it as one
+  request with `Connection: close`, so the next request on the connection is checked and routed
+  again, and the credentials never leave the machine.
+- **A partition of its own.** Cookies and storage for `localhost` ignore the port, so pages this
+  machine served and pages from the environment would share them. Tunnelled tabs use a separate
+  partition, never routed any other way. The renderer picks it only once the catalog knows the
+  environment's target, so a tab restored at startup never loads in the wrong one.
 - **Media tickets.** Desktop main opens the tunnel but holds no environment credentials. Media
   tickets are plain short-lived bearer tickets, so the renderer can hand one over. Main asks it for a tunnel URL per
   connection, which also makes the tunnel follow a route switch.
-- **Owner check, not auth.** Chromium can't authenticate to a SOCKS proxy, so any local process
-  can connect to the listener and ride this user's tunnel. On Linux the listener looks the client
-  up in `/proc/net/tcp` and refuses other users. macOS has no such check yet. The mobile app's
-  device preview has the same listener while it is open: iOS suspends other apps, but Android lets
-  any app reach it, and apps cannot see another app's socket owner there.
+- **The address the page named.** A `localhost` name dials the environment's IPv4 then IPv6
+  loopback, like a browser. An IP literal such as `[::1]` dials exactly that address, so it never
+  reaches a different server on the same port.
+- **Mobile device preview** has its own SOCKS listener while it is open, without the desktop's
+  authentication: iOS suspends other apps, but Android lets any app reach it, and apps cannot see
+  another app's socket owner there.
 - **System browser links** have no tunnel. They keep the private-network rewrite in
-  [`browserTargetResolver.ts`](../../apps/web/src/browser/browserTargetResolver.ts).
+  [`browserTargetResolver.ts`](../../apps/web/src/browser/browserTargetResolver.ts), and are not
+  offered over SSH or a public relay, where `localhost` would be this machine.
 
 ## Access and process ownership are different
 

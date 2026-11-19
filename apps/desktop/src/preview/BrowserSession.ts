@@ -23,9 +23,9 @@ import { m } from "../i18n/messages.ts";
 const PREVIEW_PARTITION_PREFIX = "persist:onicode-preview-";
 /** Ephemeral partitions omit persist: but retain a product prefix so the webview gate recognizes them. */
 const PREVIEW_EPHEMERAL_PARTITION_PREFIX = "onicode-preview-ephemeral-";
-const PROFILE_PARTITION_MARKER = "profile-";
+const PARTITION_MARKERS = { profile: "profile-", tunnel: "tunnel-" } as const;
 
-export type BrowserSessionPartitionNamespace = "profile";
+export type BrowserSessionPartitionNamespace = keyof typeof PARTITION_MARKERS;
 
 // Electron's clipboard API uses clipboard-sanitized-write and checks both permission handlers.
 const ALLOWED_PREVIEW_PERMISSIONS: ReadonlySet<string> = new Set([
@@ -591,7 +591,7 @@ export const make = Effect.gen(function* BrowserSessionMake() {
       ),
     );
     const prefix = persistent ? PREVIEW_PARTITION_PREFIX : PREVIEW_EPHEMERAL_PARTITION_PREFIX;
-    return `${prefix}${namespace === "profile" ? PROFILE_PARTITION_MARKER : ""}${Hex.encode(digest).slice(0, 20)}`;
+    return `${prefix}${namespace === undefined ? "" : PARTITION_MARKERS[namespace]}${Hex.encode(digest).slice(0, 20)}`;
   });
 
   const getSession = Effect.fn("BrowserSession.getSession")(function* (

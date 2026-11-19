@@ -24,6 +24,7 @@ import type { ManagedPolicyFileError } from "@onicode/shared/managedPolicyFile";
 
 import * as DesktopManagedPolicy from "../../app/DesktopManagedPolicy.ts";
 import * as BrowserSession from "../BrowserSession.ts";
+import { isLoopbackName } from "../LoopbackTunnel.ts";
 import { ChromiumCookieReadError, readChromiumCookies } from "./ChromiumCookies.ts";
 import type { CookieReadResult } from "./CookieDatabase.ts";
 import { FirefoxCookieReadError, readFirefoxCookies } from "./FirefoxCookies.ts";
@@ -157,11 +158,18 @@ const cookieHost = (url: string): string => {
 export const writeCookies = Effect.fn("BrowserImport.writeCookies")(function* (
   session: { readonly cookies: Pick<Session["cookies"], "set" | "flushStore"> },
   read: CookieReadResult,
+  options: { readonly tunnelled?: boolean } = {},
 ) {
   let imported = 0;
   let skipped = read.undecryptable;
   const skippedDomains = new Set(read.undecryptableHosts);
   for (const cookie of read.cookies) {
+    // A tunnelled partition's localhost is the environment's, not this machine's.
+    if (options.tunnelled && isLoopbackName(cookieHost(cookie.url))) {
+      skipped += 1;
+      skippedDomains.add(cookieHost(cookie.url));
+      continue;
+    }
     const written = yield* Effect.tryPromise({
       try: () =>
         session.cookies.set({
@@ -346,7 +354,7 @@ export const make = Effect.gen(function* BrowserImportMake() {
       );
 
     // Chromium serializes writes; a rejected cookie should not prevent the others.
-    return yield* writeCookies(session, result);
+    return yield* writeCookies(session, result, { tunnelled: input.namespace === "tunnel" });
   });
 
   return BrowserImport.of({ listSources, importCookies });
