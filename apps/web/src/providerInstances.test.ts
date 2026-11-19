@@ -96,6 +96,30 @@ describe("isProviderInstancePickerReady", () => {
       false,
     );
   });
+
+  it("rejects a warning provider without usable backends before reading its models", () => {
+    let reads = 0;
+    const models = new Proxy(
+      Array.from({ length: 50 }, (_, index) => model(`model-${index}`)),
+      {
+        get(target, key, receiver) {
+          if (typeof key === "string" && /^\d+$/.test(key)) reads += 1;
+          return Reflect.get(target, key, receiver);
+        },
+      },
+    );
+    const [entry] = deriveProviderInstanceEntries([
+      provider({
+        provider: ProviderDriverKind.make("claudeAgent"),
+        instanceId: "claudeAgent",
+        status: "warning",
+        models,
+      }),
+    ]);
+
+    expect(entry && isProviderInstancePickerReady(entry)).toBe(false);
+    expect(reads).toBe(0);
+  });
 });
 
 describe("applyProviderInstanceSettings", () => {

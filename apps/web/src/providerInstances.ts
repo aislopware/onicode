@@ -61,6 +61,7 @@ export function isProviderInstancePickerReady(entry: ProviderInstanceEntry): boo
       subProvider.unavailableReason === undefined ? [subProvider.name] : [],
     ),
   );
+  if (usable.size === 0) return false;
   return entry.models.some(
     (model) => model.subProvider !== undefined && usable.has(model.subProvider),
   );
