@@ -2638,3 +2638,4 @@ e0f5acd178	take	taken as is (Sidebar.logic.ts only; Sidebar.tsx hook order untou
 dcaff67177	take	Removing a connection withdraws its permission notice. Scenario ported to the desktop target through second-environment.ts (no second-server.ts in Onicode) and run locally: passed.
 a6d2bed55b	take	Titleless ACP tool_call_update keeps the tool's name. Clean apply.
 b45ca716f9	take	CONFLICT resolved: kept Onicode's stacked new-draft path in selectProject, added upstream's abort signal around it
+86b5734cfc	take	taken as is (Windows-only launcher parsing, inert on macOS/Linux)
