@@ -137,7 +137,8 @@ function buildDiffReviewLines(
       const oldHunkStart = hunk.deletionStart + (hunk.deletionCount === 0 ? 1 : 0);
       const newHunkStart = hunk.additionStart + (hunk.additionCount === 0 ? 1 : 0);
       const contextLines = Math.min(oldHunkStart - oldContextStart, newHunkStart - newContextStart);
-      pushContextGap(oldContextStart, newContextStart, contextLines);
+      // A gap ends at its hunk, as the diff view draws it; a guide excerpt's old side can be shorter.
+      pushContextGap(oldHunkStart - contextLines, newHunkStart - contextLines, contextLines);
     }
 
     let oldLineNumber = hunk.deletionStart;
@@ -276,7 +277,11 @@ function findDiffReviewLineIndex(
           oldContextEnd - oldContextStart,
           newContextEnd - newContextStart,
         );
-        const contextIndex = findContextIndex(oldContextStart, newContextStart, contextLines);
+        const contextIndex = findContextIndex(
+          oldContextEnd - contextLines,
+          newContextEnd - contextLines,
+          contextLines,
+        );
         if (contextIndex >= 0) return contextIndex;
         rowIndex += Math.max(0, contextLines);
       }
