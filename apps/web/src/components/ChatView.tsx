@@ -142,7 +142,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { BackgroundThreadContext } from "./chat/backgroundThread";
+import { BackgroundThreadContext, HiddenThreadContext } from "./chat/backgroundThread";
 import { WorkspaceMutationIdContext } from "./chat/ChatMarkdownMedia";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import {
@@ -1699,6 +1699,7 @@ export default function ChatView(props: ChatViewProps) {
   });
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const backgroundThread = use(BackgroundThreadContext);
+  const hiddenThread = use(HiddenThreadContext);
   const scriptKeybindings =
     useAtomValue(serverEnvironment.configValueAtom(environmentId))?.keybindings ??
     DEFAULT_RESOLVED_KEYBINDINGS;
@@ -2861,11 +2862,12 @@ export default function ChatView(props: ChatViewProps) {
     activeThread?.lineage.sideChat !== true &&
     !isSubagentThread &&
     serverConfig?.environment.capabilities.sideChats === true;
-  // A start can outlast the thread on screen; its banner would then go nowhere.
+  // A start can outlast the thread on screen, or end under Settings or Usage, where its banner
+  // goes unseen.
   const reportSideChatError = useStableCallback((message: string, threadRef: ScopedThreadRef) => {
     if (currentRouteThreadKeyRef.current === scopedThreadKey(threadRef)) {
       setThreadError(threadRef.threadId, message);
-      return;
+      if (!hiddenThread) return;
     }
     toastManager.add(
       stackedThreadToast({

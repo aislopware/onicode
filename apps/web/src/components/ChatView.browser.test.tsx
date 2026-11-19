@@ -1117,6 +1117,24 @@ it("/side sends the draft's attachments and context, and keeps them until it sta
   await open(other.id, `Answer 0 for ${other.id}.`);
   await rejectPendingCommand("Side chats are paused.");
   await expect.element(page.getByText("Side chats are paused.")).toBeVisible();
+
+  // So does one that fails while Settings covers its thread.
+  await open(thread.id, `Answer 0 for ${thread.id}.`);
+  await userEvent.click(editor);
+  await userEvent.keyboard("{Enter}");
+  await vi.waitFor(() => expect(forks()).toHaveLength(7));
+  await act(() => router.navigate({ to: "/settings/general" }));
+  await expect
+    .element(page.getByRole("heading", { name: "Time format", exact: true }))
+    .toBeVisible();
+  await rejectPendingCommand("Side chats are full.");
+  await vi.waitFor(() =>
+    expect(
+      [...document.querySelectorAll("[data-slot=toast-description]")].map(
+        (toast) => toast.textContent,
+      ),
+    ).toContain("Side chats are full."),
+  );
 });
 
 it("a send held for a compressing image goes with the mode set at Send", async () => {
