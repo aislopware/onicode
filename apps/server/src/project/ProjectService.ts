@@ -1,9 +1,11 @@
+import * as NodeUtil from "node:util";
 import {
   CommandId,
   type OrchestrationProjectShell,
   ProjectId,
   type Project,
   type ProjectCreatePayload,
+  type ProjectSettingsOverrides,
   type ProjectUpdatePayload,
   type ProjectSnapshot,
   type ThreadId,
@@ -109,6 +111,7 @@ export class ProjectOperationError extends Schema.TaggedError<ProjectOperationEr
       "list-threads",
       "delete-thread",
       "dispatch-project-command",
+      "write-project-settings",
     ]),
     projectId: Schema.optional(ProjectId),
     workspaceRoot: Schema.optional(Schema.String),
@@ -393,6 +396,45 @@ export const make = Effect.gen(function* () {
     return Option.isNone(row) ? Option.none() : Option.some(yield* hydrate(row.value));
   });
 
+  // New threads resolve these from the settings overrides; once folded, the record is never read.
+  const writeProjectSettings = Effect.fn("ProjectService.writeProjectSettings")(function* (
+    projectId: ProjectId,
+    input: Pick<
+      ProjectUpdatePayload,
+      "defaultModelSelection" | "defaultThreadEnvMode" | "scripts" | "autoPull"
+    >,
+  ) {
+    const fields = {
+      defaultModelSelection: input.defaultModelSelection,
+      defaultThreadEnvMode: input.defaultThreadEnvMode,
+      defaultProjectScripts: input.scripts,
+      defaultAutoPull: input.autoPull,
+    };
+    if (Object.values(fields).every((value) => value === undefined)) return;
+    yield* serverSettings.getSettings.pipe(
+      Effect.flatMap(({ projectSettingsOverrides }) => {
+        const current = projectSettingsOverrides[projectId];
+        const entry: Record<string, unknown> = { ...current };
+        // A null clears the project's own value, so the environment default applies again.
+        for (const [key, value] of Object.entries(fields)) {
+          if (value === null) delete entry[key];
+          else if (value !== undefined) entry[key] = value;
+        }
+        if (NodeUtil.isDeepStrictEqual(entry, current ?? {})) return Effect.void;
+        return serverSettings.updateSettings({
+          projectSettingsOverrides: {
+            [projectId]:
+              Object.keys(entry).length === 0 ? null : (entry as ProjectSettingsOverrides),
+          },
+        });
+      }),
+      Effect.mapError(
+        (cause) =>
+          new ProjectOperationError({ operation: "write-project-settings", projectId, cause }),
+      ),
+    );
+  });
+
   const create: ProjectService["Service"]["create"] = Effect.fn("ProjectService.create")(
     function* (input) {
       const workspaceRoot = yield* normalizeWorkspaceRoot({
@@ -408,6 +450,10 @@ export const make = Effect.gen(function* () {
         title: input.title,
         workspaceRoot,
         ...(input.scripts === undefined ? {} : { scripts: input.scripts }),
+      });
+      yield* writeProjectSettings(input.projectId, {
+        defaultModelSelection: input.defaultModelSelection,
+        scripts: input.scripts,
       });
       yield* projectEnrichment.invalidate([workspaceRoot]);
       return yield* readCommitted(input.projectId);
@@ -450,6 +496,7 @@ export const make = Effect.gen(function* () {
         ...(input.pinned === undefined ? {} : { pinned: input.pinned }),
         ...(input.archived === undefined ? {} : { archived: input.archived }),
       });
+      yield* writeProjectSettings(input.projectId, input);
       if (workspaceRoot !== previousRoot || input.faviconPath !== undefined) {
         yield* projectEnrichment.invalidate([previousRoot, workspaceRoot]);
       }

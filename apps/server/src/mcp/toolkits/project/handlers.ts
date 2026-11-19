@@ -33,6 +33,7 @@ import {
   resolveProjectSettings,
 } from "@onicode/shared/projectSettings";
 import { parseOniProjectFile } from "@onicode/shared/oniProjectFile";
+import { resolveProjectScripts } from "@onicode/shared/projectScripts";
 import { resolveRuntimeMode } from "../../delegatedTaskModes.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
@@ -167,20 +168,22 @@ const access = Effect.gen(function* () {
   return yield* Project.ProjectService;
 });
 
-/** Settings, not the project record, hold the project default model that new threads use. */
-const withSavedDefaultModel = Effect.gen(function* () {
+/** Settings, not the project record, hold the project defaults that new threads use. */
+const withSavedProjectSettings = Effect.gen(function* () {
   const settings = yield* ServerSettings.ServerSettingsService.pipe(
     Effect.flatMap((service) => service.getSettings),
     Effect.mapError(unavailable),
   );
   return (project: ProjectRecord) => {
-    const resolved = resolveProjectSettings(settings, project.id, project);
+    const { settings: effective, sources } = resolveProjectSettings(settings, project.id, project);
     return {
       ...project,
       defaultModelSelection:
-        resolved.sources.defaultModelSelection === "project"
-          ? resolved.settings.defaultModelSelection
-          : null,
+        sources.defaultModelSelection === "project" ? effective.defaultModelSelection : null,
+      defaultThreadEnvMode:
+        sources.defaultThreadEnvMode === "project" ? effective.defaultThreadEnvMode : null,
+      autoPull: effective.defaultAutoPull,
+      scripts: resolveProjectScripts(settings, project),
     };
   };
 });
@@ -430,7 +433,7 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
       const page = yield* projects
         .listPage({ cursor: input.cursor ?? 0, limit: input.limit ?? 20 })
         .pipe(Effect.mapError(unavailable));
-      return { ...page, projects: page.projects.map(yield* withSavedDefaultModel) };
+      return { ...page, projects: page.projects.map(yield* withSavedProjectSettings) };
     }),
   ),
   oni_project_read: McpToolAccess.reads((input) =>
@@ -442,7 +445,7 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
           code: "invalid_request",
           message: "The project was not found.",
         });
-      return (yield* withSavedDefaultModel)(result.value);
+      return (yield* withSavedProjectSettings)(result.value);
     }),
   ),
   oni_project_create: McpToolAccess.writesEnvironment(
@@ -480,14 +483,15 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
               ),
             );
           return {
-            ...project,
+            ...(yield* withSavedProjectSettings)(project),
             ...(created.commitError === undefined ? {} : { commitError: created.commitError }),
           };
         }
         const commandId = yield* newCommandId();
-        return yield* projects
+        const created = yield* projects
           .create({ ...input, workspaceRoot, commandId, projectId: ProjectId.make(commandId) })
           .pipe(Effect.mapError(projectFailure));
+        return (yield* withSavedProjectSettings)(created);
       }),
     // Linked work may bring the repository it works in; an existing
     // registered workspace is still refused.
@@ -499,7 +503,7 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
       const updated = yield* projects
         .update({ ...input, commandId: yield* newCommandId() })
         .pipe(Effect.mapError(projectFailure));
-      return (yield* withSavedDefaultModel)(updated);
+      return (yield* withSavedProjectSettings)(updated);
     }),
   ),
   oni_project_delete: McpToolAccess.writesEnvironment((input) =>

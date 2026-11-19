@@ -46,3 +46,16 @@ it.live("holds the update's lock key against other server processes while it run
     assert.strictEqual(yield* probe(machineLockFile(lockKey)), "acquired");
   }),
 );
+
+it("servers started with different temp directories share one update lock", () => {
+  const previous = process.env.TMPDIR;
+  try {
+    process.env.TMPDIR = "/tmp";
+    const fromServiceManager = machineLockFile("test:shared");
+    process.env.TMPDIR = "/var/folders/xy/T";
+    assert.strictEqual(machineLockFile("test:shared"), fromServiceManager);
+  } finally {
+    if (previous === undefined) delete process.env.TMPDIR;
+    else process.env.TMPDIR = previous;
+  }
+});

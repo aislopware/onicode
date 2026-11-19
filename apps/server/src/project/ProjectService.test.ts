@@ -1,4 +1,6 @@
 import * as Arr from "effect/Array";
+import { resolveProjectScripts } from "@onicode/shared/projectScripts";
+import { resolveProjectSettings } from "@onicode/shared/projectSettings";
 import * as Context from "effect/Context";
 import * as Queue from "effect/Queue";
 import * as Tracer from "effect/Tracer";
@@ -99,13 +101,14 @@ const layerTestFor = (
     | ProjectFaviconResolver.ProjectFaviconResolver
     | RepositoryIdentityResolver.RepositoryIdentityResolver
   >,
+  settings?: Parameters<typeof ServerSettings.layerTest>[0],
 ) =>
   RuntimeLayer.layerProjectService.pipe(
     Layer.provideMerge(ProjectEnrichmentService.layer),
     Layer.provideMerge(layerWorkspacePaths),
     Layer.provideMerge(projectMetadataLayer),
     Layer.provideMerge(SqlitePersistence.layerMemory),
-    Layer.provideMerge(ServerSettings.layerTest()),
+    Layer.provideMerge(ServerSettings.layerTest(settings)),
     Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "project-service-test-" })),
     Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
     Layer.provideMerge(layerEnrichmentCompletions),
@@ -630,6 +633,57 @@ it.layer(layerTest)("ProjectService", (it) => {
     }),
   );
 });
+
+it.effect("project defaults reach new threads once legacy project settings are folded", () =>
+  Effect.gen(function* () {
+    const service = yield* ProjectService.ProjectService;
+    const settingsService = yield* ServerSettings.ServerSettingsService;
+    const projectId = ProjectId.make("project:folded-defaults");
+    const modelSelection = { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.1-codex" };
+    const scripts = [
+      { id: "test", name: "Test", command: "vp test", icon: "test", runOnWorktreeCreate: false },
+    ] as const;
+    const resolve = Effect.fn("ProjectServiceTest.resolveDefaults")(function* () {
+      const settings = yield* settingsService.getSettings;
+      const project = Option.getOrThrow(yield* service.getById(projectId));
+      return {
+        ...resolveProjectSettings(settings, projectId, project),
+        scripts: resolveProjectScripts(settings, project),
+      };
+    });
+
+    yield* service.create({
+      commandId: CommandId.make("command:folded:create"),
+      projectId,
+      title: "Folded",
+      workspaceRoot: "/work/folded",
+      defaultModelSelection: modelSelection,
+    });
+    yield* service.update({
+      commandId: CommandId.make("command:folded:update"),
+      projectId,
+      defaultThreadEnvMode: "worktree",
+      scripts,
+      autoPull: true,
+    });
+    const saved = yield* resolve();
+    assert.deepEqual(saved.settings.defaultModelSelection, modelSelection);
+    assert.equal(saved.settings.defaultThreadEnvMode, "worktree");
+    assert.isTrue(saved.settings.defaultAutoPull);
+    assert.deepEqual(saved.scripts, scripts);
+
+    yield* service.update({
+      commandId: CommandId.make("command:folded:clear"),
+      projectId,
+      defaultModelSelection: null,
+      defaultThreadEnvMode: null,
+    });
+    const cleared = yield* resolve();
+    assert.equal(cleared.sources.defaultModelSelection, "environment");
+    assert.equal(cleared.sources.defaultThreadEnvMode, "environment");
+    assert.isTrue(cleared.settings.defaultAutoPull);
+  }).pipe(Effect.provide(layerTestFor(layerMetadata, { projectSettingsFolded: true }))),
+);
 
 it.effect("keeps project snapshots available when optional metadata enrichment fails", () =>
   Effect.gen(function* () {
