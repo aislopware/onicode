@@ -463,11 +463,7 @@ export const layer: Layer.Layer<
         function* (input) {
           switch (input.event.type) {
             case "app_thread.created": {
-              const existing = yield* projections.getThread(input.event.appThread.id).pipe(
-                Effect.catchTags({
-                  ProjectionStoreThreadNotFoundError: () => Effect.succeed(null),
-                }),
-              );
+              const existing = yield* projections.findThread(input.event.appThread.id);
               const rename = input.event.titleOnly === true;
               // A `/rename` makes the title the user's even when its text is unchanged.
               const claimsTitle =
