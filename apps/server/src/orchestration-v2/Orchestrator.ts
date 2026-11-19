@@ -1339,6 +1339,28 @@ function pendingForkTransferForThread(
   );
 }
 
+/** A fork transfer still pending when a fresh run starts would bring the parent's context back. */
+function forkTransferSupersededEvent(
+  transfer: OrchestrationV2ContextTransfer,
+  runId: RunId,
+  providerInstanceId: ProviderInstanceId,
+  now: DateTime.Utc,
+): Omit<OrchestrationV2DomainEvent, "id"> {
+  return {
+    type: "context-transfer.updated",
+    threadId: transfer.targetThreadId,
+    runId,
+    providerInstanceId,
+    occurredAt: now,
+    payload: {
+      ...transfer,
+      status: "superseded",
+      error: "Superseded by a fresh session.",
+      updatedAt: now,
+    },
+  };
+}
+
 function pendingMergeBackTransfersForThread(
   projection: Pick<OrchestrationV2ThreadProjection, "contextTransfers" | "thread">,
 ): ReadonlyArray<OrchestrationV2ContextTransfer> {
@@ -2624,6 +2646,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       );
       const followsCurrent = followsCurrentConversation(queuedMessage);
       const freshContext = queuedRun.freshContext === true;
+      // A scheduled fresh run is a side conversation, so it must not drop the fork's context.
+      const supersededForkTransfer =
+        freshContext && queuedMessage.scheduledTaskId === undefined
+          ? pendingForkTransferForThread(projection)
+          : undefined;
       const contextBoundary = freshContext ? ordinal : contextBoundaryOrdinal(projection);
       const activeProviderThread = dispatchProviderThread(
         projection,
@@ -3203,6 +3230,16 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                   occurredAt: now,
                   payload: legacyImportRecoveryHandoff,
                 },
+              ]),
+          ...(supersededForkTransfer === undefined
+            ? []
+            : [
+                forkTransferSupersededEvent(
+                  supersededForkTransfer,
+                  queuedRun.id,
+                  queuedRun.providerInstanceId,
+                  now,
+                ),
               ]),
           ...(handoffTurnItem === null
             ? []
@@ -8514,20 +8551,14 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ? pendingForkTransferForThread(projection)
         : undefined;
       if (supersededForkTransfer !== undefined) {
-        // Superseded, or the next ordinary send would bring the parent's context back.
-        yield* emitEvent({
-          type: "context-transfer.updated",
-          threadId: command.threadId,
-          runId,
-          providerInstanceId: modelSelection.instanceId,
-          occurredAt: now,
-          payload: {
-            ...supersededForkTransfer,
-            status: "superseded",
-            error: "Superseded by a fresh session.",
-            updatedAt: now,
-          },
-        });
+        yield* emitEvent(
+          forkTransferSupersededEvent(
+            supersededForkTransfer,
+            runId,
+            modelSelection.instanceId,
+            now,
+          ),
+        );
       }
       yield* emitEvent({
         type: "run-attempt.created",

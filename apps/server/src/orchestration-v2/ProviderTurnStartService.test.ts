@@ -22,6 +22,7 @@ import {
   ProviderSetupError,
   RunAttemptId,
   RunId,
+  ScheduledTaskId,
   ThreadId,
   TurnItemId,
   ProjectId,
@@ -493,8 +494,8 @@ function makeLocalCommandHarness(input: {
    */
   readonly sideChat?: {
     readonly contextRun: "current" | "failed" | "cancelled" | "delivered";
-    /** A fresh session in this run, or in a completed run between the earlier one and this. */
-    readonly fresh?: "current" | "between";
+    /** Makes this run a fresh session. */
+    readonly fresh?: boolean;
     readonly unsentResume?: boolean;
     readonly repeatedResume?: boolean;
     readonly acceptedResume?: boolean;
@@ -803,21 +804,7 @@ function makeLocalCommandHarness(input: {
                     : input.sideChat.contextRun,
                 completedAt: now,
               },
-              ...(input.sideChat.fresh === "between"
-                ? [
-                    {
-                      ...run,
-                      id: RunId.make("side-chat-fresh-run"),
-                      userMessageId: MessageId.make("side-chat-fresh-message"),
-                      activeAttemptId: RunAttemptId.make("side-chat-fresh-attempt"),
-                      status: "completed" as const,
-                      startedAt: now,
-                      completedAt: now,
-                      freshContext: true,
-                    },
-                    { ...run, ordinal: 3 },
-                  ]
-                : [input.sideChat.fresh === "current" ? { ...run, freshContext: true } : run]),
+              input.sideChat.fresh ? { ...run, freshContext: true } : run,
             ],
       contextTransfers:
         input.sideChat.nativeForkFrom === undefined
@@ -2361,22 +2348,87 @@ effectIt.effect.each([
     }),
 );
 
-effectIt.effect.each(["current", "between"] as const)(
-  "a fresh side chat session leaves a failed turn's undelivered context behind (fresh run: %s)",
-  (fresh) =>
+effectIt.effect("a fresh side chat session leaves a failed turn's undelivered context behind", () =>
+  Effect.gen(function* () {
+    const harness = makeLocalCommandHarness({
+      text: "",
+      manualContinuation: true,
+      sideChat: { contextRun: "failed", fresh: true },
+    });
+
+    yield* harness.start;
+
+    const texts = harness.startTurn.mock.calls.map(([turn]) => turn.message.text);
+    expect(texts).toHaveLength(1);
+    expect(texts[0]).not.toContain("SIDE_CHAT_CONTEXT");
+    expect(harness.projection().contextHandoffs[0]?.delivery).toBeUndefined();
+  }),
+);
+
+effectIt.effect.each([
+  { scheduled: false, status: "superseded" },
+  { scheduled: true, status: "ready" },
+] as const)(
+  "a fresh run starts without failed runs' side chat notes; an unscheduled one retires them: %j",
+  ({ scheduled, status }) =>
     Effect.gen(function* () {
       const harness = makeLocalCommandHarness({
-        text: "",
-        manualContinuation: true,
-        sideChat: { contextRun: "failed", fresh },
+        text: "Start over",
+        sideChat: { contextRun: "failed" },
+      });
+      const projection = harness.projection();
+      const current = projection.runs.at(-1)!;
+      const [note] = projection.contextHandoffs;
+      harness.setProjection({
+        ...projection,
+        runs: projection.runs.map((run) =>
+          run.id === current.id ? { ...run, freshContext: true } : run,
+        ),
+        // Each send that fails before the side chat's fork resolves leaves its own note.
+        contextHandoffs: [
+          ...projection.contextHandoffs,
+          { ...note!, id: ContextHandoffId.make("side-chat-context-retry") },
+        ],
+        turnItems: scheduled
+          ? [
+              ...projection.turnItems,
+              {
+                type: "user_message",
+                id: TurnItemId.make("scheduled-fresh-message"),
+                threadId: projection.thread.id,
+                runId: current.id,
+                nodeId: null,
+                providerThreadId: current.providerThreadId,
+                providerTurnId: null,
+                nativeItemRef: null,
+                parentItemId: null,
+                ordinal: 0,
+                status: "completed",
+                title: null,
+                startedAt: projection.updatedAt,
+                completedAt: projection.updatedAt,
+                updatedAt: projection.updatedAt,
+                createdBy: "user",
+                creationSource: "server",
+                messageId: current.userMessageId,
+                text: "Start over",
+                inputIntent: "turn_start",
+                attachments: [],
+                scheduledTaskId: ScheduledTaskId.make("fresh-session-task"),
+              },
+            ]
+          : projection.turnItems,
       });
 
       yield* harness.start;
 
-      const texts = harness.startTurn.mock.calls.map(([turn]) => turn.message.text);
-      expect(texts).toHaveLength(1);
-      expect(texts[0]).not.toContain("SIDE_CHAT_CONTEXT");
-      expect(harness.projection().contextHandoffs[0]?.delivery).toBeUndefined();
+      expect(harness.startTurn.mock.calls[0]?.[0].message.text).toBe("Start over");
+      expect(
+        harness.projection().contextHandoffs.map((handoff) => [handoff.status, handoff.delivery]),
+      ).toEqual([
+        [status, undefined],
+        [status, undefined],
+      ]);
     }),
 );
 
