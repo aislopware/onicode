@@ -8,6 +8,7 @@ import type {
   OrchestrationV2ProviderThread,
   OrchestrationV2TurnItem,
 } from "@onicode/contracts";
+import { withMessageSenderNote } from "@onicode/contracts";
 
 import * as Config from "effect/Config";
 import * as DateTime from "effect/DateTime";
@@ -159,6 +160,8 @@ export function historicalMessage(
   let text: string;
   switch (item.type) {
     case "user_message":
+      text = withMessageSenderNote(item, item.text);
+      break;
     case "assistant_message":
       text = item.text;
       break;
