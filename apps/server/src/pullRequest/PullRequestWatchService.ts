@@ -126,7 +126,8 @@ const make = Effect.gen(function* () {
     if (watching && before?.snapshot?.state === "merged") {
       return yield* new PullRequestNotOpenError({ state: "merged" });
     }
-    // A pending rollup has no failure yet, so any failure the first read finds is news.
+    // Pending, or no check registered yet: nothing has failed, so any failure the first read finds
+    // is news. A read that left the state out says nothing and leaves the seed to the link.
     let checksPendingAtStart: boolean | undefined;
     if (watching && before?.watch === undefined) {
       checksPendingAtStart = yield* pullRequests
@@ -144,7 +145,11 @@ const make = Effect.gen(function* () {
           Effect.flatMap((summary) =>
             summary.state === "merged"
               ? Effect.fail(new PullRequestNotOpenError({ state: "merged" }))
-              : Effect.succeed(summary.checksState === "pending"),
+              : Effect.succeed(
+                  summary.checksState === undefined
+                    ? undefined
+                    : summary.checksState === "pending" || summary.checksState === null,
+                ),
           ),
           Effect.catchTags({
             // Host and transport errors can recover while the watch is active.

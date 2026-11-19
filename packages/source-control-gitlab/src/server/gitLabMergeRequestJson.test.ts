@@ -1072,12 +1072,20 @@ describe("decodeListStatesJson", () => {
     { pipeline: { status: "FAILED" }, checksState: "failing" },
     { pipeline: { status: "CANCELED" }, checksState: "failing" },
     { pipeline: { status: "RUNNING" }, checksState: "pending" },
+    {
+      pipeline: { status: "RUNNING", failed: { count: 1, nodes: [{ allowFailure: false }] } },
+      checksState: "failing",
+    },
+    {
+      pipeline: { status: "RUNNING", failed: { count: 1, nodes: [{ allowFailure: true }] } },
+      checksState: "pending",
+    },
     { pipeline: { status: "WAITING_FOR_RESOURCE" }, checksState: "pending" },
     { pipeline: { status: "MANUAL" }, checksState: null },
     { pipeline: { status: "SKIPPED" }, checksState: null },
     { pipeline: null, checksState: null },
   ])(
-    "reads a $pipeline.status head pipeline as $checksState checks",
+    "reads a $pipeline.status head pipeline with $pipeline.failed.count failed jobs as $checksState checks",
     ({ pipeline, checksState }) => {
       expect([
         ...statesOf(false, [
