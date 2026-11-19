@@ -464,7 +464,9 @@ function IssueLoadingBody() {
 
 // Selecting another issue reuses this route, so the draft, older comments and errors are keyed.
 export function IssueRouteScreen({ route }: StaticScreenProps<IssueParams>) {
-  return <IssueRoute key={issueParamsKey(route.params)} params={route.params} />;
+  // Another workspace's issue under the same key is another issue, with its own comments.
+  const key = `${issueParamsKey(route.params)}\u0000${route.params.workspace ?? ""}`;
+  return <IssueRoute key={key} params={route.params} />;
 }
 
 function IssueRoute({ params }: { readonly params: IssueParams }) {

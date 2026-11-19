@@ -146,8 +146,9 @@ export class LinearApi extends Context.Service<
     readonly createIssue: (
       input: IssueCreateInput,
     ) => Effect.Effect<{ readonly identifier: string; readonly url: string }, IssueTrackerError>;
+    /** `id` is the issue's id, which unlike its key names one issue in every workspace. */
     readonly updateIssue: (
-      identifier: string,
+      id: string,
       input: IssueUpdateInput,
     ) => Effect.Effect<void, IssueTrackerError>;
     readonly createComment: (input: CommentCreateInput) => Effect.Effect<void, IssueTrackerError>;
@@ -405,8 +406,8 @@ export const make = Effect.gen(function* () {
       ),
     );
 
-  const updateIssue: LinearApi["Service"]["updateIssue"] = (identifier, input) =>
-    call("updateIssue", (linear) => linear.OniIssueUpdate({ id: identifier, input })).pipe(
+  const updateIssue: LinearApi["Service"]["updateIssue"] = (id, input) =>
+    call("updateIssue", (linear) => linear.OniIssueUpdate({ id, input })).pipe(
       Effect.flatMap(({ issueUpdate }) => applied("updateIssue", issueUpdate)),
     );
 

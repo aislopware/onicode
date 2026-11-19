@@ -65,7 +65,7 @@ export function useOpenIssueLink(
       projects: allProjects.filter((project) => project.environmentId === environmentId),
       trackers,
     });
-    if (target === null) return false;
+    if (target === null || target.namesPlace) return false;
     event.preventDefault();
     event.stopPropagation();
     const surface = {

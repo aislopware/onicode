@@ -225,7 +225,14 @@ export function createIssueEnvironmentAtoms<R, E>(
       concurrency: {
         mode: "singleFlight",
         key: ({ environmentId, input }) =>
-          JSON.stringify([environmentId, input.projectId, input.scope, input.key, input.cursor]),
+          JSON.stringify([
+            environmentId,
+            input.projectId,
+            input.scope,
+            input.key,
+            input.workspace,
+            input.cursor,
+          ]),
       },
     }),
     /** Read when the composer opens: what a scope offers a new issue changes with a commit. */
