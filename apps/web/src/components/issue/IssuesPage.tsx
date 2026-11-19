@@ -78,6 +78,7 @@ import { SidebarInset } from "~/components/ui/sidebar";
 import { isCommandPaletteOpen } from "~/commandPaletteBus";
 import { useLiveRefresh } from "~/hooks/useLiveRefresh";
 import { resolveShortcutCommand, shortcutLabelForCommand } from "~/keybindings";
+import { issueLinkWorkspace } from "@onicode/client-runtime/issue-links";
 import { issueSurfaceRef } from "~/lib/openIssueLink";
 import { isTerminalFocused } from "~/lib/terminalFocus";
 import { usePanelAnimationSettings, usePanelPresence } from "~/panelAnimations";
@@ -358,6 +359,8 @@ export function IssuesPage() {
     capableEnvironments[0]?.environmentId ??
     null;
 
+  const panelWorkspace =
+    renderedSurface?.kind === "issue" ? issueSurfaceRef(renderedSurface).workspace : undefined;
   const panelListEntry =
     renderedSurface?.kind === "issue"
       ? (groups
@@ -370,7 +373,8 @@ export function IssuesPage() {
                   ...renderedSurface,
                   host: renderedSurface.host ?? row.host,
                   projectId: renderedSurface.projectId as ProjectId,
-                }),
+                }) &&
+              (panelWorkspace === undefined || issueLinkWorkspace(row.url) === panelWorkspace),
           ) ?? null)
       : null;
 
@@ -825,7 +829,8 @@ export function IssuesPage() {
           >
             {renderedSurface.kind === "issue" ? (
               <IssueDetailPanel
-                key={`${panelEnvironmentId}:${renderedSurface.id}`}
+                // Another workspace's issue under the same key is another issue.
+                key={`${panelEnvironmentId}:${renderedSurface.id}:${issueSurfaceRef(renderedSurface).workspace ?? ""}`}
                 environmentId={panelEnvironmentId}
                 listEntry={panelListEntry}
                 reference={issueSurfaceRef(renderedSurface)}

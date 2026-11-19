@@ -110,8 +110,14 @@ describe("resolveIssueLinkTarget", () => {
     expect(resolve("https://linear.app.evil.example/acme/issue/WEB-17")).toBeNull();
     // Team keys repeat across workspaces; only the connected one's links are its issues.
     expect(resolve("https://linear.app/othercorp/issue/WEB-17")).toBeNull();
-    // The panel opens an issue at its top, so a link to one of its comments stays the browser's.
-    expect(resolve("https://linear.app/acme/issue/WEB-17/fix-it#comment-cmt_1")).toBeNull();
+    // One spelling, so a link and a stored URL that differ in case read the same cached issue.
+    expect(resolve("https://linear.app/Acme/issue/WEB-17")?.ref.workspace).toBe("acme");
+    // The panel opens an issue at its top, so a link to one of its comments is the browser's.
+    expect(resolve("https://linear.app/acme/issue/WEB-17/fix-it")?.namesPlace).toBe(false);
+    expect(resolve("https://linear.app/acme/issue/WEB-17/fix-it#comment-cmt_1")).toMatchObject({
+      ref: { key: "WEB-17" },
+      namesPlace: true,
+    });
     expect(
       resolveIssueLinkTarget({ url: "https://linear.app/acme/issue/WEB-17", projects }),
     ).toBeNull();
@@ -120,9 +126,17 @@ describe("resolveIssueLinkTarget", () => {
   it.each([
     "https://github.com.evil.example/acme/web/issues/7",
     "https://github.com/acme/web/pull/7",
-    "https://github.com/acme/web/issues/7#issuecomment-123",
   ])("leaves %s an ordinary link", (url) => {
     expect(resolveIssueLinkTarget({ url, projects })).toBeNull();
+  });
+
+  it("marks a link to a comment, which may still name a pull request GitHub numbers as an issue", () => {
+    expect(
+      resolveIssueLinkTarget({
+        url: "https://github.com/acme/web/issues/7#issuecomment-123",
+        projects,
+      }),
+    ).toMatchObject({ ref: { scope: "acme/web", key: "7" }, namesPlace: true });
   });
 });
 

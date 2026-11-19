@@ -188,7 +188,8 @@ export function RightPanelSurfaceContent(props: {
       }
       return (
         <IssueDetailPanel
-          key={`${surface.environmentId ?? props.environmentId}:${surface.id}`}
+          // Another workspace's issue under the same key is another issue, with its own comments.
+          key={`${surface.environmentId ?? props.environmentId}:${surface.id}:${issueSurfaceRef(surface).workspace ?? ""}`}
           environmentId={
             (surface.environmentId as EnvironmentId | undefined) ?? props.environmentId
           }

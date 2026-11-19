@@ -579,12 +579,13 @@ export const make: Effect.Effect<StandaloneIssueTrackerApi, never, LinearApi.Lin
       }),
 
       update: Effect.fn("LinearIssueTracker.update")(function* (input) {
-        const { identifier } = yield* requireTeamIssue("update", input);
+        // By id: the key could name another workspace's issue if the credential changed since.
+        const issue = yield* requireTeamIssue("update", input);
         const scope =
           input.labels !== undefined || input.assignees !== undefined
             ? yield* requireTeam("update", input.scope)
             : null;
-        yield* linear.updateIssue(identifier, {
+        yield* linear.updateIssue(issue.id, {
           ...(input.title === undefined ? {} : { title: input.title }),
           ...(input.body === undefined ? {} : { description: input.body }),
           ...(scope === null || input.labels === undefined
@@ -597,12 +598,12 @@ export const make: Effect.Effect<StandaloneIssueTrackerApi, never, LinearApi.Lin
       }),
 
       setState: Effect.fn("LinearIssueTracker.setState")(function* (input) {
-        const { identifier } = yield* requireTeamIssue("setState", input);
+        const issue = yield* requireTeamIssue("setState", input);
         const scope = yield* requireTeam("setState", input.scope);
         const wanted = scope.team.states.nodes.find((state) => state.name === input.state);
         if (wanted === undefined)
           return yield* failed("setState", `This team's workflow has no "${input.state}" state.`);
-        yield* linear.updateIssue(identifier, { stateId: wanted.id });
+        yield* linear.updateIssue(issue.id, { stateId: wanted.id });
       }),
 
       setReaction: Effect.fn("LinearIssueTracker.setReaction")(function* (input) {

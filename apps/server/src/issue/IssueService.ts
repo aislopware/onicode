@@ -756,14 +756,21 @@ const make = Effect.gen(function* () {
         .pipe(Effect.mapError(toIssueError("resolveUrl")));
       const canonicalUrl = parseUrl(issue.url);
       const canonical = canonicalUrl === null ? null : standalone.api.parseIssueUrl(canonicalUrl);
-      if (canonical === null || canonical.workspace !== standalone.link.workspace) {
+      if (
+        canonical === null ||
+        canonical.workspace.toLowerCase() !== standalone.link.workspace.toLowerCase()
+      ) {
         return yield* new IssueOperationError({
           operation: "resolveUrl",
           reason: "not-found",
           detail: "This issue URL does not belong to the connected workspace.",
         });
       }
-      return { ...resolved, workspace: canonical.workspace, issue: toDetail(served, issue) };
+      return {
+        ...resolved,
+        workspace: canonical.workspace.toLowerCase(),
+        issue: toDetail(served, issue),
+      };
     },
   );
 

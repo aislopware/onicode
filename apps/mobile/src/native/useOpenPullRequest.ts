@@ -78,6 +78,7 @@ export function useNavigateToPullRequest(options?: { readonly replace?: boolean 
         // A dropped connection says nothing about what the link names; the browser knows.
         if (isAtomCommandInterrupted(preview)) return tryOpenExternalUrl(url, "pull-request");
       }
+      if (issue.namesPlace) return tryOpenExternalUrl(url, "pull-request");
       const issueParams = {
         environmentId,
         projectId: issue.ref.projectId,

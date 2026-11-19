@@ -59,6 +59,7 @@ function fakeStandaloneTracker(
         ["https://linear.app/acme/issue/ENG-1/issue-title", "acme"],
         ["https://linear.app/acme/issue/ENG-1/canonical-title", "acme"],
         ["https://linear.app/other-workspace/issue/ENG-1/old-title", "other-workspace"],
+        ["https://linear.app/Acme/issue/ENG-1/old-title", "Acme"],
       ]);
       const workspace = links.get(url.href);
       return workspace === undefined
@@ -569,6 +570,36 @@ describe("IssueService with a standalone tracker", () => {
       expect(
         yield* service.resolveUrl("https://linear.app/acme/issue/ENG-1/old-title"),
       ).toMatchObject({ key: "ENG-1", writable: true, workspace: "acme" });
+      // Workspace keys are compared as the client compares them, whatever their case.
+      expect(
+        yield* service.resolveUrl("https://linear.app/Acme/issue/ENG-1/old-title"),
+      ).toMatchObject({ key: "ENG-1" });
+      // The workspace a reference names reaches the tracker on reads and writes alike.
+      const asked: Array<string | undefined> = [];
+      const recording = yield* makeService({
+        projects: [project({ id: "web" })],
+        trackers: [
+          fakeStandaloneTracker({
+            getComments: (input) =>
+              Effect.sync(() => {
+                asked.push(input.workspace);
+                return { comments: [], nextCursor: null };
+              }),
+            setState: (input) => Effect.sync(() => void asked.push(input.workspace)),
+          }),
+        ],
+        bindings: { web: { tracker: LINEAR, scope: "ENG" } },
+      });
+      const ref = {
+        projectId: "web" as ProjectId,
+        tracker: LINEAR,
+        scope: "ENG",
+        key: "ENG-1",
+        workspace: "acme",
+      };
+      yield* recording.comments({ ...ref, cursor: "c" });
+      yield* recording.setState({ ...ref, state: "Done" });
+      expect(asked).toEqual(["acme", "acme"]);
       const refused = yield* service
         .resolveUrl("https://linear.app/other-workspace/issue/ENG-1/old-title")
         .pipe(Effect.result);

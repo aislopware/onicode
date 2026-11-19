@@ -530,6 +530,9 @@ describe("LinearIssueTracker", () => {
         { stateId: "st_canceled" },
         { stateId: "st_todo" },
       ]);
+      // By the checked issue's id, not its key: a credential moved to another workspace since the
+      // check would find a different issue under the same key.
+      expect(updates.map((update) => update.id)).toEqual(["iss_ENG-1", "iss_ENG-1"]);
     }),
   );
 

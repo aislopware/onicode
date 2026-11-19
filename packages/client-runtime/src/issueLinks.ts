@@ -54,13 +54,12 @@ function parseStandaloneIssueLink(url: string) {
 
 /** The workspace a standalone tracker's issue link names, which a reference read through it keeps. */
 export function issueLinkWorkspace(url: string | undefined): string | undefined {
-  return url === undefined ? undefined : parseStandaloneIssueLink(url)?.link.workspace;
+  return url === undefined
+    ? undefined
+    : parseStandaloneIssueLink(url)?.link.workspace.toLowerCase();
 }
 
-/**
- * A link to a place in an issue (`#issuecomment-1`, `#note_1`, `#comment-…`). The panel opens an
- * issue at its top, so such a link stays the browser's.
- */
+/** A link to a place in an issue (`#issuecomment-1`, `#note_1`, `#comment-…`). */
 function namesPlaceInIssue(url: string): boolean {
   try {
     return new URL(url).hash !== "";
@@ -118,7 +117,7 @@ function resolveStandaloneIssueLink<Project extends LinkProject>(
       host: link.host,
       scope: own === undefined ? link.scope : lender.binding.scope,
       key: link.key,
-      workspace: link.workspace,
+      workspace: link.workspace.toLowerCase(),
     },
   };
 }
@@ -152,11 +151,10 @@ export function createIssueLinkResolver<Project extends LinkProject>(
     return null;
   };
 
-  return (
+  const resolve = (
     url: string,
     preferredProjectId?: string,
   ): { readonly project: Project; readonly ref: IssueRef } | null => {
-    if (namesPlaceInIssue(url)) return null;
     // A link names its server's port; a binding does only when its remote or web URL did.
     const authority = linkAuthority(url);
     const parsed = parseIssueLink(url, authority);
@@ -188,6 +186,22 @@ export function createIssueLinkResolver<Project extends LinkProject>(
       },
     };
   };
+
+  return (
+    url: string,
+    preferredProjectId?: string,
+  ): {
+    readonly project: Project;
+    readonly ref: IssueRef;
+    /**
+     * The link names a place inside the issue, which the panel cannot show: it opens at the top,
+     * so a click is the browser's. A GitHub link may still name a pull request's comment.
+     */
+    readonly namesPlace: boolean;
+  } | null => {
+    const target = resolve(url, preferredProjectId);
+    return target === null ? null : { ...target, namesPlace: namesPlaceInIssue(url) };
+  };
 }
 
 /** One link resolved on its own, for a click or press; see `createIssueLinkResolver`. */
@@ -198,7 +212,7 @@ export function resolveIssueLinkTarget<Project extends LinkProject>(input: {
   readonly preferredProjectId?: string | undefined;
   /** The environment's standalone trackers and bindings; without them only git-host links resolve. */
   readonly trackers?: IssueTrackerConnectionList | undefined;
-}): { readonly project: Project; readonly ref: IssueRef } | null {
+}) {
   return createIssueLinkResolver(input.projects, input.trackers)(
     input.url,
     input.preferredProjectId,
