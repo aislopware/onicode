@@ -134,6 +134,18 @@ it.live.each(
               path.join(sharedHome, "config.toml"),
             );
             assert.isFalse(yield* fs.exists(path.join(effective.config.homePath, "auth.json")));
+            // The shared config names the original home's bundled plugins, which a shadow home must override.
+            assert.include(
+              codexAppServerArgs(effective.config.launchArgs),
+              `marketplaces.openai-bundled.source=${JSON.stringify(
+                path.join(
+                  effective.config.homePath,
+                  ".tmp",
+                  "bundled-marketplaces",
+                  "openai-bundled",
+                ),
+              )}`,
+            );
           }
           assert.isUndefined(effective.environment.ACCESS_TOKEN);
           assert.isUndefined(effective.environment.OPENAI_API_KEY);
