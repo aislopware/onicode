@@ -6593,106 +6593,112 @@ describe("ClaudeAdapterV2 background wake turns", () => {
   );
 
   // Compaction already released the charge of a steer it summarized; dropping it releases nothing.
-  it.effect("refunds a dropped steer's PDF once when compaction ran before the drop", () =>
-    Effect.gen(function* () {
-      const fileSystem = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const harness = yield* makeWakeHarness;
-      const idAllocator = yield* IdAllocator.IdAllocatorV2;
-      const document = ChatFileAttachment.make({
-        type: "file",
-        id: ChatAttachmentId.make("steer-budget-document"),
-        name: "steer-budget.pdf",
-        mimeType: "application/pdf",
-        sizeBytes: 64 * 1024,
-      });
-      const pages = Buffer.from(
-        `%PDF-1.7\n1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n2 0 obj << /Type /Pages /Count 3 >> endobj\n${Array.from({ length: 3 }, (_, i) => `${i + 3} 0 obj << /Type /Page /Parent 2 0 R >> endobj`).join("\n")}\n`,
-      );
-      yield* fileSystem.writeFile(
-        path.join(harness.attachmentsDir, attachmentRelativePath(document)!),
-        Buffer.concat([
-          pages,
-          Buffer.alloc(document.sizeBytes - pages.length - 5, 32),
-          Buffer.from("%%EOF"),
-        ]),
-      );
-      const attemptId = RunAttemptId.make("attempt-steer-budget-refund");
-      const input = makeClaudeTestTurnInput({
-        threadId: harness.threadId,
-        providerThread: harness.providerThread,
-        now: yield* DateTime.now,
-        attemptId,
-        text: "Run the build.",
-        attachments: [],
-      });
-      yield* harness.runtime.startTurn(input);
-      yield* harness.runtime.steerTurn({
-        threadId: harness.threadId,
-        runId: input.runId,
-        providerThread: harness.providerThread,
-        providerTurnId: idAllocator.derive.providerTurn({
-          driver: ClaudeAdapterV2.CLAUDE_PROVIDER,
-          nativeTurnId: `turn:${attemptId}`,
-        }),
-        message: {
-          createdBy: "user",
-          creationSource: "web",
-          messageId: MessageId.make("message-steer-budget"),
-          text: "Read this PDF.",
-          attachments: [document],
-        },
-      });
-      const steerContent = harness.offeredMessages[1]?.message.content;
-      assert.isTrue(
-        Array.isArray(steerContent) && steerContent.some((block) => block.type === "document"),
-      );
-      for (const frame of [
-        {
-          type: "system",
-          subtype: "status",
-          status: "compacting",
-          uuid: "00000000-0000-4000-8000-000000002530",
-        },
-        {
+  // One dropped while compaction runs takes its charge out of what the boundary releases.
+  it.effect.each(["after", "while"] as const)(
+    "refunds a dropped steer's PDF once when it drops %s compaction",
+    (drop) =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const harness = yield* makeWakeHarness;
+        const idAllocator = yield* IdAllocator.IdAllocatorV2;
+        const document = ChatFileAttachment.make({
+          type: "file",
+          id: ChatAttachmentId.make("steer-budget-document"),
+          name: "steer-budget.pdf",
+          mimeType: "application/pdf",
+          sizeBytes: 64 * 1024,
+        });
+        const pages = Buffer.from(
+          `%PDF-1.7\n1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n2 0 obj << /Type /Pages /Count 3 >> endobj\n${Array.from({ length: 3 }, (_, i) => `${i + 3} 0 obj << /Type /Page /Parent 2 0 R >> endobj`).join("\n")}\n`,
+        );
+        yield* fileSystem.writeFile(
+          path.join(harness.attachmentsDir, attachmentRelativePath(document)!),
+          Buffer.concat([
+            pages,
+            Buffer.alloc(document.sizeBytes - pages.length - 5, 32),
+            Buffer.from("%%EOF"),
+          ]),
+        );
+        const attemptId = RunAttemptId.make("attempt-steer-budget-refund");
+        const input = makeClaudeTestTurnInput({
+          threadId: harness.threadId,
+          providerThread: harness.providerThread,
+          now: yield* DateTime.now,
+          attemptId,
+          text: "Run the build.",
+          attachments: [],
+        });
+        yield* harness.runtime.startTurn(input);
+        yield* harness.runtime.steerTurn({
+          threadId: harness.threadId,
+          runId: input.runId,
+          providerThread: harness.providerThread,
+          providerTurnId: idAllocator.derive.providerTurn({
+            driver: ClaudeAdapterV2.CLAUDE_PROVIDER,
+            nativeTurnId: `turn:${attemptId}`,
+          }),
+          message: {
+            createdBy: "user",
+            creationSource: "web",
+            messageId: MessageId.make("message-steer-budget"),
+            text: "Read this PDF.",
+            attachments: [document],
+          },
+        });
+        const steerContent = harness.offeredMessages[1]?.message.content;
+        assert.isTrue(
+          Array.isArray(steerContent) && steerContent.some((block) => block.type === "document"),
+        );
+        const boundary = {
           type: "system",
           subtype: "compact_boundary",
           compact_metadata: { trigger: "auto", pre_tokens: 1500, post_tokens: 400 },
           uuid: "00000000-0000-4000-8000-000000002531",
-        },
-        {
+        };
+        const cancelled = {
           type: "command_lifecycle",
           command_uuid: harness.promptUuid(1),
           state: "cancelled",
           uuid: "00000000-0000-4000-8000-000000002532",
-        },
-      ]) {
-        yield* harness.offerAndWait(claudeSdkFrame({ ...frame, session_id: WAKE_NATIVE_SESSION }));
-      }
-      yield* harness.offerAndWait(
-        makeResultFrame({ uuid: "00000000-0000-4000-8000-000000002533", result: "Built." }),
-      );
-      yield* Queue.take(harness.terminalReceipts);
-      const persisted = harness.events.findLast(
-        (event) => event.type === "provider_thread.updated",
-      );
-      assert.deepEqual(
-        persisted?.type === "provider_thread.updated"
-          ? persisted.providerThread.nativeMetadata?.claudeAttachmentBudget
-          : undefined,
-        { bytesUsed: 0, pagesUsed: 0 },
-      );
-    }).pipe(
-      Effect.scoped,
-      Effect.provide(
-        Layer.mergeAll(
-          IdAllocator.layer,
-          McpProviderSessions.layer,
-          NodeServices.layer,
-          NodeCrypto.layer,
+        };
+        for (const frame of [
+          {
+            type: "system",
+            subtype: "status",
+            status: "compacting",
+            uuid: "00000000-0000-4000-8000-000000002530",
+          },
+          ...(drop === "after" ? [boundary, cancelled] : [cancelled, boundary]),
+        ]) {
+          yield* harness.offerAndWait(
+            claudeSdkFrame({ ...frame, session_id: WAKE_NATIVE_SESSION }),
+          );
+        }
+        yield* harness.offerAndWait(
+          makeResultFrame({ uuid: "00000000-0000-4000-8000-000000002533", result: "Built." }),
+        );
+        yield* Queue.take(harness.terminalReceipts);
+        const persisted = harness.events.findLast(
+          (event) => event.type === "provider_thread.updated",
+        );
+        assert.deepEqual(
+          persisted?.type === "provider_thread.updated"
+            ? persisted.providerThread.nativeMetadata?.claudeAttachmentBudget
+            : undefined,
+          { bytesUsed: 0, pagesUsed: 0 },
+        );
+      }).pipe(
+        Effect.scoped,
+        Effect.provide(
+          Layer.mergeAll(
+            IdAllocator.layer,
+            McpProviderSessions.layer,
+            NodeServices.layer,
+            NodeCrypto.layer,
+          ),
         ),
       ),
-    ),
   );
 
   it.effect.each(["result-only", "streamed"] as const)(
@@ -6754,16 +6760,15 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           }),
         );
         yield* harness.awaitTerminal(1);
-        const replies = new Map<string, { readonly ordinal: number; readonly text: string }>();
+        // The event sink places each item where it first appears, whatever its ordinal says.
+        const replies = new Map<string, string>();
         for (const event of harness.events) {
           if (event.type === "turn_item.updated" && event.turnItem.type === "assistant_message") {
-            replies.set(event.turnItem.id, event.turnItem);
+            replies.set(event.turnItem.id, event.turnItem.text);
           }
         }
         assert.deepEqual(
-          [...replies.values()]
-            .toSorted((left, right) => left.ordinal - right.ordinal)
-            .map((reply) => reply.text),
+          [...replies.values()],
           steerReply === "streamed" ? ["Built.", "Done."] : ["Built.\n\nDone."],
         );
       }).pipe(
@@ -7753,9 +7758,46 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       const afterDrop = yield* runTurn(9, "Created Jira issue PROJ-43", [boardB, boardC]);
       assert.include(afterDrop, "Board B1");
       assert.notInclude(afterDrop, "Board C1");
+      // Two dropped steers that replaced the same note leave the one Claude read.
+      const boardB2 = { key: boardB.key, text: "Board B2" };
+      const sameKey = harness.offeredMessages.length;
+      assert.include(yield* steer(9, "Created Jira issue PROJ-43", [boardB2]), "Board B2");
+      assert.include(
+        yield* steer(9, "Created Jira issue PROJ-43", [{ key: boardB.key, text: "Board B3" }]),
+        "Board B3",
+      );
+      for (const index of [sameKey, sameKey + 1]) {
+        yield* harness.offerAndWait(
+          claudeSdkFrame({
+            type: "command_lifecycle",
+            command_uuid: harness.promptUuid(index),
+            state: "cancelled",
+            uuid: `00000000-0000-4000-8000-00000003830${index - sameKey}`,
+            session_id: WAKE_NATIVE_SESSION,
+          }),
+        );
+      }
       yield* finishTurn(9);
+      const afterSameKeyDrops = yield* runTurn(10, "Created Jira issue PROJ-43", [boardB2]);
+      assert.notInclude(afterSameKeyDrops, "PROJ-43");
+      assert.include(afterSameKeyDrops, "Board B2");
+      // A steer dropped after a compaction takes back nothing: a later steer resent its note.
+      const boardD = { key: "mcp_app_item-4", text: "Board D1" };
+      const beforeCompaction = harness.offeredMessages.length;
+      assert.include(yield* steer(10, "Created Jira issue PROJ-43", [boardD]), "Board D1");
+      yield* compact("00000000-0000-4000-8000-000000038310");
+      assert.include(yield* steer(10, "Created Jira issue PROJ-43", [boardD]), "Board D1");
+      yield* harness.offerAndWait(
+        claudeSdkFrame({
+          type: "command_lifecycle",
+          command_uuid: harness.promptUuid(beforeCompaction),
+          state: "cancelled",
+          uuid: "00000000-0000-4000-8000-000000038311",
+          session_id: WAKE_NATIVE_SESSION,
+        }),
+      );
+      assert.notInclude(yield* steer(10, "Created Jira issue PROJ-43", [boardD]), "Board D1");
       // A steer picks its notes after waiting out the subagent moves a compaction may finish in.
-      assert.notInclude(yield* runTurn(10, "Created Jira issue PROJ-43"), "PROJ-43");
       yield* harness.offerAndWait(
         claudeSdkFrame({
           type: "system",
