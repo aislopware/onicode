@@ -4,7 +4,10 @@ import type {
   ThreadId,
 } from "@onicode/contracts";
 import type { ThreadStructure } from "@onicode/client-runtime/state/shell";
-import { backgroundWorkTextPreview } from "@onicode/shared/orchestrationV2PendingBackgroundWork";
+import {
+  backgroundWorkHoldsCompletion,
+  backgroundWorkTextPreview,
+} from "@onicode/shared/orchestrationV2PendingBackgroundWork";
 import { T, useGT } from "gt-react";
 import { useState } from "react";
 
@@ -75,7 +78,7 @@ export function BackgroundWorkDetails(props: {
                   <div className="flex items-baseline justify-between gap-3">
                     <h3 className="font-medium">{title}</h3>
                     <span className="shrink-0 text-xs text-muted-foreground">
-                      {task.awaited
+                      {backgroundWorkHoldsCompletion([task])
                         ? gt("Waiting", { $context: "status of background work" })
                         : gt("Running", { $context: "status of background work" })}
                     </span>
