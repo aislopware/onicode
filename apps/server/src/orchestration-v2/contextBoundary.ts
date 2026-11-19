@@ -22,7 +22,7 @@ export function startedFreshRun(run: OrchestrationV2Run): boolean {
 }
 
 // Collected in one pass: an hourly fresh-session schedule leaves thousands of fresh runs to check.
-// Turn items, unlike messages, are not narrowed to the runs since the latest compaction.
+// A compacted thread's command read loads the prompts of every fresh-context run.
 function scheduledMessageIds(
   turnItems: OrchestrationV2ThreadProjection["turnItems"],
 ): ReadonlySet<MessageId> {
