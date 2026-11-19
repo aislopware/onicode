@@ -202,6 +202,31 @@ export function injectMcpAppCsp(html: string, csp: McpAppCsp | undefined): strin
     : `<!doctype html>${meta}${html}`;
 }
 
+const STORED_CSP =
+  /^(\uFEFF?\s*<!doctype[^>]*>)<meta http-equiv="Content-Security-Policy" content="([^"]*)">/i;
+
+/**
+ * Rebuilds a snapshot's stored policy from the domains it declared, so policy changes reach old
+ * snapshots. Domain validation drops the policy's own keywords; no stored policy gets the strictest.
+ */
+export function refreshMcpAppCsp(html: string): string {
+  const stored = STORED_CSP.exec(html);
+  if (!stored) return injectMcpAppCsp(html, undefined);
+  const directives = new Map(
+    stored[2]!.split(";").map((directive) => {
+      const [name, ...values] = directive.trim().split(/\s+/);
+      return [name, values] as const;
+    }),
+  );
+  const csp = readMcpAppCsp({
+    resourceDomains: directives.get("script-src"),
+    connectDomains: directives.get("connect-src"),
+    frameDomains: directives.get("frame-src"),
+    baseUriDomains: directives.get("base-uri"),
+  });
+  return injectMcpAppCsp(`${stored[1]}${html.slice(stored[0].length)}`, csp);
+}
+
 /** Opaque origins require authenticating bridge messages by parent window. */
 export function injectMcpAppThemeBootstrap(html: string): string {
   const script = `<script>

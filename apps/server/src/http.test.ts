@@ -79,6 +79,41 @@ describe("MCP app asset responses", () => {
       }).pipe(Effect.provide(layerFileResponse)),
   );
 
+  it.effect("serves snapshots under the current CSP with the domains they declared", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const directory = yield* fs.makeTempDirectoryScoped({ prefix: "oni-mcp-csp-" });
+      const file = path.join(directory, "app.html");
+      const page = "<!DOCTYPE html><html><body>app</body></html>";
+      const csp = {
+        connectDomains: ["https://api.example.com"],
+        resourceDomains: ["https://cdn.example.com", "https://*.fonts.example.com"],
+        frameDomains: ["https://embed.example.com"],
+        baseUriDomains: ["https://example.com"],
+      };
+      // Snapshots captured before blob: frames were allowed.
+      const old = (html: string) =>
+        html
+          .replace("frame-src blob: ", "frame-src ")
+          .replace("frame-src blob:", "frame-src 'none'");
+      for (const [stored, current] of [
+        [old(injectMcpAppCsp(page, csp)), injectMcpAppCsp(page, csp)],
+        [old(injectMcpAppCsp(page, undefined)), injectMcpAppCsp(page, undefined)],
+        // A capture without a stored policy gets the strictest one.
+        [page, injectMcpAppCsp(page, undefined)],
+      ] as const) {
+        yield* fs.writeFileString(file, stored);
+        const response = HttpServerResponse.toWeb(
+          yield* assetFileResponse({ path: file, mimeType: "text/html", renderIntent: "mcp-app" }),
+        );
+        expect(yield* Effect.promise(() => response.text())).toBe(
+          injectMcpAppCookieBootstrap(injectMcpAppThemeBootstrap(current)),
+        );
+      }
+    }).pipe(Effect.provide(layerFileResponse)),
+  );
+
   it.effect("rejects oversized captures before transforming them", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

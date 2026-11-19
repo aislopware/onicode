@@ -4,7 +4,11 @@ import {
   AuthOrchestrationReadScope,
   EnvironmentHttpApi,
 } from "@onicode/contracts";
-import { injectMcpAppCookieBootstrap, injectMcpAppThemeBootstrap } from "@onicode/shared/mcpApp";
+import {
+  injectMcpAppCookieBootstrap,
+  injectMcpAppThemeBootstrap,
+  refreshMcpAppCsp,
+} from "@onicode/shared/mcpApp";
 import {
   FILE_PREVIEW_SCROLL_SCRIPT,
   findStoredHtmlRenderBootstrap,
@@ -183,6 +187,7 @@ export const assetFileResponse = Effect.fn("assetFileResponse")(function* (
     }
     const body = pipe(
       new TextDecoder().decode(bytes),
+      refreshMcpAppCsp,
       injectMcpAppThemeBootstrap,
       injectMcpAppCookieBootstrap,
       (html) => new TextEncoder().encode(html),

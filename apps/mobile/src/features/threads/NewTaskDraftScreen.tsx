@@ -485,6 +485,7 @@ export function NewTaskDraftScreen(props: {
         pickerClosed: initialPickerRef.current === "open" && isFocused,
         useLastProject: saved?.useLastProjectForNewThreads,
         lastProject: saved?.lastThreadProject,
+        reservedDestination: incomingShare?.destination,
       },
     );
     if (selection.kind === "preserve") {
@@ -512,6 +513,7 @@ export function NewTaskDraftScreen(props: {
     projectScopes,
     projects,
     flow.draftKey,
+    incomingShare?.destination,
     props.initialProjectRef,
     props.incomingShareId,
     props.draftId,
