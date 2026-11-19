@@ -2569,3 +2569,4 @@ b6d6717df6	take	taken as is
 80142c0cc3	take	taken as is
 99be1f6601	take	taken as is
 245c579807	take	taken as is
+08db5e3145	skip	upstream contribution policy (model acceptance list in CONTRIBUTING); Onicode keeps its own CONTRIBUTING, which has no such section
