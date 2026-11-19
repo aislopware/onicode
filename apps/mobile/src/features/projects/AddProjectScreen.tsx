@@ -47,7 +47,7 @@ import {
 } from "@onicode/client-runtime/state/filesystem";
 import {
   appendBrowsePathSegment,
-  ensureBrowseDirectoryPath,
+  listedBrowseDirectoryPath,
   inferProjectTitleFromPath,
   isWindowsPlatform,
 } from "@onicode/client-runtime/state/projects";
@@ -1151,7 +1151,7 @@ function FolderBrowser(props: {
                 right={null}
                 onPress={() => {
                   void props.navigateToBrowsePath({
-                    browseDirectoryPath: ensureBrowseDirectoryPath(entry.fullPath),
+                    browseDirectoryPath: listedBrowseDirectoryPath(entry.fullPath),
                   });
                 }}
               />
@@ -1543,7 +1543,7 @@ export function AddProjectLocalFolderScreen(props: { readonly environmentId?: st
       const [best] = recentFolders.entries;
       if (best) {
         await navigateToBrowsePath({
-          browseDirectoryPath: ensureBrowseDirectoryPath(best.fullPath),
+          browseDirectoryPath: listedBrowseDirectoryPath(best.fullPath),
         });
       }
       return;
