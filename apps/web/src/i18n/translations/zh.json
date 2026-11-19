@@ -8227,6 +8227,7 @@
   "48886d66b4fc9ae8": "fx 可执行文件的路径。此机器上的所有 fx 实例共用 fx login 登录信息。",
   "35bb63c79e2954cf": "Grok CLI 可执行文件的路径。",
   "f8c1b66eb8b5dbd8": "Kiro CLI 可执行文件的路径。",
+  "6d57fa7008430a2f": "Command Code CLI 可执行文件的路径。",
   "1fc0ad6e3624dbd8": "此环境中 Muse Code 的可执行文件路径。在该主机上用 muse login 登录。",
   "ab221de3bd424896": "OpenCode 可执行文件的路径。",
   "064d8c86f3689946": "留空则让 Onicode 在需要时启动服务器。",

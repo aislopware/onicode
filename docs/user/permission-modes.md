@@ -59,4 +59,7 @@ approvals for actions that support them.
 Kiro offers only **Supervised** and **Full access**. In **Supervised** Kiro also asks you to
 review a turn's file changes. See [Kiro permissions](./providers-kiro.md#permission-modes).
 
+Command Code offers no **Auto**. A Command Code thread already set to it runs in **Supervised**. See
+[Command Code permissions](./providers-command-code.md#permission-modes).
+
 See the [provider guides](./install.md#providers) for setup and provider-specific limits.

@@ -218,6 +218,11 @@ const shouldRetainMissingProviderModels = (provider: ServerProvider): boolean =>
     return true;
   }
 
+  if (provider.driver === ProviderDriverKind.make("commandCode")) {
+    // Command Code's models are learned from the threads that ran them, never probed.
+    return true;
+  }
+
   if (provider.driver === ProviderDriverKind.make("claudeAgent")) {
     // Claude Code keeps one gateway model cache per Claude home, for one base URL at a time, so a
     // ready probe can omit this instance's gateway models after another instance or a terminal

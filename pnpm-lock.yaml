@@ -784,6 +784,9 @@ importers:
       '@onicode/provider-acp-registry':
         specifier: workspace:*
         version: link:../../packages/provider-acp-registry
+      '@onicode/provider-command-code':
+        specifier: workspace:*
+        version: link:../../packages/provider-command-code
       '@onicode/provider-core':
         specifier: workspace:*
         version: link:../../packages/provider-core
@@ -1344,6 +1347,9 @@ importers:
       '@onicode/provider-acp-registry':
         specifier: workspace:*
         version: link:../provider-acp-registry
+      '@onicode/provider-command-code':
+        specifier: workspace:*
+        version: link:../provider-command-code
       '@onicode/provider-core':
         specifier: workspace:*
         version: link:../provider-core
@@ -1570,6 +1576,37 @@ importers:
       '@onicode/provider-testing':
         specifier: workspace:*
         version: link:../provider-testing
+      '@types/node':
+        specifier: 26.6.6
+        version: 26.6.6
+      effect-acp:
+        specifier: workspace:*
+        version: link:../effect-acp
+      vite-plus:
+        specifier: 1.6.0
+        version: 1.6.0(@astrojs/compiler-rs@0.5.1)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.0)(@vitest/ui@5.1.0)(@volar/typescript@2.4.28(typescript@7.0.2))(bufferutil@4.1.0)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.0.13)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.48.0)(typescript@7.0.2)(unrun@0.2.39)(utf-8-validate@6.0.6)(yaml@2.9.1)
+
+  packages/provider-command-code:
+    dependencies:
+      '@onicode/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@onicode/provider-acp':
+        specifier: workspace:*
+        version: link:../provider-acp
+      '@onicode/provider-core':
+        specifier: workspace:*
+        version: link:../provider-core
+      '@onicode/shared':
+        specifier: workspace:*
+        version: link:../shared
+      effect:
+        specifier: 4.1.4
+        version: 4.1.4
+    devDependencies:
+      '@effect/vitest':
+        specifier: 4.1.4
+        version: 4.1.4(patch_hash=262b111889698ab1aaa2d439fff4e9da82c3992be451f5dad3f120445bb093a6)(@astrojs/compiler-rs@0.5.1)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.0)(@vitest/ui@5.1.0)(@volar/typescript@2.4.28(typescript@7.0.2))(bufferutil@4.1.0)(effect@4.1.4)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.0.13)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.48.0)(typescript@7.0.2)(unrun@0.2.39)(utf-8-validate@6.0.6)(yaml@2.9.1)
       '@types/node':
         specifier: 26.6.6
         version: 26.6.6

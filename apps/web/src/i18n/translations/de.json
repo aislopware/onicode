@@ -8212,6 +8212,7 @@
   "48886d66b4fc9ae8": "Pfad zur fx-Binärdatei. Alle fx-Instanzen auf diesem Rechner teilen sich die fx-Anmeldung.",
   "35bb63c79e2954cf": "Pfad zur Grok-CLI-Binärdatei.",
   "f8c1b66eb8b5dbd8": "Pfad zur Kiro-CLI-Binärdatei.",
+  "6d57fa7008430a2f": "Pfad zur Command-Code-CLI-Binärdatei.",
   "1fc0ad6e3624dbd8": "Pfad zur Muse-Code-Binärdatei in dieser Umgebung. Melde dich auf diesem Host mit muse login an.",
   "ab221de3bd424896": "Pfad zur OpenCode-Binärdatei.",
   "064d8c86f3689946": "Leer lassen, damit Onicode den Server bei Bedarf startet.",

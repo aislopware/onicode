@@ -16,6 +16,7 @@ import {
   type ServerSettings,
 } from "@onicode/contracts";
 import { acpRegistryClient } from "@onicode/provider-acp-registry/client";
+import { commandCodeClient } from "@onicode/provider-command-code/client";
 import { cursorClient } from "@onicode/provider-cursor/client";
 import { fxClient } from "@onicode/provider-fx/client";
 import { grokClient } from "@onicode/provider-grok/client";
@@ -47,6 +48,7 @@ const PACKAGED_CLIENTS: ReadonlyArray<ProviderClientDefinition> = [
   grokClient,
   fxClient,
   kiroClient,
+  commandCodeClient,
   museClient,
   openCodeClient,
   piClient,

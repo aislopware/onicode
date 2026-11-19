@@ -8210,6 +8210,7 @@
   "48886d66b4fc9ae8": "Caminho do binário fx. Todas as instâncias do fx nesta máquina compartilham o login do fx.",
   "35bb63c79e2954cf": "Caminho do binário da CLI do Grok.",
   "f8c1b66eb8b5dbd8": "Caminho do binário da CLI do Kiro.",
+  "6d57fa7008430a2f": "Caminho do binário da CLI do Command Code.",
   "1fc0ad6e3624dbd8": "Caminho do binário do Muse Code neste ambiente. Entre com muse login nesse host.",
   "ab221de3bd424896": "Caminho do binário do OpenCode.",
   "064d8c86f3689946": "Deixe em branco para o Onicode iniciar o servidor quando necessário.",

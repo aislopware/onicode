@@ -14,6 +14,7 @@ import {
   secretSettingsFields,
 } from "@onicode/contracts";
 import { acpRegistryClient } from "@onicode/provider-acp-registry/client";
+import { commandCodeClient } from "@onicode/provider-command-code/client";
 import { cursorClient } from "@onicode/provider-cursor/client";
 import { grokClient } from "@onicode/provider-grok/client";
 import { kiroClient } from "@onicode/provider-kiro/client";
@@ -37,6 +38,7 @@ const providerSecretFields = new Map([
     cursorClient,
     grokClient,
     kiroClient,
+    commandCodeClient,
     museClient,
     openCodeClient,
     piClient,

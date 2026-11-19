@@ -6,6 +6,7 @@ import {
   ProviderDriverKind,
 } from "@onicode/contracts";
 import { acpRegistryClient } from "@onicode/provider-acp-registry/client";
+import { commandCodeClient } from "@onicode/provider-command-code/client";
 import { makeProviderClientRegistry, type ProviderIcon } from "@onicode/provider-core/client";
 import { modelShortName } from "@onicode/provider-core/modelShortName";
 import { cursorClient } from "@onicode/provider-cursor/client";
@@ -54,6 +55,7 @@ export const providerClients = makeProviderClientRegistry([
     settingsSchema: AntigravitySettings,
   },
   kiroClient,
+  commandCodeClient,
   museClient,
   piClient,
   acpRegistryClient,

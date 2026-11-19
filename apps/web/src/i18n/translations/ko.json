@@ -8170,6 +8170,7 @@
   "48886d66b4fc9ae8": "fx 바이너리 경로입니다. 이 머신의 모든 fx 인스턴스는 fx 로그인을 공유합니다.",
   "35bb63c79e2954cf": "Grok CLI 바이너리 경로입니다.",
   "f8c1b66eb8b5dbd8": "Kiro CLI 바이너리 경로입니다.",
+  "6d57fa7008430a2f": "Command Code CLI 바이너리 경로입니다.",
   "1fc0ad6e3624dbd8": "이 환경의 Muse Code 바이너리 경로입니다. 해당 호스트에서 muse login으로 로그인하세요.",
   "ab221de3bd424896": "OpenCode 바이너리 경로입니다.",
   "064d8c86f3689946": "비워 두면 필요할 때 Onicode가 서버를 실행합니다.",

@@ -16,6 +16,10 @@ import type {
   ProviderUsageReaderEnv,
 } from "@onicode/provider-core/server/driver";
 import { KiroDriver, type KiroDriverEnv } from "@onicode/provider-kiro/server";
+import {
+  CommandCodeDriver,
+  type CommandCodeDriverEnv,
+} from "@onicode/provider-command-code/server";
 
 export type BuiltInDriversEnv =
   | AcpRegistryDriverEnv
@@ -26,6 +30,7 @@ export type BuiltInDriversEnv =
   | FxDriverEnv
   | GrokDriverEnv
   | KiroDriverEnv
+  | CommandCodeDriverEnv
   | OpenCodeDriverEnv
   | PiDriverEnv
   | MuseDriverEnv;
@@ -39,6 +44,7 @@ export const BUILT_IN_DRIVERS: ReadonlyArray<AnyProviderDriver<BuiltInDriversEnv
   OpenCodeDriver,
   AntigravityDriver,
   KiroDriver,
+  CommandCodeDriver,
   PiDriver,
   MuseDriver,
   AcpRegistryDriver,

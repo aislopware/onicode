@@ -8217,6 +8217,7 @@
   "48886d66b4fc9ae8": "Sökväg till fx-binären. Alla fx-instanser på den här datorn delar dess fx-inloggning.",
   "35bb63c79e2954cf": "Sökväg till Grok CLI-binären.",
   "f8c1b66eb8b5dbd8": "Sökväg till Kiro CLI-binären.",
+  "6d57fa7008430a2f": "Sökväg till Command Code CLI-binären.",
   "1fc0ad6e3624dbd8": "Sökväg till Muse Code-binären i den här miljön. Logga in med muse login på den värden.",
   "ab221de3bd424896": "Sökväg till OpenCode-binären.",
   "064d8c86f3689946": "Lämna tomt för att låta Onicode starta servern vid behov.",
