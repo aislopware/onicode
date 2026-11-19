@@ -2728,3 +2728,4 @@ a4d0151700	take	fix: match dotted capital I in Find in Thread (#39290); scenario
 55e379bb96	take	fix(server): the HEAD watch no longer spawns Git in a removed worktree (#39294)
 9f4d25495d	take	fix(server): whole-word content searches no longer miss matching files (#39285)
 5bc2d512e4	take	fix(web): scroll wide tables to the selected Find match (#39295); scenario ported to the desktop target (ControlOrMeta+f)
+cb2a488c67	skip	nightly/stable update tracks only; Onicode ships one channel through better-update and has no desktopUpdateChannelOf or channel switch
