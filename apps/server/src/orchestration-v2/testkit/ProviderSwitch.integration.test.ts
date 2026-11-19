@@ -5533,7 +5533,7 @@ describe("orchestration v2 provider switching", () => {
           const restarted = yield* turnFor(steerText);
           assert.equal(restarted.driver, path === "steer" ? CLAUDE_DRIVER : CODEX_DRIVER);
           // The handoff carries the schedule's own prompt, not the user's chat before it.
-          assert.include(restarted.text, "]\nscheduled\n");
+          assert.include(restarted.text, "not the user typing in this chat.]\n\nscheduled\n");
           assert.notInclude(restarted.text, "]\nuser-first\n");
           if (path === "restart") {
             assert.isFalse(yield* Ref.get(failResumeOnce));
