@@ -190,6 +190,11 @@ function BrowserPreviewScreen({
                   environmentId={environmentId}
                   tab={tab}
                   streaming={streaming}
+                  onForward={
+                    ready && tab.canGoForward
+                      ? () => command({ type: "history", delta: 1 })
+                      : undefined
+                  }
                   onPaste={ready ? () => streamRef.current?.paste() : undefined}
                   onReleaseControl={ready ? () => command({ type: "releaseControl" }) : undefined}
                 />

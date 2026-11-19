@@ -181,6 +181,10 @@ vi.mock("../state/projects", () => ({
   },
 }));
 vi.mock("../state/server", () => ({ serverEnvironment: {} }));
+vi.mock("../features/browser/useOpenLocalPreview", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../features/browser/useOpenLocalPreview")>()),
+  useLocalPreviewUrl: () => () => null,
+}));
 vi.mock("../state/session", () => ({
   readEnvironmentScope: () => true,
   usePreparedConnection: () => ({ _tag: "Some", value: { httpBaseUrl: "https://example.com" } }),

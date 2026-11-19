@@ -201,6 +201,7 @@ describe("normalizePreviewUrl", () => {
       );
     }
     expect(normalizePreviewUrl("localhost:3000")).toBe("http://localhost:3000/");
+    expect(normalizePreviewUrl("app.localhost:5173")).toBe("http://app.localhost:5173/");
     expect(normalizePreviewUrl("devbox:8080")).toBe("https://devbox:8080/");
   });
 });

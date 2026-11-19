@@ -47,6 +47,7 @@ const NativeTunnelWebView = requireNativeView<
         url: string;
         debug?: string;
         cause?: string;
+        unsupported?: boolean;
       }>,
     ) => void;
     readonly onPageScroll: (event: NativeSyntheticEvent<{ y: number }>) => void;
@@ -71,7 +72,7 @@ export function TunnelWebView({
   readonly onNavigationChange: (navigation: TunnelNavigation) => void;
   /**
    * `url` is the address that failed, or empty when the platform does not report it.
-   * `unsupported` means this device's webview cannot route localhost at all.
+   * `unsupported` means this device's webview cannot route localhost at all; Android only.
    */
   readonly onLoadError: (failure: {
     readonly url: string;
@@ -117,8 +118,7 @@ export function TunnelWebView({
         onLoadError={({ nativeEvent }) =>
           onLoadError({
             url: nativeEvent.url,
-            // The view reports a setup failure with no URL and code -1, before any page loads.
-            unsupported: nativeEvent.code === -1 && nativeEvent.url === "",
+            unsupported: nativeEvent.unsupported === true,
             description: nativeEvent.description,
             debug: nativeEvent.debug,
             cause:

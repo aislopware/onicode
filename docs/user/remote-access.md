@@ -289,7 +289,7 @@ requests to the host's other ports reach the host. A request to an address it bu
 
 If the host runs an older Onicode, or your connection to it has no terminal
 access, `localhost` tabs you open in the desktop app stream from the host
-instead.
+instead, and the mobile app doesn't offer **Open on this device**.
 
 The first tab downloads a headless Chrome, about 120 MB, into the Onicode home. It
 is the same browser [HTML renders](html-renders.md) use, so a host downloads it

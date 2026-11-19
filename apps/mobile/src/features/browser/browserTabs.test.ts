@@ -12,6 +12,13 @@ describe("loopbackUrlForDevice", () => {
     // The unspecified address would name the phone's own interfaces.
     expect(loopbackUrlForDevice("http://0.0.0.0:3000/")).toBe("http://localhost:3000/");
     expect(loopbackUrlForDevice("http://[::]:3000/")).toBe("http://localhost:3000/");
+    // The names the native tunnels carry, like the desktop app's.
+    expect(loopbackUrlForDevice("http://app.localhost:5173/")).toBe("http://app.localhost:5173/");
+    expect(loopbackUrlForDevice("http://localhost.:5173/")).toBe("http://localhost.:5173/");
+    expect(loopbackUrlForDevice("http://127.0.0.2:3000/")).toBe("http://127.0.0.2:3000/");
+    expect(loopbackUrlForDevice("http://localhost..:5173/")).toBeNull();
+    expect(loopbackUrlForDevice("http://localhost.example.com/")).toBeNull();
+    expect(loopbackUrlForDevice("http://notlocalhost/")).toBeNull();
     expect(loopbackUrlForDevice("https://example.com/")).toBeNull();
     expect(loopbackUrlForDevice("http://192.168.1.5:3000/")).toBeNull();
     expect(loopbackUrlForDevice("file:///tmp/a.html")).toBeNull();

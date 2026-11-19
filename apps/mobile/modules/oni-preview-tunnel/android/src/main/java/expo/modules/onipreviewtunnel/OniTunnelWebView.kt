@@ -52,7 +52,7 @@ class OniTunnelWebView(context: Context, appContext: AppContext) : ExpoView(cont
     destroyWebView()
     this.environmentId = environmentId
     if (!WebViewFeature.isFeatureSupported(WebViewFeature.MULTI_PROFILE)) {
-      fail("This WebView cannot keep environments apart. Update Android System WebView.")
+      unsupported("multi-profile")
       return
     }
     val profile = "oni-preview-tunnel-$environmentId"
@@ -85,8 +85,13 @@ class OniTunnelWebView(context: Context, appContext: AppContext) : ExpoView(cont
     pendingUrl?.let { loadUrl(it) }
   }
 
-  private fun fail(description: String, url: String = "") {
+  private fun fail(description: String, url: String) {
     onLoadError(mapOf("code" to -1, "description" to description, "url" to url))
+  }
+
+  /** JavaScript explains it in the user's language; `feature` names what the WebView lacks. */
+  private fun unsupported(feature: String) {
+    onLoadError(mapOf("code" to -1, "description" to feature, "url" to "", "unsupported" to true))
   }
 
   /** Reports the page's scroll position in steps, enough for the bar to follow its direction. */
@@ -115,7 +120,7 @@ class OniTunnelWebView(context: Context, appContext: AppContext) : ExpoView(cont
   override fun onAttachedToWindow() {
     super.onAttachedToWindow()
     val supported = WebViewFeature.isFeatureSupported(WebViewFeature.PROXY_OVERRIDE)
-    if (!supported || !TunnelProxy.attach(this)) fail("This WebView cannot route localhost.")
+    if (!supported || !TunnelProxy.attach(this)) unsupported("proxy-override")
   }
 
   override fun onDetachedFromWindow() {

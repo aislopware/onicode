@@ -328,7 +328,7 @@ import {
 import { ZoomableImagePressable } from "./ZoomableImagePressable";
 import { openSettings } from "../settings/settings-navigation";
 import { loopbackUrlForDevice } from "../browser/browserTabs";
-import { useOpenLocalPreview } from "../browser/useOpenLocalPreview";
+import { useLocalPreviewUrl, useOpenLocalPreview } from "../browser/useOpenLocalPreview";
 import { useSelectWorkspaceDetail } from "../layout/workspace/useSelectWorkspaceDetail";
 import { useMessageTimeFormatter } from "./useMessageTimeFormatter";
 
@@ -3143,6 +3143,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   const navigation = useNavigation();
   const openLinkedThread = useOpenLinkedThread();
   const openLocalPreview = useOpenLocalPreview();
+  const localPreviewUrl = useLocalPreviewUrl(props.environmentId);
   // Recycling a row disposes its native audio player, so a started clip's row stays rendered.
   const [retainedMediaRowId, setRetainedMediaRowId] = useState<string | null>(null);
   const onOpenTurnDiff = useCallback(
@@ -3432,7 +3433,8 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       if (instructionsPath) openSkillInstructions(instructionsPath);
       return;
     }
-    // Safari would open the phone's own localhost, so these open on the device by default.
+    // Safari would open the phone's own localhost, so these open on the device, which explains
+    // when it can't.
     const deviceUrl = loopbackUrlForDevice(href);
     if (deviceUrl) {
       openLocalPreview(
@@ -3568,7 +3570,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
         };
       }
       // The environment's localhost, which this device can only reach through the tunnel.
-      if (loopbackUrlForDevice(href)) {
+      if (localPreviewUrl(href)) {
         return {
           title: href,
           actions: [
@@ -3593,7 +3595,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
         if (actionId === "open-thread") onMarkdownLinkPress(href);
         return;
       }
-      const deviceUrl = loopbackUrlForDevice(href);
+      const deviceUrl = localPreviewUrl(href);
       if (deviceUrl) {
         if (actionId === "open-on-device") {
           markdownLinkRequest.current?.abort();
