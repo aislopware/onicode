@@ -4940,5 +4940,15 @@
   "5ddfea667ccceecf": "Mettre à jour une pull request",
   "c87d85c418b791a5": "Répondre sur une pull request",
   "4bcd613be5a48aa2": "Relire une pull request",
-  "81b284c3afb54ec6": "Fusionner une pull request"
+  "81b284c3afb54ec6": "Fusionner une pull request",
+  "978e75afd6bcd1b1": "{count, plural, one {Journaux CI lus {count} fois} other {Journaux CI lus {count} fois}}",
+  "1cf829d3d6dec9a4": "{count, plural, one {Tentative de lecture des journaux CI {count} fois} other {Tentatives de lecture des journaux CI {count} fois}}",
+  "9b0b9f9c4bc84265": "{count, plural, one {Tentative de relance de la CI {count} fois} other {Tentatives de relance de la CI {count} fois}}",
+  "d38466778437bfa9": "Aucune vérification en échec à relancer",
+  "8982283666c8c3d5": "{count, plural, one {CI relancée {count} fois} other {CI relancée {count} fois}}",
+  "39949fd3853031e5": "{count, plural, one {Impossible de relancer {count} vérification} other {Impossible de relancer {count} vérifications}}",
+  "15d8d7174c79fc23": "{count, plural, one {{count} vérification relancée} other {{count} vérifications relancées}}",
+  "24d802debbab31e0": "{rerun, plural, one {{rerun} vérification relancée, {refused} refusées} other {{rerun} vérifications relancées, {refused} refusées}}",
+  "9f0d37a2ec338e59": "Lire les journaux CI",
+  "dcca0dff7324e0f0": "Relancer la CI"
 }

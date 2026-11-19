@@ -4926,5 +4926,15 @@
   "5ddfea667ccceecf": "풀 리퀘스트 업데이트",
   "c87d85c418b791a5": "풀 리퀘스트에 응답",
   "4bcd613be5a48aa2": "풀 리퀘스트 검토",
-  "81b284c3afb54ec6": "풀 리퀘스트 병합"
+  "81b284c3afb54ec6": "풀 리퀘스트 병합",
+  "978e75afd6bcd1b1": "{count, plural, other {CI 로그를 {count}번 읽음}}",
+  "1cf829d3d6dec9a4": "{count, plural, other {CI 로그 읽기를 {count}번 시도함}}",
+  "9b0b9f9c4bc84265": "{count, plural, other {CI 재실행을 {count}번 시도함}}",
+  "d38466778437bfa9": "재실행할 실패한 검사가 없음",
+  "8982283666c8c3d5": "{count, plural, other {CI를 {count}번 재실행함}}",
+  "39949fd3853031e5": "{count, plural, other {검사 {count}개를 재실행하지 못함}}",
+  "15d8d7174c79fc23": "{count, plural, other {검사 {count}개를 재실행함}}",
+  "24d802debbab31e0": "{rerun, plural, other {검사 {rerun}개를 재실행하고 {refused}개는 거부됨}}",
+  "9f0d37a2ec338e59": "CI 로그 읽기",
+  "dcca0dff7324e0f0": "CI 재실행"
 }
