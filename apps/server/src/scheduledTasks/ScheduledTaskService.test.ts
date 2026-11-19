@@ -420,6 +420,8 @@ it.effect.each([
   { status: "failed", error: "Weekly usage limit reached", heldWarning: true },
   { status: "interrupted", error: "The run was stopped.", heldWarning: false },
   { status: "cancelled", error: "The run was cancelled.", heldWarning: false },
+  // The held occurrence was resumed and its turn completed, so the warning is stale.
+  { status: "completed", error: null, heldWarning: true },
 ] as const)("a run that ends $status after its message was accepted records it", (outcome) =>
   Effect.gen(function* () {
     const projectId = ProjectId.make("project:test");
