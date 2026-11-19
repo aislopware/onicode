@@ -92,6 +92,9 @@ function acceptAttachmentUploads(gate?: () => Promise<void>): Disposable {
   };
 }
 
+// One input event, where typing a key at a time takes seconds on a loaded CI runner.
+const insertText = (text: string) => cdp().send("Input.insertText", { text });
+
 /** Holds every call to `method` until `release`, then ends it with `end`, until disposed. */
 function holdRpc(method: string, end: Effect.Effect<never, Error>) {
   let release = () => {};
@@ -965,7 +968,8 @@ it("/side sends the draft's attachments and context, and keeps them until it sta
   };
   const sendImageToSideChat = async () => {
     await pasteImage();
-    await userEvent.keyboard("/side what is this?{Enter}");
+    await insertText("/side what is this?");
+    await userEvent.keyboard("{Enter}");
   };
   const sentMessage = (fields: Record<string, unknown>) =>
     vi.waitFor(() =>
@@ -998,7 +1002,8 @@ it("/side sends the draft's attachments and context, and keeps them until it sta
   // A reply alone is enough to send.
   await page.getByRole("button", { name: "Reply to this response" }).first().click();
   await userEvent.click(editor);
-  await userEvent.keyboard("/side {Enter}");
+  await insertText("/side ");
+  await userEvent.keyboard("{Enter}");
   await sentMessage({
     context: expect.objectContaining({ records: [expect.objectContaining({ kind: "response" })] }),
   });
@@ -1045,7 +1050,7 @@ it("/side sends the draft's attachments and context, and keeps them until it sta
   await sendImageToSideChat();
   await vi.waitFor(() => expect(forks()).toHaveLength(4));
   await expect.element(image).toBeVisible();
-  await userEvent.keyboard(" next");
+  await insertText(" next");
   await rejectPendingCommand("Side chats are paused.");
   await expect.element(image).toBeVisible();
   await vi.waitFor(() =>
@@ -1062,7 +1067,9 @@ it("/side sends the draft's attachments and context, and keeps them until it sta
     releaseUpload = resolve;
   });
   const uploadsBeforeEdit = uploadsStarted;
-  await sendImageToSideChat();
+  await pasteImage();
+  // Typed key by key: after one inserted text event, the paste below replaces the restored draft.
+  await userEvent.keyboard("/side what is this?{Enter}");
   await vi.waitFor(() => expect(uploadsStarted).toBeGreaterThan(uploadsBeforeEdit));
   await page.getByRole("button", { name: "Remove shot.png" }).click();
   releaseUpload();
