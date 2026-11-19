@@ -1,6 +1,6 @@
 import { observeResize } from "~/lib/observeResize";
 
-import { skyEventsAt, skyWeatherAt } from "./sky";
+import { isSouthernTimeZone, skyEventsAt, skySeasonAt, skyWeatherAt } from "./sky";
 import {
   paintSkyBackdrop,
   paintSkyLife,
@@ -25,6 +25,7 @@ export function runSky(canvas: HTMLCanvasElement, controlsHost: HTMLElement): ()
 
   const root = canvas.ownerDocument.documentElement;
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+  const southern = isSouthernTimeZone(Intl.DateTimeFormat().resolvedOptions().timeZone);
   let timer: number | undefined;
   let onScreen = true;
   let backdropKey = "";
@@ -46,10 +47,11 @@ export function runSky(canvas: HTMLCanvasElement, controlsHost: HTMLElement): ()
       hour: hourOf(now),
       epochMs: still ? minute * 60_000 : now.getTime(),
       weather: skyWeatherAt(now),
+      season: skySeasonAt(now, southern),
     };
 
     const key = `${width}|${scale}|${scene.dark}|${minute}`;
-    const events = still ? [] : skyEventsAt(scene.epochMs / 1000);
+    const events = still ? [] : skyEventsAt(scene.epochMs / 1000, southern);
     // A picture with nothing moving is looked at once a second and painted when something starts.
     if (holdingStill && key === backdropKey && events.length === 0) {
       timer = window.setTimeout(paint, 1000);

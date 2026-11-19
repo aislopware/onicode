@@ -51,20 +51,10 @@ function columnControls(
   return { effort, others: controls.filter((control) => control !== effort) };
 }
 
-/**
- * What the model trigger shows after the model name: the effort word (or bars, per the
- * Appearance setting), a bolt for Fast, a workflow icon for Ultracode, and other traits such as a
- * context window.
- */
-export function describeComposerEffort(
-  traits: TraitsSelectionInput | null,
-  effortDisplay: EffortDisplay,
-  size: ComposerControlSize,
-  resolve: MessageResolver = m,
-): { suffix: ReactNode; detail: string | null } {
-  if (!traits) return { suffix: null, detail: null };
+/** The level, speed and other traits a model's options resolve to, before anything words them. */
+function resolveEffortTraits(traits: TraitsSelectionInput, resolve: MessageResolver) {
   const visibility = getTraitsSectionVisibility({ ...traits, resolve });
-  if (!visibility.hasAnyControls) return { suffix: null, detail: null };
+  if (!visibility.hasAnyControls) return null;
   const modelSelection =
     traits.instanceId && traits.model
       ? { instanceId: traits.instanceId, model: traits.model, options: traits.modelOptions ?? [] }
@@ -94,23 +84,20 @@ export function describeComposerEffort(
             : getDescriptorStringValue(reasoning, modelSelection, traits.reportedModelSelection),
         )
       : null;
-  // Workflow levels such as Ultracode always show their name; the setting names every level.
-  const word = glyph
-    ? (glyph.special ?? (effortDisplay === "label" ? glyph.label : null))
-    : !reasoning
-      ? null
-      : reasoning.type === "boolean"
-        ? reasoning.currentValue === true
-          ? resolve(msg("{option} On", { option: reasoning.label }))
-          : resolve(msg("{option} Off", { option: reasoning.label }))
-        : ultrathink
-          ? "Ultrathink"
-          : (getProviderOptionCurrentLabel(
-              reasoning,
-              modelSelection,
-              traits.reportedModelSelection,
-            ) ?? (reasoning.id === "thinking" ? reasoning.label : null));
-  const fast = display.speedLabel === "Fast" || display.speedLabel === "Ultrafast";
+  // The level in words where no bars stand for it.
+  const plainWord = !reasoning
+    ? null
+    : reasoning.type === "boolean"
+      ? reasoning.currentValue === true
+        ? resolve(msg("{option} On", { option: reasoning.label }))
+        : resolve(msg("{option} Off", { option: reasoning.label }))
+      : ultrathink
+        ? "Ultrathink"
+        : (getProviderOptionCurrentLabel(
+            reasoning,
+            modelSelection,
+            traits.reportedModelSelection,
+          ) ?? (reasoning.id === "thinking" ? reasoning.label : null));
   // Agent options such as modes live in the picker; the trigger adds only the context window.
   const contextWindow =
     visibility.contextWindowDescriptor &&
@@ -119,6 +106,39 @@ export function describeComposerEffort(
       modelSelection,
       traits.reportedModelSelection,
     );
+  return { display, glyph, plainWord, contextWindow };
+}
+
+/** A model row's quiet label in the picker: the level and speed a pick of that model starts at. */
+export function describeModelLevel(
+  traits: TraitsSelectionInput | null,
+  resolve: MessageResolver = m,
+): string | null {
+  const resolved = traits ? resolveEffortTraits(traits, resolve) : null;
+  if (!resolved) return null;
+  const word = resolved.glyph ? resolved.glyph.label : resolved.plainWord;
+  return [word, resolved.display.speedLabel].filter(Boolean).join(" · ") || null;
+}
+
+/**
+ * What the model trigger shows after the model name: the effort word (or bars, per the
+ * Appearance setting), a bolt for Fast, a workflow icon for Ultracode, and other traits such as a
+ * context window.
+ */
+export function describeComposerEffort(
+  traits: TraitsSelectionInput | null,
+  effortDisplay: EffortDisplay,
+  size: ComposerControlSize,
+  resolve: MessageResolver = m,
+): { suffix: ReactNode; detail: string | null } {
+  const resolved = traits ? resolveEffortTraits(traits, resolve) : null;
+  if (!resolved) return { suffix: null, detail: null };
+  const { display, glyph, contextWindow } = resolved;
+  // Workflow levels such as Ultracode always show their name; the setting names every level.
+  const word = glyph
+    ? (glyph.special ?? (effortDisplay === "label" ? glyph.label : null))
+    : resolved.plainWord;
+  const fast = display.speedLabel === "Fast" || display.speedLabel === "Ultrafast";
   if (!word && !glyph && !fast && !display.ultracode && !contextWindow)
     return { suffix: null, detail: display.label };
   return {

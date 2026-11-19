@@ -397,6 +397,8 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   onRequestClose?: () => void;
   onOpenProviderSetup?: (instanceId: ProviderInstanceId) => void;
   getModelDisabledReason?: (instanceId: ProviderInstanceId, model: string) => string | null;
+  /** A quiet label after a model's name: the level a pick of it starts at. */
+  getModelLevel?: (instanceId: ProviderInstanceId, model: string) => string | null;
   onInstanceModelChange: (instanceId: ProviderInstanceId, model: string) => void;
   /** The owning popup moves focus here when it opens (its `initialFocus`). */
   searchInputRef: RefObject<HTMLInputElement | null>;
@@ -983,7 +985,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
         ref={pickerContentRef}
         className={cn(
           "relative flex max-h-(--available-height) w-screen max-w-80 flex-col overflow-hidden bg-popover",
-          props.side !== undefined && "min-[45rem]:max-w-148 min-[45rem]:flex-row",
+          props.side !== undefined && "min-[45rem]:max-w-136 min-[45rem]:flex-row",
         )}
         style={isSearching && searchHeight > 0 ? { height: searchHeight } : undefined}
         data-model-picker-content="true"
@@ -1043,7 +1045,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
           <div
             className={cn(
               "flex min-h-0 flex-1 flex-col overflow-hidden",
-              props.side !== undefined && "min-[45rem]:w-80 min-[45rem]:flex-none",
+              props.side !== undefined && "min-[45rem]:w-68 min-[45rem]:flex-none",
             )}
           >
             {instanceEntries.map((entry) =>
@@ -1246,6 +1248,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                         disabledReason={
                           getModelDisabledReason?.(model.instanceId, model.slug) ?? null
                         }
+                        level={props.getModelLevel?.(model.instanceId, model.slug) ?? null}
                         onToggleFavorite={toggleFavorite}
                       />
                     );

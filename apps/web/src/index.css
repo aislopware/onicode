@@ -130,7 +130,8 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(oni-mobi
   --workspace-titlebar-control-gap: 0.75rem;
   --workspace-titlebar-scroll-fade-height: 1.5rem;
   --chat-content-max-width: 46rem;
-  --thread-details-panel-width: 17.5rem;
+  /* In pixels, as the details card is laid out: a rem width drifts from it with the interface font size. */
+  --thread-details-panel-width: 280px;
   /* The prompt on phones: iOS zooms into any input under 16px on focus. */
   --font-size-prompt-touch: max(var(--font-size-prompt, 1rem), 16px);
   /* Horizontal gutter shared by the page header and the chat column, clear of

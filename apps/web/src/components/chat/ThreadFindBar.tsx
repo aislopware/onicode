@@ -81,7 +81,13 @@ export function ThreadFindBar(props: ThreadFindBarProps) {
   return (
     <div
       data-thread-find-bar
-      className="absolute top-3 right-3 z-40 w-[min(var(--thread-details-panel-width),calc(100%-1.5rem))] transition-opacity duration-150 ease-out starting:opacity-0 motion-reduce:transition-none"
+      className="absolute z-40 w-(--thread-details-panel-width) transition-opacity duration-150 ease-out starting:opacity-0 motion-reduce:transition-none"
+      // The same pixel gap as the details card under it, at any interface font size.
+      style={{
+        top: THREAD_DETAILS_CARD_GAP,
+        right: THREAD_DETAILS_CARD_GAP,
+        maxWidth: `calc(100% - ${THREAD_DETAILS_CARD_GAP * 2}px)`,
+      }}
     >
       <InputGroup
         variant="popover"

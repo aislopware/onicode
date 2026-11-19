@@ -166,6 +166,212 @@ export function skyBodyAt(hour: number): { readonly sun: boolean; readonly progr
   return { sun: false, progress: sinceSunset / (24 - SUNSET_HOUR + SUNRISE_HOUR) };
 }
 
+/** How much of each season the date holds. The four add up to 1. */
+export interface SkySeason {
+  readonly spring: number;
+  readonly summer: number;
+  readonly autumn: number;
+  readonly winter: number;
+}
+
+const YEAR_DAYS = 365.2425;
+// The days an alpine valley looks most like its season: deep snow, first meadow, high summer, larches.
+const SEASON_PEAK_DAYS = { winter: 15, spring: 108, summer: 200, autumn: 292 } as const;
+const SEASON_ORDER = ["winter", "spring", "summer", "autumn"] as const;
+type SeasonName = (typeof SEASON_ORDER)[number];
+
+const smooth = (amount: number) => {
+  const clamped = Math.min(1, Math.max(0, amount));
+  return clamped * clamped * (3 - 2 * clamped);
+};
+
+/** South of the equator the year runs half a turn ahead, as far as the time zone can tell. */
+const SOUTHERN_ZONE =
+  /^(Australia|Antarctica)\/|^Pacific\/(Auckland|Chatham|Fiji|Tongatapu|Apia|Noumea|Port_Moresby|Efate|Guadalcanal|Rarotonga|Tahiti|Easter)$|^America\/(Sao_Paulo|Argentina\/|Buenos_Aires|Santiago|Punta_Arenas|Montevideo|Asuncion|La_Paz|Lima|Campo_Grande|Cuiaba|Porto_Velho|Rio_Branco|Bahia|Maceio|Recife|Araguaina)|^Africa\/(Johannesburg|Maputo|Windhoek|Gaborone|Harare|Lusaka|Maseru|Mbabane|Blantyre|Luanda|Lubumbashi|Dar_es_Salaam)$|^Indian\/(Antananarivo|Mauritius|Reunion)$|^Atlantic\/Stanley$/;
+
+export const isSouthernTimeZone = (timeZone: string) => SOUTHERN_ZONE.test(timeZone);
+
+export function skySeasonAt(date: Date, southern = false): SkySeason {
+  const startOfYear = new Date(date.getFullYear(), 0, 1).getTime();
+  const dayOfYear = (date.getTime() - startOfYear) / 86_400_000;
+  const day = (dayOfYear + (southern ? YEAR_DAYS / 2 : 0)) % YEAR_DAYS;
+  const weights = { winter: 0, spring: 0, summer: 0, autumn: 0 };
+  SEASON_ORDER.forEach((name, index) => {
+    const next = SEASON_ORDER[(index + 1) % SEASON_ORDER.length] ?? name;
+    const from = SEASON_PEAK_DAYS[name];
+    const span = (SEASON_PEAK_DAYS[next] - from + YEAR_DAYS) % YEAR_DAYS;
+    const since = (day - from + YEAR_DAYS) % YEAR_DAYS;
+    if (since >= span) return;
+    const into = smooth(since / span);
+    weights[name] += 1 - into;
+    weights[next] += into;
+  });
+  return weights;
+}
+
+/** The hours the sun rises and sets: long days in summer, short ones in winter. */
+function skyDaylightAt(season: SkySeason): { readonly rise: number; readonly set: number } {
+  return {
+    rise: SUNRISE_HOUR - 0.6 * season.summer + 1.2 * season.winter,
+    set: SUNSET_HOUR + 1.5 * season.summer - 1.5 * season.winter,
+  };
+}
+
+/**
+ * The hour the sky's keys are written for: the season's sunrise lands on the keys' sunrise and
+ * its sunset on theirs, so a winter dusk comes early and a summer one late.
+ */
+export function skySolarHour(hour: number, season: SkySeason): number {
+  const wrapped = wrapHour(hour);
+  const { rise, set } = skyDaylightAt(season);
+  if (wrapped < rise) return (wrapped / rise) * SUNRISE_HOUR;
+  if (wrapped <= set) {
+    return SUNRISE_HOUR + ((wrapped - rise) / (set - rise)) * (SUNSET_HOUR - SUNRISE_HOUR);
+  }
+  return SUNSET_HOUR + ((wrapped - set) / (24 - set)) * (24 - SUNSET_HOUR);
+}
+
+interface SeasonLook {
+  /** What the top of the sky leans toward, and how far. */
+  readonly high: SkyColor;
+  readonly highAmount: number;
+  /** The same for the sky at the horizon. */
+  readonly low: SkyColor;
+  readonly lowAmount: number;
+  readonly ridge: SkyColor;
+  readonly ridgeAmount: number;
+  /** The valley floor in daylight: snow, meadow or larch gold. */
+  readonly ground: SkyColor;
+  /** How far down the far ridge its snow reaches, from 0 to 1. */
+  readonly snow: number;
+}
+
+// The sky stays in the blues all year and the land carries the season, so no season turns muddy.
+const SEASON_LOOKS: Record<SeasonName, SeasonLook> = {
+  winter: {
+    high: [0.5, 0.155, 250],
+    highAmount: 0.45,
+    low: [0.93, 0.035, 225],
+    lowAmount: 0.5,
+    ridge: [0.5, 0.075, 252],
+    ridgeAmount: 0.6,
+    ground: [0.95, 0.04, 240],
+    snow: 1,
+  },
+  spring: {
+    high: [0.52, 0.15, 245],
+    highAmount: 0.35,
+    low: [0.9, 0.055, 200],
+    lowAmount: 0.45,
+    ridge: [0.44, 0.09, 232],
+    ridgeAmount: 0.5,
+    ground: [0.62, 0.14, 138],
+    snow: 0.5,
+  },
+  summer: {
+    high: [0.43, 0.19, 262],
+    highAmount: 0.3,
+    low: [0.85, 0.07, 215],
+    lowAmount: 0.3,
+    ridge: [0.38, 0.11, 252],
+    ridgeAmount: 0.4,
+    ground: [0.47, 0.13, 148],
+    snow: 0.2,
+  },
+  autumn: {
+    high: [0.42, 0.17, 264],
+    highAmount: 0.3,
+    low: [0.9, 0.05, 75],
+    lowAmount: 0.3,
+    ridge: [0.42, 0.09, 285],
+    ridgeAmount: 0.5,
+    ground: [0.62, 0.17, 48],
+    snow: 0.38,
+  },
+};
+
+const RADIANS = Math.PI / 180;
+
+/** Mixes in OKLab, where a blue leaning toward amber passes through grey, not through green. */
+function tintColor(color: SkyColor, toward: SkyColor, amount: number): SkyColor {
+  const fromA = color[1] * Math.cos(color[2] * RADIANS);
+  const fromB = color[1] * Math.sin(color[2] * RADIANS);
+  const a = fromA + (toward[1] * Math.cos(toward[2] * RADIANS) - fromA) * amount;
+  const b = fromB + (toward[1] * Math.sin(toward[2] * RADIANS) - fromB) * amount;
+  return [
+    color[0] + (toward[0] - color[0]) * amount,
+    Math.hypot(a, b),
+    (Math.atan2(b, a) / RADIANS + 360) % 360,
+  ];
+}
+
+/** Mixes around the hue wheel, as leaves turn: green goes to orange through gold, not through brown. */
+function turnColor(color: SkyColor, toward: SkyColor, amount: number): SkyColor {
+  const turn = ((toward[2] - color[2] + 540) % 360) - 180;
+  // A wide turn passes through yellow, which only looks clean when it is light.
+  const lift = 0.36 * Math.sin(Math.PI * amount) * (Math.abs(turn) / 180);
+  return [
+    color[0] + (toward[0] - color[0]) * amount + lift,
+    color[1] + (toward[1] - color[1]) * amount,
+    (color[2] + turn * amount + 360) % 360,
+  ];
+}
+
+const NIGHT_LAND: SkyColor = [0.24, 0.07, 266];
+
+/** How far down the far ridge the snow lies, from the summer peaks to the winter valley. */
+export const skySnowAt = (season: SkySeason) =>
+  SEASON_ORDER.reduce((snow, name) => snow + season[name] * SEASON_LOOKS[name].snow, 0);
+
+// The land takes a little of the horizon's light, and at night sinks into the blue of the dark.
+const landLit = (color: SkyColor, palette: SkyPalette) =>
+  tintColor(tintColor(color, palette.sky[4] ?? color, 0.14), NIGHT_LAND, 0.66 * palette.night);
+
+/** The valley floor under any snow, in the season's colour and the hour's light. */
+export function skyGroundAt(season: SkySeason, palette: SkyPalette): SkyColor {
+  let shared = 0;
+  let ground: SkyColor = SEASON_LOOKS.spring.ground;
+  for (const name of SEASON_ORDER) {
+    // Winter lies on the land as snow instead of bleaching its colour to sand.
+    if (name === "winter") continue;
+    // Cubed, so the land keeps its season's colour until the next one is well under way.
+    const share = season[name] ** 3;
+    shared += share;
+    if (shared > 0) ground = turnColor(ground, SEASON_LOOKS[name].ground, share / shared);
+  }
+  return landLit(ground, palette);
+}
+
+/** How much of the valley floor lies under snow, and the snow in the hour's light. */
+export const skySnowfieldAt = (season: SkySeason, palette: SkyPalette) => ({
+  cover: smooth((season.winter - 0.3) / 0.45),
+  color: landLit(SEASON_LOOKS.winter.ground, palette),
+});
+
+/** A palette as the season colours it. Night keeps most of its own colour. */
+export function seasonedPalette(palette: SkyPalette, season: SkySeason): SkyPalette {
+  const daylight = 1 - 0.7 * palette.night;
+  const tinted = (color: SkyColor, pick: (look: SeasonLook) => readonly [SkyColor, number]) =>
+    SEASON_ORDER.reduce<SkyColor>((mixed, name) => {
+      const [toward, amount] = pick(SEASON_LOOKS[name]);
+      // Each season pulls by its share, so two seasons meeting blend instead of stacking.
+      return tintColor(mixed, toward, amount * daylight * season[name]);
+    }, color);
+  // How far down the sky a stop sits: the horizon takes the low tint, the zenith the high one.
+  const depth = [0, 0.2, 0.5, 0.85, 1];
+  return {
+    night: palette.night,
+    sky: palette.sky.map((color, index) => {
+      const down = depth[index] ?? 1;
+      const high = tinted(color, (look) => [look.high, look.highAmount * (1 - down)]);
+      // A sunset's own colour stays: the horizon tint eases off as the stop grows vivid and warm.
+      const vivid = Math.min(1, Math.max(0, (color[1] - 0.11) / 0.05));
+      return tinted(high, (look) => [look.low, look.lowAmount * down * (1 - 0.6 * vivid)]);
+    }),
+    farRidge: tinted(palette.farRidge, (look) => [look.ridge, look.ridgeAmount]),
+  };
+}
+
 const SYNODIC_MONTH_DAYS = 29.530588;
 const KNOWN_NEW_MOON_MS = Date.UTC(2000, 0, 6, 18, 14);
 
@@ -257,7 +463,7 @@ interface SkyMoment {
   readonly auroraNight: boolean;
 }
 
-function skyMomentAt(epochSeconds: number): SkyMoment {
+function skyMomentAt(epochSeconds: number, southern: boolean): SkyMoment {
   const date = new Date(epochSeconds * 1000);
   const hour = date.getHours() + date.getMinutes() / 60 + date.getSeconds() / 3600;
   const lunar = lunarDateOf(date);
@@ -267,7 +473,8 @@ function skyMomentAt(epochSeconds: number): SkyMoment {
   const nightNumber = localDayNumber(new Date(date.getTime() - 12 * 3_600_000));
   return {
     hour,
-    month: date.getMonth(),
+    // The petals, leaves and snow in the air keep to the land's season.
+    month: (date.getMonth() + (southern ? 6 : 0)) % 12,
     night: skyPaletteAt(hour).night,
     wind: skyWeatherAt(date).wind,
     newYear: firstOfYear && hour < 0.25,
@@ -342,7 +549,7 @@ export const skyEventSeconds = (kind: SkyEventKind) => SKY_EVENT_RULES[kind].las
  * The events in the air at a time. Each kind's timeline is cut into slots, and a slot's number
  * alone decides whether it holds an event and when it starts, so nothing has to be remembered.
  */
-export function skyEventsAt(epochSeconds: number): SkyEvent[] {
+export function skyEventsAt(epochSeconds: number, southern = false): SkyEvent[] {
   const events: SkyEvent[] = [];
   SKY_EVENT_KINDS.forEach((kind, kindIndex) => {
     const rule = SKY_EVENT_RULES[kind];
@@ -351,7 +558,7 @@ export function skyEventsAt(epochSeconds: number): SkyEvent[] {
     const startedAt = slot * rule.every + random() * (rule.every - rule.lasts);
     const roll = random();
     if (epochSeconds < startedAt || epochSeconds > startedAt + rule.lasts) return;
-    if (roll >= rule.chance(skyMomentAt(startedAt))) return;
+    if (roll >= rule.chance(skyMomentAt(startedAt, southern))) return;
     events.push({ kind, startedAt, seed: Math.floor(random() * 1_000_000) });
   });
   return events;

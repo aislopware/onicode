@@ -2,6 +2,7 @@ import type { ChatComposerProps } from "./ChatComposer";
 import type { PromptUltrathink } from "./TraitsPicker";
 import type { ProviderInstanceEntry } from "../../providerInstances";
 import { type AppModelOption } from "../../modelSelection";
+import { useComposerDraftStore } from "../../composerDraftStore";
 import { useGT, useMessages } from "gt-react";
 import { CircleAlertIcon } from "lucide-react";
 import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
@@ -28,6 +29,7 @@ import {
   ComposerEffortColumn,
   ComposerPickerFooter,
   describeComposerEffort,
+  describeModelLevel,
 } from "./ComposerModelEffort";
 import type { useComposerProviderModel } from "./useComposerProviderModel";
 import { resolveComposerControlsOwnership } from "./composerControlsOwnership";
@@ -150,21 +152,52 @@ export function ComposerControlsBar(props: {
   const m = useMessages();
   const applyThreadModelPick = useApplyThreadModelPick();
   const applyRouteThreadModelPick = useStableCallback(() => applyThreadModelPick(routeThreadRef));
-  const traitsInput = resolveComposerTraitsInput({
-    provider: selectedProvider,
-    instanceId: selectedInstanceId,
+  const traitsTarget = {
     ...(routeKind === "server"
       ? { threadRef: routeThreadRef, onDraftModelOptionsChange: applyRouteThreadModelPick }
       : {}),
     ...(routeKind === "draft" && draftId ? { draftId } : {}),
+    promptUltrathink,
+    onPromptEdit,
+  };
+  const traitsInput = resolveComposerTraitsInput({
+    ...traitsTarget,
+    provider: selectedProvider,
+    instanceId: selectedInstanceId,
     model: selectedModel,
     models: selectedProviderModels,
     modelOptions: composerModelOptions?.[selectedInstanceId],
     reportedModelSelection,
-    promptUltrathink,
-    onPromptEdit,
   });
   const effort = describeComposerEffort(traitsInput, props.effortDisplay, controlSize, m);
+  const rememberedOptionsByModel = useComposerDraftStore(
+    (store) => store.stickyOptionsByModelByProvider,
+  );
+  const getModelLevel = (instanceId: ProviderInstanceId, model: string) => {
+    if (instanceId === selectedInstanceId && model === selectedModel) {
+      return describeModelLevel(traitsInput, m);
+    }
+    const entry = providerInstanceEntries.find((entry) => entry.instanceId === instanceId);
+    if (!entry) return null;
+    // What a pick of this model starts at: its remembered options, else the thread's own.
+    const remembered = rememberedOptionsByModel[instanceId]?.[model];
+    const threadOptions =
+      activeThreadModelSelection?.instanceId === instanceId &&
+      activeThreadModelSelection.model === model
+        ? activeThreadModelSelection.options
+        : undefined;
+    return describeModelLevel(
+      resolveComposerTraitsInput({
+        ...traitsTarget,
+        provider: entry.driverKind,
+        instanceId,
+        model,
+        models: entry.models,
+        modelOptions: remembered && remembered.length > 0 ? remembered : threadOptions,
+      }),
+      m,
+    );
+  };
   const restingBlockDefs = showModeBlock
     ? [
         {
@@ -244,6 +277,7 @@ export function ComposerControlsBar(props: {
         : {})}
       onOpenChange={onModelPickerOpenChange}
       getModelDisabledReason={getModelDisabledReason}
+      getModelLevel={getModelLevel}
       onOpenProviderSetup={onOpenProviderSetup}
     />
   );
