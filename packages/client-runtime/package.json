@@ -650,6 +650,7 @@
   },
   "dependencies": {
     "@onicode/contracts": "workspace:*",
+    "@onicode/issue-tracker-linear": "workspace:*",
     "@onicode/provider-acp-registry": "workspace:*",
     "@onicode/provider-core": "workspace:*",
     "@onicode/provider-cursor": "workspace:*",

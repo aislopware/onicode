@@ -2570,3 +2570,4 @@ b6d6717df6	take	taken as is
 99be1f6601	take	taken as is
 245c579807	take	taken as is
 08db5e3145	skip	upstream contribution policy (model acceptance list in CONTRIBUTING); Onicode keeps its own CONTRIBUTING, which has no such section
+966bdc74f3	take	Kept Onicode's createIssueLinkResolver (bindings indexed once, read lazily at a message's first link; upstream's inline resolveIssueLinkTarget rescans per link) and added upstream's standalone Linear fallback and trackers argument to it; ChatMarkdown keeps Onicode's issuePreviewsEnabled gate for the tracker query. Contract field workspace is optional.
