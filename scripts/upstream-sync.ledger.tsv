@@ -2785,3 +2785,4 @@ f9e45e4363	take	fix(server): agents on hosts without swap are OOM-killed instead
 c4419dadd9	take	fix(server): threads stay in Working when Claude or OpenCode marks a background wait between turns (#38638)
 b111b6310a	skip	kept Onicode's collapsed linked-issue rows: they already collapse per thread (3 visible), skip summary reads for hidden rows (deferRead) and guard the sidebar badge click; upstream's version would conflict and lose both
 cae24a6f0e	skip	T3 nightly release feed check (.github/scripts/check-nightly-release.*) and nightly release docs; Onicode releases through better-update on one channel
+cdeacd547a	take	perf(server): turn start reads a long thread's restart-note history once (#39241)
