@@ -992,6 +992,23 @@ describe("ThreadTitleRegenerationService", () => {
           createdBy: "user",
           creationSource: "web",
         });
+        // Stopped before it started, the fresh send sets no boundary but still superseded the fork.
+        const [freshRun] = (yield* threads.getThreadRecords(startedOver, ["runs"])).runs;
+        assert.isDefined(freshRun);
+        const eventSink = yield* EventSink.EventSinkV2;
+        const now = yield* DateTime.now;
+        yield* eventSink.write({
+          events: [
+            {
+              id: EventId.make("fresh:started-over:stopped"),
+              type: "run.updated",
+              threadId: startedOver,
+              runId: freshRun.id,
+              occurredAt: now,
+              payload: { ...freshRun, status: "cancelled", startedAt: null, completedAt: now },
+            },
+          ],
+        });
         const own = yield* regenerate(startedOver);
         assert.include(own?.message, "Plan the migration");
         assert.isUndefined(own?.forkSource);

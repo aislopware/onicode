@@ -85,7 +85,7 @@ import { expandAssistantCitationsForProvider } from "@onicode/shared/assistantCi
 import { modelSwitchSince } from "./modelSwitch.ts";
 import {
   contextBoundaryOrdinal,
-  readForkContextBoundaryOrdinal,
+  readFreshRunUserMessages,
   scheduledFreshRunOrdinals,
 } from "./contextBoundary.ts";
 import { isPlaceholderThreadTitle } from "./placeholderThreadTitle.ts";
@@ -8483,21 +8483,35 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     const sideChatFork =
       pendingForkTransfer !== undefined && projection.thread.lineage.sideChat === true;
     // A side chat never carries what the parent's fresh session discarded.
-    const sideChatParentBoundary =
-      !sideChatFork || sourceProjection === null
-        ? 0
-        : yield* readForkContextBoundaryOrdinal(
-            (runIds) => readHandoffItems(sourceProjection.thread.id, runIds),
-            sourceProjection.runs,
-          );
+    const sideChatParentContext = {
+      runs: sourceProjection?.runs ?? [],
+      turnItems:
+        !sideChatFork || sourceProjection === null
+          ? []
+          : yield* readFreshRunUserMessages(
+              projectionStore,
+              sourceProjection.thread.id,
+              sourceProjection.runs,
+            ).pipe(
+              Effect.mapError(
+                (cause) =>
+                  new OrchestratorProjectionError({ threadId: sourceProjection.thread.id, cause }),
+              ),
+            ),
+    };
+    const sideChatParentBoundary = contextBoundaryOrdinal(sideChatParentContext);
     const anchorRun =
       pendingForkTransfer?.sourcePoint.runId === undefined || sourceProjection === null
         ? null
         : (sourceProjection.runs.find(
             (candidate) => candidate.id === pendingForkTransfer.sourcePoint.runId,
           ) ?? null);
+    // A scheduled fresh session is a conversation of its own, not the main thread beside it.
     const sideChatAnchorDiscarded =
-      sideChatFork && anchorRun !== null && anchorRun.ordinal < sideChatParentBoundary;
+      sideChatFork &&
+      anchorRun !== null &&
+      (anchorRun.ordinal < sideChatParentBoundary ||
+        scheduledFreshRunOrdinals(sideChatParentContext).has(anchorRun.ordinal));
     const sourceRun = sideChatAnchorDiscarded ? null : anchorRun;
     const sourceProviderThread =
       sourceProjection === null || sourceRun === null
@@ -8511,8 +8525,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           sourceProjection.attempts.find((candidate) => candidate.id === sourceRun.activeAttemptId)
             ?.providerTurnId ??
           undefined);
-    // Opened during the parent's first turn, or anchored before its fresh session: the digest
-    // is the whole context.
+    // Opened during the parent's first turn, or anchored where its main thread no longer is: the
+    // digest is the whole context.
     const sideChatWithoutSource =
       sideChatFork &&
       (pendingForkTransfer.sourcePoint.runId === undefined || sideChatAnchorDiscarded);

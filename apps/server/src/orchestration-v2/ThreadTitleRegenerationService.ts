@@ -24,7 +24,11 @@ import * as Schema from "effect/Schema";
 
 import * as ServerSettings from "../serverSettings.ts";
 import * as TextGeneration from "../textGeneration/TextGeneration.ts";
-import { forkContextSuperseded, readForkContextBoundaryOrdinal } from "./contextBoundary.ts";
+import {
+  forkContextBoundaryOrdinal,
+  forkContextSuperseded,
+  readFreshRunUserMessages,
+} from "./contextBoundary.ts";
 import type { OrchestratorV2Error } from "./Orchestrator.ts";
 import * as ProjectStore from "./ProjectStore.ts";
 import { forkInheritedRunOrdinals, ProjectionStoreThreadNotFoundError } from "./ProjectionStore.ts";
@@ -127,13 +131,8 @@ const make = Effect.gen(function* () {
     runs: ReadonlyArray<OrchestrationV2Run>,
     forkRun?: OrchestrationV2Run,
   ) =>
-    readForkContextBoundaryOrdinal(
-      (runIds) =>
-        threads
-          .getThreadRecords(threadId, ["turnItems"], { turnItemRunIds: runIds })
-          .pipe(Effect.map((records) => records.turnItems)),
-      runs,
-      forkRun,
+    readFreshRunUserMessages(threads, threadId, runs).pipe(
+      Effect.map((turnItems) => forkContextBoundaryOrdinal({ runs, turnItems }, forkRun)),
     );
 
   const messagesThroughRun = Effect.fn("ThreadTitleRegenerationService.messagesThroughRun")(

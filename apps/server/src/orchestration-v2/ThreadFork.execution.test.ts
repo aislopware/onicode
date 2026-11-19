@@ -667,6 +667,8 @@ const writeParentRun = (input: {
   /** A checkpointed run on a native provider thread, which `latest_stable` forks start from. */
   readonly stable?: boolean;
   readonly freshContext?: boolean;
+  /** Started by a scheduled task, as a fresh-session schedule does. */
+  readonly scheduled?: boolean;
 }) =>
   Effect.gen(function* () {
     const eventSink = yield* EventSink.EventSinkV2;
@@ -773,6 +775,9 @@ const writeParentRun = (input: {
             messageId,
             text: input.text,
             attachments: [],
+            ...(input.scheduled
+              ? { scheduledTaskId: ScheduledTaskId.make(`${input.runId}:task`) }
+              : {}),
           },
         },
       ],
@@ -1383,64 +1388,85 @@ it.effect("a side chat opened during the parent's first turn starts from a diges
 );
 
 it.effect.each([
-  { name: "no stable run", stable: false },
-  { name: "a stable run before it", stable: true },
-])(
-  "a side chat of a parent started fresh, with $name, leaves the discarded history out",
-  ({ stable }) =>
-    Effect.gen(function* () {
-      const orchestrator = yield* Orchestrator.OrchestratorV2;
-      const prefix = `side-chat-fresh-${stable ? "stable" : "first"}`;
-      const grandparentId = ThreadId.make(`${prefix}-grandparent`);
-      const grandparentRunId = RunId.make(`${prefix}-grandparent-run`);
-      const parentId = ThreadId.make(`${prefix}-parent`);
-      const sideChatId = ThreadId.make(`${prefix}-child`);
-      yield* createParent(grandparentId);
-      yield* writeParentRun({
-        threadId: grandparentId,
-        runId: grandparentRunId,
-        ordinal: 1,
-        status: "completed",
-        text: "GRANDPARENT_MARKER",
-        stable: true,
-      });
-      yield* orchestrator.dispatch({
-        type: "thread.fork",
-        commandId: CommandId.make(`${prefix}-parent-fork`),
-        sourceThreadId: grandparentId,
-        targetThreadId: parentId,
-        sourcePoint: { type: "run", runId: grandparentRunId },
-        createdBy: "user",
-        creationSource: "web",
-      });
-      yield* writeImportedHistory(parentId, "PARENT_IMPORTED_MARKER");
-      yield* writeParentRun({
-        threadId: parentId,
-        runId: RunId.make(`${prefix}-discarded-run`),
-        ordinal: 1,
-        status: "completed",
-        text: "PARENT_DISCARDED_MARKER",
-        stable,
-      });
-      yield* writeParentRun({
-        threadId: parentId,
-        runId: RunId.make(`${prefix}-fresh-run`),
-        ordinal: 2,
-        status: "running",
-        text: "PARENT_FRESH_MARKER",
-        freshContext: true,
-      });
-      yield* forkSideChat(`${prefix}-fork`, parentId, sideChatId);
-      yield* askSideChat(sideChatId, `${prefix}-first-message`);
+  {
+    name: "started fresh with no stable run",
+    earlier: { stable: false },
+    latest: { stable: false, freshContext: true },
+    kept: ["PARENT_LATEST_MARKER"],
+    dropped: ["PARENT_EARLIER_MARKER", "PARENT_IMPORTED_MARKER", "GRANDPARENT_MARKER"],
+  },
+  {
+    name: "started fresh after a stable run",
+    earlier: { stable: true },
+    latest: { stable: false, freshContext: true },
+    kept: ["PARENT_LATEST_MARKER"],
+    dropped: ["PARENT_EARLIER_MARKER", "PARENT_IMPORTED_MARKER", "GRANDPARENT_MARKER"],
+  },
+  {
+    name: "whose latest stable run is a scheduled fresh session",
+    earlier: { stable: true },
+    latest: { stable: true, freshContext: true, scheduled: true },
+    kept: [
+      "PARENT_EARLIER_MARKER",
+      "PARENT_LATEST_MARKER",
+      "PARENT_IMPORTED_MARKER",
+      "GRANDPARENT_MARKER",
+    ],
+    dropped: [],
+  },
+])("a side chat of a parent $name starts from the parent's main thread", (testCase) =>
+  Effect.gen(function* () {
+    const orchestrator = yield* Orchestrator.OrchestratorV2;
+    const prefix = `side-chat-main-${testCase.name.replaceAll(" ", "-")}`;
+    const grandparentId = ThreadId.make(`${prefix}-grandparent`);
+    const grandparentRunId = RunId.make(`${prefix}-grandparent-run`);
+    const parentId = ThreadId.make(`${prefix}-parent`);
+    const sideChatId = ThreadId.make(`${prefix}-child`);
+    yield* createParent(grandparentId);
+    yield* writeParentRun({
+      threadId: grandparentId,
+      runId: grandparentRunId,
+      ordinal: 1,
+      status: "completed",
+      text: "GRANDPARENT_MARKER",
+      stable: true,
+    });
+    yield* orchestrator.dispatch({
+      type: "thread.fork",
+      commandId: CommandId.make(`${prefix}-parent-fork`),
+      sourceThreadId: grandparentId,
+      targetThreadId: parentId,
+      sourcePoint: { type: "run", runId: grandparentRunId },
+      createdBy: "user",
+      creationSource: "web",
+    });
+    yield* writeImportedHistory(parentId, "PARENT_IMPORTED_MARKER");
+    yield* writeParentRun({
+      threadId: parentId,
+      runId: RunId.make(`${prefix}-earlier-run`),
+      ordinal: 1,
+      status: "completed",
+      text: "PARENT_EARLIER_MARKER",
+      ...testCase.earlier,
+    });
+    // An idle parent, so a kept anchor would fork natively.
+    yield* writeParentRun({
+      threadId: parentId,
+      runId: RunId.make(`${prefix}-latest-run`),
+      ordinal: 2,
+      status: "completed",
+      text: "PARENT_LATEST_MARKER",
+      ...testCase.latest,
+    });
+    yield* forkSideChat(`${prefix}-fork`, parentId, sideChatId);
+    yield* askSideChat(sideChatId, `${prefix}-first-message`);
 
-      const started = yield* orchestrator.getThreadProjection(sideChatId);
-      assert.isNull(started.providerThreads[0]?.forkedFrom ?? null);
-      const context = started.contextHandoffs.map((handoff) => handoff.summaryText).join("\n");
-      assert.include(context, "- User: PARENT_FRESH_MARKER");
-      assert.notInclude(context, "PARENT_DISCARDED_MARKER");
-      assert.notInclude(context, "PARENT_IMPORTED_MARKER");
-      assert.notInclude(context, "GRANDPARENT_MARKER");
-    }).pipe(Effect.provide(forkCases[0]!.layer)),
+    const started = yield* orchestrator.getThreadProjection(sideChatId);
+    assert.isNull(started.providerThreads[0]?.forkedFrom ?? null);
+    const context = started.contextHandoffs.map((handoff) => handoff.summaryText).join("\n");
+    for (const marker of testCase.kept) assert.include(context, `- User: ${marker}`);
+    for (const marker of testCase.dropped) assert.notInclude(context, marker);
+  }).pipe(Effect.provide(forkCases[0]!.layer)),
 );
 
 it.effect("merge-back rejects a second fork's context until the first is consumed", () =>
