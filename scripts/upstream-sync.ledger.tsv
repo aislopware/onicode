@@ -2668,3 +2668,4 @@ bc6621d73a	take	CONFLICT resolved: kept Onicode's untrimmed-root check (and befo
 470ca63499	take	taken as is
 2a411317d9	take	fix(web): PDF pages no longer turn black while the panel is resized
 0317d4f4e5	take	fix(mobile): Arabic paragraphs that open with an English word render right to left
+25854935ba	take	fix(server): theme publish refuses a directory under the theme's file name; scenario cli-theme-publish-keeps-existing-directory ported (WEB runs on Onicode's desktop target)
