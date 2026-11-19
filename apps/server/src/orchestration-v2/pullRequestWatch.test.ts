@@ -246,6 +246,14 @@ describe("evaluatePullRequestWatch", () => {
       ).changes,
       [],
     );
+    assert.deepEqual(
+      evaluatePullRequestWatch(
+        watch({ awaitingBaseline: "all", checksPending: true }),
+        detail({ checks: [check("lint", "skipped"), check("deploy", "neutral")] }),
+        noRemarks,
+      ).changes,
+      [],
+    );
 
     // A read the host could not finish keeps the baseline and must keep the seed with it.
     const placeholder = { ...check("Workflow approval status", "pending"), placeholder: true };

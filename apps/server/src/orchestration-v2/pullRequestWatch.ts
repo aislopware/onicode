@@ -147,8 +147,14 @@ export function evaluatePullRequestWatch(
       checks.every((check) => check.status !== "pending");
     owedChecks = owed;
     if (passedNow && (!passed || gateGrew)) {
-      // Like a failure, CI running at the start can finish green before the first read.
-      if (!checksBaseline || (watch.checksPending === true && settled)) {
+      // Like a failure, CI running at the start can finish green before the first read. Checks
+      // that only skipped or wait on a manual job passed nothing since then.
+      if (
+        !checksBaseline ||
+        (watch.checksPending === true &&
+          settled &&
+          gate.some((check) => check.status === "success"))
+      ) {
         changes.push({ kind: "checks-passed", count: gate.length, required: required.length > 0 });
       }
       owedChecks =
