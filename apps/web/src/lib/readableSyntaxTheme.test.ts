@@ -17,7 +17,7 @@ function contrast(foreground: string, background: string): number {
 // pierre-light's faintest syntax colors: yellow, cyan, orange, teal, green, pink.
 const PIERRE_LIGHT_FAINT = ["#d5a910", "#08c0ef", "#d5901c", "#1ca1c7", "#199f43", "#d32a61"];
 // Light code surfaces: the code background, added and deleted lines, and changed words on each.
-const LIGHT_CODE_SURFACES = ["#fcfcfc", "#ecf9f4", "#fef0f0", "#ccecdf", "#f8d3d4"];
+const LIGHT_CODE_SURFACES = ["#fafafb", "#ecf9f4", "#fef0f0", "#ccecdf", "#f8d3d4"];
 
 describe("readableOnLightCode", () => {
   it("brings pierre-light's faint colors to 4.5:1 on every light code surface", () => {

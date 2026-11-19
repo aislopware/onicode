@@ -4,7 +4,7 @@ import { useEffect, useRef, type ComponentProps, type ReactNode } from "react";
 
 import { cn } from "~/lib/utils";
 
-import { Toggle, ToggleGroup } from "../ui/toggle-group";
+import { Tabs, TabsList, TabsTab } from "../ui/tabs";
 import { PullRequestMetaLine } from "./pullRequestPresentation";
 
 export function PullRequestDetailHeaderBody({
@@ -89,40 +89,42 @@ export function PullRequestDetailTabBar<Tab extends string>({
   useEffect(() => () => clearTimeout(pointerIntent.current), []);
   return (
     <nav
-      className="col-span-2 flex min-w-0 flex-wrap items-center gap-2 border-t border-border px-4 py-2"
+      className="col-span-2 flex min-w-0 items-end gap-4 border-t border-border px-4"
       aria-label={gt("Pull request tabs")}
       inert={inert}
     >
-      <ToggleGroup
+      <Tabs
         className="shrink-0"
-        size="segmented"
-        variant="segmented"
-        value={[value]}
+        value={value}
         onValueChange={(next) => {
-          const nextTab = tabs.find((item) => item.value === next[0])?.value;
+          const nextTab = tabs.find((item) => item.value === next)?.value;
           if (nextTab) onValueChange?.(nextTab);
         }}
       >
-        {tabs.map((tab) => (
-          <Toggle
-            key={tab.value}
-            value={tab.value}
-            onPointerEnter={
-              onTabIntent
-                ? () => {
-                    clearTimeout(pointerIntent.current);
-                    pointerIntent.current = setTimeout(() => onTabIntent(tab.value), 150);
-                  }
-                : undefined
-            }
-            onPointerLeave={onTabIntent ? () => clearTimeout(pointerIntent.current) : undefined}
-            onFocus={onTabIntent ? () => onTabIntent(tab.value) : undefined}
-          >
-            {tab.label}
-          </Toggle>
-        ))}
-      </ToggleGroup>
-      {children}
+        <TabsList>
+          {tabs.map((tab) => (
+            <TabsTab
+              key={tab.value}
+              value={tab.value}
+              onPointerEnter={
+                onTabIntent
+                  ? () => {
+                      clearTimeout(pointerIntent.current);
+                      pointerIntent.current = setTimeout(() => onTabIntent(tab.value), 150);
+                    }
+                  : undefined
+              }
+              onPointerLeave={onTabIntent ? () => clearTimeout(pointerIntent.current) : undefined}
+              onFocus={onTabIntent ? () => onTabIntent(tab.value) : undefined}
+            >
+              {tab.label}
+            </TabsTab>
+          ))}
+        </TabsList>
+      </Tabs>
+      <div className="flex min-h-9 min-w-0 flex-1 flex-wrap items-center gap-2 py-1.5">
+        {children}
+      </div>
     </nav>
   );
 }

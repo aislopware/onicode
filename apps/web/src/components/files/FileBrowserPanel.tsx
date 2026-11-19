@@ -99,7 +99,7 @@ function FileSearchField({
 }) {
   const gt = useGT();
   return (
-    <InputGroup variant="ghost" className="h-7 min-w-0 flex-1">
+    <InputGroup variant="ghost" className="h-7 min-w-0 flex-1 sm:h-7">
       <InputGroupInput
         ref={ref}
         type="search"

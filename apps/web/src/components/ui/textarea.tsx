@@ -21,7 +21,7 @@ function Textarea({
       className={
         cn(
           !unstyled &&
-            "relative inline-flex w-full rounded-lg border border-input bg-background not-dark:bg-clip-padding text-base text-foreground shadow-xs/5 ring-ring/24 transition-shadow before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-lg)-1px)] has-focus-visible:has-aria-invalid:border-destructive/64 has-focus-visible:has-aria-invalid:ring-destructive/16 has-aria-invalid:border-destructive/36 has-focus-visible:border-ring has-disabled:opacity-64 has-[:disabled,:focus-visible,[aria-invalid]]:shadow-none has-focus-visible:ring-[3px] has-focus-visible:ring-inset not-has-disabled:has-not-focus-visible:not-has-aria-invalid:before:shadow-[0_1px_--theme(--color-black/4%)] sm:text-sm dark:bg-input/32 dark:has-aria-invalid:ring-destructive/24 dark:not-has-disabled:has-not-focus-visible:not-has-aria-invalid:before:shadow-[0_-1px_--theme(--color-white/6%)]",
+            "relative inline-flex w-full rounded-(--control-radius) border border-input bg-card text-base text-foreground transition-colors duration-100 has-focus-visible:outline-ring-inset has-aria-invalid:border-destructive has-aria-invalid:[--focus-ring:var(--destructive)] has-autofill:bg-foreground/4 has-disabled:opacity-55 sm:text-ui dark:has-autofill:bg-foreground/8",
           className,
         ) || undefined
       }
@@ -32,11 +32,11 @@ function Textarea({
         render={(defaultProps) => (
           <textarea
             className={cn(
-              "field-sizing-content max-h-64 w-full rounded-[inherit] px-[calc(--spacing(3)-1px)] py-[calc(--spacing(1.5)-1px)] outline-none wrap-anywhere",
+              "field-sizing-content max-h-64 w-full rounded-[inherit] px-2.5 py-1.5 outline-none placeholder:text-placeholder wrap-anywhere",
               rows === undefined && "min-h-17.5 max-sm:min-h-20.5",
-              size === "sm" && "px-[calc(--spacing(2.5)-1px)] py-[calc(--spacing(1)-1px)]",
+              size === "sm" && "px-2 py-1",
               size === "sm" && rows === undefined && "min-h-16.5 max-sm:min-h-19.5",
-              size === "lg" && "py-[calc(--spacing(2)-1px)]",
+              size === "lg" && "py-2",
               size === "lg" && rows === undefined && "min-h-18.5 max-sm:min-h-21.5",
             )}
             // field-sizing: content ignores `rows`, so an explicit row count sets the minimum height.
@@ -44,7 +44,7 @@ function Textarea({
               rows === undefined
                 ? undefined
                 : {
-                    minHeight: `calc(${rows}lh + 2 * (var(--spacing) * ${size === "sm" ? 1 : size === "lg" ? 2 : 1.5} - 1px))`,
+                    minHeight: `calc(${rows}lh + 2 * var(--spacing) * ${size === "sm" ? 1 : size === "lg" ? 2 : 1.5})`,
                   }
             }
             data-slot="textarea"

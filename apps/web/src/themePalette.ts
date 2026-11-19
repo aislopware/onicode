@@ -391,6 +391,10 @@ export function subscribeToCustomThemes(listener: () => void): () => void {
 // The desktop surface ladder in index.css, where it differs from the shared palette mobile uses.
 const STANDARD_WEB_COLORS: Record<ThemeAppearance, Partial<ThemeColors>> = {
   light: {
+    canvas: "#fafafb",
+    chrome: "#fafafb",
+    toolbar: "#fafafb",
+    terminalBackground: "#fafafb",
     sidebar: "#f3f3f5",
     sidebarControlSurface: "#eaeaed",
     sidebarRowHover: "#f9f9fa",
