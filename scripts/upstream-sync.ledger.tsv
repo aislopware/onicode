@@ -2782,3 +2782,4 @@ b5bef4d939	take	/logout in chat needs providers:manage; guest-link and analytics
 f8d7f48913	take	desktop SSH reaches one-time-code hosts through a signed-in ControlMaster; kept Onicode's Effect.onError tunnel cleanup
 34a7ab3641	skip	kept Onicode's single mcp__onicode__ Pi registration: upstream's public mcp__t3-code__ and alias mcp__t3_code__ names both translate to mcp__onicode__, which is already Pi's own name for the server and is registered direct or deferred; Onicode dropped the hidden alias in 829d4cf43a
 f9e45e4363	take	fix(server): agents on hosts without swap are OOM-killed instead of throttled for hours (#39287)
+c4419dadd9	take	fix(server): threads stay in Working when Claude or OpenCode marks a background wait between turns (#38638)
