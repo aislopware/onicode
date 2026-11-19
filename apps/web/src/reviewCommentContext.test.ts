@@ -133,7 +133,7 @@ describe("review comment context parsing", () => {
       { ignoreWhitespace: true },
     );
     const fileDiff = rendered?.kind === "files" ? rendered.files[0]! : null;
-    const comment = (side: "deletions" | "additions") =>
+    const comment = (side: "deletions" | "additions", splitView = true) =>
       buildDiffReviewComment({
         id: "comment-whitespace",
         sectionId: "turn:1",
@@ -142,10 +142,13 @@ describe("review comment context parsing", () => {
         fileDiff: fileDiff!,
         range: { start: 2, side, end: 2, endSide: side },
         text: "Why?",
+        splitView,
       })?.diff;
 
     expect(comment("deletions")).toBe("@@ -2,1 +2,1 @@\n     return 1");
     expect(comment("additions")).toBe("@@ -2,1 +2,1 @@\n         return 1");
+    // Stacked view shows only the head text.
+    expect(comment("deletions", false)).toBe("@@ -2,1 +2,1 @@\n         return 1");
   });
 
   it("restores Pierre line selections from persisted diff comment row indexes", () => {

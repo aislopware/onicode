@@ -375,7 +375,6 @@ interface MutableAnnotationGroup {
 }
 
 interface DraftAnchor {
-  readonly fileKey: string;
   readonly path: string;
   readonly oldPath: string | null;
   readonly position: PullRequestReviewPosition;
@@ -476,6 +475,8 @@ function PullRequestCodeTab({
     range: SelectedLineRange;
   } | null>(null);
   const [draft, setDraft] = useState<DraftAnchor | null>(null);
+  // Held here: a page refresh remounts the file, and with it the editor.
+  const [draftText, setDraftText] = useState("");
   const [threadPending, setThreadPending] = useState(false);
   const [orphansOpen, setOrphansOpen] = useState(false);
   // Scope slices before reset to prevent using a previous pull request's data or cursor.
@@ -852,7 +853,8 @@ function PullRequestCodeTab({
         groupAt(anchor.side, anchor.line).pending.push(comment);
       }
     }
-    if (draft?.fileKey === fileKey) {
+    // By path, like pending comments: a refreshed page renders the file under a new key.
+    if (draft?.path === path) {
       const anchor = getReviewPositionAnchor(draft.position);
       groupAt(anchor.side, anchor.line).draft = true;
     }
@@ -1086,12 +1088,13 @@ function PullRequestCodeTab({
           fileDiff: item.fileDiff,
           range,
           text: "",
+          splitView: diffLayout === "split",
         })
       : null;
     // A draft that could only go to the agent needs something to send.
     if (!canCommentOnLines && agentComment === null) return;
+    setDraftText("");
     setDraft({
-      fileKey: item.id,
       path,
       oldPath: previousPath === path ? null : previousPath,
       ...anchor,
@@ -1339,7 +1342,8 @@ function PullRequestCodeTab({
           ownerKey={JSON.stringify([environmentId, reviewKey, draft])}
           kind="draft"
           rangeLabel={`${draft.path}:${getReviewPositionAnchor(draft.position).line}`}
-          text=""
+          text={draftText}
+          onTextChange={setDraftText}
           completionScope={canCommentOnLines ? completionScope : null}
           submitLabel={canCommentOnLines ? gt("Add to review") : gt("Add to agent")}
           {...(canCommentOnLines && onAddToAgentSelection && draft.agentComment !== null
