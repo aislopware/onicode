@@ -471,14 +471,14 @@ describe("findAssistantCitationText", () => {
     const visible = "Intro: the answer.";
     const folded = "Intro: the answer. Folded: the answer!";
     const inFold = selector("the answer", { prefix: "Folded: ", suffix: "!" });
-    expect(findAssistantCitationInFolds(visible, folded, inFold)).toEqual({
+    expect(findAssistantCitationInFolds(visible, () => folded, inFold)).toEqual({
       folded: true,
       start: 27,
       end: 37,
     });
     // A fold that was open around the quote has since closed, so its context is gone.
     const drifted = selector("the answer", { prefix: "Gone: " });
-    expect(findAssistantCitationInFolds(visible, folded, drifted)).toEqual({
+    expect(findAssistantCitationInFolds(visible, () => folded, drifted)).toEqual({
       folded: false,
       start: 7,
       end: 17,

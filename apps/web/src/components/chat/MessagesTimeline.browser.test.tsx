@@ -1345,6 +1345,38 @@ describe("MessagesTimeline citations", () => {
     });
   });
 
+  it("keeps a fold closed when the cited text only spans across it", async () => {
+    await using _screen = await renderTimeline(
+      [
+        message("A question", {}, "question"),
+        message(
+          "Intro: before.\n\n<details>\n<summary>More</summary>\n\nFolded text.\n\n</details>\n\nAfter.",
+          { role: "assistant" },
+          "cited",
+        ),
+      ],
+      {
+        citationRequest: {
+          ...CITATION_REQUEST,
+          citation: {
+            ...CITATION_REQUEST.citation,
+            text: "before.\nAfter",
+            start: 7,
+            end: 20,
+            prefix: "Intro: ",
+            suffix: ".",
+          },
+        },
+        citationHistory: { _tag: "found" },
+      },
+    );
+    await vi.waitFor(() => {
+      const [range] = CSS.highlights.get("oni-assistant-citation") ?? [];
+      expect(range?.toString()).toMatch(/^before\.[\s\S]*After$/);
+      expect(document.querySelector("[data-markdown-details-open=true]")).toBeNull();
+    });
+  });
+
   it("opens the superseded attempt that folds the cited response", async () => {
     const runId = RunId.make("run-steered");
     const attempt = (id: string, ordinal: number, status: "superseded" | "running") => ({

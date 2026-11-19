@@ -34,8 +34,10 @@ export function findAssistantCitationSourceAnchor(
   );
   const viewport = source?.closest<HTMLElement>("[data-assistant-citation-viewport]");
   if (!source || !viewport) return null;
-  const range = resolveAssistantCitationRange(source, citation);
-  return range && hiddenFoldsIn(source, range).length === 0 ? { source, range, viewport } : null;
+  const resolved = resolveAssistantCitation(source, citation);
+  return resolved && resolved.folds.length === 0
+    ? { source, range: resolved.range, viewport }
+    : null;
 }
 
 const CONTROL_SELECTOR = "button, input, textarea, select, [role=button], [contenteditable]";
@@ -211,17 +213,24 @@ function rawTextOffset(text: string, normalizedOffset: number): number {
   return text.length;
 }
 
-export function resolveAssistantCitationRange(
+/** The cited range, and the closed folds that hold its text. */
+export function resolveAssistantCitation(
   root: HTMLElement,
   selector: AssistantTextSelector,
-): Range | null {
+): { range: Range; folds: Element[] } | null {
   if (excludedAncestor(root) !== null) return null;
   const visible = readAssistantText(root);
-  const folded = root.querySelector(`${FOLD_PANEL_SELECTOR}[hidden]`)
-    ? readAssistantText(root, true)
-    : visible;
-  const match = findAssistantCitationInFolds(visible.text, folded.text, selector);
-  return match === null ? null : citationRange(root, match.folded ? folded : visible, match);
+  let folded: ReturnType<typeof readAssistantText> | undefined;
+  const readFolded = () =>
+    (folded ??= root.querySelector(`${FOLD_PANEL_SELECTOR}[hidden]`)
+      ? readAssistantText(root, true)
+      : visible).text;
+  const match = findAssistantCitationInFolds(visible.text, readFolded, selector);
+  if (match === null) return null;
+  const range = citationRange(root, match.folded ? folded! : visible, match);
+  if (range === null) return null;
+  // A match from the visible text may span a closed fold without quoting it.
+  return { range, folds: match.folded ? hiddenFoldsIn(root, range) : [] };
 }
 
 /**
@@ -231,18 +240,19 @@ export function resolveAssistantCitationRange(
  */
 export function findAssistantCitationInFolds(
   visible: string,
-  folded: string,
+  readFolded: () => string,
   selector: AssistantTextSelector,
 ): { folded: boolean; start: number; end: number } | null {
   const attempts = [
-    [visible, true],
-    [folded, true],
-    [visible, false],
-    [folded, false],
+    [false, true],
+    [true, true],
+    [false, false],
+    [true, false],
   ] as const;
-  for (const [text, requireContext] of attempts) {
+  for (const [folded, requireContext] of attempts) {
+    const text = folded ? readFolded() : visible;
     const match = findAssistantCitationText(text, selector, { requireContext });
-    if (match !== null) return { folded: text !== visible, ...match };
+    if (match !== null) return { folded, ...match };
   }
   return null;
 }
@@ -253,9 +263,8 @@ function hiddenFoldsIn(root: HTMLElement, range: Range): Element[] {
   );
 }
 
-/** Opens the closed folds a resolved range covers, and reports whether there were any. */
-export function revealAssistantCitationFolds(root: HTMLElement, range: Range): boolean {
-  const folds = hiddenFoldsIn(root, range);
+/** Opens closed folds, and reports whether there were any. */
+export function revealAssistantCitationFolds(folds: readonly Element[]): boolean {
   for (const fold of folds) fold.dispatchEvent(new Event("beforematch"));
   return folds.length > 0;
 }
