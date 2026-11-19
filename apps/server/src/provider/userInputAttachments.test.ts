@@ -495,8 +495,12 @@ describe("question answer paths", () => {
             cell_type: "code",
             source: ["print(43 * 7)"],
             outputs: [
-              { text: ["301\n"] },
-              { data: { "text/plain": ["42"] } },
+              { output_type: "stream", name: "stdout", text: "\u001b[32m301\u001b[0m\n" },
+              {
+                output_type: "display_data",
+                data: { "text/plain": ["\u001b[", "33m42\u001b[0m\n", "Next line"] },
+                metadata: {},
+              },
               {
                 output_type: "error",
                 ename: "ZeroDivisionError",
@@ -525,8 +529,8 @@ describe("question answer paths", () => {
       expect(NodeFS.existsSync(`${path}.txt`)).toBe(false);
       const extracted = NodeFS.readFileSync(sidecar, "utf8");
       expect(extracted).toContain("Vessel: Larkspur");
-      expect(extracted).toContain("301");
-      expect(extracted).toContain("42");
+      expect(extracted).toContain("Output:\n301\n");
+      expect(extracted).toContain("42\nNext line");
       expect(extracted).toContain(`## Cell 3 (raw)\n${rawSource}`);
       expect(extracted).toContain(
         "ZeroDivisionError: division by zero\nCell In[1], line 1\n----> 1 1 / 0\nZeroDivisionError: division by zero",
