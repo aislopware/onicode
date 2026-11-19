@@ -665,6 +665,14 @@ export function useComposerSend(input: ComposerSendInput) {
       // The draft keeps the question, its uploads and their progress until the side chat has
       // them, so a reload or a failed start leaves it to send again.
       const draftAtSend = useComposerDraftStore.getState().getComposerDraft(composerDraftTarget);
+      const draftUnchanged = () =>
+        !composerDraftContentChanged(
+          draftAtSend,
+          useComposerDraftStore.getState().getComposerDraft(composerDraftTarget),
+        );
+      // A removed attachment loses its upload, so a change before the fork waits for Send again.
+      const draftChanged = () =>
+        new Error(m(msg("Draft changed while preparing this message. Review it and send again.")));
       sendInFlightRef.current = true;
       if (capabilities.supportsAttachmentUploads) startDraftAttachmentUploads(snapshot.attachments);
       const started = await settlePromise(async () => {
@@ -674,7 +682,10 @@ export function useComposerSend(input: ComposerSendInput) {
           attachments: snapshot.attachments,
           usesAttachmentUploads: capabilities.supportsAttachmentUploads,
           draftTarget: composerDraftTarget,
+        }).catch((error: unknown) => {
+          throw draftUnchanged() ? error : draftChanged();
         });
+        if (!draftUnchanged()) throw draftChanged();
         const attachmentIds = boundAttachmentIds(attachments, snapshot.attachments);
         return onSideChat(
           {
@@ -712,17 +723,14 @@ export function useComposerSend(input: ComposerSendInput) {
         return;
       }
       if (!started.value) return;
-      const onRoute = currentRouteThreadKeyRef.current === routeThreadKey;
+      // The composer may show another draft by now, such as a queued message being edited.
+      const composerShowsSent =
+        currentRouteThreadKeyRef.current === routeThreadKey && promptRef.current === promptAtSend;
       if (sendsDraft) {
-        // Edits made meanwhile stay, along with what was sent.
-        if (
-          !composerDraftContentChanged(
-            draftAtSend,
-            useComposerDraftStore.getState().getComposerDraft(composerDraftTarget),
-          )
-        ) {
+        // Edits made while it forked stay, along with what was sent.
+        if (draftUnchanged()) {
           clearComposerDraftContent(composerDraftTarget);
-          if (onRoute) {
+          if (composerShowsSent) {
             promptRef.current = "";
             composerRef.current?.resetCursorState();
           }
@@ -741,11 +749,16 @@ export function useComposerSend(input: ComposerSendInput) {
         return;
       }
       // Answering a question, the composer shows the answer, which lives apart from this draft.
-      if (onRoute) {
-        if (!sendCtx.answeringPendingUserInput && promptRef.current === promptAtSend) {
+      if (!sendCtx.answeringPendingUserInput) {
+        if (
+          useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.prompt ===
+          promptAtSend
+        ) {
           setComposerDraftPrompt(composerDraftTarget, "");
-          promptRef.current = "";
         }
+        if (composerShowsSent) promptRef.current = "";
+      }
+      if (currentRouteThreadKeyRef.current === routeThreadKey) {
         composerRef.current?.resetCursorState();
       }
       return;

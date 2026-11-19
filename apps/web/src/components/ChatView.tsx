@@ -213,7 +213,7 @@ import { DEFAULT_RESOLVED_KEYBINDINGS } from "@onicode/shared/keybindings";
 import { shortcutLabelForCommand } from "../keybindings";
 import { cn } from "~/lib/utils";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
-import { toastManager } from "./ui/toast";
+import { stackedThreadToast, toastManager } from "./ui/toast";
 import { projectScriptIdFromCommand } from "~/projectScripts";
 import { newMessageId } from "~/lib/utils";
 import {
@@ -2867,7 +2867,20 @@ export default function ChatView(props: ChatViewProps) {
       runtimeMode,
       modelSelection: composerRef.current?.getSendContext().selectedModelSelection,
     }),
-    onError: (message, threadRef) => setThreadError(threadRef.threadId, message),
+    // A start can outlast the thread on screen; its banner would then go nowhere.
+    onError: (message, threadRef) => {
+      if (currentRouteThreadKeyRef.current === scopedThreadKey(threadRef)) {
+        setThreadError(threadRef.threadId, message);
+        return;
+      }
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: gt("Side chat not started"),
+          description: message,
+        }),
+      );
+    },
   });
   // A maximized panel covers the terminal drawer the command runs in.
   const runSideChatShellCommandStable = useStableCallback((command: string) => {

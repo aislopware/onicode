@@ -26,7 +26,7 @@ import {
   makeThreadRequestsResolvedAnnouncer,
   sendApprovalFeedback,
 } from "@onicode/client-runtime/state/thread-requests";
-import { DateTime } from "effect";
+import { DateTime, Effect } from "effect";
 import { AsyncResult, type Atom } from "effect/reactivity";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
@@ -237,6 +237,7 @@ vi.mock("../lib/copyTextWithHaptic", () => ({ copyTextWithHaptic: vi.fn() }));
 vi.mock("./use-remote-environment-registry", () => ({ setPendingConnectionError: vi.fn() }));
 
 import { Alert } from "react-native";
+import { prepareTurnAttachments } from "../lib/attachmentUpload";
 import { useThreadComposerState } from "./use-thread-composer-state";
 import { useSelectedThreadRequests } from "./use-selected-thread-requests";
 import { questionAttachmentDraftKey } from "./question-attachments";
@@ -452,13 +453,15 @@ describe("mobile task permissions", () => {
       runtimeMode: "approval-required",
     };
     // The draft stays until the side chat has it, so a restart or a failed start keeps it.
+    const clearsDuringStart: number[] = [];
     const startSideChat = vi.fn(async () => {
-      expect(state.clearDraft).not.toHaveBeenCalled();
+      clearsDuringStart.push(state.clearDraft.mock.calls.length);
       return true;
     });
     const composer = useThreadComposerState({ startSideChat });
     expect(composer.sideChatUnavailableReason).toBeNull();
     expect(await composer.onSendMessage()).toBeNull();
+    expect(clearsDuringStart).toEqual([0]);
     expect(startSideChat).toHaveBeenCalledExactlyOnceWith(
       { environmentId: "secondary", threadId: "thread" },
       { text: "why does this fail?", attachments: [], titleSeed: "why does this fail?" },
@@ -500,7 +503,7 @@ describe("mobile task permissions", () => {
     expect(state.clearDraft).toHaveBeenCalled();
     state.draft = { ...state.draft, context: undefined };
 
-    // Edits made while it starts stay, with what was sent.
+    // Edits made while it forks stay, with what was sent.
     vi.clearAllMocks();
     startSideChat.mockImplementationOnce(async () => {
       state.draft = { ...state.draft, text: `${state.draft.text} next draft` };
@@ -510,14 +513,14 @@ describe("mobile task permissions", () => {
     expect(state.clearDraft).not.toHaveBeenCalled();
     state.draft = { ...state.draft, text: "/side what is this?" };
 
-    // A failed start leaves the draft as sent, and a send meanwhile says why it waits.
+    // A failed start leaves the draft as sent. A send meanwhile, even from a thread screen
+    // mounted again, says why it waits.
     vi.clearAllMocks();
-    const failing = useThreadComposerState({ startSideChat });
     startSideChat.mockImplementationOnce(async () => {
-      expect(await failing.onSendMessage()).toBeNull();
+      expect(await useThreadComposerState({ startSideChat }).onSendMessage()).toBeNull();
       return false;
     });
-    expect(await failing.onSendMessage()).toBeNull();
+    expect(await useThreadComposerState({ startSideChat }).onSendMessage()).toBeNull();
     expect(startSideChat).toHaveBeenCalledOnce();
     expect(Alert.alert).toHaveBeenCalledExactlyOnceWith(
       "Still sending your previous message.",
@@ -527,6 +530,21 @@ describe("mobile task permissions", () => {
     expect(state.mergeDraft).not.toHaveBeenCalled();
     expect(state.appendAttachments).not.toHaveBeenCalled();
     expect(state.enqueue).not.toHaveBeenCalled();
+
+    // A change before the fork, such as a removed attachment that took its upload, waits for
+    // Send again.
+    vi.clearAllMocks();
+    vi.mocked(prepareTurnAttachments).mockImplementationOnce(() => {
+      state.draft = { ...state.draft, attachments: [] };
+      return Effect.die("upload cancelled") as never;
+    });
+    expect(await useThreadComposerState({ startSideChat }).onSendMessage()).toBeNull();
+    expect(startSideChat).not.toHaveBeenCalled();
+    expect(Alert.alert).toHaveBeenCalledExactlyOnceWith(
+      "Side chat not started",
+      "Draft changed while preparing this message. Review it and send again.",
+    );
+    expect(state.clearDraft).not.toHaveBeenCalled();
     // A model the send would refuse does not start a side chat either.
     vi.clearAllMocks();
     state.serverConfig = {
