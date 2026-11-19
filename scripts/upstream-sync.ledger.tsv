@@ -2709,3 +2709,4 @@ d1f8636f49	take	adapted: Onicode already translated every key; adopted upstream'
 80cf4f7945	take	taken as is (web-only store; mobile has no equivalent reconcile)
 1852121afa	take	taken as is (quarantine prefix renamed to onicode by the port script)
 5f8ab374af	take	taken as is (ACP providers only)
+d3da5c6f32	skip	marketing site copy only; Onicode removed apps/marketing's T3 homepage
