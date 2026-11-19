@@ -32,7 +32,7 @@ function logPathHydrationWarning(message: string, error?: unknown): void {
 // __MISE_DIFF is mise's record of the PATH entries it added. It must travel
 // with the shell's PATH, or `mise x` can rebuild PATH behind a same-named
 // wrapper (`exec mise x claude -- claude`) that then re-runs itself forever.
-const LOGIN_SHELL_ENV_NAMES = ["PATH", "__MISE_DIFF", "JAVA_HOME"] as const;
+const LOGIN_SHELL_ENV_NAMES = ["PATH", "__MISE_DIFF", "JAVA_HOME", "PNPM_HOME"] as const;
 const LOGIN_SHELL_TIMEOUT = Duration.seconds(5);
 const SLOW_LOGIN_SHELL_TIMEOUT_MS = 20_000;
 
@@ -59,10 +59,12 @@ function applyLoginShellEnvironment(
   if (shellPath && shellEnvironment.__MISE_DIFF) {
     env.__MISE_DIFF = shellEnvironment.__MISE_DIFF;
   }
-  // Android SDK tools are Java programs. A keg-only JDK (Homebrew's openjdk)
-  // is only reachable through the JAVA_HOME the shell profile sets.
-  if (!env.JAVA_HOME && shellEnvironment.JAVA_HOME) {
-    env.JAVA_HOME = shellEnvironment.JAVA_HOME;
+  // Android SDK tools are Java programs, and a keg-only JDK (Homebrew's openjdk) is only reachable
+  // through the profile's JAVA_HOME. pnpm's global commands refuse to run without PNPM_HOME.
+  for (const name of ["JAVA_HOME", "PNPM_HOME"] as const) {
+    if (!env[name] && shellEnvironment[name]) {
+      env[name] = shellEnvironment[name];
+    }
   }
 }
 
