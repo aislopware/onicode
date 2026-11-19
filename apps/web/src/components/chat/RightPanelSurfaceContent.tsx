@@ -2,7 +2,6 @@ import { useGT } from "gt-react";
 import type {
   EditorId,
   EnvironmentId,
-  IssueTrackerKind,
   PreviewAnnotationPayload,
   ProjectId,
   ResolvedKeybindingsConfig,
@@ -15,6 +14,7 @@ import { lazy, Suspense } from "react";
 import SideChatPane from "./SideChatPane";
 import type { ComposerImageAttachment, DraftId } from "../../composerDraftStore";
 import type { ShortcutMatchContext } from "../../keybindings";
+import { issueSurfaceRef } from "../../lib/openIssueLink";
 import type { SideChatParentPanel } from "../../lib/sideChatPane";
 import { type RightPanelSurface, useRightPanelStore } from "../../rightPanelStore";
 import {
@@ -192,13 +192,7 @@ export function RightPanelSurfaceContent(props: {
           environmentId={
             (surface.environmentId as EnvironmentId | undefined) ?? props.environmentId
           }
-          reference={{
-            projectId: surface.projectId as ProjectId,
-            tracker: surface.tracker as IssueTrackerKind,
-            ...(surface.host ? { host: surface.host } : {}),
-            scope: surface.scope,
-            key: surface.key,
-          }}
+          reference={issueSurfaceRef(surface)}
           threadRef={threadRef}
           onSelectPullRequest={(reference) => {
             useRightPanelStore.getState().openPullRequest(threadRef, {

@@ -395,6 +395,47 @@ describe("LinearIssueTracker", () => {
 
       const missing = yield* Effect.flip(api.getIssue({ ...target, key: "123" }));
       expect(missing.reason).toBe("not-found");
+      // Team keys repeat across workspaces: a link naming another one is not this issue.
+      const elsewhere = yield* Effect.flip(
+        api.getIssue({ ...target, key: "ENG-7", workspace: "othercorp" }),
+      );
+      expect(elsewhere.reason).toBe("not-found");
+      expect((yield* api.getIssue({ ...target, key: "ENG-7", workspace: "Acme" })).key).toBe(
+        "ENG-7",
+      );
+    }),
+  );
+
+  it.effect("reads a hover summary without the conversation, in the link's workspace", () =>
+    Effect.gen(function* () {
+      const { tracker, requests } = fakeLinear({
+        OniIssueSummary: () => ({
+          issue: issue("ENG-7", { comments: { nodes: [{ id: "cmt_1" }, { id: "cmt_2" }] } }),
+        }),
+        OniComments: () => ({
+          issue: {
+            url: "https://linear.app/acme/issue/ENG-7",
+            comments: { nodes: [], pageInfo: { hasNextPage: false, endCursor: null } },
+          },
+        }),
+      });
+      const api = yield* tracker;
+      expect(yield* api.getIssueSummary({ ...target, key: "ENG-7" })).toMatchObject({
+        key: "ENG-7",
+        title: "Issue ENG-7",
+        url: "https://linear.app/acme/issue/ENG-7",
+        state: { category: "open", name: "In Progress" },
+        commentCount: 2,
+      });
+      expect(requests.map((request) => request.operation)).toEqual(["OniIssueSummary"]);
+      const elsewhere = yield* Effect.flip(
+        api.getIssueSummary({ ...target, key: "ENG-7", workspace: "othercorp" }),
+      );
+      expect(elsewhere.reason).toBe("not-found");
+      const olderElsewhere = yield* Effect.flip(
+        api.getComments({ ...target, key: "ENG-7", cursor: "c", workspace: "othercorp" }),
+      );
+      expect(olderElsewhere.reason).toBe("not-found");
     }),
   );
 
@@ -473,6 +514,11 @@ describe("LinearIssueTracker", () => {
       // An identifier from another team resolves in Linear, so the team is checked before writing.
       const foreign = yield* Effect.flip(live.setState({ ...target, key: "OPS-3", state: "Done" }));
       expect(foreign.detail).toContain("OPS");
+      // So is the workspace: the same key in another one is another issue.
+      const elsewhere = yield* Effect.flip(
+        live.setState({ ...target, key: "ENG-1", state: "Done", workspace: "othercorp" }),
+      );
+      expect(elsewhere.reason).toBe("not-found");
       // A move names one of the team's own states; nothing is asked for as "open" or "closed".
       yield* live.setState({ ...target, key: "ENG-1", state: "Canceled" });
       yield* live.setState({ ...target, key: "ENG-1", state: "Todo" });

@@ -52,6 +52,23 @@ function parseStandaloneIssueLink(url: string) {
   }
 }
 
+/** The workspace a standalone tracker's issue link names, which a reference read through it keeps. */
+export function issueLinkWorkspace(url: string | undefined): string | undefined {
+  return url === undefined ? undefined : parseStandaloneIssueLink(url)?.link.workspace;
+}
+
+/**
+ * A link to a place in an issue (`#issuecomment-1`, `#note_1`, `#comment-…`). The panel opens an
+ * issue at its top, so such a link stays the browser's.
+ */
+function namesPlaceInIssue(url: string): boolean {
+  try {
+    return new URL(url).hash !== "";
+  } catch {
+    return false;
+  }
+}
+
 /** Whether `url` is a standalone tracker's issue link, which only bindings can resolve. */
 export function isStandaloneIssueLink(url: string): boolean {
   return parseStandaloneIssueLink(url) !== null;
@@ -101,6 +118,7 @@ function resolveStandaloneIssueLink<Project extends LinkProject>(
       host: link.host,
       scope: own === undefined ? link.scope : lender.binding.scope,
       key: link.key,
+      workspace: link.workspace,
     },
   };
 }
@@ -138,6 +156,7 @@ export function createIssueLinkResolver<Project extends LinkProject>(
     url: string,
     preferredProjectId?: string,
   ): { readonly project: Project; readonly ref: IssueRef } | null => {
+    if (namesPlaceInIssue(url)) return null;
     // A link names its server's port; a binding does only when its remote or web URL did.
     const authority = linkAuthority(url);
     const parsed = parseIssueLink(url, authority);

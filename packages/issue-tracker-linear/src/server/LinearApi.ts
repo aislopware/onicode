@@ -38,6 +38,7 @@ import {
   type LinearTeamLabel,
   type LinearUser,
   type OniIssue,
+  type OniIssueSummary,
   type OniTeam,
   type Template,
 } from "./LinearApi.graphql.ts";
@@ -46,6 +47,7 @@ export type { IssueFilter } from "../../schema/linear.graphql.ts";
 export type {
   LinearComment,
   LinearIssue,
+  LinearIssueSummary,
   LinearReaction,
   LinearUser,
 } from "./LinearApi.graphql.ts";
@@ -79,6 +81,7 @@ export interface LinearTemplate extends Omit<Template, "templateData"> {
 
 type LinearTeamDetail = OniTeam.Result["teams"]["nodes"][number];
 type LinearIssueDetail = NonNullable<OniIssue.Result["issue"]>;
+type LinearIssueRow = NonNullable<OniIssueSummary.Result["issue"]>;
 
 /** The team with the workspace-wide labels that any of its issues may also carry. */
 export interface LinearTeamScope {
@@ -121,12 +124,22 @@ export class LinearApi extends Context.Service<
       identifier: string,
       comments: number,
     ) => Effect.Effect<LinearIssueDetail | null, IssueTrackerError>;
+    /** The issue without its conversation, with the ids of up to `comments` of its comments. */
+    readonly getIssueSummary: (
+      identifier: string,
+      comments: number,
+    ) => Effect.Effect<LinearIssueRow | null, IssueTrackerError>;
     readonly getComments: (input: {
       readonly identifier: string;
       readonly first: number;
       readonly after: string;
     }) => Effect.Effect<
-      { readonly nodes: ReadonlyArray<LinearComment>; readonly nextCursor: string | null },
+      {
+        /** The issue's canonical URL, which names its workspace. */
+        readonly url: string;
+        readonly nodes: ReadonlyArray<LinearComment>;
+        readonly nextCursor: string | null;
+      },
       IssueTrackerError
     >;
     readonly getTeam: (key: string) => Effect.Effect<LinearTeamScope | null, IssueTrackerError>;
@@ -319,14 +332,25 @@ export const make = Effect.gen(function* () {
       })),
     );
 
-  const getIssue: LinearApi["Service"]["getIssue"] = (identifier, comments) =>
-    call("getIssue", (linear) => linear.OniIssue({ id: identifier, comments })).pipe(
-      Effect.map((data) => data.issue),
-      // Linear answers an unknown identifier with an error and no data, not with null.
+  // Linear answers an unknown identifier with an error and no data, not with null.
+  const missingAsNull = <A, R>(read: Effect.Effect<A, IssueTrackerError, R>) =>
+    read.pipe(
       Effect.catchIf(
         (error) => error.reason === "failed" && /not found/i.test(error.detail),
         () => Effect.succeed(null),
       ),
+    );
+
+  const getIssue: LinearApi["Service"]["getIssue"] = (identifier, comments) =>
+    call("getIssue", (linear) => linear.OniIssue({ id: identifier, comments })).pipe(
+      Effect.map((data) => data.issue),
+      missingAsNull,
+    );
+
+  const getIssueSummary: LinearApi["Service"]["getIssueSummary"] = (identifier, comments) =>
+    call("getIssueSummary", (linear) => linear.OniIssueSummary({ id: identifier, comments })).pipe(
+      Effect.map((data) => data.issue),
+      missingAsNull,
     );
 
   const getComments: LinearApi["Service"]["getComments"] = (input) =>
@@ -337,6 +361,7 @@ export const make = Effect.gen(function* () {
         data.issue === null
           ? Effect.fail(fail("getComments", "not-found", "This issue no longer exists."))
           : Effect.succeed({
+              url: data.issue.url,
               nodes: data.issue.comments.nodes,
               nextCursor: nextCursor(data.issue.comments.pageInfo),
             }),
@@ -428,6 +453,7 @@ export const make = Effect.gen(function* () {
     viewer,
     listIssues,
     getIssue,
+    getIssueSummary,
     getComments,
     getTeam,
     createIssue,

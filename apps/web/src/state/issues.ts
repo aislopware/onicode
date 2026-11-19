@@ -7,6 +7,7 @@ import {
   type MergedIssueList,
 } from "@onicode/client-runtime/state/issues";
 import { useAtomValue } from "@effect/atom-react";
+import { issueLinkWorkspace } from "@onicode/client-runtime/issue-links";
 import type { EnvironmentId, ThreadIssueLink } from "@onicode/contracts";
 
 import { connectionAtomRuntime } from "../connection/runtime";
@@ -29,12 +30,14 @@ export function useLinkedIssueSummary(
   mountScope?: "sidebar" | "thread-details" | "linked-items" | "sidebar-tooltip",
 ) {
   const configs = useServerConfigs();
+  const workspace = issueLinkWorkspace(link?.url);
   const input = link && {
     projectId: link.projectId,
     tracker: link.tracker,
     host: link.host,
     scope: link.scope,
     key: link.key,
+    ...(workspace === undefined ? {} : { workspace }),
   };
   return useEnvironmentQuery(
     input && configs.get(environmentId)?.environment.capabilities.issues === true

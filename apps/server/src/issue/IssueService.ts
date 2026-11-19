@@ -465,6 +465,15 @@ const make = Effect.gen(function* () {
     };
   });
 
+  /** Where the tracker finds `input`'s issue when `project` serves it. */
+  const issueTarget = (project: SupportedProject, input: IssueRef) => ({
+    cwd: project.project.workspaceRoot,
+    host: project.host,
+    scope: project.scope,
+    key: input.key,
+    workspace: input.workspace,
+  });
+
   const toDetail = (
     project: SupportedProject & { readonly writable: boolean },
     issue: TrackerIssueDetail,
@@ -482,29 +491,17 @@ const make = Effect.gen(function* () {
   const detail: IssueService["Service"]["detail"] = (input) =>
     requireProject(input).pipe(
       Effect.flatMap((project) =>
-        project.api
-          .getIssue({
-            cwd: project.project.workspaceRoot,
-            host: project.host,
-            scope: project.scope,
-            key: input.key,
-          })
-          .pipe(
-            Effect.mapError(toIssueError("detail")),
-            Effect.map((issue) => toDetail(project, issue)),
-          ),
+        project.api.getIssue(issueTarget(project, input)).pipe(
+          Effect.mapError(toIssueError("detail")),
+          Effect.map((issue) => toDetail(project, issue)),
+        ),
       ),
     );
 
   const summary: IssueService["Service"]["summary"] = (input) =>
     requireProject(input).pipe(
       Effect.flatMap((project) => {
-        const target = {
-          cwd: project.project.workspaceRoot,
-          host: project.host,
-          scope: project.scope,
-          key: input.key,
-        };
+        const target = issueTarget(project, input);
         return (project.api.getIssueSummary?.(target) ?? project.api.getIssue(target)).pipe(
           Effect.mapError(toIssueError("summary")),
           // Named fields, so a tracker's fuller read never rides along to the client.
@@ -534,10 +531,7 @@ const make = Effect.gen(function* () {
       Effect.flatMap((project) =>
         project.api
           .getComments({
-            cwd: project.project.workspaceRoot,
-            host: project.host,
-            scope: project.scope,
-            key: input.key,
+            ...issueTarget(project, input),
             cursor: input.cursor,
           })
           .pipe(Effect.mapError(toIssueError("comments"))),
@@ -606,10 +600,7 @@ const make = Effect.gen(function* () {
           ? Effect.fail(unsupported("comment", "comments"))
           : project.api
               .comment({
-                cwd: project.project.workspaceRoot,
-                host: project.host,
-                scope: project.scope,
-                key: input.key,
+                ...issueTarget(project, input),
                 body: input.body,
               })
               .pipe(Effect.mapError(toIssueError("comment")));
@@ -635,10 +626,7 @@ const make = Effect.gen(function* () {
           return Effect.fail(unsupported("update", "assignees"));
         return project.api
           .update({
-            cwd: project.project.workspaceRoot,
-            host: project.host,
-            scope: project.scope,
-            key: input.key,
+            ...issueTarget(project, input),
             title: input.title,
             body: input.body,
             labels: input.labels,
@@ -655,10 +643,7 @@ const make = Effect.gen(function* () {
           return Effect.fail(unsupported("setState", "changing an issue's state"));
         return project.api
           .setState({
-            cwd: project.project.workspaceRoot,
-            host: project.host,
-            scope: project.scope,
-            key: input.key,
+            ...issueTarget(project, input),
             state: input.state,
           })
           .pipe(Effect.mapError(toIssueError("setState")));
@@ -672,10 +657,7 @@ const make = Effect.gen(function* () {
           ? Effect.fail(unsupported("react", "reactions"))
           : project.api
               .setReaction({
-                cwd: project.project.workspaceRoot,
-                host: project.host,
-                scope: project.scope,
-                key: input.key,
+                ...issueTarget(project, input),
                 subjectId: input.subjectId,
                 content: input.content,
                 reacted: input.reacted,
@@ -781,7 +763,7 @@ const make = Effect.gen(function* () {
           detail: "This issue URL does not belong to the connected workspace.",
         });
       }
-      return { ...resolved, issue: toDetail(served, issue) };
+      return { ...resolved, workspace: canonical.workspace, issue: toDetail(served, issue) };
     },
   );
 

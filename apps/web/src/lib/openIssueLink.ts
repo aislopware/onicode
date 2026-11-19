@@ -1,15 +1,36 @@
 import type {
   EnvironmentId,
+  IssueRef,
   IssueTrackerConnectionList,
+  IssueTrackerKind,
+  ProjectId,
   ScopedThreadRef,
 } from "@onicode/contracts";
-import { resolveIssueLinkTarget } from "@onicode/client-runtime/issue-links";
+import { issueLinkWorkspace, resolveIssueLinkTarget } from "@onicode/client-runtime/issue-links";
 import { useNavigate } from "@tanstack/react-router";
 import type { MouseEvent } from "react";
 
 import { readIssueListPreferences } from "../components/issue/issueListPreferences";
-import { ISSUES_PANEL_REF, PULL_REQUESTS_PANEL_REF, useRightPanelStore } from "../rightPanelStore";
+import {
+  ISSUES_PANEL_REF,
+  PULL_REQUESTS_PANEL_REF,
+  type IssueSurface,
+  useRightPanelStore,
+} from "../rightPanelStore";
 import { useProjects, useServerConfigs } from "../state/entities";
+
+/** What an issue tab reads, keeping the workspace its link named. */
+export function issueSurfaceRef(surface: IssueSurface): IssueRef {
+  const workspace = issueLinkWorkspace(surface.url);
+  return {
+    projectId: surface.projectId as ProjectId,
+    tracker: surface.tracker as IssueTrackerKind,
+    ...(surface.host ? { host: surface.host } : {}),
+    scope: surface.scope,
+    key: surface.key,
+    ...(workspace === undefined ? {} : { workspace }),
+  };
+}
 
 /**
  * Opens an issue link beside the thread, and says whether it did. Anything else — a host no

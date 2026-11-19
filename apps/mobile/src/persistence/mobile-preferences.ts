@@ -108,6 +108,7 @@ const WorkspaceSelections = Schema.Struct({
       host: Schema.optional(Schema.String),
       scope: Schema.String,
       issueKey: Schema.String,
+      workspace: Schema.optional(Schema.String),
       key: Schema.optional(Schema.String),
     }),
   ),
