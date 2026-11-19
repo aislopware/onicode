@@ -36,7 +36,9 @@ export function useIssueSummary(
 ): IssueSummary | null {
   const configs = useServerConfigs();
   const capabilities =
-    environmentId === null ? undefined : configs.get(environmentId)?.environment.capabilities;
+    environmentId === null || input === null
+      ? undefined
+      : configs.get(environmentId)?.environment.capabilities;
   const target =
     environmentId === null || input === null || capabilities?.issues !== true
       ? null
