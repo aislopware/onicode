@@ -5102,6 +5102,47 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       }),
   );
 
+  it.effect("commit_push_pr opens a PR from a branch whose pushRemote is a fork", () =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("onicode-git-manager-");
+      yield* initRepo(repoDir);
+      const originDir = yield* createBareRemote();
+      const forkDir = yield* createBareRemote();
+      yield* runGit(repoDir, ["remote", "add", "origin", originDir]);
+      yield* runGit(repoDir, ["remote", "add", "fork", forkDir]);
+      yield* runGit(repoDir, ["push", "origin", "main"]);
+      yield* runGit(repoDir, ["checkout", "-b", "topic"]);
+      yield* runGit(repoDir, ["push", "-u", "origin", "topic"]);
+      yield* configureVisibleRemoteUrlWithLocalRewrite(
+        repoDir,
+        "origin",
+        "git@github.com:aislopware/sample-app.git",
+        originDir,
+      );
+      yield* configureVisibleRemoteUrlWithLocalRewrite(
+        repoDir,
+        "fork",
+        "git@github.com:octocat/sample-app.git",
+        forkDir,
+      );
+      // The branch keeps tracking origin/topic while its commits go to the fork.
+      yield* runGit(repoDir, ["config", "branch.topic.pushRemote", "fork"]);
+      NodeFS.writeFileSync(NodePath.join(repoDir, "fork-change.txt"), "change\n");
+
+      const { manager, providerCalls } = yield* makeManager();
+      const result = yield* runStackedAction(manager, {
+        cwd: repoDir,
+        action: "commit_push_pr",
+      });
+
+      expect(result.push).toMatchObject({ status: "pushed", upstreamBranch: "fork/topic" });
+      expect(result.pr.status).toBe("created");
+      expect(created(providerCalls)).toEqual([
+        { baseRefName: "main", headSelector: "octocat:topic" },
+      ]);
+    }),
+  );
+
   it.effect("rejects push/pr actions from detached HEAD", () =>
     Effect.gen(function* () {
       const repoDir = yield* makeTempDir("onicode-git-manager-");

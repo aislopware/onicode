@@ -2513,8 +2513,9 @@ export const make = Effect.gen(function* () {
       };
     }
 
-    // A PR opened from the remote branch would leave out commits not pushed yet.
-    if (details.aheadCount > 0) {
+    // A PR opened from the remote branch would leave out commits not pushed yet. A push
+    // remote just received HEAD; aheadCount measures the tracked upstream instead.
+    if (pushRemoteRef === undefined && details.aheadCount > 0) {
       return yield* new GitManagerError({
         operation: "runPrStep",
         cwd,
