@@ -10,7 +10,6 @@ import {
 import type { EnvironmentOption } from "../components/BranchToolbar.logic";
 import {
   deriveLogicalProjectKeyFromSettings,
-  isPickableProjectMember,
   selectProjectGroupingSettings,
 } from "@onicode/client-runtime/state/project-grouping";
 import { useProjects } from "../state/entities";
@@ -63,9 +62,6 @@ export function useLogicalProjectEnvironments(
     const seen = new Set<string>();
     for (const p of allProjects) {
       if (seen.has(p.environmentId)) continue;
-      // An archived copy is a destination only for the draft already on it.
-      const isActive = p.environmentId === activeProject.environmentId && p.id === activeProject.id;
-      if (!isActive && !isPickableProjectMember(p)) continue;
       if (deriveLogicalProjectKeyFromSettings(p, projectGroupingSettings) !== logicalKey) continue;
       seen.add(p.environmentId);
       pushEnvironment(p.environmentId, p.id);

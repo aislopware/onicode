@@ -850,7 +850,13 @@ export function NewTaskFlowProvider(
       );
     };
     for (const project of projects) {
-      if (!isPickableProjectMember(project) || !hostsSelectedRepository(project)) {
+      // The draft's own archived copy stays listed so its machine still shows as selected.
+      if (
+        (!isPickableProjectMember(project) &&
+          (project.environmentId !== selectedProject?.environmentId ||
+            project.id !== selectedProject.id)) ||
+        !hostsSelectedRepository(project)
+      ) {
         continue;
       }
       if (seen.has(project.environmentId)) {
