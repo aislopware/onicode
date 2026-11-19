@@ -1,6 +1,7 @@
 import { claimThreadOpen } from "@onicode/client-runtime/state/thread-search";
 import { EnvironmentId, type ScopedThreadRef, ThreadId } from "@onicode/contracts";
-import { AsyncResult, Atom } from "effect/reactivity";
+import * as Effect from "effect/Effect";
+import { Atom } from "effect/reactivity";
 import { expect, it, vi } from "vite-plus/test";
 
 import { fakeTimers, render } from "../../../test/render";
@@ -65,7 +66,7 @@ function visitedThreadIds() {
 
 it("records the visit of the next thread at once after switching threads", async () => {
   mocks.visitRun.mockReset();
-  mocks.visitRun.mockResolvedValue(AsyncResult.success(undefined));
+  mocks.visitRun.mockReturnValue(Effect.void);
   appAtomRegistry.set(presentAtom, true);
   setShell(threadA, "2026-01-02T00:00:00.000Z");
   setShell(threadB, "2026-01-03T00:00:00.000Z");
@@ -94,7 +95,7 @@ it("records the visit of the next thread at once after switching threads", async
 
 it("records no visit while nobody is at the window", async () => {
   mocks.visitRun.mockReset();
-  mocks.visitRun.mockResolvedValue(AsyncResult.success(undefined));
+  mocks.visitRun.mockReturnValue(Effect.void);
   appAtomRegistry.set(presentAtom, false);
   setShell(threadC, "2026-01-02T00:00:00.000Z");
 
