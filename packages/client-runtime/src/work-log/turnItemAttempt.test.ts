@@ -61,5 +61,8 @@ describe("makeTurnItemAttemptResolver", () => {
     expect(resolve({ ...command("node-other-run", 5), runId: RunId.make("run-2") })).toBe(
       undefined,
     );
+    // No attempt has started by the item's time (a pending retry has no start yet).
+    const pendingOnly = makeTurnItemAttemptResolver([attempt(2, retryRootNodeId, null)], []);
+    expect(pendingOnly(command("node-early-tool", 0))?.attemptOrdinal).toBe(2);
   });
 });
