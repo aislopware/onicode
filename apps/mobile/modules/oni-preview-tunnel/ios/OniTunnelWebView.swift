@@ -273,7 +273,7 @@ private final class OniEnvironmentProxy {
     var proxy = ProxyConfiguration(
       socksv5Proxy: .hostPort(host: "127.0.0.1", port: NWEndpoint.Port(rawValue: proxyPort)!)
     )
-    // Only the stand-in host belongs to the environment; everything else loads directly.
+    // Only the stand-in host and its subdomains belong to the environment; the rest loads directly.
     proxy.matchDomains = [OniLoopback.standInHost]
     proxy.allowFailover = false
     store.proxyConfigurations = [proxy]
@@ -350,26 +350,40 @@ private struct WeakView {
 /// Real iPhones never send loopback addresses to a webview's proxy (the simulator does), so the
 /// view loads them under a stand-in host the proxy does carry, and shows `localhost` instead.
 /// It is as long as `localhost`, so the proxy can swap the two in plain HTTP without
-/// changing a message's length.
+/// changing a message's length. A `.localhost` subdomain keeps its labels in front of it.
 enum OniLoopback {
   static let standInHost = "onil.test"
 
   static func isLoopbackHost(_ host: String) -> Bool {
-    let host = host.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+    let host = normalized(host)
     if host == "localhost" || host.hasSuffix(".localhost") { return true }
     if let address = IPv4Address(host) { return address.rawValue.first == 127 }
     if let address = IPv6Address(host) { return address.isLoopback }
     return false
   }
 
+  static func isStandIn(_ host: String) -> Bool {
+    let host = normalized(host)
+    return host == standInHost || host.hasSuffix("." + standInHost)
+  }
+
   static func standIn(_ url: URL) -> URL {
-    guard let host = url.host(percentEncoded: false), isLoopbackHost(host) else { return url }
-    return replacingHost(url, with: standInHost)
+    guard let typed = url.host(percentEncoded: false), isLoopbackHost(typed) else { return url }
+    let host = normalized(typed)
+    let subdomain = host.hasSuffix(".localhost") ? String(host.dropLast("localhost".count)) : ""
+    return replacingHost(url, with: subdomain + standInHost)
   }
 
   static func shown(_ url: URL) -> URL {
-    guard url.host(percentEncoded: false)?.lowercased() == standInHost else { return url }
-    return replacingHost(url, with: "localhost")
+    guard let host = url.host(percentEncoded: false), isStandIn(host) else { return url }
+    return replacingHost(url, with: String(normalized(host).dropLast(standInHost.count)) + "localhost")
+  }
+
+  /// Lowercased, without IPv6 brackets or a fully qualified name's trailing dot.
+  private static func normalized(_ host: String) -> String {
+    var host = host.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+    if host.hasSuffix(".") { host.removeLast() }
+    return host
   }
 
   private static func replacingHost(_ url: URL, with host: String) -> URL {

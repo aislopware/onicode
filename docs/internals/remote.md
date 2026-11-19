@@ -247,6 +247,15 @@ undo by accident:
 - **Mobile device preview** has its own SOCKS listener while it is open, without the desktop's
   authentication: iOS suspends other apps, but Android lets any app reach it, and apps cannot see
   another app's socket owner there.
+- **iOS rewrites text, not just headers.** iOS never sends loopback hosts to a webview's proxy, so
+  the device preview loads them under a stand-in host. Only a page's main frame can be redirected
+  there; its subresources reach the environment because the listener
+  ([`OniHttpRewriter`](../../apps/mobile/modules/oni-preview-tunnel/ios/OniHttpRewriter.swift))
+  swaps `localhost` and `127.0.0.1` for the stand-in in plain HTTP heads and in unencoded text
+  bodies, and asks servers for unencoded replies. Rewriting heads alone would send the page's
+  absolute URLs for other ports to the phone and break its `location.hostname === "localhost"`
+  checks. Other bodies, and everything after an upgrade, pass byte for byte. The cost is
+  uncompressed text over the tunnel.
 - **System browser links** have no tunnel. They keep the private-network rewrite in
   [`browserTargetResolver.ts`](../../apps/web/src/browser/browserTargetResolver.ts), and are not
   offered over SSH or a public relay, where `localhost` would be this machine.

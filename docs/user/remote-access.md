@@ -282,6 +282,10 @@ stays where it was, and agents keep using it. Each host keeps its own cookies
 and site data on the phone. On iPhone and iPad the page runs under a stand-in
 address while the address bar shows `localhost`, so browser features that need
 a secure page, such as the clipboard or service workers, aren't available there.
+The page sees that address wherever the pages, scripts, and other text the
+host sends over plain HTTP say `localhost` or `127.0.0.1`, which is how its
+requests to the host's other ports reach the host. A request to an address it builds any other way, such as
+`[::1]`, goes to the phone and fails.
 
 If the host runs an older Onicode, or your connection to it has no terminal
 access, `localhost` tabs you open in the desktop app stream from the host
