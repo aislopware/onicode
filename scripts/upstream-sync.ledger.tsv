@@ -2753,3 +2753,4 @@ eb62a37150	take	atomic saves keep modes and fsync; telemetry Identify test left 
 4c099280f6	take	dev runner never points a dev server at the live ~/.onicode/userdata; AGENTS.md keeps Onicode's dev lines
 4fccab84a0	take	fix(server): keep Codex apps and plugins off during text generation (#39086)
 1a51984153	take	fix(web): a tool call's diff names its files relative to the workspace (#32697)
+c3e82a93fe	skip	T3 Connect cloudflared minimum version (relayClient), removed in Onicode; Onicode does not run cloudflared
