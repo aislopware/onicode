@@ -1318,6 +1318,33 @@ describe("MessagesTimeline citations", () => {
     });
   });
 
+  it("opens the closed fold that holds the cited text instead of a copy outside it", async () => {
+    await using _screen = await renderTimeline(
+      [
+        message("A question", {}, "question"),
+        message(
+          "Intro: the cited answer.\n\n<details>\n<summary>More</summary>\n\nFolded: the cited answer!\n\n</details>",
+          { role: "assistant" },
+          "cited",
+        ),
+      ],
+      {
+        citationRequest: {
+          ...CITATION_REQUEST,
+          citation: { ...CITATION_REQUEST.citation, prefix: "Folded: ", suffix: "!" },
+        },
+        citationHistory: { _tag: "found" },
+      },
+    );
+    await vi.waitFor(() => {
+      const [range] = CSS.highlights.get("oni-assistant-citation") ?? [];
+      expect(range?.toString()).toBe("the cited answer");
+      expect(
+        range?.startContainer.parentElement?.closest("[data-markdown-details-open=true]"),
+      ).not.toBeNull();
+    });
+  });
+
   it("opens the superseded attempt that folds the cited response", async () => {
     const runId = RunId.make("run-steered");
     const attempt = (id: string, ordinal: number, status: "superseded" | "running") => ({

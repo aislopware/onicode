@@ -1,11 +1,13 @@
 import type { LegendListRef } from "@legendapp/list/react";
 import type { AssistantCitation, MessageId, ScopedThreadRef } from "@onicode/contracts";
 import { msg } from "gt-react";
-import { useEffect, useRef, type ReactNode, type RefObject } from "react";
+import { use, useEffect, useRef, type ReactNode, type RefObject } from "react";
 import {
   resolveAssistantCitationRange,
+  revealAssistantCitationFolds,
   type AssistantCitationSourceAnchor,
 } from "~/lib/assistantTextSelection";
+import { MarkdownFindContext } from "./markdownFindContext";
 import { m } from "~/i18n/messages";
 import { toastManager } from "../ui/toast";
 import { observeResize } from "~/lib/observeResize";
@@ -166,6 +168,8 @@ function observeAssistantCitationSource({
     const index = state.indexByKey(itemKey);
     if (index === undefined || !(state.sizeAtIndex(index) > 0)) return;
     const range = resolveAssistantCitationRange(root, request.citation);
+    // Opening the fold resizes the root, which schedules the next pass.
+    if (range && revealAssistantCitationFolds(root, range)) return;
     const rect = (range ?? root).getBoundingClientRect();
     if (rect.height <= 0 || scrollNode.clientHeight <= 0) {
       clear();
@@ -358,6 +362,8 @@ export function AssistantCitationSource({
   children: ReactNode;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
+  const cited = request?.citation.messageId === messageId;
+  const searching = use(MarkdownFindContext);
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- observes this message's DOM for a citation reveal request and scrolls the LegendList to it
   useEffect(() => {
     const root = rootRef.current;
@@ -375,7 +381,7 @@ export function AssistantCitationSource({
       data-assistant-citation-environment={threadRef?.environmentId}
       data-assistant-citation-thread={threadRef?.threadId}
     >
-      {children}
+      <MarkdownFindContext value={searching || cited}>{children}</MarkdownFindContext>
     </div>
   );
 }

@@ -1353,6 +1353,8 @@ const AssistantMarkdownContent = memo(function AssistantMarkdownContent(props: {
   } | null>(null);
   if (quoteSelection !== null && quoteSelection.markdown !== liveMarkdown) setQuoteSelection(null);
   const quoteChoices = quoteSelection?.selectors ?? [];
+  // The other choices are other passages, so a too-long pick sends the user back to reselect.
+  const closeChoices = () => setQuoteSelection(null);
   const tooLong = (quote: string) => {
     if (quote.length <= ASSISTANT_CITATION_MAX_TEXT_LENGTH) return false;
     Dialog.alert(
@@ -1360,6 +1362,8 @@ const AssistantMarkdownContent = memo(function AssistantMarkdownContent(props: {
       gt("Select up to {max} characters to cite.", {
         max: ASSISTANT_CITATION_MAX_TEXT_LENGTH.toLocaleString(),
       }),
+      [{ text: gt("OK"), onPress: closeChoices }],
+      { onDismiss: closeChoices },
     );
     return true;
   };
@@ -1403,6 +1407,7 @@ const AssistantMarkdownContent = memo(function AssistantMarkdownContent(props: {
                   path,
                   text,
                   mathRenderingEnabled,
+                  Platform.OS === "android" ? "android" : "ios",
                 );
                 if (selectors.length === 0) {
                   Dialog.alert(
@@ -1424,7 +1429,7 @@ const AssistantMarkdownContent = memo(function AssistantMarkdownContent(props: {
         models={models}
       />
       {quoteChoices.length > 0 && props.onCiteAssistantText ? (
-        <Sheet title={gt("Choose quote source")} onClose={() => setQuoteSelection(null)}>
+        <Sheet title={gt("Choose quote source")} onClose={closeChoices}>
           <ScrollView
             contentInsetAdjustmentBehavior="automatic"
             contentContainerStyle={{ padding: 20 }}
