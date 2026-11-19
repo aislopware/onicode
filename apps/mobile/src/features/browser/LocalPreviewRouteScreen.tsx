@@ -55,6 +55,7 @@ export function LocalPreviewScreen(props: {
   const [page, setPage] = useState<TunnelNavigation | null>(null);
   const [failed, setFailed] = useState(false);
   const [disconnected, setDisconnected] = useState(false);
+  const [refusal, setRefusal] = useState<"address" | "conflict" | null>(null);
   const [debug, setDebug] = useState<string | undefined>(undefined);
   const [unsupported, setUnsupported] = useState(false);
   // A chat link, a deep link or a remembered pane can land here when the page can't open.
@@ -80,6 +81,7 @@ export function LocalPreviewScreen(props: {
   const back = () => void webView.current?.goBack();
   const canGoBack = page?.canGoBack ?? false;
   const pageColor = failed || unsupported || blocker ? null : page?.pageColor || null;
+  const failure = refusal ?? (disconnected ? "environment" : "port");
 
   return (
     // Full screen spans the Duo's rail, so it insets its own sides; the pane is inset already.
@@ -144,8 +146,15 @@ export function LocalPreviewScreen(props: {
                   // A link to another port fails with that port's address, not the one typed earlier.
                   if (failure.url) setRequested(failure.url);
                   setDebug(failure.debug);
-                  // Android reports no cause, so a refused tunnel request stands in for it there.
-                  if (failure.cause) setDisconnected(failure.cause === "environment");
+                  setRefusal(
+                    failure.cause === "address" || failure.cause === "conflict"
+                      ? failure.cause
+                      : null,
+                  );
+                  // Android reports no reachability cause, so a refused tunnel request stands in for it.
+                  if (failure.cause === "environment" || failure.cause === "port") {
+                    setDisconnected(failure.cause === "environment");
+                  }
                   setFailed(true);
                 }}
               />
@@ -174,20 +183,33 @@ export function LocalPreviewScreen(props: {
                     <EmptyState
                       variant="plain"
                       title={
-                        disconnected
-                          ? gt("Not connected to {environment}", { environment: environmentLabel })
-                          : gt("Can't reach {host}", { host: hostOf(current) })
+                        failure === "conflict"
+                          ? gt("Another environment’s page is open")
+                          : failure === "environment"
+                            ? gt("Not connected to {environment}", {
+                                environment: environmentLabel,
+                              })
+                            : gt("Can't reach {host}", { host: hostOf(current) })
                       }
                       detail={
-                        disconnected
+                        failure === "conflict"
                           ? gt(
-                              "Pages on {environment}’s localhost load through its connection. Try again once it reconnects.",
-                              { environment: environmentLabel },
+                              "This device shows one environment’s localhost pages at a time. Close the other page, then try again.",
                             )
-                          : gt(
-                              "Nothing is listening on port {port} on {environment}. Start the server there, then try again.",
-                              { port: portOf(current), environment: environmentLabel },
-                            )
+                          : failure === "address"
+                            ? gt(
+                                "This device reaches {environment} only at localhost and 127.0.0.1. Open this address in the streamed browser instead.",
+                                { environment: environmentLabel },
+                              )
+                            : failure === "environment"
+                              ? gt(
+                                  "Pages on {environment}’s localhost load through its connection. Try again once it reconnects.",
+                                  { environment: environmentLabel },
+                                )
+                              : gt(
+                                  "Nothing is listening on port {port} on {environment}. Start the server there, then try again.",
+                                  { port: portOf(current), environment: environmentLabel },
+                                )
                       }
                       actionLabel={gt("Try again")}
                       onAction={retry}

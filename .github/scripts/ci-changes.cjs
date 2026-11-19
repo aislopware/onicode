@@ -47,7 +47,7 @@ const TEST_ONLY_DEPS = {
 const BUILD_ONLY_DEPS = { onicode: ["@onicode/web"] };
 
 const MOBILE_NATIVE =
-  /^apps\/mobile\/.*\.(swift|kt|kts)$|^apps\/mobile\/(\.swiftlint\.yml|detekt\.yml|\.editorconfig|Brewfile)$|^scripts\/mobile-native-static-check\.ts$|^package\.json$|^\.github\/workflows\/ci\.yml$|^\.github\/scripts\/ci-changes\.cjs$|^\.github\/actions\/ci-changes\//;
+  /^apps\/mobile\/.*\.(swift|kt|kts)$|^apps\/mobile\/modules\/[^/]+\/tests\/(run-ios\.sh|ios\/)|^apps\/mobile\/(\.swiftlint\.yml|detekt\.yml|\.editorconfig|Brewfile)$|^scripts\/mobile-native-static-check\.ts$|^package\.json$|^\.github\/workflows\/ci\.yml$|^\.github\/scripts\/ci-changes\.cjs$|^\.github\/actions\/ci-changes\//;
 
 const OWN_TEST_JOB = new Set(["onicode", "@onicode/web", "@onicode/monorepo"]);
 

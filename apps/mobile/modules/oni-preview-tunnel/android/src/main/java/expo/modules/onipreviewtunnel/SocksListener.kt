@@ -43,7 +43,7 @@ private fun loopbackIp(name: String): String? {
 }
 
 /** A loopback address to dial exactly, "" for a `localhost` name, or null when not loopback. */
-private fun String.loopbackHost() = loopbackIp(this) ?: "".takeIf { isLoopbackName(this) }
+internal fun String.loopbackHost() = loopbackIp(this) ?: "".takeIf { isLoopbackName(this) }
 
 private fun InetAddress.loopbackHost(): String? = when {
   !isLoopbackAddress -> null

@@ -1,11 +1,12 @@
 import { AuthTerminalOperateScope, type EnvironmentId } from "@onicode/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigation } from "@react-navigation/native";
+import { Platform } from "react-native";
 
 import { environmentServerConfigsAtom } from "../../state/server";
 import { useEnvironmentScope, useEnvironmentScopeDenied } from "../../state/session";
 import { useOpenThreadInspector } from "../threads/thread-inspector-navigation";
-import { loopbackUrlForDevice } from "./browserTabs";
+import { loopbackUrlForDevice, tunnelReaches } from "./browserTabs";
 
 /** Opens an environment's localhost page on this device: in the inspector pane where there is one. */
 export function useOpenLocalPreview() {
@@ -43,5 +44,8 @@ export function useLocalPreviewUrl(environmentId: EnvironmentId) {
     (configs) => configs.get(environmentId)?.environment.capabilities.previewTunnel === true,
   );
   const canTunnel = useEnvironmentScope(environmentId, AuthTerminalOperateScope) && tunnel;
-  return (href: string) => (canTunnel ? loopbackUrlForDevice(href) : null);
+  return (href: string) => {
+    const url = canTunnel ? loopbackUrlForDevice(href) : null;
+    return url !== null && tunnelReaches(url, Platform.OS) ? url : null;
+  };
 }

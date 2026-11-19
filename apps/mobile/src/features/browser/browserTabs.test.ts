@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { loopbackUrlForDevice } from "./browserTabs";
+import { loopbackUrlForDevice, tunnelReaches } from "./browserTabs";
 
 describe("loopbackUrlForDevice", () => {
   it("opens only the environment's loopback pages on this device", () => {
@@ -23,5 +23,25 @@ describe("loopbackUrlForDevice", () => {
     expect(loopbackUrlForDevice("http://192.168.1.5:3000/")).toBeNull();
     expect(loopbackUrlForDevice("file:///tmp/a.html")).toBeNull();
     expect(loopbackUrlForDevice("")).toBeNull();
+  });
+});
+
+describe("tunnelReaches", () => {
+  it("reaches only the environment's localhost on iOS and any loopback address on Android", () => {
+    for (const url of [
+      "http://localhost:3000/",
+      "http://app.localhost:3000/",
+      "http://127.0.0.1:3000/",
+      "http://0.0.0.0:3000/",
+    ]) {
+      expect(tunnelReaches(url, "ios")).toBe(true);
+      expect(tunnelReaches(url, "android")).toBe(true);
+    }
+    // iOS dials the environment's localhost, which may be another server than this address.
+    expect(tunnelReaches("http://127.0.0.2:3000/", "ios")).toBe(false);
+    expect(tunnelReaches("http://127.0.0.2:3000/", "android")).toBe(true);
+    expect(tunnelReaches("http://[::1]:3000/", "ios")).toBe(false);
+    expect(tunnelReaches("http://[::1]:3000/", "android")).toBe(true);
+    expect(tunnelReaches("https://example.com/", "android")).toBe(false);
   });
 });

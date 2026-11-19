@@ -81,10 +81,12 @@ export function TunnelWebView({
     /** What the native proxy saw, shown with the error so a report carries it. iOS only. */
     readonly debug?: string;
     /**
-     * iOS only: whether the environment itself was out of reach (`environment`) or answered that
-     * nothing listens on the port (`port`).
+     * iOS: whether the environment itself was out of reach (`environment`) or answered that
+     * nothing listens on the port (`port`), or `address` for a loopback address other than the
+     * environment's localhost, which it doesn't carry. Android: `conflict` when another
+     * environment's page is open, which refuses every connection.
      */
-    readonly cause?: "environment" | "port";
+    readonly cause?: "environment" | "port" | "address" | "conflict";
   }) => void;
   /** Whether the last connection could get into the environment's tunnel at all. */
   readonly onAccess?: (available: boolean) => void;
@@ -122,7 +124,10 @@ export function TunnelWebView({
             description: nativeEvent.description,
             debug: nativeEvent.debug,
             cause:
-              nativeEvent.cause === "environment" || nativeEvent.cause === "port"
+              nativeEvent.cause === "environment" ||
+              nativeEvent.cause === "port" ||
+              nativeEvent.cause === "address" ||
+              nativeEvent.cause === "conflict"
                 ? nativeEvent.cause
                 : undefined,
           })

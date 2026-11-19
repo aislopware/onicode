@@ -41,3 +41,16 @@ export function loopbackUrlForDevice(value: string): string | null {
     return null;
   }
 }
+
+/**
+ * Whether this device's webview reaches the environment's server at `value` itself. iOS carries
+ * only the environment's `localhost`, which the host dials at 127.0.0.1 and then ::1, so another
+ * loopback address there, ::1 included, could reach a different server.
+ */
+export function tunnelReaches(value: string, platform: string): boolean {
+  const url = loopbackUrlForDevice(value);
+  if (url === null) return false;
+  const host = normalizeHostname(new URL(url).hostname);
+  const isAddress = /^[\d.]+$/.test(host) || host.includes(":");
+  return platform !== "ios" || !isAddress || host === "127.0.0.1";
+}

@@ -285,7 +285,13 @@ a secure page, such as the clipboard or service workers, aren't available there.
 The page sees that address wherever the pages, scripts, and other text the
 host sends over plain HTTP say `localhost` or `127.0.0.1`, which is how its
 requests to the host's other ports reach the host. A request to an address it builds any other way, such as
-`[::1]`, goes to the phone and fails.
+`[::1]`, goes to the phone and fails. A page at such an address, such as
+`[::1]` or `127.0.0.2`, doesn't open on iPhone and iPad; use the streamed tab
+for it.
+
+The phone shows one host's `localhost` pages at a time on Android. If another
+host's page is still open behind the one you're looking at, close it, then try
+again.
 
 If the host runs an older Onicode, or your connection to it has no terminal
 access, `localhost` tabs you open in the desktop app stream from the host

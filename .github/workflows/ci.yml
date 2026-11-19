@@ -16,7 +16,7 @@ concurrency:
 jobs:
   # Skips jobs a pull request cannot affect: a web change does not run the
   # server shards, a server change does not run the mobile tests, and the macOS
-  # lint (~6.7x a Linux minute) runs only for native mobile sources.
+  # lint and module tests (~6.7x a Linux minute) run only for native mobile sources.
   # .github/scripts/ci-changes.cjs maps changed files to workspace packages and
   # their dependents. Pushes to main still run every Linux job. Detection fails
   # open: if the diff cannot be resolved, everything runs.
@@ -538,7 +538,7 @@ jobs:
           done
 
   mobile_native_static_analysis:
-    name: Mobile Native Static Analysis
+    name: Mobile Native Checks
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.mobile_native != 'false' }}
     runs-on: macos-26
@@ -562,6 +562,10 @@ jobs:
 
       - name: Lint mobile native sources
         run: vp run lint:mobile
+
+      # Each compiles a module's real Swift with swiftc and runs it, no simulator.
+      - name: Test mobile native modules
+        run: for test in apps/mobile/modules/*/tests/run-ios.sh; do bash "$test"; done
 
   # Branch protection requires this job by its name, `Check`. It fails when any
   # other job fails, is cancelled, or is skipped without a reason, so splitting
