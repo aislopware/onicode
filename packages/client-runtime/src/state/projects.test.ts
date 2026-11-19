@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { findProjectByPath, isScratchProject } from "./projects.ts";
+import { findProjectByPath, isScratchProject, listedBrowseDirectoryPath } from "./projects.ts";
 
 describe("isScratchProject", () => {
   it.each([null, undefined])(
@@ -19,5 +19,11 @@ describe("findProjectByPath", () => {
 
     expect(findProjectByPath(projects, "/code/foo/")).toBe(projects[0]);
     expect(findProjectByPath(projects, "/code/foo ")).toBeUndefined();
+  });
+});
+
+describe("listedBrowseDirectoryPath", () => {
+  it("browses into a listed folder whose name ends in a space, not its neighbour", () => {
+    expect(listedBrowseDirectoryPath("/code/foo ")).toBe("/code/foo /");
   });
 });

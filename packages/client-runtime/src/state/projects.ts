@@ -176,11 +176,15 @@ export function getBrowseDirectoryPath(currentPath: string): string {
 }
 
 export function ensureBrowseDirectoryPath(currentPath: string): string {
-  const trimmed = currentPath.trim();
-  if (trimmed.length === 0 || hasTrailingPathSeparator(trimmed)) {
-    return trimmed;
+  return listedBrowseDirectoryPath(currentPath.trim());
+}
+
+/** A listed folder's exact path as a browse directory: unlike typed text, a name may end in a space. */
+export function listedBrowseDirectoryPath(fullPath: string): string {
+  if (fullPath.length === 0 || hasTrailingPathSeparator(fullPath)) {
+    return fullPath;
   }
-  return `${trimmed}${preferredPathSeparator(trimmed)}`;
+  return `${fullPath}${preferredPathSeparator(fullPath)}`;
 }
 
 export function getBrowseParentPath(currentPath: string): string | null {

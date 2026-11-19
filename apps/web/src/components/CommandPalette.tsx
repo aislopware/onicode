@@ -156,7 +156,7 @@ import {
 } from "../lib/chatThreadActions";
 import {
   appendBrowsePathSegment,
-  ensureBrowseDirectoryPath,
+  listedBrowseDirectoryPath,
   findProjectByPath,
   getBrowseDirectoryPath,
   hasTrailingPathSeparator,
@@ -2449,7 +2449,7 @@ function OpenCommandPaletteDialog(props: {
   };
 
   const jumpToFolder = async (fullPath: string): Promise<void> => {
-    const nextQuery = ensureBrowseDirectoryPath(fullPath);
+    const nextQuery = listedBrowseDirectoryPath(fullPath);
     await browseNavigation.run(
       () => prefetchBrowsePath(getBrowseDirectoryPath(nextQuery)),
       () => {
