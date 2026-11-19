@@ -1,12 +1,31 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  isLoopbackHost,
   normalizePreviewUrl,
   PreviewUrlNormalizationError,
   resolveAddressBarInput,
   previewPdfAssetUrl,
   resolveSearchUrlTemplate,
 } from "./preview.ts";
+
+describe("isLoopbackHost", () => {
+  it("names this machine's loopback, `*.localhost` included", () => {
+    for (const host of [
+      "localhost",
+      "localhost.",
+      "127.0.0.1",
+      "[::1]",
+      "app.localhost",
+      "A.LocalHost.",
+    ]) {
+      expect(isLoopbackHost(host)).toBe(true);
+    }
+    for (const host of ["notlocalhost", "localhost.example.com", "192.168.1.5"]) {
+      expect(isLoopbackHost(host)).toBe(false);
+    }
+  });
+});
 
 describe("previewPdfAssetUrl", () => {
   it.each([

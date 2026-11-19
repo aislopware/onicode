@@ -203,8 +203,16 @@ final class OniTunnelWebView: ExpoView, WKNavigationDelegate {
     decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void
   ) {
     let url = navigationAction.request.url
-    guard let url, navigationAction.targetFrame?.isMainFrame ?? true,
-      OniLoopback.standIn(url) != url
+    let isMainFrame = navigationAction.targetFrame?.isMainFrame ?? true
+    // Loading it would open a server on this device. A new window's link leaves this page be.
+    if let url, let host = url.host(percentEncoded: false), OniLoopback.isUncarried(host) {
+      decisionHandler(.cancel)
+      guard navigationAction.targetFrame?.isMainFrame == true else { return }
+      failedUrl = url
+      onLoadError(["code": -1, "description": "", "url": url.absoluteString, "cause": "address"])
+      return
+    }
+    guard let url, isMainFrame, OniLoopback.standIn(url) != url
     else { return decisionHandler(.allow) }
     decisionHandler(.cancel)
     // The same request at the stand-in host, so a form keeps its method, headers and body.
@@ -354,12 +362,19 @@ private struct WeakView {
 enum OniLoopback {
   static let standInHost = "onil.test"
 
+  /// The names of the environment's `localhost`, which it dials at 127.0.0.1 and then ::1; another
+  /// loopback address, ::1 included, could reach a different server there.
   static func isLoopbackHost(_ host: String) -> Bool {
     let host = normalized(host)
-    if host == "localhost" || host.hasSuffix(".localhost") { return true }
-    if let address = IPv4Address(host) { return address.rawValue.first == 127 }
-    if let address = IPv6Address(host) { return address.isLoopback }
-    return false
+    return host == "localhost" || host.hasSuffix(".localhost") || IPv4Address(host) == .loopback
+  }
+
+  /// A loopback address other than the environment's `localhost`, which the stand-in can't carry.
+  static func isUncarried(_ host: String) -> Bool {
+    let normalized = normalized(host)
+    let ipv6 = IPv6Address(normalized)
+    let ipv4 = IPv4Address(normalized) ?? ipv6?.asIPv4
+    return (ipv4?.rawValue.first == 127 || ipv6?.isLoopback == true) && !isLoopbackHost(host)
   }
 
   static func isStandIn(_ host: String) -> Bool {

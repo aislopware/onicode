@@ -109,8 +109,9 @@ private func parseConnect(_ data: [UInt8]) -> SocksRequest? {
   let host = Array(data[4..<(4 + hostLength)])
   let loopback: Bool
   switch data[3] {
-  case 1: loopback = host[0] == 127
-  case 4: loopback = IPv6Address(Data(host))?.isLoopback ?? false
+  case 1: loopback = host == [127, 0, 0, 1]
+  // The environment's `localhost` is reached by name; an exact IPv6 address isn't carried.
+  case 4: loopback = false
   default: loopback = isLoopbackName(String(decoding: host.dropFirst(), as: UTF8.self))
   }
   guard loopback else { return .refuse(replyNotAllowed) }
