@@ -2,7 +2,7 @@
 import * as NodeFS from "node:fs";
 import * as NodeURL from "node:url";
 
-/** Fallback for supported Node 22.16, 22.17 and 23.11, where import.meta.main is undefined. */
+/** Fallback for supported Node 22.16 and 22.17, where import.meta.main is undefined. */
 export const isEntrypoint = (input: {
   readonly moduleUrl: string;
   readonly entryPath: string | undefined;
