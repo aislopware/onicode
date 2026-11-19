@@ -31,6 +31,7 @@ const MAX_ENVELOPE_NODES = 128;
 const encoder = new TextEncoder();
 // Antigravity's terminal tool prefixes an `acp-mcp-call` result's stdout with timestamps and exit status.
 const TERMINAL_OUTPUT_MARKER = "\nCommand output:\n";
+const TERMINAL_HEADER_MAX_LENGTH = 1_024;
 
 interface ResultReadBudget {
   remainingBytes: number;
@@ -59,10 +60,11 @@ interface CompactToolOutput {
   sentMessage?: string;
 }
 
-// Output past the budget would be dropped anyway, so it is never scanned.
-function terminalResult(output: unknown, maxLength: number): string | undefined {
-  if (typeof output !== "string" || output.length > maxLength) return undefined;
-  const marker = output.indexOf(TERMINAL_OUTPUT_MARKER);
+// The marker follows a short timestamp and exit-status header; a longer remainder fails the
+// string budget by length before it is encoded.
+function terminalResult(output: unknown): string | undefined {
+  if (typeof output !== "string") return undefined;
+  const marker = output.slice(0, TERMINAL_HEADER_MAX_LENGTH).indexOf(TERMINAL_OUTPUT_MARKER);
   return marker === -1 ? undefined : output.slice(marker + TERMINAL_OUTPUT_MARKER.length);
 }
 
@@ -114,8 +116,7 @@ function readResult(value: unknown, budget: ResultReadBudget, depth = 0): Result
     value.is_error === true ||
     value._tag === "OrchestratorMcpFailure" ||
     value.error != null;
-  const content =
-    value.structuredContent ?? value.content ?? terminalResult(value.output, budget.remainingBytes);
+  const content = value.structuredContent ?? value.content ?? terminalResult(value.output);
   if (content !== undefined) {
     const nested = readResult(content, budget, depth + 1);
     return { ...nested, failed: failed || nested.failed };
