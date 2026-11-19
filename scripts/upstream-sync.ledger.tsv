@@ -2667,3 +2667,4 @@ bc6621d73a	take	CONFLICT resolved: kept Onicode's untrimmed-root check (and befo
 2c7bfcec84	skip	already in Onicode: the floating dictation pill already carries [-webkit-app-region:no-drag] (kept Onicode's: same fix, plus its shadow-popup tokens and a comment on why)
 470ca63499	take	taken as is
 2a411317d9	take	fix(web): PDF pages no longer turn black while the panel is resized
+0317d4f4e5	take	fix(mobile): Arabic paragraphs that open with an English word render right to left
