@@ -1,4 +1,3 @@
-import "./intl-polyfills";
 import { resolveLocaleSelection } from "@onicode/client-runtime/locales";
 import { useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/reactivity";
