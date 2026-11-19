@@ -35,7 +35,7 @@ export function findAssistantCitationSourceAnchor(
   const viewport = source?.closest<HTMLElement>("[data-assistant-citation-viewport]");
   if (!source || !viewport) return null;
   const range = resolveAssistantCitationRange(source, citation);
-  return range ? { source, range, viewport } : null;
+  return range && hiddenFoldsIn(source, range).length === 0 ? { source, range, viewport } : null;
 }
 
 const CONTROL_SELECTOR = "button, input, textarea, select, [role=button], [contenteditable]";
@@ -216,29 +216,48 @@ export function resolveAssistantCitationRange(
   selector: AssistantTextSelector,
 ): Range | null {
   if (excludedAncestor(root) !== null) return null;
-  // Desktop quotes skip folds that were closed; mobile quotes read every fold, open or not.
   const visible = readAssistantText(root);
-  const shown = findAssistantCitationText(visible.text, selector, { requireContext: true });
-  if (shown !== null) return citationRange(root, visible, shown);
-  const all = readAssistantText(root, true);
-  const match = findAssistantCitationText(all.text, selector);
-  return match === null ? null : citationRange(root, all, match);
+  const folded = root.querySelector(`${FOLD_PANEL_SELECTOR}[hidden]`)
+    ? readAssistantText(root, true)
+    : visible;
+  const match = findAssistantCitationInFolds(visible.text, folded.text, selector);
+  return match === null ? null : citationRange(root, match.folded ? folded : visible, match);
 }
 
-/** Opens the closed folds a resolved range sits in, and reports whether there were any. */
-export function revealAssistantCitationFolds(root: HTMLElement, range: Range): boolean {
-  const folds = new Set<Element>();
-  for (const node of [range.startContainer, range.endContainer]) {
-    const element = node.nodeType === 1 ? (node as Element) : node.parentElement;
-    for (
-      let fold = element?.closest(`${FOLD_PANEL_SELECTOR}[hidden]`);
-      fold && root.contains(fold);
-      fold = fold.parentElement?.closest(`${FOLD_PANEL_SELECTOR}[hidden]`)
-    )
-      folds.add(fold);
+/**
+ * Desktop quotes skip folds that were closed; mobile quotes read every fold, open or not.
+ * Context decides first, so a closed fold's copy beats an identical one outside it; a lone
+ * visible copy outranks a lone folded one when context no longer matches.
+ */
+export function findAssistantCitationInFolds(
+  visible: string,
+  folded: string,
+  selector: AssistantTextSelector,
+): { folded: boolean; start: number; end: number } | null {
+  const attempts = [
+    [visible, true],
+    [folded, true],
+    [visible, false],
+    [folded, false],
+  ] as const;
+  for (const [text, requireContext] of attempts) {
+    const match = findAssistantCitationText(text, selector, { requireContext });
+    if (match !== null) return { folded: text !== visible, ...match };
   }
+  return null;
+}
+
+function hiddenFoldsIn(root: HTMLElement, range: Range): Element[] {
+  return [...root.querySelectorAll(`${FOLD_PANEL_SELECTOR}[hidden]`)].filter((fold) =>
+    range.intersectsNode(fold),
+  );
+}
+
+/** Opens the closed folds a resolved range covers, and reports whether there were any. */
+export function revealAssistantCitationFolds(root: HTMLElement, range: Range): boolean {
+  const folds = hiddenFoldsIn(root, range);
   for (const fold of folds) fold.dispatchEvent(new Event("beforematch"));
-  return folds.size > 0;
+  return folds.length > 0;
 }
 
 function citationRange(
