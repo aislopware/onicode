@@ -480,13 +480,15 @@ export function ServerBrowserSurface(props: {
       if (noFrameTimer !== null) clearTimeout(noFrameTimer);
       noFrameTimer = null;
     };
-    const painter = createPreviewFramePainter(canvas, () => {
-      if (hasFrameRef.current) return;
-      hasFrameRef.current = true;
-      clearNoFrameTimer();
-      setFramesStalled(false);
-      firstFrame();
-    });
+    const createPainter = () =>
+      createPreviewFramePainter(canvas, () => {
+        if (hasFrameRef.current) return;
+        hasFrameRef.current = true;
+        clearNoFrameTimer();
+        setFramesStalled(false);
+        firstFrame();
+      });
+    let painter = createPainter();
     const client = createPreviewStreamClient(
       { access, threadId, tabId, maxWidth: cap.width, maxHeight: cap.height },
       {
@@ -537,12 +539,16 @@ export function ServerBrowserSurface(props: {
         },
         onConnectedChange: (connected) => {
           clearNoFrameTimer();
+          // The canvas keeps the last connection's pixels and its decodes may still land; only a
+          // frame from this connection shows the page.
+          painter.stop();
+          painter = createPainter();
+          hasFrameRef.current = false;
           if (connected) {
-            if (!hasFrameRef.current)
-              noFrameTimer = setTimeout(() => {
-                setFramesStalled(true);
-                noFrames();
-              }, NO_FRAME_TIMEOUT_MS);
+            noFrameTimer = setTimeout(() => {
+              setFramesStalled(true);
+              noFrames();
+            }, NO_FRAME_TIMEOUT_MS);
             return;
           }
           setFileChooser(null);

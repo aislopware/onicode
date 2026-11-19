@@ -22,8 +22,12 @@ vi.mock(import("@onicode/client-runtime/preview/server-browser-stream"), async (
   ...(await original()),
   createPreviewStreamClient: mocks.createClient as never,
   createPreviewFramePainter: (_canvas, onPainted) => {
-    mocks.painted = onPainted ?? null;
-    return { paint: () => undefined, stop: () => undefined };
+    // Like the real painter, a stopped one drops a decode still in flight.
+    let stopped = false;
+    mocks.painted = () => {
+      if (!stopped) onPainted?.();
+    };
+    return { paint: () => undefined, stop: () => (stopped = true) };
   },
 }));
 
@@ -255,5 +259,14 @@ describe("ServerBrowserSurface frames", () => {
 
     await act(() => mocks.painted?.());
     expect(container.querySelector('[role="alert"]')).toBeNull();
+
+    // A frame from an earlier connection does not count for the next one.
+    const lateDecode = mocks.painted;
+    await act(() => handlers.onConnectedChange(false));
+    await act(() => handlers.onConnectedChange(true));
+    await act(() => lateDecode?.());
+    await act(() => vi.advanceTimersByTime(10_000));
+    expect(onNoFrames).toHaveBeenCalledTimes(2);
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("not drawing it");
   });
 });
