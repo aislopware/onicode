@@ -10,15 +10,10 @@ interface PendingActivation {
   readonly request: DesktopAppActivationRequest;
   readonly resolve: (response: DesktopAppActivationResponse) => void;
   readonly timeout: ReturnType<typeof setTimeout>;
-  /** The page it was sent to, which keeps it across a handler remount. */
-  dispatchedTo: RendererPort | null;
+  dispatched: boolean;
 }
 
-interface RendererPort {
-  readonly send: (request: DesktopAppActivationRequest) => void;
-  /** The command got its answer without the page, so the page must not open the folder later. */
-  readonly abandon: (requestId: string) => void;
-}
+type RendererSender = (request: DesktopAppActivationRequest) => void;
 
 function failure(
   requestId: string,
@@ -38,7 +33,7 @@ export class DesktopAppActivationBroker {
   readonly #pending = new Map<string, PendingActivation>();
   readonly #requestTimeoutMs: number;
   readonly #activate: () => void;
-  #renderer: RendererPort | null = null;
+  #renderer: RendererSender | null = null;
   #closed = false;
 
   constructor(input: { readonly requestTimeoutMs: number; readonly activate: () => void }) {
@@ -68,7 +63,7 @@ export class DesktopAppActivationBroker {
           ),
         );
       }, this.#requestTimeoutMs);
-      this.#pending.set(request.requestId, { request, resolve, timeout, dispatchedTo: null });
+      this.#pending.set(request.requestId, { request, resolve, timeout, dispatched: false });
     });
 
     this.#activate();
@@ -76,8 +71,8 @@ export class DesktopAppActivationBroker {
     return response;
   }
 
-  registerRenderer(renderer: RendererPort): void {
-    this.#renderer = renderer;
+  registerRenderer(send: RendererSender): void {
+    this.#renderer = send;
     this.#flush();
   }
 
@@ -89,9 +84,7 @@ export class DesktopAppActivationBroker {
   clearRenderer(): void {
     this.#renderer = null;
     for (const pending of this.#pending.values()) {
-      if (pending.dispatchedTo !== null) {
-        // Its page is gone, so there is nothing to tell.
-        pending.dispatchedTo = null;
+      if (pending.dispatched) {
         this.#settle(
           failure(
             pending.request.requestId,
@@ -103,9 +96,18 @@ export class DesktopAppActivationBroker {
     }
   }
 
+  /**
+   * The page starts opening a sent request only once this returns true; from then on the page
+   * answers it, so the timeout no longer can. A request already answered returns false.
+   */
+  claim(requestId: string): boolean {
+    const pending = this.#pending.get(requestId);
+    if (!pending?.dispatched) return false;
+    clearTimeout(pending.timeout);
+    return true;
+  }
+
   complete(response: DesktopAppActivationResponse): void {
-    const pending = this.#pending.get(response.requestId);
-    if (pending) pending.dispatchedTo = null;
     this.#settle(response);
   }
 
@@ -128,14 +130,14 @@ export class DesktopAppActivationBroker {
   #flush(): void {
     const renderer = this.#renderer;
     if (renderer === null) return;
-    if ([...this.#pending.values()].some((pending) => pending.dispatchedTo !== null)) return;
+    if ([...this.#pending.values()].some((pending) => pending.dispatched)) return;
 
     for (const pending of this.#pending.values()) {
       try {
-        pending.dispatchedTo = renderer;
-        renderer.send(pending.request);
+        pending.dispatched = true;
+        renderer(pending.request);
       } catch {
-        pending.dispatchedTo = null;
+        pending.dispatched = false;
         this.#renderer = null;
       }
       return;
@@ -147,11 +149,6 @@ export class DesktopAppActivationBroker {
     if (!pending) return;
     clearTimeout(pending.timeout);
     this.#pending.delete(response.requestId);
-    try {
-      pending.dispatchedTo?.abandon(response.requestId);
-    } catch {
-      // The page is going away, and it takes its copy of the request with it.
-    }
     pending.resolve(response);
     this.#flush();
   }

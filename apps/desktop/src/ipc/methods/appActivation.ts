@@ -16,6 +16,16 @@ export const setReady = DesktopIpc.makeIpcMethod({
   }),
 });
 
+export const claim = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.DESKTOP_APP_ACTIVATION_CLAIM_CHANNEL,
+  payload: Schema.String,
+  result: Schema.Boolean,
+  handler: Effect.fn("desktop.ipc.appActivation.claim")(function* (requestId) {
+    const activation = yield* DesktopAppActivation.DesktopAppActivation;
+    return yield* activation.claim(requestId);
+  }),
+});
+
 export const complete = DesktopIpc.makeIpcMethod({
   channel: IpcChannels.DESKTOP_APP_ACTIVATION_COMPLETE_CHANNEL,
   payload: DesktopAppActivationResponse,

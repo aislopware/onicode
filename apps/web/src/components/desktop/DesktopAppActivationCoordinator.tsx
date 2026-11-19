@@ -10,14 +10,13 @@ export function DesktopAppActivationCoordinator() {
   // With no environment to wait for, requests get their failure now instead of timing out.
   const ready = activation !== undefined && openLocalWorkspace.state !== "pending";
 
-  const processRequest = useEffectEvent(
-    async (request: DesktopAppActivationRequest, signal: AbortSignal) =>
-      openLocalWorkspace.open(request, signal),
+  const processRequest = useEffectEvent(async (request: DesktopAppActivationRequest) =>
+    openLocalWorkspace.open(request),
   );
 
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- hands desktop activation requests to this mounted handler
   useEffect(() => {
-    setDesktopAppActivationHandler((request, signal) => processRequest(request, signal));
+    setDesktopAppActivationHandler((request) => processRequest(request));
     return () => setDesktopAppActivationHandler(null);
   }, []);
 

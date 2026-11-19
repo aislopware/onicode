@@ -181,9 +181,8 @@ describe("desktop app activation", () => {
     },
   );
 
-  function receiverHarness() {
+  function receiverHarness(claim: (requestId: string) => boolean = () => true) {
     let deliver: (input: DesktopAppActivationRequest) => void = () => undefined;
-    let abandon: (requestId: string) => void = () => undefined;
     const completions: DesktopAppActivationResponse[] = [];
     let onComplete: () => void = () => undefined;
     const receiver = createDesktopAppActivationReceiver({
@@ -191,10 +190,7 @@ describe("desktop app activation", () => {
         deliver = listener;
         return () => undefined;
       },
-      onAbandoned: (listener) => {
-        abandon = listener;
-        return () => undefined;
-      },
+      claim: async (requestId) => claim(requestId),
       complete: async (response) => {
         completions.push(response);
         onComplete();
@@ -207,7 +203,6 @@ describe("desktop app activation", () => {
     return {
       receiver,
       deliver: (input: DesktopAppActivationRequest = request) => deliver(input),
-      abandon,
       completions,
       nextCompletion,
     };
@@ -220,7 +215,7 @@ describe("desktop app activation", () => {
     harness.receiver.setHandler(null);
     const completed = harness.nextCompletion();
     harness.deliver();
-    // Lets the queue reach the request while no handler is set.
+    // Lets the request reach the wait for a handler while none is set.
     await Promise.resolve();
     harness.receiver.setHandler(async (input) => success(input.requestId));
     await completed;
@@ -229,35 +224,37 @@ describe("desktop app activation", () => {
     expect(harness.completions).toEqual([success("request-1")]);
   });
 
-  it("drops a request the desktop app gave up on before a handler came back", async () => {
-    const harness = receiverHarness();
+  it.each([
+    { name: "before a handler came back", handlerAtDelivery: false },
+    { name: "while the page was busy", handlerAtDelivery: true },
+  ])("skips a request the desktop app answered $name", async ({ handlerAtDelivery }) => {
+    const harness = receiverHarness((requestId) => requestId !== request.requestId);
     const handled = vi.fn(async (input: DesktopAppActivationRequest) => success(input.requestId));
-    harness.deliver();
-    harness.abandon(request.requestId);
+    if (handlerAtDelivery) harness.receiver.setHandler(handled);
     const completed = harness.nextCompletion();
+    harness.deliver();
     harness.receiver.setHandler(handled);
-    // A dropped request never reaches the handler, so a second request marks the queue's progress.
+    // A skipped request never completes, so a second request marks progress.
     harness.deliver({ ...request, requestId: "request-2" });
     await completed;
 
     expect(handled.mock.calls.map(([input]) => input.requestId)).toEqual(["request-2"]);
+    expect(harness.completions).toEqual([success("request-2")]);
   });
 
-  it("does not open a thread once the desktop app gives up while the project is added", async () => {
+  it("handles the next request while an abandoned one is still stuck", async () => {
     const harness = receiverHarness();
-    const deps = dependencies({
-      findProject: () => null,
-      waitForProject: vi.fn(async () => harness.abandon(request.requestId)),
-    });
-    const completed = harness.nextCompletion();
-    harness.receiver.setHandler((input, signal) =>
-      handleDesktopAppActivationRequest(input, deps, signal),
+    harness.receiver.setHandler((input) =>
+      input.requestId === request.requestId
+        ? new Promise<DesktopAppActivationResponse>(() => undefined)
+        : Promise.resolve(success(input.requestId)),
     );
+    const completed = harness.nextCompletion();
     harness.deliver();
+    harness.deliver({ ...request, requestId: "request-2" });
     await completed;
 
-    expect(deps.createProject).toHaveBeenCalledOnce();
-    expect(deps.openThread).not.toHaveBeenCalled();
+    expect(harness.completions).toEqual([success("request-2")]);
   });
 
   it.each([

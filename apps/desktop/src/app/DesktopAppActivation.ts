@@ -25,10 +25,7 @@ import * as Scope from "effect/Scope";
 import type * as Electron from "electron";
 
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
-import {
-  DESKTOP_APP_ACTIVATION_ABANDONED_CHANNEL,
-  DESKTOP_APP_ACTIVATION_REQUEST_CHANNEL,
-} from "../ipc/channels.ts";
+import { DESKTOP_APP_ACTIVATION_REQUEST_CHANNEL } from "../ipc/channels.ts";
 import * as DesktopWindow from "../window/DesktopWindow.ts";
 import { DesktopAppActivationBroker } from "./DesktopAppActivationBroker.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
@@ -291,6 +288,7 @@ export class DesktopAppActivation extends Context.Service<
   {
     readonly start: Effect.Effect<void, DesktopAppActivationStartError, Scope.Scope>;
     readonly setRendererReady: (ready: boolean) => Effect.Effect<void>;
+    readonly claim: (requestId: string) => Effect.Effect<boolean>;
     readonly complete: (response: DesktopAppActivationResponse) => Effect.Effect<void>;
   }
 >()("@onicode/desktop/app/DesktopAppActivation") {}
@@ -384,16 +382,14 @@ export const make = Effect.gen(function* () {
         };
       }
 
-      broker.registerRenderer({
-        send: (request) => webContents.send(DESKTOP_APP_ACTIVATION_REQUEST_CHANNEL, request),
-        abandon: (requestId) => {
-          if (!webContents.isDestroyed()) {
-            webContents.send(DESKTOP_APP_ACTIVATION_ABANDONED_CHANNEL, requestId);
-          }
-        },
+      broker.registerRenderer((request) => {
+        webContents.send(DESKTOP_APP_ACTIVATION_REQUEST_CHANNEL, request);
       });
     }),
-    // The IPC handler owns the activation-completion span.
+    // The IPC handlers own the claim and completion spans.
+    claim: Effect.fnUntraced(function* (requestId) {
+      return yield* Effect.sync(() => broker.claim(requestId));
+    }),
     complete: Effect.fnUntraced(function* (response) {
       return yield* Effect.sync(() => broker.complete(response));
     }),

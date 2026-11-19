@@ -1190,10 +1190,10 @@ export interface DesktopBridge {
   };
   appActivation: {
     setReady: (ready: boolean) => Promise<void>;
+    /** False when the desktop app already answered the command; the page must not open it. */
+    claim: (requestId: string) => Promise<boolean>;
     complete: (response: DesktopAppActivationResponse) => Promise<void>;
     onRequest: (listener: (request: DesktopAppActivationRequest) => void) => () => void;
-    /** The desktop app answered the command without the page; the page must not open it now. */
-    onAbandoned: (listener: (requestId: string) => void) => () => void;
   };
   preview: DesktopPreviewBridge;
 }
