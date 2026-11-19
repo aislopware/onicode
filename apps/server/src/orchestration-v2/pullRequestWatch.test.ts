@@ -254,6 +254,17 @@ describe("evaluatePullRequestWatch", () => {
       ).changes,
       [],
     );
+    // A required check can finish neutral while an advisory one succeeds.
+    assert.deepEqual(
+      evaluatePullRequestWatch(
+        watch({ awaitingBaseline: "all", checksPending: true }),
+        detail({
+          checks: [{ ...check("lint", "neutral"), required: true }, check("docs", "success")],
+        }),
+        noRemarks,
+      ).changes,
+      [{ kind: "checks-passed", count: 1, required: true }],
+    );
 
     // A read the host could not finish keeps the baseline and must keep the seed with it.
     const placeholder = { ...check("Workflow approval status", "pending"), placeholder: true };

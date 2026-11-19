@@ -172,29 +172,7 @@ describe("PullRequestWatchService", () => {
         [{ readChecksState: "pending" }, true],
         [{ readChecksState: "failing" }, false],
         [{}, undefined],
-        [{ readChecksState: null }, true],
-        // After an earlier watch, no state may mean its checks all skipped.
-        [
-          {
-            readChecksState: null,
-            thread: makeThread([
-              makeLink(9, {
-                endedWatch: {
-                  startedAt: "2026-08-20T00:00:00.000Z",
-                  headSha: "abc123",
-                  failedChecks: [],
-                  passed: true,
-                  passedChecks: ["lint"],
-                  remarksThrough: "2026-08-20T00:00:00.000Z",
-                  remarkIds: [],
-                  conflicting: false,
-                  wakes: 1,
-                },
-              }),
-            ]),
-          },
-          undefined,
-        ],
+        [{ readChecksState: null }, undefined],
         [
           {
             readFailure: new PullRequestOperationError({

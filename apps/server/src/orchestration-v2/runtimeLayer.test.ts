@@ -4248,7 +4248,14 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
       });
       assert.deepEqual(yield* watchOf, started);
 
-      const recorded = { ...started, headSha: "abc123", failedChecks: ["lint"], wakes: 1 };
+      const recorded = {
+        ...started,
+        headSha: "abc123",
+        failedChecks: ["e2e"],
+        passed: true,
+        passedChecks: ["lint"],
+        wakes: 1,
+      };
       yield* orchestrator.dispatch({
         type: "thread.pull-request-watch.sync",
         commandId: CommandId.make("pr-watch-record"),
@@ -4315,7 +4322,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
       });
       assert.isTrue((yield* watchOf)?.checksPending);
       // Only the link says CI runs, and it may predate what the last watch told.
-      assert.deepEqual((yield* watchOf)?.failedChecks, ["lint"]);
+      assert.deepEqual((yield* watchOf)?.failedChecks, ["e2e"]);
 
       // A fresh read of a rerun on the same head: its result is news.
       yield* orchestrator.dispatch({
@@ -4336,6 +4343,9 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
       const rerun = yield* watchOf;
       assert.equal(rerun?.headSha, "abc123");
       assert.deepEqual(rerun?.failedChecks, []);
+      // The told required pass stays told while advisory checks rerun.
+      assert.isTrue(rerun?.passed);
+      assert.deepEqual(rerun?.passedChecks, ["lint"]);
       assert.isTrue(rerun?.checksPending);
     }),
   );

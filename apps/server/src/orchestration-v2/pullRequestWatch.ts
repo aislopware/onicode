@@ -153,7 +153,7 @@ export function evaluatePullRequestWatch(
         !checksBaseline ||
         (watch.checksPending === true &&
           settled &&
-          gate.some((check) => check.status === "success"))
+          checks.some((check) => check.status === "success"))
       ) {
         changes.push({ kind: "checks-passed", count: gate.length, required: required.length > 0 });
       }

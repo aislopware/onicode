@@ -1080,6 +1080,10 @@ describe("decodeListStatesJson", () => {
       pipeline: { status: "RUNNING", failed: { nodes: [{ allowFailure: true }] } },
       checksState: "pending",
     },
+    {
+      pipeline: { status: "RUNNING", failed: { count: 25, nodes: [{ allowFailure: true }] } },
+      checksState: "pending",
+    },
     { pipeline: { status: "WAITING_FOR_RESOURCE" }, checksState: "pending" },
     { pipeline: { status: "MANUAL" }, checksState: null },
     { pipeline: { status: "SKIPPED" }, checksState: null },
