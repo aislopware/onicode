@@ -2760,3 +2760,4 @@ c3e82a93fe	skip	T3 Connect cloudflared minimum version (relayClient), removed in
 a8b57b07ea	take	fix(server): let parents revert after their subagents complete (#31874)
 d6b5aac30a	take	link-naming refusal taken; kept Onicode's ProjectService.create default-model handling: it saves defaultModelSelection via writeProjectSettings (279b2ed080), so upstream's refusal would turn a working input into an error
 554be2c617	skip	kept Onicode's CLAUDE_REMOVAL_SAFETY_REASONS: it already matches the reworded check ('rule out a dangerous removal') behind a reason-type guard, so a hook's own wording cannot trigger it; the same test row is already in ClaudeAdapterV2.test.ts
+ebb3dd0b76	take	fix(source-control-github): sign out an app sign-in GitHub refuses to refresh for the client's credentials (#39048)
