@@ -1470,7 +1470,7 @@ const make = Effect.gen(function* () {
       const throughRunOrdinal = target?.ordinal ?? 0;
       const endedActiveTarget = target !== undefined && isActiveRun(target);
       const laterRunActive = Effect.fn("ThreadManagementService.forceStopLaterRunActive")(
-        function* (providerSessionId: ProviderSessionId) {
+        function* (providerSessionId: ProviderSessionId, includeQueued = true) {
           const { runs, providerThreads } = yield* orchestrator.getThreadRecords(input.threadId, [
             "runs",
             "providerThreads",
@@ -1491,18 +1491,27 @@ const make = Effect.gen(function* () {
           ) {
             return true;
           }
-          const queued = endedActiveTarget
-            ? runs.filter((run) => run.status === "queued" && run.queueHeld !== true)
-            : [];
+          const queued =
+            endedActiveTarget && includeQueued
+              ? runs.filter((run) => run.status === "queued" && run.queueHeld !== true)
+              : [];
           if (queued.length === 0) return false;
-          const context = yield* orchestrator.getThreadRecords(
-            input.threadId,
-            ["messages", "turnItems"],
-            {
-              messageIds: queued.map((run) => run.userMessageId),
-              turnItemTypes: ["user_message"],
-            },
-          );
+          // Turn items only tell which fresh runs a schedule started.
+          const freshRunIds = runs.flatMap((run) => (run.freshContext === true ? [run.id] : []));
+          const messageIds = queued.map((run) => run.userMessageId);
+          const context =
+            freshRunIds.length === 0
+              ? {
+                  ...(yield* orchestrator.getThreadRecords(input.threadId, ["messages"], {
+                    messageIds,
+                  })),
+                  turnItems: [],
+                }
+              : yield* orchestrator.getThreadRecords(input.threadId, ["messages", "turnItems"], {
+                  messageIds,
+                  turnItemTypes: ["user_message"],
+                  turnItemRunIds: freshRunIds,
+                });
           return queued.some((run) =>
             Orchestrator.queuedRunProviderSessionIds(
               { ...context, runs, providerThreads },
@@ -1540,9 +1549,9 @@ const make = Effect.gen(function* () {
         for (const threadId of others) sharedWith.add(threadId);
         if (others.length > 0) {
           shared = true;
-          // Detaching unloads every native thread this thread has there, a follow-up's too.
-          // Kept, the release below still drops the stopped turn so the process can idle.
-          if (!(yield* laterRunActive(providerSessionId))) {
+          // Detaching interrupts every native thread this thread has there, a running follow-up's
+          // too; a queued one loads its thread again when it starts.
+          if (!(yield* laterRunActive(providerSessionId, false))) {
             yield* detach(providerSessionId);
             continue;
           }
@@ -1554,8 +1563,9 @@ const make = Effect.gen(function* () {
             providerSessionId,
             ownProviderThreadIds,
             throughRunOrdinal,
-            // A promoted follow-up may not have marked its turn busy yet.
-            keepIf: laterRunActive(providerSessionId),
+            // A promoted follow-up may not have marked its turn busy yet. A sibling's background
+            // work marks nothing busy, so with siblings working the process always stays.
+            keepIf: others.length > 0 ? Effect.succeed(true) : laterRunActive(providerSessionId),
             reason: "manual_shutdown",
             detail: FORCE_STOP_REASON,
           })

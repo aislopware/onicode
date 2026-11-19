@@ -1991,53 +1991,86 @@ it.effect("ProviderSessionManagerV2 still idles out a session releaseUnlessBusy 
   }),
 );
 
-it.effect("ProviderSessionManagerV2 closes a session whose release was interrupted", () =>
-  Effect.gen(function* () {
-    const state = yield* Ref.make(emptyState);
-    const scopeCloseReached = yield* Deferred.make<void>();
-    yield* Effect.gen(function* () {
-      const eventSink = yield* EventSink.EventSinkV2;
-      const idAllocator = yield* IdAllocator.IdAllocatorV2;
-      const manager = yield* ProviderSessionManager.ProviderSessionManagerV2;
-      const now = yield* DateTime.now;
-      const threadId = ThreadId.make("thread-provider-session-manager-interrupted-release");
-      const providerSessionId = idAllocator.derive.providerSession({
-        providerInstanceId: modelSelection.instanceId,
-      });
-      yield* eventSink.write({
-        events: [yield* makeThreadCreatedEvent({ idAllocator, threadId, now })],
-      });
-      yield* manager.open({ threadId, providerSessionId, modelSelection, runtimePolicy });
-      const deciding = yield* Deferred.make<void>();
-      const decided = yield* Deferred.make<void>();
-      const release = yield* manager
-        .releaseUnlessBusy({
-          providerSessionId,
-          ownProviderThreadIds: [],
-          throughRunOrdinal: 0,
-          keepIf: Deferred.succeed(deciding, undefined).pipe(
-            Effect.andThen(Deferred.await(decided)),
-            Effect.as(false),
-          ),
-          reason: "manual_shutdown",
-        })
-        .pipe(Effect.forkChild);
-      yield* Deferred.await(deciding);
-      const interrupting = yield* Fiber.interrupt(release).pipe(
-        Effect.forkChild({ startImmediately: true }),
-      );
-      yield* Deferred.succeed(decided, undefined);
-      yield* Fiber.join(interrupting);
+it.effect.each(["closes", "waits for shutdown", "keeps a reopened session"] as const)(
+  "ProviderSessionManagerV2 %s when a release was interrupted",
+  (then) =>
+    Effect.gen(function* () {
+      const state = yield* Ref.make(emptyState);
+      const scopeCloseReached = yield* Deferred.make<void>();
+      const eventStreamsEnded = yield* Queue.unbounded<ProviderSessionId>();
+      yield* Effect.gen(function* () {
+        const eventSink = yield* EventSink.EventSinkV2;
+        const idAllocator = yield* IdAllocator.IdAllocatorV2;
+        const manager = yield* ProviderSessionManager.ProviderSessionManagerV2;
+        const now = yield* DateTime.now;
+        const threadId = ThreadId.make("thread-provider-session-manager-interrupted-release");
+        const providerSessionId = idAllocator.derive.providerSession({
+          providerInstanceId: modelSelection.instanceId,
+        });
+        yield* eventSink.write({
+          events: [yield* makeThreadCreatedEvent({ idAllocator, threadId, now })],
+        });
+        yield* manager.open({ threadId, providerSessionId, modelSelection, runtimePolicy });
+        const deciding = yield* Deferred.make<void>();
+        const decided = yield* Deferred.make<void>();
+        const release = yield* manager
+          .releaseUnlessBusy({
+            providerSessionId,
+            ownProviderThreadIds: [],
+            throughRunOrdinal: 0,
+            keepIf: Deferred.succeed(deciding, undefined).pipe(
+              Effect.andThen(Deferred.await(decided)),
+              Effect.as(false),
+            ),
+            reason: "manual_shutdown",
+          })
+          .pipe(Effect.forkChild);
+        yield* Deferred.await(deciding);
+        const interrupting = yield* Fiber.interrupt(release).pipe(
+          Effect.forkChild({ startImmediately: true }),
+        );
+        yield* Deferred.succeed(decided, undefined);
+        yield* Fiber.join(interrupting);
 
-      yield* Deferred.await(scopeCloseReached);
-      yield* TestClock.adjust("30 seconds");
-      assert.isFalse(yield* manager.isLive(providerSessionId));
-    }).pipe(
-      Effect.provide(
-        layerTest({ state, idleTimeoutMs: 60_000, hangSessionScopeClose: true, scopeCloseReached }),
-      ),
-    );
-  }),
+        yield* Deferred.await(scopeCloseReached);
+        // Its caller stopped waiting; the release still has records to write.
+        const shuttingDown =
+          then === "waits for shutdown"
+            ? yield* manager.shutdown.pipe(Effect.forkChild({ startImmediately: true }))
+            : undefined;
+        assert.isUndefined(shuttingDown?.pollUnsafe());
+        if (then === "keeps a reopened session") {
+          yield* manager.open({ threadId, providerSessionId, modelSelection, runtimePolicy });
+        }
+        yield* TestClock.adjust("30 seconds");
+        // The pump stops only once the session counts as closed.
+        assert.equal(yield* Queue.take(eventStreamsEnded), providerSessionId);
+        if (shuttingDown !== undefined) yield* Fiber.join(shuttingDown);
+        if (then === "keeps a reopened session") {
+          const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
+          assert.equal(
+            (yield* projectionStore.getThreadProjection(threadId)).providerSessions.at(-1)?.status,
+            "ready",
+          );
+          // The replacement's scope close hangs too.
+          const closing = yield* manager.shutdown.pipe(
+            Effect.forkChild({ startImmediately: true }),
+          );
+          yield* TestClock.adjust("30 seconds");
+          yield* Fiber.join(closing);
+        }
+      }).pipe(
+        Effect.provide(
+          layerTest({
+            state,
+            idleTimeoutMs: 60_000,
+            hangSessionScopeClose: true,
+            scopeCloseReached,
+            eventStreamsEnded,
+          }),
+        ),
+      );
+    }),
 );
 
 it.effect.each(["startTurn", "resumeTurn"] as const)(

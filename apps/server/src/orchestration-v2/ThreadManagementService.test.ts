@@ -1172,15 +1172,26 @@ it.effect.each([
     teardown: ["keep"],
   },
   {
-    name: "keeps a shared process a busy sibling uses without detaching a follow-up from it",
+    name: "keeps a shared process a busy sibling uses without interrupting a started follow-up",
     others: ["thread:thread-management:force-stop:other"],
     killed: false,
-    followUp: "fresh",
+    followUp: "promoted",
     expected: {
       outcome: "shared",
       sharedWithThreadIds: ["thread:thread-management:force-stop:other"],
     },
     teardown: ["keep"],
+  },
+  {
+    name: "keeps a busy sibling's process when the follow-up it was kept for ends first",
+    others: ["thread:thread-management:force-stop:other"],
+    killed: false,
+    followUp: "promoted-then-ended",
+    expected: {
+      outcome: "shared",
+      sharedWithThreadIds: ["thread:thread-management:force-stop:other"],
+    },
+    teardown: ["keep", "detach"],
   },
 ])("Force stop $name", ({ others, killed, expected, teardown, ...row }) =>
   Effect.gen(function* () {
@@ -1198,6 +1209,14 @@ it.effect.each([
     const targetOrdinal = followUp === "reordered" ? 3 : 1;
     const followUpMessageId = MessageId.make("message:queued-follow-up");
     const dispatched: Array<OrchestrationV2Command | { readonly type: string }> = [];
+    // Settling the stopped turn promotes a follow-up; later reads see it start, then maybe end.
+    let readsAfterSettle = 0;
+    const followUpStatus = () =>
+      dispatched.length === 0 || followUp === undefined || !followUp.startsWith("promoted")
+        ? "queued"
+        : followUp === "promoted" || readsAfterSettle === 1
+          ? "running"
+          : "completed";
     const teardowns: Array<string> = [];
     const tornDown = yield* Deferred.make<void>();
     const layerTest = ThreadManagementService.layer.pipe(
@@ -1224,72 +1243,75 @@ it.effect.each([
       Layer.provide(
         Layer.mock(Orchestrator.OrchestratorV2)({
           getThreadRecords: () =>
-            Effect.succeed({
-              thread: {
-                id: threadId,
-                deletedAt: null,
-                modelSelection: { instanceId, model: "gpt-5.4" },
-                activeProviderThreadId: providerThreadId,
-              },
-              runs: [
-                {
-                  id: runId,
-                  ordinal: targetOrdinal,
-                  status: "settledRun" in row ? "completed" : "running",
-                  activeAttemptId: "attempt",
-                  providerThreadId,
-                },
-                // A queued follow-up neither supersedes the request nor becomes the target.
-                {
-                  id: RunId.make("run:queued-follow-up"),
-                  ordinal: 2,
-                  status: "queued",
-                  userMessageId: followUpMessageId,
+            Effect.sync(() => {
+              if (dispatched.length > 0) readsAfterSettle++;
+              return {
+                thread: {
+                  id: threadId,
+                  deletedAt: null,
                   modelSelection: { instanceId, model: "gpt-5.4" },
-                  providerInstanceId: instanceId,
-                  providerThreadId:
-                    followUp === "fresh"
-                      ? reservedProviderThreadId
-                      : followUp === "reordered"
-                        ? providerThreadId
-                        : null,
-                  ...(followUp === "fresh" ? { freshContext: true } : {}),
+                  activeProviderThreadId: providerThreadId,
                 },
-              ],
-              messages: followUp === undefined ? [] : [{ id: followUpMessageId, role: "user" }],
-              turnItems: [],
-              providerThreads: [
-                {
-                  id: providerThreadId,
-                  appThreadId: threadId,
-                  providerInstanceId: instanceId,
-                  providerSessionId,
-                  ownerNodeId: null,
-                  firstRunOrdinal: 1,
-                  lastRunOrdinal: targetOrdinal,
-                  nativeThreadRef: { nativeId: "native-thread" },
-                },
-                // Reserved when the fresh-context follow-up queued; its session comes at start.
-                {
-                  id: reservedProviderThreadId,
-                  appThreadId: threadId,
-                  providerInstanceId: instanceId,
-                  providerSessionId: null,
-                  ownerNodeId: null,
-                  firstRunOrdinal: null,
-                  lastRunOrdinal: null,
-                  nativeThreadRef: null,
-                },
-              ],
-              providerTurns: [
-                {
-                  id: "provider-turn:force-stop",
-                  providerThreadId,
-                  runAttemptId: "attempt",
-                  status: "settledRun" in row ? "completed" : "running",
-                },
-              ],
-            } as unknown as OrchestrationV2ThreadProjection),
+                runs: [
+                  {
+                    id: runId,
+                    ordinal: targetOrdinal,
+                    status: "settledRun" in row ? "completed" : "running",
+                    activeAttemptId: "attempt",
+                    providerThreadId,
+                  },
+                  // A queued follow-up neither supersedes the request nor becomes the target.
+                  {
+                    id: RunId.make("run:queued-follow-up"),
+                    ordinal: 2,
+                    status: followUpStatus(),
+                    userMessageId: followUpMessageId,
+                    modelSelection: { instanceId, model: "gpt-5.4" },
+                    providerInstanceId: instanceId,
+                    providerThreadId:
+                      followUp === "fresh"
+                        ? reservedProviderThreadId
+                        : followUp === undefined
+                          ? null
+                          : providerThreadId,
+                    ...(followUp === "fresh" ? { freshContext: true } : {}),
+                  },
+                ],
+                messages: followUp === undefined ? [] : [{ id: followUpMessageId, role: "user" }],
+                turnItems: [],
+                providerThreads: [
+                  {
+                    id: providerThreadId,
+                    appThreadId: threadId,
+                    providerInstanceId: instanceId,
+                    providerSessionId,
+                    ownerNodeId: null,
+                    firstRunOrdinal: 1,
+                    lastRunOrdinal: targetOrdinal,
+                    nativeThreadRef: { nativeId: "native-thread" },
+                  },
+                  // Reserved when the fresh-context follow-up queued; its session comes at start.
+                  {
+                    id: reservedProviderThreadId,
+                    appThreadId: threadId,
+                    providerInstanceId: instanceId,
+                    providerSessionId: null,
+                    ownerNodeId: null,
+                    firstRunOrdinal: null,
+                    lastRunOrdinal: null,
+                    nativeThreadRef: null,
+                  },
+                ],
+                providerTurns: [
+                  {
+                    id: "provider-turn:force-stop",
+                    providerThreadId,
+                    runAttemptId: "attempt",
+                    status: "settledRun" in row ? "completed" : "running",
+                  },
+                ],
+              } as unknown as OrchestrationV2ThreadProjection;
+            }),
           dispatch: (command) =>
             Effect.sync(() => {
               dispatched.push(command);
