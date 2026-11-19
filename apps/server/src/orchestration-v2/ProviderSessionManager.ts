@@ -3027,11 +3027,11 @@ export const layerWithOptions = (
         };
         // Several adapters never end their event stream, and a parked pump retains the whole session.
         // Racing the whole drain keeps per-event cost flat (Stream.interruptWhen hands off every chunk);
-        // the uninterruptible handler lets the event in flight at close finish. The drain is forked
-        // first so it subscribes even when the session closed before the pump started.
+        // an uninterruptible chunk lets the events already pulled at close finish. The drain is
+        // forked first so it subscribes even when the session closed before the pump started.
         return Effect.raceFirst(
-          Stream.runForEach(entry.runtime.events, (nativeEvent) =>
-            Effect.uninterruptible(handleEvent(nativeEvent)),
+          Stream.runForEachArray(entry.runtime.events, (nativeEvents) =>
+            Effect.uninterruptible(Effect.forEach(nativeEvents, handleEvent, { discard: true })),
           ),
           Deferred.await(entry.sessionClosed),
         ).pipe(
