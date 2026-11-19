@@ -38,6 +38,7 @@ it("drops strict MCP mode, and only that, next to an administrator's managed-mcp
   assert.equal(options.strictMcpConfig, undefined);
   assert.deepEqual(options.mcpServers, {});
   assert.equal(options.env?.ENABLE_CLAUDEAI_MCP_SERVERS, "false");
+  assert.equal(options.env?.CLAUDE_CODE_DISABLE_CRON, "1");
 });
 
 // A shell trampoline would not do: dash drops the exported function, and the launcher exits 127.

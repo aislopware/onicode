@@ -850,6 +850,7 @@ describe("ClaudeAdapterV2 native protocol logging", () => {
       resume: false,
       cwd: "/workspace",
       allowedTools: overrides.allowedTools ?? [],
+      disallowedTools: ["ListAgents"],
       mcpServers: overrides.mcpServers ?? {},
       environment: {},
     });
@@ -868,6 +869,15 @@ describe("ClaudeAdapterV2 native protocol logging", () => {
       ...ClaudeAdapterV2.CLAUDE_TOOLS_UNUSED_UNDER_ONICODE,
     ]);
     assert.deepEqual(options.env, { CLAUDE_CODE_DISABLE_CRON: "1" });
+    const withoutOnicodeTools = ClaudeAdapterV2.makeClaudeQueryOptions({
+      modelSelection: CLAUDE_TEST_MODEL_SELECTION,
+      nativeThreadId: "native-thread-claude-no-mcp",
+      resume: false,
+      cwd: "/workspace",
+      environment: {},
+    });
+    assert.isUndefined(withoutOnicodeTools.disallowedTools);
+    assert.deepEqual(withoutOnicodeTools.env, {});
     const logged = ClaudeAdapterV2.loggedClaudeQueryOptions(options);
     assert.equal(logged.hasMcpServers, true);
     assert.notInclude(JSON.stringify(logged), "secret-claude-token");

@@ -143,6 +143,7 @@ class EvalToolCallError extends Schema.TaggedError<EvalToolCallError>()("EvalToo
 }
 const DEFERRED_LIST =
   /(The following deferred tools are now available via ToolSearch\.[^\n]*\n)((?:[^\n]+\n)*)/;
+const LOOP_SKILL = /^- loop: [^\n]*\n/m;
 const MODEL_LINE = /You are powered by the model named .+?\. The exact model ID is [\w.-]+\./;
 // API keys can be billed differently for requests that open with Claude Code's identity line,
 // so every copy of it becomes a neutral line. The rest of the captured prompt is unchanged.
@@ -585,6 +586,7 @@ const claudeQueryOptions = (model: Model, device = true, browser = true) => {
     resume: false,
     cwd: null,
     mcpServers: { onicode: { type: "http", url: "http://127.0.0.1/mcp" } },
+    environment: {},
     deviceToolsAvailable: device,
     browserToolsAvailable: browser,
   };
@@ -699,9 +701,13 @@ export const buildBase = (
   if (systemTexts.filter((value) => value.includes(RUNTIME_MARKER)).length !== 1 || !deferredList) {
     throw new Error(`The template needs one ${RUNTIME_MARKER} block and a deferred tool list.`);
   }
-  const disallowed = new Set(
-    claudeQueryOptions(options.model, options.deviceAccess, options.browserAccess).disallowedTools,
+  const queryOptions = claudeQueryOptions(
+    options.model,
+    options.deviceAccess,
+    options.browserAccess,
   );
+  const disallowed = new Set(queryOptions.disallowedTools);
+  const loopSkill = queryOptions.env?.CLAUDE_CODE_DISABLE_CRON === "1" ? LOOP_SKILL : undefined;
   const nativeDeferred = deferredList
     .split("\n")
     .filter((name) => name && !isOniName(name) && !disallowed.has(name));
@@ -727,6 +733,7 @@ export const buildBase = (
     const at = value.indexOf(RUNTIME_MARKER);
     return anonymize(at === -1 ? value : value.slice(0, at) + append)
       .replace(DEFERRED_LIST, (_, header: string) => `${header}${names}\n`)
+      .replace(loopSkill ?? "", "")
       .replace(MODEL_LINE, modelLine)
       .replace(IDENTITY, NEUTRAL_IDENTITY);
   });

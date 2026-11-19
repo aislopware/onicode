@@ -2516,8 +2516,10 @@ export function makeClaudeQueryOptions(input: {
         } as ClaudeSdkSettings);
   const deviceInstructions = input.mcpServers !== undefined && input.deviceToolsAvailable === true;
   const disallowedTools = [
-    ...(input.disallowedTools ?? []),
-    ...(input.mcpServers === undefined ? [] : CLAUDE_TOOLS_UNUSED_UNDER_ONICODE),
+    ...new Set([
+      ...(input.disallowedTools ?? []),
+      ...(input.mcpServers === undefined ? [] : CLAUDE_TOOLS_UNUSED_UNDER_ONICODE),
+    ]),
   ];
   const options: ClaudeAgentSdkQueryOptions = {
     model: compiledSelection.apiModelId,
