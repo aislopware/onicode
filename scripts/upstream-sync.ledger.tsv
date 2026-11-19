@@ -2733,3 +2733,4 @@ d32df2d34c	take	fix(server): native session replacement fails honestly when the 
 61085457d7	take	fix(server): repeated capture timeouts no longer delay turn starts (#29196)
 800b0748bc	take	fix(server): restart recovery no longer reads every idle thread on a shared session (#32396)
 1e70210250	take	perf(server): avoid discarded history when retrieving remote task results (#26664)
+1e9f4c45c3	take	fix(triage): file labeled reports through the issue template (#31321)
