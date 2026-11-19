@@ -23,7 +23,6 @@ import {
   createAtomCommandScheduler,
   createEnvironmentRpcCommand,
   createEnvironmentRpcQueryAtomFamily,
-  createEnvironmentRpcSubscriptionAtomFamily,
 } from "./runtime.ts";
 import type { EnvironmentRegistry } from "../connection/registry.ts";
 
@@ -153,6 +152,8 @@ export function createIssueCommentPager<E>(
  */
 export function createIssueEnvironmentAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
+  /** The pull request atoms' `linkChanges`, so an environment holds one link-change stream. */
+  linkChanges: (environmentId: EnvironmentId) => Atom.Atom<unknown>,
 ) {
   const commandScheduler = createAtomCommandScheduler();
   const serialPerEnvironment = {
@@ -187,17 +188,13 @@ export function createIssueEnvironmentAtoms<R, E>(
       // A closed card's value is only marked stale; nothing is read until the next hover.
       registry.refresh(summary(target));
     });
-  const linkedThreadSignals = createEnvironmentRpcSubscriptionAtomFamily(runtime, {
-    label: "environment-data:issues:linked-thread-refreshes",
-    tag: WS_METHODS.pullRequestsSubscribeLinkedThreadRefreshes,
-  });
   return {
     /** The threads an issue is linked to, reread when the server signals a link changed. */
     linkedThreads: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:issues:linked-threads",
       tag: WS_METHODS.issuesLinkedThreads,
       staleTimeMs: 0,
-      refreshTrigger: ({ environmentId }) => linkedThreadSignals({ environmentId, input: {} }),
+      refreshTrigger: ({ environmentId }) => linkChanges(environmentId),
     }),
     list: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:issues:list",

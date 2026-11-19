@@ -5,6 +5,7 @@ import {
   EnvironmentId,
   AuthSourceControlWriteScope,
   AuthOrchestrationOperateScope,
+  IssueTrackerKind,
   ProjectId,
   PullRequestOperationError,
   SourceControlProviderKind,
@@ -52,6 +53,7 @@ import {
   pullRequestPendingEditsAtom,
   pullRequestPendingEditsFor,
 } from "./pullRequests.ts";
+import { createIssueEnvironmentAtoms } from "./issues.ts";
 import * as PullRequestDiffLoader from "./pullRequestDiffHttp.ts";
 import { executeAtomQuery, queryPersistenceKey } from "./runtime.ts";
 import { EnvironmentQueryStore } from "./queryPersistence.ts";
@@ -1853,6 +1855,77 @@ it.effect.each([
       yield* Effect.promise(() => vi.advanceTimersByTimeAsync(0));
       expect(reads).toBe(1 + polledReads + signalledReads);
     }),
+);
+
+it.effect("shares one link-change stream between pull request and issue readers", () =>
+  Effect.gen(function* () {
+    const subscriptions = { pullRequestRefreshes: 0, linkChanges: 0 };
+    let issueReads = 0;
+    const linkedThreadSignal = yield* SubscriptionRef.make(0);
+    const client = {
+      [WS_METHODS.pullRequestsSubscribeRefreshes]: () =>
+        Stream.unwrap(
+          Effect.sync(() => {
+            subscriptions.pullRequestRefreshes++;
+            return Stream.never;
+          }),
+        ),
+      [WS_METHODS.pullRequestsSubscribeLinkedThreadRefreshes]: () =>
+        Stream.unwrap(
+          Effect.sync(() => {
+            subscriptions.linkChanges++;
+            return SubscriptionRef.changes(linkedThreadSignal).pipe(
+              Stream.filter((value) => value > 0),
+            );
+          }),
+        ),
+      [WS_METHODS.pullRequestsLinkedThreads]: () => Effect.succeed({ threads: [] }),
+      [WS_METHODS.issuesLinkedThreads]: () =>
+        Effect.sync(() => {
+          issueReads++;
+          return { threads: [] };
+        }),
+    } as unknown as WsRpcProtocolClient;
+    const { runtime, atoms, registry } = yield* makeTestRuntime(client);
+    registry.set(initialConfigs(TARGET.environmentId), {
+      environment: { capabilities: { linkedThreadRefreshes: true } },
+    });
+    const issues = createIssueEnvironmentAtoms(runtime, atoms.linkChanges);
+    const mount = <A, E>(reader: Atom.Atom<AsyncResult.AsyncResult<A, E>>) =>
+      Effect.gen(function* () {
+        const unmount = registry.mount(reader);
+        yield* Effect.addFinalizer(() => Effect.sync(unmount));
+        yield* AtomRegistry.getResult(registry, reader);
+      });
+    const issueReader = issues.linkedThreads({
+      environmentId: TARGET.environmentId,
+      input: {
+        tracker: IssueTrackerKind.make("linear"),
+        host: "linear.app",
+        scope: "ENG",
+        key: "ENG-7",
+      },
+    });
+    yield* mount(issueReader);
+    // Pull request refreshes are not link changes, so an issue alone does not follow them.
+    expect(subscriptions).toEqual({ pullRequestRefreshes: 0, linkChanges: 1 });
+    yield* mount(
+      atoms.linkedThreads({
+        environmentId: TARGET.environmentId,
+        input: { projectId: ProjectId.make("project-1"), repository: "acme/web", number: 1 },
+      }),
+    );
+    expect(subscriptions.linkChanges).toBe(1);
+
+    const reread = Latch.makeUnsafe();
+    const stop = registry.subscribe(issueReader, () => {
+      if (issueReads >= 2) reread.openUnsafe();
+    });
+    yield* Effect.addFinalizer(() => Effect.sync(stop));
+    yield* SubscriptionRef.set(linkedThreadSignal, 1);
+    yield* reread.await;
+    expect(issueReads).toBe(2);
+  }),
 );
 
 it.effect("shares close, reopen, and merge with an untouched client's mounted PR readers", () =>

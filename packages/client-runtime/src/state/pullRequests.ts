@@ -835,18 +835,23 @@ export function createPullRequestEnvironmentAtoms<R, E>(
     tag: WS_METHODS.pullRequestsSubscribeLinkedThreadRefreshes,
   });
   // Servers without `linkedThreadRefreshes` never signal link changes, so poll them instead.
-  const linkedThreadsRefreshes = Atom.family((environmentId: EnvironmentId) =>
+  const linkChanges = Atom.family((environmentId: EnvironmentId) =>
     Atom.make((get): unknown => {
-      const signal = get(refreshes({ environmentId, input: {} }));
       const config = get(sessions.initialConfigValueAtom(environmentId));
       if (config?.environment.capabilities.linkedThreadRefreshes === true) {
-        return [signal, get(linkedThreadSignals({ environmentId, input: {} }))];
+        return get(linkedThreadSignals({ environmentId, input: {} }));
       }
       // @effect-diagnostics-next-line globalTimers:off - Mirrors `Atom.withRefresh`, outside an Effect runtime.
       const handle = setTimeout(() => get.refreshSelf(), 10_000);
       get.addFinalizer(() => clearTimeout(handle));
       return {};
     }),
+  );
+  const linkedThreadsRefreshes = Atom.family((environmentId: EnvironmentId) =>
+    Atom.make((get): unknown => [
+      get(refreshes({ environmentId, input: {} })),
+      get(linkChanges(environmentId)),
+    ]),
   );
   const commandScheduler = createAtomCommandScheduler();
   const routedRequest = createPullRequestRouter();
@@ -1210,6 +1215,8 @@ export function createPullRequestEnvironmentAtoms<R, E>(
 
   return {
     refreshes,
+    /** When a link may have changed; issue atoms share it, for one stream per environment. */
+    linkChanges,
     linkedThreads: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:pull-requests:linked-threads",
       persistence: persistQuery(PullRequestLinkedThreadsResult),

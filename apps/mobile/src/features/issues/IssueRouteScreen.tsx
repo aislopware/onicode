@@ -4,7 +4,6 @@ import { issueEventSentence } from "@onicode/client-runtime/issue-presentation";
 import { sourceControlClients } from "@onicode/client-runtime/source-control-clients";
 import { createIssueCommentPager } from "@onicode/client-runtime/state/issues";
 import { threadTitleText } from "@onicode/client-runtime/operations";
-import { visibleLinkedThreads } from "@onicode/client-runtime/state/threads";
 import type {
   IssueComment,
   IssueEvent,
@@ -42,7 +41,7 @@ import { NativeScrollView } from "../../native/NativeScrollViewMarker";
 import { useEnvironmentServerConfig } from "../../state/entities";
 import { issueEnvironment, refreshIssueLists } from "../../state/issues";
 import { useEnvironmentQuery } from "../../state/query";
-import { environmentThreadShells } from "../../state/threads";
+import { useLinkedThreads } from "../../state/use-linked-threads";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { usePullToRefresh } from "../../state/use-pull-to-refresh";
 import { useAdaptiveWorkspaceLayout } from "../layout/AdaptiveWorkspaceLayout";
@@ -309,39 +308,44 @@ function LinkedPullRequests(props: {
 }
 
 /** The threads this issue is linked to, most recently active first; hidden while there are none. */
-function LinkedThreads(props: { readonly params: IssueParams; readonly host: string }) {
+function LinkedThreads(props: {
+  readonly params: IssueParams;
+  readonly host: string;
+  readonly url: string;
+}) {
   const gt = useGT();
   const messages = useMessages();
   const navigation = useNavigation();
   const { environmentId, input } = issueTarget(props.params);
   const listsThreads =
     useEnvironmentServerConfig(environmentId)?.environment.capabilities.issueLinkedThreads === true;
-  const relations = useEnvironmentQuery(
-    listsThreads
-      ? issueEnvironment.linkedThreads({
-          environmentId,
-          input: { tracker: input.tracker, host: props.host, scope: input.scope, key: input.key },
-        })
-      : null,
-  );
-  const hiddenKeys = useAtomValue(environmentThreadShells.hiddenThreadKeysAtom);
-  const hidingAnywhere = useAtomValue(environmentThreadShells.anyEnvironmentHidingAtom);
-  const loadedThreadRefs = useAtomValue(
-    environmentThreadShells.environmentThreadRefsAtom(environmentId),
-  );
-  const threads = visibleLinkedThreads(
-    relations.data?.threads ?? [],
+  const key = {
+    tracker: input.tracker,
+    host: props.host,
+    scope: input.scope,
+    key: input.key,
+    url: props.url,
+  };
+  const { threads, error, refresh } = useLinkedThreads(
     environmentId,
-    loadedThreadRefs,
-    hiddenKeys,
-    hidingAnywhere,
+    listsThreads ? issueEnvironment.linkedThreads({ environmentId, input: key }) : null,
+    JSON.stringify({ environmentId, key }),
   );
-  if (threads.length === 0) return null;
+  if (threads.length === 0 && error === null) return null;
   return (
     <View className="gap-2">
       <PullRequestSectionHeading>
         <T>Linked threads</T>
       </PullRequestSectionHeading>
+      {error !== null ? (
+        <View className="items-start gap-2 rounded-2xl bg-grouped-card p-3">
+          <Text className="text-sm">
+            <T>Couldn't load linked threads</T>
+          </Text>
+          <Text className="text-xs text-foreground-muted">{error}</Text>
+          <Button label={gt("Retry")} size="compact" onPress={refresh} />
+        </View>
+      ) : null}
       {threads.map((thread) => {
         const title = threadTitleText(thread.title, messages);
         return (
@@ -696,7 +700,7 @@ function IssueRoute({ params }: { readonly params: IssueParams }) {
                     {detail.linkedPullRequests.length > 0 ? (
                       <LinkedPullRequests params={params} links={detail.linkedPullRequests} />
                     ) : null}
-                    <LinkedThreads params={params} host={detail.host} />
+                    <LinkedThreads params={params} host={detail.host} url={detail.url} />
                     <View className="gap-3">
                       <PullRequestSectionHeading>
                         {detail.commentCount > 0

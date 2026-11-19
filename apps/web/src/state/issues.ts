@@ -13,10 +13,14 @@ import { connectionAtomRuntime } from "../connection/runtime";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { useServerConfigs } from "./entities";
 import { formatEnvironmentQueryError, useEnvironmentQuery } from "./query";
+import { pullRequestEnvironment } from "./pullRequests";
 
 export type { IssueListTarget };
 
-export const issueEnvironment = createIssueEnvironmentAtoms(connectionAtomRuntime);
+export const issueEnvironment = createIssueEnvironmentAtoms(
+  connectionAtomRuntime,
+  pullRequestEnvironment.linkChanges,
+);
 
 /** A linked issue's live row: the summary, not the conversation a detail carries. */
 export function useLinkedIssueSummary(

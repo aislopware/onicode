@@ -521,13 +521,24 @@ export const ThreadIssueLink = Schema.Struct({
 });
 export type ThreadIssueLink = typeof ThreadIssueLink.Type;
 
+/** Case-insensitive throughout: issue keys are numbers or, like Linear's `ENG-7`, any case. */
 export function threadIssueKeyOf(key: ThreadIssueKey): string {
-  return `${key.tracker}\u0000${key.host.trim().toLowerCase()}\u0000${key.scope.trim().toLowerCase()}\u0000${key.key.trim()}`;
+  return `${key.tracker}\u0000${key.host.trim().toLowerCase()}\u0000${key.scope.trim().toLowerCase()}\u0000${key.key.trim().toLowerCase()}`;
 }
 
 export function threadIssueKeysEqual(left: ThreadIssueKey, right: ThreadIssueKey): boolean {
   return threadIssueKeyOf(left) === threadIssueKeyOf(right);
 }
+
+/**
+ * Which issue's linked threads to read. `url`, the issue's own, tells apart issues a key does
+ * not, such as one Linear team key in two workspaces; older clients leave it out.
+ */
+export const IssueLinkedThreadsInput = Schema.Struct({
+  ...ThreadIssueKey.fields,
+  url: Schema.optionalKey(TrimmedNonEmptyString),
+});
+export type IssueLinkedThreadsInput = typeof IssueLinkedThreadsInput.Type;
 
 /** The threads an issue is linked to, most recently active first. */
 export const IssueLinkedThreadsResult = Schema.Struct({

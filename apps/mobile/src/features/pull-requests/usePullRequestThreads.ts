@@ -1,16 +1,9 @@
 import { errorDisplayMessage } from "@onicode/client-runtime/errors";
-import { useAtomValue } from "@effect/atom-react";
-import { visibleLinkedThreads } from "@onicode/client-runtime/state/threads";
 import { AsyncResult } from "effect/reactivity";
 import { useGT } from "gt-react-native";
 import { settlePromise, squashAtomCommandFailure } from "@onicode/client-runtime/state/runtime";
 import * as Dialog from "../../components/ui/Dialog";
-import {
-  StackActions,
-  useNavigation,
-  useNavigationState,
-  useRoute,
-} from "@react-navigation/native";
+import { StackActions, useNavigation } from "@react-navigation/native";
 import { threadPullRequestLinkMode } from "@onicode/client-runtime/thread-pull-request-compatibility";
 import {
   AuthOrchestrationOperateScope,
@@ -29,8 +22,7 @@ import { scopedThreadKey } from "../../lib/scopedEntities";
 import { uuidv4 } from "../../lib/uuid";
 import { useEnvironmentServerConfig } from "../../state/entities";
 import { composerPullRequests } from "../../state/pull-requests";
-import { useEnvironmentQuery } from "../../state/query";
-import { environmentThreadShells } from "../../state/threads";
+import { useLinkedThreads } from "../../state/use-linked-threads";
 import { useEnvironmentScope } from "../../state/session";
 import {
   createNewTaskDraft,
@@ -64,28 +56,12 @@ export function usePullRequestThreads(
     ...target,
     input: { ...target.input, ...(parsed ? normalizeThreadPullRequestKey(parsed) : {}) },
   };
-  const key = JSON.stringify(reference);
-  const route = useRoute();
-  // The iOS synthetic workspace parent's focus differs from the visible detail's focus.
-  const focused = useNavigationState((state) => state.routes[state.index]?.key === route.key);
-  const relations = useEnvironmentQuery(
-    pr && supported && focused ? composerPullRequests.linkedThreads(reference) : null,
-  );
-  const [lastRelations, setLastRelations] = useState({ key, data: relations.data });
-  if (relations.data && (lastRelations.key !== key || relations.data !== lastRelations.data))
-    setLastRelations({ key, data: relations.data });
-  const hiddenKeys = useAtomValue(environmentThreadShells.hiddenThreadKeysAtom);
-  const hidingAnywhere = useAtomValue(environmentThreadShells.anyEnvironmentHidingAtom);
-  const loadedThreadRefs = useAtomValue(
-    environmentThreadShells.environmentThreadRefsAtom(target.environmentId),
-  );
-  const threads = visibleLinkedThreads(
-    (relations.data ?? (lastRelations.key === key ? lastRelations.data : null))?.threads ?? [],
+  const relations = useLinkedThreads(
     target.environmentId,
-    loadedThreadRefs,
-    hiddenKeys,
-    hidingAnywhere,
+    pr && supported ? composerPullRequests.linkedThreads(reference) : null,
+    JSON.stringify(reference),
   );
+  const { threads } = relations;
   const connected = usePullRequestConnected(params.environmentId);
   const canOperate = useEnvironmentScope(target.environmentId, AuthOrchestrationOperateScope);
   const canAsk = !connected || canOperate;
@@ -196,7 +172,7 @@ export function usePullRequestThreads(
     }
   };
   return {
-    ...relations,
+    isPending: relations.isPending,
     threads,
     canAsk,
     canWatch: config?.environment.capabilities.threadPullRequestWatch === true,
