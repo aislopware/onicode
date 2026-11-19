@@ -1655,8 +1655,10 @@ const canBind = (port) =>
       const root = yield* fs.makeTempDirectoryScoped({ prefix: "oni-dangling-home-" });
       const home = `${root}/home`;
       const target = `${root}/shared/onicode`;
-      yield* fs.makeDirectory(home, { recursive: true });
-      yield* fs.symlink(target, `${home}/.onicode`);
+      // A chain of two links, the second relative to its own directory.
+      yield* fs.makeDirectory(`${home}/links`, { recursive: true });
+      yield* fs.symlink("links/profile", `${home}/.onicode`);
+      yield* fs.symlink("../../shared/onicode", `${home}/links/profile`);
       const launch = `${root}/launch.sh`;
       yield* fs.writeFileString(
         launch,

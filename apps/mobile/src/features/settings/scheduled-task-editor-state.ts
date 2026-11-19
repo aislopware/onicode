@@ -38,6 +38,19 @@ export function scheduledTaskEditorHasChanges(
   );
 }
 
+/** Read live: a link can land in the same batch as Save or an edit, before either renders. */
+export function isScheduledTaskEditorSaving(): boolean {
+  return appAtomRegistry.get(scheduledTaskEditorSessionAtom)?.saving === true;
+}
+
+export function scheduledTaskEditorBlocksRemoval(): boolean {
+  const session = appAtomRegistry.get(scheduledTaskEditorSessionAtom);
+  return (
+    session !== null &&
+    (session.saving || scheduledTaskEditorHasChanges(session.initial, session.current))
+  );
+}
+
 export function startScheduledTaskEditor(next: ScheduledTaskEditor | null): void {
   newTaskLinkAwaitsDiscard = false;
   appAtomRegistry.set(scheduledTaskEditorSessionAtom, {
@@ -80,15 +93,16 @@ export function setScheduledTaskEditorSaving(
 }
 
 /**
- * A saved task is the new baseline. Without it a later new-task link reads the saved edits as
- * unsaved, keeps them under "New", and saving there would overwrite the task.
+ * The editor Save submitted is the new baseline. Without it a later new-task link reads the saved
+ * edits as unsaved, keeps them under "New", and saving there would overwrite the task. An edit
+ * that landed while the save ran stays unsaved; returns false when one did.
  */
-export function markScheduledTaskEditorSaved(): void {
+export function markScheduledTaskEditorSaved(submitted: ScheduledTaskEditor | null): boolean {
   newTaskLinkAwaitsDiscard = false;
   const session = appAtomRegistry.get(scheduledTaskEditorSessionAtom);
-  if (session) {
-    appAtomRegistry.set(scheduledTaskEditorSessionAtom, { ...session, initial: session.current });
-  }
+  if (!session) return true;
+  appAtomRegistry.set(scheduledTaskEditorSessionAtom, { ...session, initial: submitted });
+  return !scheduledTaskEditorHasChanges(submitted, session.current);
 }
 
 export function readScheduledTaskEditor(

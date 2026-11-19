@@ -115,6 +115,27 @@ export const changeState = Effect.fn("RunningServer.changeState")(function* <A, 
       Effect.scoped,
     );
 
+  // The lock, not the record, tells whether a server runs: a crashed server's record outlives
+  // it, and its pid and port may belong to another process by now. A lock that cannot be
+  // opened leaves the record to decide.
+  const changed = yield* ServerOwnership.acquireServerOwnership(serverRuntimeStatePath).pipe(
+    Effect.provide(ProcessRunner.layer),
+    Effect.as(true),
+    Effect.catchTags({
+      ServerAlreadyRunningError: () => Effect.succeed(false),
+      ServerOwnershipError: () => Effect.succeed(false),
+    }),
+    Effect.flatMap((owned) =>
+      owned
+        ? locally.pipe(
+            Effect.tap(() => clearPersistedServerRuntimeState(serverRuntimeStatePath)),
+            Effect.asSome,
+          )
+        : Effect.succeedNone,
+    ),
+    Effect.scoped,
+  );
+  if (Option.isSome(changed)) return changed.value;
   const running = yield* readLiveServerRuntimeState(serverRuntimeStatePath);
   if (Option.isNone(running)) return yield* changeLocally(Effect.fail);
   const { origin } = running.value;

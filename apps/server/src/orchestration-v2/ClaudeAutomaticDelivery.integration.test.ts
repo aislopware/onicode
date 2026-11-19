@@ -1077,6 +1077,8 @@ it.effect.each([
   "Claude cancels it and the user stops",
   "a later steer lands before the run-end reaction",
   "a later client steer lands before the run-end reaction",
+  // Checkpoint capture ends the run between the steer's two reads of the active run.
+  "a later client steer lands as its run ends",
   // A wire-valid steer that names its run as well as the intent.
   "a later client steer names its stopped run",
   "a later restart lands before the run-end reaction",
@@ -1085,6 +1087,9 @@ it.effect.each([
   Effect.gen(function* () {
     const cwd = yield* checkpointWorkspace("claude-unread-steer");
     const sdkMessages = yield* Queue.unbounded<SDKMessage>();
+    const activeRunReadEntered = yield* Deferred.make<void>();
+    const activeRunReadRelease = yield* Deferred.make<void>();
+    let activeRunReads: number | undefined;
     const offers: SDKUserMessage[] = [];
     const adapter = yield* ClaudeAdapterV2.makeClaudeAdapterV2({
       instanceId: modelSelection.instanceId,
@@ -1308,6 +1313,14 @@ it.effect.each([
       }
 
       if (outcome.startsWith("a later")) {
+        const lands = outcome === "a later client steer lands as its run ends";
+        if (lands) activeRunReads = 0;
+        const late = lands
+          ? yield* send("late", { type: "start_immediately" }, undefined, "steer").pipe(
+              Effect.forkScoped,
+            )
+          : undefined;
+        if (lands) yield* Deferred.await(activeRunReadEntered);
         // The reaction skips reconcile writes, so the turn ends unseen by it.
         const now = yield* DateTime.now;
         yield* (yield* EventSink.EventSinkV2).write({
@@ -1341,13 +1354,26 @@ it.effect.each([
             [MessageId.make("before"), false],
             [MessageId.make("after"), false],
           ]);
+          // The run-end requeue, which recovery repeats, then places the unread steer after the
+          // restart and behind only the message queued before it.
+          yield* orchestrator.recoverDelegatedTasks;
+          assert.deepEqual(yield* queuedOrder, [
+            [MessageId.make("before"), false],
+            [steerId, false],
+            [MessageId.make("after"), false],
+          ]);
           return;
         }
-        yield* outcome === "a later client steer names its stopped run"
-          ? send("late", { type: "steer_active", targetRunId: parent.id }, undefined, "steer")
-          : client
-            ? send("late", { type: "start_immediately" }, undefined, "steer")
-            : send("late", { type: "steer_active", targetRunId: parent.id });
+        if (late !== undefined) {
+          yield* Deferred.succeed(activeRunReadRelease, undefined);
+          yield* Fiber.join(late);
+        } else {
+          yield* outcome === "a later client steer names its stopped run"
+            ? send("late", { type: "steer_active", targetRunId: parent.id }, undefined, "steer")
+            : client
+              ? send("late", { type: "start_immediately" }, undefined, "steer")
+              : send("late", { type: "steer_active", targetRunId: parent.id });
+        }
         // The steer Claude never read keeps its place ahead of the later one, which is not
         // steered into the run the queue started.
         const behind = yield* queued;
@@ -1428,7 +1454,28 @@ it.effect.each([
         ProviderReplayHarness.layerWithRegistry(
           { name: "claude-unread-steer" },
           ProviderAdapterRegistry.layerSingle(adapter),
-          { runEffectWorker: false },
+          {
+            runEffectWorker: false,
+            // Holds the steer's second read of the active run, the one after the queue starts.
+            wrapProjectionStore: (store) => ({
+              ...store,
+              getThreadRecords: ((threadId, fields, options) => {
+                const read = store.getThreadRecords(threadId, fields, options);
+                const activeRunRead =
+                  fields.length === 1 && fields[0] === "runs" && options?.runStatuses?.length === 4;
+                if (!activeRunRead) return read;
+                // Counted per run: dispatch reuses one read effect for both reads.
+                return Effect.suspend(() =>
+                  activeRunReads === undefined || ++activeRunReads !== 2
+                    ? read
+                    : Deferred.succeed(activeRunReadEntered, undefined).pipe(
+                        Effect.andThen(Deferred.await(activeRunReadRelease)),
+                        Effect.andThen(read),
+                      ),
+                );
+              }) as typeof store.getThreadRecords,
+            }),
+          },
         ),
       ),
     );

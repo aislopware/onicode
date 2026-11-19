@@ -912,11 +912,6 @@ export const make = Effect.gen(function* () {
       Effect.withSpan("EnvironmentAuth.consumeMcpApprovalCode"),
     );
 
-  yield* revokePairedClientsThePolicyDisallows(managedPolicy, {
-    sessions,
-    pairingLinks: bootstrapCredentials,
-  });
-
   return EnvironmentAuth.of({
     getDescriptor: Effect.fn("EnvironmentAuth.getDescriptor")(function () {
       return Effect.succeed(descriptor);
@@ -988,6 +983,16 @@ const revokePairedClientsThePolicyDisallows = Effect.fn(
     });
   }
 });
+
+/** Server startup only: CLI commands open the same stores and must not revoke behind the server. */
+export const layerRevokeClientsThePolicyDisallows = Layer.effectDiscard(
+  Effect.gen(function* () {
+    yield* revokePairedClientsThePolicyDisallows(yield* ManagedPolicy.ManagedPolicy, {
+      sessions: yield* SessionStore.SessionStore,
+      pairingLinks: yield* PairingGrantStore.PairingGrantStore,
+    });
+  }),
+);
 
 export const layer = Layer.effect(EnvironmentAuth, make).pipe(
   Layer.provideMerge(PairingGrantStore.layer),

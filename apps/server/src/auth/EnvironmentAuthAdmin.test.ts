@@ -86,10 +86,9 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
         const startupLocal = yield* startup("127.0.0.1");
         yield* environmentAuth.createPairingLink({ subject: "one-time-token" });
 
-        yield* EnvironmentAuth.make.pipe(
-          Effect.provide(
-            Layer.merge(ManagedPolicy.layerTest(desktopAndLocalOnly), layerServerConfig()),
-          ),
+        yield* Layer.build(EnvironmentAuth.layerRevokeClientsThePolicyDisallows).pipe(
+          Effect.provide(ManagedPolicy.layerTest(desktopAndLocalOnly)),
+          Effect.scoped,
         );
 
         const remaining = (yield* sessions.listActive()).map((session) => session.sessionId);

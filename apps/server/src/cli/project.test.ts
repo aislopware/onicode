@@ -38,6 +38,8 @@ import * as RuntimeLayer from "../orchestration-v2/runtimeLayer.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ProjectEnrichmentService from "../project/ProjectEnrichmentService.ts";
 import * as ProjectFaviconResolver from "../project/ProjectFaviconResolver.ts";
+import * as ProcessRunner from "../processRunner.ts";
+import * as ServerOwnership from "../serverOwnership.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolver.ts";
 import * as OniProjectFileLoader from "../project/OniProjectFileLoader.ts";
@@ -142,13 +144,17 @@ it.effect.each(["snapshot", "mutation"] as const)(
       const baseDir = NodePath.join(root, "state");
       const workspaceRoot = NodePath.join(root, "workspace");
       yield* fs.makeDirectory(workspaceRoot);
-      yield* persistServerRuntimeState({
-        path: NodePath.join(baseDir, "userdata", "server-runtime.json"),
-        state: yield* makePersistedServerRuntimeState({
+      // A live server has migrated its database, holds its ownership lock and published its origin.
+      yield* readProjects(baseDir);
+      const ownership = yield* ServerOwnership.acquireServerOwnership(
+        NodePath.join(baseDir, "userdata", "server-runtime.json"),
+      ).pipe(Effect.provide(Layer.mergeAll(ProcessRunner.layer, NodeCrypto.layer)));
+      yield* ownership.publish(
+        yield* makePersistedServerRuntimeState({
           config: { host: "127.0.0.1", dev: false },
           port: 3_773,
         }),
-      });
+      );
       const now = "2026-01-01T00:00:00.000Z";
       const requestReceived = Promise.withResolvers<void>();
       const releaseResponse = Promise.withResolvers<void>();

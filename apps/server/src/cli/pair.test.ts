@@ -391,6 +391,41 @@ describe("onicode pair", () => {
     ).pipe(Effect.provide(NodeServices.layer)),
   );
 
+  it.effect(
+    "leaves paired clients alone when a CLI command runs under a policy that keeps clients local",
+    () =>
+      Effect.gen(function* () {
+        const baseDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "oni-cli-policy-test-"));
+        const policyPath = NodePath.join(baseDir, "policy.json");
+        NodeFS.writeFileSync(
+          policyPath,
+          JSON.stringify({
+            schemaVersion: 1,
+            organization: "Example Corp",
+            limits: { clients: ["desktop", "local"] },
+          }),
+        );
+        yield* provideCliTestLayers(
+          runCli(["auth", "pairing", "create", "--json", "--base-dir", baseDir]),
+        );
+
+        // The running server revokes them at its next start and tells their sockets.
+        const lines = yield* provideCliTestLayers(
+          Effect.gen(function* () {
+            yield* runCli(["auth", "pairing", "list", "--json", "--base-dir", baseDir]);
+            return yield* TestConsole.logLines;
+          }).pipe(
+            Effect.provide(
+              ConfigProvider.layer(
+                ConfigProvider.fromEnv({ env: { ONICODE_DEV_MANAGED_POLICY_PATH: policyPath } }),
+              ),
+            ),
+          ),
+        );
+        assert.lengthOf(JSON.parse(String(lines.at(-1))), 1);
+      }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
   it.effect("ignores runtime state whose recorded pid is no longer alive", () =>
     withDescriptorServer((origin) =>
       Effect.gen(function* () {
@@ -695,9 +730,24 @@ describe("auth session revoke", () => {
     {
       label: "goes through a running server, which closes open connections",
       recorded: true,
-      lockHeld: false,
+      lockHeld: true,
       server: "answers",
       outcome: "revoked by server",
+    },
+    {
+      label: "goes through a running server when the ownership lock cannot be opened",
+      recorded: true,
+      lockHeld: false,
+      lockUnopenable: true,
+      server: "answers",
+      outcome: "revoked by server",
+    },
+    {
+      label: "writes the database when a stale record's pid and port belong to another process",
+      recorded: true,
+      lockHeld: false,
+      server: "answers",
+      outcome: "revoked locally",
     },
     {
       label: "writes the database when no server runs",
@@ -723,18 +773,18 @@ describe("auth session revoke", () => {
     {
       label: "does not repeat a change locally when the server stops replying mid-request",
       recorded: true,
-      lockHeld: false,
+      lockHeld: true,
       server: "hangs",
       outcome: "RunningServerNoReplyError",
     },
     {
       label: "does not repeat a change locally when the server answers with an error",
       recorded: true,
-      lockHeld: false,
+      lockHeld: true,
       server: "fails",
       outcome: "HttpClientError",
     },
-  ] as const)("$label", ({ recorded, lockHeld, server, outcome }) =>
+  ] as const)("$label", ({ recorded, lockHeld, server, outcome, ...row }) =>
     provideCliTestLayers(
       Effect.gen(function* () {
         const baseDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "oni-cli-revoke-test-"));
@@ -763,6 +813,13 @@ describe("auth session revoke", () => {
           yield* ServerOwnership.acquireServerOwnership(statePath).pipe(
             Effect.provide(ProcessRunner.layer),
           );
+        }
+        const lockUnopenable = "lockUnopenable" in row;
+        // SQLite cannot open a directory, so the lock can neither be taken nor be seen as held.
+        if (lockUnopenable) {
+          const lockPath = NodePath.join(baseDir, "userdata", "server-owner.sqlite");
+          NodeFS.rmSync(lockPath, { force: true });
+          NodeFS.mkdirSync(lockPath);
         }
 
         const requests: Array<{ readonly path: string; readonly body: unknown }> = [];
@@ -812,7 +869,7 @@ describe("auth session revoke", () => {
 
         assert.deepEqual(
           requests,
-          server === "answers" || server === "fails"
+          (lockHeld || lockUnopenable) && (server === "answers" || server === "fails")
             ? [{ path: "/api/auth/clients/revoke", body: { sessionId: issued.sessionId } }]
             : [],
         );

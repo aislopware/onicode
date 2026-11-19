@@ -544,7 +544,8 @@ const layerProjectFaviconResolver = ProjectFaviconResolver.layer.pipe(
 
 const layerServerEnvironment = ServerEnvironment.layer.pipe(Layer.provide(ServerSecretStore.layer));
 
-const layerAuth = EnvironmentAuth.layer.pipe(
+const layerAuth = EnvironmentAuth.layerRevokeClientsThePolicyDisallows.pipe(
+  Layer.provideMerge(EnvironmentAuth.layer),
   Layer.provideMerge(layerPersistence),
   Layer.provide(layerServerEnvironment),
   Layer.provide(ServerSecretStore.layer),

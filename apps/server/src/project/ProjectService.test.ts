@@ -1046,17 +1046,19 @@ it.effect("refuses a folder whose path ends in a space instead of using its neig
 
     yield* Effect.gen(function* () {
       const service = yield* ProjectService.ProjectService;
-      for (const workspaceRoot of [`${fixture}/foo `, `${fixture}/foo /`]) {
+      for (const workspaceRoot of [`${fixture}/foo `, `${fixture}/foo /`, `${fixture}/new /.`]) {
         const rejected = yield* service
           .create({
             commandId: CommandId.make(`command:space:create:${workspaceRoot}`),
             projectId: ProjectId.make("project:space"),
             title: "foo",
             workspaceRoot,
+            createWorkspaceRootIfMissing: true,
           })
           .pipe(Effect.flip);
         assert.equal(rejected._tag, "ProjectInvalidError", workspaceRoot);
       }
+      assert.isFalse(yield* fileSystem.exists(`${fixture}/new `));
       assert.isTrue(Option.isNone(yield* service.getByWorkspaceRoot(`${fixture}/foo`)));
 
       const projectId = ProjectId.make("project:space:move");

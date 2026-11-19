@@ -13,8 +13,33 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 
 const { Children, mocks } = vi.hoisted(() => ({
   Children: ({ children }: { children?: ReactNode }) => children,
-  mocks: { upsert: vi.fn(), alert: vi.fn(), tasks: [] as ScheduledTask[] },
+  mocks: {
+    upsert: vi.fn(),
+    alert: vi.fn(),
+    tasks: [] as ScheduledTask[],
+    preventRemove: { prevent: false, guard: (_event: { data: { action: unknown } }) => {} },
+    beforeRemove: new Set<(event: RemoveEvent) => void>(),
+  },
 }));
+type RemoveEvent = { data: { action: unknown }; preventDefault: () => void };
+const navigation = {
+  isFocused: () => false,
+  addListener: (_type: "beforeRemove", listener: (event: RemoveEvent) => void) => {
+    mocks.beforeRemove.add(listener);
+    return () => mocks.beforeRemove.delete(listener);
+  },
+};
+/** Like React Navigation: every listener from the last commit, the rendered guard too. Kept or not. */
+function removeEditor(): boolean {
+  let prevented = false;
+  const event = { data: { action: { type: "RESET" } }, preventDefault: () => (prevented = true) };
+  for (const listener of mocks.beforeRemove) listener(event);
+  if (mocks.preventRemove.prevent) {
+    prevented = true;
+    mocks.preventRemove.guard(event);
+  }
+  return prevented;
+}
 vi.mock("react-native", () => ({
   Platform: { OS: "ios" },
   View: Children,
@@ -24,8 +49,10 @@ vi.mock("react-native", () => ({
   ),
 }));
 vi.mock("@react-navigation/native", () => ({
-  useNavigation: () => ({ isFocused: () => false }),
-  usePreventRemove: () => {},
+  useNavigation: () => navigation,
+  usePreventRemove: (prevent: boolean, guard: (event: { data: { action: unknown } }) => void) => {
+    mocks.preventRemove = { prevent, guard };
+  },
 }));
 vi.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ bottom: 0 }) }));
 vi.mock("@expo/ui/community/datetime-picker", () => ({ DateTimePicker: () => null }));
@@ -236,6 +263,31 @@ describe("scheduled task batched edits", () => {
         schedule: { type: "interval", everyMs: 3_600_000 },
       }),
     });
+  });
+  it("keeps the editor open when a link lands in the same batch as Save", async () => {
+    const held = Promise.withResolvers<{ _tag: "Success" }>();
+    mocks.upsert.mockReturnValue(held.promise);
+    let kept = false;
+    act(() => {
+      button("Save changes").click();
+      kept = removeEditor();
+    });
+    expect(kept).toBe(true);
+    expect(mocks.alert).toHaveBeenCalledExactlyOnceWith("Saving task", expect.any(String));
+    await act(async () => held.resolve({ _tag: "Success" }));
+  });
+  it("keeps an edit made while Save ran as unsaved instead of taking it as saved", async () => {
+    const held = Promise.withResolvers<{ _tag: "Success" }>();
+    mocks.upsert.mockReturnValue(held.promise);
+    act(() => {
+      button("Save changes").click();
+      button("Interval").click();
+    });
+    await act(async () => held.resolve({ _tag: "Success" }));
+    const session = appAtomRegistry.get(scheduledTaskEditorSessionAtom);
+    expect(session?.initial?.draft.schedule.mode).toBe("fixed_time");
+    expect(session?.current?.draft.schedule.mode).toBe("interval");
+    expect(removeEditor()).toBe(true);
   });
   it("keeps the target project when an old picker fires after changing environments", () => {
     const editor = appAtomRegistry.get(scheduledTaskEditorSessionAtom)?.current;

@@ -19,6 +19,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Path from "effect/Path";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
@@ -191,6 +192,7 @@ export const make = Effect.gen(function* () {
   const threadCommands = yield* ThreadCommandExecutor.ThreadCommandExecutor;
   const serverSettings = yield* ServerSettings.ServerSettingsService;
   const fileSystem = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
   const isManagedWorktreePath = yield* makeIsManagedWorktreePath;
   const isWorktreeContainer = yield* makeIsWorktreeContainer.pipe(
     Effect.provide(ProcessRunner.layer),
@@ -495,13 +497,14 @@ export const make = Effect.gen(function* () {
   const create: ProjectService["Service"]["create"] = Effect.fn("ProjectService.create")(
     function* (input) {
       yield* rejectUntrimmedWorkspaceRoot(input.projectId, input.workspaceRoot);
+      // `foo /` and `foo /.` resolve to `foo `, which normalizing may create.
+      yield* rejectUntrimmedWorkspaceRoot(input.projectId, path.resolve(input.workspaceRoot));
       yield* rejectWslSharePath(input.projectId, input.workspaceRoot);
       const workspaceRoot = yield* normalizeWorkspaceRoot({
         projectId: input.projectId,
         workspaceRoot: input.workspaceRoot,
         createIfMissing: input.createWorkspaceRootIfMissing ?? false,
       });
-      // Again once resolved: `foo /` and `foo /.` resolve to `foo `.
       yield* rejectUntrimmedWorkspaceRoot(input.projectId, workspaceRoot);
       yield* rejectWorktreeContainer(input.projectId, workspaceRoot);
       yield* commit(

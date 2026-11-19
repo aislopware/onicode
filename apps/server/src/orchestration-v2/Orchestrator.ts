@@ -16079,15 +16079,19 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           ),
         );
       const steerTarget = command.deliveryIntent === "steer" ? yield* latestActiveRunId : undefined;
-      yield* mapDispatchError(command)(
+      const placeEndedRunsSteers = mapDispatchError(command)(
         requeueUnreadSteers(command.threadId).pipe(
           Effect.andThen(startNextQueuedRun(command.threadId, { latestRunEnded: true })),
         ),
       );
+      yield* placeEndedRunsSteers;
       if (
         command.deliveryIntent === "steer" &&
         (steerTarget === undefined || (yield* latestActiveRunId) !== steerTarget)
       ) {
+        // Checkpoint capture ends a run outside this lock; one that ended after the first read
+        // still places its unread steers ahead of this one.
+        if (steerTarget !== undefined) yield* placeEndedRunsSteers;
         const { deliveryIntent: _steer, ...asSend } = command;
         decided = { ...asSend, dispatchMode: { type: "start_immediately" as const } };
       }

@@ -106,8 +106,9 @@ describe("new scheduled task link", () => {
 
   it("starts the new-task screen fresh after the edited task was saved", () => {
     startScheduledTaskEditor(editing);
-    updateScheduledTaskEditor({ ...editing, draft: { ...editing.draft, prompt: "saved" } }, null);
-    markScheduledTaskEditorSaved();
+    const saved = { ...editing, draft: { ...editing.draft, prompt: "saved" } };
+    updateScheduledTaskEditor(saved, null);
+    expect(markScheduledTaskEditorSaved(saved)).toBe(true);
 
     takeScheduledTaskNewLink(newTaskLink);
     expect(appAtomRegistry.get(scheduledTaskEditorSessionAtom)).toBeNull();
