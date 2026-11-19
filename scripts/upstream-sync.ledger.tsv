@@ -2763,3 +2763,4 @@ d6b5aac30a	take	link-naming refusal taken; kept Onicode's ProjectService.create 
 ebb3dd0b76	take	fix(source-control-github): sign out an app sign-in GitHub refuses to refresh for the client's credentials (#39048)
 916fcdc364	take	fix(web): preserve newer project action drafts when imports fail (#39312)
 767f194fd9	take	Codex thread name follows Onicode thread renames; kept Onicode's keep-steered-notes capacity-retry case
+c8b214158e	take	fix(server): Antigravity 1.5 temporary setup and text-helper sessions clean up their files (#39275)
