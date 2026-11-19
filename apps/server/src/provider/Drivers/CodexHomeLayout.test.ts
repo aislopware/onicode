@@ -274,11 +274,14 @@ it.layer(NodeServices.layer)("CodexHomeLayout", (it) => {
           yield* fileSystem.makeDirectory(path.join(sharedHome, "log"));
           yield* fileSystem.makeDirectory(path.join(sharedHome, "memories"));
           yield* fileSystem.makeDirectory(path.join(sharedHome, "tmp"));
+          yield* fileSystem.makeDirectory(path.join(sharedHome, ".tmp"));
           yield* writeTextFile(path.join(sharedHome, "config.toml"), 'model = "gpt-5-codex"\n');
           yield* writeTextFile(path.join(shadowHome, "auth.json"), '{"shadow":true}\n');
           yield* fileSystem.makeDirectory(path.join(shadowHome, "log"), { recursive: true });
           yield* fileSystem.makeDirectory(path.join(shadowHome, "memories"), { recursive: true });
           yield* fileSystem.makeDirectory(path.join(shadowHome, "tmp"), { recursive: true });
+          const shadowTmpFile = path.join(shadowHome, ".tmp", "bundled-marketplaces", "write");
+          yield* writeTextFile(shadowTmpFile, "in progress");
 
           const layout = yield* resolveCodexHomeLayout(
             decodeCodexSettings({
@@ -304,6 +307,7 @@ it.layer(NodeServices.layer)("CodexHomeLayout", (it) => {
           expect(logLinkResult._tag).toBe("Failure");
           expect(memoriesLinkResult._tag).toBe("Failure");
           expect(tmpLinkResult._tag).toBe("Failure");
+          expect(yield* fileSystem.readFileString(shadowTmpFile)).toBe("in progress");
         }),
     );
 
@@ -335,32 +339,35 @@ it.layer(NodeServices.layer)("CodexHomeLayout", (it) => {
       () =>
         Effect.gen(function* () {
           const path = yield* Path.Path;
-          const sharedHome = yield* makeTempDir("onicode-codex-shared-");
-          const shadowRoot = yield* makeTempDir("onicode-codex-shadow-root-");
-          const shadowHome = path.join(shadowRoot, "shadow");
-          yield* writeTextFile(path.join(sharedHome, "config.toml"), 'model = "gpt-5-codex"\n');
-          yield* writeTextFile(path.join(shadowHome, "config.toml"), 'model = "local"\n');
+          // A shadow-owned .tmp is kept only as a directory.
+          for (const entryName of ["config.toml", ".tmp"]) {
+            const sharedHome = yield* makeTempDir("onicode-codex-shared-");
+            const shadowRoot = yield* makeTempDir("onicode-codex-shadow-root-");
+            const shadowHome = path.join(shadowRoot, "shadow");
+            yield* writeTextFile(path.join(sharedHome, entryName), 'model = "gpt-5-codex"\n');
+            yield* writeTextFile(path.join(shadowHome, entryName), 'model = "local"\n');
 
-          const layout = yield* resolveCodexHomeLayout(
-            decodeCodexSettings({
-              homePath: sharedHome,
-              shadowHomePath: shadowHome,
-            }),
-          );
+            const layout = yield* resolveCodexHomeLayout(
+              decodeCodexSettings({
+                homePath: sharedHome,
+                shadowHomePath: shadowHome,
+              }),
+            );
 
-          const error = yield* materializeCodexShadowHome(layout).pipe(Effect.flip);
+            const error = yield* materializeCodexShadowHome(layout).pipe(Effect.flip);
 
-          expect(error).toBeInstanceOf(CodexShadowHomeEntryConflictError);
-          expect(error).toMatchObject({
-            sharedHomePath: sharedHome,
-            effectiveHomePath: shadowHome,
-            entryName: "config.toml",
-            linkPath: path.join(shadowHome, "config.toml"),
-            targetPath: path.join(sharedHome, "config.toml"),
-          });
-          expect(error.message).toBe(
-            `Cannot create Codex shadow home entry 'config.toml' because '${path.join(shadowHome, "config.toml")}' already exists and is not a symlink.`,
-          );
+            expect(error).toBeInstanceOf(CodexShadowHomeEntryConflictError);
+            expect(error).toMatchObject({
+              sharedHomePath: sharedHome,
+              effectiveHomePath: shadowHome,
+              entryName,
+              linkPath: path.join(shadowHome, entryName),
+              targetPath: path.join(sharedHome, entryName),
+            });
+            expect(error.message).toBe(
+              `Cannot create Codex shadow home entry '${entryName}' because '${path.join(shadowHome, entryName)}' already exists and is not a symlink.`,
+            );
+          }
         }),
     );
   });
