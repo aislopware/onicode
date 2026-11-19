@@ -146,6 +146,8 @@ const defaultWorktreeStrategy = Effect.fn("mcp.defaultWorktreeStrategy")(functio
       cwd: workspaceRoot,
       // Not peeled: a branch whose tip object is missing still resolves, so only an unborn HEAD exits 1.
       args: ["rev-parse", "--verify", "--quiet", "HEAD"],
+      // NON_REPOSITORY_FATAL reads English; execute passes the host's language to Git otherwise.
+      env: { LANGUAGE: "C" },
       allowNonZeroExit: true,
       timeoutMs: 5_000,
     })

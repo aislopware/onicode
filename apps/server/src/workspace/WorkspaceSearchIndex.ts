@@ -287,11 +287,13 @@ function buildContentSearchQuery(input: Omit<ProjectSearchContentsInput, "cwd">)
 
 const ASCII_WORD = /^\w+$/;
 
-// A whole-word search for an ASCII word asks fff for the word itself, so substring hits are dropped
-// natively instead of filling pages with lines the JS check then discards. `-u` keeps `\b` and `i`
-// to ASCII: plain search does not fold `ſ` or `K`, and any non-ASCII neighbour stays a candidate.
+// fff drops substring hits natively for an ASCII whole word. `-u` keeps `i` to ASCII (plain search
+// does not fold `ſ` or `K`). The edges are WORD_CHARACTER's complement, not `\b`, whose word
+// characters differ, and exclude newlines (as `\x0A`: fff rewrites `\n`), as fff counts a match on
+// the line it starts on.
+const NOT_WORD_CHARACTER = String.raw`(?u:[^\p{Letter}\p{Mark}\p{Number}_\x0A])`;
 function buildWholeWordPattern(query: string, caseSensitive: boolean): string {
-  return `(?${caseSensitive ? "" : "i"}-u)\\b${query}\\b`;
+  return `(?${caseSensitive ? "" : "i"}-u)(?:^|${NOT_WORD_CHARACTER})${query}(?:${NOT_WORD_CHARACTER}|$)`;
 }
 
 // fff's ranges for that pattern are not used: the JS word check decides, on every hit in the line.

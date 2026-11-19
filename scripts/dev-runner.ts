@@ -243,7 +243,11 @@ export const createDevRunnerEnv = Effect.fn("dev-runner.createDevRunnerEnv")(fun
   host,
   port,
   devUrl,
-}: CreateDevRunnerEnvInput): Effect.fn.Return<NodeJS.ProcessEnv, never, Path.Path> {
+}: CreateDevRunnerEnvInput): Effect.fn.Return<
+  NodeJS.ProcessEnv,
+  never,
+  FileSystem.FileSystem | Path.Path
+> {
   const { webPort, debugPort } = portsForOffset(webOffset);
   const serverPort = port ?? BASE_SERVER_PORT + serverOffset;
   const configuredBaseDir = oniHome?.trim() || undefined;
@@ -252,9 +256,22 @@ export const createDevRunnerEnv = Effect.fn("dev-runner.createDevRunnerEnv")(fun
   const output: NodeJS.ProcessEnv = { ...baseEnv, ONICODE_PORT: String(serverPort) };
 
   const path = yield* Path.Path;
-  // The server stores an explicit home's state in userdata, which for ~/.onicode is the live
-  // install. Left implicit, dev state goes to ~/.onicode/dev.
-  const isLiveHome = resolvedBaseDir === path.join(yield* HostProcess.HomeDirectory, ".onicode");
+  const fileSystem = yield* FileSystem.FileSystem;
+  // Device and inode, as macOS paths can differ in case or go through a firmlink.
+  const identity = (target: string) =>
+    fileSystem.stat(target).pipe(
+      Effect.map((info) =>
+        Option.match(info.ino, { onNone: () => target, onSome: (ino) => `${info.dev}:${ino}` }),
+      ),
+      Effect.orElseSucceed(() => target),
+    );
+  // The server stores an explicit home's state in userdata, which for ~/.onicode (or a home whose
+  // userdata links to its own) is the live install. Left implicit, dev state goes to ~/.onicode/dev.
+  const liveHome = path.join(yield* HostProcess.HomeDirectory, ".onicode");
+  const isLiveHome =
+    (yield* identity(resolvedBaseDir)) === (yield* identity(liveHome)) ||
+    (yield* identity(path.join(resolvedBaseDir, "userdata"))) ===
+      (yield* identity(path.join(liveHome, "userdata")));
   if (configuredBaseDir !== undefined && !isLiveHome) {
     output.ONICODE_HOME = resolvedBaseDir;
   } else {

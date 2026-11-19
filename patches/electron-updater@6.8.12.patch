@@ -2,19 +2,28 @@ diff --git a/out/electronHttpExecutor.js b/out/electronHttpExecutor.js
 index b701311..d61d29a 100644
 --- a/out/electronHttpExecutor.js
 +++ b/out/electronHttpExecutor.js
-@@ -3,7 +3,36 @@ Object.defineProperty(exports, "__esModule", { value: true });
+@@ -3,7 +3,45 @@ Object.defineProperty(exports, "__esModule", { value: true });
  exports.ElectronHttpExecutor = exports.NET_SESSION_NAME = void 0;
  exports.getNetSession = getNetSession;
  const builder_util_runtime_1 = require("builder-util-runtime");
 +const fs_1 = require("fs");
 +const stream_1 = require("stream");
  exports.NET_SESSION_NAME = "electron-updater";
-+// A stall on a slow link is retried, resuming after the bytes earlier attempts wrote.
++// A stall or a dropped connection is retried, resuming after the bytes earlier attempts wrote.
 +const DOWNLOAD_STALL_RETRIES = 3;
 +// A mirror can end a 206 before the total it declared; a retry asks for the rest.
 +const PARTIAL_CONTENT_ENDED = "Partial content ended before the declared total";
++const DOWNLOAD_STALL_ERRORS = new Set([
++    "Request timed out",
++    "net::ERR_TIMED_OUT",
++    "net::ERR_CONTENT_LENGTH_MISMATCH",
++    "net::ERR_CONNECTION_RESET",
++    "net::ERR_CONNECTION_CLOSED",
++    "net::ERR_INCOMPLETE_CHUNKED_ENCODING",
++    PARTIAL_CONTENT_ENDED,
++]);
 +function isDownloadStall(error) {
-+    return error != null && (error.message === "Request timed out" || error.message === "net::ERR_TIMED_OUT" || error.message === PARTIAL_CONTENT_ENDED);
++    return error != null && DOWNLOAD_STALL_ERRORS.has(error.message);
 +}
 +// doDownload turns any status >= 400 into this error before a response handler sees it.
 +function isRangeNotSatisfiable(error) {
@@ -39,7 +48,7 @@ index b701311..d61d29a 100644
  function getNetSession() {
      return require("electron").session.fromPartition(exports.NET_SESSION_NAME, {
          cache: false,
-@@ -16,27 +45,139 @@ class ElectronHttpExecutor extends builder_util_runtime_1.HttpExecutor {
+@@ -16,27 +54,146 @@ class ElectronHttpExecutor extends builder_util_runtime_1.HttpExecutor {
          this.cachedSession = null;
      }
      async download(url, destination, options) {
@@ -47,6 +56,7 @@ index b701311..d61d29a 100644
 +        // Only bytes this call wrote are resumed: the differential downloader leaves its own output
 +        // at the same destination, and an attempt that fails before headers keeps the last count.
 +        const held = { bytes: 0 };
++        let mostHeld = 0;
 +        for (let attempt = 0;; attempt++) {
 +            const offset = held.bytes;
 +            try {
@@ -58,6 +68,12 @@ index b701311..d61d29a 100644
 +                if (digest != null) {
 +                    await verifyFile(destination, digest, options.cancellationToken);
 +                    return destination;
++                }
++                // Writing past every earlier attempt is progress, so the retries start over. A
++                // server that restarts each attempt at byte 0 must get further than before.
++                if (held.bytes > mostHeld) {
++                    mostHeld = held.bytes;
++                    attempt = 0;
 +                }
 +                if (attempt >= DOWNLOAD_STALL_RETRIES || !isDownloadStall(e)) {
 +                    throw e;
@@ -195,7 +211,7 @@ index b701311..d61d29a 100644
          });
      }
      createRequest(options, callback) {
-@@ -61,6 +202,35 @@ class ElectronHttpExecutor extends builder_util_runtime_1.HttpExecutor {
+@@ -61,6 +218,35 @@ class ElectronHttpExecutor extends builder_util_runtime_1.HttpExecutor {
          }
          return request;
      }

@@ -794,6 +794,12 @@ describe("auth session revoke", () => {
             runCli(["auth", "session", "issue", "--base-dir", baseDir, "--json"]),
           ),
         ) as { readonly sessionId: string };
+        // A server takes the lock before it publishes its record.
+        if (lockHeld) {
+          yield* ServerOwnership.acquireServerOwnership(statePath).pipe(
+            Effect.provide(ProcessRunner.layer),
+          );
+        }
         if (recorded) {
           // A port just released has no listener, so connecting to it is refused.
           const port = yield* (yield* NetService.NetService).reserveLoopbackPort("127.0.0.1");
@@ -808,11 +814,6 @@ describe("auth session revoke", () => {
               origin: `http://127.0.0.1:${port}`,
             },
           });
-        }
-        if (lockHeld) {
-          yield* ServerOwnership.acquireServerOwnership(statePath).pipe(
-            Effect.provide(ProcessRunner.layer),
-          );
         }
         const lockUnopenable = "lockUnopenable" in row;
         // SQLite cannot open a directory, so the lock can neither be taken nor be seen as held.

@@ -3908,8 +3908,24 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   // the committed list holds the target row with end maintenance off.
   const { jumpToMessageId } = props;
   const jumpReady = !!jumpToMessageId && loadedListKey === feedThreadKey;
-  if (jumpReady && revealedMessageId !== jumpToMessageId) {
-    setInteractionState((current) => ({ ...current, revealedMessageId: jumpToMessageId }));
+  // The match may sit in a folded long body or a folded agent-sent message, folded again since a jump.
+  const messageBodyKey = `message:${jumpToMessageId}`;
+  const agentMessageKey = `agent:${jumpToMessageId}`;
+  if (
+    jumpReady &&
+    (revealedMessageId !== jumpToMessageId ||
+      expandedWorkRows[messageBodyKey] !== true ||
+      expandedWorkRows[agentMessageKey] !== true)
+  ) {
+    setInteractionState((current) => ({
+      ...current,
+      revealedMessageId: jumpToMessageId,
+      expandedWorkRows: {
+        ...current.expandedWorkRows,
+        [messageBodyKey]: true,
+        [agentMessageKey]: true,
+      },
+    }));
   }
   const presentedFeed = usePendingTurnRows(
     useThreadFeedPresentation(props, expandedTurnIds, expandedWorkGroups, revealedMessageId),

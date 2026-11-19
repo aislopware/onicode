@@ -788,6 +788,48 @@ describe("isSidebarToggleShortcut", () => {
     );
   });
 
+  it("fires a custom Ctrl chord bound for a focused terminal", () => {
+    const bindings = [
+      ...DEFAULT_BINDINGS,
+      ...compileResolvedKeybindingsConfig([
+        { key: "ctrl+shift+e", command: "sidebar.toggle", when: "terminalFocus" },
+      ]),
+    ];
+    assert.isTrue(
+      isSidebarToggleShortcut(event({ key: "E", ctrlKey: true, shiftKey: true }), bindings, {
+        platform: "Linux",
+        context: { terminalFocus: true },
+      }),
+    );
+  });
+
+  it("fires Ctrl+B in a focused terminal when a binding names the terminal", () => {
+    const bindings = [
+      ...DEFAULT_BINDINGS,
+      ...compileResolvedKeybindingsConfig([
+        { key: "ctrl+b", command: "sidebar.toggle", when: "terminalFocus" },
+      ]),
+    ];
+    assert.isTrue(
+      isSidebarToggleShortcut(event({ key: "b", ctrlKey: true }), bindings, {
+        platform: "Linux",
+        context: { terminalFocus: true },
+      }),
+    );
+    const doubled = [
+      ...DEFAULT_BINDINGS,
+      ...compileResolvedKeybindingsConfig([
+        { key: "ctrl+b", command: "sidebar.toggle", when: "!!terminalFocus" },
+      ]),
+    ];
+    assert.isTrue(
+      isSidebarToggleShortcut(event({ key: "b", ctrlKey: true }), doubled, {
+        platform: "Linux",
+        context: { terminalFocus: true },
+      }),
+    );
+  });
+
   it("keeps Cmd+B toggling the sidebar from a focused terminal on macOS", () => {
     assert.isTrue(
       isSidebarToggleShortcut(event({ key: "b", metaKey: true }), DEFAULT_BINDINGS, {

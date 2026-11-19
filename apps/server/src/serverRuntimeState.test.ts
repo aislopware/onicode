@@ -303,6 +303,26 @@ describe("server ownership", () => {
     }).pipe(Effect.provide(layerOwnership)),
   );
 
+  it.effect("clears a crashed owner's record when it takes the lock", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const root = yield* fs.makeTempDirectoryScoped({ prefix: "oni-owner-crashed-" });
+      const statePath = path.join(root, "server-runtime.json");
+      yield* ServerRuntimeState.persistServerRuntimeState({
+        path: statePath,
+        state: { ...(yield* makeState), pid: process.pid, ownerId: "crashed-owner" },
+      });
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          yield* ServerOwnership.acquireServerOwnership(statePath, { clearCrashedRecord: true });
+          const record = yield* ServerRuntimeState.readPersistedServerRuntimeState(statePath);
+          assert.isTrue(Option.isNone(record));
+        }),
+      );
+    }).pipe(Effect.provide(layerOwnership)),
+  );
+
   it.effect("never removes a runtime record another server published", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

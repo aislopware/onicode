@@ -17,6 +17,7 @@ import * as ProcessRunner from "../processRunner.ts";
 import * as ServerOwnership from "../serverOwnership.ts";
 import {
   clearPersistedServerRuntimeState,
+  type PersistedServerRuntimeState,
   readLiveServerRuntimeState,
 } from "../serverRuntimeState.ts";
 
@@ -90,6 +91,51 @@ const isUnanswered = (cause: unknown) =>
   (HttpClientError.isHttpClientError(cause) && cause.response === undefined);
 
 /**
+ * Runs `whenNoServer` holding the ownership lock, or returns none. The lock, not the record, tells
+ * whether a server runs: a crashed server's record outlives it, and its pid and port may belong to
+ * another process by now. A lock that cannot be opened leaves the record to decide.
+ */
+const ifNoServerRuns = Effect.fn("RunningServer.ifNoServerRuns")(function* <A, E, R>(
+  serverRuntimeStatePath: string,
+  whenNoServer: Effect.Effect<A, E, R>,
+) {
+  return yield* ServerOwnership.acquireServerOwnership(serverRuntimeStatePath).pipe(
+    Effect.provide(ProcessRunner.layer),
+    Effect.as(true),
+    Effect.catchTags({
+      ServerAlreadyRunningError: () => Effect.succeed(false),
+      ServerOwnershipError: () => Effect.succeed(false),
+    }),
+    Effect.flatMap((owned) => (owned ? Effect.asSome(whenNoServer) : Effect.succeedNone)),
+    Effect.scoped,
+  );
+});
+
+/** The record of the server running on this state, if the ownership lock shows one runs. */
+export const readRunningServerState = Effect.fn("RunningServer.readRunningServerState")(function* (
+  serverRuntimeStatePath: string,
+) {
+  // Only the lock: a probe holding it longer would make a server starting meanwhile give up.
+  const lockFree = yield* ServerOwnership.holdServerOwnershipLock(serverRuntimeStatePath).pipe(
+    Effect.as(true),
+    Effect.catchTags({
+      ServerAlreadyRunningError: () => Effect.succeed(false),
+      ServerOwnershipError: () => Effect.succeed(false),
+    }),
+    Effect.scoped,
+  );
+  const record = yield* readLiveServerRuntimeState(serverRuntimeStatePath);
+  if (!lockFree || Option.isNone(record)) return record;
+  // A record without an owner is from a server older than the lock: its pid's start time decides.
+  const legacyLive =
+    record.value.ownerId === undefined &&
+    (yield* ServerOwnership.legacyOwnerIsLive(record.value).pipe(
+      Effect.provide(ProcessRunner.layer),
+    ));
+  return legacyLive ? record : Option.none<PersistedServerRuntimeState>();
+});
+
+/**
  * Makes a change through the running server, so the server applies it and its clients see it.
  * With no server, makes it locally while holding the ownership lock, so none starts midway.
  */
@@ -115,25 +161,9 @@ export const changeState = Effect.fn("RunningServer.changeState")(function* <A, 
       Effect.scoped,
     );
 
-  // The lock, not the record, tells whether a server runs: a crashed server's record outlives
-  // it, and its pid and port may belong to another process by now. A lock that cannot be
-  // opened leaves the record to decide.
-  const changed = yield* ServerOwnership.acquireServerOwnership(serverRuntimeStatePath).pipe(
-    Effect.provide(ProcessRunner.layer),
-    Effect.as(true),
-    Effect.catchTags({
-      ServerAlreadyRunningError: () => Effect.succeed(false),
-      ServerOwnershipError: () => Effect.succeed(false),
-    }),
-    Effect.flatMap((owned) =>
-      owned
-        ? locally.pipe(
-            Effect.tap(() => clearPersistedServerRuntimeState(serverRuntimeStatePath)),
-            Effect.asSome,
-          )
-        : Effect.succeedNone,
-    ),
-    Effect.scoped,
+  const changed = yield* ifNoServerRuns(
+    serverRuntimeStatePath,
+    locally.pipe(Effect.tap(() => clearPersistedServerRuntimeState(serverRuntimeStatePath))),
   );
   if (Option.isSome(changed)) return changed.value;
   const running = yield* readLiveServerRuntimeState(serverRuntimeStatePath);

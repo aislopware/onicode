@@ -20,6 +20,7 @@ import { createScratchProjectActions } from "../hooks/useScratchProject";
 import { getClientSettings } from "../hooks/useSettings";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
 import { selectProjectGroupingSettings } from "@onicode/client-runtime/state/project-grouping";
+import { isMacPlatform, resolveEventKeys } from "@onicode/shared/keybindings";
 import { selectActiveRightPanel, useRightPanelStore } from "../rightPanelStore";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { buildSidebarProjectSnapshots } from "../sidebarProjectGrouping";
@@ -35,6 +36,19 @@ import { useUiStateStore } from "../uiStateStore";
 import { type CommandHandler, registerCommands } from "./dispatcher";
 
 const CHAT_ROUTE_ID = "/_chat";
+const APP_ZOOM_KEYS = ["=", "+", "-", "0"];
+
+// Electron's zoom accelerators: Mod with = - 0, plus Shift only for + (Shift+=).
+function isAppZoomChord(event: KeyboardEvent): boolean {
+  const mac = isMacPlatform(navigator.platform);
+  const mod = mac ? event.metaKey : event.ctrlKey;
+  const otherMod = mac ? event.ctrlKey : event.metaKey;
+  if (!mod || otherMod || event.altKey) return false;
+  const keys = resolveEventKeys(event);
+  return event.shiftKey
+    ? keys.has("+") || keys.has("=")
+    : APP_ZOOM_KEYS.some((key) => keys.has(key));
+}
 
 /**
  * New-thread and preview commands, live while a chat route is showing and no
@@ -127,11 +141,11 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
       const environmentId = readRouteEnvironmentId();
       if (environmentId && canOperatePreview(environmentId)) dispatchPreviewAction(action);
     };
-  // Unclaimed, zoom keys reach the desktop menu accelerators or the browser's own zoom.
+  // Unclaimed, app zoom chords reach the desktop menu accelerators or the browser's own zoom.
   const zoomCommand =
     (action: PreviewAction): CommandHandler =>
     (event) => {
-      if (!isBrowserSurfaceFocused()) return false;
+      if (isAppZoomChord(event) && !isBrowserSurfaceFocused()) return false;
       previewCommand(action)(event);
     };
 

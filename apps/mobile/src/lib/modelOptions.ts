@@ -23,6 +23,7 @@ import {
   getProviderOptionDescriptors,
 } from "@onicode/shared/model";
 import { resolveModelShortName } from "@onicode/client-runtime/provider-clients";
+import { isProviderPickerReady } from "@onicode/client-runtime/providerPickerReadiness";
 import { resolveProvidersForCwd } from "@onicode/client-runtime/providerSkills";
 
 /** The contracts `disallowedProviderMessage` English, as translatable sentences. */
@@ -392,10 +393,11 @@ export function buildModelOptions(
     if (
       !matchesLockedProvider(provider) ||
       isDriverDisallowed(config, provider.driver) ||
-      !isProviderEnabledForProject(config, provider, projectId) ||
-      !provider.installed ||
-      provider.auth.status === "unauthenticated" ||
-      (provider.driver === "antigravity" && provider.availability === "unavailable")
+      // As on desktop, the project's settings decide whether the instance is on.
+      !isProviderPickerReady({
+        ...provider,
+        enabled: isProviderEnabledForProject(config, provider, projectId),
+      })
     ) {
       continue;
     }
@@ -498,7 +500,11 @@ export function buildModelOptions(
         isDefault: false,
         isLegacy: model?.isLegacy === true,
         ...(isModelSelectionUnavailable(config, fallbackModelSelection, projectId) ||
-        (provider !== undefined && !isProviderEnabledForProject(config, provider, projectId)) ||
+        (provider !== undefined &&
+          !isProviderPickerReady({
+            ...provider,
+            enabled: isProviderEnabledForProject(config, provider, projectId),
+          })) ||
         provider?.updateRequiredModels?.some((gated) => gated.slug === fallbackModelSelection.model)
           ? { isUnavailable: true }
           : {}),

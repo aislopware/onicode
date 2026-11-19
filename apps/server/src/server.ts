@@ -874,7 +874,9 @@ const layerMakeServer = Layer.unwrap(
   Effect.gen(function* () {
     const config = yield* ServerConfig.ServerConfig;
     // Before anything opens the database: one server per Onicode home.
-    const ownership = yield* ServerOwnership.acquireServerOwnership(config.serverRuntimeStatePath);
+    const ownership = yield* ServerOwnership.acquireServerOwnership(config.serverRuntimeStatePath, {
+      clearCrashedRecord: true,
+    });
     const activation = yield* Deferred.make<void>();
     const awaitActivation = Deferred.await(activation);
     const layerActivation = Layer.succeed(ServerActivation.ServerActivation, awaitActivation);

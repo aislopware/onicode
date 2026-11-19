@@ -33,7 +33,7 @@ The backend is part of each thread's model choice, so two threads can run on dif
 
 Sign-ins are different: every fx instance on a machine shares that machine's fx login. A backend you are signed out of shows as unavailable, with the command to run on that machine, such as `fx login grok`. Refresh the provider after signing in.
 
-**Default** runs whatever fx would start a new session on in the thread's project folder, including a model fx's settings give only that folder. Its label shows the machine-wide default. A custom model you add in the provider settings goes to fx as is, on the thread's current backend, and fx reports an error if that backend does not offer it.
+**Default** runs whatever fx would start a new session on in the thread's project folder, including a model fx's settings give only that folder. Its label shows the machine-wide default. While that default backend is signed out, Default is not offered. A custom model you add in the provider settings goes to fx as is, on the thread's current backend, and fx reports an error if that backend does not offer it.
 
 fx also has an **Effort** control. A new thread starts at Medium.
 

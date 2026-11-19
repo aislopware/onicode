@@ -74,8 +74,9 @@ function startDownload(onDisk: string, release = RELEASE) {
     ]);
     return request as { request: FakeRequest; headers: Record<string, string> };
   };
-  // The first request answers 200 and writes `body` to the file, then stalls before the end.
-  const stallAfterWriting = async (body: string) => {
+  // The first request answers 200 and writes `body` to the file, then stalls before the end, or
+  // fails with `error`.
+  const stallAfterWriting = async (body: string, error?: string) => {
     const [{ request }] = await first;
     const response = startResponse(request, 200, { "content-length": String(release.length) });
     const fileOut = createWriteStream.mock.results[0]!.value as NodeFS.WriteStream;
@@ -84,7 +85,8 @@ function startDownload(onDisk: string, release = RELEASE) {
     await committed;
     const closed = NodeEvents.EventEmitter.once(fileOut, "close");
     const retry = nextRequest();
-    await vi.advanceTimersByTimeAsync(60_000);
+    if (error === undefined) await vi.advanceTimersByTimeAsync(60_000);
+    else request.emit("error", new Error(error));
     await closed;
     await vi.advanceTimersByTimeAsync(2_000);
     return retry;
@@ -200,10 +202,19 @@ describe("ElectronHttpExecutor idle timeout", () => {
       written: PREFIX,
       retry: { status: 200, headers: {}, body: LARGE_RELEASE },
     },
-  ])("$name", async ({ written, retry: { status, headers, body } }) => {
+    {
+      name: "resumes a download whose connection dropped before the declared length",
+      written: PREFIX,
+      error: "net::ERR_CONTENT_LENGTH_MISMATCH",
+      retry: { status: 206, headers: { "content-range": RESUMED_RANGE }, body: "world" },
+    },
+  ])("$name", async ({ written, error, retry: { status, headers, body } }) => {
     using download = startDownload("", LARGE_RELEASE);
 
-    const { request: unanswered, headers: first } = await download.stallAfterWriting(written);
+    const { request: unanswered, headers: first } = await download.stallAfterWriting(
+      written,
+      error,
+    );
     expect(first.Range).toBe(`bytes=${written.length}-`);
     // A retry that fails before any response still resumes after the bytes the first one wrote.
     const retry = download.nextRequest();
@@ -242,6 +253,72 @@ describe("ElectronHttpExecutor idle timeout", () => {
 
     await expect(download.result).resolves.toBe(download.destination);
     expect(download.read()).toBe(LARGE_RELEASE);
+  });
+
+  it("keeps retrying while each stalled attempt writes more of the release", async () => {
+    const release = `${PREFIX.repeat(4)}world`;
+    using download = startDownload("", release);
+
+    let { request, headers } = await download.stallAfterWriting(PREFIX);
+    for (let chunks = 1; chunks < 4; chunks++) {
+      const offset = PREFIX.length * chunks;
+      expect(headers.Range).toBe(`bytes=${offset}-`);
+      const response = startResponse(request, 206, {
+        "content-range": `bytes ${offset}-${release.length - 1}/${release.length}`,
+        "content-length": String(release.length - offset),
+      });
+      const fileOut = download.lastFileOut();
+      const committed = NodeEvents.EventEmitter.once(fileOut, "drain");
+      response.write(PREFIX);
+      await committed;
+      const closed = NodeEvents.EventEmitter.once(fileOut, "close");
+      const retry = download.nextRequest();
+      await vi.advanceTimersByTimeAsync(60_000);
+      await closed;
+      // Long enough for a backoff that kept growing, so a download that gives up fails here.
+      await vi.advanceTimersByTimeAsync(8_000);
+      ({ request, headers } = await retry);
+    }
+    const offset = PREFIX.length * 4;
+    expect(headers.Range).toBe(`bytes=${offset}-`);
+    respond(
+      request,
+      206,
+      { "content-range": `bytes ${offset}-${release.length - 1}/${release.length}` },
+      "world",
+    );
+
+    await expect(download.result).resolves.toBe(download.destination);
+    expect(download.read()).toBe(release);
+  });
+
+  it("gives up on a server that restarts each attempt without getting further", async () => {
+    const release = `${PREFIX.repeat(4)}world`;
+    using download = startDownload("", release);
+    // The attempt answers 200 from byte 0 and stalls after writing `body`.
+    const stallFromStart = async (request: FakeRequest, body: string) => {
+      const response = startResponse(request, 200, { "content-length": String(release.length) });
+      const fileOut = download.lastFileOut();
+      const committed = NodeEvents.EventEmitter.once(fileOut, "drain");
+      response.write(body);
+      await committed;
+      const closed = NodeEvents.EventEmitter.once(fileOut, "close");
+      await vi.advanceTimersByTimeAsync(60_000);
+      await closed;
+      await vi.advanceTimersByTimeAsync(8_000);
+    };
+
+    let { request } = await download.stallAfterWriting(PREFIX.repeat(2));
+    // Neither retry writes more than the first attempt did, though the second beats the first.
+    for (const body of [PREFIX, PREFIX.repeat(2)]) {
+      const retry = download.nextRequest();
+      await stallFromStart(request, body);
+      ({ request } = await retry);
+    }
+    const outcome = expect(download.result).rejects.toThrow("Request timed out");
+    await stallFromStart(request, PREFIX);
+    expect(download.requestCount()).toBe(4);
+    await outcome;
   });
 
   it("fails a file past the end of the release when the caller cancels its digest check", async () => {
