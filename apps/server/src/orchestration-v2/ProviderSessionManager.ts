@@ -1445,7 +1445,7 @@ export const layerWithOptions = (
         return closeExit;
       });
 
-      const releaseEntry = (input: {
+      type ReleaseEntryInput = {
         readonly providerSessionId: ProviderSessionId;
         readonly reason: ProviderSessionReleaseReason;
         readonly detail?: string;
@@ -1456,7 +1456,17 @@ export const layerWithOptions = (
         readonly keepIf?: Effect.Effect<boolean>;
         readonly gracefulSubscribers?: boolean;
         readonly eventStreamCause?: Cause.Cause<ProviderAdapter.ProviderAdapterV2Error>;
-      }) =>
+      };
+
+      // Once out of the live map nothing else closes the entry, so an interrupted caller stops
+      // waiting without stopping the teardown, which a wedged finalizer could hold for 30 s.
+      const releaseEntry = (input: ReleaseEntryInput) =>
+        releaseEntryToEnd(input).pipe(
+          Effect.forkDetach({ startImmediately: true }),
+          Effect.flatMap(Fiber.join),
+        );
+
+      const releaseEntryToEnd = (input: ReleaseEntryInput) =>
         Effect.acquireUseRelease(
           removeLiveEntry(input),
           ([entry, releasedAt]) =>

@@ -1991,6 +1991,55 @@ it.effect("ProviderSessionManagerV2 still idles out a session releaseUnlessBusy 
   }),
 );
 
+it.effect("ProviderSessionManagerV2 closes a session whose release was interrupted", () =>
+  Effect.gen(function* () {
+    const state = yield* Ref.make(emptyState);
+    const scopeCloseReached = yield* Deferred.make<void>();
+    yield* Effect.gen(function* () {
+      const eventSink = yield* EventSink.EventSinkV2;
+      const idAllocator = yield* IdAllocator.IdAllocatorV2;
+      const manager = yield* ProviderSessionManager.ProviderSessionManagerV2;
+      const now = yield* DateTime.now;
+      const threadId = ThreadId.make("thread-provider-session-manager-interrupted-release");
+      const providerSessionId = idAllocator.derive.providerSession({
+        providerInstanceId: modelSelection.instanceId,
+      });
+      yield* eventSink.write({
+        events: [yield* makeThreadCreatedEvent({ idAllocator, threadId, now })],
+      });
+      yield* manager.open({ threadId, providerSessionId, modelSelection, runtimePolicy });
+      const deciding = yield* Deferred.make<void>();
+      const decided = yield* Deferred.make<void>();
+      const release = yield* manager
+        .releaseUnlessBusy({
+          providerSessionId,
+          ownProviderThreadIds: [],
+          throughRunOrdinal: 0,
+          keepIf: Deferred.succeed(deciding, undefined).pipe(
+            Effect.andThen(Deferred.await(decided)),
+            Effect.as(false),
+          ),
+          reason: "manual_shutdown",
+        })
+        .pipe(Effect.forkChild);
+      yield* Deferred.await(deciding);
+      const interrupting = yield* Fiber.interrupt(release).pipe(
+        Effect.forkChild({ startImmediately: true }),
+      );
+      yield* Deferred.succeed(decided, undefined);
+      yield* Fiber.join(interrupting);
+
+      yield* Deferred.await(scopeCloseReached);
+      yield* TestClock.adjust("30 seconds");
+      assert.isFalse(yield* manager.isLive(providerSessionId));
+    }).pipe(
+      Effect.provide(
+        layerTest({ state, idleTimeoutMs: 60_000, hangSessionScopeClose: true, scopeCloseReached }),
+      ),
+    );
+  }),
+);
+
 it.effect.each(["startTurn", "resumeTurn"] as const)(
   "ProviderSessionManagerV2 keeps a shared session a sibling is busy on when releasing (%s)",
   (start) =>

@@ -36,6 +36,7 @@ import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as CommandReceiptStore from "./CommandReceiptStore.ts";
 import * as Orchestrator from "./Orchestrator.ts";
 import * as ProviderSessionManager from "./ProviderSessionManager.ts";
+import * as IdAllocator from "@onicode/provider-core/server/IdAllocator";
 import * as ProviderAdapter from "@onicode/provider-core/server/ProviderAdapter";
 import * as ThreadManagementService from "./ThreadManagementService.ts";
 import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
@@ -1154,12 +1155,48 @@ it.effect.each([
     expected: { outcome: "releasing", sharedWithThreadIds: [] },
     teardown: ["release"],
   },
+  {
+    name: "keeps the session of a follow-up moved ahead of a later message in the queue",
+    others: [] as ReadonlyArray<string>,
+    killed: false,
+    followUp: "reordered",
+    expected: { outcome: "released", sharedWithThreadIds: [] },
+    teardown: ["keep"],
+  },
+  {
+    name: "keeps the shared process a fresh-context follow-up starts on",
+    others: [] as ReadonlyArray<string>,
+    killed: false,
+    followUp: "fresh",
+    expected: { outcome: "released", sharedWithThreadIds: [] },
+    teardown: ["keep"],
+  },
+  {
+    name: "keeps a shared process a busy sibling uses without detaching a follow-up from it",
+    others: ["thread:thread-management:force-stop:other"],
+    killed: false,
+    followUp: "fresh",
+    expected: {
+      outcome: "shared",
+      sharedWithThreadIds: ["thread:thread-management:force-stop:other"],
+    },
+    teardown: ["keep"],
+  },
 ])("Force stop $name", ({ others, killed, expected, teardown, ...row }) =>
   Effect.gen(function* () {
     const threadId = ThreadId.make("thread:thread-management:force-stop");
-    const providerSessionId = ProviderSessionId.make("provider-session:force-stop");
+    const instanceId = ProviderInstanceId.make("codex");
+    // A provider hosting several threads in one process runs them on its instance's shared session.
+    const providerSessionId = IdAllocator.derive.providerSession({
+      providerInstanceId: instanceId,
+    });
     const providerThreadId = ProviderThreadId.make("provider-thread:force-stop");
+    const reservedProviderThreadId = ProviderThreadId.make("provider-thread:force-stop:reserved");
     const runId = RunId.make("run:thread-management:force-stop");
+    const followUp = "followUp" in row ? row.followUp : undefined;
+    // Moved ahead of a message queued after it, the follow-up starts after a run of higher ordinal.
+    const targetOrdinal = followUp === "reordered" ? 3 : 1;
+    const followUpMessageId = MessageId.make("message:queued-follow-up");
     const dispatched: Array<OrchestrationV2Command | { readonly type: string }> = [];
     const teardowns: Array<string> = [];
     const tornDown = yield* Deferred.make<void>();
@@ -1168,10 +1205,13 @@ it.effect.each([
         Layer.mock(ProviderSessionManager.ProviderSessionManagerV2)({
           isLive: () => Effect.succeed(true),
           otherWorkingThreads: () => Effect.succeed(others.map((id) => ThreadId.make(id))),
-          releaseUnlessBusy: () =>
-            Effect.sync(() => teardowns.push("release")).pipe(
-              Effect.andThen(
-                "releaseHangs" in row ? Effect.never : Effect.succeed(!("siblingBusy" in row)),
+          releaseUnlessBusy: (input) =>
+            (input.keepIf ?? Effect.succeed(false)).pipe(
+              Effect.tap((keep) => Effect.sync(() => teardowns.push(keep ? "keep" : "release"))),
+              Effect.flatMap((keep) =>
+                "releaseHangs" in row
+                  ? Effect.never
+                  : Effect.succeed(!keep && !("siblingBusy" in row)),
               ),
             ),
           detach: () =>
@@ -1185,18 +1225,62 @@ it.effect.each([
         Layer.mock(Orchestrator.OrchestratorV2)({
           getThreadRecords: () =>
             Effect.succeed({
-              thread: { id: threadId, deletedAt: null },
+              thread: {
+                id: threadId,
+                deletedAt: null,
+                modelSelection: { instanceId, model: "gpt-5.4" },
+                activeProviderThreadId: providerThreadId,
+              },
               runs: [
                 {
                   id: runId,
-                  ordinal: 1,
+                  ordinal: targetOrdinal,
                   status: "settledRun" in row ? "completed" : "running",
                   activeAttemptId: "attempt",
+                  providerThreadId,
                 },
                 // A queued follow-up neither supersedes the request nor becomes the target.
-                { id: RunId.make("run:queued-follow-up"), ordinal: 2, status: "queued" },
+                {
+                  id: RunId.make("run:queued-follow-up"),
+                  ordinal: 2,
+                  status: "queued",
+                  userMessageId: followUpMessageId,
+                  modelSelection: { instanceId, model: "gpt-5.4" },
+                  providerInstanceId: instanceId,
+                  providerThreadId:
+                    followUp === "fresh"
+                      ? reservedProviderThreadId
+                      : followUp === "reordered"
+                        ? providerThreadId
+                        : null,
+                  ...(followUp === "fresh" ? { freshContext: true } : {}),
+                },
               ],
-              providerThreads: [{ id: providerThreadId, appThreadId: threadId, providerSessionId }],
+              messages: followUp === undefined ? [] : [{ id: followUpMessageId, role: "user" }],
+              turnItems: [],
+              providerThreads: [
+                {
+                  id: providerThreadId,
+                  appThreadId: threadId,
+                  providerInstanceId: instanceId,
+                  providerSessionId,
+                  ownerNodeId: null,
+                  firstRunOrdinal: 1,
+                  lastRunOrdinal: targetOrdinal,
+                  nativeThreadRef: { nativeId: "native-thread" },
+                },
+                // Reserved when the fresh-context follow-up queued; its session comes at start.
+                {
+                  id: reservedProviderThreadId,
+                  appThreadId: threadId,
+                  providerInstanceId: instanceId,
+                  providerSessionId: null,
+                  ownerNodeId: null,
+                  firstRunOrdinal: null,
+                  lastRunOrdinal: null,
+                  nativeThreadRef: null,
+                },
+              ],
               providerTurns: [
                 {
                   id: "provider-turn:force-stop",

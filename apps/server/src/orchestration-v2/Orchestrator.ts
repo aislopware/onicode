@@ -1536,6 +1536,81 @@ function rootProviderThreadsForProvider(
     );
 }
 
+/** The stored provider thread a queued run's start continues; none when the start makes a new one. */
+function queuedRunTargetProviderThread(input: {
+  readonly projection: Pick<
+    OrchestrationV2ThreadProjection,
+    "providerThreads" | "thread" | "runs" | "turnItems"
+  >;
+  readonly providerInstanceId: ModelSelection["instanceId"];
+  readonly followsCurrent: boolean;
+  readonly freshContext: boolean;
+  readonly contextBoundary: number;
+  readonly activeProviderThread: OrchestrationV2ProviderThread | undefined;
+  readonly storedProviderThread: OrchestrationV2ProviderThread;
+}): OrchestrationV2ProviderThread | undefined {
+  const { activeProviderThread, contextBoundary, storedProviderThread } = input;
+  // A run queued before a fresh run started is bound to the conversation that run left behind.
+  const followsLatestContext =
+    !input.freshContext &&
+    (input.followsCurrent || providerThreadPredatesBoundary(storedProviderThread, contextBoundary));
+  return followsLatestContext
+    ? activeProviderThread?.providerInstanceId === input.providerInstanceId &&
+      !providerThreadPredatesBoundary(activeProviderThread, contextBoundary)
+      ? activeProviderThread
+      : rootProviderThreadsForProvider(input.projection, input.providerInstanceId)[0]
+    : input.freshContext &&
+        // The reserved row belongs to the instance the run queued on, which may have changed.
+        (storedProviderThread.providerInstanceId !== input.providerInstanceId ||
+          storedProviderThread.firstRunOrdinal !== null ||
+          storedProviderThread.nativeThreadRef !== null)
+      ? undefined
+      : storedProviderThread;
+}
+
+/**
+ * Sessions a queued run's start can put it on, bound the way `startNextQueuedRun` binds it. A
+ * thread with no session yet, or one on another instance, takes the instance's shared session
+ * where its provider hosts several threads in one.
+ */
+export function queuedRunProviderSessionIds(
+  projection: Pick<
+    OrchestrationV2ThreadProjection,
+    "providerThreads" | "thread" | "runs" | "turnItems" | "messages"
+  >,
+  run: OrchestrationV2Run,
+): ReadonlyArray<ProviderSessionId> {
+  const storedProviderThread = projection.providerThreads.find(
+    (candidate) => candidate.id === run.providerThreadId,
+  );
+  const message = projection.messages.find((candidate) => candidate.id === run.userMessageId);
+  if (storedProviderThread === undefined || message === undefined) return [];
+  const { instanceId } = queuedRunModelSelection(projection, run);
+  const freshContext = run.freshContext === true;
+  const contextBoundary = freshContext ? run.ordinal : contextBoundaryOrdinal(projection);
+  const target = queuedRunTargetProviderThread({
+    projection,
+    providerInstanceId: instanceId,
+    followsCurrent: followsCurrentConversation(message),
+    freshContext,
+    contextBoundary,
+    activeProviderThread: dispatchProviderThread(
+      projection,
+      message,
+      freshContext,
+      contextBoundary,
+    ),
+    storedProviderThread,
+  });
+  const own = target?.providerSessionId ?? null;
+  return own !== null && target?.providerInstanceId === instanceId
+    ? [own]
+    : [
+        ...(own === null ? [] : [own]),
+        IdAllocator.derive.providerSession({ providerInstanceId: instanceId }),
+      ];
+}
+
 function isHandoffSourceRun(run: OrchestrationV2Run): boolean {
   return (
     run.status === "completed" ||
@@ -2677,22 +2752,15 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         freshContext,
         contextBoundary,
       );
-      // A run queued before a fresh run started is bound to the conversation that run left behind.
-      const followsLatestContext =
-        !freshContext &&
-        (followsCurrent || providerThreadPredatesBoundary(storedProviderThread, contextBoundary));
-      const targetProviderThread = followsLatestContext
-        ? activeProviderThread?.providerInstanceId === queuedRun.providerInstanceId &&
-          !providerThreadPredatesBoundary(activeProviderThread, contextBoundary)
-          ? activeProviderThread
-          : rootProviderThreadsForProvider(projection, queuedRun.providerInstanceId)[0]
-        : freshContext &&
-            // The reserved row belongs to the instance the run queued on, which may have changed.
-            (storedProviderThread.providerInstanceId !== queuedRun.providerInstanceId ||
-              storedProviderThread.firstRunOrdinal !== null ||
-              storedProviderThread.nativeThreadRef !== null)
-          ? undefined
-          : storedProviderThread;
+      const targetProviderThread = queuedRunTargetProviderThread({
+        projection,
+        providerInstanceId: queuedRun.providerInstanceId,
+        followsCurrent,
+        freshContext,
+        contextBoundary,
+        activeProviderThread,
+        storedProviderThread,
+      });
       const queuedProviderThread: OrchestrationV2ProviderThread = targetProviderThread ?? {
         id: idAllocator.derive.providerThread({
           driver: targetAdapter.driver,

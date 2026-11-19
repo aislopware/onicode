@@ -1463,31 +1463,55 @@ const make = Effect.gen(function* () {
       const ownProviderThreadIds = records.providerThreads.flatMap((providerThread) =>
         providerThread.appThreadId === input.threadId ? [providerThread.id] : [],
       );
-      // Settling the target can promote a queued follow-up onto the same session; that run is
-      // not Force stop's to end. Only a newer run bound to a provider thread on this session
-      // counts, including an unheld queued one when this stop ended the target: the run-end
-      // reaction may not have promoted it yet. An unreadable thread counts as one.
+      // A follow-up the settlement promotes onto this session is not Force stop's to end: a newer
+      // active run counts, and so does an unheld queued one the run-end reaction may not have
+      // promoted yet, bound as its promotion binds it (queue order is not ordinal order). An
+      // unreadable thread counts as one.
       const throughRunOrdinal = target?.ordinal ?? 0;
       const endedActiveTarget = target !== undefined && isActiveRun(target);
-      const laterRunActive = (providerSessionId: ProviderSessionId) =>
-        orchestrator.getThreadRecords(input.threadId, ["runs", "providerThreads"]).pipe(
-          Effect.map(({ runs, providerThreads }) => {
-            const onSession = new Set(
-              providerThreads.flatMap((providerThread) =>
-                providerThread.providerSessionId === providerSessionId ? [providerThread.id] : [],
-              ),
-            );
-            return runs.some(
+      const laterRunActive = Effect.fn("ThreadManagementService.forceStopLaterRunActive")(
+        function* (providerSessionId: ProviderSessionId) {
+          const { runs, providerThreads } = yield* orchestrator.getThreadRecords(input.threadId, [
+            "runs",
+            "providerThreads",
+          ]);
+          const onSession = new Set(
+            providerThreads.flatMap((providerThread) =>
+              providerThread.providerSessionId === providerSessionId ? [providerThread.id] : [],
+            ),
+          );
+          if (
+            runs.some(
               (run) =>
                 run.ordinal > throughRunOrdinal &&
-                (isActiveRun(run) ||
-                  (endedActiveTarget && run.status === "queued" && run.queueHeld !== true)) &&
+                isActiveRun(run) &&
                 run.providerThreadId !== null &&
                 onSession.has(run.providerThreadId),
-            );
-          }),
-          Effect.orElseSucceed(() => true),
-        );
+            )
+          ) {
+            return true;
+          }
+          const queued = endedActiveTarget
+            ? runs.filter((run) => run.status === "queued" && run.queueHeld !== true)
+            : [];
+          if (queued.length === 0) return false;
+          const context = yield* orchestrator.getThreadRecords(
+            input.threadId,
+            ["messages", "turnItems"],
+            {
+              messageIds: queued.map((run) => run.userMessageId),
+              turnItemTypes: ["user_message"],
+            },
+          );
+          return queued.some((run) =>
+            Orchestrator.queuedRunProviderSessionIds(
+              { ...context, runs, providerThreads },
+              run,
+            ).includes(providerSessionId),
+          );
+        },
+        Effect.orElseSucceed(() => true),
+      );
       const detach = (providerSessionId: ProviderSessionId) =>
         sessions
           .detach({ providerSessionId, threadId: input.threadId, detail: FORCE_STOP_REASON })
@@ -1516,8 +1540,12 @@ const make = Effect.gen(function* () {
         for (const threadId of others) sharedWith.add(threadId);
         if (others.length > 0) {
           shared = true;
-          yield* detach(providerSessionId);
-          continue;
+          // Detaching unloads every native thread this thread has there, a follow-up's too.
+          // Kept, the release below still drops the stopped turn so the process can idle.
+          if (!(yield* laterRunActive(providerSessionId))) {
+            yield* detach(providerSessionId);
+            continue;
+          }
         }
         // The session manager re-checks atomically with turn starts and keeps a session a
         // sibling began using in the meantime.
