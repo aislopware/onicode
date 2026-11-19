@@ -2778,3 +2778,4 @@ b5481adcd8	take	scheduled tasks start from the project's default branch; webhook
 f0f9de46c6	take	fix(web): localize compact restart countdown
 98af8803fe	take	refactor(web): share restart countdown seconds in update capsule
 02c5270a11	take	fix(web): keep SSH connection checks pending until they finish (#39328)
+b5bef4d939	take	/logout in chat needs providers:manage; guest-link and analytics parts left out
