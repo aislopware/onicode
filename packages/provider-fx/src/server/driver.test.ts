@@ -5,9 +5,11 @@ import { ProviderInstanceId } from "@onicode/contracts";
 import * as IdAllocator from "@onicode/provider-core/server/IdAllocator";
 import * as McpProviderSessions from "@onicode/provider-core/server/McpProviderSessions";
 import * as ProviderEventLoggers from "@onicode/provider-core/server/ProviderEventLoggers";
+import * as ProviderLatestVersions from "@onicode/provider-core/server/ProviderLatestVersions";
 import * as TestProviderHost from "@onicode/provider-testing/TestProviderHost";
 import * as HostProcess from "@onicode/shared/HostProcess";
 import * as Effect from "effect/Effect";
+import * as HttpClient from "effect/http/HttpClient";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
@@ -25,10 +27,17 @@ const layerTest = TestProviderHost.layer({ runBackgroundWork: false }).pipe(
   Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   Layer.provideMerge(IdAllocator.layer),
   Layer.provideMerge(McpProviderSessions.layer),
+  Layer.provideMerge(ProviderLatestVersions.layer),
   Layer.provideMerge(
     Layer.succeed(
       ProviderEventLoggers.ProviderEventLoggers,
       ProviderEventLoggers.NoOpProviderEventLoggers,
+    ),
+  ),
+  Layer.provideMerge(
+    Layer.succeed(
+      HttpClient.HttpClient,
+      HttpClient.make(() => Effect.die("Unexpected HTTP request")),
     ),
   ),
 );

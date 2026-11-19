@@ -2537,3 +2537,4 @@ c350ee7e15	take	feat(web): filter the issues list by project
 2e3d9fccdd	take	feat(web): show linked issues beside thread pull requests; dropped the Share with guest catalog key (removed surface), kept desktop-only wording in docs
 b4239c4b23	skip	guest links are a removed surface (Funnel/guest share); mobile guest share sheet only serves it
 733bc8f1d0	take	taken as is; mobile counterpart of desktop citations, shares selector logic via @onicode/shared/assistantCitations; server rejects over-long expanded quotes before opening a provider session
+3ce2145864	take	taken as is; ACP stop/cancel relabel is gated on the fx flavor's isCancelledToolCall, other ACP providers unchanged; shared mise detection now honours MISE_DATA_DIR (also helps Claude/Codex installs)
