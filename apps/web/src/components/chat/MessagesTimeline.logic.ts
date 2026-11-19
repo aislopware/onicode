@@ -79,7 +79,7 @@ import {
   formatReadToolLabel,
   formatSearchToolLabel,
 } from "@onicode/shared/toolActivityCopy";
-import { isWindowsAbsolutePath } from "@onicode/shared/path";
+import { isHostPath } from "@onicode/shared/path";
 
 export function timelineEntryRunId(entry: TimelineEntry): RunId | null {
   if (entry.kind === "message") {
@@ -231,7 +231,7 @@ export function workEntryReadOutput(
       workEntryReadRawPaths(entry as WorkLogEntry)
         .map((path) => {
           const trimmed = path.trim().replaceAll("\\", "/");
-          if (!workspaceRoot || trimmed.startsWith("/") || isWindowsAbsolutePath(trimmed)) {
+          if (!workspaceRoot || isHostPath(trimmed)) {
             return trimmed;
           }
           const root = workspaceRoot.replaceAll("\\", "/").replace(/\/+$/, "");
