@@ -2862,7 +2862,22 @@ export const make = Effect.gen(function* () {
             yield* executeMr("rebase");
           }
           const refs = yield* getDiffRefs(input);
-          // After a rebase, the head checked above is replaced by its rebased commits.
+          // A rebase that moved the head may carry a push made around it, so the rebased
+          // commits need their own review; an already rebased branch still merges pinned.
+          if (
+            input.mergeMethod === "rebase" &&
+            input.expectedHeadSha !== undefined &&
+            refs.headSha !== input.expectedHeadSha
+          ) {
+            return yield* new GitLabMutationRefusedError({
+              command: "glab",
+              cwd: input.cwd,
+              operation: "runMergeRequestAction",
+              reasons: [
+                `the rebase moved the head to ${refs.headSha}; review it, then merge with that as the expected head`,
+              ],
+            });
+          }
           flags.push(
             "--sha",
             input.mergeMethod === "rebase" ? refs.headSha : (input.expectedHeadSha ?? refs.headSha),
