@@ -121,6 +121,16 @@ describe("previewRuntimeFor on desktop", () => {
       runtime: undefined,
     },
     {
+      // On the environment, another loopback address at the forward's port is another server.
+      case: "a host from before the tunnel, the SSH port at another address",
+      target: remote,
+      origin: ssh,
+      tunnel: false,
+      operate: true,
+      url: "http://[::1]:52000/",
+      runtime: "server",
+    },
+    {
       case: "a host from before the tunnel, another port over SSH",
       target: remote,
       origin: ssh,

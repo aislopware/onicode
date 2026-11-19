@@ -177,7 +177,9 @@ const parseProxyRequest = (head: string, authorization: string): ProxyRequest =>
   };
 };
 
-const statusCode = (head: string) => Number(head.split(" ", 2)[1]);
+// NaN unless the status line is unambiguous; Chromium reads loose forms the same way or not at all.
+const statusCode = (head: string) =>
+  Number(/^HTTP\/1\.[01] (\d{3})(?: |$)/.exec(head.split("\r\n", 1)[0] ?? "")?.[1]);
 
 // A destination's 407 would look like the listener's own challenge, answered with its credentials.
 const relayedResponseHead = (head: string) => {
@@ -209,10 +211,11 @@ const isTunnelEndpoint = (
   destination: { readonly host: string; readonly port: number },
 ) => {
   const endpoint = tunnelEndpoint(tunnelUrl);
+  // `localhost` names the forward; another address at its port is another server there.
   return (
     isLoopbackName(endpoint.host) &&
-    endpoint.host === destination.host &&
-    endpoint.port === destination.port
+    endpoint.port === destination.port &&
+    (endpoint.host === destination.host || !isLoopbackIp(destination.host))
   );
 };
 
@@ -416,8 +419,8 @@ const make = Effect.gen(function* () {
           while (true) {
             const response = yield* readHead(target.pull, received);
             // Unread, it would desynchronise every later response; a close shows as a failure.
-            if (response.head === undefined) return;
-            const status = statusCode(response.head);
+            const status = response.head === undefined ? Number.NaN : statusCode(response.head);
+            if (response.head === undefined || Number.isNaN(status)) return;
             if (status >= 100 && status < 200 && status !== 101) {
               yield* writer.write(Buffer.from(`${response.head}\r\n\r\n`, "latin1"));
               received = response.rest;

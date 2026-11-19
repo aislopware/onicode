@@ -37,7 +37,14 @@ const needsTunnel = (environmentId: EnvironmentId, rawUrl: string): boolean => {
     const origin = readPreparedConnection(environmentId)?.httpBaseUrl;
     if (origin === undefined) return true;
     const environment = new URL(origin);
-    return !(isLocalLoopbackHost(environment.hostname) && urlPort(environment) === urlPort(url));
+    // `localhost` names the forward; another address at its port is another server there.
+    const namesForward =
+      url.hostname === environment.hostname || !/^\[|^[\d.]+$/.test(url.hostname);
+    return !(
+      isLocalLoopbackHost(environment.hostname) &&
+      urlPort(environment) === urlPort(url) &&
+      namesForward
+    );
   } catch {
     return true;
   }
