@@ -73,6 +73,7 @@ import { useEnvironmentScopeDenied } from "../../state/session";
 import { environmentThreadDetails } from "../../state/threads";
 import { scopeProjectRef, scopeThreadRef } from "@onicode/client-runtime/environment";
 
+import { SymbolView } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
 import { ComposerAttachmentButton } from "./ComposerAttachmentButton";
 import {
@@ -898,6 +899,22 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
             onDismiss={voiceInput.cancel}
           />
           {isExpanded ? editingAttachments : null}
+          {attachmentBlockReason !== null ? (
+            <View className="flex-row items-center gap-1.5 px-4 py-1.5">
+              <SymbolView
+                name="exclamationmark.triangle"
+                size={13}
+                tintColorClassName="accent-warning-foreground"
+                type="monochrome"
+              />
+              <Text
+                accessibilityRole="alert"
+                className="min-w-0 flex-1 text-xs text-warning-foreground"
+              >
+                {attachmentBlockReason}
+              </Text>
+            </View>
+          ) : null}
           <View
             onLayout={(event) => {
               compactEditor.onRowLayout(event);
