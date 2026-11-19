@@ -37,4 +37,14 @@ it("reads turn items once however many fresh-session scheduled runs a thread has
   assert.equal(scheduledOrdinals.size, scheduledRuns);
   assert.isFalse(scheduledOrdinals.has(clearOrdinal));
   assert.isAtMost(itemReads, items.length);
+
+  // Most threads never start fresh, and their dispatches should not read turn items at all.
+  itemReads = 0;
+  const continuing = {
+    runs: runs.map((run) => ({ ...run, freshContext: false })),
+    turnItems,
+  } as unknown as Projection;
+  assert.equal(contextBoundaryOrdinal(continuing), 0);
+  assert.equal(scheduledFreshRunOrdinals(continuing).size, 0);
+  assert.equal(itemReads, 0);
 });

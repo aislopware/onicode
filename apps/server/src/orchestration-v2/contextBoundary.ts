@@ -18,11 +18,11 @@ function scheduledMessageIds(
 export function scheduledFreshRunOrdinals(
   projection: Pick<OrchestrationV2ThreadProjection, "runs" | "turnItems">,
 ): ReadonlySet<number> {
+  const freshRuns = projection.runs.filter((run) => run.freshContext === true);
+  if (freshRuns.length === 0) return new Set();
   const messageIds = scheduledMessageIds(projection.turnItems);
   return new Set(
-    projection.runs.flatMap((run) =>
-      run.freshContext === true && messageIds.has(run.userMessageId) ? [run.ordinal] : [],
-    ),
+    freshRuns.flatMap((run) => (messageIds.has(run.userMessageId) ? [run.ordinal] : [])),
   );
 }
 
