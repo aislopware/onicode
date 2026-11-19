@@ -235,6 +235,33 @@ try {
   parentPort.postMessage({ type: "unavailable", ...describe(error) });
 }
 const statements = new Map();
+const endsTransaction = /^\\s*(?:COMMIT|END|ROLLBACK)(?:\\s+TRANSACTION)?\\s*;?\\s*$/i;
+// The savepoints the parent deferred, with the error of one that could not open. Statements in
+// such a scope fail with that error, as a direct connection never runs them, until it ends.
+// Effect's release is a comment, so it only ends a scope here; SQLite keeps the savepoint, as direct.
+const scopes = [];
+const control = (sql) => {
+  const [, verb, name] = /^(SAVEPOINT|ROLLBACK TO SAVEPOINT|-- release) (\\S+)$/.exec(sql);
+  if (verb === "SAVEPOINT") {
+    let error;
+    try {
+      db.exec(sql);
+    } catch (cause) {
+      error = cause;
+    }
+    scopes.push({ name, error });
+    return;
+  }
+  const at = scopes.findLastIndex((scope) => scope.name === name);
+  if (at === -1) return db.exec(sql);
+  const target = scopes[at];
+  scopes.splice(verb === "ROLLBACK TO SAVEPOINT" ? at + 1 : at);
+  if (target.error === undefined) return db.exec(sql);
+  // Effect saw the scope fail if it rolls back. If it releases one no statement failed in, as an
+  // empty one, the failure is returned so its parent fails as on a direct connection.
+  if (verb === "ROLLBACK TO SAVEPOINT") target.reported = true;
+  else if (!target.reported) return target.error;
+};
 const prepare = (sql, cached) => {
   if (!cached) return db.prepare(sql);
   let statement = statements.get(sql);
@@ -262,7 +289,29 @@ parentPort.on("message", (request) => {
   try {
     if (db === undefined) throw new Error("database connection is unavailable");
     operation = "execute";
-    for (const savepoint of savepoints) db.exec(savepoint);
+    let failure;
+    let lost;
+    for (const savepoint of savepoints) {
+      try {
+        lost ??= control(savepoint);
+      } catch (error) {
+        failure ??= error;
+      }
+    }
+    // A transaction's end still runs, so a failed control cannot keep it open.
+    if (!endsTransaction.test(sql)) {
+      // A caller's release is not queued, since it can commit, but ends its scopes here too.
+      const release = /^\\s*RELEASE\\s+(?:SAVEPOINT\\s+)?(effect_sql_\\d+)\\s*;?\\s*$/i.exec(sql);
+      const at = release === null ? -1 : scopes.findLastIndex((scope) => scope.name === release[1]);
+      if (at !== -1) {
+        scopes.splice(at);
+      } else if (release === null) {
+        const failed = scopes.filter((scope) => scope.error !== undefined);
+        for (const scope of failed) scope.reported = true;
+        failure ??= lost ?? failed.at(-1)?.error;
+      }
+      if (failure !== undefined) throw failure;
+    }
     operation = "prepare";
     const statement = prepare(sql, cached);
     operation = "execute";
@@ -306,6 +355,8 @@ parentPort.on("message", (request) => {
     // A failed iterator can report its previous SQLite error when the statement is reused.
     statements.delete(sql);
     reply({ id, error: { operation, ...describe(error) } });
+  } finally {
+    if (db !== undefined && !db.isTransaction) scopes.length = 0;
   }
 });
 `;
@@ -395,7 +446,8 @@ const makeWorkerConnection = Effect.fnUntraced(function* (options: {
       }
     | undefined;
   let nextRequestId = 0;
-  // Materialize nested savepoints with the next statement; empty jobs need no worker round trip.
+  // Savepoint statements wait in order for the next statement, so nested jobs need no worker
+  // round trip; the worker runs them first and tracks which ones opened.
   const pendingSavepoints: string[] = [];
   // A replacement writer would lose the pragmas callers set on it, such as foreign_keys.
   let writerStopped: string | undefined;
@@ -433,10 +485,19 @@ const makeWorkerConnection = Effect.fnUntraced(function* (options: {
     >();
     const stop = (message: string) => {
       stoppedMessage = message;
-      replies.close();
       if (options.role === "writer") writerStopped = message;
       announce({ type: "unavailable", message });
       if (current?.worker === worker) current = undefined;
+      // The exit can overtake replies sent just before it. Their callers resume synchronously, so the
+      // worker must already look stopped, or a closing scope would wait for this exit again.
+      for (
+        let next = NodeWorkerThreads.receiveMessageOnPort(replies);
+        next !== undefined;
+        next = NodeWorkerThreads.receiveMessageOnPort(replies)
+      ) {
+        receive(next.message);
+      }
+      replies.close();
       for (const [id, request] of pending) {
         request.resume(
           request.endsTransaction
@@ -483,15 +544,41 @@ const makeWorkerConnection = Effect.fnUntraced(function* (options: {
         const endsTransaction = readOnly
           ? endsReadTransaction(input.sql)
           : /^\s*ROLLBACK\b/i.test(input.sql);
-        if (stoppedMessage !== undefined) {
-          return endsTransaction
-            ? Effect.succeed([])
-            : Effect.fail(failedWith({ message: stoppedMessage }, "execute"));
-        }
         const safeIntegers = Boolean(Context.get(fiber.context, Client.SafeIntegers));
         const reply = Effect.callback<ReadonlyArray<any>, SqlError>((resume) => {
+          // Checked beside the post: the worker can stop while the fiber yields, and a post to it is dropped.
+          if (stoppedMessage !== undefined) {
+            resume(
+              endsTransaction
+                ? Effect.succeed([])
+                : Effect.fail(failedWith({ message: stoppedMessage }, "execute")),
+            );
+            return;
+          }
           const id = nextRequestId++;
           const received = new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT));
+          const cached = input.cached && !hasLargeBinding(input.params);
+          // Every post carries the queue, COMMIT too, so no savepoint outlives the statements after it.
+          const message = {
+            id,
+            safeIntegers,
+            ...input,
+            cached,
+            received,
+            savepoints: [...pendingSavepoints],
+          };
+          const seen = Atomics.load(replied, 0);
+          try {
+            // oxlint-disable-next-line unicorn/require-post-message-target-origin -- Node workers do not accept a target origin.
+            worker.postMessage(message);
+          } catch (cause) {
+            // An uncloneable binding never reaches the worker, so nothing may wait for its reply.
+            resume(Effect.fail(failed(cause, workerFailureMessages.execute, "execute")));
+            return;
+          }
+          // An unsent savepoint must stay queued, or its rollback would target an older sibling's.
+          pendingSavepoints.length = 0;
+          // Replies arrive on the event loop or in the drain below, so registering after the post is safe.
           pending.set(id, {
             endsTransaction,
             received,
@@ -504,20 +591,6 @@ const makeWorkerConnection = Effect.fnUntraced(function* (options: {
               ),
           });
           if (pending.size === 1) worker.ref();
-          const cached = input.cached && !hasLargeBinding(input.params);
-          const message = {
-            id,
-            safeIntegers,
-            ...input,
-            cached,
-            received,
-            savepoints: [...pendingSavepoints],
-          };
-          const seen = Atomics.load(replied, 0);
-          // oxlint-disable-next-line unicorn/require-post-message-target-origin -- Node workers do not accept a target origin.
-          worker.postMessage(message);
-          // An unsent savepoint must stay queued, or its rollback would target an older sibling's.
-          pendingSavepoints.length = 0;
           if (Atomics.wait(replied, 0, seen, replyWaitMs) === "timed-out") return;
           for (
             let next = NodeWorkerThreads.receiveMessageOnPort(replies);
@@ -550,19 +623,15 @@ const makeWorkerConnection = Effect.fnUntraced(function* (options: {
         // Read snapshots need deferred BEGIN; readonly connections reject IMMEDIATE and EXCLUSIVE.
         const statement = readOnly && /^\s*BEGIN\b/i.test(sql) ? "BEGIN" : sql;
         const effect = Effect.suspend(() => {
-          if (!readOnly && /^SAVEPOINT effect_sql_\d+$/.test(statement)) {
+          const savepoint = /^(SAVEPOINT|ROLLBACK TO SAVEPOINT|-- release) (effect_sql_\d+)$/.exec(
+            statement,
+          );
+          // Only the writer queues savepoints, and only its worker needs their release.
+          if (readOnly && savepoint?.[1] === "-- release") return Effect.succeed([]);
+          if (!readOnly && savepoint !== null) {
             pendingSavepoints.push(statement);
             return Effect.succeed([]);
           }
-          const rollback = /^ROLLBACK TO SAVEPOINT (effect_sql_\d+)$/.exec(statement);
-          if (rollback !== null) {
-            const pending = pendingSavepoints.lastIndexOf(`SAVEPOINT ${rollback[1]}`);
-            if (pending !== -1) {
-              pendingSavepoints.splice(pending);
-              return Effect.succeed([]);
-            }
-          }
-          if (statement === "COMMIT" || statement === "ROLLBACK") pendingSavepoints.length = 0;
           return request({
             sql: statement,
             params: params ?? [],
@@ -798,7 +867,6 @@ const startCheckpointWorker = Effect.fnUntraced(function* (filename: string) {
     return undefined;
   }
   const worker = started.success;
-  worker.unref();
   const runFork = Effect.runForkWith(yield* Effect.context<never>());
   let stopped = false;
   const stop = (reason: string) => {
@@ -812,6 +880,8 @@ const startCheckpointWorker = Effect.fnUntraced(function* (filename: string) {
   });
   worker.on("error", (cause) => stop(cause instanceof Error ? cause.message : String(cause)));
   worker.on("exit", (code) => stop(`exited with code ${code}`));
+  // A message listener refs the worker again, so unref only after adding listeners.
+  worker.unref();
   yield* Effect.addFinalizer(() =>
     Effect.promise(() => {
       stopped = true;
@@ -1169,6 +1239,9 @@ const make = Effect.fn("makeWithDatabase")(function* (
     transactionAcquirer,
     // BEGIN IMMEDIATE avoids read-then-write SQLITE_BUSY_SNAPSHOT, which busy_timeout cannot resolve.
     beginTransaction: options.readonly === true ? "BEGIN" : "BEGIN IMMEDIATE",
+    // Tells the writer worker that a nested scope ended, so a savepoint that could not open stops
+    // mattering. A comment, so it never commits or flushes anything a direct connection would not.
+    releaseSavepoint: writerWorker ? (name) => `-- release ${name}` : undefined,
     spanAttributes: [
       ...(options.spanAttributes ? Object.entries(options.spanAttributes) : []),
       [ATTR_DB_SYSTEM_NAME, "sqlite"],

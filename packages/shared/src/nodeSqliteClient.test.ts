@@ -31,6 +31,7 @@ const silentWorkers = vi.hoisted(() => ({ on: false, readyOnTerminate: false }))
 const failingWorkers = vi.hoisted(() => ({ message: undefined as string | undefined }));
 const checkpointWorkers = vi.hoisted((): Array<NodeWorkerThreads.Worker> => []);
 const replyBatches = vi.hoisted((): Array<ReadonlyArray<unknown>> => []);
+const workerReplied = vi.hoisted(() => new WeakMap<NodeWorkerThreads.Worker, Int32Array>());
 
 vi.mock("node:worker_threads", async (importOriginal) => {
   const actual = await importOriginal<typeof NodeWorkerThreads>();
@@ -46,6 +47,9 @@ vi.mock("node:worker_threads", async (importOriginal) => {
       startedWorkers.push(this);
       workerExits.set(this, new Promise((resolve) => this.once("exit", () => resolve())));
       if (args[1]?.workerData?.frames !== undefined) checkpointWorkers.push(this);
+      if (args[1]?.workerData?.replied !== undefined) {
+        workerReplied.set(this, args[1].workerData.replied);
+      }
     }
     override terminate() {
       // A "ready" already queued when termination starts reaches the parent before "exit".
@@ -78,6 +82,7 @@ vi.mock("node:worker_threads", async (importOriginal) => {
 
 const withReaderClient = <A, E>(
   use: (sql: SqlClient.SqlClient) => Effect.Effect<A, E, SqlClient.SqlClient>,
+  options?: { readonly writerWorker?: boolean },
 ) =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
@@ -90,7 +95,7 @@ const withReaderClient = <A, E>(
       yield* sql`CREATE TABLE entries(name TEXT NOT NULL)`;
       yield* sql`INSERT INTO entries VALUES ('first')`;
       return yield* use(sql);
-    }).pipe(Effect.provide(SqliteClient.layer({ filename, readerWorker: true })));
+    }).pipe(Effect.provide(SqliteClient.layer({ filename, readerWorker: true, ...options })));
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer));
 
 const countEntries = (sql: SqlClient.SqlClient) =>
@@ -246,9 +251,313 @@ it.effect.each([false, true])("batches worker results without losing rows (reade
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
 
+const refedPorts = () =>
+  process.getActiveResourcesInfo().filter((resource) => resource === "MessagePort").length;
+
+it.effect.each([false, true])(
+  "commits a transaction its caller opened with a savepoint (writerWorker=%s)",
+  (writerWorker) =>
+    Effect.gen(function* () {
+      const { filename, other } = yield* makeTempDatabase;
+      const value = () => other.prepare("SELECT value FROM counters WHERE id = 1").get()?.value;
+      yield* Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`SAVEPOINT effect_sql_1`.unprepared;
+        yield* sql`COMMIT`.unprepared;
+        yield* sql`BEGIN`.unprepared;
+        yield* sql`END`.unprepared;
+        yield* sql`SAVEPOINT effect_sql_1`.unprepared;
+        yield* sql`COMMIT`.unprepared;
+        yield* sql`BEGIN`.unprepared;
+        yield* Effect.flip(sql`INSERT OR ROLLBACK INTO counters VALUES (1, 0)`);
+        yield* sql`SAVEPOINT effect_sql_1`.unprepared;
+        yield* sql`COMMIT`.unprepared;
+        yield* sql`SAVEPOINT effect_sql_1`.unprepared;
+        yield* sql`ROLLBACK TO SAVEPOINT effect_sql_1`.unprepared;
+        yield* sql`UPDATE counters SET value = 1 WHERE id = 1`;
+        yield* sql`COMMIT`.unprepared;
+        assert.equal(value(), 1);
+        // Releasing a savepoint that started the transaction commits it.
+        yield* sql`SAVEPOINT effect_sql_1`.unprepared;
+        yield* sql`UPDATE counters SET value = 2 WHERE id = 1`;
+        yield* sql`RELEASE SAVEPOINT effect_sql_1`.unprepared;
+        assert.equal(value(), 2);
+        yield* sql`SAVEPOINT effect_sql_1`.unprepared;
+        yield* sql`UPDATE counters SET value = 1 WHERE id = 1`;
+        yield* sql`RELEASE effect_sql_1`.unprepared;
+        assert.equal(value(), 1);
+        // It runs as the caller wrote it, bindings and all.
+        yield* sql`SAVEPOINT effect_sql_1`.unprepared;
+        yield* sql`UPDATE counters SET value = 2 WHERE id = 1`;
+        assert.isTrue(
+          Exit.isFailure(
+            yield* Effect.exit(sql.unsafe("RELEASE SAVEPOINT effect_sql_1", [1]).unprepared),
+          ),
+        );
+        yield* sql`ROLLBACK`.unprepared;
+        assert.equal(value(), 1);
+        // A rollback to an older savepoint removes the newer ones, here a namesake of the outer one.
+        yield* sql`BEGIN`.unprepared;
+        yield* sql`SAVEPOINT effect_sql_2`.unprepared;
+        yield* sql`UPDATE counters SET value = 3 WHERE id = 1`;
+        yield* sql`SAVEPOINT effect_sql_1`.unprepared;
+        yield* sql`SAVEPOINT effect_sql_2`.unprepared;
+        yield* sql`ROLLBACK TO SAVEPOINT effect_sql_1`.unprepared;
+        yield* sql`ROLLBACK TO SAVEPOINT effect_sql_2`.unprepared;
+        yield* sql`COMMIT`.unprepared;
+        assert.equal(value(), 1);
+        // A savepoint that cannot open after a rollback to an older one ends with the next rollback to it.
+        yield* sql`CREATE VIRTUAL TABLE drafts USING fts5(body)`;
+        yield* sql`BEGIN`.unprepared;
+        yield* sql`SAVEPOINT effect_sql_1`.unprepared;
+        yield* sql`INSERT INTO drafts VALUES ('first')`;
+        yield* sql`ROLLBACK TO SAVEPOINT effect_sql_1`.unprepared;
+        yield* sql`INSERT INTO drafts VALUES ('second')`;
+        yield* sql`PRAGMA query_only = ON`;
+        yield* Effect.exit(sql`SAVEPOINT effect_sql_2`.unprepared);
+        yield* sql`ROLLBACK TO SAVEPOINT effect_sql_1`.unprepared;
+        yield* sql`PRAGMA query_only = OFF`;
+        yield* sql`COMMIT`.unprepared;
+        assert.deepEqual(yield* sql`SELECT body FROM drafts`, []);
+        // Releasing an outer savepoint also ends an inner one that could not open.
+        yield* sql`BEGIN`.unprepared;
+        yield* sql`SAVEPOINT effect_sql_1`.unprepared;
+        yield* sql`INSERT INTO drafts VALUES ('third')`;
+        yield* sql`PRAGMA query_only = ON`;
+        yield* Effect.exit(sql`SAVEPOINT effect_sql_2`.unprepared);
+        yield* Effect.exit(sql`SELECT 1`);
+        yield* sql`RELEASE SAVEPOINT effect_sql_1`.unprepared;
+        yield* sql`PRAGMA query_only = OFF`;
+        yield* sql`COMMIT`.unprepared;
+        assert.deepEqual(yield* sql`SELECT body FROM drafts`, [{ body: "third" }]);
+        // Releasing one that could not open fails, as nothing opened it.
+        yield* sql`BEGIN`.unprepared;
+        yield* sql`INSERT INTO drafts VALUES ('fourth')`;
+        yield* sql`PRAGMA query_only = ON`;
+        yield* Effect.exit(sql`SAVEPOINT effect_sql_2`.unprepared);
+        const unopened = yield* Effect.exit(sql`RELEASE effect_sql_2`.unprepared);
+        assert.isTrue(Exit.isFailure(unopened));
+        yield* sql`PRAGMA query_only = OFF`;
+        yield* sql`ROLLBACK`.unprepared;
+        // ROLLBACK TO keeps its savepoint, so a second one undoes the writes since the first.
+        yield* sql`BEGIN`.unprepared;
+        yield* sql`SAVEPOINT effect_sql_1`.unprepared;
+        yield* sql`UPDATE counters SET value = 2 WHERE id = 1`;
+        yield* sql`ROLLBACK TO SAVEPOINT effect_sql_1`.unprepared;
+        yield* sql`UPDATE counters SET value = 3 WHERE id = 1`;
+        yield* sql`ROLLBACK TO SAVEPOINT effect_sql_1`.unprepared;
+        yield* sql`COMMIT`.unprepared;
+        assert.equal(value(), 1);
+        // A savepoint statement that fails does not keep a ROLLBACK from ending the transaction.
+        yield* sql`BEGIN`.unprepared;
+        yield* sql`UPDATE counters SET value = 9 WHERE id = 1`;
+        yield* Effect.exit(sql`ROLLBACK TO SAVEPOINT effect_sql_9`.unprepared);
+        yield* sql`ROLLBACK`.unprepared;
+        assert.equal(value(), 1);
+        // A caller's release reports it like any other statement.
+        yield* sql`BEGIN`.unprepared;
+        yield* sql`SAVEPOINT effect_sql_1`.unprepared;
+        yield* sql`UPDATE counters SET value = 2 WHERE id = 1`;
+        const missing = yield* Effect.exit(sql`ROLLBACK TO SAVEPOINT effect_sql_9`.unprepared);
+        const released = yield* Effect.exit(sql`RELEASE SAVEPOINT effect_sql_1`.unprepared);
+        assert.notEqual(Exit.isFailure(missing), Exit.isFailure(released));
+        yield* sql`ROLLBACK`.unprepared;
+        assert.equal(value(), 1);
+        // Nor the savepoint statements after it from running. The worker reports it with the next one.
+        yield* sql`BEGIN`.unprepared;
+        const unknown = yield* Effect.exit(sql`ROLLBACK TO SAVEPOINT effect_sql_9`.unprepared);
+        yield* sql`SAVEPOINT effect_sql_1`.unprepared;
+        const next = yield* Effect.exit(sql`UPDATE counters SET value = 7 WHERE id = 1`);
+        assert.notEqual(Exit.isFailure(unknown), Exit.isFailure(next));
+        yield* sql`UPDATE counters SET value = 7 WHERE id = 1`;
+        yield* sql`ROLLBACK TO SAVEPOINT effect_sql_1`.unprepared;
+        yield* sql`COMMIT`.unprepared;
+        assert.equal(value(), 1);
+        // A savepoint the worker never saw queued still rolls back.
+        yield* sql`BEGIN`.unprepared;
+        yield* sql`SAVEPOINT effect_sql_1`;
+        yield* sql`UPDATE counters SET value = 8 WHERE id = 1`;
+        yield* sql`ROLLBACK TO SAVEPOINT effect_sql_1`.unprepared;
+        yield* sql`COMMIT`.unprepared;
+        assert.equal(value(), 1);
+        // A COMMIT that fails leaves the transaction and its savepoints in place.
+        yield* sql`PRAGMA foreign_keys = ON`;
+        yield* sql`CREATE TABLE links(counter INTEGER REFERENCES counters(id) DEFERRABLE INITIALLY DEFERRED)`;
+        yield* sql`BEGIN`.unprepared;
+        yield* sql`INSERT INTO links VALUES (2)`;
+        yield* sql`SAVEPOINT effect_sql_1`.unprepared;
+        yield* sql`UPDATE counters SET value = 4 WHERE id = 1`;
+        yield* sql`SAVEPOINT effect_sql_1`.unprepared;
+        yield* Effect.flip(sql`COMMIT`.unprepared);
+        yield* sql`ROLLBACK TO SAVEPOINT effect_sql_1`.unprepared;
+        yield* sql`DELETE FROM links`;
+        yield* sql`COMMIT`.unprepared;
+        assert.equal(value(), 4);
+        // A savepoint that cannot open, here for FTS5's pending writes, must not keep the
+        // transaction's end from running.
+        yield* sql`CREATE VIRTUAL TABLE docs USING fts5(body)`;
+        for (const end of ["rollback;", "COMMIT", "END TRANSACTION"]) {
+          yield* sql`BEGIN`.unprepared;
+          yield* sql`INSERT INTO docs VALUES ('lost')`;
+          yield* sql`PRAGMA query_only = ON`;
+          yield* Effect.exit(sql`SAVEPOINT effect_sql_1`.unprepared);
+          yield* Effect.exit(sql.unsafe(end).unprepared);
+          yield* sql`PRAGMA query_only = OFF`;
+        }
+        // In Effect's own transactions it fails only its nested transaction, whose rollback must
+        // not reach a sibling's savepoint of the same name.
+        yield* sql.withTransaction(
+          Effect.gen(function* () {
+            yield* sql.withTransaction(sql`INSERT INTO counters VALUES (42, 0)`);
+            yield* sql`INSERT INTO docs VALUES ('kept')`;
+            yield* sql`PRAGMA query_only = ON`;
+            yield* Effect.exit(sql.withTransaction(Effect.fail("empty")));
+            yield* sql`SELECT 1`;
+            yield* Effect.exit(sql.withTransaction(sql`SELECT 1`));
+            // None of its statements run, as a direct connection never starts its body.
+            yield* Effect.exit(
+              sql.withTransaction(
+                Effect.exit(sql`PRAGMA query_only = OFF`).pipe(
+                  Effect.andThen(sql`INSERT INTO counters VALUES (47, 0)`),
+                ),
+              ),
+            );
+            yield* sql`PRAGMA query_only = OFF`;
+          }),
+        );
+        assert.deepEqual(yield* sql`SELECT body FROM docs`, [{ body: "kept" }]);
+        assert.deepEqual(yield* sql`SELECT id FROM counters WHERE id IN (42, 47)`, [{ id: 42 }]);
+        // A body that handles its statement's failure ends its nested transaction normally.
+        yield* sql.withTransaction(
+          Effect.gen(function* () {
+            yield* sql`INSERT INTO docs VALUES ('pending')`;
+            yield* sql`PRAGMA query_only = ON`;
+            yield* Effect.exit(sql.withTransaction(Effect.exit(sql`SELECT 1`)));
+            yield* sql`PRAGMA query_only = OFF`;
+            yield* sql`INSERT INTO counters VALUES (43, 0)`;
+          }),
+        );
+        assert.deepEqual(yield* sql`SELECT body FROM docs ORDER BY rowid`, [
+          { body: "kept" },
+          { body: "pending" },
+        ]);
+        assert.deepEqual(yield* sql`SELECT value FROM counters WHERE id = 43`, [{ value: 0 }]);
+        // An empty nested transaction whose savepoint cannot open still fails its parent.
+        const failed = yield* Effect.exit(
+          sql.withTransaction(
+            Effect.gen(function* () {
+              yield* sql`INSERT INTO docs VALUES ('dropped')`;
+              yield* sql`PRAGMA query_only = ON`;
+              yield* sql.withTransaction(Effect.void);
+              yield* sql`PRAGMA query_only = OFF`;
+              yield* sql`INSERT INTO counters VALUES (39, 0)`;
+            }),
+          ),
+        );
+        yield* sql`PRAGMA query_only = OFF`;
+        assert.isTrue(Exit.isFailure(failed));
+        assert.deepEqual(yield* sql`SELECT id FROM counters WHERE id = 39`, []);
+        // An empty nested transaction still opens its savepoint, which saves FTS5's pending writes.
+        yield* sql.withTransaction(
+          Effect.gen(function* () {
+            yield* sql`INSERT INTO docs VALUES ('saved')`;
+            yield* sql.withTransaction(Effect.void);
+            yield* sql`PRAGMA query_only = ON`;
+            yield* Effect.exit(
+              sql.withTransaction(
+                sql`PRAGMA query_only = OFF`.pipe(
+                  Effect.andThen(sql`INSERT INTO counters VALUES (41, 0)`),
+                ),
+              ),
+            );
+            yield* sql`PRAGMA query_only = OFF`;
+          }),
+        );
+        assert.deepEqual(yield* sql`SELECT id FROM counters WHERE id = 41`, [{ id: 41 }]);
+        // A nested transaction that ended keeps its savepoint, so FTS5 still holds its pending writes.
+        yield* sql.withTransaction(
+          Effect.gen(function* () {
+            yield* sql.withTransaction(sql.withTransaction(sql`INSERT INTO docs VALUES ('held')`));
+            yield* sql`PRAGMA query_only = ON`;
+            yield* Effect.exit(
+              sql.withTransaction(
+                Effect.exit(sql`PRAGMA query_only = OFF`).pipe(
+                  Effect.andThen(sql`INSERT INTO counters VALUES (48, 0)`),
+                ),
+              ),
+            );
+            yield* sql`PRAGMA query_only = OFF`;
+          }),
+        );
+        assert.deepEqual(yield* sql`SELECT id FROM counters WHERE id = 48`, []);
+        assert.deepEqual(yield* sql`SELECT body FROM docs WHERE body = 'held'`, [{ body: "held" }]);
+        // Concurrent siblings take turns at the savepoint, and one's rollback keeps the other's writes.
+        yield* sql.withTransaction(
+          Effect.all(
+            [
+              sql.withTransaction(sql`INSERT INTO counters VALUES (44, 0)`),
+              Effect.exit(
+                sql.withTransaction(
+                  sql`INSERT INTO counters VALUES (45, 0)`.pipe(Effect.andThen(Effect.fail("no"))),
+                ),
+              ),
+              sql.withTransaction(sql`INSERT INTO counters VALUES (46, 0)`),
+            ],
+            { concurrency: "unbounded" },
+          ),
+        );
+        assert.deepEqual(yield* sql`SELECT id FROM counters WHERE id > 43 ORDER BY id`, [
+          { id: 44 },
+          { id: 46 },
+        ]);
+        // A savepoint issued while END is still in flight starts a transaction of its own.
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            const connection = yield* sql.reserve;
+            yield* connection.executeUnprepared("BEGIN", [], undefined);
+            const end = yield* connection
+              .executeUnprepared("END", [], undefined)
+              .pipe(Effect.forkChild({ startImmediately: true }));
+            yield* connection.executeUnprepared("SAVEPOINT effect_sql_1", [], undefined);
+            yield* connection.executeUnprepared(
+              "ROLLBACK TO SAVEPOINT effect_sql_1",
+              [],
+              undefined,
+            );
+            yield* Fiber.join(end);
+            yield* connection.executeUnprepared(
+              "UPDATE counters SET value = 6 WHERE id = 1",
+              [],
+              undefined,
+            );
+            yield* connection.executeUnprepared(
+              "ROLLBACK TO SAVEPOINT effect_sql_1",
+              [],
+              undefined,
+            );
+            yield* connection.executeUnprepared("COMMIT", [], undefined);
+            assert.equal(value(), 4);
+            // A write issued while COMMIT is in flight runs after it, outside the transaction.
+            yield* connection.executeUnprepared("BEGIN", [], undefined);
+            yield* connection.executeUnprepared("SAVEPOINT effect_sql_1", [], undefined);
+            const commit = yield* connection
+              .executeUnprepared("COMMIT", [], undefined)
+              .pipe(Effect.forkChild({ startImmediately: true }));
+            yield* connection.execute("UPDATE counters SET value = 5 WHERE id = 1", [], undefined);
+            yield* Fiber.join(commit);
+          }),
+        );
+      }).pipe(
+        Effect.provide(SqliteClient.layer({ filename, writerWorker, replyWait: Duration.zero })),
+      );
+      assert.equal(value(), 5);
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
 it.effect("coalesces savepoints with queries and preserves nested rollback", () =>
   Effect.gen(function* () {
     const { filename } = yield* makeTempDatabase;
+    const idlePorts = refedPorts();
     yield* Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
       const worker = startedWorkers.filter((entry) => !checkpointWorkers.includes(entry)).at(-1)!;
@@ -257,6 +566,7 @@ it.effect("coalesces savepoints with queries and preserves nested rollback", () 
         Effect.forEach(Array.from({ length: 53 }), () => sql.withTransaction(Effect.void)),
       );
       assert.equal(messages.mock.calls.length, 2);
+      assert.equal(refedPorts(), idlePorts);
 
       yield* sql.withTransaction(
         Effect.gen(function* () {
@@ -276,7 +586,14 @@ it.effect("coalesces savepoints with queries and preserves nested rollback", () 
           );
           assert.equal(messages.mock.calls.length, sent);
           assert.deepEqual(yield* sql`SELECT value FROM counters WHERE id = 1`, [{ value: 1 }]);
-          assert.deepEqual(messages.mock.calls.at(-1)?.[0].savepoints, []);
+          // Both ride along with the next statement, the empty one too: opening it can save FTS5 writes.
+          assert.deepEqual(messages.mock.calls.at(-1)?.[0].savepoints, [
+            "ROLLBACK TO SAVEPOINT effect_sql_1",
+            "-- release effect_sql_1",
+            "SAVEPOINT effect_sql_1",
+            "ROLLBACK TO SAVEPOINT effect_sql_1",
+            "-- release effect_sql_1",
+          ]);
           yield* sql.withTransaction(
             sql
               .withTransaction(
@@ -293,11 +610,120 @@ it.effect("coalesces savepoints with queries and preserves nested rollback", () 
           const unsent = yield* sql
             .withTransaction(sql.unsafe("SELECT ?", [Symbol("uncloneable")]))
             .pipe(Effect.exit);
-          assert.isTrue(Exit.isFailure(unsent));
+          assert.isTrue(Exit.isFailure(unsent) && Cause.hasFails(unsent.cause));
+          assert.isFalse(Exit.isFailure(unsent) && Cause.hasDies(unsent.cause));
+          yield* sql`SELECT 1`;
         }),
       );
       assert.deepEqual(yield* sql`SELECT value FROM counters WHERE id = 1`, [{ value: 5 }]);
+      // A request that never reached the worker must not keep the process alive.
+      assert.equal(refedPorts(), idlePorts);
     }).pipe(Effect.provide(SqliteClient.layer({ filename, writerWorker: true })));
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
+it.effect("fails a writer request whose worker stops at any point before the post", () =>
+  Effect.gen(function* () {
+    const { filename } = yield* makeTempDatabase;
+    const base = yield* Scheduler.Scheduler;
+    // Stops the worker at each scheduler check of one request in turn, until the request finishes first.
+    for (let boundary = 0; boundary < 1000; boundary++) {
+      const { stopped, exit, answered } = yield* Effect.gen(function* () {
+        const connection = yield* (yield* SqlClient.SqlClient).reserve;
+        const worker = startedWorkers.filter((entry) => !checkpointWorkers.includes(entry)).at(-1)!;
+        let checks = 0;
+        let stopped = false;
+        let postedBeforeStop = false;
+        const posts = vi.spyOn(worker, "postMessage");
+        const scheduler: Scheduler.Scheduler = {
+          executionMode: base.executionMode,
+          makeDispatcher: () => base.makeDispatcher(),
+          shouldYield: () => {
+            if (checks++ === boundary) {
+              stopped = true;
+              postedBeforeStop = posts.mock.calls.length > 0;
+              // An exited worker drops posts without an error.
+              posts.mockImplementation(() => {});
+              worker.emit("exit", 1);
+            }
+            return false;
+          },
+        };
+        // Detached: a hung writer request is uninterruptible and would block the scope.
+        const fiber = yield* connection
+          .execute("SELECT 1", [], undefined)
+          .pipe(
+            Effect.provideService(Scheduler.Scheduler, scheduler),
+            Effect.forkDetach({ startImmediately: true }),
+          );
+        const exit = fiber.pollUnsafe();
+        yield* Effect.promise(() => worker.terminate());
+        return { stopped, exit, answered: !stopped || postedBeforeStop };
+      }).pipe(
+        Effect.scoped,
+        Effect.provide(
+          SqliteClient.layer({ filename, writerWorker: true, replyWait: Duration.seconds(1) }),
+        ),
+      );
+      assert.isDefined(exit, `request still pending after a stop at check ${boundary}`);
+      // Only a request the worker received before it stopped can have succeeded.
+      assert.equal(
+        Exit.isSuccess(exit),
+        answered,
+        `wrong outcome after a stop at check ${boundary}`,
+      );
+      if (!stopped) {
+        assert.isAbove(boundary, 0, "the request never consulted its scheduler");
+        return;
+      }
+    }
+    assert.fail("the request never finished before a stop");
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
+it.effect("keeps a reply that arrived before the worker's exit, then closes", () =>
+  Effect.gen(function* () {
+    const { filename, other } = yield* makeTempDatabase;
+    // Without WAL an exclusive lock holds the read back; read-only starts no checkpoint worker.
+    other.exec("PRAGMA journal_mode = DELETE");
+    let worker: NodeWorkerThreads.Worker | undefined;
+    yield* Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      // Waited for in place, so its reply has counted before the next request samples the counter.
+      yield* sql`SELECT 1`;
+      const writer = startedWorkers.at(-1)!;
+      worker = writer;
+      const replied = workerReplied.get(writer)!;
+      const post = writer.postMessage.bind(writer);
+      let exited = false;
+      vi.spyOn(writer, "postMessage").mockImplementation((message) => {
+        // An exited worker never answers close.
+        if (exited) return;
+        post(message);
+        // Runs once the request waits; the worker cannot reply until the lock is released.
+        queueMicrotask(() => {
+          const seen = Atomics.load(replied, 0);
+          other.exec("COMMIT");
+          // The reply now waits on its port, unread until the event loop runs.
+          assert.notEqual(Atomics.wait(replied, 0, seen, 4000), "timed-out");
+          exited = true;
+          writer.emit("exit", 1);
+        });
+      });
+      other.exec("BEGIN EXCLUSIVE");
+      // The last statement: its caller resumes from the exit straight into closing the client.
+      assert.deepEqual(yield* sql`SELECT value FROM counters WHERE id = 1`, [{ value: 0 }]);
+    }).pipe(
+      Effect.provide(
+        SqliteClient.layer({
+          filename,
+          readonly: true,
+          writerWorker: true,
+          replyWait: Duration.millis(200),
+        }),
+      ),
+    );
+    yield* Effect.promise(() => worker!.terminate());
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
 
@@ -654,24 +1080,28 @@ it.effect("keeps read-only work inside a write transaction on the writer", () =>
 );
 
 it.effect("fails a read-only transaction whose reader stops, then starts a new reader", () =>
-  withReaderClient((sql) =>
-    Effect.gen(function* () {
-      const startedBefore = startedWorkers.length;
-      const error = yield* sql
-        .withTransaction(
-          Effect.gen(function* () {
-            yield* countEntries(sql);
-            yield* Effect.promise(() => startedWorkers.at(-1)!.terminate());
-            return yield* countEntries(sql);
-          }),
-        )
-        .pipe(SqliteClient.readOnly, Effect.flip);
+  withReaderClient(
+    (sql) =>
+      Effect.gen(function* () {
+        const startedBefore = startedWorkers.length;
+        const error = yield* sql
+          .withTransaction(
+            sql.withTransaction(
+              Effect.gen(function* () {
+                yield* countEntries(sql);
+                yield* Effect.promise(() => startedWorkers.at(-1)!.terminate());
+                return yield* countEntries(sql);
+              }),
+            ),
+          )
+          .pipe(SqliteClient.readOnly, Effect.flip);
 
-      assert.equal(error._tag, "SqlError");
-      assert.include(String(error.reason.cause), "Database reader exited");
-      assert.equal(yield* countEntries(sql).pipe(SqliteClient.readOnly), 1);
-      assert.equal(startedWorkers.length, startedBefore + 2);
-    }),
+        assert.equal(error._tag, "SqlError");
+        assert.include(String(error.reason.cause), "Database reader exited");
+        assert.equal(yield* countEntries(sql).pipe(SqliteClient.readOnly), 1);
+        assert.equal(startedWorkers.length, startedBefore + 2);
+      }),
+    { writerWorker: true },
   ),
 );
 
