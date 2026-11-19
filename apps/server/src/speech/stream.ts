@@ -13,13 +13,14 @@ import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
 import * as Socket from "effect/socket/Socket";
-import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
+import { authenticateMediaRequest, failEnvironmentInternal } from "../auth/http.ts";
+import * as SessionStore from "../auth/SessionStore.ts";
 import * as SpeechService from "./SpeechService.ts";
 
 const decodeCommand = Schema.decodeUnknownEffect(Schema.fromJsonString(SpeechStreamCommand));
 
 /** One socket owns one stream. Audio is processed and acknowledged in arrival order. */
-export const runSpeechSocket = Effect.fn("speech.runSocket")(function* (
+const runSpeechSocket = Effect.fn("speech.runSocket")(function* (
   socket: Socket.Socket,
   speech: Pick<SpeechService.SpeechService["Service"], "startStream">,
 ) {
@@ -91,21 +92,24 @@ export const runSpeechSocket = Effect.fn("speech.runSocket")(function* (
 
 export const speechStreamRouteLayer = Layer.unwrap(
   Effect.gen(function* () {
-    const auth = yield* EnvironmentAuth.EnvironmentAuth;
     const speech = yield* SpeechService.SpeechService;
+    const sessions = yield* SessionStore.SessionStore;
     return HttpRouter.add(
       "GET",
       SPEECH_STREAM_PATH,
       Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest;
-        const session = yield* auth
-          .authenticateWebSocketUpgrade(request, "media")
-          .pipe(Effect.result);
-        if (session._tag === "Failure") return HttpServerResponse.empty({ status: 401 });
-        if (!session.success.scopes.includes(AuthOrchestrationOperateScope))
-          return HttpServerResponse.empty({ status: 403 });
+        const session = yield* authenticateMediaRequest(AuthOrchestrationOperateScope);
         const socket = yield* request.upgrade;
-        yield* runSpeechSocket(socket, speech).pipe(Effect.scoped);
+        yield* Effect.raceFirst(
+          runSpeechSocket(socket, speech).pipe(Effect.scoped),
+          sessions.awaitInvalidation(session.sessionId).pipe(
+            Effect.catchTags({
+              SessionCredentialVerificationError: (error) =>
+                failEnvironmentInternal("internal_error", error).pipe(Effect.ignore),
+            }),
+          ),
+        );
         return HttpServerResponse.empty();
       }),
     );

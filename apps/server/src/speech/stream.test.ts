@@ -4,10 +4,18 @@ import { expect } from "vite-plus/test";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
-import { HttpRouter, HttpServer, HttpServerRequest, HttpServerResponse } from "effect/http";
-import { SpeechStreamEvent, DEFAULT_SPEECH_TRANSCRIPTION_OPTIONS } from "@onicode/contracts";
-import type { SpeechService, SpeechStream } from "./SpeechService.ts";
-import { runSpeechSocket } from "./stream.ts";
+import { HttpClient, HttpRouter, HttpServer } from "effect/http";
+import {
+  AuthOrchestrationOperateScope,
+  AuthSessionId,
+  DEFAULT_SPEECH_TRANSCRIPTION_OPTIONS,
+  SPEECH_STREAM_PATH,
+  SpeechStreamEvent,
+} from "@onicode/contracts";
+import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
+import * as SessionStore from "../auth/SessionStore.ts";
+import { SpeechService, type SpeechStream } from "./SpeechService.ts";
+import { speechStreamRouteLayer } from "./stream.ts";
 import type * as NetAddress from "effect/net/NetAddress";
 
 const decodeEvent = Schema.decodeUnknownSync(Schema.fromJsonString(SpeechStreamEvent));
@@ -42,22 +50,32 @@ function client(url: string) {
 const withServer = Effect.fn("test.speech.withServer")(function* (
   startStream: SpeechService["Service"]["startStream"],
   run: (url: string) => Promise<void>,
-) {
-  const routes = HttpRouter.add(
-    "GET",
-    "/ws/voice",
-    Effect.gen(function* () {
-      const request = yield* HttpServerRequest.HttpServerRequest;
-      const socket = yield* request.upgrade;
-      yield* runSpeechSocket(socket, { startStream }).pipe(Effect.scoped);
-      return HttpServerResponse.empty();
+  sessionInvalidated: Effect.Effect<void> = Effect.never,
+  authenticated: EnvironmentAuth.EnvironmentAuth["Service"]["authenticateWebSocketUpgrade"] = () =>
+    Effect.succeed({
+      sessionId: AuthSessionId.make("speech-test"),
+      subject: "speech-test",
+      method: "bearer-access-token",
+      scopes: [AuthOrchestrationOperateScope],
     }),
+) {
+  yield* Layer.build(
+    HttpRouter.serve(speechStreamRouteLayer, { disableLogger: true, disableListenLog: true }).pipe(
+      Layer.provide(Layer.mock(SpeechService, { startStream })),
+      Layer.provide(
+        Layer.mock(SessionStore.SessionStore, { awaitInvalidation: () => sessionInvalidated }),
+      ),
+      Layer.provide(
+        Layer.mock(EnvironmentAuth.EnvironmentAuth, {
+          authenticateWebSocketUpgrade: authenticated,
+        }),
+      ),
+    ),
   );
-  yield* Layer.build(HttpRouter.serve(routes, { disableLogger: true, disableListenLog: true }));
   const server = yield* HttpServer.HttpServer;
   const address = server.address as NetAddress.InetAddress;
   const host = address._tag === "InetAddressV6" ? "[::1]" : "127.0.0.1";
-  const url = `ws://${host}:${address.port}/ws/voice`;
+  const url = `ws://${host}:${address.port}${SPEECH_STREAM_PATH}`;
   yield* Effect.promise(() => run(url));
 });
 
@@ -167,3 +185,42 @@ it.live("processes pipelined audio before the finish command", () => {
     },
   ).pipe(Effect.scoped, Effect.provide(NodeHttpServer.layerTest));
 });
+
+it.live("closes the socket and releases its stream when the session is revoked", () => {
+  const revoked = Promise.withResolvers<void>();
+  const closed = Promise.withResolvers<void>();
+  const stream: SpeechStream = { feed: () => Effect.never, finish: Effect.never };
+  return withServer(
+    () => Effect.acquireRelease(Effect.succeed(stream), () => Effect.sync(() => closed.resolve())),
+    async (url) => {
+      const connection = client(url);
+      try {
+        expect(await connection.next()).toEqual({ type: "ready" });
+        const socketClosed = new Promise((resolve) =>
+          connection.socket.addEventListener("close", resolve),
+        );
+        revoked.resolve();
+        await Promise.all([socketClosed, closed.promise]);
+      } finally {
+        connection.socket.close();
+      }
+    },
+    Effect.promise(() => revoked.promise),
+  ).pipe(Effect.scoped, Effect.provide(NodeHttpServer.layerTest));
+});
+
+it.live("answers a failed session lookup as a server error, not a rejected credential", () =>
+  Effect.gen(function* () {
+    yield* withServer(
+      () => Effect.never,
+      async () => {},
+      Effect.never,
+      () =>
+        Effect.fail(
+          new EnvironmentAuth.ServerAuthSessionCredentialValidationError({ cause: "db down" }),
+        ),
+    );
+    const response = yield* HttpClient.get(SPEECH_STREAM_PATH);
+    expect(response.status).toBe(500);
+  }).pipe(Effect.scoped, Effect.provide(NodeHttpServer.layerTest)),
+);
