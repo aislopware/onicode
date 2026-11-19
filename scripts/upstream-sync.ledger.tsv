@@ -2704,6 +2704,6 @@ a73cdc4df1	take	fix(provider-acp-registry): a failed terminal sign-in shows what
 106a1e03b7	take	adapted: same cache-miss refetch applied to Onicode's @cursor/sdk 1.4.0 patch (upstream patches 1.3.1)
 c0b1d32c97	take	taken as is
 2fe74b00fa	take	taken as is
-d1f8636f49	skip	Onicode already translates every key this commit translates (web and mobile, all 9 locales); kept Onicode's wording
+d1f8636f49	take	adapted: Onicode already translated every key; adopted upstream's formal French for 6 mobile quote messages (rest of mobile fr uses vous), kept Onicode's wording elsewhere
 9246c3235e	take	test conflict: kept Onicode's sidecar extracted-text path, took upstream's tighter output asserts
 80cf4f7945	take	taken as is (web-only store; mobile has no equivalent reconcile)
