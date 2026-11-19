@@ -2686,3 +2686,4 @@ ff9efe89f6	take	fix(web): copying items within one list keeps their list markers
 da33a53d18	take	fix(server): wake when CI fails during the PR watch baseline read (#39116)
 dc7216ca23	take	fix(mobile): new-task link no longer blanks a scheduled task while it saves (#39154)
 a1e7ac2b24	take	adapted: ChatView CONFLICT resolved keeping Onicode's provider session views next to the moved freshSessionArmed hook
+2526691ea5	take	fix(mobile): cancelling a model download keeps the current transcription model (#39157)
