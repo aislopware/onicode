@@ -96,6 +96,11 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
       yield* git(aliasDir, ["remote", "add", "origin", "git@github.com-personal:owner/repo.git"]);
       yield* git(plainDir, ["init"]);
       yield* git(plainDir, ["remote", "add", "origin", "git@github.com:owner/repo.git"]);
+      const portAliasDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "oni-repository-identity-ssh-port-test-",
+      });
+      yield* git(portAliasDir, ["init"]);
+      yield* git(portAliasDir, ["remote", "add", "origin", "git@forge-b:team/repo.git"]);
 
       const runner = yield* ProcessRunner.ProcessRunner;
       // Stands in for `Host github.com-personal` / `HostName github.com` in ~/.ssh/config.
@@ -106,7 +111,9 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
               ? Effect.succeed({
                   stdout: input.args.some((arg) => arg.includes("github.com-personal"))
                     ? "user git\nhostname github.com\nport 22\n"
-                    : `hostname ${input.args.at(-1) ?? ""}\nport 22\n`,
+                    : input.args.some((arg) => arg.includes("forge-b"))
+                      ? "user git\nhostname nas\nport 2223\n"
+                      : `hostname ${input.args.at(-1) ?? ""}\nport 22\n`,
                   stderr: "",
                   code: ChildProcessSpawner.ExitCode(0),
                   timedOut: false,
@@ -125,6 +132,9 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
       expect(plainIdentity?.canonicalKey).toBe("github.com/owner/repo");
       expect(aliasIdentity?.canonicalKey).toBe(plainIdentity?.canonicalKey);
       expect(aliasIdentity?.locator.remoteUrl).toBe("git@github.com-personal:owner/repo.git");
+      // Another alias to the same machine on its own port may be a different forge.
+      const portAliasIdentity = yield* resolver.resolve(portAliasDir);
+      expect(portAliasIdentity?.canonicalKey).toBe("forge-b/team/repo");
     }).pipe(Effect.provide(ProcessRunner.layer)),
   );
 
