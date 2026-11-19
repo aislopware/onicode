@@ -2658,3 +2658,4 @@ e8c4824b70	take	CONFLICT resolved: Orchestrator keeps Onicode's steerMissedRunId
 c9359f6535	take	fix(mobile): project picker starts a chat in an open copy, not an archived one (#38984)
 bb234221ce	take	fix(server): Antigravity refreshes no longer erase scanned folders' project skills (#39037)
 aced664ed9	take	fix(client-runtime): prefer newer completed compaction over stale liveUsage (#39024)
+bc6062805d	take	taken as is
