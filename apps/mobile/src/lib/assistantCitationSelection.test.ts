@@ -368,6 +368,25 @@ it("uses the web math representation around a selected passage", () => {
     start: 0,
     end: 9,
   });
+  const [beforeBreak] = collectMobileAssistantTextSelectors(
+    "- A\\[x\\]B\n- C",
+    "0:0",
+    "A\n",
+    true,
+    "android",
+  );
+  expect(findAssistantCitationText("A\\[\nx\n\\]B\nC", beforeBreak!.selector)).toEqual({
+    start: 0,
+    end: 1,
+  });
+  const [linked] = collectMobileAssistantTextSelectors(
+    "- [a ](u)\\[x\\]B\n- C",
+    "0:0",
+    "a \n\uFFFCB",
+    true,
+    "android",
+  );
+  expect([linked?.selector.start, linked?.selector.end]).toEqual([0, 10]);
   expect(texts("- \\[x\\]\\[y\\]\n- C", "\uFFFC\uFFFC", "android")).toEqual([
     "\\[\nx\n\\]\\[\ny\n\\]",
   ]);

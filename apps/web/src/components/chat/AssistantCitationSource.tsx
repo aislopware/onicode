@@ -3,7 +3,7 @@ import type { AssistantCitation, MessageId, ScopedThreadRef } from "@onicode/con
 import { msg } from "gt-react";
 import { use, useEffect, useRef, type ReactNode, type RefObject } from "react";
 import {
-  resolveAssistantCitationRange,
+  resolveAssistantCitation,
   revealAssistantCitationFolds,
   type AssistantCitationSourceAnchor,
 } from "~/lib/assistantTextSelection";
@@ -65,7 +65,7 @@ export function observeAssistantCitationCommentSource({
       !source.contains(range.startContainer) ||
       !source.contains(range.endContainer)
     ) {
-      const repaired = resolveAssistantCitationRange(source, citation);
+      const repaired = resolveAssistantCitation(source, citation)?.range;
       if (!repaired) {
         unavailable();
         return false;
@@ -167,10 +167,11 @@ function observeAssistantCitationSource({
     const state = list.getState();
     const index = state.indexByKey(itemKey);
     if (index === undefined || !(state.sizeAtIndex(index) > 0)) return;
-    const range = resolveAssistantCitationRange(root, request.citation);
+    const resolved = resolveAssistantCitation(root, request.citation);
+    const range = resolved?.range ?? null;
     // Opening the fold resizes the root, which schedules the next pass. Once the quote is in
     // view, a fold the user closes stays closed.
-    if (range && !activation.scrolled && revealAssistantCitationFolds(root, range)) return;
+    if (resolved && !activation.scrolled && revealAssistantCitationFolds(resolved.folds)) return;
     const rect = (range ?? root).getBoundingClientRect();
     if (rect.height <= 0 || scrollNode.clientHeight <= 0) {
       clear();

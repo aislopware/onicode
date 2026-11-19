@@ -204,7 +204,7 @@ function citationText(
           for (const inline of child.children) {
             if (inline.type !== "text") {
               run ||= inline.type !== "break";
-              spaced = inline.type === "break";
+              spaced = inline.type === "break" || /\s$/.test(renderedText(inline, (v) => v));
               continue;
             }
             let cursor = 0;
@@ -401,13 +401,13 @@ export function collectMobileAssistantTextSelectors(
       fullOffsets[start + quote.length]!,
     );
     if (!selector) return null;
-    const quoted = expandAttachments(
-      text,
-      expansions,
-      matchText.slice(0, start).match(EXPANDED)?.length ?? 0,
-    );
+    const before = matchText.slice(0, start).match(EXPANDED)?.length ?? 0;
+    const quoted = expandAttachments(text, expansions, before);
+    const next = expansions[before + (quote.match(EXPANDED)?.length ?? 0)];
+    const endsAtBreak =
+      matchText[start + quote.length] === ATTACHMENT && next?.startsWith(NATIVE_BREAK);
     return {
-      selector: { ...selector, text: quoted },
+      selector: { ...selector, text: endsAtBreak ? quoted.replace(/\n$/, "") : quoted },
       index: matches.indexOf(start),
       count: matches.length,
     };
