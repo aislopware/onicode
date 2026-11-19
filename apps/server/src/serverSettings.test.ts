@@ -2385,6 +2385,38 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
     }).pipe(Effect.provide(layerServerSettings())),
   );
 
+  it.effect(
+    "does not recreate a settings link's missing target directory to save a migration",
+    () =>
+      Effect.gen(function* () {
+        const serverConfig = yield* ServerConfig.ServerConfig;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const sql = yield* SqlClient.SqlClient;
+        const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+        yield* sql`
+        INSERT INTO projection_projects (
+          project_id, title, workspace_root, auto_pull, scripts_json, created_at, updated_at
+        )
+        VALUES (
+          ${"project-linked"}, ${"Project"}, ${"/tmp/project-linked"}, ${1}, ${"[]"},
+          ${"2026-08-25T00:00:00.000Z"}, ${"2026-08-25T00:00:00.000Z"}
+        )
+      `;
+        // A dotfiles restore renamed the linked directory away and has not put the backup back yet.
+        const dotfiles = yield* fileSystem.makeTempDirectoryScoped({
+          prefix: "oni-settings-dotfiles-",
+        });
+        const active = path.join(dotfiles, "active");
+        yield* fileSystem.remove(serverConfig.settingsPath, { force: true });
+        yield* fileSystem.symlink(path.join(active, "settings.json"), serverConfig.settingsPath);
+
+        const settings = yield* serverSettings.getSettings;
+        assert.isTrue(settings.projectSettingsFolded);
+        assert.isFalse(yield* fileSystem.exists(active));
+      }).pipe(Effect.scoped, Effect.provide(layerServerSettings())),
+  );
+
   it.effect.each([
     { label: "malformed JSON", broken: '{"defaultAutoPull": tru' },
     { label: "invalid retention", broken: '{"usageHistoryRetentionDays": 0}' },
