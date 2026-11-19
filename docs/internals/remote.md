@@ -229,10 +229,11 @@ undo by accident:
 - **HTTP, so it can authenticate.** Any local process can reach the listener's port. Chromium
   can't authenticate to a SOCKS proxy, but answers an HTTP proxy's 407 through Electron's `login`
   event, so the listener refuses every client without this run's random credentials, which main
-  hands only to Chromium. Plain http arrives in absolute form; the listener forwards it and its
-  `Content-Length` body as one request, closes the connection after the response, and drops
-  anything Chromium sends after the body, so every request is checked and routed on its own and
-  the credentials never leave the machine.
+  hands only to Chromium. Plain http arrives in absolute form. A connection keeps one tunnel to
+  one server, since a dev server's page loads hundreds of modules and a tunnel each costs round
+  trips; every request on it is checked again and sent without the proxy's fields, and bodies
+  go by `Content-Length` so the next request can be found. Another server closes the connection,
+  and Chromium retries on a new one. The credentials never leave the machine.
 - **A partition of its own.** Cookies and storage for `localhost` ignore the port, so pages this
   machine served and pages from the environment would share them. Tunnelled tabs use a separate
   partition, never routed any other way. The renderer picks it only once the catalog knows the

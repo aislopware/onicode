@@ -40,6 +40,20 @@ describe("browser target resolver", () => {
     expect(resolveExternalServerUrl(EnvironmentId.make("environment-1"), asset)).toBe(asset);
   });
 
+  it("opens links that aren't web pages as written", async () => {
+    readPreparedConnection.mockReturnValue({
+      httpBaseUrl: "http://127.0.0.1:41234",
+      target: { _tag: "SshConnectionTarget", connectionId: "saved:remote" },
+    });
+    const { resolveExternalLinkUrl } = await import("./browserTargetResolver");
+    for (const url of ["magnet:?xt=urn:btih:abc", "itms-apps:?id=1", "mailto:a@example.com"]) {
+      expect(resolveExternalLinkUrl(EnvironmentId.make("environment-1"), url)).toBe(url);
+    }
+    expect(
+      resolveExternalLinkUrl(EnvironmentId.make("environment-1"), "http://localhost:5173/"),
+    ).toBeNull();
+  });
+
   it("normalizes schemeless localhost server-picker values", async () => {
     readPreparedConnection.mockReturnValue({
       httpBaseUrl: "http://localhost:3773",

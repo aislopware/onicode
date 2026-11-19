@@ -44,6 +44,7 @@ const listenDecoy = Effect.acquireRelease(
 /**
  * Stands in for the environment's /api/preview/tunnel. Echoes each frame behind a 0xee byte, or
  * sends `reply.text` once what it received contains `reply.after`, then closes unless `keepOpen`.
+ * With `keepOpen` it answers each further `after` again.
  */
 const listenEndpoint = (reply?: {
   readonly text: string;
@@ -61,15 +62,18 @@ const listenEndpoint = (reply?: {
               { port: 0, host: "127.0.0.1" },
               () => resolve({ server, requests, received }),
             );
-            let replied = false;
+            let replied = 0;
             server.on("connection", (socket: NodeWS.WebSocket, request: { url?: string }) => {
               requests.push(request.url ?? "");
               socket.on("message", (data: Buffer) => {
                 received.push(data.toString("latin1"));
                 if (reply === undefined) {
                   socket.send(Buffer.concat([Uint8Array.of(0xee), data]));
-                } else if (!replied && received.join("").includes(reply.after ?? "")) {
-                  replied = true;
+                } else if (
+                  (replied === 0 || reply.keepOpen) &&
+                  received.join("").split(reply.after ?? "").length - 1 > replied
+                ) {
+                  replied++;
                   socket.send(Buffer.from(reply.text, "latin1"), () => {
                     if (!reply.keepOpen) socket.close();
                   });
@@ -237,23 +241,23 @@ it.effect.each([
     case: "a keep-alive response",
     reply:
       "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: keep-alive\r\nKeep-Alive: timeout=5\r\n\r\nok",
-    head: "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close",
+    head: "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: keep-alive\r\nKeep-Alive: timeout=5",
   },
   {
     // Chromium would answer it with this run's credentials and send them on.
     case: "the environment's own proxy challenge",
     reply:
       'HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm="x"\r\nContent-Length: 0\r\n\r\n',
-    head: "HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close",
+    head: "HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0",
   },
   {
-    // Passed on unread, it could keep the connection open for Chromium's next request.
+    // Passed on unread, it would desynchronise the next request's response.
     case: "a response head over the size limit",
-    reply: `HTTP/1.1 200 OK\r\nX-Padding: ${"a".repeat(70_000)}\r\nContent-Length: 0\r\n\r\n`,
-    head: "HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close",
+    reply: `HTTP/1.1 200 OK\r\nX-Padding: ${"a".repeat(300_000)}\r\nContent-Length: 0\r\n\r\n`,
+    head: "",
   },
 ])(
-  "forwards a plain http request in origin form, answering $case on one connection",
+  "forwards a plain http request in origin form, answering $case",
   ({ reply, head: expectedHead }) =>
     Effect.gen(function* () {
       const endpoint = yield* listenEndpoint({ text: reply });
@@ -266,9 +270,9 @@ it.effect.each([
           `Proxy-Connection: keep-alive\r\nProxy-Authorization: ${authorization}\r\n` +
           "Accept: */*\r\n\r\n",
       );
-      // The credentials stay on this machine, and the environment closes after one response.
+      // The credentials stay on this machine.
       expect(endpoint.received.join("")).toBe(
-        "GET /app?r='y'&x=1 HTTP/1.1\r\nHost: localhost:5173\r\nAccept: */*\r\nConnection: close\r\n\r\n",
+        "GET /app?r='y'&x=1 HTTP/1.1\r\nHost: localhost:5173\r\nAccept: */*\r\n\r\n",
       );
       expect(endpoint.requests).toEqual(["/api/preview/tunnel?wsTicket=t&port=5173"]);
       expect(head).toBe(expectedHead);
@@ -293,34 +297,67 @@ const readFromProxy = (proxyPort: number, request: string, until: string) =>
     ({ socket }) => Effect.sync(() => socket.destroy()),
   );
 
-it.effect("forwards one framed request per connection, past informational responses", () =>
+/** One client connection to the proxy; `send` resolves once a reply after it contains `until`. */
+const openProxyConnection = (proxyPort: number) =>
+  Effect.acquireRelease(
+    Effect.promise(
+      () =>
+        new Promise<NodeNet.Socket>((resolve, reject) => {
+          const socket = NodeNet.connect(proxyPort, "127.0.0.1", () => resolve(socket));
+          socket.on("error", reject);
+        }),
+    ),
+    (socket) => Effect.sync(() => socket.destroy()),
+  ).pipe(
+    Effect.map((socket) => {
+      let received = "";
+      const closed = new Promise<string>((resolve) => socket.on("close", () => resolve(received)));
+      socket.on("data", (chunk: Buffer) => (received += chunk.toString("latin1")));
+      const send = (request: string, until: string) =>
+        Effect.promise(
+          () =>
+            new Promise<string>((resolve) => {
+              const from = received.length;
+              const check = () => {
+                if (received.indexOf(until, from) < 0) return;
+                socket.off("data", check);
+                resolve(received.slice(from));
+              };
+              socket.on("data", check);
+              socket.write(request);
+            }),
+        );
+      return {
+        send,
+        closed: (request: string) => Effect.promise(() => (socket.write(request), closed)),
+      };
+    }),
+  );
+
+it.effect("keeps a connection to one server for Chromium's next request", () =>
   Effect.gen(function* () {
-    // The environment's server keeps the connection open after answering.
+    // A dev server's page loads hundreds of modules; a tunnel each would cost round trips.
     const endpoint = yield* listenEndpoint({
-      text:
-        "HTTP/1.1 100 Continue\r\n\r\n" +
-        "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: keep-alive\r\n\r\nok",
-      after: "abc",
+      text: "HTTP/1.1 100 Continue\r\n\r\n" + "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok",
+      after: "\r\n\r\n",
       keepOpen: true,
     });
     const { proxyPort, authorization } = yield* routeThroughTunnel(
       `ws://127.0.0.1:${addressPort(endpoint.server)}/api/preview/tunnel`,
     );
-    const post = (path: string, body: string) =>
-      `POST http://localhost:5173${path} HTTP/1.1\r\nHost: localhost:5173\r\n` +
-      `Proxy-Authorization: ${authorization}\r\nContent-Length: ${body.length}\r\n\r\n${body}`;
-    // Chromium could send a second request on a connection it thinks is still open.
-    const { received } = yield* readFromProxy(
-      proxyPort,
-      post("/first", "abc") + post("/second", "xyz"),
-      "\r\n\r\nok",
-    );
-    expect(received).toBe(
-      "HTTP/1.1 100 Continue\r\n\r\n" +
-        "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok",
-    );
+    const get = (authority: string, path: string) =>
+      `GET http://${authority}${path} HTTP/1.1\r\nHost: ${authority}\r\n` +
+      `Proxy-Authorization: ${authorization}\r\n\r\n`;
+    const connection = yield* openProxyConnection(proxyPort);
+    const response = "HTTP/1.1 100 Continue\r\n\r\nHTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok";
+    expect(yield* connection.send(get("localhost:5173", "/first"), "\r\n\r\nok")).toBe(response);
+    expect(yield* connection.send(get("localhost:5173", "/second"), "\r\n\r\nok")).toBe(response);
+    // Another server needs its own tunnel; Chromium retries on a new connection.
+    yield* connection.closed(get("localhost:5174", "/third"));
+    expect(endpoint.requests).toEqual(["/api/preview/tunnel?port=5173"]);
     expect(endpoint.received.join("")).toBe(
-      "POST /first HTTP/1.1\r\nHost: localhost:5173\r\nContent-Length: 3\r\nConnection: close\r\n\r\nabc",
+      "GET /first HTTP/1.1\r\nHost: localhost:5173\r\n\r\n" +
+        "GET /second HTTP/1.1\r\nHost: localhost:5173\r\n\r\n",
     );
   }),
 );
@@ -341,7 +378,7 @@ it.effect("streams a request body to the environment as it arrives", () =>
         `Proxy-Authorization: ${authorization}\r\nContent-Length: 6\r\n\r\nabc`,
       "\r\n\r\nok",
     );
-    expect(received).toBe("HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok");
+    expect(received).toBe("HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok");
   }),
 );
 
@@ -381,7 +418,7 @@ it.effect.each([
       "connect-lan": connectRequest("192.168.1.20:80", authorization),
       oversized: connectRequest(`localhost:${decoyPort}`, authorization).replace(
         "\r\n\r\n",
-        `\r\nX-Padding: ${"a".repeat(70_000)}\r\n\r\n`,
+        `\r\nX-Padding: ${"a".repeat(300_000)}\r\n\r\n`,
       ),
       chunked:
         `POST http://localhost:${decoyPort}/ HTTP/1.1\r\nHost: localhost:${decoyPort}\r\n` +

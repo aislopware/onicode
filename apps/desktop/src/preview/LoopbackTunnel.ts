@@ -25,7 +25,8 @@ import { PREVIEW_TUNNEL_ACCESS_REQUEST_CHANNEL } from "../ipc/channels.ts";
 
 const ACCESS_TIMEOUT = "15 seconds";
 const CONNECT_TIMEOUT = "10 seconds";
-const MAX_HEAD_BYTES = 64 * 1024;
+// Chromium accepts response heads up to this size.
+const MAX_HEAD_BYTES = 256 * 1024;
 const HEAD_END = Buffer.from("\r\n\r\n");
 const PROXY_USER = "onicode";
 const PROXY_REALM = "Onicode preview";
@@ -141,8 +142,7 @@ const originForm = (target: string) => {
 
 /**
  * Chromium sends CONNECT for https and WebSockets, and an absolute-form request for plain http.
- * A forwarded request is rewritten to the origin form with `Connection: close`, so each proxy
- * connection carries one request and the next one is checked and routed again.
+ * A forwarded request is rewritten to the origin form without the proxy's own fields.
  */
 const parseProxyRequest = (head: string, authorization: string): ProxyRequest => {
   const [requestLine = "", ...fields] = head.split("\r\n");
@@ -159,7 +159,7 @@ const parseProxyRequest = (head: string, authorization: string): ProxyRequest =>
   if (!isLoopbackName(host)) return { refusal: 403 };
   const port = Number(url.port || 80);
   if (connect) return { host, port, forwardHead: undefined, bodyLength: 0 };
-  // Only the one framed request is forwarded, so its body length must be known up front.
+  // Bodies are forwarded by length, so the next request on the connection can be found and checked.
   if (fieldValues(fields, /^transfer-encoding\s*:/i).length > 0) return { refusal: 501 };
   const lengths = new Set(fieldValues(fields, /^content-length\s*:/i));
   const [length = "0"] = lengths;
@@ -171,7 +171,6 @@ const parseProxyRequest = (head: string, authorization: string): ProxyRequest =>
     forwardHead: [
       `${method} ${originForm(target)} ${version}`,
       ...fields.filter((field) => !HOP_BY_HOP_FIELD.test(field)),
-      "Connection: close",
       "",
       "",
     ].join("\r\n"),
@@ -180,19 +179,14 @@ const parseProxyRequest = (head: string, authorization: string): ProxyRequest =>
 
 const statusCode = (head: string) => Number(head.split(" ", 2)[1]);
 
-// Without this Chromium would keep the proxy connection open and send its next request raw. A
-// destination's 407 would look like the listener's own challenge, answered with its credentials.
-const closingResponseHead = (head: string) => {
-  const [statusLine = "", ...fields] = head.split("\r\n");
-  const challenged = statusCode(head) === 407;
+// A destination's 407 would look like the listener's own challenge, answered with its credentials.
+const relayedResponseHead = (head: string) => {
+  if (statusCode(head) !== 407) return Buffer.from(`${head}\r\n\r\n`, "latin1");
+  const [, ...fields] = head.split("\r\n");
   return Buffer.from(
     [
-      challenged ? "HTTP/1.1 502 Bad Gateway" : statusLine,
-      ...fields.filter(
-        (field) =>
-          !HOP_BY_HOP_FIELD.test(field) && !(challenged && /^proxy-authenticate\s*:/i.test(field)),
-      ),
-      "Connection: close",
+      "HTTP/1.1 502 Bad Gateway",
+      ...fields.filter((field) => !/^proxy-authenticate\s*:/i.test(field)),
       "",
       "",
     ].join("\r\n"),
@@ -383,42 +377,66 @@ const make = Effect.gen(function* () {
             pump(target.pull, writer.writeAll),
           );
         }
-        const forwardHead = Buffer.from(request.forwardHead, "latin1");
-        // One request goes on; anything Chromium sends after its body never leaves this machine.
-        const forwardBody = Effect.gen(function* () {
-          let remaining = request.bodyLength;
-          const take = (chunk: Uint8Array) => {
-            const part = chunk.subarray(0, remaining);
-            remaining -= part.length;
-            return part;
-          };
-          yield* target.writer.write(Buffer.concat([forwardHead, take(rest)]));
-          while (true) {
-            for (const chunk of yield* pull) {
-              const part = take(chunk);
+        const destinationKey = `${request.host} ${request.port}`;
+        let sent = 0;
+        let answered = 0;
+        // Requests to the same server reuse the tunnel. Each is checked again, sent without the
+        // proxy's own fields, and its body is forwarded by length so the next one can be found.
+        const forwardRequests = Effect.gen(function* () {
+          let next: ProxyRequest = request;
+          let buffered = rest;
+          while (!("refusal" in next) && next.forwardHead !== undefined) {
+            let remaining = next.bodyLength;
+            const take = (chunk: Buffer) => {
+              const part = chunk.subarray(0, remaining);
+              remaining -= part.length;
+              buffered = chunk.subarray(part.length);
+              return part;
+            };
+            sent++;
+            yield* target.writer.write(
+              Buffer.concat([Buffer.from(next.forwardHead, "latin1"), take(buffered)]),
+            );
+            while (remaining > 0) {
+              const part = take(Buffer.concat(yield* pull));
               if (part.length > 0) yield* target.writer.write(part);
             }
+            // Chromium sends the next request only once it has read the whole response.
+            const following = yield* readHead(pull, buffered);
+            if (following.head === undefined) return yield* writer.write(refusal(400));
+            next = parseProxyRequest(following.head, authorization);
+            if ("refusal" in next) return yield* writer.write(refusal(next.refusal));
+            // Another server needs its own tunnel; Chromium retries on a new connection.
+            if (`${next.host} ${next.port}` !== destinationKey) return;
+            buffered = following.rest;
           }
         });
-        const relayResponse = Effect.gen(function* () {
+        const relayResponses = Effect.gen(function* () {
           let received: Buffer = Buffer.alloc(0);
           while (true) {
             const response = yield* readHead(target.pull, received);
-            // Unread, the response could keep the connection open for Chromium's next request.
-            if (response.head === undefined) return yield* writer.write(refusal(502));
+            // Unread, it would desynchronise every later response; a close shows as a failure.
+            if (response.head === undefined) return;
             const status = statusCode(response.head);
-            if (status >= 200 || status === 101 || !(status >= 100)) {
-              yield* writer.write(
-                Buffer.concat([closingResponseHead(response.head), response.rest]),
-              );
-              break;
+            if (status >= 100 && status < 200 && status !== 101) {
+              yield* writer.write(Buffer.from(`${response.head}\r\n\r\n`, "latin1"));
+              received = response.rest;
+              continue;
             }
-            yield* writer.write(Buffer.from(`${response.head}\r\n\r\n`, "latin1"));
-            received = response.rest;
+            answered++;
+            yield* writer.write(Buffer.concat([relayedResponseHead(response.head), response.rest]));
+            // Bytes that arrive after the next request went out start that request's response.
+            while (true) {
+              const chunks = yield* target.pull;
+              if (sent > answered) {
+                received = Buffer.concat(chunks);
+                break;
+              }
+              yield* writer.writeAll(chunks);
+            }
           }
-          return yield* pump(target.pull, writer.writeAll);
         });
-        return yield* Effect.raceFirst(forwardBody, relayResponse);
+        return yield* Effect.raceFirst(forwardRequests, relayResponses);
       },
       Effect.scoped,
       (effect) => Effect.ignoreCause(effect),

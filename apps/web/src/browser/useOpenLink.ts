@@ -8,7 +8,7 @@ import { readLocalApi } from "~/localApi";
 import { previewEnvironment } from "~/state/preview";
 import { useAtomCommand } from "~/state/use-atom-command";
 
-import { resolveExternalServerUrl } from "./browserTargetResolver";
+import { resolveExternalLinkUrl } from "./browserTargetResolver";
 import {
   canOpenLinksInApp,
   resolveBrowserLinkTargetPreference,
@@ -43,7 +43,7 @@ export function useOpenLink(threadRef: ScopedThreadRef | null | undefined): (
     });
     // Null when the system browser would reach a different server on this computer.
     const externalUrl = targetThreadRef
-      ? resolveExternalServerUrl(targetThreadRef.environmentId, url)
+      ? resolveExternalLinkUrl(targetThreadRef.environmentId, url)
       : url;
     if ((target === "app" || externalUrl === null) && targetThreadRef) {
       const result = await openUrlInPreview({ threadRef: targetThreadRef, url, openPreview });
