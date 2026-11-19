@@ -42,6 +42,27 @@ describe("findPromptLinkProjects", () => {
     expect(ids("gitlab", "x")).toEqual([]);
   });
 
+  it("puts open copies before archived ones, keeping recency within each", () => {
+    const projects = [
+      {
+        id: "archived",
+        archivedAt: "2026-01-02T00:00:00.000Z",
+        repositoryIdentity: identity("github.com/aislopware/onicode"),
+      },
+      { id: "recent", repositoryIdentity: identity("github.com/aislopware/onicode") },
+      {
+        id: "older",
+        archivedAt: null,
+        repositoryIdentity: identity("github.com/aislopware/onicode"),
+      },
+    ];
+    expect(
+      findPromptLinkProjects(projects, { owner: "aislopware", name: "onicode" }).map(
+        (project) => project.id,
+      ),
+    ).toEqual(["recent", "older", "archived"]);
+  });
+
   it("matches a checkout of the repository's GitCafe mirror", () => {
     const projects = [
       { id: "gitcafe", repositoryIdentity: identity("git.cafe/aislopware/onicode") },

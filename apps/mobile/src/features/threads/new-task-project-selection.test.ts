@@ -142,6 +142,8 @@ describe("resolveEnvironmentProjectMatch", () => {
     ];
     expect(resolveEnvironmentProjectMatch(target, selected)).toBe(target[1]);
     expect(isSameRepository(target[1]!, selected)).toBe(true);
+    const archived = { ...target[1]!, archivedAt: "2026-07-02T00:00:00.000Z" };
+    expect(resolveEnvironmentProjectMatch([archived], selected)).toBeNull();
   });
 
   it("falls back to workspace basename, then title, for unindexed projects", () => {
