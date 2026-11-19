@@ -33,7 +33,7 @@ import {
   type Attachment,
   type IssueHistory,
   type LinearComment,
-  type LinearIssue,
+  type LinearIssueSummary,
   type LinearReaction,
   type LinearTeamLabel,
   type LinearUser,
@@ -121,7 +121,7 @@ export class LinearApi extends Context.Service<
       readonly after?: string | undefined;
       readonly orderBy: "updatedAt" | "createdAt";
     }) => Effect.Effect<
-      { readonly nodes: ReadonlyArray<LinearIssue>; readonly nextCursor: string | null },
+      { readonly nodes: ReadonlyArray<LinearIssueSummary>; readonly nextCursor: string | null },
       IssueTrackerError
     >;
     /** Null when Linear has no issue by that identifier, or the credential cannot see it. */

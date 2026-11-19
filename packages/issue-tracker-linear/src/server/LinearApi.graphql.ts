@@ -273,7 +273,7 @@ export declare namespace OniWorkspace {
 }
 
 export const IssueConnection = Schema.Struct({
-  nodes: Schema.Array(LinearIssue),
+  nodes: Schema.Array(LinearIssueSummary),
   pageInfo: LinearPageInfo
 })
 export interface IssueConnection extends Schema.Struct.Type<typeof IssueConnection.fields> {}
@@ -288,12 +288,11 @@ export const OniIssues = GraphQL.query("OniIssues", {
       { name: "orderBy", body: "PaginationOrderBy!" }
     ],
     selections: [
-      { name: "issues", body: ["(first:$", "first", " after:$", "after", " filter:$", "filter", " orderBy:$", "orderBy", "){nodes{...LinearIssue}pageInfo{...LinearPageInfo}}"] }
+      { name: "issues", body: ["(first:$", "first", " after:$", "after", " filter:$", "filter", " orderBy:$", "orderBy", "){nodes{...LinearIssueSummary}pageInfo{...LinearPageInfo}}"] }
     ],
     fragments: [
-      { name: "LinearIssue", body: ["on Issue{...LinearIssueSummary description}"] },
-      { name: "LinearPageInfo", body: ["on PageInfo{hasNextPage endCursor}"] },
       { name: "LinearIssueSummary", body: ["on Issue{id identifier number title url createdAt updatedAt completedAt canceledAt state{...LinearWorkflowState}team{key}creator{...LinearUser}botActor{...LinearBot}assignee{...LinearUser}labels{nodes{...LinearLabel}}}"] },
+      { name: "LinearPageInfo", body: ["on PageInfo{hasNextPage endCursor}"] },
       { name: "LinearWorkflowState", body: ["on WorkflowState{id name type position}"] },
       { name: "LinearUser", body: ["on User{id name displayName email avatarUrl}"] },
       { name: "LinearBot", body: ["on ActorBot{name userDisplayName avatarUrl}"] },
