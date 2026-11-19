@@ -1946,7 +1946,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         },
       };
     },
-    commitDraft: (text, selection) => {
+    commitDraft: (text, selection, startFocus) => {
       const snapshot = readComposerSnapshot();
       const applied = applyPromptReplacement(0, snapshot.value.length, text, {
         expectedText: snapshot.value,
@@ -1956,7 +1956,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       const cursor = collapseExpandedComposerCursor(text, selection.start, isLiteralPendingAnswer);
       setComposerCursor(cursor);
       window.requestAnimationFrame(() => {
-        if (mayRefocusAfterDictation(composerFormRef.current)) {
+        if (mayRefocusAfterDictation(composerFormRef.current, startFocus)) {
           composerEditorRef.current?.focusAt(cursor);
         }
       });

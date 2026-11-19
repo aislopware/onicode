@@ -4,7 +4,11 @@ import { expect, it, vi } from "vite-plus/test";
 import { fakeTimers, render } from "../../test/render";
 import { useTextFieldSpeech } from "./useTextFieldSpeech";
 
-type Commit = (text: string, selection: { start: number; end: number }) => void;
+type Commit = (
+  text: string,
+  selection: { start: number; end: number },
+  startFocus: Element | null,
+) => void;
 const speech = vi.hoisted(() => ({ commit: null as Commit | null }));
 vi.mock("./useEnvironmentSpeechInput", () => ({
   useEnvironmentSpeechInput: (input: { commitDraft: Commit }) => {
@@ -47,18 +51,23 @@ it("returns focus to the field after dictation only while the user has not moved
   // Fake frames hold the refocus frame until the test advances it.
   using _timers = fakeTimers();
 
-  speech.commit!("Dictated", { start: 8, end: 8 });
+  speech.commit!("Dictated", { start: 8, end: 8 }, null);
   vi.advanceTimersToNextFrame();
   expect(document.activeElement).toBe(elsewhere.element());
 
+  // Started from that field with the mic, which keeps focus where it is.
+  speech.commit!("Dictated", { start: 8, end: 8 }, elsewhere.element());
+  vi.advanceTimersToNextFrame();
+  expect(document.activeElement).toBe(draft.element());
+
   elsewhere.element().blur();
-  speech.commit!("Dictated", { start: 8, end: 8 });
+  speech.commit!("Dictated", { start: 8, end: 8 }, null);
   vi.advanceTimersToNextFrame();
   expect(document.activeElement).toBe(draft.element());
 
   // A plain button, as when a shortcut started dictation, yields like the composer does.
   screen.getByRole("button", { name: "Plain" }).element().focus();
-  speech.commit!("Dictated", { start: 8, end: 8 });
+  speech.commit!("Dictated", { start: 8, end: 8 }, null);
   vi.advanceTimersToNextFrame();
   expect(document.activeElement).toBe(draft.element());
 });

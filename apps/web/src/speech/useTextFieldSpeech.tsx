@@ -42,11 +42,11 @@ export function useTextFieldSpeech(input: {
         selection: { start: cursor, end: field?.selectionEnd ?? cursor },
       };
     },
-    commitDraft: (text, selection) => {
+    commitDraft: (text, selection, startFocus) => {
       latest.current.onTextChange(text);
       window.requestAnimationFrame(() => {
         const field = latest.current.textareaRef.current;
-        if (!field || !mayRefocusAfterDictation(field)) return;
+        if (!field || !mayRefocusAfterDictation(field, startFocus)) return;
         field.focus({ preventScroll: true });
         field.setSelectionRange(selection.start, selection.end);
       });
