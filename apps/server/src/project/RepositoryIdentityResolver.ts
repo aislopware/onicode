@@ -159,14 +159,21 @@ const sshResolvedRemoteUrl = Effect.fn("RepositoryIdentityResolver.sshResolvedRe
       })
       .pipe(Effect.option);
     if (result._tag === "None" || result.value.code !== 0) return remoteUrl;
-    const hostName = result.value.stdout
-      .split("\n")
+    const lines = result.value.stdout.split("\n");
+    const hostName = lines
       .find((line) => line.startsWith("hostname "))
       ?.slice("hostname ".length)
       .trim()
       .toLowerCase();
+    const port = lines
+      .find((line) => line.startsWith("port "))
+      ?.slice("port ".length)
+      .trim();
+    // Aliases on one self-hosted machine may reach different forges through different ports.
+    const nonDefaultPort = port !== undefined && port !== "22";
     if (
       hostName === undefined ||
+      (nonDefaultPort && !sourceControlDefinitions.findByPublicHost(hostName)) ||
       !SSH_HOST_NAME.test(hostName) ||
       IPV4.test(hostName) ||
       hostName === host.toLowerCase() ||
