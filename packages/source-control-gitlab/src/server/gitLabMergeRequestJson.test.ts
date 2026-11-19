@@ -225,6 +225,26 @@ describe("decodeMergeRequestDetailJson", () => {
     expect(headSha({ sha: "  " })).toBeUndefined();
   });
 
+  it("reads who merged and the commit the merge landed, squash or not", () => {
+    const merged = (entry: Record<string, unknown>) => {
+      const detail = expectSuccess(decodeMergeRequestDetailJson(detailJson(entry)));
+      return { sha: detail.mergeCommitSha, by: detail.mergedBy?.login };
+    };
+    const merge = "1".repeat(40);
+    const squash = "2".repeat(40);
+
+    expect(merged({ merge_commit_sha: merge, merge_user: { username: "ada" } })).toEqual({
+      sha: merge,
+      by: "ada",
+    });
+    expect(merged({ merge_commit_sha: null, squash_commit_sha: squash })).toEqual({
+      sha: squash,
+      by: undefined,
+    });
+    expect(merged({ merged_by: { username: "grace" } }).by).toBe("grace");
+    expect(merged({})).toEqual({ sha: undefined, by: undefined });
+  });
+
   it("reads the diff refs threads are placed against", () => {
     const diffRefs = (entry: Record<string, unknown>) =>
       expectSuccess(decodeMergeRequestDetailJson(detailJson(entry))).diffRefs;

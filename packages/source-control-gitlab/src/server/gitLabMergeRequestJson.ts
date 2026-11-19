@@ -89,6 +89,11 @@ const RawMergeRequestSchema = Schema.Struct({
   created_at: Schema.String,
   updated_at: Schema.String,
   merged_at: Schema.optional(Schema.NullOr(Schema.String)),
+  merge_commit_sha: Schema.optional(Schema.NullOr(Schema.String)),
+  squash_commit_sha: Schema.optional(Schema.NullOr(Schema.String)),
+  merge_user: Schema.optional(Schema.NullOr(RawUserSchema)),
+  /** Deprecated by GitLab in favor of merge_user; older instances send only this. */
+  merged_by: Schema.optional(Schema.NullOr(RawUserSchema)),
   closed_at: Schema.optional(Schema.NullOr(Schema.String)),
   reviewers: Schema.optional(Schema.NullOr(Schema.Array(RawUserSchema))),
   labels: Schema.optional(Schema.NullOr(Schema.Array(RawLabelRefSchema))),
@@ -232,6 +237,8 @@ export interface GitLabMergeRequestDetail extends GitLabMergeRequestListItem {
   readonly body: string;
   readonly changedFiles: number;
   readonly mergedAt: string | null;
+  readonly mergeCommitSha?: string;
+  readonly mergedBy?: PullRequestActor;
   readonly closedAt: string | null;
   readonly reviewers: ReadonlyArray<PullRequestActor>;
   readonly checks: ReadonlyArray<PullRequestCheck>;
@@ -536,6 +543,9 @@ function toListItem(
 function toDetail(raw: Schema.Schema.Type<typeof RawMergeRequestSchema>): GitLabMergeRequestDetail {
   const listItem = toListItem(raw);
   const headSha = trimmed(raw.sha);
+  // A squash merge without a merge commit lands only the squash commit.
+  const mergeCommitSha = trimmed(raw.merge_commit_sha) ?? trimmed(raw.squash_commit_sha);
+  const mergedBy = toActor(raw.merge_user ?? raw.merged_by);
   const refs = raw.diff_refs;
   const diffRefs =
     refs && refs.base_sha !== null && refs.head_sha !== null && refs.start_sha !== null
@@ -570,6 +580,8 @@ function toDetail(raw: Schema.Schema.Type<typeof RawMergeRequestSchema>): GitLab
       : {}),
     ...(raw.diverged_commits_count == null ? {} : { divergedCommits: raw.diverged_commits_count }),
     ...(headSha === null ? {} : { headSha }),
+    ...(mergeCommitSha === null ? {} : { mergeCommitSha }),
+    ...(mergedBy === null ? {} : { mergedBy }),
     ...(diffRefs === null ? {} : { diffRefs }),
     ...(raw.head_pipeline?.id == null || raw.head_pipeline.project_id == null
       ? {}
