@@ -74,8 +74,8 @@ export function alternatePreviewRuntime(
   if (!snapshot || !serverBrowser || !isPreviewSupportedInRuntime()) return null;
   if (environmentId === primaryEnvironmentId) return null;
   if (snapshot.runtime !== "server") return "server";
-  const url = snapshot.navStatus._tag === "Idle" ? undefined : snapshot.navStatus.url;
-  return previewRuntimeFor(environmentId, url) === undefined ? "desktop" : null;
+  if (snapshot.navStatus._tag === "Idle") return "desktop";
+  return previewRuntimeFor(environmentId, snapshot.navStatus.url) === undefined ? "desktop" : null;
 }
 
 export function isPreviewAvailableFor(environmentId: EnvironmentId): boolean {
