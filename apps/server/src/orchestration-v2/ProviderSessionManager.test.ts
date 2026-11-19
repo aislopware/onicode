@@ -1245,9 +1245,9 @@ it.effect("ProviderSessionManagerV2 closes every live session for a provider ins
   }),
 );
 
-it.effect(
-  "ProviderSessionManagerV2 stops the event pump when release gives up on a wedged finalizer",
-  () =>
+it.effect.each([false, true])(
+  "ProviderSessionManagerV2 stops the event pump when release gives up on a wedged finalizer (release interrupted: %s)",
+  (interruptRelease) =>
     Effect.gen(function* () {
       const state = yield* Ref.make(emptyState);
       const eventStreamsEnded = yield* Queue.unbounded<ProviderSessionId>();
@@ -1271,8 +1271,10 @@ it.effect(
           .closeInstance(modelSelection.instanceId)
           .pipe(Effect.forkChild);
         yield* Deferred.await(scopeCloseReached);
+        // A caller that gives up on the release must not keep the pump parked either.
+        if (interruptRelease) yield* Fiber.interrupt(release);
         yield* TestClock.adjust("30 seconds");
-        yield* Fiber.join(release);
+        if (!interruptRelease) yield* Fiber.join(release);
 
         assert.isTrue(Option.isNone(yield* manager.get(providerSessionId)));
         assert.equal(yield* Queue.take(eventStreamsEnded), providerSessionId);
