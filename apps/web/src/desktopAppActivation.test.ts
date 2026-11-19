@@ -10,7 +10,6 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import {
   createDesktopAppActivationReceiver,
   handleDesktopAppActivationRequest,
-  reserveDesktopAppActivationOrder,
   resolveLocalWorkspaceState,
   type DesktopAppActivationDependencies,
 } from "./desktopAppActivation";
@@ -188,6 +187,7 @@ describe("desktop app activation", () => {
     const claimResults: Promise<boolean>[] = [];
     const completions: DesktopAppActivationResponse[] = [];
     let onComplete: () => void = () => undefined;
+    const countWaiters = new Set<() => void>();
     const receiver = createDesktopAppActivationReceiver({
       onRequest: (listener) => {
         deliver = listener;
@@ -202,6 +202,7 @@ describe("desktop app activation", () => {
       complete: async (response) => {
         completions.push(response);
         onComplete();
+        for (const wake of countWaiters) wake();
       },
     });
     const nextCompletion = () =>
@@ -215,6 +216,16 @@ describe("desktop app activation", () => {
       claimResults,
       completions,
       nextCompletion,
+      completed: (count: number) =>
+        new Promise<void>((resolve) => {
+          const wake = () => {
+            if (completions.length < count) return;
+            countWaiters.delete(wake);
+            resolve();
+          };
+          countWaiters.add(wake);
+          wake();
+        }),
     };
   }
 
@@ -310,192 +321,90 @@ describe("desktop app activation", () => {
     expect(harness.claims.filter((requestId) => requestId === request.requestId)).toHaveLength(2);
   });
 
-  it("keeps an older open that finishes late from replacing a newer one", async () => {
-    let projectAppeared: () => void = () => undefined;
+  it("adds a new folder once when two opens ask for it together", async () => {
+    const projects = new Map<string, ProjectId>();
     const deps = dependencies({
-      findProject: (_environmentId, workspaceRoot) =>
-        workspaceRoot === request.workspaceRoot
-          ? null
-          : { id: existingProjectId, environmentId, workspaceRoot },
-      waitForProject: vi.fn(
-        () =>
-          new Promise<void>((resolve) => {
-            projectAppeared = resolve;
-          }),
-      ),
+      findProject: (_environmentId, workspaceRoot) => {
+        const id = projects.get(workspaceRoot);
+        return id === undefined ? null : { id, environmentId, workspaceRoot };
+      },
+      createProject: vi.fn(async (_environmentId, workspaceRoot) => {
+        if (projects.has(workspaceRoot)) {
+          throw new Error("Active project already exists for workspace root");
+        }
+        return createdProjectId;
+      }),
+      waitForProject: vi.fn(async ({ projectId }) => {
+        projects.set(request.workspaceRoot, projectId);
+      }),
     });
-    // An activation still adding its project, then a sidebar drop of a known folder.
-    const older = handleDesktopAppActivationRequest(request, deps);
-    await expect(
-      handleDesktopAppActivationRequest(
-        { ...request, requestId: "request-2", workspaceRoot: "/workspace/other" },
-        deps,
-      ),
-    ).resolves.toMatchObject({ ok: true });
-    projectAppeared();
-
-    // Nobody is left to tell: a drop stops quietly, an activation's command is answered by the receiver.
-    await expect(older).resolves.toBeNull();
-    expect(vi.mocked(deps.openThread).mock.calls.map(([projectRef]) => projectRef)).toEqual([
-      { environmentId, projectId: existingProjectId },
-    ]);
-  });
-
-  it.each([
-    { name: "still shows its thread", outcome: { threadId } },
-    { name: "is abandoned by the new-thread handler", outcome: null },
-  ])(
-    "reports an older open a newer one replaced while it $name as replaced",
-    async ({ outcome }) => {
-      let finishOpen: () => void = () => undefined;
-      const deps = dependencies({
-        openThread: vi.fn(async (projectRef) => {
-          if (projectRef.projectId !== existingProjectId) return { threadId };
-          await new Promise<void>((resolve) => {
-            finishOpen = resolve;
-          });
-          return outcome;
-        }),
-        findProject: (_environmentId, workspaceRoot) => ({
-          id: workspaceRoot === request.workspaceRoot ? existingProjectId : createdProjectId,
-          environmentId,
-          workspaceRoot,
-        }),
-      });
-      // The first folder of a drop is still navigating when an activation shows its own thread.
-      const older = handleDesktopAppActivationRequest(request, deps);
-      await expect(
-        handleDesktopAppActivationRequest(
-          { ...request, requestId: "request-2", workspaceRoot: "/workspace/other" },
-          deps,
-        ),
-      ).resolves.toMatchObject({ ok: true });
-      finishOpen();
-
-      // Null stops the rest of the drop, which would otherwise undo the newer open.
-      await expect(older).resolves.toBeNull();
-    },
-  );
-
-  it("ranks every folder of a drop by when it was dropped", async () => {
-    let projectAppeared: () => void = () => undefined;
-    const deps = dependencies({
-      findProject: (_environmentId, workspaceRoot) =>
-        workspaceRoot === "/workspace/new"
-          ? null
-          : { id: existingProjectId, environmentId, workspaceRoot },
-      waitForProject: vi.fn(
-        () =>
-          new Promise<void>((resolve) => {
-            projectAppeared = resolve;
-          }),
-      ),
-    });
-    const dropOrder = reserveDesktopAppActivationOrder();
-    await handleDesktopAppActivationRequest(request, deps, dropOrder);
-    // An activation that came after the drop, still adding its project.
-    const activation = handleDesktopAppActivationRequest(
-      { ...request, requestId: "request-2", workspaceRoot: "/workspace/new" },
-      deps,
-    );
-    await handleDesktopAppActivationRequest(
-      { ...request, requestId: "request-3", workspaceRoot: "/workspace/second" },
-      deps,
-      dropOrder,
-    );
-    projectAppeared();
-
-    await expect(activation).resolves.toMatchObject({ ok: true, projectId: createdProjectId });
-  });
-
-  it("gives way to a drop made while an activation's claim was in flight", async () => {
-    let grant: (claimed: boolean) => void = () => undefined;
-    let claimRequested: () => void = () => undefined;
-    const claimed = new Promise<void>((resolve) => {
-      claimRequested = resolve;
-    });
-    const harness = receiverHarness(
-      () =>
-        new Promise<boolean>((resolve) => {
-          grant = resolve;
-          claimRequested();
-        }),
-    );
-    const deps = dependencies({
-      findProject: (_environmentId, workspaceRoot) =>
-        workspaceRoot === request.workspaceRoot
-          ? null
-          : { id: existingProjectId, environmentId, workspaceRoot },
-    });
-    harness.receiver.setHandler((input, order) =>
-      handleDesktopAppActivationRequest(input, deps, order),
-    );
+    const harness = receiverHarness();
+    harness.receiver.setHandler((input) => handleDesktopAppActivationRequest(input, deps));
+    const completed = harness.completed(2);
+    // A drop takes its turn the same way.
     harness.deliver();
-    await claimed;
-    await expect(
-      handleDesktopAppActivationRequest(
-        { ...request, requestId: "drop", workspaceRoot: "/workspace/other" },
-        deps,
-        reserveDesktopAppActivationOrder(),
-      ),
-    ).resolves.toMatchObject({ ok: true });
-    const completed = harness.nextCompletion();
-    grant(true);
+    harness.deliver({ ...request, requestId: "request-2" });
     await completed;
 
     expect(harness.completions).toEqual([
-      expect.objectContaining({ requestId: request.requestId, code: "thread-open-failed" }),
+      expect.objectContaining({ requestId: request.requestId, ok: true }),
+      expect.objectContaining({ requestId: "request-2", ok: true, projectId: createdProjectId }),
     ]);
-    // Nor does it add its folder, which the drop may be about to add too.
-    expect(deps.createProject).not.toHaveBeenCalled();
-    expect(deps.openThread).toHaveBeenCalledOnce();
+    expect(deps.createProject).toHaveBeenCalledOnce();
   });
 
-  it("lets an older open show its thread when a newer one fails before it could", async () => {
+  it("shows an open's thread even when a later open fails", async () => {
     let projectAppeared: () => void = () => undefined;
-    const createProject = vi
-      .fn<DesktopAppActivationDependencies["createProject"]>()
-      .mockResolvedValueOnce(createdProjectId)
-      .mockRejectedValueOnce(new Error("Active project already exists for workspace root"));
+    let addingProject: () => void = () => undefined;
+    const adding = new Promise<void>((resolve) => {
+      addingProject = resolve;
+    });
     const deps = dependencies({
-      findProject: () => null,
-      createProject,
+      findProject: (_environmentId, workspaceRoot) =>
+        workspaceRoot === request.workspaceRoot
+          ? null
+          : { id: existingProjectId, environmentId, workspaceRoot },
       waitForProject: vi.fn(
         () =>
           new Promise<void>((resolve) => {
             projectAppeared = resolve;
+            addingProject();
           }),
       ),
+      openThread: vi.fn(async (projectRef) =>
+        projectRef.projectId === createdProjectId ? { threadId } : null,
+      ),
     });
-    // An activation and a drop of the same new folder.
-    const older = handleDesktopAppActivationRequest(request, deps);
-    await expect(
-      handleDesktopAppActivationRequest({ ...request, requestId: "request-2" }, deps),
-    ).resolves.toMatchObject({ ok: false, code: "project-create-failed" });
+    const harness = receiverHarness();
+    harness.receiver.setHandler((input) => handleDesktopAppActivationRequest(input, deps));
+    const completed = harness.completed(2);
+    // A command still adding its folder, then one for a folder whose thread will not open.
+    harness.deliver();
+    harness.deliver({ ...request, requestId: "request-2", workspaceRoot: "/workspace/other" });
+    await adding;
     projectAppeared();
+    await completed;
 
-    await expect(older).resolves.toMatchObject({ ok: true, projectId: createdProjectId });
+    expect(harness.completions).toEqual([
+      expect.objectContaining({ requestId: request.requestId, ok: true }),
+      expect.objectContaining({ requestId: "request-2", code: "thread-open-failed" }),
+    ]);
   });
 
   it.each([
     {
       name: "rejects",
-      handler: async (): Promise<DesktopAppActivationResponse | null> => {
+      handler: async (): Promise<DesktopAppActivationResponse> => {
         throw new Error("boom");
       },
       code: "internal-error",
     },
     {
       name: "throws before returning a promise",
-      handler: (): Promise<DesktopAppActivationResponse | null> => {
+      handler: (): Promise<DesktopAppActivationResponse> => {
         throw new Error("boom");
       },
       code: "internal-error",
-    },
-    {
-      name: "gave way to a newer open",
-      handler: async (): Promise<DesktopAppActivationResponse | null> => null,
-      code: "thread-open-failed",
     },
   ])(
     "answers a request whose handler $name instead of leaving the command waiting",

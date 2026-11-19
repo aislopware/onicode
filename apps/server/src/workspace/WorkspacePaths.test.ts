@@ -40,6 +40,18 @@ it.layer(layerTest)("WorkspacePathsLive", (it) => {
         expect(stat.type).toBe("Directory");
       }),
     );
+
+    it.effect("keeps a space that ends a folder's name", () =>
+      Effect.gen(function* () {
+        const workspacePaths = yield* WorkspacePaths.WorkspacePaths;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const cwd = yield* makeTempDir();
+        yield* fileSystem.makeDirectory(`${cwd}/foo`);
+        yield* fileSystem.makeDirectory(`${cwd}/foo `);
+
+        expect(yield* workspacePaths.normalizeWorkspaceRoot(`${cwd}/foo `)).toBe(`${cwd}/foo `);
+      }),
+    );
   });
 
   describe("resolveRelativePathWithinRoot", () => {

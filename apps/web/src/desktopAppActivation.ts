@@ -36,7 +36,6 @@ export interface DesktopAppActivationDependencies {
   readonly waitForProject: (projectRef: ScopedProjectRef) => Promise<void>;
   readonly openThread: (
     projectRef: ScopedProjectRef,
-    signal: AbortSignal,
   ) => Promise<{ readonly threadId: ThreadId } | null>;
 }
 
@@ -95,43 +94,22 @@ function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message.trim().length > 0 ? error.message : fallback;
 }
 
-let nextOpenOrder = 0;
-let highestShownOrder = -1;
-const runningOpens = new Set<{ readonly order: number; readonly abort: AbortController }>();
-
-/** Opens share one order when they stem from one moment: the folders of a drop, or an activation's receipt. */
-export function reserveDesktopAppActivationOrder(): number {
-  return nextOpenOrder++;
-}
+let lastOpen: Promise<unknown> = Promise.resolve();
 
 /**
- * The newest open that reaches its thread wins: older ones, running or yet to start, stop before
- * they show theirs and resolve to null, so a drop stops instead of opening its next folder over
- * the winner.
+ * Runs folder opens one at a time, in the order they arrived, so the last one asked for is the one
+ * left showing and each sees the projects the ones before it added.
  */
+export function queueDesktopAppActivation<T>(open: () => Promise<T>): Promise<T> {
+  const result = lastOpen.then(open);
+  lastOpen = result.catch(() => undefined);
+  return result;
+}
+
 export async function handleDesktopAppActivationRequest(
   request: DesktopAppActivationRequest,
   dependencies: DesktopAppActivationDependencies,
-  order = reserveDesktopAppActivationOrder(),
-): Promise<DesktopAppActivationResponse | null> {
-  // Before any write: the newer open may be adding the same folder.
-  if (order < highestShownOrder) return null;
-  const open = { order, abort: new AbortController() };
-  runningOpens.add(open);
-  try {
-    const response = await openWorkspace(request, dependencies, order, open.abort.signal);
-    return open.abort.signal.aborted ? null : response;
-  } finally {
-    runningOpens.delete(open);
-  }
-}
-
-async function openWorkspace(
-  request: DesktopAppActivationRequest,
-  dependencies: DesktopAppActivationDependencies,
-  order: number,
-  signal: AbortSignal,
-): Promise<DesktopAppActivationResponse | null> {
+): Promise<DesktopAppActivationResponse> {
   const target = dependencies.getTarget();
   if (target === null) {
     return failure(
@@ -164,16 +142,11 @@ async function openWorkspace(
     }
   }
 
-  if (signal.aborted || order < highestShownOrder) return null;
-  highestShownOrder = order;
-  for (const other of runningOpens) {
-    if (other.order < order) other.abort.abort();
-  }
   try {
-    const opened = await dependencies.openThread(
-      { environmentId: target.environmentId, projectId },
-      signal,
-    );
+    const opened = await dependencies.openThread({
+      environmentId: target.environmentId,
+      projectId,
+    });
     if (opened === null) {
       return failure(
         request.requestId,
@@ -199,8 +172,7 @@ async function openWorkspace(
 
 type DesktopAppActivationHandler = (
   request: DesktopAppActivationRequest,
-  order: number,
-) => Promise<DesktopAppActivationResponse | null>;
+) => Promise<DesktopAppActivationResponse>;
 
 /**
  * Listens for the page's whole life, so a request sent while the handler remounts (leaving
@@ -218,8 +190,7 @@ export function createDesktopAppActivationReceiver(
     return handler;
   };
   activation.onRequest((request) => {
-    const order = reserveDesktopAppActivationOrder();
-    void (async () => {
+    void queueDesktopAppActivation(async () => {
       let handle: DesktopAppActivationHandler | null = null;
       // A handler that left during the claim may come back after the command timed out.
       while (handle === null) {
@@ -230,9 +201,7 @@ export function createDesktopAppActivationReceiver(
       }
       let response: DesktopAppActivationResponse;
       try {
-        response =
-          (await handle(request, order)) ??
-          failure(request.requestId, "thread-open-failed", "A newer open replaced this one.");
+        response = await handle(request);
       } catch (error) {
         response = failure(
           request.requestId,
@@ -241,7 +210,7 @@ export function createDesktopAppActivationReceiver(
         );
       }
       await activation.complete(response);
-    })().catch(() => undefined);
+    }).catch(() => undefined);
   });
   return {
     setHandler: (next: DesktopAppActivationHandler | null) => {

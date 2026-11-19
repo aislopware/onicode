@@ -64,6 +64,12 @@ describe("project RPC errors", () => {
         });
       }
     }
+    // The server refuses these rather than open the folder without the space.
+    const workspaceRoot = "/workspace/foo ";
+    expect(roundTrip(ProjectCreatePayload, { title: "foo", workspaceRoot }).workspaceRoot).toBe(
+      workspaceRoot,
+    );
+    expect(roundTrip(ProjectUpdatePayload, { workspaceRoot }).workspaceRoot).toBe(workspaceRoot);
   });
 
   it("derives stable messages from structured request context while retaining causes", () => {

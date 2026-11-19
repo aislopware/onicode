@@ -7,6 +7,7 @@ import {
   ForwardCompatibleUnion,
   isUnknownUnionMember,
   IsoDateTime,
+  NonBlankString,
   NonNegativeInt,
   PositiveInt,
   ProjectId,
@@ -179,7 +180,7 @@ export type ProjectSnapshot = typeof ProjectSnapshot.Type;
 
 export const ProjectCreatePayload = Schema.Struct({
   title: TrimmedNonEmptyString,
-  workspaceRoot: TrimmedNonEmptyString,
+  workspaceRoot: NonBlankString,
   createWorkspaceRootIfMissing: Schema.optional(Schema.Boolean),
   defaultModelSelection: Schema.optional(Schema.NullOr(ModelSelection)),
   scripts: Schema.optional(Schema.Array(ProjectScript)),
@@ -188,7 +189,7 @@ export type ProjectCreatePayload = typeof ProjectCreatePayload.Type;
 
 export const ProjectUpdatePayload = Schema.Struct({
   title: Schema.optional(TrimmedNonEmptyString),
-  workspaceRoot: Schema.optional(TrimmedNonEmptyString),
+  workspaceRoot: Schema.optional(NonBlankString),
   defaultModelSelection: Schema.optional(Schema.NullOr(ModelSelection)),
   autoPull: Schema.optional(Schema.Boolean),
   projectIcon: Schema.optional(Schema.NullOr(ProjectIconOverride)),

@@ -7,7 +7,7 @@ import { FolderPlusIcon } from "lucide-react";
 import { useGT } from "gt-react";
 import { useState, type DragEvent, type ReactNode } from "react";
 
-import { reserveDesktopAppActivationOrder } from "../../desktopAppActivation";
+import { queueDesktopAppActivation } from "../../desktopAppActivation";
 import { useOpenLocalWorkspace } from "../../hooks/useOpenLocalWorkspace";
 import { randomUUID } from "../../lib/utils";
 import { resolveDroppedFolderPath } from "../chat/folderDrop";
@@ -61,39 +61,35 @@ export function SidebarFolderDrop(props: { children: ReactNode }) {
       reportNotConnected();
       return;
     }
-    // One at a time, so the last folder is the one left open.
-    const order = reserveDesktopAppActivationOrder();
-    for (const folder of folders) {
-      const workspaceRoot = resolveDroppedFolderPath(folder, bridge.getPathForFile);
-      const response =
-        workspaceRoot === null
-          ? undefined
-          : await openLocalWorkspace.open(
-              {
+    // The whole drop takes one turn among opens, so its last folder is the one left open.
+    await queueDesktopAppActivation(async () => {
+      for (const folder of folders) {
+        const workspaceRoot = resolveDroppedFolderPath(folder, bridge.getPathForFile);
+        const response =
+          workspaceRoot === null
+            ? undefined
+            : await openLocalWorkspace.open({
                 version: DESKTOP_APP_ACTIVATION_PROTOCOL_VERSION,
                 requestId: randomUUID(),
                 type: "open-workspace",
                 workspaceRoot,
                 platform,
-              },
-              order,
-            );
-      // A newer open took over; the rest of this drop would undo it.
-      if (response === null) return;
-      if (response?.ok) continue;
-      // It went away during the batch; the rest would fail the same way.
-      if (response?.code === "environment-unavailable") {
-        reportNotConnected();
-        return;
+              });
+        if (response?.ok) continue;
+        // It went away during the batch; the rest would fail the same way.
+        if (response?.code === "environment-unavailable") {
+          reportNotConnected();
+          return;
+        }
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: gt('Could not add "{name}"', { name: folder.name }),
+            description: response?.message ?? gt("Onicode could not read the folder's path."),
+          }),
+        );
       }
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: gt('Could not add "{name}"', { name: folder.name }),
-          description: response?.message ?? gt("Onicode could not read the folder's path."),
-        }),
-      );
-    }
+    });
   };
 
   const onDragOver = (event: DragEvent) => {

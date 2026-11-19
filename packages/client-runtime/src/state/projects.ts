@@ -126,7 +126,8 @@ export function findProjectByPath<T extends { workspaceRoot?: string; cwd?: stri
   candidatePath: string,
 ): T | undefined {
   const normalizedCandidate = normalizeProjectPathForComparison(candidatePath);
-  if (normalizedCandidate.length === 0) {
+  // Projects never live at such a path (the server refuses it); trimming would match the neighbour.
+  if (normalizedCandidate.length === 0 || candidatePath.trim() !== candidatePath) {
     return undefined;
   }
   return projects.find((project) => {
