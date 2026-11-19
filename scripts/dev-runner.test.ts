@@ -199,6 +199,20 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
       }),
     );
 
+    it.effect("skips offsets that land a port Chromium refuses to load", () =>
+      Effect.gen(function* () {
+        // 5733 + 932 = 6665, an IRC port the dev window cannot open (ERR_UNSAFE_PORT).
+        const offset = yield* findFirstAvailableOffset({
+          startOffset: 932,
+          requireServerPort: true,
+          requireWebPort: true,
+          checkPortAvailability: () => Effect.succeed(true),
+        });
+
+        assert.equal(offset, 937);
+      }),
+    );
+
     it.effect("probes the renderer and debug ports on loopback only", () =>
       Effect.gen(function* () {
         const probed: Array<{ port: number; role: string | undefined }> = [];
