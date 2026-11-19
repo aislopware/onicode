@@ -179,6 +179,10 @@
       "types": "./src/providerSkills.ts",
       "default": "./src/providerSkills.ts"
     },
+    "./providerPickerReadiness": {
+      "types": "./src/providerPickerReadiness.ts",
+      "default": "./src/providerPickerReadiness.ts"
+    },
     "./providerUpdateRequiredModels": {
       "types": "./src/providerUpdateRequiredModels.ts",
       "default": "./src/providerUpdateRequiredModels.ts"

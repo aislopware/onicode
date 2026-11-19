@@ -1,3 +1,7 @@
+import {
+  isProviderPickerHealthy,
+  isProviderPickerReady,
+} from "@onicode/client-runtime/providerPickerReadiness";
 import { pipe } from "effect/Function";
 import {
   DEFAULT_MODEL_BY_PROVIDER,
@@ -48,38 +52,20 @@ export function hasInstanceBadge(entries: ReadonlyArray<ProviderInstanceEntry>):
   return entries.some((entry) => shouldShowInstanceBadge(entry, entries));
 }
 
-/**
- * Disabled instances may retain ready status until reconciliation. A warning still offers
- * the models of sub-providers that report no problem of their own.
- */
+const pickerState = (entry: ProviderInstanceEntry) => ({
+  ...entry.snapshot,
+  enabled: entry.enabled,
+  installed: entry.installed,
+  status: entry.status,
+  models: entry.models,
+});
+
 function isProviderInstanceHealthy(entry: ProviderInstanceEntry): boolean {
-  if (!entry.enabled || !entry.isAvailable) return false;
-  if (entry.status === "ready") return true;
-  if (entry.status !== "warning") return false;
-  const usable = new Set(
-    entry.snapshot.subProviders?.flatMap((subProvider) =>
-      subProvider.unavailableReason === undefined ? [subProvider.name] : [],
-    ),
-  );
-  if (usable.size === 0) return false;
-  return entry.models.some(
-    (model) => model.subProvider !== undefined && usable.has(model.subProvider),
-  );
+  return entry.isAvailable && isProviderPickerHealthy(pickerState(entry));
 }
 
-/** Also true after a check that only failed or ran late: an earlier check's models stay offered. */
 export function isProviderInstancePickerReady(entry: ProviderInstanceEntry): boolean {
-  if (isProviderInstanceHealthy(entry)) return true;
-  const { subProviders, auth, modelsRetained } = entry.snapshot;
-  if (!entry.enabled || !entry.isAvailable || subProviders !== undefined) return false;
-  if (modelsRetained === true) return true;
-  // The sign-in was confirmed, so the warning is about something else, such as a late catalog.
-  return (
-    entry.status === "warning" &&
-    entry.installed &&
-    auth.status === "authenticated" &&
-    entry.models.length > 0
-  );
+  return entry.isAvailable && isProviderPickerReady(pickerState(entry));
 }
 
 export function isProviderInstancePickerVisible(entry: ProviderInstanceEntry): boolean {

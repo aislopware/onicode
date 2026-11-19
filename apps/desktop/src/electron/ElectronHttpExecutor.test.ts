@@ -106,6 +106,7 @@ function startDownload(onDisk: string, release = RELEASE) {
         });
       }),
     requestCount: () => requestCount,
+    lastFileOut: () => createWriteStream.mock.results.at(-1)!.value as NodeFS.WriteStream,
     read: () => NodeFS.readFileSync(destination, "utf8"),
     [Symbol.dispose]: () => {
       createWriteStream.mockRestore();
@@ -211,6 +212,33 @@ describe("ElectronHttpExecutor idle timeout", () => {
     const { request, headers: second } = await retry;
     expect(second.Range).toBe(`bytes=${written.length}-`);
     respond(request, status, headers, body);
+
+    await expect(download.result).resolves.toBe(download.destination);
+    expect(download.read()).toBe(LARGE_RELEASE);
+  });
+
+  it("asks for the rest when a resumed response ends before its declared total", async () => {
+    using download = startDownload("", LARGE_RELEASE);
+
+    const { request: shortened } = await download.stallAfterWriting(PREFIX);
+    const rest = download.nextRequest();
+    const total = LARGE_RELEASE.length;
+    respond(
+      shortened,
+      206,
+      { "content-range": `bytes ${PREFIX.length}-${PREFIX.length + 1}/${total}` },
+      "wo",
+    );
+    await NodeEvents.EventEmitter.once(download.lastFileOut(), "close");
+    await vi.advanceTimersByTimeAsync(4_000);
+    const { request, headers } = await rest;
+    expect(headers.Range).toBe(`bytes=${PREFIX.length + 2}-`);
+    respond(
+      request,
+      206,
+      { "content-range": `bytes ${PREFIX.length + 2}-${total - 1}/${total}` },
+      "rld",
+    );
 
     await expect(download.result).resolves.toBe(download.destination);
     expect(download.read()).toBe(LARGE_RELEASE);

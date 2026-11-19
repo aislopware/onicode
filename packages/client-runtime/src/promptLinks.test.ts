@@ -151,11 +151,15 @@ describe("resolvePromptLinkModelSelection", () => {
     instanceId: string,
     driver: string,
     status: "ready" | "warning" | "error" | "disabled" = "ready",
+    modelsRetained?: boolean,
   ) => ({
     instanceId: ProviderInstanceId.make(instanceId),
     driver: ProviderDriverKind.make(driver),
     enabled: true,
+    installed: true,
+    auth: { status: "authenticated" as const },
     status,
+    ...(modelsRetained === undefined ? {} : { modelsRetained }),
     models: [
       { slug: "small", name: "Small" },
       { slug: "big", name: "Big", aliases: ["opus"], isDefault: true },
@@ -189,5 +193,12 @@ describe("resolvePromptLinkModelSelection", () => {
     expect(
       resolvePromptLinkModelSelection(providers, { provider: "cursor", model: null }),
     ).toBeNull();
+  });
+
+  it("uses an instance that kept its models after a failed check, as the pickers do", () => {
+    const providers = [provider("codex", "codex", "error", true)];
+    expect(
+      resolvePromptLinkModelSelection(providers, { provider: "codex", model: "small" }),
+    ).toEqual({ selection: { instanceId: "codex", model: "small" }, exact: true });
   });
 });

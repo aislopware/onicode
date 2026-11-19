@@ -195,4 +195,11 @@ describe("mobile model mentions", () => {
   ] as const)("does not suggest a preserved selection whose provider is %s", (_, providers) => {
     expect(buildComposerModelItems([option("traex:gpt-6.1")], "gpt", providers)).toEqual([]);
   });
+
+  it("suggests the models a provider kept after a failed check", () => {
+    const retained = provider("traex", { status: "error", modelsRetained: true });
+    expect(
+      buildComposerModelItems([option("traex:gpt-6.1")], "gpt", [retained]).map((item) => item.id),
+    ).toEqual(["model:traex:gpt-6.1"]);
+  });
 });
