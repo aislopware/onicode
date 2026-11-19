@@ -2672,3 +2672,4 @@ bc6621d73a	take	CONFLICT resolved: kept Onicode's untrimmed-root check (and befo
 60c6952430	take	fix(mobile): a missing image no longer stops its gallery opening on Android (#39128)
 4113f8fee5	take	fix(web): block invalid project monograms before save (#39131)
 6dc7fdc8e8	take	fix(opencode): owned servers no longer fail turns after five stalled event subscriptions (#39134)
+d067a04175	take	fix(web): a slow chat file link no longer replaces a file opened from the picker (#39130); scenario ported with ControlOrMeta+p for the desktop target
