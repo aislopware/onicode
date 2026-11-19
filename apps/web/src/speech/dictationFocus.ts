@@ -1,10 +1,16 @@
 import { shouldRefocusComposerOnWindowFocus } from "../lib/editableFocus";
 
-/** Dictation hands focus back to its editor unless the user moved it somewhere deliberate. */
-export function mayRefocusAfterDictation(editor: Element | null | undefined): boolean {
+/**
+ * Dictation hands focus back to its editor unless the user moved it somewhere deliberate since
+ * the recording started; focus that never moved, as with the mic or the shortcut, comes back.
+ */
+export function mayRefocusAfterDictation(
+  editor: Element | null | undefined,
+  startFocus: Element | null,
+): boolean {
   const active = document.activeElement;
   return (
-    (active !== null && (editor?.contains(active) ?? false)) ||
+    (active !== null && (active === startFocus || (editor?.contains(active) ?? false))) ||
     shouldRefocusComposerOnWindowFocus(active, document.getSelection())
   );
 }

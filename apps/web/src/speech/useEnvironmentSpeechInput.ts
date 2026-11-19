@@ -91,9 +91,11 @@ type HookInput = {
   /** False keeps the transcript off the cleanup provider even when cleanup is on; the model test uses it. */
   readonly cleanup?: boolean | undefined;
   readonly readDraft: () => DraftInput;
+  /** `startFocus` is what had focus when the recording started. */
   readonly commitDraft: (
     text: string,
     selection: { readonly start: number; readonly end: number },
+    startFocus: Element | null,
   ) => void;
   /** Names the draft in the indicator shown while a recording's editor is off screen. */
   readonly label?: string | null | undefined;
@@ -316,6 +318,7 @@ export function useEnvironmentSpeechInput(input: HookInput) {
   const createTarget = useStableCallback((): VoiceInputTarget => {
     const owner = latestRef.current.input.ownerKey;
     recordedOwnerRef.current = owner;
+    const startFocus = document.activeElement;
     const readContext = () => {
       const current = latestRef.current;
       return {
@@ -352,7 +355,7 @@ export function useEnvironmentSpeechInput(input: HookInput) {
           persistent?.commitStoredText(text);
           return;
         }
-        latestRef.current.input.commitDraft(text, selection);
+        latestRef.current.input.commitDraft(text, selection, startFocus);
         if (pendingSubmissionRef.current?.ownerKey === owner)
           pendingSubmissionRef.current.text = text;
       },
