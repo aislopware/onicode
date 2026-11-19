@@ -964,7 +964,7 @@ it("/side sends the draft's attachments and context, and keeps them until it sta
   const uploadsBeforeEdit = uploadsStarted;
   await sendImageToSideChat();
   await vi.waitFor(() => expect(uploadsStarted).toBeGreaterThan(uploadsBeforeEdit));
-  await userEvent.keyboard("!");
+  await page.getByRole("button", { name: "Remove shot.png" }).click();
   releaseUpload();
   uploadGate = null;
   await expect
@@ -973,7 +973,8 @@ it("/side sends the draft's attachments and context, and keeps them until it sta
     )
     .toBeVisible();
   expect(forks()).toHaveLength(5);
-  await expect.element(image).toBeVisible();
+  await expect.element(image).not.toBeInTheDocument();
+  await userEvent.click(editor);
 
   // A start that fails after the user left says so where they are.
   holdFork = true;

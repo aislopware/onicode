@@ -724,7 +724,7 @@ export function useThreadComposerState(input: {
             )
           );
         };
-        // A removed attachment loses its upload, so a change before the fork waits for Send again.
+        // The side chat gets what Send was pressed on, so a change before the fork waits for Send.
         const draftChanged = () =>
           new Error(
             m(msg("Draft changed while preparing this message. Review it and send again.")),
@@ -762,6 +762,7 @@ export function useThreadComposerState(input: {
             },
           );
         });
+        endStart();
         if (AsyncResult.isSuccess(started) && started.value) {
           // Edits made while it forked stay, along with what was sent.
           if (unchanged()) clearComposerDraftContent(threadKey);
@@ -772,7 +773,6 @@ export function useThreadComposerState(input: {
             error instanceof Error ? error.message : m(msg("Could not start a side chat.")),
           );
         }
-        endStart();
       }
       return null;
     }
