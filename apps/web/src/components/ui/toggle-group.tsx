@@ -3,6 +3,7 @@ import { ToggleGroup as ToggleGroupPrimitive } from "@base-ui/react/toggle-group
 import type { VariantProps } from "class-variance-authority";
 import * as React from "react";
 
+import { observeResize } from "~/lib/observeResize";
 import { cn } from "~/lib/utils";
 import { Toggle as ToggleComponent, type toggleVariants } from "~/components/ui/toggle";
 
@@ -25,17 +26,17 @@ function ToggleGroup({
   return (
     <ToggleGroupPrimitive
       className={cn(
-        "flex w-fit *:focus-visible:z-10 dark:*:[[data-slot=separator]:has(+[data-slot=toggle]:hover)]:before:bg-input/64 dark:*:[[data-slot=separator]:has(+[data-slot=toggle][data-pressed])]:before:bg-input dark:*:[[data-slot=toggle]:hover+[data-slot=separator]]:before:bg-input/64 dark:*:[[data-slot=toggle][data-pressed]+[data-slot=separator]]:before:bg-input",
+        "flex w-fit *:focus-visible:z-10",
         orientation === "horizontal"
           ? "*:pointer-coarse:after:min-w-auto"
           : "*:pointer-coarse:after:min-h-auto",
         variant === "segmented"
-          ? "gap-0.5 rounded-lg bg-input/40 p-0.5"
+          ? "relative isolate gap-0.5 rounded-lg bg-secondary p-0.5 dark:bg-white/4.5"
           : variant === "default"
             ? "gap-0.5"
             : orientation === "horizontal"
-              ? "*:not-first:not-data-[slot=separator]:before:-start-[0.5px] *:not-last:not-data-[slot=separator]:before:-end-[0.5px] *:not-first:rounded-s-none *:not-last:rounded-e-none *:not-first:border-s-0 *:not-last:border-e-0 *:not-first:before:rounded-s-none *:not-last:before:rounded-e-none"
-              : "*:not-first:not-data-[slot=separator]:before:-top-[0.5px] *:not-last:not-data-[slot=separator]:before:-bottom-[0.5px] flex-col *:not-first:rounded-t-none *:not-last:rounded-b-none *:not-first:border-t-0 *:not-last:border-b-0 *:not-first:before:rounded-t-none *:not-last:before:rounded-b-none *:data-[slot=toggle]:not-last:before:hidden dark:*:last:before:hidden dark:*:first:before:block",
+              ? "*:not-first:rounded-s-none *:not-last:rounded-e-none *:not-first:border-s-0"
+              : "flex-col *:not-first:rounded-t-none *:not-last:rounded-b-none *:not-first:border-t-0",
         className,
       )}
       data-size={size}
@@ -45,7 +46,56 @@ function ToggleGroup({
       {...props}
     >
       <ToggleGroupContext value={value}>{children}</ToggleGroupContext>
+      {variant === "segmented" ? <SegmentedIndicator /> : null}
     </ToggleGroupPrimitive>
+  );
+}
+
+/** The selected surface of a segmented group: one element that slides to the pressed item. */
+function SegmentedIndicator() {
+  const ref = React.useRef<HTMLSpanElement>(null);
+
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- the pressed item's box is known only from layout
+  React.useLayoutEffect(() => {
+    const indicator = ref.current;
+    const group = indicator?.parentElement;
+    if (!indicator || !group) return;
+    const place = () => {
+      const pressed = group.querySelector<HTMLElement>("[data-pressed]");
+      indicator.hidden = pressed === null;
+      if (pressed === null) return;
+      const from = group.getBoundingClientRect();
+      const to = pressed.getBoundingClientRect();
+      indicator.style.setProperty("--pressed-left", `${to.left - from.left - group.clientLeft}px`);
+      indicator.style.setProperty("--pressed-top", `${to.top - from.top - group.clientTop}px`);
+      indicator.style.setProperty("--pressed-width", `${to.width}px`);
+      indicator.style.setProperty("--pressed-height", `${to.height}px`);
+    };
+    place();
+    // Read the placed box before motion is allowed, so the first placement does not slide in.
+    void indicator.offsetWidth;
+    indicator.dataset.placed = "";
+    const pressedChanges = new MutationObserver(place);
+    pressedChanges.observe(group, {
+      attributeFilter: ["data-pressed"],
+      attributes: true,
+      childList: true,
+      subtree: true,
+    });
+    const stopObservingSize = observeResize(group, place);
+    return () => {
+      pressedChanges.disconnect();
+      stopObservingSize();
+    };
+  }, []);
+
+  return (
+    <span
+      aria-hidden
+      className="pointer-events-none absolute top-0 left-0 -z-1 h-(--pressed-height) w-(--pressed-width) translate-x-(--pressed-left) translate-y-(--pressed-top) rounded-(--control-radius) border border-transparent bg-card shadow-[var(--card-shadow),var(--plate-shadow)] transition-[translate,width,height] duration-250 ease-[cubic-bezier(0.76,0,0.24,1)] not-data-placed:transition-none motion-reduce:transition-none in-[[data-slot=toggle-group]:has(:focus-visible)]:transition-none dark:border-white/10 dark:bg-white/8 dark:shadow-[inset_0_1px_0_rgb(255_255_255/4%),var(--plate-shadow)]"
+      data-slot="toggle-group-indicator"
+      ref={ref}
+    />
   );
 }
 
@@ -63,7 +113,12 @@ function Toggle({
 
   return (
     <ToggleComponent
-      className={className}
+      // The group's indicator is the selected surface here, so the item keeps only its text colour.
+      className={cn(
+        resolvedVariant === "segmented" &&
+          "data-pressed:bg-transparent data-pressed:shadow-none data-pressed:hover:bg-transparent dark:data-pressed:bg-transparent dark:data-pressed:hover:bg-transparent",
+        className,
+      )}
       data-size={resolvedSize}
       data-variant={resolvedVariant}
       size={resolvedSize}

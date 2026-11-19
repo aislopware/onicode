@@ -10,8 +10,9 @@ import {
   MIN_PROMPT_FONT_SIZE,
 } from "@onicode/contracts";
 
-export const DEFAULT_SANS_FONT_STACK =
-  '-apple-system, BlinkMacSystemFont, "Inter Variable", "Segoe UI", system-ui, sans-serif';
+const SYSTEM_SANS_FONT_STACK =
+  '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif';
+export const DEFAULT_SANS_FONT_STACK = `"Inter Variable", ${SYSTEM_SANS_FONT_STACK}`;
 
 // Some engines map `ui-monospace` to a proportional font, so prefer concrete names.
 export const DEFAULT_CODE_FONT_STACK =
@@ -58,6 +59,12 @@ export function appearanceFontStack(custom: string, defaultStack: string): strin
   return families === null ? defaultStack : `${families}, ${defaultStack}`;
 }
 
+/** A chosen face falls back to the system face. "SF Pro" names no CSS family, so it must not land on the bundled default. */
+function sansFontStack(custom: string): string {
+  const families = cssFontFamilies(custom);
+  return families === null ? DEFAULT_SANS_FONT_STACK : `${families}, ${SYSTEM_SANS_FONT_STACK}`;
+}
+
 export interface AppearanceFontPreferences {
   readonly sans: string;
   readonly code: string;
@@ -75,7 +82,7 @@ export function applyAppearanceFontVariables(
   preferences: AppearanceFontPreferences,
 ): void {
   const families: ReadonlyArray<readonly [variable: string, custom: string, fallback: string]> = [
-    ["--font-sans", preferences.sans, DEFAULT_SANS_FONT_STACK],
+    ["--font-sans", preferences.sans, SYSTEM_SANS_FONT_STACK],
     ["--font-mono", preferences.code, DEFAULT_CODE_FONT_STACK],
     ["--font-composer", preferences.separate ? preferences.composer : "", "var(--font-sans)"],
   ];
@@ -88,10 +95,7 @@ export function applyAppearanceFontVariables(
     }
   }
 
-  const markerWidth = probeWidth(
-    appearanceFontStack(preferences.sans, DEFAULT_SANS_FONT_STACK),
-    LIST_MARKER_PROBE_TEXT,
-  );
+  const markerWidth = probeWidth(sansFontStack(preferences.sans), LIST_MARKER_PROBE_TEXT);
   if (markerWidth === null) {
     root.style.removeProperty("--list-marker-sans");
   } else {
@@ -283,7 +287,7 @@ export function displayFontFamily(family: string): string {
     .replace(/^(['"])(.*)\1$/, "$2")
     .trim()
     .toLowerCase();
-  if (label === "sf pro") return appearanceFontStack(family, DEFAULT_SANS_FONT_STACK);
+  if (label === "sf pro") return sansFontStack(family);
   if (label === "sf mono") return DEFAULT_CODE_FONT_STACK;
   return cssFontFamilies(family) ?? "";
 }

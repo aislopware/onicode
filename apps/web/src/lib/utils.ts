@@ -11,7 +11,10 @@ import { m, type MessageResolver } from "../i18n/messages";
 // treat text-2xs or bg-composer-seam-below as colors.
 const twMerge = extendTailwindMerge({
   extend: {
-    theme: { text: ["2xs", "3xs", "4xs", "5xs"] },
+    theme: {
+      text: ["2xs", "3xs", "4xs", "5xs", "ui"],
+      shadow: ["popup", "popup-dark", "plate", "card"],
+    },
     classGroups: { "bg-image": [{ bg: ["composer-seam-below", "composer-seam-above"] }] },
   },
 });

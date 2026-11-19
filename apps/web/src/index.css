@@ -101,7 +101,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(oni-mobi
    * Compact UI geometry. Keep these values semantic so sidebar, palette,
    * tooltip, and toolbar controls cannot quietly drift apart.
    */
-  --control-radius: 0.5rem;
+  --control-radius: 0.375rem;
   --sidebar-content-inset: 0.5rem;
   --sidebar-control-gap: 0.5rem;
   --sidebar-icon-color: color-mix(
@@ -172,9 +172,19 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(oni-mobi
    default stacks are mirrored in `appearanceFonts.ts`. */
 @theme {
   --font-sans:
-    -apple-system, BlinkMacSystemFont, "Inter Variable", "Segoe UI", system-ui, sans-serif;
+    "Inter Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   --font-mono:
     ui-monospace, "SF Mono", "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
+  /* Interface text sits a little above regular, and semibold a little under 600. */
+  --font-weight-normal: 450;
+  --font-weight-semibold: 560;
+  /* Every bare border and divide is a hairline: one device pixel on a 2x display. */
+  --default-border-width: 0.5px;
+  /* The size of controls, menu rows and settings rows, between xs (12px) and sm (14px). */
+  --text-ui: 0.8125rem;
+  --text-ui--line-height: 1.25;
+  --text-ui--letter-spacing: -0.01em;
+  --ease-out-quint: cubic-bezier(0.23, 1, 0.32, 1);
 }
 
 @theme inline {
@@ -201,9 +211,13 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(oni-mobi
   --shadow-composer: 0 1px 2px rgb(0 0 0 / 5%);
   --shadow-composer-dark: 0 14px 32px -18px rgb(0 0 0 / 75%);
   /* Menus, popovers and pickers: three short layers, so a popup sits on the page rather than floats. */
-  --shadow-popup: 0 3px 8px rgb(0 0 0 / 7%), 0 2px 5px rgb(0 0 0 / 4%), 0 1px 1px rgb(0 0 0 / 3%);
+  --shadow-popup: 0 6px 18px rgb(0 0 0 / 3%), 0 3px 9px rgb(0 0 0 / 4%), 0 1px 1px rgb(0 0 0 / 5%);
   --shadow-popup-dark:
-    0 3px 8px rgb(0 0 0 / 28%), 0 2px 5px rgb(0 0 0 / 18%), 0 1px 1px rgb(0 0 0 / 14%);
+    0 3px 8px rgb(0 0 0 / 13%), 0 2px 5px rgb(0 0 0 / 13%), 0 1px 1px rgb(0 0 0 / 13%);
+  /* plate: the lift under a raised control or a switch thumb. card: the ring that outlines a
+     card, drawn outside its box. Both change with the colour scheme, so they are variables. */
+  --shadow-plate: var(--plate-shadow);
+  --shadow-card: var(--card-shadow);
   /* Overlap the lower toolbar backdrop by one pixel to cover the composer seam. */
   --spacing-composer-seam: calc(var(--spacing) * 4 - 1px);
   /* Dark-mode shade where an attached surface meets the composer: 10px of
@@ -259,22 +273,27 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(oni-mobi
   --color-ring: var(--ring);
   --color-input: var(--contrast-input);
   --color-border: var(--contrast-border);
+  --color-border-2: var(--contrast-border-2);
+  --color-border-3: var(--contrast-border-3);
   --color-destructive: var(--destructive);
   --color-accent-foreground: var(--contrast-accent-foreground);
   --color-accent: var(--accent);
   --color-muted-foreground: var(--contrast-muted-foreground);
+  --color-subtle-foreground: var(--contrast-subtle-foreground);
   --color-muted: var(--muted);
   --color-placeholder: var(--contrast-placeholder);
   --color-secondary-label: var(--contrast-secondary-label);
   --color-icon-muted: var(--contrast-icon-muted);
   --color-secondary-foreground: var(--contrast-secondary-foreground);
   --color-secondary: var(--secondary);
+  --color-secondary-hover: var(--secondary-hover);
   --color-primary-foreground: var(--primary-foreground);
   --color-primary: var(--primary);
   --color-popover-foreground: var(--contrast-popover-foreground);
   --color-popover: var(--popover);
   --color-card-foreground: var(--contrast-card-foreground);
   --color-card: var(--card);
+  --color-card-hover: var(--card-hover);
   --color-code: var(--code-background);
   --color-foreground: var(--contrast-foreground);
   --color-background: var(--background);
@@ -293,7 +312,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(oni-mobi
   --color-sidebar-row-active: var(--sidebar-row-active);
   --color-sidebar-row-selected: var(--sidebar-row-selected);
   --color-sidebar-border: var(--contrast-sidebar-border);
-  --radius-sm: calc(var(--radius) - 4px);
+  --radius-sm: calc(var(--radius) - 5px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
@@ -410,6 +429,13 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(oni-mobi
   }
 }
 
+/* Keyboard focus: one pixel inside the control's edge. A filled control sets --focus-ring to
+   its own text colour, where the accent would not show. */
+@utility outline-ring-inset {
+  outline: 1px solid var(--focus-ring, var(--ring));
+  outline-offset: -1px;
+}
+
 @utility surface-glass {
   background: color-mix(in srgb, var(--background) var(--glass-opacity), transparent);
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
@@ -477,13 +503,13 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(oni-mobi
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
   border-color: color-mix(in srgb, var(--contrast-foreground) 10%, transparent);
-  box-shadow: 0 24px 64px -24px rgb(0 0 0 / 65%);
+  box-shadow: var(--shadow-popup);
 
   @variant dark {
     border-color: color-mix(in srgb, var(--color-white) 8%, transparent);
     box-shadow:
       inset 0 1px rgb(255 255 255 / 4%),
-      0 24px 72px -20px rgb(0 0 0 / 90%);
+      var(--shadow-popup-dark);
   }
 
   @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
@@ -933,7 +959,8 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(oni-mobi
 :root {
   color-scheme: light;
   --radius: 0.5rem;
-  --background: var(--color-zinc-25);
+  /* Three light grounds: the sidebar, this canvas one step above it, then white cards. */
+  --background: oklch(98.5% 0.0015 290);
   --app-chrome-background: var(--background);
   --toolbar-background: var(--app-chrome-background);
   --toolbar-foreground: var(--foreground);
@@ -942,18 +969,27 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(oni-mobi
   --toolbar-control-foreground: var(--foreground);
   --toolbar-control-hover: var(--accent);
   --surface-raised: color-mix(in srgb, var(--card) 20%, transparent);
-  --foreground: var(--color-zinc-900);
+  --foreground: oklch(23.5% 0.0038 290);
   --card: var(--color-white);
-  --card-foreground: var(--color-zinc-900);
+  /* A card or a row in one, under the pointer. */
+  --card-hover: color-mix(in oklab, var(--card) 97%, var(--foreground));
+  --card-foreground: var(--foreground);
   --popover: var(--color-white);
-  --popover-foreground: var(--color-zinc-900);
-  --primary: oklch(0.488 0.217 264);
+  --popover-foreground: var(--foreground);
+  --primary: oklch(0.54 0.213 267.8);
   --primary-foreground: var(--color-white);
-  --secondary: var(--color-zinc-50);
-  --secondary-foreground: var(--color-zinc-800);
-  --muted: var(--color-zinc-50);
-  --muted-foreground: var(--color-zinc-500);
-  --placeholder: var(--muted-foreground);
+  /* Fills are an alpha of black or white, so they read the same on every ground. */
+  --secondary: oklch(0% 0 0 / 5%);
+  --secondary-hover: oklch(0% 0 0 / 8%);
+  --secondary-foreground: var(--foreground);
+  --muted: oklch(0% 0 0 / 4%);
+  /* The track of a switch that is off, a solid step under the canvas. */
+  --switch-track: oklch(93.2% 0.0028 290);
+  /* Text steps down from the foreground toward the sidebar ground: 62% for muted, 48% for
+     subtle (the description under a row's title), 36% for a placeholder. */
+  --muted-foreground: oklch(51.1% 0.0033 290);
+  --subtle-foreground: oklch(61.3% 0.0031 290);
+  --placeholder: oklch(70% 0.003 290);
   --secondary-label: var(--muted-foreground);
   --icon-muted: var(--muted-foreground);
   /* One step past the accent, so a user turn stands off the near-white canvas. */
@@ -973,10 +1009,19 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(oni-mobi
   --tool-error-icon: var(--error);
   --error-surface: color-mix(in srgb, var(--error) 8%, transparent);
   --destructive: var(--error);
-  /* The one border weight. Call sites use it as is, never at a partial opacity. */
-  --border: --alpha(var(--color-zinc-200) / 65%);
-  --input: var(--color-zinc-300);
-  --ring: var(--primary);
+  /* Three hairline strengths, used as they are and never at a partial opacity: dividers, then
+     the outline of a control, card or popup, then a checkbox and other small marks. */
+  --border: oklch(0% 0 0 / 8%);
+  --border-2: oklch(0% 0 0 / 11%);
+  --border-3: oklch(0% 0 0 / 15%);
+  --input: var(--border-2);
+  --ring: color-mix(in oklch, var(--primary) 92%, black);
+  --plate-shadow: 0 1px 2px oklch(0% 0 0 / 5%);
+  --card-shadow: 0 0 0 0.5px var(--contrast-border-2);
+  /* A card's own border: none in light, where the ring above outlines it. */
+  --card-hairline: transparent;
+  /* The lit top edge of a raised control. */
+  --highlight-top: transparent;
   --destructive-foreground: var(--error-foreground);
   --info: var(--color-blue-500);
   --info-foreground: var(--color-blue-700);
@@ -989,10 +1034,9 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(oni-mobi
   --update-foreground: var(--primary);
   /* Keep every sidebar primitive on the same light surface hierarchy, including
      portaled mobile sheets and settings navigation outside the app sidebar. */
-  --sidebar: #f3f3f5;
+  --sidebar: oklch(96.2% 0.0025 290);
   --sidebar-foreground: var(--foreground);
-  /* zinc-500 is 4.36:1 on this surface; this step is 4.76:1. */
-  --sidebar-muted-foreground: #6b6b74;
+  --sidebar-muted-foreground: var(--muted-foreground);
   --sidebar-control-surface: #eaeaed;
   --sidebar-row-hover: #f9f9fa;
   --sidebar-row-active: var(--color-white);
@@ -1016,11 +1060,16 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(oni-mobi
     --card-foreground: var(--foreground);
     --popover: #212122;
     --popover-foreground: var(--foreground);
-    --primary: oklch(0.571 0.21 264);
-    --secondary: --alpha(var(--color-white) / 3%);
-    --secondary-foreground: var(--color-neutral-100);
-    --muted: --alpha(var(--color-white) / 3%);
-    --muted-foreground: #a0a0a2;
+    --primary: oklch(0.58 0.213 267.8);
+    --secondary: oklch(100% 0 0 / 8%);
+    --secondary-hover: oklch(100% 0 0 / 11%);
+    --secondary-foreground: var(--foreground);
+    --muted: oklch(100% 0 0 / 3.5%);
+    --switch-track: oklch(32.93% 0.0017 286.3);
+    /* 68%, 52% and 38% of the foreground here. */
+    --muted-foreground: oklch(68.4% 0.0016 286.3);
+    --subtle-foreground: oklch(55.6% 0.0017 286.3);
+    --placeholder: oklch(44.4% 0.0018 286.3);
     --accent: --alpha(var(--color-white) / 6%);
     --accent-foreground: var(--color-neutral-100);
     /* A user turn sits above the composer tone, level with the selected sidebar row. */
@@ -1029,8 +1078,14 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(oni-mobi
     --error-foreground: var(--color-red-400);
     --tool-error-icon: #fca5a5;
     --error-surface: color-mix(in srgb, var(--error) 16%, transparent);
-    --border: --alpha(var(--color-white) / 5.5%);
-    --input: --alpha(var(--color-white) / 11%);
+    --border: oklch(100% 0 0 / 8%);
+    --border-2: oklch(100% 0 0 / 12%);
+    --border-3: oklch(100% 0 0 / 16%);
+    --ring: var(--primary);
+    --plate-shadow: 0 0.5px 1px 1px oklch(0% 0 0 / 30%);
+    --card-shadow: 0 0 0 1px oklch(0% 0 0 / 30%);
+    --card-hairline: var(--contrast-border);
+    --highlight-top: oklch(100% 0 0 / 4%);
     --info-foreground: var(--color-blue-400);
     --success-foreground: var(--color-emerald-400);
     --warning-foreground: var(--color-amber-400);
@@ -1050,19 +1105,19 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(oni-mobi
    hierarchy: a navigation tone one step below the canvas, a lighter hover, and
    white selected/raised surfaces. */
 [data-app-sidebar] {
-  --background: var(--color-zinc-25);
-  --foreground: var(--color-zinc-900);
+  --background: oklch(98.5% 0.0015 290);
+  --foreground: oklch(23.5% 0.0038 290);
   --card: var(--color-white);
-  --card-foreground: var(--color-zinc-900);
+  --card-foreground: var(--foreground);
   --accent: var(--color-zinc-100);
-  --accent-foreground: var(--color-zinc-900);
-  --muted: #f3f3f5;
-  --muted-foreground: var(--color-zinc-500);
-  --border: --alpha(var(--color-zinc-200) / 65%);
-  --input: var(--color-zinc-300);
-  --sidebar: #f3f3f5;
-  --sidebar-foreground: var(--color-zinc-900);
-  --sidebar-muted-foreground: #6b6b74;
+  --accent-foreground: var(--foreground);
+  --muted: oklch(96.2% 0.0025 290);
+  --muted-foreground: oklch(51.1% 0.0033 290);
+  --border: oklch(0% 0 0 / 8%);
+  --input: oklch(0% 0 0 / 11%);
+  --sidebar: oklch(96.2% 0.0025 290);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-muted-foreground: var(--muted-foreground);
   --sidebar-control-surface: #eaeaed;
   --sidebar-row-hover: #f9f9fa;
   --sidebar-row-active: var(--color-white);
@@ -1077,9 +1132,9 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(oni-mobi
     --accent: #1a1a1b;
     --accent-foreground: #f7f7f8;
     --muted: #111112;
-    --muted-foreground: #a0a0a2;
-    --border: rgb(255 255 255 / 5.5%);
-    --input: rgb(255 255 255 / 18%);
+    --muted-foreground: oklch(68.4% 0.0016 286.3);
+    --border: oklch(100% 0 0 / 8%);
+    --input: oklch(100% 0 0 / 16%);
     --sidebar: var(--card);
     --sidebar-foreground: var(--foreground);
     --sidebar-muted-foreground: var(--muted-foreground);
@@ -1160,6 +1215,7 @@ html[data-theme-id]:not([data-theme-id=""]) {
   --primary: var(--app-theme-message-action);
   --primary-foreground: var(--app-theme-message-action-foreground);
   --secondary: var(--app-theme-secondary);
+  --secondary-hover: color-mix(in oklab, var(--app-theme-secondary) 94%, var(--app-theme-text));
   --secondary-foreground: var(--app-theme-secondary-foreground);
   --muted: var(--app-theme-muted);
   --muted-foreground: var(--app-theme-muted-foreground);
@@ -1184,10 +1240,18 @@ html[data-theme-id]:not([data-theme-id=""]) {
   --warning-surface: var(--app-theme-warning-surface);
   --update: var(--app-theme-update);
   --update-foreground: var(--app-theme-update-foreground);
-  /* A theme names the full-strength colour; borders are drawn at the app's one weight. */
+  /* A theme names the full-strength colour; the three border strengths are steps of it. */
   --border: color-mix(in srgb, var(--app-theme-border) 65%, transparent);
+  --border-2: color-mix(in srgb, var(--app-theme-border) 85%, transparent);
+  --border-3: var(--app-theme-border);
   --input: var(--app-theme-input);
   --ring: var(--app-theme-focus);
+  --subtle-foreground: color-mix(
+    in oklch,
+    var(--app-theme-muted-foreground) 77%,
+    var(--app-theme-canvas)
+  );
+  --switch-track: var(--app-theme-input);
   --sidebar: var(--app-theme-sidebar);
   --sidebar-foreground: var(--app-theme-sidebar-foreground);
   --sidebar-muted-foreground: var(--app-theme-sidebar-muted-foreground);
@@ -1417,9 +1481,28 @@ html[data-theme-id] [data-app-sidebar] {
     color-mix(in srgb, var(--border) var(--appearance-contrast-base), transparent),
     var(--foreground) var(--appearance-contrast-border-boost)
   );
+  --contrast-border-2: color-mix(
+    in srgb,
+    color-mix(in srgb, var(--border-2) var(--appearance-contrast-base), transparent),
+    var(--foreground) var(--appearance-contrast-border-boost)
+  );
+  --contrast-border-3: color-mix(
+    in srgb,
+    color-mix(in srgb, var(--border-3) var(--appearance-contrast-base), transparent),
+    var(--foreground) var(--appearance-contrast-border-boost)
+  );
   --contrast-foreground: color-mix(
     in oklab,
     color-mix(in oklab, var(--foreground) var(--appearance-contrast-base), var(--background)),
+    var(--appearance-contrast-target) var(--appearance-contrast-boost)
+  );
+  --contrast-subtle-foreground: color-mix(
+    in oklab,
+    color-mix(
+      in oklab,
+      var(--subtle-foreground) var(--appearance-contrast-base),
+      var(--background)
+    ),
     var(--appearance-contrast-target) var(--appearance-contrast-boost)
   );
   --contrast-muted-foreground: color-mix(
@@ -1500,6 +1583,7 @@ body {
   /* Reference the theme token (not a literal stack) so the Settings ->
      Appearance runtime override of --font-sans reaches all interface text. */
   font-family: var(--font-sans);
+  font-weight: var(--font-weight-normal);
   margin: 0;
   padding: 0;
 }
