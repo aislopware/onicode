@@ -148,6 +148,7 @@ const OpenCode2ProviderCapabilities = {
     emitsTurnStarted: true,
     emitsTurnCompleted: true,
     supportsInterrupt: true,
+    supportsNativeResume: true,
     supportsActiveSteering: true,
     supportsSteeringByInterruptRestart: true,
     supportsQueuedMessages: true,
