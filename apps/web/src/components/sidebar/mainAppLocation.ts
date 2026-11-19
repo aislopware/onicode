@@ -68,16 +68,19 @@ export const markAppModalFocusSettled = () => {
 };
 export const isAppModalFocusSettled = () => appModalFocusSettled;
 
-/** Leaves Settings or Usage for the page that opened it. False when a newer navigation already left. */
+/**
+ * Leaves Settings or Usage for the page that opened it. False when a newer navigation already
+ * left: `closedOn` is the history entry the close started on.
+ */
 export function useCloseAppModal() {
   const navigate = useNavigate();
   const router = useRouter();
-  return () => {
+  return (closedOn?: string) => {
     // The modal closes after its exit animation. A navigation made meanwhile, even to the other
     // modal, has already left it and may still be loading; returning now would replace it.
     if (
       !isAppModalPage(router.history.location.pathname) ||
-      router.history.location.state.__TSR_key !== router.state.resolvedLocation?.state.__TSR_key
+      (closedOn !== undefined && router.history.location.state.__TSR_key !== closedOn)
     )
       return false;
     const href = appModalReturnHref ?? mainAppHref ?? "/";

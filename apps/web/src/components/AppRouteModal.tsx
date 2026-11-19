@@ -57,10 +57,18 @@ export function AppRouteModal({ label, children }: { label: string; children: Re
   // One that comes back to a modal page (a redirect) keeps it mounted, so it shows again on
   // the new entry instead of staying closed on its own route.
   const entryKey = useRouterState({ select: (state) => state.resolvedLocation?.state.__TSR_key });
+  const onModalPage = useRouterState({
+    select: (state) => isAppModalPage(state.resolvedLocation?.pathname ?? ""),
+  });
   const [skippedOn, setSkippedOn] = useState<{ entryKey: string | undefined } | null>(null);
-  const shown = open || (skippedOn !== null && skippedOn.entryKey !== entryKey);
+  const shown = open || (skippedOn !== null && skippedOn.entryKey !== entryKey && onModalPage);
   // A key or press during the exit animation moves focus on, and the close must not undo it.
   const inputWhileClosingRef = useRef<CloseWatch | null>(null);
+  // The history entry and the page shown when the close started.
+  const closedOnRef = useRef<{ historyKey: string | undefined; entryKey: string | undefined }>({
+    historyKey: undefined,
+    entryKey: undefined,
+  });
   const stopWatch = () => {
     inputWhileClosingRef.current?.stop.abort();
     inputWhileClosingRef.current = null;
@@ -77,6 +85,7 @@ export function AppRouteModal({ label, children }: { label: string; children: Re
       window.addEventListener(type, see, { capture: true, signal: watch.stop.signal });
     inputWhileClosingRef.current?.stop.abort();
     inputWhileClosingRef.current = watch;
+    closedOnRef.current = { historyKey: router.history.location.state.__TSR_key, entryKey };
     setOpen(false);
     setSkippedOn(null);
   };
@@ -138,7 +147,10 @@ export function AppRouteModal({ label, children }: { label: string; children: Re
       onOpenChangeComplete={(nextOpen) => {
         // Shown again after a skipped close: the close it was finishing is over.
         if (nextOpen) stopWatch();
-        else if (!closeAppModal()) setSkippedOn({ entryKey });
+        // A navigation made meanwhile wins. If it already reached another Settings section, the
+        // modal shows again there.
+        else if (!closeAppModal(closedOnRef.current.historyKey))
+          setSkippedOn({ entryKey: closedOnRef.current.entryKey });
       }}
     >
       <DialogPrimitive.Portal>

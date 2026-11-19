@@ -449,9 +449,12 @@ describe("workspace area focus", () => {
         });
         host.attachShadow({ mode: "open" }).append(...rows);
         panel.element.append(host);
-        return { host, row: rows[1]! };
+        return { host, rows, row: rows[1]! };
       };
       const first = tree();
+      // Entering on one row and arrowing to the next stays inside the shadow root, so the
+      // document sees no focusin for the second row.
+      first.rows[0]!.focus();
       first.row.focus();
       // The page reports the host as focused, so that is what a caller saves.
       const saved = document.activeElement as HTMLElement;

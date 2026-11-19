@@ -569,6 +569,31 @@ describe("AppRouteModal", () => {
     );
   });
 
+  it("stays open on the Settings section Back reached while it closed", async () => {
+    using _styles = appStyles();
+    await using screen = await render(
+      <AppRouteModal label="Settings">
+        <p>Settings</p>
+      </AppRouteModal>,
+      { router: "/settings/general" },
+    );
+    const router = screen.router!;
+    await router.navigate({ href: "/settings/appearance" });
+    const settings = page.getByRole("dialog", { name: "Settings" });
+    await expect.element(settings).toHaveFocus();
+
+    settings
+      .element()
+      .dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    router.history.back();
+    await vi.waitFor(() =>
+      expect(router.state.resolvedLocation?.pathname).toBe("/settings/general"),
+    );
+    await expect.element(settings).toHaveAttribute("data-closed");
+
+    await expect.element(settings).toHaveAttribute("data-open");
+  });
+
   it("shows again when a jump made while it closed comes back to Settings", async () => {
     await using screen = await render(
       <AppRouteModal label="Settings">
