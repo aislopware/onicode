@@ -30,6 +30,11 @@ const BASE_WEB_PORT = 5733;
 // Clear of common CDP ports such as 9222 and 9333 that a developer's own browser may hold.
 const BASE_DEBUG_PORT = 19222;
 const MAX_HASH_OFFSET = 3000;
+// Chromium refuses these (ERR_UNSAFE_PORT); kRestrictedPorts in net/base/port_util.cc, unprivileged ones.
+const CHROMIUM_RESTRICTED_PORTS = new Set([
+  1719, 1720, 1723, 2049, 3659, 4045, 5060, 5061, 6000, 6566, 6665, 6666, 6667, 6668, 6669, 6697,
+  10080,
+]);
 const MAX_PORT = 65535;
 const DESKTOP_DEV_LOOPBACK_HOST = "127.0.0.1";
 // Dev binds loopback; other interfaces cannot establish port availability.
@@ -373,6 +378,14 @@ export const findFirstAvailableOffset = Effect.fn("dev-runner.findFirstAvailable
       (!requireServerPort && !requireWebPort && (serverPortOutOfRange || webPortOutOfRange))
     ) {
       break;
+    }
+
+    if (
+      (requireServerPort && CHROMIUM_RESTRICTED_PORTS.has(serverPort)) ||
+      (requireWebPort &&
+        (CHROMIUM_RESTRICTED_PORTS.has(webPort) || CHROMIUM_RESTRICTED_PORTS.has(debugPort)))
+    ) {
+      continue;
     }
 
     const checks: Array<Effect.Effect<boolean, never, R>> = [];
