@@ -7,6 +7,7 @@ import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 
 import { getCommandPaletteOpener } from "../commandPaletteStore";
 import { useNativeTitlebarHeight } from "../lib/windowControlsOverlay";
 import {
+  isWorkspaceFocusTargetShown,
   requestWorkspaceFocus,
   workspaceFocusTargetFor,
   type WorkspaceFocusTarget,
@@ -19,8 +20,25 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 
 // Settings and Usage are sibling routes, so a modal that mounts while another is mounted
 // replaces it (Usage opened from Settings) and returns to what that one opened from.
-let mountedModals = 0;
-let mountedModalOpener: WorkspaceFocusTarget | null = null;
+let mountedModal: { opener: WorkspaceFocusTarget | null; shown: boolean } | undefined;
+
+interface CloseWatch {
+  seen: boolean;
+  stop: AbortController;
+  /** Set when the opener waits for the page behind the modal, which comes back as it unmounts. */
+  returnOnUnmount: boolean;
+}
+
+/** Whether input during the close moved focus out of the modal; a key with nowhere to go did not. */
+function focusMovedOn(watch: CloseWatch) {
+  const active = document.activeElement;
+  return (
+    watch.seen &&
+    active instanceof HTMLElement &&
+    active !== document.body &&
+    !active.closest("[data-app-modal]")
+  );
+}
 
 /**
  * Large modal for the Settings and Usage routes. Esc, the close button, or a press on the
@@ -37,11 +55,15 @@ export function AppRouteModal({ label, children }: { label: string; children: Re
   const [skippedOn, setSkippedOn] = useState<{ entryKey: string | undefined } | null>(null);
   const shown = open || (skippedOn !== null && skippedOn.entryKey !== entryKey);
   // A key or press during the exit animation moves focus on, and the close must not undo it.
-  const inputWhileClosingRef = useRef<{ seen: boolean; stop: AbortController } | null>(null);
+  const inputWhileClosingRef = useRef<CloseWatch | null>(null);
+  const stopWatch = () => {
+    inputWhileClosingRef.current?.stop.abort();
+    inputWhileClosingRef.current = null;
+  };
   const close = () => {
     // Base UI returns focus once the exit animation ends. The closing key or press is past
     // the window's capture phase, so only later input counts.
-    const watch = { seen: false, stop: new AbortController() };
+    const watch: CloseWatch = { seen: false, stop: new AbortController(), returnOnUnmount: false };
     const see = () => {
       watch.seen = true;
     };
@@ -62,21 +84,34 @@ export function AppRouteModal({ label, children }: { label: string; children: Re
   // Read the opener's area now: the page under the modal may unmount and take it along. With
   // nothing focused there is no opener; Base UI would send focus to the page's first control.
   const [opener] = useState(() => {
-    if (mountedModals > 0) return mountedModalOpener;
     const element = getCommandPaletteOpener() ?? document.activeElement;
-    return element instanceof HTMLElement && element !== document.body
-      ? workspaceFocusTargetFor(element)
-      : null;
+    const focused = element instanceof HTMLElement && element !== document.body ? element : null;
+    // A closed modal still mounted hands its opener on only while the user has focused nothing else.
+    if (mountedModal && (mountedModal.shown || !focused || focused.closest("[data-app-modal]")))
+      return mountedModal.opener;
+    return focused ? workspaceFocusTargetFor(focused) : null;
   });
-  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- records the mounted modal's opener for a modal that replaces it, and drops it with the last modal so it holds no closed page.
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- records the mounted modal's opener for a modal that replaces it, and drops it on unmount so it holds no closed page.
   useEffect(() => {
-    mountedModals += 1;
-    mountedModalOpener = opener;
+    const mounted = { opener, shown };
+    mountedModal = mounted;
     return () => {
-      mountedModals -= 1;
-      if (mountedModals === 0) mountedModalOpener = null;
+      if (mountedModal === mounted) mountedModal = undefined;
     };
-  }, [opener]);
+  }, [opener, shown]);
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- the page behind the modal is back only once its route unmounts it, so a keyboard close returns focus then.
+  useEffect(
+    () => () => {
+      const watch = inputWhileClosingRef.current;
+      watch?.stop.abort();
+      if (!watch?.returnOnUnmount) return;
+      // A modal that replaced this one returns focus when it closes.
+      if (focusMovedOn(watch) || document.querySelector("[data-app-modal]") || !opener) return;
+      // The opener's area may not come back (a panel closed meanwhile); the page's content takes it.
+      requestWorkspaceFocus(isWorkspaceFocusTargetShown(opener) ? opener : { area: "content" });
+    },
+    [opener],
+  );
   // Clear the native window controls (macOS traffic lights, the Windows and Linux caption
   // buttons). Below sm the modal fills the window and leaves that strip empty; up to lg its
   // 1.5rem inset is shorter than the strip.
@@ -96,7 +131,9 @@ export function AppRouteModal({ label, children }: { label: string; children: Re
         close();
       }}
       onOpenChangeComplete={(nextOpen) => {
-        if (!nextOpen && !closeAppModal()) setSkippedOn({ entryKey });
+        // Shown again after a skipped close: the close it was finishing is over.
+        if (nextOpen) stopWatch();
+        else if (!closeAppModal()) setSkippedOn({ entryKey });
       }}
     >
       <DialogPrimitive.Portal>
@@ -125,31 +162,24 @@ export function AppRouteModal({ label, children }: { label: string; children: Re
             initialFocus={popupRef}
             finalFocus={(closeType) => {
               const watch = inputWhileClosingRef.current;
-              watch?.stop.abort();
-              inputWhileClosingRef.current = null;
-              // Input that moved focus out of the modal settles it; a key with nowhere to go does not.
-              const active = document.activeElement;
-              if (
-                watch?.seen &&
-                active instanceof HTMLElement &&
-                active !== document.body &&
-                !active.closest("[data-app-modal]")
-              ) {
+              if (watch && focusMovedOn(watch)) {
+                stopWatch();
                 markAppModalFocusSettled();
                 return false;
               }
               const element = opener?.returnTo;
-              if (closeType !== "keyboard" || !element) return false;
+              if (closeType !== "keyboard" || !element || !watch) {
+                stopWatch();
+                return false;
+              }
+              markAppModalFocusSettled();
               if (element.isConnected && !element.closest("[inert]")) {
-                markAppModalFocusSettled();
+                stopWatch();
                 return element;
               }
-              // Gone with no area to find its replacement in: the page's own entry focus decides.
-              if (!element.isConnected && !opener.area) return false;
               // The thread behind the modal stays inert, and a page it replaced unmounted, until
-              // the route closes; the opener or its remounted replacement takes focus then.
-              markAppModalFocusSettled();
-              requestWorkspaceFocus(opener);
+              // the route closes; input until then still counts.
+              watch.returnOnUnmount = true;
               return false;
             }}
             aria-label={label}

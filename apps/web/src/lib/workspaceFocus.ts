@@ -127,6 +127,36 @@ function revealInScrollers(target: HTMLElement) {
   }
 }
 
+/** The visible area a target names: its control's own area while connected, else by its names. */
+function targetArea(doc: Document, { area: name, within, returnTo }: WorkspaceFocusTarget) {
+  const ownArea = returnTo?.isConnected ? workspaceArea(returnTo) : null;
+  const areas = Array.from(doc.querySelectorAll<HTMLElement>(AREA_SELECTOR)).filter(
+    isWorkspaceElementVisible,
+  );
+  if (ownArea) return areas.find((element) => element === ownArea);
+  if (name === "content")
+    return (
+      areas.find((element) => element.dataset.workspaceArea === "composer") ??
+      areas.find(
+        (element) => element.dataset.workspaceArea === "pull-requests" || element.matches("main"),
+      ) ??
+      areas.find((element) => element.dataset.workspaceArea === "conversation") ??
+      areas.find((element) => element.dataset.workspaceArea === "panel")
+    );
+  return areas.find(
+    (element) =>
+      element.dataset.workspaceArea === name &&
+      (!within || sameNames(areaNames(element).slice(0, -1), within)),
+  );
+}
+
+/** Whether the page shows where `target` leads: its control outside any area, or its area. */
+export function isWorkspaceFocusTargetShown(target: WorkspaceFocusTarget) {
+  const { returnTo } = target;
+  if (returnTo?.isConnected && !workspaceArea(returnTo)) return isWorkspaceElementVisible(returnTo);
+  return targetArea(document, target) !== undefined;
+}
+
 /** Keeps area focus local, like VS Code's layout service focusPart/visible-neighbour actions. */
 export function createWorkspaceFocusController(doc: Document) {
   const lastFocused = new Map<string, HTMLElement>();
@@ -194,12 +224,23 @@ export function createWorkspaceFocusController(doc: Document) {
     );
     // Panel surfaces may unmount when hidden. Recover the same named control when
     // it mounts again, without sharing focus history between different surface tabs.
+    // A file tree's rows sit in its host's shadow root, and a remounted tree has a new one.
+    const previousRoot = previous?.getRootNode();
+    const candidates = (): HTMLElement[] =>
+      previousRoot instanceof ShadowRoot
+        ? Array.from(area.querySelectorAll(previousRoot.host.localName)).flatMap((host) =>
+            Array.from(host.shadowRoot?.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR) ?? []),
+          )
+        : Array.from(area.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
     const restored =
       previous && !previous.isConnected
-        ? Array.from(area.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).find(
+        ? candidates().find(
             (element) =>
               belongs(element) &&
               element.tagName === previous.tagName &&
+              // A tree row's name repeats across folders; its path does not.
+              (previous.dataset.itemPath === undefined ||
+                element.dataset.itemPath === previous.dataset.itemPath) &&
               ((previous.id && element.id === previous.id) ||
                 (previous.getAttribute("aria-label") &&
                   element.getAttribute("aria-label") === previous.getAttribute("aria-label")) ||
@@ -245,37 +286,14 @@ export function createWorkspaceFocusController(doc: Document) {
     }
     return false;
   };
-  const focusTarget = ({
-    area: name,
-    within,
-    selector,
-    restore = true,
-    returnTo,
-  }: WorkspaceFocusTarget) => {
-    const ownArea = returnTo?.isConnected ? workspaceArea(returnTo) : null;
-    if (returnTo?.isConnected && !ownArea) {
+  const focusTarget = (target: WorkspaceFocusTarget) => {
+    const { selector, restore = true, returnTo } = target;
+    if (returnTo?.isConnected && !workspaceArea(returnTo)) {
       if (!isWorkspaceElementVisible(returnTo) || returnTo.matches(":disabled")) return false;
       returnTo.focus({ preventScroll: true });
       return doc.activeElement === returnTo;
     }
-    const areas = Array.from(doc.querySelectorAll<HTMLElement>(AREA_SELECTOR)).filter(
-      isWorkspaceElementVisible,
-    );
-    const area = ownArea
-      ? areas.find((element) => element === ownArea)
-      : name === "content"
-        ? (areas.find((element) => element.dataset.workspaceArea === "composer") ??
-          areas.find(
-            (element) =>
-              element.dataset.workspaceArea === "pull-requests" || element.matches("main"),
-          ) ??
-          areas.find((element) => element.dataset.workspaceArea === "conversation") ??
-          areas.find((element) => element.dataset.workspaceArea === "panel"))
-        : areas.find(
-            (element) =>
-              element.dataset.workspaceArea === name &&
-              (!within || sameNames(areaNames(element).slice(0, -1), within)),
-          );
+    const area = targetArea(doc, target);
     if (!area) return false;
     const surface = area.querySelector("[data-right-panel-surface-content]");
     // A lazy surface's Suspense fallback is empty. Wait for its content instead
@@ -492,6 +510,9 @@ export function moveWorkspaceFocus(direction: 1 | -1, fromArea?: string): boolea
 /** Explicit user actions request focus after React has committed the destination. */
 export function requestWorkspaceFocus(target: WorkspaceFocusTarget) {
   focusRequestVersion++;
+  // The request names where focus goes, so an area move the palette queued before it is dropped.
+  pendingPaletteDirection = undefined;
+  cancelAnimationFrame(paletteMoveFrame);
   controller?.request(target);
 }
 
@@ -502,6 +523,7 @@ export function requestWorkspaceContentFocus() {
 }
 
 let pendingPaletteDirection: 1 | -1 | undefined;
+let paletteMoveFrame = 0;
 export function queueWorkspaceFocusFromPalette(direction: 1 | -1) {
   pendingPaletteDirection = direction;
 }
@@ -511,6 +533,8 @@ export function restoreWorkspaceFocusFromPalette(): boolean {
   if (pendingPaletteDirection === undefined) return false;
   const direction = pendingPaletteDirection;
   pendingPaletteDirection = undefined;
-  window.requestAnimationFrame(() => controller?.move(direction, undefined, true));
+  paletteMoveFrame = window.requestAnimationFrame(() =>
+    controller?.move(direction, undefined, true),
+  );
   return true;
 }

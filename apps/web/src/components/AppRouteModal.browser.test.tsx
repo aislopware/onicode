@@ -54,15 +54,17 @@ function Home() {
   );
 }
 
-function PullRequests() {
+function PullRequests({ panel = true }: { panel?: boolean }) {
   return (
     <>
       <div data-workspace-area="pull-requests">
         <button type="button">Open pull request</button>
       </div>
-      <div data-workspace-area="panel">
-        <button type="button">Show file tree</button>
-      </div>
+      {panel ? (
+        <div data-workspace-area="panel">
+          <button type="button">Show file tree</button>
+        </div>
+      ) : null}
     </>
   );
 }
@@ -223,27 +225,34 @@ describe("AppRouteModal", () => {
     await expect.element(screen.getByRole("button", { name: "Elsewhere" })).toHaveFocus();
   });
 
-  it("still returns focus after a key during the close that moved nothing", async () => {
-    using _styles = appStyles();
-    const view = (background: boolean, modal: ReactNode = null) => (
-      <>
-        <Thread background={background} />
-        {modal}
-      </>
-    );
-    await using screen = await render(view(false), { router: "/" });
-    using _focus = { [Symbol.dispose]: startWorkspaceFocus(screen.router!) };
-    (screen.getByRole("textbox", { name: "Main message" }).element() as HTMLElement).focus();
+  it.each(["while it closed", "once it closed"] as const)(
+    "still returns focus after a key %s that moved nothing",
+    async (when) => {
+      using _styles = appStyles();
+      const view = (background: boolean, modal: ReactNode = null) => (
+        <>
+          <Thread background={background} />
+          {modal}
+        </>
+      );
+      await using screen = await render(view(false), { router: "/" });
+      using _focus = { [Symbol.dispose]: startWorkspaceFocus(screen.router!) };
+      (screen.getByRole("textbox", { name: "Main message" }).element() as HTMLElement).focus();
 
-    await screen.rerender(view(true, usageModal));
-    await expect.element(page.getByRole("dialog", { name: "Usage" })).toHaveFocus();
-    // With the thread inert and the sidebar collapsed, F6 has nowhere to go.
-    closeThenPress("F6", document.body);
-    await expect.element(page.getByRole("dialog", { name: "Usage" })).not.toBeInTheDocument();
-    await screen.rerender(view(false));
+      await screen.rerender(view(true, usageModal));
+      await expect.element(page.getByRole("dialog", { name: "Usage" })).toHaveFocus();
+      // With the thread inert and the sidebar collapsed, F6 has nowhere to go.
+      if (when === "while it closed") closeThenPress("F6", document.body);
+      else await closeWithEsc();
+      await expect.element(page.getByRole("dialog", { name: "Usage" })).not.toBeInTheDocument();
+      // The route has not closed yet, so the thread is still inert.
+      if (when === "once it closed")
+        document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "F6", bubbles: true }));
+      await screen.rerender(view(false));
 
-    await expect.element(screen.getByRole("textbox", { name: "Main message" })).toHaveFocus();
-  });
+      await expect.element(screen.getByRole("textbox", { name: "Main message" })).toHaveFocus();
+    },
+  );
 
   it("returns to what Settings opened from after Usage replaced it", async () => {
     const opener = <button type="button">Open settings</button>;
@@ -271,6 +280,35 @@ describe("AppRouteModal", () => {
     await closeWithEsc();
 
     await expect.element(screen.getByRole("button", { name: "Open settings" })).toHaveFocus();
+  });
+
+  it("returns to what the user focused after Settings closed when Usage replaced it", async () => {
+    // A jump made while Settings closed has left its route, so its close is skipped and it
+    // stays mounted until that page loads.
+    await using screen = await render(<Sidebar />, { router: "/projects/demo" });
+    (screen.getByRole("button", { name: "New thread" }).element() as HTMLElement).focus();
+    await screen.rerender(
+      <Sidebar>
+        <AppRouteModal key="settings" label="Settings">
+          <p>Settings</p>
+        </AppRouteModal>
+      </Sidebar>,
+    );
+    await expect.element(page.getByRole("dialog", { name: "Settings" })).toHaveFocus();
+    await userEvent.keyboard("{Escape}");
+    await expect.element(screen.getByRole("button", { name: "New thread" })).toHaveFocus();
+    (screen.getByRole("button", { name: "Sidebar control" }).element() as HTMLElement).focus();
+
+    await screen.rerender(
+      <Sidebar>
+        <AppRouteModal key="usage" label="Usage">
+          <p>Usage</p>
+        </AppRouteModal>
+      </Sidebar>,
+    );
+    await closeWithEsc();
+
+    await expect.element(screen.getByRole("button", { name: "Sidebar control" })).toHaveFocus();
   });
 
   it("returns to what Settings opened from when Usage replaced it from a Settings menu", async () => {
@@ -414,17 +452,20 @@ describe("AppRouteModal", () => {
     },
   );
 
-  it("focuses the Pull Requests list when its opener outside any area is gone", async () => {
-    const pullRequests = (
+  it.each([
+    { opener: "outside any area is gone", name: "Maximize", panelReturns: true },
+    { opener: "in a panel that did not come back", name: "Show file tree", panelReturns: false },
+  ])("focuses the Pull Requests list when its opener $opener", async ({ name, panelReturns }) => {
+    const pullRequests = (panel: boolean) => (
       <>
         <button type="button">Maximize</button>
-        <PullRequests />
+        <PullRequests panel={panel} />
       </>
     );
-    await using screen = await render(pullRequests, { router: "/pull-requests" });
+    await using screen = await render(pullRequests(true), { router: "/pull-requests" });
     using _location = { [Symbol.dispose]: startMainAppLocationTracking(screen.router!) };
     using _focus = { [Symbol.dispose]: startWorkspaceFocus(screen.router!) };
-    (screen.getByRole("button", { name: "Maximize" }).element() as HTMLElement).focus();
+    (screen.getByRole("button", { name }).element() as HTMLElement).focus();
 
     await screen.router!.navigate({ href: "/usage" });
     await screen.rerender(usageModal);
@@ -432,7 +473,7 @@ describe("AppRouteModal", () => {
     await vi.waitFor(() =>
       expect(screen.router!.state.resolvedLocation?.pathname).toBe("/pull-requests"),
     );
-    await screen.rerender(pullRequests);
+    await screen.rerender(pullRequests(panelReturns));
 
     await expect.element(screen.getByRole("button", { name: "Open pull request" })).toHaveFocus();
   });

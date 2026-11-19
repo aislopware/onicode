@@ -2,7 +2,13 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import { userEvent } from "vite-plus/test/browser";
 import appCss from "~/index.css?inline";
 import { fakeTimers } from "../../test/render";
-import { createWorkspaceFocusController } from "./workspaceFocus";
+import {
+  createWorkspaceFocusController,
+  queueWorkspaceFocusFromPalette,
+  requestWorkspaceFocus,
+  restoreWorkspaceFocusFromPalette,
+  startWorkspaceFocus,
+} from "./workspaceFocus";
 
 function setup() {
   const root = document.createElement("div");
@@ -365,6 +371,21 @@ describe("workspace area focus", () => {
     await vi.waitFor(() => expect(document.activeElement).toBe(list.button));
   });
 
+  it("drops the palette's queued area move for a focus request made after it", async () => {
+    using fixture = setup();
+    using _app = { [Symbol.dispose]: startWorkspaceFocus({ subscribe: () => () => {} } as never) };
+    using _frames = fakeTimers();
+    fixture.area("sidebar", 0).button.focus();
+    const terminal = fixture.area("terminal", 5);
+    fixture.area("panel", 6);
+    // "Focus Next Workspace Area" runs, then a shortcut opens the terminal before the palette closes.
+    queueWorkspaceFocusFromPalette(1);
+    requestWorkspaceFocus({ area: "terminal" });
+    restoreWorkspaceFocusFromPalette();
+    vi.advanceTimersToNextFrame();
+    expect(document.activeElement).toBe(terminal.button);
+  });
+
   it("drops a request on a key that a shortcut stops at the window", async () => {
     using fixture = setup();
     using _frames = fakeTimers();
@@ -411,22 +432,36 @@ describe("workspace area focus", () => {
     await vi.waitFor(() => expect(document.activeElement).toBe(sideComposer.button));
   });
 
-  it("returns to a file tree's row, not its shadow host", async () => {
-    using fixture = setup();
-    const sidebar = fixture.area("sidebar", 0);
-    const panel = fixture.area("panel", 4);
-    const tree = document.createElement("div");
-    const row = document.createElement("button");
-    row.textContent = "src";
-    tree.attachShadow({ mode: "open" }).append(row);
-    panel.element.append(tree);
-    row.focus();
-    // The page reports the host as focused, so that is what a caller saves.
-    const saved = document.activeElement as HTMLElement;
-    sidebar.button.focus();
-    fixture.controller.request({ area: "panel", returnTo: saved });
-    await vi.waitFor(() => expect(tree.shadowRoot!.activeElement).toBe(row));
-  });
+  it.each([false, true])(
+    "returns to a file tree's row, not its shadow host (tree remounted: %s)",
+    async (remount) => {
+      using fixture = setup();
+      const sidebar = fixture.area("sidebar", 0);
+      const panel = fixture.area("panel", 4);
+      // Rows are named by file name, so only their path tells two index.ts rows apart.
+      const tree = () => {
+        const host = document.createElement("file-tree-container");
+        const rows = ["src/lib/index.ts", "src/index.ts"].map((path) => {
+          const row = document.createElement("button");
+          row.setAttribute("aria-label", "index.ts");
+          row.dataset.itemPath = path;
+          return row;
+        });
+        host.attachShadow({ mode: "open" }).append(...rows);
+        panel.element.append(host);
+        return { host, row: rows[1]! };
+      };
+      const first = tree();
+      first.row.focus();
+      // The page reports the host as focused, so that is what a caller saves.
+      const saved = document.activeElement as HTMLElement;
+      sidebar.button.focus();
+      if (remount) first.host.remove();
+      const { host, row } = remount ? tree() : first;
+      fixture.controller.request({ area: "panel", returnTo: saved });
+      await vi.waitFor(() => expect(host.shadowRoot!.activeElement).toBe(row));
+    },
+  );
 
   it("keeps moving while a hover popup without focus is open", () => {
     using fixture = setup();
