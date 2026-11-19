@@ -140,6 +140,8 @@ export function AnnotatableCodeView({
     filePath: string;
     previousFilePath: string;
     annotation: DiffCommentLineAnnotation;
+    // Built from the lines the viewer showed: a patch reparsed since may lack expanded rows.
+    comment: ReviewCommentContext;
   } | null>(null);
   const [draftText, setDraftText] = useState("");
 
@@ -209,19 +211,8 @@ export function AnnotatableCodeView({
   };
 
   const submitEntry = (entryId: string, text: string) => {
-    const entry = draft?.annotation.metadata.entries.find((candidate) => candidate.id === entryId);
-    const file = draft ? filesByKey.get(draft.fileKey) : undefined;
-    if (!entry || !file) return;
-    const comment = buildDiffReviewComment({
-      id: entry.id,
-      sectionId,
-      sectionTitle,
-      filePath: file.filePath,
-      fileDiff: file.fileDiff,
-      range: entry.range,
-      text,
-    });
-    if (comment) addReviewComment(composerDraftTarget, comment);
+    if (!draft?.annotation.metadata.entries.some((entry) => entry.id === entryId)) return;
+    addReviewComment(composerDraftTarget, { ...draft.comment, text: text.trim() });
     setSelectedLines(null);
     setDraft(null);
     setDraftText("");
@@ -255,6 +246,7 @@ export function AnnotatableCodeView({
           entries: [{ id, kind: "draft", range, rangeLabel: comment.rangeLabel, text: "" }],
         },
       },
+      comment,
     });
   };
 

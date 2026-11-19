@@ -381,6 +381,11 @@ interface DraftAnchor {
   readonly position: PullRequestReviewPosition;
   readonly startPosition?: PullRequestReviewPosition;
   readonly range: SelectedLineRange;
+  /**
+   * The agent's context, from the lines the viewer showed at selection: a page refresh can
+   * replace the parsed file with one that lacks expanded rows. Null when there is none.
+   */
+  readonly agentComment: ReviewCommentContext | null;
 }
 
 export interface PullRequestAgentSelectionInput {
@@ -1071,12 +1076,27 @@ function PullRequestCodeTab({
       (sourceFile && resolveDiffReviewAnchor(sourceFile, range, rangeComments)) ??
       resolveDiffReviewAnchor(file, range, rangeComments);
     if (anchor === null) return;
+    const agentComment = onAddToAgentSelection
+      ? buildDiffReviewComment({
+          id: `pull-request-selection:${diffReviewSelectionId(item.id, range)}`,
+          sectionId: `pull-request:${detail.number}`,
+          // oxlint-disable-next-line onicode/no-untranslated-copy -- context title sent to the agent
+          sectionTitle: `PR #${detail.number} review`,
+          filePath: path,
+          fileDiff: item.fileDiff,
+          range,
+          text: "",
+        })
+      : null;
+    // A draft that could only go to the agent needs something to send.
+    if (!canCommentOnLines && agentComment === null) return;
     setDraft({
       fileKey: item.id,
       path,
       oldPath: previousPath === path ? null : previousPath,
       ...anchor,
       range,
+      agentComment,
     });
   };
 
@@ -1085,23 +1105,10 @@ function PullRequestCodeTab({
     text: string,
     onFinish: (comment: ReviewCommentContext) => void,
   ) => {
-    const file = files.find((candidate) => buildFileDiffRenderKey(candidate) === anchor.fileKey);
-    const comment =
-      file === undefined
-        ? null
-        : buildDiffReviewComment({
-            id: `pull-request-selection:${diffReviewSelectionId(anchor.fileKey, anchor.range)}`,
-            sectionId: `pull-request:${detail.number}`,
-            // oxlint-disable-next-line onicode/no-untranslated-copy -- context title sent to the agent
-            sectionTitle: `PR #${detail.number} review`,
-            filePath: anchor.path,
-            fileDiff: file,
-            range: anchor.range,
-            text,
-          });
+    if (anchor.agentComment === null) return;
     setDraft(null);
     setSelectedLines(null);
-    if (comment !== null) onFinish(comment);
+    onFinish({ ...anchor.agentComment, text: text.trim() });
   };
 
   // Stable props preserve viewer portals during selection, typing, and review updates.
@@ -1335,7 +1342,7 @@ function PullRequestCodeTab({
           text=""
           completionScope={canCommentOnLines ? completionScope : null}
           submitLabel={canCommentOnLines ? gt("Add to review") : gt("Add to agent")}
-          {...(canCommentOnLines && onAddToAgentSelection
+          {...(canCommentOnLines && onAddToAgentSelection && draft.agentComment !== null
             ? {
                 secondaryAction: {
                   label: gt("Add to agent"),

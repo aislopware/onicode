@@ -159,5 +159,22 @@ describe("diff comment drafts", () => {
       }),
     ]);
     expect(container.querySelector("p")?.textContent).toBe("Keep this draft");
+
+    // A patch replaced before submit, without the line the draft was opened on, still takes
+    // the comment as the user saw it.
+    await click("Comment on shared.ts");
+    await typeComment("Second thought");
+    const moved = file("shared.ts", 3, "rename-pure", "old.ts");
+    moved.fileDiff = parsePatchFiles(
+      "diff --git a/shared.ts b/shared.ts\n--- a/shared.ts\n+++ b/shared.ts\n@@ -9 +9 @@\n-old\n+new\n",
+      { cacheKeyPrefix: "shared-moved" },
+    )[0]!.files[0]!;
+    Object.assign(moved.fileDiff, { type: "rename-pure", prevName: "old.ts", isPartial: true });
+    await screen.rerender(view([moved], "loaded"));
+    await click("Comment");
+    expect(useComposerDraftStore.getState().getComposerDraft(target)?.reviewComments).toEqual([
+      expect.objectContaining({ text: "Keep this draft" }),
+      expect.objectContaining({ text: "Second thought", diff: "@@ -0,0 +1,1 @@\n+new" }),
+    ]);
   });
 });
