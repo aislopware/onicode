@@ -1,5 +1,6 @@
 import { EnvironmentId, MessageId, ThreadId, type AssistantCitation } from "@onicode/contracts";
-import type { AnyRouter } from "@tanstack/react-router";
+import { useRouter, type AnyRouter } from "@tanstack/react-router";
+import { useRef } from "react";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { userEvent } from "vite-plus/test/browser";
 
@@ -28,12 +29,23 @@ const citation: AssistantCitation = {
   suffix: "",
 };
 
+/** "Start closing" records the entry a modal's close starts on; "Close modal" ends that close. */
 function ReturnControls() {
   const closeAppModal = useCloseAppModal();
   const navigateToMainApp = useNavigateToMainApp();
+  const router = useRouter();
+  const closedOn = useRef<string | undefined>(undefined);
   return (
     <>
-      <button type="button" onClick={() => void closeAppModal()}>
+      <button
+        type="button"
+        onClick={() => {
+          closedOn.current = router.history.location.state.__TSR_key;
+        }}
+      >
+        Start closing
+      </button>
+      <button type="button" onClick={() => void closeAppModal(closedOn.current)}>
         Close modal
       </button>
       <button type="button" onClick={() => void navigateToMainApp()}>
@@ -96,6 +108,7 @@ describe("main app return location", () => {
       using _tracking = { [Symbol.dispose]: startMainAppLocationTracking(router) };
 
       await settled(router, router.navigate({ href: "/settings/general" }));
+      (screen.getByRole("button", { name: "Start closing" }).element() as HTMLElement).click();
       // The modal returns only after its exit animation, so a jump can start first. A DOM
       // click runs the return in the same task, while that jump is still loading.
       const jump = router.navigate({ href: destination });
@@ -105,6 +118,19 @@ describe("main app return location", () => {
       expect(router.state.location.pathname).toBe(destination);
     },
   );
+
+  it("still closes when Esc came while a Settings section was loading", async () => {
+    await using screen = await render(<ReturnControls />, { router: THREAD_PATH });
+    const router = screen.router!;
+    using _tracking = { [Symbol.dispose]: startMainAppLocationTracking(router) };
+
+    await settled(router, router.navigate({ href: "/settings/general" }));
+    void router.navigate({ href: "/settings/keybindings" });
+    (screen.getByRole("button", { name: "Start closing" }).element() as HTMLElement).click();
+    (screen.getByRole("button", { name: "Close modal" }).element() as HTMLElement).click();
+
+    await vi.waitFor(() => expect(router.state.location.pathname).toBe(THREAD_PATH));
+  });
 
   it("leaves no stop on Settings for history back after it closes", async () => {
     const otherThreadPath = "/environment-one/thread-two";

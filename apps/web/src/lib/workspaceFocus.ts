@@ -174,16 +174,8 @@ export function createWorkspaceFocusController(doc: Document) {
     keyboardArea = target;
     target.setAttribute("data-workspace-keyboard-focus", "");
   };
-  const remember = (event: FocusEvent) => {
-    if (event.target !== keyboardArea) unmarkKeyboardArea();
-    // Window activation refocuses the same element; only focus arriving from elsewhere counts.
-    const arrived = event.target !== previousTarget;
-    previousTarget = event.target;
+  const record = (event: FocusEvent, area: HTMLElement) => {
     if (!(event.target instanceof HTMLElement)) return;
-    const area = workspaceArea(event.target);
-    if (!area?.dataset.workspaceArea) return;
-    if (arrived && standsInFor(event.target, area)) markKeyboardArea(event.target);
-    lastArea = areaNames(area);
     const key = area.dataset.workspaceFocusKey ?? areaNames(area).join(" ");
     lastFocused.delete(key);
     // Custom file trees retarget focusin to their nonfocusable shadow host.
@@ -197,7 +189,26 @@ export function createWorkspaceFocusController(doc: Document) {
     // Surface history must not retain an unbounded number of detached panel trees.
     if (lastFocused.size > 64) lastFocused.delete(lastFocused.keys().next().value!);
   };
+  const remember = (event: FocusEvent) => {
+    if (event.target !== keyboardArea) unmarkKeyboardArea();
+    // Window activation refocuses the same element; only focus arriving from elsewhere counts.
+    const arrived = event.target !== previousTarget;
+    previousTarget = event.target;
+    if (!(event.target instanceof HTMLElement)) return;
+    const area = workspaceArea(event.target);
+    if (!area?.dataset.workspaceArea) return;
+    if (arrived && standsInFor(event.target, area)) markKeyboardArea(event.target);
+    lastArea = areaNames(area);
+    record(event, area);
+  };
+  // Focus moving between a file tree's rows stays inside its shadow root and fires no focusin
+  // here, so the row focus leaves the tree from is recorded as it goes.
+  const rememberLeaving = (event: FocusEvent) => {
+    const area = event.target instanceof HTMLElement ? workspaceArea(event.target) : null;
+    if (area?.dataset.workspaceArea) record(event, area);
+  };
   doc.addEventListener("focusin", remember);
+  doc.addEventListener("focusout", rememberLeaving);
 
   const focusArea = (area: HTMLElement, restore = true, nested = true, returnTo?: HTMLElement) => {
     const key = area.dataset.workspaceFocusKey ?? areaNames(area).join(" ");
@@ -236,8 +247,6 @@ export function createWorkspaceFocusController(doc: Document) {
             (element) =>
               belongs(element) &&
               element.tagName === previous.tagName &&
-              // A file tree's sticky copy of a folder row has the row's path but not its role.
-              element.getAttribute("role") === previous.getAttribute("role") &&
               // A tree row's name repeats across folders; its path does not.
               (previous.dataset.itemPath === undefined ||
                 element.dataset.itemPath === previous.dataset.itemPath) &&
@@ -457,6 +466,7 @@ export function createWorkspaceFocusController(doc: Document) {
       cancelRequest();
       unmarkKeyboardArea();
       doc.removeEventListener("focusin", remember);
+      doc.removeEventListener("focusout", rememberLeaving);
       doc.removeEventListener("focusout", recover);
       view.removeEventListener("pointerdown", onPointerDown, true);
       view.removeEventListener("keydown", onUserInput, true);
