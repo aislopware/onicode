@@ -6,6 +6,7 @@ import {
   isFileDiffCollapsed,
   withFileDiffFold,
   withPullRequestDiffFold,
+  withViewedFileDiffFold,
   type DiffFoldGroup,
 } from "./pullRequestDiffFold.ts";
 
@@ -34,6 +35,15 @@ describe("isFileDiffCollapsed", () => {
     expect(isFileDiffCollapsed("b.ts", "folded", overrides, false)).toBe(true);
     expect(isFileDiffCollapsed("c.ts", "folded", new Map([["c.ts", false]]), true)).toBe(false);
     expect(isFileDiffCollapsed("d.ts", "expanded", new Map([["d.ts", true]]), false)).toBe(true);
+    // A Viewed fold replaces the file's own choice and lasts only while its content is unchanged.
+    const viewedFold = withViewedFileDiffFold(
+      new Map([["e.test.ts", false]]),
+      "e.test.ts",
+      "e@1",
+      true,
+    );
+    expect(isFileDiffCollapsed("e.test.ts", "expanded", viewedFold, true, "e@1")).toBe(true);
+    expect(isFileDiffCollapsed("e.test.ts", "expanded", viewedFold, true, "e@2")).toBe(false);
   });
 });
 

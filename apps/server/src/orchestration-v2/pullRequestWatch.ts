@@ -125,8 +125,10 @@ export function evaluatePullRequestWatch(
   }
   const required = checks.filter((check) => check.required === true);
   const gate = required.length > 0 ? required : checks;
+  // Checks that only skipped or wait on a manual job passed nothing until one succeeds on this head.
   const passedNow =
     awaitingApproval.length === 0 &&
+    (passed || checks.some((check) => check.status === "success")) &&
     gate.every((check) => check.status !== "pending" && !isFailedCheck(check));
   if (checks.length > 0 && !(unread && passedNow)) {
     const gateNames = gate.map((check) => check.name);
@@ -147,14 +149,8 @@ export function evaluatePullRequestWatch(
       checks.every((check) => check.status !== "pending");
     owedChecks = owed;
     if (passedNow && (!passed || gateGrew)) {
-      // Like a failure, CI running at the start can finish green before the first read. Checks
-      // that only skipped or wait on a manual job passed nothing since then.
-      if (
-        !checksBaseline ||
-        (watch.checksPending === true &&
-          settled &&
-          checks.some((check) => check.status === "success"))
-      ) {
+      // Like a failure, CI running at the start can finish green before the first read.
+      if (!checksBaseline || (watch.checksPending === true && settled)) {
         changes.push({ kind: "checks-passed", count: gate.length, required: required.length > 0 });
       }
       owedChecks =

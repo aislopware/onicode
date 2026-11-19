@@ -246,24 +246,68 @@ describe("evaluatePullRequestWatch", () => {
       ).changes,
       [],
     );
+    const skipped = detail({ checks: [check("lint", "skipped"), check("deploy", "neutral")] });
     assert.deepEqual(
       evaluatePullRequestWatch(
         watch({ awaitingBaseline: "all", checksPending: true }),
-        detail({ checks: [check("lint", "skipped"), check("deploy", "neutral")] }),
+        skipped,
+        noRemarks,
+      ).changes,
+      [],
+    );
+    // Nor do they pass anything on a head pushed after the baseline.
+    const skippedRead = evaluatePullRequestWatch(
+      watch({ headSha: "bbbbbbbbbb" }),
+      skipped,
+      noRemarks,
+    );
+    assert.deepEqual(skippedRead.changes, []);
+    // A success landing after that read is still the first pass.
+    assert.deepEqual(
+      evaluatePullRequestWatch(
+        skippedRead.next,
+        detail({ checks: [...skipped.checks, check("test", "success")] }),
+        noRemarks,
+      ).changes,
+      [{ kind: "checks-passed", count: 3, required: false }],
+    );
+    // Nor is an advisory check that skipped after a skipped required one.
+    const requiredSkipped = { ...check("lint", "skipped"), required: true };
+    const owedRead = evaluatePullRequestWatch(
+      watch({ headSha: "bbbbbbbbbb" }),
+      detail({ checks: [requiredSkipped, check("docs", "pending")] }),
+      noRemarks,
+    );
+    assert.deepEqual(
+      evaluatePullRequestWatch(
+        owedRead.next,
+        detail({ checks: [requiredSkipped, check("docs", "skipped")] }),
         noRemarks,
       ).changes,
       [],
     );
     // A required check can finish neutral while an advisory one succeeds.
+    const requiredNeutral = { ...check("lint", "neutral"), required: true };
+    const neutralPass = evaluatePullRequestWatch(
+      watch({ awaitingBaseline: "all", checksPending: true }),
+      detail({ checks: [requiredNeutral, check("docs", "success")] }),
+      noRemarks,
+    );
+    assert.deepEqual(neutralPass.changes, [{ kind: "checks-passed", count: 1, required: true }]);
+    // Rerunning the advisory check does not announce the same gate again.
+    const rerun = evaluatePullRequestWatch(
+      neutralPass.next,
+      detail({ checks: [requiredNeutral, check("docs", "pending")] }),
+      noRemarks,
+    );
+    assert.deepEqual(rerun.changes, []);
     assert.deepEqual(
       evaluatePullRequestWatch(
-        watch({ awaitingBaseline: "all", checksPending: true }),
-        detail({
-          checks: [{ ...check("lint", "neutral"), required: true }, check("docs", "success")],
-        }),
+        rerun.next,
+        detail({ checks: [requiredNeutral, check("docs", "success")] }),
         noRemarks,
       ).changes,
-      [{ kind: "checks-passed", count: 1, required: true }],
+      [],
     );
 
     // A read the host could not finish keeps the baseline and must keep the seed with it.

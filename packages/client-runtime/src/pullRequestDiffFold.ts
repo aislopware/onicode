@@ -3,13 +3,19 @@ export type DiffFoldOverride = "expanded" | "folded" | null;
 /** The reader's own fold choice per file. It is absolute, so a Viewed mark loading later keeps it. */
 export type FileDiffFoldChoices = ReadonlyMap<string, boolean>;
 
+/** `contentKey` holds a fold the Viewed mark made, which a change to the file's content drops. */
 export function isFileDiffCollapsed(
   fileKey: string,
   foldOverride: DiffFoldOverride,
   choices: FileDiffFoldChoices,
   viewed = false,
+  contentKey = fileKey,
 ): boolean {
-  return choices.get(fileKey) ?? (foldOverride === null ? viewed : foldOverride === "folded");
+  return (
+    choices.get(fileKey) ??
+    choices.get(contentKey) ??
+    (foldOverride === null ? viewed : foldOverride === "folded")
+  );
 }
 
 export function withFileDiffFold(
@@ -22,6 +28,17 @@ export function withFileDiffFold(
   if (collapsed === undefined) next.delete(fileKey);
   else next.set(fileKey, collapsed);
   return next;
+}
+
+/** Marking a file Viewed replaces its own fold choice with one tied to the content it saw. */
+export function withViewedFileDiffFold(
+  choices: FileDiffFoldChoices,
+  fileKey: string,
+  contentKey: string,
+  collapsed: boolean | undefined,
+): FileDiffFoldChoices {
+  const cleared = fileKey === contentKey ? choices : withFileDiffFold(choices, fileKey, undefined);
+  return withFileDiffFold(cleared, contentKey, collapsed);
 }
 
 export interface DiffFoldGroup {

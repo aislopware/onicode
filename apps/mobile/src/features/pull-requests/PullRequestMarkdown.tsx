@@ -70,7 +70,7 @@ export function PullRequestMarkdownRepository(props: {
     : null;
   return (
     <AutolinksContext value={autolinks}>
-      <GithubEmojiContext value={provider === "github"}>
+      <GithubEmojiContext value={provider === "github" || provider === "gitlab"}>
         <LineBreaksContext value={lineBreaks}>
           <ChangeRequestUrlContext value={url ?? null}>
             <PullRequestMediaContext value={media}>{props.children}</PullRequestMediaContext>

@@ -30,6 +30,18 @@ type MarkdownNode = {
 };
 
 const AUTOLINK_IGNORED_TYPES = new Set(["link", "linkReference"]);
+const PROTECTED_HTML_TAG = /<(\/)?(?:a|code|pre|script|style)(?=[\s>])[^>]*>/giu;
+const HTML_COMMENT = /<!--(?:-?>|[\s\S]*?-->)/gu;
+
+/** Inline `<code>` and its kin arrive as sibling `html` nodes around the text they hold. */
+function protectedHtmlDepth(depth: number, node: MarkdownNode): number {
+  if (node.type !== "html" || node.value === undefined) return depth;
+  let next = depth;
+  for (const match of node.value.replace(HTML_COMMENT, "").matchAll(PROTECTED_HTML_TAG)) {
+    next = Math.max(0, next + (match[1] ? -1 : 1));
+  }
+  return next;
+}
 
 export function remarkPullRequestAutolinks(options: {
   readonly autolinks: (text: string) => ReadonlyArray<ReferenceAutolink>;
@@ -37,9 +49,11 @@ export function remarkPullRequestAutolinks(options: {
   const visit = (node: MarkdownNode): void => {
     const children = node.children;
     if (children === undefined) return;
+    let htmlDepth = 0;
     for (let index = 0; index < children.length; index += 1) {
       const child = children[index]!;
-      if (AUTOLINK_IGNORED_TYPES.has(child.type)) continue;
+      htmlDepth = protectedHtmlDepth(htmlDepth, child);
+      if (htmlDepth > 0 || AUTOLINK_IGNORED_TYPES.has(child.type)) continue;
       if (child.type !== "text" || child.value === undefined) {
         visit(child);
         continue;
@@ -79,15 +93,21 @@ function remarkChangeRequestMediaUrls(options: { readonly changeRequestUrl: stri
   return (tree: MarkdownNode) => visit(tree);
 }
 
-/** GitHub renders `:alias:` emoji in prose; code keeps them, being `inlineCode`/`code`, not `text`. */
-function remarkGithubEmoji() {
+/** GitHub and GitLab render `:alias:` emoji in prose, but not in code. */
+function remarkEmojiShortcodes() {
   const visit = (node: MarkdownNode): void => {
     if (node.type === "text" && node.value !== undefined)
       node.value = expandGithubEmojiAliases(node.value);
-    node.children?.forEach(visit);
+    let htmlDepth = 0;
+    for (const child of node.children ?? []) {
+      htmlDepth = protectedHtmlDepth(htmlDepth, child);
+      if (htmlDepth === 0) visit(child);
+    }
   };
   return (tree: MarkdownNode) => visit(tree);
 }
+
+const EMOJI_SHORTCODE_PROVIDERS = new Set(["github", "gitlab"]);
 
 const NO_PLUGINS: PluggableList = [];
 const markdownPlugins = new Map<string, PluggableList>();
@@ -108,7 +128,7 @@ export function pullRequestMarkdownPlugins(
   if (plugins === undefined) {
     const autolinks = changeRequestReferenceAutolinker(changeRequest);
     plugins = [[remarkChangeRequestMediaUrls, { changeRequestUrl: repositoryUrl }]];
-    if (changeRequest.provider === "github") plugins.push(remarkGithubEmoji);
+    if (EMOJI_SHORTCODE_PROVIDERS.has(changeRequest.provider)) plugins.push(remarkEmojiShortcodes);
     if (autolinks) plugins.push([remarkPullRequestAutolinks, { autolinks }]);
     markdownPlugins.set(key, plugins);
   }
@@ -124,7 +144,7 @@ const commentPreviewProcessor = (plugins: PluggableList) =>
     .use(CHAT_MARKDOWN_REHYPE_PLUGINS)
     .freeze();
 const commentPreview = commentPreviewProcessor(NO_PLUGINS);
-const githubCommentPreview = commentPreviewProcessor([remarkGithubEmoji]);
+const emojiCommentPreview = commentPreviewProcessor([remarkEmojiShortcodes]);
 
 const PREVIEW_BLOCK_TAGS = new Set([
   "blockquote",
@@ -164,7 +184,7 @@ function commentPreviewText(node: Nodes): string {
 }
 
 export function pullRequestCommentPreview(body: string, provider: string): string {
-  const processor = provider === "github" ? githubCommentPreview : commentPreview;
+  const processor = EMOJI_SHORTCODE_PROVIDERS.has(provider) ? emojiCommentPreview : commentPreview;
   const tree = processor.runSync(processor.parse(body), body);
   return commentPreviewText(tree).replace(/\s+/gu, " ").trim();
 }

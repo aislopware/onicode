@@ -82,7 +82,10 @@ export function nativePullRequestMarkdown(
           const start = child.position?.start.offset;
           const end = child.position?.end.offset;
           const tag = start === undefined || end === undefined ? "" : markdown.slice(start, end);
-          for (const match of tag.matchAll(/<(\/)?(?:a|code|pre|script|style)(?=[\s>])[^>]*>/giu)) {
+          const tags = tag.replace(/<!--(?:-?>|[\s\S]*?-->)/gu, "");
+          for (const match of tags.matchAll(
+            /<(\/)?(?:a|code|pre|script|style)(?=[\s>])[^>]*>/giu,
+          )) {
             protectedHtmlDepth = Math.max(0, protectedHtmlDepth + (match[1] ? -1 : 1));
           }
         } else if (protectedHtmlDepth === 0) visit(child, inLink);

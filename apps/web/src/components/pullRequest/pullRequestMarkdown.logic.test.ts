@@ -41,29 +41,35 @@ function links(markdown: string) {
 
 describe("remarkPullRequestAutolinks", () => {
   it("links the host's references in prose and leaves links and code alone", () => {
-    expect(links("Fixes #12 in **abcdef1**. [#13](https://example.com) `#14`")).toEqual([
+    expect(
+      links(
+        'Fixes #12 in **abcdef1**. [#13](https://example.com) `#14` <code>#15</code> <a href="https://example.com">#16</a> #17',
+      ),
+    ).toEqual([
       ["#12", "https://github.com/team/repo/issues/12", "reference"],
       ["abcdef1", "https://github.com/team/repo/commit/abcdef1", "commit"],
       ["#13", "https://example.com", undefined],
+      ["#17", "https://github.com/team/repo/issues/17", "reference"],
+    ]);
+    expect(links('<code title="<!--">#19</code> <!--> <code>#20</code>')).toEqual([]);
+    expect(links("<!-- <code> -->\n\n#18")).toEqual([
+      ["#18", "https://github.com/team/repo/issues/18", "reference"],
     ]);
   });
 });
 
 describe("pullRequestMarkdownPlugins", () => {
-  it("renders GitHub emoji shortcodes in prose and leaves code literal", () => {
-    const processor = unified()
-      .use(remarkParse)
-      .use(
-        pullRequestMarkdownPlugins({
-          provider: "github",
-          url: "https://github.com/team/repo/pull/8",
-        }),
-      );
-    const tree = processor.runSync(processor.parse("Ship it :tada: :+1: `:tada:`")) as Node;
+  it.each([
+    ["github", "https://github.com/team/repo/pull/8"],
+    ["gitlab", "https://gitlab.com/team/repo/-/merge_requests/8"],
+  ])("renders %s emoji shortcodes in prose and leaves code literal", (provider, url) => {
+    const processor = unified().use(remarkParse).use(pullRequestMarkdownPlugins({ provider, url }));
+    const markdown = "Ship it :tada: :+1: `:tada:` Use <code>:smile:</code> here :smile:";
+    const tree = processor.runSync(processor.parse(markdown)) as Node;
     const text = (node: Node): string =>
       (node.type === "inlineCode" ? `\`${node.value}\`` : (node.value ?? "")) +
       (node.children ?? []).map(text).join("");
-    expect(text(tree)).toBe("Ship it 🎉 👍 `:tada:`");
+    expect(text(tree)).toBe("Ship it 🎉 👍 `:tada:` Use <code>:smile:</code> here 😄");
   });
 });
 
@@ -91,7 +97,8 @@ describe("pullRequestCommentPreview", () => {
     ],
     [":codex-followup[Prepare **print** version]", ":codex-followup[Prepare **print** version]"],
     ["Approved :thumbsup: `:warning:`", "Approved 👍 :warning:"],
-    ["Approved :thumbsup:", "Approved :thumbsup:", "gitlab"],
+    ["Approved :thumbsup:", "Approved 👍", "gitlab"],
+    ["Approved :thumbsup:", "Approved :thumbsup:", "bitbucket"],
   ])("extracts readable text from %s", (body, expected, provider = "github") => {
     expect(pullRequestCommentPreview(body, provider)).toBe(expected);
   });

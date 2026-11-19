@@ -4,6 +4,7 @@ import {
   isFileDiffCollapsed,
   withFileDiffFold,
   withPullRequestDiffFold,
+  withViewedFileDiffFold,
   type FileDiffFoldChoices,
 } from "@onicode/client-runtime/pull-request-diff-fold";
 import {
@@ -84,6 +85,7 @@ import { isTestChangedFile } from "@onicode/shared/changedFileKind";
 import { orderDiffFilesForReview } from "@onicode/client-runtime/diff-file-order";
 import { isWorkspaceImagePreviewPath } from "@onicode/shared/mediaPreview";
 import {
+  buildFileDiffContentVersion,
   buildFileDiffIdentityKey,
   buildFileDiffRenderKey,
   fnv1a32,
@@ -399,6 +401,19 @@ function buildFileDiffFoldKey(fileDiff: FileDiffMetadata): string {
   return isTestChangedFile(resolveFileDiffPath(fileDiff))
     ? buildFileDiffIdentityKey(fileDiff)
     : buildFileDiffRenderKey(fileDiff);
+}
+
+const viewedTestFoldKeys = new WeakMap<FileDiffMetadata, string>();
+
+// A test folded by Viewed stays folded until its own diff changes, wherever it lands on the page.
+function buildViewedFoldKey(fileDiff: FileDiffMetadata): string {
+  if (!isTestChangedFile(resolveFileDiffPath(fileDiff))) return buildFileDiffRenderKey(fileDiff);
+  let key = viewedTestFoldKeys.get(fileDiff);
+  if (key === undefined) {
+    key = `${buildFileDiffIdentityKey(fileDiff)}@${buildFileDiffContentVersion(fileDiff)}`;
+    viewedTestFoldKeys.set(fileDiff, key);
+  }
+  return key;
 }
 
 function isRemovedLine(fileDiff: FileDiffMetadata, oldLine: number): boolean {
@@ -903,6 +918,7 @@ function PullRequestCodeTab({
     return {
       fileKey,
       foldKey: buildFileDiffFoldKey(fileDiff),
+      viewedFoldKey: buildViewedFoldKey(fileDiff),
       path,
       fileDiff,
       annotations,
@@ -975,13 +991,14 @@ function PullRequestCodeTab({
   const draftLocksSelection =
     draft !== null && annotatedFiles.some((file) => file.path === draft.path);
   const items: CodeViewDiffItem<ReviewAnnotationGroup>[] = annotatedFiles.map(
-    ({ fileKey, foldKey, path, fileDiff, annotations, annotationsVersion }) => {
+    ({ fileKey, foldKey, viewedFoldKey, path, fileDiff, annotations, annotationsVersion }) => {
       const group = foldGroup(path);
       const collapsed = isFileDiffCollapsed(
         foldKey,
         group.override,
         group.choices,
         foldsAsViewed(path),
+        viewedFoldKey,
       );
       const viewedMark = filesViewedEnabled
         ? `e${isFileViewed(path) ? "v" : ""}${isFileViewedStale(path) ? "s" : ""}`
@@ -1026,11 +1043,15 @@ function PullRequestCodeTab({
   const toggleFile = (fileKey: string) => {
     const file = annotatedFiles.find((file) => file.fileKey === fileKey);
     if (file === undefined) return;
-    const { path, foldKey } = file;
+    const { path, foldKey, viewedFoldKey } = file;
     const { override } = foldGroup(path);
     const viewed = foldsAsViewed(path);
     setFoldChoices(path, (current) =>
-      withFileDiffFold(current, foldKey, !isFileDiffCollapsed(foldKey, override, current, viewed)),
+      withFileDiffFold(
+        current,
+        foldKey,
+        !isFileDiffCollapsed(foldKey, override, current, viewed, viewedFoldKey),
+      ),
     );
   };
 
@@ -1047,7 +1068,9 @@ function PullRequestCodeTab({
     }
     for (const file of range) {
       const collapsed = foldGroup(file.path).override === null ? undefined : viewed;
-      setFoldChoices(file.path, (current) => withFileDiffFold(current, file.foldKey, collapsed));
+      setFoldChoices(file.path, (current) =>
+        withViewedFileDiffFold(current, file.foldKey, file.viewedFoldKey, collapsed),
+      );
     }
   };
   const fileViewedToggle = {
