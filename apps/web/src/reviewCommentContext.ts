@@ -505,7 +505,11 @@ export function buildDiffReviewComment(input: {
     text: input.text.trim(),
     diff: [
       `@@ -${oldRange.start},${oldRange.count} +${newRange.start},${newRange.count} @@`,
-      ...selectedLines.map((line) => `${getDiffChangeMarker(line.change)}${line.content}`),
+      // A guide excerpt's context without an old number has no old line to consume.
+      ...selectedLines.map(
+        (line) =>
+          `${line.change === "context" && line.oldLineNumber === null ? "+" : getDiffChangeMarker(line.change)}${line.content}`,
+      ),
     ].join("\n"),
     fenceLanguage: "diff",
     selection: {
