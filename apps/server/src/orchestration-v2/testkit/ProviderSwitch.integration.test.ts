@@ -4936,7 +4936,7 @@ describe("orchestration v2 provider switching", () => {
             // Claude queues a steer that switches provider; Codex restarts its turn for one.
             ...(path === "return"
               ? {}
-              : { holdFirstTurn: started, holdRunOrdinal: path === "steer" ? 3 : 2 }),
+              : { holdFirstTurn: started, holdRunOrdinal: path === "steer" ? 4 : 2 }),
           }),
           makeTestAdapter({
             instanceId: alternateSelection.instanceId,
@@ -4995,7 +4995,12 @@ describe("orchestration v2 provider switching", () => {
             options: Partial<
               Pick<
                 Extract<OrchestrationV2Command, { readonly type: "message.dispatch" }>,
-                "dispatchMode" | "scheduledTaskId" | "freshContext"
+                | "dispatchMode"
+                | "scheduledTaskId"
+                | "freshContext"
+                | "notification"
+                | "createdBy"
+                | "creationSource"
               >
             > = {},
           ) =>
@@ -5053,15 +5058,29 @@ describe("orchestration v2 provider switching", () => {
             assert.include(back.text, "]\non-codex");
             return;
           }
-          // The steer's target already holds the user's conversation.
+          // The steer's target already holds the user's conversation, and the steer lands on a
+          // later wake of the session rather than its first run.
           if (path === "steer") {
             yield* dispatch("user-on-claude-first", CLAUDE_MODEL_SELECTION);
             yield* settle;
+            yield* dispatch("scheduled", home, scheduled);
+            yield* settle;
           }
-          yield* dispatch("scheduled", home, {
-            ...scheduled,
-            dispatchMode: { type: "start_immediately" },
-          });
+          yield* dispatch(
+            path === "steer" ? "wake" : "scheduled",
+            home,
+            path === "steer"
+              ? {
+                  notification: {
+                    source: { kind: "monitor" },
+                    outcome: "updated",
+                    summary: "wake",
+                  },
+                  createdBy: "agent",
+                  creationSource: "server",
+                }
+              : { ...scheduled, dispatchMode: { type: "start_immediately" } },
+          );
           yield* Deferred.await(started);
           yield* worker.drain();
           const running = (yield* orchestrator.getThreadProjection(threadId)).runs.at(-1)!;
@@ -5153,6 +5172,16 @@ describe("orchestration v2 provider switching", () => {
             restarted.providerThreadId,
             (yield* turnFor("user-on-claude-first")).providerThreadId,
           );
+          assert.notInclude(restarted.text, "user-on-claude-first");
+          // The new row still starts at the schedule, so the wake stays in its session.
+          const moved = yield* orchestrator.getThreadProjection(threadId);
+          assert.equal(
+            moved.providerThreads.find((thread) => thread.id === restarted.providerThreadId)
+              ?.firstRunOrdinal,
+            moved.runs.find(
+              (run) => run.userMessageId === MessageId.make(`message:${name}:scheduled`),
+            )?.ordinal,
+          );
           // The user's next Claude message continues their conversation, not the schedule's.
           yield* dispatch("user-on-claude", CLAUDE_MODEL_SELECTION);
           yield* settle;
@@ -5183,9 +5212,22 @@ describe("orchestration v2 provider switching", () => {
       }),
   );
 
-  it.live("returns to a native session that compacted after its last reported usage", () =>
+  it.live.each([
+    { name: "compacted-since-usage", at: "after", resumes: true },
+    { name: "compacted-with-usage", at: "with", resumes: true },
+    // With no usage report, the transcript the compaction replaced no longer counts.
+    { name: "compacted-unmeasured", at: "after", unmeasured: true, resumes: true },
+    // A 0 count measured nothing; the summary the session kept still fills its window.
+    {
+      name: "compacted-to-summary",
+      at: "after",
+      afterTokenCount: 0,
+      summary: "s".repeat(64_000),
+      resumes: false,
+    },
+  ] as const)("returns to a native session compacted $at its last reported usage ($name)", (row) =>
     Effect.gen(function* () {
-      const name = "compacted-since-usage";
+      const name = row.name;
       const capturedTurns = yield* Ref.make<ReadonlyArray<CapturedTurn>>([]);
       const generation = yield* Ref.make(0);
       const layerRegistry = ProviderAdapterRegistry.layerFromAdapters([
@@ -5194,11 +5236,12 @@ describe("orchestration v2 provider switching", () => {
           driver: CLAUDE_DRIVER,
           capabilities: ClaudeProviderCapabilitiesV2,
           modelSelection: CLAUDE_MODEL_SELECTION,
-          responseByRunOrdinal: {},
+          responseByRunOrdinal: "unmeasured" in row ? { 1: "r".repeat(64_000) } : {},
           capturedTurns,
           nativeThreadGeneration: generation,
           getModelContextWindow: () => 32_000,
-          tokenUsageByRunOrdinal: { 1: { usedTokens: 30_000, maxTokens: 32_000 } },
+          tokenUsageByRunOrdinal:
+            "unmeasured" in row ? {} : { 1: { usedTokens: 30_000, maxTokens: 32_000 } },
         }),
         makeTestAdapter({
           instanceId: CODEX_MODEL_SELECTION.instanceId,
@@ -5249,7 +5292,13 @@ describe("orchestration v2 provider switching", () => {
         // The session compacts after its last usage report and reports no new count.
         const first = yield* orchestrator.getThreadProjection(threadId);
         const run = first.runs.at(-1)!;
-        const compactedAt = DateTime.add(yield* DateTime.now, { seconds: 1 });
+        const reportedAt =
+          first.providerTurns.find((turn) => turn.tokenUsage)?.tokenUsage?.updatedAt ??
+          DateTime.formatIso(yield* DateTime.now);
+        const compactedAt =
+          row.at === "with"
+            ? DateTime.makeUnsafe(reportedAt)
+            : DateTime.add(DateTime.makeUnsafe(reportedAt), { seconds: 1 });
         yield* eventSink.write({
           events: [
             {
@@ -5276,6 +5325,8 @@ describe("orchestration v2 provider switching", () => {
                 updatedAt: compactedAt,
                 type: "compaction",
                 driver: CLAUDE_DRIVER,
+                ...("afterTokenCount" in row ? { afterTokenCount: row.afterTokenCount } : {}),
+                ...("summary" in row ? { summary: row.summary } : {}),
               },
             },
           ],
@@ -5284,13 +5335,14 @@ describe("orchestration v2 provider switching", () => {
         yield* send("back-on-claude", CLAUDE_MODEL_SELECTION);
         const turns = yield* Ref.get(capturedTurns);
         const back = turns.find((turn) => turn.text.endsWith("back-on-claude"))!;
-        // The pre-compaction count left no room for the Codex turn, which replaced the session.
-        assert.equal(yield* Ref.get(generation), 1);
+        // The pre-compaction count would leave no room for the Codex turn and replace the session.
+        assert.equal(yield* Ref.get(generation), row.resumes ? 1 : 2);
         assert.equal(
-          back.nativeThreadId,
-          turns.find((turn) => turn.text.endsWith("claude-first"))!.nativeThreadId,
+          back.nativeThreadId ===
+            turns.find((turn) => turn.text.endsWith("claude-first"))!.nativeThreadId,
+          row.resumes,
         );
-        assert.include(back.text, "]\non-codex");
+        assert.include(back.text, row.resumes ? "]\non-codex" : "on-codex");
         const projection = yield* orchestrator.getThreadProjection(threadId);
         assert.isNull(
           projection.providerThreads.find((thread) => thread.id === run.providerThreadId)!
