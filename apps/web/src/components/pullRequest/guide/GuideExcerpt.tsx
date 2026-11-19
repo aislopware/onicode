@@ -17,12 +17,7 @@ import {
   resolveFileDiffPreviousPath,
 } from "~/lib/diffRendering";
 import { PREFERRED_HIGHLIGHTER } from "~/lib/syntaxHighlighting";
-import {
-  buildDiffReviewComment,
-  diffReviewSelectionId,
-  resolveDiffReviewAnchor,
-  type ReviewCommentContext,
-} from "~/reviewCommentContext";
+import type { ReviewCommentContext } from "~/reviewCommentContext";
 
 import { DiffCommentAnnotation } from "../../diffs/DiffCommentAnnotation";
 import { DIFF_VIEW_UNSAFE_CSS } from "../../diffs/StyledDiffCodeView";
@@ -35,7 +30,7 @@ import {
 import type { PendingReviewComment } from "../pullRequestReviewStore";
 import { excerptRows, fileDiffRows, rowsToPatch } from "@onicode/client-runtime/review-guide-tour";
 import type { PullRequestCompletionScope } from "../PullRequestMarkdownTextarea";
-import { excerptLoader } from "./GuideExcerpt.logic";
+import { commentDraftFor, excerptLoader, type CommentDraft } from "./GuideExcerpt.logic";
 import { GuideNoteMarker } from "./GuideNotes";
 import { GuideProse } from "./GuideProse";
 
@@ -71,12 +66,6 @@ interface ExcerptAnnotation {
   readonly markers: ExcerptNoteMarker["markers"];
   readonly pending: ReadonlyArray<PendingReviewComment>;
   readonly draft: boolean;
-}
-
-export interface CommentDraft {
-  readonly range: SelectedLineRange;
-  readonly position: PullRequestReviewPosition;
-  readonly startPosition?: PullRequestReviewPosition;
 }
 
 type ExcerptSlice = NonNullable<ReturnType<typeof excerptSlice>>;
@@ -235,7 +224,14 @@ function ExcerptDiff({
   })();
 
   const beginComment = (range: SelectedLineRange | null) => {
-    const next = commentDraftFor(file, range, commenting);
+    if (commenting === null) return;
+    const next = commentDraftFor({
+      path: excerpt.path,
+      file,
+      drawn: slice.fileDiff,
+      range,
+      ranged: commenting.rangeComments,
+    });
     if (next !== null) setDraft(next);
   };
   const gt = useGT();
@@ -334,16 +330,6 @@ function previousPathOf(file: FileDiffMetadata, path: string): string | null {
   return previous === path ? null : previous;
 }
 
-export function commentDraftFor(
-  file: FileDiffMetadata,
-  range: SelectedLineRange | null,
-  commenting: ExcerptCommenting | null,
-): CommentDraft | null {
-  if (range === null || commenting === null) return null;
-  const anchor = resolveDiffReviewAnchor(file, range, commenting.rangeComments);
-  return anchor === null ? null : { range, ...anchor };
-}
-
 export function GuideCommentDraft({
   path,
   file,
@@ -361,18 +347,8 @@ export function GuideCommentDraft({
   const onAskAgent = commenting.onAskAgent;
   const askAgent = (request: string) => {
     if (onAskAgent === null) return;
-    const comment = buildDiffReviewComment({
-      id: `pull-request-guide:${diffReviewSelectionId(path, draft.range)}`,
-      sectionId: `pull-request-guide:${path}`,
-      // oxlint-disable-next-line onicode/no-untranslated-copy -- context title sent to the agent
-      sectionTitle: "Review guide",
-      filePath: path,
-      fileDiff: file,
-      range: draft.range,
-      text: request,
-    });
     onClose();
-    if (comment !== null) onAskAgent(comment, request);
+    onAskAgent({ ...draft.context, text: request.trim() }, request);
   };
   return (
     <DiffCommentAnnotation

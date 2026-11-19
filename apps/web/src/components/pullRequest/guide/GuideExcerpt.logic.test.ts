@@ -6,7 +6,7 @@ import { expect, it } from "vite-plus/test";
 
 import { createGitDiffFileContentsLoader } from "~/lib/diffFileContents";
 import { getRenderablePatch } from "~/lib/diffRendering";
-import { excerptLoader } from "./GuideExcerpt.logic";
+import { commentDraftFor, excerptLoader } from "./GuideExcerpt.logic";
 
 function parse(patch: string): FileDiffMetadata {
   const renderable = getRenderablePatch(patch, "guide-excerpt-test");
@@ -68,6 +68,42 @@ it("expands an excerpt whose file has another hunk that changes its length", asy
   await expect(
     new DiffHunksRenderer({ expandUnchanged: true }).asyncRender(hydrated),
   ).resolves.toBeDefined();
+});
+
+it("keeps the lines a draft selected from expanded context for Ask agent", () => {
+  const original = Array.from({ length: 12 }, (_, index) => `line ${index + 1}`);
+  const changed = original.map((line, index) => (index === 9 ? "line 10 changed" : line));
+  const file = parse(
+    [
+      "diff --git a/file.ts b/file.ts",
+      "--- a/file.ts",
+      "+++ b/file.ts",
+      "@@ -9,3 +9,3 @@",
+      " line 9",
+      "-line 10",
+      "+line 10 changed",
+      " line 11",
+      "",
+    ].join("\n"),
+  );
+  // The view loads unchanged lines into its own copy of the diff.
+  const drawn = hydratePartialDiff("clone", file, {
+    oldFile: { name: "file.ts", contents: `${original.join("\n")}\n` },
+    newFile: { name: "file.ts", contents: `${changed.join("\n")}\n` },
+  });
+
+  const draft = commentDraftFor({
+    path: "file.ts",
+    file,
+    drawn,
+    range: { start: 7, side: "additions", end: 10, endSide: "additions" },
+    ranged: true,
+  });
+
+  expect(draft?.position).toEqual({ kind: "added", newLine: 10 });
+  expect(draft?.context.diff).toBe(
+    ["@@ -7,4 +7,4 @@", " line 7", " line 8", " line 9", "-line 10", "+line 10 changed"].join("\n"),
+  );
 });
 
 it("leaves a deleted file's excerpt without context expansion", () => {
