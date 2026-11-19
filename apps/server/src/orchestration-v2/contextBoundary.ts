@@ -1,4 +1,8 @@
-import type { OrchestrationV2Run, OrchestrationV2ThreadProjection } from "@onicode/contracts";
+import type {
+  MessageId,
+  OrchestrationV2Run,
+  OrchestrationV2ThreadProjection,
+} from "@onicode/contracts";
 
 import { cancelledBeforeStart } from "./RestartBackgroundNote.ts";
 
@@ -23,15 +27,24 @@ export function isScheduledFreshRun(
 export function contextBoundaryOrdinal(
   projection: Pick<OrchestrationV2ThreadProjection, "runs" | "turnItems">,
 ): number {
+  // Built once, not searched per run: an hourly fresh-session schedule leaves thousands of fresh runs.
+  let scheduledMessageIds: ReadonlySet<MessageId> | undefined;
   let boundary = 0;
   for (const run of projection.runs) {
     if (
-      run.freshContext === true &&
-      run.status !== "queued" &&
-      !cancelledBeforeStart(run) &&
-      run.ordinal > boundary &&
-      !isScheduledFreshRun(run, projection.turnItems)
+      run.freshContext !== true ||
+      run.status === "queued" ||
+      cancelledBeforeStart(run) ||
+      run.ordinal <= boundary
     ) {
+      continue;
+    }
+    scheduledMessageIds ??= new Set(
+      projection.turnItems.flatMap((item) =>
+        item.type === "user_message" && item.scheduledTaskId !== undefined ? [item.messageId] : [],
+      ),
+    );
+    if (!scheduledMessageIds.has(run.userMessageId)) {
       boundary = run.ordinal;
     }
   }
