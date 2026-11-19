@@ -726,6 +726,7 @@ export function useComposerSend(input: ComposerSendInput) {
         return;
       }
       if (!started.value) return;
+      setThreadError(activeThread.id, null);
       // The composer may show another draft by now, such as a queued message being edited.
       const composerShowsSent =
         currentRouteThreadKeyRef.current === routeThreadKey && promptRef.current === promptAtSend;

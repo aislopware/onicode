@@ -860,7 +860,7 @@ it("/side sends the draft's attachments and context, and keeps them until it sta
 
   const editor = page.getByRole("textbox", { name: `Message ${thread.title}`, exact: true });
   const image = page.getByRole("img", { name: "shot.png" });
-  const sendImageToSideChat = async () => {
+  const pasteImage = async () => {
     await userEvent.click(editor);
     const clipboardData = new DataTransfer();
     clipboardData.items.add(new File([PNG], "shot.png", { type: "image/png" }));
@@ -870,6 +870,9 @@ it("/side sends the draft's attachments and context, and keeps them until it sta
         new ClipboardEvent("paste", { clipboardData, bubbles: true, cancelable: true }),
       );
     await expect.element(image).toBeVisible();
+  };
+  const sendImageToSideChat = async () => {
+    await pasteImage();
     await userEvent.keyboard("/side what is this?{Enter}");
   };
   const sentMessage = (fields: Record<string, unknown>) =>
@@ -956,6 +959,7 @@ it("/side sends the draft's attachments and context, and keeps them until it sta
   await userEvent.keyboard("{Enter}");
   await sentMessage({ text: "what is this? next" });
   await expect.element(image).not.toBeInTheDocument();
+  await expect.element(page.getByText("Side chats are paused.")).not.toBeInTheDocument();
 
   // A change before the fork, such as removing an attachment and its upload, waits for Send.
   uploadGate = new Promise((resolve) => {
@@ -974,9 +978,28 @@ it("/side sends the draft's attachments and context, and keeps them until it sta
     .toBeVisible();
   expect(forks()).toHaveLength(5);
   await expect.element(image).not.toBeInTheDocument();
-  await userEvent.click(editor);
 
   // A start that fails after the user left says so where they are.
+  uploadGate = new Promise((resolve) => {
+    releaseUpload = resolve;
+  });
+  const uploadsBeforeLeaving = uploadsStarted;
+  await pasteImage();
+  await userEvent.keyboard("{Enter}");
+  await vi.waitFor(() => expect(uploadsStarted).toBeGreaterThan(uploadsBeforeLeaving));
+  await open(other.id, `Answer 0 for ${other.id}.`);
+  useComposerDraftStore.getState().setPrompt(draftTarget, "/side what is this? more");
+  releaseUpload();
+  uploadGate = null;
+  await expect
+    .element(
+      page.getByText("Draft changed while preparing this message. Review it and send again."),
+    )
+    .toBeVisible();
+  expect(forks()).toHaveLength(5);
+  await open(thread.id, `Answer 0 for ${thread.id}.`);
+  await expect.element(image).toBeVisible();
+  await userEvent.click(editor);
   holdFork = true;
   await userEvent.keyboard("{Enter}");
   await vi.waitFor(() => expect(forks()).toHaveLength(6));
