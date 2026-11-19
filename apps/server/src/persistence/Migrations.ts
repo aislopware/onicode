@@ -112,6 +112,7 @@ import Migration0101 from "./Migrations/101_RepairStaleTitleRegeneration.ts";
 import Migration0102 from "./Migrations/102_IssueTrackerBindings.ts";
 import Migration0103 from "./Migrations/103_ActiveShellIndexIndexes.ts";
 import Migration0104 from "./Migrations/104_BackgroundRecoveryIndexes.ts";
+import Migration0105 from "./Migrations/105_TurnStartReadIndexes.ts";
 
 const migrationEntries = [
   [1, "OrchestrationEvents", Migration0001],
@@ -219,6 +220,7 @@ const migrationEntries = [
   [102, "IssueTrackerBindings", Migration0102],
   [103, "ActiveShellIndexIndexes", Migration0103],
   [104, "BackgroundRecoveryIndexes", Migration0104],
+  [105, "TurnStartReadIndexes", Migration0105],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);
