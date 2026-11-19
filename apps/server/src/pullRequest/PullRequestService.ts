@@ -3954,12 +3954,18 @@ export const make = Effect.gen(function* () {
   )(function* (input) {
     const ref = yield* canonicalRef(input);
     yield* readCache.invalidate(refScope(ref));
+    const refresh = (repository: string) =>
+      Effect.suspend(() => {
+        bumpRefEpoch({ ...ref, repository });
+        listingsEpoch = ++epochCounter;
+        return SubscriptionRef.set(pullRequestRefreshes, listingsEpoch);
+      });
     const { repository, summary } = yield* runAction(input).pipe(
       Effect.ensuring(readCache.invalidate(refScope(ref))),
+      // A refused action may already have changed the PR, as a GitLab rebase merge does.
+      Effect.tapError(() => refresh(ref.repository)),
     );
-    bumpRefEpoch({ ...ref, repository });
-    listingsEpoch = ++epochCounter;
-    yield* SubscriptionRef.set(pullRequestRefreshes, listingsEpoch);
+    yield* refresh(repository);
     if (input.action === "merge") {
       // A successful merge action can merely enqueue the PR or enable auto-merge.
       const merged = summary?.state === "merged" ? summary : null;
