@@ -219,6 +219,7 @@ function layerSessions(
       detach: () => Effect.void,
       otherWorkingThreads: () => Effect.succeed([]),
       releaseUnlessBusy: () => Effect.succeed(true),
+      forgetLoadedProviderThread: () => Effect.void,
       subscribePromptSuggestion: () => Stream.empty,
     }),
   );
