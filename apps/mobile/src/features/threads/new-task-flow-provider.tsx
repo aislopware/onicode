@@ -88,6 +88,7 @@ import {
   type HomeProjectScope,
 } from "../home/homeThreadList";
 import { useMobileProjectGroupingSettings } from "../../state/project-grouping";
+import { isPickableProjectMember } from "@onicode/client-runtime/state/project-grouping";
 import {
   resolveNewTaskDraftWorkspace,
   resolveNewTaskBranchWorktreePath,
@@ -849,7 +850,7 @@ export function NewTaskFlowProvider(
       );
     };
     for (const project of projects) {
-      if (!hostsSelectedRepository(project)) {
+      if (!isPickableProjectMember(project) || !hostsSelectedRepository(project)) {
         continue;
       }
       if (seen.has(project.environmentId)) {
