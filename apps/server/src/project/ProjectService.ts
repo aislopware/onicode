@@ -9,7 +9,9 @@ import {
   type ProjectSnapshot,
   type ThreadId,
 } from "@onicode/contracts";
+import * as HostProcess from "@onicode/shared/HostProcess";
 import * as KeyedLock from "@onicode/shared/KeyedLock";
+import { isWslSharePath } from "@onicode/shared/path";
 import { resolveProjectScripts } from "@onicode/shared/projectScripts";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -277,6 +279,19 @@ export const make = Effect.gen(function* () {
     });
   });
 
+  // Git for Windows can't trust an index written inside the distro and rereads every file across the
+  // share, so git status can hit its timeout. Checked before normalizing, which already stats the share.
+  const rejectWslSharePath = Effect.fn("ProjectService.rejectWslSharePath")(function* (
+    projectId: ProjectId,
+    workspaceRoot: string,
+  ) {
+    if (!isWslSharePath(workspaceRoot) || !(yield* HostProcess.isWindows)) return;
+    return yield* new ProjectInvalidError({
+      projectId,
+      detail: `${workspaceRoot.trim()} is inside WSL. Add it to the WSL backend instead of the Windows one.`,
+    });
+  });
+
   const commit = Effect.fn("ProjectService.commit")(function* (
     command: ProjectCommand,
     // Runs under the project lock before a first commit: a failure commits nothing, so a retry
@@ -480,6 +495,7 @@ export const make = Effect.gen(function* () {
   const create: ProjectService["Service"]["create"] = Effect.fn("ProjectService.create")(
     function* (input) {
       yield* rejectUntrimmedWorkspaceRoot(input.projectId, input.workspaceRoot);
+      yield* rejectWslSharePath(input.projectId, input.workspaceRoot);
       const workspaceRoot = yield* normalizeWorkspaceRoot({
         projectId: input.projectId,
         workspaceRoot: input.workspaceRoot,
@@ -517,6 +533,9 @@ export const make = Effect.gen(function* () {
       const previousRoot = existing.value.workspaceRoot;
       if (input.workspaceRoot !== undefined) {
         yield* rejectUntrimmedWorkspaceRoot(input.projectId, input.workspaceRoot);
+        if (input.workspaceRoot !== previousRoot) {
+          yield* rejectWslSharePath(input.projectId, input.workspaceRoot);
+        }
       }
       const workspaceRoot =
         input.workspaceRoot === undefined

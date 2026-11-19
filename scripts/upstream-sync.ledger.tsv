@@ -2663,3 +2663,4 @@ bc6062805d	take	taken as is
 2f577fa397	take	scenario ported to the desktop target (onicode fixture, ONICODE_HOME)
 67692a7549	take	taken as is
 475ae52ac2	take	scenario ported to the desktop target (onicode fixture); OTLP export is the user's own collector, not T3 telemetry
+bc6621d73a	take	CONFLICT resolved: kept Onicode's untrimmed-root check (and beforeCommit hook) and added upstream's WSL-share refusal after it; update checks WSL only when the root changes
