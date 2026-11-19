@@ -211,6 +211,26 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
       }),
   );
 
+  it.effect("keeps a space that ends the working directory's name", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const root = yield* fs.makeTempDirectoryScoped({ prefix: "oni-cli-cwd-space-" });
+      // A bootstrap project there would otherwise land in the neighbouring `project`.
+      const cwd = path.join(root, "project ");
+      yield* fs.makeDirectory(cwd);
+      const config = yield* resolveServerConfig(
+        { ...minimalWebFlags(path.join(root, "home")), cwd: Option.some(cwd) },
+        Option.none(),
+      ).pipe(
+        Effect.provide(
+          Layer.merge(NetService.layer, ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} }))),
+        ),
+      );
+      expect(config.cwd).toBe(cwd);
+    }),
+  );
+
   it.effect("names the pair command for the refused server's home", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

@@ -471,6 +471,26 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
       }),
     );
 
+    it.effect("leaves the neighbouring project alone for a folder whose name ends in a space", () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const { baseDir, workspaceRoot, project } = yield* makeProjectLookupFixture();
+        yield* fs.makeDirectory(`${workspaceRoot} `);
+        const error = yield* runCli([
+          "project",
+          "remove",
+          `${workspaceRoot} `,
+          "--base-dir",
+          baseDir,
+        ]).pipe(Effect.flip);
+        assert.include(error.message, "No active project found");
+        assert.deepEqual(
+          (yield* readProjects(baseDir)).projects.map((entry) => entry.id),
+          [project.id],
+        );
+      }),
+    );
+
     it.effect("does not resolve another environment's project ID in an empty database", () =>
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;

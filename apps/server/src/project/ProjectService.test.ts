@@ -935,16 +935,19 @@ it.effect("refuses a folder whose path ends in a space instead of using its neig
 
     yield* Effect.gen(function* () {
       const service = yield* ProjectService.ProjectService;
-      const rejected = yield* service
-        .create({
-          commandId: CommandId.make("command:space:create"),
-          projectId: ProjectId.make("project:space"),
-          title: "foo",
-          workspaceRoot: `${fixture}/foo `,
-        })
-        .pipe(Effect.flip);
-      assert.equal(rejected._tag, "ProjectInvalidError");
+      for (const workspaceRoot of [`${fixture}/foo `, `${fixture}/foo /`]) {
+        const rejected = yield* service
+          .create({
+            commandId: CommandId.make(`command:space:create:${workspaceRoot}`),
+            projectId: ProjectId.make("project:space"),
+            title: "foo",
+            workspaceRoot,
+          })
+          .pipe(Effect.flip);
+        assert.equal(rejected._tag, "ProjectInvalidError", workspaceRoot);
+      }
       assert.isTrue(Option.isNone(yield* service.getByWorkspaceRoot(`${fixture}/foo`)));
+      assert.isTrue(Option.isNone(yield* service.getByWorkspaceRoot(`${fixture}/foo `)));
 
       const projectId = ProjectId.make("project:space:move");
       yield* service.create({
@@ -957,7 +960,7 @@ it.effect("refuses a folder whose path ends in a space instead of using its neig
         .update({
           commandId: CommandId.make("command:space:move"),
           projectId,
-          workspaceRoot: `${fixture}/foo `,
+          workspaceRoot: `${fixture}/foo /`,
         })
         .pipe(Effect.flip);
       assert.equal(moved._tag, "ProjectInvalidError");

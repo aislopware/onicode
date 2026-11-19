@@ -312,7 +312,7 @@ export const resolveServerConfig = Effect.fn("config.resolveServerConfig")(funct
     ),
   );
   const rawCwd = Option.getOrElse(normalizedFlags.cwd, () => process.cwd());
-  const cwd = path.resolve(yield* expandHomePath(rawCwd.trim()));
+  const cwd = path.resolve(yield* expandHomePath(rawCwd));
   const derivedPaths = yield* ServerConfig.deriveServerPaths(baseDir, dev, {
     baseDirIsExplicit: Option.isSome(explicitBaseDir),
   });

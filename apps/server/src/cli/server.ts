@@ -53,7 +53,7 @@ export const runDefaultServerCommand = Effect.fn("server.runDefaultServerCommand
   flags: CliServerFlags,
 ) {
   if (Option.isSome(flags.cwd)) {
-    const cwd = flags.cwd.value.trim();
+    const cwd = flags.cwd.value;
     const fs = yield* FileSystem.FileSystem;
     const platform = yield* HostProcess.Platform;
     const explicitPath =

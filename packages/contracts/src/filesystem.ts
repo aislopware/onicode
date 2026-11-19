@@ -1,5 +1,10 @@
 import * as Schema from "effect/Schema";
-import { NonNegativeInt, PositiveInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import {
+  NonBlankString,
+  NonNegativeInt,
+  PositiveInt,
+  TrimmedNonEmptyString,
+} from "./baseSchemas.ts";
 
 const FILESYSTEM_PATH_MAX_LENGTH = 512;
 
@@ -32,14 +37,15 @@ export const FilesystemBrowseInput = Schema.Struct({
 });
 export type FilesystemBrowseInput = typeof FilesystemBrowseInput.Type;
 
+// Real paths: a folder may end in a space, and trimming would name its neighbour.
 export const FilesystemBrowseEntry = Schema.Struct({
   name: TrimmedNonEmptyString,
-  fullPath: TrimmedNonEmptyString,
+  fullPath: NonBlankString,
 });
 export type FilesystemBrowseEntry = typeof FilesystemBrowseEntry.Type;
 
 export const FilesystemBrowseResult = Schema.Struct({
-  parentPath: TrimmedNonEmptyString,
+  parentPath: NonBlankString,
   entries: Schema.Array(FilesystemBrowseEntry),
 });
 export type FilesystemBrowseResult = typeof FilesystemBrowseResult.Type;

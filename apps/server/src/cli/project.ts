@@ -290,8 +290,9 @@ const findActiveProjectTarget = Effect.fn("findActiveProjectTarget")(function* (
     } satisfies ProjectMutationTarget;
   }
 
+  // Untrimmed: a folder whose name ends in a space is not the project at its neighbour.
   const normalizedWorkspaceRootResult = yield* Effect.result(
-    normalizeWorkspaceRootForProjectCommand(trimmedIdentifier),
+    normalizeWorkspaceRootForProjectCommand(input.identifier),
   );
   // A stored workspace path still identifies its project after the directory is gone, so a
   // relative or trailing-slash path resolves the same way it would while the directory exists.
