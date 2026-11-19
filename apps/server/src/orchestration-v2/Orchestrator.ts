@@ -15980,17 +15980,14 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       if (shell !== null) yield* refuseAboveDispatchModeLimit(command, threadId, shell);
     }
 
-    // The run-end release can lag behind a new send; start the queue first so the send waits behind it.
-    // A restart continuation resumes the ended run, so it must not be overtaken by the queue.
-    // A steer follow-up takes its place first and starts the queue after it commits. A send that
-    // beats the run-end reaction places the ended run's unread steers before it starts anything.
+    // The run-end release can lag behind a new send, or a steer that reaches an ended run and so
+    // starts as one: place that run's unread steers and start the queue first, so it waits behind.
+    // A restart continuation resumes the ended run and must not be overtaken by the queue; a steer
+    // follow-up takes its place first and starts the queue after it commits.
     if (
       command.type === "message.dispatch" &&
       command.restartContinuationOfRunId === undefined &&
-      command.steerFollowUpOfRunId === undefined &&
-      (command.dispatchMode.type === "start_immediately" ||
-        command.dispatchMode.type === "queue_after_active" ||
-        command.dispatchMode.type === "defer_start")
+      command.steerFollowUpOfRunId === undefined
     ) {
       yield* mapDispatchError(command)(
         requeueUnreadSteers(command.threadId).pipe(

@@ -400,84 +400,131 @@ it.effect("waitForThread follows a restart continuation instead of the cut run",
   }),
 );
 
-it.effect("waitForThread follows a queued message steered into the running turn", () =>
-  Effect.gen(function* () {
-    const projectId = ProjectId.make("project:thread-management:wait-steered");
-    const threadId = ThreadId.make("thread:thread-management:wait-steered");
-    const activeId = RunId.make("run:thread-management:wait-steered:1");
-    const queuedId = RunId.make("run:thread-management:wait-steered:2");
-    const messageId = MessageId.make("message:thread-management:wait-steered");
-    const subscribed = yield* Deferred.make<void>();
-    const events = yield* Queue.unbounded<OrchestrationV2StoredEvent>();
-    let promoted = false;
-    let activeStatus: OrchestrationV2Run["status"] = "running";
-    const layerTest = ThreadManagementService.layer.pipe(
-      Layer.provide(Layer.mock(ProviderSessionManager.ProviderSessionManagerV2)({})),
-      Layer.provide(
-        Layer.mock(Orchestrator.OrchestratorV2)({
-          getThreadEventSequence: () => Effect.succeed(0),
-          restartContinuationPending: () => Effect.succeed(false),
-          steerDeliveryPending: () => Effect.succeed(false),
-          streamStoredEventsFrom: (input) =>
-            input?.eventType === "run.updated"
-              ? Stream.fromEffect(Deferred.succeed(subscribed, undefined)).pipe(
-                  Stream.drain,
-                  Stream.concat(Stream.fromQueue(events)),
-                )
-              : Stream.never,
-          getThreadRecords: (_threadId, fields) =>
-            Effect.sync(() => {
-              const records = {
-                thread: { id: threadId, projectId, deletedAt: null },
-                runs: [
-                  { id: activeId, status: activeStatus },
-                  {
-                    id: queuedId,
-                    status: promoted ? "cancelled" : "queued",
-                    startedAt: null,
-                    userMessageId: messageId,
-                  },
-                ],
-                messages: [{ id: messageId, runId: promoted ? activeId : queuedId }],
-              } as unknown as OrchestrationV2ThreadProjection;
-              // The turn ends right after the wait learns which run took the message.
-              if (promoted && fields.some((field) => field === "messages"))
-                activeStatus = "completed";
-              return records;
-            }),
-        }),
-      ),
-      Layer.provide(ServerSettings.layerTest()),
-      Layer.provide(layerReceiptsTest),
-    );
-    const service = yield* ThreadManagementService.ThreadManagementService.pipe(
-      Effect.provide(layerTest),
-    );
-    const fiber = yield* service
-      .waitForThread({ projectId, threadId, runId: queuedId, timeoutMs: 60 * 60 * 1_000 })
-      .pipe(Effect.forkChild);
-    yield* Deferred.await(subscribed);
-    promoted = true;
-    // Both updates are buffered before the wait reads either.
-    yield* Queue.offerAll(
-      events,
-      [
-        { id: queuedId, status: "cancelled" },
-        { id: activeId, status: "completed" },
-      ].map(
-        (payload, index) =>
-          ({
-            sequence: index + 1,
-            event: { threadId, type: "run.updated", payload },
-          }) as unknown as OrchestrationV2StoredEvent,
-      ),
-    );
+it.effect.each([
+  { steer: "read" },
+  // The run-end reaction moves a message Claude dropped unread to a run of its own.
+  { steer: "dropped" },
+  // Stop drops the unread steer instead, so the stopped run answers.
+  { steer: "stopped" },
+] as const)(
+  "waitForThread follows a queued message steered into the running turn, $steer",
+  ({ steer }) =>
+    Effect.gen(function* () {
+      const projectId = ProjectId.make("project:thread-management:wait-steered");
+      const threadId = ThreadId.make("thread:thread-management:wait-steered");
+      const activeId = RunId.make("run:thread-management:wait-steered:1");
+      const queuedId = RunId.make("run:thread-management:wait-steered:2");
+      const requeuedId = RunId.make("run:thread-management:wait-steered:3");
+      const messageId = MessageId.make("message:thread-management:wait-steered");
+      const subscribed = yield* Deferred.make<void>();
+      const events = yield* Queue.unbounded<OrchestrationV2StoredEvent>();
+      const steerItemReads = yield* Queue.unbounded<void>();
+      let promoted = false;
+      let activeStatus: OrchestrationV2Run["status"] = "running";
+      let requeued: OrchestrationV2Run["status"] | undefined;
+      const layerTest = ThreadManagementService.layer.pipe(
+        Layer.provide(Layer.mock(ProviderSessionManager.ProviderSessionManagerV2)({})),
+        Layer.provide(
+          Layer.mock(Orchestrator.OrchestratorV2)({
+            getThreadEventSequence: () => Effect.succeed(0),
+            restartContinuationPending: () => Effect.succeed(false),
+            steerDeliveryPending: () => Effect.succeed(false),
+            streamStoredEventsFrom: (input) =>
+              input?.eventType === "run.updated"
+                ? Stream.fromEffect(Deferred.succeed(subscribed, undefined)).pipe(
+                    Stream.drain,
+                    Stream.concat(Stream.fromQueue(events)),
+                  )
+                : Stream.never,
+            getThreadRecords: (_threadId, fields) =>
+              Effect.sync(() => {
+                const records = {
+                  thread: { id: threadId, projectId, deletedAt: null },
+                  runs: [
+                    { id: activeId, status: activeStatus },
+                    {
+                      id: queuedId,
+                      status: promoted ? "cancelled" : "queued",
+                      startedAt: null,
+                      userMessageId: messageId,
+                    },
+                    ...(requeued === undefined
+                      ? []
+                      : [{ id: requeuedId, status: requeued, userMessageId: messageId }]),
+                  ],
+                  messages: [
+                    {
+                      id: messageId,
+                      runId: requeued !== undefined ? requeuedId : promoted ? activeId : queuedId,
+                    },
+                  ],
+                  turnItems: [
+                    {
+                      type: "user_message",
+                      runId: activeId,
+                      messageId,
+                      status: steer !== "read" && requeued === undefined ? "pending" : "completed",
+                    },
+                    ...(steer === "stopped"
+                      ? [{ type: "run_interrupt_request", runId: activeId }]
+                      : []),
+                  ],
+                } as unknown as OrchestrationV2ThreadProjection;
+                // The turn ends right after the wait learns which run took the message.
+                if (promoted && fields.some((field) => field === "messages"))
+                  activeStatus = "completed";
+                if (fields.some((field) => field === "turnItems"))
+                  Queue.offerUnsafe(steerItemReads, undefined);
+                return records;
+              }),
+          }),
+        ),
+        Layer.provide(ServerSettings.layerTest()),
+        Layer.provide(layerReceiptsTest),
+      );
+      const service = yield* ThreadManagementService.ThreadManagementService.pipe(
+        Effect.provide(layerTest),
+      );
+      const fiber = yield* service
+        .waitForThread({ projectId, threadId, runId: queuedId, timeoutMs: 60 * 60 * 1_000 })
+        .pipe(Effect.forkChild);
+      yield* Deferred.await(subscribed);
+      promoted = true;
+      // Both updates are buffered before the wait reads either.
+      yield* Queue.offerAll(
+        events,
+        [
+          { id: queuedId, status: "cancelled" },
+          { id: activeId, status: "completed" },
+        ].map(
+          (payload, index) =>
+            ({
+              sequence: index + 1,
+              event: { threadId, type: "run.updated", payload },
+            }) as unknown as OrchestrationV2StoredEvent,
+        ),
+      );
+      if (steer === "dropped") {
+        yield* Effect.raceFirst(Queue.take(steerItemReads), Fiber.await(fiber));
+        requeued = "completed";
+        yield* Queue.offer(events, {
+          sequence: 3,
+          event: {
+            threadId,
+            type: "run.updated",
+            payload: { id: requeuedId, status: "completed" },
+          },
+        } as unknown as OrchestrationV2StoredEvent);
+      }
 
-    expect(yield* Fiber.join(fiber)).toMatchObject({
-      timedOut: false,
-      run: { id: activeId, status: "completed" },
-    });
-  }),
+      expect(yield* Fiber.join(fiber)).toMatchObject({
+        timedOut: false,
+        run:
+          steer === "dropped"
+            ? { id: requeuedId, status: "completed" }
+            : { id: activeId, status: "completed" },
+      });
+    }),
 );
 
 it.effect.each([
@@ -541,6 +588,7 @@ it.effect.each([
                   messages: [
                     { id: messageId, runId: requeued === undefined ? failedId : requeuedId },
                   ],
+                  turnItems: [],
                 }) as unknown as OrchestrationV2ThreadProjection,
             ),
         }),
