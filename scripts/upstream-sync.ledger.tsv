@@ -2671,3 +2671,4 @@ bc6621d73a	take	CONFLICT resolved: kept Onicode's untrimmed-root check (and befo
 25854935ba	take	fix(server): theme publish refuses a directory under the theme's file name; scenario cli-theme-publish-keeps-existing-directory ported (WEB runs on Onicode's desktop target)
 60c6952430	take	fix(mobile): a missing image no longer stops its gallery opening on Android (#39128)
 4113f8fee5	take	fix(web): block invalid project monograms before save (#39131)
+6dc7fdc8e8	take	fix(opencode): owned servers no longer fail turns after five stalled event subscriptions (#39134)
