@@ -10,6 +10,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import {
   createDesktopAppActivationReceiver,
   handleDesktopAppActivationRequest,
+  reserveDesktopAppActivationOrder,
   resolveLocalWorkspaceState,
   type DesktopAppActivationDependencies,
 } from "./desktopAppActivation";
@@ -338,6 +339,73 @@ describe("desktop app activation", () => {
     expect(vi.mocked(deps.openThread).mock.calls.map(([projectRef]) => projectRef)).toEqual([
       { environmentId, projectId: existingProjectId },
     ]);
+  });
+
+  it.each([
+    { name: "still shows its thread", outcome: { threadId } },
+    { name: "is abandoned by the new-thread handler", outcome: null },
+  ])(
+    "reports an older open a newer one replaced while it $name as replaced",
+    async ({ outcome }) => {
+      let finishOpen: () => void = () => undefined;
+      const deps = dependencies({
+        openThread: vi.fn(async (projectRef) => {
+          if (projectRef.projectId !== existingProjectId) return { threadId };
+          await new Promise<void>((resolve) => {
+            finishOpen = resolve;
+          });
+          return outcome;
+        }),
+        findProject: (_environmentId, workspaceRoot) => ({
+          id: workspaceRoot === request.workspaceRoot ? existingProjectId : createdProjectId,
+          environmentId,
+          workspaceRoot,
+        }),
+      });
+      // The first folder of a drop is still navigating when an activation shows its own thread.
+      const older = handleDesktopAppActivationRequest(request, deps);
+      await expect(
+        handleDesktopAppActivationRequest(
+          { ...request, requestId: "request-2", workspaceRoot: "/workspace/other" },
+          deps,
+        ),
+      ).resolves.toMatchObject({ ok: true });
+      finishOpen();
+
+      // Null stops the rest of the drop, which would otherwise undo the newer open.
+      await expect(older).resolves.toBeNull();
+    },
+  );
+
+  it("ranks every folder of a drop by when it was dropped", async () => {
+    let projectAppeared: () => void = () => undefined;
+    const deps = dependencies({
+      findProject: (_environmentId, workspaceRoot) =>
+        workspaceRoot === "/workspace/new"
+          ? null
+          : { id: existingProjectId, environmentId, workspaceRoot },
+      waitForProject: vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            projectAppeared = resolve;
+          }),
+      ),
+    });
+    const dropOrder = reserveDesktopAppActivationOrder();
+    await handleDesktopAppActivationRequest(request, deps, dropOrder);
+    // An activation that came after the drop, still adding its project.
+    const activation = handleDesktopAppActivationRequest(
+      { ...request, requestId: "request-2", workspaceRoot: "/workspace/new" },
+      deps,
+    );
+    await handleDesktopAppActivationRequest(
+      { ...request, requestId: "request-3", workspaceRoot: "/workspace/second" },
+      deps,
+      dropOrder,
+    );
+    projectAppeared();
+
+    await expect(activation).resolves.toMatchObject({ ok: true, projectId: createdProjectId });
   });
 
   it("lets an older open show its thread when a newer one fails before it could", async () => {

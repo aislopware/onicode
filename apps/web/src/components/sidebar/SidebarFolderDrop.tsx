@@ -7,6 +7,7 @@ import { FolderPlusIcon } from "lucide-react";
 import { useGT } from "gt-react";
 import { useState, type DragEvent, type ReactNode } from "react";
 
+import { reserveDesktopAppActivationOrder } from "../../desktopAppActivation";
 import { useOpenLocalWorkspace } from "../../hooks/useOpenLocalWorkspace";
 import { randomUUID } from "../../lib/utils";
 import { resolveDroppedFolderPath } from "../chat/folderDrop";
@@ -61,18 +62,22 @@ export function SidebarFolderDrop(props: { children: ReactNode }) {
       return;
     }
     // One at a time, so the last folder is the one left open.
+    const order = reserveDesktopAppActivationOrder();
     for (const folder of folders) {
       const workspaceRoot = resolveDroppedFolderPath(folder, bridge.getPathForFile);
       const response =
         workspaceRoot === null
           ? undefined
-          : await openLocalWorkspace.open({
-              version: DESKTOP_APP_ACTIVATION_PROTOCOL_VERSION,
-              requestId: randomUUID(),
-              type: "open-workspace",
-              workspaceRoot,
-              platform,
-            });
+          : await openLocalWorkspace.open(
+              {
+                version: DESKTOP_APP_ACTIVATION_PROTOCOL_VERSION,
+                requestId: randomUUID(),
+                type: "open-workspace",
+                workspaceRoot,
+                platform,
+              },
+              order,
+            );
       // A newer open took over; the rest of this drop would undo it.
       if (response === null) return;
       if (response?.ok) continue;
