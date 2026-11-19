@@ -2731,3 +2731,4 @@ a4d0151700	take	fix: match dotted capital I in Find in Thread (#39290); scenario
 cb2a488c67	skip	nightly/stable update tracks only; Onicode ships one channel through better-update and has no desktopUpdateChannelOf or channel switch
 d32df2d34c	take	fix(server): native session replacement fails honestly when the provider reuses its session (#27517); CONFLICT in ProviderSwitch test fixture kept both fields; Onicode's scheduled-fresh-session test gives its alternate Codex adapter fresh native ids, as real Codex does
 61085457d7	take	fix(server): repeated capture timeouts no longer delay turn starts (#29196)
+800b0748bc	take	fix(server): restart recovery no longer reads every idle thread on a shared session (#32396)
