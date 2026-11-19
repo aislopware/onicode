@@ -9,7 +9,17 @@ import type {
 } from "@onicode/contracts";
 import * as Effect from "effect/Effect";
 
-import { cancelledBeforeStart } from "./RestartBackgroundNote.ts";
+import { cancelledBeforeStart, neverStarted } from "./RestartBackgroundNote.ts";
+
+/** A fresh run that never reached a provider discarded nothing, also once a rollback rewound it. */
+function discardedContext(run: OrchestrationV2Run): boolean {
+  return (
+    run.freshContext === true &&
+    run.status !== "queued" &&
+    !cancelledBeforeStart(run) &&
+    !(run.status === "rolled_back" && neverStarted(run))
+  );
+}
 
 // Collected in one pass: an hourly fresh-session schedule leaves thousands of fresh runs to check.
 // Turn items, unlike messages, are not narrowed to the runs since the latest compaction.
@@ -42,14 +52,7 @@ export function contextBoundaryOrdinal(
   let scheduled: ReadonlySet<MessageId> | undefined;
   let boundary = 0;
   for (const run of projection.runs) {
-    if (
-      run.freshContext !== true ||
-      run.status === "queued" ||
-      cancelledBeforeStart(run) ||
-      run.ordinal <= boundary
-    ) {
-      continue;
-    }
+    if (!discardedContext(run) || run.ordinal <= boundary) continue;
     scheduled ??= scheduledMessageIds(projection.turnItems);
     if (!scheduled.has(run.userMessageId)) {
       boundary = run.ordinal;
@@ -66,27 +69,35 @@ export function forkContextBoundaryOrdinal(
   projection: Pick<OrchestrationV2ThreadProjection, "runs" | "turnItems">,
   forkRun: OrchestrationV2Run | undefined,
 ): number {
-  return forkRun?.freshContext === true &&
-    forkRun.status !== "queued" &&
-    !cancelledBeforeStart(forkRun)
+  return forkRun !== undefined && discardedContext(forkRun)
     ? forkRun.ordinal
     : contextBoundaryOrdinal(projection);
 }
 
-/** `forkContextBoundaryOrdinal`, reading only the fresh runs' items: they tell schedules apart. */
-export const readForkContextBoundaryOrdinal = <E, R>(
-  readTurnItems: (
-    runIds: ReadonlyArray<RunId>,
-  ) => Effect.Effect<ReadonlyArray<OrchestrationV2TurnItem>, E, R>,
+/** The user messages of fresh runs: all the boundary and schedule checks read. */
+export const readFreshRunUserMessages = <E, R>(
+  store: {
+    readonly getThreadRecords: (
+      threadId: ThreadId,
+      fields: ReadonlyArray<"turnItems">,
+      filter: {
+        readonly turnItemRunIds: ReadonlyArray<RunId>;
+        readonly turnItemTypes: ReadonlyArray<OrchestrationV2TurnItem["type"]>;
+      },
+    ) => Effect.Effect<Pick<OrchestrationV2ThreadProjection, "turnItems">, E, R>;
+  },
+  threadId: ThreadId,
   runs: ReadonlyArray<OrchestrationV2Run>,
-  forkRun?: OrchestrationV2Run,
-): Effect.Effect<number, E, R> => {
+): Effect.Effect<ReadonlyArray<OrchestrationV2TurnItem>, E, R> => {
   const freshRunIds = runs.flatMap((run) => (run.freshContext === true ? [run.id] : []));
   return freshRunIds.length === 0
-    ? Effect.succeed(0)
-    : readTurnItems(freshRunIds).pipe(
-        Effect.map((turnItems) => forkContextBoundaryOrdinal({ runs, turnItems }, forkRun)),
-      );
+    ? Effect.succeed([])
+    : store
+        .getThreadRecords(threadId, ["turnItems"], {
+          turnItemRunIds: freshRunIds,
+          turnItemTypes: ["user_message"],
+        })
+        .pipe(Effect.map(({ turnItems }) => turnItems));
 };
 
 /** A fresh send before a fork's first run supersedes its transfer, discarding the parent's context. */

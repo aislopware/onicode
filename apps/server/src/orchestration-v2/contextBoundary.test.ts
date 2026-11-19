@@ -48,3 +48,19 @@ it("reads turn items once however many fresh-session scheduled runs a thread has
   assert.equal(scheduledFreshRunOrdinals(continuing).size, 0);
   assert.equal(itemReads, 0);
 });
+
+it("ignores fresh runs that never reached a provider, also after a rollback rewound them", () => {
+  const run = (ordinal: number, status: string, startedAt: string | null) => ({
+    ordinal,
+    status,
+    startedAt,
+    freshContext: true,
+    userMessageId: `message-${ordinal}`,
+  });
+  const boundary = (runs: ReadonlyArray<ReturnType<typeof run>>) =>
+    contextBoundaryOrdinal({ runs, turnItems: [] } as unknown as Projection);
+
+  assert.equal(boundary([run(2, "cancelled", null)]), 0);
+  assert.equal(boundary([run(2, "rolled_back", null)]), 0);
+  assert.equal(boundary([run(2, "rolled_back", "2026-11-19T00:00:00.000Z")]), 2);
+});
