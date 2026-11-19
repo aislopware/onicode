@@ -21,7 +21,6 @@ import {
   type PreviewAdjustInput,
 } from "@onicode/contracts";
 import {
-  isLoopbackHost,
   normalizePreviewUrl,
   isPreviewUrlNormalizationError,
   resolveAddressBarInput,
@@ -48,6 +47,7 @@ import {
   useThreadPreviewState,
 } from "~/previewStateStore";
 import {
+  namesLoopback,
   resolveDiscoveredServerUrl,
   resolveExternalServerUrl,
 } from "~/browser/browserTargetResolver";
@@ -1194,7 +1194,7 @@ export function PreviewView({
               tunnelled={
                 tunnelsLoopback &&
                 !isServerTab &&
-                isLoopbackHost(URL.parse(navStatus.url)?.hostname ?? "")
+                namesLoopback(URL.parse(navStatus.url)?.hostname ?? "")
               }
               {...(moveTarget === "server"
                 ? { move: { label: moveLabel, onMove: () => void handleMoveTab() } }
