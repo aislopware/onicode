@@ -171,12 +171,13 @@ export function createIssueEnvironmentAtoms<R, E>(
     tag: WS_METHODS.issuesSummary,
     staleTimeMs: 30_000,
   });
-  const detailRef = ({ projectId, tracker, host, scope, key }: IssueRef): IssueRef => ({
+  const detailRef = ({ projectId, tracker, host, scope, key, workspace }: IssueRef): IssueRef => ({
     projectId,
     tracker,
     ...(host === undefined ? {} : { host }),
     scope,
     key,
+    ...(workspace === undefined ? {} : { workspace }),
   });
   const refreshDetail = (
     { environmentId, input }: { readonly environmentId: EnvironmentId; readonly input: IssueRef },

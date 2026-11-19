@@ -15,6 +15,8 @@ export type IssueParams = {
   readonly host?: string;
   readonly scope: string;
   readonly issueKey: string;
+  /** The workspace a standalone tracker's link named; see `IssueRef.workspace`. */
+  readonly workspace?: string;
   /** The list row the issue was opened from, shown until its detail arrives. */
   readonly initialSummary?: IssueListEntry;
 };
@@ -26,6 +28,7 @@ export function issueTarget(params: IssueParams) {
     ...(params.host ? { host: params.host } : {}),
     scope: params.scope,
     key: params.issueKey,
+    ...(params.workspace ? { workspace: params.workspace } : {}),
   };
   return { environmentId: EnvironmentId.make(params.environmentId), input };
 }

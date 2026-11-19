@@ -19,7 +19,6 @@ import {
 import type {
   ContextMenuItem,
   EnvironmentId,
-  IssueTrackerKind,
   PreviewSessionSnapshot,
   ProjectId,
   PullRequestState,
@@ -66,6 +65,7 @@ import {
 
 import type { DesktopPreviewOverlay } from "~/previewStateStore";
 import type { RightPanelSurface } from "~/rightPanelStore";
+import { issueSurfaceRef } from "~/lib/openIssueLink";
 import { cn } from "~/lib/utils";
 import { issueStatePresentation } from "~/components/issue/issuePresentation";
 import { issueEnvironment } from "~/state/issues";
@@ -796,13 +796,7 @@ function IssueSurfaceIcon({
       ? null
       : issueEnvironment.detail({
           environmentId: resolvedEnvironmentId,
-          input: {
-            projectId: surface.projectId as ProjectId,
-            tracker: surface.tracker as IssueTrackerKind,
-            ...(surface.host ? { host: surface.host } : {}),
-            scope: surface.scope,
-            key: surface.key,
-          },
+          input: issueSurfaceRef(surface),
         }),
   ).data;
   if (detail === null) return <CircleDotIcon className="size-3 shrink-0" />;

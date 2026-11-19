@@ -140,6 +140,7 @@ const make = Effect.gen(function* () {
     host: target.host,
     scope: target.scope,
     key: target.key,
+    ...(target.workspace === undefined ? {} : { workspace: target.workspace }),
   });
 
   const readIssue = (target: ResolvedTarget) =>

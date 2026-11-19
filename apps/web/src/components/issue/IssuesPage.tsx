@@ -16,7 +16,6 @@ import type {
   IssueListInput,
   IssueListSort,
   IssueListState,
-  IssueTrackerKind,
   IssueTrackerSummary,
   ProjectId,
 } from "@onicode/contracts";
@@ -79,6 +78,7 @@ import { SidebarInset } from "~/components/ui/sidebar";
 import { isCommandPaletteOpen } from "~/commandPaletteBus";
 import { useLiveRefresh } from "~/hooks/useLiveRefresh";
 import { resolveShortcutCommand, shortcutLabelForCommand } from "~/keybindings";
+import { issueSurfaceRef } from "~/lib/openIssueLink";
 import { isTerminalFocused } from "~/lib/terminalFocus";
 import { usePanelAnimationSettings, usePanelPresence } from "~/panelAnimations";
 import {
@@ -828,13 +828,7 @@ export function IssuesPage() {
                 key={`${panelEnvironmentId}:${renderedSurface.id}`}
                 environmentId={panelEnvironmentId}
                 listEntry={panelListEntry}
-                reference={{
-                  projectId: renderedSurface.projectId as ProjectId,
-                  tracker: renderedSurface.tracker as IssueTrackerKind,
-                  ...(renderedSurface.host ? { host: renderedSurface.host } : {}),
-                  scope: renderedSurface.scope,
-                  key: renderedSurface.key,
-                }}
+                reference={issueSurfaceRef(renderedSurface)}
                 onSelectPullRequest={(reference) => {
                   useRightPanelStore.getState().openPullRequest(rightPanelRef, {
                     projectId: reference.projectId,

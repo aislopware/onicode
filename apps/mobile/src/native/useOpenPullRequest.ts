@@ -85,6 +85,7 @@ export function useNavigateToPullRequest(options?: { readonly replace?: boolean 
         ...(issue.ref.host === undefined ? {} : { host: issue.ref.host }),
         scope: issue.ref.scope,
         issueKey: issue.ref.key,
+        ...(issue.ref.workspace === undefined ? {} : { workspace: issue.ref.workspace }),
       };
       if (replace) navigation.dispatch(StackActions.replace("Issue", issueParams));
       else navigation.dispatch(StackActions.push("Issue", issueParams));

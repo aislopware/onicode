@@ -568,7 +568,7 @@ describe("IssueService with a standalone tracker", () => {
       });
       expect(
         yield* service.resolveUrl("https://linear.app/acme/issue/ENG-1/old-title"),
-      ).toMatchObject({ key: "ENG-1", writable: true });
+      ).toMatchObject({ key: "ENG-1", writable: true, workspace: "acme" });
       const refused = yield* service
         .resolveUrl("https://linear.app/other-workspace/issue/ENG-1/old-title")
         .pipe(Effect.result);

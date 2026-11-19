@@ -20,6 +20,19 @@ const pullRequest = {
   name: "PullRequest",
   params: { environmentId: "env", projectId: "project", repository: "o/r", number: 7 },
 };
+const issue = {
+  key: "issue",
+  name: "Issue",
+  params: {
+    environmentId: "env",
+    projectId: "project",
+    tracker: "linear",
+    host: "linear.app",
+    scope: "ENG",
+    issueKey: "ENG-7",
+    workspace: "acme",
+  },
+};
 const settings = { key: "settings", name: "Settings" };
 const requireFromNative = NodeModule.createRequire(
   NodeModule.createRequire(import.meta.url).resolve("@react-navigation/native/package.json"),
@@ -37,16 +50,19 @@ const names = (state: { routes: readonly { name: string }[] }) =>
   state.routes.map((route) => route.name);
 
 describe("workspace tab selections", () => {
-  it("remembers the chat, pull request and Settings page each tab showed", () => {
+  it("remembers the chat, pull request, issue and Settings page each tab showed", () => {
     const afterThread = workspaceSelectionsIn([home, thread], {});
     const afterPullRequest = workspaceSelectionsIn([home, pullRequest], afterThread);
-    expect(afterPullRequest).toMatchObject({
+    const afterIssue = workspaceSelectionsIn([home, issue], afterPullRequest);
+    // The issue keeps the workspace its link named, so reopening the tab reads the same one.
+    expect(afterIssue).toMatchObject({
       threads: thread.params,
       pullRequests: pullRequest.params,
+      issues: issue.params,
     });
     const afterSettings = workspaceSelectionsIn(
       [home, settings, { key: "appearance", name: "SettingsAppearance" }],
-      afterPullRequest,
+      afterIssue,
     );
     expect(afterSettings.settings).toBe("SettingsAppearance");
     expect(workspaceSelectionsIn([home, thread], afterSettings)).toBe(afterSettings);

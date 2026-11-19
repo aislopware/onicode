@@ -69,6 +69,11 @@ export interface IssueScopeTarget {
 export interface IssueTarget extends IssueScopeTarget {
   /** The issue's native id within the scope: `"123"` on GitHub, `"ENG-123"` on Linear. */
   readonly key: string;
+  /**
+   * The workspace the issue's link named, for a standalone tracker whose keys repeat across
+   * workspaces: it refuses an issue elsewhere. Absent, the credential's own workspace is meant.
+   */
+  readonly workspace?: string | undefined;
 }
 
 /** An issue as the tracker sees it, before the service attaches project context. */

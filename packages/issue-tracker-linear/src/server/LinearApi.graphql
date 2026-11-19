@@ -54,13 +54,12 @@ fragment LinearComment on Comment {
   }
 }
 
-fragment LinearIssue on Issue {
+fragment LinearIssueSummary on Issue {
   id
   identifier
   number
   title
   url
-  description
   createdAt
   updatedAt
   completedAt
@@ -85,6 +84,11 @@ fragment LinearIssue on Issue {
       ...LinearLabel
     }
   }
+}
+
+fragment LinearIssue on Issue {
+  ...LinearIssueSummary
+  description
 }
 
 fragment LinearPageInfo on PageInfo {
@@ -183,8 +187,20 @@ query OniIssue($id: String!, $comments: Int!) {
   }
 }
 
+query OniIssueSummary($id: String!, $comments: Int!) {
+  issue(id: $id) {
+    ...LinearIssueSummary
+    comments(first: $comments) {
+      nodes {
+        id
+      }
+    }
+  }
+}
+
 query OniComments($id: String!, $first: Int!, $after: String) {
   issue(id: $id) {
+    url
     comments(first: $first, after: $after, orderBy: createdAt) {
       nodes {
         ...LinearComment

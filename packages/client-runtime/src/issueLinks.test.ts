@@ -99,6 +99,8 @@ describe("resolveIssueLinkTarget", () => {
       host: "linear.app",
       scope: "WEB",
       key: "WEB-17",
+      // The server refuses the key in any other workspace, should the credential move to one.
+      workspace: "acme",
     });
     expect(resolve("https://linear.app/acme/issue/OPS-3")?.ref).toMatchObject({
       projectId: "p1",
@@ -108,6 +110,8 @@ describe("resolveIssueLinkTarget", () => {
     expect(resolve("https://linear.app.evil.example/acme/issue/WEB-17")).toBeNull();
     // Team keys repeat across workspaces; only the connected one's links are its issues.
     expect(resolve("https://linear.app/othercorp/issue/WEB-17")).toBeNull();
+    // The panel opens an issue at its top, so a link to one of its comments stays the browser's.
+    expect(resolve("https://linear.app/acme/issue/WEB-17/fix-it#comment-cmt_1")).toBeNull();
     expect(
       resolveIssueLinkTarget({ url: "https://linear.app/acme/issue/WEB-17", projects }),
     ).toBeNull();
@@ -116,6 +120,7 @@ describe("resolveIssueLinkTarget", () => {
   it.each([
     "https://github.com.evil.example/acme/web/issues/7",
     "https://github.com/acme/web/pull/7",
+    "https://github.com/acme/web/issues/7#issuecomment-123",
   ])("leaves %s an ordinary link", (url) => {
     expect(resolveIssueLinkTarget({ url, projects })).toBeNull();
   });

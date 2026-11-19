@@ -98,6 +98,7 @@ function issueSelection(params: object | undefined): Omit<IssueSelection, "key">
     scope: identity.scope,
     issueKey: identity.issueKey,
     ...(typeof value?.host === "string" ? { host: value.host } : {}),
+    ...(typeof value?.workspace === "string" ? { workspace: value.workspace } : {}),
   };
 }
 
@@ -105,7 +106,8 @@ function sameIssue(left: IssueSelection | undefined, right: Omit<IssueSelection,
   return (
     left !== undefined &&
     ISSUE_IDENTITY.every((key) => left[key] === right[key]) &&
-    left.host === right.host
+    left.host === right.host &&
+    left.workspace === right.workspace
   );
 }
 

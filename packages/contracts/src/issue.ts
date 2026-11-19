@@ -81,6 +81,11 @@ export const IssueRef = Schema.Struct({
   host: Schema.optional(TrimmedNonEmptyString),
   scope: TrimmedNonEmptyString,
   key: TrimmedNonEmptyString,
+  /**
+   * The workspace a standalone tracker's link named (`acme` in `linear.app/acme/issue/ENG-7`).
+   * Keys repeat across workspaces, so the server refuses the issue from any other.
+   */
+  workspace: Schema.optional(TrimmedNonEmptyString),
 });
 export type IssueRef = typeof IssueRef.Type;
 

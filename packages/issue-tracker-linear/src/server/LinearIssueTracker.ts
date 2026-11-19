@@ -163,7 +163,7 @@ function userName(user: LinearApi.LinearUser): string {
 }
 
 /** Linear's connections report no totals, so a listing shows no comment count. */
-function toSummary(issue: LinearApi.LinearIssue, commentCount = 0): TrackerIssueSummary {
+function toSummary(issue: LinearApi.LinearIssueSummary, commentCount = 0): TrackerIssueSummary {
   return {
     key: issue.identifier,
     displayKey: issue.identifier,
@@ -332,6 +332,27 @@ const notFound = (operation: string) =>
 const failed = (operation: string, detail: string) =>
   new IssueTrackerError({ tracker: LinearApi.KIND, operation, reason: "failed", detail });
 
+/** Keys repeat across workspaces, so an issue outside the one its link named is not that issue. */
+function requireWorkspace(operation: string, issueUrl: string, workspace: string | undefined) {
+  if (workspace === undefined) return Effect.void;
+  let named: string | undefined;
+  try {
+    named = parseLinearIssueUrl(new URL(issueUrl))?.workspace;
+  } catch {
+    named = undefined;
+  }
+  return named?.toLowerCase() === workspace.toLowerCase()
+    ? Effect.void
+    : Effect.fail(
+        new IssueTrackerError({
+          tracker: LinearApi.KIND,
+          operation,
+          reason: "not-found",
+          detail: "This issue link names another Linear workspace than the connected one.",
+        }),
+      );
+}
+
 export const make: Effect.Effect<StandaloneIssueTrackerApi, never, LinearApi.LinearApi> =
   Effect.gen(function* () {
     const linear = yield* LinearApi.LinearApi;
@@ -347,12 +368,17 @@ export const make: Effect.Effect<StandaloneIssueTrackerApi, never, LinearApi.Lin
      */
     const requireTeamIssue = Effect.fn("LinearIssueTracker.requireTeamIssue")(function* (
       operation: string,
-      input: { readonly scope: string; readonly key: string },
+      input: {
+        readonly scope: string;
+        readonly key: string;
+        readonly workspace?: string | undefined;
+      },
     ) {
       const identifier = yield* requireIdentifier(operation, input.key);
       // One comment, not none: Linear refuses a page of zero.
       const issue = yield* linear.getIssue(identifier, 1);
       if (issue === null) return yield* notFound(operation);
+      yield* requireWorkspace(operation, issue.url, input.workspace);
       const team = input.scope.trim().toUpperCase();
       if (issue.team.key !== team) {
         return yield* failed(
@@ -494,6 +520,7 @@ export const make: Effect.Effect<StandaloneIssueTrackerApi, never, LinearApi.Lin
         ]);
         const viewer = me?.id ?? null;
         if (issue === null) return yield* notFound("getIssue");
+        yield* requireWorkspace("getIssue", issue.url, input.workspace);
         return {
           ...toSummary(issue, issue.comments.nodes.length),
           body: issue.description ?? "",
@@ -510,12 +537,22 @@ export const make: Effect.Effect<StandaloneIssueTrackerApi, never, LinearApi.Lin
         };
       }),
 
+      // Only the issue and its comment ids: a hover card shows a count, not the conversation.
+      getIssueSummary: Effect.fn("LinearIssueTracker.getIssueSummary")(function* (input) {
+        const identifier = yield* requireIdentifier("getIssueSummary", input.key);
+        const issue = yield* linear.getIssueSummary(identifier, COMMENTS_PAGE);
+        if (issue === null) return yield* notFound("getIssueSummary");
+        yield* requireWorkspace("getIssueSummary", issue.url, input.workspace);
+        return toSummary(issue, issue.comments.nodes.length);
+      }),
+
       getComments: Effect.fn("LinearIssueTracker.getComments")(function* (input) {
         const identifier = yield* requireIdentifier("getComments", input.key);
         const [page, viewer] = yield* Effect.all([
           linear.getComments({ identifier, first: COMMENTS_PAGE, after: input.cursor }),
           viewerId,
         ]);
+        yield* requireWorkspace("getComments", page.url, input.workspace);
         return {
           comments: page.nodes.map((comment) => toComment(comment, viewer)),
           nextCursor: page.nextCursor,

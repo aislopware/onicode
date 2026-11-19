@@ -120,23 +120,23 @@ export const LinearComment = Schema.Struct({
 export interface LinearComment extends Schema.Struct.Type<typeof LinearComment.fields> {}
 
 /** A team is the primary organizational unit in Linear. Issues belong to teams, and each team has its own workflow states, cycles, labels, and settings. Teams can be public (visible to all workspace members), private (visible only to team members), or restricted (visible only within an enclosing private-team boundary). Teams can also have sub-teams that inherit settings from their parent. */
-export const LinearIssueTeamTeam = Schema.Struct({
+export const LinearIssueSummaryTeamTeam = Schema.Struct({
   /** The team's unique key, used as a prefix in issue identifiers (e.g., 'ENG' in 'ENG-123') and in URLs. */
   key: Schema.String
 })
-export interface LinearIssueTeamTeam extends Schema.Struct.Type<typeof LinearIssueTeamTeam.fields> {}
+export interface LinearIssueSummaryTeamTeam extends Schema.Struct.Type<typeof LinearIssueSummaryTeamTeam.fields> {}
 
-export const LinearIssueLabelsIssueLabelConnection = Schema.Struct({
+export const LinearIssueSummaryLabelsIssueLabelConnection = Schema.Struct({
   nodes: Schema.Array(LinearLabel)
 })
-export interface LinearIssueLabelsIssueLabelConnection extends Schema.Struct.Type<typeof LinearIssueLabelsIssueLabelConnection.fields> {}
+export interface LinearIssueSummaryLabelsIssueLabelConnection extends Schema.Struct.Type<typeof LinearIssueSummaryLabelsIssueLabelConnection.fields> {}
 
 /**
- * `fragment LinearIssue on Issue`
+ * `fragment LinearIssueSummary on Issue`
  *
  * An issue is the core work item in Linear. Issues belong to a team, have a workflow status, can be assigned to users, carry a priority level, and can be organized into projects and cycles. Issues support sub-issues (parent-child hierarchy up to 10 levels deep), labels, due dates, estimates, and SLA tracking. They can also be linked to other issues via relations, attached to releases, and tracked through their full history of changes.
  */
-export const LinearIssue = Schema.Struct({
+export const LinearIssueSummary = Schema.Struct({
   /** The unique identifier of the entity. */
   id: Shared.ID,
   /** Issue's human readable identifier (e.g. ENG-123). */
@@ -147,8 +147,6 @@ export const LinearIssue = Schema.Struct({
   title: Schema.String,
   /** Issue URL. */
   url: Schema.String,
-  /** The issue's description in markdown format. */
-  description: Schema.NullOr(Schema.String),
   /** The time at which the entity was created. */
   createdAt: Shared.DateTime,
   /**
@@ -163,7 +161,7 @@ export const LinearIssue = Schema.Struct({
   /** The workflow state (issue status) that the issue is currently in. Workflow states represent the issue's progress through the team's workflow, such as Triage, Todo, In Progress, Done, or Canceled. */
   state: LinearWorkflowState,
   /** The team that the issue belongs to. Every issue must belong to exactly one team, which determines the available workflow states, labels, and other team-specific configuration. */
-  team: LinearIssueTeamTeam,
+  team: LinearIssueSummaryTeamTeam,
   /** The user who created the issue. Null if the creator's account has been deleted or if the issue was created by an integration or system process. */
   creator: Schema.NullOr(LinearUser),
   /** The bot that created the issue, if applicable. */
@@ -171,7 +169,19 @@ export const LinearIssue = Schema.Struct({
   /** The user to whom the issue is assigned. Null if the issue is unassigned. */
   assignee: Schema.NullOr(LinearUser),
   /** Labels associated with this issue. */
-  labels: LinearIssueLabelsIssueLabelConnection
+  labels: LinearIssueSummaryLabelsIssueLabelConnection
+})
+export interface LinearIssueSummary extends Schema.Struct.Type<typeof LinearIssueSummary.fields> {}
+
+/**
+ * `fragment LinearIssue on Issue`
+ *
+ * An issue is the core work item in Linear. Issues belong to a team, have a workflow status, can be assigned to users, carry a priority level, and can be organized into projects and cycles. Issues support sub-issues (parent-child hierarchy up to 10 levels deep), labels, due dates, estimates, and SLA tracking. They can also be linked to other issues via relations, attached to releases, and tracked through their full history of changes.
+ */
+export const LinearIssue = Schema.Struct({
+  ...LinearIssueSummary.fields,
+  /** The issue's description in markdown format. */
+  description: Schema.NullOr(Schema.String)
 })
 export interface LinearIssue extends Schema.Struct.Type<typeof LinearIssue.fields> {}
 
@@ -253,8 +263,9 @@ export const OniIssues = GraphQL.query("OniIssues", {
       { name: "issues", body: ["(first:$", "first", " after:$", "after", " filter:$", "filter", " orderBy:$", "orderBy", "){nodes{...LinearIssue}pageInfo{...LinearPageInfo}}"] }
     ],
     fragments: [
-      { name: "LinearIssue", body: ["on Issue{id identifier number title url description createdAt updatedAt completedAt canceledAt state{...LinearWorkflowState}team{key}creator{...LinearUser}botActor{...LinearBot}assignee{...LinearUser}labels{nodes{...LinearLabel}}}"] },
+      { name: "LinearIssue", body: ["on Issue{...LinearIssueSummary description}"] },
       { name: "LinearPageInfo", body: ["on PageInfo{hasNextPage endCursor}"] },
+      { name: "LinearIssueSummary", body: ["on Issue{id identifier number title url createdAt updatedAt completedAt canceledAt state{...LinearWorkflowState}team{key}creator{...LinearUser}botActor{...LinearBot}assignee{...LinearUser}labels{nodes{...LinearLabel}}}"] },
       { name: "LinearWorkflowState", body: ["on WorkflowState{id name type position}"] },
       { name: "LinearUser", body: ["on User{id name displayName email avatarUrl}"] },
       { name: "LinearBot", body: ["on ActorBot{name userDisplayName avatarUrl}"] },
@@ -291,11 +302,11 @@ export const IssueTeamTeam = Schema.Struct({
 })
 export interface IssueTeamTeam extends Schema.Struct.Type<typeof IssueTeamTeam.fields> {}
 
-export const CommentConnection = Schema.Struct({
+export const OniIssueIssueCommentsCommentConnection = Schema.Struct({
   nodes: Schema.Array(LinearComment),
   pageInfo: LinearPageInfo
 })
-export interface CommentConnection extends Schema.Struct.Type<typeof CommentConnection.fields> {}
+export interface OniIssueIssueCommentsCommentConnection extends Schema.Struct.Type<typeof OniIssueIssueCommentsCommentConnection.fields> {}
 
 /** An attachment linking external content to an issue. Attachments represent connections to external resources such as GitHub pull requests, Slack messages, Zendesk tickets, Figma files, Sentry issues, Intercom conversations, and plain URLs. Each attachment has a title and subtitle displayed in the Linear UI, a URL serving as both the link destination and unique identifier per issue, and optional metadata specific to the source integration. */
 export const Attachment = Schema.Struct({
@@ -361,8 +372,6 @@ export const OniIssueIssueIssue = Schema.Struct({
   title: Schema.String,
   /** Issue URL. */
   url: Schema.String,
-  /** The issue's description in markdown format. */
-  description: Schema.NullOr(Schema.String),
   /** The time at which the entity was created. */
   createdAt: Shared.DateTime,
   /**
@@ -385,9 +394,11 @@ export const OniIssueIssueIssue = Schema.Struct({
   /** The user to whom the issue is assigned. Null if the issue is unassigned. */
   assignee: Schema.NullOr(LinearUser),
   /** Labels associated with this issue. */
-  labels: LinearIssueLabelsIssueLabelConnection,
+  labels: LinearIssueSummaryLabelsIssueLabelConnection,
+  /** The issue's description in markdown format. */
+  description: Schema.NullOr(Schema.String),
   /** Comments associated with the issue, including inline comments on the issue's description. */
-  comments: CommentConnection,
+  comments: OniIssueIssueCommentsCommentConnection,
   /** Reactions associated with the issue. */
   reactions: Schema.Array(LinearReaction),
   /** Attachments associated with the issue. */
@@ -408,14 +419,15 @@ export const OniIssue = GraphQL.query("OniIssue", {
       { name: "issue", body: ["(id:$", "id", "){...LinearIssue team{states(first:100){nodes{...LinearWorkflowState}}}comments(first:$", "comments", " orderBy:createdAt){nodes{...LinearComment}pageInfo{...LinearPageInfo}}reactions{...LinearReaction}attachments(first:50){nodes{url title sourceType metadata}}history(first:100 orderBy:createdAt){nodes{id createdAt actor{...LinearUser}botActor{...LinearBot}fromState{...LinearWorkflowState}toState{...LinearWorkflowState}fromAssignee{...LinearUser}toAssignee{...LinearUser}addedLabels{...LinearLabel}removedLabels{...LinearLabel}fromTitle toTitle}}}"] }
     ],
     fragments: [
-      { name: "LinearIssue", body: ["on Issue{id identifier number title url description createdAt updatedAt completedAt canceledAt state{...LinearWorkflowState}team{key}creator{...LinearUser}botActor{...LinearBot}assignee{...LinearUser}labels{nodes{...LinearLabel}}}"] },
+      { name: "LinearIssue", body: ["on Issue{...LinearIssueSummary description}"] },
       { name: "LinearWorkflowState", body: ["on WorkflowState{id name type position}"] },
       { name: "LinearComment", body: ["on Comment{id body createdAt url user{...LinearUser}botActor{...LinearBot}reactions{...LinearReaction}}"] },
       { name: "LinearPageInfo", body: ["on PageInfo{hasNextPage endCursor}"] },
       { name: "LinearReaction", body: ["on Reaction{id emoji user{...LinearUser}}"] },
       { name: "LinearUser", body: ["on User{id name displayName email avatarUrl}"] },
       { name: "LinearBot", body: ["on ActorBot{name userDisplayName avatarUrl}"] },
-      { name: "LinearLabel", body: ["on IssueLabel{id name color}"] }
+      { name: "LinearLabel", body: ["on IssueLabel{id name color}"] },
+      { name: "LinearIssueSummary", body: ["on Issue{id identifier number title url createdAt updatedAt completedAt canceledAt state{...LinearWorkflowState}team{key}creator{...LinearUser}botActor{...LinearBot}assignee{...LinearUser}labels{nodes{...LinearLabel}}}"] }
     ]
   },
   variables: {
@@ -432,10 +444,64 @@ export declare namespace OniIssue {
   export type Result = typeof OniIssue.result.Type
 }
 
+/** A comment associated with an issue, project update, initiative update, document content, post, project, or initiative. Comments support rich text (ProseMirror), emoji reactions, and threaded replies via parentId. Comments can be created by workspace users or by external users through integrations (e.g., Slack, Intercom). Each comment belongs to exactly one parent entity. */
+export const NodesComment = Schema.Struct({
+  /** The unique identifier of the entity. */
+  id: Shared.ID
+})
+export interface NodesComment extends Schema.Struct.Type<typeof NodesComment.fields> {}
+
+export const OniIssueSummaryIssueCommentsCommentConnection = Schema.Struct({
+  nodes: Schema.Array(NodesComment)
+})
+export interface OniIssueSummaryIssueCommentsCommentConnection extends Schema.Struct.Type<typeof OniIssueSummaryIssueCommentsCommentConnection.fields> {}
+
+/** An issue is the core work item in Linear. Issues belong to a team, have a workflow status, can be assigned to users, carry a priority level, and can be organized into projects and cycles. Issues support sub-issues (parent-child hierarchy up to 10 levels deep), labels, due dates, estimates, and SLA tracking. They can also be linked to other issues via relations, attached to releases, and tracked through their full history of changes. */
+export const OniIssueSummaryIssueIssue = Schema.Struct({
+  ...LinearIssueSummary.fields,
+  /** Comments associated with the issue, including inline comments on the issue's description. */
+  comments: OniIssueSummaryIssueCommentsCommentConnection
+})
+export interface OniIssueSummaryIssueIssue extends Schema.Struct.Type<typeof OniIssueSummaryIssueIssue.fields> {}
+
+/** `query OniIssueSummary` */
+export const OniIssueSummary = GraphQL.query("OniIssueSummary", {
+  document: {
+    variables: [
+      { name: "id", body: "String!" },
+      { name: "comments", body: "Int!" }
+    ],
+    selections: [
+      { name: "issue", body: ["(id:$", "id", "){...LinearIssueSummary comments(first:$", "comments", "){nodes{id}}}"] }
+    ],
+    fragments: [
+      { name: "LinearIssueSummary", body: ["on Issue{id identifier number title url createdAt updatedAt completedAt canceledAt state{...LinearWorkflowState}team{key}creator{...LinearUser}botActor{...LinearBot}assignee{...LinearUser}labels{nodes{...LinearLabel}}}"] },
+      { name: "LinearWorkflowState", body: ["on WorkflowState{id name type position}"] },
+      { name: "LinearUser", body: ["on User{id name displayName email avatarUrl}"] },
+      { name: "LinearBot", body: ["on ActorBot{name userDisplayName avatarUrl}"] },
+      { name: "LinearLabel", body: ["on IssueLabel{id name color}"] }
+    ]
+  },
+  variables: {
+    id: Schema.String,
+    comments: Shared.Int
+  },
+  result: Schema.Struct({
+    /** One specific issue, looked up by its unique identifier. */
+    issue: OniIssueSummaryIssueIssue
+  })
+})
+export declare namespace OniIssueSummary {
+  export type Variables = typeof OniIssueSummary.variables.Type
+  export type Result = typeof OniIssueSummary.result.Type
+}
+
 /** An issue is the core work item in Linear. Issues belong to a team, have a workflow status, can be assigned to users, carry a priority level, and can be organized into projects and cycles. Issues support sub-issues (parent-child hierarchy up to 10 levels deep), labels, due dates, estimates, and SLA tracking. They can also be linked to other issues via relations, attached to releases, and tracked through their full history of changes. */
 export const OniCommentsIssueIssue = Schema.Struct({
+  /** Issue URL. */
+  url: Schema.String,
   /** Comments associated with the issue, including inline comments on the issue's description. */
-  comments: CommentConnection
+  comments: OniIssueIssueCommentsCommentConnection
 })
 export interface OniCommentsIssueIssue extends Schema.Struct.Type<typeof OniCommentsIssueIssue.fields> {}
 
@@ -448,7 +514,7 @@ export const OniComments = GraphQL.query("OniComments", {
       { name: "after", body: "String" }
     ],
     selections: [
-      { name: "issue", body: ["(id:$", "id", "){comments(first:$", "first", " after:$", "after", " orderBy:createdAt){nodes{...LinearComment}pageInfo{...LinearPageInfo}}}"] }
+      { name: "issue", body: ["(id:$", "id", "){url comments(first:$", "first", " after:$", "after", " orderBy:createdAt){nodes{...LinearComment}pageInfo{...LinearPageInfo}}}"] }
     ],
     fragments: [
       { name: "LinearComment", body: ["on Comment{id body createdAt url user{...LinearUser}botActor{...LinearBot}reactions{...LinearReaction}}"] },
@@ -782,13 +848,13 @@ export const CommentIssueIssue = Schema.Struct({
 export interface CommentIssueIssue extends Schema.Struct.Type<typeof CommentIssueIssue.fields> {}
 
 /** A comment associated with an issue, project update, initiative update, document content, post, project, or initiative. Comments support rich text (ProseMirror), emoji reactions, and threaded replies via parentId. Comments can be created by workspace users or by external users through integrations (e.g., Slack, Intercom). Each comment belongs to exactly one parent entity. */
-export const Comment = Schema.Struct({
+export const CommentComment = Schema.Struct({
   /** The issue that the comment is associated with. Null if the comment belongs to a different parent entity type. */
   issue: Schema.NullOr(CommentIssueIssue),
   /** Reactions associated with the comment. */
   reactions: Schema.Array(LinearReaction)
 })
-export interface Comment extends Schema.Struct.Type<typeof Comment.fields> {}
+export interface CommentComment extends Schema.Struct.Type<typeof CommentComment.fields> {}
 
 /** `query OniCommentReactions` */
 export const OniCommentReactions = GraphQL.query("OniCommentReactions", {
@@ -809,7 +875,7 @@ export const OniCommentReactions = GraphQL.query("OniCommentReactions", {
   },
   result: Schema.Struct({
     /** A specific comment. */
-    comment: Comment
+    comment: CommentComment
   })
 })
 export declare namespace OniCommentReactions {
@@ -818,4 +884,4 @@ export declare namespace OniCommentReactions {
 }
 
 /** Every operation in LinearApi.graphql. */
-export const LinearApiGraphQLGroup = GraphQLGroup.make(OniViewer, OniIssues, OniIssue, OniComments, OniTeam, OniIssueCreate, OniIssueUpdate, OniCommentCreate, OniReactionCreate, OniReactionDelete, OniIssueReactions, OniCommentReactions)
+export const LinearApiGraphQLGroup = GraphQLGroup.make(OniViewer, OniIssues, OniIssue, OniIssueSummary, OniComments, OniTeam, OniIssueCreate, OniIssueUpdate, OniCommentCreate, OniReactionCreate, OniReactionDelete, OniIssueReactions, OniCommentReactions)

@@ -9,6 +9,7 @@ import {
   type EnvironmentIssueEntry,
   type HeldIssuePage,
 } from "@onicode/client-runtime/issue-list";
+import { issueLinkWorkspace } from "@onicode/client-runtime/issue-links";
 import { issueTrackerDetailText } from "@onicode/client-runtime/state/issue-trackers";
 import { squashAtomCommandFailure } from "@onicode/client-runtime/state/runtime";
 import type {
@@ -216,6 +217,7 @@ export function IssuesScreen(
   const selectDetail = useSelectWorkspaceDetail();
   const selectIssue = (item: EnvironmentIssueEntry) => {
     Keyboard.dismiss();
+    const workspace = issueLinkWorkspace(item.url);
     selectDetail({
       name: "Issue",
       params: {
@@ -225,6 +227,7 @@ export function IssuesScreen(
         host: item.host,
         scope: item.scope,
         issueKey: item.key,
+        ...(workspace === undefined ? {} : { workspace }),
         initialSummary: item,
       },
     });
