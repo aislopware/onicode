@@ -49,6 +49,7 @@ import {
   contextBoundaryOrdinal,
   isScheduledFreshRun,
   readFreshRunUserMessages,
+  runContextBoundaryOrdinal,
   scheduledFreshRunOrdinals,
   startedFreshRun,
 } from "./contextBoundary.ts";
@@ -60,6 +61,7 @@ import {
   estimateTextTokens,
   contextUsageForHandoff,
   historicalMessage,
+  compactionSinceUsage,
   latestNativeContextUsage,
 } from "@onicode/provider-core/server/handoffBudget";
 import { deliverContextHandoffs, withInlineContext } from "./ContextHandoffDelivery.ts";
@@ -1044,6 +1046,15 @@ export const layer: Layer.Layer<
       );
       const handoffContextForThread = (loadedProviderThread: OrchestrationV2ProviderThread) => {
         const measuredContext = latestNativeContextUsage(projection, providerThread);
+        const compaction =
+          measuredContext === undefined
+            ? undefined
+            : compactionSinceUsage(
+                projection.compactions,
+                providerThread.id,
+                measuredContext.reportedAt,
+              );
+        const usageEstimated = compaction !== undefined && compaction.afterTokenCount === undefined;
         const previousSelection =
           measuredContext?.modelSelection ??
           projection.runs.findLast(
@@ -1060,7 +1071,13 @@ export const layer: Layer.Layer<
           providerThread.nativeThreadRef?.nativeId;
         const threadUsage = loadedProviderThread.contextUsage ?? providerThread.contextUsage;
         const previousUsage = measuredContext
-          ? { ...threadUsage, ...measuredContext.usage }
+          ? {
+              ...threadUsage,
+              ...measuredContext.usage,
+              ...(compaction?.afterTokenCount === undefined
+                ? {}
+                : { usedTokens: compaction.afterTokenCount }),
+            }
           : threadUsage;
         const reuseTelemetry =
           sameSelection ||
@@ -1137,7 +1154,11 @@ export const layer: Layer.Layer<
                     (legacyInputRunIds.has(item.runId) &&
                       !coveredItemIds.has(item.id) &&
                       !legacyRecoveredRunIds.has(item.runId)));
-                if (item.runId === run.id || (!acceptedNatively && !deliveredItemIds.has(item.id)))
+                if (
+                  item.runId === run.id ||
+                  (usageEstimated && item.ordinal < compaction.ordinal) ||
+                  (!acceptedNatively && !deliveredItemIds.has(item.id))
+                )
                   return sum;
                 const historical = historicalMessage(item);
                 const nativeAttachments =
@@ -1169,7 +1190,8 @@ export const layer: Layer.Layer<
         const missedRunIds = new Set(missedRuns.map((source) => source.id));
         return {
           sameNativeThread,
-          handoffUsage,
+          // A count from before the compaction would come back as the session's usage.
+          handoffUsage: usageEstimated ? null : handoffUsage,
           deliveredItemIds,
           coveredItemIds,
           acceptedAttempts,
@@ -1178,16 +1200,19 @@ export const layer: Layer.Layer<
           missedRuns,
           missedRunIds,
           budget: Effect.gen(function* () {
+            const usage = budgetProviderThread.contextUsage;
+            const estimate =
+              usage?.usedTokens === undefined || usageEstimated ? yield* nativeContextEstimate : 0;
             return handoffBudget({
               tokenCap,
               modelContextWindow,
               userText: restartNote === "" ? userText : `${restartNote}\n\n${userText}`,
               attachments: providerMessage.attachments,
-              providerThread: budgetProviderThread,
-              nativeContextEstimate:
-                budgetProviderThread.contextUsage?.usedTokens === undefined
-                  ? yield* nativeContextEstimate
-                  : 0,
+              providerThread:
+                usageEstimated && usage != null
+                  ? { ...budgetProviderThread, contextUsage: { ...usage, usedTokens: estimate } }
+                  : budgetProviderThread,
+              nativeContextEstimate: estimate,
             });
           }),
         };
@@ -1267,8 +1292,13 @@ export const layer: Layer.Layer<
           });
           const createdAt = yield* DateTime.now;
           const history = yield* projectionStore.getTurnStartHistory(input.threadId);
-          const boundary = contextBoundaryOrdinal({ runs: projection.runs, turnItems: history });
+          const boundary = runContextBoundaryOrdinal(
+            { runs: projection.runs, turnItems: history },
+            run,
+          );
           const from = Math.max(1, boundary);
+          // A steering restart's earlier attempt received the run's own prompt; only the steer is new.
+          const restarted = attempt.reason === "steering_restart";
           const handoff = yield* contextHandoffService.prepareProviderHandoff({
             threadId: projection.thread.id,
             targetRunId: run.id,
@@ -1277,7 +1307,10 @@ export const layer: Layer.Layer<
             toProviderThreadId: providerThread.id,
             fromProviderInstanceId: providerThread.providerInstanceId,
             toProviderInstanceId: run.providerInstanceId,
-            coveredRunOrdinals: { from, to: Math.max(from, run.ordinal - 1) },
+            coveredRunOrdinals: {
+              from,
+              to: Math.max(from, restarted ? run.ordinal : run.ordinal - 1),
+            },
             strategy: "full_thread_summary",
             runs: projection.runs,
             items: [
@@ -1290,13 +1323,16 @@ export const layer: Layer.Layer<
               ...history.filter((item) =>
                 item.runId === null
                   ? boundary === 0
-                  : projection.runs.some(
-                      (source) =>
-                        source.id === item.runId &&
-                        source.ordinal >= boundary &&
-                        source.ordinal < run.ordinal &&
-                        source.status !== "rolled_back",
-                    ),
+                  : item.runId === run.id
+                    ? restarted &&
+                      !(item.type === "user_message" && item.messageId === run.userMessageId)
+                    : projection.runs.some(
+                        (source) =>
+                          source.id === item.runId &&
+                          source.ordinal >= boundary &&
+                          source.ordinal < run.ordinal &&
+                          source.status !== "rolled_back",
+                      ),
               ),
             ],
             createdAt,

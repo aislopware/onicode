@@ -1,4 +1,5 @@
 import { isListedThreadLineage, type OrchestrationV2ThreadProjection } from "@onicode/contracts";
+import { compactionSinceUsage } from "@onicode/provider-core/server/handoffBudget";
 import { COMPACTION_SUGGESTION_MIN_TOKENS } from "@onicode/shared/claudeCompaction";
 import { derivePendingBackgroundWork } from "@onicode/shared/orchestrationV2PendingBackgroundWork";
 import * as DateTime from "effect/DateTime";
@@ -96,7 +97,12 @@ export function idleCompactionWindow(
     .filter((turn) => turn.providerThreadId === providerThread.id && turn.tokenUsage !== undefined)
     .map((turn) => turn.tokenUsage!)
     .toSorted((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt));
-  if ((usages[0]?.usedTokens ?? 0) < MIN_CONTEXT_TOKENS) return null;
+  const compaction =
+    usages[0] === undefined
+      ? undefined
+      : compactionSinceUsage(turnItems, providerThread.id, usages[0].updatedAt);
+  const usedTokens = compaction === undefined ? usages[0]?.usedTokens : compaction.afterTokenCount;
+  if ((usedTokens ?? 0) < MIN_CONTEXT_TOKENS) return null;
   // A request served fully from cache creates no cache entry and reports no
   // TTL, but it still refreshes the cache. Treat it as unknown and skip.
   const expiresAt = usages[0]?.promptCacheExpiresAt;

@@ -25,10 +25,11 @@ import * as Schema from "effect/Schema";
 import * as ServerSettings from "../serverSettings.ts";
 import * as TextGeneration from "../textGeneration/TextGeneration.ts";
 import {
-  forkContextBoundaryOrdinal,
   forkContextSuperseded,
   readFreshRunUserMessages,
+  runContextBoundaryOrdinal,
 } from "./contextBoundary.ts";
+import { cancelledBeforeStart } from "./RestartBackgroundNote.ts";
 import type { OrchestratorV2Error } from "./Orchestrator.ts";
 import * as ProjectStore from "./ProjectStore.ts";
 import { forkInheritedRunOrdinals, ProjectionStoreThreadNotFoundError } from "./ProjectionStore.ts";
@@ -132,7 +133,7 @@ const make = Effect.gen(function* () {
     forkRun?: OrchestrationV2Run,
   ) =>
     readFreshRunUserMessages(threads, threadId, runs).pipe(
-      Effect.map((turnItems) => forkContextBoundaryOrdinal({ runs, turnItems }, forkRun)),
+      Effect.map((turnItems) => runContextBoundaryOrdinal({ runs, turnItems }, forkRun)),
     );
 
   const messagesThroughRun = Effect.fn("ThreadTitleRegenerationService.messagesThroughRun")(
@@ -150,11 +151,16 @@ const make = Effect.gen(function* () {
         source.runs.filter((run) => run.ordinal <= forkOrdinal),
         source.runs.find((run) => run.id === runId),
       );
+      // A queued message cancelled before it started never joined the conversation.
+      const cancelledRunIds = new Set(
+        source.runs.flatMap((run) => (cancelledBeforeStart(run) ? [run.id] : [])),
+      );
       const messages = source.messages.filter((message) => {
         if (message.streaming) return false;
         if (message.runId === null) {
           return boundary === 0 && source.thread.historyOrigin === "v1_import";
         }
+        if (cancelledRunIds.has(message.runId)) return false;
         const ordinal = ordinals.get(message.runId) ?? Infinity;
         return ordinal >= boundary && ordinal <= forkOrdinal;
       });

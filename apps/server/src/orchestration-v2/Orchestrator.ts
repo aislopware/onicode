@@ -87,6 +87,9 @@ import { modelSwitchSince } from "./modelSwitch.ts";
 import {
   contextBoundaryOrdinal,
   readFreshRunUserMessages,
+  runContextBoundaryOrdinal,
+  scheduledConversationStart,
+  scheduledConversationStarts,
   scheduledFreshRunOrdinals,
 } from "./contextBoundary.ts";
 import { isPlaceholderThreadTitle } from "./placeholderThreadTitle.ts";
@@ -1441,6 +1444,18 @@ function conversationProviderThread(
   );
 }
 
+/** Runs of scheduled fresh sessions, apart from the one `anchorRun` belongs to. */
+function sideConversationRunIds(
+  projection: Pick<OrchestrationV2ThreadProjection, "runs" | "turnItems">,
+  anchorRun: OrchestrationV2Run | null,
+): ReadonlySet<RunId> {
+  const starts = scheduledConversationStarts(projection);
+  const anchorStart = anchorRun === null ? undefined : starts.get(anchorRun.id);
+  return new Set(
+    Array.from(starts).flatMap(([runId, start]) => (start === anchorStart ? [] : [runId])),
+  );
+}
+
 /** Wakes and fresh starts act on the active session; a message continues the conversation. */
 function dispatchProviderThread(
   projection: Pick<
@@ -1502,13 +1517,17 @@ function rootProviderThreadsForProvider(
   providerInstanceId: ModelSelection["instanceId"],
 ): ReadonlyArray<OrchestrationV2ProviderThread> {
   const boundary = contextBoundaryOrdinal(projection);
+  const scheduledFreshOrdinals = scheduledFreshRunOrdinals(projection);
+  // A scheduled fresh session's thread never saw the conversation a message continues.
   return projection.providerThreads
     .filter(
       (providerThread) =>
         providerThread.providerInstanceId === providerInstanceId &&
         providerThread.appThreadId === projection.thread.id &&
         providerThread.ownerNodeId === null &&
-        !providerThreadPredatesBoundary(providerThread, boundary),
+        !providerThreadPredatesBoundary(providerThread, boundary) &&
+        (providerThread.firstRunOrdinal === null ||
+          !scheduledFreshOrdinals.has(providerThread.firstRunOrdinal)),
     )
     .toSorted(
       (left, right) =>
@@ -6568,10 +6587,13 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           strategy: "full_thread_summary",
         }),
       );
-      const existingTargetProviderThread = rootProviderThreadsForProvider(
-        input.projection,
-        input.modelSelection.instanceId,
-      ).find((candidate) => candidate.id !== providerThread.id);
+      // A scheduled fresh run moves to a provider thread of its own, as it started on one.
+      const existingTargetProviderThread =
+        scheduledConversationStart(input.projection, targetRun) === targetRun.ordinal
+          ? undefined
+          : rootProviderThreadsForProvider(input.projection, input.modelSelection.instanceId).find(
+              (candidate) => candidate.id !== providerThread.id,
+            );
       const targetProviderSessionId =
         existingTargetProviderThread?.providerSessionId ??
         (yield* mapDispatchError(input.command)(
@@ -6616,7 +6638,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           type: "provider_handoff",
         }),
       );
-      const contextBoundary = contextBoundaryOrdinal(input.projection);
+      const contextBoundary = runContextBoundaryOrdinal(input.projection, targetRun);
       restartHandoff = yield* contextHandoffService
         .prepareProviderHandoff({
           threadId: input.command.threadId,
@@ -8973,6 +8995,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
               toProviderInstanceId: modelSelection.instanceId,
               coveredRunOrdinals: visibleDeltaRunOrdinals(sourceProjection, sideChatParentItems),
               parentItems: sideChatParentItems,
+              sideConversationRunIds: sideConversationRunIds(sideChatParentContext, anchorRun),
               createdAt: now,
             })
             .pipe(mapDispatchError(command));

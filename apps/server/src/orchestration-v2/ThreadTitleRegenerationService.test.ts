@@ -176,7 +176,7 @@ function recordRun(input: {
   readonly ordinal: number;
   readonly user: string;
   readonly assistant: string;
-  readonly status?: "completed" | "rolled_back";
+  readonly status?: "completed" | "rolled_back" | "cancelled";
   readonly freshContext?: boolean;
 }) {
   return Effect.gen(function* () {
@@ -224,7 +224,7 @@ function recordRun(input: {
             activeAttemptId: null,
             status: input.status ?? "completed",
             requestedAt: now,
-            startedAt: now,
+            startedAt: input.status === "cancelled" ? null : now,
             completedAt: now,
             checkpointId: null,
             contextHandoffId: null,
@@ -292,18 +292,26 @@ function forkSeededSource(prefix: string, sideChat = false, rollbackPriorRun = t
       status: rollbackPriorRun ? "rolled_back" : "completed",
     });
     yield* TestClock.adjust(1);
+    yield* recordRun({
+      threadId: sourceThreadId,
+      runId: RunId.make(`${prefix}:run:cancelled`),
+      ordinal: 2,
+      user: "Queued message removed before it started",
+      assistant: "",
+      status: "cancelled",
+    });
     const forkRunId = RunId.make(`${prefix}:run:1`);
     yield* recordRun({
       threadId: sourceThreadId,
       runId: forkRunId,
-      ordinal: 2,
+      ordinal: 3,
       user: "Move session storage from Redis to Postgres",
       assistant: "Sessions now persist in the Postgres sessions table.",
     });
     yield* recordRun({
       threadId: sourceThreadId,
       runId: RunId.make(`${prefix}:run:2`),
-      ordinal: 3,
+      ordinal: 4,
       user: "Later work the fork never saw",
       assistant: "Done.",
     });
@@ -727,6 +735,7 @@ describe("ThreadTitleRegenerationService", () => {
         assert.include(call?.forkSource?.history, "Sessions now persist in the Postgres");
         assert.notInclude(call?.forkSource?.history, "Later work the fork never saw");
         assert.notInclude(call?.forkSource?.history, "Rolled back attempt");
+        assert.notInclude(call?.forkSource?.history, "Queued message removed before it started");
         const fork = yield* threads.getThreadRecords(forkThreadId, []);
         assert.equal(fork.thread.title, "Generated title");
       }).pipe(Effect.provide(harness.layer));

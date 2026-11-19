@@ -12,6 +12,7 @@ import {
   ProviderTurnId,
   RunId,
   ThreadId,
+  TurnItemId,
 } from "@onicode/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
@@ -163,6 +164,32 @@ describe("idleCompactionWindow", () => {
     const compacted = records(cache);
     compacted.messages = [{ ...compacted.messages[0]!, text: "/compact" }];
     expect(idleCompactionWindow(compacted, NOW_MS)).toBeNull();
+    // Claude compacted on its own after the last usage report, and reported no new count.
+    const autoCompacted = records(cache);
+    const compaction = {
+      id: TurnItemId.make("compaction"),
+      threadId,
+      runId,
+      nodeId: NodeId.make("root-node"),
+      providerThreadId,
+      providerTurnId: null,
+      nativeItemRef: null,
+      parentItemId: null,
+      ordinal: 5,
+      status: "completed",
+      title: "Context compacted",
+      startedAt: at(1),
+      completedAt: at(1),
+      updatedAt: at(1),
+      type: "compaction",
+      driver: ProviderDriverKind.make("claudeAgent"),
+    } as const;
+    autoCompacted.turnItems = [compaction];
+    expect(idleCompactionWindow(autoCompacted, NOW_MS)).toBeNull();
+    autoCompacted.turnItems = [{ ...compaction, afterTokenCount: 199_999 }];
+    expect(idleCompactionWindow(autoCompacted, NOW_MS)).toBeNull();
+    autoCompacted.turnItems = [{ ...compaction, afterTokenCount: 210_000 }];
+    expect(idleCompactionWindow(autoCompacted, NOW_MS)).not.toBeNull();
     const steered = records(cache);
     steered.runs = [
       ...steered.runs,
@@ -282,9 +309,9 @@ describe("IdleCompactionService", () => {
           }),
           Layer.mock(ProjectionStore.ProjectionStoreV2)({
             getThread: () => Effect.succeed(data.thread),
-            getThreadRecords: () =>
+            getThreadRecords: (_threadId, keys) =>
               Effect.sync(() => {
-                historyReads++;
+                if ((keys as ReadonlyArray<string>).includes("runs")) historyReads++;
                 return data;
               }),
           }),

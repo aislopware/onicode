@@ -709,7 +709,13 @@ export interface ProjectionStoreV2Shape {
       | "contextHandoffs"
       | "contextTransfers"
       | "turnItems"
-    > & { readonly hasConversation: boolean },
+    > & {
+      readonly hasConversation: boolean;
+      /** The thread's completed compactions, oldest first. */
+      readonly compactions: ReadonlyArray<
+        Extract<OrchestrationV2TurnItem, { readonly type: "compaction" }>
+      >;
+    },
     ProjectionStoreV2Error
   >;
   readonly getTurnStartHistory: (
@@ -5510,6 +5516,23 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
               WHERE bindings.thread_id = ${threadId}
               ORDER BY sessions.updated_at ASC, sessions.provider_session_id ASC
             `.pipe(Effect.flatMap(decodeRows(decodeProviderSessionPayload, threadId)));
+            const compactions = yield* sql<PayloadRow>`
+              SELECT payload_json FROM orchestration_v2_projection_turn_items
+              -- A thread has few compactions; the ordinal index would walk its whole history.
+              INDEXED BY orchestration_v2_projection_turn_items_thread_type_idx
+              WHERE thread_id = ${threadId} AND type = 'compaction' AND status = 'completed'
+              ORDER BY ordinal ASC, turn_item_id ASC
+            `.pipe(
+              Effect.flatMap(decodeRows(decodeTurnItemPayload, threadId)),
+              Effect.map((items) =>
+                items.filter(
+                  (
+                    item,
+                  ): item is Extract<OrchestrationV2TurnItem, { readonly type: "compaction" }> =>
+                    item.type === "compaction",
+                ),
+              ),
+            );
             const run = runs.find((source) => source.id === runId);
             const unsentSource = unsentManualContinuationSource(run, {
               runs,
@@ -5554,6 +5577,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
               contextHandoffs,
               contextTransfers,
               turnItems,
+              compactions,
             };
           }),
         )

@@ -1637,6 +1637,7 @@ it.effect.each<{
     readonly scheduled?: boolean;
     /** The ordinal of the run whose provider thread this one continues. */
     readonly continuesRun?: number;
+    readonly text?: string;
   }>;
   readonly kept: ReadonlyArray<string>;
   readonly dropped: ReadonlyArray<string>;
@@ -1678,6 +1679,21 @@ it.effect.each<{
       "GRANDPARENT_MARKER",
     ],
     dropped: [],
+  },
+  {
+    name: "whose scheduled fresh sessions outgrew the digest",
+    runs: [
+      { stable: true },
+      ...Array.from({ length: 40 }, (_, index) => ({
+        stable: true,
+        freshContext: true,
+        scheduled: true,
+        text: `SCHEDULED_REPORT_${index} ${"x".repeat(300)}`,
+      })),
+    ],
+    // The main conversation comes before older schedule output; the anchored report stays.
+    kept: ["PARENT_RUN_1_MARKER", "SCHEDULED_REPORT_39 "],
+    dropped: ["SCHEDULED_REPORT_0 "],
   },
 ])("a side chat of a parent $name starts from the parent's main thread", (testCase) =>
   Effect.gen(function* () {

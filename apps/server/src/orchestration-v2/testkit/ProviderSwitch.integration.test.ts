@@ -4902,6 +4902,407 @@ describe("orchestration v2 provider switching", () => {
       }),
   );
 
+  it.live.each(["return", "steer", "restart"] as const)(
+    "keeps a scheduled fresh session's thread apart from the conversation on a provider %s",
+    (path) =>
+      Effect.gen(function* () {
+        const name = `scheduled-fresh-provider-${path}`;
+        const cwd = yield* checkpointWorkspace(name);
+        const capturedTurns = yield* Ref.make<ReadonlyArray<CapturedTurn>>([]);
+        const started = yield* Deferred.make<void>();
+        const failResumeOnce = yield* Ref.make(false);
+        // Another Codex account resumes the same native history after a session restart.
+        const alternateSelection: ModelSelection = {
+          ...CODEX_MODEL_SELECTION,
+          instanceId: ProviderInstanceId.make("codex-alternate"),
+        };
+        const adapters = [
+          makeTestAdapter({
+            instanceId: CLAUDE_MODEL_SELECTION.instanceId,
+            driver: CLAUDE_DRIVER,
+            capabilities: ClaudeProviderCapabilitiesV2,
+            modelSelection: CLAUDE_MODEL_SELECTION,
+            responseByRunOrdinal: {},
+            capturedTurns,
+            nativeThreadGeneration: yield* Ref.make(0),
+          }),
+          makeTestAdapter({
+            instanceId: CODEX_MODEL_SELECTION.instanceId,
+            driver: CODEX_DRIVER,
+            capabilities: CodexProviderCapabilitiesV2,
+            modelSelection: CODEX_MODEL_SELECTION,
+            responseByRunOrdinal: {},
+            capturedTurns,
+            // Claude queues a steer that switches provider; Codex restarts its turn for one.
+            ...(path === "return" ? {} : { holdFirstTurn: started, holdRunOrdinal: 2 }),
+          }),
+          makeTestAdapter({
+            instanceId: alternateSelection.instanceId,
+            driver: CODEX_DRIVER,
+            capabilities: CodexProviderCapabilitiesV2,
+            modelSelection: alternateSelection,
+            responseByRunOrdinal: {},
+            capturedTurns,
+            failResumeOnce,
+          }),
+        ];
+        const layerRegistry = Layer.succeed(
+          ProviderAdapterRegistry.ProviderAdapterRegistryV2,
+          ProviderAdapterRegistry.ProviderAdapterRegistryV2.of({
+            get: (instanceId) => {
+              const adapter = adapters.find((candidate) => candidate.instanceId === instanceId);
+              return adapter === undefined
+                ? Effect.fail(
+                    new ProviderAdapterRegistry.ProviderAdapterRegistryLookupError({ instanceId }),
+                  )
+                : Effect.succeed(adapter);
+            },
+            list: () => Effect.succeed(adapters.map((adapter) => adapter.instanceId)),
+            getMetadata: (instanceId) => {
+              const adapter = adapters.find((candidate) => candidate.instanceId === instanceId);
+              return adapter === undefined
+                ? Effect.fail(
+                    new ProviderAdapterRegistry.ProviderAdapterRegistryLookupError({ instanceId }),
+                  )
+                : Effect.succeed({
+                    driver: adapter.driver,
+                    continuationKey:
+                      adapter.driver === CODEX_DRIVER
+                        ? "codex:shared-native-account-history"
+                        : `${adapter.driver}:${instanceId}`,
+                    enabled: true,
+                    capabilities:
+                      adapter.driver === CODEX_DRIVER
+                        ? CodexProviderCapabilitiesV2
+                        : ClaudeProviderCapabilitiesV2,
+                  });
+            },
+          }),
+        );
+        // The user's provider, which runs the schedule; the steer moves the schedule to the other.
+        const home = path === "return" ? CLAUDE_MODEL_SELECTION : CODEX_MODEL_SELECTION;
+        const homeDriver = path === "return" ? CLAUDE_DRIVER : CODEX_DRIVER;
+        const threadId = ThreadId.make(`thread:${name}`);
+        yield* Effect.gen(function* () {
+          const orchestrator = yield* Orchestrator.OrchestratorV2;
+          const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+          const eventSink = yield* EventSink.EventSinkV2;
+          const dispatch = (
+            key: string,
+            modelSelection: ModelSelection,
+            options: Partial<
+              Pick<
+                Extract<OrchestrationV2Command, { readonly type: "message.dispatch" }>,
+                "dispatchMode" | "scheduledTaskId" | "freshContext"
+              >
+            > = {},
+          ) =>
+            orchestrator.dispatch({
+              type: "message.dispatch",
+              createdBy: "user",
+              creationSource: "web",
+              commandId: CommandId.make(`command:${name}:${key}`),
+              threadId,
+              messageId: MessageId.make(`message:${name}:${key}`),
+              text: key,
+              attachments: [],
+              modelSelection,
+              dispatchMode: { type: "queue_after_active" },
+              ...options,
+            });
+          const settle = Effect.gen(function* () {
+            yield* worker.drain();
+            yield* waitForIdle(threadId);
+          });
+          yield* orchestrator.dispatch({
+            type: "thread.create",
+            createdBy: "user",
+            creationSource: "web",
+            commandId: CommandId.make(`command:${name}:create`),
+            threadId,
+            projectId: ProjectId.make(`project:${name}`),
+            title: "Scheduled fresh session beside the conversation",
+            modelSelection: home,
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            branch: null,
+            worktreePath: cwd,
+          });
+          yield* dispatch("user-first", home);
+          yield* settle;
+          const scheduled = {
+            scheduledTaskId: ScheduledTaskId.make(name),
+            freshContext: true,
+          } as const;
+          const turnFor = (text: string) =>
+            Ref.get(capturedTurns).pipe(
+              Effect.map((turns) => turns.find((turn) => turn.text.endsWith(text))!),
+            );
+          if (path === "return") {
+            yield* dispatch("scheduled", CLAUDE_MODEL_SELECTION, scheduled);
+            yield* settle;
+            yield* dispatch("on-codex", CODEX_MODEL_SELECTION);
+            yield* settle;
+            yield* dispatch("back-on-claude", CLAUDE_MODEL_SELECTION);
+            yield* settle;
+            const back = yield* turnFor("back-on-claude");
+            // The schedule's native session never saw the user's first message.
+            assert.equal(back.nativeThreadId, (yield* turnFor("user-first")).nativeThreadId);
+            assert.include(back.text, "on-codex");
+            return;
+          }
+          yield* dispatch("scheduled", home, {
+            ...scheduled,
+            dispatchMode: { type: "start_immediately" },
+          });
+          yield* Deferred.await(started);
+          yield* worker.drain();
+          const running = (yield* orchestrator.getThreadProjection(threadId)).runs.at(-1)!;
+          const now = yield* DateTime.now;
+          const providerTurn = {
+            id: ProviderTurnId.make(`provider-turn:${name}:scheduled`),
+            providerThreadId: running.providerThreadId!,
+            nodeId: running.rootNodeId!,
+            runAttemptId: running.activeAttemptId!,
+            nativeTurnRef: null,
+            ordinal: 1,
+            status: "running" as const,
+            startedAt: now,
+            completedAt: null,
+          };
+          yield* eventSink.write({
+            events: [
+              {
+                id: EventId.make(`event:${name}:scheduled-running`),
+                type: "provider-turn.updated",
+                threadId,
+                runId: running.id,
+                nodeId: running.rootNodeId!,
+                driver: homeDriver,
+                providerInstanceId: home.instanceId,
+                occurredAt: now,
+                payload: providerTurn,
+              },
+            ],
+          });
+          const restartedCompleted = yield* orchestrator.streamStoredEvents.pipe(
+            Stream.filter(
+              ({ event }) =>
+                event.type === "run.updated" &&
+                event.runId === running.id &&
+                event.payload.status === "completed",
+            ),
+            Stream.runHead,
+            Effect.forkScoped,
+          );
+          // The other account's new session cannot resume the history, so it recovers from a summary.
+          if (path === "restart") yield* Ref.set(failResumeOnce, true);
+          const steerText = path === "steer" ? "steer-to-claude" : "steer-to-other-account";
+          yield* dispatch(
+            steerText,
+            path === "steer" ? CLAUDE_MODEL_SELECTION : alternateSelection,
+            { dispatchMode: { type: "steer_active", targetRunId: running.id } },
+          );
+          const steered = yield* orchestrator.getThreadProjection(threadId);
+          const attempt = steered.attempts.find((source) => source.id === running.activeAttemptId)!;
+          const interruptedAt = yield* DateTime.now;
+          yield* eventSink.write({
+            events: [
+              {
+                id: EventId.make(`event:${name}:scheduled-interrupted`),
+                type: "provider-turn.updated",
+                threadId,
+                runId: running.id,
+                nodeId: running.rootNodeId!,
+                driver: homeDriver,
+                providerInstanceId: home.instanceId,
+                occurredAt: interruptedAt,
+                payload: { ...providerTurn, status: "interrupted", completedAt: interruptedAt },
+              },
+              {
+                id: EventId.make(`event:${name}:scheduled-attempt-interrupted`),
+                type: "run-attempt.updated",
+                threadId,
+                runId: running.id,
+                nodeId: running.rootNodeId!,
+                providerInstanceId: home.instanceId,
+                occurredAt: interruptedAt,
+                payload: { ...attempt, status: "interrupted", completedAt: interruptedAt },
+              },
+            ],
+          });
+          yield* worker.drain();
+          yield* Fiber.join(restartedCompleted);
+          const restarted = yield* turnFor(steerText);
+          assert.equal(restarted.driver, path === "steer" ? CLAUDE_DRIVER : CODEX_DRIVER);
+          // The handoff carries the schedule's own prompt, not the user's chat before it.
+          assert.include(restarted.text, "]\nscheduled\n");
+          assert.notInclude(restarted.text, "]\nuser-first\n");
+          if (path === "restart") {
+            assert.isFalse(yield* Ref.get(failResumeOnce));
+            return;
+          }
+          // The user's next Claude message continues their conversation, not the schedule's.
+          yield* dispatch("user-on-claude", CLAUDE_MODEL_SELECTION);
+          yield* settle;
+          assert.notEqual(
+            (yield* turnFor("user-on-claude")).providerThreadId,
+            restarted.providerThreadId,
+          );
+        }).pipe(
+          Effect.scoped,
+          Effect.provide(
+            ProviderReplayHarness.layerWithRegistry(
+              {
+                name,
+                runtimePolicyOverride: {
+                  cwd,
+                  approvalPolicy: "never",
+                  sandboxPolicy: {
+                    type: "readOnly",
+                    access: { type: "fullAccess" },
+                    networkAccess: false,
+                  },
+                },
+              },
+              layerRegistry,
+            ),
+          ),
+        );
+      }),
+  );
+
+  it.live("returns to a native session that compacted after its last reported usage", () =>
+    Effect.gen(function* () {
+      const name = "compacted-since-usage";
+      const capturedTurns = yield* Ref.make<ReadonlyArray<CapturedTurn>>([]);
+      const generation = yield* Ref.make(0);
+      const layerRegistry = ProviderAdapterRegistry.layerFromAdapters([
+        makeTestAdapter({
+          instanceId: CLAUDE_MODEL_SELECTION.instanceId,
+          driver: CLAUDE_DRIVER,
+          capabilities: ClaudeProviderCapabilitiesV2,
+          modelSelection: CLAUDE_MODEL_SELECTION,
+          responseByRunOrdinal: {},
+          capturedTurns,
+          nativeThreadGeneration: generation,
+          getModelContextWindow: () => 32_000,
+          tokenUsageByRunOrdinal: { 1: { usedTokens: 30_000, maxTokens: 32_000 } },
+        }),
+        makeTestAdapter({
+          instanceId: CODEX_MODEL_SELECTION.instanceId,
+          driver: CODEX_DRIVER,
+          capabilities: CodexProviderCapabilitiesV2,
+          modelSelection: CODEX_MODEL_SELECTION,
+          responseByRunOrdinal: {},
+          capturedTurns,
+        }),
+      ]);
+      const threadId = ThreadId.make(`thread:${name}`);
+      yield* Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+        const eventSink = yield* EventSink.EventSinkV2;
+        const send = (key: string, modelSelection: ModelSelection) =>
+          Effect.gen(function* () {
+            yield* orchestrator.dispatch({
+              type: "message.dispatch",
+              createdBy: "user",
+              creationSource: "web",
+              commandId: CommandId.make(`command:${name}:${key}`),
+              threadId,
+              messageId: MessageId.make(`message:${name}:${key}`),
+              text: key,
+              attachments: [],
+              modelSelection,
+              dispatchMode: { type: "queue_after_active" },
+            });
+            yield* worker.drain();
+            yield* waitForIdle(threadId);
+          });
+        yield* orchestrator.dispatch({
+          type: "thread.create",
+          createdBy: "user",
+          creationSource: "web",
+          commandId: CommandId.make(`command:${name}:create`),
+          threadId,
+          projectId: ProjectId.make(`project:${name}`),
+          title: "Compacted since its usage",
+          modelSelection: CLAUDE_MODEL_SELECTION,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: null,
+        });
+        yield* send("claude-first", CLAUDE_MODEL_SELECTION);
+        // The session compacts after its last usage report and reports no new count.
+        const first = yield* orchestrator.getThreadProjection(threadId);
+        const run = first.runs.at(-1)!;
+        const compactedAt = DateTime.add(yield* DateTime.now, { seconds: 1 });
+        yield* eventSink.write({
+          events: [
+            {
+              id: EventId.make(`event:${name}:compaction`),
+              type: "turn-item.updated",
+              threadId,
+              runId: run.id,
+              nodeId: run.rootNodeId!,
+              occurredAt: compactedAt,
+              payload: {
+                id: TurnItemId.make(`item:${name}:compaction`),
+                threadId,
+                runId: run.id,
+                nodeId: run.rootNodeId,
+                providerThreadId: run.providerThreadId,
+                providerTurnId: null,
+                nativeItemRef: null,
+                parentItemId: null,
+                ordinal: Math.max(...first.turnItems.map((item) => item.ordinal)) + 1,
+                status: "completed",
+                title: null,
+                startedAt: compactedAt,
+                completedAt: compactedAt,
+                updatedAt: compactedAt,
+                type: "compaction",
+                driver: CLAUDE_DRIVER,
+              },
+            },
+          ],
+        });
+        yield* send("on-codex", CODEX_MODEL_SELECTION);
+        yield* send("back-on-claude", CLAUDE_MODEL_SELECTION);
+        const turns = yield* Ref.get(capturedTurns);
+        const back = turns.find((turn) => turn.text.endsWith("back-on-claude"))!;
+        // The pre-compaction count left no room for the Codex turn, which replaced the session.
+        assert.equal(yield* Ref.get(generation), 1);
+        assert.equal(
+          back.nativeThreadId,
+          turns.find((turn) => turn.text.endsWith("claude-first"))!.nativeThreadId,
+        );
+        assert.include(back.text, "on-codex");
+        const projection = yield* orchestrator.getThreadProjection(threadId);
+        assert.isNull(
+          projection.providerThreads.find((thread) => thread.id === run.providerThreadId)!
+            .contextUsage ?? null,
+        );
+      }).pipe(
+        Effect.provide(
+          ProviderReplayHarness.layerWithRegistry(
+            {
+              name,
+              runtimePolicyOverride: {
+                cwd: process.cwd(),
+                approvalPolicy: "never",
+                sandboxPolicy: { type: "readOnly" },
+              },
+            },
+            layerRegistry,
+          ),
+        ),
+      );
+    }),
+  );
+
   it.live("keeps the thread a queued fresh run reserved for that run", () =>
     Effect.gen(function* () {
       const cwd = yield* checkpointWorkspace("fresh-context-reserved");
