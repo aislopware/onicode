@@ -73,6 +73,8 @@ const TAP_SLOP_PX = 8;
 const MULTI_CLICK_MS = 500;
 const MULTI_CLICK_SLOP_PX = 4;
 const WHEEL_LINE_PX = 16;
+// The server answers a new viewer with a still within seconds, so silence means Chromium is not painting.
+const NO_FRAME_TIMEOUT_MS = 10_000;
 
 type MouseInput = Extract<PreviewStreamInput, { type: "mouse" }>;
 type WheelInput = Extract<PreviewStreamInput, { type: "wheel" }>;
@@ -245,6 +247,7 @@ export function ServerBrowserSurface(props: {
    */
   readonly controlSlot?: HTMLElement | null;
   readonly onFirstFrame?: () => void;
+  readonly onNoFrames?: () => void;
   readonly onViewport?: (viewport: PreviewStreamViewport) => void;
   readonly onControl?: (control: PreviewStreamControl | null) => void;
   readonly onPopup?: (tabId: string) => void;
@@ -260,6 +263,7 @@ export function ServerBrowserSurface(props: {
     followSize = true,
     controlSlot,
     onFirstFrame,
+    onNoFrames,
     onViewport,
     onControl,
     onPopup,
@@ -314,6 +318,8 @@ export function ServerBrowserSurface(props: {
   const probeRef = useRef<TouchProbe | null>(null);
   const lastProbeRef = useRef<{ x: number; y: number; editable: boolean; at: number } | null>(null);
   const firstFrame = useEffectEvent(() => onFirstFrame?.());
+  const noFrames = useEffectEvent(() => onNoFrames?.());
+  const [framesStalled, setFramesStalled] = useState(false);
   const viewportChanged = useEffectEvent((viewport: PreviewStreamViewport) =>
     onViewport?.(viewport),
   );
@@ -469,9 +475,16 @@ export function ServerBrowserSurface(props: {
     const canvas = canvasRef.current;
     if (!visible || accessDenied || hostSetup || !access || !cap || !canvas) return;
     let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+    let noFrameTimer: ReturnType<typeof setTimeout> | null = null;
+    const clearNoFrameTimer = () => {
+      if (noFrameTimer !== null) clearTimeout(noFrameTimer);
+      noFrameTimer = null;
+    };
     const painter = createPreviewFramePainter(canvas, () => {
       if (hasFrameRef.current) return;
       hasFrameRef.current = true;
+      clearNoFrameTimer();
+      setFramesStalled(false);
       firstFrame();
     });
     const client = createPreviewStreamClient(
@@ -523,7 +536,15 @@ export function ServerBrowserSurface(props: {
           }
         },
         onConnectedChange: (connected) => {
-          if (connected) return;
+          clearNoFrameTimer();
+          if (connected) {
+            if (!hasFrameRef.current)
+              noFrameTimer = setTimeout(() => {
+                setFramesStalled(true);
+                noFrames();
+              }, NO_FRAME_TIMEOUT_MS);
+            return;
+          }
           setFileChooser(null);
           controlRef.current = null;
           setControl(null);
@@ -548,6 +569,7 @@ export function ServerBrowserSurface(props: {
     clientRef.current = client;
     return () => {
       painter.stop();
+      clearNoFrameTimer();
       if (refreshTimer !== null) clearTimeout(refreshTimer);
       client.stop();
       if (clientRef.current === client) clientRef.current = null;
@@ -931,6 +953,16 @@ export function ServerBrowserSurface(props: {
             if (text) send({ type: "text", text });
           }}
         />
+        {visible && framesStalled && !pdfUrl ? (
+          <div className="absolute inset-0 flex items-center justify-center bg-background p-4 text-center">
+            <p role="alert" className="max-w-sm text-sm text-muted-foreground">
+              <T>
+                The server's browser loaded this page but is not drawing it. Try reloading, or open
+                the page in a browser on this computer.
+              </T>
+            </p>
+          </div>
+        ) : null}
         {fileChooser && control?.controller === "you" ? (
           <div
             className="absolute inset-x-2 top-2 z-10 flex flex-col gap-2 rounded-lg border border-border bg-background p-3 shadow-popup dark:shadow-popup-dark"
