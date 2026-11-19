@@ -11,7 +11,7 @@ import { resolveSelfInvocation, selfInvocationArgs } from "@onicode/shared/nodeR
 import * as CodexInstallation from "./CodexInstallation.ts";
 import { makeCodexChatGptAuth } from "./CodexChatGptAuth.ts";
 import { COMMAND_TIMEOUT_MS } from "./CodexManagedTokenProtocol.ts";
-import { materializeCodexShadowHome } from "./Drivers/CodexHomeLayout.ts";
+import { codexHomeLaunchArgs, materializeCodexShadowHome } from "./Drivers/CodexHomeLayout.ts";
 
 export interface CodexEffectiveRuntime {
   readonly config: CodexSettings;
@@ -122,7 +122,11 @@ export const makeCodexManagedRuntime = Effect.fn("makeCodexManagedRuntime")(func
         setupMode: "managed",
         binaryPath: executable.executablePath,
         homePath,
-        launchArgs: managedCodexLaunchArgs(invocation.command, authArgs),
+        launchArgs: codexHomeLaunchArgs(
+          path,
+          homeLayout,
+          managedCodexLaunchArgs(invocation.command, authArgs),
+        ),
       }),
       environment,
       revision: profileKey,
