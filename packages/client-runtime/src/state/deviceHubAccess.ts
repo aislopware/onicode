@@ -18,6 +18,21 @@ export { type DeviceHubAccess, withDeviceHubQuery } from "../device/hubAccess.ts
 
 const TICKET_TIMEOUT_MS = 8_000;
 
+/** Reusable across media requests until it expires. */
+export const mintMediaTicket = Effect.fn("clientRuntime.state.mintMediaTicket")(function* (
+  prepared: PreparedConnection,
+) {
+  return yield* executeAuthenticatedEnvironmentHttpRequest({
+    prepared,
+    group: "auth",
+    method: "POST",
+    url: (urls) => urls.webSocketTicketFor({ params: { use: "media" } }),
+    timeoutMs: TICKET_TIMEOUT_MS,
+    request: ({ client, headers }) =>
+      client.webSocketTicketFor({ headers, params: { use: "media" } }),
+  });
+});
+
 export const resolveDeviceHubAccess = Effect.fn("clientRuntime.state.resolveDeviceHubAccess")(
   function* (input: {
     readonly prepared: PreparedConnection;
@@ -25,15 +40,7 @@ export const resolveDeviceHubAccess = Effect.fn("clientRuntime.state.resolveDevi
   }): Effect.fn.Return<DeviceHubAccess, RemoteEnvironmentRequestError, HttpClient.HttpClient> {
     const httpBase = environmentEndpointUrl(input.prepared.httpBaseUrl, input.hubBasePath);
     const wsBase = httpBase.replace(/^http/, "ws");
-    const ticket = yield* executeAuthenticatedEnvironmentHttpRequest({
-      prepared: input.prepared,
-      group: "auth",
-      method: "POST",
-      url: (urls) => urls.webSocketTicketFor({ params: { use: "media" } }),
-      timeoutMs: TICKET_TIMEOUT_MS,
-      request: ({ client, headers }) =>
-        client.webSocketTicketFor({ headers, params: { use: "media" } }),
-    });
+    const ticket = yield* mintMediaTicket(input.prepared);
     return {
       httpBase,
       wsBase,

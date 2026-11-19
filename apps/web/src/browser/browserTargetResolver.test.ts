@@ -11,34 +11,35 @@ describe("browser target resolver", () => {
 
   it("refuses public relay hosts until the authenticated gateway exists", async () => {
     readPreparedConnection.mockReturnValue({ httpBaseUrl: "https://relay.example.com" });
-    const { resolveDiscoveredServerUrl } = await import("./browserTargetResolver");
+    const { resolveExternalServerUrl } = await import("./browserTargetResolver");
     expect(
-      resolveDiscoveredServerUrl(EnvironmentId.make("environment-1"), "http://localhost:5173"),
+      resolveExternalServerUrl(EnvironmentId.make("environment-1"), "http://localhost:5173"),
     ).toBe("http://localhost:5173");
   });
 
   it("normalizes schemeless localhost server-picker values", async () => {
     readPreparedConnection.mockReturnValue({ httpBaseUrl: "http://localhost:3773" });
-    const { resolveDiscoveredServerUrl } = await import("./browserTargetResolver");
-    expect(resolveDiscoveredServerUrl(EnvironmentId.make("environment-1"), "localhost:5173")).toBe(
+    const { resolveExternalServerUrl } = await import("./browserTargetResolver");
+    expect(resolveExternalServerUrl(EnvironmentId.make("environment-1"), "localhost:5173")).toBe(
       "http://localhost:5173/",
     );
-    expect(
-      resolveDiscoveredServerUrl(EnvironmentId.make("environment-1"), "0.0.0.0:3000/app"),
-    ).toBe("http://localhost:3000/app");
+    expect(resolveExternalServerUrl(EnvironmentId.make("environment-1"), "0.0.0.0:3000/app")).toBe(
+      "http://localhost:3000/app",
+    );
   });
 
   it("maps discovered loopback servers onto a remote environment host", async () => {
     readPreparedConnection.mockReturnValue({ httpBaseUrl: "http://192.168.1.25:3773" });
-    const { resolveDiscoveredServerUrl } = await import("./browserTargetResolver");
+    const { resolveExternalServerUrl } = await import("./browserTargetResolver");
     expect(
-      resolveDiscoveredServerUrl(EnvironmentId.make("environment-1"), "localhost:3000/app"),
+      resolveExternalServerUrl(EnvironmentId.make("environment-1"), "localhost:3000/app"),
     ).toBe("http://192.168.1.25:3000/app");
   });
 
   it("keeps localhost for servers on the desktop's own WSL or primary backend", async () => {
     // WSL NAT advertises a distro IP, but loopback-bound servers only answer on localhost.
-    const { resolveDiscoveredServerUrl } = await import("./browserTargetResolver");
+    const { resolveDiscoveredServerUrl, resolveExternalServerUrl } =
+      await import("./browserTargetResolver");
     for (const target of [
       { _tag: "BearerConnectionTarget", connectionId: "local:wsl:Ubuntu" },
       { _tag: "PrimaryConnectionTarget" },
@@ -52,7 +53,11 @@ describe("browser target resolver", () => {
       httpBaseUrl: "http://192.168.1.25:3773",
       target: { _tag: "BearerConnectionTarget", connectionId: "saved:remote" },
     });
+    // The webview's partition tunnels to the environment; the system browser has no tunnel.
     expect(resolveDiscoveredServerUrl(EnvironmentId.make("environment-1"), "localhost:3001/")).toBe(
+      "http://localhost:3001/",
+    );
+    expect(resolveExternalServerUrl(EnvironmentId.make("environment-1"), "localhost:3001/")).toBe(
       "http://192.168.1.25:3001/",
     );
   });
