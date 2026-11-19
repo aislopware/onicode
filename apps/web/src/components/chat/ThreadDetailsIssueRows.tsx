@@ -6,7 +6,7 @@ import type { MouseEvent } from "react";
 import { cn } from "~/lib/utils";
 import { useRightPanelStore } from "~/rightPanelStore";
 import { useServerConfigs } from "~/state/entities";
-import { useLinkedIssueDetail } from "~/state/issues";
+import { useLinkedIssueSummary } from "~/state/issues";
 
 import {
   IssueGlyph,
@@ -37,7 +37,7 @@ function LinkedIssueRow({
 }) {
   const gt = useGT();
   const configs = useServerConfigs();
-  const detail = useLinkedIssueDetail(threadRef.environmentId, link, mountScope);
+  const detail = useLinkedIssueSummary(threadRef.environmentId, link, mountScope);
   const trackerPresentation = issueTrackerPresentation(link.tracker);
   const state = detail === null ? null : issueStatePresentation(detail.state);
   const Icon = state?.Icon ?? IssueGlyph.issue;

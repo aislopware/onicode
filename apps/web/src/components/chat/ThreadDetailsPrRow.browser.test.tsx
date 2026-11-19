@@ -48,7 +48,7 @@ vi.mock(import("~/state/entities"), async (importOriginal) => ({
   useQuietThreadShell: ((ref: unknown) =>
     ref === null ? null : { branch: null, pullRequests: state.pullRequests }) as never,
 }));
-vi.mock(import("~/state/issues"), () => ({ useLinkedIssueDetail: () => null }));
+vi.mock(import("~/state/issues"), () => ({ useLinkedIssueSummary: () => null }));
 
 const queryData = () => ({
   projectId: ProjectId.make("project"),

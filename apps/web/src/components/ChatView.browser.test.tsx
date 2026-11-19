@@ -8,6 +8,7 @@ import {
   ThreadId,
   WS_METHODS,
   type IssueDetail,
+  type IssueSummary,
   type IssueRef,
   type ThreadIssueLink,
 } from "@onicode/contracts";
@@ -154,48 +155,71 @@ it("opens a linked Linear issue from an inactive thread's sidebar badge", async 
   };
   using _environment = installFakeEnvironment([first, { ...linked, issues: [issue] }]);
   const liveTitle = "Add keyboard shortcuts to the sidebar";
+  const liveDetail = {
+    ...issue,
+    title: liveTitle,
+    author: { login: "sam", name: null, avatarUrl: null },
+    state: { category: "open", name: "Open" },
+    createdAt: issue.linkedAt,
+    updatedAt: issue.linkedAt,
+    closedAt: null,
+    assignees: [],
+    labels: [],
+    commentCount: 3,
+    projectTitle: "render",
+    writable: false,
+    capabilities: {
+      create: false,
+      edit: false,
+      comment: false,
+      labels: false,
+      assignees: false,
+      reactions: false,
+      templates: false,
+      linkedPullRequests: false,
+      events: false,
+      search: false,
+    },
+    viewerPermissions: {
+      setState: false,
+      comment: false,
+      edit: false,
+      labels: false,
+      assignees: false,
+    },
+    states: [],
+    viewer: null,
+    body: "",
+    comments: [],
+    commentsCursor: null,
+    events: [],
+    linkedPullRequests: [],
+  } satisfies IssueDetail;
+  // Rows read the light summary; the panel the row opens reads the detail.
+  using _summary = answerRpc(WS_METHODS.issuesSummary, (input: IssueRef) => {
+    expect(input).toEqual(issueRef);
+    const summary: IssueSummary = {
+      tracker: liveDetail.tracker,
+      host: liveDetail.host,
+      scope: liveDetail.scope,
+      key: liveDetail.key,
+      displayKey: liveDetail.displayKey,
+      title: liveDetail.title,
+      url: liveDetail.url,
+      author: liveDetail.author,
+      state: liveDetail.state,
+      createdAt: liveDetail.createdAt,
+      updatedAt: liveDetail.updatedAt,
+      closedAt: liveDetail.closedAt,
+      assignees: liveDetail.assignees,
+      labels: liveDetail.labels,
+      commentCount: liveDetail.commentCount,
+    };
+    return Effect.succeed(summary);
+  });
   using _detail = answerRpc(WS_METHODS.issuesDetail, (input: IssueRef) => {
     expect(input).toEqual(issueRef);
-    return Effect.succeed({
-      ...issue,
-      title: liveTitle,
-      author: { login: "sam", name: null, avatarUrl: null },
-      state: { category: "open", name: "Open" },
-      createdAt: issue.linkedAt,
-      updatedAt: issue.linkedAt,
-      closedAt: null,
-      assignees: [],
-      labels: [],
-      commentCount: 3,
-      projectTitle: "render",
-      writable: false,
-      capabilities: {
-        create: false,
-        edit: false,
-        comment: false,
-        labels: false,
-        assignees: false,
-        reactions: false,
-        templates: false,
-        linkedPullRequests: false,
-        events: false,
-        search: false,
-      },
-      viewerPermissions: {
-        setState: false,
-        comment: false,
-        edit: false,
-        labels: false,
-        assignees: false,
-      },
-      states: [],
-      viewer: null,
-      body: "",
-      comments: [],
-      commentsCursor: null,
-      events: [],
-      linkedPullRequests: [],
-    } satisfies IssueDetail);
+    return Effect.succeed(liveDetail);
   });
   __setClientSettingsForTests({
     ...DEFAULT_CLIENT_SETTINGS,

@@ -78,7 +78,7 @@ import { useThreadSelectionStore } from "../../threadSelectionStore";
 import { useNowMinute } from "../../hooks/useNowMinute";
 import { useNowSecond } from "../../hooks/useNowSecond";
 import { vcsEnvironment, vcsBranchRevalidation } from "../../state/vcs";
-import { useLinkedIssueDetail } from "../../state/issues";
+import { useLinkedIssueSummary } from "../../state/issues";
 import { useEnvironmentQuery } from "../../state/query";
 import { readEnvironmentScope, useEnvironmentScope } from "../../state/session";
 import { formatRelativeTime, parseTimestampDate } from "../../timestampFormat";
@@ -1128,7 +1128,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     ) : null;
   const firstIssue = thread.issues?.[0];
   const issueCount = thread.issues?.length ?? 0;
-  const issueDetail = useLinkedIssueDetail(
+  const issueDetail = useLinkedIssueSummary(
     thread.environmentId,
     leaseLiveStatus && issueCount === 1 ? firstIssue : undefined,
     "sidebar",
