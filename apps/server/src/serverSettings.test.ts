@@ -2589,6 +2589,16 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
         yield* service.updateSettings({ enableAgentDeviceAccess: false, defaultAutoPull: true });
         assert.isTrue((yield* service.getSettings).defaultAutoPull);
 
+        // A per-key write is vetted on the keys it sets, so re-sending the stored value is refused.
+        const keyRejected = yield* service
+          .updateSettings({
+            projectSettingsOverrideKeys: {
+              [projectId]: { set: { enableAgentDeviceAccess: true } },
+            },
+          })
+          .pipe(Effect.flip);
+        assert.equal(keyRejected.managedSetting, "enableAgentDeviceAccess");
+
         // A project's defaults write keeps its stored locked value instead of being refused for it.
         yield* service.updateProjectSettingsOverride(projectId, { defaultAutoPull: true });
 

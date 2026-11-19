@@ -268,8 +268,9 @@ export const make = Effect.gen(function* () {
 
   const commit = Effect.fn("ProjectService.commit")(function* (
     command: ProjectCommand,
-    // Runs under the project lock only when this command's event commits, so replays skip it.
-    onCommitted?: Effect.Effect<void, ProjectOperationError>,
+    // Runs under the project lock before a first commit: a failure commits nothing, so a retry
+    // with the same command id runs it again, and a replayed receipt skips it.
+    beforeCommit?: Effect.Effect<void, ProjectOperationError>,
   ) {
     const { projectId } = command;
     const dispatchError = (cause: unknown) =>
@@ -296,14 +297,19 @@ export const make = Effect.gen(function* () {
         now,
       });
       if (Result.isSuccess(planned)) {
-        const { receipt, committed } = yield* eventSink.commitProjectCommand({
+        if (
+          beforeCommit !== undefined &&
+          Option.isNone(yield* eventSink.projectCommandReceipt(command.commandId))
+        ) {
+          yield* beforeCommit;
+        }
+        const { receipt } = yield* eventSink.commitProjectCommand({
           commandId: command.commandId,
           projectId,
           commandType: command.type,
           acceptedAt: now,
           event: planned.success,
         });
-        if (committed && onCommitted !== undefined) yield* onCommitted;
         return receipt;
       }
       return yield* eventSink.commitRejectedProjectCommand({

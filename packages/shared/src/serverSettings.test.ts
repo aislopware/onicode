@@ -601,6 +601,35 @@ describe("serverSettings helpers", () => {
     });
   });
 
+  it("merges per-key project override writes, so writers of different keys keep each other's", () => {
+    const projectId = ProjectId.make("project-a");
+    const model = { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.1-codex" };
+    const current = {
+      ...DEFAULT_SERVER_SETTINGS,
+      projectSettingsOverrides: { [projectId]: { defaultAutoPull: true } },
+    };
+
+    const fromA = applyServerSettingsPatch(current, {
+      projectSettingsOverrideKeys: { [projectId]: { set: { defaultModelSelection: model } } },
+    });
+    const fromB = applyServerSettingsPatch(fromA, {
+      projectSettingsOverrideKeys: {
+        [projectId]: { set: { defaultProjectScripts: [] }, unset: ["defaultAutoPull"] },
+      },
+    });
+    expect(fromB.projectSettingsOverrides[projectId]).toEqual({
+      defaultModelSelection: model,
+      defaultProjectScripts: [],
+    });
+    expect(
+      applyServerSettingsPatch(fromB, {
+        projectSettingsOverrideKeys: {
+          [projectId]: { unset: ["defaultModelSelection", "defaultProjectScripts"] },
+        },
+      }).projectSettingsOverrides[projectId],
+    ).toBeUndefined();
+  });
+
   // regression: #18334 a newer client must still see this server drop a key it does not know
   it("drops an override key this server does not know from a patch and keeps one it stored", () => {
     const projectId = ProjectId.make("project-a");

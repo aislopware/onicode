@@ -246,6 +246,10 @@ export interface EventSinkV2Shape {
     { readonly receipt: CommandReceiptStore.ProjectCommandReceiptV2; readonly committed: boolean },
     EventSinkV2Error
   >;
+  /** None for unused and thread command ids. */
+  readonly projectCommandReceipt: (
+    commandId: CommandId,
+  ) => Effect.Effect<Option.Option<CommandReceiptStore.ProjectCommandReceiptV2>, EventSinkV2Error>;
   readonly commitRejectedProjectCommand: (input: {
     readonly commandId: CommandId;
     readonly projectId: ProjectId;
@@ -1276,6 +1280,14 @@ const layerBase: Layer.Layer<
               new EventSinkWriteError({ commandId: input.commandId, eventCount: 1, cause }),
           ),
         ),
+      projectCommandReceipt: (commandId) =>
+        commandReceipts
+          .getProjectByCommandId(commandId)
+          .pipe(
+            Effect.mapError(
+              (cause) => new EventSinkWriteError({ commandId, eventCount: 0, cause }),
+            ),
+          ),
       commitRejectedProjectCommand: (input) =>
         commitRejectedProjectCommandEffect(input).pipe(
           Effect.mapError(

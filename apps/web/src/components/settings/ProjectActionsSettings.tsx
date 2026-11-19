@@ -68,6 +68,8 @@ export function ProjectActionsSettings() {
           environmentId: candidate.environmentId,
           settings: environment.serverConfig.settings,
           keybindings: environment.serverConfig.keybindings,
+          perKeyOverrides:
+            environment.serverConfig.environment.capabilities.projectSettingsOverrideKeys === true,
           ...(member ? { project: member } : {}),
         },
       ];

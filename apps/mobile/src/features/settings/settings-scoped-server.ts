@@ -5,11 +5,14 @@ import {
   type EnvironmentId,
   type ProjectId,
   type ProjectScopedServerSettingKey,
+  type ProjectSettingsOverrides,
   type ServerSettings,
   type ServerSettingsPatch,
 } from "@onicode/contracts";
 import {
   clearProjectSettingsOverrides,
+  type ProjectOverrideWrite,
+  projectOverridesPatch,
   resolveProjectSettings,
 } from "@onicode/shared/projectSettings";
 
@@ -82,12 +85,8 @@ export function planMobileScopedSettingsPatch(
     )
   )
     return [];
-  const writes = new Map<EnvironmentId, Record<string, unknown>>();
-  for (const target of targets) {
-    if (target.projectId === null) continue;
-    const current =
-      target.environment.serverConfig.settings.projectSettingsOverrides[target.projectId] ?? {};
-    const next: Record<string, unknown> = { ...current };
+  return projectOverrideWrites(targets, keys, (settings, projectId) => {
+    const next: Record<string, unknown> = { ...settings.projectSettingsOverrides[projectId] };
     for (const [key, value] of Object.entries(patch)) {
       if (
         value === null &&
@@ -98,14 +97,8 @@ export function planMobileScopedSettingsPatch(
         next[key] = value;
       }
     }
-    const overrides = writes.get(target.environment.environmentId) ?? {};
-    overrides[target.projectId] = next;
-    writes.set(target.environment.environmentId, overrides);
-  }
-  return [...writes].map(([environmentId, projectSettingsOverrides]) => ({
-    environmentId,
-    patch: { projectSettingsOverrides } as ServerSettingsPatch,
-  }));
+    return next as ProjectSettingsOverrides;
+  });
 }
 
 export function uniformMobileSetting<K extends keyof ServerSettings>(
@@ -122,19 +115,36 @@ export function planMobileScopedSettingsClear(
   targets: readonly ScopedMobileSettingsTarget[],
   keys: readonly ProjectScopedServerSettingKey[],
 ) {
-  const writes = new Map<EnvironmentId, Record<string, unknown>>();
-  for (const target of targets) {
-    if (target.projectId === null) continue;
-    const overrides = writes.get(target.environment.environmentId) ?? {};
-    overrides[target.projectId] = clearProjectSettingsOverrides(
-      target.environment.serverConfig.settings,
-      target.projectId,
+  return projectOverrideWrites(targets, keys, (settings, projectId) =>
+    clearProjectSettingsOverrides(settings, projectId, keys),
+  );
+}
+
+function projectOverrideWrites(
+  targets: readonly ScopedMobileSettingsTarget[],
+  keys: readonly string[],
+  next: (settings: ServerSettings, projectId: ProjectId) => ProjectSettingsOverrides | null,
+) {
+  const writes = new Map<
+    EnvironmentId,
+    { readonly perKey: boolean; readonly entries: ProjectOverrideWrite[] }
+  >();
+  for (const { environment, projectId } of targets) {
+    if (projectId === null) continue;
+    const pending = writes.get(environment.environmentId) ?? {
+      perKey:
+        environment.serverConfig.environment.capabilities.projectSettingsOverrideKeys === true,
+      entries: [],
+    };
+    pending.entries.push({
+      projectId,
       keys,
-    );
-    writes.set(target.environment.environmentId, overrides);
+      next: next(environment.serverConfig.settings, projectId),
+    });
+    writes.set(environment.environmentId, pending);
   }
-  return [...writes].map(([environmentId, projectSettingsOverrides]) => ({
+  return [...writes].map(([environmentId, { perKey, entries }]) => ({
     environmentId,
-    patch: { projectSettingsOverrides } as ServerSettingsPatch,
+    patch: projectOverridesPatch(entries, perKey),
   }));
 }

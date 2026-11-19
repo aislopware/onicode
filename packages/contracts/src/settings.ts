@@ -1838,6 +1838,11 @@ const ModelSelectionPatch = Schema.Struct({
   options: Schema.optionalKey(ProviderOptionSelections),
 });
 
+const ProjectSettingsOverridesPatch = Schema.Struct({
+  ...ProjectSettingsOverrides.fields,
+  sourceControlWritingStyle: Schema.optionalKey(SourceControlWritingStyleSettings),
+});
+
 export const ServerSettingsPatch = Schema.Struct({
   setModelFavorites: Schema.optionalKey(
     Schema.Array(Schema.Struct({ ...ModelFavorite.fields, favorite: Schema.Boolean })),
@@ -1922,16 +1927,19 @@ export const ServerSettingsPatch = Schema.Struct({
   fallbackModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
   /** Replaces each project's override set; null removes it. Omitted providerInstances retains its stored value. */
   projectSettingsOverrides: Schema.optionalKey(
+    Schema.Record(ProjectId, Schema.NullOr(keepUnknownOverrideKeys(ProjectSettingsOverridesPatch))),
+  ),
+  /**
+   * Sets and removes single keys of each project's overrides, keeping the keys other writers
+   * stored meanwhile. Servers with the `projectSettingsOverrideKeys` capability read it.
+   */
+  projectSettingsOverrideKeys: Schema.optionalKey(
     Schema.Record(
       ProjectId,
-      Schema.NullOr(
-        keepUnknownOverrideKeys(
-          Schema.Struct({
-            ...ProjectSettingsOverrides.fields,
-            sourceControlWritingStyle: Schema.optionalKey(SourceControlWritingStyleSettings),
-          }),
-        ),
-      ),
+      Schema.Struct({
+        set: Schema.optionalKey(ProjectSettingsOverridesPatch),
+        unset: Schema.optionalKey(Schema.Array(Schema.String)),
+      }),
     ),
   ),
   enableAgentDeviceAccess: Schema.optionalKey(Schema.Boolean),

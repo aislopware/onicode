@@ -4,6 +4,7 @@ import {
   type ProjectId,
   type ServerSettings,
 } from "@onicode/contracts";
+import { applyServerSettingsPatch } from "@onicode/shared/serverSettings";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { SettingsTarget } from "./settings-environment-filter";
@@ -56,12 +57,18 @@ describe("mobile usage-limit settings across environments", () => {
   );
 });
 
-function environment(environmentId: EnvironmentId, settings: ServerSettings): SettingsTarget {
+function environment(
+  environmentId: EnvironmentId,
+  settings: ServerSettings,
+  projectSettingsOverrideKeys = false,
+): SettingsTarget {
   return {
     environmentId,
     serverConfig: {
       settings,
-      environment: { capabilities: { projectSettingsOverrides: true } },
+      environment: {
+        capabilities: { projectSettingsOverrides: true, projectSettingsOverrideKeys },
+      },
     },
   } as SettingsTarget;
 }
@@ -138,6 +145,27 @@ describe("mobile project settings scope", () => {
         },
       },
     ]);
+  });
+
+  it("keeps a key another device stored after this device's copy, where the server merges keys", () => {
+    const copy: ServerSettings = {
+      ...DEFAULT_SERVER_SETTINGS,
+      projectSettingsOverrides: { [firstProject]: { defaultThreadEnvMode: "worktree" } },
+    };
+    const targets = resolveMobileSettingsTargets(
+      [environment(firstId, copy, true)],
+      [{ environmentId: firstId, id: firstProject }],
+    );
+    const stored: ServerSettings = {
+      ...copy,
+      projectSettingsOverrides: {
+        [firstProject]: { defaultThreadEnvMode: "worktree", responseStreamingMode: "turn" },
+      },
+    };
+    const [write] = planMobileScopedSettingsPatch(targets, true, { defaultThreadEnvMode: null });
+    expect(
+      applyServerSettingsPatch(stored, write!.patch).projectSettingsOverrides[firstProject],
+    ).toEqual({ responseStreamingMode: "turn" });
   });
 
   it("resets only the selected page's override and rejects environment-wide writes", () => {

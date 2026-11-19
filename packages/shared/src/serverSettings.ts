@@ -293,6 +293,23 @@ function mergeProjectSettingsOverridesPatch(
   return Object.fromEntries(next);
 }
 
+function mergeProjectSettingsOverrideKeys(
+  current: Readonly<Record<string, ProjectSettingsOverrides>>,
+  patch: NonNullable<ServerSettingsPatch["projectSettingsOverrideKeys"]>,
+): Readonly<Record<string, ProjectSettingsOverrides>> {
+  if (Object.keys(patch).length === 0) return current;
+  const next = { ...current };
+  for (const [projectId, { set, unset }] of Object.entries(patch)) {
+    const entry: Record<string, unknown> = {
+      ...current[projectId],
+      ...pickOverrideKeys(set, true),
+    };
+    for (const key of unset ?? []) delete entry[key];
+    next[projectId] = entry as ProjectSettingsOverrides;
+  }
+  return next;
+}
+
 export function deriveLegacyProjectOverrides(
   settings: Pick<ServerSettings, "projectSettingsOverrides">,
 ): Pick<
@@ -409,6 +426,7 @@ export function applyServerSettingsPatch(
     usageModelAliases: usageModelAliasesPatch,
     // Entry replacement: deepMerge would keep keys the client meant to clear.
     projectSettingsOverrides: projectSettingsOverridesPatch,
+    projectSettingsOverrideKeys: projectSettingsOverrideKeysPatch,
     projectAgentBrowserAccessOverrides: _legacyBrowserAccess,
     projectAutoPullOverrides: _legacyAutoPull,
     projectScriptOverrides: _legacyScripts,
@@ -588,13 +606,19 @@ export function applyServerSettingsPatch(
           },
         }
       : {}),
-    ...(projectSettingsOverridesPatch !== undefined
+    ...(projectSettingsOverridesPatch !== undefined ||
+    projectSettingsOverrideKeysPatch !== undefined
       ? {
           projectSettingsOverrides: Object.fromEntries(
             Object.entries(
-              mergeProjectSettingsOverridesPatch(
-                current.projectSettingsOverrides,
-                projectSettingsOverridesPatch,
+              mergeProjectSettingsOverrideKeys(
+                projectSettingsOverridesPatch === undefined
+                  ? current.projectSettingsOverrides
+                  : mergeProjectSettingsOverridesPatch(
+                      current.projectSettingsOverrides,
+                      projectSettingsOverridesPatch,
+                    ),
+                projectSettingsOverrideKeysPatch ?? {},
               ),
             ).filter(([, entry]) => Object.keys(entry).length > 0),
           ),
