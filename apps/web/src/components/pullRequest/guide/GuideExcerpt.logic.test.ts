@@ -188,9 +188,11 @@ it("keeps the lines drawn after a hunk that changes the line count for Ask agent
     ranged: true,
     canComment: true,
   });
-  expect(fromTop?.context?.diff.split("\n").slice(1)).toEqual([
-    " line 5",
-    ...Array.from({ length: 10 }, (_, index) => ` inserted ${index + 1}`),
+  expect(fromTop?.context?.diff.split("\n")).toEqual([
+    "@@ -1,20 +5,26 @@",
+    "+line 5",
+    ...Array.from({ length: 5 }, (_, index) => `+inserted ${index + 1}`),
+    ...Array.from({ length: 5 }, (_, index) => ` inserted ${index + 6}`),
     ...Array.from({ length: 14 }, (_, index) => ` line ${index + 6}`),
     "-line 20",
     "+line 20 changed",
