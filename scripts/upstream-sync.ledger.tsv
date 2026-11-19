@@ -2553,3 +2553,4 @@ e58d0e9f03	take	adapted: insertText in Onicode's /side test; the draft-changed s
 63899c16b9	take	scenario adapted to the desktop target (second-environment.ts, unpairs after)
 6ea01d4cbe	take	taken as is; scenario runs on the desktop target unchanged
 66235c7f2a	take	taken as is (orchestration; orchestration-v2 suite green)
+410109da5d	take	taken; pnpm-lock.yaml regenerated with vp i
