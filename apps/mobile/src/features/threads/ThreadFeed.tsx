@@ -1353,8 +1353,20 @@ const AssistantMarkdownContent = memo(function AssistantMarkdownContent(props: {
   } | null>(null);
   if (quoteSelection !== null && quoteSelection.markdown !== liveMarkdown) setQuoteSelection(null);
   const quoteChoices = quoteSelection?.selectors ?? [];
+  const tooLong = (quote: string) => {
+    if (quote.length <= ASSISTANT_CITATION_MAX_TEXT_LENGTH) return false;
+    Dialog.alert(
+      gt("Quote is too long"),
+      gt("Select up to {max} characters to cite.", {
+        max: ASSISTANT_CITATION_MAX_TEXT_LENGTH.toLocaleString(),
+      }),
+    );
+    return true;
+  };
   const cite = ({ selector }: (typeof quoteChoices)[number]) => {
     if (!props.onCiteAssistantText || !props.threadId || !props.messageId) return;
+    // A rendered formula selects as one character but cites as its TeX.
+    if (tooLong(selector.text)) return;
     setQuoteSelection(null);
     props.onCiteAssistantText({
       version: 1,
@@ -1385,16 +1397,7 @@ const AssistantMarkdownContent = memo(function AssistantMarkdownContent(props: {
         onCiteText={
           props.onCiteAssistantText && props.threadId && props.messageId
             ? (text, path) => {
-                if (!text.trim()) return;
-                if (text.length > ASSISTANT_CITATION_MAX_TEXT_LENGTH) {
-                  Dialog.alert(
-                    gt("Quote is too long"),
-                    gt("Select up to {max} characters to cite.", {
-                      max: ASSISTANT_CITATION_MAX_TEXT_LENGTH.toLocaleString(),
-                    }),
-                  );
-                  return;
-                }
+                if (!text.trim() || tooLong(text)) return;
                 const selectors = collectMobileAssistantTextSelectors(
                   liveMarkdown,
                   path,

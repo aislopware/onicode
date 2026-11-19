@@ -6,6 +6,7 @@ import {
 } from "@onicode/shared/codexMarkdownDirectives";
 import { splitMarkdownDetails } from "./markdownDetails";
 import {
+  markdownForNativeParsing,
   markdownReferenceDefinitions,
   parseMarkdownDocument,
   withReferenceDefinitions,
@@ -40,8 +41,73 @@ function renderedText(node: MarkdownNode, restoreMath: (value: string) => string
   return node.type === "break" ? "\n" : "";
 }
 
-// Mirrors md4c's latexMath flag: with math off, formulas render as their literal markdown.
-function citationText(markdown: string, mathRenderingEnabled: boolean): string {
+// Native text views report a rendered inline formula, an image, or a rule as this character.
+const ATTACHMENT = "\ufffc";
+// Stands in for display math md4c moves to its own view, which no text selection can include.
+const DETACHED = "\ue002";
+const EXPANDED = /[\ufffc\ue002]/g;
+
+// Images and rules are U+FFFC natively; md4c has no footnotes and reads `||text||` as a spoiler.
+function rendersDifferently(node: MarkdownNode): boolean {
+  if (
+    node.type === "image" ||
+    node.type === "imageReference" ||
+    node.type === "thematicBreak" ||
+    node.type === "footnoteReference"
+  )
+    return true;
+  if (node.type === "text") return node.value.includes("||");
+  return "children" in node && node.children.some(rendersDifferently);
+}
+
+const BLOCK_START =
+  /^(?:$|[-+*](?:[ \t]|$)|\d{1,9}[.)](?:[ \t]|$)|#{1,6}(?:[ \t]|$)|`{3,}|~{3,}|[-=]+[ \t]*$|<)/;
+const quoteDepth = (line: string) => /^[ \t>]*/.exec(line)![0].split(">").length - 1;
+
+// md4c reads blocks before math, so a formula line that would start a block splits the formula.
+function splitsIntoBlocks(markdown: string, start: number, source: string): boolean {
+  const depth = quoteDepth(markdown.slice(markdown.lastIndexOf("\n", start - 1) + 1, start));
+  return source
+    .split(/\r?\n/)
+    .slice(1)
+    .some(
+      (line) =>
+        quoteDepth(line) > depth || BLOCK_START.test(line.slice(/^[ \t>]*/.exec(line)![0].length)),
+    );
+}
+
+const MATH_DELIMITER = /\$|\\[([]/;
+const UNCERTAIN_PROSE = /\$|\\[([]|!`/;
+
+// md4c reads `$` as a delimiter only at a line edge or beside whitespace or punctuation.
+const FLANKED_BEFORE = /(?:^|[\s\p{P}\p{S}])$/u;
+const FLANKED_AFTER = /^(?:$|[\s\p{P}\p{S}])/u;
+
+// Neither parser reads math in a code block, and agent replies often hold shell `$` in them.
+function withoutCodeBlocks(node: MarkdownNode, source: string): string {
+  const kept: string[] = [];
+  let cursor = 0;
+  const visit = (child: MarkdownNode) => {
+    const start = child.position?.start.offset;
+    const end = child.position?.end.offset;
+    if (child.type === "code" && start !== undefined && end !== undefined) {
+      kept.push(source.slice(cursor, start));
+      cursor = end;
+    } else if ("children" in child) child.children.forEach(visit);
+  };
+  visit(node);
+  kept.push(source.slice(cursor));
+  return kept.join("");
+}
+
+// Mirrors md4c's latexMath flag: with it on, each formula is ATTACHMENT in `text`, and
+// `expansions` holds what each ATTACHMENT reads as on the web (a formula's TeX, or itself).
+// `uncertainAttachments` marks text where a native ATTACHMENT may not be a formula; that text
+// keeps the web's formulas instead.
+function citationText(
+  markdown: string,
+  mathRenderingEnabled: boolean,
+): { text: string; expansions: string[]; uncertainAttachments: boolean } {
   const formulas = mathRenderingEnabled ? markdownMathRanges(markdown) : [];
   let marker = "\ue000t3math";
   while (markdown.includes(marker)) marker += "_";
@@ -53,13 +119,112 @@ function citationText(markdown: string, mathRenderingEnabled: boolean): string {
     cursor = formula.end;
   }
   prose += markdown.slice(cursor);
-  return renderedText(parseMarkdownDocument(prose), (value) =>
-    value.replace(new RegExp(`${marker}(\\d+)\ue001`, "g"), (_, index: string) => {
-      const formula = formulas[Number(index)]!;
-      const tex = formula.tex.trim();
-      return formula.display ? `\\[\n${tex}\n\\]` : `\\(${tex}\\)`;
-    }),
+  const nativeProse = markdownForNativeParsing(prose);
+  const tree = parseMarkdownDocument(prose);
+  const tokenPattern = new RegExp(`${marker}(\\d+)\ue001`, "g");
+  // md4c moves a top-level paragraph's own display math to its own view when a neighbour is the
+  // paragraph edge, a line break, or whitespace-only text (`isIsolatedDisplayMath`).
+  const detached = new Set<number>();
+  // Text beside a formula separates when blank (md4c's blank is only space, tab, and line ends)
+  // or broken at a line; no text means the neighbour is a formula, a sibling, or the edge.
+  // md4c may read a bare URL as text, so blank text next to one stays attached to be safe.
+  const bareLink = (node?: MarkdownNode) =>
+    node?.type === "link" && !"[<".includes(nativeProse[node.position?.start.offset ?? 0] ?? "[");
+  const separates = (text: string, pattern: RegExp, last: boolean, sibling?: MarkdownNode) =>
+    text === ""
+      ? last && (sibling === undefined || sibling.type === "break")
+      : pattern.test(text) && (text.includes("\n") || !last || !bareLink(sibling));
+  for (const block of tree.children) {
+    if (block.type !== "paragraph") continue;
+    for (const [childIndex, child] of block.children.entries()) {
+      if (child.type !== "text") continue;
+      const parts = child.value.split(tokenPattern);
+      for (let part = 1; part < parts.length; part += 2) {
+        if (
+          formulas[Number(parts[part])]!.display &&
+          (separates(
+            parts[part - 1]!,
+            /(?:^|\n)[ \t\r\n]*$/,
+            part === 1,
+            block.children[childIndex - 1],
+          ) ||
+            separates(
+              parts[part + 1]!,
+              /^[ \t\r\n]*(?:\n|$)/,
+              part === parts.length - 2,
+              block.children[childIndex + 1],
+            ))
+        )
+          detached.add(Number(parts[part]));
+      }
+    }
+  }
+  // A math fence is its own native view, except in a list, which shows it as code text.
+  const listed = new Set<number>();
+  const visitLists = (node: MarkdownNode) => {
+    if (node.type === "list")
+      for (const match of renderedText(node, (value) => value).matchAll(tokenPattern))
+        listed.add(Number(match[1]));
+    else if ("children" in node) node.children.forEach(visitLists);
+  };
+  visitLists(tree);
+  const fenced = formulas.map((formula) => /^[ \t]*(?:`{3,}|~{3,})/.test(formula.source));
+  for (const [index, fence] of fenced.entries())
+    if (fence && !listed.has(index)) detached.add(index);
+  const expansions: string[] = [];
+  let authoredDetached = false;
+  const text = renderedText(tree, (value) =>
+    value.replace(
+      new RegExp(`${tokenPattern.source}|${EXPANDED.source}`, "g"),
+      (char: string, index: string | undefined) => {
+        if (index === undefined) {
+          authoredDetached ||= char === DETACHED;
+          expansions.push(char);
+          return char;
+        }
+        const formula = formulas[Number(index)]!;
+        const tex = formula.tex.trim();
+        expansions.push(formula.display ? `\\[\n${tex}\n\\]` : `\\(${tex}\\)`);
+        return detached.has(Number(index)) ? DETACHED : ATTACHMENT;
+      },
+    ),
   );
+  const unflanked = (index: number) => {
+    const at = nativeProse.indexOf(tokens[index]!);
+    const end = at + tokens[index]!.length;
+    return (
+      at === -1 ||
+      !FLANKED_BEFORE.test(nativeProse.slice(Math.max(0, at - 2), at)) ||
+      !FLANKED_AFTER.test(nativeProse.slice(end, end + 2))
+    );
+  };
+  // Images, rules, spoilers, delimiters md4c may read differently, and `!` paths it shows as images.
+  const uncertainAttachments =
+    mathRenderingEnabled &&
+    (rendersDifferently(tree) ||
+      formulas.some(
+        (formula, index) =>
+          MATH_DELIMITER.test(formula.tex) ||
+          (!fenced[index] && splitsIntoBlocks(markdown, formula.start, formula.source)) ||
+          (fenced[index] && listed.has(index)) ||
+          (formula.inTable &&
+            formula.source.startsWith("$") &&
+            /(?:^|[^\\])(?:\\\\)*\|/.test(formula.source)) ||
+          (formula.source.startsWith("$") && unflanked(index)),
+      ) ||
+      authoredDetached ||
+      UNCERTAIN_PROSE.test(withoutCodeBlocks(tree, nativeProse)));
+  // Without a reliable native form, match the web's text as before formulas were selectable.
+  if (uncertainAttachments) {
+    let index = 0;
+    const webText = text.replace(EXPANDED, () => expansions[index++]!);
+    return {
+      text: webText,
+      expansions: [...webText.matchAll(EXPANDED)].map((match) => match[0]),
+      uncertainAttachments,
+    };
+  }
+  return { text, expansions, uncertainAttachments };
 }
 
 function citationSegments(
@@ -67,7 +232,7 @@ function citationSegments(
   mathRenderingEnabled: boolean,
   path = "",
   definitions = markdownReferenceDefinitions(markdown),
-): Array<{ path: string; text: string }> {
+): Array<{ path: string; text: string; expansions: string[]; uncertainAttachments: boolean }> {
   return splitMarkdownDetails(markdown).flatMap((block, index) => {
     if (block.kind === "details")
       return citationSegments(block.body, mathRenderingEnabled, `${path}${index}/`, definitions);
@@ -76,7 +241,7 @@ function citationSegments(
         ? [
             {
               path: `${path}${index}:${segmentIndex}`,
-              text: citationText(
+              ...citationText(
                 renderCodexInlineDirectivesAsMarkdown(
                   withReferenceDefinitions(segment.markdown, definitions),
                 ),
@@ -111,20 +276,37 @@ export function collectMobileAssistantTextSelectors(
   const segmentIndex = segments.findIndex((segment) => segment.path === path);
   const segment = segments[segmentIndex];
   if (!segment) return [];
-  const fullText = normalize(segments.map((entry) => entry.text).join("\n"));
+  if (quote.includes(ATTACHMENT) && segment.uncertainAttachments) return [];
+  const matchText = normalize(segments.map((entry) => entry.text).join("\n"));
+  // Selectors use the web's text, so expand each attachment and keep where match offsets land.
+  const expansions = segments.flatMap((entry) => entry.expansions);
+  const fullOffsets: number[] = [];
+  let fullText = "";
+  let expansionIndex = 0;
+  for (const char of matchText) {
+    for (let unit = 0; unit < char.length; unit += 1) fullOffsets.push(fullText.length);
+    fullText +=
+      char === ATTACHMENT || char === DETACHED ? normalize(expansions[expansionIndex++]!) : char;
+  }
+  fullOffsets.push(fullText.length);
   const throughSegment = segments
     .slice(0, segmentIndex + 1)
     .map((entry) => entry.text)
     .join("\n");
   const offset = normalize(throughSegment).length - normalize(segment.text).length;
-  const matches = occurrences(fullText, quote);
+  const matches = occurrences(matchText, quote);
   const localMatches = occurrences(normalize(segment.text), quote);
   if (localMatches.length > 20) return [];
   return localMatches.flatMap((localStart) => {
     const start = offset + localStart;
     const index = matches.indexOf(start);
     if (index === -1) return [];
-    const selector = createAssistantTextSelector(fullText, start, start + quote.length);
-    return selector ? [{ selector: { ...selector, text }, index, count: matches.length }] : [];
+    const fullStart = fullOffsets[start]!;
+    const fullEnd = fullOffsets[start + quote.length]!;
+    const selector = createAssistantTextSelector(fullText, fullStart, fullEnd);
+    if (!selector) return [];
+    let quotedIndex = matchText.slice(0, start).match(EXPANDED)?.length ?? 0;
+    const quoted = text.replace(EXPANDED, () => expansions[quotedIndex++]!);
+    return [{ selector: { ...selector, text: quoted }, index, count: matches.length }];
   });
 }
