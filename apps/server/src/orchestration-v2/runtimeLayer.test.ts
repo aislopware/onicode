@@ -4764,6 +4764,14 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
       tool: "mcp__onicode__pull_request_merge",
       wakes: ["#20: closed, stopped watching"],
     },
+    // Some providers report a tool call that returned an error as completed.
+    {
+      name: "merge-tool-error",
+      status: "completed",
+      tool: "mcp__onicode__pull_request_merge",
+      toolOutput: { isError: true, content: [{ type: "text", text: "PR #19 is not mergeable." }] },
+      wakes: ["#19: merged, stopped watching", "#20: closed, stopped watching"],
+    },
     // A merge command that failed ended nothing itself.
     {
       name: "failed",
@@ -4784,7 +4792,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
     },
   ] as const)(
     "ends a watch without a wake when the thread's own agent merged it ($name)",
-    ({ name: key, status: ended, wakes: expected, tool, ...result }) =>
+    ({ name: key, status: ended, wakes: expected, tool, toolOutput, ...result }) =>
       Effect.gen(function* () {
         const orchestrator = yield* Orchestrator.OrchestratorV2;
         const threadId = ThreadId.make(`runtime-pull-request-watch-own-merge-${key}`);
@@ -4915,6 +4923,9 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
                     type: "dynamic_tool" as const,
                     toolName: tool,
                     input: { number: 19, method: "squash" },
+                    ...(status === "running" || toolOutput === undefined
+                      ? {}
+                      : { output: toolOutput }),
                   }),
             },
           }));
