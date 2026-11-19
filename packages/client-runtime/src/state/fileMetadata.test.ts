@@ -109,7 +109,10 @@ const makeHarness = Effect.fnUntraced(function* () {
   const seed = (path: string, kind: "file" | "directory") =>
     atoms
       .rememberEntries("/workspace", [{ path, kind }])
-      .pipe(Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor));
+      .pipe(
+        Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor),
+        Effect.provideService(AtomRegistry.AtomRegistry, registry),
+      );
   return {
     batches,
     values,
@@ -179,6 +182,62 @@ describe("file metadata", () => {
       expect(yield* h.read("/workspace/read:12:3")).toEqual({ kind: "file", byteLength: 100 });
       expect(yield* h.read("/workspace/read")).toBeNull();
       expect(h.batches).toEqual([["/workspace/report"], ["/workspace/read"]]);
+    }),
+  );
+
+  it.effect("a stat in flight asks again when a listing reports a different kind", () =>
+    Effect.gen(function* () {
+      const h = yield* makeHarness();
+      const started = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      h.response.wait = Deferred.succeed(started, undefined).pipe(
+        Effect.andThen(Deferred.await(release)),
+      );
+      h.values.set("/workspace/moved", { kind: "directory" });
+      const read = yield* h.read("/workspace/moved").pipe(Effect.forkChild);
+      yield* Deferred.await(started);
+      h.values.set("/workspace/moved", { kind: "file", byteLength: 4 });
+      yield* h.seed("moved", "file");
+      h.response.wait = Effect.void;
+      yield* Deferred.succeed(release, undefined);
+      expect(yield* Fiber.join(read)).toEqual({ kind: "file", byteLength: 4 });
+      expect(h.batches.slice(-2)).toEqual([["/workspace/moved"], ["/workspace/moved"]]);
+    }),
+  );
+
+  it.effect("a stat in flight yields to a newer file read but not to an agreeing listing", () =>
+    Effect.gen(function* () {
+      const h = yield* makeHarness();
+      const started = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      h.response.wait = Deferred.succeed(started, undefined).pipe(
+        Effect.andThen(Deferred.await(release)),
+      );
+      h.values.set("/workspace/listed.md", { kind: "file", byteLength: 3 });
+      h.values.set("/workspace/read.md", { kind: "file", byteLength: 5 });
+      const read = yield* Effect.all(
+        [h.read("/workspace/listed.md"), h.read("/workspace/read.md")],
+        {
+          concurrency: "unbounded",
+        },
+      ).pipe(Effect.forkChild);
+      yield* Deferred.await(started);
+      yield* h.seed("listed.md", "file");
+      h.values.set("/workspace/read.md", { kind: "file", byteLength: 9 });
+      yield* h.atoms
+        .rememberFile("/workspace", { relativePath: "read.md", byteLength: 9 })
+        .pipe(Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, h.supervisor));
+      h.response.wait = Effect.void;
+      yield* Deferred.succeed(release, undefined);
+
+      expect(yield* Fiber.join(read)).toEqual([
+        { kind: "file", byteLength: 3 },
+        { kind: "file", byteLength: 9 },
+      ]);
+      expect(h.batches).toEqual([
+        ["/workspace/listed.md", "/workspace/read.md"],
+        ["/workspace/read.md"],
+      ]);
     }),
   );
 
@@ -359,7 +418,7 @@ describe("file metadata", () => {
   );
 
   it.effect(
-    "stats listed files that replace directories or misses and reuses known file sizes",
+    "stats listed files that replace mounted directories or misses and reuses known file sizes",
     () =>
       Effect.gen(function* () {
         const h = yield* makeHarness();
@@ -368,19 +427,38 @@ describe("file metadata", () => {
         const directory = "/workspace/was-directory";
         const missing = "/workspace/was-missing";
         const file = "/workspace/known-file";
+        const replacedFile = "/workspace/was-file";
+        const readDirectory = "/workspace/read-directory";
         yield* h.seed("was-directory", "directory");
+        yield* h.seed("read-directory", "directory");
+        h.registry.mount(h.atom(readDirectory));
+        expect(yield* h.read(readDirectory)).toEqual({ kind: "directory" });
+        h.registry.mount(h.atom(directory));
+        expect(yield* h.read(directory)).toEqual({ kind: "directory" });
+        h.registry.mount(h.atom(missing, ENVIRONMENT_ID, threadId));
         expect(yield* h.read(missing, ENVIRONMENT_ID, threadId)).toBeNull();
         h.values.set(file, { kind: "file", byteLength: 100 });
         yield* h.read(file, ENVIRONMENT_ID, threadId);
+        h.values.set(replacedFile, { kind: "file", byteLength: 7 });
+        h.registry.mount(h.atom(replacedFile));
+        yield* h.read(replacedFile);
 
         h.values.set(directory, { kind: "file", byteLength: 2048 });
         h.values.set(missing, { kind: "file", byteLength: 4096 });
         yield* h.seed("was-directory", "file");
         yield* h.seed("was-missing", "file");
         yield* h.seed("known-file", "file");
+        yield* h.seed("was-file", "directory");
+        yield* h.atoms
+          .rememberFile("/workspace", { relativePath: "read-directory", byteLength: 6 })
+          .pipe(
+            Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, h.supervisor),
+            Effect.provideService(AtomRegistry.AtomRegistry, h.registry),
+          );
+        expect(yield* h.read(readDirectory)).toEqual({ kind: "file", byteLength: 6 });
 
         expect(yield* h.read(directory)).toEqual({ kind: "file", byteLength: 2048 });
-        h.registry.refresh(h.atom(missing, ENVIRONMENT_ID, threadId));
+        expect(yield* h.read(replacedFile)).toEqual({ kind: "directory" });
         expect(yield* h.read(missing, ENVIRONMENT_ID, threadId)).toEqual({
           kind: "file",
           byteLength: 4096,
@@ -390,7 +468,7 @@ describe("file metadata", () => {
           kind: "file",
           byteLength: 100,
         });
-        expect(h.batches.flat()).toEqual([missing, file, directory, missing]);
+        expect(h.batches.flat()).toEqual([missing, file, replacedFile, directory, missing]);
       }),
   );
 
