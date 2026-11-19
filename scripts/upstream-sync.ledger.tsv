@@ -2756,3 +2756,4 @@ eb62a37150	take	atomic saves keep modes and fsync; telemetry Identify test left 
 c3e82a93fe	skip	T3 Connect cloudflared minimum version (relayClient), removed in Onicode; Onicode does not run cloudflared
 56b0777774	take	GPT evals use the configured Codex provider and CODEX_HOME; test-signal README left out
 54038e14ec	take	fix(pi): Pi agents get Onicode's pull request linking rules (#31727)
+178a2f1cd4	take	fix(server): oni_thread_launch refuses a defaulted worktree launch when Git cannot read HEAD (#38459)
