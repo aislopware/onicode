@@ -235,14 +235,17 @@ final class OniTunnelWebView: ExpoView, WKNavigationDelegate {
     let error = error as NSError
     if error.domain == NSURLErrorDomain && error.code == NSURLErrorCancelled { return }
     let failingUrl = (error.userInfo[NSURLErrorFailingURLStringErrorKey] as? String)
-      .flatMap(URL.init(string:)).map(OniLoopback.shown)?.absoluteString
+      .flatMap(URL.init(string:)).map(OniLoopback.shown)
+    // Only loopback pages go through the tunnel, so only they carry its failure.
+    let tunneled = failingUrl?.host(percentEncoded: false).map(OniLoopback.isLoopbackHost) ?? true
     onLoadError([
       "code": error.code,
       "description": error.localizedDescription,
-      "url": failingUrl ?? "",
+      "url": failingUrl?.absoluteString ?? "",
       "debug": "\(error.domain) \(error.code), port \(proxyPort.map(String.init) ?? "none"), " + OniTunnelDiagnostics.shared.summary,
-      "cause": environmentId
-        .flatMap { OniEnvironmentProxy.forEnvironment($0).lastFailure?.rawValue } ?? "",
+      "cause": tunneled
+        ? environmentId.flatMap { OniEnvironmentProxy.forEnvironment($0).lastFailure?.rawValue } ?? ""
+        : "",
     ])
   }
 }
