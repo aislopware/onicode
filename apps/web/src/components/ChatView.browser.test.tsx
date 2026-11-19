@@ -26,7 +26,12 @@ import { AppRoot } from "~/AppRoot";
 // The route loads ChatView lazily, and its first transform (React Compiler over ~4k lines)
 // takes 6-11s; importing it here keeps that out of the test's timeout.
 import "~/components/ChatView";
-import { DraftId, useComposerDraftStore } from "~/composerDraftStore";
+import { composerTargetKey, DraftId, useComposerDraftStore } from "~/composerDraftStore";
+import {
+  addPreparingComposerImages,
+  cancelPreparingComposerImages,
+  removePreparingComposerImages,
+} from "~/components/chat/preparingComposerImages";
 import { selectThreadDiffPanelSelection, useDiffPanelStore } from "~/diffPanelStore";
 import { __setClientSettingsForTests } from "~/hooks/useSettings";
 import stylesheet from "~/index.css?inline";
@@ -1112,4 +1117,51 @@ it("/side sends the draft's attachments and context, and keeps them until it sta
   await open(other.id, `Answer 0 for ${other.id}.`);
   await rejectPendingCommand("Side chats are paused.");
   await expect.element(page.getByText("Side chats are paused.")).toBeVisible();
+});
+
+it("a send held for a compressing image goes with the mode set at Send", async () => {
+  const thread = threadWithHistory("held-send-mode", 1);
+  using _environment = installFakeEnvironment([thread], { acceptCommands: true });
+  __setClientSettingsForTests({
+    ...DEFAULT_CLIENT_SETTINGS,
+    onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
+  });
+  const draftTarget = scopeThreadRef(ENVIRONMENT_ID, thread.id);
+  const targetKey = composerTargetKey(draftTarget);
+  using _preparing = { [Symbol.dispose]: () => cancelPreparingComposerImages(targetKey) };
+  const router = getRouter(
+    createMemoryHistory({ initialEntries: [`/${ENVIRONMENT_ID}/${thread.id}`] }),
+  );
+  await router.load();
+  await using _app = await render(<AppRoot router={router} />, {
+    // AppRoot brings its own router.
+    router: false,
+  });
+  await expect.element(page.getByText(`Answer 0 for ${thread.id}.`)).toBeVisible();
+
+  await act(() =>
+    useComposerDraftStore.getState().setRuntimeMode(draftTarget, "approval-required"),
+  );
+  const editor = page.getByTestId("composer-editor");
+  await userEvent.click(editor);
+  await insertText("Held prompt");
+  const compressing = {
+    id: "compressing",
+    name: "big.png",
+    file: new File([PNG], "big.png", { type: "image/png" }),
+    hidden: false,
+  };
+  await act(() => addPreparingComposerImages(targetKey, [compressing]));
+  await userEvent.keyboard("{Enter}");
+  await act(() => useComposerDraftStore.getState().setRuntimeMode(draftTarget, "full-access"));
+  await act(() => removePreparingComposerImages(targetKey, new Set([compressing.id])));
+
+  await vi.waitFor(() =>
+    expect(dispatchedCommands()).toContainEqual(
+      expect.objectContaining({ type: "message.dispatch", text: "Held prompt" }),
+    ),
+  );
+  expect(dispatchedCommands()).toContainEqual(
+    expect.objectContaining({ type: "thread.runtime-mode.set", runtimeMode: "approval-required" }),
+  );
 });

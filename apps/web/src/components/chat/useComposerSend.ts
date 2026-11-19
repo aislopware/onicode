@@ -105,7 +105,7 @@ import { useStableCallback } from "../../hooks/useStableCallback";
 import { environmentPresentations } from "../../state/presentation";
 import {
   approvalRedirectNotice,
-  type ApprovalsAtPress,
+  type SendAtPress,
   composerDraftContentChanged,
   loadBalancingSendWarning,
   multipleModelSendBlock,
@@ -405,7 +405,6 @@ export function useComposerSend(input: ComposerSendInput) {
     composerDraftTarget,
     composerRef,
     promptRef,
-    runtimeMode,
     startFromOrigin,
     resetLocalDispatch,
     setThreadError,
@@ -427,7 +426,7 @@ export function useComposerSend(input: ComposerSendInput) {
     dispatchMode: ComposerDispatchMode = "auto",
     submissionIntent: ComposerSubmissionIntent = "foreground",
     // A held or refreshed send acts only on what the user saw when pressing Send.
-    approvalsAtPress?: ApprovalsAtPress,
+    atPress?: SendAtPress,
     directAnnotation?: {
       annotation: PreviewAnnotationPayload;
       image: ComposerImageAttachment | null;
@@ -462,13 +461,17 @@ export function useComposerSend(input: ComposerSendInput) {
       return;
     }
 
-    const sendCtx = composerRef.current?.getSendContext();
+    const liveSendCtx = composerRef.current?.getSendContext();
+    // The draft's content is read now, the mode and model as they were at Send.
+    const sendCtx =
+      liveSendCtx && atPress?.settings ? { ...liveSendCtx, ...atPress.settings } : liveSendCtx;
+    const sendRuntimeMode = atPress?.settings?.runtimeMode ?? runtimeMode;
     const shownIdsAtSend = sendCtx?.shownPendingApprovalIds ?? [];
-    const atPress = approvalsAtPress ?? {
+    const approvalsAtPress = atPress?.approvals ?? {
       shown: shownIdsAtSend,
       pending: pendingApprovalsRef.current.map((approval) => approval.requestId),
     };
-    const seenApprovalIds = shownIdsAtSend.filter((id) => atPress.shown.includes(id));
+    const seenApprovalIds = shownIdsAtSend.filter((id) => approvalsAtPress.shown.includes(id));
     // `/side` beats an open question and a plan follow-up, which would send the text to main.
     const sideChatCommand =
       sendCtx && !directAnnotation && !queuedRunEdit.isEditing
@@ -662,7 +665,7 @@ export function useComposerSend(input: ComposerSendInput) {
       // Read at Send: the upload below can outlast a change of mode, model or thread.
       const source = {
         threadRef: scopeThreadRef(activeThread.environmentId, activeThread.id),
-        runtimeMode,
+        runtimeMode: sendRuntimeMode,
         modelSelection: sendCtx.selectedModelSelection,
       };
       // The draft keeps the question, its uploads and their progress until the side chat has
@@ -1202,7 +1205,9 @@ export function useComposerSend(input: ComposerSendInput) {
     // it, and a redirect must not decline it.
     if (
       onRoute &&
-      pendingApprovalsRef.current.some((approval) => !atPress.pending.includes(approval.requestId))
+      pendingApprovalsRef.current.some(
+        (approval) => !approvalsAtPress.pending.includes(approval.requestId),
+      )
     ) {
       sendInFlightRef.current = false;
       setDockedDraftHeroThreadKey((currentThreadKey) =>
@@ -1368,6 +1373,7 @@ export function useComposerSend(input: ComposerSendInput) {
         selections: multipleModelSelections,
         targets: multipleTargets,
         sendSnapshot,
+        runtimeMode: sendRuntimeMode,
         createdAt: messageCreatedAt,
         attachmentsPromise: turnAttachmentsPromise,
         usesAttachmentUploads: turnUsesAttachmentUploads,
@@ -1458,7 +1464,7 @@ export function useComposerSend(input: ComposerSendInput) {
         ...(localCheckoutBranchMismatch
           ? { branch: localCheckoutBranchMismatch.currentBranch }
           : {}),
-        runtimeMode,
+        runtimeMode: sendRuntimeMode,
         interactionMode: DEFAULT_INTERACTION_MODE,
       });
       if (settingsResult._tag === "Failure") {
@@ -1491,7 +1497,7 @@ export function useComposerSend(input: ComposerSendInput) {
             idleCompaction: "onReturn",
           },
           modelSelection: ctxSelectedModelSelection,
-          runtimeMode,
+          runtimeMode: sendRuntimeMode,
           interactionMode: DEFAULT_INTERACTION_MODE,
         },
       });
@@ -1512,7 +1518,7 @@ export function useComposerSend(input: ComposerSendInput) {
                       projectId: activeProject.id,
                       title,
                       modelSelection: threadCreateModelSelection,
-                      runtimeMode,
+                      runtimeMode: sendRuntimeMode,
                       interactionMode: DEFAULT_INTERACTION_MODE,
                       branch: activeThreadBranch,
                       worktreePath: activeThread.worktreePath,
@@ -1561,7 +1567,7 @@ export function useComposerSend(input: ComposerSendInput) {
           },
           modelSelection: ctxSelectedModelSelection,
           titleSeed: title,
-          runtimeMode,
+          runtimeMode: sendRuntimeMode,
           interactionMode: DEFAULT_INTERACTION_MODE,
           dispatchMode: turnDispatchMode,
           ...(freshArm === undefined ? {} : { freshContext: true }),
@@ -1770,7 +1776,17 @@ export function useComposerSend(input: ComposerSendInput) {
     const ready = await refresh.finally(() => {
       sendInFlightRef.current = false;
     });
-    if (ready) return onSendLatest(...args);
+    // The draft may have moved to another environment, whose composer picks the mode and model.
+    const [event, dispatchMode, submissionIntent, atPress, directAnnotation] = args;
+    if (ready) {
+      return onSendLatest(
+        event,
+        dispatchMode,
+        submissionIntent,
+        atPress && { approvals: atPress.approvals },
+        directAnnotation,
+      );
+    }
   };
   return { onSend: onSendWithRouting };
 }
