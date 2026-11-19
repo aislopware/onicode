@@ -2707,7 +2707,7 @@ c0b1d32c97	take	taken as is
 d1f8636f49	take	adapted: Onicode already translated every key; adopted upstream's formal French for 6 mobile quote messages (rest of mobile fr uses vous), kept Onicode's wording elsewhere
 9246c3235e	take	test conflict: kept Onicode's sidecar extracted-text path, took upstream's tighter output asserts
 80cf4f7945	take	taken as is (web-only store; mobile has no equivalent reconcile)
-1852121afa	take	taken as is (quarantine prefix renamed to onicode by the port script)
+1852121afa	take	adapted: status fetch publishes its objects through Onicode's checkpoint publisher (publishPrivateObjects) instead of upstream's adoptPrivateObjects
 5f8ab374af	take	taken as is (ACP providers only)
 d3da5c6f32	skip	marketing site copy only; Onicode removed apps/marketing's T3 homepage
 21df2269bd	take	taken as is (oni_thread_launch takes clientRequestId in Onicode)
