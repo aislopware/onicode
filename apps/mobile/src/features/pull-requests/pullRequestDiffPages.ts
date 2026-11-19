@@ -1,3 +1,4 @@
+import { orderDiffFilesForReview } from "@onicode/client-runtime/diff-file-order";
 import type { ChangeRequestTerminology } from "@onicode/client-runtime/source-control-clients";
 import { changeRequestTermKind } from "../../lib/changeRequestTerm";
 import type { PullRequestDiffResult } from "@onicode/contracts";
@@ -118,7 +119,10 @@ export function combinePullRequestDiffPages(
     cache.set(page.result, value);
     return value;
   });
-  const files = parsed.flatMap((page) => (page.kind === "files" ? page.files : []));
+  const files = orderDiffFilesForReview(
+    parsed.flatMap((page) => (page.kind === "files" ? page.files : [])),
+    (file) => file.path,
+  );
   if (files.length === 0) return parsed[0] ?? { kind: "empty" };
   return {
     kind: "files",
