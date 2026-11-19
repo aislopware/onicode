@@ -372,6 +372,8 @@ contextBridge.exposeInMainWorld("desktopBridge", {
   appActivation: {
     setReady: (ready) =>
       ipcRenderer.invoke(IpcChannels.DESKTOP_APP_ACTIVATION_READY_CHANNEL, ready),
+    claim: (requestId) =>
+      ipcRenderer.invoke(IpcChannels.DESKTOP_APP_ACTIVATION_CLAIM_CHANNEL, requestId),
     complete: (response) =>
       ipcRenderer.invoke(IpcChannels.DESKTOP_APP_ACTIVATION_COMPLETE_CHANNEL, response),
     onRequest: (listener) => {
@@ -383,18 +385,6 @@ contextBridge.exposeInMainWorld("desktopBridge", {
       return () => {
         ipcRenderer.removeListener(
           IpcChannels.DESKTOP_APP_ACTIVATION_REQUEST_CHANNEL,
-          wrappedListener,
-        );
-      };
-    },
-    onAbandoned: (listener) => {
-      const wrappedListener = (_event: Electron.IpcRendererEvent, requestId: unknown) => {
-        if (typeof requestId === "string") listener(requestId);
-      };
-      ipcRenderer.on(IpcChannels.DESKTOP_APP_ACTIVATION_ABANDONED_CHANNEL, wrappedListener);
-      return () => {
-        ipcRenderer.removeListener(
-          IpcChannels.DESKTOP_APP_ACTIVATION_ABANDONED_CHANNEL,
           wrappedListener,
         );
       };
