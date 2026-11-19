@@ -92,9 +92,13 @@ class OniTunnelWebView(context: Context, appContext: AppContext) : ExpoView(cont
   }
 
   private fun fail(description: String, url: String) {
-    // A loopback connection refused because another environment's page is open says so.
-    val refused = TunnelProxy.mixed && android.net.Uri.parse(url).host?.loopbackHost() != null
-    val cause = if (refused) "conflict" else TunnelProxy.lastFailure?.cause ?: ""
+    // Only loopback pages go through the tunnel, so only they carry its failure.
+    val loopback = android.net.Uri.parse(url).host?.loopbackHost() != null
+    val cause = when {
+      !loopback -> ""
+      TunnelProxy.mixed -> "conflict"
+      else -> TunnelProxy.lastFailure?.cause ?: ""
+    }
     onLoadError(mapOf("code" to -1, "description" to description, "url" to url, "cause" to cause))
   }
 
