@@ -664,6 +664,22 @@ export const make = Effect.gen(function* () {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const scope = yield* Scope.Scope;
   const env = process.env;
+  const isLinuxAppImage =
+    environment.platform === "linux" && (env.APPIMAGE !== undefined || env.APPDIR !== undefined);
+  const appDir = env.APPDIR?.replace(/\/+$/u, "");
+  const stripAppImagePaths = (target: NodeJS.ProcessEnv) => {
+    if (!isLinuxAppImage || target.PATH === undefined) return;
+    // Cached PATHs can outlive the AppImage mount that originally contributed them. The runtime
+    // names the mount after the first six characters of the file name, Onicode-<version>.AppImage.
+    const kept = target.PATH.split(":").filter(
+      (entry) =>
+        !(appDir && (entry === appDir || entry.startsWith(`${appDir}/`))) &&
+        !/^\/tmp\/\.mount_Onicod[^/]+(?:\/|$)/u.test(entry),
+    );
+    if (kept.length > 0) target.PATH = kept.join(":");
+    else delete target.PATH;
+  };
+  stripAppImagePaths(env);
   const inherited = { ...env };
   const key = encodeCacheKey([
     environment.platform,
@@ -700,6 +716,7 @@ export const make = Effect.gen(function* () {
         budget,
       });
       const { prepared } = discovery;
+      stripAppImagePaths(fresh);
       const patch = Object.fromEntries(
         Object.keys(ShellEnvironmentPatch.fields).map((name) => [name, fresh[name] ?? null]),
       );
@@ -760,6 +777,7 @@ export const make = Effect.gen(function* () {
             return typeof value === "string" ? [[name, value]] : [];
           }),
         );
+        stripAppImagePaths(cached);
         const baseline = { ...inherited };
         const cachedPath = cached.PATH;
         if (cachedPath) {
