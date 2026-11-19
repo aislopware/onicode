@@ -17,7 +17,9 @@ import {
   ThreadId,
 } from "@onicode/contracts";
 import * as DateTime from "effect/DateTime";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
 import * as SqlClient from "effect/sql/SqlClient";
@@ -30,6 +32,7 @@ import * as CheckpointCaptureService from "./CheckpointCaptureService.ts";
 import * as EventSink from "./EventSink.ts";
 import * as IdAllocator from "@onicode/provider-core/server/IdAllocator";
 import * as ProjectionStore from "./ProjectionStore.ts";
+import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
 
 const layerProjectionStoreTest = Layer.mergeAll(
   ProjectionStore.layer.pipe(Layer.provideMerge(SqlitePersistence.layerMemory)),
@@ -269,6 +272,7 @@ it.layer(layerProjectionStoreTest)("CheckpointCaptureServiceV2", (it) => {
           Layer.provide(
             Layer.mergeAll(
               IdAllocator.layer,
+              ThreadCommandExecutor.layer,
               refLookupFails
                 ? CheckpointService.layer.pipe(
                     Layer.provide(
@@ -448,6 +452,7 @@ it.layer(layerProjectionStoreTest)("CheckpointCaptureServiceV2", (it) => {
         Layer.provide(
           Layer.mergeAll(
             IdAllocator.layer,
+            ThreadCommandExecutor.layer,
             Layer.mock(CheckpointService.CheckpointServiceV2)({
               materializeBaselineCheckpoint: () => Effect.die("a discarded run has no baseline"),
               capture: () => Effect.die("a discarded run must not be captured"),
@@ -634,6 +639,7 @@ it.layer(layerProjectionStoreTest)("CheckpointCaptureServiceV2", (it) => {
           Layer.provide(
             Layer.mergeAll(
               IdAllocator.layer,
+              ThreadCommandExecutor.layer,
               CheckpointService.layer.pipe(
                 Layer.provide(
                   Layer.mergeAll(
@@ -870,6 +876,7 @@ it.layer(layerProjectionStoreTest)("CheckpointCaptureServiceV2", (it) => {
         Layer.provide(
           Layer.mergeAll(
             IdAllocator.layer,
+            ThreadCommandExecutor.layer,
             Layer.mock(CheckpointService.CheckpointServiceV2)({
               materializeBaselineCheckpoint: () =>
                 Effect.die("baseline materialization must be skipped when ordinal 0 is ready"),
@@ -935,7 +942,7 @@ it.layer(layerProjectionStoreTest)("CheckpointCaptureServiceV2", (it) => {
     }),
   );
 
-  it.effect("completes a side chat run with a missing checkpoint and never touches git", () =>
+  it.effect("completes a side chat run under the thread lock and never touches git", () =>
     Effect.gen(function* () {
       const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
       const now = yield* DateTime.now;
@@ -1075,10 +1082,23 @@ it.layer(layerProjectionStoreTest)("CheckpointCaptureServiceV2", (it) => {
       ];
       yield* Effect.forEach(events, (candidate) => projectionStore.apply(candidate));
       const gitUnavailable = () => Effect.die("side chats must not snapshot the shared worktree");
+      const executor = yield* ThreadCommandExecutor.make;
+      const lockRequested = yield* Deferred.make<void>();
+      const observeLock: ThreadCommandExecutor.ThreadCommandExecutor["Service"]["withLock"] = (
+        key,
+        effect,
+      ) =>
+        Deferred.succeed(lockRequested, undefined).pipe(
+          Effect.andThen(executor.withLock(key, effect)),
+        );
       const layerCapture = CheckpointCaptureService.layer.pipe(
         Layer.provide(
           Layer.mergeAll(
             IdAllocator.layer,
+            Layer.succeed(ThreadCommandExecutor.ThreadCommandExecutor, {
+              ...executor,
+              withLock: observeLock,
+            }),
             CheckpointService.layer.pipe(
               Layer.provide(
                 Layer.mergeAll(
@@ -1103,13 +1123,31 @@ it.layer(layerProjectionStoreTest)("CheckpointCaptureServiceV2", (it) => {
         ),
       );
 
-      yield* CheckpointCaptureService.CheckpointCaptureServiceV2.use((service) =>
-        service.execute({
-          threadId: sideChatThreadId,
-          runId: sideChatRunId,
-          scopeId: sideChatScopeId,
-        }),
-      ).pipe(Effect.provide(layerCapture));
+      yield* Effect.gen(function* () {
+        const service = yield* CheckpointCaptureService.CheckpointCaptureServiceV2;
+        // Held as a client dispatch holds it: the run must not end until that dispatch is done.
+        const capture = yield* executor.withLock(
+          sideChatThreadId,
+          Effect.gen(function* () {
+            const capture = yield* service
+              .execute({
+                threadId: sideChatThreadId,
+                runId: sideChatRunId,
+                scopeId: sideChatScopeId,
+              })
+              .pipe(Effect.forkChild);
+            const first = yield* Effect.raceFirst(
+              Deferred.await(lockRequested).pipe(Effect.as("waits for the lock")),
+              Fiber.await(capture).pipe(Effect.as("committed")),
+            );
+            assert.equal(first, "waits for the lock");
+            const { runs } = yield* projectionStore.getThreadRecords(sideChatThreadId, ["runs"]);
+            assert.equal(runs[0]?.status, "waiting");
+            return capture;
+          }),
+        );
+        yield* Fiber.join(capture);
+      }).pipe(Effect.provide(layerCapture));
 
       const { checkpoints, runs } = yield* projectionStore.getThreadRecords(sideChatThreadId, [
         "runs",

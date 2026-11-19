@@ -127,6 +127,9 @@ export const make = Effect.gen(function* () {
           createdBy: "agent",
           creationSource: "server",
           idleCompaction: "beforeCacheExpires",
+          ...(thread.activeProviderThreadId === null
+            ? {}
+            : { idleCompactionProviderThreadId: thread.activeProviderThreadId }),
           dispatchMode: { type: "start_immediately" },
         });
         return;

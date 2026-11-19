@@ -1247,7 +1247,16 @@ it.effect.each([
       );
 
       if (outcome === "Claude cancels it twice") {
+        // The run-end reaction starts the next run outside the worker, so drain after it commits.
+        const starting = (messageId: string) =>
+          watch(
+            (event) =>
+              event.type === "run.updated" &&
+              event.payload.userMessageId === MessageId.make(messageId) &&
+              event.payload.status === "starting",
+          );
         const ended = yield* settled(parent.id, "waiting");
+        const beforeStarting = yield* starting("before");
         const nextRunning = yield* watch(
           (event) =>
             event.type === "provider-turn.updated" &&
@@ -1257,6 +1266,8 @@ it.effect.each([
         yield* answer(offers[0]!);
         yield* cancel(offers[1]!);
         yield* Fiber.join(ended);
+        yield* worker.drain();
+        yield* Fiber.join(beforeStarting);
         yield* worker.drain();
         yield* Fiber.join(nextRunning);
         // The older message runs first; the steer waits right behind it on its own model.
@@ -1281,9 +1292,12 @@ it.effect.each([
         yield* worker.drain();
         assert.equal(offers[3]?.priority, "next");
         const beforeEnded = yield* settled(before.id, "waiting");
+        const steerStarting = yield* starting("steer");
         yield* answer(offers[2]!);
         yield* cancel(offers[3]!);
         yield* Fiber.join(beforeEnded);
+        yield* worker.drain();
+        yield* Fiber.join(steerStarting);
         yield* worker.drain();
         assert.deepEqual(yield* queuedOrder, [[MessageId.make("after"), false]]);
         assert.equal(offers.length, 5);

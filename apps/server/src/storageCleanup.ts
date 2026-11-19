@@ -729,26 +729,33 @@ const make = Effect.gen(function* () {
     // Detached HEAD exits 1; full refs avoid shortening when a tag shares the branch name.
     const head = yield* read(["symbolic-ref", "--quiet", "HEAD"], 1);
     if (head === null) return true;
+    // A paused rebase, merge, cherry-pick, revert or bisect would lose its progress (and any
+    // autostash) on removal, whichever branch it stands on.
+    const operations = yield* read([
+      "rev-parse",
+      "--git-path",
+      "rebase-merge",
+      "--git-path",
+      "rebase-apply",
+      "--git-path",
+      "MERGE_HEAD",
+      "--git-path",
+      "MERGE_AUTOSTASH",
+      "--git-path",
+      "CHERRY_PICK_HEAD",
+      "--git-path",
+      "REVERT_HEAD",
+      "--git-path",
+      "sequencer",
+      "--git-path",
+      "BISECT_LOG",
+    ]);
+    if (operations === null) return true;
+    for (const state of operations.stdout.trim().split(/\r?\n/)) {
+      if (yield* fs.exists(path.resolve(cwd, state))) return true;
+    }
     // Removal keeps branches but drops a detached HEAD, so only commits held elsewhere are safe.
     if (head.exitCode !== 0) {
-      // A paused rebase, merge or bisect would lose its progress (and any autostash) on removal.
-      const operations = yield* read([
-        "rev-parse",
-        "--git-path",
-        "rebase-merge",
-        "--git-path",
-        "rebase-apply",
-        "--git-path",
-        "MERGE_HEAD",
-        "--git-path",
-        "MERGE_AUTOSTASH",
-        "--git-path",
-        "BISECT_LOG",
-      ]);
-      if (operations === null) return true;
-      for (const state of operations.stdout.trim().split(/\r?\n/)) {
-        if (yield* fs.exists(path.resolve(cwd, state))) return true;
-      }
       const unreachable = yield* read([
         "rev-list",
         "--max-count=1",

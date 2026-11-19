@@ -1026,7 +1026,7 @@ export function useThreadComposerState(input: {
       attachments: [],
       modelSelection,
       runtimeMode: thread.runtimeMode,
-      interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+      interactionMode: thread.interactionMode,
       createdAt: metadata.createdAt,
     });
     return messageId;

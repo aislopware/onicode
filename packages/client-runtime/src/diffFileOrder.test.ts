@@ -165,6 +165,54 @@ describe("orderDiffFilesForReview", () => {
         file("src/a.ts", ['import { b } from "./b";']),
       ]),
     ).toEqual(["src/a.ts", "src/b.ts"]);
+    // Breaking a <-> d at a readies c before d; c then readies b, which sorts before d.
+    expect(
+      order([
+        file("src/d.ts", ['import { a } from "./a";']),
+        file("src/c.ts", ['import { a } from "./a";']),
+        file("src/b.ts", ['import { c } from "./c";']),
+        file("src/a.ts", ['import { d } from "./d";']),
+      ]),
+    ).toEqual(["src/a.ts", "src/c.ts", "src/b.ts", "src/d.ts"]);
+  });
+
+  it("matches the first-ready-in-path-order rule on generated import graphs", () => {
+    function firstReadyOrder(graph: ReadonlyMap<string, ReadonlyArray<string>>): Array<string> {
+      const remaining = new Set(graph.keys());
+      const sorted = [...graph.keys()].sort((left, right) => left.localeCompare(right));
+      const ordered: Array<string> = [];
+      while (remaining.size > 0) {
+        const candidates = sorted.filter((path) => remaining.has(path));
+        const next =
+          candidates.find((path) =>
+            graph.get(path)!.every((dependency) => !remaining.has(dependency)),
+          ) ?? candidates[0]!;
+        remaining.delete(next);
+        ordered.push(next);
+      }
+      return ordered;
+    }
+    let seed = 7;
+    const random = () => {
+      seed = (seed * 48271) % 2147483647;
+      return seed / 2147483647;
+    };
+    for (let round = 0; round < 40; round++) {
+      // Mixed case makes localeCompare differ from code-point order.
+      const names = Array.from({ length: 3 + Math.floor(random() * 10) }, (_, index) =>
+        index % 2 === 0 ? `m${index}` : `M${index}`,
+      );
+      const graph = new Map(
+        names.map((name) => [name, names.filter((other) => other !== name && random() < 0.25)]),
+      );
+      const files = [...graph].map(([name, dependencies]) =>
+        file(
+          `${name}.ts`,
+          dependencies.map((dependency) => `import "./${dependency}";`),
+        ),
+      );
+      expect(order(files.toReversed())).toEqual(firstReadyOrder(graph).map((name) => `${name}.ts`));
+    }
   });
 
   it("keeps the tiers apart and orders tests by the source they cover", () => {

@@ -1542,7 +1542,7 @@ const make = Effect.gen(function* () {
       .workspaceScanDirectory(cwd)
       .pipe(
         Effect.flatMap((scanCwd) =>
-          providerRegistry.refreshWorkspaceSnapshot({ instanceId, cwd, scanCwd }),
+          providerRegistry.refreshWorkspaceSnapshot({ instanceId, cwd, scanCwd, modelsOnly: true }),
         ),
       );
 

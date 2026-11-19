@@ -129,6 +129,10 @@ it("keeps a scheduled fresh session's conversation to its own runs, its wakes in
   assert.deepEqual(conversationAt(3), [3, ["run-3"]]);
   assert.deepEqual(conversationAt(5), [3, ["run-3", "run-5"]]);
   assert.deepEqual(conversationAt(6), [3, ["run-3", "run-5", "run-6"]]);
-  // The main conversation continues past the schedule from its own start.
-  assert.deepEqual(conversationAt(4), [0, ["run-1", "run-2", "run-3", "run-4"]]);
+  // The main conversation continues past the schedule from its own start, without its runs.
+  assert.deepEqual(conversationAt(4), [0, ["run-1", "run-2", "run-4"]]);
+  const sideChatView = conversationRuns(projection, projection.runs[3], {
+    withScheduledRuns: true,
+  });
+  assert.deepEqual([...sideChatView.runIds].toSorted(), ["run-1", "run-2", "run-3", "run-4"]);
 });

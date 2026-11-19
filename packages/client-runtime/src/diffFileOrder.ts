@@ -112,19 +112,79 @@ function orderByImports(
   paths: ReadonlyArray<string>,
   imports: ReadonlyMap<string, ReadonlySet<string>>,
 ): Array<string> {
-  const remaining = new Set(paths);
+  // Each step takes the first path in sorted order whose dependencies are all placed, or the
+  // first unplaced path when a cycle leaves none ready. Nodes are ranks into `sorted`.
+  const sorted = [...new Set(paths)].sort((left, right) => left.localeCompare(right));
+  const rankOf = new Map(sorted.map((path, rank) => [path, rank]));
+  const pending = sorted.map(() => 0);
+  const dependents = sorted.map((): Array<number> => []);
+  sorted.forEach((path, rank) => {
+    for (const dependency of imports.get(path) ?? []) {
+      const dependencyRank = rankOf.get(dependency);
+      if (dependencyRank === undefined) continue;
+      pending[rank] = pending[rank]! + 1;
+      dependents[dependencyRank]!.push(rank);
+    }
+  });
+
+  const ready = new RankHeap();
+  pending.forEach((count, rank) => {
+    if (count === 0) ready.push(rank);
+  });
+  const placed = sorted.map(() => false);
   const ordered: Array<string> = [];
-  const sorted = [...paths].sort((left, right) => left.localeCompare(right));
-  while (remaining.size > 0) {
-    const candidates = sorted.filter((path) => remaining.has(path));
-    const next =
-      candidates.find((path) =>
-        [...(imports.get(path) ?? [])].every((dependency) => !remaining.has(dependency)),
-      ) ?? candidates[0]!;
-    remaining.delete(next);
-    ordered.push(next);
+  let lowestUnplaced = 0;
+  while (ordered.length < sorted.length) {
+    let next = ready.pop();
+    if (next === undefined) {
+      while (placed[lowestUnplaced]) lowestUnplaced++;
+      next = lowestUnplaced;
+    }
+    placed[next] = true;
+    ordered.push(sorted[next]!);
+    for (const dependent of dependents[next]!) {
+      pending[dependent] = pending[dependent]! - 1;
+      // A path placed to break a cycle reaches zero later and must not be placed twice.
+      if (pending[dependent] === 0 && !placed[dependent]) ready.push(dependent);
+    }
   }
   return ordered;
+}
+
+class RankHeap {
+  private readonly items: Array<number> = [];
+
+  push(rank: number): void {
+    const items = this.items;
+    let index = items.length;
+    items.push(rank);
+    while (index > 0) {
+      const parent = (index - 1) >> 1;
+      if (items[parent]! <= rank) break;
+      items[index] = items[parent]!;
+      index = parent;
+    }
+    items[index] = rank;
+  }
+
+  pop(): number | undefined {
+    const items = this.items;
+    const top = items[0];
+    const last = items.pop();
+    if (top === undefined || last === undefined || items.length === 0) return top;
+    let index = 0;
+    while (true) {
+      const left = 2 * index + 1;
+      if (left >= items.length) break;
+      const right = left + 1;
+      const child = right < items.length && items[right]! < items[left]! ? right : left;
+      if (items[child]! >= last) break;
+      items[index] = items[child]!;
+      index = child;
+    }
+    items[index] = last;
+    return top;
+  }
 }
 
 // `a.logic.test.ts` covers `a.logic.ts` while `a.browser.test.ts` covers `a.ts`, so the longest

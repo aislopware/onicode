@@ -4,6 +4,7 @@ import {
   type OrchestrationV2ProviderTurn,
   type OrchestrationV2ProviderTurnTokenUsage,
   type OrchestrationV2ProviderThread,
+  type RunId,
   type ServerProvider,
   type ServerSettings,
   type ThreadTokenUsageSnapshot,
@@ -280,6 +281,43 @@ export function shouldOfferResumeCompaction(input: {
 }
 
 /**
+ * The active session is a fresh-session schedule's own while the thread has a conversation of its
+ * own, which a send resumes instead, as on the server. A run's first prompt marks it scheduled.
+ */
+export function activeSessionIsScheduledFresh(
+  projection: Pick<ThreadStructure, "thread" | "providerThreads" | "runs">,
+  visibleTurnItems: ReadonlyArray<{ readonly item: ThreadStructureTurnItem }>,
+): boolean {
+  const prompts = new Map<
+    RunId,
+    Extract<ThreadStructureTurnItem, { readonly type: "user_message" }>
+  >();
+  for (const { item } of visibleTurnItems) {
+    if (item.type !== "user_message" || item.runId === null) continue;
+    const held = prompts.get(item.runId);
+    if (held === undefined || item.ordinal < held.ordinal) prompts.set(item.runId, item);
+  }
+  const startedBySchedule = (thread: OrchestrationV2ProviderThread) => {
+    const run = projection.runs.find((candidate) => candidate.ordinal === thread.firstRunOrdinal);
+    return run?.freshContext === true && prompts.get(run.id)?.scheduledTaskId !== undefined;
+  };
+  const active = projection.providerThreads.find(
+    (thread) => thread.id === projection.thread.activeProviderThreadId,
+  );
+  return (
+    active !== undefined &&
+    startedBySchedule(active) &&
+    projection.providerThreads.some(
+      (thread) =>
+        thread.appThreadId === projection.thread.id &&
+        thread.ownerNodeId === null &&
+        thread.lastRunOrdinal !== null &&
+        !startedBySchedule(thread),
+    )
+  );
+}
+
+/**
  * The tokens a plain send into an idle thread compacts first, as web's composer does under
  * "When you return", or null when it sends as is. Web reads the same state for its "Compact and
  * send" button. A send that hands off to another conversation starts that one fresh, so only the
@@ -316,6 +354,7 @@ export function compactBeforeSendTokens(input: {
     resolveIdleCompaction(input.settings, provider.instanceId) === "off" ||
     !provider.slashCommands.some((command) => command.name === "compact") ||
     resolvePendingHandoff(projection, input.selection, input.providers) !== null ||
+    activeSessionIsScheduledFresh(projection, input.visibleTurnItems) ||
     projection.runtimeRequests.some((request) => request.status === "pending") ||
     projection.runs.some((run) => run.status === "queued" && run.queueHeld === true) ||
     (!input.visibleTurnItems.some(

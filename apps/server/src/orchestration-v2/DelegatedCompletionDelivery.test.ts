@@ -9,6 +9,7 @@ import { assert, it, vi } from "@effect/vitest";
 import {
   CheckpointId,
   CommandId,
+  EnvironmentId,
   EventId,
   MessageId,
   type ModelSelection,
@@ -767,19 +768,35 @@ it.layer(layerTest)("delegated completion delivery repairs", (it) => {
     { name: "no result is waiting", delivery: "none", compacts: true },
     { name: "a result is waiting to be sent", delivery: "pending", compacts: false },
     { name: "a result was just sent", delivery: "sent", compacts: false },
-  ] as const)("compacts before the cache expires only when $name", ({ delivery, compacts }) =>
+    {
+      name: "it measured the active session",
+      delivery: "none",
+      drift: "stale-measurement",
+      compacts: false,
+    },
+    {
+      name: "the selection stayed on the measured instance",
+      delivery: "none",
+      drift: "selection-switch",
+      compacts: false,
+    },
+  ] as const)("compacts before the cache expires only when $name", (testCase) =>
     Effect.gen(function* () {
+      const { delivery, compacts } = testCase;
+      const drift = "drift" in testCase ? testCase.drift : undefined;
       const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const eventSink = yield* EventSink.EventSinkV2;
       const now = yield* DateTime.now;
-      const threadId = ThreadId.make(`thread:idle-compaction-delivery-${delivery}`);
-      const runId = RunId.make(`run:idle-compaction-delivery-${delivery}`);
-      const taskId = NodeId.make(`node:idle-compaction-delivery-${delivery}-task`);
+      const key = drift ?? delivery;
+      const threadId = ThreadId.make(`thread:idle-compaction-delivery-${key}`);
+      const runId = RunId.make(`run:idle-compaction-delivery-${key}`);
+      const taskId = NodeId.make(`node:idle-compaction-delivery-${key}-task`);
 
       yield* seedParentWithTerminalTask({
         threadId,
-        projectId: ProjectId.make(`project:idle-compaction-delivery-${delivery}`),
+        projectId: ProjectId.make(`project:idle-compaction-delivery-${key}`),
         runId,
-        rootNodeId: NodeId.make(`node:idle-compaction-delivery-${delivery}-root`),
+        rootNodeId: NodeId.make(`node:idle-compaction-delivery-${key}-root`),
         taskId,
         deliveryState: delivery === "none" ? "delivered" : "claimed",
         completionWake: "always",
@@ -801,6 +818,27 @@ it.layer(layerTest)("delegated completion delivery repairs", (it) => {
           delegatedCompletion: { parentRunId: runId, generation: 1, taskIds: [taskId] },
         });
       }
+      if (drift === "selection-switch") {
+        // The user picked another instance after the run, and nothing ran on it yet.
+        const { thread } = yield* orchestrator.getThreadProjection(threadId);
+        yield* eventSink.write({
+          events: [
+            {
+              id: EventId.make(`event:idle-compaction-selection:${threadId}`),
+              type: "thread.metadata-updated",
+              threadId,
+              occurredAt: now,
+              payload: {
+                ...thread,
+                modelSelection: {
+                  instanceId: ProviderInstanceId.make("claudeAgent"),
+                  model: "claude-opus-4-6",
+                },
+              },
+            },
+          ],
+        });
+      }
 
       const compactionId = MessageId.make(`idle-compact:${threadId}:${runId}`);
       yield* orchestrator.dispatch({
@@ -813,6 +851,9 @@ it.layer(layerTest)("delegated completion delivery repairs", (it) => {
         createdBy: "agent",
         creationSource: "server",
         idleCompaction: "beforeCacheExpires",
+        ...(drift === "stale-measurement"
+          ? { idleCompactionProviderThreadId: ProviderThreadId.make("provider-thread:replaced") }
+          : {}),
         dispatchMode: { type: "start_immediately" },
       });
 
@@ -879,7 +920,17 @@ it.layer(layerTest)("delegated completion delivery repairs", (it) => {
             result,
             status,
             title: "Inspect regression",
-            childThreadId: ThreadId.make(`thread:inline-budget-child:${id}`),
+            // The second task runs on a linked environment, with no child thread here.
+            ...(id === secondTaskId
+              ? {
+                  childThreadId: null,
+                  remoteChild: {
+                    environmentId: EnvironmentId.make("environment:inline-budget"),
+                    threadId: ThreadId.make(`thread:inline-budget-remote:${id}`),
+                    label: "Build box",
+                  },
+                }
+              : { childThreadId: ThreadId.make(`thread:inline-budget-child:${id}`) }),
           },
         })),
       });
@@ -906,7 +957,11 @@ it.layer(layerTest)("delegated completion delivery repairs", (it) => {
       const deferredTaskId = testCase.inlineFirst ? secondTaskId : firstTaskId;
       assert.include(
         message.text,
-        `Delegated task ${deferredTaskId} (Inspect regression) in child thread thread:inline-budget-child:${deferredTaskId} [${testCase.inlineFirst ? "cancelled" : "failed"}]`,
+        `Delegated task ${firstTaskId} (Inspect regression) in child thread thread:inline-budget-child:${firstTaskId} [failed]`,
+      );
+      assert.include(
+        message.text,
+        `Delegated task ${secondTaskId} (Inspect regression) in thread thread:inline-budget-remote:${secondTaskId} on linked environment Build box (environment:inline-budget) [cancelled]`,
       );
       assert.include(message.text, `Use task_status with taskId ${deferredTaskId}`);
       assert.deepEqual(message.delegatedCompletion?.taskIds, [firstTaskId, secondTaskId]);

@@ -3339,6 +3339,15 @@ describe("storage cleanup reports and local file policies", () => {
         yield* command(worktree, ["merge", "--abort"]);
         expect(yield* fs.readFileString(`${worktree}/tracked.txt`)).toBe("autostashed\n");
         yield* command(worktree, ["checkout", "--", "tracked.txt"]);
+        // An empty pick stops with a clean tree and the rest of the sequence still to apply.
+        yield* command(worktree, ["cherry-pick", "topic", "topic"]).pipe(Effect.ignore);
+        expect((yield* service.runNow).entries[0]).toMatchObject({ outcome: "kept" });
+        yield* command(worktree, ["cherry-pick", "--abort"]);
+        yield* command(worktree, ["checkout", "feature"]);
+        yield* command(worktree, ["merge", "--no-ff", "--no-commit", "topic"]);
+        expect((yield* service.runNow).entries[0]).toMatchObject({ outcome: "kept" });
+        yield* command(worktree, ["merge", "--abort"]);
+        yield* command(worktree, ["checkout", "--detach", "main"]);
         yield* command(worktree, ["bisect", "start"]);
         expect((yield* service.runNow).entries[0]).toMatchObject({ outcome: "kept" });
         yield* command(worktree, ["bisect", "reset"]);

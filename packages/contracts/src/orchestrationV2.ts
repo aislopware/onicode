@@ -614,7 +614,10 @@ export function isCompactionCommandMessage(message: CompactionMessageFields): bo
   );
 }
 
-const LEADING_COMMAND = /^\s*(?:\/|\p{Sc}[a-zA-Z0-9:_-]*[a-zA-Z])/u;
+// A command token (one nested `/segment` at most) or a skill token as the composer reads one, not
+// prose that starts with a path ("/Users/me/app"), an amount ("$25k") or a variable ("$HOME").
+const LEADING_COMMAND =
+  /^\s*(?:\/[A-Za-z][\w:.-]*(?:\/[\w:.-]+)?|\p{Sc}(?![A-Z0-9_]+(?:\s|$))(?![0-9][0-9_]*(?:[kKmMbBtT]|[eE][0-9]+)?(?:\s|$))(?=[a-zA-Z0-9:_-]*[a-zA-Z])[a-zA-Z0-9][a-zA-Z0-9:_-]*)(?=\s|$)/u;
 
 /**
  * Who sent a message, in a line the model reads before its text, or the text unchanged when a
@@ -3438,6 +3441,8 @@ export const OrchestrationV2Command = Schema.Union([
     senderThreadId: Schema.optional(ThreadId),
     linkedSender: Schema.optional(OrchestrationV2LinkedSender),
     idleCompaction: Schema.optional(OrchestrationV2IdleCompaction),
+    /** The session an idle compaction measured; it is dropped once another one is active. */
+    idleCompactionProviderThreadId: Schema.optional(ProviderThreadId),
     /** Start a new provider session without the thread's earlier context. Never steers. */
     freshContext: Schema.optional(Schema.Boolean),
     commandId: CommandId,

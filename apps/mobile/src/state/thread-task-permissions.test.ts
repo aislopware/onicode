@@ -271,6 +271,7 @@ beforeEach(() => {
   state.compactModel = null;
   state.compactDueAt = "";
   state.thread.latestRun = null;
+  state.thread.interactionMode = "default";
   state.projection = null;
   state.serverConfig = {
     providers: [{ instanceId: "codex", driver: "codex", enabled: true }],
@@ -683,6 +684,7 @@ describe("mobile task permissions", () => {
       model: "claude-sonnet-5-5",
     };
     Object.assign(state.draft, { runtimeMode: "approval-required" });
+    state.thread.interactionMode = "plan";
     const composer = useThreadComposerState(NO_SIDE_CHATS);
     expect(await composer.onSendCommand("/goal clear")).toBe("message");
     expect(state.enqueue).toHaveBeenCalledExactlyOnceWith(
@@ -694,6 +696,7 @@ describe("mobile task permissions", () => {
         attachments: [],
         modelSelection: state.thread.modelSelection,
         runtimeMode: state.thread.runtimeMode,
+        interactionMode: "plan",
       }),
     );
     expect(state.clearDraft).not.toHaveBeenCalled();

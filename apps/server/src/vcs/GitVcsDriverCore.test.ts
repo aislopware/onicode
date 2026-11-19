@@ -5688,9 +5688,15 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
               const objects = path.join(cwd, ".git", "objects");
               NodeFS.writeFileSync(path.join(objects, "pack", "tmp_pack_other"), "another fetch");
 
-              const status = yield* (yield* GitVcsDriver.GitVcsDriver).statusDetailsRemote(cwd);
+              const driver = yield* GitVcsDriver.GitVcsDriver;
+              const status = yield* driver.statusDetailsRemote(cwd);
 
               assert.equal(status.behindCount, behindCount);
+              if (transfer === "followed by a push") {
+                // Meeting a remote that moved is expected, so the next poll catches up on time.
+                yield* TestClock.adjust(Duration.seconds(16));
+                assert.equal((yield* driver.statusDetailsRemote(cwd)).behindCount, 2);
+              }
               assert.deepEqual(
                 [...NodeFS.readdirSync(objects), ...NodeFS.readdirSync(path.join(objects, "pack"))]
                   .filter((name) => name.startsWith("tmp_"))
@@ -5698,6 +5704,48 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
                 ["tmp_pack_other"],
               );
             }),
+        );
+
+        it.effect("backs off when the ref-moving fetch keeps failing after a good download", () =>
+          Effect.gen(function* () {
+            const path = yield* Path.Path;
+            const cwd = yield* makeTmpDir();
+            const remote = yield* makeTmpDir("git-vcs-driver-remote-");
+            const updater = yield* makeTmpDir("git-vcs-driver-updater-");
+            const { initialBranch } = yield* initRepoWithCommit(cwd);
+            yield* git(remote, ["init", "--bare"]);
+            yield* git(cwd, ["remote", "add", "origin", remote]);
+            yield* git(cwd, ["push", "-u", "origin", initialBranch]);
+            yield* git(updater, ["clone", remote, "."]);
+            yield* git(updater, ["config", "user.email", "test@test.com"]);
+            yield* git(updater, ["config", "user.name", "Test"]);
+            yield* writeTextFile(updater, "remote.txt", "remote\n");
+            yield* git(updater, ["add", "remote.txt"]);
+            yield* git(updater, ["commit", "-m", "remote commit"]);
+            yield* git(updater, ["push", "origin", initialBranch]);
+            const served = path.join(remote, "served.log");
+            yield* git(cwd, [
+              "config",
+              "remote.origin.uploadpack",
+              `f() { echo >> '${served}'; git upload-pack "$@"; }; f`,
+            ]);
+            // A stale lock refuses the ref update every time, while downloads keep succeeding.
+            NodeFS.writeFileSync(
+              path.join(cwd, ".git", "refs", "remotes", "origin", `${initialBranch}.lock`),
+              "",
+            );
+            const connections = () => NodeFS.readFileSync(served, "utf8").length;
+            const driver = yield* GitVcsDriver.GitVcsDriver;
+
+            yield* driver.statusDetailsRemote(cwd);
+            assert.equal(connections(), 2);
+            yield* TestClock.adjust(Duration.seconds(16));
+            yield* driver.statusDetailsRemote(cwd);
+            assert.equal(connections(), 4);
+            yield* TestClock.adjust(Duration.seconds(16));
+            yield* driver.statusDetailsRemote(cwd);
+            assert.equal(connections(), 4);
+          }),
         );
 
         it.effect(

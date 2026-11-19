@@ -43,6 +43,7 @@ function sendInput(
     readonly promptOutsideWindow?: boolean;
     readonly text?: string;
     readonly threadIdle?: boolean;
+    readonly scheduledSession?: boolean;
   } = {},
 ) {
   const source = overrides.source ?? claude;
@@ -67,6 +68,14 @@ function sendInput(
     providerInstanceId: source,
     contextUsage: null,
     updatedAt: DateTime.makeUnsafe(lastTurnAt),
+    ...(overrides.scheduledSession === true
+      ? {
+          appThreadId: v2Projection.thread.id,
+          ownerNodeId: null,
+          firstRunOrdinal: id === "provider-thread-current" ? 2 : 1,
+          lastRunOrdinal: id === "provider-thread-current" ? 2 : 1,
+        }
+      : {}),
   });
   const visibleTurnItems =
     overrides.promptOutsideWindow === true
@@ -80,6 +89,20 @@ function sendInput(
               attachments: [],
             },
           },
+          ...(overrides.scheduledSession === true
+            ? [
+                {
+                  item: {
+                    type: "user_message",
+                    runId: RunId.make("run-scheduled"),
+                    ordinal: 2,
+                    text: "Hourly report",
+                    attachments: [],
+                    scheduledTaskId: "task-hourly",
+                  },
+                },
+              ]
+            : []),
         ];
   const projection = {
     ...v2Projection,
@@ -119,6 +142,20 @@ function sendInput(
         startedAt: "2026-10-30T14:20:00.000Z",
         contextHandoffId: null,
       },
+      ...(overrides.scheduledSession === true
+        ? [
+            {
+              id: RunId.make("run-scheduled"),
+              ordinal: 2,
+              providerInstanceId: source,
+              modelSelection: sourceSelection,
+              status: "completed",
+              startedAt: "2026-10-30T14:21:00.000Z",
+              contextHandoffId: null,
+              freshContext: true,
+            },
+          ]
+        : []),
       ...(overrides.heldQueue === true
         ? [{ id: RunId.make("queued-run"), status: "queued", queueHeld: true, startedAt: null }]
         : []),
@@ -256,6 +293,11 @@ describe("compactBeforeSendTokens", () => {
     { name: "while the thread is working", threadIdle: false, expected: false },
     { name: "with no conversation but /compact", onlyCompactMessages: true, expected: false },
     { name: "for a typed /compact", text: "/compact keep the plan", expected: false },
+    {
+      name: "when the active session is a fresh-session schedule's",
+      scheduledSession: true,
+      expected: false,
+    },
   ] as const)("$name", ({ name: _name, expected, ...overrides }) => {
     expect(compactBeforeSendTokens(sendInput(overrides as Parameters<typeof sendInput>[0]))).toBe(
       expected ? 293_611 : null,

@@ -1485,6 +1485,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       remoteName,
     ];
     const objectsPath = path.join(gitCommonDir, "objects");
+    const key = `${gitCommonDir}\0${remoteName}`;
     const fetchOptions = {
       fallbackErrorDetail: "Background Git fetch exited with a non-zero status.",
       timeoutMs: Duration.toMillis(STATUS_UPSTREAM_FETCH_TIMEOUT),
@@ -1496,11 +1497,18 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     const isolatedFetch = Effect.acquireUseRelease(
       fileSystem.makeTempDirectory({ directory: objectsPath, prefix: "tmp_objdir-onicode-" }),
       Effect.fnUntraced(function* (privateObjects) {
-        const objectDirectories = yield* runGitStdout(
-          "GitVcsDriver.fetchRemoteForStatus.alternates",
-          fetchCwd,
-          ["--git-dir", gitCommonDir, "count-objects", "-v"],
-        );
+        // `count-objects` stats every loose object; most repositories have no alternates to list.
+        const hasAlternates = yield* fileSystem
+          .exists(path.join(objectsPath, "info", "alternates"))
+          .pipe(Effect.orElseSucceed(() => true));
+        const objectDirectories = hasAlternates
+          ? yield* runGitStdout("GitVcsDriver.fetchRemoteForStatus.alternates", fetchCwd, [
+              "--git-dir",
+              gitCommonDir,
+              "count-objects",
+              "-v",
+            ])
+          : "";
         const options = (writableObjects: string) => ({
           ...fetchOptions,
           env: {
@@ -1513,10 +1521,13 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
           fetchCwd,
           fetchArgs("--dry-run"),
           options(privateObjects),
-        );
+        ).pipe(Effect.tapError(() => Effect.sync(() => statusSealedRefusals.delete(key))));
         yield* publishPrivateObjects(fileSystem, path, privateObjects, objectsPath);
         // A dry run names each ref it would move on stderr and is silent when none would.
-        if (stderr.trim() === "") return;
+        if (stderr.trim() === "") {
+          statusSealedRefusals.delete(key);
+          return "done" as const;
+        }
         // This fetch may only move refs to objects the repository now holds. If the remote moved
         // since the dry run it would download, so `pack` is a file and each loose fanout folder a
         // dangling link (dumb HTTP writes loose objects): writes fail, reads stay silent ENOENT.
@@ -1536,12 +1547,35 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
               .pipe(Effect.catch(() => fileSystem.writeFileString(fanout, ""))),
           { concurrency: 16, discard: true },
         );
-        yield* executeGit(
+        // The dry run just reached this remote, so one refusal here is the seal meeting a remote
+        // that moved on, not a fault to back off from. Two in a row are a fault.
+        const refused = yield* executeGit(
           "GitVcsDriver.fetchRemoteForStatus",
           fetchCwd,
           ["-c", "fetch.unpackLimit=1", ...fetchArgs("--quiet")],
           options(sealedObjects),
+        ).pipe(
+          Effect.as(false),
+          Effect.catchTags({
+            GitCommandError: (error) =>
+              statusSealedRefusals.has(key)
+                ? Effect.fail(error)
+                : Effect.logDebug(
+                    "Background Git fetch met a remote that moved since its dry run",
+                    error,
+                  ).pipe(Effect.as(true)),
+          }),
         );
+        if (refused) {
+          statusSealedRefusals.add(key);
+          if (statusSealedRefusals.size > STATUS_UPSTREAM_REFRESH_CACHE_CAPACITY) {
+            const oldest = statusSealedRefusals.values().next().value;
+            if (oldest !== undefined) statusSealedRefusals.delete(oldest);
+          }
+          return "refused" as const;
+        }
+        statusSealedRefusals.delete(key);
+        return "done" as const;
       }),
       (privateObjects) =>
         fileSystem
@@ -1567,7 +1601,6 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
             }),
       ),
     );
-    const key = `${gitCommonDir}\0${remoteName}`;
     const failure = statusRemoteRefreshFailures.get(key);
     if (failure && (yield* Clock.currentTimeMillis) < failure.retryAt) return;
     const fiber = yield* Effect.uninterruptible(
@@ -1581,9 +1614,10 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         // healthy writer. A separate safety limit prevents a hung transport from
         // occupying its worker slot indefinitely.
         const fetch = isolatedFetch.pipe(
-          Effect.tap(() =>
+          Effect.tap((outcome) =>
             Effect.sync(() => {
-              statusRemoteRefreshFailures.delete(key);
+              // A first refusal neither clears nor extends an earlier backoff.
+              if (outcome === "done") statusRemoteRefreshFailures.delete(key);
             }),
           ),
           Effect.tapError(() => recordStatusRemoteRefreshFailure(key)),
@@ -1846,6 +1880,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
   });
 
   const statusRemoteRefreshFailures = new Map<string, { count: number; retryAt: number }>();
+  const statusSealedRefusals = new Set<string>();
   const untrackedTotalsFailures = new Map<
     string,
     {

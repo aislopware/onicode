@@ -116,11 +116,13 @@ export function scheduledConversationStarts(
 /**
  * The runs through `run` of the conversation it continues, and where that conversation starts: a
  * scheduled fresh session's own runs, a started fresh run alone, or the main conversation since
- * its latest fresh start.
+ * its latest fresh start. The main conversation leaves scheduled fresh sessions out, as its native
+ * session never saw them, unless `withScheduledRuns` asks for them (side chats rank them lower).
  */
 export function conversationRuns(
   projection: ConversationSource,
   run: OrchestrationV2Run | undefined,
+  options?: { readonly withScheduledRuns?: boolean },
 ): { readonly boundary: number; readonly runIds: ReadonlySet<RunId> } {
   const through = run?.ordinal ?? Number.POSITIVE_INFINITY;
   const start = run === undefined ? undefined : scheduledConversationStart(projection, run);
@@ -137,11 +139,17 @@ export function conversationRuns(
   }
   const boundary =
     run !== undefined && startedFreshRun(run) ? run.ordinal : contextBoundaryOrdinal(projection);
+  const scheduled =
+    options?.withScheduledRuns === true ? undefined : scheduledConversationStarts(projection);
   return {
     boundary,
     runIds: new Set(
       projection.runs.flatMap((candidate) =>
-        candidate.ordinal >= boundary && candidate.ordinal <= through ? [candidate.id] : [],
+        candidate.ordinal >= boundary &&
+        candidate.ordinal <= through &&
+        scheduled?.has(candidate.id) !== true
+          ? [candidate.id]
+          : [],
       ),
     ),
   };

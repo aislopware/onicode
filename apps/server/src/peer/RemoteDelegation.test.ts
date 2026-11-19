@@ -1753,6 +1753,7 @@ it.effect.each([
   "later-run",
   "sparse",
   "growing",
+  "heavy-tail",
   "shrinking",
   "cancel",
   "no-run",
@@ -1786,6 +1787,13 @@ it.effect.each([
           }));
         const timeline: Array<TimelineEntry> = [
           ...history(middle ? 150 : 300, boxRunId, "before"),
+          // The response budget cuts the tail page well short of the run's last reply.
+          ...(scenario === "heavy-tail"
+            ? history(60, boxRunId, "heavy").map((entry) => ({
+                ...entry,
+                text: "discarded history ".repeat(120),
+              }))
+            : []),
           {
             id: TurnItemId.make("selected"),
             runId: scenario === "no-run" ? boxLaterRunId : boxRunId,
@@ -1859,8 +1867,14 @@ it.effect.each([
         } else {
           expect(pages.at(1)?.afterPosition).toBe(tailPosition);
           const rest = pages.slice(2);
-          if (scenario === "later-run" || scenario === "shrinking" || scenario === "growing") {
-            // An inconclusive tail falls back to scanning from where the first page ended.
+          if (scenario === "growing" || scenario === "heavy-tail") {
+            // A tail that holds the run's reply but not the whole rest pages on from the tail.
+            expect(rest.length).toBeGreaterThan(0);
+            const onward = rest.map((read) => read.afterPosition ?? -1);
+            expect(onward.every((position) => position > tailPosition)).toBe(true);
+            expect(onward).toEqual([...onward].sort((left, right) => left - right));
+          } else if (scenario === "later-run" || scenario === "shrinking") {
+            // A tail without the run's reply falls back to scanning on from the first page.
             expect(rest.length).toBeGreaterThan(0);
             const resumed = rest.map((read) => read.afterPosition ?? -1);
             expect(resumed[0]).toBeLessThan(tailPosition);

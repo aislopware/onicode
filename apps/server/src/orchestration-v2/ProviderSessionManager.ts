@@ -3498,6 +3498,11 @@ export const layerWithOptions = (
                 );
               }
             }
+            const ownedProviderThreadIds = detachedProviderThreads.flatMap((providerThread) =>
+              (providerThread.appThreadId ?? input.threadId) === input.threadId
+                ? [providerThread.id]
+                : [],
+            );
             const detachResult = yield* Ref.modify(sessions, (current) => {
               const entry = current.get(key);
               if (entry === undefined || !entry.attachedThreadIds.has(input.threadId)) {
@@ -3527,6 +3532,13 @@ export const layerWithOptions = (
                   : entry.mcpCredentialIdByThread;
               const idleThreadUnloads = new Map(entry.idleThreadUnloads);
               idleThreadUnloads.delete(input.threadId);
+              // A detached turn's end may never arrive; its marker must not keep the session busy.
+              const busyTurns = new Set(
+                [...entry.busyTurns].filter(
+                  (turnKey) =>
+                    !ownedProviderThreadIds.some((id) => turnKey.startsWith(busyTurnPrefix(id))),
+                ),
+              );
               const updatedEntry = {
                 ...entry,
                 attachedThreadIds,
@@ -3534,6 +3546,7 @@ export const layerWithOptions = (
                 linkedEnvironmentsByThread,
                 mcpCredentialIdByThread,
                 idleThreadUnloads,
+                busyTurns,
               };
               const updated = new Map(current);
               updated.set(key, updatedEntry);

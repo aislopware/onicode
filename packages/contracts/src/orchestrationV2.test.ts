@@ -674,6 +674,39 @@ describe("withMessageSenderNote", () => {
     [thread, "", '[Onicode: the agent in Onicode thread "t" sent this message, not the user.]'],
     [thread, " /git/review staged", " /git/review staged"],
     [thread, "$deploy ship it", "$deploy ship it"],
+    [thread, "/compact", "/compact"],
+    [thread, "/Review now", "/Review now"],
+    [thread, "$2spec draft", "$2spec draft"],
+    [
+      thread,
+      "$25k left",
+      '[Onicode: the agent in Onicode thread "t" sent this message, not the user.]\n\n$25k left',
+    ],
+    [
+      thread,
+      "$1e3 remaining",
+      '[Onicode: the agent in Onicode thread "t" sent this message, not the user.]\n\n$1e3 remaining',
+    ],
+    [
+      thread,
+      "$_draft it",
+      '[Onicode: the agent in Onicode thread "t" sent this message, not the user.]\n\n$_draft it',
+    ],
+    [
+      thread,
+      "/Users/me/app crashes",
+      '[Onicode: the agent in Onicode thread "t" sent this message, not the user.]\n\n/Users/me/app crashes',
+    ],
+    [
+      thread,
+      "$HOME is unset",
+      '[Onicode: the agent in Onicode thread "t" sent this message, not the user.]\n\n$HOME is unset',
+    ],
+    [
+      thread,
+      "$MY_VAR is unset",
+      '[Onicode: the agent in Onicode thread "t" sent this message, not the user.]\n\n$MY_VAR is unset',
+    ],
     [
       thread,
       "$25 left",
