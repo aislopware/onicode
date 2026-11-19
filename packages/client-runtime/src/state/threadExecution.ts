@@ -35,7 +35,6 @@ import {
   resolveSelectableModel,
   withLegacyUltracodeEffort,
 } from "@onicode/shared/model";
-import { unsentManualContinuationSource } from "@onicode/shared/orchestrationV2ManualContinuation";
 import { formatDuration } from "@onicode/shared/orchestrationTiming";
 import * as DateTime from "effect/DateTime";
 
@@ -316,43 +315,21 @@ export function formatProviderSubagentStatus(
     : resolve(msg("{label} in {elapsed}", { label, elapsed }));
 }
 
-/** The run a manual continuation resumes; the server holds the queue until it does. */
+/**
+ * The run a manual continuation resumes; the server holds the queue until it does. Every provider
+ * qualifies: the server prompts one without native resume to continue where it left off.
+ */
 export function deriveResumableRunId(
-  projection: Pick<
-    ThreadStructure,
-    "runs" | "turnItems" | "attempts" | "providerTurns" | "providerThreads" | "providerSessions"
-  >,
+  projection: Pick<ThreadStructure, "runs" | "turnItems">,
   runtime: Pick<ThreadStructureRuntime, "lastErrorClass"> | null,
 ): RunId | null {
   const run = latestExecutedRun(projection.runs);
-  const resumable =
-    run?.status === "interrupted" ||
-    (run?.status === "failed" &&
-      runtime?.lastErrorClass === "usage_limit" &&
-      latestRootProviderFailure(run, projection.turnItems)?.class === "usage_limit");
-  if (!resumable) return null;
-  // Without native resume the server can only resend a message the provider never received.
-  if (
-    runProviderSession(projection, run)?.capabilities.turns.supportsNativeResume === false &&
-    unsentManualContinuationSource({ manualContinuationOfRunId: run.id }, projection) === undefined
-  ) {
-    return null;
-  }
-  return run.id;
-}
-
-function runProviderSession(
-  projection: Pick<ThreadStructure, "providerThreads" | "providerSessions">,
-  run: ThreadStructure["runs"][number],
-) {
-  const sessionId = projection.providerThreads.find(
-    (thread) => thread.id === run.providerThreadId,
-  )?.providerSessionId;
-  return sessionId == null
-    ? projection.providerSessions.findLast(
-        (session) => session.providerInstanceId === run.providerInstanceId,
-      )
-    : projection.providerSessions.find((session) => session.id === sessionId);
+  if (run?.status === "interrupted") return run.id;
+  return run?.status === "failed" &&
+    runtime?.lastErrorClass === "usage_limit" &&
+    latestRootProviderFailure(run, projection.turnItems)?.class === "usage_limit"
+    ? run.id
+    : null;
 }
 
 /**
