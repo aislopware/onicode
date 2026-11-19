@@ -2740,3 +2740,4 @@ d32df2d34c	take	fix(server): native session replacement fails honestly when the 
 dbee5a0af0	take	saves report their own outcome; relay registration, managedAuth and crash-report (telemetry) hunks left out
 73caab68e3	take	commands run as Effects; MCP approval wizard, relay discovery test and relay Live Activity hunks left out
 46b14a6808	skip	Relay device registration (remoteRegistration.ts) and the relay Live Activity preference/link UI, which Onicode removed; Onicode's pushRegistration has no such path
+938feb3246	skip	T3 Connect headless CLI login (CliTokenManager), removed in Onicode
