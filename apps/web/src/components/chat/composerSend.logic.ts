@@ -1,4 +1,12 @@
-import type { EnvironmentId, RuntimeRequestId, ThreadContextRecord } from "@onicode/contracts";
+import type {
+  EnvironmentId,
+  ModelSelection,
+  ProviderDriverKind,
+  RuntimeMode,
+  RuntimeRequestId,
+  ServerProvider,
+  ThreadContextRecord,
+} from "@onicode/contracts";
 import { msg } from "gt-react";
 import { m, type MessageResolver } from "../../i18n/messages";
 import { collectInlineContextIds } from "../../lib/composerContextReferences";
@@ -129,4 +137,29 @@ export function approvalRedirectNotice(
 export interface ApprovalsAtPress {
   readonly shown: ReadonlyArray<RuntimeRequestId>;
   readonly pending: ReadonlyArray<RuntimeRequestId>;
+}
+
+/** The model picked in the composer. */
+export interface ComposerModelSettings {
+  readonly selectedProvider: ProviderDriverKind;
+  readonly selectedModel: string;
+  readonly selectedProviderModels: ReadonlyArray<ServerProvider["models"][number]>;
+  readonly selectedPromptEffort: string | null;
+  readonly selectedModelSelection: ModelSelection;
+  readonly multipleModelSelections: ReadonlyArray<ModelSelection> | null;
+}
+
+/** The mode and model shown when Send was pressed. */
+export interface ComposerSendSettings extends ComposerModelSettings {
+  readonly runtimeMode: RuntimeMode;
+}
+
+/**
+ * What a send acts on as of the press. A send held for compressing images or dictation goes
+ * with these, not with a mode or model picked while it waited.
+ */
+export interface SendAtPress {
+  readonly approvals: ApprovalsAtPress;
+  /** Absent once the draft moved to another environment, whose composer then decides. */
+  readonly settings?: ComposerSendSettings;
 }

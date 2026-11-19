@@ -242,7 +242,7 @@ import {
   isComposerSubmissionBlocked,
   submitComposerDraft,
 } from "./composerSubmission";
-import type { ApprovalsAtPress } from "./composerSend.logic";
+import type { ComposerModelSettings, SendAtPress } from "./composerSend.logic";
 import { ComposerPromptLengthValidation } from "./ComposerPromptLengthValidation";
 import { pendingDraftWork } from "./pendingDraftWork";
 import { importComposerThreadAttachment } from "./composerThreadImport";
@@ -466,7 +466,7 @@ export interface ChatComposerProps {
     e?: { preventDefault: () => void },
     dispatchMode?: ComposerDispatchMode,
     submissionIntent?: ComposerSubmissionIntent,
-    approvalsAtPress?: ApprovalsAtPress,
+    atPress?: SendAtPress,
   ) => void;
   onResume: () => void;
   onInterrupt: () => void;
@@ -990,6 +990,22 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     selectedModel,
     selectedModelOptionsForDispatch,
   );
+  const sendModelSettings: ComposerModelSettings = {
+    selectedPromptEffort,
+    selectedModelSelection,
+    multipleModelSelections:
+      routeKind === "draft" && multipleModelSelections !== null
+        ? multipleModelSelections.map((selection) =>
+            selection.instanceId === selectedModelSelection.instanceId &&
+            selection.model === selectedModelSelection.model
+              ? selectedModelSelection
+              : selection,
+          )
+        : null,
+    selectedProvider,
+    selectedModel,
+    selectedProviderModels,
+  };
   const selectedModelForPicker = selectedModel;
   const modelOptionsByInstance = new Map<ProviderInstanceId, ReadonlyArray<AppModelOption>>();
   for (const entry of providerInstanceEntries) {
@@ -2194,16 +2210,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     (
       dispatchMode?: ComposerDispatchMode,
       submissionIntent?: ComposerSubmissionIntent,
-      approvalsAtPress?: ApprovalsAtPress,
+      atPress?: SendAtPress,
     ) => void
   >(() => {});
   const submitComposer = (
     event?: { preventDefault: () => void },
     dispatchMode?: ComposerDispatchMode,
     submissionIntent?: ComposerSubmissionIntent,
-    heldApprovals?: ApprovalsAtPress,
+    heldAtPress?: SendAtPress,
   ) => {
-    // A send that waits below keeps this press's intent and approvals, not those by then.
+    // A send that waits below keeps this press's intent, approvals, mode and model.
     const modeAtPress =
       dispatchMode ??
       resolveComposerDispatchMode({
@@ -2212,17 +2228,18 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         activeTurnDefault: followUpBehavior,
         canSteer,
       });
-    const approvalsAtPress = heldApprovals ?? {
-      shown: pendingApprovals
-        .map((approval) => approval.requestId)
-        .filter((requestId) => !heldRequestIds.has(requestId)),
-      pending: pendingApprovals.map((approval) => approval.requestId),
+    const atPress = heldAtPress ?? {
+      approvals: {
+        shown: pendingApprovals
+          .map((approval) => approval.requestId)
+          .filter((requestId) => !heldRequestIds.has(requestId)),
+        pending: pendingApprovals.map((approval) => approval.requestId),
+      },
+      settings: { runtimeMode, ...sendModelSettings },
     };
     if (voiceInputActive) {
       event?.preventDefault();
-      submitAfterDictation(() =>
-        submitComposerRef.current(modeAtPress, submissionIntent, approvalsAtPress),
-      );
+      submitAfterDictation(() => submitComposerRef.current(modeAtPress, submissionIntent, atPress));
       return false;
     }
     if (submissionBlocked || !readEnvironmentScope(environmentId, AuthOrchestrationOperateScope)) {
@@ -2233,7 +2250,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     if (
       activeThreadId &&
       submitAfterPreparingImages(() =>
-        submitComposerRef.current(modeAtPress, submissionIntent, approvalsAtPress),
+        submitComposerRef.current(modeAtPress, submissionIntent, atPress),
       )
     ) {
       event?.preventDefault();
@@ -2261,7 +2278,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       event,
       onSend: (sendEvent) => {
         providerInputRejectedRef.current = false;
-        onSend(sendEvent, modeAtPress, submissionIntent, approvalsAtPress);
+        onSend(sendEvent, modeAtPress, submissionIntent, atPress);
         return !providerInputRejectedRef.current;
       },
     });
@@ -2273,8 +2290,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const submitComposerStable = useStableCallback(submitComposer);
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- publishes the committed submission handler to the asynchronous dictation completion
   useLayoutEffect(() => {
-    submitComposerRef.current = (mode, intent, approvals) =>
-      submitComposerStable(undefined, mode, intent, approvals);
+    submitComposerRef.current = (mode, intent, atPress) =>
+      submitComposerStable(undefined, mode, intent, atPress);
   }, [submitComposerStable]);
   useDictationSubmissionShortcut({
     enabled: voiceInputActive && !speechInput.preparing,
@@ -3306,23 +3323,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         reviewComments: composerReviewComments,
         threadContexts: composerThreadContexts,
         environmentContexts: composerEnvironmentContexts,
-        selectedPromptEffort,
-        selectedModelSelection,
-        multipleModelSelections:
-          routeKind === "draft" && multipleModelSelections !== null
-            ? multipleModelSelections.map((selection) =>
-                selection.instanceId === selectedModelSelection.instanceId &&
-                selection.model === selectedModelSelection.model
-                  ? selectedModelSelection
-                  : selection,
-              )
-            : null,
+        ...sendModelSettings,
         providerAvailable:
           multipleModelSelections !== null ||
           (!noProviderAvailable && providerSendBlockReason === null),
-        selectedProvider,
-        selectedModel,
-        selectedProviderModels,
       }),
       setMultipleModelSelections,
       validateProviderInput: (providerInput: string) => {
@@ -3385,6 +3389,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       selectedPromptEffort,
       selectedProvider,
       selectedProviderModels,
+      sendModelSettings,
       compactThreadContextStable,
     ],
   );

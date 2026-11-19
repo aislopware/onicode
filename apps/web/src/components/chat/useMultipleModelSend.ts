@@ -53,7 +53,6 @@ interface MultipleModelSendInput {
   readonly composerDraftTarget: ComposerThreadTarget;
   readonly composerRef: ComposerHandleRef;
   readonly promptRef: { current: string };
-  readonly runtimeMode: RuntimeMode;
   readonly startFromOrigin: boolean;
   readonly resetLocalDispatch: ReturnType<typeof useLocalDispatchState>["resetLocalDispatch"];
   readonly setThreadError: ReturnType<typeof makeThreadErrorSetter>;
@@ -73,7 +72,6 @@ export function useMultipleModelSend(input: MultipleModelSendInput) {
     composerDraftTarget,
     composerRef,
     promptRef,
-    runtimeMode,
     startFromOrigin,
     resetLocalDispatch,
     setThreadError,
@@ -94,6 +92,7 @@ export function useMultipleModelSend(input: MultipleModelSendInput) {
     selections,
     targets,
     sendSnapshot,
+    runtimeMode,
     createdAt,
     attachmentsPromise,
     usesAttachmentUploads,
@@ -108,6 +107,7 @@ export function useMultipleModelSend(input: MultipleModelSendInput) {
     readonly selections: ReadonlyArray<ModelSelection>;
     readonly targets: ReadonlyArray<MultipleModelTarget>;
     readonly sendSnapshot: ComposerSendSnapshot;
+    readonly runtimeMode: RuntimeMode;
     readonly createdAt: string;
     readonly attachmentsPromise: ReturnType<typeof prepareTurnAttachments>;
     readonly usesAttachmentUploads: boolean;
