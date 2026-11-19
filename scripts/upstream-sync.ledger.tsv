@@ -2684,3 +2684,4 @@ ff9efe89f6	take	fix(web): copying items within one list keeps their list markers
 9d2db4b23f	take	fix(provider-acp): an ACP compaction no longer keeps a summary its agent cleared (#39151)
 541be77b1b	take	fix(provider-acp): a running tool shows the file a location-only update names (#39147)
 da33a53d18	take	fix(server): wake when CI fails during the PR watch baseline read (#39116)
+dc7216ca23	take	fix(mobile): new-task link no longer blanks a scheduled task while it saves (#39154)
