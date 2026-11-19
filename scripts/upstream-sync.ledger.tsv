@@ -2745,3 +2745,4 @@ f6881ceba0	take	fix(acp-registry): keep managed npm commands out of user PATH (#
 3f5cc38805	skip	T3 Connect device approval (requires_connect_approval, auth_connect_devices), which Onicode removed; Onicode's revoke query already excludes consumed links
 571c27acab	take	fix(server): MCP apps resume an idle Codex thread in its own workspace (#38468)
 314a11498e	skip	T3 Connect relay cloudAccountService, removed in Onicode
+a2a463a32e	take	fix(server): gh credential lookups no longer leak D-Bus daemons (#23824)
