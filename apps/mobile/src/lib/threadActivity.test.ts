@@ -813,7 +813,7 @@ describe("buildThreadFeed", () => {
     expect(activity?.getFullDetail()).toContain('"input": "vp check"');
   });
 
-  it("keeps adjacent work from different V2 attempts in separate groups", () => {
+  it("groups adjacent work by V2 attempt, also for tools whose nodes were not loaded", () => {
     const firstRootNodeId = NodeId.make("node-attempt-1");
     const secondRootNodeId = NodeId.make("node-attempt-2");
     const firstCommand = { ...command(), nodeId: firstRootNodeId };
@@ -852,16 +852,26 @@ describe("buildThreadFeed", () => {
       },
     ] satisfies ReadonlyArray<OrchestrationV2RunAttempt>;
 
-    const feed = buildThreadFeed([projected(firstCommand, 0), projected(secondCommand, 1)], {
-      attempts,
-    });
+    // Loaded with an earlier history page, which carries no leaf nodes.
+    const historyCommand = {
+      ...command("2026-06-20T00:00:04.000Z"),
+      id: TurnItemId.make("item-command-history"),
+      ordinal: 3,
+      nodeId: NodeId.make("node-tool-not-loaded"),
+    };
 
-    expect(feed).toHaveLength(2);
+    const feed = buildThreadFeed(
+      [projected(firstCommand, 0), projected(secondCommand, 1), projected(historyCommand, 2)],
+      { attempts },
+    );
+
     expect(
       feed.map((entry) =>
-        entry.type === "activity-group" ? entry.activities[0]?.attemptId : null,
+        entry.type === "activity-group"
+          ? entry.activities.map((activity) => activity.attemptId)
+          : null,
       ),
-    ).toEqual(["attempt-1", "attempt-2"]);
+    ).toEqual([["attempt-1"], ["attempt-2", "attempt-2"]]);
   });
 
   it("retains inherited and synthetic rows with their original projected identity", () => {
