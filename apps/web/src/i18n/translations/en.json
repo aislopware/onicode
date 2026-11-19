@@ -8219,6 +8219,7 @@
   "48886d66b4fc9ae8": "Path to the fx binary. All fx instances on this machine share its fx login.",
   "35bb63c79e2954cf": "Path to the Grok CLI binary.",
   "f8c1b66eb8b5dbd8": "Path to the Kiro CLI binary.",
+  "6d57fa7008430a2f": "Path to the Command Code CLI binary.",
   "1fc0ad6e3624dbd8": "Path to the Muse Code binary on this environment. Sign in with muse login on that host.",
   "ab221de3bd424896": "Path to the OpenCode binary.",
   "064d8c86f3689946": "Leave blank to let Onicode spawn the server when needed.",

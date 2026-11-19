@@ -201,6 +201,7 @@ const PACKAGE_FIELD_TEXT: ReadonlyMap<string, string> = new Map([
     "Path to the fx binary. All fx instances on this machine share its fx login.",
     msg("Path to the fx binary. All fx instances on this machine share its fx login."),
   ],
+  ["Path to the Command Code CLI binary.", msg("Path to the Command Code CLI binary.")],
   ["Path to the Grok CLI binary.", msg("Path to the Grok CLI binary.")],
   ["Path to the Kiro CLI binary.", msg("Path to the Kiro CLI binary.")],
   [

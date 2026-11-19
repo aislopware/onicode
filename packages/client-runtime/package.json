@@ -652,6 +652,7 @@
     "@onicode/contracts": "workspace:*",
     "@onicode/issue-tracker-linear": "workspace:*",
     "@onicode/provider-acp-registry": "workspace:*",
+    "@onicode/provider-command-code": "workspace:*",
     "@onicode/provider-core": "workspace:*",
     "@onicode/provider-cursor": "workspace:*",
     "@onicode/provider-fx": "workspace:*",

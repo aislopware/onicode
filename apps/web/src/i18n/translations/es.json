@@ -8209,6 +8209,7 @@
   "48886d66b4fc9ae8": "Ruta al binario de fx. Todas las instancias de fx de esta máquina comparten su inicio de sesión de fx.",
   "35bb63c79e2954cf": "Ruta al binario de la CLI de Grok.",
   "f8c1b66eb8b5dbd8": "Ruta al binario de la CLI de Kiro.",
+  "6d57fa7008430a2f": "Ruta al binario de la CLI de Command Code.",
   "1fc0ad6e3624dbd8": "Ruta al binario de Muse Code en este entorno. Inicia sesión con muse login en ese host.",
   "ab221de3bd424896": "Ruta al binario de OpenCode.",
   "064d8c86f3689946": "Déjalo en blanco para que Onicode inicie el servidor cuando haga falta.",

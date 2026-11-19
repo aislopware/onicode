@@ -36,6 +36,10 @@ export const PROVIDER_CHIP_ICONS: Readonly<
     source: require("../../assets/context-chip-icons/provider-codex.png"),
     tintsIcon: true,
   },
+  commandCode: {
+    source: require("../../assets/context-chip-icons/provider-commandCode.png"),
+    tintsIcon: true,
+  },
   cursor: {
     source: require("../../assets/context-chip-icons/provider-cursor.png"),
     tintsIcon: true,

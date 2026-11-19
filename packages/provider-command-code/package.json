@@ -1,0 +1,36 @@
+{
+  "name": "@onicode/provider-command-code",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./client": {
+      "types": "./src/client.ts",
+      "import": "./src/client.ts"
+    },
+    "./settings": {
+      "types": "./src/settings.ts",
+      "import": "./src/settings.ts"
+    },
+    "./server": {
+      "types": "./src/server.ts",
+      "import": "./src/server.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "effect-tsgo tsrs --noEmit",
+    "test": "vp test run --config ../../vite.config.ts --dir ."
+  },
+  "dependencies": {
+    "@onicode/contracts": "workspace:*",
+    "@onicode/provider-acp": "workspace:*",
+    "@onicode/provider-core": "workspace:*",
+    "@onicode/shared": "workspace:*",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@effect/vitest": "catalog:",
+    "@types/node": "catalog:",
+    "effect-acp": "workspace:*",
+    "vite-plus": "catalog:"
+  }
+}

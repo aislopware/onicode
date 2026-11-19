@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-11-14T15:58:47Z",
+  "updatedAt": "2026-11-19T09:00:00Z",
   "compatibility": [
     {
       "driver": "codex",
@@ -89,6 +89,12 @@
       "onicodeRange": ">=0.0.46",
       "recommendedRange": ">=2.27.0",
       "ranges": [{ "range": ">=2.27.0", "status": "supported" }]
+    },
+    {
+      "driver": "commandCode",
+      "onicodeRange": ">=0.19.0",
+      "recommendedRange": ">=1.88.5",
+      "ranges": [{ "range": ">=1.88.5", "status": "supported" }]
     },
     {
       "driver": "pi",

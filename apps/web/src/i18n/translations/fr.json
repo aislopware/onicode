@@ -8211,6 +8211,7 @@
   "48886d66b4fc9ae8": "Chemin du binaire fx. Toutes les instances fx de cette machine partagent sa connexion fx.",
   "35bb63c79e2954cf": "Chemin du binaire de la CLI Grok.",
   "f8c1b66eb8b5dbd8": "Chemin du binaire de la CLI Kiro.",
+  "6d57fa7008430a2f": "Chemin du binaire de la CLI Command Code.",
   "1fc0ad6e3624dbd8": "Chemin du binaire Muse Code sur cet environnement. Connectez-vous avec muse login sur cet hôte.",
   "ab221de3bd424896": "Chemin du binaire OpenCode.",
   "064d8c86f3689946": "Laissez vide pour que Onicode lance le serveur quand nécessaire.",
