@@ -1045,13 +1045,24 @@ export const layer: Layer.Layer<
       );
       const handoffContextForThread = (loadedProviderThread: OrchestrationV2ProviderThread) => {
         const measuredContext = latestNativeContextUsage(projection, providerThread);
+        const nativeId = providerThread.nativeThreadRef?.nativeId;
+        // With no usage report, the latest compaction in this native session still bounds it.
         const compaction =
-          measuredContext === undefined
-            ? undefined
-            : compactionSinceUsage(
+          measuredContext !== undefined
+            ? compactionSinceUsage(
                 projection.compactions,
                 providerThread.id,
                 measuredContext.reportedAt,
+              )
+            : projection.compactions.find(
+                (item) =>
+                  item.status === "completed" &&
+                  item.providerThreadId === providerThread.id &&
+                  nativeId !== undefined &&
+                  projection.attempts.some(
+                    (attempt) =>
+                      attempt.runId === item.runId && attempt.nativeThreadId === nativeId,
+                  ),
               );
         // A count of 0 measured nothing.
         const compactedTokens =

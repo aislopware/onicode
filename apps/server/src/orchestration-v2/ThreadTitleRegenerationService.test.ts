@@ -176,7 +176,7 @@ function recordRun(input: {
   readonly ordinal: number;
   readonly user: string;
   readonly assistant: string;
-  readonly status?: "completed" | "rolled_back" | "cancelled";
+  readonly status?: "completed" | "rolled_back" | "cancelled" | "queued";
   readonly freshContext?: boolean;
 }) {
   return Effect.gen(function* () {
@@ -224,8 +224,8 @@ function recordRun(input: {
             activeAttemptId: null,
             status: input.status ?? "completed",
             requestedAt: now,
-            startedAt: input.status === "cancelled" ? null : now,
-            completedAt: now,
+            startedAt: input.status === "cancelled" || input.status === "queued" ? null : now,
+            completedAt: input.status === "queued" ? null : now,
             checkpointId: null,
             contextHandoffId: null,
             ...(input.freshContext ? { freshContext: true } : {}),
@@ -276,7 +276,12 @@ function armRegeneration(input: { readonly command: string; readonly threadId: T
 }
 
 /** Forks a source thread at its middle run, between a rolled-back run and later work. */
-function forkSeededSource(prefix: string, sideChat = false, rollbackPriorRun = true) {
+function forkSeededSource(
+  prefix: string,
+  sideChat = false,
+  rollbackPriorRun = true,
+  unstartedStatus: "cancelled" | "queued" = "cancelled",
+) {
   return Effect.gen(function* () {
     const threads = yield* ThreadManagement.ThreadManagementService;
     const sourceThreadId = yield* createThread({
@@ -296,9 +301,9 @@ function forkSeededSource(prefix: string, sideChat = false, rollbackPriorRun = t
       threadId: sourceThreadId,
       runId: RunId.make(`${prefix}:run:cancelled`),
       ordinal: 2,
-      user: "Queued message removed before it started",
+      user: "Queued message the fork point never reached",
       assistant: "",
-      status: "cancelled",
+      status: unstartedStatus,
     });
     const forkRunId = RunId.make(`${prefix}:run:1`);
     yield* recordRun({
@@ -695,51 +700,62 @@ describe("ThreadTitleRegenerationService", () => {
   it.effect.each([
     { name: "its first message", followUp: true },
     { name: "no message of its own yet", followUp: false },
-  ])("titles a fork with $name from the source history up to the fork point", ({ followUp }) =>
-    Effect.gen(function* () {
-      const harness = makeHarness();
-      yield* Effect.gen(function* () {
-        const threads = yield* ThreadManagement.ThreadManagementService;
-        const titleRegeneration = yield* ThreadTitleRegeneration.ThreadTitleRegenerationService;
-        const { forkThreadId } = yield* forkSeededSource("thread:title:fork");
-        const requestId = CommandId.make("command:title:fork:request");
-        const messageId = MessageId.make("command:title:fork:request:message");
-        if (followUp) {
-          yield* threads.dispatch({
-            type: "message.dispatch",
-            commandId: requestId,
+    { name: "a message still queued behind the fork point", followUp: false, held: true },
+  ])(
+    "titles a fork with $name from the source history up to the fork point",
+    ({ followUp, held }) =>
+      Effect.gen(function* () {
+        const harness = makeHarness();
+        yield* Effect.gen(function* () {
+          const threads = yield* ThreadManagement.ThreadManagementService;
+          const titleRegeneration = yield* ThreadTitleRegeneration.ThreadTitleRegenerationService;
+          const { forkThreadId } = yield* forkSeededSource(
+            "thread:title:fork",
+            false,
+            true,
+            held ? "queued" : "cancelled",
+          );
+          const requestId = CommandId.make("command:title:fork:request");
+          const messageId = MessageId.make("command:title:fork:request:message");
+          if (followUp) {
+            yield* threads.dispatch({
+              type: "message.dispatch",
+              commandId: requestId,
+              threadId: forkThreadId,
+              messageId,
+              text: "Try SQLite instead",
+              titleSeed: "Try SQLite instead",
+              attachments: [],
+              modelSelection,
+              dispatchMode: { type: "defer_start" },
+              createdBy: "user",
+              creationSource: "web",
+            });
+          } else {
+            yield* armRegeneration({ command: requestId, threadId: forkThreadId });
+          }
+
+          yield* titleRegeneration.execute({
             threadId: forkThreadId,
-            messageId,
-            text: "Try SQLite instead",
-            titleSeed: "Try SQLite instead",
-            attachments: [],
-            modelSelection,
-            dispatchMode: { type: "defer_start" },
-            createdBy: "user",
-            creationSource: "web",
+            requestId,
+            kind: followUp ? { type: "initial", messageId } : { type: "regenerate" },
           });
-        } else {
-          yield* armRegeneration({ command: requestId, threadId: forkThreadId });
-        }
 
-        yield* titleRegeneration.execute({
-          threadId: forkThreadId,
-          requestId,
-          kind: followUp ? { type: "initial", messageId } : { type: "regenerate" },
-        });
-
-        const call = harness.generateThreadTitle.mock.calls[0]?.[0];
-        assert.equal(call?.message, followUp ? "Try SQLite instead" : "");
-        assert.equal(call?.forkSource?.title, "Seed title");
-        assert.include(call?.forkSource?.history, "Move session storage from Redis to Postgres");
-        assert.include(call?.forkSource?.history, "Sessions now persist in the Postgres");
-        assert.notInclude(call?.forkSource?.history, "Later work the fork never saw");
-        assert.notInclude(call?.forkSource?.history, "Rolled back attempt");
-        assert.notInclude(call?.forkSource?.history, "Queued message removed before it started");
-        const fork = yield* threads.getThreadRecords(forkThreadId, []);
-        assert.equal(fork.thread.title, "Generated title");
-      }).pipe(Effect.provide(harness.layer));
-    }),
+          const call = harness.generateThreadTitle.mock.calls[0]?.[0];
+          assert.equal(call?.message, followUp ? "Try SQLite instead" : "");
+          assert.equal(call?.forkSource?.title, "Seed title");
+          assert.include(call?.forkSource?.history, "Move session storage from Redis to Postgres");
+          assert.include(call?.forkSource?.history, "Sessions now persist in the Postgres");
+          assert.notInclude(call?.forkSource?.history, "Later work the fork never saw");
+          assert.notInclude(call?.forkSource?.history, "Rolled back attempt");
+          assert.notInclude(
+            call?.forkSource?.history,
+            "Queued message the fork point never reached",
+          );
+          const fork = yield* threads.getThreadRecords(forkThreadId, []);
+          assert.equal(fork.thread.title, "Generated title");
+        }).pipe(Effect.provide(harness.layer));
+      }),
   );
 
   it.effect.each(["plain", "deleted source"] as const)(
@@ -837,7 +853,7 @@ describe("ThreadTitleRegenerationService", () => {
         assert.include(call?.forkSource?.history, "Move session storage from Redis to Postgres");
         assert.include(call?.forkSource?.history, "Rolled back attempt");
         assert.notInclude(call?.forkSource?.history, "Later work the fork never saw");
-        assert.notInclude(call?.forkSource?.history, "Queued message removed before it started");
+        assert.notInclude(call?.forkSource?.history, "Queued message the fork point never reached");
         const fork = yield* threads.getThreadRecords(forkThreadId, []);
         assert.equal(fork.thread.title, "Generated title");
       }).pipe(Effect.provide(harness.layer));

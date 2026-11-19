@@ -16,7 +16,7 @@ import {
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
-import type * as DateTime from "effect/DateTime";
+import * as DateTime from "effect/DateTime";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -40,12 +40,18 @@ import { formatThreadTitleContext } from "@onicode/provider-core/server/threadTi
 import { NEW_THREAD_TITLE } from "@onicode/shared/threadTitles";
 export { formatThreadTitleContext } from "@onicode/provider-core/server/threadTitleContext";
 
-// A queued message cancelled before it started never joined the conversation, also once a
-// rollback rewound its run.
-const unjoinedRunIds = (runs: ReadonlyArray<OrchestrationV2Run>): ReadonlySet<RunId> =>
+// A queued message that had not started by the fork never joined its conversation, whether it
+// was cancelled, rewound or is still held.
+const unjoinedRunIds = (
+  runs: ReadonlyArray<OrchestrationV2Run>,
+  forkCreatedAt: DateTime.Utc,
+): ReadonlySet<RunId> =>
   new Set(
     runs.flatMap((run) =>
-      neverStarted(run) && (run.status === "cancelled" || run.status === "rolled_back")
+      neverStarted(run) ||
+      (run.restartContinuationOfRunId === undefined &&
+        run.startedAt !== null &&
+        DateTime.isGreaterThan(run.startedAt, forkCreatedAt))
         ? [run.id]
         : [],
     ),
@@ -165,7 +171,7 @@ const make = Effect.gen(function* () {
         source.providerThreads,
         source.runs.find((run) => run.id === runId),
       );
-      const unjoined = unjoinedRunIds(source.runs);
+      const unjoined = unjoinedRunIds(source.runs, forkCreatedAt);
       const messages = source.messages.filter((message) => {
         if (message.streaming) return false;
         if (message.runId === null) {

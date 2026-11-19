@@ -1698,6 +1698,20 @@ it.effect.each<{
     dropped: ["SCHEDULED_REPORT_0 "],
   },
   {
+    name: "whose scheduled fresh session's wakes outgrew the digest",
+    runs: [
+      { stable: true },
+      { stable: true, freshContext: true, scheduled: true },
+      ...Array.from({ length: 40 }, (_, index) => ({
+        stable: true,
+        continuesRun: 2,
+        text: `WAKE_REPORT_${index} ${"x".repeat(300)}`,
+      })),
+    ],
+    kept: ["PARENT_RUN_1_MARKER", "WAKE_REPORT_39 "],
+    dropped: ["WAKE_REPORT_0 "],
+  },
+  {
     name: "in its first turn whose inherited schedule output outgrew the digest",
     grandparentRuns: [
       { text: "GRANDPARENT_FIRST_MARKER" },

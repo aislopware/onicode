@@ -9001,7 +9001,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
               coveredRunOrdinals: visibleDeltaRunOrdinals(sourceProjection, sideChatParentItems),
               parentItems: sideChatParentItems,
               sideConversationRunIds: new Set([
-                ...sideConversationRunIds(sideChatParentContext, anchorRun),
+                ...sideConversationRunIds(sideChatParentContext, sourceRun),
                 ...(sideChatInherited?.sideRunIds ?? []),
               ]),
               createdAt: now,
