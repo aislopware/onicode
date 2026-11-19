@@ -2801,3 +2801,4 @@ cb391b5b57	skip	relay AgentAwarenessRelay only, removed in Onicode; Onicode's pu
 71e1bb2dcc	take	taken as is
 0a159c9fba	take	taken as is
 5283f33ca9	take	@napi-rs/keyring back in server deps at desktop's ^2.1.2 (the server imports it again); ffi library labels oni-*
+06eda8e36e	take	taken as is (env var is Onicode's ONICODE_THREAD_ID via PortScanner.AGENT_THREAD_ENV)
