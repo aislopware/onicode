@@ -1,12 +1,19 @@
 import { act, useLayoutEffect } from "react";
 import { createRoot } from "react-dom/client";
-import { RuntimeRequestId } from "@onicode/contracts";
+import { ProviderInstanceId, RuntimeRequestId } from "@onicode/contracts";
+import type { ActiveTurnComposerAction } from "@onicode/client-runtime/state/composer-dispatch";
 import { expect, it, vi } from "vite-plus/test";
 import {
   abortComposerDraftOperations,
   startComposerDraftOperation,
 } from "../../state/composerDraftOperations";
+import type { ComposerDraftSendSettings } from "../../state/use-composer-drafts";
 import { useSubmitAfterNativeImages } from "./useSubmitAfterNativeImages";
+
+const SHOWN: ComposerDraftSendSettings = {
+  runtimeMode: "full-access",
+  modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.5" },
+};
 
 function setup() {
   const root = createRoot(document.createElement("div"));
@@ -42,7 +49,11 @@ function setup() {
   render();
   return {
     get queue() {
-      return queue!;
+      return {
+        ...queue!,
+        deferSend: (followUp?: ActiveTurnComposerAction, settings = SHOWN) =>
+          queue!.deferSend(followUp, settings),
+      };
     },
     onSubmit,
     setBlocked(value: boolean) {
@@ -138,7 +149,7 @@ it("waits for other attachment preparation and sends once after all images join 
   await Promise.all([first, second]);
   expect(state.onSubmit).not.toHaveBeenCalled();
   state.setBlocked(false);
-  expect(state.onSubmit).toHaveBeenCalledExactlyOnceWith("steer", [], undefined);
+  expect(state.onSubmit).toHaveBeenCalledExactlyOnceWith("steer", [], SHOWN);
   state.setBlocked(true);
   state.setBlocked(false);
   expect(state.onSubmit).toHaveBeenCalledOnce();
@@ -157,14 +168,14 @@ it("holds a released send again for an image pasted while it waited on another b
   expect(state.onSubmit).not.toHaveBeenCalled();
   await state.finish(true);
   await second;
-  expect(state.onSubmit).toHaveBeenCalledExactlyOnceWith(undefined, [], undefined);
+  expect(state.onSubmit).toHaveBeenCalledExactlyOnceWith(undefined, [], SHOWN);
 });
 
 it("sends with the approvals, mode and model of the press, not those shown since", async () => {
   using state = setup();
   state.setApprovalIds(["seen"]);
   const paste = state.queue.pasteImages(["image"]);
-  const settings = { runtimeMode: "approval-required" as const, modelSelection: undefined };
+  const settings = { ...SHOWN, runtimeMode: "approval-required" as const };
   state.queue.deferSend("steer", settings);
   state.setApprovalIds(["seen", "unseen"]);
   await state.finish(true);

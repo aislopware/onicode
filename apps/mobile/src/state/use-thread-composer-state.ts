@@ -638,6 +638,8 @@ export function useThreadComposerState(input: {
     }
 
     const editKey = scopedThreadKey(selectedThreadShell.environmentId, selectedThreadShell.id);
+    // A queued edit opened or closed while the editor flushed; the draft pressed is gone.
+    if (press !== undefined && press.draftKey !== composerDraftKeyForThread(editKey)) return null;
     if (getQueuedRunEdit(editKey) !== null) {
       await saveQueuedRunEdit();
       return null;
@@ -764,11 +766,11 @@ export function useThreadComposerState(input: {
           );
         });
         const sent = AsyncResult.isSuccess(started) && started.value;
-        if (sent) await press?.flushInput();
+        const settled = sent && ((await press?.flushInput()) ?? true);
         endStart();
         if (sent) {
           // Edits made while it forked stay, along with what was sent.
-          if (unchanged()) clearComposerDraftContent(threadKey);
+          if (settled && unchanged()) clearComposerDraftContent(threadKey);
         } else if (AsyncResult.isFailure(started)) {
           const error = squashAtomCommandFailure(started);
           Dialog.alert(
@@ -853,7 +855,7 @@ export function useThreadComposerState(input: {
         attachments.length > 0 || draft.context !== undefined,
       );
       if (!response) return null;
-      await press?.flushInput();
+      if ((await press?.flushInput()) === false) return null;
       // A context paste still landing, or any draft or settings change while approvals were
       // declined, means this snapshot is no longer what the user sent.
       if (appAtomRegistry.get(composerContextImportsAtom)[threadKey]) return null;
@@ -872,6 +874,8 @@ export function useThreadComposerState(input: {
         clearComposerDraftContent(threadKey);
         return null;
       }
+      // One that arrived while the editor flushed has not been seen either.
+      if (approvalsAsSeen?.() === false) return null;
     }
 
     // Resolve at send time because outbox delivery may be delayed.

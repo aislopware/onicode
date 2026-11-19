@@ -23,8 +23,11 @@ export interface ComposerEditorHandle {
   focus: () => void;
   blur: () => void;
   setSelection: (selection: ComposerEditorSelection) => void;
-  /** iOS: resolves once a native edit still in flight has reached `onChangeText`. */
-  flushPendingInput: () => Promise<void>;
+  /**
+   * iOS: resolves once a native edit still in flight has reached `onChangeText`, or false
+   * while a paste native recorded has not, since the text is not final yet.
+   */
+  flushPendingInput: () => Promise<boolean>;
 }
 
 export interface ComposerEditorProps {

@@ -343,10 +343,11 @@ export function ComposerEditor({
       const state = await Promise.resolve()
         .then(() => nativeRef.current?.readState())
         .catch(() => undefined);
+      if (!state) return true;
       // Acknowledging past a paste JS has not received yet would get the paste rejected.
-      if (state && state.pasteEventCount <= mostRecentEventCountRef.current) {
-        applyNativeChange(state);
-      }
+      if (state.pasteEventCount > mostRecentEventCountRef.current) return false;
+      applyNativeChange(state);
+      return true;
     },
   }));
   const themeJson = JSON.stringify(createNativeComposerTheme(theme));

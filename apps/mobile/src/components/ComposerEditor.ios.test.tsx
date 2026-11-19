@@ -271,7 +271,8 @@ it("does not flush past a paste whose event has not reached JS", async () => {
   native.pasteEventCount = paste.eventCount;
   const caretMove = pend("Before pasted");
 
-  await act(async () => screen.editor.current!.flushPendingInput());
+  // The send it serves learns the draft is not final, so it does not clear it.
+  await act(async () => expect(await screen.editor.current!.flushPendingInput()).toBe(false));
   expect(getComposerDraftSnapshot(DRAFT_KEY).text).toBe("Before");
 
   await act(async () => native.deliver!(paste));

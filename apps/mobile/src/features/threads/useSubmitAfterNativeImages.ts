@@ -20,7 +20,7 @@ export function useSubmitAfterNativeImages(props: {
   readonly onSubmit: (
     followUp: ActiveTurnComposerAction | undefined,
     approvalIdsAtPress: ReadonlyArray<RuntimeRequestId>,
-    settingsAtPress: ComposerDraftSendSettings | undefined,
+    settingsAtPress: ComposerDraftSendSettings,
   ) => void;
 }) {
   type HeldSend = {
@@ -29,7 +29,7 @@ export function useSubmitAfterNativeImages(props: {
     /** The pastes it waits on; once they are aborted, nothing later releases it. */
     readonly pasteKey: string;
     readonly approvalIds: ReadonlyArray<RuntimeRequestId>;
-    readonly settings: ComposerDraftSendSettings | undefined;
+    readonly settings: ComposerDraftSendSettings;
     readonly followUp?: ActiveTurnComposerAction;
   };
   // A paste aborted with its draft (discarded, or left for a queued edit) must not hold or drop a
@@ -56,7 +56,7 @@ export function useSubmitAfterNativeImages(props: {
   }, [releasedSend, props.blocked]);
   // Stable so the composer's send handler, which calls these, stays in the compiler's cache.
   const deferSend = useStableCallback(
-    (followUp?: ActiveTurnComposerAction, settings?: ComposerDraftSendSettings) => {
+    (followUp: ActiveTurnComposerAction | undefined, settings: ComposerDraftSendSettings) => {
       const pasteKey = nativeImagePasteKey(props.draftKey);
       if (!pastes.current.has(pasteKey)) return false;
       heldSend.current = {
