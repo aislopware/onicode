@@ -20,12 +20,17 @@ const launches = vi.hoisted(() => ({
   persistent: vi.fn<BrowserType["launchPersistentContext"]>(),
   mkdir: vi.fn().mockResolvedValue(undefined),
   rm: vi.fn().mockResolvedValue(undefined),
+  readdir: vi.fn().mockResolvedValue([]),
 }));
 const launchChromium = chromium.launch.bind(chromium);
 const launchPersistentChromium = chromium.launchPersistentContext.bind(chromium);
 vi.spyOn(chromium, "launch").mockImplementation(launches.launch);
 vi.spyOn(chromium, "launchPersistentContext").mockImplementation(launches.persistent);
-vi.mock("node:fs/promises", () => ({ mkdir: launches.mkdir, rm: launches.rm }));
+vi.mock("node:fs/promises", () => ({
+  mkdir: launches.mkdir,
+  rm: launches.rm,
+  readdir: launches.readdir,
+}));
 
 // Playwright drives Chromium over a pipe, so its launch returns before the DevTools port server
 // may be listening. Chromium writes DevToolsActivePort ("<port>\n<path>") once it listens.
@@ -92,9 +97,13 @@ const makeBrowser = () => {
 
 const options = () => ({
   profilesDir: "/test/profiles",
-  executable: vi.fn(async () => "/test/chromium"),
+  browserProfilesDir: "/test/browser-profiles",
+  executable: vi.fn(async (): Promise<{ path: string; version: string; app?: string }> => ({
+    path: "/test/chromium",
+    version: "157.0.8103.78",
+  })),
   env: {},
-  chrome: { version: "157.0.8103.78", platform: "linux" as NodeJS.Platform },
+  platform: "linux" as NodeJS.Platform,
 });
 
 const withLauncher = () => {
@@ -113,6 +122,7 @@ beforeEach(() => {
   launches.persistent.mockReset();
   launches.mkdir.mockClear();
   launches.rm.mockClear();
+  launches.readdir.mockReset().mockResolvedValue([]);
 });
 
 describe("ServerBrowserContexts", () => {
@@ -276,6 +286,31 @@ describe("ServerBrowserContexts", () => {
     await pool.close();
   });
 
+  it("keeps an installed browser's profiles apart from the headless shell's", async () => {
+    launches.persistent.mockImplementation(async () => makeContext() as unknown as BrowserContext);
+    const configuration = options();
+    configuration.executable.mockResolvedValue({
+      path: "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
+      version: "157.1.99.57",
+      app: "Brave Browser",
+    });
+    const pool = new ServerBrowserContexts(configuration);
+    await pool.contextFor("work/team");
+    expect(launches.persistent).toHaveBeenCalledExactlyOnceWith(
+      "/test/browser-profiles/Brave%20Browser/work%2Fteam",
+      expect.anything(),
+    );
+
+    const entry = (name: string, directory: boolean) => ({ name, isDirectory: () => directory });
+    launches.readdir.mockResolvedValue([entry("Brave%20Browser", true), entry(".DS_Store", false)]);
+    await pool.clearProfile("work/team");
+    expect(launches.rm.mock.calls.map(([directory]) => directory).toSorted()).toEqual([
+      "/test/browser-profiles/Brave%20Browser/work%2Fteam",
+      "/test/profiles/work%2Fteam",
+    ]);
+    await pool.close();
+  });
+
   it("waits for the context to close when the same profile is cleared concurrently", async () => {
     const human = makeContext();
     const closed = Promise.withResolvers<void>();
@@ -315,7 +350,7 @@ describe("ServerBrowserContexts", () => {
     const launchedAfterDelete: Array<boolean> = [];
     configuration.executable.mockImplementation(async () => {
       launchedAfterDelete.push(deleted);
-      return "/test/chromium";
+      return { path: "/test/chromium", version: "157.0.8103.78" };
     });
     const clearing = pool.clearProfile("work/team");
     const reopening = pool.contextFor("work/team");
@@ -465,8 +500,9 @@ describe("ServerBrowserContexts", () => {
       await probe.close();
       const pool = new ServerBrowserContexts({
         ...options(),
+        executable: async () => ({ path: "/test/chromium", version }),
         env: { ...process.env, ONICODE_SERVER_BROWSER_SANDBOX: "0" },
-        chrome: { version, platform: host.platform },
+        platform: host.platform,
       });
       try {
         const context = await pool.contextFor(INCOGNITO_BROWSER_PROFILE_ID);

@@ -292,9 +292,10 @@ access, `localhost` tabs you open in the desktop app stream from the host
 instead, and the mobile app doesn't offer **Open on this device**; tapping a
 `localhost` link in a chat says why it can't open there.
 
-The first tab downloads a headless Chrome, about 120 MB, into the Onicode home. It
-is the same browser [HTML renders](html-renders.md) use, so a host downloads it
-only once. Some Linux hosts need [setup](#browser-host-setup) before it can
+Tabs run in the same headless browser [HTML renders](html-renders.md) use: an
+up-to-date Chrome, Brave or Chromium installed on a macOS host, otherwise a
+headless Chrome, about 120 MB, that the first tab downloads into the Onicode
+home. Some Linux hosts need [setup](#browser-host-setup) before it can
 start.
 
 Agent tabs have separate storage and share a Chromium process. Take control before

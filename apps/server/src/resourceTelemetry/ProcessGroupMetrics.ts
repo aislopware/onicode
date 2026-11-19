@@ -35,7 +35,7 @@ const PROVIDER_GROUPS: ReadonlyArray<readonly [RegExp, string]> = [
   [/antigravity|gemini/, "antigravity"],
 ];
 const OTHER_GROUPS: ReadonlyArray<readonly [RegExp, string]> = [
-  [/chrom/, "browser"],
+  [/chrom|brave/, "browser"],
   [/^(?:ba|z|fi|da|c)?sh(?:\.exe)?$|^pwsh|^powershell|^cmd\.exe$/, "terminal"],
 ];
 // A CLI shipped as a script runs under a JavaScript runtime, so its process name is the

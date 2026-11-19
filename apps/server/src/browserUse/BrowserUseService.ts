@@ -6,6 +6,7 @@ import type {
   ThreadId,
 } from "@onicode/contracts";
 import type { McpStdioServer } from "@onicode/provider-core/server/mcpSession";
+import * as HostProcess from "@onicode/shared/HostProcess";
 import { writeFileStringAtomically } from "@onicode/shared/atomicWrite";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -20,6 +21,7 @@ import * as NodeCrypto from "node:crypto";
 
 import * as ServerConfig from "../config.ts";
 import type * as McpInvocationContext from "../mcp/McpInvocationContext.ts";
+import * as PreviewBrowser from "../preview/PreviewBrowser.ts";
 import * as PreviewCdpBridge from "../preview/PreviewCdpBridge.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as BrowserUseDriver from "./BrowserUseDriver.ts";
@@ -48,6 +50,11 @@ export class BrowserUseService extends Context.Service<
 const SESSION_WAIT = "45 seconds";
 const STOP_TIMEOUT = "20 seconds";
 const SHARED_ENVIRONMENT = { OBU_NO_UPDATE_CHECK: "1" };
+// obu 4.9's own macOS lookup, beside the PATH it searches first.
+const OBU_DISCOVERS = new Set([
+  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+  "/Applications/Chromium.app/Contents/MacOS/Chromium",
+]);
 // obu tells the agent these in place of its own guess that an attached browser is the user's.
 // The personal browser needs none: that guess is right there.
 export const PANEL_NOTE =
@@ -73,6 +80,7 @@ const browserUseEnabledAnywhere = (settings: ServerSettingsSnapshot) =>
 export const make = Effect.gen(function* () {
   const driver = yield* BrowserUseDriver.BrowserUseDriver;
   const bridge = yield* PreviewCdpBridge.PreviewCdpBridge;
+  const previewBrowser = yield* PreviewBrowser.PreviewBrowser;
   const settings = yield* ServerSettings.ServerSettingsService;
   const config = yield* ServerConfig.ServerConfig;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
@@ -132,6 +140,16 @@ export const make = Effect.gen(function* () {
     return installed;
   });
 
+  // obu honors a CHROME_PATH the user set and finds Chrome or Chromium in /Applications
+  // itself; any other installed browser, such as Brave, is named for it.
+  const userChromePath = (yield* HostProcess.Environment).CHROME_PATH;
+  const chromeForObu = previewBrowser.system.pipe(
+    Effect.map(
+      Option.filter((browser) => userChromePath === undefined && !OBU_DISCOVERS.has(browser.path)),
+    ),
+    Effect.map(Option.map((browser) => browser.path)),
+  );
+
   const mcpServer: BrowserUseService["Service"]["mcpServer"] = Effect.fn(
     "BrowserUseService.mcpServer",
   )(
@@ -153,12 +171,19 @@ export const make = Effect.gen(function* () {
             },
           });
         }
-        case "isolated":
+        case "isolated": {
+          const browser = yield* chromeForObu;
           return Option.some<McpStdioServer>({
             command,
             args: ["mcp"],
-            env: { ...env, OBU_LANE: "agent", OBU_HOST_NOTE: ISOLATED_NOTE },
+            env: {
+              ...env,
+              ...(Option.isSome(browser) ? { CHROME_PATH: browser.value } : {}),
+              OBU_LANE: "agent",
+              OBU_HOST_NOTE: ISOLATED_NOTE,
+            },
           });
+        }
         case "personal":
           yield* syncPersonalPort(port);
           return Option.some<McpStdioServer>({
