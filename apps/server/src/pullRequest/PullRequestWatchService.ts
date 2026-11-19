@@ -126,9 +126,9 @@ const make = Effect.gen(function* () {
     if (watching && before?.snapshot?.state === "merged") {
       return yield* new PullRequestNotOpenError({ state: "merged" });
     }
-    // Pending, or no check registered yet: nothing has failed, so any failure the first read finds
-    // is news. A read that left the state out says nothing and leaves the seed to the link. No
-    // state can also mean all checks skipped, so after an earlier watch it seeds nothing.
+    // Pending: nothing has failed, so any failure the first read finds is news. A read without a
+    // verdict (state left out, no checks yet, all skipped, a manual GitLab job) leaves the seed to
+    // the link, since an old pass would read as news.
     let checksPendingAtStart: boolean | undefined;
     if (watching && before?.watch === undefined) {
       checksPendingAtStart = yield* pullRequests
@@ -147,10 +147,9 @@ const make = Effect.gen(function* () {
             summary.state === "merged"
               ? Effect.fail(new PullRequestNotOpenError({ state: "merged" }))
               : Effect.succeed(
-                  summary.checksState === undefined ||
-                    (summary.checksState === null && before?.endedWatch !== undefined)
+                  summary.checksState === undefined || summary.checksState === null
                     ? undefined
-                    : summary.checksState === "pending" || summary.checksState === null,
+                    : summary.checksState === "pending",
                 ),
           ),
           Effect.catchTags({
