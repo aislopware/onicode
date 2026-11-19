@@ -369,15 +369,11 @@ export function collectMobileAssistantTextSelectors(
   for (const char of matchText) {
     for (let unit = 0; unit < char.length; unit += 1) fullOffsets.push(fullText.length);
     const expansion = expansions[expansionIndex];
-    if (char === ATTACHMENT || char === DETACHED)
-      fullText += normalize(expansions[expansionIndex++]!.replace(NATIVE_BREAK, ""));
-    else if (
-      !(
-        char === " " &&
-        matchText[position + 1] === ATTACHMENT &&
-        expansion?.startsWith(NATIVE_BREAK)
-      )
-    )
+    const nativeBreak = expansion?.startsWith(NATIVE_BREAK) ?? false;
+    if (char === ATTACHMENT || char === DETACHED) {
+      fullText += normalize(nativeBreak ? expansion!.slice(NATIVE_BREAK.length) : expansion!);
+      expansionIndex += 1;
+    } else if (!(char === " " && matchText[position + 1] === ATTACHMENT && nativeBreak))
       fullText += char;
     position += char.length;
   }
