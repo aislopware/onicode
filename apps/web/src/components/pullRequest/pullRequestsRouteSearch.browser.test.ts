@@ -41,4 +41,13 @@ describe("pull requests route search", () => {
     expect(matchedSearch("/pull-requests?author=4089")?.author).toBeUndefined();
     expect(matchedSearch("/pull-requests?labels=4089")?.labels).toBeUndefined();
   });
+
+  it("keeps the selected repository and host whole, however long", () => {
+    const repository = `group/${"subgroup/".repeat(30)}project`;
+    const host = `${"a".repeat(220)}.example`;
+    const search = matchedSearch(
+      `/pull-requests?repository=${encodeURIComponent(repository)}&selectedHost=${host}&number=7`,
+    );
+    expect(search).toMatchObject({ repository, selectedHost: host, number: 7 });
+  });
 });

@@ -1,3 +1,4 @@
+import { scopedThreadKey } from "@onicode/client-runtime/environment";
 import { threadIssueKeyOf, type ScopedThreadRef, type ThreadIssueLink } from "@onicode/contracts";
 import { T, useGT, Var } from "gt-react";
 import { ChevronDownIcon, ChevronUpIcon, MessageSquareIcon } from "lucide-react";
@@ -161,26 +162,40 @@ export function ThreadDetailsIssueRows({
   mountScope?: Exclude<IssueRowMountScope, "linked-items">;
   onOpen?: () => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  // Keyed by thread: the details card stays mounted when another thread opens.
+  const threadKey = scopedThreadKey(threadRef);
+  const [expandedThreadKey, setExpandedThreadKey] = useState<string | null>(null);
+  const expanded = expandedThreadKey === threadKey;
   const hidden = links.length - COLLAPSED_ISSUE_ROWS;
+  const row = (link: ThreadIssueLink) => (
+    <LinkedIssueRow
+      // Links made before keys compared case-insensitively may repeat an issue.
+      key={`${threadIssueKeyOf(link)} ${link.key}`}
+      link={link}
+      threadRef={threadRef}
+      compact={compact}
+      mountScope={mountScope}
+      onOpen={onOpen}
+    />
+  );
   return (
     <>
-      {(expanded ? links : links.slice(0, COLLAPSED_ISSUE_ROWS)).map((link) => (
-        <LinkedIssueRow
-          // Links made before keys compared case-insensitively may repeat an issue.
-          key={`${threadIssueKeyOf(link)} ${link.key}`}
-          link={link}
-          threadRef={threadRef}
-          compact={compact}
-          mountScope={mountScope}
-          onOpen={onOpen}
-        />
-      ))}
+      {links.slice(0, COLLAPSED_ISSUE_ROWS).map(row)}
+      {expanded ? (
+        <div data-thread-details-issue-list className="flex flex-col">
+          {links.slice(COLLAPSED_ISSUE_ROWS).map(row)}
+        </div>
+      ) : null}
       {hidden > 0 ? (
         <ThreadDetailsControl
           variant="ghost"
           size="sm"
-          onClick={() => setExpanded(!expanded)}
+          aria-expanded={expanded}
+          onClick={(event) => {
+            // The sidebar badge's preview is portaled inside its thread row, which opens on click.
+            event.stopPropagation();
+            setExpandedThreadKey(expanded ? null : threadKey);
+          }}
           part="row"
           tone="muted"
           className="w-full active:scale-100"

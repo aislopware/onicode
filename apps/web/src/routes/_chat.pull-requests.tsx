@@ -37,9 +37,7 @@ export const Route = createFileRoute("/_chat/pull-requests")({
     ...(SORT_OPTIONS.some((option) => option.value === raw.sort)
       ? { sort: raw.sort as PullRequestListSort }
       : {}),
-    ...(typeof raw.repository === "string" && raw.repository
-      ? { repository: raw.repository.slice(0, 200) }
-      : {}),
+    ...(typeof raw.repository === "string" && raw.repository ? { repository: raw.repository } : {}),
     ...(typeof raw.number === "number" && Number.isInteger(raw.number) && raw.number > 0
       ? { number: raw.number }
       : {}),
@@ -54,7 +52,7 @@ export const Route = createFileRoute("/_chat/pull-requests")({
       ? { selectedProjectId: raw.selectedProjectId as ProjectId }
       : {}),
     ...(typeof raw.selectedHost === "string" && raw.selectedHost
-      ? { selectedHost: raw.selectedHost.slice(0, 200) }
+      ? { selectedHost: raw.selectedHost }
       : {}),
     ...(typeof raw.selectedEnvironmentId === "string" && raw.selectedEnvironmentId
       ? { selectedEnvironmentId: raw.selectedEnvironmentId as EnvironmentId }
