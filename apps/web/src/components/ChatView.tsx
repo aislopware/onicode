@@ -2861,26 +2861,27 @@ export default function ChatView(props: ChatViewProps) {
     activeThread?.lineage.sideChat !== true &&
     !isSubagentThread &&
     serverConfig?.environment.capabilities.sideChats === true;
+  // A start can outlast the thread on screen; its banner would then go nowhere.
+  const reportSideChatError = useStableCallback((message: string, threadRef: ScopedThreadRef) => {
+    if (currentRouteThreadKeyRef.current === scopedThreadKey(threadRef)) {
+      setThreadError(threadRef.threadId, message);
+      return;
+    }
+    toastManager.add(
+      stackedThreadToast({
+        type: "error",
+        title: gt("Side chat not started"),
+        description: message,
+      }),
+    );
+  });
   const sideChat = useSideChat({
     threadRef: sideChatsOffered && isServerThread ? activeThreadRef : null,
     readSettings: () => ({
       runtimeMode,
       modelSelection: composerRef.current?.getSendContext().selectedModelSelection,
     }),
-    // A start can outlast the thread on screen; its banner would then go nowhere.
-    onError: (message, threadRef) => {
-      if (currentRouteThreadKeyRef.current === scopedThreadKey(threadRef)) {
-        setThreadError(threadRef.threadId, message);
-        return;
-      }
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: gt("Side chat not started"),
-          description: message,
-        }),
-      );
-    },
+    onError: reportSideChatError,
   });
   // A maximized panel covers the terminal drawer the command runs in.
   const runSideChatShellCommandStable = useStableCallback((command: string) => {
@@ -3053,6 +3054,7 @@ export default function ChatView(props: ChatViewProps) {
     anchorNewTurn,
     acknowledgeActiveThreadWoke,
     onSideChat: sideChat.available ? sendSideChatStable : undefined,
+    onSideChatError: reportSideChatError,
     sideChatDisabledReason,
     handleNewThreadInActiveProject,
     persistThreadSettingsForNextTurn,

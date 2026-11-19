@@ -531,8 +531,7 @@ describe("mobile task permissions", () => {
     expect(state.appendAttachments).not.toHaveBeenCalled();
     expect(state.enqueue).not.toHaveBeenCalled();
 
-    // A change before the fork, such as a removed attachment that took its upload, waits for
-    // Send again.
+    // A change before the fork, such as removing an attachment, waits for Send again.
     vi.clearAllMocks();
     vi.mocked(prepareTurnAttachments).mockImplementationOnce(() => {
       state.draft = { ...state.draft, attachments: [] };

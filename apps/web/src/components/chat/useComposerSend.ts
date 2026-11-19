@@ -285,6 +285,8 @@ interface ComposerSendInput {
   readonly onSideChat?:
     | ((message: SideChatMessage | undefined, source: SideChatSource) => Promise<boolean>)
     | undefined;
+  /** Reports a side chat that did not start, on its thread or wherever the user is now. */
+  readonly onSideChatError: (message: string, threadRef: ScopedThreadRef) => void;
   /** Refuses `/side` with this reason and keeps the draft. */
   readonly sideChatDisabledReason: string | null;
   readonly handleNewThreadInActiveProject: () => void;
@@ -377,6 +379,7 @@ export function useComposerSend(input: ComposerSendInput) {
     anchorNewTurn,
     acknowledgeActiveThreadWoke,
     onSideChat,
+    onSideChatError,
     sideChatDisabledReason,
     handleNewThreadInActiveProject,
     persistThreadSettingsForNextTurn,
@@ -716,9 +719,9 @@ export function useComposerSend(input: ComposerSendInput) {
       });
       if (started._tag === "Failure") {
         const error = squashAtomCommandFailure(started);
-        setThreadError(
-          activeThread.id,
+        onSideChatError(
           error instanceof Error ? error.message : m(msg("Could not start a side chat.")),
+          source.threadRef,
         );
         return;
       }
@@ -726,39 +729,29 @@ export function useComposerSend(input: ComposerSendInput) {
       // The composer may show another draft by now, such as a queued message being edited.
       const composerShowsSent =
         currentRouteThreadKeyRef.current === routeThreadKey && promptRef.current === promptAtSend;
-      if (sendsDraft) {
-        // Edits made while it forked stay, along with what was sent.
-        if (draftUnchanged()) {
-          clearComposerDraftContent(composerDraftTarget);
-          if (composerShowsSent) {
-            promptRef.current = "";
-            composerRef.current?.resetCursorState();
-          }
+      // Answering a question, the composer shows the answer, which lives apart from this draft.
+      if (sendCtx.answeringPendingUserInput) {
+        if (currentRouteThreadKeyRef.current === routeThreadKey) {
+          composerRef.current?.resetCursorState();
         }
-        const kept = useComposerDraftStore.getState().getComposerDraft(composerDraftTarget);
-        const keptIds = new Set(
-          [...(kept?.images ?? []), ...(kept?.files ?? [])].map((attachment) => attachment.id),
-        );
+        return;
+      }
+      // Edits made while it forked stay, along with what was sent, and own their attachments
+      // (a stash keeps its uploads).
+      if (!draftUnchanged()) return;
+      if (sendsDraft) {
+        clearComposerDraftContent(composerDraftTarget);
         for (const attachment of snapshot.attachments) {
-          if (keptIds.has(attachment.id)) continue;
           if (capabilities.supportsAttachmentUploads) releaseDraftAttachment(attachment);
           if (attachment.type === "image" && attachment.previewUrl.startsWith("blob:")) {
             URL.revokeObjectURL(attachment.previewUrl);
           }
         }
-        return;
+      } else {
+        setComposerDraftPrompt(composerDraftTarget, "");
       }
-      // Answering a question, the composer shows the answer, which lives apart from this draft.
-      if (!sendCtx.answeringPendingUserInput) {
-        if (
-          useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.prompt ===
-          promptAtSend
-        ) {
-          setComposerDraftPrompt(composerDraftTarget, "");
-        }
-        if (composerShowsSent) promptRef.current = "";
-      }
-      if (currentRouteThreadKeyRef.current === routeThreadKey) {
+      if (composerShowsSent) {
+        promptRef.current = "";
         composerRef.current?.resetCursorState();
       }
       return;
