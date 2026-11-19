@@ -19,12 +19,8 @@ import {
   toViewerSide,
 } from "../PullRequestReviewAnnotation";
 import type { PendingReviewComment } from "../pullRequestReviewStore";
-import {
-  commentDraftFor,
-  GuideCommentDraft,
-  type CommentDraft,
-  type ExcerptCommenting,
-} from "./GuideExcerpt";
+import { GuideCommentDraft, type ExcerptCommenting } from "./GuideExcerpt";
+import { commentDraftFor, type CommentDraft } from "./GuideExcerpt.logic";
 
 interface FileAnnotation {
   readonly pending: ReadonlyArray<PendingReviewComment>;
@@ -79,7 +75,14 @@ export function GuideFileDiff({
   })();
 
   const beginComment = (range: SelectedLineRange | null) => {
-    const next = commentDraftFor(file, range, commenting);
+    if (commenting === null) return;
+    const next = commentDraftFor({
+      path,
+      file,
+      drawn: expandable,
+      range,
+      ranged: commenting.rangeComments,
+    });
     if (next !== null) setDraft(next);
   };
   const interactive = commenting !== null && draft === null;

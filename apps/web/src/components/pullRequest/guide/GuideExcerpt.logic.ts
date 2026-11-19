@@ -1,9 +1,53 @@
-import type { FileDiffContentsLoader, FileDiffMetadata } from "@pierre/diffs";
+import type { FileDiffContentsLoader, FileDiffMetadata, SelectedLineRange } from "@pierre/diffs";
 import {
   excerptExpansionOldContents,
   type DiffRow,
 } from "@onicode/client-runtime/review-guide-tour";
-import type { PullRequestReviewGuideExcerpt } from "@onicode/contracts";
+import type { PullRequestReviewGuideExcerpt, PullRequestReviewPosition } from "@onicode/contracts";
+
+import {
+  buildDiffReviewComment,
+  diffReviewSelectionId,
+  resolveDiffReviewAnchor,
+  type ReviewCommentContext,
+} from "~/reviewCommentContext";
+
+export interface CommentDraft {
+  readonly range: SelectedLineRange;
+  readonly position: PullRequestReviewPosition;
+  readonly startPosition?: PullRequestReviewPosition;
+  /** What Ask agent sends, taken from the lines as they were drawn when selected. */
+  readonly context: ReviewCommentContext;
+}
+
+// The review anchor comes from the pull request's diff. A selection can also reach unchanged
+// lines the view loaded into `drawn`, which that diff lacks. The pull request's diff goes first
+// because an expanded excerpt draws the changed lines around it as context.
+export function commentDraftFor(input: {
+  readonly path: string;
+  readonly file: FileDiffMetadata;
+  readonly drawn: FileDiffMetadata;
+  readonly range: SelectedLineRange | null;
+  readonly ranged: boolean;
+}): CommentDraft | null {
+  const { path, file, range } = input;
+  if (range === null) return null;
+  const anchor = resolveDiffReviewAnchor(file, range, input.ranged);
+  if (anchor === null) return null;
+  const contextFrom = (fileDiff: FileDiffMetadata) =>
+    buildDiffReviewComment({
+      id: `pull-request-guide:${diffReviewSelectionId(path, range)}`,
+      sectionId: `pull-request-guide:${path}`,
+      // oxlint-disable-next-line onicode/no-untranslated-copy -- context title sent to the agent
+      sectionTitle: "Review guide",
+      filePath: path,
+      fileDiff,
+      range,
+      text: "",
+    });
+  const context = contextFrom(file) ?? contextFrom(input.drawn);
+  return context === null ? null : { range, ...anchor, context };
+}
 
 // Other hunks shift old-side context; expand against an excerpt-matching old side.
 // Loads with the source file's diff, which the loaded contents must reproduce.
