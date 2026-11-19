@@ -184,6 +184,8 @@ export const isProviderTurnStartRunStateMissingError = Schema.is(
   ProviderTurnStartRunStateMissingError,
 );
 
+const RESUME_PROMPT = "Continue where you left off.";
+
 const START_GAVE_UP_MESSAGE =
   "Onicode could not start this turn. Send the message again; if it keeps failing, check the server logs.";
 
@@ -1892,7 +1894,6 @@ export const layer: Layer.Layer<
             .filter((part) => part !== "")
             .join("\n\n");
           const { restartContinuationOfRunId: _resumedRunId, ...promptedInput } = turnInput;
-          const text = goalCommand ? userText : withInlineContext(context, userText);
           const startInput = noteContinuation ? promptedInput : turnInput;
           const { resume: _resume, ...contextInput } = startInput;
           const { message: resumeMessage, resume: _resumeIntent, ...resumeInput } = startInput;
@@ -1905,6 +1906,10 @@ export const layer: Layer.Layer<
                 );
           // Like pending history, pending images need a prompt; native resume carries none.
           const prompted = context !== "" || missedAttachments.length > 0;
+          // A resume that must be prompted still needs a request, or the agent has nothing to do.
+          const requestText =
+            turnInput.resume && prompted && userText === "" ? RESUME_PROMPT : userText;
+          const text = goalCommand ? userText : withInlineContext(context, requestText);
           const operation =
             turnInput.resume && !prompted && session.resumeTurn !== undefined
               ? session.resumeTurn({ ...resumeInput, messageId: resumeMessage.messageId })
