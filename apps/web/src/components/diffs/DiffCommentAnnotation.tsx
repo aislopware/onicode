@@ -42,6 +42,7 @@ interface DiffCommentAnnotationProps {
   pending?: boolean;
   secondaryAction?: DiffCommentSecondaryAction;
   focusOnMount?: boolean;
+  onFocus?: () => void;
   /** Set only for pull request comments, where `@` completes the repository's users. */
   completionScope?: PullRequestCompletionScope | null;
 }
@@ -62,6 +63,7 @@ export function DiffCommentAnnotation({
   pending = false,
   secondaryAction,
   focusOnMount = true,
+  onFocus,
   completionScope = null,
 }: DiffCommentAnnotationProps) {
   const gt = useGT();
@@ -147,6 +149,7 @@ export function DiffCommentAnnotation({
         onFocus={(event) => {
           const end = event.currentTarget.value.length;
           event.currentTarget.setSelectionRange(end, end);
+          onFocus?.();
         }}
         onKeyDown={(event) => {
           if (event.key === "Escape") {

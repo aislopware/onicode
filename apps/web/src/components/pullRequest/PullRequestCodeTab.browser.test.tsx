@@ -579,16 +579,19 @@ it("keeps an open line comment and its text through a refresh that changes the p
     viewerPermissions: { ...detail.viewerPermissions, comment: true },
   };
   const view = (refreshToken: number) => (
-    <PullRequestCodeTab
-      scrollerRef={() => {}}
-      environmentId={EnvironmentId.make("environment")}
-      reference={commentable}
-      detail={commentable}
-      selectedCommitOid={null}
-      onSelectedCommitChange={() => {}}
-      onRefresh={() => {}}
-      refreshToken={refreshToken}
-    />
+    <>
+      <input aria-label="Elsewhere" />
+      <PullRequestCodeTab
+        scrollerRef={() => {}}
+        environmentId={EnvironmentId.make("environment")}
+        reference={commentable}
+        detail={commentable}
+        selectedCommitOid={null}
+        onSelectedCommitChange={() => {}}
+        onRefresh={() => {}}
+        refreshToken={refreshToken}
+      />
+    </>
   );
   const container = document.createElement("div");
   container.className = "flex h-[700px] w-[900px]";
@@ -603,8 +606,10 @@ it("keeps an open line comment and its text through a refresh that changes the p
       .find((cell) => cell != null) ?? null;
   await vi.waitFor(() => expect(numberCell(3)).not.toBeNull());
   await userEvent.click(numberCell(3)!);
-  const draft = screen.getByRole("textbox");
+  const draft = screen.getByRole("textbox", { name: /Comment on lines/ });
   await draft.fill("Unsent");
+  const elsewhere = screen.getByRole("textbox", { name: "Elsewhere" });
+  await elsewhere.click();
 
   // A push changes the page, and with it every file's render key on it.
   singlePage.current = {
@@ -617,4 +622,17 @@ it("keeps an open line comment and its text through a refresh that changes the p
 
   await expect.element(screen.getByText("six()")).toBeVisible();
   await expect.element(draft).toHaveValue("Unsent");
+  // The remounted editor leaves focus where the user put it.
+  await userEvent.keyboard("x");
+  await expect.element(elsewhere).toHaveValue("x");
+
+  // A refresh that drops the draft's file takes its Cancel button too, so selection reopens.
+  singlePage.current = {
+    ...singlePage.first,
+    patch: singlePage.first.patch.replaceAll("a.ts", "b.ts"),
+  };
+  await screen.rerender(view(2));
+  await expect.element(screen.getByText("b.ts")).toBeVisible();
+  await userEvent.click(numberCell(3)!);
+  await expect.element(draft).toHaveValue("");
 });
