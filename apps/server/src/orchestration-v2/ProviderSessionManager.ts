@@ -572,6 +572,10 @@ export const layerWithOptions = (
       const sessions = yield* Ref.make(new Map<string, LiveSessionEntry>());
       // Retry per released entry; reusing ids must not lose cleanup for earlier threads.
       const releaseRecordRetries = yield* FiberSet.make();
+      // Releases run to the end even when their caller stops waiting; shutdown waits for them.
+      const releasesInFlight = yield* FiberSet.make();
+      const runToEnd = <A, E>(effect: Effect.Effect<A, E>) =>
+        FiberSet.run(releasesInFlight, effect).pipe(Effect.flatMap(Fiber.join));
       const nextSubscriberId = yield* Ref.make(0);
       const sessionOpen = yield* KeyedLock.make<ProviderSessionId>();
       const threadAttachment = yield* KeyedLock.make<string>();
@@ -1460,11 +1464,7 @@ export const layerWithOptions = (
 
       // Once out of the live map nothing else closes the entry, so an interrupted caller stops
       // waiting without stopping the teardown, which a wedged finalizer could hold for 30 s.
-      const releaseEntry = (input: ReleaseEntryInput) =>
-        releaseEntryToEnd(input).pipe(
-          Effect.forkDetach({ startImmediately: true }),
-          Effect.flatMap(Fiber.join),
-        );
+      const releaseEntry = (input: ReleaseEntryInput) => runToEnd(releaseEntryToEnd(input));
 
       const releaseEntryToEnd = (input: ReleaseEntryInput) =>
         Effect.acquireUseRelease(
@@ -1522,8 +1522,12 @@ export const layerWithOptions = (
                     releasedAt,
                     ...detachedThread,
                   };
+                  // The caller may have stopped waiting, and open may have reused the id since.
                   const recorded = yield* Effect.exit(
-                    writeReleaseRecords({ ...records, replaced: false }),
+                    writeReleaseRecords({
+                      ...records,
+                      replaced: (yield* Ref.get(sessions)).has(sessionKey(input.providerSessionId)),
+                    }),
                   );
                   if (Exit.isFailure(recorded)) {
                     yield* retryReleaseRecords(records);
@@ -3113,6 +3117,10 @@ export const layerWithOptions = (
             ),
           { concurrency: "unbounded", discard: true },
         );
+        // A release its caller stopped waiting for still writes records; persistence closes next.
+        yield* FiberSet.awaitEmpty(releasesInFlight).pipe(
+          Effect.timeoutOption(RELEASE_SCOPE_CLOSE_TIMEOUT_MS),
+        );
       }).pipe(Effect.withSpan("ProviderSessionManager.shutdown"));
       yield* Effect.addFinalizer(() =>
         shutdown.pipe(
@@ -3378,25 +3386,30 @@ export const layerWithOptions = (
         ),
         release: releaseEntry,
         releaseUnlessBusy: Effect.fn("ProviderSessionManager.releaseUnlessBusy")(function* (input) {
-          const key = sessionKey(input.providerSessionId);
-          const before = (yield* Ref.get(sessions)).get(key);
-          yield* releaseEntry({
-            providerSessionId: input.providerSessionId,
-            reason: input.reason,
-            ...(input.detail === undefined ? {} : { detail: input.detail }),
-            keepIfBusyOtherThan: {
-              providerThreadIds: input.ownProviderThreadIds,
-              throughRunOrdinal: input.throughRunOrdinal,
-            },
-            ...(input.keepIf === undefined ? {} : { keepIf: input.keepIf }),
-          });
-          // Scope, not presence: open can install a replacement under the same id meanwhile, and
-          // a kept entry is rewritten with the same scope.
-          const released =
-            before !== undefined && (yield* Ref.get(sessions)).get(key)?.scope !== before.scope;
-          // The stopped turn's markBusy cancelled the idle timer and its markIdle may never come.
-          if (!released) yield* scheduleIdleReleaseInternal(input.providerSessionId);
-          return released;
+          // Kept, the idle timer below must start even if the caller stopped waiting.
+          return yield* runToEnd(
+            Effect.gen(function* () {
+              const key = sessionKey(input.providerSessionId);
+              const before = (yield* Ref.get(sessions)).get(key);
+              yield* releaseEntryToEnd({
+                providerSessionId: input.providerSessionId,
+                reason: input.reason,
+                ...(input.detail === undefined ? {} : { detail: input.detail }),
+                keepIfBusyOtherThan: {
+                  providerThreadIds: input.ownProviderThreadIds,
+                  throughRunOrdinal: input.throughRunOrdinal,
+                },
+                ...(input.keepIf === undefined ? {} : { keepIf: input.keepIf }),
+              });
+              // Scope, not presence: open can install a replacement under the same id meanwhile,
+              // and a kept entry is rewritten with the same scope.
+              const released =
+                before !== undefined && (yield* Ref.get(sessions)).get(key)?.scope !== before.scope;
+              // The stopped turn's markBusy cancelled the idle timer and its markIdle may never come.
+              if (!released) yield* scheduleIdleReleaseInternal(input.providerSessionId);
+              return released;
+            }),
+          );
         }),
         otherWorkingThreads: Effect.fn("ProviderSessionManager.otherWorkingThreads")(
           function* (input) {
