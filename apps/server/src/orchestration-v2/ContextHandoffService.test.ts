@@ -6,6 +6,7 @@ import {
   ProviderInstanceId,
   ProviderThreadId,
   RunId,
+  ScheduledTaskId,
   ThreadId,
   TurnItemId,
   type OrchestrationV2AppThread,
@@ -293,7 +294,13 @@ function forkTestThread(
 }
 
 /** One completed run of `threadId` whose user message is `text`. */
-function forkTestRun(threadId: ThreadId, ordinal: number, text: string, freshContext?: true) {
+function forkTestRun(
+  threadId: ThreadId,
+  ordinal: number,
+  text: string,
+  fresh?: "fresh" | "scheduled-fresh",
+) {
+  const freshContext = fresh === undefined ? undefined : true;
   const runId = RunId.make(`${threadId}:run-${ordinal}`);
   const messageId = MessageId.make(`${runId}:message`);
   const run: OrchestrationV2Run = {
@@ -336,6 +343,9 @@ function forkTestRun(threadId: ThreadId, ordinal: number, text: string, freshCon
     messageId,
     text,
     attachments: [],
+    ...(fresh === "scheduled-fresh"
+      ? { scheduledTaskId: ScheduledTaskId.make("task:hourly") }
+      : {}),
   };
   return { run, item };
 }
@@ -343,51 +353,71 @@ function forkTestRun(threadId: ThreadId, ordinal: number, text: string, freshCon
 it.effect("a portable fork carries no context its source discarded for a fresh session", () =>
   Effect.gen(function* () {
     const parentId = ThreadId.make("thread:fork-history-parent");
-    const forkId = ThreadId.make("thread:fork-history-fork");
+    const freshForkId = ThreadId.make("thread:fork-history-fresh-fork");
+    const supersededForkId = ThreadId.make("thread:fork-history-superseded-fork");
     const parentRun = forkTestRun(parentId, 1, "PARENT_WORK");
-    const forkFresh = forkTestRun(forkId, 1, "FRESH_START", true);
-    const forkLater = forkTestRun(forkId, 2, "FORK_FOLLOW_UP");
-    const fork = {
-      thread: forkTestThread(forkId, { type: "run", threadId: parentId, runId: parentRun.run.id }),
-      runs: [forkFresh.run, forkLater.run],
+    const scheduledRun = forkTestRun(parentId, 2, "SCHEDULED_SIDE_RUN", "scheduled-fresh");
+    const forkFresh = forkTestRun(freshForkId, 1, "FRESH_START", "fresh");
+    const forkLater = forkTestRun(freshForkId, 2, "FORK_FOLLOW_UP");
+    // Its fresh first run was cancelled before starting, so only the transfer records the discard.
+    const supersededRun = forkTestRun(supersededForkId, 1, "AFTER_DISCARD");
+    const forkedFromParent = { type: "run", threadId: parentId, runId: parentRun.run.id } as const;
+    const projection = (
+      thread: OrchestrationV2AppThread,
+      runs: ReadonlyArray<ReturnType<typeof forkTestRun>>,
+      contextTransfers: ReadonlyArray<unknown> = [],
+    ) => ({
+      thread,
+      runs: runs.map(({ run }) => run),
       attempts: [],
-      turnItems: [forkFresh.item, forkLater.item],
-      contextTransfers: [],
-    };
-    const projections = new Map([
-      [
-        parentId,
-        {
-          thread: forkTestThread(parentId),
-          runs: [parentRun.run],
-          attempts: [],
-          turnItems: [parentRun.item],
-          contextTransfers: [],
-        },
-      ],
-      [forkId, fork],
+      turnItems: runs.map(({ item }) => item),
+      contextTransfers,
+    });
+    const parent = projection(forkTestThread(parentId), [parentRun, scheduledRun]);
+    const freshFork = projection(forkTestThread(freshForkId, forkedFromParent), [
+      forkFresh,
+      forkLater,
     ]);
-    const items = yield* ContextHandoffService.readForkHistoryItems(
-      {
-        getThreadRecords: (threadId, _fields, filter) => {
-          const projection = projections.get(threadId);
-          if (projection === undefined)
-            return Effect.fail(new ProjectionStoreThreadNotFoundError({ threadId }));
-          const runIds = filter?.turnItemRunIds;
-          return Effect.succeed({
-            ...projection,
-            turnItems: projection.turnItems.filter(
-              (item) => runIds === undefined || runIds.includes(item.runId),
-            ),
-          } as never);
-        },
+    const supersededFork = projection(
+      forkTestThread(supersededForkId, forkedFromParent),
+      [supersededRun],
+      [{ type: "fork", targetThreadId: supersededForkId, status: "superseded" }],
+    );
+    const projections = new Map([
+      [parentId, parent],
+      [freshForkId, freshFork],
+      [supersededForkId, supersededFork],
+    ]);
+    const store: Parameters<typeof ContextHandoffService.readForkHistoryItems>[0] = {
+      getThreadRecords: (threadId, _fields, filter) => {
+        const found = projections.get(threadId);
+        if (found === undefined)
+          return Effect.fail(new ProjectionStoreThreadNotFoundError({ threadId }));
+        const runIds = filter?.turnItemRunIds;
+        return Effect.succeed({
+          ...found,
+          turnItems: found.turnItems.filter(
+            (item) => runIds === undefined || runIds.includes(item.runId),
+          ),
+        } as never);
       },
-      fork,
-      forkLater.run,
+    };
+    const texts = (items: ReadonlyArray<OrchestrationV2TurnItem>) =>
+      items.flatMap((item) => (item.type === "user_message" ? [item.text] : []));
+
+    assert.deepEqual(
+      texts(yield* ContextHandoffService.readForkHistoryItems(store, freshFork, forkLater.run)),
+      ["FRESH_START", "FORK_FOLLOW_UP"],
     );
     assert.deepEqual(
-      items.flatMap((item) => (item.type === "user_message" ? [item.text] : [])),
-      ["FRESH_START", "FORK_FOLLOW_UP"],
+      texts(
+        yield* ContextHandoffService.readForkHistoryItems(store, supersededFork, supersededRun.run),
+      ),
+      ["AFTER_DISCARD"],
+    );
+    assert.deepEqual(
+      texts(yield* ContextHandoffService.readForkHistoryItems(store, parent, scheduledRun.run)),
+      ["SCHEDULED_SIDE_RUN"],
     );
   }),
 );

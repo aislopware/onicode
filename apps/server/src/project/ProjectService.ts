@@ -1,4 +1,3 @@
-import * as NodeUtil from "node:util";
 import {
   CommandId,
   type OrchestrationProjectShell,
@@ -122,6 +121,8 @@ export class ProjectOperationError extends Schema.TaggedError<ProjectOperationEr
     return `Project operation '${this.operation}' failed${this.projectId === undefined ? "" : ` for ${this.projectId}`}.`;
   }
 }
+
+const isProjectOperationError = Schema.is(ProjectOperationError);
 
 export type ProjectServiceError =
   | ProjectNotFoundError
@@ -264,7 +265,11 @@ export const make = Effect.gen(function* () {
     });
   });
 
-  const commit = Effect.fn("ProjectService.commit")(function* (command: ProjectCommand) {
+  const commit = Effect.fn("ProjectService.commit")(function* (
+    command: ProjectCommand,
+    // Runs under the project lock only when this command's event commits, so replays skip it.
+    onCommitted?: Effect.Effect<void, ProjectOperationError>,
+  ) {
     const { projectId } = command;
     const dispatchError = (cause: unknown) =>
       new ProjectOperationError({ operation: "dispatch-project-command", projectId, cause });
@@ -290,13 +295,14 @@ export const make = Effect.gen(function* () {
         now,
       });
       if (Result.isSuccess(planned)) {
-        const { receipt } = yield* eventSink.commitProjectCommand({
+        const { receipt, committed } = yield* eventSink.commitProjectCommand({
           commandId: command.commandId,
           projectId,
           commandType: command.type,
           acceptedAt: now,
           event: planned.success,
         });
+        if (committed && onCommitted !== undefined) yield* onCommitted;
         return receipt;
       }
       return yield* eventSink.commitRejectedProjectCommand({
@@ -314,7 +320,13 @@ export const make = Effect.gen(function* () {
           ? planAndCommit
           : workspaceLocks.withLock(workspaceRoot, planAndCommit),
       )
-      .pipe(Effect.mapError(dispatchError));
+      .pipe(
+        Effect.mapError((error) =>
+          isProjectOperationError(error) && error.operation === "write-project-settings"
+            ? error
+            : dispatchError(error),
+        ),
+      );
     if (receipt.projectId !== projectId || receipt.commandType !== command.type) {
       return yield* dispatchError(
         `Command ${command.commandId} was already used by ${receipt.commandType} for ${receipt.projectId}.`,
@@ -397,43 +409,39 @@ export const make = Effect.gen(function* () {
   });
 
   // New threads resolve these from the settings overrides; once folded, the record is never read.
-  const writeProjectSettings = Effect.fn("ProjectService.writeProjectSettings")(function* (
+  const writeProjectSettings = (
     projectId: ProjectId,
     input: Pick<
       ProjectUpdatePayload,
       "defaultModelSelection" | "defaultThreadEnvMode" | "scripts" | "autoPull"
     >,
-  ) {
+  ) => {
+    // Null, like empty scripts on the legacy record, falls back to the environment default.
     const fields = {
       defaultModelSelection: input.defaultModelSelection,
       defaultThreadEnvMode: input.defaultThreadEnvMode,
-      defaultProjectScripts: input.scripts,
+      defaultProjectScripts: input.scripts?.length === 0 ? null : input.scripts,
       defaultAutoPull: input.autoPull,
     };
-    if (Object.values(fields).every((value) => value === undefined)) return;
-    yield* serverSettings.getSettings.pipe(
-      Effect.flatMap(({ projectSettingsOverrides }) => {
-        const current = projectSettingsOverrides[projectId];
+    if (Object.values(fields).every((value) => value === undefined)) return undefined;
+    return serverSettings
+      .updateProjectSettingsOverride(projectId, (current) => {
         const entry: Record<string, unknown> = { ...current };
-        // A null clears the project's own value, so the environment default applies again.
         for (const [key, value] of Object.entries(fields)) {
           if (value === null) delete entry[key];
           else if (value !== undefined) entry[key] = value;
         }
-        if (NodeUtil.isDeepStrictEqual(entry, current ?? {})) return Effect.void;
-        return serverSettings.updateSettings({
-          projectSettingsOverrides: {
-            [projectId]:
-              Object.keys(entry).length === 0 ? null : (entry as ProjectSettingsOverrides),
-          },
-        });
-      }),
-      Effect.mapError(
-        (cause) =>
-          new ProjectOperationError({ operation: "write-project-settings", projectId, cause }),
-      ),
-    );
-  });
+        return Object.keys(entry).length === 0 ? null : (entry as ProjectSettingsOverrides);
+      })
+      .pipe(
+        Effect.asVoid,
+        Effect.mapError(
+          (cause) =>
+            new ProjectOperationError({ operation: "write-project-settings", projectId, cause }),
+        ),
+        Effect.withSpan("ProjectService.writeProjectSettings"),
+      );
+  };
 
   const create: ProjectService["Service"]["create"] = Effect.fn("ProjectService.create")(
     function* (input) {
@@ -443,18 +451,21 @@ export const make = Effect.gen(function* () {
         createIfMissing: input.createWorkspaceRootIfMissing ?? false,
       });
       yield* rejectWorktreeContainer(input.projectId, workspaceRoot);
-      yield* commit({
-        type: "project.create",
-        commandId: input.commandId,
-        projectId: input.projectId,
-        title: input.title,
-        workspaceRoot,
-        ...(input.scripts === undefined ? {} : { scripts: input.scripts }),
-      });
-      yield* writeProjectSettings(input.projectId, {
-        defaultModelSelection: input.defaultModelSelection,
-        scripts: input.scripts,
-      });
+      yield* commit(
+        {
+          type: "project.create",
+          commandId: input.commandId,
+          projectId: input.projectId,
+          title: input.title,
+          workspaceRoot,
+          ...(input.scripts === undefined ? {} : { scripts: input.scripts }),
+        },
+        writeProjectSettings(input.projectId, {
+          // A new project has nothing to clear.
+          defaultModelSelection: input.defaultModelSelection ?? undefined,
+          scripts: input.scripts,
+        }),
+      );
       yield* projectEnrichment.invalidate([workspaceRoot]);
       return yield* readCommitted(input.projectId);
     },
@@ -477,26 +488,28 @@ export const make = Effect.gen(function* () {
       if (workspaceRoot !== previousRoot) {
         yield* rejectWorktreeContainer(input.projectId, workspaceRoot);
       }
-      yield* commit({
-        type: "project.meta.update",
-        commandId: input.commandId,
-        projectId: input.projectId,
-        ...(input.title === undefined ? {} : { title: input.title }),
-        ...(workspaceRoot === previousRoot ? {} : { workspaceRoot }),
-        ...(input.defaultModelSelection === undefined
-          ? {}
-          : { defaultModelSelection: input.defaultModelSelection }),
-        ...(input.autoPull === undefined ? {} : { autoPull: input.autoPull }),
-        ...(input.projectIcon === undefined ? {} : { projectIcon: input.projectIcon }),
-        ...(input.faviconPath === undefined ? {} : { faviconPath: input.faviconPath }),
-        ...(input.defaultThreadEnvMode === undefined
-          ? {}
-          : { defaultThreadEnvMode: input.defaultThreadEnvMode }),
-        ...(input.scripts === undefined ? {} : { scripts: input.scripts }),
-        ...(input.pinned === undefined ? {} : { pinned: input.pinned }),
-        ...(input.archived === undefined ? {} : { archived: input.archived }),
-      });
-      yield* writeProjectSettings(input.projectId, input);
+      yield* commit(
+        {
+          type: "project.meta.update",
+          commandId: input.commandId,
+          projectId: input.projectId,
+          ...(input.title === undefined ? {} : { title: input.title }),
+          ...(workspaceRoot === previousRoot ? {} : { workspaceRoot }),
+          ...(input.defaultModelSelection === undefined
+            ? {}
+            : { defaultModelSelection: input.defaultModelSelection }),
+          ...(input.autoPull === undefined ? {} : { autoPull: input.autoPull }),
+          ...(input.projectIcon === undefined ? {} : { projectIcon: input.projectIcon }),
+          ...(input.faviconPath === undefined ? {} : { faviconPath: input.faviconPath }),
+          ...(input.defaultThreadEnvMode === undefined
+            ? {}
+            : { defaultThreadEnvMode: input.defaultThreadEnvMode }),
+          ...(input.scripts === undefined ? {} : { scripts: input.scripts }),
+          ...(input.pinned === undefined ? {} : { pinned: input.pinned }),
+          ...(input.archived === undefined ? {} : { archived: input.archived }),
+        },
+        writeProjectSettings(input.projectId, input),
+      );
       if (workspaceRoot !== previousRoot || input.faviconPath !== undefined) {
         yield* projectEnrichment.invalidate([previousRoot, workspaceRoot]);
       }

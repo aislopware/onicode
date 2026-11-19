@@ -167,7 +167,11 @@ const readOwnHistoryItems = Effect.fn("orchestrationV2.contextHandoff.readOwnHis
         ...(source.thread.historyOrigin === "v1_import" ? [null] : []),
       ],
     });
-    const boundary = contextBoundaryOrdinal({ runs, turnItems });
+    // A fresh run, even a scheduled side conversation, saw nothing before itself.
+    const boundary =
+      runs.find((run) => run.ordinal === throughRun.ordinal)?.freshContext === true
+        ? throughRun.ordinal
+        : contextBoundaryOrdinal({ runs, turnItems });
     const keptRunIds = new Set(runs.filter((run) => run.ordinal >= boundary).map((run) => run.id));
     const kept = turnItems.filter((item) =>
       item.runId === null ? boundary === 0 : keptRunIds.has(item.runId),
