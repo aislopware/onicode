@@ -256,6 +256,21 @@ class ReviewDiffGeometryTest {
         assertEquals("$case crossing right", caret("LP.", 2), crossingBox.right, 0.5f)
       }
     }
+    // drawText reorders right-to-left text, so edges measured left to right would be mirrored.
+    val hebrew = "x = \"שלום\";"
+    val word = hebrew.indexOf("שלום")
+    boxes.clear()
+    drawing.drawWordDiffRanges(
+      canvas,
+      row("line", hebrew).copy(wordDiffRanges = listOf(DiffWordDiffRange(word, word + 4))),
+      null,
+      10f,
+      0,
+      40,
+      lines,
+      DiffStyle.defaults(1f),
+    )
+    assertEquals(0, boxes.size)
     bitmap.recycle()
   }
 
