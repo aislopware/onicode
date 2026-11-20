@@ -2834,3 +2834,4 @@ f6d941fa4f	take	feat(server): links between environments renew while they are us
 8e8ff9b243	take	feat: link several environments at once (#39426); dropped T3 Connect connectOnly test case, fixed rebrand miss not_an_onicode_environment
 414a068f67	take	fix(server): Linux keep-awake no longer blocks screen lock and display-off
 aa0662d1ed	skip	already in Onicode: the cost sentence was capitalised by an earlier Onicode change
+d26066000d	take	docs(codex): explain Chrome extension connection errors

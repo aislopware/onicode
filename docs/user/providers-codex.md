@@ -129,6 +129,22 @@ in the thread on desktop or mobile. Some tools offer access for one request,
 the current session, or permanently. See [Permission modes](./permission-modes.md)
 for command and file approvals.
 
+## Use the OpenAI Chrome extension
+
+Connecting ChatGPT in **Settings → Providers** signs in the Codex provider.
+Using your signed-in Chrome profile through the extension requires a browser
+connection for the current Codex thread.
+
+If an Onicode thread reports `The browser access host is unavailable`, its browser
+host is unavailable; this does not identify an extension connection failure.
+For a task that requested Chrome, follow [OpenAI's setup guide](https://learn.chatgpt.com/docs/chrome-extension),
+then select Chrome in a Codex chat in the ChatGPT desktop app.
+If the task runs on a remote environment, `localhost` in the desktop browser
+refers to your computer. Forward the remote page's port or use a URL reachable
+from your computer before repeating the task. Connecting to Onicode over your
+local network or Tailscale does not by itself expose that page. Onicode's Browser
+panel uses its own browser session.
+
 ## Use Daybreak
 
 Models with cyber access programs show a Cyber Access option in the model
