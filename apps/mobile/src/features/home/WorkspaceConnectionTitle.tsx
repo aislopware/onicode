@@ -1,9 +1,12 @@
 import { useAtomValue } from "@effect/atom-react";
-import type { HostHardwareAlert } from "@onicode/client-runtime/hostHardware";
+import {
+  hostHardwareAlertTitle,
+  type HostHardwareAlert,
+} from "@onicode/client-runtime/hostHardware";
 import type { EnvironmentId } from "@onicode/contracts";
 import { createContext, use, useEffect, useState, type ReactNode } from "react";
 import { Animated, Platform, Pressable, View } from "react-native";
-import { useGT, useMessages } from "gt-react-native";
+import { useGT, useLocale, useMessages } from "gt-react-native";
 
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { SymbolView } from "../../components/ui/AppSymbol";
@@ -120,6 +123,8 @@ export function WorkspaceConnectionTitle(props: {
   const status = use(ConnectionStatusContext);
   const hardwareAlert = use(HardwareAlertContext);
   const gt = useGT();
+  const messages = useMessages();
+  const locale = useLocale();
   const size = props.size ?? "navbar";
   const { scale } = useAndroidControlSizing();
 
@@ -136,8 +141,8 @@ export function WorkspaceConnectionTitle(props: {
           {/* The brand may fill the row; the warning keeps its place beside it. */}
           <View style={{ flexShrink: 1, minWidth: 0 }}>{props.brand}</View>
           <Pressable
-            accessibilityHint="Opens environment settings"
-            accessibilityLabel={hardwareAlert.title}
+            accessibilityHint={gt("Opens environment settings")}
+            accessibilityLabel={hostHardwareAlertTitle(hardwareAlert, messages, locale)}
             accessibilityRole="button"
             disabled={props.onPress === undefined}
             hitSlop={10}

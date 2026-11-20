@@ -131,7 +131,7 @@ export function GuideExcerpt({
       ) : loading ? (
         <p className="rounded-lg border border-border px-3 py-2 text-xs text-muted-foreground">
           <T>
-            Loading <Var>{excerpt.path}</Var>...
+            Loading <Var>{excerpt.path}</Var>…
           </T>
         </p>
       ) : (

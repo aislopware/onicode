@@ -1,19 +1,34 @@
 import { useAtomValue } from "@effect/atom-react";
 import { msg, T, useGT, useMessages } from "gt-react";
-import { type ReactNode, useSyncExternalStore } from "react";
+import {
+  AppWindowIcon,
+  ArrowUpIcon,
+  ClockAlertIcon,
+  DownloadIcon,
+  TriangleAlertIcon,
+} from "lucide-react";
+import { useState, useSyncExternalStore, type ReactNode } from "react";
 
 import type { MessageResolver } from "~/i18n/messages";
+import { useMediaQuery } from "~/hooks/useMediaQuery";
 import { cn } from "~/lib/utils";
 import { environmentIdsKey } from "~/state/environmentAtomList";
+import { useEnvironmentMachines } from "~/state/environments";
 import { environmentUpdateStatesAtom } from "~/state/server";
+import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import { useServerUpdate } from "../ServerUpdateAction";
+import { ThreadHoverCard } from "../ThreadHoverCard";
 import { Button } from "../ui/button";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
+import { Spinner } from "../ui/spinner";
+import { UpdateProgressRing } from "./DesktopUpdateStatusIcon";
 import {
   describeUpdateCapsule,
   formatUpdateElapsed,
   RUN_STATUS_LABELS,
   resolveUpdateRunMachineStatus,
+  UPDATE_RESTART_DELAY_MS,
+  type UpdateCapsuleView,
   type UpdateEverythingRun,
   type UpdateRunLocalState,
   type UpdateRunMachineView,
@@ -24,14 +39,18 @@ import {
   retryFailedUpdateRunServers,
 } from "./updateEverythingRun";
 
-function useNow(intervalMs: number | null): number {
+/** Steps count from `origin`, so a countdown to it changes on its own second boundaries. */
+function useNow(intervalMs: number | null, origin: number): number {
   const step = intervalMs ?? 60_000;
   const subscribe = (onChange: () => void) => {
     if (intervalMs === null) return () => {};
     const timer = setInterval(onChange, intervalMs);
     return () => clearInterval(timer);
   };
-  return useSyncExternalStore(subscribe, () => Math.floor(Date.now() / step) * step);
+  return useSyncExternalStore(
+    subscribe,
+    () => Math.floor((Date.now() - origin) / step) * step + origin,
+  );
 }
 
 function useUpdateRunMachineViews(run: UpdateEverythingRun): ReadonlyArray<UpdateRunMachineView> {
@@ -48,7 +67,7 @@ function useUpdateRunMachineViews(run: UpdateEverythingRun): ReadonlyArray<Updat
 
 function restartSecondsLeft(run: UpdateEverythingRun, now: number): number | null {
   return run.phase === "countdown" && run.restartAt !== null
-    ? Math.max(0, Math.ceil((run.restartAt - now) / 1000))
+    ? Math.ceil(Math.min(UPDATE_RESTART_DELAY_MS, Math.max(0, run.restartAt - now)) / 1000)
     : null;
 }
 
@@ -69,22 +88,106 @@ function localStatusLabel(
   return resolve(msg("restarts after the servers"));
 }
 
+function UpdateCapsuleGlyph({
+  view,
+  restartAt,
+  restartSeconds,
+}: {
+  readonly view: UpdateCapsuleView;
+  readonly restartAt: number | null;
+  readonly restartSeconds: number | null;
+}) {
+  const m = useMessages();
+  const reducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
+  // Read once per countdown: the ring then drains by itself until the restart.
+  const [drain] = useState(() => ({
+    from: view.progress,
+    ms: restartAt === null ? 0 : Math.max(0, restartAt - Date.now()),
+  }));
+
+  if (view.glyph === "restarting") return <Spinner size="md" />;
+  if (view.glyph === "countdown") {
+    return (
+      <UpdateProgressRing
+        fraction={reducedMotion ? view.progress : drain.from}
+        drainMs={reducedMotion ? undefined : drain.ms}
+      >
+        <span className="text-xs font-medium tabular-nums">
+          {m(msg("{seconds}s", { seconds: restartSeconds ?? 0 }))}
+        </span>
+      </UpdateProgressRing>
+    );
+  }
+  return (
+    <UpdateProgressRing fraction={view.progress}>
+      {view.glyph === "failed" ? (
+        <TriangleAlertIcon className="size-4" />
+      ) : view.glyph === "downloading" ? (
+        <DownloadIcon className="size-4" />
+      ) : view.tone === "slow" ? (
+        <ClockAlertIcon className="size-4" />
+      ) : (
+        <ArrowUpIcon className="size-4" />
+      )}
+    </UpdateProgressRing>
+  );
+}
+
+/** A machine and where its update stands; only trouble takes a colour. */
+function UpdateRunRow({
+  icon,
+  name,
+  status,
+  elapsed,
+  tone,
+  detail,
+}: {
+  readonly icon: ReactNode;
+  readonly name: ReactNode;
+  readonly status: string;
+  readonly elapsed?: string | undefined;
+  readonly tone?: "slow" | "failed" | undefined;
+  readonly detail?: string | null;
+}) {
+  return (
+    <div className={detail ? "min-w-56" : "min-w-0"}>
+      <div className="flex min-w-0 items-center gap-2">
+        {icon}
+        <div className="min-w-0 flex-1 truncate text-foreground/80">{name}</div>
+        <div
+          className={cn(
+            "flex shrink-0 gap-1.5 pl-4 tabular-nums",
+            tone === "failed" && "text-error",
+            tone === "slow" && "text-warning",
+          )}
+        >
+          <span>{status}</span>
+          {elapsed ? <span>{elapsed}</span> : null}
+        </div>
+      </div>
+      {/* Zero intrinsic width: the rows size the popup and a long failure wraps inside it. */}
+      {detail ? <div className="mt-0.5 w-0 min-w-full pl-5 wrap-anywhere">{detail}</div> : null}
+    </div>
+  );
+}
+
 export function SidebarUpdateCapsule({
   run,
   local,
-  icon,
   onRestart,
 }: {
   readonly run: UpdateEverythingRun;
   readonly local: UpdateRunLocalState;
-  readonly icon: ReactNode;
   readonly onRestart?: () => Promise<void>;
 }) {
   const machines = useUpdateRunMachineViews(run);
   const hasActiveMachine = machines.some(
     ({ status }) => status !== "done" && status !== "failed" && status !== "waiting",
   );
-  const now = useNow(run.phase === "countdown" ? 1_000 : hasActiveMachine ? 30_000 : null);
+  const now = useNow(
+    run.phase === "countdown" ? 1_000 : hasActiveMachine ? 30_000 : null,
+    run.restartAt ?? 0,
+  );
   const gt = useGT();
   const m = useMessages();
   const view = describeUpdateCapsule(run, machines, local, now, m);
@@ -92,9 +195,43 @@ export function SidebarUpdateCapsule({
   const failed = machines.some(({ status }) => status === "failed");
   const settled = !hasActiveMachine && run.localVersion === null;
   const restartSeconds = restartSecondsLeft(run, now);
+  const machineById = useEnvironmentMachines();
+  // The title already says what this app is doing in these states, so its row would repeat it.
+  const showLocalRow =
+    run.localVersion !== null &&
+    view.glyph !== "countdown" &&
+    view.glyph !== "restarting" &&
+    view.glyph !== "downloading";
+  const restart = run.localVersion === null ? onRestart : undefined;
+  // The restart is seconds away and "Later" lives in the popup, so the countdown brings it up.
+  const [open, setOpen] = useState(run.phase === "countdown");
+  const [phaseSeen, setPhaseSeen] = useState(run.phase);
+  if (phaseSeen !== run.phase) {
+    setPhaseSeen(run.phase);
+    if (run.phase === "countdown") setOpen(true);
+  }
 
+  const headline = view.slow
+    ? gt("{summary}. {machine}: {status}, {elapsed}", {
+        summary: view.title,
+        machine: view.label,
+        status: view.slow.status,
+        elapsed: view.slow.elapsed,
+      })
+    : view.label;
+  // Said once per step: a countdown or a percentage read out every tick would drown the reader.
+  const announcement =
+    view.glyph === "countdown"
+      ? gt("Restart in {seconds}s", { seconds: UPDATE_RESTART_DELAY_MS / 1000 })
+      : view.glyph === "downloading"
+        ? gt("Downloading")
+        : headline;
   const actionLabel =
-    view.action === "later" ? gt("Later") : view.action === "retry" ? gt("Retry") : gt("Dismiss");
+    view.action === "later"
+      ? gt("Restart later")
+      : view.action === "retry"
+        ? gt("Retry")
+        : gt("Dismiss");
   const runAction = () => {
     if (view.action === "later") postponeUpdateRestart();
     else if (view.action === "retry") retryFailedUpdateRunServers(updateServer);
@@ -102,105 +239,111 @@ export function SidebarUpdateCapsule({
   };
 
   return (
-    <Popover>
-      <div
-        className={cn(
-          "relative ml-auto flex h-8 w-8 shrink-0 items-center rounded-full bg-sidebar-control-surface text-sidebar-foreground @min-[12rem]/sidebar-update:w-full",
-          view.tone === "slow" && "ring-1 ring-warning/40 ring-inset",
-          view.tone === "failed" && "ring-1 ring-destructive/40 ring-inset",
-        )}
-      >
-        <PopoverTrigger
-          render={
-            <button
-              type="button"
-              aria-label={
-                view.slow ? `${view.label} ${view.slow.status} ${view.slow.elapsed}` : view.label
-              }
-              className="absolute inset-0 cursor-pointer rounded-full outline-hidden ring-ring hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-inset"
-            />
-          }
-        />
-        <span className="pointer-events-none relative hidden min-w-0 flex-1 truncate pl-3 text-xs @min-[12rem]/sidebar-update:block">
-          <span className={cn(view.tone === "failed" && "text-destructive")}>{view.label}</span>
-          {view.slow ? (
-            <span className="text-warning tabular-nums"> {view.slow.elapsed}</span>
-          ) : null}
-        </span>
-        {view.action !== null ? (
+    <Popover
+      open={open}
+      onOpenChange={(next, details) => {
+        // "Later" has seconds to be found: the pointer leaving does not take it away.
+        if (!next && run.phase === "countdown" && details.reason === "trigger-hover") return;
+        setOpen(next);
+      }}
+    >
+      <PopoverTrigger
+        openOnHover
+        closeDelay={150}
+        render={
           <button
             type="button"
-            className="relative hidden shrink-0 cursor-pointer pr-3 pl-1.5 text-xs underline decoration-muted-foreground/60 underline-offset-3 hover:decoration-current @min-[12rem]/sidebar-update:block"
-            onClick={runAction}
-          >
-            {actionLabel}
-          </button>
-        ) : null}
+            aria-label={headline}
+            className={cn(
+              "grid size-8 shrink-0 cursor-pointer place-items-center rounded-full bg-sidebar-control-surface outline-hidden ring-ring transition-colors hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-inset active:bg-sidebar-row-active data-popup-open:bg-sidebar-row-hover",
+              view.tone === "slow"
+                ? "text-warning"
+                : view.tone === "failed"
+                  ? "text-destructive"
+                  : "text-sidebar-foreground",
+            )}
+          />
+        }
+      >
+        {/* Keyed by state, so each new glyph fades in instead of snapping over the last. */}
         <span
-          className={cn(
-            "pointer-events-none relative grid size-8 shrink-0 place-items-center",
-            view.action !== null && "@min-[12rem]/sidebar-update:hidden",
-            restartSeconds !== null &&
-              "rounded-full text-xs font-medium tabular-nums ring-1 ring-current/22 ring-inset",
-          )}
+          key={`${view.glyph}:${view.tone}`}
+          className="grid place-items-center transition-[opacity,scale] duration-200 ease-out-quint starting:opacity-0 motion-safe:starting:scale-[0.97]"
         >
-          {restartSeconds !== null ? m(msg("{seconds}s", { seconds: restartSeconds })) : icon}
+          <UpdateCapsuleGlyph
+            key={run.restartAt}
+            view={view}
+            restartAt={run.restartAt}
+            restartSeconds={restartSeconds}
+          />
         </span>
-      </div>
-      <PopoverPopup side="top" align="end" padding="compact" width="sm">
-        <div className="flex flex-col gap-1 text-xs">
-          {run.localVersion !== null ? (
-            <div className="flex items-center justify-between gap-3">
-              <span>
-                <T>This app</T>
-              </span>
-              <span className="text-muted-foreground tabular-nums">
-                {localStatusLabel(run, local, now, m)}
-              </span>
-            </div>
-          ) : onRestart ? (
-            <div className="flex items-center justify-between gap-3">
-              <span>
-                <T>This app</T>
-              </span>
-              <Button size="xs" variant="outline" onClick={() => void onRestart()}>
-                <T>Restart to update</T>
-              </Button>
-            </div>
-          ) : null}
-          {machines.map(({ machine, status }) => (
-            <div key={machine.environmentId} className="flex min-w-0 flex-col">
-              <div className="flex items-center justify-between gap-3">
-                <span className="truncate">{machine.label}</span>
-                <span
-                  className={cn(
-                    "shrink-0 tabular-nums",
-                    status === "failed" ? "text-destructive" : "text-muted-foreground",
-                  )}
-                >
-                  {m(RUN_STATUS_LABELS[status])}
-                  {status !== "done" && status !== "failed" && status !== "waiting"
-                    ? ` ${formatUpdateElapsed(now - machine.startedAt, m)}`
-                    : ""}
-                </span>
-              </div>
-              {machine.failure !== null ? (
-                <span className="break-words text-muted-foreground">{machine.failure}</span>
-              ) : null}
-            </div>
-          ))}
-          {view.action !== null ? (
-            <div className="mt-1 flex justify-end gap-1">
-              <Button size="xs" variant="outline" onClick={runAction}>
-                {actionLabel}
-              </Button>
-              {settled && failed && view.action !== "dismiss" ? (
-                <Button size="xs" variant="ghost" onClick={dismissSettledUpdateRunMachines}>
-                  <T>Dismiss</T>
-                </Button>
-              ) : null}
-            </div>
-          ) : null}
+      </PopoverTrigger>
+      {/* Outside the button: a button's own label hides what it contains from screen readers. */}
+      <span role="status" className="sr-only">
+        {announcement}
+      </span>
+      {/* A popover's radius, not a tooltip's: the buttons inside share the tooltip's. */}
+      <PopoverPopup side="top" align="end" padding="none" initialFocus={false}>
+        <div className="px-2 py-1">
+          <ThreadHoverCard
+            // Digits only: tabular figures also widen the hyphens in machine names.
+            title={<span className="tabular-nums">{view.title}</span>}
+            footer={
+              restart || view.action !== null ? (
+                <div className="flex flex-wrap gap-1.5 *:flex-1">
+                  {restart ? (
+                    <Button size="xs" onClick={() => void restart()}>
+                      <T>Restart to update</T>
+                    </Button>
+                  ) : null}
+                  {settled && failed && view.action === "retry" ? (
+                    <Button size="xs" variant="ghost" onClick={dismissSettledUpdateRunMachines}>
+                      <T>Dismiss</T>
+                    </Button>
+                  ) : null}
+                  {view.action !== null ? (
+                    <Button size="xs" variant="outline" onClick={runAction}>
+                      {actionLabel}
+                    </Button>
+                  ) : null}
+                </div>
+              ) : null
+            }
+          >
+            {showLocalRow ? (
+              <UpdateRunRow
+                icon={<AppWindowIcon className="size-3 shrink-0 stroke-muted-foreground" />}
+                name={<T>This app</T>}
+                status={localStatusLabel(run, local, now, m)}
+              />
+            ) : null}
+            {machines.map(({ machine, status }) => (
+              <UpdateRunRow
+                key={machine.environmentId}
+                icon={
+                  <EnvironmentMachineIcon
+                    kind={machineById.get(machine.environmentId) ?? "server"}
+                    className="size-3 shrink-0 stroke-muted-foreground"
+                  />
+                }
+                name={machine.label}
+                status={m(RUN_STATUS_LABELS[status])}
+                elapsed={
+                  status === "done" || status === "failed" || status === "waiting"
+                    ? undefined
+                    : formatUpdateElapsed(now - machine.startedAt, m)
+                }
+                tone={
+                  status === "failed"
+                    ? "failed"
+                    : view.slow?.environmentId === machine.environmentId
+                      ? "slow"
+                      : undefined
+                }
+                detail={machine.failure}
+              />
+            ))}
+          </ThreadHoverCard>
         </div>
       </PopoverPopup>
     </Popover>

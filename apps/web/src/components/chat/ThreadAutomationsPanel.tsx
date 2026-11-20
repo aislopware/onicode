@@ -199,11 +199,11 @@ export function ThreadAutomationsPanel(props: {
                   {taskScheduleLine(task, tasksQuery.data?.timeZone, m)}
                 </p>
               </TooltipTrigger>
-              <TooltipPopup side="left">
-                <p className="font-medium">{task.title}</p>
-                <p className="text-muted-foreground">
-                  {taskScheduleLine(task, tasksQuery.data?.timeZone, m)}
-                </p>
+              <TooltipPopup
+                side="left"
+                description={taskScheduleLine(task, tasksQuery.data?.timeZone, m)}
+              >
+                {task.title}
               </TooltipPopup>
             </Tooltip>
             <Tooltip>

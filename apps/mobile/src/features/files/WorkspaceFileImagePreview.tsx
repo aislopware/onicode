@@ -79,7 +79,7 @@ export function WorkspaceFileImagePreview(props: {
 }) {
   const gt = useGT();
   if (props.uri === null) {
-    return <FilePreviewLoading message={gt("Preparing image preview...")} background="card" />;
+    return <FilePreviewLoading message={gt("Preparing image preview…")} background="card" />;
   }
 
   return (

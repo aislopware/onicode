@@ -3099,7 +3099,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                   >
                     <ComboboxSearchInput
                       aria-label={gt("Search projects")}
-                      placeholder={gt("Search projects...")}
+                      placeholder={gt("Search projects…")}
                       value={projectScopeMenuState.query}
                       onKeyDown={(event) => {
                         if (

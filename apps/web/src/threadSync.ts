@@ -27,6 +27,6 @@ export function resolveThreadSyncPhase(input: {
 
 export function threadSyncLabel(phase: ThreadSyncPhase, resolve: MessageResolver = m): string {
   return phase === "loading"
-    ? resolve(msg("Loading messages..."))
-    : resolve(msg("Syncing messages..."));
+    ? resolve(msg("Loading messages…"))
+    : resolve(msg("Syncing messages…"));
 }

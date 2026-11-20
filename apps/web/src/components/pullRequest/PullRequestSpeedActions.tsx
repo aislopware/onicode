@@ -101,6 +101,7 @@ export function PullRequestSpeedActions<Entry extends PullRequestSpeedActionEntr
       {actions.map((action) => {
         const label = resolve(ACTIONS[action].label);
         const Icon = ACTIONS[action].Icon;
+        const stackBlocked = action === "merge" && entry.stack !== undefined;
         return (
           <Tooltip key={action}>
             <TooltipTrigger
@@ -108,9 +109,10 @@ export function PullRequestSpeedActions<Entry extends PullRequestSpeedActionEntr
                 <Button
                   variant={action === "close" ? "destructive-outline" : "outline"}
                   size="xs"
-                  disabled={!canWrite || busy || (action === "merge" && entry.stack !== undefined)}
+                  disabled={!canWrite || busy}
+                  aria-disabled={stackBlocked || undefined}
                   aria-label={resolve(ACTIONS[action].numbered, { number: entry.number })}
-                  onClick={() => void perform(action)}
+                  onClick={stackBlocked ? undefined : () => void perform(action)}
                   onPointerDown={(event) => {
                     if (action !== "close" || !event.isPrimary || event.button !== 0) return;
                     event.stopPropagation();
@@ -123,7 +125,7 @@ export function PullRequestSpeedActions<Entry extends PullRequestSpeedActionEntr
               {label}
             </TooltipTrigger>
             <TooltipPopup>
-              {action === "merge" && entry.stack
+              {stackBlocked
                 ? gt(
                     "Open this {term, select, mr {merge request} cr {change request} other {pull request}} to merge its stack",
                     { term: changeRequestTermKind(terminology) },

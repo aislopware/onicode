@@ -46,7 +46,7 @@ import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { DraftInput } from "../ui/draft-input";
 import { SecretSourceInput, type SecretSource } from "./SecretSourceInput";
-import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
+import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../ui/popover";
 import { Switch } from "../ui/switch";
 import { ManagedControl, ManagedNotice } from "../ManagedPolicy";
 import { managedInstanceLocks, useManagedPolicy } from "../../state/managedPolicy";
@@ -1090,9 +1090,7 @@ export function ProviderInstanceCard({
       <PopoverPopup side="bottom" align="end" width="md" aria-label={versionAdvisory.title}>
         <div className="grid min-w-0 gap-3">
           <div className="grid gap-0.5">
-            <p className="text-sm font-semibold leading-tight text-foreground">
-              {versionAdvisory.title}
-            </p>
+            <PopoverTitle>{versionAdvisory.title}</PopoverTitle>
             <p
               className={cn(
                 "text-xs leading-snug [overflow-wrap:anywhere]",

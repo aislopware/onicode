@@ -375,9 +375,7 @@ function GitActionProgressButtonContent({
             >
               {progress.output}
             </TooltipTrigger>
-            <TooltipPopup side="bottom" className="max-w-96 break-words">
-              {progress.output}
-            </TooltipPopup>
+            <TooltipPopup side="bottom">{progress.output}</TooltipPopup>
           </Tooltip>
         </div>
       </div>
@@ -413,9 +411,7 @@ function GitActionSuccessButtonContent({ success }: { success: InlineGitActionSu
             >
               {success.description}
             </TooltipTrigger>
-            <TooltipPopup side="bottom" className="max-w-96 break-words">
-              {success.description}
-            </TooltipPopup>
+            <TooltipPopup side="bottom">{success.description}</TooltipPopup>
           </Tooltip>
         </div>
       </div>
@@ -846,7 +842,7 @@ export function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
               >
                 <Spinner size="sm" aria-hidden />
                 <T>
-                  Publishing repository to <Var>{publishProviderLabel}</Var>...
+                  Publishing repository to <Var>{publishProviderLabel}</Var>…
                 </T>
               </div>
             ) : null}
@@ -946,7 +942,7 @@ export function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
                   {publishRepositoryAction.isPending ? (
                     <>
                       <Spinner size="sm" aria-hidden />
-                      <T>Publishing...</T>
+                      <T>Publishing…</T>
                     </>
                   ) : (
                     <T context="verb">Publish</T>
@@ -1605,7 +1601,7 @@ function CheckoutGitActionsControl({
         >
           <CloudUploadIcon />
           <MenuItemLabel>
-            <T>Publish repository...</T>
+            <T>Publish repository…</T>
           </MenuItemLabel>
         </MenuItem>
       ) : null}
@@ -1641,7 +1637,7 @@ function CheckoutGitActionsControl({
         >
           <GitBranchPlusIcon className="size-3.5" aria-hidden />
           <span className={cn("ml-0.5", THREAD_DETAILS_PANEL_LABEL_CLASS)}>
-            {initAction.isPending ? <T>Initializing...</T> : <T>Initialize Git</T>}
+            {initAction.isPending ? <T>Initializing…</T> : <T>Initialize Git</T>}
           </span>
         </ThreadDetailsControl>
       ) : quietEmptyDraft || (compact && !gitActionProgress && !visibleInlineSuccess) ? null : (
@@ -1811,9 +1807,7 @@ function CheckoutGitActionsControl({
                   >
                     {changesBaseLabel}
                   </TooltipTrigger>
-                  <TooltipPopup side="top" className="max-w-96 break-words">
-                    {changesBaseLabel}
-                  </TooltipPopup>
+                  <TooltipPopup side="top">{changesBaseLabel}</TooltipPopup>
                 </Tooltip>
               ) : null}
               <span className="ml-auto flex shrink-0 items-baseline gap-2 ps-2 font-mono tabular-nums">

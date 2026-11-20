@@ -23,9 +23,9 @@ function noticeTitle(
     case "offline":
       return resolve(msg("You are offline"));
     case "connecting":
-      return resolve(msg("Connecting to {environment}...", { environment }));
+      return resolve(msg("Connecting to {environment}…", { environment }));
     case "reconnecting":
-      return resolve(msg("Reconnecting to {environment}...", { environment }));
+      return resolve(msg("Reconnecting to {environment}…", { environment }));
     case "unsupported":
       return resolve(msg("Client not supported"));
     case "error":

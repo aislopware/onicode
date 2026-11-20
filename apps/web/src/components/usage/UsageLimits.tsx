@@ -190,26 +190,30 @@ function WindowBar({
           />
         ) : null}
       </TooltipTrigger>
-      <TooltipPopup side="top">
-        <div className="flex flex-col gap-0.5">
-          <span className="text-foreground">
-            {timeLeft !== null
-              ? gt("{remaining}% left · {timeLeft}% of the window left", { remaining, timeLeft })
-              : gt("{remaining}% left", { remaining })}
-          </span>
-          {timeLeft !== null ? (
-            <span className="text-muted-foreground">
-              <T>The line is where even spending would be.</T>
-            </span>
-          ) : null}
-          {resetsAt ? (
-            <span className="text-muted-foreground">
-              {resetsIn
-                ? gt("Resets {resetsAt} · {resetsIn}", { resetsAt, resetsIn })
-                : gt("Resets {resetsAt}", { resetsAt })}
-            </span>
-          ) : null}
-        </div>
+      <TooltipPopup
+        side="top"
+        description={
+          timeLeft !== null || resetsAt ? (
+            <>
+              {timeLeft !== null ? (
+                <div>
+                  <T>The line is where even spending would be.</T>
+                </div>
+              ) : null}
+              {resetsAt ? (
+                <div>
+                  {resetsIn
+                    ? gt("Resets {resetsAt} · {resetsIn}", { resetsAt, resetsIn })
+                    : gt("Resets {resetsAt}", { resetsAt })}
+                </div>
+              ) : null}
+            </>
+          ) : undefined
+        }
+      >
+        {timeLeft !== null
+          ? gt("{remaining}% left · {timeLeft}% of the window left", { remaining, timeLeft })
+          : gt("{remaining}% left", { remaining })}
       </TooltipPopup>
     </Tooltip>
   );

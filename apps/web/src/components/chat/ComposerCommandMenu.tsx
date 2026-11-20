@@ -188,10 +188,10 @@ export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
             <p className="text-secondary-label text-xs">
               {props.isLoading
                 ? props.triggerKind === "skill" || props.triggerKind === "slash-command"
-                  ? gt("Searching workspace skills...")
+                  ? gt("Searching workspace skills…")
                   : props.triggerKind === "pull-request"
-                    ? gt("Finding pull request...")
-                    : gt("Searching workspace files...")
+                    ? gt("Finding pull request…")
+                    : gt("Searching workspace files…")
                 : (props.emptyStateText ??
                   (props.triggerKind === "skill"
                     ? gt("No skills found. Try / to browse provider commands.")

@@ -240,8 +240,8 @@ export function PreviewChromeRow({
                 <Button
                   variant={pickActive ? "secondary" : "ghost"}
                   size="icon-xs"
-                  onClick={onPickElement}
-                  disabled={pickDisabled}
+                  onClick={pickDisabled ? undefined : onPickElement}
+                  aria-disabled={pickDisabled || undefined}
                   aria-label={pickActive ? gt("Cancel annotation") : gt("Annotate preview")}
                   aria-pressed={pickActive ? "true" : "false"}
                   type="button"
@@ -250,11 +250,13 @@ export function PreviewChromeRow({
             >
               <MousePointerClick className={cn(pickActive && "text-primary")} />
             </TooltipTrigger>
-            <TooltipPopup>
+            <TooltipPopup
+              shortcut={pickActive && !(pickDisabled && pickDisabledReason) ? "Esc" : undefined}
+            >
               {pickDisabled && pickDisabledReason
                 ? pickDisabledReason
                 : pickActive
-                  ? gt("Cancel annotation (Esc)")
+                  ? gt("Cancel annotation")
                   : gt("Annotate elements, regions, and drawings")}
             </TooltipPopup>
           </Tooltip>

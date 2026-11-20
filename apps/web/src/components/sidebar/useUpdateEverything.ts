@@ -19,6 +19,7 @@ import {
   collectUpdateEverythingResult,
   describeUpdateEverything,
   runUpdateEverything,
+  UPDATE_RESTART_DELAY_MS,
   type UpdateRunMachine,
 } from "./updateEverything.logic";
 import {
@@ -30,8 +31,6 @@ import {
   waitForServerUpdateHandoff,
   waitForUpdateRestart,
 } from "./updateEverythingRun";
-
-const UPDATE_RESTART_DELAY_MS = 5_000;
 
 /** Servers this desktop app runs; they update with it. */
 function isHostedByThisApp(

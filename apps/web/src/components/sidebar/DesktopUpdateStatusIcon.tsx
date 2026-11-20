@@ -1,6 +1,6 @@
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { CheckIcon, CircleArrowUpIcon, DownloadIcon, RotateCwIcon } from "lucide-react";
-import type { AnimationEventHandler } from "react";
+import type { AnimationEventHandler, CSSProperties, ReactNode } from "react";
 
 const DOWNLOAD_PROGRESS_RADIUS = 14;
 const DOWNLOAD_PROGRESS_CIRCUMFERENCE = 2 * Math.PI * DOWNLOAD_PROGRESS_RADIUS;
@@ -52,9 +52,20 @@ function DesktopUpdateAvailableIcon() {
   );
 }
 
-function DesktopUpdateDownloadingIcon({ percent }: { readonly percent: number | null }) {
-  const normalizedPercent = normalizeDesktopUpdateDownloadPercent(percent);
-  const progressOffset = DOWNLOAD_PROGRESS_CIRCUMFERENCE * (1 - normalizedPercent / 100);
+/**
+ * A 32px ring around a 16px glyph. `drainMs` empties the ring from `fraction` over that long,
+ * for a countdown; without it the arc follows `fraction`.
+ */
+export function UpdateProgressRing({
+  fraction,
+  drainMs,
+  children,
+}: {
+  readonly fraction: number;
+  readonly drainMs?: number | undefined;
+  readonly children: ReactNode;
+}) {
+  const offset = DOWNLOAD_PROGRESS_CIRCUMFERENCE * (1 - Math.min(1, Math.max(0, fraction)));
 
   return (
     <span className="relative grid size-8 place-items-center">
@@ -78,14 +89,34 @@ function DesktopUpdateDownloadingIcon({ percent }: { readonly percent: number | 
           fill="none"
           stroke="currentColor"
           strokeDasharray={DOWNLOAD_PROGRESS_CIRCUMFERENCE}
-          strokeDashoffset={progressOffset}
           strokeLinecap="round"
           strokeWidth="1.5"
-          className="transition-[stroke-dashoffset] duration-300 ease-out motion-reduce:transition-none"
+          className={
+            drainMs === undefined
+              ? "[stroke-dashoffset:var(--ring-offset)] transition-[stroke-dashoffset] duration-300 ease-linear motion-reduce:transition-none"
+              : "[stroke-dashoffset:var(--ring-empty)] transition-[stroke-dashoffset] duration-(--ring-drain-ms) ease-linear starting:[stroke-dashoffset:var(--ring-offset)]"
+          }
+          style={
+            {
+              "--ring-offset": offset,
+              "--ring-empty": DOWNLOAD_PROGRESS_CIRCUMFERENCE,
+              "--ring-drain-ms": `${drainMs ?? 0}ms`,
+              // A round cap paints a dot at zero length.
+              opacity: fraction > 0 ? 1 : 0,
+            } as CSSProperties
+          }
         />
       </svg>
-      <DownloadIcon className="size-4" />
+      {children}
     </span>
+  );
+}
+
+function DesktopUpdateDownloadingIcon({ percent }: { readonly percent: number | null }) {
+  return (
+    <UpdateProgressRing fraction={normalizeDesktopUpdateDownloadPercent(percent) / 100}>
+      <DownloadIcon className="size-4" />
+    </UpdateProgressRing>
   );
 }
 

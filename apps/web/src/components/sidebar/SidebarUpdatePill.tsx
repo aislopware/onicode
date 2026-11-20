@@ -540,11 +540,10 @@ function SidebarUpdateControl() {
           ? { status: "downloading", percent: state.downloadPercent }
           : { status: "waiting" };
     return (
-      <SidebarMenuItem className="@container/sidebar-update ml-auto flex min-w-8 flex-1">
+      <SidebarMenuItem className="ml-auto shrink-0">
         <SidebarUpdateCapsule
           run={run}
           local={local}
-          icon={statusIcon}
           {...(run.localVersion === null && action === "install" && window.desktopBridge
             ? {
                 onRestart: async () => {
@@ -574,11 +573,12 @@ function SidebarUpdateControl() {
         showUpdateIconState
           ? cn(
               "bg-sidebar-control-surface text-sidebar-foreground",
-              !isInteractionDisabled && "hover:bg-sidebar-row-hover",
+              !isInteractionDisabled && "hover:bg-sidebar-row-hover active:bg-sidebar-row-active",
             )
           : cn(
               "text-(--sidebar-icon-color)",
-              !isInteractionDisabled && "hover:bg-sidebar-row-hover hover:text-sidebar-foreground",
+              !isInteractionDisabled &&
+                "hover:bg-sidebar-row-hover hover:text-sidebar-foreground active:bg-sidebar-row-active",
             ),
         disabled && !showUpdateIconState && "opacity-55",
       )}
@@ -650,14 +650,12 @@ function SidebarUpdateControl() {
               align="center"
               side="top"
               variant={showUpdateDetails ? "glass" : "default"}
+              {...(idleTooltip?.detail ? { description: idleTooltip.detail } : {})}
             >
               {idleTooltip?.detail ? (
-                <div className="text-left">
-                  <div className="font-medium">{idleTooltip.title}</div>
-                  <div className="text-muted-foreground">{idleTooltip.detail}</div>
-                </div>
+                idleTooltip.title
               ) : (
-                <span className="whitespace-pre-line">{tooltip}</span>
+                <span className="whitespace-pre-line tabular-nums">{tooltip}</span>
               )}
             </TooltipPopup>
           ) : null}

@@ -94,8 +94,8 @@ export function resolveGitActionProgressPresentation(
         ? (vcsActionLabelText({ currentLabel, hookName: input.hookName ?? null }, resolve) ??
           currentLabel)
         : isPull
-          ? resolve(msg("Pulling latest changes..."))
-          : resolve(msg("Starting source control action...")),
+          ? resolve(msg("Pulling latest changes…"))
+          : resolve(msg("Starting source control action…")),
     output: !isPull && output ? output : null,
     startedAtMs: isPull
       ? input.phaseStartedAtMs

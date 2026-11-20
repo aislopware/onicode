@@ -206,6 +206,7 @@ export function FileChip(props: {
   theme: "light" | "dark";
   accessibleLabel: string;
   tooltip: string;
+  tooltipDescription?: ReactNode;
   suffix?: string | null;
   copyMarkdown?: string;
   disabled?: boolean;
@@ -253,7 +254,11 @@ export function FileChip(props: {
           )
         }
       />
-      <TooltipPopup side="top" className="whitespace-pre-wrap">
+      <TooltipPopup
+        side="top"
+        className="whitespace-pre-wrap"
+        description={props.tooltipDescription}
+      >
         {props.tooltip}
       </TooltipPopup>
     </Tooltip>
@@ -313,7 +318,11 @@ function SvgFileChip(props: ComponentProps<typeof FileChip>) {
           />
         }
       />
-      <TooltipPopup side="top" className="whitespace-pre-wrap">
+      <TooltipPopup
+        side="top"
+        className="whitespace-pre-wrap"
+        description={props.tooltipDescription}
+      >
         {props.tooltip}
       </TooltipPopup>
     </Tooltip>

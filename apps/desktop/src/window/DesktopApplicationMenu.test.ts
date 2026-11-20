@@ -179,9 +179,9 @@ const checkForUpdatesFromMacMenu = (state: Partial<DesktopUpdateState>) =>
     if (!Array.isArray(appMenu?.submenu)) {
       throw new Error("Expected the macOS app menu submenu to be an array.");
     }
-    const checkForUpdates = appMenu.submenu.find((item) => item.label === "Check for Updates...");
+    const checkForUpdates = appMenu.submenu.find((item) => item.label === "Check for Updates…");
     if (typeof checkForUpdates?.click !== "function") {
-      throw new Error("Expected Check for Updates... menu item to have a click handler.");
+      throw new Error("Expected Check for Updates… menu item to have a click handler.");
     }
 
     // Every stub completes synchronously, so the menu action has finished when click returns.
@@ -192,7 +192,7 @@ const checkForUpdatesFromMacMenu = (state: Partial<DesktopUpdateState>) =>
     );
     const dialog = yield* Deferred.poll(shownMessageBox);
     if (Option.isNone(dialog)) {
-      throw new Error("Check for Updates... finished without showing any dialog.");
+      throw new Error("Check for Updates… finished without showing any dialog.");
     }
     return yield* dialog.value;
   });

@@ -1219,7 +1219,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
               {rows.length > 0
                 ? null
                 : workspaceModelsScanning
-                  ? gt("Searching project models...")
+                  ? gt("Searching project models…")
                   : gt("No models found")}
             </ComboboxEmpty>
             {updateRequiredNotices.map(({ instanceId, notice }) => (

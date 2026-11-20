@@ -232,7 +232,7 @@ export function AcpRegistrySearchStep({
 
       {isInitialSearch ? (
         <div className="flex min-h-20 items-center justify-center text-sm text-muted-foreground">
-          <T>Searching the registry...</T>
+          <T>Searching the registry…</T>
         </div>
       ) : null}
 

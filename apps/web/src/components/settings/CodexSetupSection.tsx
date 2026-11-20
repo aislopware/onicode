@@ -132,7 +132,7 @@ export function CodexSetupSection(props: CodexSetupSectionProps) {
               gt("Connected with your Codex CLI.")
             )
           ) : existingChecking ? (
-            gt("Checking your Codex CLI...")
+            gt("Checking your Codex CLI…")
           ) : props.provider?.installed ? (
             existingSummary.headline
           ) : (
@@ -147,7 +147,7 @@ export function CodexSetupSection(props: CodexSetupSectionProps) {
             </span>
           ) : existingChecking ? (
             <span className="text-xs text-muted-foreground">
-              <T>Checking...</T>
+              <T>Checking…</T>
             </span>
           ) : existingAuthenticated ? (
             <span className="text-xs text-muted-foreground">{existingSummary.headline}</span>
@@ -617,7 +617,7 @@ function ManagedCodexSetup({
                 : gt("Managed by Onicode.")
             : (installation?.message ?? gt("Onicode downloads and manages Codex for you."));
   const accountDescription = finishingSignIn ? (
-    gt("Finishing sign-in...")
+    gt("Finishing sign-in…")
   ) : installActive ? (
     runtimeDescription
   ) : authActive || auth?.phase === "failed" || auth?.phase === "cancelled" ? (
@@ -664,16 +664,16 @@ function ManagedCodexSetup({
       }}
     >
       {finishingSignIn
-        ? gt("Finishing sign-in...")
+        ? gt("Finishing sign-in…")
         : handoffQuery.data?.phase === "finished"
           ? transferFailed
             ? gt("Retry connection")
-            : gt("Finishing sign-in...")
+            : gt("Finishing sign-in…")
           : auth?.phase === "waiting"
             ? gt("Open sign-in page")
             : presentation === "onboarding"
               ? gt("Open sign-in page")
-              : gt("Signing in...")}
+              : gt("Signing in…")}
     </Button>
   );
   const accountPicker = (
@@ -770,7 +770,7 @@ function ManagedCodexSetup({
                 }}
               >
                 {installActive || pending
-                  ? gt("Setting up...")
+                  ? gt("Setting up…")
                   : hasSavedAccount
                     ? gt("Reconnect account")
                     : gt("Continue with ChatGPT")}
@@ -919,7 +919,7 @@ function ManagedCodexSetup({
                   }}
                 >
                   {pending
-                    ? gt("Setting up...")
+                    ? gt("Setting up…")
                     : hasSavedAccount
                       ? gt("Reconnect account")
                       : gt("Continue with ChatGPT")}

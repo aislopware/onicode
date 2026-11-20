@@ -175,14 +175,14 @@ function RecoveryActions({ runId, resetAt, recovery, snoozedUntil, onChange }: R
   return (
     <span className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1">
       <InlineButton touchTarget="padded" disabled={pending} onClick={() => void toggle("resume")}>
-        {pending ? gt("Saving...") : scheduled ? gt("Cancel auto-resume") : gt("Resume at reset")}
+        {pending ? gt("Saving…") : scheduled ? gt("Cancel auto-resume") : gt("Resume at reset")}
       </InlineButton>
       <InlineButton
         touchTarget="padded"
         disabled={pending || (!snoozed && resetPassed)}
         onClick={() => void toggle("snooze")}
       >
-        {pending ? gt("Saving...") : snoozed ? gt("Wake now") : gt("Snooze until reset")}
+        {pending ? gt("Saving…") : snoozed ? gt("Wake now") : gt("Snooze until reset")}
       </InlineButton>
     </span>
   );

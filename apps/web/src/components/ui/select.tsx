@@ -145,7 +145,10 @@ function SelectPopup({
             )}
           >
             <SelectPrimitive.List
-              className={cn("max-h-(--available-height) overflow-y-auto p-1", className)}
+              className={cn(
+                "max-h-(--available-height) overflow-y-auto overscroll-contain p-1",
+                className,
+              )}
               data-slot="select-list"
             >
               {children}

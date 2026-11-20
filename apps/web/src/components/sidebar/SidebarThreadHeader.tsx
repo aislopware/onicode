@@ -11,7 +11,7 @@ import {
 import { cn } from "~/lib/utils";
 import { Button } from "../ui/button";
 import { SidebarInput, SidebarMenuButton } from "../ui/sidebar";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { Tooltip, TooltipPopup, TooltipRow, TooltipTrigger } from "../ui/tooltip";
 
 export interface SidebarThreadHeaderProps {
   hasProjects: boolean;
@@ -54,9 +54,6 @@ export function SidebarThreadHeader({
   const resultsVisible = isSearching && searchResultCount > 0;
   // Shrinking results can remove the active option; never leave aria-activedescendant pointing at it.
   const activeResultExists = resultsVisible && activeSearchResultIndex < searchResultCount;
-  const newThreadLabel = newThreadShortcutLabel
-    ? gt("New thread ({shortcut})", { shortcut: newThreadShortcutLabel })
-    : gt("New thread");
 
   return (
     <div className="flex items-center gap-1">
@@ -109,21 +106,16 @@ export function SidebarThreadHeader({
         ) : null}
         <SidebarHeaderIconButton
           label={gt("New thread")}
+          shortcut={showNewThreadInProjectHint ? null : newThreadShortcutLabel}
           tooltip={
             showNewThreadInProjectHint ? (
-              <span className="flex flex-col gap-0.5">
-                <span>{newThreadLabel}</span>
-                <span className="text-muted-foreground">
-                  {newThreadInProjectShortcutLabel
-                    ? gt("New thread in current project: Shift+click ({shortcut})", {
-                        shortcut: newThreadInProjectShortcutLabel,
-                      })
-                    : gt("New thread in current project: Shift+click")}
-                </span>
-              </span>
-            ) : (
-              newThreadLabel
-            )
+              <>
+                <TooltipRow shortcut={newThreadShortcutLabel}>{gt("New thread")}</TooltipRow>
+                <TooltipRow shortcut={newThreadInProjectShortcutLabel}>
+                  {gt("New thread in current project: Shift+click")}
+                </TooltipRow>
+              </>
+            ) : undefined
           }
           disabled={newThreadDisabled}
           onClick={onNewThread}
@@ -138,12 +130,14 @@ export function SidebarThreadHeader({
 export function SidebarHeaderIconButton({
   label,
   tooltip = label,
+  shortcut,
   className,
   children,
   ...rest
 }: {
   label: string;
   tooltip?: ReactNode;
+  shortcut?: string | null | undefined;
   className?: string | undefined;
   children?: ReactNode;
 } & Omit<
@@ -169,7 +163,9 @@ export function SidebarHeaderIconButton({
           className="pointer-events-none absolute left-1/2 top-1/2 size-[max(100%,3rem)] -translate-1/2 pointer-fine:hidden"
         />
       </TooltipTrigger>
-      <TooltipPopup side="top">{tooltip}</TooltipPopup>
+      <TooltipPopup side="top" shortcut={shortcut}>
+        {tooltip}
+      </TooltipPopup>
     </Tooltip>
   );
 }

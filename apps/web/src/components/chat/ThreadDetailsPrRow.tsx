@@ -393,7 +393,7 @@ export function ThreadDetailsPrRow({
     rowAction === "resolve"
       ? {
           label: gt("Resolve", { $context: "verb, resolves merge conflicts" }),
-          pendingLabel: gt("Preparing..."),
+          pendingLabel: gt("Preparing…"),
           pending: handoff === "conflicts",
           destructive: true,
           suffix: newThreadSuffix,
@@ -406,7 +406,7 @@ export function ThreadDetailsPrRow({
       : rowAction === "ready"
         ? {
             label: gt("Ready", { $context: "verb, marks a draft pull request ready for review" }),
-            pendingLabel: gt("Marking..."),
+            pendingLabel: gt("Marking…"),
             pending: actionPending,
             destructive: false,
             suffix: null,
@@ -437,7 +437,7 @@ export function ThreadDetailsPrRow({
           : rowAction === "merge"
             ? {
                 label: gt("Merge", { $context: "verb, merges a pull request" }),
-                pendingLabel: gt("Merging..."),
+                pendingLabel: gt("Merging…"),
                 pending: actionPending,
                 destructive: false,
                 suffix: null,

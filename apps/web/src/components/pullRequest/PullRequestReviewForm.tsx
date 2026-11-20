@@ -228,7 +228,7 @@ export function PullRequestReviewForm({
               speech.submitAfterDictation((text) => void submit(selectedVerdict, text));
           }}
         >
-          {pending ? gt("Submitting...") : gt("Submit review")}
+          {pending ? gt("Submitting…") : gt("Submit review")}
         </Button>
       </div>
     </>

@@ -569,7 +569,7 @@ export function ZipArchiveView(props: {
         <View className="flex-1" style={{ paddingTop: headerInset }}>
           {state.status === "loading" ? (
             props.isLocal || state.receivedBytes === 0 ? (
-              <FilePreviewLoading message={gt("Opening ZIP...")} />
+              <FilePreviewLoading message={gt("Opening ZIP…")} />
             ) : (
               <ZipArchiveProgress
                 receivedBytes={state.receivedBytes}

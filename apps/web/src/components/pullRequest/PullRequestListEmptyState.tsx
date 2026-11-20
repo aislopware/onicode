@@ -126,7 +126,7 @@ export function PullRequestListEmptyState({
           </Button>
           <Button size="sm" variant="outline" disabled={refreshing} onClick={onRefresh}>
             <RefreshIcon size="sm" refreshing={refreshing} />
-            {refreshing ? gt("Checking...") : gt("Check again")}
+            {refreshing ? gt("Checking…") : gt("Check again")}
           </Button>
         </div>
       </Empty>
@@ -149,12 +149,12 @@ export function PullRequestListEmptyState({
       <div className="flex flex-wrap justify-center gap-2">
         {canLoadMore ? (
           <Button size="sm" variant="outline" disabled={loadingMore} onClick={onLoadMore}>
-            {loadingMore ? gt("Loading...") : gt("Load more pull requests")}
+            {loadingMore ? gt("Loading…") : gt("Load more pull requests")}
           </Button>
         ) : null}
         <Button size="sm" variant="outline" disabled={refreshing} onClick={onRefresh}>
           <RefreshIcon size="sm" refreshing={refreshing} />
-          {refreshing ? gt("Checking...") : gt("Check again")}
+          {refreshing ? gt("Checking…") : gt("Check again")}
         </Button>
       </div>
     </Empty>

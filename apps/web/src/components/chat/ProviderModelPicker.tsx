@@ -275,7 +275,6 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   const triggerTooltipContent = [
     props.triggerLabel ?? allModelNames ?? triggerLabel,
     props.triggerDetail,
-    shortcutLabel,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -475,7 +474,9 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
           ) : (
             <Tooltip>
               <TooltipTrigger render={<span {...triggerTextProps} />}>{triggerText}</TooltipTrigger>
-              <TooltipPopup side="top">{triggerTooltipContent}</TooltipPopup>
+              <TooltipPopup side="top" shortcut={shortcutLabel}>
+                {triggerTooltipContent}
+              </TooltipPopup>
             </Tooltip>
           )}
           {props.triggerSuffix}

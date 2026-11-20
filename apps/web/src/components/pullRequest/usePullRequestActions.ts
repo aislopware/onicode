@@ -418,7 +418,7 @@ export function usePullRequestHandoffs({
       type: "loading",
       title: m(
         msg(
-          "Preparing the {term, select, mr {merge request} cr {change request} other {pull request}} checkout...",
+          "Preparing the {term, select, mr {merge request} cr {change request} other {pull request}} checkout…",
           { term: changeRequestTermKind(terminology) },
         ),
       ),

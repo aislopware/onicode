@@ -174,36 +174,35 @@ function SecretCheckButton(props: {
         : state.status === "resolved"
           ? gt("Secret resolved")
           : state.detail;
+  const unavailable = props.disabled === true || !canCheck || state?.status === "checking";
   return (
     <Tooltip>
       <TooltipTrigger
         render={
-          <span className="inline-flex">
-            <Button
-              type="button"
-              size="icon-micro"
-              variant="ghost-muted"
-              disabled={props.disabled === true || !canCheck || state?.status === "checking"}
-              onClick={() => void run()}
-              aria-label={
-                state?.status === "failed"
-                  ? gt("{label} failed: {detail}", { label: props.label, detail: state.detail })
-                  : state?.status === "resolved"
-                    ? gt("{label} resolved", { label: props.label })
-                    : props.label
-              }
-            >
-              {state?.status === "checking" ? (
-                <Spinner />
-              ) : state?.status === "resolved" ? (
-                <CheckIcon className="text-success-foreground" />
-              ) : state?.status === "failed" ? (
-                <AlertTriangleIcon className="text-destructive" />
-              ) : (
-                <RefreshCwIcon />
-              )}
-            </Button>
-          </span>
+          <Button
+            type="button"
+            size="icon-micro"
+            variant="ghost-muted"
+            aria-disabled={unavailable || undefined}
+            onClick={unavailable ? undefined : () => void run()}
+            aria-label={
+              state?.status === "failed"
+                ? gt("{label} failed: {detail}", { label: props.label, detail: state.detail })
+                : state?.status === "resolved"
+                  ? gt("{label} resolved", { label: props.label })
+                  : props.label
+            }
+          >
+            {state?.status === "checking" ? (
+              <Spinner />
+            ) : state?.status === "resolved" ? (
+              <CheckIcon className="text-success-foreground" />
+            ) : state?.status === "failed" ? (
+              <AlertTriangleIcon className="text-destructive" />
+            ) : (
+              <RefreshCwIcon />
+            )}
+          </Button>
         }
       />
       <TooltipPopup side="top">{description}</TooltipPopup>

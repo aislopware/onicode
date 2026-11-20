@@ -144,11 +144,10 @@ export const BranchToolbarEnvModeSelector = memo(function BranchToolbarEnvModeSe
             <SelectValue />
           </ComposerContextLabel>
         </TooltipTrigger>
-        <TooltipPopup>
+        <TooltipPopup shortcut={shortcutLabel}>
           {effectiveEnvMode === "worktree"
             ? resolveEnvModeLabel("worktree", m)
             : resolveCurrentWorkspaceLabel(activeWorktreePath, m)}
-          {shortcutLabel ? ` · ${shortcutLabel}` : null}
         </TooltipPopup>
       </Tooltip>
       <SelectPopup

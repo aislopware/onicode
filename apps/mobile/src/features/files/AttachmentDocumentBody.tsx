@@ -54,11 +54,11 @@ export function AttachmentDocumentBody(props: {
     );
   }
   if (props.nativeViewer !== null && props.nativeViewer !== "unavailable") {
-    return <FilePreviewLoading message={gt("Opening in file viewer...")} />;
+    return <FilePreviewLoading message={gt("Opening in file viewer…")} />;
   }
   // ZIP text entries are read into memory and have no file URI.
   if (document.needsText ? !document.content : !document.uri) {
-    return <FilePreviewLoading message={gt("Loading file...")} />;
+    return <FilePreviewLoading message={gt("Loading file…")} />;
   }
   if (document.needsText && document.content) {
     const { content, table } = document;

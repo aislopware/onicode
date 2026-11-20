@@ -4,7 +4,7 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "~/lib/utils";
 
 const toggleVariants = cva(
-  "[&_svg]:-mx-0.5 relative inline-flex shrink-0 cursor-pointer select-none items-center justify-center gap-2 whitespace-nowrap rounded-(--control-radius) border font-medium text-base text-foreground outline-none transition-[color,background-color,border-color,box-shadow] duration-100 pointer-coarse:after:absolute pointer-coarse:after:size-full pointer-coarse:after:min-h-11 pointer-coarse:after:min-w-11 hover:bg-secondary focus-visible:outline-ring-inset disabled:pointer-events-none disabled:opacity-55 aria-disabled:opacity-55 data-pressed:bg-accent data-pressed:hover:bg-accent-hover sm:text-ui [&_svg:not([class*='opacity-'])]:opacity-80 [&_svg:not([class*='size-'])]:size-4.5 sm:[&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
+  "[&_svg]:-mx-0.5 relative inline-flex shrink-0 cursor-pointer select-none items-center justify-center gap-2 whitespace-nowrap rounded-(--control-radius) border font-medium text-base text-foreground outline-none transition-[color,background-color,border-color,box-shadow] duration-100 pointer-coarse:after:absolute pointer-coarse:after:size-full pointer-coarse:after:min-h-11 pointer-coarse:after:min-w-11 hover:bg-secondary focus-visible:outline-ring-inset disabled:pointer-events-none disabled:opacity-55 aria-disabled:cursor-not-allowed aria-disabled:opacity-55 aria-disabled:hover:bg-transparent data-pressed:bg-accent data-pressed:hover:bg-accent-hover sm:text-ui [&_svg:not([class*='opacity-'])]:opacity-80 [&_svg:not([class*='size-'])]:size-4.5 sm:[&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
   {
     defaultVariants: {
       size: "default",
@@ -24,7 +24,7 @@ const toggleVariants = cva(
         default: "border-transparent",
         pill: "rounded-full border-transparent px-3 font-normal text-muted-foreground data-pressed:text-foreground",
         ghost:
-          "border-transparent disabled:text-muted-foreground disabled:opacity-100 disabled:[&_svg]:opacity-100",
+          "border-transparent disabled:text-muted-foreground disabled:opacity-100 disabled:[&_svg]:opacity-100 aria-disabled:text-muted-foreground aria-disabled:opacity-100 aria-disabled:[&_svg]:opacity-100",
         outline:
           "border-border-2 bg-card shadow-[inset_0_1px_var(--highlight-top),var(--plate-shadow)] hover:bg-card-hover [:disabled,:active,[data-pressed]]:shadow-none",
         segmented:

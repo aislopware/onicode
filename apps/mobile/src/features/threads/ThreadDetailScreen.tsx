@@ -786,7 +786,7 @@ function ThreadDetailBody(
         });
       },
       action: {
-        label: statusPending ? gt("Stopping...") : gt("Stop", { $context: "verb, button" }),
+        label: statusPending ? gt("Stopping…") : gt("Stop", { $context: "verb, button" }),
         accessibilityLabel: gt("Stop background work"),
         disabled: !props.canOperateThread || statusPending,
         onPress: () => void runStatusAction("stop"),
@@ -819,10 +819,10 @@ function ThreadDetailBody(
       action: {
         label: statusPending
           ? lifecycleSnoozed
-            ? gt("Waking...")
+            ? gt("Waking…")
             : settled
-              ? gt("Un-settling...")
-              : gt("Dismissing...")
+              ? gt("Un-settling…")
+              : gt("Dismissing…")
           : actionLabel,
         accessibilityLabel: actionLabel,
         disabled: !props.canOperateThread || statusPending,
@@ -856,9 +856,7 @@ function ThreadDetailBody(
           unresponsive && canForceStop
             ? {
                 label:
-                  forceStoppingKey === selectedThreadKey
-                    ? gt("Force stopping...")
-                    : gt("Force stop"),
+                  forceStoppingKey === selectedThreadKey ? gt("Force stopping…") : gt("Force stop"),
                 accessibilityLabel: gt("Force stop the agent"),
                 disabled: forceStoppingKey === selectedThreadKey,
                 onPress: () =>

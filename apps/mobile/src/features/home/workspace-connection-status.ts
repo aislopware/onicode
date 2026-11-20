@@ -24,8 +24,8 @@ function workspaceConnectionStatusLabel(state: WorkspaceState, resolve: MessageR
   if (state.networkStatus === "offline") return resolve(msg("You are offline"));
   if (state.hasReadyEnvironment && state.hasSyncingConnectedEnvironment) {
     return state.hasLoadedShellSnapshot
-      ? resolve(msg("Syncing threads..."))
-      : resolve(msg("Loading threads..."));
+      ? resolve(msg("Syncing threads…"))
+      : resolve(msg("Loading threads…"));
   }
   if (state.connectingEnvironments.length === 1) {
     return resolve(
@@ -46,8 +46,8 @@ function workspaceConnectionStatusLabel(state: WorkspaceState, resolve: MessageR
   if (connectionError !== null) return connectionError;
   if (state.hasPendingShellSnapshot) {
     return state.hasLoadedShellSnapshot
-      ? resolve(msg("Syncing threads..."))
-      : resolve(msg("Loading threads..."));
+      ? resolve(msg("Syncing threads…"))
+      : resolve(msg("Loading threads…"));
   }
   return resolve(msg("Not connected"));
 }

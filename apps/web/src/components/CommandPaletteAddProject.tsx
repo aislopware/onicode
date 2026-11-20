@@ -40,6 +40,7 @@ export function CommandPaletteSubmitButton(props: {
   readonly shortcutLabel: string;
   readonly ariaLabel: string;
   readonly tooltip: ReactNode;
+  readonly tooltipShortcut?: string | undefined;
   readonly disabled: boolean;
   readonly onSubmit: () => void;
 }) {
@@ -53,11 +54,11 @@ export function CommandPaletteSubmitButton(props: {
             size="xs"
             className="absolute inset-e-2.5 top-1/2 -translate-y-1/2"
             aria-label={props.ariaLabel}
-            disabled={props.disabled}
+            aria-disabled={props.disabled || undefined}
             onMouseDown={(event) => {
               event.preventDefault();
             }}
-            onClick={props.onSubmit}
+            onClick={props.disabled ? undefined : props.onSubmit}
           />
         }
       >
@@ -66,7 +67,9 @@ export function CommandPaletteSubmitButton(props: {
           <Kbd>{props.shortcutLabel}</Kbd>
         </KbdGroup>
       </TooltipTrigger>
-      <TooltipPopup side="top">{props.tooltip}</TooltipPopup>
+      <TooltipPopup side="top" shortcut={props.tooltipShortcut}>
+        {props.tooltip}
+      </TooltipPopup>
     </Tooltip>
   );
 }

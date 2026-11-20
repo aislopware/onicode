@@ -15,7 +15,14 @@ import { cn } from "~/lib/utils";
 import { pullRequestEnvironment } from "~/state/pullRequests";
 import { useEnvironmentQuery } from "~/state/query";
 
-import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
+import {
+  Popover,
+  PopoverDescription,
+  PopoverHeader,
+  PopoverPopup,
+  PopoverTitle,
+  PopoverTrigger,
+} from "../ui/popover";
 import { Button } from "../ui/button";
 import { ScrollArea } from "../ui/scroll-area";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -218,8 +225,12 @@ export function PullRequestChecksPopover({
         ) : null}
       </PopoverTrigger>
       <PopoverPopup align="start" width="md" side="bottom">
-        <p className="mb-2 font-medium text-sm">{presentation.label}</p>
-        {summary === null ? null : <p className="mb-2 text-muted-foreground text-xs">{summary}</p>}
+        <div className="mb-2">
+          <PopoverHeader>
+            <PopoverTitle>{presentation.label}</PopoverTitle>
+            {summary === null ? null : <PopoverDescription>{summary}</PopoverDescription>}
+          </PopoverHeader>
+        </div>
         {stale ? (
           <p className="text-muted-foreground text-xs">
             <T>Check details are out of date. Refresh the pull request to update them.</T>

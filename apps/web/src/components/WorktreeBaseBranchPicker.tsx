@@ -70,9 +70,9 @@ export function WorktreeBaseBranchPicker({
   const statusText =
     branches.error ??
     (branches.isPending && branches.data === null
-      ? gt("Loading refs...")
+      ? gt("Loading refs…")
       : branches.isFetchingNextPage
-        ? gt("Loading more refs...")
+        ? gt("Loading more refs…")
         : hasNextPage
           ? gt(
               "{total, plural, one {Showing {shown} of {total} refs} other {Showing {shown} of {total} refs}}",

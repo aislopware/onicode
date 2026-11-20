@@ -6,7 +6,14 @@ import type { ReactNode } from "react";
 import { cn } from "~/lib/utils";
 import { Button } from "../ui/button";
 import { MiddleTruncate } from "../ui/middle-truncate";
-import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
+import {
+  Popover,
+  PopoverDescription,
+  PopoverHeader,
+  PopoverPopup,
+  PopoverTitle,
+  PopoverTrigger,
+} from "../ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { PullRequestGlyph } from "./pullRequestIcons";
 
@@ -65,10 +72,12 @@ function PullRequestBaseFreshnessWarning({
         <TriangleAlertIcon aria-hidden className={cn("size-3.5 shrink-0", iconClassName)} />
       </PopoverTrigger>
       <PopoverPopup align="start" side="bottom" className="max-w-80" padding="compact">
-        <p className="text-xs text-foreground">{summary}</p>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          <T>Changes can be cleanly merged.</T>
-        </p>
+        <PopoverHeader>
+          <PopoverTitle>{summary}</PopoverTitle>
+          <PopoverDescription>
+            <T>Changes can be cleanly merged.</T>
+          </PopoverDescription>
+        </PopoverHeader>
         {freshness.methods.length > 0 ? (
           <span className="mt-2 flex flex-wrap items-center gap-1.5">
             {freshness.methods.map((method) => (

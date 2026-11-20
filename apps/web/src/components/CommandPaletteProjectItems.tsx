@@ -74,7 +74,7 @@ export function buildProjectSearchItems(input: ProjectItemsInput, resolve: Messa
   });
 }
 
-/** Projects as targets of the "New thread in..." submenu. */
+/** Projects as targets of the "New thread in…" submenu. */
 export function buildNewThreadInProjectItems(
   input: ProjectItemsInput & { readonly currentProjectKey: string | null },
 ) {

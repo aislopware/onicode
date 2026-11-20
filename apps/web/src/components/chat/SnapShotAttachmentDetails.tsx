@@ -171,7 +171,7 @@ export function SnapShotContentsButton({
         <TooltipPopup side={side}>{tooltip}</TooltipPopup>
       </Tooltip>
       <PopoverPopup side={side} align="center" width="md">
-        <div className="max-h-[min(28rem,70vh)] space-y-2 overflow-y-auto">
+        <div className="max-h-[min(28rem,70vh)] space-y-2 overflow-y-auto overscroll-contain">
           <div className="flex items-center justify-between gap-2">
             <PopoverTitle>
               <T>Accessibility data</T>

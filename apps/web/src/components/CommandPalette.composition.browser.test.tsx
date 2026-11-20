@@ -231,7 +231,7 @@ it.each([
   const input = page.getByRole("combobox");
   await input.fill(step.value);
   const submit = page.getByRole("button", { name: step.submit });
-  await expect.element(submit).toBeEnabled();
+  await expect.element(submit).not.toHaveAttribute("aria-disabled");
   await userEvent.keyboard("{Tab}");
   await expect.element(submit).toHaveFocus();
 });

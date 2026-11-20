@@ -202,12 +202,12 @@ export const make = Effect.gen(function* () {
         submenu: [
           { role: "about", label: m(msg("About {appName}"), { appName: environment.displayName }) },
           {
-            label: m(msg("Check for Updates...")),
+            label: m(msg("Check for Updates…")),
             click: checkForUpdatesClick,
           },
           { type: "separator" },
           {
-            label: m(msg("Settings...")),
+            label: m(msg("Settings…")),
             accelerator: "CmdOrCtrl+,",
             click: settingsClick,
           },
@@ -234,7 +234,7 @@ export const make = Effect.gen(function* () {
             ? []
             : [
                 {
-                  label: m(msg("Settings...")),
+                  label: m(msg("Settings…")),
                   accelerator: "CmdOrCtrl+,",
                   click: settingsClick,
                 },
@@ -379,7 +379,7 @@ export const make = Effect.gen(function* () {
         label: m(msg("Help", { $context: "menu bar title" })),
         submenu: [
           {
-            label: m(msg("Check for Updates...")),
+            label: m(msg("Check for Updates…")),
             click: checkForUpdatesClick,
           },
         ],

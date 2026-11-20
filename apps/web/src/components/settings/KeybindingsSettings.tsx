@@ -218,11 +218,13 @@ function WarningTooltipIcon({
   label,
   focusable = true,
   className,
+  description,
   children,
 }: {
   label: string;
   focusable?: boolean;
   className?: string | undefined;
+  description?: ReactNode;
   children: ReactNode;
 }) {
   return (
@@ -241,7 +243,9 @@ function WarningTooltipIcon({
       >
         <TriangleAlertIcon className="size-3.5" />
       </TooltipTrigger>
-      <TooltipPopup side="top">{children}</TooltipPopup>
+      <TooltipPopup side="top" description={description}>
+        {children}
+      </TooltipPopup>
     </Tooltip>
   );
 }
@@ -281,8 +285,11 @@ function KeybindingConflictWarning({ labels }: { labels: ReadonlyArray<string> }
         : gt("Conflicts with {commands}.", { commands: labels.slice(0, 3).join(", ") });
 
   return (
-    <WarningTooltipIcon label={description}>
-      {description} <T>The most recent matching binding wins when both conditions can apply.</T>
+    <WarningTooltipIcon
+      label={description}
+      description={<T>The most recent matching binding wins when both conditions can apply.</T>}
+    >
+      {description}
     </WarningTooltipIcon>
   );
 }

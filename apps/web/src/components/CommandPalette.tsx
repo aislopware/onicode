@@ -1450,7 +1450,7 @@ function OpenCommandPaletteDialog(props: {
       kind: "submenu",
       value: "action:new-thread-in",
       searchTerms: ["new thread", "project", "pick", "choose", "select"],
-      title: gt("New thread in..."),
+      title: gt("New thread in…"),
       icon: <SquarePenIcon className={ITEM_ICON_CLASS} />,
       addonIcon: <SquarePenIcon className={ADDON_ICON_CLASS} />,
       groups: [{ value: NEW_THREAD_IN_GROUP, label: gt("Projects"), items: projectThreadItems }],
@@ -3107,6 +3107,8 @@ function OpenCommandPaletteDialog(props: {
       : canCreateProject
         ? `${submitActionLabel} (${addShortcutLabel})`
         : gt("This connection cannot add projects.");
+  const browseSubmitBlocked = (isCloneDestinationStep && !canCloneProject) || !canCreateProject;
+  const browseSubmitTooltip = browseSubmitBlocked ? browseSubmitLabel : submitActionLabel;
   const inputAccessory =
     newProjectFlow !== null ? (
       <CommandPaletteSubmitButton
@@ -3114,7 +3116,8 @@ function OpenCommandPaletteDialog(props: {
         label={isCreatingNewProject ? gt("Creating") : gt("Create")}
         shortcutLabel={createShortcutLabel}
         ariaLabel={gt("Create ({shortcut})", { shortcut: createShortcutLabel })}
-        tooltip={gt("Create ({shortcut})", { shortcut: createShortcutLabel })}
+        tooltip={gt("Create")}
+        tooltipShortcut={createShortcutLabel}
         disabled={!canSubmitNewProject}
         onSubmit={() => {
           void submitNewProject();
@@ -3126,7 +3129,8 @@ function OpenCommandPaletteDialog(props: {
         label={isRemoteProjectPending ? gt("Working") : remoteProjectButtonLabel}
         shortcutLabel="Enter"
         ariaLabel={gt("{action} (Enter)", { action: remoteProjectButtonLabel ?? gt("Continue") })}
-        tooltip={gt("{action} (Enter)", { action: remoteProjectButtonLabel ?? gt("Continue") })}
+        tooltip={remoteProjectButtonLabel ?? gt("Continue")}
+        tooltipShortcut="Enter"
         disabled={!canSubmitRemoteProjectFlow}
         onSubmit={() => {
           void submitAddProjectCloneFlow();
@@ -3138,7 +3142,8 @@ function OpenCommandPaletteDialog(props: {
         label={isCloneDestinationStep && isRemoteProjectPending ? gt("Cloning") : submitActionLabel}
         shortcutLabel={addShortcutLabel}
         ariaLabel={browseSubmitLabel}
-        tooltip={browseSubmitLabel}
+        tooltip={browseSubmitTooltip}
+        tooltipShortcut={browseSubmitBlocked ? undefined : addShortcutLabel}
         disabled={
           !canCreateProject ||
           !canCreateProjectInEnvironment(browseEnvironment?.connection.phase) ||
@@ -3271,7 +3276,7 @@ function OpenCommandPaletteDialog(props: {
         </div>
       ) : isBrowsePending && browseResult === null ? (
         <div role="status" className="px-4 py-3 text-sm text-muted-foreground">
-          <T>Loading folders...</T>
+          <T>Loading folders…</T>
         </div>
       ) : null}
       <CommandPaletteVirtualizedResults

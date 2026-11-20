@@ -144,7 +144,7 @@ export function PullRequestMarkdownEditor({
             onSave(draft);
           }}
         >
-          {saving ? gt("Saving...") : gt("Save")}
+          {saving ? gt("Saving…") : gt("Save")}
         </Button>
       </div>
     </div>

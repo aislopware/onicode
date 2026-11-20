@@ -127,9 +127,8 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
             <SelectValue />
           </ComposerContextLabel>
         </TooltipTrigger>
-        <TooltipPopup>
+        <TooltipPopup shortcut={shortcutLabel}>
           {autoEnvironmentLabel ?? activeEnvironment?.label ?? gt("Run on")}
-          {shortcutLabel ? ` · ${shortcutLabel}` : null}
         </TooltipPopup>
       </Tooltip>
       <SelectPopup alignItemWithTrigger={false} {...composerFloatingLayerProps}>

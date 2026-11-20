@@ -153,7 +153,7 @@ export function PreviewStreamWebView(
               error ? "text-center text-sm text-foreground-muted" : "text-sm text-foreground-muted"
             }
           >
-            {error || gt("Connecting to browser...")}
+            {error || gt("Connecting to browser…")}
           </AppText>
           {error && (
             <View className="items-center">
@@ -524,7 +524,7 @@ function PreviewStreamDocumentView({
               accessibilityLiveRegion="polite"
               className="text-center text-sm text-foreground-muted"
             >
-              {status === "error" ? error : gt("Connecting to browser...")}
+              {status === "error" ? error : gt("Connecting to browser…")}
             </AppText>
           )}
           {status === "error" && hostSetup && !compact ? (

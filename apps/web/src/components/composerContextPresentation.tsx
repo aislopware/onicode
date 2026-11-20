@@ -182,14 +182,19 @@ function useUploadStatusSuffix(
   return progress;
 }
 
-function attachmentTooltip(
+function attachmentTooltipDescription(
   attachment: ComposerImageAttachment | ComposerFileAttachment,
   upload: AttachmentUploadState | undefined,
   resolve: MessageResolver,
-): string {
-  const lines = [attachment.name, formatAttachmentSize(attachment.sizeBytes, resolve)];
-  if (upload?.status === "failed") lines.push("", attachmentUploadFailureText(upload, resolve));
-  return lines.join("\n");
+): ReactNode {
+  const size = formatAttachmentSize(attachment.sizeBytes, resolve);
+  if (upload?.status !== "failed") return size;
+  return (
+    <>
+      <div>{size}</div>
+      <div className="mt-1">{attachmentUploadFailureText(upload, resolve)}</div>
+    </>
+  );
 }
 
 function ImageContextChip(props: {
@@ -212,8 +217,11 @@ function ImageContextChip(props: {
           />
         }
       />
-      <TooltipPopup side="top" className="whitespace-pre-wrap">
-        {attachmentTooltip(props.record, props.upload, messages)}
+      <TooltipPopup
+        side="top"
+        description={attachmentTooltipDescription(props.record, props.upload, messages)}
+      >
+        {props.record.name}
       </TooltipPopup>
     </Tooltip>
   );
@@ -266,7 +274,12 @@ function FileContextChip(props: {
           ? gt("{name} was not saved with this draft. Attach it again to send it.", {
               name: props.record.name,
             })
-          : attachmentTooltip(props.record, props.upload, messages)
+          : props.record.name
+      }
+      tooltipDescription={
+        needsReattach
+          ? undefined
+          : attachmentTooltipDescription(props.record, props.upload, messages)
       }
     />
   );

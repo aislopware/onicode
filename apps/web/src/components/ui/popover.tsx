@@ -1,4 +1,5 @@
 import { Popover as PopoverPrimitive } from "@base-ui/react/popover";
+import type { ComponentProps } from "react";
 
 import { cn } from "~/lib/utils";
 
@@ -83,7 +84,8 @@ function PopoverPopup({
         className={cn(
           "h-(--positioner-height) max-h-(--available-height) w-(--positioner-width) max-w-(--available-width)",
           // Kept-mounted positioners first paint at the window origin, so a transform transition slides them in from there.
-          !keepMounted && "transition-transform data-instant:transition-none",
+          !keepMounted &&
+            "transition-transform data-instant:transition-none motion-reduce:transition-none",
           variant === "panel"
             ? "z-(--z-sheet) w-[min(calc(var(--thread-details-panel-width)+16px),calc(var(--anchor-width)---spacing(2)))] transition-[top] duration-150 ease-out data-instant:transition-[top] motion-reduce:transition-none motion-reduce:data-instant:transition-none"
             : "z-[130]",
@@ -95,7 +97,7 @@ function PopoverPopup({
       >
         <PopoverPrimitive.Popup
           className={cn(
-            "relative flex h-(--popup-height,auto) w-(--popup-width,auto) origin-(--transform-origin) rounded-lg text-popover-foreground outline-none transition-[width,height,scale,opacity] ease-out-quint data-ending-style:duration-100 has-data-[slot=calendar]:rounded-xl data-ending-style:scale-98 data-starting-style:scale-98 data-ending-style:opacity-0 data-starting-style:opacity-0",
+            "relative flex h-(--popup-height,auto) w-(--popup-width,auto) origin-(--transform-origin) rounded-lg text-popover-foreground outline-none transition-[width,height,scale,opacity] ease-out-quint data-ending-style:duration-100 data-instant:duration-0 has-data-[slot=calendar]:rounded-xl motion-safe:data-ending-style:scale-[0.97] motion-safe:data-starting-style:scale-[0.97] data-ending-style:opacity-0 data-starting-style:opacity-0",
             variant !== "panel" && "dropdown-glass",
             // Without it, Chromium re-snaps text after the scale-in at fractional zoom, so hovered rows jump a pixel.
             "will-change-[scale]",
@@ -113,11 +115,11 @@ function PopoverPopup({
         >
           <Viewport
             className={cn(
-              "relative size-full max-h-(--available-height) overflow-clip px-(--viewport-inline-padding) has-data-[slot=calendar]:p-2 data-instant:transition-none **:data-current:data-ending-style:opacity-0 **:data-current:data-starting-style:opacity-0 **:data-previous:data-ending-style:opacity-0 **:data-previous:data-starting-style:opacity-0 **:data-current:w-[calc(var(--popup-width)-2*var(--viewport-inline-padding)-2px)] **:data-previous:w-[calc(var(--popup-width)-2*var(--viewport-inline-padding)-2px)] **:data-current:opacity-100 **:data-previous:opacity-100 **:data-current:transition-opacity **:data-previous:transition-opacity",
+              "relative size-full max-h-(--available-height) overflow-clip px-(--viewport-inline-padding) has-data-[slot=calendar]:p-2 data-instant:transition-none **:data-current:data-ending-style:opacity-0 **:data-current:data-starting-style:opacity-0 **:data-previous:data-ending-style:opacity-0 **:data-previous:data-starting-style:opacity-0 **:data-current:w-[calc(var(--popup-width)-2*var(--viewport-inline-padding)-2px)] **:data-previous:w-[calc(var(--popup-width)-2*var(--viewport-inline-padding)-2px)] **:data-current:opacity-100 **:data-previous:opacity-100 **:data-current:transition-opacity **:data-previous:transition-opacity **:data-current:ease-out-quint **:data-previous:ease-out-quint",
               tooltipStyle && padding === "default"
                 ? "py-1 [--viewport-inline-padding:--spacing(2)]"
                 : popoverViewportPaddingClassName[padding],
-              !tooltipStyle && "not-data-transitioning:overflow-y-auto",
+              !tooltipStyle && "overscroll-contain not-data-transitioning:overflow-y-auto",
               variant === "panel" &&
                 // Pixels, not rem: the details card inside lines up with the find bar at any font size.
                 "overflow-visible py-2 [--viewport-inline-padding:8px]",
@@ -132,6 +134,17 @@ function PopoverPopup({
   );
 }
 
+/** A title with its description under it. */
+function PopoverHeader({ className, ...props }: ComponentProps<"div">) {
+  return (
+    <div
+      className={cn("flex min-w-0 flex-col gap-0.5", className)}
+      data-slot="popover-header"
+      {...props}
+    />
+  );
+}
+
 function PopoverClose({ ...props }: PopoverPrimitive.Close.Props) {
   return <PopoverPrimitive.Close data-slot="popover-close" {...props} />;
 }
@@ -139,8 +152,18 @@ function PopoverClose({ ...props }: PopoverPrimitive.Close.Props) {
 function PopoverTitle({ className, ...props }: PopoverPrimitive.Title.Props) {
   return (
     <PopoverPrimitive.Title
-      className={cn("font-semibold text-sm leading-none", className)}
+      className={cn("font-medium text-ui leading-normal", className)}
       data-slot="popover-title"
+      {...props}
+    />
+  );
+}
+
+function PopoverDescription({ className, ...props }: PopoverPrimitive.Description.Props) {
+  return (
+    <PopoverPrimitive.Description
+      className={cn("text-muted-foreground text-xs leading-[1.4] text-pretty", className)}
+      data-slot="popover-description"
       {...props}
     />
   );
@@ -152,6 +175,8 @@ export {
   PopoverTrigger,
   PopoverPopup,
   PopoverPopup as PopoverContent,
+  PopoverHeader,
   PopoverTitle,
+  PopoverDescription,
   PopoverClose,
 };

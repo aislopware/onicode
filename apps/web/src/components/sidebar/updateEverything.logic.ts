@@ -232,13 +232,25 @@ export type UpdateRunLocalState =
   | { readonly status: "waiting" }
   | null;
 
+export const UPDATE_RESTART_DELAY_MS = 5_000;
+
 export interface UpdateCapsuleView {
   readonly tone: "default" | "slow" | "failed";
+  readonly glyph: "countdown" | "restarting" | "updating" | "downloading" | "failed";
+  /** Share of the ring to draw, 0 to 1. */
+  readonly progress: number;
   readonly label: string;
-  readonly slow?: { readonly status: string; readonly elapsed: string };
+  /** Heads the list of machines, so it never names one: the rows do. */
+  readonly title: string;
+  readonly slow?: {
+    readonly environmentId: EnvironmentId;
+    readonly status: string;
+    readonly elapsed: string;
+  };
   readonly action: "later" | "retry" | "dismiss" | null;
 }
 
+const titled = (label: string) => ({ label, title: label });
 const isActive = (status: UpdateRunMachineStatus) => status !== "done" && status !== "failed";
 
 export function describeUpdateCapsule(
@@ -249,44 +261,63 @@ export function describeUpdateCapsule(
   resolve: MessageResolver = m,
 ): UpdateCapsuleView {
   if (run.phase === "countdown" && run.restartAt !== null) {
-    const seconds = Math.max(0, Math.ceil((run.restartAt - now) / 1000));
+    const remaining = Math.min(UPDATE_RESTART_DELAY_MS, Math.max(0, run.restartAt - now));
     return {
       tone: "default",
-      label: resolve(msg("Restart in {seconds}s", { seconds })),
+      glyph: "countdown",
+      progress: remaining / UPDATE_RESTART_DELAY_MS,
+      ...titled(resolve(msg("Restart in {seconds}s", { seconds: Math.ceil(remaining / 1000) }))),
       action: "later",
     };
   }
   if (run.phase === "installing") {
-    return { tone: "default", label: resolve(msg("Restarting…")), action: null };
+    return {
+      tone: "default",
+      glyph: "restarting",
+      progress: 0,
+      ...titled(resolve(msg("Restarting…"))),
+      action: null,
+    };
   }
+  const done = machines.filter(({ status }) => status === "done").length;
+  const updated = machines.length === 0 ? 0 : done / machines.length;
   const active = machines.filter(({ status }) => isActive(status) && status !== "waiting");
   const slowest = active.toSorted((a, b) => a.machine.startedAt - b.machine.startedAt)[0];
+  const updatedLabel = resolve(msg("{done} of {total} updated", { done, total: machines.length }));
   if (slowest && now - slowest.machine.startedAt >= UPDATE_SLOW_AFTER_MS) {
     return {
       tone: "slow",
+      glyph: "updating",
+      progress: updated,
       label: slowest.machine.label,
+      title: updatedLabel,
       slow: {
+        environmentId: slowest.machine.environmentId,
         status: resolve(RUN_STATUS_LABELS[slowest.status]),
         elapsed: formatUpdateElapsed(now - slowest.machine.startedAt, resolve),
       },
       action: null,
     };
   }
-  const done = machines.filter(({ status }) => status === "done").length;
   if (machines.some(({ status }) => isActive(status))) {
     return {
       tone: "default",
-      label: resolve(msg("{done} of {total} updated", { done, total: machines.length })),
+      glyph: "updating",
+      progress: updated,
+      ...titled(updatedLabel),
       action: null,
     };
   }
   if (local?.status === "downloading") {
     return {
       tone: "default",
-      label:
+      glyph: "downloading",
+      progress: Math.min(100, Math.max(0, local.percent ?? 0)) / 100,
+      ...titled(
         local.percent === null
           ? resolve(msg("Downloading"))
           : resolve(msg("Downloading {percent}%", { percent: Math.floor(local.percent) })),
+      ),
       action: null,
     };
   }
@@ -294,6 +325,8 @@ export function describeUpdateCapsule(
   if (failed.length > 0) {
     return {
       tone: "failed",
+      glyph: "failed",
+      progress: 0,
       label:
         failed.length === 1
           ? resolve(msg("{machine} failed", { machine: failed[0]!.machine.label }))
@@ -302,12 +335,15 @@ export function describeUpdateCapsule(
                 count: failed.length,
               }),
             ),
+      title: resolve(msg("Update failed")),
       action: failed.some(({ machine }) => machine.server !== null) ? "retry" : "dismiss",
     };
   }
   return {
     tone: "default",
-    label: resolve(msg("{done} of {total} updated", { done, total: machines.length })),
+    glyph: "updating",
+    progress: updated,
+    ...titled(updatedLabel),
     action: null,
   };
 }

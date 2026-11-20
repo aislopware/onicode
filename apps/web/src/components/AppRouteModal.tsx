@@ -1,6 +1,6 @@
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
 import { useRouter, useRouterState } from "@tanstack/react-router";
-import { T, useGT } from "gt-react";
+import { useGT } from "gt-react";
 import { XIcon } from "lucide-react";
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
@@ -232,8 +232,8 @@ export function AppRouteModalClose() {
       >
         <XIcon />
       </TooltipTrigger>
-      <TooltipPopup side="bottom">
-        <T>Close (Esc)</T>
+      <TooltipPopup side="bottom" shortcut="Esc">
+        {gt("Close")}
       </TooltipPopup>
     </Tooltip>
   );

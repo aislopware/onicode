@@ -39,7 +39,7 @@ export function codexFeedbackNotice(
     case "interrupted":
       return null;
     case "uploading":
-      return { title: resolve(msg("Sending feedback to OpenAI...")), description: undefined };
+      return { title: resolve(msg("Sending feedback to OpenAI…")), description: undefined };
     case "sent":
       return {
         title: resolve(msg("Feedback sent to OpenAI")),
@@ -83,7 +83,7 @@ export function codexFeedbackMessage(
                 errorMessage: submission.errorMessage,
               }),
             )
-          : resolve(msg("Sending feedback to OpenAI..."));
+          : resolve(msg("Sending feedback to OpenAI…"));
 
   return {
     id: role === "user" ? submission.id : MessageId.make(`${submission.id}:feedback`),

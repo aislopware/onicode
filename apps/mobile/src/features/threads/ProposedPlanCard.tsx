@@ -68,7 +68,7 @@ export function ProposedPlanCard(props: {
       {props.renderMarkdown(stripDisplayedPlanMarkdown(props.markdown))}
       <View className="flex-row">
         <Button
-          label={saving ? gt("Saving...") : gt("Save to workspace")}
+          label={saving ? gt("Saving…") : gt("Save to workspace")}
           tone="secondary"
           disabled={!canWrite || !props.workspaceRoot || saving}
           onPress={() =>

@@ -5,11 +5,17 @@ interface PanelTabCloseButtonProps {
   label: string;
   onClick: () => void;
   tooltip?: string;
+  tooltipShortcut?: string | null | undefined;
 }
 
 /** Sits over the end of a `relative group/tab`, hidden until the tab is hovered or holds focus.
  *  The tab's label takes `panel-tab-label` so its end fades under the button. */
-export function PanelTabCloseButton({ label, onClick, tooltip }: PanelTabCloseButtonProps) {
+export function PanelTabCloseButton({
+  label,
+  onClick,
+  tooltip,
+  tooltipShortcut,
+}: PanelTabCloseButtonProps) {
   const button = (
     <button
       type="button"
@@ -29,7 +35,7 @@ export function PanelTabCloseButton({ label, onClick, tooltip }: PanelTabCloseBu
   return (
     <Tooltip>
       <TooltipTrigger render={button} />
-      <TooltipPopup>{tooltip}</TooltipPopup>
+      <TooltipPopup shortcut={tooltipShortcut}>{tooltip}</TooltipPopup>
     </Tooltip>
   );
 }

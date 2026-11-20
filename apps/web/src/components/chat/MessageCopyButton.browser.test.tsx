@@ -26,5 +26,5 @@ it("explains a denied clipboard write and lets the same message be copied again"
   await copy.click();
 
   await expect.element(page.getByText("Copied!", { exact: true })).not.toBeInTheDocument();
-  await expect.element(copy).toBeDisabled();
+  await expect.element(copy).toHaveAttribute("aria-disabled", "true");
 });

@@ -980,9 +980,7 @@ export default function DiffPanel({
                               </span>
                             </span>
                           </TooltipTrigger>
-                          <TooltipPopup side="right" className="max-w-80">
-                            {commit.subject}
-                          </TooltipPopup>
+                          <TooltipPopup side="right">{commit.subject}</TooltipPopup>
                         </Tooltip>
                         {commitUrl ? (
                           <DropdownMenuItem
@@ -1017,12 +1015,12 @@ export default function DiffPanel({
                 ) : !canReadFiles ? (
                   <DropdownMenuItem disabled>
                     {fileAccess.isPending
-                      ? gt("Checking file access...")
+                      ? gt("Checking file access…")
                       : (fileAccess.error ?? gt("This connection cannot read local diffs."))}
                   </DropdownMenuItem>
                 ) : branchCommits === null ? (
                   <DropdownMenuItem disabled>
-                    <T>Loading commits...</T>
+                    <T>Loading commits…</T>
                   </DropdownMenuItem>
                 ) : branchCommits.commits.length === 0 ? (
                   <DropdownMenuItem disabled>
@@ -1118,7 +1116,7 @@ export default function DiffPanel({
                 className="w-72 min-w-0 max-w-[calc(100vw-1rem)] overflow-hidden"
               >
                 <ComboboxSearchInput
-                  placeholder={gt("Search refs...")}
+                  placeholder={gt("Search refs…")}
                   value={baseRefQuery}
                   onChange={(event) => setBaseRefQuery(event.target.value)}
                 />
@@ -1395,7 +1393,7 @@ export default function DiffPanel({
         </div>
       ) : isGitSelection && !canReadFiles ? (
         fileAccess.isPending ? (
-          <DiffPanelLoadingState label={gt("Checking file access...")} />
+          <DiffPanelLoadingState label={gt("Checking file access…")} />
         ) : (
           <div className="flex flex-1 items-center justify-center px-5 text-center text-xs text-muted-foreground">
             {fileAccess.error ?? gt("This connection cannot read local diffs.")}
@@ -1410,7 +1408,7 @@ export default function DiffPanel({
                   ? gt(
                       "Showing tracked changes. Untracked changes could not be loaded. Refresh to retry.",
                     )
-                  : gt("Showing tracked changes. Checking untracked files...")}
+                  : gt("Showing tracked changes. Checking untracked files…")}
               </p>
             )}
             {isSelectedPatchTruncated && !lazySource && (
@@ -1462,14 +1460,14 @@ export default function DiffPanel({
                 <DiffPanelLoadingState
                   label={
                     toolCallSelection
-                      ? gt("Loading tool call diff...")
+                      ? gt("Loading tool call diff…")
                       : selectedTurn
-                        ? gt("Loading checkpoint diff...")
+                        ? gt("Loading checkpoint diff…")
                         : selectedGitScope === "unstaged"
-                          ? gt("Loading uncommitted changes...")
+                          ? gt("Loading uncommitted changes…")
                           : selectedGitScope === "commit"
-                            ? gt("Loading commit...")
-                            : gt("Loading changes...")
+                            ? gt("Loading commit…")
+                            : gt("Loading changes…")
                   }
                 />
               ) : (

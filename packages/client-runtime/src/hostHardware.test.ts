@@ -1,7 +1,13 @@
 import { EnvironmentId, type HostHardwareSnapshot } from "@onicode/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { describeHostHardware, describeHostHardwareAlert, formatCapacity } from "./hostHardware.ts";
+import {
+  describeHostHardware,
+  findHostHardwareAlert,
+  formatCapacity,
+  hostHardwareAlertDescription,
+  hostHardwareAlertTitle,
+} from "./hostHardware.ts";
 
 const GiB = 1024 ** 3;
 
@@ -59,7 +65,7 @@ describe("describeHostHardware", () => {
           kind: "cpu",
           key: "cpu",
           title: "Apple M4 Pro",
-          detail: "14 cores (10 performance, 4 efficiency) · Load 4.2",
+          detail: "14 cores (10 performance and 4 efficiency) · Load 4.2",
           value: "23% in use",
           fraction: 0.234,
           level: "normal",
@@ -142,7 +148,7 @@ describe("describeHostHardware", () => {
       },
       {
         title: "500 GB storage",
-        detail: "494 GB used · /work · Onicode data, worktrees, projects",
+        detail: "494 GB used · /work · Onicode data, worktrees, and projects",
         value: "6 GB available",
         level: "critical",
       },
@@ -150,7 +156,7 @@ describe("describeHostHardware", () => {
   });
 });
 
-describe("describeHostHardwareAlert", () => {
+describe("findHostHardwareAlert", () => {
   const studio = EnvironmentId.make("studio");
   const runner = EnvironmentId.make("runner");
   const withFree = (memoryGiB: number, storageGiB: number): HostHardwareSnapshot => ({
@@ -195,8 +201,8 @@ describe("describeHostHardwareAlert", () => {
       {
         level: "critical",
         kind: "memory",
-        title: "Low memory and low storage on Studio",
-        description: "1.5 GB available of 48 GB memory, 24 GB available of 926 GB storage",
+        title: "Memory almost full and low storage on Studio",
+        description: "1.5 GB available of 48 GB memory\n24 GB available of 926 GB storage",
       },
     ],
     // A minute-long burst over 14 CPUs is no warning; the 5-minute average has to agree.
@@ -215,8 +221,8 @@ describe("describeHostHardwareAlert", () => {
       {
         level: "critical",
         kind: "cpu",
-        title: "Low memory and heavy processor load on Studio",
-        description: "Load 45 on 14 CPUs, 3.5 GB available of 48 GB memory",
+        title: "Low memory and processor overloaded on Studio",
+        description: "Load 45 on 14 CPUs\n3.5 GB available of 48 GB memory",
       },
     ],
     [
@@ -224,23 +230,21 @@ describe("describeHostHardwareAlert", () => {
       {
         level: "critical",
         kind: "memory",
-        title: "Low memory, low storage and heavy processor load on Studio",
+        title: "Memory almost full, storage almost full, and heavy processor load on Studio",
         description:
-          "1.5 GB available of 48 GB memory, 9 GB available of 926 GB storage, Load 37 on 14 CPUs",
+          "1.5 GB available of 48 GB memory\n9 GB available of 926 GB storage\nLoad 37 on 14 CPUs",
       },
     ],
   ])(
     "warns when memory or storage runs out or work queues for the processor (%#)",
     (hardware, expected) => {
-      const alert = describeHostHardwareAlert([
-        { environmentId: studio, label: "Studio", hardware },
-      ]);
+      const alert = findHostHardwareAlert([{ environmentId: studio, label: "Studio", hardware }]);
       expect(
         alert && {
           level: alert.level,
           kind: alert.kind,
-          title: alert.title,
-          description: alert.description,
+          title: hostHardwareAlertTitle(alert),
+          description: hostHardwareAlertDescription(alert),
         },
       ).toEqual(expected);
     },
@@ -252,19 +256,28 @@ describe("describeHostHardwareAlert", () => {
       { environmentId: runner, label: "Runner", hardware: withFree(16, 9) },
     ];
 
-    expect(describeHostHardwareAlert(machines)).toEqual({
+    const alert = findHostHardwareAlert(machines);
+    expect(
+      alert && {
+        key: alert.key,
+        level: alert.level,
+        kind: alert.kind,
+        title: hostHardwareAlertTitle(alert),
+        description: hostHardwareAlertDescription(alert),
+        environmentId: alert.environmentId,
+      },
+    ).toEqual({
       key: "runner:storage:/:critical|studio:storage:/:high",
       level: "critical",
       kind: "storage",
-      title: "Low storage on 2 machines",
+      title: "Storage almost full on 2 machines",
       description:
         "Runner: 9 GB available of 926 GB storage\nStudio: 24 GB available of 926 GB storage",
       environmentId: runner,
     });
     // Free space moving within the same level is the same warning.
     expect(
-      describeHostHardwareAlert([machines[0]!, { ...machines[1]!, hardware: withFree(16, 7) }])
-        ?.key,
+      findHostHardwareAlert([machines[0]!, { ...machines[1]!, hardware: withFree(16, 7) }])?.key,
     ).toBe("runner:storage:/:critical|studio:storage:/:high");
   });
 });

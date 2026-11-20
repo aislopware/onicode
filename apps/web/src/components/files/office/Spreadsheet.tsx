@@ -560,7 +560,7 @@ function SpreadsheetGrid(props: {
         schedule();
         if (track.delta === 0) return;
         resizingPending = true;
-        setNotice(m(msg("Resizing preview...")));
+        setNotice(m(msg("Resizing preview…")));
         void engine
           .call(
             "resize",

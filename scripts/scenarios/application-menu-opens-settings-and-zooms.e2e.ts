@@ -20,7 +20,7 @@ test(
     expect(menus).toEqual(expect.arrayContaining(["File", "Edit", "View", "Window", "Help"]));
 
     // macOS keeps Settings in the menu named after the app, which comes first; elsewhere it is in File.
-    await desktop.chooseApplicationMenuItem(menus[0] ?? "File", "Settings...");
+    await desktop.chooseApplicationMenuItem(menus[0] ?? "File", "Settings…");
     const settings = screen.getByRole("dialog", "Settings");
     await expect(settings).toBeVisible();
     await settings.getByRole("region", "Settings content").getByRole("button", "Close").tap();

@@ -31,9 +31,7 @@ export function PdfPreview(props: { readonly uri: string }) {
             }),
           )
         }
-        renderLoading={() => (
-          <FilePreviewLoading message={gt("Loading PDF...")} background="card" />
-        )}
+        renderLoading={() => <FilePreviewLoading message={gt("Loading PDF…")} background="card" />}
         style={{ flex: 1, backgroundColor: "transparent" }}
       />
     </View>

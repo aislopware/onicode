@@ -572,11 +572,16 @@ const ProviderModelRow = memo(function ProviderModelRow({
               </code>
             ) : null}
           </TooltipTrigger>
-          <TooltipPopup side="top" align="start">
-            <div>{model.name}</div>
-            {model.name !== model.slug ? (
-              <code className="font-mono text-2xs text-muted-foreground">{model.slug}</code>
-            ) : null}
+          <TooltipPopup
+            side="top"
+            align="start"
+            description={
+              model.name !== model.slug ? (
+                <code className="font-mono text-2xs">{model.slug}</code>
+              ) : undefined
+            }
+          >
+            {model.name}
           </TooltipPopup>
         </Tooltip>
         {model.isCustom ? (
@@ -672,17 +677,18 @@ const ProviderModelRow = memo(function ProviderModelRow({
           </>
         ) : null}
       </span>
-      {/* Disabled switches receive no pointer events; wrap the tooltip trigger. */}
       <Tooltip>
-        <TooltipTrigger render={<span className="flex shrink-0 items-center" />}>
-          <Switch
-            size="sm"
-            checked={!isHidden}
-            disabled={!canWritePreferences || model.isCustom}
-            onCheckedChange={(checked) => onSetHidden(model.slug, !checked)}
-            aria-label={gt("Show {name} in the model picker", { name: model.name })}
-          />
-        </TooltipTrigger>
+        <TooltipTrigger
+          render={
+            <Switch
+              size="sm"
+              checked={!isHidden}
+              readOnly={!canWritePreferences || model.isCustom}
+              onCheckedChange={(checked) => onSetHidden(model.slug, !checked)}
+              aria-label={gt("Show {name} in the model picker", { name: model.name })}
+            />
+          }
+        />
         <TooltipPopup side="top">{pickerTooltip}</TooltipPopup>
       </Tooltip>
     </div>

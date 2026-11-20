@@ -41,10 +41,7 @@ export const ComposerFooterModeControls = memo(function ComposerFooterModeContro
     resolveRuntimeModeOption("approval-required", messages);
   const RuntimeModeIcon = runtimeModeOption.icon;
   // The chip opens the same Permissions toggle used in the model picker and the overflow menu.
-  const permissionsTooltip = gt("Permissions: {mode}. {description}", {
-    mode: runtimeModeOption.label,
-    description: runtimeModeOption.description,
-  });
+  const permissionsLabel = gt("Permissions: {mode}", { mode: runtimeModeOption.label });
   const permissionsChip = (
     <Menu
       open={open}
@@ -64,7 +61,7 @@ export const ComposerFooterModeControls = memo(function ComposerFooterModeContro
                   size={size}
                   // Mirrors the model trigger's trailing pe-1 so the gaps on both sides of the chip match.
                   className="ps-1.5"
-                  aria-label={gt("Permissions: {mode}", { mode: runtimeModeOption.label })}
+                  aria-label={permissionsLabel}
                 />
               }
             />
@@ -83,7 +80,9 @@ export const ComposerFooterModeControls = memo(function ComposerFooterModeContro
             {runtimeModeOption.label}
           </span>
         </TooltipTrigger>
-        <TooltipPopup side="top">{permissionsTooltip}</TooltipPopup>
+        <TooltipPopup side="top" description={runtimeModeOption.description}>
+          {permissionsLabel}
+        </TooltipPopup>
       </Tooltip>
       <MenuPopup align="start" {...composerFloatingLayerProps}>
         <ComposerPermissionsSection

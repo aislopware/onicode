@@ -1,5 +1,6 @@
 import { describeHostHardware, type HostHardwareGauge } from "@onicode/client-runtime/hostHardware";
 import { resolveEnvironmentMachineKind } from "@onicode/contracts";
+import { useGT, useLocale, useMessages } from "gt-react";
 import { CpuIcon, HardDriveIcon, MemoryStickIcon } from "lucide-react";
 
 import { cn } from "~/lib/utils";
@@ -13,6 +14,7 @@ import { useSearchableSetting } from "./settingsSearch";
 const GAUGE_ICONS = { cpu: CpuIcon, memory: MemoryStickIcon, storage: HardDriveIcon };
 
 function HardwareGauge({ gauge }: { readonly gauge: HostHardwareGauge }) {
+  const gt = useGT();
   const Icon = GAUGE_ICONS[gauge.kind];
   const percent = gauge.fraction === null ? null : Math.round(gauge.fraction * 100);
   return (
@@ -30,15 +32,15 @@ function HardwareGauge({ gauge }: { readonly gauge: HostHardwareGauge }) {
             gauge.level === "high" && "text-warning-foreground",
           )}
         >
-          {gauge.value ?? "Usage unavailable"}
+          {gauge.value ?? gt("Usage unavailable")}
         </p>
         <div
           role="meter"
-          aria-label={`${gauge.title} in use`}
+          aria-label={gt("{resource} in use", { resource: gauge.title })}
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={percent ?? undefined}
-          aria-valuetext={gauge.value ?? "Unavailable"}
+          aria-valuetext={gauge.value ?? gt("Unavailable")}
           className="h-1 overflow-hidden rounded-full bg-foreground/10"
         >
           <div
@@ -59,13 +61,16 @@ function HardwareGauge({ gauge }: { readonly gauge: HostHardwareGauge }) {
 }
 
 function EnvironmentHardware({ environment }: { readonly environment: EnvironmentPresentation }) {
+  const gt = useGT();
+  const messages = useMessages();
+  const locale = useLocale();
   const supported = environment.serverConfig?.environment.capabilities.hostHardware === true;
   const { data, error } = useEnvironmentQuery(
     supported
       ? serverEnvironment.hostHardware({ environmentId: environment.environmentId, input: {} })
       : null,
   );
-  const view = data === null ? null : describeHostHardware(data);
+  const view = data === null ? null : describeHostHardware(data, messages, locale);
   return (
     <EnvironmentRow
       kind={resolveEnvironmentMachineKind(environment.serverConfig)}
@@ -74,8 +79,8 @@ function EnvironmentHardware({ environment }: { readonly environment: Environmen
         view
           ? [view.name, ...view.facts].join(" · ")
           : !supported
-            ? "Update Onicode on this machine to see its hardware."
-            : (error ?? "Reading hardware…")
+            ? gt("Update Onicode on this machine to see its hardware.")
+            : (error ?? gt("Reading hardware…"))
       }
       detail={
         view ? (

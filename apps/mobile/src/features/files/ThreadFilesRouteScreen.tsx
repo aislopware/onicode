@@ -296,7 +296,7 @@ function FileContent(props: {
 
   if (isAudioFile) {
     return props.previewUri === null ? (
-      <FilePreviewLoading message={gt("Loading file...")} />
+      <FilePreviewLoading message={gt("Loading file…")} />
     ) : (
       <AudioFilePreview uri={props.previewUri} onRetry={props.onRetryPreview} />
     );
@@ -328,7 +328,7 @@ function FileContent(props: {
   }
 
   if (props.fileContents === null) {
-    return <FilePreviewLoading message={gt("Loading file...")} />;
+    return <FilePreviewLoading message={gt("Loading file…")} />;
   }
 
   return (
@@ -566,13 +566,13 @@ export function ThreadFilesTreeScreen(props: ThreadFilesRouteScreenProps) {
         />
       );
     }
-    return <LoadingScreen message={gt("Opening files...")} messagePlacement="above-spinner" />;
+    return <LoadingScreen message={gt("Opening files…")} messagePlacement="above-spinner" />;
   }
 
   if (!canReadFiles) {
     if (fileAccess.isPending) {
       return (
-        <LoadingScreen message={gt("Checking file access...")} messagePlacement="above-spinner" />
+        <LoadingScreen message={gt("Checking file access…")} messagePlacement="above-spinner" />
       );
     }
     return (
@@ -984,14 +984,14 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
 
   if (environmentId === null || (threadId !== null && selectedThread === null)) {
     return withInspector(
-      <LoadingScreen message={gt("Opening file...")} messagePlacement="above-spinner" />,
+      <LoadingScreen message={gt("Opening file…")} messagePlacement="above-spinner" />,
     );
   }
 
   if (!canReadFiles) {
     if (fileAccess.isPending) {
       return withInspector(
-        <LoadingScreen message={gt("Checking file access...")} messagePlacement="above-spinner" />,
+        <LoadingScreen message={gt("Checking file access…")} messagePlacement="above-spinner" />,
       );
     }
     return withInspector(
@@ -1017,7 +1017,7 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
 
   if (metadataPending) {
     return withInspector(
-      <LoadingScreen message={gt("Opening file...")} messagePlacement="above-spinner" />,
+      <LoadingScreen message={gt("Opening file…")} messagePlacement="above-spinner" />,
     );
   }
   if (directoryPath !== null) {

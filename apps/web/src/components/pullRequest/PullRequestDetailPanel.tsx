@@ -1082,7 +1082,7 @@ export function PullRequestDetailPanel({
       type: "loading",
       title: m(
         msg(
-          "Preparing the {term, select, mr {merge request} cr {change request} other {pull request}} checkout...",
+          "Preparing the {term, select, mr {merge request} cr {change request} other {pull request}} checkout…",
           { term: changeRequestTermKind(terminology) },
         ),
       ),
@@ -2190,7 +2190,7 @@ export function PullRequestDetailPanel({
                   fallback={
                     <DiffPanelLoadingState
                       label={gt(
-                        "Loading {term, select, mr {merge request} cr {change request} other {pull request}} diff...",
+                        "Loading {term, select, mr {merge request} cr {change request} other {pull request}} diff…",
                         { term: changeRequestTermKind(terminology) },
                       )}
                     />

@@ -139,7 +139,7 @@ function OpenVideoPreviewModal(props: {
           <View className="flex-1 items-center justify-center gap-3 px-6">
             <AppActivityIndicator color="#ffffff" />
             <AppText className="text-sm text-white/80">
-              <T>Loading video...</T>
+              <T>Loading video…</T>
             </AppText>
           </View>
         ) : (
@@ -168,7 +168,7 @@ function OpenVideoPreviewModal(props: {
           className="mx-4 my-3 min-h-12 items-center justify-center rounded-xl bg-white/15 px-4"
         >
           <AppText className="font-oni-medium text-base text-white">
-            {mediaActions.sharing ? gt("Opening share sheet...") : gt("Save or share video")}
+            {mediaActions.sharing ? gt("Opening share sheet…") : gt("Save or share video")}
           </AppText>
         </Pressable>
       </View>

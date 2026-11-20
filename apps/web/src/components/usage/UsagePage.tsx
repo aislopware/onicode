@@ -69,6 +69,7 @@ import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../
 import { AppRouteModal, AppRouteModalClose } from "../AppRouteModal";
 import { Skeleton } from "../ui/skeleton";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import {
   WorkspaceBreadcrumb,
@@ -181,12 +182,16 @@ export function UsagePage() {
   const gt = useGT();
   const locale = useLocale();
   const m = useMessages();
+  const optionShortcut = (
+    option: (typeof METRIC_OPTIONS)[number] | (typeof WINDOW_OPTIONS)[number],
+  ) =>
+    shortcutLabelForCommand(keybindings, option.command, {
+      context: { usagePageOpen: true },
+    });
   const shortcutTitle = (
     option: (typeof METRIC_OPTIONS)[number] | (typeof WINDOW_OPTIONS)[number],
   ) => {
-    const shortcut = shortcutLabelForCommand(keybindings, option.command, {
-      context: { usagePageOpen: true },
-    });
+    const shortcut = optionShortcut(option);
     return shortcut
       ? gt("{label} ({shortcut})", { label: m(option.label), shortcut })
       : m(option.label);
@@ -419,9 +424,14 @@ export function UsagePage() {
             }}
           >
             {WINDOW_OPTIONS.map((option) => (
-              <Toggle key={option.days} value={String(option.days)} title={shortcutTitle(option)}>
-                {m(option.label)}
-              </Toggle>
+              <Tooltip key={option.days}>
+                <TooltipTrigger render={<Toggle value={String(option.days)} />}>
+                  {m(option.label)}
+                </TooltipTrigger>
+                <TooltipPopup side="bottom" shortcut={optionShortcut(option)}>
+                  {m(option.label)}
+                </TooltipPopup>
+              </Tooltip>
             ))}
           </ToggleGroup>
         )}
@@ -435,9 +445,14 @@ export function UsagePage() {
           }}
         >
           {METRIC_OPTIONS.map((option) => (
-            <Toggle key={option.value} value={option.value} title={shortcutTitle(option)}>
-              {m(option.label)}
-            </Toggle>
+            <Tooltip key={option.value}>
+              <TooltipTrigger render={<Toggle value={option.value} />}>
+                {m(option.label)}
+              </TooltipTrigger>
+              <TooltipPopup side="bottom" shortcut={optionShortcut(option)}>
+                {m(option.label)}
+              </TooltipPopup>
+            </Tooltip>
           ))}
         </ToggleGroup>
         <Button
