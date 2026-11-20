@@ -13,6 +13,7 @@ import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import { afterAll, expect } from "vite-plus/test";
 import * as NodeChildProcess from "node:child_process";
 
+import * as HostProcess from "@onicode/shared/HostProcess";
 import { ManagedPolicyFileError } from "@onicode/shared/managedPolicyFile";
 
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
@@ -91,6 +92,63 @@ const readField = (stdout: string, field: string) => {
 };
 
 const SERVER_ENTRY_SOURCE = '#!/bin/sh\necho "onicode wsl runtime test server 0.0.0"\n';
+
+// Emulates `wsl.exe [-d <distro>] [--cd <dir>] [--|--exec] <argv>` in a distro with automount off.
+const layerFakeWslExe = (home: string, inherited: Record<string, string> = {}) =>
+  Layer.effect(
+    ChildProcessSpawner.ChildProcessSpawner,
+    Effect.map(ChildProcessSpawner.ChildProcessSpawner, (local) =>
+      ChildProcessSpawner.make((command) => {
+        if (!ChildProcess.isStandardCommand(command) || command.command !== "wsl.exe") {
+          return local.spawn(command);
+        }
+        const args = command.args.map((word) =>
+          Redacted.isRedacted(word) ? Redacted.value(word) : word,
+        );
+        while (args.length > 0) {
+          const flag = args[0];
+          if (flag === "-d" || flag === "--distribution" || flag === "--cd") {
+            args.splice(0, 2);
+          } else if (flag === "--" || flag === "--exec" || flag === "-e") {
+            args.shift();
+            break;
+          } else {
+            break;
+          }
+        }
+        const [file = "sh", ...rest] =
+          args[0] === "wslpath"
+            ? ["sh", "-c", 'printf "wslpath: %s\\n" "$1" >&2; exit 1', "wslpath", args.at(-1) ?? ""]
+            : args;
+        return local.spawn(
+          ChildProcess.make(file, rest, {
+            ...command.options,
+            env: { ...command.options.env, ...inherited, HOME: home },
+            extendEnv: true,
+          }),
+        );
+      }),
+    ),
+  );
+
+const layerWslEnvironment = (home: string, inherited?: Record<string, string>) =>
+  layerDesktopWslEnvironment.pipe(
+    Layer.provide(
+      Layer.mergeAll(
+        layerFakeWslExe(home, inherited),
+        DesktopManagedPolicy.layerTest(),
+        Layer.effect(
+          DesktopEnvironment.DesktopEnvironment,
+          Effect.map(
+            Path.Path,
+            (path) =>
+              ({ platform: "win32", path }) as DesktopEnvironment.DesktopEnvironment["Service"],
+          ),
+        ),
+      ),
+    ),
+    Layer.provide(NodeServices.layer),
+  );
 
 describe("WSL runtime cache", () => {
   it.each([
@@ -414,69 +472,6 @@ describe.skipIf(posixShellRunner === null)("WSL runtime install script (executed
 
   // Runs the distro side on the local bash, so a Windows dev box using the wsl.exe runner skips it.
   describe.skipIf(posixShellRunner?.file !== "bash")("prepareRuntime through wsl.exe", () => {
-    // Emulates `wsl.exe [-d <distro>] [--cd <dir>] [--|--exec] <argv>` in a distro with automount off.
-    const layerFakeWslExe = (home: string) =>
-      Layer.effect(
-        ChildProcessSpawner.ChildProcessSpawner,
-        Effect.map(ChildProcessSpawner.ChildProcessSpawner, (local) =>
-          ChildProcessSpawner.make((command) => {
-            if (!ChildProcess.isStandardCommand(command) || command.command !== "wsl.exe") {
-              return local.spawn(command);
-            }
-            const args = command.args.map((word) =>
-              Redacted.isRedacted(word) ? Redacted.value(word) : word,
-            );
-            while (args.length > 0) {
-              const flag = args[0];
-              if (flag === "-d" || flag === "--distribution" || flag === "--cd") {
-                args.splice(0, 2);
-              } else if (flag === "--" || flag === "--exec" || flag === "-e") {
-                args.shift();
-                break;
-              } else {
-                break;
-              }
-            }
-            const [file = "sh", ...rest] =
-              args[0] === "wslpath"
-                ? [
-                    "sh",
-                    "-c",
-                    'printf "wslpath: %s\\n" "$1" >&2; exit 1',
-                    "wslpath",
-                    args.at(-1) ?? "",
-                  ]
-                : args;
-            return local.spawn(
-              ChildProcess.make(file, rest, {
-                ...command.options,
-                env: { ...command.options.env, HOME: home },
-                extendEnv: true,
-              }),
-            );
-          }),
-        ),
-      );
-
-    const layerWslEnvironment = (home: string) =>
-      layerDesktopWslEnvironment.pipe(
-        Layer.provide(
-          Layer.mergeAll(
-            layerFakeWslExe(home),
-            DesktopManagedPolicy.layerTest(),
-            Layer.effect(
-              DesktopEnvironment.DesktopEnvironment,
-              Effect.map(
-                Path.Path,
-                (path) =>
-                  ({ platform: "win32", path }) as DesktopEnvironment.DesktopEnvironment["Service"],
-              ),
-            ),
-          ),
-        ),
-        Layer.provide(NodeServices.layer),
-      );
-
     it.live("installs the runtime when wslpath cannot translate the archive's Windows path", () => {
       const fixture = createFixture();
       return Effect.gen(function* () {
@@ -541,6 +536,29 @@ describe.skipIf(posixShellRunner === null)("WSL runtime install script (executed
     expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
   });
 });
+
+describe.skipIf(HostProcess.Platform.defaultValue() === "win32")(
+  "home discovery through wsl.exe",
+  () => {
+    // WSLENV=ONICODE_HOME/p hands the Windows home to every wsl.exe as a /mnt/c path.
+    it.live.each([
+      { profile: "", oniHome: null },
+      { profile: "export ONICODE_HOME=/home/me/.oni-linux\n", oniHome: "/home/me/.oni-linux" },
+    ])("reads only a home the distro sets itself ($oniHome)", ({ profile, oniHome }) =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "oni-wsl-home-" });
+        yield* fileSystem.writeFileString(`${home}/.bash_profile`, profile);
+        const probed = yield* Effect.gen(function* () {
+          return yield* (yield* DesktopWslEnvironment).probeRuntime("Ubuntu");
+        }).pipe(
+          Effect.provide(layerWslEnvironment(home, { ONICODE_HOME: "/mnt/c/Users/me/.onicode" })),
+        );
+        expect(probed).toMatchObject({ ok: true, oniHome });
+      }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+    );
+  },
+);
 
 describe("parseResolvedPath", () => {
   it("preserves spaces and apostrophes in the resolved login-shell PATH", () => {

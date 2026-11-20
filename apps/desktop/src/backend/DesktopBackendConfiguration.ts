@@ -612,7 +612,7 @@ const resolveWslStartConfig = Effect.fn("desktop.backendConfiguration.resolveWsl
   const bootstrap = {
     mode: "desktop" as const,
     port: input.port,
-    // Omit oniHome to keep the Linux backend from sharing the primary's Windows SQLite file.
+    // Never the Windows home, which would share the primary's SQLite file; a ready launch adds the distro's own.
     host: wslBindHost,
     desktopBootstrapToken: input.bootstrapToken,
     desktopBootstrapSecret: input.bootstrapSecret,
@@ -747,12 +747,19 @@ const resolveWslStartConfig = Effect.fn("desktop.backendConfiguration.resolveWsl
       "--exec",
       "env",
       `PATH=${launchPath}`,
-      ...(preflight.oniHome === null ? [] : [`ONICODE_HOME=${preflight.oniHome}`]),
+      // ONICODE_HOME counts as an explicit home, which keeps --dev off its dev/ state; the
+      // bootstrap home below does not. Packaged launches pass it on for agents' onicode CLI.
+      ...(preflight.oniHome === null || environment.isDevelopment
+        ? []
+        : [`ONICODE_HOME=${preflight.oniHome}`]),
       ...command,
       "--bootstrap-fd",
       "0",
       ...devArgs,
     ],
+    ...(preflight.oniHome === null
+      ? {}
+      : { bootstrap: { ...bootstrap, oniHome: preflight.oniHome } }),
     preflightFailure: Option.none(),
     ...(preflight.runtimeId === undefined
       ? {}
