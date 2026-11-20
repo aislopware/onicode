@@ -14,6 +14,7 @@ import {
   ScheduledTaskUpsertInput,
   ThreadId,
   type OrchestrationV2DomainEvent,
+  type OrchestrationV2Run,
 } from "@onicode/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
@@ -41,6 +42,7 @@ import * as McpProviderSessions from "@onicode/provider-core/server/McpProviderS
 import * as ProviderContinuationRequests from "@onicode/provider-core/server/ProviderContinuationRequests";
 import * as LegacyV1ThreadImporter from "./legacy/LegacyV1ThreadImporter.ts";
 import * as Orchestrator from "./Orchestrator.ts";
+import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
 import * as ThreadLaunchService from "./ThreadLaunchService.ts";
 import * as ThreadManagementService from "./ThreadManagementService.ts";
@@ -88,6 +90,10 @@ const batch = frame({
   },
 });
 
+// A CLI that echoes the prompt on its first frame is one that confirms each steer it reads.
+const echoingBatch = (prompt: SDKUserMessage) =>
+  frame({ ...(batch as object), user_message_uuids: [prompt.uuid] });
+
 const toolResult = (id: string, cancelled: boolean) =>
   frame({
     type: "user",
@@ -126,6 +132,65 @@ const result = (uuid: string, aborted: boolean) =>
     usage: { input_tokens: 1, output_tokens: 1 },
     modelUsage: {},
   });
+
+// A finished child whose result its parent run has claimed for `messageId`.
+const claimedChildResult = (input: {
+  readonly parent: OrchestrationV2Run;
+  readonly rootNodeId: NodeId;
+  readonly messageId: MessageId;
+  readonly taskId: NodeId;
+  readonly now: DateTime.Utc;
+}): ReadonlyArray<OrchestrationV2DomainEvent> => {
+  const { parent, rootNodeId, messageId, taskId, now } = input;
+  return [
+    {
+      id: EventId.make("cohort"),
+      type: "run.updated",
+      threadId: parent.threadId,
+      runId: parent.id,
+      occurredAt: now,
+      payload: {
+        ...parent,
+        delegatedCompletion: {
+          disposition: "open",
+          nextGeneration: 2,
+          delivery: { generation: 1, messageId, taskIds: [taskId] },
+        },
+      },
+    },
+    {
+      id: EventId.make("child"),
+      type: "subagent.updated",
+      threadId: parent.threadId,
+      runId: parent.id,
+      nodeId: taskId,
+      occurredAt: now,
+      payload: {
+        id: taskId,
+        threadId: parent.threadId,
+        runId: parent.id,
+        parentNodeId: rootNodeId,
+        origin: "app_owned",
+        createdBy: "agent",
+        driver: ClaudeAdapterV2.CLAUDE_PROVIDER,
+        providerInstanceId: modelSelection.instanceId,
+        providerThreadId: null,
+        childThreadId: null,
+        nativeTaskRef: null,
+        prompt: "Background work",
+        title: "Child",
+        model: null,
+        completionWake: "always",
+        completionDelivery: { state: "claimed", observedByRunId: null },
+        status: "completed",
+        result: "done",
+        startedAt: now,
+        completedAt: now,
+        updatedAt: now,
+      },
+    },
+  ];
+};
 
 const deliveries = [
   "child completion",
@@ -242,7 +307,10 @@ it.effect.each(deliveries)(
             event.type === "turn-item.updated" &&
             event.payload.nativeItemRef?.nativeId === "status-4",
         );
-        yield* Queue.offer(sdkMessages, batch);
+        yield* Queue.offer(
+          sdkMessages,
+          delivery === "child completion" ? echoingBatch(offers[0]!) : batch,
+        );
         yield* Fiber.join(pending);
         const before = yield* orchestrator.getThreadProjection(threadId);
         assert.equal(before.turnItems.filter((item) => item.status === "running").length, 5);
@@ -251,57 +319,14 @@ it.effect.each(deliveries)(
         const messageId = MessageId.make("automatic-notice");
         if (delivery === "child completion") {
           const taskId = NodeId.make("completed-child");
-          const now = yield* DateTime.now;
-          const sink = yield* EventSink.EventSinkV2;
-          yield* sink.write({
-            events: [
-              {
-                id: EventId.make("cohort"),
-                type: "run.updated",
-                threadId,
-                runId: parent.id,
-                occurredAt: now,
-                payload: {
-                  ...parent,
-                  delegatedCompletion: {
-                    disposition: "open",
-                    nextGeneration: 2,
-                    delivery: { generation: 1, messageId, taskIds: [taskId] },
-                  },
-                },
-              },
-              {
-                id: EventId.make("child"),
-                type: "subagent.updated",
-                threadId,
-                runId: parent.id,
-                nodeId: taskId,
-                occurredAt: now,
-                payload: {
-                  id: taskId,
-                  threadId,
-                  runId: parent.id,
-                  parentNodeId: parent.rootNodeId,
-                  origin: "app_owned",
-                  createdBy: "agent",
-                  driver: ClaudeAdapterV2.CLAUDE_PROVIDER,
-                  providerInstanceId: modelSelection.instanceId,
-                  providerThreadId: null,
-                  childThreadId: null,
-                  nativeTaskRef: null,
-                  prompt: "Background work",
-                  title: "Child",
-                  model: null,
-                  completionWake: "always",
-                  completionDelivery: { state: "claimed", observedByRunId: null },
-                  status: "completed",
-                  result: "done",
-                  startedAt: now,
-                  completedAt: now,
-                  updatedAt: now,
-                },
-              },
-            ],
+          yield* (yield* EventSink.EventSinkV2).write({
+            events: claimedChildResult({
+              parent,
+              rootNodeId: parent.rootNodeId,
+              messageId,
+              taskId,
+              now: yield* DateTime.now,
+            }),
           });
           const command = {
             type: "message.dispatch" as const,
@@ -411,10 +436,23 @@ it.effect.each(deliveries)(
           assert.equal(steer.inputIntent, "promoted_queued_to_steer");
         }
         yield* worker.drain();
-        const explicitSteer =
-          delivery === "user steering" || delivery === "promoted queued message";
+        const queuesBehindActiveTurn = delivery === "scheduled message";
         assert.equal(batchAbort.signal.aborted, false);
-        assert.equal(offers.length, explicitSteer ? 2 : 1);
+        assert.lengthOf(offers, queuesBehindActiveTurn ? 1 : 2);
+        if (!queuesBehindActiveTurn) assert.equal(offers[1]?.priority, "next");
+        // Claude has only queued the result; it is delivered once Claude says it read it.
+        const delivered =
+          delivery === "child completion"
+            ? yield* watch(
+                (event) =>
+                  event.type === "subagent.updated" &&
+                  event.payload.completionDelivery?.state === "delivered",
+              )
+            : null;
+        if (delivered !== null) {
+          const queuedInClaude = yield* orchestrator.getThreadProjection(threadId);
+          assert.equal(queuedInClaude.subagents[0]?.completionDelivery?.state, "claimed");
+        }
         const finished = yield* watch(
           (event) =>
             event.type === "run.updated" &&
@@ -424,12 +462,21 @@ it.effect.each(deliveries)(
         yield* Queue.offer(sdkMessages, toolResult("build", false));
         for (const id of statusIds)
           yield* Queue.offer(sdkMessages, toolResult(id, batchAbort.signal.aborted));
-        yield* Queue.offer(sdkMessages, result("completed", false));
+        yield* Queue.offer(
+          sdkMessages,
+          delivery === "child completion"
+            ? frame({
+                ...(result("completed", false) as object),
+                user_message_uuid: offers[1]!.uuid,
+              })
+            : result("completed", false),
+        );
         yield* Fiber.join(finished);
+        if (delivered !== null) yield* Fiber.join(delivered);
         yield* worker.drain();
         yield* orchestrator.resumeQueuedRuns;
         yield* worker.drain();
-        if (!explicitSteer) {
+        if (queuesBehindActiveTurn) {
           const queued = (yield* orchestrator.getThreadProjection(threadId)).runs[1]!;
           const noticeFinished = yield* watch(
             (event) =>
@@ -437,18 +484,9 @@ it.effect.each(deliveries)(
               event.payload.id === queued.id &&
               event.payload.status === "waiting",
           );
-          const delivered =
-            delivery === "child completion"
-              ? yield* watch(
-                  (event) =>
-                    event.type === "subagent.updated" &&
-                    event.payload.completionDelivery?.state === "delivered",
-                )
-              : null;
           yield* Queue.offer(sdkMessages, result("notice-completed", false));
           yield* Fiber.join(noticeFinished);
           yield* worker.drain();
-          if (delivered !== null) yield* Fiber.join(delivered);
         }
         const after = yield* orchestrator.getThreadProjection(threadId);
         const reads = after.turnItems.filter((item) =>
@@ -460,19 +498,23 @@ it.effect.each(deliveries)(
           assert.equal(read.toolNonExecutionKind, undefined);
           assert.equal(read.type === "dynamic_tool" && read.output === refusal, false);
         }
-        assert.equal(offers.length, 2);
+        assert.lengthOf(offers, 2);
         assert.equal(offers.filter((offer) => offer.priority === "now").length, 0);
-        if (!explicitSteer) {
-          assert.equal(after.runs.length, 2);
-          if (delivery === "child completion") {
-            assert.equal(after.messages.filter((message) => message.id === messageId).length, 1);
-            assert.equal(after.subagents[0]?.completionDelivery?.state, "delivered");
-          } else {
-            assert.equal(
-              after.messages.filter((message) => message.scheduledTaskId !== undefined).length,
-              1,
-            );
-          }
+        if (delivery === "child completion") {
+          assert.lengthOf(after.runs, 1);
+          assert.deepEqual(
+            after.messages
+              .filter((message) => message.id === messageId)
+              .map((message) => message.runId),
+            [parent.id],
+          );
+          assert.equal(after.subagents[0]?.completionDelivery?.state, "delivered");
+        } else if (queuesBehindActiveTurn) {
+          assert.lengthOf(after.runs, 2);
+          assert.equal(
+            after.messages.filter((message) => message.scheduledTaskId !== undefined).length,
+            1,
+          );
         }
         yield* orchestrator.recoverDelegatedTasks;
         yield* orchestrator.resumeQueuedRuns;
@@ -1083,6 +1125,29 @@ it.effect.each([
   "a later client steer names its stopped run",
   "a later restart lands before the run-end reaction",
   "a later client restart lands before the run-end reaction",
+  // Notices the app steers in itself. Claude queues them like any steer, so one it never read
+  // is queued again, and nobody is told to resend text they did not write.
+  "Claude cancels a child result",
+  "the Claude process exits with a child result unread",
+  "the user stops with a child result unread",
+  "Claude cancels a task question",
+  "the user stops with a task question unread",
+  // Until Claude echoes a prompt uuid it could not say it read a notice, so it is handed none.
+  "a child result arrives before Claude echoes a prompt",
+  // Stop lands first, so the question Claude then hands back must not start a turn.
+  "the user stops before Claude echoes, with a task question planned",
+  // Claude's read and the accept that read starts commit apart, so the accept can be lost.
+  "Claude read a child result whose accept was lost before the run ended",
+  "Claude read a child result whose accept was lost before a restart",
+  // Anything that offers results finds the read one first, as startup's task pass does.
+  "Claude read a child result whose accept was lost before a wake policy change",
+  // Planned for Claude and not yet handed over when the server stops.
+  "the server restarts before a child result is offered",
+  "the server restarts before a task question is offered",
+  "the server restarts before a task question is offered, and the first requeue fails",
+  // A notice steered in after the user's steer is queued again behind it.
+  "the server restarts with a steer and a later task question unread",
+  "the server restarts with two task questions unread",
 ] as const)("handles an unread steer when %s", (outcome) =>
   Effect.gen(function* () {
     const cwd = yield* checkpointWorkspace("claude-unread-steer");
@@ -1090,6 +1155,7 @@ it.effect.each([
     const activeRunReadEntered = yield* Deferred.make<void>();
     const activeRunReadRelease = yield* Deferred.make<void>();
     let activeRunReads: number | undefined;
+    let failNoticeRead = false;
     const offers: SDKUserMessage[] = [];
     const adapter = yield* ClaudeAdapterV2.makeClaudeAdapterV2({
       instanceId: modelSelection.instanceId,
@@ -1235,6 +1301,357 @@ it.effect.each([
       yield* worker.drain();
       yield* Fiber.join(running);
       const parent = (yield* orchestrator.getThreadProjection(threadId)).runs[0]!;
+      if (outcome.includes("child result") || outcome.includes("task question")) {
+        const question = outcome.includes("task question");
+        const noticeId = MessageId.make("notice");
+        const sink = yield* EventSink.EventSinkV2;
+        const echoes = !outcome.includes("before Claude echoes");
+        if (echoes) {
+          const echoed = yield* watch(
+            (event) =>
+              event.type === "turn-item.updated" &&
+              event.payload.nativeItemRef?.nativeId === "status-4",
+          );
+          yield* Queue.offer(sdkMessages, echoingBatch(offers[0]!));
+          yield* Fiber.join(echoed);
+        }
+        if (!question) {
+          if (parent.rootNodeId === null) return yield* Effect.die("parent has no root node");
+          yield* sink.write({
+            events: claimedChildResult({
+              parent,
+              rootNodeId: parent.rootNodeId,
+              messageId: noticeId,
+              taskId: NodeId.make("completed-child"),
+              now: yield* DateTime.now,
+            }),
+          });
+        }
+        const noticeItem = (status: "pending" | "cancelled") =>
+          watch(
+            (event) =>
+              event.type === "turn-item.updated" &&
+              event.payload.type === "notification" &&
+              event.payload.status === status,
+          );
+        const noticeRun = (
+          type: "run.created" | "run.updated",
+          matches: (run: OrchestrationV2Run) => boolean,
+        ) =>
+          watch(
+            (event) =>
+              (event.type === "run.created" || event.type === "run.updated") &&
+              event.type === type &&
+              event.payload.userMessageId === noticeId &&
+              matches(event.payload),
+          );
+        const task = Effect.map(
+          orchestrator.getThreadProjection(threadId),
+          (projection) => projection.subagents[0]?.completionDelivery?.state,
+        );
+        const notice = Effect.map(orchestrator.getThreadProjection(threadId), (projection) =>
+          projection.turnItems.find((item) => item.type === "notification"),
+        );
+        const noticeRuns = Effect.map(orchestrator.getThreadProjection(threadId), (projection) =>
+          projection.runs.filter((run) => run.userMessageId === noticeId),
+        );
+        // A restart that finds the turn over: recovery cancels the run it cut short, then
+        // looks for what that run left unread or unaccepted.
+        const cut = Effect.gen(function* () {
+          const live = yield* orchestrator.getThreadProjection(threadId);
+          const now = yield* DateTime.now;
+          yield* sink.write({
+            commandId: CommandId.make("command:runtime-reconcile:startup:unread-notice"),
+            events: [
+              ...live.providerTurns.map((turn, index) => ({
+                id: EventId.make(`recovered-turn-${index}`),
+                type: "provider-turn.updated" as const,
+                threadId,
+                occurredAt: now,
+                payload: { ...turn, status: "completed" as const, completedAt: now },
+              })),
+              ...live.runs.map((run, index) => ({
+                id: EventId.make(`recovered-run-${index}`),
+                type: "run.updated" as const,
+                threadId,
+                runId: run.id,
+                occurredAt: now,
+                payload: { ...run, status: "cancelled" as const, completedAt: now },
+              })),
+            ],
+          });
+        });
+        const restart = Effect.andThen(cut, orchestrator.recoverDelegatedTasks);
+        const afterSteer = outcome.includes("a steer and a later");
+        if (afterSteer) {
+          const unreadSteer = yield* pending();
+          yield* send("steer", { type: "steer_active", targetRunId: parent.id });
+          yield* worker.drain();
+          yield* Fiber.join(unreadSteer);
+        }
+        const unread = yield* noticeItem("pending");
+        const sendNotice = (messageId: MessageId, askingTask: string) =>
+          orchestrator.dispatch({
+            type: "message.dispatch",
+            commandId: CommandId.make(messageId),
+            threadId,
+            messageId,
+            text: "Child notice.",
+            attachments: [],
+            dispatchMode: { type: "queue_after_active" },
+            createdBy: "agent",
+            creationSource: "server",
+            ...(question
+              ? {
+                  notification: {
+                    source: {
+                      kind: "delegated_task" as const,
+                      taskIds: [NodeId.make(askingTask)],
+                    },
+                    outcome: "updated" as const,
+                    summary: "Delegated task has a question",
+                  },
+                }
+              : {
+                  delegatedCompletion: {
+                    parentRunId: parent.id,
+                    generation: 1,
+                    taskIds: [NodeId.make("completed-child")],
+                  },
+                }),
+          });
+        yield* sendNotice(noticeId, "asking-child");
+        if (outcome.includes("two task questions")) {
+          const laterId = MessageId.make("later-notice");
+          yield* sendNotice(laterId, "later-asking-child");
+          // Neither was handed over. Queued again, they keep the order they were steered in.
+          yield* restart;
+          assert.deepEqual(yield* queuedOrder, [
+            [noticeId, true],
+            [laterId, true],
+          ]);
+          return;
+        }
+        if (outcome.startsWith("the server restarts before")) {
+          // Nobody has read a notice the worker has not handed over yet.
+          assert.equal((yield* notice)?.status, "pending");
+          failNoticeRead = outcome.endsWith("the first requeue fails");
+          yield* restart;
+          if (outcome.endsWith("the first requeue fails")) {
+            // A requeue that fails is not remembered as refused: the next pass sends it again.
+            assert.isFalse(failNoticeRead);
+            assert.deepEqual(yield* queuedOrder, []);
+            yield* orchestrator.recoverDelegatedTasks;
+          }
+          assert.deepEqual(yield* queuedOrder, [[noticeId, true]]);
+          // The planned steer can still run, late, and finds its turn over. The notice
+          // already has its run, so it is not queued a second time.
+          yield* worker.drain();
+          assert.lengthOf(yield* noticeRuns, 1);
+          if (!question) assert.equal(yield* task, "claimed");
+          assert.lengthOf(offers, 1);
+          return;
+        }
+        const stopsFirst = outcome.startsWith("the user stops before");
+        if (stopsFirst) {
+          yield* orchestrator.dispatch({
+            type: "run.interrupt",
+            commandId: CommandId.make("stop"),
+            threadId,
+            runId: parent.id,
+            holdQueue: true,
+          });
+        }
+        yield* worker.drain();
+        if (!echoes) {
+          // Claude was never handed the notice, which waits for the next turn instead: held
+          // when Stop had already landed, as Stop holds everything queued before it.
+          assert.lengthOf(offers, 1);
+          assert.deepEqual(yield* queuedOrder, [[noticeId, stopsFirst]]);
+          if (!question) assert.equal(yield* task, "claimed");
+          return;
+        }
+        if (afterSteer) {
+          // Claude was handed both and read neither. Both are queued again from the same
+          // place, and the notice, steered in second, waits behind the steer.
+          assert.deepEqual(
+            offers.map((offer) => offer.priority),
+            [undefined, "next", "next"],
+          );
+          yield* restart;
+          assert.deepEqual(yield* queuedOrder, [
+            [steerId, true],
+            [noticeId, true],
+          ]);
+          return;
+        }
+        assert.deepEqual(
+          offers.map((offer) => offer.priority),
+          [undefined, "next"],
+        );
+        // Claude has only queued the result, so nothing counts it as delivered yet.
+        if (!question) assert.equal(yield* task, "claimed");
+        yield* Fiber.join(unread);
+        const reported = Effect.map(orchestrator.getThreadProjection(threadId), (projection) =>
+          projection.turnItems.flatMap((item) =>
+            item.type === "system_notice" ? [item.title] : [],
+          ),
+        );
+
+        if (outcome.startsWith("Claude cancels")) {
+          const ended = yield* settled(parent.id, "waiting");
+          const restarted = yield* noticeRun("run.updated", (run) => run.status === "starting");
+          const rerunning = yield* watch(
+            (event) =>
+              event.type === "provider-turn.updated" &&
+              event.payload.status === "running" &&
+              event.payload.runAttemptId !== parent.activeAttemptId,
+          );
+          yield* Queue.offer(sdkMessages, toolResult("build", false));
+          for (const id of statusIds) yield* Queue.offer(sdkMessages, toolResult(id, false));
+          yield* answer(offers[0]!);
+          yield* cancel(offers[1]!);
+          yield* Fiber.join(ended);
+          yield* worker.drain();
+          yield* Fiber.join(restarted);
+          yield* worker.drain();
+          yield* Fiber.join(rerunning);
+          // One commit closes the unread notice and queues it again, so no crash parts them.
+          const requeue = yield* sink
+            .readByCommandId({
+              commandId: CommandId.make(`command:unread-steer:${parent.id}:${noticeId}`),
+            })
+            .pipe(Stream.runCollect);
+          assert.isTrue(
+            Array.from(requeue).some(
+              ({ event }) =>
+                event.type === "turn-item.updated" &&
+                event.payload.type === "notification" &&
+                event.payload.status === "cancelled",
+            ),
+          );
+          // It reaches Claude again as the next turn's prompt, still undelivered until then.
+          assert.deepEqual(
+            offers.map((offer) => offer.priority),
+            [undefined, "next", undefined],
+          );
+          assert.notInclude(yield* reported, "Steer delivery not confirmed");
+          if (question) {
+            assert.include(offeredText(offers[2]), "Child notice.");
+            return;
+          }
+          assert.equal(yield* task, "claimed");
+          const delivered = yield* watch(
+            (event) =>
+              event.type === "subagent.updated" &&
+              event.payload.completionDelivery?.state === "delivered",
+          );
+          const reran = yield* noticeRun("run.updated", (run) => run.status === "waiting");
+          yield* answer(offers[2]!);
+          yield* Fiber.join(reran);
+          yield* worker.drain();
+          yield* Fiber.join(delivered);
+          return;
+        }
+
+        if (outcome.includes("accept was lost")) {
+          // The adapter's events arrive in order, so its own pending mark is in before this one.
+          const built = yield* watch(
+            (event) =>
+              event.type === "turn-item.updated" &&
+              event.payload.nativeItemRef?.nativeId === "build" &&
+              event.payload.status === "completed",
+          );
+          yield* Queue.offer(sdkMessages, toolResult("build", false));
+          yield* Fiber.join(built);
+          const read = yield* notice;
+          if (read === undefined) return yield* Effect.die("the notice has no item");
+          const now = yield* DateTime.now;
+          // Claude's read is committed without the accept it starts: only the provider's own
+          // event starts one, and this write names no driver.
+          yield* sink.write({
+            events: [
+              {
+                id: EventId.make("read"),
+                type: "turn-item.updated",
+                threadId,
+                occurredAt: now,
+                payload: { ...read, status: "completed", completedAt: now, updatedAt: now },
+              },
+            ],
+          });
+          if (outcome.endsWith("a restart")) {
+            yield* restart;
+          } else if (outcome.endsWith("a wake policy change")) {
+            // The run is over and nothing has accepted the read yet when a command offers the
+            // thread's results, as startup does for each finished task before its own accept.
+            yield* cut;
+            yield* orchestrator.dispatch({
+              type: "delegated_task.wake-policy",
+              commandId: CommandId.make("wake-policy"),
+              parentThreadId: threadId,
+              taskId: NodeId.make("completed-child"),
+              completionWake: "settled_only",
+            });
+          } else {
+            // A run's end starts the queue last, so the next run starts after the accept.
+            const ended = yield* settled(parent.id, "waiting");
+            const next = yield* watch(
+              (event) =>
+                event.type === "run.updated" &&
+                event.payload.userMessageId === MessageId.make("before") &&
+                event.payload.status === "starting",
+            );
+            yield* send("before", { type: "queue_after_active" });
+            for (const id of statusIds) yield* Queue.offer(sdkMessages, toolResult(id, false));
+            yield* answer(offers[1]!);
+            yield* Fiber.join(ended);
+            yield* worker.drain();
+            yield* Fiber.join(next);
+          }
+          // The result Claude read is delivered, and nothing offers it again, as a turn of
+          // its own or as a second steer. A result's text is written from its tasks.
+          assert.equal(yield* task, "delivered");
+          assert.lengthOf(yield* noticeRuns, 0);
+          assert.lengthOf(
+            offers.filter((offer) => offer.priority === "next"),
+            1,
+          );
+          return;
+        }
+
+        if (outcome.startsWith("the Claude process exits")) {
+          const held = yield* noticeRun("run.updated", (run) => run.queueHeld === true);
+          yield* Queue.shutdown(sdkMessages);
+          yield* Fiber.join(held);
+          yield* worker.drain();
+          // The provider failure holds the queue, as it does for a steer the user sent.
+          assert.deepEqual(yield* queuedOrder, [[noticeId, true]]);
+          assert.equal(yield* task, "claimed");
+          assert.lengthOf(offers, 2);
+          return;
+        }
+
+        // Stop drops the stopped run's child results, read or not. A question stays the child's
+        // to have answered, so it waits in the held queue.
+        const dropped = yield* question
+          ? noticeRun("run.created", (run) => run.status === "queued")
+          : noticeItem("cancelled");
+        yield* orchestrator.dispatch({
+          type: "run.interrupt",
+          commandId: CommandId.make("stop"),
+          threadId,
+          runId: parent.id,
+          holdQueue: true,
+        });
+        yield* worker.drain();
+        yield* Fiber.join(dropped);
+        assert.deepEqual(yield* queuedOrder, question ? [[noticeId, true]] : []);
+        if (!question) assert.equal(yield* task, "disposed");
+        assert.notInclude(yield* reported, "Steer delivery not confirmed");
+        assert.lengthOf(offers, 2);
+        return;
+      }
       yield* send("before", { type: "queue_after_active" });
       const unread = yield* pending();
       yield* send("steer", { type: "steer_active", targetRunId: parent.id });
@@ -1475,6 +1892,21 @@ it.effect.each([
               ...store,
               getThreadRecords: ((threadId, fields, options) => {
                 const read = store.getThreadRecords(threadId, fields, options);
+                // The read a requeued notice's dispatch makes of the run it was steered into.
+                const noticeRead =
+                  fields.length === 1 &&
+                  fields[0] === "turnItems" &&
+                  options?.turnItemTypes?.join() === "notification" &&
+                  options.turnItemStatuses?.includes("cancelled") === true;
+                if (noticeRead) {
+                  return Effect.suspend(() => {
+                    if (!failNoticeRead) return read;
+                    failNoticeRead = false;
+                    return Effect.fail(
+                      new ProjectionStore.ProjectionStoreReadError({ threadId, cause: "injected" }),
+                    );
+                  });
+                }
                 const activeRunRead =
                   fields.length === 1 && fields[0] === "runs" && options?.runStatuses?.length === 4;
                 if (!activeRunRead) return read;

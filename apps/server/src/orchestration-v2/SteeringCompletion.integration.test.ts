@@ -16,6 +16,7 @@ import {
   ProviderThreadId,
   ProviderTurnId,
   PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
+  RuntimeRequestId,
   ScheduledTaskId,
   ThreadId,
   TurnItemId,
@@ -525,6 +526,8 @@ const nextTurnSelectionHarness = Effect.fn("nextTurnSelectionHarness")(function*
   ) => Effect.Effect<void, ProviderAdapter.ProviderAdapterV2Error> = () => Effect.void,
   extraAdapters: ReadonlyArray<ProviderAdapter.ProviderAdapterV2["Service"]> = [],
   steersDuringCompaction = true,
+  // Runs after each read of a steer's target, which the worker makes while it prepares the offer.
+  afterSteerTargetRead: () => Effect.Effect<void> = () => Effect.void,
 ) {
   const driver = ProviderDriverKind.make(nativeGoals === undefined ? "codex" : "opencode");
   const cwd = yield* checkpointWorkspace(name);
@@ -671,7 +674,16 @@ const nextTurnSelectionHarness = Effect.fn("nextTurnSelectionHarness")(function*
   const layer = ProviderReplayHarness.layerWithRegistry(
     { name },
     ProviderAdapterRegistry.layerFromAdapters([adapter, ...extraAdapters]),
-    { runEffectWorker: false },
+    {
+      runEffectWorker: false,
+      wrapProjectionStore: (store) => ({
+        ...store,
+        getProviderControlContext: (threadId, target) =>
+          store
+            .getProviderControlContext(threadId, target)
+            .pipe(Effect.tap(() => Effect.suspend(afterSteerTargetRead))),
+      }),
+    },
   );
   const startFirstTurn = Effect.gen(function* () {
     const orchestrator = yield* Orchestrator.OrchestratorV2;
@@ -783,13 +795,28 @@ const writeCompaction = Effect.fn("writeCompaction")(function* (
 
 it.effect.each([
   { notice: "delegated task question", goal: null, compacting: false, steers: true },
-  { notice: "delegated task question", goal: null, compacting: true, steers: true },
+  // A steer would abort the compaction, so the question waits for the turn to end.
+  { notice: "delegated task question", goal: null, compacting: true, steers: false },
+  // Answered after the steer was planned and before it was sent: the provider never gets it.
+  { notice: "answered delegated task question", goal: null, compacting: false, steers: false },
+  // The same once the worker has begun: the answer commits while it prepares the offer.
+  {
+    notice: "delegated task question answered during the offer",
+    goal: null,
+    compacting: false,
+    steers: false,
+  },
   { notice: "background command", goal: "active", compacting: false, steers: true },
+  { notice: "background command", goal: "active", compacting: true, steers: true },
   { notice: "background command", goal: null, compacting: false, steers: false },
 ] as const)(
   "a $notice notice steers into the running turn: $steers (goal $goal, compacting $compacting)",
   ({ notice, goal, compacting, steers }) =>
     Effect.gen(function* () {
+      const answeredDuringOffer = notice === "delegated task question answered during the offer";
+      const answered = answeredDuringOffer || notice === "answered delegated task question";
+      let steerTargetReads = 0;
+      let answerDuringOffer: Effect.Effect<void> = Effect.void;
       const { started, steered, layer, startFirstTurn } = yield* nextTurnSelectionHarness(
         `notice-steer-${notice.replaceAll(" ", "-")}-${goal ?? "none"}-${compacting}`,
         false,
@@ -800,6 +827,9 @@ it.effect.each([
         undefined,
         [],
         !compacting,
+        // The steer reads its target on entry and again to load the session; the second read
+        // is past anything checked on entry.
+        () => (++steerTargetReads === 2 ? answerDuringOffer : Effect.void),
       );
       yield* Effect.gen(function* () {
         const orchestrator = yield* Orchestrator.OrchestratorV2;
@@ -834,14 +864,60 @@ it.effect.each([
             ],
           });
         }
-        const messageId = MessageId.make("message:notice");
+        const childThreadId = ThreadId.make("thread:question-child");
+        const requestId = RuntimeRequestId.make("request:question");
+        const writeQuestion = Effect.fnUntraced(function* (status: "pending" | "resolved") {
+          const now = yield* DateTime.now;
+          yield* (yield* EventSink.EventSinkV2).write({
+            events: [
+              {
+                id: EventId.make(`event:question-${status}`),
+                type: "runtime-request.updated",
+                threadId: childThreadId,
+                occurredAt: now,
+                payload: {
+                  id: requestId,
+                  nodeId: NodeId.make("node:question"),
+                  providerTurnId: null,
+                  nativeRequestRef: null,
+                  kind: "user_input",
+                  status,
+                  responseCapability: { type: "message" },
+                  createdAt: now,
+                  resolvedAt: status === "pending" ? null : now,
+                },
+              },
+            ],
+          });
+        });
+        if (answered) {
+          yield* orchestrator.dispatch({
+            type: "thread.create",
+            commandId: CommandId.make("create-question-child"),
+            threadId: childThreadId,
+            projectId: ProjectId.make("project:question-child"),
+            title: "Asking child",
+            modelSelection: runSelection,
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            branch: null,
+            worktreePath: null,
+            createdBy: "user",
+            creationSource: "web",
+          });
+          yield* writeQuestion("pending");
+        }
+        // The reactor's wake id names the question it asks about.
+        const messageId = MessageId.make(
+          answered ? `message:delegated-task-question:${threadId}:${requestId}` : "message:notice",
+        );
         const notification =
-          notice === "delegated task question"
+          notice !== "background command"
             ? {
                 source: {
                   kind: "delegated_task" as const,
                   taskIds: [NodeId.make("task:question")],
-                  childThreadId: ThreadId.make("thread:question-child"),
+                  childThreadId,
                 },
                 outcome: "updated" as const,
                 summary: "Delegated task has a question",
@@ -863,6 +939,13 @@ it.effect.each([
           createdBy: "agent",
           creationSource: "server",
         });
+        if (answeredDuringOffer) {
+          steerTargetReads = 0;
+          answerDuringOffer = writeQuestion("resolved").pipe(
+            Effect.provideService(EventSink.EventSinkV2, yield* EventSink.EventSinkV2),
+            Effect.orDie,
+          );
+        } else if (answered) yield* writeQuestion("resolved");
         yield* worker.drain();
         const after = yield* orchestrator.getThreadProjection(threadId);
         assert.deepEqual(
@@ -872,11 +955,11 @@ it.effect.each([
         assert.lengthOf(started, 1);
         assert.equal(
           after.runs.some((run) => run.status === "queued"),
-          !steers,
+          !steers && !answered,
         );
         const message = after.messages.find((candidate) => candidate.id === messageId);
         assert.deepEqual(message?.notification, notification);
-        if (steers) assert.equal(message?.runId, started[0]?.runId);
+        if (steers || answered) assert.equal(message?.runId, started[0]?.runId);
         assert.deepEqual(after.thread.modelSelection, composerSelection);
       }).pipe(Effect.provide(layer));
     }),

@@ -337,9 +337,11 @@ export const layerExecutor: Layer.Layer<
                   : { modelSelection: effect.request.modelSelection }),
               })
               .pipe(
-                Effect.tap(() =>
+                Effect.tap((steered) =>
                   Effect.gen(function* () {
                     if (effect.request.type !== "provider-turn.steer") return;
+                    // A steer the provider only queued is accepted once the agent reads it.
+                    if (steered !== undefined && steered.awaitsRead) return;
                     const messageId = effect.request.messageId;
                     const projection = yield* threads.getThreadRecords(
                       effect.threadId,
@@ -365,15 +367,25 @@ export const layerExecutor: Layer.Layer<
                     ) {
                       return yield* error;
                     }
+                    const { messageId, providerTurnId } = effect.request;
                     const projection = yield* threads.getThreadRecords(
                       effect.threadId,
-                      ["messages", "runs"],
-                      { messageIds: [effect.request.messageId] },
+                      ["messages", "runs", "attempts", "providerTurns"],
+                      { messageIds: [messageId], providerTurnIds: [providerTurnId] },
                     );
-                    const messageId = effect.request.messageId;
                     const message = projection.messages.find((item) => item.id === messageId);
-                    const run = projection.runs.find((item) => item.id === message?.runId);
+                    // The run this effect steered, which the message may have left since.
+                    const turn = projection.providerTurns.find(
+                      (item) => item.id === providerTurnId,
+                    );
+                    const attempt = projection.attempts.find(
+                      (item) => item.id === turn?.runAttemptId,
+                    );
+                    const run = projection.runs.find((item) => item.id === attempt?.runId);
                     if (message === undefined || run === undefined) return yield* error;
+                    // The steered run's requeue already moved the message, into a run of its own
+                    // or another run's turn, and whatever holds it now delivers it.
+                    if (message.runId !== run.id) return;
                     const automatic =
                       message.delegatedCompletion !== undefined ||
                       message.notification !== undefined;
@@ -382,6 +394,9 @@ export const layerExecutor: Layer.Layer<
                     // Notifications must be queued messages.
                     const queued =
                       automatic || error.steerDeclined === true || error.turnAbandoned === true;
+                    // A follow-up that names its run is skipped once that run's requeue has
+                    // moved the message, so an unread notice is not queued twice.
+                    const followsRun = error.steerDeclined === true || automatic;
                     // Reuse message ids and receipts so retries cannot duplicate messages or follow-ups.
                     yield* threads
                       .dispatch({
@@ -389,8 +404,9 @@ export const layerExecutor: Layer.Layer<
                         commandId: CommandId.make(`command:steer-follow-up:${effect.id}`),
                         threadId: effect.threadId,
                         messageId: message.id,
-                        ...(error.steerDeclined ? { steerFollowUpOfRunId: run.id } : {}),
-                        ...(error.steerDeclined || automatic ? {} : { steerMissedRunId: run.id }),
+                        ...(followsRun
+                          ? { steerFollowUpOfRunId: run.id }
+                          : { steerMissedRunId: run.id }),
                         ...(error.steerDeclined &&
                         effect.request.steerFollowUpAfterRunOrdinal !== undefined
                           ? {

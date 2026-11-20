@@ -4684,6 +4684,87 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     ),
   );
 
+  it.effect("moves a foreground subagent to the background for the user's steer only", () =>
+    Effect.gen(function* () {
+      const idAllocator = yield* IdAllocator.IdAllocatorV2;
+      const moved: string[] = [];
+      const harness = yield* makeWakeHarnessWithOptions({
+        backgroundTasks: (toolUseId) =>
+          Effect.sync(() => {
+            moved.push(toolUseId);
+            return true;
+          }),
+      });
+      const input = makeClaudeTestTurnInput({
+        threadId: harness.threadId,
+        providerThread: harness.providerThread,
+        now: yield* DateTime.now,
+        attemptId: RunAttemptId.make("steer-foreground-subagent"),
+        text: "Audit with a subagent.",
+        attachments: [],
+      });
+      yield* harness.runtime.startTurn(input);
+      // Claude takes a notice only from a CLI that has echoed a prompt uuid.
+      yield* harness.offerAndWait(
+        claudeSdkFrame({
+          ...makeAssistantTextFrame({
+            uuid: "00000000-0000-4000-8000-000000039527",
+            text: "Auditing.",
+          }),
+          user_message_uuids: [harness.promptUuid(0)],
+        }),
+      );
+      yield* harness.offerAndWait(
+        claudeSdkFrame({
+          type: "system",
+          subtype: "task_started",
+          task_id: "steer-foreground-task",
+          tool_use_id: "steer-foreground-tool",
+          description: "Audit",
+          subagent_type: "general-purpose",
+          is_backgrounded: false,
+          task_type: "local_agent",
+          prompt: "Audit.",
+          uuid: "00000000-0000-4000-8000-000000039528",
+          session_id: WAKE_NATIVE_SESSION,
+        }),
+      );
+      const steer = (createdBy: "agent" | "user") =>
+        harness.runtime.steerTurn({
+          threadId: harness.threadId,
+          runId: input.runId,
+          providerThread: harness.providerThread,
+          providerTurnId: idAllocator.derive.providerTurn({
+            driver: ClaudeAdapterV2.CLAUDE_PROVIDER,
+            nativeTurnId: `turn:${input.attemptId}`,
+          }),
+          message: {
+            createdBy,
+            creationSource: createdBy === "agent" ? "server" : "web",
+            messageId: MessageId.make(`steer-foreground-${createdBy}`),
+            text: "A delegated task finished.",
+            attachments: [],
+          },
+          ...(createdBy === "agent" ? { notice: true } : {}),
+        });
+      // A notice waits for the subagent the turn is running; it does not cut that work loose.
+      yield* steer("agent");
+      assert.deepEqual(moved, []);
+      yield* steer("user");
+      assert.deepEqual(moved, ["steer-foreground-tool"]);
+      assert.lengthOf(harness.offeredMessages, 3);
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          IdAllocator.layer,
+          McpProviderSessions.layer,
+          NodeServices.layer,
+          NodeCrypto.layer,
+        ),
+      ),
+    ),
+  );
+
   it.effect.each(["release-after", "cancel-after", "release-before", "resume-pending"] as const)(
     "keeps attachment reservations across compaction: %s boundary",
     (outcome) =>
@@ -6153,19 +6234,54 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     {
       readBy: "none",
       echoes: true,
+      sender: "user",
+      endsBy: "stop",
       title: "warns that a steer Claude never read before Stop was not delivered",
     },
     {
       readBy: "none",
       echoes: false,
+      sender: "user",
+      endsBy: "stop",
       title: "does not warn about a steer on a CLI that never echoes prompt uuids",
     },
     {
       readBy: "assistant",
       echoes: true,
+      sender: "user",
+      endsBy: "stop",
       title: "does not warn about a steer Claude read before Stop",
     },
-  ] as const)("$title", ({ readBy, echoes }) =>
+    {
+      readBy: "none",
+      echoes: true,
+      sender: "notice",
+      endsBy: "stop",
+      title: "does not warn about a notice Claude never read before Stop",
+    },
+    {
+      readBy: "none",
+      echoes: false,
+      sender: "notice",
+      endsBy: "stop",
+      title: "declines a notice on a CLI that has not echoed a prompt uuid",
+    },
+    {
+      readBy: "none",
+      echoes: true,
+      sender: "notice",
+      endsBy: "result",
+      title: "leaves a notice unread when the turn's result names no prompt",
+    },
+    // Another agent's own message is a steer like the user's: only the app's notices wait.
+    {
+      readBy: "none",
+      echoes: false,
+      sender: "agent",
+      endsBy: "stop",
+      title: "takes another agent's steer on a CLI that has not echoed a prompt uuid",
+    },
+  ] as const)("$title", ({ readBy, echoes, sender, endsBy }) =>
     Effect.gen(function* () {
       const harness = yield* makeWakeHarnessWithOptions({
         close: (sdkMessages) => Queue.shutdown(sdkMessages),
@@ -6223,21 +6339,46 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         }),
       );
       const steerText = "Codeword: PELICAN. Remember it, I will ask for it later.";
-      yield* harness.runtime.steerTurn({
+      const steer = harness.runtime.steerTurn({
         threadId: harness.threadId,
         runId: firstInput.runId,
         providerThread: harness.providerThread,
         providerTurnId,
         message: {
-          createdBy: "user",
-          creationSource: "web",
+          createdBy: sender === "user" ? "user" : "agent",
+          creationSource: sender === "user" ? "web" : sender === "agent" ? "mcp" : "server",
           messageId: MessageId.make("unread-steer"),
           text: steerText,
           attachments: [],
         },
+        ...(sender === "notice" ? { notice: true } : {}),
       });
+      const steerStatuses = () =>
+        harness.events.flatMap((event) => (event.type === "steer.updated" ? [event.status] : []));
+      if (sender === "notice" && !echoes) {
+        // This CLI could not say later whether Claude read the notice, so it is never handed
+        // over: the orchestrator sends it as the next turn instead.
+        assert.equal((yield* Effect.flip(steer))._tag, "ProviderAdapterSteerDeclinedError");
+        assert.lengthOf(harness.offeredMessages, 1);
+        assert.deepEqual(steerStatuses(), []);
+        return;
+      }
+      const steered = yield* steer;
+      // Only a CLI that echoes prompt uuids says later whether Claude read the steer.
+      assert.deepEqual(steered, echoes ? { awaitsRead: true } : undefined);
       const steerUuid = harness.offeredMessages.at(-1)?.uuid;
       assert.isDefined(steerUuid);
+      if (endsBy === "result") {
+        // Only Claude's echo or start of the notice says it was read; a result that names no
+        // prompt leaves it pending, for the orchestrator to queue again.
+        yield* harness.offerAndWait(
+          makeResultFrame({ uuid: "00000000-0000-4000-8000-000000015704", result: "Done." }),
+        );
+        yield* harness.awaitTerminal(1);
+        assert.equal(harness.terminalEvents()[0]?.status, "completed");
+        assert.deepEqual(steerStatuses(), ["pending"]);
+        return;
+      }
       if (readBy === "assistant") {
         yield* harness.offerAndWait(
           claudeSdkFrame({
@@ -6273,6 +6414,13 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       const undelivered = notices.find((message) =>
         /not (have )?(been )?delivered|never (reached|delivered)/i.test(message ?? ""),
       );
+      if (sender === "notice") {
+        // Nobody wrote the notice, so nobody is asked to resend it: it stays pending and the
+        // orchestrator queues it again.
+        assert.isUndefined(undelivered);
+        assert.deepEqual(steerStatuses(), ["pending"]);
+        return;
+      }
       if (readBy !== "none" || !echoes) {
         assert.isUndefined(undelivered);
         return;

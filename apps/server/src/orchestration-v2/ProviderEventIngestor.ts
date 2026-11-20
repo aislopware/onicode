@@ -640,8 +640,9 @@ export const layer: Layer.Layer<
                 threadId: input.event.threadId,
                 itemId: idAllocator.derive.userTurnItem({ messageId: input.event.messageId }),
               });
+              // A notice steered into the turn keeps its message's item id.
               if (
-                item?.type !== "user_message" ||
+                (item?.type !== "user_message" && item?.type !== "notification") ||
                 item.status === input.event.status ||
                 (item.status !== "pending" && item.status !== "completed")
               ) {

@@ -122,6 +122,10 @@ If Claude exits or the server restarts first, the message waits in the queue in 
 same place until you resume it. If you press Stop, Onicode shows a notice with the text
 of any steer Claude had not read.
 
+Results and questions from delegated tasks reach Claude the same way and never appear in
+that notice. A question Claude had not read is queued again. A task result Claude had not
+read is queued again too, unless you press Stop, which discards it.
+
 ## Skills
 
 Claude skills come from the config directory's `skills` folder and the project's

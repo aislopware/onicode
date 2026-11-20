@@ -477,6 +477,17 @@ it.effect("recovery closes a secret card but leaves a link card and an unread st
         inputIntent: "steer",
         messageId: "message:steer:recovery",
       },
+      {
+        id: "turn-item:notice:recovery",
+        threadId,
+        runId,
+        nodeId: null,
+        type: "notification",
+        status: "pending",
+        source: { kind: "delegated_task", taskIds: [] },
+        outcome: "updated",
+        summary: "Delegated task has a question",
+      },
     ],
   } as unknown as OrchestrationV2ThreadProjection;
   const layer = ProviderRuntimeRecovery.layer.pipe(
@@ -514,9 +525,14 @@ it.effect("recovery closes a secret card but leaves a link card and an unread st
     assert.equal(secret?.status, "cancelled");
     assert.equal(secret?.type === "secret_request" ? secret.secretStatus : null, "cancelled");
     // Nothing in memory waits on a link card; the user can still answer it.
-    // Claude never reported reading the steer, so the orchestrator queues it.
+    // Claude never reported reading the steer or the notice, so the orchestrator queues them.
     assert.deepEqual(
-      cards.filter((card) => card.type === "link_request" || card.type === "user_message"),
+      cards.filter(
+        (card) =>
+          card.type === "link_request" ||
+          card.type === "user_message" ||
+          card.type === "notification",
+      ),
       [],
     );
   }).pipe(Effect.provide(layer));

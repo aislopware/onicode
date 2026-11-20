@@ -600,6 +600,8 @@ export interface ProviderAdapterV2SteerInput {
   readonly modelSelection?: ModelSelection;
   /** The thread's MCP app notes; the adapter sends those the agent has not seen yet. */
   readonly appContext?: ProviderAdapterV2TurnInput["appContext"];
+  /** The app steered this in itself: a task result, a task question or a goal notice. */
+  readonly notice?: boolean;
 }
 
 export interface ProviderAdapterV2InterruptInput {
@@ -731,6 +733,9 @@ export interface ProviderAdapterV2SessionSettings {
   }) => Effect.Effect<ProviderMemoryFile, ProviderAdapterV2Error>;
 }
 
+/** The provider only queued the steer; a `steer.updated` event says whether the agent read it. */
+export type ProviderAdapterV2SteerResult = { readonly awaitsRead: true };
+
 export type ProviderAdapterV2SubagentOutcome = {
   readonly status: "completed" | "failed" | "cancelled";
   readonly completedAt: NonNullable<OrchestrationV2Subagent["completedAt"]>;
@@ -794,7 +799,7 @@ export interface ProviderAdapterV2SessionRuntime {
   ) => Effect.Effect<void, ProviderAdapterV2Error>;
   readonly steerTurn: (
     input: ProviderAdapterV2SteerInput,
-  ) => Effect.Effect<void, ProviderAdapterV2Error>;
+  ) => Effect.Effect<void | ProviderAdapterV2SteerResult, ProviderAdapterV2Error>;
   /** Applies a thread's new selection to its running process where the provider can; otherwise it waits for the next turn. */
   readonly applyModelSelection?: (input: {
     readonly providerThread: OrchestrationV2ProviderThread;

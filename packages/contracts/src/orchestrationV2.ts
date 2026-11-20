@@ -307,6 +307,9 @@ export const OrchestrationV2TurnCapabilities = Schema.Struct({
   // Only where the provider takes a steer during an automatic compaction without aborting it;
   // otherwise the server holds the steer until the compaction ends.
   activeSteeringDuringCompaction: Schema.optional(Schema.Boolean),
+  // The provider says when the agent reads a notice the app steered in, and declines one it
+  // could not say that for. Such a notice is delivered once read, not once handed over.
+  activeSteeringConfirmsRead: Schema.optional(Schema.Boolean),
   supportsSteeringByInterruptRestart: Schema.Boolean,
   supportsQueuedMessages: Schema.Boolean,
   terminalStatusQuality: Schema.Literals(["strong", "weak", "none"]),
