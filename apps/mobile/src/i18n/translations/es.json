@@ -437,7 +437,6 @@
   "693cb5c4fb40f109": "Solo se pueden editar los entornos bearer guardados.",
   "5f5844b910cb1544": "La credencial bearer guardada no está disponible.",
   "51b0133f1ed3cf5c": "La etiqueta del entorno no puede estar vacía.",
-  "0c0150a90b582a7a": "La URL del entorno no es válida.",
   "d1626c30301e2073": "Actualiza Onicode en {host} manualmente; no puede actualizarse solo.",
   "5e6058eb33826290": "{host} no volvió con una versión compatible de Onicode.",
   "e77ac580a4ddcd3b": "Disponible",
