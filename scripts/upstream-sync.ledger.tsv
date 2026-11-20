@@ -2827,3 +2827,4 @@ ec275c7a19	take	fix(server): compacting a subagent thread no longer adds a task 
 ff8a831067	take	fix(antigravity): accept UTF-16 text attachments with a BOM (#39456)
 c57ccdaf52	take	fix(server): signed URLs stay out of HTTP request logs (#39464); webhook route parts dropped (Onicode has no webhooks)
 320ab2a2ac	take	fix(server): Antigravity drops a stale sign-in failure once a session signs in (#39443)
+09b79941a5	take	fix(server): keep escaped spaces in Codex launch overrides (#39458)
