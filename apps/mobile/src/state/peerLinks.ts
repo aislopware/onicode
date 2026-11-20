@@ -1,7 +1,7 @@
 import {
   linkableMachines,
   linkedEnvironmentNames,
-  offersLinkedEnvironments,
+  linkNamesQuery,
 } from "@onicode/client-runtime/link-request";
 import { createPeerLinkEnvironmentAtoms } from "@onicode/client-runtime/state/peerLinks";
 import type { EnvironmentId } from "@onicode/contracts";
@@ -21,17 +21,31 @@ export function useLinkedEnvironments(
   environmentId: EnvironmentId | null,
 ): ReadonlyMap<EnvironmentId, string> {
   const { environments } = useEnvironments();
-  const offered = offersLinkedEnvironments(
+  const query = linkNamesQuery(
     environments.find((environment) => environment.environmentId === environmentId)?.serverConfig,
   );
-  const links = useEnvironmentQuery(
-    offered && environmentId !== null
+  const names = useEnvironmentQuery(
+    query === "names" && environmentId !== null
       ? peerLinkEnvironment.names({ environmentId, input: {} })
       : null,
   );
+  const list = useEnvironmentQuery(
+    query === "list" && environmentId !== null
+      ? peerLinkEnvironment.list({ environmentId, input: {} })
+      : null,
+  );
   return useMemo(
-    () => linkedEnvironmentNames({ links: offered ? (links.data?.links ?? []) : [], environments }),
-    [environments, links.data, offered],
+    () =>
+      linkedEnvironmentNames({
+        links:
+          query === "names"
+            ? (names.data?.links ?? [])
+            : query === "list"
+              ? (list.data?.links ?? [])
+              : [],
+        environments,
+      }),
+    [environments, names.data, list.data, query],
   );
 }
 

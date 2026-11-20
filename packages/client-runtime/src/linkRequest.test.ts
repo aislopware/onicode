@@ -9,6 +9,7 @@ import {
   ANOTHER_ADDRESS,
   linkableMachines,
   linkedEnvironmentNames,
+  linkNamesQuery,
   linkRequestAnswerInput,
   linkRequestDisplay,
   linkRequestFailureMessage,
@@ -203,7 +204,7 @@ describe("linkableMachines", () => {
 });
 
 describe("linkedEnvironmentNames", () => {
-  it("names the links as this client does, else as the link does", () => {
+  it("names the unexpired links as this client does, else as the link does", () => {
     const vps = EnvironmentId.make("environment-vps");
     const mini = EnvironmentId.make("environment-mini");
     const unsaved = EnvironmentId.make("environment-unsaved");
@@ -211,7 +212,9 @@ describe("linkedEnvironmentNames", () => {
       linkedEnvironmentNames({
         links: [
           { environmentId: vps, label: "vps-01" },
-          { environmentId: unsaved, label: "Office box" },
+          // An older server's full list still holds expired links.
+          { environmentId: mini, label: "mini", status: "expired" },
+          { environmentId: unsaved, label: "Office box", status: "reachable" },
         ],
         environments: [
           { environmentId: vps, label: "Hetzner VPS" },
@@ -224,6 +227,37 @@ describe("linkedEnvironmentNames", () => {
         [unsaved, "Office box"],
       ]),
     );
+  });
+});
+
+describe("linkNamesQuery", () => {
+  const config = (capabilities: Record<string, boolean>, linkedEnvironmentsEnabled: boolean) =>
+    ({
+      environment: { capabilities },
+      settings: { linkedEnvironmentsEnabled },
+    }) as unknown as ServerConfig;
+  it.each([
+    {
+      name: "a server that serves link names",
+      capabilities: { peerLinks: true, linkThreadStream: true },
+      enabled: true,
+      expected: "names",
+    },
+    {
+      name: "a server from before link names",
+      capabilities: { peerLinks: true },
+      enabled: true,
+      expected: "list",
+    },
+    {
+      name: "a server with links off",
+      capabilities: { peerLinks: true, linkThreadStream: true },
+      enabled: false,
+      expected: null,
+    },
+    { name: "a server without links", capabilities: {}, enabled: true, expected: null },
+  ])("reads $name with $expected", ({ capabilities, enabled, expected }) => {
+    expect(linkNamesQuery(config(capabilities, enabled))).toBe(expected);
   });
 });
 

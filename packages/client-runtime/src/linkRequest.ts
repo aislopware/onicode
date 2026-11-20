@@ -26,11 +26,24 @@ export const offersLinkedEnvironments = (
   config?.environment.capabilities.peerLinks === true && config.settings.linkedEnvironmentsEnabled;
 
 /**
- * The machines an environment's agents can work on, by name: its unexpired links (the server
- * leaves out expired ones), named as this client names them, else as the link does.
+ * Which RPC names an environment's links: `names`, with thread read access, or the full `list` on
+ * servers from before it, which answer only that. Null while it offers no links.
+ */
+export const linkNamesQuery = (
+  config: Pick<ServerConfig, "environment" | "settings"> | null | undefined,
+): "names" | "list" | null =>
+  !offersLinkedEnvironments(config)
+    ? null
+    : config?.environment.capabilities.linkThreadStream === true
+      ? "names"
+      : "list";
+
+/**
+ * The machines an environment's agents can work on, by name: its unexpired links, named as this
+ * client names them, else as the link does. Only an older server's full list holds expired links.
  */
 export function linkedEnvironmentNames(input: {
-  readonly links: ReadonlyArray<PeerLinkName>;
+  readonly links: ReadonlyArray<PeerLinkName & { readonly status?: PeerLinkSummary["status"] }>;
   readonly environments: ReadonlyArray<{
     readonly environmentId: EnvironmentId;
     readonly label: string;
@@ -40,8 +53,10 @@ export function linkedEnvironmentNames(input: {
     input.environments.map((environment) => [environment.environmentId, environment.label]),
   );
   return new Map(
-    input.links.map(
-      (link) => [link.environmentId, names.get(link.environmentId) ?? link.label] as const,
+    input.links.flatMap((link) =>
+      link.status === "expired"
+        ? []
+        : [[link.environmentId, names.get(link.environmentId) ?? link.label] as const],
     ),
   );
 }
