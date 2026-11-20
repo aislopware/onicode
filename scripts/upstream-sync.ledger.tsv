@@ -2929,3 +2929,4 @@ d7f6b3efca	take	Adapted: no Connect/webhook HTTP groups, mcpApprovalCodes or ser
 3925267688	take	taken as is (remote watching of a desktop agent's hidden tab)
 6f5293fbdc	take	kept Onicode's turned-off gate from #293 (also covers providers off for the project, clearer error); adopted upstream's status: disabled in the test fixture
 ccabed086a	take	stripped T3 Connect machines (connect nodes, relay routes, offered state, not-added fold, device-approval state) and the web-only 'This browser' label; kept Onicode's tailscale add mode, RemoteDesktopHostSettings, EnvironmentHardwareSettings and empty state; accessConfig from ./linkAccess
+6d6ca60907	take	taken as is
