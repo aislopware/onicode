@@ -213,6 +213,37 @@ describe("idleCompactionWindow", () => {
     };
     expect(idleCompactionWindow(sideChat, NOW_MS)).toBeNull();
   });
+
+  it("still compacts while a delegated child thread runs on its own", () => {
+    const delegating = records({ cacheExpiresInMs: 60 * MINUTE_MS });
+    delegating.turnItems = [
+      {
+        id: TurnItemId.make("delegate-item"),
+        threadId,
+        runId,
+        nodeId: NodeId.make("delegate-node"),
+        providerThreadId,
+        providerTurnId: null,
+        nativeItemRef: null,
+        parentItemId: null,
+        ordinal: 1,
+        status: "running",
+        title: "Implement the feature",
+        startedAt: at(-MINUTE_MS),
+        completedAt: null,
+        updatedAt: at(-MINUTE_MS),
+        type: "subagent",
+        subagentId: NodeId.make("delegate-node"),
+        origin: "app_owned",
+        driver: ProviderDriverKind.make("codex"),
+        providerInstanceId: ProviderInstanceId.make("codex"),
+        childThreadId: ThreadId.make("delegate-child"),
+        prompt: "Implement the feature",
+        result: null,
+      },
+    ];
+    expect(idleCompactionWindow(delegating, NOW_MS)?.runId).toBe(runId);
+  });
 });
 
 describe("IdleCompactionService", () => {
