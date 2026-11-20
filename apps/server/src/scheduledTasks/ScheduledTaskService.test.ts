@@ -772,6 +772,8 @@ it.effect("a fresh-session task launches one thread, then starts each later run 
     const launches = yield* Ref.make(0);
     const sends = yield* Ref.make<Array<{ threadId: ThreadId; freshContext?: boolean }>>([]);
     const launched = ThreadId.make("thread:fresh-session-task");
+    const staleSaveRead = yield* Deferred.make<void>();
+    const finishStaleSave = yield* Deferred.make<void>();
     const layer = ScheduledTaskService.layer.pipe(
       Layer.provide(
         Layer.mergeAll(
@@ -781,6 +783,7 @@ it.effect("a fresh-session task launches one thread, then starts each later run 
               Ref.update(launches, (n) => n + 1).pipe(
                 Effect.as({ threadId: launched, resumed: false } as never),
               ),
+            isNonGitProject: () => Effect.succeed(false),
           }),
           Layer.mock(ThreadManagementService.ThreadManagementService)({
             getThreadShell: () =>
@@ -798,9 +801,14 @@ it.effect("a fresh-session task launches one thread, then starts each later run 
                 },
               ]).pipe(Effect.as({} as never)),
           }),
+          // Only a worktree save asks, which holds that save between its read and its write.
           Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
             namedProjectsRoot: "/projects",
-            isScratchProject: () => Effect.succeed(false),
+            isScratchProject: () =>
+              Deferred.succeed(staleSaveRead, undefined).pipe(
+                Effect.andThen(Deferred.await(finishStaleSave)),
+                Effect.as(false),
+              ),
           }),
           NodeCrypto.layer,
           Layer.succeed(Scheduler.Scheduler, { register: () => Effect.void }),
@@ -860,6 +868,22 @@ it.effect("a fresh-session task launches one thread, then starts each later run 
       });
       assert.equal(cleared.task.threadId, null);
       assert.equal(cleared.task.threadMode, "continue");
+      // A save that read the binding before another client cleared it leaves it cleared.
+      yield* service.upsert({ ...input, threadId: launched, threadMode: "continue" });
+      const staleSave = yield* Effect.forkChild(
+        service.upsert({ ...input, workspaceStrategy: { type: "worktree", baseRef: "main" } }),
+      );
+      yield* Deferred.await(staleSaveRead);
+      yield* service.upsert({
+        ...input,
+        threadId: null,
+        unbindThread: true,
+        threadMode: "continue",
+      });
+      yield* Deferred.succeed(finishStaleSave, undefined);
+      const stale = yield* Fiber.join(staleSave);
+      assert.equal(stale.task.threadId, null);
+      assert.equal(stale.task.threadMode, "continue");
     }).pipe(Effect.provide(layer));
   }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
 );

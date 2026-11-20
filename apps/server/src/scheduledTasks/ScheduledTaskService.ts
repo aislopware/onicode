@@ -1195,7 +1195,8 @@ export const layer = Layer.effect(
         runCount: existingTask?.runCount ?? 0,
       };
       yield* saveTask(
-        task,
+        // A save that names no thread writes none, so a binding cleared since the read stays cleared.
+        input.threadId == null ? { ...task, threadId: null } : task,
         input.requireExisting === true,
         scheduleUnchanged ? existingTask.schedule : null,
         threadId === null && input.unbindThread === true ? (existingTask?.threadId ?? null) : null,
