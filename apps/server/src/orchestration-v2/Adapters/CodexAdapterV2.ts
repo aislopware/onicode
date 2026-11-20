@@ -1104,6 +1104,7 @@ const CodexThreadHistoryMetadata = Schema.Struct({
   thread: Schema.Struct({
     historyMode: Schema.optionalKey(Schema.Literals(["legacy", "paginated"])),
     status: Schema.optionalKey(Schema.Struct({ type: Schema.String })),
+    cwd: Schema.optionalKey(Schema.String),
   }),
 });
 const decodeCodexThreadHistoryMetadata = Schema.decodeUnknownEffect(CodexThreadHistoryMetadata);
@@ -1126,6 +1127,7 @@ const readCodexThreadHistoryMetadata = Effect.fn("CodexAdapterV2.readThreadHisto
     return {
       historyMode: metadata.thread.historyMode,
       loaded: metadata.thread.status?.type !== "notLoaded",
+      cwd: metadata.thread.cwd,
     };
   },
 );
@@ -7926,10 +7928,15 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
         ) =>
           request.pipe(
             Effect.catchIf(isCodexThreadNotFoundError, () =>
-              Effect.all([
-                readMcpSession(providerThread.appThreadId),
-                readStdioMcpServers(undefined),
-              ]).pipe(
+              readCodexThreadHistoryMetadata(client.raw, threadId).pipe(
+                Effect.map(({ cwd }) => cwd),
+                Effect.orElseSucceed(() => undefined),
+                Effect.flatMap((cwd) =>
+                  Effect.all([
+                    readMcpSession(providerThread.appThreadId),
+                    readStdioMcpServers(cwd),
+                  ]),
+                ),
                 Effect.flatMap(([mcpSession, stdioMcpServers]) =>
                   resumeNativeThread(threadId, {
                     excludeTurns: true,
@@ -9040,7 +9047,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                   runtimeRequests: [],
                 };
               }
-              const { historyMode, loaded } = yield* ensureInitialized.pipe(
+              const { historyMode, loaded, cwd } = yield* ensureInitialized.pipe(
                 Effect.andThen(readCodexThreadHistoryMetadata(client.raw, threadId)),
               );
               if (historyMode !== "paginated") {
@@ -9058,7 +9065,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                   ...codexThreadRuntimeParams({
                     threadId: threadInput.providerThread.appThreadId,
                     mcpSession: yield* readMcpSession(threadInput.providerThread.appThreadId),
-                    stdioMcpServers: yield* readStdioMcpServers(undefined),
+                    stdioMcpServers: yield* readStdioMcpServers(cwd),
                   }),
                 });
               }
