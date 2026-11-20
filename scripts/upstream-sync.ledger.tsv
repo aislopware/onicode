@@ -2836,3 +2836,4 @@ f6d941fa4f	take	feat(server): links between environments renew while they are us
 aa0662d1ed	skip	already in Onicode: the cost sentence was capitalised by an earlier Onicode change
 d26066000d	take	docs(codex): explain Chrome extension connection errors
 9bb92a46dd	take	fix(shared): count each pending subagent thread once
+6348824b45	take	fix(github): keep the enterprise token off hosts other than GH_HOST
