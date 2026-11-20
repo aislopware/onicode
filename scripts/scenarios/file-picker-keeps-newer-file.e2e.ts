@@ -138,9 +138,9 @@ test(
       return null;
     });
     await app.screenshot("active-file-after-citation-search");
+    // The tab's only text is its title; its icon and close button carry none.
     const activeFile = await browser.evaluate(
-      () =>
-        document.querySelector('[data-active-tab="true"] button:last-of-type')?.textContent ?? null,
+      () => document.querySelector('[data-active-tab="true"]')?.textContent?.trim() ?? null,
     );
     expect(activeFile).toBe(PICKED);
   },
