@@ -82,6 +82,11 @@ export function evaluatePullRequestWatch(
   const awaiting = checks.filter((check) => check.status === "action-required");
   const failedBefore = failedChecks;
   const newlyFailed = failed.filter((check) => !failedBefore.includes(check.name));
+  // A read that leaves out a failed check, such as a GitLab downstream pipeline whose read
+  // failed, says nothing about it: the check did not run again, and the read is not complete.
+  // Names are not carried further, since hosts replace and rename checks on later reads.
+  const missing = (name: string) => !checks.some((check) => check.name === name);
+  const dropped = failedBefore.filter(missing);
   if (checks.length > 0) {
     // A run awaiting approval waits on a person, like a review, so only running checks count.
     // An unfinished baseline read keeps the seed below for the next one.
@@ -137,56 +142,84 @@ export function evaluatePullRequestWatch(
     awaitingApproval.length === 0 &&
     (passed || checks.some((check) => check.status === "success")) &&
     gate.every((check) => check.status !== "pending" && !isFailedCheck(check));
+  // That read settles nothing, but a failed check it shows running again still owes a wake.
+  if (unread && passedNow) {
+    const rerun = failedBefore.filter(
+      (name) => !missing(name) && !failed.some((check) => check.name === name),
+    );
+    if (rerun.length > 0) owedChecks = [...new Set([...owedBefore, ...rerun])];
+  }
   if (checks.length > 0 && !(unread && passedNow)) {
     const gateNames = gate.map((check) => check.name);
     const told = passed && passedChecks.length === 0 ? gateNames : passedChecks;
     // Required checks can finish between sweeps; detect new names. With no required checks, ignore advisory gate growth.
     const gateGrew = required.length > 0 && gateNames.some((name) => !told.includes(name));
-    // Other checks still pending when required ones passed are owed one wake when all settle.
-    // Only those are owed, so later advisory churn never wakes. One turned required is gate news.
-    const owed =
-      passedNow && passed
-        ? checks
-            .filter((check) => check.required !== true && owedChecks.includes(check.name))
-            .map((check) => check.name)
-        : [];
-    const settled =
-      failed.length === 0 &&
-      awaitingApproval.length === 0 &&
-      checks.every((check) => check.status !== "pending");
-    owedChecks = owed;
+    const running =
+      awaitingApproval.length > 0 ||
+      checks.some((check) => check.status === "pending" || check.status === "action-required");
+    const finished = !unread && !running && dropped.length === 0;
+    const settled = !running && failed.length === 0;
+    // Once one wake is owed, it stays owed until every check has finished, whatever the checks
+    // do in between. A failed check that runs again owes it too; one that shares its name with
+    // a check still failing, as GitLab's synthetic Pipeline can, says nothing.
+    const reran = failedBefore.some(
+      (name) => !missing(name) && !failed.some((check) => check.name === name),
+    );
+    const owes = owedBefore.length > 0 || reran;
+    // A failure seen while other checks run owes it. A baseline read the host could not finish
+    // cannot tell CI running at the start from a failure from before the watch.
+    const failedWhileRunning = checksBaseline
+      ? running && failed.length > 0
+      : newlyFailed.length > 0;
     if (passedNow && (!passed || gateGrew)) {
       // Like a failure, CI running at the start can finish green before the first read.
       if (!checksBaseline || (watch.checksPending === true && settled)) {
-        changes.push({ kind: "checks-passed", count: gate.length, required: required.length > 0 });
+        changes.push(
+          // A rerun outside the gate passed too, so all of them did.
+          finished && reran && settled && checks.length > gate.length
+            ? { kind: "checks-passed", count: checks.length, required: false }
+            : { kind: "checks-passed", count: gate.length, required: required.length > 0 },
+        );
       }
-      owedChecks =
-        required.length > 0
-          ? checks
-              .filter((check) => check.required !== true && check.status === "pending")
-              .map((check) => check.name)
-          : [];
-    } else if (settled && owed.length > 0) {
-      changes.push({ kind: "checks-passed", count: checks.length, required: false });
-      owedChecks = [];
-    } else if (gate.some(isFailedCheck)) {
-      // A failed gate never sends the passed wake. A failure seen while other checks still run, or
-      // a failed check that ran again, owes one wake once every check has finished. Only whether
-      // the list is empty matters here, and the failed checks are never empty.
-      const rerun = failedBefore.some((name) => !failedChecks.includes(name));
-      const running =
-        unread ||
-        awaitingApproval.length > 0 ||
-        checks.some((check) => check.status === "pending" || check.status === "action-required");
-      if (running) {
-        if (owedBefore.length > 0 || rerun || newlyFailed.length > 0) owedChecks = failedChecks;
-      } else if (owedBefore.length > 0 || rerun) {
+      if (finished && owes && !settled) {
         changes.push({
           kind: "checks-finished",
           passed: checks.filter((check) => check.status === "success").length,
           failing: failed,
         });
       }
+      // Other checks still pending when required ones passed are owed one wake when all finish.
+      // Advisory jobs that start and pass later are not news.
+      const pendingAdvisory =
+        required.length > 0
+          ? checks
+              .filter((check) => check.required !== true && check.status === "pending")
+              .map((check) => check.name)
+          : [];
+      owedChecks =
+        !finished && (owes || failedWhileRunning)
+          ? [...new Set([...owedBefore, ...failedBefore, ...failedChecks, ...pendingAdvisory])]
+          : pendingAdvisory;
+    } else if (finished) {
+      // Skipped-only checks pass nothing, so after a failure they still finish.
+      if (owes) {
+        changes.push(
+          settled && passedNow
+            ? { kind: "checks-passed", count: checks.length, required: false }
+            : {
+                kind: "checks-finished",
+                passed: checks.filter((check) => check.status === "success").length,
+                failing: failed,
+              },
+        );
+      }
+      owedChecks = [];
+    } else if (owes || failedWhileRunning) {
+      // Only whether the list is empty matters, and these names never are.
+      owedChecks =
+        owedBefore.length > 0 ? owedBefore : [...new Set([...failedBefore, ...failedChecks])];
+    } else {
+      owedChecks = [];
     }
     passed = passedNow;
     passedChecks = passedNow ? gateNames : [];
@@ -397,6 +430,12 @@ function changeLines(
     case "checks-failed":
       return [`- Checks failed${context.commit}:`, ...listed(change.failed, failedCheckLine)];
     case "checks-finished":
+      // Skipped and neutral checks neither pass nor fail.
+      if (change.failing.length === 0) {
+        return [
+          `- Every check has finished${context.commit}: none failed, and each was skipped or neutral.`,
+        ];
+      }
       return [
         `- Every check has finished${context.commit}: ${change.passed} passed, ${change.failing.length} still failing:`,
         ...listed(change.failing, failedCheckLine),
@@ -534,7 +573,7 @@ export function pullRequestWatchMessage(input: {
   const failed = changes.some(
     (change) =>
       change.kind === "checks-failed" ||
-      change.kind === "checks-finished" ||
+      (change.kind === "checks-finished" && change.failing.length > 0) ||
       change.kind === "conflicting" ||
       change.kind === "needs-rebase" ||
       change.kind === "merge-queue-removed",
