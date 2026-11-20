@@ -2840,3 +2840,4 @@ d26066000d	take	docs(codex): explain Chrome extension connection errors
 e25a337e5f	take	fix(web): keep long-named VS Code themes separate on import
 7f928416b2	take	fix(antigravity): MCP calls through call_mcp_tool show the tool
 aa685426e7	skip	relay/T3 Connect only: infra/relay, apps/server/src/cloud and contracts/relay.ts are removed in Onicode
+6f05fbf45f	take	fix(server): secret names can no longer leave the secrets directory; CloudLink parts dropped (T3 Connect removed)
