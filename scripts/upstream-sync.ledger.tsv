@@ -2837,3 +2837,4 @@ aa0662d1ed	skip	already in Onicode: the cost sentence was capitalised by an earl
 d26066000d	take	docs(codex): explain Chrome extension connection errors
 9bb92a46dd	take	fix(shared): count each pending subagent thread once
 6348824b45	take	fix(github): keep the enterprise token off hosts other than GH_HOST
+e25a337e5f	take	fix(web): keep long-named VS Code themes separate on import
