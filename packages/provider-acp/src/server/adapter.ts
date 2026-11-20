@@ -9577,7 +9577,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             text,
             turnInput.message.attachments,
           );
-          const dispatched = yield* runtimeTransitionPermit.withPermit(
+          const [dispatched, context] = yield* runtimeTransitionPermit.withPermit(
             Effect.gen(function* () {
               const context = yield* Ref.get(activeTurn);
               if (
@@ -9589,14 +9589,6 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                 return yield* new ProviderAdapter.ProviderAdapterProtocolError({
                   driver,
                   detail: `Provider turn ${turnInput.providerTurnId} is not active and cannot be steered.`,
-                });
-              }
-              // A wake turn has no prompt of its own to steer; its reply ends the run soon.
-              if (context.promptSequence === 0) {
-                return yield* new ProviderAdapter.ProviderAdapterSteerDeclinedError({
-                  driver,
-                  providerThreadId: turnInput.providerThread.id,
-                  providerTurnId: turnInput.providerTurnId,
                 });
               }
               const generation = yield* Ref.get(runtimeCallbackGeneration);
@@ -9662,10 +9654,12 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                   detail: `Provider turn ${turnInput.providerTurnId} ended before it could be steered.`,
                 });
               }
-              return dispatched;
+              return [dispatched, context] as const;
             }),
           );
           yield* Deferred.await(dispatched);
+          // A wake run sent no prompt, so its inactivity watchdog waits for this one.
+          yield* Deferred.succeed(context.promptDispatched, undefined);
         });
 
         yield* Effect.addFinalizer(() =>
@@ -10013,6 +10007,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
               effect.pipe(
                 Effect.mapError((cause) =>
                   cause._tag === "ProviderAdapterSteerRunUnsupportedError" ||
+                  // Onicode's steering.declines (Grok `$skill`) sends the message as the next turn.
                   cause._tag === "ProviderAdapterSteerDeclinedError"
                     ? cause
                     : new ProviderAdapter.ProviderAdapterSteerRunError({
