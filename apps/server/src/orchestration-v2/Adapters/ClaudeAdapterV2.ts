@@ -12885,7 +12885,8 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             const gatewayResetAt = isGatewayCooldown(message) ? resultResetAt : null;
             // An untyped rejection without a reset is the gateway's own 429; its text names the reset.
             const countsTowardReset = (type: string, time: string | null | undefined) =>
-              time !== undefined && !(type === "unknown" && time === null && gatewayResetAt != null);
+              time !== undefined &&
+              !(type === "unknown" && time === null && gatewayResetAt != null);
             const resetTimes = Array.from(context.rateLimitResetTimes)
               .filter(([type, time]) => countsTowardReset(type, time))
               .map(([, time]) => time);

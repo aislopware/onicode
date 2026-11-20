@@ -821,7 +821,10 @@ it.effect("a fresh-session task launches one thread, then starts each later run 
     );
     yield* Effect.gen(function* () {
       const service = yield* ScheduledTaskService.ScheduledTaskService;
-      const raced = <A, E, E2>(stale: Effect.Effect<A, E>, concurrent: Effect.Effect<unknown, E2>) =>
+      const raced = <A, E, E2>(
+        stale: Effect.Effect<A, E>,
+        concurrent: Effect.Effect<unknown, E2>,
+      ) =>
         Effect.gen(function* () {
           yield* Ref.set(holdNextSave, true);
           const fiber = yield* Effect.forkChild(stale);
