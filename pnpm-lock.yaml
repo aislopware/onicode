@@ -333,7 +333,7 @@ patchedDependencies:
   '@react-native-menu/menu@2.1.2': 498ad13f71d4ebbdeadcde10c5b2e33bff21335039007fcd0964b69347361e8b
   '@react-navigation/native-stack@7.21.1': 9c599e52aaf2f653faf27e48dd4b11cd99d0b420b5d724e8221787125c518cae
   app-builder-lib@26.18.1: 9f74d395be438c1e2d4e790bf4e01ac04574c8d90020c6fbd07c0f0e3b45d17a
-  electron-updater@6.8.12: 39c1f174b17bef225d0bb3765b9912eb60808084db30f378ce94d91de83fa431
+  electron-updater@6.8.12: 9a871c1428f69161ddf12e9cf7af8fc19fee562247cb443305fb16429149e7f1
   expo-audio@58.0.12: a43c056bef0592302436562f7cd9a5ad56df054db3e60e46f7486feec29a3092
   expo-modules-core@58.1.0: f0b0fd100550ed76e5c25b4d13eb7c9ff62825f8f197c53edf7bf447c50c9fb7
   expo-network@58.0.5: ba4eebf6c09f5074df0ccc54017ad7087faa5d2c0db1e9bb258d1ea86a4638d7
@@ -415,7 +415,7 @@ importers:
         version: 45.3.2(supports-color@8.1.1)
       electron-updater:
         specifier: 6.8.12
-        version: 6.8.12(patch_hash=39c1f174b17bef225d0bb3765b9912eb60808084db30f378ce94d91de83fa431)(supports-color@8.1.1)
+        version: 6.8.12(patch_hash=9a871c1428f69161ddf12e9cf7af8fc19fee562247cb443305fb16429149e7f1)(supports-color@8.1.1)
       electron-webauthn:
         specifier: 'catalog:'
         version: 1.4.0
@@ -16874,7 +16874,7 @@ snapshots:
 
   electron-to-chromium@1.5.430: {}
 
-  electron-updater@6.8.12(patch_hash=39c1f174b17bef225d0bb3765b9912eb60808084db30f378ce94d91de83fa431)(supports-color@8.1.1):
+  electron-updater@6.8.12(patch_hash=9a871c1428f69161ddf12e9cf7af8fc19fee562247cb443305fb16429149e7f1)(supports-color@8.1.1):
     dependencies:
       builder-util-runtime: 9.7.1(supports-color@8.1.1)
       fs-extra: 10.1.0

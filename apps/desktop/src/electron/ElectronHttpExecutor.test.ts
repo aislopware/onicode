@@ -228,32 +228,36 @@ describe("ElectronHttpExecutor idle timeout", () => {
     expect(download.read()).toBe(LARGE_RELEASE);
   });
 
-  it("asks for the rest when a resumed response ends before its declared total", async () => {
-    using download = startDownload("", LARGE_RELEASE);
+  it.each([
+    ["wo", RESUMED_RANGE],
+    ["", RESUMED_RANGE],
+    ["", `bytes ${PREFIX.length}-${LARGE_RELEASE.length - 1}/*`],
+    ["wo", `bytes ${PREFIX.length}-${LARGE_RELEASE.length - 1}/*`],
+  ])(
+    "asks for the rest when a resumed response ends before its declared total (sent %j, %s)",
+    async (sent, contentRange) => {
+      using download = startDownload("", LARGE_RELEASE);
 
-    const { request: shortened } = await download.stallAfterWriting(PREFIX);
-    const rest = download.nextRequest();
-    const total = LARGE_RELEASE.length;
-    respond(
-      shortened,
-      206,
-      { "content-range": `bytes ${PREFIX.length}-${PREFIX.length + 1}/${total}` },
-      "wo",
-    );
-    await NodeEvents.EventEmitter.once(download.lastFileOut(), "close");
-    await vi.advanceTimersByTimeAsync(4_000);
-    const { request, headers } = await rest;
-    expect(headers.Range).toBe(`bytes=${PREFIX.length + 2}-`);
-    respond(
-      request,
-      206,
-      { "content-range": `bytes ${PREFIX.length + 2}-${total - 1}/${total}` },
-      "rld",
-    );
+      const { request: shortened } = await download.stallAfterWriting(PREFIX);
+      const rest = download.nextRequest();
+      const total = LARGE_RELEASE.length;
+      respond(shortened, 206, { "content-range": contentRange }, sent);
+      await NodeEvents.EventEmitter.once(download.lastFileOut(), "close");
+      await vi.advanceTimersByTimeAsync(4_000);
+      const { request, headers } = await rest;
+      const resumeAt = PREFIX.length + sent.length;
+      expect(headers.Range).toBe(`bytes=${resumeAt}-`);
+      respond(
+        request,
+        206,
+        { "content-range": `bytes ${resumeAt}-${total - 1}/${total}` },
+        LARGE_RELEASE.slice(resumeAt),
+      );
 
-    await expect(download.result).resolves.toBe(download.destination);
-    expect(download.read()).toBe(LARGE_RELEASE);
-  });
+      await expect(download.result).resolves.toBe(download.destination);
+      expect(download.read()).toBe(LARGE_RELEASE);
+    },
+  );
 
   it("keeps retrying while each stalled attempt writes more of the release", async () => {
     const release = `${PREFIX.repeat(4)}world`;
