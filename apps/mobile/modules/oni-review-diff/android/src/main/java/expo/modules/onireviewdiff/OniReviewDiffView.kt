@@ -548,6 +548,9 @@ internal data class DiffRow(
 ) {
   val resolvedFileId: String get() = fileId.ifEmpty { id }
   val isPlainAscii: Boolean = content.all { it in ' '..'~' }
+  val needsBidi: Boolean by lazy(LazyThreadSafetyMode.NONE) {
+    !isPlainAscii && java.text.Bidi.requiresBidi(content.toCharArray(), 0, content.length)
+  }
 }
 
 internal data class DiffWordDiffRange(

@@ -408,6 +408,13 @@ internal class ReviewDiffCanvasDrawing(context: Context) {
     }
   }
 
+  // drawText orders right-to-left runs by direction, which the left-to-right edges would mirror.
+  private fun drawsWordDiffs(row: DiffRow, lines: CodeLines): Boolean =
+    lines.nativeLayout == null &&
+      row.wordDiffRanges.isNotEmpty() &&
+      (row.change == "add" || row.change == "delete") &&
+      !row.needsBidi
+
   /** Highlights word diffs; [top]..[bottom] is the row's first visual line. */
   @Suppress("LongParameterList")
   fun drawWordDiffRanges(
@@ -420,8 +427,7 @@ internal class ReviewDiffCanvasDrawing(context: Context) {
     lines: CodeLines,
     style: DiffStyle
   ) {
-    val changed = row.change == "add" || row.change == "delete"
-    if (lines.nativeLayout != null || row.wordDiffRanges.isEmpty() || !changed) return
+    if (!drawsWordDiffs(row, lines)) return
     val color = if (row.change == "add") theme.addBar else theme.deleteBar
     backgroundPaint.color = withAlpha(color, 71)
     configureCodePaint(theme.text, 0, style)
