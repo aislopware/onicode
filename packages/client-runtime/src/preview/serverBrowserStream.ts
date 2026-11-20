@@ -33,7 +33,7 @@ export const previewStreamControlLabel = (
   resolve: MFunctionType = mFallback,
 ): string =>
   !control
-    ? resolve(msg("Connecting..."))
+    ? resolve(msg("Connecting…"))
     : !control.canOperate
       ? resolve(msg("Read-only"))
       : control.controller === "you"

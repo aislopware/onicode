@@ -130,16 +130,16 @@ describe("CommandPalette open intents", () => {
     expect(screen.router?.state.location.pathname).toBe(pathname);
   });
 
-  it("opens New thread in... with focus in the search input, not the Back button", async () => {
+  it("opens New thread in… with focus in the search input, not the Back button", async () => {
     setup();
     await using _screen = await render(<CommandPalette>{null}</CommandPalette>);
 
     openCommandPalette({ open: "new-thread-in" });
 
-    await expect.element(page.getByPlaceholder("Search...")).toHaveFocus();
+    await expect.element(page.getByPlaceholder("Search…")).toHaveFocus();
   });
 
-  it("highlights the first project when New thread in... opens from the root list", async () => {
+  it("highlights the first project when New thread in… opens from the root list", async () => {
     const environmentId = EnvironmentId.make("local");
     const project = (id: string, title: string): Project => ({
       id: ProjectId.make(id),
@@ -159,17 +159,17 @@ describe("CommandPalette open intents", () => {
 
     openCommandPalette({});
     await expect
-      .element(page.getByPlaceholder("Search commands, projects, and threads..."))
+      .element(page.getByPlaceholder("Search commands, projects, and threads…"))
       .toHaveFocus();
     // ArrowDown before the first row's auto-highlight lands moves to the first row instead.
     await expect.element(page.getByRole("option").first()).toHaveAttribute("data-highlighted");
     await userEvent.keyboard("{ArrowDown}");
     await expect
-      .element(page.getByRole("option", { name: /^New thread in\.\.\./ }))
+      .element(page.getByRole("option", { name: /^New thread in…/ }))
       .toHaveAttribute("data-highlighted");
     await userEvent.keyboard("{Enter}");
 
-    await expect.element(page.getByPlaceholder("Search...")).toHaveFocus();
+    await expect.element(page.getByPlaceholder("Search…")).toHaveFocus();
     await expect.element(page.getByRole("option").first()).toHaveAttribute("data-highlighted");
     await expect.element(page.getByRole("option").nth(1)).not.toHaveAttribute("data-highlighted");
   });
@@ -180,7 +180,7 @@ describe("CommandPalette open intents", () => {
 
     openCommandPalette({ query: "acme" });
 
-    const input = page.getByPlaceholder("Search commands, projects, and threads...");
+    const input = page.getByPlaceholder("Search commands, projects, and threads…");
     await expect.element(input).toHaveFocus();
     await expect.element(input).toHaveValue("acme");
   });
@@ -292,13 +292,13 @@ describe("CommandPalette open intents", () => {
     );
   });
 
-  it("numbers filtered New thread in... rows from 1 and jumps to them", async () => {
+  it("numbers filtered New thread in… rows from 1 and jumps to them", async () => {
     using _platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("Linux x86_64");
     setup({ projects: [makeProject("server"), makeProject("lima")] });
     await using _screen = await render(<CommandPalette>{null}</CommandPalette>);
 
     openCommandPalette({ open: "new-thread-in" });
-    await userEvent.fill(page.getByPlaceholder("Search..."), "li");
+    await userEvent.fill(page.getByPlaceholder("Search…"), "li");
     await expect.element(page.getByRole("option", { name: /server/ })).not.toBeInTheDocument();
     await expect.element(page.getByRole("option", { name: /lima/ })).toMatchTextContent("Ctrl+1");
     await userEvent.keyboard("{Control>}1{/Control}");

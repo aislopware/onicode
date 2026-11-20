@@ -203,21 +203,18 @@ export function SavedBackendListRow({
     versionMismatch !== null &&
     (serverUpdateState.status === "idle" || serverUpdateState.status === "failed");
 
-  const statusTooltip = `${
-    unsupported
-      ? (connectionErrorText(environment.connection, messages) ??
-        connectionStatusText(environment.connection, messages))
-      : enabled
-        ? connectionStatusText(environment.connection, messages)
-        : gt("Switched off")
-  }${
-    versionMismatch
-      ? `\n${gt("Update available: {serverVersion} → {clientVersion}", {
-          serverVersion: versionMismatch.serverVersion,
-          clientVersion: versionMismatch.clientVersion,
-        })}`
-      : ""
-  }`;
+  const statusTooltip = unsupported
+    ? (connectionErrorText(environment.connection, messages) ??
+      connectionStatusText(environment.connection, messages))
+    : enabled
+      ? connectionStatusText(environment.connection, messages)
+      : gt("Switched off");
+  const statusUpdateTooltip = versionMismatch
+    ? gt("Update available: {serverVersion} → {clientVersion}", {
+        serverVersion: versionMismatch.serverVersion,
+        clientVersion: versionMismatch.clientVersion,
+      })
+    : undefined;
 
   return (
     <EnvironmentRow
@@ -230,7 +227,7 @@ export function SavedBackendListRow({
             {/* The status can change while the tooltip is open, and base-ui only
                 re-measures the popup when the trigger's payload changes. */}
             <TooltipTrigger
-              payload={statusTooltip}
+              payload={`${statusTooltip}\n${statusUpdateTooltip ?? ""}`}
               render={
                 <span
                   className={cn(
@@ -246,7 +243,7 @@ export function SavedBackendListRow({
             >
               {subtitleText}
             </TooltipTrigger>
-            <TooltipPopup side="top" className="whitespace-pre-wrap">
+            <TooltipPopup side="top" description={statusUpdateTooltip}>
               {statusTooltip}
             </TooltipPopup>
           </Tooltip>
@@ -392,7 +389,8 @@ export function SavedBackendListRow({
             <Switch
               size="sm"
               checked={enabled}
-              disabled={isRemoving || blocked}
+              disabled={isRemoving && !blocked}
+              readOnly={blocked}
               aria-label={
                 enabled
                   ? gt("Switch off {label}", { label: environment.label })

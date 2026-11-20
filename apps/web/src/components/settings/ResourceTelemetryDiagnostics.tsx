@@ -1115,7 +1115,7 @@ function ResourceTelemetryDiagnosticsBody({
               />
               {snapshot
                 ? formatSamplingStatus(snapshot.sampleIntervalMs, messages)
-                : gt("Sampling every ...")}
+                : gt("Sampling every …")}
             </div>
           </div>
           <div className="grid grid-cols-2 divide-x divide-y divide-border md:grid-cols-3">

@@ -403,10 +403,8 @@ function SidebarControl({ showSidebar }: { readonly showSidebar: boolean }) {
               />
             }
           />
-          <TooltipPopup side="bottom">
-            {shortcutLabel
-              ? gt("Toggle main sidebar ({shortcut})", { shortcut: shortcutLabel })
-              : gt("Toggle main sidebar")}
+          <TooltipPopup side="bottom" shortcut={shortcutLabel}>
+            {gt("Toggle main sidebar")}
           </TooltipPopup>
         </Tooltip>
       ) : null}

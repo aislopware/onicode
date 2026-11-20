@@ -237,16 +237,6 @@ function relationshipThreadTitle(input: {
   return formatSubagentDisplayTitle(input.title);
 }
 
-/** The full title, since the row truncates it, with what a click does. */
-function LineageTooltipContent(props: { readonly title: string; readonly hint: string }) {
-  return (
-    <>
-      <span className="block font-medium">{props.title}</span>
-      <span className="block text-muted-foreground">{props.hint}</span>
-    </>
-  );
-}
-
 function currentSubagent<Agent extends RuntimeSubagent>(
   agent: Agent | undefined,
   childThread: OrchestrationV2ThreadShell | null | undefined,
@@ -345,17 +335,17 @@ function RemoteSubagentRow(props: {
             <span className="shrink-0">· {threadRelationshipStatusLabel(status, m)}</span>
           </span>
         </TooltipTrigger>
-        <TooltipPopup side="left">
-          <LineageTooltipContent
-            title={title}
-            hint={
-              environment === null
-                ? gt("Runs on {label}. Connect to it to open the thread there.", {
-                    label: remoteChild.label,
-                  })
-                : gt("Open on {label}", { label: remoteChild.label })
-            }
-          />
+        <TooltipPopup
+          side="left"
+          description={
+            environment === null
+              ? gt("Runs on {label}. Connect to it to open the thread there.", {
+                  label: remoteChild.label,
+                })
+              : gt("Open on {label}", { label: remoteChild.label })
+          }
+        >
+          {title}
         </TooltipPopup>
       </Tooltip>
     </li>
@@ -446,21 +436,21 @@ function DelegatedFromRow(props: {
             </span>
           ) : null}
         </TooltipTrigger>
-        <TooltipPopup side="left">
-          <LineageTooltipContent
-            title={title}
-            hint={
-              environment === null
-                ? label
-                  ? gt("Delegated from {label}. Connect to it to open the parent thread.", {
-                      label,
-                    })
-                  : gt(
-                      "Delegated from a linked environment. Connect to it to open the parent thread.",
-                    )
-                : gt("Open parent agent on {label}", { label: environment.label })
-            }
-          />
+        <TooltipPopup
+          side="left"
+          description={
+            environment === null
+              ? label
+                ? gt("Delegated from {label}. Connect to it to open the parent thread.", {
+                    label,
+                  })
+                : gt(
+                    "Delegated from a linked environment. Connect to it to open the parent thread.",
+                  )
+              : gt("Open parent agent on {label}", { label: environment.label })
+          }
+        >
+          {title}
         </TooltipPopup>
       </Tooltip>
     </li>
@@ -836,28 +826,31 @@ export function ThreadRelationshipsPanel(props: {
       node?.thread?.lineage.sideChat === true && !isParent,
       m,
     );
-    const RelationshipPopup = agent ? ThreadHoverCardPopup : TooltipPopup;
-    const relationshipTooltip = agent ? (
-      <SubagentTooltipContent
-        title={threadTitle}
-        model={agent.model}
-        providerInstanceId={agent.providerInstanceId}
-        origin={agent.origin}
-        modelSelection={agent.modelSelection}
-        provider={provider}
-        providers={providers}
-        driver={providerDriver}
-        elapsed={<AgentElapsed environmentId={props.environmentId} agent={agent} />}
-        status={agent.status}
-        result={agent.result}
-        progress={agent.progress}
-        parentThread={currentThread ?? undefined}
-        childThread={node?.thread ?? undefined}
-        parentProject={currentProject}
-        childProject={project}
-      />
+    const relationshipPopup = agent ? (
+      <ThreadHoverCardPopup side="left">
+        <SubagentTooltipContent
+          title={threadTitle}
+          model={agent.model}
+          providerInstanceId={agent.providerInstanceId}
+          origin={agent.origin}
+          modelSelection={agent.modelSelection}
+          provider={provider}
+          providers={providers}
+          driver={providerDriver}
+          elapsed={<AgentElapsed environmentId={props.environmentId} agent={agent} />}
+          status={agent.status}
+          result={agent.result}
+          progress={agent.progress}
+          parentThread={currentThread ?? undefined}
+          childThread={node?.thread ?? undefined}
+          parentProject={currentProject}
+          childProject={project}
+        />
+      </ThreadHoverCardPopup>
     ) : (
-      <LineageTooltipContent title={threadTitle} hint={hint} />
+      <TooltipPopup side="left" description={hint}>
+        {threadTitle}
+      </TooltipPopup>
     );
     const relationshipContent = (
       <>
@@ -910,7 +903,7 @@ export function ThreadRelationshipsPanel(props: {
         >
           {relationshipContent}
         </TooltipTrigger>
-        <RelationshipPopup side="left">{relationshipTooltip}</RelationshipPopup>
+        {relationshipPopup}
       </Tooltip>
     );
     if (workflowGroup && agent) {
@@ -951,7 +944,7 @@ export function ThreadRelationshipsPanel(props: {
               >
                 {relationshipContent}
               </TooltipTrigger>
-              <RelationshipPopup side="left">{relationshipTooltip}</RelationshipPopup>
+              {relationshipPopup}
             </Tooltip>
             <span aria-hidden="true" className={THREAD_DETAILS_PANEL_SPLIT_SEPARATOR_CLASS} />
             <Tooltip>

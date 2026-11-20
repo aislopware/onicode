@@ -390,7 +390,7 @@ export function ArchivedThreadsScreen(props: {
         <View className="items-center py-16">
           <AppActivityIndicator colorClassName="accent-icon" />
           <Text className="mt-3 text-sm text-foreground-muted">
-            <T>Loading archive...</T>
+            <T>Loading archive…</T>
           </Text>
         </View>
       );

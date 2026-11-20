@@ -135,7 +135,7 @@ export function GitBranchesSheet(_props: GitBranchesSheetProps) {
         title={gt("Existing branches")}
         footer={
           branchesLoading
-            ? gt("Loading branches...")
+            ? gt("Loading branches…")
             : availableBranches.length === 0
               ? gt("No local branches found.")
               : undefined

@@ -80,7 +80,7 @@ test(
     const dialog = screen.getByRole("dialog", "Link issue to a thread");
     const thread = dialog.getByText("Café planning", { exact: true });
     await thread.waitFor();
-    await dialog.getByPlaceholder("Search threads or projects...").fill("cafe");
+    await dialog.getByPlaceholder("Search threads or projects…").fill("cafe");
     await app.screenshot("issue-link-thread-search");
     expect(await thread.isVisible(), "Searching for cafe keeps Café planning available").toBe(true);
   },

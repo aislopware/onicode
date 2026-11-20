@@ -71,7 +71,7 @@ export function DeviceStreamWebView({
     colors: props.colors,
     labels: {
       screen: props.platform === "ios" ? gt("iOS Simulator screen") : gt("Android Emulator screen"),
-      reconnectingControls: gt("Reconnecting device controls..."),
+      reconnectingControls: gt("Reconnecting device controls…"),
     },
   } satisfies DeviceStreamConfiguration);
   return (
@@ -235,7 +235,7 @@ function DeviceStreamDocumentView({
             accessibilityLiveRegion="polite"
             className="text-center text-sm text-foreground-muted"
           >
-            {status === "error" ? error : gt("Connecting to device...")}
+            {status === "error" ? error : gt("Connecting to device…")}
           </AppText>
           {status === "error" ? (
             <View className="items-center">

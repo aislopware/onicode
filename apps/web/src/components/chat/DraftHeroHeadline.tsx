@@ -263,7 +263,7 @@ export function DraftHeroHeadline({
       <ComboboxPopup align="center" className="w-72 overflow-hidden">
         <ComboboxSearchInput
           aria-label={gt("Search projects")}
-          placeholder={gt("Search projects...")}
+          placeholder={gt("Search projects…")}
           value={pickerQuery}
           onChange={(event) => setPickerQuery(event.target.value)}
           onKeyDown={(event) => {
@@ -348,7 +348,11 @@ export function DraftHeroHeadline({
         >
           <T>or start without a project</T>
         </TooltipTrigger>
-        {noProjectShortcut ? <TooltipPopup side="bottom">{noProjectShortcut}</TooltipPopup> : null}
+        {noProjectShortcut ? (
+          <TooltipPopup side="bottom" shortcut={noProjectShortcut}>
+            {gt("New thread without a project")}
+          </TooltipPopup>
+        ) : null}
       </Tooltip>
     ) : null;
 

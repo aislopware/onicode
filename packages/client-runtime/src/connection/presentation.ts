@@ -100,11 +100,11 @@ export function connectionStatusText(
     case "offline":
       return resolve(msg("Offline", { $context: "connection status" }));
     case "connecting":
-      return resolve(msg("Connecting..."));
+      return resolve(msg("Connecting…"));
     case "reconnecting":
       return error
-        ? resolve(msg("Failed to connect. Reconnecting... Reason: {error}", { error }))
-        : resolve(msg("Reconnecting..."));
+        ? resolve(msg("Failed to connect. Reconnecting… Reason: {error}", { error }))
+        : resolve(msg("Reconnecting…"));
     case "connected":
       return resolve(msg("Connected", { $context: "connection status" }));
     case "unsupported":
@@ -121,7 +121,7 @@ export function connectionStatusTitle(
   resolve: MFunctionType = mFallback,
 ): string {
   if (connection.phase === "reconnecting" && connection.error) {
-    return resolve(msg("Failed to connect. Reconnecting..."));
+    return resolve(msg("Failed to connect. Reconnecting…"));
   }
   return connectionStatusText({ ...connection, error: null }, resolve);
 }

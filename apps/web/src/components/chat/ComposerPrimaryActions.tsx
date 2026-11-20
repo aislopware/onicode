@@ -77,7 +77,7 @@ const formatPendingPrimaryActionLabel = (
   resolve: MessageResolver,
 ) => {
   if (input.isResponding) {
-    return resolve(msg("Submitting..."));
+    return resolve(msg("Submitting…"));
   }
   if (input.compact) {
     return input.isLastQuestion
@@ -426,25 +426,23 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
         ? dispatchTooltip
         : submitLabel);
 
+  const sendBlocked = isSendDisabled || isEnvironmentUnavailable;
   const sendButton = (
     <button
       type={showResume ? "button" : "submit"}
-      className="relative isolate flex h-9 w-9 items-center justify-center overflow-hidden rounded-full bg-message-action text-message-action-foreground shadow-xs transition-[background-color,color,box-shadow,scale] duration-150 outline-none focus-visible:outline-ring-inset [--focus-ring:var(--message-action-foreground)] [--focus-ring-offset:-3px] enabled:cursor-pointer enabled:shadow-message-action/24 enabled:inset-shadow-control-highlight hover:bg-message-action-hover active:scale-[0.97] active:inset-shadow-control-pressed active:shadow-none disabled:pointer-events-none disabled:bg-foreground/12 disabled:text-muted-foreground disabled:shadow-none sm:h-8 sm:w-8 [&_svg]:pointer-events-none"
+      className="relative isolate flex h-9 w-9 items-center justify-center overflow-hidden rounded-full bg-message-action text-message-action-foreground shadow-xs transition-[background-color,color,box-shadow,scale] duration-150 outline-none focus-visible:outline-ring-inset [--focus-ring:var(--message-action-foreground)] [--focus-ring-offset:-3px] enabled:cursor-pointer enabled:shadow-message-action/24 enabled:inset-shadow-control-highlight hover:bg-message-action-hover active:scale-[0.97] active:inset-shadow-control-pressed active:shadow-none disabled:pointer-events-none disabled:bg-foreground/12 disabled:text-muted-foreground disabled:shadow-none aria-disabled:cursor-not-allowed aria-disabled:bg-foreground/12 aria-disabled:text-muted-foreground aria-disabled:shadow-none aria-disabled:inset-shadow-none aria-disabled:active:scale-100 sm:h-8 sm:w-8 [&_svg]:pointer-events-none"
       {...pointerFocusProps}
       onClick={(event) => {
-        if (stopPhase === "landed") {
+        if (sendBlocked || stopPhase === "landed") {
           event.preventDefault();
           return;
         }
         if (showResume) onResume?.();
         else onSubmitMessage?.(event);
       }}
-      disabled={
-        isSendBusy ||
-        isSendDisabled ||
-        isEnvironmentUnavailable ||
-        (!hasSendableContent && !showResume)
-      }
+      // A blocked send stays focusable so its reason reaches the keyboard; empty and busy do not.
+      aria-disabled={sendBlocked || undefined}
+      disabled={!sendBlocked && (isSendBusy || (!hasSendableContent && !showResume))}
       aria-label={submitStatus ?? submitLabel}
     >
       {isSendBusy ? (
@@ -512,15 +510,14 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
           </span>
           <span className="text-muted-foreground">{compactTokens}</span>
         </TooltipTrigger>
-        <TooltipPopup>
-          <div>
-            {keepFullHistory
-              ? gt("Next send keeps all {tokens} tokens.", { tokens: compactTokens })
-              : gt("Next send compacts {tokens} tokens first.", { tokens: compactTokens })}
-          </div>
-          <div>
-            {keepFullHistory ? gt("Click to compact first") : gt("Click to keep full history")}
-          </div>
+        <TooltipPopup
+          description={
+            keepFullHistory ? gt("Click to compact first") : gt("Click to keep full history")
+          }
+        >
+          {keepFullHistory
+            ? gt("Next send keeps all {tokens} tokens.", { tokens: compactTokens })
+            : gt("Next send compacts {tokens} tokens first.", { tokens: compactTokens })}
         </TooltipPopup>
       </Tooltip>
       {children}

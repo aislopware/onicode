@@ -192,7 +192,7 @@ export function runStopNowItem(input: {
         />
         {unresponsive && input.canForceStop ? (
           <InlineButton disabled={input.forceStopping} onClick={input.onForceStop}>
-            {input.forceStopping ? <T>Force stopping...</T> : <T>Force stop</T>}
+            {input.forceStopping ? <T>Force stopping…</T> : <T>Force stop</T>}
           </InlineButton>
         ) : null}
       </>
@@ -304,7 +304,7 @@ export function backgroundWorkNowItem(
           onOpenThread={onOpenThread}
         />
         <InlineButton disabled={input.stopDisabled} onClick={() => void input.onStop()}>
-          {input.stopping ? <T>Stopping...</T> : <T context="verb, stops background work">Stop</T>}
+          {input.stopping ? <T>Stopping…</T> : <T context="verb, stops background work">Stop</T>}
         </InlineButton>
       </>
     ),
@@ -355,7 +355,7 @@ export function branchMismatchBannerItem(
     ),
     actions: (
       <Button size="xs" variant="ghost" disabled={input.restoreDisabled} onClick={input.onRestore}>
-        {input.restoring ? <T>Restoring...</T> : <T>Restore branch</T>}
+        {input.restoring ? <T>Restoring…</T> : <T>Restore branch</T>}
       </Button>
     ),
     dismissLabel: resolve(msg("Dismiss branch change notice")),

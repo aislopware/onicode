@@ -502,11 +502,11 @@ it("keeps Ready pending when refreshed detail becomes mergeable before the actio
       }),
     }),
   );
-  await expect.element(screen.getByRole("button", { name: "Marking..." })).toBeDisabled();
+  await expect.element(screen.getByRole("button", { name: "Marking…" })).toBeDisabled();
 
   state.isDraft = false;
   await screen.rerender(row());
-  await expect.element(screen.getByRole("button", { name: "Marking..." })).toBeDisabled();
+  await expect.element(screen.getByRole("button", { name: "Marking…" })).toBeDisabled();
   await act(async () => {
     finish({ _tag: "Success", value: undefined });
     await result;

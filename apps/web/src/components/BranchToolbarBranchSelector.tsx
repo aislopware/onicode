@@ -385,9 +385,9 @@ export function BranchToolbarBranchSelector({
   const [isBranchActionPending, startBranchActionTransition] = useTransition();
   const totalBranchCount = branchRefState.data?.totalCount ?? 0;
   const branchStatusText = isInitialBranchesLoadPending
-    ? gt("Loading refs...")
+    ? gt("Loading refs…")
     : isFetchingNextPage
-      ? gt("Loading more refs...")
+      ? gt("Loading more refs…")
       : hasNextPage
         ? gt(
             "{total, plural, one {Showing {shown} of {total} refs} other {Showing {shown} of {total} refs}}",

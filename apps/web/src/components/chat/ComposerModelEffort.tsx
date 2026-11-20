@@ -229,9 +229,7 @@ function LevelSegment(props: {
   return (
     <Tooltip>
       <TooltipTrigger render={<button {...segmentProps} />}>{content}</TooltipTrigger>
-      <TooltipPopup side="top" className="max-w-56">
-        {hint}
-      </TooltipPopup>
+      <TooltipPopup side="top">{hint}</TooltipPopup>
     </Tooltip>
   );
 }
@@ -286,10 +284,10 @@ function markEffortLevel(input: HTMLInputElement | null) {
   input.dataset.effortLevel = "";
 }
 
-function levelHint(choice: LevelChoice): string {
-  const name =
-    choice.isDefault && choice.label !== "Default" ? `${choice.label} · Default` : choice.label;
-  return choice.description ? `${name}. ${choice.description}` : name;
+function levelName(choice: LevelChoice): string {
+  return choice.isDefault && choice.label !== "Default"
+    ? `${choice.label} · Default`
+    : choice.label;
 }
 
 /** The reasoning levels as one slider: a stop per level, filled from the fast end to the thumb. */
@@ -347,8 +345,8 @@ function EffortSlider(props: {
                     )}
                   />
                 </TooltipTrigger>
-                <TooltipPopup side="top" className="max-w-56">
-                  {levelHint(choice)}
+                <TooltipPopup side="top" description={choice.description || undefined}>
+                  {levelName(choice)}
                 </TooltipPopup>
               </Tooltip>
             ))}
@@ -764,9 +762,7 @@ export function ComposerPickerFooter(props: {
               >
                 <OptionIcon aria-hidden="true" className="size-3.5" />
               </TooltipTrigger>
-              <TooltipPopup side="top" className="max-w-56">
-                {option.disabledReason ?? option.description}
-              </TooltipPopup>
+              <TooltipPopup side="top">{option.disabledReason ?? option.description}</TooltipPopup>
             </Tooltip>
           );
         })}

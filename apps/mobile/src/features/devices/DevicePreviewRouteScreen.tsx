@@ -468,7 +468,7 @@ function OpenDevicePreview({
         <>
           <AppActivityIndicator color={themeVariables["--color-icon"]} />
           <AppText className="text-sm text-foreground-muted">
-            <T>Connecting to device...</T>
+            <T>Connecting to device…</T>
           </AppText>
         </>
       )}

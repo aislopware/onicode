@@ -257,28 +257,28 @@ const RUN_ACTION_LABEL = msg("Running source control action");
 const ACTION_FAILED_ERROR = msg("Source control action failed.");
 
 function hookRunningText(hookName: string): string {
-  return msg("Running {hook}...", { hook: hookName });
+  return msg("Running {hook}…", { hook: hookName });
 }
 
 /** The server names its steps in English (GitManager); the ones it can send are worded here. */
 function serverStepText(label: string): string | null {
   switch (label) {
     case "Generating commit message...":
-      return msg("Generating commit message...");
+      return msg("Generating commit message…");
     case "Committing...":
-      return msg("Committing...");
+      return msg("Committing…");
     case "Preparing feature branch...":
-      return msg("Preparing feature branch...");
+      return msg("Preparing feature branch…");
     case "Pushing...":
-      return msg("Pushing...");
+      return msg("Pushing…");
   }
   const content = /^Generating (.+) content\.\.\.$/.exec(label)?.[1];
   if (content !== undefined)
-    return msg("Generating {shortLabel} content...", { shortLabel: content });
+    return msg("Generating {shortLabel} content…", { shortLabel: content });
   const creating = /^Creating (.+)\.\.\.$/.exec(label)?.[1];
-  if (creating !== undefined) return msg("Creating {singular}...", { singular: creating });
+  if (creating !== undefined) return msg("Creating {singular}…", { singular: creating });
   const preparing = /^Preparing (.+)\.\.\.$/.exec(label)?.[1];
-  if (preparing !== undefined) return msg("Preparing {shortLabel}...", { shortLabel: preparing });
+  if (preparing !== undefined) return msg("Preparing {shortLabel}…", { shortLabel: preparing });
   return null;
 }
 

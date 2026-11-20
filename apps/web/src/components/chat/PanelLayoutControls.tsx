@@ -80,10 +80,8 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
           threadPanelToggle
         )}
       </TooltipTrigger>
-      <TooltipPopup side="bottom">
-        {threadPanelShortcutLabel
-          ? gt("Toggle thread details ({shortcut})", { shortcut: threadPanelShortcutLabel })
-          : gt("Toggle thread details")}
+      <TooltipPopup side="bottom" shortcut={threadPanelShortcutLabel}>
+        {gt("Toggle thread details")}
       </TooltipPopup>
     </Tooltip>
   );
@@ -96,49 +94,53 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
       {showThreadPanelControl ? threadPanelControl : null}
       {showTerminalControl ? (
         <Tooltip>
-          <TooltipTrigger render={<span className="flex shrink-0" />}>
-            <Toggle
-              className="shrink-0 [-webkit-app-region:no-drag]"
-              pressed={terminalOpen}
-              onPressedChange={onToggleTerminal}
-              aria-label={gt("Toggle terminal drawer")}
-              variant="ghost"
-              size="sm"
-              disabled={!terminalAvailable}
-            >
-              <PanelBottomIcon className="size-4" />
-            </Toggle>
+          {/* aria-disabled, not disabled: focus still reaches it, so the reason below is readable. */}
+          <TooltipTrigger
+            render={
+              <Toggle
+                className="shrink-0 [-webkit-app-region:no-drag]"
+                pressed={terminalOpen}
+                onPressedChange={terminalAvailable ? onToggleTerminal : undefined}
+                aria-label={gt("Toggle terminal drawer")}
+                variant="ghost"
+                size="sm"
+                aria-disabled={!terminalAvailable}
+              />
+            }
+          >
+            <PanelBottomIcon className="size-4" />
           </TooltipTrigger>
-          <TooltipPopup side="bottom">
+          <TooltipPopup side="bottom" shortcut={terminalAvailable ? terminalShortcutLabel : null}>
             {terminalAvailable
-              ? terminalShortcutLabel
-                ? gt("Toggle terminal drawer ({shortcut})", { shortcut: terminalShortcutLabel })
-                : gt("Toggle terminal drawer")
+              ? gt("Toggle terminal drawer")
               : gt("Terminal drawer is unavailable")}
           </TooltipPopup>
         </Tooltip>
       ) : null}
       {showRightPanelControl ? (
         <Tooltip>
-          <TooltipTrigger render={<span className="flex shrink-0" />}>
-            <Toggle
-              className="shrink-0 [-webkit-app-region:no-drag]"
-              pressed={rightPanelOpen}
-              onPressedChange={onToggleRightPanel}
-              aria-label={gt("Toggle right panel")}
-              data-right-panel-toggle
-              variant="ghost"
-              size="sm"
-              disabled={!rightPanelAvailable}
-            >
-              <PanelRightIcon className="size-4" />
-            </Toggle>
+          <TooltipTrigger
+            render={
+              <Toggle
+                className="shrink-0 [-webkit-app-region:no-drag]"
+                pressed={rightPanelOpen}
+                onPressedChange={rightPanelAvailable ? onToggleRightPanel : undefined}
+                aria-label={gt("Toggle right panel")}
+                data-right-panel-toggle
+                variant="ghost"
+                size="sm"
+                aria-disabled={!rightPanelAvailable}
+              />
+            }
+          >
+            <PanelRightIcon className="size-4" />
           </TooltipTrigger>
-          <TooltipPopup side="bottom">
+          <TooltipPopup
+            side="bottom"
+            shortcut={rightPanelAvailable ? rightPanelShortcutLabel : null}
+          >
             {rightPanelAvailable
-              ? rightPanelShortcutLabel
-                ? gt("Toggle right panel ({shortcut})", { shortcut: rightPanelShortcutLabel })
-                : gt("Toggle right panel")
+              ? gt("Toggle right panel")
               : (rightPanelUnavailableLabel ?? gt("Right panel is unavailable"))}
           </TooltipPopup>
         </Tooltip>

@@ -88,7 +88,7 @@ export function AssistantCitationCommentEditor({
           "Enter to save the citation comment; Command/Ctrl+Enter to save and send; Shift+Enter for a new line.",
         )}
         aria-invalid={commentTooLong || undefined}
-        placeholder={gt("Add an optional comment...")}
+        placeholder={gt("Add an optional comment…")}
         rows={2}
         dir={textDirection(comment)}
         className="field-sizing-content block max-h-40 min-h-16 w-full resize-none bg-transparent px-1 py-1.5 text-base outline-none placeholder:text-muted-foreground sm:text-sm"

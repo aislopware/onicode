@@ -326,24 +326,16 @@ export function QueuedRunsControl({
                           <T>Send now</T>
                         </Button>
                       </TooltipTrigger>
-                      <TooltipPopup>
-                        {item.runId === steerTarget?.run.id && props.steerShortcutLabel
-                          ? workflow?.canSendNow
-                            ? gt("Start a turn with this message ({shortcut})", {
-                                shortcut: props.steerShortcutLabel,
-                              })
-                            : workflow?.promoteSkipsCompaction
-                              ? gt("Skip compaction and send this message ({shortcut})", {
-                                  shortcut: props.steerShortcutLabel,
-                                })
-                              : gt("Send into the current turn ({shortcut})", {
-                                  shortcut: props.steerShortcutLabel,
-                                })
-                          : workflow?.canSendNow
-                            ? gt("Start a turn with this message")
-                            : workflow?.promoteSkipsCompaction
-                              ? gt("Skip compaction and send this message")
-                              : gt("Send into the current turn")}
+                      <TooltipPopup
+                        shortcut={
+                          item.runId === steerTarget?.run.id ? props.steerShortcutLabel : null
+                        }
+                      >
+                        {workflow?.canSendNow
+                          ? gt("Start a turn with this message")
+                          : workflow?.promoteSkipsCompaction
+                            ? gt("Skip compaction and send this message")
+                            : gt("Send into the current turn")}
                       </TooltipPopup>
                     </Tooltip>
                   </>
@@ -371,38 +363,38 @@ export function QueuedRunsControl({
                 ) : (
                   <>
                     <Tooltip>
-                      {/* The span keeps the tooltip, and its reason, on a disabled button. */}
-                      <TooltipTrigger render={<span className="flex shrink-0" />}>
-                        <Button
-                          size="icon-xs"
-                          variant="ghost-muted"
-                          aria-label={gt("Edit queued message")}
-                          disabled={
-                            item.runId === null ||
-                            busyRunId !== null ||
-                            props.editBlockedReason !== null
-                          }
-                          onClick={() => {
-                            if (item.runId !== null && item.messageId !== null) {
-                              props.onEditQueuedRun({
-                                runId: item.runId,
-                                messageId: item.messageId,
-                                text: item.text,
-                                attachments: item.attachments,
-                              });
-                            }
-                          }}
-                        >
-                          <PencilIcon />
-                        </Button>
+                      <TooltipTrigger
+                        render={
+                          <Button
+                            size="icon-xs"
+                            variant="ghost-muted"
+                            aria-label={gt("Edit queued message")}
+                            disabled={item.runId === null || busyRunId !== null}
+                            aria-disabled={props.editBlockedReason !== null || undefined}
+                            onClick={() => {
+                              if (props.editBlockedReason !== null) return;
+                              if (item.runId !== null && item.messageId !== null) {
+                                props.onEditQueuedRun({
+                                  runId: item.runId,
+                                  messageId: item.messageId,
+                                  text: item.text,
+                                  attachments: item.attachments,
+                                });
+                              }
+                            }}
+                          />
+                        }
+                      >
+                        <PencilIcon />
                       </TooltipTrigger>
-                      <TooltipPopup>
-                        {props.editBlockedReason ??
-                          (item.serverIndex === queued.length - 1 && props.editShortcutLabel
-                            ? gt("Edit in the composer ({shortcut})", {
-                                shortcut: props.editShortcutLabel,
-                              })
-                            : gt("Edit in the composer"))}
+                      <TooltipPopup
+                        shortcut={
+                          props.editBlockedReason === null && item.serverIndex === queued.length - 1
+                            ? props.editShortcutLabel
+                            : null
+                        }
+                      >
+                        {props.editBlockedReason ?? gt("Edit in the composer")}
                       </TooltipPopup>
                     </Tooltip>
                     <Tooltip>

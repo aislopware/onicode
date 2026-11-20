@@ -107,7 +107,7 @@ export function BranchPicker({
       {children}
       <ComboboxPopup {...popupProps}>
         <ComboboxSearchInput
-          placeholder={gt("Search refs...")}
+          placeholder={gt("Search refs…")}
           value={query}
           onChange={(event) => {
             onQueryChange(event.target.value);
@@ -182,7 +182,7 @@ export function BranchPicker({
                   </label>
                 }
               />
-              <TooltipPopup side="top" className="max-w-72 whitespace-normal">
+              <TooltipPopup side="top">
                 <T>
                   Uses the latest commit of the base branch’s tracked remote branch, even if its
                   name differs. Otherwise uses the same-named branch on origin. Uses your local

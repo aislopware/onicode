@@ -18,7 +18,7 @@ import { useContentTopInset } from "../../components/ui/useBarInset";
 export function WorkspaceFileWebPreview(props: { readonly uri: string | null }) {
   const gt = useGT();
   if (props.uri === null) {
-    return <FilePreviewLoading message={gt("Preparing preview...")} background="card" />;
+    return <FilePreviewLoading message={gt("Preparing preview…")} background="card" />;
   }
   return <DocumentWebPreview key={props.uri} uri={props.uri} />;
 }

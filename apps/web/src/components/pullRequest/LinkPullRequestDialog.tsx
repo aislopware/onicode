@@ -177,7 +177,7 @@ function LinkPullRequestDialog({
             onClick={() => void submit()}
             disabled={pending || resolved === null || "error" in resolved}
           >
-            {pending ? gt("Linking...") : gt("Link", { $context: "verb, button" })}
+            {pending ? gt("Linking…") : gt("Link", { $context: "verb, button" })}
           </Button>
         </DialogFooter>
       </DialogPopup>

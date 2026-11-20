@@ -28,7 +28,13 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { AndroidIcon, AppleIcon } from "../Icons";
 import { Button, InlineButton } from "../ui/button";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
-import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
+import {
+  Popover,
+  PopoverDescription,
+  PopoverPopup,
+  PopoverTitle,
+  PopoverTrigger,
+} from "../ui/popover";
 import { Spinner } from "../ui/spinner";
 import { toastManager } from "../ui/toast";
 import { incompleteListings } from "../device/DeviceSetup";
@@ -735,17 +741,17 @@ function PlatformIcon(props: {
         ) : null}
       </PopoverTrigger>
       <PopoverPopup side="top" align="end" width="sm">
-        <p className="text-sm font-medium">
+        <PopoverTitle>
           {available
             ? partial
               ? gt("{platform} available on some", { platform: props.label })
               : gt("{platform} available", { platform: props.label })
             : gt("{platform} not available", { platform: props.label })}
-        </p>
+        </PopoverTitle>
         {props.row.shared ? (
           <>
             {uniform && !available && sharedAnswer?.reason ? (
-              <p className="mt-1 text-xs text-muted-foreground">{sharedAnswer.reason}</p>
+              <PopoverDescription>{sharedAnswer.reason}</PopoverDescription>
             ) : null}
             {several ? (
               <dl className="mt-2 space-y-1.5 text-xs">
@@ -800,9 +806,9 @@ function PlatformIcon(props: {
             })}
           </dl>
         ) : !available ? (
-          <p className="mt-1 text-xs text-muted-foreground">
+          <PopoverDescription>
             {availability(props.known[0]!)?.reason ?? gt("Not set up on this machine.")}
-          </p>
+          </PopoverDescription>
         ) : null}
       </PopoverPopup>
     </Popover>

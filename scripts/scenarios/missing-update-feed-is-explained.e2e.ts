@@ -13,7 +13,7 @@ test(
     ).toBeDisabled();
     await app.screenshot("sidebar");
 
-    await desktop.chooseApplicationMenuItem("Help", "Check for Updates...");
+    await desktop.chooseApplicationMenuItem("Help", "Check for Updates…");
     await expect
       .poll(() => desktop.takeMessageBoxes())
       .toEqual([

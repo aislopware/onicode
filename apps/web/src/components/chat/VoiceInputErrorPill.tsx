@@ -67,10 +67,8 @@ export function VoiceInputErrorPill(props: {
             </Button>
           }
         />
-        <TooltipPopup side="top">
-          {props.cancelShortcutLabel
-            ? gt("Dismiss ({shortcut})", { shortcut: props.cancelShortcutLabel })
-            : gt("Dismiss")}
+        <TooltipPopup side="top" shortcut={props.cancelShortcutLabel}>
+          {gt("Dismiss")}
         </TooltipPopup>
       </Tooltip>
       <Tooltip>

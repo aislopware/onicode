@@ -137,9 +137,8 @@ function HistoryNavigationButton({
       >
         <Icon className="size-3.5" />
       </TooltipTrigger>
-      <TooltipPopup side="bottom">
+      <TooltipPopup side="bottom" shortcut={shortcutLabel}>
         {label}
-        {shortcutLabel ? ` (${shortcutLabel})` : ""}
       </TooltipPopup>
     </Tooltip>
   );

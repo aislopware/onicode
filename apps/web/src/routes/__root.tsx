@@ -37,6 +37,8 @@ import { PrimaryAuthErrorSurface } from "../components/auth/PrimaryAuthErrorSurf
 import { Button } from "../components/ui/button";
 import { StandalonePage, StandalonePageHeader } from "../components/ui/standalone-page";
 import { AnchoredToastProvider, ToastProvider } from "../components/ui/toast";
+import { TooltipProvider } from "../components/ui/tooltip";
+import { TruncationTooltip } from "../components/ui/truncation-tooltip";
 import { useClientSettings } from "../hooks/useSettings";
 import {
   deriveLogicalProjectKeyFromSettings,
@@ -118,7 +120,11 @@ function RootRouteView() {
   return (
     <ToastProvider>
       <AnchoredToastProvider>
-        <RootRouteBranch />
+        {/* One group for the app: after the first tooltip, its neighbours open at once. */}
+        <TooltipProvider>
+          <RootRouteBranch />
+        </TooltipProvider>
+        <TruncationTooltip />
       </AnchoredToastProvider>
     </ToastProvider>
   );

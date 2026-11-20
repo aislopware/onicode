@@ -330,7 +330,7 @@ export function ThemeSearchSection({
             if (event.key === "Enter" && !isSearching && installingId === null)
               themeSearch.searchNow();
           }}
-          placeholder={gt("Search themes...")}
+          placeholder={gt("Search themes…")}
           size="lg"
           type="search"
           value={query}
@@ -391,7 +391,7 @@ export function ThemeSearchSection({
 
       <div className="sr-only" role="status">
         {isSearching
-          ? gt("Searching themes...")
+          ? gt("Searching themes…")
           : results
             ? gt(
                 "{count, plural, one {{count} supported theme found.} other {{count} supported themes found.}}",
@@ -408,7 +408,7 @@ export function ThemeSearchSection({
 
       {isSearching && results === null ? (
         <div className="flex min-h-20 items-center justify-center gap-2 text-muted-foreground text-sm">
-          <Spinner /> <T>Searching themes...</T>
+          <Spinner /> <T>Searching themes…</T>
         </div>
       ) : null}
 
@@ -483,11 +483,7 @@ export function ThemeSearchSection({
                       ) : (
                         <PackagePlusIcon />
                       )}
-                      {isInstalling
-                        ? isInstalled
-                          ? gt("Updating...")
-                          : gt("Installing...")
-                        : action}
+                      {isInstalling ? (isInstalled ? gt("Updating…") : gt("Installing…")) : action}
                     </Button>
                   </div>
                 </article>

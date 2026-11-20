@@ -651,7 +651,7 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
             : gt("Snoozed", { $context: "thread status" })
         }
         clockMinute={nowMinute}
-        actionLabel={isUnsnoozing ? gt("Waking...") : gt("Wake now")}
+        actionLabel={isUnsnoozing ? gt("Waking…") : gt("Wake now")}
         actionDisabled={!canOperateThread || isUnsnoozing}
         onAction={() => void handleUnsnoozeActiveThreadStable()}
       />
@@ -665,7 +665,7 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
           : gt("Settled", { $context: "thread status" })
       }
       clockMinute={nowMinute}
-      actionLabel={isUnsettling ? gt("Un-settling...") : gt("Un-settle")}
+      actionLabel={isUnsettling ? gt("Un-settling…") : gt("Un-settle")}
       actionDisabled={!canOperateThread || isUnsettling}
       onAction={() => void handleUnsettleActiveThreadStable()}
     />

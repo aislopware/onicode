@@ -464,7 +464,7 @@ const RESOURCE_HISTORY_WINDOWS = [
 
 function formatShortProcessName(command: string): string {
   const name = formatProcessName(command);
-  return name.length > 42 ? `${name.slice(0, 39)}...` : name;
+  return name.length > 42 ? `${name.slice(0, 41)}…` : name;
 }
 
 function ResourceHistoryProcessNameCell({
@@ -1066,7 +1066,7 @@ function DiagnosticsSettingsBody() {
           onSignal={signalProcess}
           emptyLabel={
             isProcessInitialLoading
-              ? gt("Loading live processes...")
+              ? gt("Loading live processes…")
               : gt("No live descendant processes found.")
           }
         />
@@ -1140,7 +1140,7 @@ function DiagnosticsSettingsBody() {
           processes={resourceData?.topProcesses ?? []}
           emptyLabel={
             isResourceInitialLoading
-              ? gt("Collecting process resource samples...")
+              ? gt("Collecting process resource samples…")
               : gt("No process resource samples found for this window.")
           }
         />
@@ -1264,7 +1264,7 @@ function DiagnosticsSettingsBody() {
           </DiagnosticsTable>
         ) : (
           <EmptyRows
-            label={isInitialLoading ? gt("Loading failures...") : gt("No failed spans found.")}
+            label={isInitialLoading ? gt("Loading failures…") : gt("No failed spans found.")}
           />
         )}
       </SettingsSection>
@@ -1295,7 +1295,7 @@ function DiagnosticsSettingsBody() {
         ) : (
           <EmptyRows
             label={
-              isInitialLoading ? gt("Loading failure groups...") : gt("No repeated failures found.")
+              isInitialLoading ? gt("Loading failure groups…") : gt("No repeated failures found.")
             }
           />
         )}
@@ -1326,9 +1326,7 @@ function DiagnosticsSettingsBody() {
             ))}
           </DiagnosticsTable>
         ) : (
-          <EmptyRows
-            label={isInitialLoading ? gt("Loading slow spans...") : gt("No spans found.")}
-          />
+          <EmptyRows label={isInitialLoading ? gt("Loading slow spans…") : gt("No spans found.")} />
         )}
       </SettingsSection>
 
@@ -1403,7 +1401,7 @@ function DiagnosticsSettingsBody() {
         ) : (
           <EmptyRows
             label={
-              isInitialLoading ? gt("Loading recent logs...") : gt("No warnings or errors found.")
+              isInitialLoading ? gt("Loading recent logs…") : gt("No warnings or errors found.")
             }
           />
         )}
@@ -1437,9 +1435,7 @@ function DiagnosticsSettingsBody() {
             ))}
           </DiagnosticsTable>
         ) : (
-          <EmptyRows
-            label={isInitialLoading ? gt("Loading span names...") : gt("No spans found.")}
-          />
+          <EmptyRows label={isInitialLoading ? gt("Loading span names…") : gt("No spans found.")} />
         )}
       </SettingsSection>
       {exportFormEnvironmentId === environmentId && <TelemetryExportSettings />}

@@ -67,9 +67,7 @@ export function ConnectionStatusDot({
   return (
     <Tooltip>
       <TooltipTrigger render={dot} />
-      <TooltipPopup side="top" className="whitespace-pre-wrap">
-        {tooltipText}
-      </TooltipPopup>
+      <TooltipPopup side="top">{tooltipText}</TooltipPopup>
     </Tooltip>
   );
 }

@@ -343,7 +343,7 @@ export function ReviewThreadCard({
             onClick={onFix}
           >
             <HammerIcon className="size-3" />
-            {fixPending ? gt("Preparing...") : (fixLabel ?? gt("Fix in a thread"))}
+            {fixPending ? gt("Preparing…") : (fixLabel ?? gt("Fix in a thread"))}
           </Button>
         ) : null}
         {onAddToChat && comments.some((comment) => visibleBody(comment.body) !== null) ? (
@@ -429,7 +429,7 @@ export function ReviewThreadCard({
                 disabled={loadingMore}
                 onClick={() => void loadMore()}
               >
-                {loadingMore ? gt("Loading...") : gt("Load more comments")}
+                {loadingMore ? gt("Loading…") : gt("Load more comments")}
               </Button>
             </div>
           ) : null}

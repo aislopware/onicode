@@ -47,6 +47,7 @@ import {
   workEntryDisplayLabel,
   workEntryReadOutput,
 } from "./MessagesTimeline.logic";
+import { observeResize } from "~/lib/observeResize";
 import { cn } from "~/lib/utils";
 import type { MessageResolver } from "~/i18n/messages";
 import { formatUpcomingTimestamp } from "../../timestampFormat";
@@ -217,6 +218,22 @@ export function ReasoningTraceContent({ entries }: { entries: ReadonlyArray<Time
   );
 }
 
+const NOTICE_COLLAPSED_LINES = "line-clamp-3";
+
+/** Whether a line-clamped element hides text. Ignores it while `data-expanded`, when nothing is clamped. */
+function useClampedText() {
+  const [clamped, setClamped] = useState(false);
+  const [observe] = useState(() => (element: HTMLElement | null) => {
+    if (!element) return;
+    return observeResize(element, () => {
+      if (element.dataset.expanded === undefined) {
+        setClamped(element.scrollHeight > element.clientHeight + 1);
+      }
+    });
+  });
+  return [clamped, observe] as const;
+}
+
 type WorkEntryRowProps = {
   workEntry: TimelineWorkEntry;
   workspaceRoot: string | undefined;
@@ -295,6 +312,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
       ? notificationChildThreadId(workEntry.projectedItem.item.source)
       : undefined;
   const groupView = use(WorkGroupViewCtx);
+  const [noticeClamped, observeNoticeClamp] = useClampedText();
   const [expanded, setExpanded] = useState(
     () => groupView?.state.expandedEntries.has(workEntry.id) ?? false,
   );
@@ -386,6 +404,8 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
     );
   }
   const iconConfig = workToneIcon(workEntry.tone);
+  // A notice is its message: it wraps, and a long one opens in place instead of in a panel.
+  const isNotice = workEntry.itemType === "system_notice";
   const showWarningIndicator = workEntry.sourceActivityKind === "runtime.warning";
   const showFailedIndicator =
     !showWarningIndicator && workEntryDisplayIndicatesToolFailure(workEntry);
@@ -503,7 +523,8 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
   const accessibleDisplayText = showFailedIndicator
     ? gt("{label}, tool call failed", { label: accessiblePreview })
     : accessiblePreview;
-  const rowToggleProps = canExpandProjectedItem
+  const canToggle = isNotice ? noticeClamped || expanded : canExpandProjectedItem;
+  const rowToggleProps = canToggle
     ? {
         role: "button" as const,
         tabIndex: 0 as const,
@@ -525,6 +546,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
       data-v2-item-type={workEntry.projectedItem?.item.type}
       data-v2-item-visibility={workEntry.projectedItem?.visibility}
       {...rowToggleProps}
+      wrapLabel={isNotice}
       icon={
         <span
           className={iconWrapperClass}
@@ -540,52 +562,75 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
         </span>
       }
       label={
-        <div className="min-w-0 flex-1 overflow-hidden">
-          <p className="flex min-w-0 w-full items-baseline gap-1.5 text-sm leading-relaxed">
-            <span
-              className={cn(answerPreview ? "min-w-0" : "min-w-0 flex-1", "truncate", headingClass)}
-            >
-              {isReasoning && !expanded ? (
-                <ChatMarkdown
-                  inline
-                  text={(workEntry.detail ?? previewText).slice(
-                    0,
-                    THOUGHT_PREVIEW_SOURCE_MAX_LENGTH,
-                  )}
-                  cwd={ctx.markdownCwd}
-                  parseRawHtml={false}
-                  extraRemarkPlugins={
-                    workEntry.toolLifecycleStatus === "inProgress"
-                      ? thoughtPreviewPlugins(gt("Thinking"))
-                      : thoughtPreviewPlugins(gt("Thought"))
-                  }
-                />
-              ) : threadLabel ? (
-                <ThreadReadLabel
-                  label={threadLabel}
-                  environmentId={ctx.activeThreadEnvironmentId}
-                  linked
-                />
-              ) : (
-                previewText
-              )}
-            </span>
-            {answerPreview ? (
+        isNotice ? (
+          <p
+            ref={observeNoticeClamp}
+            data-expanded={expanded ? "" : undefined}
+            className={cn(
+              "wrap-anywhere whitespace-pre-line text-sm leading-relaxed",
+              headingClass,
+              expanded ? "cursor-text select-text!" : NOTICE_COLLAPSED_LINES,
+              !canToggle && "cursor-text select-text!",
+            )}
+            // Dragging over the open text selects it; only a plain click closes the row.
+            onClick={(event) => {
+              if (expanded && window.getSelection()?.isCollapsed === false) event.stopPropagation();
+            }}
+          >
+            {previewText}
+          </p>
+        ) : (
+          <div className="min-w-0 flex-1 overflow-hidden">
+            <p className="flex min-w-0 w-full items-baseline gap-1.5 text-sm leading-relaxed">
               <span
                 className={cn(
-                  "min-w-0 truncate",
-                  !expanded &&
-                    workEntry.questionAnswer &&
-                    hasQuestionAnswer(workEntry.questionAnswer)
-                    ? "text-foreground"
-                    : "text-muted-foreground",
+                  answerPreview ? "min-w-0" : "min-w-0 flex-1",
+                  "truncate",
+                  headingClass,
                 )}
               >
-                {answerPreview}
+                {isReasoning && !expanded ? (
+                  <ChatMarkdown
+                    inline
+                    text={(workEntry.detail ?? previewText).slice(
+                      0,
+                      THOUGHT_PREVIEW_SOURCE_MAX_LENGTH,
+                    )}
+                    cwd={ctx.markdownCwd}
+                    parseRawHtml={false}
+                    extraRemarkPlugins={
+                      workEntry.toolLifecycleStatus === "inProgress"
+                        ? thoughtPreviewPlugins(gt("Thinking"))
+                        : thoughtPreviewPlugins(gt("Thought"))
+                    }
+                  />
+                ) : threadLabel ? (
+                  <ThreadReadLabel
+                    label={threadLabel}
+                    environmentId={ctx.activeThreadEnvironmentId}
+                    linked
+                  />
+                ) : (
+                  previewText
+                )}
               </span>
-            ) : null}
-          </p>
-        </div>
+              {answerPreview ? (
+                <span
+                  className={cn(
+                    "min-w-0 truncate",
+                    !expanded &&
+                      workEntry.questionAnswer &&
+                      hasQuestionAnswer(workEntry.questionAnswer)
+                      ? "text-foreground"
+                      : "text-muted-foreground",
+                  )}
+                >
+                  {answerPreview}
+                </span>
+              ) : null}
+            </p>
+          </div>
+        )
       }
       trailing={
         <>
@@ -624,17 +669,30 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
           !toolIconAcceptsTint(entryToolIcon) ? (
             <XIcon aria-hidden className={cn("size-3.5 shrink-0", failedToolIconClassName)} />
           ) : null}
-          {canExpandProjectedItem ? (
-            <span className="flex size-4 shrink-0 items-center justify-center" aria-hidden>
+          {canToggle ? (
+            <span
+              className={cn(
+                "flex size-4 shrink-0 items-center justify-center",
+                // Centred on the first line of a wrapping notice.
+                isNotice && "mt-[3px]",
+              )}
+              aria-hidden
+            >
               <ChevronRightIcon
                 className={cn(
-                  "size-3.5 shrink-0 text-icon-muted opacity-70 transition-transform duration-200",
+                  "size-3.5 shrink-0 text-icon-muted opacity-70 transition-transform duration-150 ease-out-quint motion-reduce:transition-none",
                   expanded && "rotate-90",
                 )}
               />
             </span>
           ) : null}
-          <TimelineRowTimestamp createdAt={workEntry.createdAt} timestampFormat={timestampFormat} />
+          <TimelineRowTimestamp
+            createdAt={workEntry.createdAt}
+            timestampFormat={timestampFormat}
+            // Appearing on hover would take width from a wrapping notice and reflow it.
+            alwaysVisible={isNotice}
+            {...(isNotice ? { className: "mt-0.5" } : {})}
+          />
         </>
       }
     >
@@ -657,6 +715,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
       {expanded && isReasoning ? <ReasoningTraceContent entries={[workEntry]} /> : null}
       {expanded &&
       !isReasoning &&
+      !isNotice &&
       !workEntry.questionAnswer &&
       canExpandProjectedItem &&
       (expandedBody ||

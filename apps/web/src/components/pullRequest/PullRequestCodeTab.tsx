@@ -1182,7 +1182,7 @@ function PullRequestCodeTab({
             </Button>
           </>
         ) : diffQuery.isPending ? (
-          gt("Loading more files...")
+          gt("Loading more files…")
         ) : null}
       </div>
     );
@@ -1878,7 +1878,7 @@ function PullRequestCodeTab({
     return withToolbar(
       <DiffPanelLoadingState
         label={gt(
-          "Loading {term, select, mr {merge request} cr {change request} other {pull request}} diff...",
+          "Loading {term, select, mr {merge request} cr {change request} other {pull request}} diff…",
           { term },
         )}
       />,
@@ -2060,7 +2060,7 @@ function PullRequestCodeTab({
                       {diffQuery.error !== null
                         ? gt("Retry")
                         : diffQuery.isPending
-                          ? gt("Loading more files...")
+                          ? gt("Loading more files…")
                           : gt("Load more files")}
                     </Button>
                   </div>
@@ -2103,7 +2103,7 @@ function WithheldFileNotice({
           onClick={() => onLoad(path)}
         >
           {status === "loading"
-            ? gt("Loading...")
+            ? gt("Loading…")
             : status === "error"
               ? gt("Retry")
               : gt("Load diff")}

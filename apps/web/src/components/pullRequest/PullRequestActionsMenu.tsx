@@ -266,7 +266,7 @@ export function PullRequestActionsMenu({
         <MenuItem disabled={handoff !== null} onClick={askAboutPullRequest}>
           <MessageCircleQuestionIcon className="mt-1 size-3.5 shrink-0 self-start" />
           <span className="flex min-w-0 flex-col">
-            <span>{handoff === "ask" ? gt("Opening...") : gt("Ask a question")}</span>
+            <span>{handoff === "ask" ? gt("Opening…") : gt("Ask a question")}</span>
             <span className="text-xs text-muted-foreground">
               {attachesToComposer
                 ? gt(
@@ -287,7 +287,7 @@ export function PullRequestActionsMenu({
           <span className="flex min-w-0 flex-col">
             <span>
               {handoff === "explain"
-                ? gt("Opening...")
+                ? gt("Opening…")
                 : gt("Explain this {term, select, mr {MR} cr {change request} other {PR}}", {
                     term: changeRequestTermKind(terminology),
                   })}
@@ -299,13 +299,13 @@ export function PullRequestActionsMenu({
         </MenuItem>
         <MenuItem disabled={handoff !== null || !canFixFindings} onClick={startFixFindings}>
           <HammerIcon className="size-3.5" />
-          {handoff === "findings" ? gt("Preparing...") : handoffLabels.fixFindings}
+          {handoff === "findings" ? gt("Preparing…") : handoffLabels.fixFindings}
         </MenuItem>
         {canWriteGuide ? (
           <MenuItem disabled={guideRunning} onClick={writeGuide}>
             <ScrollTextIcon className="size-3.5" />
             {guideRunning
-              ? gt("Writing guide...")
+              ? gt("Writing guide…")
               : !guideWritten
                 ? gt("Write guide")
                 : gt("Rewrite guide")}
@@ -552,9 +552,7 @@ export function PullRequestActionsMenu({
               <Trash2Icon className="mt-1 size-3.5 shrink-0 self-start" />
               <span className="flex min-w-0 flex-col">
                 <span>
-                  {pendingAction === "delete-branch"
-                    ? gt("Deleting branch...")
-                    : gt("Delete branch")}
+                  {pendingAction === "delete-branch" ? gt("Deleting branch…") : gt("Delete branch")}
                 </span>
                 <span className="truncate text-xs text-muted-foreground">
                   {environmentConnected ? detail.headBranch : gt("Reconnect to delete this branch")}

@@ -6,16 +6,30 @@ import {
   useRef,
   useState,
   type ComponentProps,
+  type ReactNode,
   type RefObject,
 } from "react";
 
 import { cn } from "~/lib/utils";
 import { useNativeTitlebarHeight } from "~/lib/windowControlsOverlay";
 
+import { Kbd } from "./kbd";
+
 // Base UI's default, restated because a padding object zeroes the sides it omits.
 const COLLISION_PADDING = 5;
 
-const TooltipProvider = TooltipPrimitive.Provider;
+/** How long the pointer rests before the first tooltip opens. */
+const TOOLTIP_DELAY_MS = 300;
+/** After one closes, the next opens at once: the reader is scanning, not waiting. */
+const TOOLTIP_WARM_MS = 300;
+
+function TooltipProvider({
+  delay = TOOLTIP_DELAY_MS,
+  timeout = TOOLTIP_WARM_MS,
+  ...props
+}: TooltipPrimitive.Provider.Props) {
+  return <TooltipPrimitive.Provider delay={delay} timeout={timeout} {...props} />;
+}
 
 type TooltipActionsRef = RefObject<TooltipPrimitive.Root.Actions | null>;
 
@@ -106,7 +120,7 @@ function TooltipPositioner(props: TooltipPrimitive.Positioner.Props) {
   const titlebarHeight = useNativeTitlebarHeight();
   return (
     <TooltipPrimitive.Positioner
-      className="pointer-events-none z-[140] max-w-(--available-width) transition-[top,left,right,bottom,transform] data-instant:transition-none"
+      className="pointer-events-none z-[140] max-w-(--available-width) transition-[top,left,right,bottom,transform] data-instant:transition-none motion-reduce:transition-none"
       collisionPadding={{
         top: COLLISION_PADDING + titlebarHeight,
         right: COLLISION_PADDING,
@@ -126,6 +140,8 @@ function TooltipPopup({
   side = "top",
   variant = "default",
   anchor,
+  shortcut,
+  description,
   children,
   ...props
 }: TooltipPrimitive.Popup.Props & {
@@ -134,26 +150,46 @@ function TooltipPopup({
   sideOffset?: TooltipPrimitive.Positioner.Props["sideOffset"];
   variant?: "default" | "glass" | "code";
   anchor?: TooltipPrimitive.Positioner.Props["anchor"];
+  /** The key combination for the action, shown as a key chip after the label. */
+  shortcut?: string | null | undefined;
+  /** A sentence under the label; the children become its title. */
+  description?: ReactNode;
 }) {
   return (
     <TooltipPrimitive.Portal>
       <TooltipPositioner align={align} anchor={anchor} side={side} sideOffset={sideOffset}>
         <TooltipPrimitive.Popup
           className={cn(
-            "relative flex origin-(--transform-origin) rounded-md font-medium text-popover-foreground text-xs transition-opacity duration-150 ease-out-quint data-ending-style:opacity-0 data-ending-style:duration-100 data-starting-style:opacity-0 data-instant:duration-0",
+            "relative flex origin-(--transform-origin) rounded-md font-medium text-popover-foreground text-xs transition-[opacity,scale] duration-[125ms] ease-out-quint will-change-[scale] motion-safe:data-ending-style:scale-[0.97] data-ending-style:opacity-0 data-ending-style:duration-100 motion-safe:data-starting-style:scale-[0.97] data-starting-style:opacity-0 data-instant:duration-0",
             variant === "glass"
               ? "dropdown-glass shadow-popup dark:shadow-popup-dark"
               : "border border-border-2 bg-popover shadow-popup dark:shadow-popup-dark",
             variant === "code"
               ? "max-w-120 wrap-anywhere text-left font-mono text-2xs leading-relaxed"
-              : "max-w-80 wrap-anywhere whitespace-normal leading-snug",
+              : "max-w-80 wrap-anywhere whitespace-normal text-balance leading-snug",
+            description !== undefined && "max-w-64",
             className,
           )}
           data-slot="tooltip-popup"
           {...props}
         >
-          <div className="min-w-0 px-2 py-1" data-slot="tooltip-viewport">
-            {children}
+          <div
+            className={cn(
+              "min-w-0 px-2 py-1",
+              shortcut && "flex items-center gap-2",
+              description !== undefined && "py-1.5 text-left",
+            )}
+            data-slot="tooltip-viewport"
+          >
+            {shortcut || description !== undefined ? (
+              <span className="min-w-0">{children}</span>
+            ) : (
+              children
+            )}
+            {shortcut ? <Kbd className="-me-1 h-4 min-w-4 shrink-0">{shortcut}</Kbd> : null}
+            {description !== undefined ? (
+              <TooltipDescription>{description}</TooltipDescription>
+            ) : null}
           </div>
         </TooltipPrimitive.Popup>
       </TooltipPositioner>
@@ -161,4 +197,46 @@ function TooltipPopup({
   );
 }
 
-export { TooltipProvider, Tooltip, TooltipTrigger, TooltipPopup, TooltipScrollDismissArea };
+/** Body text of a tooltip: the regular-weight line under a medium title. */
+function TooltipDescription({ className, ...props }: ComponentProps<"div">) {
+  return (
+    <div
+      className={cn("mt-0.5 font-normal text-muted-foreground", className)}
+      data-slot="tooltip-description"
+      {...props}
+    />
+  );
+}
+
+/** One line of a tooltip that lists several actions, each with its own key chip. */
+function TooltipRow({
+  shortcut,
+  className,
+  children,
+}: {
+  shortcut?: string | null | undefined;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      className={cn("flex items-center justify-between gap-3 not-first:mt-1", className)}
+      data-slot="tooltip-row"
+    >
+      <span className="min-w-0">{children}</span>
+      {shortcut ? <Kbd className="-me-1 h-4 min-w-4 shrink-0">{shortcut}</Kbd> : null}
+    </div>
+  );
+}
+
+export {
+  TOOLTIP_DELAY_MS,
+  TOOLTIP_WARM_MS,
+  TooltipProvider,
+  Tooltip,
+  TooltipTrigger,
+  TooltipPopup,
+  TooltipDescription,
+  TooltipRow,
+  TooltipScrollDismissArea,
+};

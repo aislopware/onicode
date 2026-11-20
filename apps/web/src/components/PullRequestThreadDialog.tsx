@@ -302,7 +302,7 @@ export function PullRequestThreadDialog({
             <div className="flex items-center gap-2 text-muted-foreground text-xs">
               <Spinner size="sm" />
               {gt(
-                "Resolving {term, select, mr {merge request} cr {change request} other {pull request}}...",
+                "Resolving {term, select, mr {merge request} cr {change request} other {pull request}}…",
                 { term },
               )}
             </div>
@@ -334,7 +334,7 @@ export function PullRequestThreadDialog({
             }
           >
             {preparingMode === "local"
-              ? gt("Preparing local...")
+              ? gt("Preparing local…")
               : gt("Local", { $context: "checkout in the main repo" })}
           </Button>
           <Button
@@ -351,7 +351,7 @@ export function PullRequestThreadDialog({
             }
           >
             {preparingMode === "worktree"
-              ? gt("Preparing worktree...")
+              ? gt("Preparing worktree…")
               : gt("Worktree", { $context: "checkout in a new git worktree" })}
           </Button>
         </DialogFooter>

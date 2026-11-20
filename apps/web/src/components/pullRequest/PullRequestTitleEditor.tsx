@@ -128,7 +128,7 @@ export function PullRequestTitleEditor({
           disabled={!canWriteSourceControl || titleSaving || titleDraft.trim().length === 0}
           onClick={() => void saveTitle(titleDraft)}
         >
-          {titleSaving ? gt("Saving...") : gt("Save")}
+          {titleSaving ? gt("Saving…") : gt("Save")}
         </Button>
       </div>
     </div>

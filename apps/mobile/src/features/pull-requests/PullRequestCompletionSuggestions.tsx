@@ -10,13 +10,13 @@ import type { usePullRequestCompletions } from "./usePullRequestCompletions";
 const COPY = {
   mention: {
     label: msg("Mention a user"),
-    pending: msg("Searching users..."),
+    pending: msg("Searching users…"),
     failed: msg("Couldn't search users on the host"),
     none: msg("No matching users"),
   },
   reference: {
     label: msg("Reference an issue or change request"),
-    pending: msg("Searching..."),
+    pending: msg("Searching…"),
     failed: msg("Couldn't search the host"),
     none: msg("No matching issues or change requests"),
   },

@@ -240,8 +240,8 @@ export function RemoteDesktopWebView({
             {status === "error"
               ? error
               : status === "reconnecting"
-                ? gt("Reconnecting...")
-                : gt("Connecting to the host...")}
+                ? gt("Reconnecting…")
+                : gt("Connecting to the host…")}
           </AppText>
           {status === "error" ? (
             <View className="items-center">

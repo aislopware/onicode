@@ -19,7 +19,7 @@ import {
   type EnvironmentPresentation,
   type EnvironmentServerConfig,
 } from "../connection/presentation.ts";
-import { describeHostHardwareAlert, type HostHardwareAlert } from "../hostHardware.ts";
+import { findHostHardwareAlert, type HostHardwareAlert } from "../hostHardware.ts";
 import { type EnvironmentCatalogState, enabledEnvironmentIds } from "./connections.ts";
 
 function mapsEqual<K, V>(left: ReadonlyMap<K, V>, right: ReadonlyMap<K, V>): boolean {
@@ -373,13 +373,9 @@ export function createHostHardwareAlertAtom(input: {
         ? []
         : [{ environmentId, label: presentation.entry.target.label, hardware }];
     });
-    const next = describeHostHardwareAlert(machines);
+    const next = findHostHardwareAlert(machines);
     const previous = Option.getOrNull(get.self<HostHardwareAlert | null>());
-    return previous !== null &&
-      next !== null &&
-      previous.key === next.key &&
-      previous.title === next.title &&
-      previous.description === next.description
+    return previous !== null && next !== null && JSON.stringify(previous) === JSON.stringify(next)
       ? previous
       : next;
   }).pipe(Atom.withLabel("host-hardware-alert"));

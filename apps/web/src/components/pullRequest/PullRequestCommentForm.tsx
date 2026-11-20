@@ -171,14 +171,14 @@ export function PullRequestCommentForm({
                 </span>
                 <span className="col-start-1 row-start-1">
                   {submitting === "close"
-                    ? gt("Closing...")
+                    ? gt("Closing…")
                     : inlineConfirm.isArmed("close")
                       ? gt("Confirm close?")
                       : gt("Close with comment")}
                 </span>
               </span>
             ) : submitting === "reopen" ? (
-              gt("Reopening...")
+              gt("Reopening…")
             ) : (
               gt("Reopen with comment")
             )}
@@ -192,7 +192,7 @@ export function PullRequestCommentForm({
         >
           <SendIcon className="size-3.5" />
           {submitting === "comment"
-            ? gt("Posting...")
+            ? gt("Posting…")
             : gt("Comment", { $context: "verb, submit button" })}
         </Button>
       </div>

@@ -5,6 +5,7 @@ import type {
   EnvironmentMachineKind,
   HostHardwareSnapshot,
 } from "@onicode/contracts";
+import { useGT, useLocale, useMessages } from "gt-react-native";
 import { useState } from "react";
 import { Platform, useWindowDimensions, View } from "react-native";
 
@@ -20,6 +21,7 @@ import { SettingsSection } from "./components/SettingsSection";
 const GAUGE_SYMBOLS = { cpu: "cpu", memory: "memorychip", storage: "internaldrive" } as const;
 
 function HardwareGaugeRow({ gauge }: { readonly gauge: HostHardwareGauge }) {
+  const gt = useGT();
   const { fontScale } = useWindowDimensions();
   const value = (
     <Text
@@ -31,7 +33,7 @@ function HardwareGaugeRow({ gauge }: { readonly gauge: HostHardwareGauge }) {
         gauge.level === "critical" && "text-danger-foreground",
       )}
     >
-      {gauge.value ?? "Usage unavailable"}
+      {gauge.value ?? gt("Usage unavailable")}
     </Text>
   );
   return (
@@ -83,6 +85,9 @@ export function EnvironmentHardwareSection(props: {
   readonly environmentId: EnvironmentId;
   readonly machine: EnvironmentMachineKind;
 }) {
+  const gt = useGT();
+  const messages = useMessages();
+  const locale = useLocale();
   // The query polls, so it runs only while this screen is the one on top.
   const focused = useIsFocused();
   const { data, error } = useEnvironmentQuery(
@@ -94,10 +99,10 @@ export function EnvironmentHardwareSection(props: {
   const [lastReading, setLastReading] = useState<HostHardwareSnapshot | null>(null);
   if (data !== null && data !== lastReading) setLastReading(data);
   const hardware = data ?? lastReading;
-  const view = hardware === null ? null : describeHostHardware(hardware);
+  const view = hardware === null ? null : describeHostHardware(hardware, messages, locale);
 
   return (
-    <SettingsSection title="Hardware">
+    <SettingsSection title={gt("Hardware")}>
       {view ? (
         <>
           <ListRowLayout
@@ -118,7 +123,7 @@ export function EnvironmentHardwareSection(props: {
       ) : (
         <View className="p-4">
           <Text selectable={error !== null} className="text-sm text-foreground-muted">
-            {error ?? "Reading hardware…"}
+            {error ?? gt("Reading hardware…")}
           </Text>
         </View>
       )}

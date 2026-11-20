@@ -3600,7 +3600,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   ) : showProviderUnavailable ? (
                     gt("Enable a provider in Settings")
                   ) : (
-                    gt("Ask anything...")
+                    gt("Ask anything…")
                   )}
                 </button>
                 {collapsedComposerImagePreviews}
@@ -3691,10 +3691,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 {composerSuggestionsVisible && composerMenuItems.length === 0
                   ? isComposerMenuLoading
                     ? composerTriggerKind === "pull-request"
-                      ? gt("Finding pull request...")
+                      ? gt("Finding pull request…")
                       : composerTriggerKind === "skill" || composerTriggerKind === "slash-command"
-                        ? gt("Searching workspace skills...")
-                        : gt("Searching workspace files...")
+                        ? gt("Searching workspace skills…")
+                        : gt("Searching workspace files…")
                     : composerMenuEmptyState
                   : ""}
               </div>

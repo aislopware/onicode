@@ -276,6 +276,36 @@ describe("describeUpdateCapsule", () => {
     };
     const run = { localVersion: null, phase: "servers" as const, restartAt: null, machines: [] };
 
-    expect(describeUpdateCapsule(run, [failed], null, 0).action).toBe("retry");
+    // The title heads the machine list, so it never repeats the row that failed or runs slow.
+    expect(describeUpdateCapsule(run, [failed], null, 0)).toMatchObject({
+      action: "retry",
+      glyph: "failed",
+      label: "remote failed",
+      title: "Update failed",
+    });
+    const slow = { machine: { ...failed.machine, result: null }, status: "downloading" as const };
+    expect(describeUpdateCapsule(run, [slow], null, 5 * 60_000)).toMatchObject({
+      tone: "slow",
+      label: "remote",
+      title: "0 of 1 updated",
+      slow: { environmentId: "remote" },
+    });
+
+    const done = {
+      machine: { ...failed.machine, result: "done" as const },
+      status: "done" as const,
+    };
+    const waiting = { machine: { ...failed.machine, result: null }, status: "waiting" as const };
+    expect(describeUpdateCapsule(run, [done, waiting], null, 0)).toMatchObject({
+      glyph: "updating",
+      progress: 0.5,
+    });
+    expect(
+      describeUpdateCapsule(run, [done], { status: "downloading", percent: 40 }, 0),
+    ).toMatchObject({ glyph: "downloading", progress: 0.4 });
+    // A clock that reads before the countdown began must not show more than the full delay.
+    expect(
+      describeUpdateCapsule({ ...run, phase: "countdown", restartAt: 6_000 }, [done], null, 0),
+    ).toMatchObject({ glyph: "countdown", progress: 1, label: "Restart in 5s", action: "later" });
   });
 });

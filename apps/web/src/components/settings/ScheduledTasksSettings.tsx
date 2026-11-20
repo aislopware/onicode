@@ -941,7 +941,7 @@ function ScheduledTaskDestination({
           <ComboboxPopup align="start" side="bottom" className="w-80">
             <ComboboxSearchInput
               aria-label={gt("Search threads")}
-              placeholder={gt("Search all threads...")}
+              placeholder={gt("Search all threads…")}
               value={query}
               onChange={(event) => setQuery(event.target.value)}
             />

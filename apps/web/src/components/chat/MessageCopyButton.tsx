@@ -41,8 +41,11 @@ export const MessageCopyButton = memo(function MessageCopyButton({
         render={
           <Button
             aria-label={label}
-            disabled={isCopied}
-            onClick={() => copyToClipboard(text)}
+            // aria-disabled, not disabled: disabling the focused button drops focus to the page.
+            aria-disabled={isCopied || undefined}
+            onClick={() => {
+              if (!isCopied) copyToClipboard(text);
+            }}
             ref={ref}
             type="button"
             size={size}
@@ -53,9 +56,7 @@ export const MessageCopyButton = memo(function MessageCopyButton({
       >
         {isCopied ? <CheckIcon className="size-3 text-primary" /> : <Icon className="size-3" />}
       </TooltipTrigger>
-      <TooltipPopup>
-        <p>{label}</p>
-      </TooltipPopup>
+      <TooltipPopup>{label}</TooltipPopup>
     </Tooltip>
   );
 });

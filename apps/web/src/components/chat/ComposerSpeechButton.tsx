@@ -97,9 +97,8 @@ function ShortcutTooltip(props: {
   return (
     <Tooltip>
       <TooltipTrigger render={props.children} />
-      <TooltipPopup side="top">
+      <TooltipPopup side="top" shortcut={props.shortcut}>
         {props.label}
-        {props.shortcut ? ` (${props.shortcut})` : ""}
       </TooltipPopup>
     </Tooltip>
   );

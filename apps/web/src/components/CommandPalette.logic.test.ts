@@ -238,7 +238,7 @@ describe("buildThreadActionItems", () => {
       kind: "submenu" as const,
       value: "action:new-thread-in",
       searchTerms: ["new thread"],
-      title: "New thread in...",
+      title: "New thread in…",
       icon: null,
       addonIcon: null,
       groups: [{ value: "projects", label: "Projects", items: projects }],

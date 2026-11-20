@@ -4,8 +4,17 @@ import type {
   HostHardwareVolumeUse,
   HostResourcesSnapshot,
 } from "@onicode/contracts";
+import { mFallback, msg } from "gt-i18n";
+import type { MFunctionType } from "gt-i18n/types";
+
+import { formatConjunctionList } from "./listFormat.ts";
 
 export type HostHardwareLevel = "normal" | "high" | "critical";
+
+/** What a warning reports, without words, so a display can say it in its own language. */
+export type HostHardwareReading =
+  | { readonly kind: "cpu"; readonly load: string; readonly cpus: number }
+  | { readonly kind: "memory" | "storage"; readonly available: string; readonly total: string };
 
 export interface HostHardwareGauge {
   readonly kind: "cpu" | "memory" | "storage";
@@ -19,7 +28,7 @@ export interface HostHardwareGauge {
   readonly fraction: number | null;
   readonly level: HostHardwareLevel;
   /** What a warning says about this resource; null at the normal level. */
-  readonly warning: string | null;
+  readonly warning: HostHardwareReading | null;
 }
 
 export interface HostHardwareView {
@@ -43,14 +52,30 @@ export function formatCapacity(bytes: number): string {
   return `${rounded()} ${UNITS[unit]}`;
 }
 
-function plural(count: number, noun: string): string {
-  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+function capitalize(text: string, locale: string): string {
+  return text.charAt(0).toLocaleUpperCase(locale) + text.slice(1);
 }
 
-function formatUptime(seconds: number): string {
-  if (seconds >= 86_400) return `Up ${plural(Math.floor(seconds / 86_400), "day")}`;
-  if (seconds >= 3_600) return `Up ${plural(Math.floor(seconds / 3_600), "hour")}`;
-  return `Up ${plural(Math.max(1, Math.floor(seconds / 60)), "minute")}`;
+function formatUptime(seconds: number, resolve: MFunctionType): string {
+  if (seconds >= 86_400) {
+    return resolve(
+      msg("{count, plural, one {Up {count} day} other {Up {count} days}}", {
+        count: Math.floor(seconds / 86_400),
+      }),
+    );
+  }
+  if (seconds >= 3_600) {
+    return resolve(
+      msg("{count, plural, one {Up {count} hour} other {Up {count} hours}}", {
+        count: Math.floor(seconds / 3_600),
+      }),
+    );
+  }
+  return resolve(
+    msg("{count, plural, one {Up {count} minute} other {Up {count} minutes}}", {
+      count: Math.max(1, Math.floor(seconds / 60)),
+    }),
+  );
 }
 
 const GiB = 1024 ** 3;
@@ -113,41 +138,137 @@ function usedFraction(total: number, available: number): number | null {
   return total > 0 ? Math.min(1, Math.max(0, 1 - available / total)) : null;
 }
 
-function describeCores(hardware: HostHardwareSnapshot): string {
+function describeCores(
+  hardware: HostHardwareSnapshot,
+  resolve: MFunctionType,
+  locale: string,
+): string {
   const { logicalCores, physicalCores, coreGroups } = hardware.cpu;
   const cores = physicalCores ?? logicalCores;
-  const parts = [plural(cores, "core")];
-  if (coreGroups.length > 0) {
-    parts[0] += ` (${coreGroups.map((group) => `${group.cores} ${group.name.toLowerCase()}`).join(", ")})`;
-  } else if (physicalCores !== null && logicalCores > physicalCores) {
-    parts.push(plural(logicalCores, "thread"));
-  }
   // A container quota or CPU affinity leaves the server fewer CPUs than the machine has.
-  const usable = hardware.usage.cpuCount;
-  if (usable > 0 && usable < logicalCores) parts.push(`${usable} usable`);
-  return parts.join(", ");
+  const usableCpus = hardware.usage.cpuCount;
+  const usable = usableCpus > 0 && usableCpus < logicalCores ? usableCpus : null;
+  if (coreGroups.length > 0) {
+    const groups = formatConjunctionList(
+      coreGroups.map((group) =>
+        resolve(
+          msg(
+            "{name, select, performance {{cores} performance} efficiency {{cores} efficiency} other {{cores} {name}}}",
+            {
+              name: group.name.toLowerCase(),
+              cores: group.cores,
+              $context: "cores of one kind in a hybrid CPU, such as 10 performance",
+            },
+          ),
+        ),
+      ),
+      locale,
+      resolve,
+    );
+    return usable === null
+      ? resolve(
+          msg("{cores, plural, one {{cores} core ({groups})} other {{cores} cores ({groups})}}", {
+            cores,
+            groups,
+          }),
+        )
+      : resolve(
+          msg(
+            "{cores, plural, one {{cores} core ({groups}), {usable} usable} other {{cores} cores ({groups}), {usable} usable}}",
+            { cores, groups, usable, $context: "usable: CPUs this server may use" },
+          ),
+        );
+  }
+  if (physicalCores !== null && logicalCores > physicalCores) {
+    return usable === null
+      ? resolve(
+          msg(
+            "{cores, plural, one {{cores} core, {threads, plural, one {{threads} thread} other {{threads} threads}}} other {{cores} cores, {threads, plural, one {{threads} thread} other {{threads} threads}}}}",
+            { cores, threads: logicalCores },
+          ),
+        )
+      : resolve(
+          msg(
+            "{cores, plural, one {{cores} core, {threads, plural, one {{threads} thread} other {{threads} threads}}, {usable} usable} other {{cores} cores, {threads, plural, one {{threads} thread} other {{threads} threads}}, {usable} usable}}",
+            {
+              cores,
+              threads: logicalCores,
+              usable,
+              $context: "usable: CPUs this server may use",
+            },
+          ),
+        );
+  }
+  return usable === null
+    ? resolve(msg("{cores, plural, one {{cores} core} other {{cores} cores}}", { cores }))
+    : resolve(
+        msg(
+          "{cores, plural, one {{cores} core, {usable} usable} other {{cores} cores, {usable} usable}}",
+          { cores, usable, $context: "usable: CPUs this server may use" },
+        ),
+      );
 }
 
 const VOLUME_USE_LABELS: Record<HostHardwareVolumeUse, string> = {
-  home: "home",
-  data: "Onicode data",
-  worktrees: "worktrees",
-  projects: "projects",
+  home: msg("home", { $context: "what a disk holds: the home folder" }),
+  data: msg("Onicode data", { $context: "what a disk holds" }),
+  worktrees: msg("worktrees", { $context: "what a disk holds" }),
+  projects: msg("projects", { $context: "what a disk holds" }),
 };
 
-function describeVolumeUses(uses: ReadonlyArray<HostHardwareVolumeUse>): string {
-  const text = uses.map((use) => VOLUME_USE_LABELS[use]).join(", ");
-  return text.charAt(0).toUpperCase() + text.slice(1);
+function describeVolumeUses(
+  uses: ReadonlyArray<HostHardwareVolumeUse>,
+  resolve: MFunctionType,
+  locale: string,
+): string {
+  return capitalize(
+    formatConjunctionList(
+      uses.map((use) => resolve(VOLUME_USE_LABELS[use])),
+      locale,
+      resolve,
+    ),
+    locale,
+  );
+}
+
+function describeReading(reading: HostHardwareReading, resolve: MFunctionType): string {
+  switch (reading.kind) {
+    case "cpu":
+      return resolve(
+        msg("{cpus, plural, one {Load {load} on {cpus} CPU} other {Load {load} on {cpus} CPUs}}", {
+          load: reading.load,
+          cpus: reading.cpus,
+        }),
+      );
+    case "memory":
+      return resolve(
+        msg("{available} available of {total} memory", {
+          available: reading.available,
+          total: reading.total,
+        }),
+      );
+    case "storage":
+      return resolve(
+        msg("{available} available of {total} storage", {
+          available: reading.available,
+          total: reading.total,
+        }),
+      );
+  }
 }
 
 /** One layout for desktop and mobile: the machine's name, a few facts, and a gauge per resource. */
-export function describeHostHardware(hardware: HostHardwareSnapshot): HostHardwareView {
+export function describeHostHardware(
+  hardware: HostHardwareSnapshot,
+  resolve: MFunctionType = mFallback,
+  locale = "en",
+): HostHardwareView {
   const { usage } = hardware;
   const name = hardware.model ?? hardware.hostname ?? hardware.os;
   const facts = [
     hardware.os,
     hardware.hostname,
-    hardware.uptimeSeconds > 0 ? formatUptime(hardware.uptimeSeconds) : null,
+    hardware.uptimeSeconds > 0 ? formatUptime(hardware.uptimeSeconds, resolve) : null,
   ].filter((fact): fact is string => fact !== null && fact !== name);
 
   const memoryTotal = usage.totalMemoryBytes > 0 ? usage.totalMemoryBytes : hardware.memoryBytes;
@@ -167,62 +288,88 @@ export function describeHostHardware(hardware: HostHardwareSnapshot): HostHardwa
     usage.availableMemoryBytes,
     LOW_LIMITS.memory,
   );
-  const memoryTitle = `${formatCapacity(hardware.memoryBytes)} memory`;
-  const memoryValue =
-    memoryFraction === null ? null : `${formatCapacity(usage.availableMemoryBytes)} available`;
+  const memoryUsed = formatCapacity(memoryTotal - usage.availableMemoryBytes);
 
   const gauges: Array<HostHardwareGauge> = [
     {
       kind: "cpu",
       key: "cpu",
-      title: hardware.cpu.model ?? "Processor",
-      detail: [describeCores(hardware), load === null ? null : `Load ${formatLoad(load)}`]
+      title: hardware.cpu.model ?? resolve(msg("Processor", { $context: "hardware gauge title" })),
+      detail: [
+        describeCores(hardware, resolve, locale),
+        load === null
+          ? null
+          : resolve(msg("Load {load}", { load: formatLoad(load), $context: "CPU load average" })),
+      ]
         .filter((part) => part !== null)
         .join(" · "),
       value:
-        usage.cpuUtilization === null ? null : `${Math.round(usage.cpuUtilization * 100)}% in use`,
+        usage.cpuUtilization === null
+          ? null
+          : resolve(msg("{percent}% in use", { percent: Math.round(usage.cpuUtilization * 100) })),
       // Busy is fine; agents and builds keep every core busy. Work queueing for them is not.
       fraction: usage.cpuUtilization,
       level: cpuLevel,
       warning:
         cpuLevel === "normal" || load === null
           ? null
-          : `Load ${formatLoad(load)} on ${plural(loadCpus, "CPU")}`,
+          : { kind: "cpu", load: formatLoad(load), cpus: loadCpus },
     },
     {
       kind: "memory",
       key: "memory",
-      title: memoryTitle,
+      title: resolve(msg("{capacity} memory", { capacity: formatCapacity(hardware.memoryBytes) })),
       detail:
         memoryFraction === null
-          ? "Usage unavailable"
-          : `${formatCapacity(memoryTotal - usage.availableMemoryBytes)} used${
-              memoryLimited ? ` of ${formatCapacity(memoryTotal)} usable` : ""
-            }`,
-      value: memoryValue,
+          ? resolve(msg("Usage unavailable"))
+          : memoryLimited
+            ? resolve(
+                msg("{used} used of {usable} usable", {
+                  used: memoryUsed,
+                  usable: formatCapacity(memoryTotal),
+                }),
+              )
+            : resolve(msg("{used} used", { used: memoryUsed })),
+      value:
+        memoryFraction === null
+          ? null
+          : resolve(
+              msg("{capacity} available", {
+                capacity: formatCapacity(usage.availableMemoryBytes),
+              }),
+            ),
       fraction: memoryFraction,
       level: memoryLevel,
-      warning: memoryLevel === "normal" ? null : `${memoryValue} of ${memoryTitle}`,
+      warning:
+        memoryLevel === "normal"
+          ? null
+          : {
+              kind: "memory",
+              available: formatCapacity(usage.availableMemoryBytes),
+              total: formatCapacity(hardware.memoryBytes),
+            },
     },
     ...hardware.volumes.map((volume): HostHardwareGauge => {
       const fraction = usedFraction(volume.totalBytes, volume.availableBytes);
-      const used = `${formatCapacity(volume.totalBytes - volume.availableBytes)} used`;
-      const title = `${formatCapacity(volume.totalBytes)} storage`;
-      const value = `${formatCapacity(volume.availableBytes)} available`;
+      const used = resolve(
+        msg("{used} used", { used: formatCapacity(volume.totalBytes - volume.availableBytes) }),
+      );
+      const total = formatCapacity(volume.totalBytes);
+      const available = formatCapacity(volume.availableBytes);
       const level = lowLevel(volume.totalBytes, volume.availableBytes, LOW_LIMITS.storage);
       return {
         kind: "storage",
         key: `storage:${volume.mountPoint}`,
-        title,
+        title: resolve(msg("{capacity} storage", { capacity: total })),
         // One volume needs no name; several are told apart by where they mount and what they hold.
         detail:
           hardware.volumes.length === 1
             ? used
-            : `${used} · ${volume.mountPoint} · ${describeVolumeUses(volume.uses)}`,
-        value,
+            : `${used} · ${volume.mountPoint} · ${describeVolumeUses(volume.uses, resolve, locale)}`,
+        value: resolve(msg("{capacity} available", { capacity: available })),
         fraction,
         level,
-        warning: level === "normal" ? null : `${value} of ${title}`,
+        warning: level === "normal" ? null : { kind: "storage", available, total },
       };
     }),
   ];
@@ -236,38 +383,51 @@ export interface HostHardwareAlert {
   readonly level: Exclude<HostHardwareLevel, "normal">;
   /** The resource in the worst state, for the icon. */
   readonly kind: HostHardwareGauge["kind"];
-  readonly title: string;
-  readonly description: string;
   /** The machine in the worst state. */
   readonly environmentId: EnvironmentId;
+  /** The strained machines and their warnings, worst first. */
+  readonly machines: ReadonlyArray<{
+    readonly environmentId: EnvironmentId;
+    readonly label: string;
+    readonly warnings: ReadonlyArray<{
+      readonly level: Exclude<HostHardwareLevel, "normal">;
+      readonly reading: HostHardwareReading;
+    }>;
+  }>;
 }
 
 // At the same level, running out of memory or storage breaks work; a queue only slows it.
 const KIND_ORDER = ["memory", "storage", "cpu"] as const;
 
 const KIND_PHRASES: Record<HostHardwareGauge["kind"], string> = {
-  memory: "low memory",
-  storage: "low storage",
-  cpu: "heavy processor load",
+  memory: msg("low memory", { $context: "a hardware problem, listed at the start of a warning" }),
+  storage: msg("low storage", { $context: "a hardware problem, listed at the start of a warning" }),
+  cpu: msg("heavy processor load", {
+    $context: "a hardware problem, listed at the start of a warning",
+  }),
+};
+// Critical differs in words as well as colour.
+const CRITICAL_KIND_PHRASES: Record<HostHardwareGauge["kind"], string> = {
+  memory: msg("memory almost full", {
+    $context: "a hardware problem, listed at the start of a warning",
+  }),
+  storage: msg("storage almost full", {
+    $context: "a hardware problem, listed at the start of a warning",
+  }),
+  cpu: msg("processor overloaded", {
+    $context: "a hardware problem, listed at the start of a warning",
+  }),
 };
 
 function severity(gauge: HostHardwareGauge): number {
   return (gauge.level === "critical" ? 0 : KIND_ORDER.length) + KIND_ORDER.indexOf(gauge.kind);
 }
 
-function joinPhrases(phrases: ReadonlyArray<string>): string {
-  const text =
-    phrases.length <= 2
-      ? phrases.join(" and ")
-      : `${phrases.slice(0, -1).join(", ")} and ${phrases[phrases.length - 1]}`;
-  return text.charAt(0).toUpperCase() + text.slice(1);
-}
-
 /**
  * What to warn about across the connected machines: memory or storage running out, or work
  * queueing for the processor.
  */
-export function describeHostHardwareAlert(
+export function findHostHardwareAlert(
   machines: ReadonlyArray<{
     readonly environmentId: EnvironmentId;
     readonly label: string;
@@ -276,11 +436,16 @@ export function describeHostHardwareAlert(
 ): HostHardwareAlert | null {
   const strained = machines
     .map((machine) => ({
-      ...machine,
+      environmentId: machine.environmentId,
+      label: machine.label,
       gauges: describeHostHardware(machine.hardware)
         .gauges.filter(
-          (gauge): gauge is HostHardwareGauge & { readonly warning: string } =>
-            gauge.warning !== null,
+          (
+            gauge,
+          ): gauge is HostHardwareGauge & {
+            readonly level: HostHardwareAlert["level"];
+            readonly warning: HostHardwareReading;
+          } => gauge.warning !== null,
         )
         // `filter` returned a new array; Hermes has no `toSorted`.
         .sort((a, b) => severity(a) - severity(b)),
@@ -290,26 +455,81 @@ export function describeHostHardwareAlert(
   const worst = strained[0];
   if (worst === undefined) return null;
 
-  const kinds = KIND_ORDER.filter((kind) =>
-    strained.some((machine) => machine.gauges.some((gauge) => gauge.kind === kind)),
-  );
-  const readings = (machine: (typeof strained)[number]) =>
-    machine.gauges.map((gauge) => gauge.warning).join(", ");
   return {
     key: strained
       .flatMap((machine) =>
         machine.gauges.map((gauge) => `${machine.environmentId}:${gauge.key}:${gauge.level}`),
       )
       .join("|"),
-    level: worst.gauges[0]!.level === "critical" ? "critical" : "high",
+    level: worst.gauges[0]!.level,
     kind: worst.gauges[0]!.kind,
-    title: `${joinPhrases(kinds.map((kind) => KIND_PHRASES[kind]))} on ${
-      strained.length === 1 ? worst.label : plural(strained.length, "machine")
-    }`,
-    description:
-      strained.length === 1
-        ? readings(worst)
-        : strained.map((machine) => `${machine.label}: ${readings(machine)}`).join("\n"),
     environmentId: worst.environmentId,
+    machines: strained.map((machine) => ({
+      environmentId: machine.environmentId,
+      label: machine.label,
+      warnings: machine.gauges.map((gauge) => ({ level: gauge.level, reading: gauge.warning })),
+    })),
   };
+}
+
+export function hostHardwareAlertTitle(
+  alert: HostHardwareAlert,
+  resolve: MFunctionType = mFallback,
+  locale = "en",
+): string {
+  const warnings = alert.machines.flatMap((machine) => machine.warnings);
+  const problems = capitalize(
+    formatConjunctionList(
+      KIND_ORDER.filter((kind) => warnings.some((warning) => warning.reading.kind === kind)).map(
+        (kind) =>
+          resolve(
+            warnings.some(
+              (warning) => warning.reading.kind === kind && warning.level === "critical",
+            )
+              ? CRITICAL_KIND_PHRASES[kind]
+              : KIND_PHRASES[kind],
+          ),
+      ),
+      locale,
+      resolve,
+    ),
+    locale,
+  );
+  return alert.machines.length === 1
+    ? resolve(
+        msg("{problems} on {machine}", {
+          problems,
+          machine: alert.machines[0]!.label,
+          $context: "hardware warning, such as: Low memory and low storage on Studio",
+        }),
+      )
+    : resolve(
+        msg(
+          "{count, plural, one {{problems} on {count} machine} other {{problems} on {count} machines}}",
+          { problems, count: alert.machines.length },
+        ),
+      );
+}
+
+/** One line per warning; with several machines, each line names its machine. */
+export function hostHardwareAlertDescription(
+  alert: HostHardwareAlert,
+  resolve: MFunctionType = mFallback,
+): string {
+  return alert.machines
+    .flatMap((machine) =>
+      machine.warnings.map((warning) => {
+        const reading = describeReading(warning.reading, resolve);
+        return alert.machines.length === 1
+          ? reading
+          : resolve(
+              msg("{machine}: {reading}", {
+                machine: machine.label,
+                reading,
+                $context: "a machine's name, then a hardware warning about it",
+              }),
+            );
+      }),
+    )
+    .join("\n");
 }

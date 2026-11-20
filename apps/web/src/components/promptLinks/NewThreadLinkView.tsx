@@ -361,7 +361,7 @@ export function NewThreadLinkView({ link }: { readonly link: NewThreadLink }) {
 
   switch (state.status) {
     case "opening":
-      return <LinkPage title={gt("Opening the link...")} />;
+      return <LinkPage title={gt("Opening the link…")} />;
     case "opened":
       return (
         <LinkPage title={gt("This link is open")}>
@@ -450,7 +450,7 @@ function PullRequestLinkCheckout({
           )
         }
       >
-        {handoff !== null ? gt("Checking out...") : gt("Check out")}
+        {handoff !== null ? gt("Checking out…") : gt("Check out")}
       </Button>
     </LinkPage>
   );

@@ -328,7 +328,7 @@ function SavePlanToWorkspaceForm({
           <T>Cancel</T>
         </Button>
         <Button size="sm" onClick={() => onSave(savePath)} disabled={!canWriteFiles || saving}>
-          {saving ? gt("Saving...") : gt("Save")}
+          {saving ? gt("Saving…") : gt("Save")}
         </Button>
       </DialogFooter>
     </>

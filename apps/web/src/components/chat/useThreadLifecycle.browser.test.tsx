@@ -145,7 +145,7 @@ function RestoreBranchHarness(props: {
         disabled={lifecycle.isRestoringThreadBranch}
         onClick={lifecycle.handleSwitchCheckoutToThreadStable}
       >
-        {lifecycle.isRestoringThreadBranch ? "Restoring..." : "Restore branch"}
+        {lifecycle.isRestoringThreadBranch ? "Restoring…" : "Restore branch"}
       </button>
     </>
   );
@@ -180,7 +180,7 @@ it.each(["a", "b", "navigation"] as const)(
     });
 
     await page.getByRole("button", { name: "Restore branch" }).click();
-    await expect.element(page.getByRole("button", { name: "Restoring..." })).toBeDisabled();
+    await expect.element(page.getByRole("button", { name: "Restoring…" })).toBeDisabled();
 
     // ChatView stays mounted across server threads, so the hook sees thread B in place.
     currentRouteThreadKeyRef.current = threadB.routeThreadKey;
@@ -194,7 +194,7 @@ it.each(["a", "b", "navigation"] as const)(
     // Back on thread A, its own restore is still pending, so it can't start a second one.
     currentRouteThreadKeyRef.current = threadA.routeThreadKey;
     await screen.rerender(harness(threadA));
-    await expect.element(page.getByRole("button", { name: "Restoring..." })).toBeDisabled();
+    await expect.element(page.getByRole("button", { name: "Restoring…" })).toBeDisabled();
     currentRouteThreadKeyRef.current = threadB.routeThreadKey;
     await screen.rerender(harness(threadB));
 
@@ -208,7 +208,7 @@ it.each(["a", "b", "navigation"] as const)(
     });
     await vi.waitFor(() => expect(refreshGitStatus).toHaveBeenCalledOnce());
     expect(focusComposer).not.toHaveBeenCalled();
-    await expect.element(page.getByRole("button", { name: "Restoring..." })).toBeDisabled();
+    await expect.element(page.getByRole("button", { name: "Restoring…" })).toBeDisabled();
     expect(switchRef).toHaveBeenCalledTimes(2);
 
     completions[first === "a" ? 1 : 0]!({
@@ -247,23 +247,23 @@ it.each(["Success", "Failure"] as const)(
     );
     await using screen = await render(harness(threadA));
     await page.getByRole("button", { name: "Stop", exact: true }).click();
-    await expect.element(page.getByRole("button", { name: "Stopping..." })).toBeDisabled();
+    await expect.element(page.getByRole("button", { name: "Stopping…" })).toBeDisabled();
     await screen.rerender(harness(threadB));
     await page.getByRole("button", { name: "Stop", exact: true }).click();
     await screen.rerender(harness(threadA));
-    await expect.element(page.getByRole("button", { name: "Stopping..." })).toBeDisabled();
+    await expect.element(page.getByRole("button", { name: "Stopping…" })).toBeDisabled();
     completions[0]!(
       outcome === "Success"
         ? { _tag: "Success", value: undefined }
         : { _tag: "Failure", cause: Cause.fail(new Error("stop failed")) },
     );
     if (outcome === "Success") {
-      await expect.element(page.getByRole("button", { name: "Stopping..." })).toBeDisabled();
+      await expect.element(page.getByRole("button", { name: "Stopping…" })).toBeDisabled();
     } else {
       await expect.element(page.getByRole("button", { name: "Stop", exact: true })).toBeEnabled();
     }
     await screen.rerender(harness(threadB));
-    await expect.element(page.getByRole("button", { name: "Stopping..." })).toBeDisabled();
+    await expect.element(page.getByRole("button", { name: "Stopping…" })).toBeDisabled();
     expect(state.switchRef).toHaveBeenCalledTimes(2);
     completions[1]!({ _tag: "Success", value: undefined });
   },

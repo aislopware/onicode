@@ -1255,7 +1255,7 @@ function AgentInstallTerminal({
           ) : setupState === "openFailed" ? (
             gt("Could not open the setup terminal.")
           ) : (
-            gt("Preparing command...")
+            gt("Preparing command…")
           )}
         </span>
         <div className="flex items-center gap-1">

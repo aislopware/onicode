@@ -212,7 +212,7 @@ export function useVcsPullAction(scope: SourceControlActionScope) {
   };
   return useAction({
     kind: "pull",
-    label: msg("Pulling latest changes..."),
+    label: msg("Pulling latest changes…"),
     scope,
     action,
     onSuccess: status.refresh,

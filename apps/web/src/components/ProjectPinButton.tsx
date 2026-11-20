@@ -7,6 +7,7 @@ import { resolveShortcutCommand } from "../keybindings";
 
 import { cn } from "~/lib/utils";
 import { Button } from "./ui/button";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 
 /** The thread pin shortcut, which pins the highlighted row in a project list. */
 export function isProjectPinShortcut(
@@ -43,33 +44,35 @@ export function ProjectPinButton(props: {
         !props.pinned && "opacity-0 in-data-highlighted:opacity-100 pointer-coarse:opacity-100",
       )}
     >
-      <Button
-        size="icon-xs"
-        variant="ghost-muted"
-        tabIndex={-1}
-        aria-hidden="true"
-        title={
-          props.shortcutLabel
-            ? gt("{action} ({shortcut})", { action, shortcut: props.shortcutLabel })
-            : action
-        }
-        onPointerDown={(event) => event.stopPropagation()}
-        onMouseDown={(event) => event.preventDefault()}
-        onClick={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          props.onToggle();
-        }}
-      >
-        {props.pinned ? (
-          <>
-            <PinIcon className="size-3.5 group-hover/pin:hidden" />
-            <PinOffIcon className="hidden size-3.5 group-hover/pin:block" />
-          </>
-        ) : (
-          <PinIcon className="size-3.5" />
-        )}
-      </Button>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              size="icon-xs"
+              variant="ghost-muted"
+              tabIndex={-1}
+              aria-hidden="true"
+              onPointerDown={(event) => event.stopPropagation()}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                props.onToggle();
+              }}
+            />
+          }
+        >
+          {props.pinned ? (
+            <>
+              <PinIcon className="size-3.5 group-hover/pin:hidden" />
+              <PinOffIcon className="hidden size-3.5 group-hover/pin:block" />
+            </>
+          ) : (
+            <PinIcon className="size-3.5" />
+          )}
+        </TooltipTrigger>
+        <TooltipPopup shortcut={props.shortcutLabel}>{action}</TooltipPopup>
+      </Tooltip>
     </span>
   );
 }

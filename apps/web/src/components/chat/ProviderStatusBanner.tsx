@@ -224,7 +224,7 @@ export const ProviderStatusBanner = memo(function ProviderStatusBanner({
                 variant="outline"
               >
                 <RefreshIcon />
-                {isRefreshing ? gt("Refreshing...") : gt("Refresh")}
+                {isRefreshing ? gt("Refreshing…") : gt("Refresh")}
               </Button>
             </div>
           </div>

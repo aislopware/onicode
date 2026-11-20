@@ -798,7 +798,7 @@ export function AddProviderInstanceDialog({
                   onClick={() => void handleSave()}
                 >
                   {isSaving
-                    ? gt("Adding...")
+                    ? gt("Adding…")
                     : isAcpRegistry && !isLocalAcp
                       ? gt("Continue to sign-in")
                       : gt("Add instance")}

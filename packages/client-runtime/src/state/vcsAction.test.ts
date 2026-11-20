@@ -132,7 +132,7 @@ describe("vcsActionState", () => {
       "Creating merge request...",
       "Preparing PR...",
     ]) {
-      expect(label(step)).toBe(`[${step}]`);
+      expect(label(step)).toBe(`[${step.replace("...", "…")}]`);
     }
     expect(label("Running husky pre-commit")).toBe("Running husky pre-commit");
   });
@@ -211,7 +211,7 @@ describe("vcsActionState", () => {
       currentPhaseLabel: "Committing...",
     });
     expect(output).toMatchObject({
-      currentLabel: "Running post-commit...",
+      currentLabel: "Running post-commit…",
       hookName: "post-commit",
       lastOutputLine: "hook output",
     });
