@@ -2877,3 +2877,4 @@ e6d521012d	take	fix(server): a PR watch tells the agent when the checks finish a
 a0ef9d8d95	take	fix(web): editable file drag selection no longer breaks across virtualized scroll windows (#39574); lockfile regenerated
 d5a084c440	take	fix(web): the provider update pill no longer recounts dismissed updates (#39636)
 2c33cbdf02	take	fix(web): strip terminal colors from saved notebook output (#39643)
+37e14f5c81	take	lockfile CONFLICT was only the patch hash; took upstream's hash (patch file identical)
