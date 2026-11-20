@@ -1058,6 +1058,7 @@ it.effect("settles only the stopped run's background work, once", () =>
       },
     });
     const commandItem = (ordinal: number) => TurnItemId.make(`turn-item:settle-binding:${ordinal}`);
+    const toolNode = (ordinal: number) => NodeId.make(`node:settle-binding:${ordinal}:tool`);
     for (const ordinal of [1, 2]) {
       const runId = RunId.make(`run:settle-binding:${ordinal}`);
       const attemptId = RunAttemptId.make(`attempt:settle-binding:${ordinal}`);
@@ -1123,6 +1124,31 @@ it.effect("settles only the stopped run's background work, once", () =>
         },
       });
       yield* projections.apply({
+        id: EventId.make(`settle-binding:tool-node:${ordinal}`),
+        type: "node.updated",
+        threadId,
+        runId,
+        nodeId: toolNode(ordinal),
+        occurredAt: now,
+        payload: {
+          id: toolNode(ordinal),
+          threadId,
+          runId,
+          parentNodeId: nodeId,
+          rootNodeId: nodeId,
+          kind: "tool_call",
+          status: "running",
+          countsForRun: true,
+          providerThreadId,
+          providerTurnId,
+          nativeItemRef: null,
+          runtimeRequestId: null,
+          checkpointScopeId: null,
+          startedAt: now,
+          completedAt: null,
+        },
+      });
+      yield* projections.apply({
         id: EventId.make(`settle-binding:item:${ordinal}`),
         type: "turn-item.updated",
         threadId,
@@ -1132,7 +1158,7 @@ it.effect("settles only the stopped run's background work, once", () =>
           id: commandItem(ordinal),
           threadId,
           runId,
-          nodeId,
+          nodeId: toolNode(ordinal),
           providerThreadId,
           providerTurnId,
           nativeItemRef: null,
@@ -1153,6 +1179,11 @@ it.effect("settles only the stopped run's background work, once", () =>
         .flatMap((item) => (item.type === "command_execution" ? [`${item.id}:${item.status}`] : []))
         .toSorted(),
     );
+    const toolNodeStatuses = Effect.map(projections.getThreadProjection(threadId), (projection) =>
+      projection.nodes
+        .flatMap((node) => (node.kind === "tool_call" ? [`${node.id}:${node.status}`] : []))
+        .toSorted(),
+    );
     const settle = {
       type: "thread.background-work.settle",
       commandId: CommandId.make("stop-run-1:background-work-settled"),
@@ -1164,6 +1195,10 @@ it.effect("settles only the stopped run's background work, once", () =>
     assert.deepEqual(yield* itemStatuses, [
       `${commandItem(1)}:interrupted`,
       `${commandItem(2)}:running`,
+    ]);
+    assert.deepEqual(yield* toolNodeStatuses, [
+      `${toolNode(1)}:interrupted`,
+      `${toolNode(2)}:running`,
     ]);
 
     const emptySettle = {

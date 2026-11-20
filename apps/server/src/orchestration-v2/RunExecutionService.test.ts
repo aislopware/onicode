@@ -3501,7 +3501,8 @@ it.effect("does not interrupt an ended provider when its terminal write fails", 
 it.effect("ends a running root command when the provider stream fails mid-turn", () =>
   Effect.gen(function* () {
     const now = yield* DateTime.now;
-    const { written, observed } = yield* captureRootRunTermination({
+    const commandNodeId = NodeId.make("node:stream-error-running-command:tool");
+    const { written, observed, finalEvents } = yield* captureRootRunTermination({
       key: "stream-error-running-command",
       shouldFinalizeRun: () => Effect.succeed(true),
       events: (ids) =>
@@ -3521,7 +3522,7 @@ it.effect("ends a running root command when the provider stream fails mid-turn",
               completedAt: null,
             },
           },
-          backgroundTurnItemEvent(ids, "command_execution", "running", 1),
+          ...runningToolCall(ids, commandNodeId, now),
         ).pipe(
           Stream.concat(
             Stream.fail(
@@ -3550,6 +3551,14 @@ it.effect("ends a running root command when the provider stream fails mid-turn",
       (item) => item.id === ids.itemId && item.status !== "running",
     );
     assert.isDefined(endedCommand);
+    // Its tool call node ends with it; the session release skips the already ended item.
+    const endedNode = finalEvents.find(
+      (event) => event.type === "node.updated" && event.nodeId === commandNodeId,
+    );
+    assert.strictEqual(
+      endedNode?.type === "node.updated" ? endedNode.payload.status : undefined,
+      "interrupted",
+    );
   }),
 );
 
@@ -3593,6 +3602,7 @@ it.effect.each([
   ({ ended, raisedByOni, stopped }) =>
     Effect.gen(function* () {
       const providerInstanceId = ProviderInstanceId.make("codex");
+      const now = yield* DateTime.now;
       const { finalEvents } = yield* captureRootRunTermination({
         key: "stream-error-outlived-subagent",
         shouldFinalizeRun: () => Effect.succeed(true),
@@ -3620,6 +3630,13 @@ it.effect.each([
                 status: "running",
               }),
             },
+            // A command the root left running, with its tool call node.
+            ...runningToolCall(
+              ids,
+              NodeId.make("node:stream-error-outlived-subagent:tool"),
+              now,
+              TurnItemId.make(`${ids.itemId}:command`),
+            ),
             rootTerminalEvent(ids, "completed"),
           ).pipe(
             Stream.concat(
@@ -3649,12 +3666,19 @@ it.effect.each([
         finalEvents.flatMap((event) =>
           event.type === "run.updated" ||
           event.type === "subagent.updated" ||
-          event.type === "turn-item.updated"
+          event.type === "turn-item.updated" ||
+          (event.type === "node.updated" && event.payload.kind === "tool_call")
             ? [`${event.type}:${event.payload.status}`]
             : [],
         ),
         ended
-          ? ["run.updated:waiting", "subagent.updated:failed", "turn-item.updated:failed"]
+          ? [
+              "run.updated:waiting",
+              "subagent.updated:failed",
+              "turn-item.updated:failed",
+              "node.updated:interrupted",
+              "turn-item.updated:interrupted",
+            ]
           : ["run.updated:waiting"],
       );
     }),
@@ -3994,11 +4018,13 @@ function captureRootRunTermination(input: {
         if (event.type === "turn_item.updated")
           stored.turnItems.set(event.turnItem.id, event.turnItem);
       });
-    const loadUnsettledWork = (threadId: ThreadId) =>
+    const loadUnsettledWork = (threadId: ThreadId, nodeIds: ReadonlyArray<NodeId>) =>
       Effect.sync(() => {
         const work = {
           subagents: [...stored.subagents.values()].filter((row) => row.threadId === threadId),
-          nodes: [...stored.nodes.values()].filter((row) => row.threadId === threadId),
+          nodes: [...stored.nodes.values()].filter(
+            (row) => row.threadId === threadId && nodeIds.includes(row.id),
+          ),
           turnItems: [...stored.turnItems.values()].filter((row) => row.threadId === threadId),
         };
         return input.settleStored?.(work) ?? work;
@@ -4317,6 +4343,40 @@ function backgroundTurnItemEvent(
       status,
     },
   } as ProviderAdapter.ProviderAdapterV2Event;
+}
+
+/** A running root command and its tool call node, as an adapter reports them. */
+function runningToolCall(
+  ids: BackgroundScenarioIds,
+  nodeId: NodeId,
+  startedAt: DateTime.Utc,
+  itemId?: TurnItemId,
+): ReadonlyArray<ProviderAdapter.ProviderAdapterV2Event> {
+  const item = backgroundTurnItemEvent(ids, "command_execution", "running", 1, itemId);
+  return [
+    {
+      type: "node.updated",
+      driver,
+      node: {
+        id: nodeId,
+        threadId: ids.threadId,
+        runId: ids.runId,
+        parentNodeId: ids.rootNodeId,
+        rootNodeId: ids.rootNodeId,
+        kind: "tool_call",
+        status: "running",
+        countsForRun: true,
+        providerThreadId: ids.providerThreadId,
+        providerTurnId: ids.rootProviderTurnId,
+        nativeItemRef: null,
+        runtimeRequestId: null,
+        checkpointScopeId: null,
+        startedAt,
+        completedAt: null,
+      },
+    } as ProviderAdapter.ProviderAdapterV2Event,
+    item.type === "turn_item.updated" ? { ...item, turnItem: { ...item.turnItem, nodeId } } : item,
+  ];
 }
 
 function backgroundTurnItemEventForRun(
