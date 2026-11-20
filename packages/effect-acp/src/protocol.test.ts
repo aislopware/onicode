@@ -1,4 +1,5 @@
 import * as Path from "effect/Path";
+import * as PlatformError from "effect/PlatformError";
 import * as AcpError from "./errors.ts";
 import * as Effect from "effect/Effect";
 import * as Deferred from "effect/Deferred";
@@ -1291,6 +1292,46 @@ it.layer(NodeServices.layer)("effect-acp protocol", (it) => {
         yield* transport.notify("session/cancel", { sessionId: "session-1" }).pipe(Effect.flip),
         error,
       );
+    }),
+  );
+
+  it.effect.each([
+    { name: "the process exit when the agent exited", exited: true },
+    { name: "the write failure when the process lives on", exited: false },
+  ])("reports $name after a failed write", ({ exited: agentExited }) =>
+    Effect.gen(function* () {
+      const { input } = yield* makeInMemoryStdio();
+      const exited = new AcpError.AcpProcessExitedError({ code: 1 });
+      const termination = yield* Deferred.make<AcpError.AcpError>();
+      const transport = yield* AcpProtocol.makeAcpPatchedProtocol({
+        stdio: Stdio.make({
+          args: Effect.succeed([]),
+          stdin: Stream.fromQueue(input),
+          stdout: () =>
+            Sink.forEach(() =>
+              Effect.fail(
+                PlatformError.systemError({
+                  _tag: "BadResource",
+                  description: "write EPIPE",
+                  module: "Stream",
+                  method: "write",
+                }),
+              ),
+            ),
+          stderr: () => Sink.drain,
+        }),
+        terminationError: agentExited ? Effect.succeed(exited) : Effect.never,
+        serverRequestMethods: new Set(),
+        onTermination: (error) => Deferred.succeed(termination, error).pipe(Effect.asVoid),
+      });
+
+      const failure = yield* transport
+        .request("initialize", { protocolVersion: 1 })
+        .pipe(Effect.flip, Effect.orDie);
+      const error = yield* Deferred.await(termination);
+      assert.strictEqual(failure, error);
+      if (agentExited) assert.strictEqual(error, exited);
+      else expect(error).toMatchObject({ detail: "Failed to write an outgoing ACP message" });
     }),
   );
 

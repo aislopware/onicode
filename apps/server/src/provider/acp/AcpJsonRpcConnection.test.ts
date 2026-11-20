@@ -507,6 +507,40 @@ describe("AcpSessionRuntime", () => {
     }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
+  it.effect("fails a request that reaches the client after ACP exited with the exit", () =>
+    Effect.gen(function* () {
+      const clientClosed = yield* Deferred.make<void>();
+      const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+      const runtime = yield* AcpSessionRuntime.make({
+        ...mockRuntimeOptions,
+        spawn: {
+          command: process.execPath,
+          args: ["-e", `process.stderr.write("page-size check failed\\n", () => process.exit(1));`],
+        },
+        // Hold initialize between its connection check and its call until the client shut down.
+        requestLogger: (event) =>
+          event.method === "initialize" && event.status === "started"
+            ? Deferred.await(clientClosed)
+            : Effect.void,
+      }).pipe(
+        Effect.provideService(
+          ChildProcessSpawner.ChildProcessSpawner,
+          ChildProcessSpawner.make((command) =>
+            spawner.spawn(command).pipe(
+              // Registered before the ACP client, so it runs after the client's shutdown.
+              Effect.tap(() =>
+                Effect.addFinalizer(() => Deferred.succeed(clientClosed, undefined)),
+              ),
+            ),
+          ),
+        ),
+      );
+      const error = yield* runtime.initialize().pipe(Effect.flip);
+      assert.instanceOf(error, EffectAcpErrors.AcpProcessExitedError);
+      expect(error).toMatchObject({ code: 1, stderr: "page-size check failed" });
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+  );
+
   it.effect("drains large stderr output and keeps auth-sized logging chunks", () =>
     Effect.gen(function* () {
       const lengths: Array<number> = [];
