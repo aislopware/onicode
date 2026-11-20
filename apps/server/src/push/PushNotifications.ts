@@ -384,7 +384,7 @@ const make = Effect.gen(function* () {
       });
       if (error.reason === "grant") yield* dropGrant;
       yield* devices.recordDelivery({ deviceId, at, failure: error.message });
-      return { outcome: "failed", detail: error.message } as const;
+      return { outcome: "failed", detail: error.message, retryable: error.retryable } as const;
     }
     const outcome = result.success;
     if (outcome === "unregistered") yield* dropGrant;
@@ -453,9 +453,14 @@ const make = Effect.gen(function* () {
         delivered.set(deviceId, activity);
         if (working) refreshDueAt.set(deviceId, now + PUSH_ANDROID_ACTIVITY_KEEPALIVE_MS);
         else refreshDueAt.delete(deviceId);
-      } else if (working && result.outcome === "failed") {
-        // Work that goes on unchanged publishes nothing that would send this again.
-        refreshDueAt.set(deviceId, now);
+      } else if (activity !== undefined && result.outcome === "failed") {
+        // Nothing later publishes what failed: work going on unchanged, or the end of it.
+        if (working || result.retryable) refreshDueAt.set(deviceId, now);
+        else {
+          refreshDueAt.delete(deviceId);
+          // The phone still shows what was last delivered; the next change sends again.
+          delivered.delete(deviceId);
+        }
       }
       return;
     }
@@ -498,9 +503,14 @@ const make = Effect.gen(function* () {
           // The gateway ended the activity, so its token is spent.
           yield* devices.setGrant({ deviceId, kind: "liveActivityUpdate", grant: null });
         }
-      } else if (working && result.outcome === "failed") {
-        // Whatever was due waits for something else, such as the end of a start's hold.
-        refreshDueAt.set(deviceId, now);
+      } else if (result.outcome === "failed") {
+        // Nothing later publishes what failed: work going on unchanged, or the end of it.
+        if (working || result.retryable) refreshDueAt.set(deviceId, now);
+        else {
+          refreshDueAt.delete(deviceId);
+          // The phone still shows what was last delivered; the next change sends again.
+          delivered.delete(deviceId);
+        }
       }
       // A card swiped away is gone, and its start goes on holding back another one below.
       if (result.outcome !== "unregistered") return;

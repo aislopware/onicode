@@ -13,6 +13,7 @@ import {
   ThreadId,
 } from "@onicode/contracts";
 import type { PushMessage } from "@onicode/contracts/pushGateway";
+import * as Clock from "effect/Clock";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -147,7 +148,10 @@ function makeGate() {
 }
 
 const setup = Effect.fn(function* (options?: {
-  readonly outcome?: (delivery: Delivery) => "delivered" | "unregistered" | "failed";
+  /** `failed` is a failure that would fail again; `unreachable` one that may pass. */
+  readonly outcome?: (
+    delivery: Delivery,
+  ) => "delivered" | "unregistered" | "failed" | "unreachable";
   readonly onDeliver?: Effect.Effect<void>;
   /** Runs after the snapshot of every thread is read and before the service sees it. */
   readonly onSnapshot?: Effect.Effect<void>;
@@ -181,6 +185,13 @@ const setup = Effect.fn(function* (options?: {
             messages.push(input.message);
             yield* options?.onDeliver ?? Effect.void;
             const outcome = options?.outcome?.(delivery) ?? "delivered";
+            if (outcome === "unreachable") {
+              return yield* new PushGatewayClient.PushDeliveryError({
+                reason: "unreachable",
+                retryable: true,
+                detail: "The gateway did not answer.",
+              });
+            }
             if (outcome !== "failed") return outcome;
             return yield* new PushGatewayClient.PushDeliveryError({
               reason: "provider",
@@ -347,7 +358,7 @@ describe("PushNotifications", () => {
 
   it.effect("alerts an Android device on the transitions it asked for, in one message", () =>
     Effect.gen(function* () {
-      let outcome: "failed" | "delivered" = "delivered";
+      let outcome: "failed" | "unreachable" | "delivered" = "delivered";
       const { push, change, register, taken, messages } = yield* setup({ outcome: () => outcome });
       assert.isFalse(yield* push.alertsOnInput);
       yield* register(
@@ -405,6 +416,41 @@ describe("PushNotifications", () => {
       yield* push.drain;
       assert.deepStrictEqual(taken(), working);
 
+      // So may the last one, which the keepalive left due long after the card is gone.
+      const finished = [{ grant: "grant_notification", alert: undefined, active: 0 }];
+      outcome = "unreachable";
+      yield* Clock.currentTimeMillis.pipe(
+        Effect.flatMap((now) =>
+          change({ ...finishedAt(now), updatedAt: DateTime.makeUnsafe(now) }),
+        ),
+      );
+      yield* TestClock.adjust("5 seconds");
+      yield* push.drain;
+      assert.deepStrictEqual(taken(), finished);
+      outcome = "delivered";
+      yield* TestClock.adjust("1 minute");
+      yield* push.drain;
+      assert.deepStrictEqual(taken(), finished);
+      // One that would fail again is not tried every minute.
+      yield* change({});
+      assert.deepStrictEqual(taken(), working);
+      outcome = "failed";
+      yield* Clock.currentTimeMillis.pipe(
+        Effect.flatMap((now) =>
+          change({ ...finishedAt(now), updatedAt: DateTime.makeUnsafe(now) }),
+        ),
+      );
+      yield* TestClock.adjust("5 seconds");
+      yield* push.drain;
+      assert.deepStrictEqual(taken(), finished);
+      yield* TestClock.adjust("1 minute");
+      yield* push.drain;
+      assert.deepStrictEqual(taken(), []);
+      outcome = "delivered";
+      // Work that starts again is sent, though it looks like the card the phone last took.
+      yield* change({});
+      assert.deepStrictEqual(taken(), working);
+
       // A phone that asked not to hear about input, or cannot be alerted at all, does not count.
       yield* register(
         registration({ preferences: { ...registration().preferences, notifyOnInput: false } }),
@@ -419,7 +465,10 @@ describe("PushNotifications", () => {
     "starts one Live Activity per stretch of work and updates it through its own grant",
     () =>
       Effect.gen(function* () {
-        const { push, change, register, restart, taken, messages } = yield* setup();
+        let updateOutcome: "delivered" | "unreachable" = "delivered";
+        const { push, change, register, restart, taken, messages } = yield* setup({
+          outcome: (delivery) => (delivery.grant === "grant_update" ? updateOutcome : "delivered"),
+        });
         yield* register(
           registration({ platform: "ios", label: "iPhone", liveActivityStart: grant("start") }),
         );
@@ -458,11 +507,17 @@ describe("PushNotifications", () => {
         ]);
         assert.strictEqual(messages.at(-1)?.activity?.urgent, true);
 
+        // The last update may fail, with nothing later to send it again.
+        updateOutcome = "unreachable";
         yield* change({ status: "failed", latestRunCompletedAt: DateTime.makeUnsafe(8 * 60_000) });
         assert.deepStrictEqual(taken(), [
           { grant: "grant_notification", alert: "Agent failed · onicode", active: undefined },
           { grant: "grant_update", alert: undefined, active: 0 },
         ]);
+        updateOutcome = "delivered";
+        yield* TestClock.adjust("1 minute");
+        yield* push.drain;
+        assert.deepStrictEqual(taken(), [{ grant: "grant_update", alert: undefined, active: 0 }]);
 
         // The ended activity's grant is spent, so new work starts a new one.
         yield* change({});
