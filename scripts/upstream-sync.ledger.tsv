@@ -2893,3 +2893,4 @@ df09ced768	take	taken as is: Antigravity command line text cut on code-point bou
 e74b795535	take	Antigravity-only; CONFLICT in test resolved to upstream's table (its native-default row replaces Onicode's renamed single case)
 cf10320186	take	Azure DevOps only; taken as is
 391f93fc8f	take	CONFLICT resolved: kept Onicode's canonicalBaseRelativePath (hidden-folder exemption, upstream lacks it) beside upstream's entryFileName claim; server layer merges WorkspacePreviewRevisions without the removed cloud EnvironmentKeys
+97e7834f4b	take	test CONFLICT: kept Onicode's subagent.updated wait after upstream's cut-off node assertion
