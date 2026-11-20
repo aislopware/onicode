@@ -887,7 +887,13 @@ export const layer = Layer.effect(
         }
         // The stored row can belong to a replacement, so report this dispatch separately.
         return { task: recorded, threadId, dispatchFailed: !runSucceeded };
-      }).pipe(Effect.onError((cause) => releaseStuckRun(task, startedAtIso, errorMessage(cause))));
+      }).pipe(
+        Effect.onError((cause) => releaseStuckRun(task, startedAtIso, errorMessage(cause))),
+        // A launched thread is bound and recorded only here, so a Run Now caller that goes away
+        // must not leave it unbound for the next run to launch another. The launch's own git
+        // branch read stays interruptible.
+        Effect.uninterruptible,
+      );
 
       // Reserve and release as one bracket so an interrupt cannot leave the task marked busy.
       return yield* Effect.acquireUseRelease(

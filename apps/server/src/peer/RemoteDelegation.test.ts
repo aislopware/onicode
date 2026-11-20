@@ -9,6 +9,7 @@ import {
   type ModelSelection,
   NodeId,
   type OrchestrationV2Run,
+  type OrchestrationV2ServerCommand,
   type OrchestratorMcpThreadReadInput,
   ProjectId,
   ProviderDriverKind,
@@ -674,6 +675,8 @@ const makeLaptop = (
   kept?: Context.Context<Layer.Success<ReturnType<typeof layerLinkingEnvironment>>>,
   /** Runs as each follow attempt here starts, on its follower's fiber. */
   beforeFollow: Effect.Effect<void, Orchestrator.OrchestratorV2Error> = Effect.void,
+  /** Runs after each command RemoteDelegation dispatches here commits, on the caller's fiber. */
+  afterDispatch: (command: OrchestrationV2ServerCommand) => Effect.Effect<void> = () => Effect.void,
 ) =>
   Effect.gen(function* () {
     const linking = kept ?? (yield* layerLinkingEnvironment(laptop).pipe(Layer.build));
@@ -711,6 +714,8 @@ const makeLaptop = (
                   ...threads,
                   getThreadEventSequence: (threadId: ThreadId) =>
                     beforeFollow.pipe(Effect.andThen(threads.getThreadEventSequence(threadId))),
+                  dispatch: (command: OrchestrationV2ServerCommand) =>
+                    threads.dispatch(command).pipe(Effect.tap(() => afterDispatch(command))),
                 };
               }),
             ),
@@ -1437,6 +1442,59 @@ it.effect("follows an open task again after the laptop restarts", () =>
       expect(task).toMatchObject({ status: "completed", result: "Finished while you were away." });
     }),
   ).pipe(Effect.provide(NodeHttpServer.layerTest)),
+);
+
+it.effect.each(["async", "wait"] as const)(
+  "a %s task whose caller goes away after it is recorded is still followed",
+  (mode) =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const thread = yield* makeBoxThread;
+        const b = yield* serveBox(thread);
+        const offers = yield* SubscriptionRef.make<
+          ReadonlyArray<ProviderContinuationRequests.ProviderContinuationRequest>
+        >([]);
+        const database = yield* SqlitePersistence.layerMemory.pipe(Layer.build);
+        const recorded = yield* Deferred.make<void>();
+        const release = yield* Deferred.make<void>();
+        const a = yield* makeLaptop(database, offers, undefined, undefined, (command) =>
+          command.type === "delegated_task.remote.request"
+            ? Deferred.succeed(recorded, undefined).pipe(Effect.andThen(Deferred.await(release)))
+            : Effect.void,
+        );
+        yield* linkTo(a.links, b, "full-access");
+        yield* seedParent(a);
+
+        const call = yield* Effect.forkChild(
+          a.call("delegate_task", {
+            task: "Run the full suite on the box.",
+            target: {
+              environmentId: box.environmentId,
+              providerInstanceId: instanceId,
+              model: "gpt-5.4",
+            },
+            mode,
+            clientRequestId: "suite-on-box",
+          }),
+        );
+        yield* Deferred.await(recorded);
+        yield* Effect.sync(() => call.interruptUnsafe());
+        yield* Deferred.succeed(release, undefined);
+        yield* Fiber.await(call);
+
+        const projection = yield* a.orchestrator.getThreadProjection(parentThreadId);
+        const recordedTask = projection.subagents[0]!;
+        // A wait whose call went away hands the result to the parent's wake instead.
+        if (mode === "wait") expect(recordedTask.completionWake).toBe("always");
+        yield* Ref.set(thread.reply, "Finished after the caller left.");
+        yield* Ref.set(thread.status, "completed");
+        yield* Deferred.succeed(thread.finished, undefined);
+        expect(yield* taskResult(a, recordedTask.id)).toMatchObject({
+          status: "completed",
+          result: "Finished after the caller left.",
+        });
+      }),
+    ).pipe(Effect.provide(NodeHttpServer.layerTest)),
 );
 
 it.effect("fails the task when the box revokes the link, and cancel interrupts it there", () =>
