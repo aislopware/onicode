@@ -5286,13 +5286,13 @@ function providerFailureFromResult(
     apiErrorStatus === 429 && message.result.startsWith("API Error:")
       ? gatewayCooldownResetAt(
           // CLIProxyAPI nests upstream errors in its message; only its own cooldown counts.
-          message.result.startsWith(
-            "API Error: Request rejected (429) · All credentials for model ",
+          /^API Error: (?:Request rejected \(429\)|Server is temporarily limiting requests \(not your usage limit\)) · All credentials for model /.test(
+            message.result,
           )
-            ? (/^API Error: Request rejected \(429\) · All credentials for model [^\s()]+ are cooling down \(reset after (?:(\d+)h ?)?(?:(\d+)m ?)?(?:(\d+)s)?\)/.exec(
+            ? (/^API Error: (?:Request rejected \(429\)|Server is temporarily limiting requests \(not your usage limit\)) · All credentials for model [^\s()]+ are cooling down \(reset after (?:(\d+)h ?)?(?:(\d+)m ?)?(?:(\d+)s)?\)/.exec(
                 message.result,
               ) ??
-                /^API Error: Request rejected \(429\) · All credentials for model [^\s()]+ are cooling down \(last error: [\s\S]*\) \(reset after (?:(\d+)h ?)?(?:(\d+)m ?)?(?:(\d+)s)?\)$/.exec(
+                /^API Error: (?:Request rejected \(429\)|Server is temporarily limiting requests \(not your usage limit\)) · All credentials for model [^\s()]+ are cooling down \(last error: [\s\S]*\) \(reset after (?:(\d+)h ?)?(?:(\d+)m ?)?(?:(\d+)s)?\)$/.exec(
                   message.result,
                 ))
             : /\(reset after (?:(\d+)h ?)?(?:(\d+)m ?)?(?:(\d+)s)?\)/.exec(message.result),
@@ -12876,15 +12876,20 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             const resultResetAt =
               resultFailure?.class === "usage_limit" ? resultFailure.resetAt : null;
             // An untyped rejection without a reset is the gateway's own 429; its text names the reset.
+            const countsTowardReset = (type: string, time: string | null | undefined) =>
+              time !== undefined && !(type === "unknown" && time === null && resultResetAt != null);
             const resetTimes = Array.from(context.rateLimitResetTimes)
-              .filter(
-                ([type, time]) => !(type === "unknown" && time === null && resultResetAt != null),
-              )
+              .filter(([type, time]) => countsTowardReset(type, time))
               .map(([, time]) => time);
+            // The CLI suppresses an unchanged rate_limit_event and repeats it on the assistant frame.
             const assistantLimit = context.latestAssistantRateLimit;
             if (
               assistantLimit?.type != null &&
-              !context.rateLimitResetTimes.has(assistantLimit.type)
+              !countsTowardReset(
+                assistantLimit.type,
+                context.rateLimitResetTimes.get(assistantLimit.type),
+              ) &&
+              countsTowardReset(assistantLimit.type, assistantLimit.resetAt)
             ) {
               resetTimes.push(assistantLimit.resetAt);
             }

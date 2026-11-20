@@ -10929,6 +10929,9 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     ),
   );
 
+  const untypedGatewayLimit =
+    "API Error: Server is temporarily limiting requests (not your usage limit) · All credentials for model claude-opus-5-5 are cooling down (last error: rate_limit_error: This request would exceed your account's rate limit. Please try again later.) (reset after 2h26m17s)";
+
   it.effect.each([
     { status: 503, cooldown: "4m 6s", seconds: 246 },
     { status: 503, cooldown: "1h 2m 3s", seconds: 3723 },
@@ -10964,8 +10967,33 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       proxy: true,
       sdkResetSeconds: null,
       sdkLimitType: null,
+      result: untypedGatewayLimit,
+    },
+    {
+      status: 429,
+      cooldown: "untyped assistant-only rejection",
+      seconds: 8777,
+      proxy: true,
+      assistantResetSeconds: null,
+      result: untypedGatewayLimit,
+    },
+    {
+      status: 429,
+      cooldown: "untyped rejection with a later assistant reset",
+      seconds: 9000,
+      proxy: true,
+      sdkResetSeconds: null,
+      sdkLimitType: null,
+      assistantResetSeconds: 9000,
+      result: untypedGatewayLimit,
+    },
+    {
+      status: 429,
+      cooldown: "nested 1m under an outer 2h",
+      seconds: 7200,
+      proxy: true,
       result:
-        "API Error: Server is temporarily limiting requests (not your usage limit) · All credentials for model claude-opus-5-5 are cooling down (last error: rate_limit_error: This request would exceed your account's rate limit. Please try again later.) (reset after 2h26m17s)",
+        "API Error: Server is temporarily limiting requests (not your usage limit) · All credentials for model claude-opus-5-5 are cooling down (last error: All credentials for model upstream are cooling down (reset after 1m)) (reset after 2h)",
     },
   ])("recovers wrapped gateway limits with status $status and cooldown $cooldown", (input) =>
     Effect.gen(function* () {
@@ -11005,6 +11033,22 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         makeAssistantErrorFrame({
           uuid: "00000000-0000-4000-8000-000000000652",
           error: input.proxy ? "rate_limit" : "server_error",
+          ...(input.assistantResetSeconds === undefined
+            ? {}
+            : {
+                apiErrorParams: {
+                  rate_limit_info: {
+                    status: "rejected",
+                    isUsingOverage: false,
+                    ...(input.assistantResetSeconds === null
+                      ? {}
+                      : {
+                          resetsAt:
+                            DateTime.toEpochMillis(now) / 1000 + input.assistantResetSeconds,
+                        }),
+                  },
+                },
+              }),
         }),
         makeResultFrame({
           uuid: "00000000-0000-4000-8000-000000000653",
