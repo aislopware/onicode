@@ -296,6 +296,7 @@ describe("environment theme", () => {
             Stream.fromQueue(snapshots).pipe(
               Stream.filter((snapshot) => snapshot.join("\n") === names.join("\n")),
               Stream.runHead,
+              Effect.map((snapshot) => snapshot.valueOrUndefined),
             );
           const current = path.join(outside, "current");
           const v1 = path.join(outside, "v1");
@@ -313,11 +314,37 @@ describe("environment theme", () => {
           yield* fs.symlink(v1, current);
           yield* fs.symlink(current, path.join(outside, "themes-next"));
           yield* fs.rename(path.join(outside, "themes-next"), environmentThemesDir);
-          yield* nextSnapshot(["Shared Light"]);
+          assert.deepEqual(yield* nextSnapshot(["Shared Light"]), ["Shared Light"]);
 
           yield* fs.symlink(v2, path.join(outside, "current-next"));
           yield* fs.rename(path.join(outside, "current-next"), current);
-          yield* nextSnapshot(["Nightfall"]);
+          assert.deepEqual(yield* nextSnapshot(["Nightfall"]), ["Nightfall"]);
+
+          // themes -> release/themes, then the `release` directory link is repointed.
+          const release = path.join(outside, "release");
+          for (const [version, themes] of [
+            ["r1", { "shared-light.json": SHARED_THEME }],
+            ["r2", { "nightfall.json": NIGHTFALL_THEME, "shared-light.json": SHARED_THEME }],
+          ] as const) {
+            yield* fs.makeDirectory(path.join(outside, version, "themes"), { recursive: true });
+            for (const [name, theme] of Object.entries(themes)) {
+              yield* fs.writeFileString(
+                path.join(outside, version, "themes", name),
+                encodeThemeFile(theme),
+              );
+            }
+          }
+          yield* fs.symlink(path.join(outside, "r1"), release);
+          yield* fs.symlink(path.join(release, "themes"), path.join(outside, "themes-next"));
+          yield* fs.rename(path.join(outside, "themes-next"), environmentThemesDir);
+          assert.deepEqual(yield* nextSnapshot(["Shared Light"]), ["Shared Light"]);
+
+          yield* fs.symlink(path.join(outside, "r2"), path.join(outside, "release-next"));
+          yield* fs.rename(path.join(outside, "release-next"), release);
+          assert.deepEqual(yield* nextSnapshot(["Nightfall", "Shared Light"]), [
+            "Nightfall",
+            "Shared Light",
+          ]);
         }),
       ),
   );
