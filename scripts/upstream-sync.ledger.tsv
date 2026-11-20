@@ -2883,3 +2883,4 @@ abd47de64f	take	taken as is
 ec72de7d3f	take	kept Onicode's own-scripts read (empty = inherits), so a read-then-update round trip cannot freeze environment defaults into the project; adopted upstream's create-time Settings fallback and test
 7fcec368cb	take	kept Onicode's prompt-budgeted readImageBlocks and stream-json error tests; a retry without images that also fails reports the first run's failure so Onicode's stream-json error detail survives; new test reuses Onicode's generateBranchNameWithImage helper
 8238dc2652	take	taken as is
+e6e1ce70c8	take	taken as is (server-shipped preview browser pin; mac-arm64 size checked against chrome-for-testing)
