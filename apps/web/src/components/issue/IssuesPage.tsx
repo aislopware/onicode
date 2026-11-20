@@ -59,6 +59,7 @@ import {
   issueFilterProjects,
   issueListTargets,
   issueProjectKeys,
+  issueRowHidden,
   issueSurfaceTargetFromSearch,
 } from "./issuesSearch.logic";
 import { ISSUE_SAVED_VIEWS } from "./issueSavedViews";
@@ -284,7 +285,7 @@ export function IssuesPage() {
   // would be, and each tracker's rows carry on from their own cursors.
   // The server names every tracker so the menu can switch hosts, but reads only the chosen one.
   const chosenHost = search.host?.toLowerCase();
-  // A server older than `excludeProjectIds` still answers for hidden projects.
+  const rowHidden = issueRowHidden(hiddenProjects, projects);
   const shown =
     chosenHost || hiddenProjects.size > 0
       ? new Map(
@@ -292,26 +293,11 @@ export function IssuesPage() {
             environmentId,
             {
               ...page,
-              entries: page.entries.filter(
-                (entry) =>
-                  !hiddenProjects.has(
-                    pullRequestProjectKey({ environmentId, id: entry.projectId }),
-                  ),
-              ),
-              errors: page.errors.filter(
-                (error) =>
-                  !hiddenProjects.has(
-                    pullRequestProjectKey({ environmentId, id: error.projectId }),
-                  ),
-              ),
+              entries: page.entries.filter((entry) => !rowHidden(environmentId, entry)),
+              errors: page.errors.filter((error) => !rowHidden(environmentId, error)),
               answer: {
                 ...page.answer,
-                scopes: page.answer.scopes?.filter(
-                  (scope) =>
-                    !hiddenProjects.has(
-                      pullRequestProjectKey({ environmentId, id: scope.projectId }),
-                    ),
-                ),
+                scopes: page.answer.scopes?.filter((scope) => !rowHidden(environmentId, scope)),
                 trackers: chosenHost
                   ? page.answer.trackers.filter(
                       (tracker) => tracker.host.toLowerCase() === chosenHost,

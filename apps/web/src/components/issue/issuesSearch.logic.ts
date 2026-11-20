@@ -2,11 +2,13 @@ import { pullRequestFilterProjects } from "@onicode/client-runtime/pull-request-
 import type { EnvironmentProject } from "@onicode/client-runtime/state/models";
 import {
   ISSUE_LIST_MAX_EXCLUDED_PROJECTS,
+  repositoryGroupingKeyOf,
   type EnvironmentId,
   type IssueListInput,
   type ProjectId,
 } from "@onicode/contracts";
 
+import { sourceControlClients } from "@onicode/client-runtime/source-control-clients";
 import type { IssueListTarget } from "@onicode/client-runtime/state/issues";
 
 import type { IssueSurfaceTarget } from "~/rightPanelStore";
@@ -104,6 +106,77 @@ const projectKey = (project: { readonly id: ProjectId; readonly environmentId: E
 
 export const issueProjectKeys = (pairs: IssuesSearch["hideProjects"]): ReadonlySet<string> =>
   new Set((pairs ?? []).map((pair) => JSON.stringify(pair)));
+
+/**
+ * A server older than `excludeProjectIds` reads hidden projects too, and tags a scope's rows with
+ * one of the projects that read it, so a row stays while a shown project in its environment reads
+ * the same scope. Trackers bound in settings and errors name no repository scope, so those stay
+ * while a shown project shares the hidden one's repository.
+ */
+export function issueRowHidden(
+  hidden: ReadonlySet<string>,
+  projects: ReadonlyArray<Pick<EnvironmentProject, "id" | "environmentId" | "repositoryIdentity">>,
+): (
+  environmentId: EnvironmentId,
+  row: {
+    readonly projectId: ProjectId;
+    readonly host?: string | undefined;
+    readonly scope?: string | undefined;
+  },
+) => boolean {
+  if (hidden.size === 0) return () => false;
+  type Project = (typeof projects)[number];
+  const scopeKey = (environmentId: EnvironmentId, host: string, scope: string) =>
+    JSON.stringify([environmentId, host.toLowerCase(), scope.toLowerCase()]);
+  const scopes = new Map<Project, ReadonlyArray<string>>();
+  const scopesOf = (project: Project) => {
+    let keys = scopes.get(project);
+    if (!keys) {
+      keys = sourceControlClients
+        .issueBindings(project.repositoryIdentity)
+        .map(({ host, scope }) => scopeKey(project.environmentId, host, scope));
+      scopes.set(project, keys);
+    }
+    return keys;
+  };
+  const repositoryOf = (project: Project) =>
+    project.repositoryIdentity
+      ? JSON.stringify([
+          project.environmentId,
+          repositoryGroupingKeyOf(project.repositoryIdentity).toLowerCase(),
+        ])
+      : null;
+  const byKey = new Map(projects.map((project) => [projectKey(project), project]));
+  // Built when a hidden row first needs its environment; a server that honours exclusions sends none.
+  const shownIn = new Map<EnvironmentId, { scopes: Set<string>; repositories: Set<string> }>();
+  const shown = (environmentId: EnvironmentId) => {
+    let index = shownIn.get(environmentId);
+    if (!index) {
+      const inEnvironment = projects.filter(
+        (project) => project.environmentId === environmentId && !hidden.has(projectKey(project)),
+      );
+      index = {
+        scopes: new Set(inEnvironment.flatMap(scopesOf)),
+        repositories: new Set(inEnvironment.flatMap((project) => repositoryOf(project) ?? [])),
+      };
+      shownIn.set(environmentId, index);
+    }
+    return index;
+  };
+  return (environmentId, row) => {
+    const key = projectKey({ environmentId, id: row.projectId });
+    if (!hidden.has(key)) return false;
+    const project = byKey.get(key);
+    if (!project) return true;
+    if (row.host !== undefined && row.scope !== undefined) {
+      const rowScope = scopeKey(environmentId, row.host, row.scope);
+      if (shown(environmentId).scopes.has(rowScope)) return false;
+      if (scopesOf(project).includes(rowScope)) return true;
+    }
+    const repository = repositoryOf(project);
+    return repository === null || !shown(environmentId).repositories.has(repository);
+  };
+}
 
 /**
  * Each environment leaves out its hidden projects, named from the saved pairs so a listing sent

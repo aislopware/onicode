@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import type { EnvironmentProject } from "@onicode/client-runtime/state/models";
-import { EnvironmentId, ProjectId } from "@onicode/contracts";
+import { EnvironmentId, ProjectId, SourceControlProviderKind } from "@onicode/contracts";
 
 import {
   issueFilterProjects,
   issueListTargets,
+  issueProjectKeys,
+  issueRowHidden,
   issueSurfaceTargetFromSearch,
   issuesSearchFromUrl,
 } from "./issuesSearch.logic";
@@ -130,5 +132,53 @@ describe("issueFilterProjects", () => {
       ["scratch", "onicode · laptop · /work/scratch"],
       ["worktree", "onicode · laptop · /work/worktree"],
     ]);
+  });
+});
+
+describe("issueRowHidden", () => {
+  it("keeps a scope's rows while a shown project reads that scope", () => {
+    const environmentId = EnvironmentId.make("env");
+    const project = (id: string, repository: string, origin?: string) =>
+      ({
+        id: ProjectId.make(id),
+        environmentId,
+        repositoryIdentity: {
+          canonicalKey: `github.com/${repository}`,
+          provider: SourceControlProviderKind.make("github"),
+          displayName: repository,
+          owner: repository.split("/")[0],
+          name: repository.split("/")[1],
+          ...(origin
+            ? { origin: { canonicalKey: `github.com/${origin}`, displayName: origin } }
+            : {}),
+        },
+      }) as unknown as EnvironmentProject;
+    const projects = [
+      project("main", "acme/api"),
+      project("worktree", "acme/api"),
+      project("fork", "acme/api", "me/api"),
+      project("fork-clone", "me/api"),
+    ];
+    const hidden = (...ids: string[]) =>
+      issueRowHidden(
+        issueProjectKeys(ids.map((id) => [environmentId, ProjectId.make(id)] as const)),
+        projects,
+      );
+    const row = (projectId: string, scope?: string, host = "github.com") => ({
+      projectId: ProjectId.make(projectId),
+      ...(scope ? { host, scope } : {}),
+    });
+
+    expect(hidden("main")(environmentId, row("main", "acme/api"))).toBe(false);
+    expect(hidden("main", "worktree")(environmentId, row("main", "acme/api"))).toBe(false);
+    expect(hidden("fork")(environmentId, row("fork", "me/api"))).toBe(false);
+    // The fork's clone shares its repository but reads only the fork.
+    expect(hidden("main", "worktree", "fork")(environmentId, row("fork", "acme/api"))).toBe(true);
+    // Settings-bound trackers and errors name no repository scope.
+    expect(hidden("main")(environmentId, row("main", "ENG", "linear.app"))).toBe(false);
+    expect(hidden("main")(environmentId, row("main"))).toBe(false);
+    expect(
+      hidden("fork", "fork-clone")(environmentId, row("fork-clone", "ENG", "linear.app")),
+    ).toBe(true);
   });
 });
