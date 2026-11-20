@@ -372,6 +372,11 @@ export class GitLabCli extends Context.Service<
   }
 >()("@onicode/source-control-gitlab/server/GitLabCli") {}
 
+// The create-MR endpoint has no draft attribute; GitLab reads the draft marker from the title.
+// Same markers and case rule as glab's `EnsureTitlePrefix`.
+const draftTitle = (title: string) =>
+  /^\s*(?:\[draft\]|\(draft\)|draft:)/i.test(title) ? title : `Draft: ${title}`;
+
 const RawGitLabRepositoryCloneUrlsSchema = Schema.Struct({
   path_with_namespace: TrimmedNonEmptyString,
   web_url: TrimmedNonEmptyString,
@@ -839,8 +844,7 @@ export const make = Effect.gen(function* () {
             ? []
             : ["--raw-field", `target_project_id=${targetProjectId}`]),
           "--raw-field",
-          // The REST create has no draft field; GitLab drafts a title with one of these prefixes.
-          `title=${input.draft === true && !/^\s*(\[draft\]|\(draft\)|draft:)/iu.test(input.title) ? `Draft: ${input.title}` : input.title}`,
+          `title=${input.draft === true ? draftTitle(input.title) : input.title}`,
           "--field",
           "description=@-",
         ],
