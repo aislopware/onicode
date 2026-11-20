@@ -1347,12 +1347,19 @@ export function VoiceSettingsPanel() {
   });
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- subscribes to microphone device changes while settings are open
   useEffect(() => {
-    queueMicrotask(() => void refreshMicrophones());
+    let closed = false;
+    queueMicrotask(() => {
+      if (!closed) void refreshMicrophones();
+    });
     const mediaDevices = navigator.mediaDevices;
-    if (!mediaDevices?.addEventListener) return;
     const onChange = () => void refreshMicrophones();
-    mediaDevices.addEventListener("devicechange", onChange);
-    return () => mediaDevices.removeEventListener("devicechange", onChange);
+    mediaDevices?.addEventListener?.("devicechange", onChange);
+    return () => {
+      closed = true;
+      // A listing still in flight must not write the saved order after Settings closes.
+      microphoneRefreshId.current += 1;
+      mediaDevices?.removeEventListener?.("devicechange", onChange);
+    };
   }, [refreshMicrophones]);
   const modelStatus = catalog.status;
   const target = settingsScope?.target;
