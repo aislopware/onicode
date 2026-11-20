@@ -2887,3 +2887,4 @@ e6e1ce70c8	take	taken as is (server-shipped preview browser pin; mac-arm64 size 
 602e5b32f5	take	taken as is
 e3294d7663	take	taken as is
 55c4713d08	take	took .cargo/config.toml (oni-resource-monitor.exe in its comment); skipped release-desktop.yml, T3's release pipeline; Onicode's build-desktop-artifact runs cargo from the repo root and no workflow caches the Windows binary, so no cache key needed
+c7157d376d	take	taken as is
