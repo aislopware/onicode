@@ -403,10 +403,15 @@ export const make: Effect.Effect<IssueTrackerApi, never, GitLabCli.GitLabCli> = 
         },
         decode: decodeAwardEmojiJson,
       }).pipe(
-        // GitLab before 16.1 has no `Note.awardEmoji`; comments then load without reactions.
-        // Any other failure fails the page, so a later page cannot lose its awards cursor to it.
+        // Comments load without reactions when GitLab cannot give them, as before 16.1 with no
+        // `Note.awardEmoji`. A failure a retry outlasts fails the page instead, so a later page
+        // cannot lose its awards cursor to it.
         Effect.catchIf(
-          (error) => error.cause instanceof GitLabCli.GitLabCliGraphqlFieldError,
+          (error) =>
+            !(
+              error.cause instanceof GitLabCli.GitLabCliUnreachableError ||
+              error.cause instanceof GitLabCli.GitLabCliRateLimitError
+            ),
           () => Effect.succeed(null),
         ),
       );

@@ -223,7 +223,7 @@ describe("GitLabIssueTracker", () => {
     }),
   );
 
-  it.effect("loads the detail without comment reactions where GitLab has no Note.awardEmoji", () =>
+  it.effect("loads the detail without comment reactions where GitLab cannot give them", () =>
     Effect.gen(function* () {
       const graphqlFailures: Array<GitLabCli.GitLabCliError> = [];
       const api = yield* GitLabIssueTracker.make.pipe(
@@ -239,32 +239,39 @@ describe("GitLabIssueTracker", () => {
         ),
       );
       const context = { operation: "execute", command: "glab", cwd: "/w" } as const;
-      // GitLab before 16.1 has no `Note.awardEmoji`; glab exits 1 on any query naming it.
-      const missingField = new GitLabCli.GitLabCliGraphqlFieldError({
-        ...context,
-        cause: new Error("glab: Field 'awardEmoji' doesn't exist on type 'Note'"),
-      });
-      graphqlFailures.push(missingField, missingField);
       const target = { cwd: "/w", host: "gitlab.example.com", scope: "acme/web", key: "42" };
-      const issue = yield* api.getIssue(target);
-      expect(issue.comments.map((comment) => [comment.id, comment.reactions])).toEqual([["7", []]]);
-      expect(issue.reactions).toEqual([
-        { content: "eyes", count: 1, actors: ["theo"], viewerHasReacted: false },
-      ]);
-      const later = yield* api.getComments({ ...target, cursor: "2:after-100" });
-      expect(later.comments.map((comment) => comment.reactions)).toEqual([[]]);
+      // GitLab before 16.1 has no `Note.awardEmoji` and glab exits 1 on any query naming it; a
+      // refused or too complex query fails the same way on every read.
+      for (const stderr of [
+        "glab: Field 'awardEmoji' doesn't exist on type 'Note'",
+        "glab: 403 Forbidden",
+        "glab: Query has complexity of 300, which exceeds max complexity of 250",
+      ]) {
+        const refused = new GitLabCli.GitLabCliCommandError({ ...context, cause: new Error(stderr) });
+        graphqlFailures.push(refused, refused);
+        const issue = yield* api.getIssue(target);
+        expect(issue.comments.map((comment) => [comment.id, comment.reactions])).toEqual([
+          ["7", []],
+        ]);
+        expect(issue.reactions).toEqual([
+          { content: "eyes", count: 1, actors: ["theo"], viewerHasReacted: false },
+        ]);
+        const later = yield* api.getComments({ ...target, cursor: "2:after-100" });
+        expect(later.comments.map((comment) => comment.reactions)).toEqual([[]]);
+      }
 
-      // A host that has the field but times out fails the page rather than hand out a cursor
+      // A timeout, server error or rate limit fails the page rather than hand out a cursor
       // without awards, so reactions come back on the next read.
-      const timedOut = new GitLabCli.GitLabCliCommandError({
-        ...context,
-        cause: new Error("glab timed out"),
-      });
-      graphqlFailures.push(timedOut, timedOut);
-      expect((yield* api.getIssue(target).pipe(Effect.flip)).reason).toBe("failed");
-      expect(
-        (yield* api.getComments({ ...target, cursor: "2:after-100" }).pipe(Effect.flip)).reason,
-      ).toBe("failed");
+      for (const [transient, reason] of [
+        [new GitLabCli.GitLabCliUnreachableError({ ...context, cause: new Error("timed out") }), "failed"],
+        [new GitLabCli.GitLabCliRateLimitError({ ...context, cause: new Error("429") }), "rate-limited"],
+      ] as const) {
+        graphqlFailures.push(transient, transient);
+        expect((yield* api.getIssue(target).pipe(Effect.flip)).reason).toBe(reason);
+        expect(
+          (yield* api.getComments({ ...target, cursor: "2:after-100" }).pipe(Effect.flip)).reason,
+        ).toBe(reason);
+      }
       expect((yield* api.getIssue(target)).comments[0]?.reactions).toEqual([
         { content: "thumbs-up", count: 2, actors: ["theo"], viewerHasReacted: true },
       ]);
