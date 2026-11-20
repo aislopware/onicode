@@ -99,21 +99,51 @@ const resolveWatchTarget = Effect.fn("watchDirectoryReplacements.resolveWatchTar
   return yield* resolveSymlinkTarget(unresolved).pipe(Effect.orElseSucceed(() => unresolved));
 });
 
-/** Watch replacements of a configured directory, its symlink target, and the target's parent. */
-export const watchDirectoryPath = (directory: string, watchChild: Stream.Stream<void>) => {
+// Past this many links the chain is a loop; its final target is watched as before.
+const MAX_SYMLINK_HOPS = 40;
+
+/** The next link in a chain `entry` starts, when its target is itself a symlink. */
+const nextSymlinkHop = Effect.fn("watchDirectoryReplacements.nextSymlinkHop")(function* (
+  entry: string,
+) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const link = yield* fs.readLink(entry).pipe(Effect.option);
+  if (Option.isNone(link)) return undefined;
+  const rawTarget = path.isAbsolute(link.value)
+    ? link.value
+    : `${path.dirname(entry)}${path.sep}${link.value}`;
+  const name = path.basename(rawTarget);
+  if (name === "." || name === "..") return undefined;
+  const parent = yield* realPath(path.dirname(rawTarget)).pipe(Effect.option);
+  if (Option.isNone(parent)) return undefined;
+  const hop = path.join(parent.value, name);
+  return Option.isSome(yield* fs.readLink(hop).pipe(Effect.option)) ? hop : undefined;
+});
+
+/**
+ * Watch replacements of a configured directory, every symlink it reaches the directory through,
+ * the final target, and the target's parent.
+ */
+export const watchDirectoryPath = (
+  directory: string,
+  watchChild: Stream.Stream<void>,
+  hops = 0,
+): Stream.Stream<void, never, FileSystem.FileSystem | Path.Path> => {
   const entry = NodePath.resolve(directory);
   return watchDirectoryReplacements(
     (ready) => watchDirectoryEntry(entry, ready),
     Stream.unwrap(
-      resolveWatchTarget(entry).pipe(
-        Effect.map((target) => {
-          if (target === entry) return watchChild;
-          return watchDirectoryReplacements(
-            (ready) => watchDirectoryEntry(NodePath.dirname(target), ready),
-            watchDirectoryReplacements((ready) => watchDirectoryEntry(target, ready), watchChild),
-          );
-        }),
-      ),
+      Effect.gen(function* () {
+        const hop = hops < MAX_SYMLINK_HOPS ? yield* nextSymlinkHop(entry) : undefined;
+        if (hop !== undefined) return watchDirectoryPath(hop, watchChild, hops + 1);
+        const target = yield* resolveWatchTarget(entry);
+        if (target === entry) return watchChild;
+        return watchDirectoryReplacements(
+          (ready) => watchDirectoryEntry(NodePath.dirname(target), ready),
+          watchDirectoryReplacements((ready) => watchDirectoryEntry(target, ready), watchChild),
+        );
+      }),
     ),
   );
 };
