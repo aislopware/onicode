@@ -198,23 +198,12 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
         <DialogTitle className="sr-only">
           {isVideo ? gt("Expanded video preview") : gt("Expanded image preview")}
         </DialogTitle>
-        <Button
-          type="button"
-          ref={closeButtonRef}
-          size="icon-sm-pill"
-          variant="media-close"
-          className="absolute right-0 top-0 z-20 max-[8rem]:right-1/2 max-[8rem]:translate-x-1/2"
-          onClick={close}
-          aria-label={isVideo ? gt("Close video preview") : gt("Close image preview")}
-        >
-          <XIcon aria-hidden="true" />
-        </Button>
         {preview.images.length > 1 && (
           <Button
             type="button"
             size="icon"
-            variant="media-navigation"
-            className="left-0 top-auto bottom-0 translate-y-0 sm:top-1/2 sm:bottom-auto sm:-translate-y-1/2"
+            variant="media-ghost"
+            className="absolute bottom-0 left-0 z-20 sm:top-1/2 sm:bottom-auto sm:-translate-y-1/2"
             aria-label={gt("Previous media")}
             onClick={() => navigateImage(-1)}
           >
@@ -223,34 +212,48 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
         )}
         <MediaActions source={actionsSource} showTooltip={false}>
           <div className="relative isolate z-10 flex max-h-full max-w-[var(--media-width)] flex-col items-center">
-            {item.type === "video" ? (
-              <ExpandedVideo key={index} item={item} />
-            ) : showingAccessibilityDetails ? (
-              accessibilityDetails ? (
-                <SnapShotAccessibilityData
-                  details={accessibilityDetails}
-                  className="h-[min(var(--media-height),40rem)] w-[min(var(--media-width),42rem)] transition-opacity duration-150 ease-out-quint starting:opacity-0 rounded-lg border border-border bg-background p-4 text-xs leading-5 shadow-2xl motion-reduce:transition-none"
+            {/* Close stays beside the media it closes: level with its top edge, or above it when the gutters are gone. */}
+            <div className="relative w-fit max-w-full min-w-0">
+              {item.type === "video" ? (
+                <ExpandedVideo key={index} item={item} />
+              ) : showingAccessibilityDetails ? (
+                accessibilityDetails ? (
+                  <SnapShotAccessibilityData
+                    details={accessibilityDetails}
+                    className="h-[min(var(--media-height),40rem)] w-[min(var(--media-width),42rem)] transition-opacity duration-150 ease-out-quint starting:opacity-0 rounded-lg border border-border bg-background p-4 text-xs leading-5 shadow-2xl motion-reduce:transition-none"
+                  />
+                ) : null
+              ) : item.src === null || failedImageSrc === item.src ? (
+                <ExpandedMediaFailure>
+                  <p>
+                    {openOriginalLink
+                      ? gt("This image could not be loaded.")
+                      : gt("Image unavailable. The file may have been moved or deleted.")}
+                  </p>
+                  {openOriginalLink}
+                </ExpandedMediaFailure>
+              ) : (
+                <ZoomableImage
+                  ref={zoomableImageRef}
+                  key={`${index}:${item.src}`}
+                  src={item.src}
+                  name={item.name}
+                  mimeType={itemMimeType(item)}
+                  onError={() => setFailedImageSrc(item.src)}
                 />
-              ) : null
-            ) : item.src === null || failedImageSrc === item.src ? (
-              <ExpandedMediaFailure>
-                <p>
-                  {openOriginalLink
-                    ? gt("This image could not be loaded.")
-                    : gt("Image unavailable. The file may have been moved or deleted.")}
-                </p>
-                {openOriginalLink}
-              </ExpandedMediaFailure>
-            ) : (
-              <ZoomableImage
-                ref={zoomableImageRef}
-                key={`${index}:${item.src}`}
-                src={item.src}
-                name={item.name}
-                mimeType={itemMimeType(item)}
-                onError={() => setFailedImageSrc(item.src)}
-              />
-            )}
+              )}
+              <Button
+                type="button"
+                ref={closeButtonRef}
+                size="icon-sm"
+                variant="media-ghost"
+                className="absolute right-0 bottom-full z-20 mb-1.5 sm:top-0 sm:right-auto sm:bottom-auto sm:left-full sm:mb-0 sm:ml-1.5"
+                onClick={close}
+                aria-label={isVideo ? gt("Close video preview") : gt("Close image preview")}
+              >
+                <XIcon aria-hidden="true" />
+              </Button>
+            </div>
             <div className="mt-2 flex max-w-[var(--media-width)] items-center justify-center gap-1.5 text-xs text-white/80 max-sm:px-10">
               <span className="truncate" aria-live="polite" aria-atomic="true">
                 {item.name}
@@ -294,8 +297,8 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
           <Button
             type="button"
             size="icon"
-            variant="media-navigation"
-            className="right-0 top-auto bottom-0 translate-y-0 sm:top-1/2 sm:bottom-auto sm:-translate-y-1/2"
+            variant="media-ghost"
+            className="absolute right-0 bottom-0 z-20 sm:top-1/2 sm:bottom-auto sm:-translate-y-1/2"
             aria-label={gt("Next media")}
             onClick={() => navigateImage(1)}
           >
