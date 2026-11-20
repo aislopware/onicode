@@ -44,7 +44,7 @@ import * as ProviderSessionManager from "./ProviderSessionManager.ts";
 import * as ThreadManagementService from "./ThreadManagementService.ts";
 import * as ProviderReplayHarness from "./testkit/ProviderReplayHarness.ts";
 import { checkpointWorkspace } from "@onicode/provider-testing/replayWorkspace";
-import type * as ProviderAdapter from "@onicode/provider-core/server/ProviderAdapter";
+import * as ProviderAdapter from "@onicode/provider-core/server/ProviderAdapter";
 
 const instanceId = ProviderInstanceId.make("codex");
 const modelSelection = { instanceId, model: "gpt-5.1-codex" };
@@ -2011,13 +2011,13 @@ it.effect(
 );
 
 it.effect.each([
-  { followUp: "started its turn", startedBeforeRelease: true },
-  { followUp: "was promoted", startedBeforeRelease: false },
-  { followUp: "switched provider instance", startedBeforeRelease: true, switchesInstance: true },
-  { followUp: "has fresh context", startedBeforeRelease: true, freshContext: true },
+  { followUp: "continuing the conversation" },
+  { followUp: "refused while the stopped turn is active", refusesWhileActive: true },
+  { followUp: "on another provider instance", switchesInstance: true },
+  { followUp: "with fresh context", freshContext: true },
 ])(
-  "Force stop keeps only the session of a queued follow-up that $followUp",
-  ({ startedBeforeRelease, switchesInstance = false, freshContext = false }) =>
+  "Force stop starts a queued follow-up on a new session ($followUp)",
+  ({ refusesWhileActive = false, switchesInstance = false, freshContext = false }) =>
     Effect.gen(function* () {
       const cwd = yield* checkpointWorkspace("thread-stop-force-stop-follow-up");
       const driver = adapter.driver;
@@ -2029,6 +2029,8 @@ it.effect.each([
       const started: Array<ProviderAdapter.ProviderAdapterV2TurnInput> = [];
       const interrupted: Array<ProviderAdapter.ProviderAdapterV2InterruptInput> = [];
       let opened = 0;
+      // Sessions in the order they opened, by the order they closed.
+      const closed: Array<number> = [];
       // Fresh context on a one-thread-per-session provider puts the follow-up on its own session.
       // The session itself reports shared threads so fresh-context cleanup leaves the stopped
       // run's session to Force stop, as pending background work would.
@@ -2050,6 +2052,10 @@ it.effect.each([
         openSession: (input) =>
           Effect.gen(function* () {
             opened += 1;
+            const session = opened;
+            yield* Effect.addFinalizer(() => Effect.sync(() => closed.push(session)));
+            // The stopped turn never ends, as when its provider ignores Stop.
+            let turnActive = false;
             const now = yield* DateTime.now;
             const events = yield* Queue.unbounded<ProviderAdapter.ProviderAdapterV2Event>();
             eventQueues.set(input.providerSessionId, events);
@@ -2093,6 +2099,14 @@ it.effect.each([
               resumeThread: ({ providerThread }) => Effect.succeed(providerThread),
               startTurn: (turn) =>
                 Effect.gen(function* () {
+                  if (refusesWhileActive && turnActive) {
+                    return yield* new ProviderAdapter.ProviderAdapterProtocolError({
+                      driver,
+                      detail: "The previous turn is still active.",
+                      reason: "previous_turn_active",
+                    });
+                  }
+                  turnActive = true;
                   started.push(turn);
                   yield* Queue.offer(events, {
                     type: "provider_turn.updated",
@@ -2123,23 +2137,7 @@ it.effect.each([
             };
           }),
       });
-      // The settlement promotes the follow-up; optionally its turn starts before Force stop releases.
-      const layerSessionsStartingFollowUpFirst = Layer.effect(
-        ProviderSessionManager.ProviderSessionManagerV2,
-        Effect.gen(function* () {
-          const sessions = yield* ProviderSessionManager.ProviderSessionManagerV2;
-          const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
-          return ProviderSessionManager.ProviderSessionManagerV2.of({
-            ...sessions,
-            releaseUnlessBusy: (input) =>
-              (startedBeforeRelease ? worker.drain().pipe(Effect.orDie) : Effect.void).pipe(
-                Effect.andThen(sessions.releaseUnlessBusy(input)),
-              ),
-          });
-        }),
-      );
       const layerLive = ThreadManagementService.layer.pipe(
-        Layer.provide(layerSessionsStartingFollowUpFirst),
         Layer.provideMerge(
           Layer.mergeAll(
             layerDatabase,
@@ -2209,6 +2207,8 @@ it.effect.each([
         });
 
         const result = yield* threads.forceStopThread({ threadId });
+        const closedByForceStop = [...closed];
+        // The settlement promoted the follow-up; its turn starts now.
         yield* worker.drain();
 
         assert.deepEqual(
@@ -2216,18 +2216,15 @@ it.effect.each([
           [1, 2],
           "the queued follow-up did not start its turn",
         );
-        assert.equal(
-          opened,
-          switchesInstance || freshContext ? 2 : 1,
-          "Force stop tore down the session the follow-up was promoted onto",
+        assert.deepEqual(
+          closedByForceStop,
+          [1],
+          "Force stop left the session of the turn that ignored Stop open",
         );
-        const [stopped, followUp] = [started[0]!, started[1]!];
+        assert.equal(opened, 2, "the follow-up started on the stopped turn's session");
+        assert.deepEqual(closed, [1], "the follow-up's session was closed");
+        const followUp = started[1]!;
         const providerSessionId = followUp.providerThread.providerSessionId!;
-        assert.equal(
-          yield* sessions.isLive(stopped.providerThread.providerSessionId!),
-          !switchesInstance && !freshContext,
-          "Force stop kept the stopped run's session for a follow-up on another session",
-        );
         assert.isFalse(
           interrupted.some((interrupt) =>
             String(interrupt.providerTurnId).includes(followUp.attemptId),
@@ -2238,11 +2235,7 @@ it.effect.each([
           yield* sessions.isLive(providerSessionId),
           "Force stop of the first run released the session the follow-up's turn is running on",
         );
-        assert.deepEqual(
-          result,
-          { outcome: "released", sharedWithThreadIds: [] },
-          "Force stop detached the thread the follow-up runs on as if its session were shared",
-        );
+        assert.deepEqual(result, { outcome: "released", sharedWithThreadIds: [] });
 
         // The first run's provider never confirms the stop; the follow-up's turn ends normally.
         yield* Queue.offer(eventQueues.get(providerSessionId)!, {
@@ -2259,7 +2252,7 @@ it.effect.each([
         yield* TestClock.adjust("31 minutes");
         assert.isFalse(
           yield* sessions.isLive(providerSessionId),
-          "the stopped run's unconfirmed turn kept the session from going idle",
+          "the follow-up's session did not go idle after its turn",
         );
       }).pipe(Effect.provide(layerLive));
     }),

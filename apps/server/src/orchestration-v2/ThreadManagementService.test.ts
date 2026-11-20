@@ -4,6 +4,7 @@ import {
   EnvironmentId,
   MessageId,
   type OrchestrationV2Command,
+  type OrchestrationV2ServerCommand,
   type OrchestrationV2Run,
   type OrchestrationV2ProviderThread,
   ProviderThreadId,
@@ -21,6 +22,7 @@ import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Option from "effect/Option";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Queue from "effect/Queue";
@@ -1110,101 +1112,44 @@ it.effect.each([
   }),
 );
 
+const forceStopSibling = "thread:thread-management:force-stop:other";
 it.effect.each([
   {
     name: "kills the thread's own agent and ends its turn",
-    others: [] as ReadonlyArray<string>,
     killed: true,
     expected: { outcome: "killed", sharedWithThreadIds: [] },
-    teardown: ["release"],
+  },
+  {
+    name: "reports a session torn down without an agent of its own as released",
+    expected: { outcome: "released", sharedWithThreadIds: [] },
   },
   {
     name: "keeps a process another working thread shares and only ends this turn",
-    others: ["thread:thread-management:force-stop:other"],
-    killed: false,
-    expected: {
-      outcome: "shared",
-      sharedWithThreadIds: ["thread:thread-management:force-stop:other"],
-    },
-    teardown: ["detach"],
+    sharedWith: [forceStopSibling],
+    expected: { outcome: "shared", sharedWithThreadIds: [forceStopSibling] },
   },
   {
     name: "still settles a finished run's background work in a shared process",
-    others: ["thread:thread-management:force-stop:other"],
-    killed: false,
+    sharedWith: [forceStopSibling],
     settledRun: true,
-    expected: {
-      outcome: "shared",
-      sharedWithThreadIds: ["thread:thread-management:force-stop:other"],
-    },
-    teardown: ["detach"],
-  },
-  {
-    name: "detaches when a sibling starts a turn just before the session is released",
-    others: [] as ReadonlyArray<string>,
-    killed: false,
-    siblingBusy: true,
-    expected: { outcome: "shared", sharedWithThreadIds: [] },
-    teardown: ["release", "detach"],
+    expected: { outcome: "shared", sharedWithThreadIds: [forceStopSibling] },
   },
   {
     name: "reports a teardown that has not finished in time as still releasing",
-    others: [] as ReadonlyArray<string>,
-    killed: false,
-    releaseHangs: true,
+    teardownHangs: true,
     expected: { outcome: "releasing", sharedWithThreadIds: [] },
-    teardown: ["release"],
   },
   {
-    name: "keeps the session of a follow-up moved ahead of a later message in the queue",
-    others: [] as ReadonlyArray<string>,
-    killed: false,
-    followUp: "reordered",
-    expected: { outcome: "released", sharedWithThreadIds: [] },
-    teardown: ["keep"],
+    name: "lets the retired sessions close when the settlement fails",
+    settleFails: true,
+    expected: "failed",
   },
   {
-    name: "keeps the shared process a fresh-context follow-up starts on",
-    others: [] as ReadonlyArray<string>,
-    killed: false,
-    followUp: "fresh",
-    expected: { outcome: "released", sharedWithThreadIds: [] },
-    teardown: ["keep"],
+    name: "still settles when its caller goes away after retiring",
+    callerGoesAway: true,
+    expected: "interrupted",
   },
-  {
-    name: "keeps a shared process a busy sibling uses without interrupting a started follow-up",
-    others: ["thread:thread-management:force-stop:other"],
-    killed: false,
-    followUp: "promoted",
-    expected: {
-      outcome: "shared",
-      sharedWithThreadIds: ["thread:thread-management:force-stop:other"],
-    },
-    teardown: ["keep"],
-  },
-  {
-    name: "detaches from a busy sibling's process while the follow-up is still queued",
-    others: ["thread:thread-management:force-stop:other"],
-    killed: false,
-    followUp: "queued",
-    expected: {
-      outcome: "shared",
-      sharedWithThreadIds: ["thread:thread-management:force-stop:other"],
-    },
-    teardown: ["detach"],
-  },
-  {
-    name: "keeps a busy sibling's process when the follow-up it was kept for ends first",
-    others: ["thread:thread-management:force-stop:other"],
-    killed: false,
-    followUp: "promoted-then-ended",
-    expected: {
-      outcome: "shared",
-      sharedWithThreadIds: ["thread:thread-management:force-stop:other"],
-    },
-    teardown: ["keep", "detach"],
-  },
-])("Force stop $name", ({ others, killed, expected, teardown, ...row }) =>
+])("Force stop $name", ({ expected, ...row }) =>
   Effect.gen(function* () {
     const threadId = ThreadId.make("thread:thread-management:force-stop");
     const instanceId = ProviderInstanceId.make("codex");
@@ -1213,127 +1158,103 @@ it.effect.each([
       providerInstanceId: instanceId,
     });
     const providerThreadId = ProviderThreadId.make("provider-thread:force-stop");
-    const reservedProviderThreadId = ProviderThreadId.make("provider-thread:force-stop:reserved");
     const runId = RunId.make("run:thread-management:force-stop");
-    const followUp = "followUp" in row ? row.followUp : undefined;
-    // Moved ahead of a message queued after it, the follow-up starts after a run of higher ordinal.
-    const targetOrdinal = followUp === "reordered" ? 3 : 1;
-    const followUpMessageId = MessageId.make("message:queued-follow-up");
-    const dispatched: Array<OrchestrationV2Command | { readonly type: string }> = [];
-    // Settling the stopped turn promotes a follow-up; later reads see it start, then maybe end.
-    let readsAfterSettle = 0;
-    const followUpStatus = () =>
-      dispatched.length === 0 || followUp === undefined || !followUp.startsWith("promoted")
-        ? "queued"
-        : followUp === "promoted" || readsAfterSettle === 1
-          ? "running"
-          : "completed";
-    const teardowns: Array<string> = [];
-    const tornDown = yield* Deferred.make<void>();
+    const sharedWith = "sharedWith" in row ? row.sharedWith : undefined;
+    const order: Array<string> = [];
+    const dispatched: Array<OrchestrationV2ServerCommand> = [];
+    const retiredProviderThreadIds: Array<ProviderThreadId> = [];
+    const afterCompleted = yield* Deferred.make<void>();
+    const retired = yield* Deferred.make<void>();
+    const interruptSent = yield* Deferred.make<void>();
     const layerTest = ThreadManagementService.layer.pipe(
       Layer.provide(
         Layer.mock(ProviderSessionManager.ProviderSessionManagerV2)({
-          isLive: () => Effect.succeed(true),
-          otherWorkingThreads: () => Effect.succeed(others.map((id) => ThreadId.make(id))),
-          releaseUnlessBusy: (input) =>
-            (input.keepIf ?? Effect.succeed(false)).pipe(
-              Effect.tap((keep) => Effect.sync(() => teardowns.push(keep ? "keep" : "release"))),
-              Effect.flatMap((keep) =>
-                "releaseHangs" in row
-                  ? Effect.never
-                  : Effect.succeed(!keep && !("siblingBusy" in row)),
-              ),
-            ),
-          detach: () =>
-            Effect.sync(() => teardowns.push("detach")).pipe(
-              Effect.andThen(Deferred.succeed(tornDown, undefined)),
-              Effect.asVoid,
-            ),
+          retireThread: (input) =>
+            Effect.gen(function* () {
+              order.push("retire");
+              retiredProviderThreadIds.push(...input.ownProviderThreadIds);
+              if ("callerGoesAway" in row) {
+                yield* Deferred.succeed(retired, undefined);
+                yield* Deferred.await(interruptSent);
+              }
+              // Started at once: it gets past `after` here only if that is already complete.
+              yield* input.after.pipe(
+                Effect.andThen(Effect.sync(() => order.push("after"))),
+                Effect.andThen(Deferred.succeed(afterCompleted, undefined)),
+                Effect.forkDetach({ startImmediately: true }),
+              );
+              return {
+                shared: sharedWith !== undefined,
+                sharedWithThreadIds: (sharedWith ?? []).map((id) => ThreadId.make(id)),
+                teardown: "teardownHangs" in row ? Effect.never : Deferred.await(afterCompleted),
+              };
+            }),
         }),
       ),
       Layer.provide(
         Layer.mock(Orchestrator.OrchestratorV2)({
           getThreadRecords: () =>
-            Effect.sync(() => {
-              if (dispatched.length > 0) readsAfterSettle++;
-              return {
-                thread: {
-                  id: threadId,
-                  deletedAt: null,
-                  modelSelection: { instanceId, model: "gpt-5.4" },
-                  activeProviderThreadId: providerThreadId,
+            Effect.succeed({
+              thread: {
+                id: threadId,
+                deletedAt: null,
+                modelSelection: { instanceId, model: "gpt-5.4" },
+                activeProviderThreadId: providerThreadId,
+              },
+              runs: [
+                {
+                  id: runId,
+                  ordinal: 1,
+                  status: "settledRun" in row ? "completed" : "running",
+                  activeAttemptId: "attempt",
+                  providerThreadId,
                 },
-                runs: [
-                  {
-                    id: runId,
-                    ordinal: targetOrdinal,
-                    status: "settledRun" in row ? "completed" : "running",
-                    activeAttemptId: "attempt",
-                    providerThreadId,
-                  },
-                  // A queued follow-up neither supersedes the request nor becomes the target.
-                  {
-                    id: RunId.make("run:queued-follow-up"),
-                    ordinal: 2,
-                    status: followUpStatus(),
-                    userMessageId: followUpMessageId,
-                    modelSelection: { instanceId, model: "gpt-5.4" },
-                    providerInstanceId: instanceId,
-                    providerThreadId:
-                      followUp === "fresh"
-                        ? reservedProviderThreadId
-                        : followUp === undefined
-                          ? null
-                          : providerThreadId,
-                    ...(followUp === "fresh" ? { freshContext: true } : {}),
-                  },
-                ],
-                messages: followUp === undefined ? [] : [{ id: followUpMessageId, role: "user" }],
-                turnItems: [],
-                providerThreads: [
-                  {
-                    id: providerThreadId,
-                    appThreadId: threadId,
-                    providerInstanceId: instanceId,
-                    providerSessionId,
-                    ownerNodeId: null,
-                    firstRunOrdinal: 1,
-                    lastRunOrdinal: targetOrdinal,
-                    nativeThreadRef: { nativeId: "native-thread" },
-                  },
-                  // Reserved when the fresh-context follow-up queued; its session comes at start.
-                  {
-                    id: reservedProviderThreadId,
-                    appThreadId: threadId,
-                    providerInstanceId: instanceId,
-                    providerSessionId: null,
-                    ownerNodeId: null,
-                    firstRunOrdinal: null,
-                    lastRunOrdinal: null,
-                    nativeThreadRef: null,
-                  },
-                ],
-                providerTurns: [
-                  {
-                    id: "provider-turn:force-stop",
-                    providerThreadId,
-                    runAttemptId: "attempt",
-                    status: "settledRun" in row ? "completed" : "running",
-                  },
-                ],
-              } as unknown as OrchestrationV2ThreadProjection;
-            }),
+                // A queued follow-up neither supersedes the request nor becomes the target.
+                {
+                  id: RunId.make("run:queued-follow-up"),
+                  ordinal: 2,
+                  status: "queued",
+                  providerThreadId,
+                },
+              ],
+              providerThreads: [
+                { id: providerThreadId, appThreadId: threadId, providerSessionId },
+                // A native subagent's thread is read with its parent but is its child's own.
+                {
+                  id: ProviderThreadId.make("provider-thread:force-stop:native-child"),
+                  appThreadId: ThreadId.make("thread:thread-management:force-stop:child"),
+                  providerSessionId,
+                },
+              ],
+              providerTurns: [
+                {
+                  id: "provider-turn:force-stop",
+                  providerThreadId,
+                  runAttemptId: "attempt",
+                  status: "settledRun" in row ? "completed" : "running",
+                },
+              ],
+            } as unknown as OrchestrationV2ThreadProjection),
           dispatch: (command) =>
-            Effect.sync(() => {
+            Effect.suspend(() => {
+              order.push("dispatch");
               dispatched.push(command);
-              return { sequence: 1, storedEvents: [] } as never;
+              return "settleFails" in row
+                ? Effect.fail(
+                    new Orchestrator.OrchestratorDispatchError({
+                      commandId: command.commandId,
+                      commandType: command.type,
+                      cause: "simulated",
+                    }),
+                  )
+                : Effect.succeed({ sequence: 1, storedEvents: [] } as never);
             }),
         }),
       ),
       Layer.provide(
         Layer.succeed(AgentScope, {
           ...AgentScope.defaultValue(),
-          kill: () => Effect.succeed(killed),
+          kill: () => Effect.succeed("killed" in row),
         }),
       ),
       Layer.provide(ServerSettings.layerTest()),
@@ -1341,9 +1262,27 @@ it.effect.each([
     );
     yield* Effect.gen(function* () {
       const service = yield* ThreadManagementService.ThreadManagementService;
-      const stopping = yield* service.forceStopThread({ threadId, runId }).pipe(Effect.forkChild);
+      const stopping = yield* service
+        .forceStopThread({ threadId, runId })
+        .pipe(Effect.result, Effect.forkChild);
+      if ("callerGoesAway" in row) {
+        yield* Deferred.await(retired);
+        yield* Fiber.interrupt(stopping).pipe(Effect.forkDetach({ startImmediately: true }));
+        yield* Deferred.succeed(interruptSent, undefined);
+      }
       yield* TestClock.adjust("10 seconds");
-      expect(yield* Fiber.join(stopping)).toEqual(expected);
+      const exit = yield* Fiber.await(stopping);
+      expect(
+        Exit.isSuccess(exit)
+          ? Result.isSuccess(exit.value)
+            ? exit.value.success
+            : "failed"
+          : "interrupted",
+      ).toEqual(expected);
+      yield* Deferred.await(afterCompleted);
+      // The sessions are retired before the settlement can promote a follow-up, and close after it.
+      expect(order).toEqual(["retire", "dispatch", "after"]);
+      expect(retiredProviderThreadIds).toEqual([providerThreadId]);
       expect(dispatched).toMatchObject([
         {
           type: "thread.background-work.settle",
@@ -1351,8 +1290,6 @@ it.effect.each([
           reason: "Force stopped by user",
         },
       ]);
-      if (teardown.at(-1) === "detach") yield* Deferred.await(tornDown);
-      expect(teardowns).toEqual(teardown);
     }).pipe(Effect.provide(layerTest));
   }),
 );

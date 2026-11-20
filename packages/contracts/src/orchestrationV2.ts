@@ -4344,9 +4344,9 @@ export type OrchestrationV2ForceStopThreadInput = typeof OrchestrationV2ForceSto
 export const OrchestrationV2ForceStopThreadResult = Schema.Struct({
   /**
    * `killed`: its own agent processes were killed. `released`: its provider session was torn
-   * down (killing the agent's process group) or handed to its newer run. `releasing`: teardown
-   * continues on the server. `shared`: the agent process also works for `sharedWithThreadIds`,
-   * so only this thread's turn was ended.
+   * down (killing the agent's process group). `releasing`: teardown continues on the server.
+   * `shared`: the agent process also works for `sharedWithThreadIds`, so only this thread's
+   * turn was ended.
    */
   outcome: Schema.Literals(["killed", "released", "releasing", "shared"]),
   sharedWithThreadIds: Schema.Array(ThreadId),
