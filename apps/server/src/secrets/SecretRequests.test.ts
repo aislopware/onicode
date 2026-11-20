@@ -40,7 +40,7 @@ const decodeSecretInputExit = Schema.decodeUnknownExit(OrchestratorMcpRequestSec
 const FAKE_KIND = SecretProviderKind.make("fake");
 const vault = SecretProviderId.make("vault");
 /** Reads `fake://` references from `values` while unlocked, as a password manager would. */
-const fakeVault = () => {
+const fakeVault = (gate: Effect.Effect<void> = Effect.void) => {
   const state = { unlocked: true, values: new Map([["fake://github/token", "ghp_from_vault"]]) };
   const driver = defineSecretProviderDriver({
     kind: FAKE_KIND,
@@ -53,8 +53,10 @@ const fakeVault = () => {
       invalidReferenceMessage: "Use fake://item.",
     }),
     read: (_config, references) =>
-      Effect.sync(() =>
-        references.map((reference) => (state.unlocked ? state.values.get(reference) : undefined)),
+      gate.pipe(
+        Effect.map(() =>
+          references.map((reference) => (state.unlocked ? state.values.get(reference) : undefined)),
+        ),
       ),
   });
   return {
@@ -72,6 +74,8 @@ const withService = <A, E>(
     readonly stored: Map<string, Uint8Array>;
     readonly dispatched: Array<OrchestrationV2ServerCommand>;
     readonly moveThread: (to: ProjectId) => void;
+    /** The next removal from the store fails, as a read-only disk would. */
+    readonly failNextRemove: () => void;
   }) => Effect.Effect<A, E>,
   options: {
     readonly threadId?: ThreadId;
@@ -81,8 +85,10 @@ const withService = <A, E>(
     readonly removeFails?: boolean;
     readonly closedFirst?: boolean;
     readonly failedRecords?: number;
+    /** The first read of the thread after the card is saved fails. */
+    readonly failedReadAfterSave?: boolean;
     readonly resolver?: Layer.Layer<SecretResolver.SecretResolver>;
-    readonly afterCreate?: Effect.Effect<void>;
+    readonly afterStore?: Effect.Effect<void>;
   } = {},
 ) =>
   Effect.gen(function* () {
@@ -91,6 +97,8 @@ const withService = <A, E>(
     let secretStatus = "pending";
     let threadProjectId = projectId;
     let failedRecords = options.failedRecords ?? 0;
+    let failNextRemove = false;
+    let failReadAfterSave = options.failedReadAfterSave ?? false;
     const requestThreadId = options.threadId ?? threadId;
     const layerDependencies = Layer.mergeAll(
       NodeCrypto.layer,
@@ -101,7 +109,10 @@ const withService = <A, E>(
         ServerSecretStore.ServerSecretStore.of({
           ...(options.directory === undefined ? {} : { directory: options.directory }),
           get: (name) => Effect.yieldNow.pipe(Effect.as(Option.fromNullishOr(stored.get(name)))),
-          set: (name, value) => Effect.sync(() => void stored.set(name, value)),
+          set: (name, value) =>
+            Effect.sync(() => void stored.set(name, value)).pipe(
+              Effect.andThen(options.afterStore ?? Effect.void),
+            ),
           create: (name, value) =>
             stored.has(name)
               ? Effect.fail(
@@ -116,9 +127,7 @@ const withService = <A, E>(
                     ),
                   } as never),
                 )
-              : Effect.sync(() => void stored.set(name, value)).pipe(
-                  Effect.andThen(options.afterCreate ?? Effect.void),
-                ),
+              : Effect.sync(() => void stored.set(name, value)),
           getOrCreateRandom: (name, bytes) =>
             Effect.sync(() => {
               const existing = stored.get(name);
@@ -128,12 +137,18 @@ const withService = <A, E>(
               return value;
             }),
           remove: (name) =>
-            options.removeFails
-              ? Effect.fail(
-                  new ServerSecretStore.SecretStorePersistError({
-                    resource: name,
-                    cause: new Error("read-only"),
-                  }),
+            options.removeFails || failNextRemove
+              ? Effect.sync(() => {
+                  failNextRemove = false;
+                }).pipe(
+                  Effect.andThen(
+                    Effect.fail(
+                      new ServerSecretStore.SecretStorePersistError({
+                        resource: name,
+                        cause: new Error("read-only"),
+                      }),
+                    ),
+                  ),
                 )
               : Effect.sync(() => void stored.delete(name)),
         }),
@@ -142,6 +157,11 @@ const withService = <A, E>(
         // Reads yield like a real store, so two answers can both see a pending card.
         getThreadRecords: () =>
           Effect.yieldNow.pipe(
+            Effect.andThen(() => {
+              if (!failReadAfterSave || secretStatus !== "saved") return Effect.void;
+              failReadAfterSave = false;
+              return Effect.fail(new Error("database busy") as never);
+            }),
             Effect.map(
               () =>
                 ({
@@ -189,6 +209,9 @@ const withService = <A, E>(
         dispatched,
         moveThread: (to) => {
           threadProjectId = to;
+        },
+        failNextRemove: () => {
+          failNextRemove = true;
         },
       });
     }).pipe(Effect.provide(SecretRequests.layer.pipe(Layer.provide(layerDependencies))));
@@ -351,6 +374,24 @@ it.effect("a save that loses to the card closing deletes the value and says so",
         assert.isFalse(valuesOf(stored).some((value) => value.includes("ghp_secret")));
       }),
     { closedFirst: true },
+  ),
+);
+
+it.effect("a recorded save stands when reading the card back fails", () =>
+  withFiles(
+    ({ service, fs }) =>
+      Effect.gen(function* () {
+        yield* service.answer({
+          threadId,
+          turnItemId,
+          answer: { type: "save", secret: "ghp_secret" },
+        });
+        assert.equal(
+          yield* fs.readFileString(singleFile(yield* service.saveToFile({ threadId, turnItemId }))),
+          "ghp_secret",
+        );
+      }),
+    { failedReadAfterSave: true },
   ),
 );
 
@@ -521,13 +562,26 @@ it.effect("a fields request keeps each value apart and delivers one file per fie
     const fs = yield* FileSystem.FileSystem;
     const directory = yield* fs.makeTempDirectoryScoped({ prefix: "secret-files-test-" });
     yield* withService(
-      ({ service, stored, dispatched }) =>
+      ({ service, stored, dispatched, failNextRemove }) =>
         Effect.gen(function* () {
           const answer = (values: Record<string, string>) =>
             service.answer({ threadId, turnItemId, answer: { type: "save", values } });
-          // An older client answers with one secret; a partial answer is just as wrong.
+          // An older client answers with one secret or a reference, and cannot decode
+          // fields_mismatch, so it gets a reason it knows.
+          for (const legacy of [
+            { type: "save", secret: "pw" } as const,
+            {
+              type: "reference",
+              reference: { provider: vault, reference: "fake://github/token" },
+            } as const,
+          ]) {
+            const refused = yield* service
+              .answer({ threadId, turnItemId, answer: legacy })
+              .pipe(Effect.flip);
+            assert.equal(refused.reason, "store_failed");
+          }
+          // A partial answer, or one with an extra value, is wrong too.
           for (const wrong of [
-            service.answer({ threadId, turnItemId, answer: { type: "save", secret: "pw" } }),
             answer({ email: "qa@acme.dev" }),
             answer({ email: "qa@acme.dev", password: "pw", extra: "x" }),
           ]) {
@@ -538,6 +592,10 @@ it.effect("a fields request keeps each value apart and delivers one file per fie
           const failed = yield* answer({ email: "qa@acme.dev", password: "pw" }).pipe(Effect.flip);
           assert.equal(failed.reason, "record_failed");
           assert.deepEqual(valuesOf(stored), []);
+          // A value the cleanup could not remove is replaced by the next answer, never kept.
+          failNextRemove();
+          yield* answer({ email: "old@acme.dev", password: "old-pw" }).pipe(Effect.flip);
+          assert.lengthOf(valuesOf(stored), 1);
 
           yield* answer({ email: "qa@acme.dev", password: "hunter2" });
           assert.include(dispatched[0] as object, { secretStatus: "saved" });
@@ -556,7 +614,7 @@ it.effect("a fields request keeps each value apart and delivers one file per fie
         }),
       {
         directory,
-        failedRecords: 1,
+        failedRecords: 2,
         fields: [
           { name: "email", label: "Email" },
           { name: "password", label: "Password" },
@@ -600,6 +658,41 @@ it.effect("two racing answers to a fields card never mix their values", () =>
   }).pipe(Effect.provide(NodeServices.layer)),
 );
 
+it.effect("a card waiting on a locked secret provider does not hold up another thread's card", () =>
+  Effect.gen(function* () {
+    const readStarted = yield* Deferred.make<void>();
+    const unlocked = yield* Deferred.make<void>();
+    const { layer } = fakeVault(
+      Deferred.succeed(readStarted, undefined).pipe(Effect.andThen(Deferred.await(unlocked))),
+    );
+    yield* withService(
+      ({ service, dispatched }) =>
+        Effect.gen(function* () {
+          const waiting = yield* service
+            .answer({
+              threadId,
+              turnItemId,
+              answer: {
+                type: "reference",
+                reference: { provider: vault, reference: "fake://github/token" },
+              },
+            })
+            .pipe(Effect.forkChild);
+          yield* Deferred.await(readStarted);
+          yield* service.answer({
+            threadId: ThreadId.make("thread-other"),
+            turnItemId,
+            answer: { type: "decline" },
+          });
+          assert.include(dispatched[0] as object, { secretStatus: "declined" });
+          yield* Deferred.succeed(unlocked, undefined);
+          yield* Fiber.join(waiting).pipe(Effect.ignore);
+        }),
+      { resolver: layer },
+    );
+  }),
+);
+
 it.effect("a fields answer interrupted between two values keeps neither", () =>
   Effect.gen(function* () {
     const firstStored = yield* Deferred.make<void>();
@@ -618,7 +711,7 @@ it.effect("a fields answer interrupted between two values keeps neither", () =>
           assert.deepEqual(valuesOf(stored), []);
         }),
       {
-        afterCreate: Deferred.succeed(firstStored, undefined).pipe(Effect.andThen(Effect.never)),
+        afterStore: Deferred.succeed(firstStored, undefined).pipe(Effect.andThen(Effect.never)),
         fields: [
           { name: "email", label: "Email" },
           { name: "password", label: "Password" },

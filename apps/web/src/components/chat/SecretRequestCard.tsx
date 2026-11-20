@@ -299,8 +299,8 @@ function PendingSecretRequestForm(props: {
           {error}
         </p>
       ) : null}
-      <div className="flex min-w-0 items-end justify-between gap-2">
-        <div id={privacyId} className="flex min-w-0 flex-col gap-1.5">
+      <div className="flex min-w-0 flex-wrap items-end justify-between gap-2">
+        <div id={privacyId} className="flex min-w-0 grow basis-52 flex-col gap-1.5">
           {destination !== null ? (
             <CardNote
               icon={
@@ -341,7 +341,7 @@ function PendingSecretRequestForm(props: {
             </CardNote>
           ) : null}
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="ms-auto flex shrink-0 items-center gap-2">
           <Button
             type="button"
             size="xs"

@@ -50,7 +50,7 @@ const SECRET_REQUEST_FAILURE_MESSAGES = {
   agent_stopped: "The agent that asked has stopped, so this secret can't be used.",
   store_failed: "Could not store the secret.",
   reference_unreadable: "Could not read the secret from the secret provider.",
-  record_failed: "Saved the secret, but could not update the request.",
+  record_failed: "Could not save the secret. Try again.",
   read_failed: "Could not read the secret.",
   ref_unavailable:
     "That secret was already delivered or does not exist. Ask the user again with request_secret.",

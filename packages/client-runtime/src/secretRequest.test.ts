@@ -5,6 +5,8 @@ import {
   ThreadId,
   TurnItemId,
 } from "@onicode/contracts";
+import { mFallback } from "gt-i18n";
+import type { MFunctionType } from "gt-i18n/types";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -117,6 +119,21 @@ describe("secretRequestFailureMessage", () => {
       "Could not answer the request. Try again.",
     );
     expect(secretRequestFailureMessage(undefined)).toBe("Could not answer the request. Try again.");
+  });
+
+  it("shows an answer's failure in the active language, a named secret provider included", () => {
+    const resolve = ((message, options) => `[fr] ${mFallback(message, options)}`) as MFunctionType;
+    expect(
+      secretRequestFailureMessage(new SecretRequestError({ reason: "agent_stopped" }), resolve),
+    ).toBe("[fr] The agent that asked has stopped, so this secret can't be used.");
+    expect(
+      secretRequestFailureMessage(
+        new SecretRequestError({ reason: "reference_unreadable", provider: "1Password" }),
+        resolve,
+      ),
+    ).toBe(
+      '[fr] Could not read the secret from the secret provider "1Password". Unlock it and try again, or enter the value.',
+    );
   });
 });
 
