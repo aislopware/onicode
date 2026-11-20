@@ -559,6 +559,7 @@ type AuthorizedClientsHeaderActionProps = {
   environmentId: EnvironmentId;
   onPairingLinkCreated: (result: AuthPairingCredentialResult) => void;
   clientSessions: ReadonlyArray<ServerClientSessionRecord> | null;
+  pairingLinkCount: number;
   isRevokingOtherClients: boolean;
   onRevokeOtherClients: () => void;
   delegatableScopes: ReadonlyArray<AuthEnvironmentScope>;
@@ -568,6 +569,7 @@ export const AuthorizedClientsHeaderAction = memo(function AuthorizedClientsHead
   environmentId,
   onPairingLinkCreated,
   clientSessions,
+  pairingLinkCount,
   isRevokingOtherClients,
   onRevokeOtherClients,
   delegatableScopes,
@@ -636,7 +638,9 @@ export const AuthorizedClientsHeaderAction = memo(function AuthorizedClientsHead
       <Button
         size="xs"
         variant="destructive-outline"
-        disabled={isRevokingOtherClients || !canRevokeOtherClients(clientSessions)}
+        disabled={
+          isRevokingOtherClients || !canRevokeOtherClients(clientSessions, pairingLinkCount)
+        }
         onClick={() => void onRevokeOtherClients()}
       >
         {isRevokingOtherClients ? gt("Revoking…") : gt("Revoke others")}

@@ -58,7 +58,7 @@ it.effect("links a file of environments, reports each line, and fails when one d
       const file = NodePath.join(baseDir, "fleet.txt");
       yield* fs.writeFileString(
         file,
-        `# fleet\n${one.url} ${firstCode}\n\n${two.url} not-a-code\n${three.url} ${thirdCode}\n`,
+        `# fleet\n${one.url} ${firstCode} # rack 1\n\n${two.url} not-a-code\n${three.url} ${thirdCode}\n`,
       );
       const link = (from: string) =>
         runCli(["environment", "link", "--from", from, "--access", "auto", "--base-dir", baseDir]);

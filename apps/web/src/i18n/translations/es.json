@@ -7135,6 +7135,7 @@
   "0badb0dc1c68223f": "No se pudo revocar el enlace de emparejamiento",
   "7d86e527ad36e0ba": "No se pudo revocar el acceso del cliente.",
   "f0289c9a9258fc11": "No se pudo revocar el acceso del cliente",
+  "740103bb1653c20b": "Enlaces de emparejamiento sin usar revocados",
   "2686e86a255edb3f": "Se revocó 1 cliente más",
   "23601766b7c2d13e": "{count, plural, one {Se revocó {count} cliente} other {Se revocaron {count} clientes}}",
   "ca0bfbc3cb91e6b9": "Los demás clientes emparejados necesitarán un enlace de emparejamiento nuevo para volver a conectarse.",

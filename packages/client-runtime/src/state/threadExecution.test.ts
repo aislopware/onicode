@@ -229,6 +229,29 @@ describe("thread execution presentation", () => {
         providerSessions: [session("Session failed")],
       }),
     ).toBe("limited@2026-07-28T10:05:00.000Z");
+    // It owns a failure text it shares with the overtaking run, whose dismissed banner stays apart.
+    const crash = { ...item.failure, class: "provider_error" as const };
+    const overtook = {
+      ...run("overtook", 2, "failed"),
+      rootNodeId: NodeId.make("overtook-root"),
+      completedAt: now,
+    };
+    expect(
+      source({
+        runs: [{ ...ended, completedAt: later }, overtook],
+        turnItems: [
+          { ...item, failure: crash, completedAt: later, updatedAt: later },
+          {
+            ...item,
+            id: TurnItemId.make("overtook-error"),
+            runId: overtook.id,
+            nodeId: overtook.rootNodeId,
+            failure: crash,
+          },
+        ],
+        providerSessions: [session("Plan limit reached")],
+      }),
+    ).toBe("limit-error@2026-07-28T10:05:00.000Z");
     // An interrupted run ends too; a run stopped or cancelled before it started never ran.
     expect(
       source({

@@ -790,6 +790,11 @@ it.effect(
           .link({ url: impostor.url, pairingCode: second.credential, access: "auto" })
           .pipe(Effect.flip);
         expect(taken.message).toContain("already linked");
+        // The CLI's batch link keeps a current link, but not at an address it never had.
+        const kept = yield* a.links
+          .linkUnlessLinked({ url: impostor.url, pairingCode: second.credential, access: "auto" })
+          .pipe(Effect.flip);
+        expect(kept.message).toBe(taken.message);
         expect(yield* linkedSessions(impostor)).toEqual([]);
         expect(Option.getOrUndefined(yield* a.links.get(box.environmentId))?.urls).toEqual([b.url]);
         // The address the link already has still renews it.

@@ -520,7 +520,6 @@ const make = Effect.gen(function* () {
       stored !== undefined && DateTime.isGreaterThan(stored.expiresAt, yield* DateTime.now)
         ? stored
         : undefined;
-    if (keepLinked && current !== undefined) return { link: current, alreadyLinked: true };
     // Anything can answer as a linked machine, so an address alone renews its
     // link only where the link already reaches it, and never moves it.
     if (
@@ -533,6 +532,7 @@ const make = Effect.gen(function* () {
         message: `${primary} answers as ${current.label}, which is already linked at another address. If ${current.label} moved, forget that link first.`,
       });
     }
+    if (keepLinked && current !== undefined) return { link: current, alreadyLinked: true };
     const self = yield* environment.getDescriptor;
     if (peer.environmentId === self.environmentId) {
       return yield* new PeerLinkError({

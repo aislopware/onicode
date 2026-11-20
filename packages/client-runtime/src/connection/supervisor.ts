@@ -278,7 +278,8 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
   const intent = yield* Ref.make(initialIntent);
   const signals = yield* Queue.unbounded<SupervisorSignal>();
   const resetRetryState = yield* Ref.make(false);
-  const probeUnanswered = yield* Ref.make(false);
+  // The signal of a probe that went unanswered: an offline report, or anything else.
+  const probeUnanswered = yield* Ref.make<"offline" | "other" | null>(null);
   const state = yield* SubscriptionRef.make<SupervisorConnectionState>(
     !initialIntent.desired
       ? availableState(initialIntent, 0)
@@ -665,7 +666,18 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
       if (probeTimeout === undefined) {
         continue;
       }
-      yield* Ref.set(probeUnanswered, true);
+      // The latest signal names why a probe went unanswered, but an explicit retry always tries.
+      let retried = false;
+      const recordProbeTrigger = (signal: SupervisorSignal) => {
+        if (signal._tag === "RetryRequested") retried = true;
+        return Ref.set(
+          probeUnanswered,
+          !retried && signal._tag === "NetworkChanged" && signal.network === "offline"
+            ? "offline"
+            : "other",
+        );
+      };
+      yield* recordProbeTrigger(next);
       let probe = yield* Effect.forkChild(lease.session.probe);
       // A busy server can miss one foreground probe while the socket is still
       // healthy, so the first miss asks again and only the follow-up's miss
@@ -758,7 +770,7 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
         if (probeEvent._tag === "ProbeCompleted") {
           if (silentSocket) yield* Fiber.interrupt(silentSocket);
           if (Exit.isSuccess(probeEvent.exit)) {
-            yield* Ref.set(probeUnanswered, false);
+            yield* Ref.set(probeUnanswered, null);
           }
           yield* probeEvent.exit;
           break;
@@ -770,6 +782,7 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
         }
         const signalTimeout = probeTimeoutFor(probeEvent.signal, routeKind);
         if (signalTimeout !== undefined) {
+          yield* recordProbeTrigger(probeEvent.signal);
           // A retry or network signal wants a definite answer, even when its
           // own deadline lands after the foreground one.
           if (!isForegroundProbe(probeEvent.signal)) toleratesMiss = false;
@@ -1043,7 +1056,7 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
           ),
       );
       replacing = false;
-      const failedProbe = yield* Ref.getAndSet(probeUnanswered, false);
+      const failedProbe = yield* Ref.getAndSet(probeUnanswered, null);
       if (outcome.established) {
         // A session came up, so no earlier failure describes the connection.
         // Losing a live session is not a failed connection either, for example
@@ -1086,8 +1099,11 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
         continue;
       }
 
-      if (failedProbe) {
+      if (failedProbe !== null) {
         resetRetryLadder();
+        // A probe missed for another reason than an offline report says nothing about the network,
+        // so one attempt ignores an earlier, possibly stale, offline report.
+        replacing = failedProbe === "other";
         yield* setState(connectingState(yield* Ref.get(intent), generation, 1, latestFailure));
         continue;
       }

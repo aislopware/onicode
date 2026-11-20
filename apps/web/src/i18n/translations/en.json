@@ -7143,6 +7143,7 @@
   "0badb0dc1c68223f": "Could not revoke pairing link",
   "7d86e527ad36e0ba": "Failed to revoke client access.",
   "f0289c9a9258fc11": "Could not revoke client access",
+  "740103bb1653c20b": "Revoked unused pairing links",
   "2686e86a255edb3f": "Revoked 1 other client",
   "23601766b7c2d13e": "{count, plural, other {Revoked {count} clients}}",
   "ca0bfbc3cb91e6b9": "Other paired clients will need a new pairing link before reconnecting.",

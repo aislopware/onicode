@@ -152,6 +152,7 @@ interface PendingCode {
   readonly codeChallenge: string;
   readonly resource: string;
   readonly access: AuthMcpClientAccess;
+  readonly revocation: number;
   readonly expiresAtMs: number;
 }
 
@@ -346,6 +347,7 @@ const make = Effect.gen(function* () {
   const mintCode = Effect.fn("McpOAuth.mintCode")(function* (
     authorization: AuthorizationRequest,
     access: AuthMcpClientAccess,
+    revocation: number,
   ) {
     const now = yield* Clock.currentTimeMillis;
     const code = Buffer.from(yield* random.randomBytes(32)).toString("base64url");
@@ -358,6 +360,7 @@ const make = Effect.gen(function* () {
         codeChallenge: authorization.codeChallenge,
         resource: authorization.resource,
         access,
+        revocation,
         expiresAtMs: now + AUTHORIZATION_CODE_TTL_MS,
       });
       return next;
@@ -367,6 +370,7 @@ const make = Effect.gen(function* () {
 
   const approve: McpOAuth["Service"]["approve"] = Effect.fn("McpOAuth.approve")(function* (input) {
     const { decision } = input;
+    const revocation = yield* environmentAuth.otherClientsRevocation;
     yield* environmentAuth.consumeMcpApprovalCode(decision.code, decision.access).pipe(
       Effect.catchIf(EnvironmentAuth.isServerAuthInternalError, (cause) =>
         Effect.logError("MCP approval code check failed.", { cause }).pipe(
@@ -380,7 +384,7 @@ const make = Effect.gen(function* () {
         ),
       ),
     );
-    const code = yield* mintCode(input.authorization, decision.access);
+    const code = yield* mintCode(input.authorization, decision.access, revocation);
     yield* Effect.logInfo("Approved an MCP client sign-in.", {
       client: input.authorization.client.name,
       access: decision.access,
@@ -427,7 +431,8 @@ const make = Effect.gen(function* () {
         pending.redirectUri !== redirectUri ||
         pending.resource !== urls.resource ||
         !sameResource(urls, token.resource) ||
-        !(yield* pkceVerifies(verifier, pending.codeChallenge))
+        !(yield* pkceVerifies(verifier, pending.codeChallenge)) ||
+        pending.revocation !== (yield* environmentAuth.otherClientsRevocation)
       ) {
         return yield* fail("invalid_grant", "The authorization code is invalid or expired.");
       }
@@ -447,6 +452,11 @@ const make = Effect.gen(function* () {
             ),
           ),
         );
+      // Other clients revoked while it was issued: that sweep may have missed it.
+      if (pending.revocation !== (yield* environmentAuth.otherClientsRevocation)) {
+        yield* environmentAuth.revokeSession(issued.sessionId).pipe(Effect.ignore({ log: true }));
+        return yield* fail("invalid_grant", "The authorization code is invalid or expired.");
+      }
       return {
         access_token: issued.token,
         token_type: "Bearer",

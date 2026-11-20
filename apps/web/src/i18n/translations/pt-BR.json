@@ -7135,6 +7135,7 @@
   "0badb0dc1c68223f": "Não foi possível revogar o link de pareamento",
   "7d86e527ad36e0ba": "Falha ao revogar o acesso do cliente.",
   "f0289c9a9258fc11": "Não foi possível revogar o acesso do cliente",
+  "740103bb1653c20b": "Links de pareamento não usados revogados",
   "2686e86a255edb3f": "1 outro cliente revogado",
   "23601766b7c2d13e": "{count, plural, one {{count} cliente revogado} other {{count} clientes revogados}}",
   "ca0bfbc3cb91e6b9": "Os outros clientes pareados vão precisar de um novo link de pareamento para se reconectar.",
