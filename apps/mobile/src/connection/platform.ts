@@ -39,34 +39,39 @@ const layerConnectivity = Connectivity.layer({
     }),
   ),
   changes: Stream.callback((queue) =>
-    Effect.acquireRelease(
-      Effect.sync(() => {
-        let active = true;
-        const networkSubscription = Network.addNetworkStateListener((state) => {
-          Queue.offerUnsafe(queue, networkStatus(state));
-        });
-        const appStateSubscription = AppState.addEventListener("change", (state) => {
-          if (state !== "active") {
-            return;
-          }
-          void Network.getNetworkStateAsync()
-            .then((current) => {
-              if (active) {
-                Queue.offerUnsafe(queue, networkStatus(current));
-              }
-            })
-            .catch(() => undefined);
-        });
-        return {
-          close: () => {
-            active = false;
-            networkSubscription.remove();
-            appStateSubscription.remove();
-          },
-        };
-      }),
-      ({ close }) => Effect.sync(close),
-    ).pipe(Effect.asVoid),
+    Effect.gen(function* () {
+      let active = true;
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => {
+          active = false;
+        }),
+      );
+      yield* Effect.acquireRelease(
+        Effect.sync(() =>
+          Network.addNetworkStateListener((state) => {
+            Queue.offerUnsafe(queue, networkStatus(state));
+          }),
+        ),
+        (subscription) => Effect.sync(() => subscription.remove()),
+      );
+      yield* Effect.acquireRelease(
+        Effect.sync(() =>
+          AppState.addEventListener("change", (state) => {
+            if (state !== "active") {
+              return;
+            }
+            void Network.getNetworkStateAsync()
+              .then((current) => {
+                if (active) {
+                  Queue.offerUnsafe(queue, networkStatus(current));
+                }
+              })
+              .catch(() => undefined);
+          }),
+        ),
+        (subscription) => Effect.sync(() => subscription.remove()),
+      );
+    }),
   ),
 });
 

@@ -1123,11 +1123,14 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
   yield* Effect.addFinalizer(() => Queue.shutdown(signals).pipe(Effect.andThen(clearLease)));
   // A defect in a background listener would otherwise end it for good, silently.
   // Untraced: a span here would stay open for the supervisor's whole lifetime.
+  // A task that keeps failing restarts ever more slowly; one that ran a while starts over.
   const keepRunning = Effect.fnUntraced(
-    function* (task: string, effect: Effect.Effect<void>, onRestart?: Effect.Effect<void>) {
-      let current = effect;
+    function* (task: string, start: (restarted: boolean) => Effect.Effect<void>) {
+      let restarted = false;
+      let delayMs = RETRY_BASE_DELAY_MS;
       while (true) {
-        const exit = yield* Effect.exit(current);
+        const startedAt = yield* Clock.currentTimeMillis;
+        const exit = yield* Effect.exit(start(restarted));
         if (Exit.isSuccess(exit) || Cause.hasInterruptsOnly(exit.cause)) return yield* exit;
         yield* Effect.logError("Connection supervisor task failed; restarting it.").pipe(
           Effect.annotateLogs({
@@ -1137,8 +1140,12 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
             ...safeErrorLogAttributes(exit.cause.reasons.find(Cause.isDieReason)?.defect),
           }),
         );
-        yield* Effect.sleep(RETRY_BASE_DELAY_MS);
-        current = onRestart ? onRestart.pipe(Effect.andThen(effect)) : effect;
+        if ((yield* Clock.currentTimeMillis) - startedAt >= BACKOFF_RESET_AFTER_MS) {
+          delayMs = RETRY_BASE_DELAY_MS;
+        }
+        yield* Effect.sleep(delayMs);
+        delayMs = Math.min(RETRY_MAX_DELAY_MS, delayMs * 2);
+        restarted = true;
       }
     },
     (self) => Effect.forkScoped(self),
@@ -1159,26 +1166,32 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
           : Effect.void,
       ),
     );
-  // A restarted listener may have missed changes while it was down.
-  yield* keepRunning(
-    "network-listener",
-    connectivity.changes.pipe(Stream.runForEach(applyNetwork)),
-    connectivity.status.pipe(Effect.flatMap(applyNetwork)),
+  // A restarted listener may have missed changes while it was down. Platform streams don't
+  // replay, and a callback stream registers its listener in `toPull`, so the catch-up read
+  // comes after it and a change during the read waits in the pull.
+  yield* keepRunning("network-listener", (restarted) =>
+    Effect.gen(function* () {
+      const changes = yield* Stream.toPull(connectivity.changes);
+      if (restarted) {
+        yield* connectivity.status.pipe(Effect.flatMap(applyNetwork));
+      }
+      yield* Stream.fromPull(Effect.succeed(changes)).pipe(Stream.runForEach(applyNetwork));
+    }).pipe(Effect.scoped),
   );
-  yield* keepRunning(
-    "wakeup-listener",
-    wakeups.changes.pipe(
-      Stream.runForEach((reason) =>
-        // A long suspension can hide a network change the platform never reported.
-        (reason === "network-changed" || reason === "application-active-long"
-          ? forgetSilentRoutes
-          : Effect.void
-        ).pipe(Effect.andThen(signal({ _tag: "Wakeup", reason }))),
-      ),
+  const applyWakeup = (reason: ConnectionWakeups.ConnectionWakeup) =>
+    // A long suspension can hide a network change the platform never reported.
+    (reason === "network-changed" || reason === "application-active-long"
+      ? forgetSilentRoutes
+      : Effect.void
+    ).pipe(Effect.andThen(signal({ _tag: "Wakeup", reason })));
+  // A return to the app while the listener was down is lost, so a restart checks the connection
+  // without the return probe's short timeout: a busy host stays, a silently dead socket goes later.
+  yield* keepRunning("wakeup-listener", (restarted) =>
+    (restarted ? applyWakeup("application-active") : Effect.void).pipe(
+      Effect.andThen(wakeups.changes.pipe(Stream.runForEach(applyWakeup))),
     ),
   );
-  yield* keepRunning(
-    "better-route-checker",
+  yield* keepRunning("better-route-checker", () =>
     Queue.take(betterRouteChecks).pipe(Effect.flatMap(checkBetterRoutes), Effect.forever),
   );
   // A restarted loop has forgotten its retry ladder, so it waits out the

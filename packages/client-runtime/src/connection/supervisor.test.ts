@@ -9,6 +9,7 @@ import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Logger from "effect/Logger";
 import * as Option from "effect/Option";
+import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
 import * as Random from "effect/Random";
 import * as Ref from "effect/Ref";
@@ -2641,10 +2642,56 @@ describe("EnvironmentSupervisor background fibers", () => {
     }).pipe(Effect.provide(TestClock.layer())),
   );
 
+  it.effect("hears the network return during its restarted listener's catch-up read", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness();
+      const networkChanges = yield* PubSub.unbounded<NetworkStatus>();
+      const subscriptions = yield* Ref.make(0);
+      const returnsDuringRead = yield* Ref.make(false);
+      const dying = Connectivity.Connectivity.of({
+        // The read answers "offline" while the network comes back.
+        status: Ref.getAndSet(returnsDuringRead, false).pipe(
+          Effect.flatMap((returns) =>
+            returns ? PubSub.publish(networkChanges, "online") : Effect.void,
+          ),
+          Effect.as("offline" as const),
+        ),
+        // Like a platform listener, it reports only changes after it registers.
+        changes: Stream.callback<NetworkStatus>((queue) =>
+          Effect.gen(function* () {
+            if ((yield* Ref.updateAndGet(subscriptions, (count) => count + 1)) === 1) {
+              return yield* Effect.die(new Error("platform connectivity stream died"));
+            }
+            const changes = yield* PubSub.subscribe(networkChanges);
+            return yield* PubSub.take(changes).pipe(
+              Effect.flatMap((status) => Queue.offer(queue, status)),
+              Effect.forever,
+            );
+          }),
+        ),
+      });
+      const supervisor = yield* EnvironmentSupervisor.make(LAN_ENTRY, {
+        initiallyDesired: true,
+      }).pipe(
+        Effect.provideService(Connectivity.Connectivity, dying),
+        Effect.provide(harness.dependencies),
+      );
+      yield* Ref.set(returnsDuringRead, true);
+      yield* TestClock.adjust("10 minutes");
+      expect((yield* SubscriptionRef.get(supervisor.state)).phase).toBe("connected");
+    }).pipe(Effect.provide(TestClock.layer())),
+  );
+
   it.effect("replaces a stalled session on return to the app after its wakeup stream died", () =>
     Effect.gen(function* () {
-      const harness = yield* makeHarness({ probe: () => Effect.never });
       const returns = yield* SubscriptionRef.make(0);
+      // The session stalls only once the user has left; the restart's own probe is answered.
+      const harness = yield* makeHarness({
+        probe: () =>
+          SubscriptionRef.get(returns).pipe(
+            Effect.flatMap((count) => (count === 0 ? Effect.void : Effect.never)),
+          ),
+      });
       const subscriptions = yield* Ref.make(0);
       const dying = ConnectionWakeups.ConnectionWakeups.of({
         changes: Stream.unwrap(
@@ -2673,6 +2720,55 @@ describe("EnvironmentSupervisor background fibers", () => {
       });
 
       // The user returns to the app; the session's probe never answers.
+      yield* SubscriptionRef.update(returns, (count) => count + 1);
+      yield* TestClock.adjust("15 seconds");
+      yield* TestClock.adjust("15 seconds");
+      yield* TestClock.adjust("10 minutes");
+      expect(yield* SubscriptionRef.get(supervisor.state)).toMatchObject({
+        phase: "connected",
+        generation: 2,
+      });
+    }).pipe(Effect.provide(TestClock.layer())),
+  );
+
+  it.effect("replaces a stalled session on a return during its wakeup stream's restart", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({ probe: () => Effect.never });
+      const returns = yield* SubscriptionRef.make(0);
+      const subscriptions = yield* Ref.make(0);
+      const dies = yield* Deferred.make<void>();
+      const dying = ConnectionWakeups.ConnectionWakeups.of({
+        changes: Stream.unwrap(
+          Ref.updateAndGet(subscriptions, (count) => count + 1).pipe(
+            Effect.map((count) =>
+              count === 1
+                ? Stream.unwrap(
+                    Deferred.await(dies).pipe(
+                      Effect.as(Stream.die(new Error("platform wakeup stream died"))),
+                    ),
+                  )
+                : SubscriptionRef.changes(returns).pipe(
+                    Stream.drop(1),
+                    Stream.map(() => "application-active" as const),
+                  ),
+            ),
+          ),
+        ),
+      });
+      const supervisor = yield* EnvironmentSupervisor.make(TARGET_ENTRY, {
+        initiallyDesired: true,
+      }).pipe(
+        Effect.provideService(ConnectionWakeups.ConnectionWakeups, dying),
+        Effect.provide(harness.dependencies),
+      );
+      yield* TestClock.adjust("10 minutes");
+      expect(yield* SubscriptionRef.get(supervisor.state)).toMatchObject({
+        phase: "connected",
+        generation: 1,
+      });
+
+      // The user returns to the app before the listener is back; the probe never answers.
+      yield* Deferred.succeed(dies, undefined);
       yield* SubscriptionRef.update(returns, (count) => count + 1);
       yield* TestClock.adjust("15 seconds");
       yield* TestClock.adjust("15 seconds");
