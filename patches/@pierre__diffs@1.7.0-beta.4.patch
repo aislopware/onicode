@@ -78,7 +78,7 @@ index b4c280390b52434f63fbe7916d81b150d9006fb4..db87ba385f927d793a80d908cd575216
  		const finishMouseSelection = (event) => {
  			if (event.pointerType !== "mouse") return;
  			const refocusEditor = this.#isGutterMouseDown;
-+			const primarySelection = this.#isContentMouseDown ? this.#selections?.at(-1) : void 0;
++			const primarySelection = this.#isContentMouseDown && (this.#selectionStart !== void 0 || this.#shiftKeyPressed) ? this.#selections?.at(-1) : void 0;
 +			const renderRange = this.#renderRange;
 +			const selectionLeavesRenderRange = primarySelection !== void 0 && renderRange !== void 0 && (primarySelection.start.line < renderRange.startingLine || primarySelection.end.line >= renderRange.startingLine + renderRange.totalLines);
  			this.#resetSelectionGesture();
@@ -241,7 +241,20 @@ index b4c280390b52434f63fbe7916d81b150d9006fb4..db87ba385f927d793a80d908cd575216
  	#focusAt(position) {
  		if (this.#focusRequest?.restore != null) this.#restoreReplacementFocus(position);
  		else this.#focus(position);
-@@ -2145,6 +2235,19 @@ var Editor = class {
+@@ -2135,16 +2225,32 @@ var Editor = class {
+ 	#scrollToLine(line, char = 0, noFocus = false) {
+ 		this.__postponeBgTokenizeToNextFrame();
+ 		if (this.#scrollCaretIntoView(line, char, "center")) {
++			// A host reveal still pending for an earlier target would scroll back to it.
++			this.#lineReveal = void 0;
++			this.#virtualizedInstance?.cancelScroll(this.#handleLineRevealDone);
+ 			if (!noFocus) this.#focusAt({
+ 				line,
+ 				character: char
+ 			});
+ 			this.#scrollingToLine = void 0;
+ 			this.#scrollingToLineChar = void 0;
+ 			this.#scrollingToLineFixed = false;
  			this.#scrollingToLineNoFocus = false;
  			return;
  		}
@@ -261,7 +274,7 @@ index b4c280390b52434f63fbe7916d81b150d9006fb4..db87ba385f927d793a80d908cd575216
  		let yFix = 0;
  		if (this.#scrollingToLine === line && this.#contentElement !== void 0) for (let i = this.#contentElement.childElementCount - 1; i >= 0; i--) {
  			const child = this.#contentElement.children[i];
-@@ -3370,6 +3473,7 @@ var Editor = class {
+@@ -3370,6 +3476,7 @@ var Editor = class {
  		this.#searchPanel = searchPanel;
  		this.#retainSearchPanelFocus = false;
  		searchPanel.mount();

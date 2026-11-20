@@ -2,13 +2,13 @@ import { useEffect, useEffectEvent, useRef, useState } from "react";
 import type { RuntimeRequestId } from "@onicode/contracts";
 import type { ActiveTurnComposerAction } from "@onicode/client-runtime/state/composer-dispatch";
 import { useStableCallback } from "../../lib/useStableCallback";
-import { composerDraftAbortGeneration } from "../../state/composerDraftOperations";
+import {
+  nativeImagePasteKey,
+  nativeImagePastePending,
+  onNativeImagePastesSettled,
+  startNativeImagePaste,
+} from "../../state/composerDraftOperations";
 import type { ComposerDraftSendSettings } from "../../state/use-composer-drafts";
-
-/** Pastes into a draft count until it is discarded or the composer leaves it for a queued edit. */
-export function nativeImagePasteKey(draftKey: string): string {
-  return `${composerDraftAbortGeneration(draftKey)}:${draftKey}`;
-}
 
 export function useSubmitAfterNativeImages(props: {
   readonly draftKey: string;
@@ -32,9 +32,6 @@ export function useSubmitAfterNativeImages(props: {
     readonly settings: ComposerDraftSendSettings;
     readonly followUp?: ActiveTurnComposerAction;
   };
-  // A paste aborted with its draft (discarded, or left for a queued edit) must not hold or drop a
-  // send from the draft shown now; one that can still land in it must.
-  const pastes = useRef(new Map<string, { pending: number; failed: boolean }>());
   const heldSend = useRef<HeldSend | null>(null);
   const [releasedSend, setReleasedSend] = useState<HeldSend | null>(null);
   const consumedSend = useRef<HeldSend | null>(null);
@@ -42,7 +39,7 @@ export function useSubmitAfterNativeImages(props: {
     if (held.draftKey !== props.draftKey || held.generation !== props.readResetGeneration()) return;
     if (held.pasteKey !== nativeImagePasteKey(held.draftKey)) return;
     // An image pasted while the send waited on another blocker joins the turn first.
-    if (pastes.current.has(held.pasteKey)) {
+    if (nativeImagePastePending(held.pasteKey)) {
       if (heldSend.current === null) heldSend.current = { ...held };
       return;
     }
@@ -54,11 +51,22 @@ export function useSubmitAfterNativeImages(props: {
     consumedSend.current = releasedSend;
     sendReleased(releasedSend);
   }, [releasedSend, props.blocked]);
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- subscribes to pastes settling, including a question's that this composer did not start
+  useEffect(
+    () =>
+      onNativeImagePastesSettled((key, failed) => {
+        const held = heldSend.current;
+        if (held?.pasteKey !== key) return;
+        heldSend.current = null;
+        if (!failed) setReleasedSend(held);
+      }),
+    [],
+  );
   // Stable so the composer's send handler, which calls these, stays in the compiler's cache.
   const deferSend = useStableCallback(
     (followUp: ActiveTurnComposerAction | undefined, settings: ComposerDraftSendSettings) => {
       const pasteKey = nativeImagePasteKey(props.draftKey);
-      if (!pastes.current.has(pasteKey)) return false;
+      if (!nativeImagePastePending(pasteKey)) return false;
       heldSend.current = {
         draftKey: props.draftKey,
         generation: props.readResetGeneration(),
@@ -71,21 +79,7 @@ export function useSubmitAfterNativeImages(props: {
     },
   );
   const pasteImages = useStableCallback((uris: ReadonlyArray<string>) => {
-    const draftKey = props.draftKey;
-    const key = nativeImagePasteKey(draftKey);
-    const paste = pastes.current.get(key) ?? { pending: 0, failed: false };
-    pastes.current.set(key, paste);
-    paste.pending += 1;
-    const finish = (success: boolean) => {
-      if (!success) paste.failed = true;
-      paste.pending -= 1;
-      if (paste.pending > 0) return;
-      pastes.current.delete(key);
-      const held = heldSend.current;
-      if (held?.pasteKey !== key) return;
-      heldSend.current = null;
-      if (!paste.failed) setReleasedSend(held);
-    };
+    const finish = startNativeImagePaste(props.draftKey);
     return props.onPasteImages(uris).then(finish, (error: unknown) => {
       finish(false);
       throw error;

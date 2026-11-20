@@ -14,7 +14,8 @@ import type {
   ThreadId,
 } from "@onicode/contracts";
 import { create } from "zustand";
-import { DraftId, useComposerDraftStore } from "./composerDraftStore";
+import { DraftId, composerTargetKey, useComposerDraftStore } from "./composerDraftStore";
+import { pendingDraftWork } from "./components/chat/pendingDraftWork";
 import {
   cancelPreparingComposerImages,
   countPreparingComposerImages,
@@ -104,6 +105,43 @@ export function changeQuestionAttachmentPreparation(key: DraftId, delta: number)
   );
 }
 
+type QuestionDraftWork = {
+  readonly questionKey: string;
+  claimKey: string;
+  thread?: ScopedThreadRef;
+  discarded: boolean;
+};
+const questionDraftWork = new Set<QuestionDraftWork>();
+
+/**
+ * Work still landing in a question draft. If the question closes unsent it lands in the thread
+ * instead; if the question's draft is cleared any other way, it is dropped.
+ */
+export function startQuestionDraftWork(key: DraftId) {
+  const work: QuestionDraftWork = { questionKey: key, claimKey: key, discarded: false };
+  questionDraftWork.add(work);
+  pendingDraftWork.begin(key);
+  changeQuestionAttachmentPreparation(key, 1);
+  return {
+    movedThread: () => work.thread,
+    discarded: () => work.discarded,
+    finish: () => {
+      if (!questionDraftWork.delete(work)) return;
+      pendingDraftWork.end(work.claimKey);
+      changeQuestionAttachmentPreparation(key, -1);
+    },
+  };
+}
+
+/** Question imports that moved to this thread draft and still hold a slot in it. */
+export function countMovedQuestionImports(threadKey: string): number {
+  let count = 0;
+  for (const work of questionDraftWork) {
+    if (work.thread && work.claimKey === threadKey) count += 1;
+  }
+  return count;
+}
+
 /** Releases the draft's attachments except `keepIds`, which have moved to another draft. */
 export function clearQuestionAttachmentDraft(
   key: DraftId,
@@ -120,6 +158,10 @@ export function clearQuestionAttachmentDraft(
     }
   }
   store.clearComposerContent(key);
+  // A late import would recreate the draft; it still holds its claim until it settles.
+  for (const work of questionDraftWork) {
+    if (work.questionKey === key && !work.thread) work.discarded = true;
+  }
   if (countPreparingComposerImages(key) > 0) cancelPreparingComposerImages(key);
   useQuestionAttachmentPreparation.setState(({ counts }) => {
     const next = { ...counts };
@@ -195,6 +237,13 @@ function returnUnsentAnswersToThreadDraft(
   const wasUnanswered = (key: string) => key.startsWith(threadPrefix) && !otherRequestKeys.has(key);
   for (const key of preparingKeys.filter(wasUnanswered)) {
     movePreparingComposerImagesToThread(key, target);
+    for (const work of questionDraftWork) {
+      if (work.questionKey !== key || work.thread || work.discarded) continue;
+      pendingDraftWork.end(work.claimKey);
+      work.claimKey = composerTargetKey(target);
+      work.thread = target;
+      pendingDraftWork.begin(work.claimKey);
+    }
   }
   const questionDrafts = Object.entries(store.draftsByThreadKey).filter(([key]) =>
     wasUnanswered(key),

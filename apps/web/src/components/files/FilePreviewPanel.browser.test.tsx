@@ -1,4 +1,4 @@
-import { DEFAULT_THEMES, preloadHighlighter } from "@pierre/diffs";
+import { DEFAULT_THEMES, preloadHighlighter, Virtualizer } from "@pierre/diffs";
 import { EnvironmentId, ThreadId, type ProjectReadFileResult } from "@onicode/contracts";
 import { AsyncResult } from "effect/reactivity";
 import { StrictMode, type ReactNode } from "react";
@@ -517,6 +517,7 @@ describe("source file scroll", () => {
     await preloadHighlighter({ themes: Object.values(DEFAULT_THEMES), langs: ["typescript"] });
     const wrapped = "wrap ".repeat(60);
     const lines = Array.from({ length: 800 }, (_, i) => `const line${i} = "${wrapped}";`);
+    lines[2] = `const needle0 = "${wrapped}";`;
     lines.push(
       "const needle = 1;",
       ...Array.from({ length: 40 }, (_, i) => `const tail${i} = ${i};`),
@@ -558,6 +559,71 @@ describe("source file scroll", () => {
         .map((row) => Number(row.getAttribute("data-line")));
     };
     await vi.waitFor(() => expect(visibleLines()).toContain(801));
+
+    // Next wraps to the distant first match and Previous returns to this rendered one before the
+    // virtualizer's next pass, which is where a still-pending distant reveal would land.
+    const search = deepActiveElement();
+    expect(search).toBeInstanceOf(HTMLInputElement);
+    using reveals = vi.spyOn(Virtualizer.prototype, "scrollSpanIntoView");
+    for (const shiftKey of [false, true]) {
+      search!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", shiftKey }));
+    }
+    const virtualizer = reveals.mock.contexts[0] as Virtualizer;
+    const distantReveal = reveals.mock.calls[0]?.[0];
+    expect(virtualizer).toBeInstanceOf(Virtualizer);
+    expect(distantReveal).toBeDefined();
+    // The distant reveal ends cancelled, or settled after it scrolled away to its own match.
+    await vi.waitFor(() =>
+      expect(Reflect.get(virtualizer, "spanScrollRequest")).not.toBe(distantReveal),
+    );
+    expect(visibleLines()).toContain(801);
+  });
+
+  it("collapses a select-all selection in a long file to the caret clicked inside it", async () => {
+    using _settings = setup();
+    localStorage.setItem("onicode.renderMarkdown", "false");
+    const style = document.createElement("style");
+    style.textContent = appCss;
+    document.head.append(style);
+    using _style = { [Symbol.dispose]: () => style.remove() };
+    await preloadHighlighter({ themes: Object.values(DEFAULT_THEMES), langs: ["markdown"] });
+    const lines = Array.from({ length: 400 }, (_, index) => `line ${index + 1} markdown content`);
+    const contents = `${lines.join("\n")}\n`;
+    state.file = {
+      relativePath: "notes.md",
+      contents,
+      byteLength: contents.length,
+      truncated: false,
+    };
+    await using screen = await render(
+      <div style={{ width: 560, height: 400, display: "flex", flexDirection: "column" }}>
+        {filePreview("notes.md")}
+      </div>,
+    );
+    const shadowRoot = () => screen.container.querySelector("diffs-container")?.shadowRoot;
+    const row = (line: number) =>
+      shadowRoot()!.querySelector<HTMLElement>(`[data-content] [data-line="${line}"]`)!;
+    const selectAll = () =>
+      userEvent.keyboard(
+        isMacPlatform(navigator.platform) ? "{Meta>}a{/Meta}" : "{Control>}a{/Control}",
+      );
+    await vi.waitFor(() =>
+      expect(shadowRoot()?.querySelector('[data-content][contenteditable="true"]')).not.toBeNull(),
+    );
+    await userEvent.click(row(1));
+    await vi.waitFor(() => expect(deepActiveElement()?.matches("[data-content]")).toBe(true));
+    await selectAll();
+    // Chrome collapses a click inside a selection on release, after the editor's pointerup.
+    await userEvent.click(row(3), { position: { x: row(3).clientWidth - 4, y: 4 } });
+    await userEvent.keyboard("X");
+
+    await selectAll();
+    const clipboardData = new DataTransfer();
+    const copy = { clipboardData, bubbles: true, cancelable: true, composed: true };
+    shadowRoot()!.querySelector("[data-content]")!.dispatchEvent(new ClipboardEvent("copy", copy));
+    expect(clipboardData.getData("text/plain")).toBe(
+      contents.replace("line 3 markdown content\n", "line 3 markdown contentX\n"),
+    );
   });
 });
 

@@ -181,7 +181,11 @@ import {
   formatComposerContextReference,
 } from "@onicode/shared/composerContextReferences";
 import { appAtomRegistry } from "./atom-registry";
-import { startComposerDraftOperation } from "./composerDraftOperations";
+import {
+  nativeImagePasteKey,
+  nativeImagePastePending,
+  startComposerDraftOperation,
+} from "./composerDraftOperations";
 import { questionAttachmentDraftKey } from "./question-attachments";
 import {
   pickQuestionAttachments,
@@ -282,9 +286,13 @@ it.each(["picker open", "reading image"] as const)(
       await Promise.race([opened.promise, picking]);
     }
     resolveQuestionImagePreparations(questionKey, threadKey);
+    // The thread's paste registry holds the send for the moved image.
+    const threadPaste = nativeImagePasteKey(threadKey);
+    expect(nativeImagePastePending(threadPaste)).toBe(stage === "reading image");
     selection.resolve(screenshot);
     bytes.resolve("YWJj");
     await picking;
+    expect(nativeImagePastePending(threadPaste)).toBe(false);
 
     expect(getComposerDraftSnapshot(questionKey).attachments).toEqual([]);
     expect(getComposerDraftSnapshot(threadKey).attachments).toEqual(

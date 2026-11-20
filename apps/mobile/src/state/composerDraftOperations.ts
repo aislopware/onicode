@@ -44,3 +44,41 @@ export function abortComposerDraftOperationsWhere(matches: (draftKey: string) =>
     if (matches(draftKey)) abortComposerDraftOperations(draftKey);
   }
 }
+
+/** Pastes into a draft count until it is discarded or the composer leaves it for a queued edit. */
+export function nativeImagePasteKey(draftKey: string): string {
+  return `${composerDraftAbortGeneration(draftKey)}:${draftKey}`;
+}
+
+// A paste aborted with its draft (discarded, or left for a queued edit) must not hold or drop a
+// send from the draft shown now; one that can still land in it must.
+const nativeImagePastes = new Map<string, { pending: number; failed: boolean }>();
+const nativeImagePasteListeners = new Set<(pasteKey: string, failed: boolean) => void>();
+
+/** Images converting into a draft, a closed question's included, that a send waits for. */
+export function startNativeImagePaste(draftKey: string): (success: boolean) => void {
+  const key = nativeImagePasteKey(draftKey);
+  const paste = nativeImagePastes.get(key) ?? { pending: 0, failed: false };
+  nativeImagePastes.set(key, paste);
+  paste.pending += 1;
+  return (success) => {
+    if (!success) paste.failed = true;
+    paste.pending -= 1;
+    if (paste.pending > 0) return;
+    nativeImagePastes.delete(key);
+    for (const settled of nativeImagePasteListeners) settled(key, paste.failed);
+  };
+}
+
+export function nativeImagePastePending(pasteKey: string): boolean {
+  return nativeImagePastes.has(pasteKey);
+}
+
+export function onNativeImagePastesSettled(
+  listener: (pasteKey: string, failed: boolean) => void,
+): () => void {
+  nativeImagePasteListeners.add(listener);
+  return () => {
+    nativeImagePasteListeners.delete(listener);
+  };
+}

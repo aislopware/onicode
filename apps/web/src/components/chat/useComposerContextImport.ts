@@ -40,12 +40,18 @@ import {
 } from "~/lib/composerContextRecords";
 import { assetEnvironment } from "~/state/assets";
 import { copiedComposerAttachmentFile } from "~/lib/copiedComposerAttachments";
-import { countQuestionAttachments, questionAttachmentDraftId } from "../../questionAttachments";
+import {
+  countMovedQuestionImports,
+  countQuestionAttachments,
+  questionAttachmentDraftId,
+  startQuestionDraftWork,
+} from "../../questionAttachments";
 import { collectInlineContextIds } from "../../lib/composerContextReferences";
 import { elementContextToPreviewAnnotation } from "../../lib/elementContext";
 import { orchestrationEnvironment } from "~/state/orchestration";
 import { pendingDraftWork } from "./pendingDraftWork";
 import { readComposerImageBytes } from "./composerAttachmentFiles";
+import { serializeComposerImages } from "./composerImagePersistence";
 import { randomUUID } from "~/lib/utils";
 import { readPreparedConnection } from "~/state/session";
 import { resolveAssetUrl } from "~/assets/assetUrls";
@@ -151,6 +157,7 @@ export function useComposerContextImport(input: {
       (draft?.files.length ?? 0) +
       countPreparingComposerImages(attachmentTargetKey) +
       (pendingThreadImportsRef.current.get(attachmentTargetKey) ?? 0) +
+      countMovedQuestionImports(attachmentTargetKey) +
       countQuestionAttachments(otherQuestionKeys)
     );
   };
@@ -160,12 +167,18 @@ export function useComposerContextImport(input: {
     localId: string,
     sourceEnvironmentId: EnvironmentId,
     importTargetKey: string,
+    questionWork: ReturnType<typeof startQuestionDraftWork> | null,
   ) => {
     const fail = (reason: string) => {
+      // The question was answered elsewhere, so nothing waits for this attachment.
+      if (questionWork?.discarded()) return;
       toastManager.add({
         type: "error",
         title: m(msg("Couldn't bring {name} into this message", { name: record.name })),
-        description: m(msg("{reason} Remove the chip or attach the file again.", { reason })),
+        // A question's attachment has no chip, before or after it moves to the thread.
+        description: questionWork
+          ? reason
+          : m(msg("{reason} Remove the chip or attach the file again.", { reason })),
       });
     };
     let file = copiedComposerAttachmentFile(sourceEnvironmentId, record.attachmentId);
@@ -216,7 +229,9 @@ export function useComposerContextImport(input: {
     }
     // The draft these bytes belong to may have been sent or switched away from while they
     // downloaded. Dropping them here keeps them out of whatever draft is open now.
-    if (attachmentTargetKeyRef.current !== importTargetKey) return;
+    if (questionWork?.discarded()) return;
+    const thread = questionWork?.movedThread();
+    if (!thread && attachmentTargetKeyRef.current !== importTargetKey) return;
     const replacesFileMarker =
       record.kind === "file" &&
       composerFilesRef.current.some(
@@ -237,40 +252,44 @@ export function useComposerContextImport(input: {
       return;
     }
     if (record.kind === "image") {
-      const accepted = addComposerDraftImages(
-        attachmentDraftTarget,
-        [
-          {
-            type: "image",
-            id: localId,
-            name: record.name,
-            mimeType: file.type,
-            sizeBytes: file.size,
-            previewUrl: URL.createObjectURL(file),
-            file,
-            ...(record.source ? { source: record.source } : {}),
-          },
-        ],
-        {
-          allowDuplicates:
-            getComposerDraft(composerDraftTarget)?.previewAnnotations.some(
-              (annotation) => annotation.id === localId,
-            ) ?? false,
-        },
-      );
-      if (!accepted.includes(localId))
+      const image: ComposerImageAttachment = {
+        type: "image",
+        id: localId,
+        name: record.name,
+        mimeType: file.type,
+        sizeBytes: file.size,
+        previewUrl: URL.createObjectURL(file),
+        file,
+        ...(record.source ? { source: record.source } : {}),
+      };
+      const accepted = addComposerDraftImages(thread ?? attachmentDraftTarget, [image], {
+        allowDuplicates:
+          getComposerDraft(composerDraftTarget)?.previewAnnotations.some(
+            (annotation) => annotation.id === localId,
+          ) ?? false,
+      });
+      if (!accepted.includes(localId)) {
         fail(m(msg("The draft rejected this attachment (duplicate or attachment limit reached).")));
+      } else if (thread) {
+        // In the draft now, so its claim and reserved slot go before the slow save.
+        questionWork?.finish();
+        const serialized = await serializeComposerImages([image], []);
+        await useComposerDraftStore
+          .getState()
+          .appendPersistedAttachments(thread, [image], serialized);
+      }
     } else {
-      const accepted = addComposerFilesToDraft([
-        {
-          type: "file",
-          id: localId,
-          name: record.name,
-          mimeType: file.type,
-          sizeBytes: file.size,
-          file,
-        },
-      ]);
+      const attachment: ComposerFileAttachment = {
+        type: "file",
+        id: localId,
+        name: record.name,
+        mimeType: file.type,
+        sizeBytes: file.size,
+        file,
+      };
+      const accepted = thread
+        ? useComposerDraftStore.getState().addFiles(thread, [attachment])
+        : addComposerFilesToDraft([attachment]);
       if (!accepted.includes(localId))
         fail(m(msg("The draft rejected this attachment (duplicate or attachment limit reached).")));
     }
@@ -284,10 +303,17 @@ export function useComposerContextImport(input: {
     // the transfer against its own draft so a send cannot snapshot a message whose chip has no
     // attachment behind it, and so bytes for an abandoned draft never enter the next one.
     const importTargetKey = attachmentTargetKey;
-    pendingDraftWork.begin(importTargetKey);
-    await runAttachmentImport(record, localId, sourceEnvironmentId, importTargetKey).finally(() =>
-      pendingDraftWork.end(importTargetKey),
-    );
+    const questionWork = questionAttachmentTarget
+      ? startQuestionDraftWork(questionAttachmentTarget)
+      : null;
+    if (!questionWork) pendingDraftWork.begin(importTargetKey);
+    await runAttachmentImport(
+      record,
+      localId,
+      sourceEnvironmentId,
+      importTargetKey,
+      questionWork,
+    ).finally(() => (questionWork ? questionWork.finish() : pendingDraftWork.end(importTargetKey)));
   };
   const importContextRecords = (
     records: ReadonlyArray<ComposerContextRecord>,
