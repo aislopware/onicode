@@ -2418,18 +2418,21 @@ const make = Effect.gen(function* () {
           // Null keeps the stored thread, which another client may have changed since the read.
           threadId: input.bindToCurrentThread === undefined ? null : threadId,
           unbindThread: input.bindToCurrentThread === false,
-          threadMode:
-            input.freshSession === undefined && input.bindToCurrentThread === undefined
-              ? scheduledTaskThreadMode(existing)
-              : (input.freshSession ??
+          // Omitted keeps the stored mode, which another client may also have changed.
+          ...(input.freshSession === undefined && input.bindToCurrentThread === undefined
+            ? {}
+            : {
+                threadMode:
+                  (input.freshSession ??
                   (input.bindToCurrentThread !== false &&
                     scheduledTaskThreadMode(existing) === "fresh_session"))
-                ? "fresh_session"
-                : threadId === null &&
-                    (input.bindToCurrentThread === false ||
-                      scheduledTaskThreadMode(existing) === "new_thread")
-                  ? "new_thread"
-                  : "continue",
+                    ? "fresh_session"
+                    : threadId === null &&
+                        (input.bindToCurrentThread === false ||
+                          scheduledTaskThreadMode(existing) === "new_thread")
+                      ? "new_thread"
+                      : "continue",
+              }),
           workspaceStrategy,
           modelSelection: existing.modelSelection,
           runtimeMode: existing.runtimeMode,
@@ -2437,8 +2440,9 @@ const make = Effect.gen(function* () {
           createdBy: existing.createdBy,
           creationSource: existing.creationSource,
         };
+        // The modes were checked against this binding, so a save racing a rebind is refused.
         const { task } = yield* scheduledTasks
-          .upsert(upsertInput)
+          .upsert(upsertInput, { expectedThreadId: existing.threadId })
           .pipe(
             Effect.mapError((error) =>
               failure("orchestration_error", `Could not update scheduled task: ${error.message}`),

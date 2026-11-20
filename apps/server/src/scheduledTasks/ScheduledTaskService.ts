@@ -18,6 +18,7 @@ import {
   scheduledTaskThreadMode,
   managedRuntimeModeDenial,
 } from "@onicode/contracts";
+import * as NodeUtil from "node:util";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
@@ -102,6 +103,10 @@ export class ScheduledTaskService extends Context.Service<
     readonly subscribeList: () => Stream.Stream<ScheduledTaskListResult, ScheduledTaskError>;
     readonly upsert: (
       input: ScheduledTaskUpsertInput,
+      options?: {
+        /** Refuse the save unless the task is still bound to this thread when it commits. */
+        readonly expectedThreadId?: ThreadId | null;
+      },
     ) => Effect.Effect<ScheduledTaskMutationResult, ScheduledTaskError>;
     readonly setEnabled: (
       input: ScheduledTaskSetEnabledInput,
@@ -392,6 +397,12 @@ export const layer = Layer.effect(
       keptSchedule: ScheduledTask["schedule"] | null,
       /** The thread this save unbinds; any other stored thread is kept. */
       unboundThreadId: ThreadId | null,
+      destination: {
+        /** The save leaves the project, thread and mode as it read them. */
+        readonly keepsThread: boolean;
+        readonly keepsWorkspace: boolean;
+        readonly expectedThreadId: ThreadId | null | undefined;
+      },
     ) =>
       sql<{ task_id: string }>`
         INSERT INTO scheduled_tasks (
@@ -448,15 +459,27 @@ export const layer = Layer.effect(
           enabled = excluded.enabled,
           schedule_json = excluded.schedule_json,
           project_id = excluded.project_id,
-          -- A first run may bind the thread while this save is in flight, so a save
-          -- without a thread keeps any thread but the one it unbinds.
+          -- What this save leaves as it read keeps what is stored at commit, so a first run's
+          -- binding or another client's bind, unbind or mode change is not undone.
           thread_id = CASE
+            WHEN ${destination.keepsThread ? 1 : 0} = 1
+              AND excluded.project_id = scheduled_tasks.project_id
+            THEN scheduled_tasks.thread_id
             WHEN excluded.thread_mode = 'new_thread' THEN NULL
             WHEN excluded.project_id != scheduled_tasks.project_id THEN excluded.thread_id
             ELSE COALESCE(excluded.thread_id, NULLIF(scheduled_tasks.thread_id, ${unboundThreadId}))
           END,
-          thread_mode = excluded.thread_mode,
-          workspace_strategy_json = excluded.workspace_strategy_json,
+          thread_mode = CASE
+            WHEN ${destination.keepsThread ? 1 : 0} = 1
+              AND excluded.project_id = scheduled_tasks.project_id
+            THEN scheduled_tasks.thread_mode
+            ELSE excluded.thread_mode
+          END,
+          workspace_strategy_json = CASE
+            WHEN ${destination.keepsWorkspace ? 1 : 0} = 1
+            THEN scheduled_tasks.workspace_strategy_json
+            ELSE excluded.workspace_strategy_json
+          END,
           model_selection_json = excluded.model_selection_json,
           runtime_mode = excluded.runtime_mode,
           interaction_mode = excluded.interaction_mode,
@@ -474,6 +497,8 @@ export const layer = Layer.effect(
             THEN scheduled_tasks.next_run_at
             ELSE excluded.next_run_at
           END
+        WHERE ${destination.expectedThreadId === undefined ? 1 : 0} = 1
+           OR scheduled_tasks.thread_id IS ${destination.expectedThreadId ?? null}
         RETURNING task_id
       `.pipe(
         Effect.mapError((cause) =>
@@ -482,7 +507,18 @@ export const layer = Layer.effect(
         Effect.flatMap((rows) =>
           rows.length > 0
             ? Effect.void
-            : taskError("Schedule task not found.", { taskId: task.id }),
+            : destination.expectedThreadId === undefined
+              ? taskError("Schedule task not found.", { taskId: task.id })
+              : findTask(task.id).pipe(
+                  Effect.flatMap((stored) =>
+                    taskError(
+                      stored === null
+                        ? "Schedule task not found."
+                        : "The task's thread changed while saving. Read the task again.",
+                      { taskId: task.id },
+                    ),
+                  ),
+                ),
         ),
       );
 
@@ -1107,7 +1143,7 @@ export const layer = Layer.effect(
 
     const upsert: ScheduledTaskService["Service"]["upsert"] = Effect.fn(
       "ScheduledTaskService.upsert",
-    )(function* (input) {
+    )(function* (input, options) {
       const now = yield* localNow;
       const uuid =
         input.commandId === undefined
@@ -1144,11 +1180,12 @@ export const layer = Layer.effect(
       // Refused on save rather than at run time; a disabled task can still be saved, so one
       // stored above the ceiling can be turned off before its mode is lowered. A task bound to a
       // thread runs in that thread's mode, which the orchestrator checks instead.
-      const modeDenial =
-        input.enabled && threadId === null
-          ? managedRuntimeModeDenial(managedPolicy.summary, input.runtimeMode)
-          : undefined;
-      if (modeDenial !== undefined) return yield* taskError(modeDenial, { taskId: id });
+      const unboundModeDenial = input.enabled
+        ? managedRuntimeModeDenial(managedPolicy.summary, input.runtimeMode)
+        : undefined;
+      if (threadId === null && unboundModeDenial !== undefined) {
+        return yield* taskError(unboundModeDenial, { taskId: id });
+      }
       // Keep the existing next_run_at when the schedule itself is untouched:
       // editing a title or prompt must not postpone (or resurrect) a due
       // run — only schedule/enabled changes restart the clock.
@@ -1194,12 +1231,32 @@ export const layer = Layer.effect(
         lastRunError: existingTask?.lastRunError ?? null,
         runCount: existingTask?.runCount ?? 0,
       };
+      // Clients send the thread they loaded; one equal to the stored thread is no change, so the
+      // save writes none and the stored binding wins at commit.
+      const keepsStoredThread = threadId !== null && threadId === existingTask?.threadId;
+      const keepsThread =
+        existingTask !== null &&
+        existingTask.projectId === input.projectId &&
+        threadId === existingTask.threadId &&
+        threadMode === scheduledTaskThreadMode(existingTask);
       yield* saveTask(
-        // A save that names no thread writes none, so a binding cleared since the read stays cleared.
-        input.threadId == null ? { ...task, threadId: null } : task,
+        keepsStoredThread ? { ...task, threadId: null } : task,
         input.requireExisting === true,
         scheduleUnchanged ? existingTask.schedule : null,
         threadId === null && input.unbindThread === true ? (existingTask?.threadId ?? null) : null,
+        {
+          keepsThread,
+          keepsWorkspace:
+            existingTask !== null &&
+            NodeUtil.isDeepStrictEqual(workspaceStrategy, existingTask.workspaceStrategy),
+          // Unbound since the read, this mode would have been refused.
+          expectedThreadId:
+            options?.expectedThreadId !== undefined
+              ? options.expectedThreadId
+              : keepsStoredThread && unboundModeDenial !== undefined
+                ? threadId
+                : undefined,
+        },
       );
       yield* notifyChanged;
       return { task: (yield* findTask(id)) ?? task };
