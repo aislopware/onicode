@@ -796,28 +796,65 @@ describe("RpcSessionFactory", () => {
     }),
   );
 
-  it.effect("closes the session when the config source dies", () =>
+  it.effect.each([{ end: "dies" as const }, { end: "is interrupted" as const }])(
+    "closes the session when the config source $end",
+    ({ end }) =>
+      Effect.gen(function* () {
+        const { factory, sockets } = yield* makeFactory();
+        const session = yield* factory.connect(PREPARED);
+        const readyFiber = yield* Effect.forkChild(session.ready);
+        const socket = yield* awaitSocket(sockets);
+        socket.open();
+        yield* completeInitialConfig(socket);
+        yield* Fiber.join(readyFiber);
+
+        const closedFiber = yield* session.closed.pipe(Effect.exit, Effect.forkChild);
+        const request = yield* awaitRequest(socket);
+        socket.serverMessage(
+          end === "dies"
+            ? encodeJson({
+                _tag: "Defect",
+                defect: encodeDefect(new Error("config stream died")),
+              })
+            : encodeJson({
+                _tag: "Exit",
+                requestId: request.id,
+                exit: { _tag: "Failure", cause: [{ _tag: "Interrupt", fiberId: 1 }] },
+              }),
+        );
+
+        const closed = yield* Fiber.join(closedFiber);
+        expect(Exit.isFailure(closed)).toBe(true);
+        if (Exit.isFailure(closed)) {
+          if (end === "dies") {
+            expect(Cause.hasDies(closed.cause)).toBe(true);
+          } else {
+            expect(Cause.squash(closed.cause)).toMatchObject({ reason: "remote-unavailable" });
+          }
+        }
+      }),
+  );
+
+  it.effect("fails readiness when the config source is interrupted before its first snapshot", () =>
     Effect.gen(function* () {
       const { factory, sockets } = yield* makeFactory();
       const session = yield* factory.connect(PREPARED);
-      const readyFiber = yield* Effect.forkChild(session.ready);
+      const readyFiber = yield* session.ready.pipe(Effect.exit, Effect.forkChild);
       const socket = yield* awaitSocket(sockets);
       socket.open();
-      yield* completeInitialConfig(socket);
-      yield* Fiber.join(readyFiber);
-
-      const closedFiber = yield* session.closed.pipe(Effect.exit, Effect.forkChild);
+      const request = yield* awaitRequest(socket);
       socket.serverMessage(
         encodeJson({
-          _tag: "Defect",
-          defect: encodeDefect(new Error("config stream died")),
+          _tag: "Exit",
+          requestId: request.id,
+          exit: { _tag: "Failure", cause: [{ _tag: "Interrupt", fiberId: 1 }] },
         }),
       );
 
-      const closed = yield* Fiber.join(closedFiber);
-      expect(Exit.isFailure(closed)).toBe(true);
-      if (Exit.isFailure(closed)) {
-        expect(Cause.hasDies(closed.cause)).toBe(true);
+      const ready = yield* Fiber.join(readyFiber);
+      expect(Exit.isFailure(ready)).toBe(true);
+      if (Exit.isFailure(ready)) {
+        expect(Cause.squash(ready.cause)).toMatchObject({ reason: "remote-unavailable" });
       }
     }),
   );
