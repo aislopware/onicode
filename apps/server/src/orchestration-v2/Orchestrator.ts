@@ -10474,7 +10474,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       parentRun === undefined ||
       (followsUp
         ? parentRun.id !== followUpOwnerRun(parentProjection.runs)?.id
-        : !isActiveRun(parentRun)) ||
+        : !(isActiveRun(parentRun) || (yield* backgroundSubagentOutlivesRun(parentRun)))) ||
       parentRun.rootNodeId === null
     ) {
       return yield* new OrchestratorDispatchError({

@@ -3,6 +3,7 @@ import { ProviderInstanceId, ProviderThreadId } from "@onicode/contracts";
 import {
   backgroundWorkHoldsCompletion,
   derivePendingBackgroundWork,
+  hasPendingBackgroundSubagent,
   monitorHoldsWakeCompletion,
 } from "./orchestrationV2PendingBackgroundWork.ts";
 
@@ -32,12 +33,22 @@ describe("derivePendingBackgroundWork", () => {
           title: null,
         },
         { id: "unknown-item", type: "subagent", status: "running", title: null },
+        {
+          id: "delegated-item",
+          owningProviderInstanceId: owner,
+          origin: "app_owned",
+          type: "subagent",
+          status: "running",
+          title: null,
+        },
       ],
     });
     expect(tasks).toEqual([
       { taskId: "owned-item", kind: "subagent", providerInstanceId: owner },
       { taskId: "unknown-item", kind: "subagent" },
+      { taskId: "delegated-item", kind: "subagent" },
     ]);
+    expect(hasPendingBackgroundSubagent(tasks.slice(1), owner)).toBe(false);
   });
 
   it("takes a roster subagent's instance from its owning provider thread", () => {

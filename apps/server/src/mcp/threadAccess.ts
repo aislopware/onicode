@@ -202,6 +202,18 @@ export const isLiveCallerShell = (
   (shell.activeRunId !== null ||
     hasPendingBackgroundSubagent(shell.pendingBackgroundTasks, providerInstanceId));
 
+/** The settled latest run a live background subagent still works, and delegates, under. */
+export const backgroundSubagentRunId = (
+  shell: Pick<
+    OrchestrationV2ThreadShell,
+    "archivedAt" | "activeRunId" | "latestRunId" | "providerInstanceId" | "pendingBackgroundTasks"
+  > | null,
+  providerInstanceId: ProviderInstanceId | undefined,
+) =>
+  shell !== null && shell.activeRunId === null && isLiveCallerShell(shell, providerInstanceId)
+    ? (shell.latestRunId ?? undefined)
+    : undefined;
+
 /** Thread callers need a live run or its background subagent in an unarchived thread. OAuth clients rely on their session and ceiling. */
 export function assertLiveCaller({ caller, scope }: Caller) {
   if (caller === undefined) return Effect.void;

@@ -920,6 +920,44 @@ const delegateToBox = (laptopEnv: Effect.Success<ReturnType<typeof makeLaptop>>)
       }),
     );
 
+/** The parent's turn ends, while a background agent of its own still holds its credential. */
+const settleParentUnderBackgroundAgent = (
+  laptopEnv: Effect.Success<ReturnType<typeof makeLaptop>>,
+) =>
+  Effect.gen(function* () {
+    const now = yield* DateTime.now;
+    const projection = yield* laptopEnv.orchestrator.getThreadProjection(parentThreadId);
+    const run = projection.runs.find((candidate) => candidate.id === parentRunId)!;
+    yield* laptopEnv.sink.write({
+      commandId: CommandId.make("command:seed:laptop-parent-ended"),
+      events: [
+        {
+          id: EventId.make("event:seed-background-agent:laptop-parent"),
+          type: "provider-thread.updated",
+          threadId: parentThreadId,
+          driver,
+          providerInstanceId: instanceId,
+          occurredAt: now,
+          payload: {
+            ...projection.providerThreads[0]!,
+            pendingBackgroundTasks: [{ taskId: "native-agent", kind: "subagent" }],
+            updatedAt: now,
+          },
+        },
+        {
+          id: EventId.make("event:seed-run-ended:laptop-parent"),
+          type: "run.updated",
+          threadId: parentThreadId,
+          runId: parentRunId,
+          nodeId: parentRootNode,
+          providerInstanceId: instanceId,
+          occurredAt: now,
+          payload: { ...run, status: "completed", completedAt: now },
+        },
+      ],
+    });
+  });
+
 /** Waits until the task here has the result its thread there ended with. */
 const taskResult = (laptopEnv: Effect.Success<ReturnType<typeof makeLaptop>>, taskId: NodeId) =>
   laptopEnv.orchestrator
@@ -2525,38 +2563,7 @@ it.effect("a follow-up sent after the parent's own run ended is still a task", (
       yield* Deferred.succeed(thread.finished, undefined);
       yield* taskResult(a, delegated.taskId);
 
-      // The parent's turn ends, while a background agent of its own still holds its credential.
-      const now = yield* DateTime.now;
-      const projection = yield* a.orchestrator.getThreadProjection(parentThreadId);
-      const run = projection.runs.find((candidate) => candidate.id === parentRunId)!;
-      yield* a.sink.write({
-        commandId: CommandId.make("command:seed:laptop-parent-ended"),
-        events: [
-          {
-            id: EventId.make("event:seed-background-agent:laptop-parent"),
-            type: "provider-thread.updated",
-            threadId: parentThreadId,
-            driver,
-            providerInstanceId: instanceId,
-            occurredAt: now,
-            payload: {
-              ...projection.providerThreads[0]!,
-              pendingBackgroundTasks: [{ taskId: "native-agent", kind: "subagent" }],
-              updatedAt: now,
-            },
-          },
-          {
-            id: EventId.make("event:seed-run-ended:laptop-parent"),
-            type: "run.updated",
-            threadId: parentThreadId,
-            runId: parentRunId,
-            nodeId: parentRootNode,
-            providerInstanceId: instanceId,
-            occurredAt: now,
-            payload: { ...run, status: "completed", completedAt: now },
-          },
-        ],
-      });
+      yield* settleParentUnderBackgroundAgent(a);
 
       const sent = yield* a.call("oni_thread_send", {
         environmentId: box.environmentId,
@@ -2582,6 +2589,48 @@ it.effect("a follow-up sent after the parent's own run ended is still a task", (
       expect(yield* taskResult(a, followUp.taskId!)).toMatchObject({
         status: "completed",
         result: "The slow suite passes too.",
+      });
+      const offered = yield* SubscriptionRef.changes(offers).pipe(
+        Stream.filter((seen) => wakes(seen) > wokenBefore),
+        Stream.runHead,
+      );
+      expect(Option.isSome(offered)).toBe(true);
+    }),
+  ).pipe(Effect.provide(NodeHttpServer.layerTest)),
+);
+
+it.effect("a background agent delegates to the box after the parent's own run ended", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const thread = yield* makeBoxThread;
+      const b = yield* serveBox(thread);
+      const offers = yield* SubscriptionRef.make<
+        ReadonlyArray<ProviderContinuationRequests.ProviderContinuationRequest>
+      >([]);
+      const database = yield* SqlitePersistence.layerMemory.pipe(Layer.build);
+      const a = yield* makeLaptop(database, offers);
+      yield* a.remote.start();
+      yield* linkTo(a.links, b, "full-access");
+      yield* seedParent(a);
+      yield* settleParentUnderBackgroundAgent(a);
+
+      const delegated = yield* delegateToBox(a);
+      const tasks = (yield* a.orchestrator.getThreadProjection(parentThreadId)).subagents;
+      expect(tasks.find((task) => task.id === delegated.taskId)).toMatchObject({
+        runId: parentRunId,
+        status: "running",
+      });
+
+      const wakes = (
+        seen: ReadonlyArray<ProviderContinuationRequests.ProviderContinuationRequest>,
+      ) => seen.filter((offer) => offer.threadId === parentThreadId).length;
+      const wokenBefore = wakes(yield* SubscriptionRef.get(offers));
+      yield* Ref.set(thread.reply, "All green.");
+      yield* Ref.set(thread.status, "completed");
+      yield* Deferred.succeed(thread.finished, undefined);
+      expect(yield* taskResult(a, delegated.taskId)).toMatchObject({
+        status: "completed",
+        result: "All green.",
       });
       const offered = yield* SubscriptionRef.changes(offers).pipe(
         Stream.filter((seen) => wakes(seen) > wokenBefore),
