@@ -1,8 +1,18 @@
 import type { EnvironmentId, OrchestrationV2ThreadShell } from "@onicode/contracts";
 
+import { normalizeSearchText } from "~/lib/utils";
+
+export function threadLinkMatcher(query: string, locale?: string) {
+  const localQuery = query.trim().toLocaleLowerCase(locale);
+  const foldedQuery = normalizeSearchText(query);
+  return (text: string) =>
+    text.toLocaleLowerCase(locale).includes(localQuery) ||
+    normalizeSearchText(text).includes(foldedQuery);
+}
+
 /**
  * The threads a pull request or an issue can be linked to: the environment's unarchived ones
- * whose `searchText` holds the query, newest first. Side chats are left out, as linked-thread
+ * whose `searchText` matches the query, newest first. Side chats are left out, as linked-thread
  * answers leave them out.
  */
 export function threadLinkCandidates<
@@ -18,14 +28,14 @@ export function threadLinkCandidates<
   query: string,
   searchText: (thread: T) => string,
 ): T[] {
-  const search = query.trim().toLocaleLowerCase();
+  const matches = threadLinkMatcher(query);
   return threads
     .filter(
       (thread) =>
         thread.environmentId === environmentId &&
         thread.archivedAt === null &&
         thread.lineage.sideChat !== true &&
-        searchText(thread).toLocaleLowerCase().includes(search),
+        matches(searchText(thread)),
     )
     .toSorted((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }

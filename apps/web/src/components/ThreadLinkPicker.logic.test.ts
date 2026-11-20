@@ -1,7 +1,7 @@
 import { EnvironmentId } from "@onicode/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { threadLinkCandidates } from "./ThreadLinkPicker.logic";
+import { threadLinkCandidates, threadLinkMatcher } from "./ThreadLinkPicker.logic";
 
 const here = EnvironmentId.make("here");
 
@@ -39,5 +39,15 @@ describe("threadLinkCandidates", () => {
         (candidate) => labels.get(candidate.id) ?? `Fix ${candidate.id}`,
       ).map((candidate) => candidate.id),
     ).toEqual(["newer", "older"]);
+  });
+});
+
+describe("threadLinkMatcher", () => {
+  it.each([
+    ["cafe", "Café planning", undefined],
+    ["café", "Café planning", undefined],
+    ["ışık", "Işık planı", "tr-TR"],
+  ])("matches %s against %s", (query, text, locale) => {
+    expect(threadLinkMatcher(query, locale)(text)).toBe(true);
   });
 });
