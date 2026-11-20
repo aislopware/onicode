@@ -2911,3 +2911,4 @@ d817e61487	take	fix(ssh): a slow remote server keeps its SSH forward on reconnec
 ccc1feb155	take	fix(ssh): reconnect stops waiting on a remote server that is shutting down; old remote helpers exit 1, which keeps the previous behavior
 f60c747568	take	fix(web): open PDF attachments no longer reload while the agent works
 667d8a120a	take	CONFLICT: kept Onicode's requireWorkspace check after the now-concurrent getIssue/viewer reads; upstream's notFound filter replaces the null check
+c813e7db51	take	fix(linear): scope issue numbers to the named team
