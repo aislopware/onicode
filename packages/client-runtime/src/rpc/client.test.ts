@@ -552,6 +552,55 @@ describe("environment RPC", () => {
         expect(inputs).toBe(2);
       }),
   );
+
+  it.effect("restarts resubscribe signals that die and resubscribes once per failure streak", () =>
+    Effect.gen(function* () {
+      let signalRuns = 0;
+      const subscriptions = yield* Queue.unbounded<void>();
+      const client = {
+        [WS_METHODS.subscribeTerminalMetadata]: () => {
+          Queue.offerUnsafe(subscriptions, undefined);
+          return Stream.never;
+        },
+      } as unknown as WsRpcProtocolClient;
+      const { activeSession, supervisor } = yield* makeHarness();
+      yield* SubscriptionRef.set(activeSession, Option.some(session(client)));
+
+      const subscriptionFiber = yield* subscribeDynamicWithSession(
+        WS_METHODS.subscribeTerminalMetadata,
+        () => Effect.succeed({}),
+        {
+          resubscribe: Stream.suspend(() => {
+            signalRuns += 1;
+            const died = Stream.die(new Error("platform wakeups died"));
+            if (signalRuns === 1) {
+              return Stream.fromEffect(Effect.sleep("1 second")).pipe(
+                Stream.drain,
+                Stream.concat(died),
+              );
+            }
+            return signalRuns === 2 ? died : Stream.never;
+          }),
+        },
+      ).pipe(
+        Stream.runDrain,
+        Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor),
+        Effect.forkChild,
+      );
+      yield* Queue.take(subscriptions);
+      yield* TestClock.adjust("1 second");
+      expect(subscriptionFiber.pollUnsafe()).toBeUndefined();
+
+      yield* TestClock.adjust("250 millis");
+      yield* Queue.take(subscriptions);
+
+      // Dying again at once is the same streak: it backs off and restarts without resubscribing.
+      yield* TestClock.adjust("500 millis");
+      expect(signalRuns).toBe(3);
+      expect(yield* Queue.size(subscriptions)).toBe(0);
+      yield* Fiber.interrupt(subscriptionFiber);
+    }),
+  );
 });
 
 it.effect.each([true, false])(

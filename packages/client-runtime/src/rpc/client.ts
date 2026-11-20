@@ -17,16 +17,20 @@ import {
   WS_METHODS,
 } from "@onicode/contracts";
 import * as Cause from "effect/Cause";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Option from "effect/Option";
+import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import { RpcClientError } from "effect/rpc";
 
 import * as EnvironmentSupervisor from "../connection/supervisor.ts";
+import { safeErrorLogAttributes } from "../errors/safeLog.ts";
 import type { WsRpcProtocolClient } from "../rpc/protocol.ts";
 import type { RpcSession } from "../rpc/session.ts";
 
@@ -293,6 +297,38 @@ interface SubscriptionOptions<TTag extends EnvironmentSubscriptionRpcTag> {
   readonly resubscribe?: Stream.Stream<unknown, never, never>;
 }
 
+const SIGNALS_HEALTHY_AFTER_MS = 30_000;
+
+// Resubscribe signals that die would end the subscription they feed, so they restart after a
+// backoff. The first restart of a streak resubscribes once, since a platform wakeup stream does
+// not replay what it missed; a source that keeps dying must not turn into polling.
+const keepSignalling = (
+  signals: Stream.Stream<unknown>,
+  logAnnotations: Record<string, unknown>,
+): Stream.Stream<unknown> =>
+  Stream.callback<unknown>((queue) =>
+    Effect.gen(function* () {
+      let failures = 0;
+      while (true) {
+        const startedAt = yield* Clock.currentTimeMillis;
+        const exit = yield* Effect.exit(
+          Stream.runForEach(signals, (signal) => Queue.offer(queue, signal)),
+        );
+        if (Exit.isSuccess(exit) || Cause.hasInterruptsOnly(exit.cause)) return yield* exit;
+        if ((yield* Clock.currentTimeMillis) - startedAt >= SIGNALS_HEALTHY_AFTER_MS) failures = 0;
+        yield* Effect.logWarning("Subscription resubscribe signals failed; restarting them.").pipe(
+          Effect.annotateLogs({
+            ...logAnnotations,
+            ...safeErrorLogAttributes(Cause.squash(exit.cause)),
+          }),
+        );
+        const catchUp = failures === 0;
+        yield* Effect.sleep(subscriptionRetryDelay("250 millis", failures++));
+        if (catchUp) yield* Queue.offer(queue, undefined);
+      }
+    }),
+  );
+
 function subscribeDynamicMapped<TTag extends EnvironmentSubscriptionRpcTag, A>(
   tag: TTag,
   makeInput: (session: RpcSession) => Effect.Effect<EnvironmentRpcInput<TTag>>,
@@ -316,9 +352,10 @@ function subscribeDynamicMapped<TTag extends EnvironmentSubscriptionRpcTag, A>(
           ? sessionChanges
           : Stream.merge(
               sessionChanges,
-              options.resubscribe.pipe(
-                Stream.mapEffect(() => SubscriptionRef.get(supervisor.session)),
-              ),
+              keepSignalling(options.resubscribe, {
+                environmentId: supervisor.target.environmentId,
+                method: tag,
+              }).pipe(Stream.mapEffect(() => SubscriptionRef.get(supervisor.session))),
             );
       return sessions.pipe(
         Stream.switchMap(

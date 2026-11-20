@@ -366,19 +366,38 @@ describe("FileBrowserPanel", () => {
       await vi.waitFor(() => expect(isTreeRowInView("d09/")).toBe(true));
     });
 
-    it("leaves the scroll position alone once the user scrolls the tree", async () => {
-      const cwd = "/repo-reveal-user-scroll";
-      using _listing = withDirectoryListing([]);
-      await using screen = await renderRevealedPanel(cwd);
+    it.each([
+      {
+        input: "the wheel",
+        cwd: "/repo-reveal-user-wheel",
+        moveToTop: async (scroller: HTMLElement) => {
+          scroller.dispatchEvent(new WheelEvent("wheel", { bubbles: true, composed: true }));
+          scroller.scrollTop = 0;
+        },
+      },
+      {
+        input: "a key the tree handles",
+        cwd: "/repo-reveal-user-key",
+        moveToTop: async (scroller: HTMLElement) => {
+          findTreeRow("d09/")!.focus();
+          await userEvent.keyboard("{Home}");
+          await vi.waitFor(() => expect(scroller.scrollTop).toBe(0));
+        },
+      },
+    ])(
+      "leaves the scroll position alone once the user moves with $input",
+      async ({ cwd, moveToTop }) => {
+        using _listing = withDirectoryListing([]);
+        await using screen = await renderRevealedPanel(cwd);
 
-      const scroller = findTreeScroller()!;
-      scroller.dispatchEvent(new WheelEvent("wheel", { bubbles: true, composed: true }));
-      scroller.scrollTop = 0;
-      directory.entries = [...roots, ...listing("d01", 60)];
-      await screen.rerender(renderPanel(cwd));
-      await vi.waitFor(() => expect(scroller.scrollHeight).toBeGreaterThan(60 * 24));
+        const scroller = findTreeScroller()!;
+        await moveToTop(scroller);
+        directory.entries = [...roots, ...listing("d01", 60)];
+        await screen.rerender(renderPanel(cwd));
+        await vi.waitFor(() => expect(scroller.scrollHeight).toBeGreaterThan(60 * 24));
 
-      expect(scroller.scrollTop).toBe(0);
-    });
+        expect(scroller.scrollTop).toBe(0);
+      },
+    );
   });
 });
