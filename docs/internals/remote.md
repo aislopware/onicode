@@ -168,7 +168,7 @@ Unlinking on the linking side only forgets the token.
   a machine for it only when the client already reaches exactly one machine
   there. An address alone never moves an unexpired link to another address.
 - **The receiving side owns a link's expiry.** It renews the session when the
-  link is used and answers each call with `Onicode-Link-Expires-At`; the linking
+  link is used and answers each call with `oni-link-expires-at`; the linking
   side stores that and never extends a link on its own. A receiving side that
   predates renewal sends no header, so the link keeps its original 30 days on
   both sides.
