@@ -463,11 +463,12 @@ const routed = Effect.fn("McpToolAccess.routed")(function* <Tools extends Record
         if (scope.linkedEnvironments === false) return yield* PeerForwarding.linkedEnvironmentsOff;
         yield* (remote as RemoteCheck<typeof params>)(params);
         if (Option.isNone(forwarding)) return yield* linksUnavailable;
-        const result = yield* forwarding.value.call(scope, tool, target, {
-          ...params,
-          environmentId,
-        });
-        return forwarded === undefined ? result : yield* forwarded(params, target, result);
+        const call = forwarding.value.call(scope, tool, target, { ...params, environmentId });
+        if (forwarded === undefined) return yield* call;
+        // Once the call there returns, a caller that goes away must not skip recording it here.
+        return yield* Effect.uninterruptibleMask((restore) =>
+          restore(call).pipe(Effect.flatMap((result) => forwarded(params, target, result))),
+        );
       });
   }
   return handlers as Toolkit.HandlersFrom<Tools>;

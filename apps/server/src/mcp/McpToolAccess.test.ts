@@ -9,8 +9,10 @@ import {
   ThreadId,
 } from "@onicode/contracts";
 import * as Cause from "effect/Cause";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as Sink from "effect/Sink";
@@ -456,6 +458,56 @@ it.effect.each([
   call(tool, scope, args).pipe(
     Effect.map((outcome) => expect(outcome).toBe(expected)),
     Effect.provide(linkedProbeServer),
+  ),
+);
+
+it.effect("records a linked call's answer here when its caller goes away as it returns", () =>
+  Effect.gen(function* () {
+    const answered = yield* Deferred.make<void>();
+    const recorded: Array<string> = [];
+    let callerGoesAway = () => {};
+    const ForwardedToolkit = Toolkit.make(Tool.make("writes", linkedProbe));
+    const handlers = McpToolAccess.toLayer(ForwardedToolkit, {
+      writes: McpToolAccess.afterForwarding(
+        McpToolAccess.writes(ranHere),
+        (_params, environmentId, result) => {
+          // The answer is here, and the caller leaves before it is recorded.
+          callerGoesAway();
+          return Effect.sync(() => {
+            recorded.push(environmentId);
+            return result;
+          });
+        },
+      ),
+    });
+    yield* Effect.gen(function* () {
+      const built = yield* ForwardedToolkit;
+      const caller = yield* built
+        .handle("writes", { environmentId: box })
+        .pipe(Stream.unwrap, Stream.runDrain, Effect.forkChild);
+      callerGoesAway = () => caller.interruptUnsafe();
+      yield* Deferred.succeed(answered, undefined);
+      yield* Fiber.await(caller);
+    }).pipe(
+      Effect.provide(
+        McpToolAccess.HandlersLayer.layer(handlers).pipe(
+          Layer.provideMerge(
+            Layer.mock(PeerForwarding.PeerForwarding)({
+              call: () => Deferred.await(answered).pipe(Effect.as({ ran: "sent" } as never)),
+            }),
+          ),
+        ),
+      ),
+    );
+
+    expect(recorded).toEqual([box]);
+  }).pipe(
+    Effect.provideService(McpInvocationContext.McpInvocationContext, supervised),
+    Effect.provide(
+      Layer.mock(ThreadManagement.ThreadManagementService)({
+        getThreadShell: (threadId) => Effect.succeed(shells.get(threadId) ?? null),
+      }),
+    ),
   ),
 );
 
