@@ -60,10 +60,13 @@ it.layer(NodeServices.layer)("ManagedPolicy.load", (it) => {
         JSON.stringify({
           schemaVersion: 1,
           organization: "Example Corp",
-          limits: { browserCookieImport: false },
+          limits: { browserCookieImport: false, previewTunnel: false },
         }),
       );
-      assert.deepEqual(policy.summary?.limits, { browserCookieImport: false });
+      assert.deepEqual(policy.summary?.limits, {
+        browserCookieImport: false,
+        previewTunnel: false,
+      });
     }),
   );
 

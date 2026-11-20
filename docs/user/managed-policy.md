@@ -166,6 +166,7 @@ A few settings need care:
     "maxRuntimeMode": "auto-accept-edits",
     "clients": ["desktop"],
     "browserCookieImport": false,
+    "previewTunnel": false,
     "providers": {
       "allowedDrivers": ["claudeAgent", "codex"],
       "instances": {
@@ -244,6 +245,10 @@ so restart Onicode after that.
 
 - `browserCookieImport: false`: users cannot import cookies from another browser into Onicode's
   browser.
+- `previewTunnel: false`: other devices cannot load this machine's `localhost` pages themselves.
+  Browser tabs stream from it instead, and port forwarding and **Open on this device** are
+  unavailable. This wins over the user's
+  [Preview tunnel setting](./remote-access.md#browser-on-a-remote-environment).
 
 ### Providers
 

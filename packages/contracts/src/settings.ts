@@ -1414,6 +1414,8 @@ export const ServerSettings = Schema.Struct({
   keepAwakeWhileAgentsWork: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
 
   enableAgentBrowserAccess: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  /** Lets clients reach this machine's loopback ports over `/api/preview/tunnel`. */
+  enablePreviewTunnel: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   cloudSpeechCredentials: CloudSpeechCredentials.pipe(
     Schema.withDecodingDefault(Effect.succeed({ openai: "", xai: "", openrouter: "" })),
   ),
@@ -1899,6 +1901,7 @@ export const ServerSettingsPatch = Schema.Struct({
   continueThreadsAfterServerUpdate: Schema.optionalKey(Schema.Boolean),
   keepAwakeWhileAgentsWork: Schema.optionalKey(Schema.Boolean),
   enableAgentBrowserAccess: Schema.optionalKey(Schema.Boolean),
+  enablePreviewTunnel: Schema.optionalKey(Schema.Boolean),
   cloudSpeechCredentials: Schema.optionalKey(
     Schema.Struct({
       openai: Schema.optionalKey(SettingsSecretValue),
@@ -2058,10 +2061,12 @@ export function requiredScopesForServerSettingsPatch(
   let changesProviders = false;
   let changesSettings = false;
   // Who may sign in is access management, not a preference.
-  const changesAccess = patch.tailnetSignIn !== undefined;
+  let changesAccess = patch.tailnetSignIn !== undefined;
   for (const [key, value] of Object.entries(patch)) {
     if (value === undefined) continue;
-    if (
+    if (key === "enablePreviewTunnel") {
+      changesAccess = true;
+    } else if (
       key === "providers" ||
       key === "providerInstances" ||
       key === "usageLimitSources" ||
