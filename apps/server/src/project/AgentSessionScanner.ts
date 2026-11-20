@@ -350,6 +350,9 @@ interface ClaudeFields {
   readonly title: string | undefined;
   readonly customTitle: string | null;
   readonly model: string | undefined;
+  // Over every record, so a reply out of the history window or without text still counts.
+  readonly hasModelReply: boolean;
+  readonly hasSyntheticReply: boolean;
 }
 
 const emptyClaudeFields: ClaudeFields = {
@@ -357,6 +360,8 @@ const emptyClaudeFields: ClaudeFields = {
   title: undefined,
   customTitle: null,
   model: undefined,
+  hasModelReply: false,
+  hasSyntheticReply: false,
 };
 
 // Claude Code's model name for its own local errors, such as "Invalid API key".
@@ -365,6 +370,11 @@ const CLAUDE_SYNTHETIC_MODEL = "<synthetic>";
 function foldClaudeFields(fields: ClaudeFields, record: DecodedTranscriptRecord): ClaudeFields {
   if (isHiddenClaudeRecord(record)) return fields;
   const model = record.message?.model?.trim();
+  const content = record.message?.content;
+  // Text, a tool call or thinking; a record without content is no reply.
+  const reply =
+    record.type === "assistant" &&
+    (typeof content === "string" ? content.trim().length > 0 : (content?.length ?? 0) > 0);
   return {
     sessionId: record.sessionId?.trim() || fields.sessionId,
     title: claudeTitle(record.aiTitle) ?? fields.title,
@@ -375,6 +385,9 @@ function foldClaudeFields(fields: ClaudeFields, record: DecodedTranscriptRecord)
         : (claudeTitle(record.customTitle) ?? null),
     // Not a model ID that can be selected when the imported session resumes.
     model: model && model !== CLAUDE_SYNTHETIC_MODEL ? model : fields.model,
+    hasModelReply: fields.hasModelReply || (reply && model !== CLAUDE_SYNTHETIC_MODEL),
+    hasSyntheticReply:
+      fields.hasSyntheticReply || (record.type === "assistant" && model === CLAUDE_SYNTHETIC_MODEL),
   };
 }
 
@@ -532,9 +545,6 @@ function parseAgentSessionRecords(
   let derivedTitle: string | undefined;
   // Names a session whose only request was a bare command, such as `/review`.
   let bareCommandTitle: string | undefined;
-  let hasAssistantMessage = false;
-  let hasClaudeSyntheticReply = false;
-  let hasClaudeModelReply = false;
   let hasCodexSessionId = false;
   const messages: Array<AgentSessionThreadMessage & { readonly codexResponseUser: boolean }> = [];
   let firstUserMessage:
@@ -605,7 +615,6 @@ function parseAgentSessionRecords(
       derivedTitle = deriveTitle(input.source, titleText);
       bareCommandTitle ??= deriveTitle(input.source, message.text);
     }
-    hasAssistantMessage ||= message.role === "assistant";
     conversationMessageCount += 1;
     messages.push(message);
     if (messages.length > MAX_IMPORTED_MESSAGES) messages.shift();
@@ -647,11 +656,6 @@ function parseAgentSessionRecords(
       if (record.type !== "user" && record.type !== "assistant") continue;
       const { text, titleText } = claudeVisibleText(record);
       if (text.length === 0) continue;
-      if (record.type === "assistant") {
-        if (record.message?.model?.trim() === CLAUDE_SYNTHETIC_MODEL)
-          hasClaudeSyntheticReply = true;
-        else hasClaudeModelReply = true;
-      }
       retainMessage(
         {
           role: record.type,
@@ -726,18 +730,15 @@ function parseAgentSessionRecords(
   const visibleMessages = messages.map(
     ({ codexResponseUser: _codexResponseUser, ...message }) => message,
   );
+  if (providerSessionId.trim().length === 0 || firstUserMessage === undefined) return null;
+  // A Claude session did nothing when the model never replied to a bare command such as
+  // `/clear`, or answered only with Claude Code's own errors. It costs no import slot.
   if (
-    providerSessionId.trim().length === 0 ||
-    firstUserMessage === undefined ||
-    // A Claude session of bare commands such as `/clear` that no reply followed did nothing.
-    (input.source === "claudeAgent" && derivedTitle === undefined && !hasAssistantMessage) ||
-    // Nor did one whose only replies are Claude Code's own errors.
-    (input.source === "claudeAgent" &&
-      droppedMessageCount === 0 &&
-      hasClaudeSyntheticReply &&
-      !hasClaudeModelReply)
+    input.source === "claudeAgent" &&
+    !claudeFields.hasModelReply &&
+    (derivedTitle === undefined || claudeFields.hasSyntheticReply)
   ) {
-    return null;
+    return "empty";
   }
   const firstUserMessageRetained = messages.includes(firstUserMessage);
   const { codexResponseUser: _codexResponseUser, ...visibleFirstUserMessage } = firstUserMessage;

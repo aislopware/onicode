@@ -2218,7 +2218,26 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
         const workspace = yield* makeTempDir("onicode-workspace-");
         const codexRollout = (name: string) =>
           path.join(codexHomePath, "sessions", "2026", "08", "24", `rollout-${name}.jsonl`);
+        const signInError = (index: number) => [
+          { type: "user", message: { role: "user", content: `plugin ${index}` }, cwd: workspace },
+          {
+            type: "assistant",
+            message: {
+              role: "assistant",
+              model: "<synthetic>",
+              content: [{ type: "text", text: "Invalid API key · Please run /login" }],
+            },
+            cwd: workspace,
+          },
+        ];
         // Newer empty sessions would exhaust the 100-transcript import budget before any real one.
+        // So would sessions Claude Code answered only with its own errors, however long.
+        const errorSessions = Array.from({ length: 100 }, (_, index) => ({
+          filePath: path.join(claudeHomePath, "projects", "-slug", `claude-error-${index}.jsonl`),
+          records: Array.from({ length: index === 0 ? 101 : 1 }, (_, turn) =>
+            signInError(turn),
+          ).flat(),
+        }));
         const emptySessions = Array.from({ length: 100 }, (_, index) =>
           index % 2 === 0
             ? {
@@ -2259,6 +2278,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
               },
         );
         const transcripts = [
+          ...errorSessions,
           ...emptySessions,
           {
             // Without session_meta there is no resumable session ID.
@@ -3962,6 +3982,52 @@ describe("parseAgentSessionTranscript", () => {
         title: "plugin",
         texts: ["plugin", "Which plugin?", "GitHub", "Invalid API key · Please run /login"],
       },
+    },
+    {
+      name: "a bare command followed by an assistant record without content",
+      records: [
+        { type: "user", message: { content: "<command-name>/clear</command-name>" } },
+        { type: "assistant", message: { role: "assistant", content: [] } },
+      ],
+      expected: null,
+    },
+    {
+      name: "a bare command Claude answered only with tool calls",
+      records: [
+        { type: "user", message: { content: "<command-name>/review</command-name>" } },
+        {
+          type: "assistant",
+          message: {
+            role: "assistant",
+            model: "claude-sonnet-4-5",
+            content: [{ type: "tool_use", id: "tool-1", name: "Bash", input: {} }],
+          },
+        },
+      ],
+      expected: { title: "/review", texts: ["/review"] },
+    },
+    {
+      name: "a prompt Claude answered only with tool calls before its own error",
+      records: [
+        { type: "user", message: { role: "user", content: "fix build" } },
+        {
+          type: "assistant",
+          message: {
+            role: "assistant",
+            model: "claude-sonnet-4-5",
+            content: [{ type: "tool_use", id: "tool-1", name: "Bash", input: {} }],
+          },
+        },
+        {
+          type: "assistant",
+          message: {
+            role: "assistant",
+            model: "<synthetic>",
+            content: [{ type: "text", text: "API Error: 500" }],
+          },
+        },
+      ],
+      expected: { title: "fix build", texts: ["fix build", "API Error: 500"] },
     },
   ])("imports a Claude session only if it got a request: $name", ({ records, expected }) => {
     const thread = AgentSessionScanner.parseAgentSessionTranscript({
