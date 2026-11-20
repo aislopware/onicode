@@ -99,7 +99,7 @@ export function ReopenClosedViewShortcut() {
       : pathname === "/issues"
         ? ISSUES_PANEL_REF
         : null);
-  // Other routes keep forwarding, as before, rather than guess whether a panel listens.
+  // Routes without a known panel forward the chord rather than guess.
   const rightPanelOpen = useRightPanelStore(
     (state) => panelRef === null || selectThreadRightPanelState(state.byThreadKey, panelRef).isOpen,
   );

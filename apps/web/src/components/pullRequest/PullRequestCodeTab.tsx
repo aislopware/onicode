@@ -31,6 +31,7 @@ import type {
   PullRequestReviewPosition,
   PullRequestReviewThread,
   PullRequestThreadCommentsResult,
+  ScopedThreadRef,
 } from "@onicode/contracts";
 import { SOURCE_CONTROL_MEDIA_ASSET } from "@onicode/contracts";
 import {
@@ -430,6 +431,7 @@ function isRemovedLine(fileDiff: FileDiffMetadata, oldLine: number): boolean {
 
 function PullRequestCodeTab({
   scrollerRef,
+  threadRef = null,
   environmentId,
   reference,
   detail,
@@ -448,6 +450,7 @@ function PullRequestCodeTab({
   onRevealSettled,
 }: {
   scrollerRef: (node: HTMLDivElement | null) => void;
+  threadRef?: ScopedThreadRef | null;
   environmentId: EnvironmentId;
   reference: PullRequestRef;
   detail: PullRequestDetailView;
@@ -1891,6 +1894,7 @@ function PullRequestCodeTab({
         error={diffQuery.error}
         provider={detail.provider}
         url={detail.url}
+        threadRef={threadRef}
         onRetry={() => diffQuery.refresh()}
       />,
     );
