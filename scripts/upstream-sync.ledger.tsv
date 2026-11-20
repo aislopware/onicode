@@ -2860,3 +2860,4 @@ d6cdb4f161	take	taken as is; desktop scenario ported (WEB = desktop renderer tar
 732c03f410	take	CONFLICT resolved: adopted upstream's threadLinkMatcher (accent/locale folding) inside Onicode's threadLinkCandidates; kept Onicode's threadLinkCandidates: it also drops side chats and searches the rendered threadTitleText, which upstream's inline filter lacks; desktop scenario ported
 272cd38379	take	taken as is
 de0466fd80	skip	T3's release version bump (0.1.11); Onicode versions its own releases through better-update (currently 0.20.0)
+16d40942ac	take	taken as is
