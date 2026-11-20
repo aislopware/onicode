@@ -82,7 +82,8 @@ export function PullRequestInlineCommentScreen({ route }: StaticScreenProps<Inli
     const result = await settlePromise(() => store.flush());
     pending.current = false;
     setBusy(false);
-    if (AsyncResult.isSuccess(result)) navigation.goBack();
+    // Dismissed while saving, goBack would pop the screen underneath.
+    if (AsyncResult.isSuccess(result) && navigation.isFocused()) navigation.goBack();
   };
   return (
     <PullRequestSheetContent

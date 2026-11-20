@@ -7,7 +7,8 @@ export function threadLinkMatcher(query: string, locale?: string) {
   const foldedQuery = normalizeSearchText(query);
   return (text: string) =>
     text.toLocaleLowerCase(locale).includes(localQuery) ||
-    normalizeSearchText(text).includes(foldedQuery);
+    // A query of combining marks alone folds to nothing, which every text includes.
+    (foldedQuery !== "" && normalizeSearchText(text).includes(foldedQuery));
 }
 
 /**
@@ -27,8 +28,9 @@ export function threadLinkCandidates<
   environmentId: EnvironmentId,
   query: string,
   searchText: (thread: T) => string,
+  locale?: string,
 ): T[] {
-  const matches = threadLinkMatcher(query);
+  const matches = threadLinkMatcher(query, locale);
   return threads
     .filter(
       (thread) =>

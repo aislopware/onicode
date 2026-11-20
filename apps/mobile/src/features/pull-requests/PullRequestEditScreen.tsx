@@ -125,7 +125,8 @@ export function PullRequestEditScreen({ route }: StaticScreenProps<PullRequestEd
     }
     // updateComment refreshes the activity on its own; a title or body lives on the detail.
     if (params.field !== "comment") detail.refresh();
-    navigation.goBack();
+    // Dismissed while saving, goBack would pop the screen underneath.
+    if (navigation.isFocused()) navigation.goBack();
   };
   const title =
     params.field === "title"

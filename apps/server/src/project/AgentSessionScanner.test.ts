@@ -3905,8 +3905,11 @@ describe("parseAgentSessionTranscript", () => {
     expect(thread?.title).toBe("Fix the flaky login test");
   });
 
-  it("does not split an emoji when shortening a long first message into a title", () => {
-    const prompt = `${"a".repeat(99)}🚀 then deploy`;
+  it.each([
+    ["an emoji", `${"a".repeat(99)}🚀 then deploy`, 99],
+    ["a flag", `${"a".repeat(98)}🇻🇳 then deploy`, 98],
+    ["a skin-tone emoji", `${"a".repeat(97)}👍🏽 then deploy`, 97],
+  ])("does not split %s when shortening a long first message into a title", (_, prompt, kept) => {
     const thread = AgentSessionScanner.parseAgentSessionTranscript({
       contents: [
         encodeTranscriptRecord({ type: "session_meta", payload: { id: "codex-session" } }),
@@ -3921,7 +3924,7 @@ describe("parseAgentSessionTranscript", () => {
       lastActiveAtMs: Date.parse("2026-08-25T08:00:00.000Z"),
     });
 
-    expect(thread?.title).toBe("a".repeat(99));
+    expect(thread?.title).toBe("a".repeat(kept));
   });
 
   it.each([

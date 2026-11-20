@@ -1331,15 +1331,19 @@ export function VoiceSettingsPanel() {
   const prepared = destination.cloudProvider ? null : destination.prepared;
   const catalog = useVoiceModels(prepared);
 
+  const microphoneRefreshId = useRef(0);
   const refreshMicrophones = useStableCallback(async () => {
     if (!navigator.mediaDevices?.enumerateDevices) return;
-    try {
-      const devices = await listAudioInputs();
-      setMicrophones(devices);
-      updateMicrophoneOrder((order) => rememberMicrophones(order, devices));
-    } catch {
+    const requestId = ++microphoneRefreshId.current;
+    const devices = await listAudioInputs().catch(() => null);
+    // A device change can start a newer listing that settles first.
+    if (requestId !== microphoneRefreshId.current) return;
+    if (devices === null) {
       setMicrophones([]);
+      return;
     }
+    setMicrophones(devices);
+    updateMicrophoneOrder((order) => rememberMicrophones(order, devices));
   });
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- subscribes to microphone device changes while settings are open
   useEffect(() => {

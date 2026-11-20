@@ -215,7 +215,7 @@ export function NewTaskEnvironmentPickerRouteScreen() {
                 onPress={() => {
                   void Haptics.selectionAsync();
                   void flow.switchEnvironment(environment.environmentId).then((switched) => {
-                    if (switched) navigation.goBack();
+                    if (switched && navigation.isFocused()) navigation.goBack();
                   });
                 }}
                 selected={flow.selectedEnvironmentId === environment.environmentId}
