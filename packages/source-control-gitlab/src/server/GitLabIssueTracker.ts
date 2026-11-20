@@ -45,6 +45,9 @@ import {
   gitLabAwardName,
 } from "./gitLabMergeRequestJson.ts";
 
+const isGitLabCliUnreachableError = Schema.is(GitLabCli.GitLabCliUnreachableError);
+const isGitLabCliRateLimitError = Schema.is(GitLabCli.GitLabCliRateLimitError);
+
 const KIND = IssueTrackerKind.make("gitlab");
 /** How many pages of system notes the timeline reads before giving up on the rest. */
 const MAX_ACTIVITY_PAGES = 20;
@@ -408,10 +411,7 @@ export const make: Effect.Effect<IssueTrackerApi, never, GitLabCli.GitLabCli> = 
         // cannot lose its awards cursor to it.
         Effect.catchIf(
           (error) =>
-            !(
-              error.cause instanceof GitLabCli.GitLabCliUnreachableError ||
-              error.cause instanceof GitLabCli.GitLabCliRateLimitError
-            ),
+            !(isGitLabCliUnreachableError(error.cause) || isGitLabCliRateLimitError(error.cause)),
           () => Effect.succeed(null),
         ),
       );
