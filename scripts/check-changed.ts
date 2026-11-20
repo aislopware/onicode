@@ -454,7 +454,6 @@ const checkChanged = Effect.fn("checkChanged")(function* (input: {
 
   // Resolve without the lockfile in a temp copy to preserve the working tree and lockfile.
   // Copy mobile modules too: they are file: dependencies, not workspace packages.
-  // Cached registry metadata limits this to patches stranded by local changes, not registry drift.
   const checkPatches = Effect.scoped(
     Effect.gen(function* () {
       const temp = yield* fs.makeTempDirectoryScoped({ prefix: "oni-patch-check-" });
@@ -464,7 +463,13 @@ const checkChanged = Effect.fn("checkChanged")(function* (input: {
         yield* fs.copy(inRoot(relative), dest);
       });
       yield* copy("package.json");
-      yield* copy("pnpm-workspace.yaml");
+      // A fresh resolve takes newer registry versions whose peers the lockfile install never
+      // sees, so only patches may fail it.
+      const workspace = yield* fs.readFileString(inRoot("pnpm-workspace.yaml"));
+      yield* fs.writeFileString(
+        path.join(temp, "pnpm-workspace.yaml"),
+        `${workspace.replace(/^strictPeerDependencies:.*$/m, "")}\nstrictPeerDependencies: false\n`,
+      );
       for (const pkg of packages) yield* copy(`${pkg.dir}/package.json`);
       const modulesDir = "apps/mobile/modules";
       if (yield* fs.exists(inRoot(modulesDir))) {

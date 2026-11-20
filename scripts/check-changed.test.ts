@@ -351,7 +351,10 @@ function launcherFixture() {
     write(file, NodeFS.readFileSync(NodePath.join(import.meta.dirname, "..", file), "utf8"));
   }
   write(".gitignore", "node_modules/\nrecords/\n");
-  write("pnpm-workspace.yaml", "packages:\n  - packages/*\n");
+  write(
+    "pnpm-workspace.yaml",
+    "packages:\n  - packages/*\nstrictPeerDependencies: true # strict\n",
+  );
   write(
     "package.json",
     JSON.stringify({
@@ -375,7 +378,8 @@ function launcherFixture() {
     import fs from 'node:fs';
     import path from 'node:path';
     const args = process.argv.slice(2);
-    fs.writeFileSync(path.join(process.env.RECORDS, process.pid + '.json'), JSON.stringify({ args, cwd: process.cwd() }));
+    const workspace = args[0] === 'install' ? { workspace: fs.readFileSync('pnpm-workspace.yaml', 'utf8') } : {};
+    fs.writeFileSync(path.join(process.env.RECORDS, process.pid + '.json'), JSON.stringify({ args, cwd: process.cwd(), ...workspace }));
     console.log('fixture stdout: ' + args[0]);
     console.error('fixture stderr: ' + args[0]);
     process.exit(args[0] === process.env.FAIL_STEP ? 23 : 0);
@@ -428,7 +432,7 @@ function launcherFixture() {
         env: { ...env, TEMP: NodeOS.tmpdir(), RECORDS: records, FAIL_STEP: failStep },
       });
     },
-    calls: (): Array<{ args: Array<string>; cwd: string }> =>
+    calls: (): Array<{ args: Array<string>; cwd: string; workspace?: string }> =>
       NodeFS.readdirSync(records).map((file) =>
         JSON.parse(NodeFS.readFileSync(NodePath.join(records, file), "utf8")),
       ),
@@ -488,6 +492,9 @@ it.each(["install", "lint"])("reports a failing %s step with its output", (step)
     "--ignore-scripts",
   ]);
   expect(install?.cwd).not.toBe(project.root);
+  // Registry drift in peers must not fail a check that is only about patches.
+  expect(install?.workspace).toContain("strictPeerDependencies: false");
+  expect(install?.workspace).not.toContain("strictPeerDependencies: true");
   expect(result.stdout + result.stderr).toContain(`fixture stdout: ${step}`);
   expect(result.stdout + result.stderr).toContain(`fixture stderr: ${step}`);
   expect(result.stdout).toContain(step === "install" ? "FAIL  unused patches" : "FAIL  lint");
