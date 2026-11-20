@@ -283,6 +283,7 @@ export const make = Effect.gen(function* () {
         ),
       );
     }),
+    createsDraftChangeRequests: true,
     createChangeRequest: Effect.fn("GitLabSourceControlProvider.createChangeRequest")(
       function (input) {
         const source = SourceControlProvider.sourceControlRefFromInput(input);
