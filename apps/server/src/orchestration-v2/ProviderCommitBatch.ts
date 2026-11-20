@@ -40,7 +40,7 @@ type Snapshot =
     }
   | {
       readonly type: "plan.updated";
-      readonly plan: { readonly id: string; readonly threadId: string };
+      readonly plan: { readonly id: string; readonly threadId: string; readonly kind: string };
     };
 const isSnapshot = (event: { readonly type: string }): event is Snapshot =>
   event.type === "node.updated" ||
@@ -56,7 +56,12 @@ const snapshotEntity = (event: Snapshot) => {
         : event.type === "turn_item.updated"
           ? event.turnItem
           : event.plan;
-  return { key: `${event.type}:${entity.id}`, threadId: entity.threadId };
+  return {
+    key: `${event.type}:${entity.id}`,
+    threadId: entity.threadId,
+    // Step durations are derived from each todo list state in turn, so none may be skipped.
+    combinable: event.type !== "plan.updated" || event.plan.kind !== "todo_list",
+  };
 };
 
 /** Who a provider stream writes for; ranks its snapshots against other streams'. */
@@ -73,6 +78,8 @@ export const isCommitBatchError = Schema.is(CommitBatchError);
 
 interface StreamState {
   readonly owner: { active: boolean };
+  /** What the snapshot that stopped this stream failed with; its later snapshots fail with it. */
+  failure: Exit.Exit<void, CommitBatchError> | undefined;
   readonly priority: StreamPriority | undefined;
   /** Queued snapshots not yet taken into a batch, in stream order. */
   readonly jobs: Array<Job>;
@@ -88,6 +95,7 @@ interface Job {
   /** Still in its stream's queue, holding one of the backlog's `MAX_QUEUED` slots. */
   queued: boolean;
   readonly key: string;
+  readonly combinable: boolean;
   readonly threadId: string;
   readonly queuedAt: number;
   readonly bytes: number;
@@ -138,7 +146,7 @@ function coalesce(jobs: ReadonlyArray<Job>): Array<Unit> {
     const job = jobs[index]!;
     const next = nextOfKey.get(job.key);
     nextOfKey.set(job.key, index);
-    if (next === undefined) continue;
+    if (next === undefined || !job.combinable || !jobs[next]!.combinable) continue;
     let replaced = true;
     for (let between = index + 1; replaced && between < next; between++) {
       if (firstSeen.get(jobs[between]!.key)! > index) replaced = false;
@@ -211,7 +219,7 @@ export const make = Effect.fn("ProviderCommitBatch.make")(function* (
   const enqueue = Effect.fnUntraced(function* <A, E, R>(
     effect: Effect.Effect<A, E, R>,
     stream: StreamState,
-    entity: { readonly key: string; readonly threadId: string },
+    entity: { readonly key: string; readonly threadId: string; readonly combinable: boolean },
     bytes: number,
     skipped: A,
   ) {
@@ -226,6 +234,7 @@ export const make = Effect.fn("ProviderCommitBatch.make")(function* (
       stream,
       queued: false,
       key: entity.key,
+      combinable: entity.combinable,
       threadId: entity.threadId,
       queuedAt: yield* Clock.currentTimeMillis,
       bytes,
@@ -251,6 +260,7 @@ export const make = Effect.fn("ProviderCommitBatch.make")(function* (
         release();
         if (Exit.isFailure(exit)) {
           stream.owner.active = false;
+          stream.failure ??= exit;
           yield* Deferred.failCause(
             reply,
             preserveFailure && ownFailure !== undefined ? ownFailure : exit.cause,
@@ -356,13 +366,17 @@ export const make = Effect.fn("ProviderCommitBatch.make")(function* (
     Effect.uninterruptibleMask((restore) =>
       Effect.gen(function* () {
         const outcomes = new Map<Job, Exit.Exit<void, CommitBatchError>>();
+        // Units of a stream that stopped; they settle once the transaction's outcome is known.
+        const stopped = new Set<Unit>();
         let taken = 0;
         const work = Effect.gen(function* () {
           // A retried transaction runs this again from the first unit.
           outcomes.clear();
+          stopped.clear();
           taken = 0;
           const startedAt = yield* Clock.monotonicTimeNanos;
-          for (const { job, superseded } of units) {
+          for (const unit of units) {
+            const { job } = unit;
             if (
               taken > 0 &&
               waitingWriters > 0 &&
@@ -371,8 +385,7 @@ export const make = Effect.fn("ProviderCommitBatch.make")(function* (
               return;
             taken++;
             if (!job.stream.owner.active) {
-              yield* job.cancel;
-              for (const replaced of superseded) yield* replaced.cancel;
+              stopped.add(unit);
               continue;
             }
             const outcome = yield* (units.length > 1 ? isolate(job.execute) : job.execute).pipe(
@@ -380,6 +393,7 @@ export const make = Effect.fn("ProviderCommitBatch.make")(function* (
             );
             outcomes.set(job, outcome);
             if (Exit.isFailure(outcome)) {
+              // Its failure is recorded once settled, when the transaction's outcome is known.
               job.stream.owner.active = false;
               if (units.length === 1) return yield* Effect.failCause(outcome.cause);
             }
@@ -401,7 +415,15 @@ export const make = Effect.fn("ProviderCommitBatch.make")(function* (
           "orchestration_v2.batch_wait_ms":
             (yield* Clock.currentTimeMillis) - Math.min(...jobs.map((job) => job.queuedAt)),
         });
-        for (const { job, superseded } of committed) {
+        for (const unit of committed) {
+          const { job, superseded } = unit;
+          if (stopped.has(unit)) {
+            // A superseded snapshot arrived before the failure, so its reply must carry it too.
+            const failure = job.stream.failure;
+            for (const each of [job, ...superseded])
+              yield* failure === undefined ? each.cancel : each.skip(failure);
+            continue;
+          }
           const outcome = outcomes.get(job) ?? Exit.void;
           const final = Exit.isSuccess(exit) ? outcome : exit;
           yield* job.settle(
@@ -474,6 +496,7 @@ export const make = Effect.fn("ProviderCommitBatch.make")(function* (
       );
     const stream: StreamState = {
       owner: { active: true },
+      failure: undefined,
       priority,
       jobs: [],
       unsettled: 0,
