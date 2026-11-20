@@ -1,4 +1,8 @@
-import type { IssueRef, IssueTrackerConnectionList } from "@onicode/contracts";
+import {
+  IssueTrackerKind,
+  type IssueRef,
+  type IssueTrackerConnectionList,
+} from "@onicode/contracts";
 import {
   LINEAR_HOST,
   LINEAR_KIND,
@@ -10,21 +14,11 @@ import type { EnvironmentProject } from "./state/shell.ts";
 
 type LinkProject = Pick<EnvironmentProject, "id" | "environmentId" | "repositoryIdentity">;
 
-/** The host and scope a project's git-host tracker is bound to, the way the server resolves it. */
-function projectIssueBinding(project: LinkProject): {
-  readonly tracker: string;
-  readonly host: string;
-  readonly scope: string;
-} | null {
-  const identity = project.repositoryIdentity;
-  const scope = sourceControlClients.issueScope(identity);
-  const kind = identity?.provider;
-  if (!identity || kind === undefined || kind === "unknown" || scope === null) return null;
-  return {
-    tracker: kind,
-    host: sourceControlClients.changeRequestHost(identity, kind),
-    scope: scope.toLowerCase(),
-  };
+/** The hosts and scopes a project's git-host tracker is bound to, the way the server resolves them. */
+function projectIssueBindings(project: LinkProject) {
+  return sourceControlClients
+    .issueBindings(project.repositoryIdentity)
+    .map((binding) => ({ ...binding, scope: binding.scope.toLowerCase() }));
 }
 
 function linkAuthority(url: string): string | null {
@@ -36,10 +30,9 @@ function linkAuthority(url: string): string | null {
 }
 
 function indexIssueBindings<Project extends LinkProject>(projects: ReadonlyArray<Project>) {
-  const bindings = projects.flatMap((project) => {
-    const binding = projectIssueBinding(project);
-    return binding === null ? [] : [{ project, binding }];
-  });
+  const bindings = projects.flatMap((project) =>
+    projectIssueBindings(project).map((binding) => ({ project, binding })),
+  );
   return { bindings, hosts: new Set(bindings.map((candidate) => candidate.binding.host)) };
 }
 
@@ -179,7 +172,7 @@ export function createIssueLinkResolver<Project extends LinkProject>(
       project: lender.project,
       ref: {
         projectId: lender.project.id,
-        tracker: lender.binding.tracker as IssueRef["tracker"],
+        tracker: IssueTrackerKind.make(lender.binding.tracker),
         host: lender.binding.host,
         scope: own === undefined ? link.scope : lender.binding.scope,
         key: link.key,
