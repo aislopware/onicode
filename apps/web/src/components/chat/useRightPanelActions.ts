@@ -8,6 +8,9 @@ import { formatFilePathForClipboard } from "@onicode/client-runtime/media-action
 import { resolvePathLinkTarget } from "@onicode/shared/fileLinks";
 import { useStableCallback } from "../../hooks/useStableCallback";
 import { type ScopedThreadRef, type RunId } from "@onicode/contracts";
+import { scopeThreadRef } from "@onicode/client-runtime/environment";
+import { sideThreadComposer, sideThreadKindOf } from "@onicode/client-runtime/side-thread";
+import { readThreadShell } from "../../state/entities";
 import { scopedThreadKey } from "@onicode/client-runtime/environment";
 import { useEffect } from "react";
 import {
@@ -207,11 +210,19 @@ export function useRightPanelActions(input: RightPanelActionsInput) {
     if (surface.kind === "terminal") {
       focusTerminal(activeThreadRef, surface.activeTerminalId);
     }
-    if (surface.kind === "side-chat") {
-      requestWorkspaceFocus({
-        area: "panel",
-        selector: `[data-side-chat-pane="${CSS.escape(surface.threadId)}"] [data-workspace-area="composer"] [contenteditable="true"]`,
-      });
+    if (surface.kind === "thread") {
+      const kind = sideThreadKindOf(
+        readThreadShell(scopeThreadRef(activeThreadRef.environmentId, surface.threadId)),
+      );
+      // A thread with no composer, or one not known yet, takes focus as any other tab does.
+      requestWorkspaceFocus(
+        kind !== null && sideThreadComposer(kind) === "composer"
+          ? {
+              area: "panel",
+              selector: `[data-side-chat-pane="${CSS.escape(surface.threadId)}"] [data-workspace-area="composer"] [contenteditable="true"]`,
+            }
+          : { area: "panel" },
+      );
     }
     if (surface.kind === "diff" && !diffOpen) {
       onDiffPanelOpen?.();

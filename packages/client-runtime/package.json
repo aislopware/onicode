@@ -135,6 +135,10 @@
       "types": "./src/linkedThread.ts",
       "default": "./src/linkedThread.ts"
     },
+    "./side-thread": {
+      "types": "./src/sideThread.ts",
+      "default": "./src/sideThread.ts"
+    },
     "./scheduled-task-time-zone": {
       "types": "./src/scheduledTaskTimeZone.ts",
       "default": "./src/scheduledTaskTimeZone.ts"
