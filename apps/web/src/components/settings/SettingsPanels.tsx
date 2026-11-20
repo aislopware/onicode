@@ -3,6 +3,7 @@ import { m as resolveMessage } from "~/i18n/messages";
 import { NotificationSettings } from "./NotificationSettings";
 import { CheckIcon } from "lucide-react";
 import { msg, T, useGT, useMessages } from "gt-react";
+import { useAtomValue } from "@effect/atom-react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useRef, useState } from "react";
 import {
@@ -37,6 +38,7 @@ import {
   canCheckForUpdate,
   getDesktopUpdateButtonTooltip,
   getDesktopUpdateDisabledReason,
+  getDesktopUpdateDownloadedVersion,
   getDesktopUpdateInstallConfirmationMessage,
   isDesktopUpdateButtonDisabled,
   resolveDesktopUpdateButtonAction,
@@ -72,7 +74,7 @@ import { useTextGenerationTargets } from "../../textGenerators";
 import { ensureLocalApi, readLocalApi } from "../../localApi";
 import { isMacPlatform } from "../../lib/utils";
 import { useEnvironmentProviders, usePrimaryEnvironmentId } from "../../state/environments";
-import { EMPTY_SERVER_PROVIDERS } from "../../state/server";
+import { EMPTY_SERVER_PROVIDERS, primaryServerSettingsAtom } from "../../state/server";
 import { Button } from "../ui/button";
 import { DraftInput } from "../ui/draft-input";
 import { Input } from "../ui/input";
@@ -111,7 +113,7 @@ import { AdvancedSettings } from "./AdvancedSettings";
 import { PullRequestLinksOpenInAppSetting } from "./IntegrationsSettings";
 import { StorageCleanupSections } from "./StorageSettings";
 import { useCheckProviderUpdates } from "../ProviderUpdatesAction";
-import { downloadLocalUpdate } from "../sidebar/SidebarUpdatePill";
+import { downloadLocalUpdate, installLocalUpdateWithNotice } from "../sidebar/SidebarUpdatePill";
 
 const RESPONSE_STREAMING_MODE_LABELS: Record<ResponseStreamingMode, string> = {
   turn: msg("Wait for the full response"),
@@ -154,6 +156,7 @@ function AboutVersionSection() {
   const messages = useMessages();
   const updateState = useDesktopUpdateState();
   const [isUpdateActionPending, setIsUpdateActionPending] = useState(false);
+  const continuesThreads = useAtomValue(primaryServerSettingsAtom).continueThreadsAfterServerUpdate;
   const checkProviderUpdates = useCheckProviderUpdates();
   const hasDesktopBridge = typeof window !== "undefined" && Boolean(window.desktopBridge);
   // The desktop updates this machine, whose policy the primary environment reports.
@@ -168,7 +171,7 @@ function AboutVersionSection() {
     const action = updateState ? resolveDesktopUpdateButtonAction(updateState) : "none";
 
     if (action === "download") {
-      void downloadLocalUpdate(bridge, { notifyDownloaded: false });
+      void downloadLocalUpdate(bridge);
       return;
     }
 
@@ -180,6 +183,7 @@ function AboutVersionSection() {
         confirmed = await ensureLocalApi().dialogs.confirm(
           getDesktopUpdateInstallConfirmationMessage(
             updateState ?? { availableVersion: null, downloadedVersion: null },
+            continuesThreads,
           ),
           { initialFocus: "confirm" },
         );
@@ -201,21 +205,10 @@ function AboutVersionSection() {
         setIsUpdateActionPending(false);
         return;
       }
-      void bridge
-        .installUpdate()
-        .catch((error: unknown) => {
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: gt("Could not install update"),
-              description:
-                error instanceof Error
-                  ? (thrownErrorMessage(error, resolveMessage) ?? error.message)
-                  : gt("Install failed."),
-            }),
-          );
-        })
-        .finally(() => setIsUpdateActionPending(false));
+      void installLocalUpdateWithNotice(
+        bridge,
+        updateState ? getDesktopUpdateDownloadedVersion(updateState) : null,
+      ).finally(() => setIsUpdateActionPending(false));
       return;
     }
 

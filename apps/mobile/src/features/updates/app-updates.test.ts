@@ -57,7 +57,7 @@ function makeUpdateEnvironment(overrides: Partial<AppUpdateEnvironment> = {}): {
       onNextBackground: vi.fn((apply: () => void, _includeCurrent: boolean) => {
         backgroundCallbacks.push(apply);
       }),
-      onForegroundStay: vi.fn((apply: () => void) => {
+      onForegroundStay: vi.fn((apply: () => void, _afterMs: number) => {
         foregroundStayCallbacks.push(apply);
       }),
       ...overrides,
@@ -173,6 +173,26 @@ describe("runAppUpdateCheck", () => {
 
     expect(client.reloadAsync).toHaveBeenCalledOnce();
     reportError.mockRestore();
+  });
+
+  it("asks again later when the install prompt is declined, then installs once accepted", async () => {
+    const client = makeAvailableUpdateClient();
+    const confirmInstallNow = vi.fn(async () => false);
+    const { environment, foregroundStayCallbacks } = makeUpdateEnvironment({ confirmInstallNow });
+    const deferral = createAppUpdateDeferral();
+
+    await runAppUpdateCheck({ client, deferral, environment });
+    expect(vi.mocked(environment.onForegroundStay).mock.calls[0]?.[1]).toBe(5 * 60 * 1000);
+
+    foregroundStayCallbacks[0]?.();
+    await vi.waitFor(() => expect(foregroundStayCallbacks).toHaveLength(2));
+    expect(vi.mocked(environment.onForegroundStay).mock.calls[1]?.[1]).toBe(30 * 60 * 1000);
+    expect(client.reloadAsync).not.toHaveBeenCalled();
+
+    confirmInstallNow.mockResolvedValue(true);
+    foregroundStayCallbacks[1]?.();
+    await vi.waitFor(() => expect(client.reloadAsync).toHaveBeenCalledOnce());
+    expect(foregroundStayCallbacks).toHaveLength(2);
   });
 
   it("restarts into the embedded bundle for a rollback directive", async () => {

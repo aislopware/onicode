@@ -84,7 +84,9 @@ const layerDesktopUpdates = ({ checkResult }: MenuServices) =>
     emitState: Effect.void,
     disabledReason: Effect.succeedNone,
     configure: Effect.void,
-    check: () => (checkResult ? Effect.succeed(checkResult) : Effect.die("unexpected check")),
+    check: () => Effect.die("unexpected check"),
+    checkAndDownload: () =>
+      checkResult ? Effect.succeed(checkResult) : Effect.die("unexpected check"),
     download: Effect.die("unexpected download"),
     install: Effect.die("unexpected install"),
     installPrepared: () => Effect.die("unexpected installPrepared"),

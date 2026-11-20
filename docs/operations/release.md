@@ -109,6 +109,21 @@ repository.
 Users add it as `https://onicode-apt.jmango360.dev`, a Cloudflare Worker that forwards to that
 feed. Machines keep the hostname in their sources, so it has to keep answering.
 
+### Requiring an update
+
+`release create --critical` makes the release required: every older desktop app shows **Update
+required** until it restarts into the newest release. better-update writes the newest critical
+release's version into the channel file as `minimumSupportedVersion`, so the requirement outlives
+later releases that are not critical. `release critical <releaseId>` marks a release that is
+already out, and `--off`, halting or deleting it lifts the requirement. Apps learn
+of it at their next check, up to four hours later, and an app that cannot download or install the
+update lets its user dismiss the dialog.
+
+The mobile app reads the same key from the macOS channel file, since every surface shares one
+version. A phone below it installs the pending OTA update at once, or shows **Update required**
+with a link to TestFlight or Google Play when only a store build lifts it. It never blocks on a
+version it has no way to reach, so ship the mobile release before or with the critical one.
+
 ### Taking over from the native Onicode
 
 The macOS feed used to serve the native (Rust) Onicode, and its updater installs this build only
@@ -182,6 +197,14 @@ code. To publish one by hand:
 ```sh
 better-update update publish --channel production --profile production --message "<what changed>"
 ```
+
+### Telling phones about a store build
+
+better-update serves `feeds/<project>/<ios|android>/store.json`, the newest store build it
+submitted. A phone whose binary has another runtime version than that build offers the update with
+a link to the store (`ONICODE_MOBILE_IOS_STORE_URL`, TestFlight by default; Google Play follows from
+the package). `ONICODE_MOBILE_FEEDS_URL` names another feed root; a development build reads none
+unless it is set.
 
 ## CLI
 

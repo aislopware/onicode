@@ -1,11 +1,8 @@
-import type { DesktopBridge, DesktopUpdateState } from "@onicode/contracts";
+import type { DesktopBridge } from "@onicode/contracts";
 import { msg, T } from "gt-react";
-import { ArrowRightIcon } from "lucide-react";
+import { ArrowDownToLineIcon, ArrowRightIcon } from "lucide-react";
 
-import {
-  getDesktopUpdateDownloadedVersion,
-  getDesktopUpdateReleaseUrl,
-} from "./desktopUpdate.logic";
+import { getDesktopUpdateReleaseUrl } from "./desktopUpdate.logic";
 import { m } from "../i18n/messages";
 import { toastManager } from "./ui/toast";
 
@@ -36,7 +33,7 @@ function ReleaseNotesLink({
       }}
       type="button"
     >
-      <T>Read more</T>
+      <T>What's new</T>
       <ArrowRightIcon
         aria-hidden
         className="ml-1 inline size-3 -rotate-45 align-[-0.125em]"
@@ -46,19 +43,51 @@ function ReleaseNotesLink({
   );
 }
 
-export function showDesktopUpdateDownloadedToast(
-  shell: DesktopUpdateShell,
-  state: DesktopUpdateState,
-): void {
-  const releaseUrl = getDesktopUpdateReleaseUrl(getDesktopUpdateDownloadedVersion(state));
-  toastManager.add({
-    type: "success",
-    title: m(msg("Update downloaded")),
+/** Shows the restart prompt until the returned function closes it; `onDismiss` runs when the user closes it instead. */
+export function showDesktopUpdatePrompt({
+  shell,
+  version,
+  title,
+  note,
+  actionLabel,
+  onAction,
+  onDismiss,
+}: {
+  readonly shell: DesktopUpdateShell | undefined;
+  readonly version: string;
+  readonly title: string;
+  readonly note: string;
+  readonly actionLabel: string;
+  readonly onAction: () => void;
+  readonly onDismiss: () => void;
+}): () => void {
+  const releaseUrl = getDesktopUpdateReleaseUrl(version);
+  let dismissed = true;
+  const id = toastManager.add({
+    title,
     description: (
       <>
-        <T>Restart the app from the update button to install it.</T>
-        {releaseUrl ? <ReleaseNotesLink releaseUrl={releaseUrl} shell={shell} /> : null}
+        {note}
+        {shell && releaseUrl ? <ReleaseNotesLink releaseUrl={releaseUrl} shell={shell} /> : null}
       </>
     ),
+    timeout: 0,
+    onClose: () => {
+      if (dismissed) onDismiss();
+    },
+    actionProps: { children: actionLabel, onClick: onAction },
+    data: {
+      actionLayout: "stacked-end",
+      leadingIcon: <ArrowDownToLineIcon aria-hidden className="size-4 text-primary" />,
+      secondaryActionProps: {
+        children: m(msg("Later")),
+        onClick: () => toastManager.close(id),
+      },
+      secondaryActionVariant: "ghost",
+    },
   });
+  return () => {
+    dismissed = false;
+    toastManager.close(id);
+  };
 }

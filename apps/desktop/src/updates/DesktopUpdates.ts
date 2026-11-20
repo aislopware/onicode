@@ -38,6 +38,7 @@ import * as DesktopUpdatePolicy from "./DesktopUpdatePolicy.ts";
 import { normalizeDesktopUpdateReleaseNotes } from "./releaseNotes.ts";
 import {
   createInitialDesktopUpdateState,
+  isUpdateRequired,
   reduceDesktopUpdateStateOnCheckFailure,
   reduceDesktopUpdateStateOnCheckStart,
   reduceDesktopUpdateStateOnDownloadComplete,
@@ -51,7 +52,9 @@ import {
 } from "./updateMachine.ts";
 
 const AUTO_UPDATE_STARTUP_DELAY = "15 seconds";
-const AUTO_UPDATE_POLL_INTERVAL = "4 hours";
+const AUTO_UPDATE_POLL_INTERVAL_MS = Duration.toMillis(Duration.hours(4));
+// Timers stand still while the machine sleeps, so the poller wakes often and reads the wall clock.
+const AUTO_UPDATE_POLL_TICK = "10 minutes";
 const UPDATE_CHECK_WAIT = Duration.seconds(90);
 
 type UpdateAction = "check" | "download" | "install" | "install-recovery";
@@ -68,6 +71,8 @@ const UpdateInfo = Schema.Struct({
   // Malformed notes must not block update-state decoding; normalizeDesktopUpdateReleaseNotes validates separately.
   releaseNotes: Schema.optional(Schema.Unknown),
   releaseDate: Schema.optional(Schema.String),
+  // Not electron-updater's own field; a malformed one must not hide the update either.
+  minimumSupportedVersion: Schema.optional(Schema.Unknown),
 });
 
 const DownloadProgressInfo = Schema.Struct({
@@ -152,6 +157,8 @@ export class DesktopUpdates extends Context.Service<
     readonly disabledReason: Effect.Effect<Option.Option<string>>;
     readonly configure: Effect.Effect<void, never, Scope.Scope>;
     readonly check: (reason: string) => Effect.Effect<DesktopUpdateCheckResult>;
+    /** Checks, then downloads what it found without holding the caller. */
+    readonly checkAndDownload: (reason: string) => Effect.Effect<DesktopUpdateCheckResult>;
     readonly download: Effect.Effect<DesktopUpdateActionResult>;
     readonly install: Effect.Effect<DesktopUpdateActionResult>;
     /** `pinned` installs exactly `expectedVersion`, without first looking for a newer release. */
@@ -320,6 +327,7 @@ export const make = Effect.gen(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
   const fileSystem = yield* FileSystem.FileSystem;
   const policy = yield* DesktopUpdatePolicy.DesktopUpdatePolicy;
+  const scope = yield* Effect.scope;
   // Any user can set the mock flag, so it never replaces an administrator's update source.
   const mockUpdates = config.mockUpdates && policy.message === null;
 
@@ -856,9 +864,14 @@ export const make = Effect.gen(function* () {
     };
   });
 
+  // Unattended checks fetch what they find, so an offer always installs with one restart. Not from
+  // the update-available event: installs and remote updates check too, then run their own download.
+  const downloadFoundUpdate = downloadAvailableUpdate(false).pipe(Effect.asVoid);
+
   const startUpdatePollers: Effect.Effect<void, never, Scope.Scope> = Effect.gen(function* () {
     yield* Effect.sleep(AUTO_UPDATE_STARTUP_DELAY).pipe(
       Effect.andThen(checkForUpdates("startup")),
+      Effect.andThen(downloadFoundUpdate),
       Effect.catchCause((cause) => {
         if (Cause.hasInterruptsOnly(cause)) {
           return Effect.void;
@@ -872,8 +885,15 @@ export const make = Effect.gen(function* () {
       }),
       Effect.forkScoped,
     );
-    yield* Effect.sleep(AUTO_UPDATE_POLL_INTERVAL).pipe(
-      Effect.andThen(checkForUpdates("poll")),
+    let lastPollAt = DateTime.toEpochMillis(yield* DateTime.now);
+    yield* Effect.sleep(AUTO_UPDATE_POLL_TICK).pipe(
+      Effect.andThen(DateTime.now),
+      Effect.flatMap((now) => {
+        const at = DateTime.toEpochMillis(now);
+        if (at - lastPollAt < AUTO_UPDATE_POLL_INTERVAL_MS) return Effect.void;
+        lastPollAt = at;
+        return checkForUpdates("poll").pipe(Effect.andThen(downloadFoundUpdate));
+      }),
       Effect.forever,
       Effect.catchCause((cause) => {
         if (Cause.hasInterruptsOnly(cause)) {
@@ -897,7 +917,14 @@ export const make = Effect.gen(function* () {
       Effect.flatMap(
         Effect.fn("desktop.updates.applyUpdateAvailable")(function* (info) {
           const state = yield* Ref.get(updateStateRef);
-          if (isOffered(state) && state.availableVersion === info.version) return;
+          const required = isUpdateRequired(environment.appVersion, info.minimumSupportedVersion);
+          if (
+            isOffered(state) &&
+            state.availableVersion === info.version &&
+            (state.required === true) === required
+          ) {
+            return;
+          }
 
           const checkedAt = yield* currentIsoTimestamp;
           const { releaseNotes, omittedReleaseCount } = normalizeDesktopUpdateReleaseNotes(
@@ -912,11 +939,13 @@ export const make = Effect.gen(function* () {
               checkedAt,
               releaseNotes,
               omittedReleaseCount,
+              required,
             ),
           );
           yield* Ref.set(lastLoggedDownloadMilestoneRef, -1);
           yield* logUpdaterInfo("update available", {
             version: info.version,
+            required,
             releaseNoteGroups: releaseNotes.length,
             omittedReleaseCount,
           });
@@ -1043,6 +1072,21 @@ export const make = Effect.gen(function* () {
     );
   });
 
+  const check = Effect.fn("desktop.updates.check")(function* (reason: string) {
+    yield* Effect.annotateCurrentSpan({ reason });
+    if (!(yield* Ref.get(updaterConfiguredRef))) {
+      return {
+        checked: false,
+        state: yield* Ref.get(updateStateRef),
+      };
+    }
+    const checked = yield* checkForUpdates(reason);
+    return {
+      checked,
+      state: yield* Ref.get(updateStateRef),
+    };
+  });
+
   return DesktopUpdates.of({
     getState: Ref.get(updateStateRef),
     isActionActive: activeUpdateAction.pipe(Effect.map(Option.isSome)),
@@ -1138,19 +1182,11 @@ export const make = Effect.gen(function* () {
 
       yield* startUpdatePollers;
     }).pipe(Effect.withSpan("desktop.updates.configure")),
-    check: Effect.fn("desktop.updates.check")(function* (reason: string) {
-      yield* Effect.annotateCurrentSpan({ reason });
-      if (!(yield* Ref.get(updaterConfiguredRef))) {
-        return {
-          checked: false,
-          state: yield* Ref.get(updateStateRef),
-        };
-      }
-      const checked = yield* checkForUpdates(reason);
-      return {
-        checked,
-        state: yield* Ref.get(updateStateRef),
-      };
+    check,
+    checkAndDownload: Effect.fn("desktop.updates.checkAndDownload")(function* (reason: string) {
+      const result = yield* check(reason);
+      yield* downloadFoundUpdate.pipe(Effect.forkIn(scope));
+      return result;
     }),
     download: Effect.gen(function* () {
       const result = yield* downloadAvailableUpdate(true);

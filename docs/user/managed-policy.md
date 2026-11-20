@@ -277,7 +277,8 @@ starts the binary you set.
   you have approved. The desktop update files (`latest-mac.yml` and `latest-linux.yml`, copied from
   Onicode's update feeds) and the downloads they list go at the URL's root. The `oni-*` archives and
   `SHA256SUMS` of a GitHub release go under `v<version>/`. A `onicode` run through `npx` comes from
-  npm, so pin it with your package tooling.
+  npm, so pin it with your package tooling. A `minimumSupportedVersion` line in an update file makes
+  the update required for every older app; remove the line to leave the timing to your users.
 
 ## What a policy does not cover
 

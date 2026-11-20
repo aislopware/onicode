@@ -3,6 +3,7 @@ import type {
   DesktopUpdateReleaseNote,
   DesktopUpdateState,
 } from "@onicode/contracts";
+import { compareSemverVersions, parseSemver } from "@onicode/shared/semver";
 
 function nextStatusAfterDownloadFailure(
   currentState: DesktopUpdateState,
@@ -83,17 +84,29 @@ export function reduceDesktopUpdateStateOnCheckFailure(
   };
 }
 
+/** A feed's `minimumSupportedVersion` makes its update required for every older app. */
+export function isUpdateRequired(currentVersion: string, minimumSupportedVersion: unknown) {
+  return (
+    typeof minimumSupportedVersion === "string" &&
+    parseSemver(minimumSupportedVersion) !== null &&
+    compareSemverVersions(currentVersion, minimumSupportedVersion) < 0
+  );
+}
+
 export function reduceDesktopUpdateStateOnUpdateAvailable(
   state: DesktopUpdateState,
   version: string,
   checkedAt: string,
   releaseNotes: ReadonlyArray<DesktopUpdateReleaseNote> = [],
   omittedReleaseCount = 0,
+  required = false,
 ): DesktopUpdateState {
   const isDownloadedVersion = state.downloadedVersion === version;
   const preserveReleaseNotes = isDownloadedVersion && releaseNotes.length === 0;
+  const { required: _required, ...offer } = state;
   return {
-    ...state,
+    ...offer,
+    ...(required ? { required } : {}),
     status: isDownloadedVersion ? "downloaded" : "available",
     availableVersion: version,
     downloadedVersion: isDownloadedVersion ? version : null,
@@ -124,8 +137,9 @@ export function reduceDesktopUpdateStateOnNoUpdate(
     };
   }
 
+  const { required: _required, ...current } = state;
   return {
-    ...state,
+    ...current,
     status: "up-to-date",
     availableVersion: null,
     downloadedVersion: null,

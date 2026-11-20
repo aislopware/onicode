@@ -170,6 +170,90 @@ describe("DesktopUpdates", () => {
     ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
   });
 
+  it.effect("a background check downloads what it finds and retries a failed download", () => {
+    let offline = true;
+    const harness = makeHarness({
+      checkForUpdates: Effect.sync(() => harness.emit("update-available", { version: "1.2.4" })),
+      downloadUpdate: Effect.suspend(() =>
+        offline
+          ? Effect.fail(
+              new ElectronUpdater.ElectronUpdaterDownloadUpdateError({
+                channel: null,
+                cause: new Error("offline"),
+              }),
+            )
+          : Effect.void,
+      ),
+    });
+
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* updates.configure;
+
+        yield* TestClock.adjust("15 seconds");
+        assert.equal(harness.downloadCount(), 1);
+        const failed = yield* updates.getState;
+        assert.equal(failed.status, "available");
+        assert.equal(failed.errorContext, "download");
+
+        offline = false;
+        yield* TestClock.adjust("4 hours");
+        assert.equal(harness.downloadCount(), 2);
+        assert.equal((yield* updates.getState).status, "downloading");
+      }),
+    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+  });
+
+  it.effect("a check from the app starts the download without waiting for it", () =>
+    Effect.gen(function* () {
+      const downloadStarted = yield* Deferred.make<void>();
+      const harness = makeHarness({
+        checkForUpdates: Effect.sync(() => harness.emit("update-available", { version: "1.2.4" })),
+        downloadUpdate: Deferred.succeed(downloadStarted, undefined).pipe(
+          Effect.andThen(Effect.never),
+        ),
+      });
+
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const updates = yield* DesktopUpdates.DesktopUpdates;
+          yield* updates.configure;
+
+          const result = yield* updates.checkAndDownload("web-ui");
+          assert.isTrue(result.checked);
+          assert.equal(result.state.status, "available");
+          yield* Deferred.await(downloadStarted);
+          assert.equal((yield* updates.getState).status, "downloading");
+        }),
+      ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+    }),
+  );
+
+  it.effect("follows the feed on whether the offered update is required", () => {
+    const harness = makeHarness();
+
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* updates.configure;
+
+        harness.emit("update-available", { version: "1.2.5" });
+        yield* flushCallbacks;
+        assert.isUndefined((yield* updates.getState).required);
+
+        // The release was marked critical after this app had already been offered it.
+        harness.emit("update-available", { version: "1.2.5", minimumSupportedVersion: "1.2.4" });
+        yield* flushCallbacks;
+        assert.isTrue((yield* updates.getState).required);
+
+        harness.emit("update-available", { version: "1.2.5", minimumSupportedVersion: "1.2.3" });
+        yield* flushCallbacks;
+        assert.isUndefined((yield* updates.getState).required);
+      }),
+    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+  });
+
   it.effect.each([
     { action: "download", offer: "update-available", found: null, accepted: true },
     { action: "install", offer: "update-downloaded", found: null, accepted: true },
