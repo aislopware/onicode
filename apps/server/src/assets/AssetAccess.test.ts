@@ -1028,6 +1028,34 @@ describe("AssetAccess", () => {
     }).pipe(Effect.provide(layerTest)),
   );
 
+  it.effect.skipIf(!symlinksSupported)(
+    "serves the workspace file it checked, not what its path names later",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const root = yield* fs.makeTempDirectoryScoped({ prefix: "oni-workspace-open-file-" });
+        const outside = yield* fs.makeTempDirectoryScoped({ prefix: "oni-workspace-outside-" });
+        const filePath = path.join(root, "shot.png");
+        const secretPath = path.join(outside, "secret.png");
+        yield* fs.writeFileString(filePath, "workspace");
+        yield* fs.writeFileString(secretPath, "outside");
+        const result = yield* issueAssetUrl({
+          resource: { _tag: "workspace-file", threadId: ThreadId.make("thread-1"), path: filePath },
+          workspaceRoot: root,
+        });
+        const suffix = result.relativeUrl.slice(`${ASSET_ROUTE_PREFIX}/`.length);
+        const separator = suffix.indexOf("/");
+        const asset = yield* resolveAsset(suffix.slice(0, separator), suffix.slice(separator + 1));
+        if (asset?.kind !== "file") throw new Error("Expected the workspace file");
+
+        yield* fs.remove(filePath);
+        yield* fs.symlink(secretPath, filePath);
+        const response = HttpServerResponse.toWeb(yield* assetFileResponse(asset));
+        expect(yield* Effect.promise(() => response.text())).toBe("workspace");
+      }).pipe(Effect.provide(layerTest)),
+  );
+
   it.effect.skipIf(!symlinksSupported)("validates canonical preview dependency paths", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
@@ -1338,7 +1366,10 @@ describe("AssetAccess", () => {
           const result = yield* issueAssetUrl({ resource, workspaceRoot: root });
           const suffix = result.relativeUrl.slice(`${ASSET_ROUTE_PREFIX}/`.length);
           const token = suffix.slice(0, suffix.indexOf("/"));
-          expect(yield* resolveAsset(token, name)).toEqual({ kind: "file", path: canonicalPath });
+          expect(yield* resolveAsset(token, name)).toMatchObject({
+            kind: "file",
+            path: canonicalPath,
+          });
           expect(yield* resolveAsset(token, siblingName)).toBeNull();
           expect(yield* resolveAsset(token, "private.docx")).toBeNull();
           expect(yield* resolveAsset(token, `../${name}`)).toBeNull();
@@ -1390,7 +1421,10 @@ describe("AssetAccess", () => {
         const suffix = result.relativeUrl.slice(`${ASSET_ROUTE_PREFIX}/`.length);
         const token = suffix.slice(0, suffix.indexOf("/"));
 
-        expect(yield* resolveAsset(token, name)).toEqual({ kind: "file", path: canonicalFile });
+        expect(yield* resolveAsset(token, name)).toMatchObject({
+          kind: "file",
+          path: canonicalFile,
+        });
         if (name.endsWith(".png")) {
           expect(yield* resolveAsset(token, "other.png")).toBeNull();
         }
@@ -1596,7 +1630,7 @@ describe("AssetAccess", () => {
           faviconSuffix.slice(0, faviconSeparatorIndex),
           faviconSuffix.slice(faviconSeparatorIndex + 1),
         ),
-      ).toEqual({ kind: "file", path: canonicalFaviconPath });
+      ).toMatchObject({ kind: "file", path: canonicalFaviconPath });
 
       yield* fileSystem.writeFileString(faviconPath, updatedFavicon);
       const updatedFaviconResult = yield* issueAssetUrl({
@@ -1651,13 +1685,13 @@ describe("AssetAccess", () => {
       expect(result.relativeUrl).toMatch(/\/v[0-9a-f]{64}-custom\.png$/);
       expect(
         yield* resolveAsset(suffix.slice(0, separatorIndex), suffix.slice(separatorIndex + 1)),
-      ).toEqual({ kind: "file", path: canonicalPath });
+      ).toMatchObject({ kind: "file", path: canonicalPath });
       const tamperedSuffixResult = yield* resolveAsset(
         suffix.slice(0, separatorIndex),
         "sibling.png",
       );
-      expect(tamperedSuffixResult).toEqual({ kind: "file", path: canonicalPath });
-      expect(tamperedSuffixResult).not.toEqual({ kind: "file", path: canonicalSiblingPath });
+      expect(tamperedSuffixResult).toMatchObject({ kind: "file", path: canonicalPath });
+      expect(tamperedSuffixResult).not.toMatchObject({ path: canonicalSiblingPath });
     }).pipe(Effect.provide(layerTest)),
   );
 
