@@ -2858,3 +2858,4 @@ da54e47f26	take	taken as is; edited regions identical to upstream
 d6cdb4f161	take	taken as is; desktop scenario ported (WEB = desktop renderer target)
 22936ae669	take	taken as is; voice UI matches upstream, desktop scenario ported
 732c03f410	take	CONFLICT resolved: adopted upstream's threadLinkMatcher (accent/locale folding) inside Onicode's threadLinkCandidates; kept Onicode's threadLinkCandidates: it also drops side chats and searches the rendered threadTitleText, which upstream's inline filter lacks; desktop scenario ported
+272cd38379	take	taken as is
