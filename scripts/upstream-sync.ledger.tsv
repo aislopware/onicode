@@ -2946,3 +2946,4 @@ b076d8c8bf	take	CONFLICT: took upstream's already-ended result (merged or closed
 6788be775b	take	taken as is
 0fa2b92f8d	take	env var rebranded to ONICODE_EVAL_MODEL_PROVIDER; evals/test-signal README left out (Onicode has no test-signal eval)
 921a54c2fd	skip	T3 Connect CLI status (removed surface); apps/server/src/cli/connect.ts does not exist in Onicode
+d984b71385	take	taken as is (GitHub/GitLab fork-origin PRs now resolve to the origin remote)
