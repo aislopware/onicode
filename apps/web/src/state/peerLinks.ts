@@ -2,6 +2,7 @@ import { useAtomValue } from "@effect/atom-react";
 import {
   linkableMachines,
   linkedEnvironmentNames,
+  linkNamesQuery,
   offersLinkedEnvironments,
 } from "@onicode/client-runtime/link-request";
 import { createPeerLinkEnvironmentAtoms } from "@onicode/client-runtime/state/peerLinks";
@@ -23,7 +24,13 @@ export const offersLinkedEnvironmentsAtom = Atom.family((environmentId: Environm
   ).pipe(Atom.withLabel(`peer-links:offered:${environmentId}`)),
 );
 
-const offersNoLinksAtom = Atom.make(false).pipe(Atom.withLabel("peer-links:offered:none"));
+const linkNamesQueryAtom = Atom.family((environmentId: EnvironmentId) =>
+  Atom.make((get) =>
+    linkNamesQuery(get(environmentPresentations.serverConfigsAtom).get(environmentId)),
+  ).pipe(Atom.withLabel(`peer-links:names-query:${environmentId}`)),
+);
+
+const noLinkNamesQueryAtom = Atom.make(null).pipe(Atom.withLabel("peer-links:names-query:none"));
 
 /**
  * The machines `environmentId` links to, by name, while it offers links, and none otherwise.
@@ -32,17 +39,27 @@ const offersNoLinksAtom = Atom.make(false).pipe(Atom.withLabel("peer-links:offer
 export function useLinkedEnvironments(
   environmentId: EnvironmentId | null,
 ): ReadonlyMap<EnvironmentId, string> {
-  const offered = useAtomValue(
-    environmentId === null ? offersNoLinksAtom : offersLinkedEnvironmentsAtom(environmentId),
+  const query = useAtomValue(
+    environmentId === null ? noLinkNamesQueryAtom : linkNamesQueryAtom(environmentId),
   );
   const identities = useEnvironmentIdentities();
-  const links = useEnvironmentQuery(
-    offered && environmentId !== null
+  const names = useEnvironmentQuery(
+    query === "names" && environmentId !== null
       ? peerLinkEnvironment.names({ environmentId, input: {} })
       : null,
   );
+  const list = useEnvironmentQuery(
+    query === "list" && environmentId !== null
+      ? peerLinkEnvironment.list({ environmentId, input: {} })
+      : null,
+  );
   return linkedEnvironmentNames({
-    links: offered ? (links.data?.links ?? []) : [],
+    links:
+      query === "names"
+        ? (names.data?.links ?? [])
+        : query === "list"
+          ? (list.data?.links ?? [])
+          : [],
     environments: identities,
   });
 }
