@@ -379,6 +379,12 @@ describe("decodePipelineStageChecksJson", () => {
                 },
                 { name: "slow", status: "CANCELED", webPath: "/acme/web/-/jobs/5" },
                 { name: "e2e", status: "RUNNING", webPath: "/acme/web/-/jobs/6" },
+                {
+                  name: "flaky",
+                  status: "CANCELED",
+                  allowFailure: true,
+                  webPath: "/acme/web/-/jobs/8",
+                },
               ],
             },
           },
@@ -398,6 +404,7 @@ describe("decodePipelineStageChecksJson", () => {
       ["test / lint", "neutral", "https://gitlab.example.com/acme/web/-/jobs/4"],
       ["test / slow", "cancelled", "https://gitlab.example.com/acme/web/-/jobs/5"],
       ["test / e2e", "pending", "https://gitlab.example.com/acme/web/-/jobs/6"],
+      ["test / flaky", "neutral", "https://gitlab.example.com/acme/web/-/jobs/8"],
       ["deploy / release", "neutral", "https://gitlab.example.com/acme/web/-/jobs/7"],
     ]);
     expect(checks?.[0]?.description).toBe("passed");
@@ -734,12 +741,13 @@ describe("decodeMergeRequestDiffsJson", () => {
 });
 
 describe("decodeTriggerJobChecksJson", () => {
-  it("reads a downstream failure GitLab was told to allow as neutral, not failure", () => {
+  it("reads a downstream failure or cancellation GitLab was told to allow as neutral", () => {
     const result = expectSuccess(
       decodeTriggerJobChecksJson(
         JSON.stringify([
           { name: "e2e", allow_failure: true, downstream_pipeline: { status: "failed" } },
           { name: "deploy", allow_failure: false, downstream_pipeline: { status: "running" } },
+          { name: "smoke", allow_failure: true, downstream_pipeline: { status: "canceled" } },
           { name: 7 },
         ]),
       ),
@@ -748,8 +756,9 @@ describe("decodeTriggerJobChecksJson", () => {
     expect(result.checks.map((check) => [check.name, check.status])).toEqual([
       ["e2e", "neutral"],
       ["deploy", "pending"],
+      ["smoke", "neutral"],
     ]);
-    expect(result.rawCount).toBe(3);
+    expect(result.rawCount).toBe(4);
   });
 });
 
