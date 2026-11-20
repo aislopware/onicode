@@ -91,9 +91,9 @@ const isUnanswered = (cause: unknown) =>
   (HttpClientError.isHttpClientError(cause) && cause.response === undefined);
 
 /**
- * Runs `whenNoServer` holding the ownership lock, or returns none. The lock, not the record, tells
- * whether a server runs: a crashed server's record outlives it, and its pid and port may belong to
- * another process by now. A lock that cannot be opened leaves the record to decide.
+ * Runs `whenNoServer` holding the ownership lock, or returns none when the lock is held or cannot be
+ * opened. The lock, not the record, tells whether a server runs: a crashed server's record outlives
+ * it, and its pid and port may belong to another process by now.
  */
 const ifNoServerRuns = Effect.fn("RunningServer.ifNoServerRuns")(function* <A, E, R>(
   serverRuntimeStatePath: string,
@@ -111,28 +111,35 @@ const ifNoServerRuns = Effect.fn("RunningServer.ifNoServerRuns")(function* <A, E
   );
 });
 
-/** The record of the server running on this state, if the ownership lock shows one runs. */
+/**
+ * The record of the server running on this state. The ownership lock decides; a pre-lock record or
+ * a lock that cannot be opened leaves it to the recorded pid's start time.
+ */
 export const readRunningServerState = Effect.fn("RunningServer.readRunningServerState")(function* (
   serverRuntimeStatePath: string,
 ) {
-  // Only the lock: a probe holding it longer would make a server starting meanwhile give up.
-  const lockFree = yield* ServerOwnership.holdServerOwnershipLock(serverRuntimeStatePath).pipe(
-    Effect.as(true),
-    Effect.catchTags({
-      ServerAlreadyRunningError: () => Effect.succeed(false),
-      ServerOwnershipError: () => Effect.succeed(false),
-    }),
-    Effect.scoped,
-  );
   const record = yield* readLiveServerRuntimeState(serverRuntimeStatePath);
-  if (!lockFree || Option.isNone(record)) return record;
-  // A record without an owner is from a server older than the lock: its pid's start time decides.
-  const legacyLive =
-    record.value.ownerId === undefined &&
-    (yield* ServerOwnership.legacyOwnerIsLive(record.value).pipe(
-      Effect.provide(ProcessRunner.layer),
-    ));
-  return legacyLive ? record : Option.none<PersistedServerRuntimeState>();
+  if (Option.isNone(record)) return record;
+  // Only the lock: a probe holding it longer would make a server starting meanwhile give up.
+  const lock = !(yield* ServerOwnership.ownershipLockExists(serverRuntimeStatePath))
+    ? ("free" as const)
+    : yield* ServerOwnership.holdServerOwnershipLock(serverRuntimeStatePath).pipe(
+        Effect.as("free" as const),
+        Effect.catchTags({
+          ServerAlreadyRunningError: () => Effect.succeed("held" as const),
+          ServerOwnershipError: () => Effect.succeed("unknown" as const),
+        }),
+        Effect.scoped,
+      );
+  // A starting server clears a crashed owner's record after taking the lock.
+  if (lock === "held") return yield* readLiveServerRuntimeState(serverRuntimeStatePath);
+  if (lock === "free" && record.value.ownerId !== undefined) {
+    return Option.none<PersistedServerRuntimeState>();
+  }
+  const live = yield* ServerOwnership.legacyOwnerIsLive(record.value).pipe(
+    Effect.provide(ProcessRunner.layer),
+  );
+  return live ? record : Option.none<PersistedServerRuntimeState>();
 });
 
 /**
@@ -166,7 +173,7 @@ export const changeState = Effect.fn("RunningServer.changeState")(function* <A, 
     locally.pipe(Effect.tap(() => clearPersistedServerRuntimeState(serverRuntimeStatePath))),
   );
   if (Option.isSome(changed)) return changed.value;
-  const running = yield* readLiveServerRuntimeState(serverRuntimeStatePath);
+  const running = yield* readRunningServerState(serverRuntimeStatePath);
   if (Option.isNone(running)) return yield* changeLocally(Effect.fail);
   const { origin } = running.value;
   return yield* serverClient(origin, scopes).pipe(

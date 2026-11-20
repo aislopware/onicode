@@ -25,8 +25,8 @@ import { readBootstrapEnvelope } from "../bootstrap.ts";
 import { resolveServiceLauncherMode } from "../service/serviceLauncherClient.ts";
 import * as ServerConfig from "../config.ts";
 import { expandHomePath, resolveBaseDir } from "../os-jank.ts";
-import { isProcessAlive, readPersistedServerRuntimeState } from "../serverRuntimeState.ts";
 import { resolveHostCliCommand } from "./invocation.ts";
+import { readRunningServerState } from "./runningServer.ts";
 
 const modeFlag = Flag.Literals("mode", ServerConfig.RuntimeMode.literals).pipe(
   Flag.withDescription("Runtime mode. `desktop` keeps loopback defaults unless overridden."),
@@ -319,14 +319,9 @@ export const resolveServerConfig = Effect.fn("config.resolveServerConfig")(funct
   // An interactive CLI must not start over a discovered server. Lifetime locking
   // and supervisor handoff are separate; this preflight cannot arbitrate two starts.
   if (options?.rejectRunningServer && mode === "standalone") {
-    const runtime = yield* readPersistedServerRuntimeState(derivedPaths.serverRuntimeStatePath);
+    const runtime = yield* readRunningServerState(derivedPaths.serverRuntimeStatePath);
     // A killed container can leave a record with the new server's own PID.
-    if (
-      Option.isSome(runtime) &&
-      runtime.value.pid > 0 &&
-      runtime.value.pid !== process.pid &&
-      isProcessAlive(runtime.value.pid)
-    ) {
+    if (Option.isSome(runtime) && runtime.value.pid !== process.pid) {
       // Bare `onicode pair` prefers a linked worktree's `.onicode`, so always name this home.
       const { command: pairCommand } = yield* resolveHostCliCommand("pair", [
         "--base-dir",

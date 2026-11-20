@@ -203,7 +203,8 @@ describe("onicode server command safety", () => {
           pid: child.pid,
           port: 3773,
           origin: "http://127.0.0.1:3773",
-          startedAt: "2026-10-01T00:00:00.000Z",
+          // A pre-lock record is trusted only when written after its pid started.
+          startedAt: "2099-01-01T00:00:00.000Z",
           serviceManaged: true,
         });
         yield* Effect.promise(() => NodeFSP.mkdir(stateDir, { recursive: true }));

@@ -30,6 +30,7 @@ import {
   SERVICE_LAUNCHER_PROTOCOL,
 } from "../service/serviceProtocol.ts";
 import { deriveServerPaths } from "../config.ts";
+import * as ServerOwnership from "../serverOwnership.ts";
 import { resolveServerConfig } from "./config.ts";
 
 const deriveExplicitServerPaths = (baseDir: string, dev: boolean) =>
@@ -130,6 +131,8 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
         ["own-pid", process.pid, "standalone", true],
         ["desktop", child.pid, "desktop", true],
         ["serve", child.pid, "standalone", false],
+        // A crashed lock-aware server's pid now belongs to another process.
+        ["reused", child.pid, "standalone", true],
       ] as const) {
         const baseDir = path.join(root, name);
         const stateDir = path.join(baseDir, "userdata");
@@ -142,6 +145,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
             port: 3773,
             origin: "http://127.0.0.1:3773",
             startedAt: "2026-10-01T00:00:00.000Z",
+            ...(name === "reused" ? { ownerId: "crashed-owner" } : {}),
           }),
         );
         const cwd = path.join(root, `${name}-project`);
@@ -180,15 +184,18 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
         const child = yield* liveProcess;
         assert(child.pid !== undefined);
         const stateDir = path.join(baseDir, "userdata");
+        const statePath = path.join(stateDir, "server-runtime.json");
         yield* fs.makeDirectory(stateDir, { recursive: true });
+        yield* ServerOwnership.holdServerOwnershipLock(statePath);
         yield* fs.writeFileString(
-          path.join(stateDir, "server-runtime.json"),
+          statePath,
           yield* encodeUnknownJson({
             version: 1,
             pid: child.pid,
             port: 3773,
             origin: "http://127.0.0.1:3773",
             startedAt: "2026-10-01T00:00:00.000Z",
+            ownerId: "live-owner",
           }),
         );
         const cwd = path.join(baseDir, "project");
@@ -241,15 +248,18 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
         const home = yield* fs.makeTempDirectoryScoped({ prefix: "oni-cli-preflight-pair-" });
         const baseDir = source === "default" ? path.join(home, ".onicode") : home;
         const stateDir = path.join(baseDir, "userdata");
+        const statePath = path.join(stateDir, "server-runtime.json");
         yield* fs.makeDirectory(stateDir, { recursive: true });
+        yield* ServerOwnership.holdServerOwnershipLock(statePath);
         yield* fs.writeFileString(
-          path.join(stateDir, "server-runtime.json"),
+          statePath,
           yield* encodeUnknownJson({
             version: 1,
             pid: child.pid,
             port: 3773,
             origin: "http://127.0.0.1:3773",
             startedAt: "2026-10-01T00:00:00.000Z",
+            ownerId: "live-owner",
           }),
         );
         const error = yield* resolveServerConfig(

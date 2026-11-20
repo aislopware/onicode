@@ -739,8 +739,18 @@ describe("auth session revoke", () => {
       recorded: true,
       lockHeld: false,
       lockUnopenable: true,
+      // The recorded pid started before this record, so it is the server that wrote it.
+      startedAt: "2100-01-01T00:00:00.000Z",
       server: "answers",
       outcome: "revoked by server",
+    },
+    {
+      label: "refuses a recorded pid that started after its record when the lock cannot be opened",
+      recorded: true,
+      lockHeld: false,
+      lockUnopenable: true,
+      server: "answers",
+      outcome: "Could not acquire server ownership",
     },
     {
       label: "writes the database when a stale record's pid and port belong to another process",
@@ -805,9 +815,10 @@ describe("auth session revoke", () => {
           const port = yield* (yield* NetService.NetService).reserveLoopbackPort("127.0.0.1");
           yield* persistServerRuntimeState({
             path: statePath,
-            // An owner id skips the legacy liveness probe, so only the lock decides.
+            // With an owner id, a lock that opens decides alone.
             state: {
               ...baseState,
+              ...("startedAt" in row ? { startedAt: row.startedAt } : {}),
               pid: process.pid,
               ownerId: "test-owner",
               port,
@@ -870,7 +881,8 @@ describe("auth session revoke", () => {
 
         assert.deepEqual(
           requests,
-          (lockHeld || lockUnopenable) && (server === "answers" || server === "fails")
+          (lockHeld || (lockUnopenable && "startedAt" in row)) &&
+            (server === "answers" || server === "fails")
             ? [{ path: "/api/auth/clients/revoke", body: { sessionId: issued.sessionId } }]
             : [],
         );
