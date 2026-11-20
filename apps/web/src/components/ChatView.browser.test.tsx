@@ -322,13 +322,11 @@ it.each([{ issueSummaries: false }, { issueSummaries: true }])(
     // Closed elsewhere: refreshing the panel also refreshes the state its tab shows.
     Object.assign(liveDetail, { state: { category: "closed", name: "Shipped" } });
     await userEvent.click(page.getByRole("button", { name: "Refresh issue" }));
-    await expect
-      .element(
-        page
-          .getByRole("button", { name: /^Close / })
-          .getByRole("img", { name: "Shipped", exact: true }),
-      )
-      .toBeVisible();
+    await vi.waitFor(() =>
+      expect(
+        document.querySelector("[data-active-tab='true'] [role='img'][aria-label='Shipped']"),
+      ).toBeVisible(),
+    );
     await act(() => useRightPanelStore.getState().close(scopeThreadRef(ENVIRONMENT_ID, linked.id)));
     await expect
       .element(
