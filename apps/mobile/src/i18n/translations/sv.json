@@ -4021,6 +4021,15 @@
     },
     " har ingen tillgänglig modell. Installera eller logga in hos en leverantör där för att välja en."
   ],
+  "5dc2710a40895938": [
+    "Ditt utkast är sparat på den här enheten. ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " har en redo leverantör som är avstängd för det här projektet eller inte tillåten av en policy. Kontrollera leverantörsinställningarna där för att välja en modell."
+  ],
   "3a3930717d8d73b4": "Ditt utkast är sparat på den här enheten. Anslut till en miljö för att välja dess första modell.",
   "8b53cd9e9e107f7c": "Lägg till en miljö innan du skapar en uppgift.",
   "b369a312b533f975": "Läser in projekt från den sparade miljön.",

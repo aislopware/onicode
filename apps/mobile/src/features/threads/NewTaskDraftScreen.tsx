@@ -74,6 +74,7 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { ProjectCloneBanner } from "./ProjectCloneBanner";
 import {
   describeUnavailableModelSelection,
+  hasReadyProviderTurnedOff,
   isModelSelectionUnavailable,
   resolveSelectableModelSelection,
 } from "../../lib/modelOptions";
@@ -999,7 +1000,15 @@ export function NewTaskDraftScreen(props: {
         <View className="flex-1 justify-end gap-3 p-4">
           {environmentControl}
           <Text className="text-foreground-muted">
-            {environmentConnected && selectedEnvironmentServerConfig ? (
+            {environmentConnected &&
+            selectedEnvironmentServerConfig &&
+            hasReadyProviderTurnedOff(selectedEnvironmentServerConfig, selectedProject.id) ? (
+              <T>
+                Your draft is saved on this device. <Var>{selectedEnvironmentLabel}</Var> has a
+                ready provider that is turned off for this project or not allowed by policy. Check
+                its provider settings to choose a model.
+              </T>
+            ) : environmentConnected && selectedEnvironmentServerConfig ? (
               <T>
                 Your draft is saved on this device. <Var>{selectedEnvironmentLabel}</Var> has no
                 model available. Install or sign in to a provider there to choose one.

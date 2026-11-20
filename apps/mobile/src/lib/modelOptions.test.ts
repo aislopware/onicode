@@ -14,6 +14,7 @@ import {
   buildModelOptions,
   describeUnavailableModelSelection,
   groupByProvider,
+  hasReadyProviderTurnedOff,
   isModelSelectionUnavailable,
   resolveDefaultableModelSelection,
   resolveNewTaskModelSelection,
@@ -140,6 +141,7 @@ describe("mobile model options", () => {
     expect(
       buildModelOptions(config, null, undefined, null).map((option) => option.providerKey),
     ).toEqual(["codex", "codex_retained"]);
+    expect(hasReadyProviderTurnedOff(config, null)).toBe(false);
     // A saved selection on a provider the picker leaves out stays, but cannot be picked.
     const saved = { instanceId: ProviderInstanceId.make("codex_failed"), model: "test" };
     expect(buildModelOptions(config, saved, undefined, null).at(-1)).toMatchObject({
@@ -730,6 +732,8 @@ describe("mobile model options", () => {
       };
 
       expect(buildModelOptions(configWith(settings), null, undefined, projectId)).toEqual([]);
+      expect(hasReadyProviderTurnedOff(configWith(settings), projectId)).toBe(true);
+      expect(hasReadyProviderTurnedOff(configWith(settings), null)).toBe(false);
     });
 
     it("hides a machine-disabled instance for a project with no override, even though another project's keep-alive left it running", () => {
@@ -954,6 +958,7 @@ describe("synchronized mobile model visibility", () => {
       expect(
         buildModelOptions(config, null, undefined, null).map((option) => option.providerKey),
       ).toEqual(["codex"]);
+      expect(hasReadyProviderTurnedOff(config, null)).toBe(true);
     });
 
     it("marks a thread's selection on a disallowed driver unavailable with the policy reason", () => {

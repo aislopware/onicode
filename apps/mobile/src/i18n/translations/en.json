@@ -4022,6 +4022,15 @@
     },
     " has no model available. Install or sign in to a provider there to choose one."
   ],
+  "5dc2710a40895938": [
+    "Your draft is saved on this device. ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " has a ready provider that is turned off for this project or not allowed by policy. Check its provider settings to choose a model."
+  ],
   "3a3930717d8d73b4": "Your draft is saved on this device. Connect to an environment to choose its first model.",
   "8b53cd9e9e107f7c": "Add an environment before creating a task.",
   "b369a312b533f975": "Loading projects from the saved environment.",
