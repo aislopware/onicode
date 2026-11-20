@@ -115,7 +115,7 @@ export class AuthPairingLinkRepository extends Context.Service<
     readonly revoke: (
       input: RevokeAuthPairingLinkInput,
     ) => Effect.Effect<boolean, AuthPairingLinkRepositoryError>;
-    /** Every unspent pairing and approval code; returns the revoked ids. */
+    /** Every live unspent pairing and approval code; returns the revoked ids. */
     readonly revokeUnspent: (
       input: RevokeUnspentAuthPairingLinksInput,
     ) => Effect.Effect<ReadonlyArray<string>, AuthPairingLinkRepositoryError>;
@@ -281,6 +281,7 @@ export const make = Effect.gen(function* () {
         SET revoked_at = ${revokedAt}
         WHERE revoked_at IS NULL
           AND consumed_at IS NULL
+          AND expires_at > ${revokedAt}
         RETURNING id AS "id"
       `,
   });

@@ -68,7 +68,8 @@ once it has one.
   leak, not the shell.
 - The default grant includes `access:write`, so a full session can mint more
   pairing links and sessions. They appear in Sharing & access. "Revoke
-  others" removes the other sessions; revoke unused pairing links one by one.
+  others" removes the other sessions and every unused pairing link and
+  approval code.
 - `filesystem:read` reads anything the server's user can read, including paths
   outside projects.
 - Plain HTTP on a LAN or tailnet is the user's choice. `onicode serve` warns when it
