@@ -2829,3 +2829,4 @@ c57ccdaf52	take	fix(server): signed URLs stay out of HTTP request logs (#39464);
 320ab2a2ac	take	fix(server): Antigravity drops a stale sign-in failure once a session signs in (#39443)
 09b79941a5	take	fix(server): keep escaped spaces in Codex launch overrides (#39458)
 f6d941fa4f	take	feat(server): links between environments renew while they are used (#39399); kept Onicode's peer-link/thread-CLI subject check, dropped T3 Connect renew/DPoP/proof-key and hostedAppUrl parts
+4d5bf2d557	take	fix(opencode): label xhigh reasoning Extra High (#39451)
