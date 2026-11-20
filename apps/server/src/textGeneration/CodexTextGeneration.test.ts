@@ -732,7 +732,7 @@ it.effect.each(PREFLIGHT_PRIMARY_STATES)("text generation preflight: %s", (prima
             }
           : {}),
         ...(DISABLED_IN_SETTINGS.has(primaryState) && instanceId === primary
-          ? { enabled: false }
+          ? { enabled: false, status: "disabled" }
           : {}),
         ...(primaryState === "exhausted" && instanceId === primary
           ? {
