@@ -13,7 +13,7 @@ import * as Path from "effect/Path";
 import { APP_DIR } from "../e2e.config.ts";
 import { makeState } from "./onicode.ts";
 import { ScenarioError } from "./shell.ts";
-import { ENVIRONMENT_LABEL, prepareHome, start } from "./start-app.ts";
+import { prepareHome, SCENARIO_MACHINE_ENV, start } from "./start-app.ts";
 
 interface Pairing {
   readonly host: string;
@@ -60,7 +60,7 @@ const serve = Effect.fn("scenario.secondEnvironment")(function* (
       PATH: `${path.join(home, "bin")}:${hostEnvironment.PATH ?? ""}`,
       HOME: hostEnvironment.HOME,
       ONICODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD: "0",
-      ONICODE_ENVIRONMENT_LABEL: ENVIRONMENT_LABEL,
+      ...SCENARIO_MACHINE_ENV,
       ...options.env,
     },
     onLine: (line) => {

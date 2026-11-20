@@ -58,6 +58,8 @@ test(
       await dialog.getByPlaceholder("backend.example.com").fill(host);
       await dialog.getByPlaceholder("PAIRCODE").fill(token);
       await dialog.getByRole("button", "Add environment").tap();
+      // The map is the default view; its rows carry no actions menu.
+      await screen.getByRole("button", "List", { exact: true }).tap();
       await expect(moreActions).toBeVisible({ timeout: 60_000 });
       paired = true;
       await app.open("/");

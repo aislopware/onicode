@@ -1,9 +1,12 @@
-import type { EnvironmentMachineKind } from "@onicode/contracts";
+import { EnvironmentMachineKind } from "@onicode/contracts";
 import * as HostProcess from "@onicode/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
+import * as Schema from "effect/Schema";
 
 import * as ProcessRunner from "../processRunner.ts";
+
+const isEnvironmentMachineKind = Schema.is(EnvironmentMachineKind);
 
 const DMI_ROOT = "/sys/class/dmi/id";
 const KERNEL_RELEASE_PATH = "/proc/sys/kernel/osrelease";
@@ -212,6 +215,9 @@ export const detectServerEnvironmentMachineModel = Effect.fn("detectServerEnviro
 
 export const detectServerEnvironmentMachineKind = Effect.fn("detectServerEnvironmentMachineKind")(
   function* () {
+    // Staged demos and scenario captures set it so a VM reads as, say, a laptop.
+    const override = (yield* HostProcess.Environment).ONICODE_ENVIRONMENT_MACHINE_KIND?.trim();
+    if (isEnvironmentMachineKind(override)) return override;
     const platform = yield* HostProcess.Platform;
     switch (platform) {
       case "darwin":
