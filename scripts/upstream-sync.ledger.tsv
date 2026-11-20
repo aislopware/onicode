@@ -2904,3 +2904,4 @@ f08272f965	take	adopted upstream over Onicode's 3ec66ef35f draft flow: same draf
 e24f0c7154	take	ACP shared adapter; kept Onicode's SteerDeclinedError pass-through in steer mapError (a clean merge dropped it, breaking Onicode's steering.declines for Grok $skill); only the wake-turn decline is removed
 31e31c608d	take	ACP Registry (DeepSeek) only; taken as is
 9cc4018c75	take	fix(server): idle threads compact while a delegated task runs
+7085c47776	take	fix(mobile): a settings row an older environment left mixed can be set off
