@@ -277,12 +277,22 @@ const readToolOutputImage = Effect.fn("AssetAccess.readToolOutputImage")(functio
     : { mimeType: image.mimeType, bytes: Buffer.from(image.data, "base64") };
 });
 
+// The response streams the descriptor the path checks approved, not what the path names later.
+const openCheckedFileAsset = (filePath: string) =>
+  openMediaFile(filePath).pipe(
+    Effect.tapError((cause) => Effect.logError("Failed to open asset file.", { filePath, cause })),
+    Effect.orElseSucceed(() => null),
+    Effect.map((file) =>
+      file ? ({ kind: "file", path: filePath, file } satisfies ResolvedAsset) : null,
+    ),
+  );
+
 // Browsers cannot draw .icns; serve its embedded PNG.
 const projectFaviconAsset = Effect.fn("AssetAccess.projectFaviconAsset")(function* (
   filePath: string,
 ) {
   if (!filePath.toLowerCase().endsWith(".icns")) {
-    return { kind: "file", path: filePath } satisfies ResolvedAsset;
+    return yield* openCheckedFileAsset(filePath);
   }
   const fileSystem = yield* FileSystem.FileSystem;
   const bytes = yield* fileSystem.readFile(filePath).pipe(
@@ -1115,9 +1125,7 @@ export const resolveAsset = Effect.fn("AssetAccess.resolveAsset")(function* (
       workspaceRoot: claims.workspaceRoot,
       relativePath: claims.relativePath,
     });
-    return exactWorkspaceFile
-      ? ({ kind: "file", path: exactWorkspaceFile } satisfies ResolvedAsset)
-      : null;
+    return exactWorkspaceFile ? yield* openCheckedFileAsset(exactWorkspaceFile) : null;
   }
   if (!isPreviewDependencyPath(decodedPath, path)) return null;
   const joinedRelativePath =
