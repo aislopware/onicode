@@ -2889,3 +2889,4 @@ e3294d7663	take	taken as is
 55c4713d08	take	took .cargo/config.toml (oni-resource-monitor.exe in its comment); skipped release-desktop.yml, T3's release pipeline; Onicode's build-desktop-artifact runs cargo from the repo root and no workflow caches the Windows binary, so no cache key needed
 c7157d376d	take	taken as is
 a4bf29e178	take	taken as is: mobile new-thread copy names the host with no model; all 10 locales
+df09ced768	take	taken as is: Antigravity command line text cut on code-point boundary
