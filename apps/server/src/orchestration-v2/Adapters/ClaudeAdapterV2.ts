@@ -5606,6 +5606,8 @@ interface ClaudeLiveQueryContext {
   selection: CompiledClaudeModelSelection;
   readonly closed: Deferred.Deferred<void, never>;
   lastTurn: ActiveClaudeTurnContext | null;
+  // Opened under a new session id, which holds no conversation until a turn attaches.
+  readonly createdSession: boolean;
   // "early" echoes on the first frame; "acknowledged" confirms uuid acceptance, but resume turns can still precede the prompt.
   promptEchoMode: "unknown" | "acknowledged" | "early" | "result_only";
   // The CLI may fall back from the requested mode on its first init frame.
@@ -10543,6 +10545,18 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           readonly message: SDKMessage;
         }) {
           const message = wakeInput.message;
+          const live = yield* Ref.get(queryContext);
+          // A missing conversation reported before any turn attached is the opening start's own
+          // failure, not background output.
+          if (
+            live?.nativeThreadId === wakeInput.nativeThreadId &&
+            live.lastTurn === null &&
+            message.type === "result" &&
+            message.subtype !== "success" &&
+            message.errors.some((error) => error.startsWith(CLAUDE_CONVERSATION_NOT_FOUND))
+          ) {
+            return;
+          }
           const isNotification =
             message.type === "system" && message.subtype === "task_notification";
           const isPendingTaskNotification =
@@ -13742,6 +13756,25 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           );
           const closedExistingNativeThreadId = existing !== null ? existing.nativeThreadId : null;
           clearedNativeSessions.delete(nativeThreadId);
+          // A resume fallback moves the provider thread to a new native session. Output buffered on a
+          // dead earlier one can never be drained, so it must not count as background work.
+          for (const [abandoned, remembered] of yield* Ref.get(lastProviderThreadByNativeThread)) {
+            if (
+              abandoned === nativeThreadId ||
+              abandoned === closedExistingNativeThreadId ||
+              remembered.id !== turnInput.providerThread.id
+            )
+              continue;
+            // Its process is gone, and the thread row now names the new session, so nothing is emitted.
+            yield* clearWakeStateForNativeThread(abandoned);
+            yield* clearPendingBackgroundTasksForNativeThread(abandoned);
+            scheduledWakeupsByNativeThread.delete(abandoned);
+            yield* Ref.update(lastProviderThreadByNativeThread, (current) => {
+              const updated = new Map(current);
+              updated.delete(abandoned);
+              return updated;
+            });
+          }
           if (existing !== null) {
             yield* existing.query.close.pipe(Effect.ignore);
             if (existing.nativeThreadId !== nativeThreadId) {
@@ -13858,6 +13891,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             selection: compiledSelection,
             closed,
             lastTurn: null,
+            createdSession: !shouldResume,
             promptEchoMode: "unknown",
             openedPermissionMode: queryOptions.permissionMode,
             receivedInit: false,
@@ -13977,6 +14011,10 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                   current?.query === querySession ? [true, null] : [false, current],
                 );
                 if (ownsLiveQuery) {
+                  // Nothing can resume a missing conversation to drain what it buffered.
+                  if (exit._tag === "Failure" && isClaudeConversationNotFound(exit.cause)) {
+                    yield* clearWakeStateForNativeThread(context.nativeThreadId);
+                  }
                   yield* finalizeActiveTurnAfterQueryExit(
                     context,
                     exit._tag === "Failure" ? exit.cause : undefined,
@@ -14216,6 +14254,23 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               });
               if (!attached) {
                 yield* Ref.update(activeTurn, (current) => (current === context ? null : current));
+                // Before the start fails, so its retry cannot resume a session that never got a
+                // prompt. A conversation saved under the id that Onicode never recorded still needs
+                // resume, or every create would fail "already in use".
+                if (
+                  querySession.createdSession &&
+                  // A scan that fails keeps the id, as before.
+                  (yield* claudeTranscriptState(nativeThreadId).pipe(
+                    Effect.orElseSucceed(() => "conversation" as const),
+                  )) !== "conversation"
+                ) {
+                  yield* Ref.update(openedNativeThreads, (current) => {
+                    if (!current.has(nativeThreadId)) return current;
+                    const updated = new Set(current);
+                    updated.delete(nativeThreadId);
+                    return updated;
+                  });
+                }
                 return yield* new ProviderAdapter.ProviderAdapterProtocolError({
                   driver: CLAUDE_PROVIDER,
                   detail: CLAUDE_QUERY_ENDED_BEFORE_TURN_DETAIL,

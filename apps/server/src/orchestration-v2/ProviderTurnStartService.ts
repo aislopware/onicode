@@ -78,11 +78,15 @@ import {
 import * as RunExecutionService from "./RunExecutionService.ts";
 import * as RuntimePolicy from "./RuntimePolicy.ts";
 import * as TurnItemPositionStore from "./TurnItemPositionStore.ts";
+import { isBufferedProviderNotification } from "./NotificationMailbox.ts";
 import {
   isRestartNoteContinuation,
   pendingRestartCancelledBackgroundWork,
   restartCancelledBackgroundWorkNote,
 } from "./RestartBackgroundNote.ts";
+
+const LOST_WAKE_OUTPUT_NOTE =
+  "The session that held this background output can no longer be resumed, so that output is lost. The context above is the conversation so far.";
 
 export class ProviderTurnStartError extends Schema.TaggedError<ProviderTurnStartError>()(
   "ProviderTurnStartError",
@@ -1018,7 +1022,7 @@ export const layer: Layer.Layer<
       // Providers without native resume get the prompt Resume used to send.
       const promptedResume =
         manualResume && unsentResumeMessage === undefined && session.resumeTurn === undefined;
-      const userText = promptedResume
+      let userText = promptedResume
         ? MANUAL_RESUME_PROMPT
         : withMessageSenderNote(
             providerMessage,
@@ -1869,6 +1873,8 @@ export const layer: Layer.Layer<
         if (!replacementWrite.committed) return undefined;
         effectiveHandoffs = withRecoveryHandoff(handoff);
         resumeFellBack = true;
+        if (isBufferedProviderNotification(message))
+          userText = `${userText}\n\n${LOST_WAKE_OUTPUT_NOTE}`;
         recoveryTurnItem = handoffTurnItem;
         return replacement;
       });
@@ -2224,7 +2230,11 @@ export const layer: Layer.Layer<
           text: userText,
           attachments: providerMessage.attachments,
           createdBy: message.createdBy,
-          creationSource: message.creationSource,
+          // The buffered output stayed with the lost native session, so prompt the fresh one instead.
+          creationSource:
+            resumeFellBack && isBufferedProviderNotification(message)
+              ? "server"
+              : message.creationSource,
           ...(message.scheduledTaskId === undefined
             ? {}
             : { scheduledTaskId: message.scheduledTaskId }),
