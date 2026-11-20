@@ -225,24 +225,26 @@ describe("GitLabIssueTracker", () => {
 
   it.effect("loads the detail without comment reactions where GitLab has no Note.awardEmoji", () =>
     Effect.gen(function* () {
-      // GitLab before 16.1 has no `Note.awardEmoji`; glab exits 1 on any query naming it.
+      const graphqlFailures: Array<GitLabCli.GitLabCliError> = [];
       const api = yield* GitLabIssueTracker.make.pipe(
         Effect.provide(
           Layer.mock(GitLabCli.GitLabCli)({
-            execute: (input) =>
-              input.args[1] === "graphql"
-                ? Effect.fail(
-                    new GitLabCli.GitLabCliCommandError({
-                      operation: "execute",
-                      command: "glab",
-                      cwd: input.cwd,
-                      cause: new Error("glab: Field 'awardEmoji' doesn't exist on type 'Note'"),
-                    }),
-                  )
-                : Effect.succeed(TestSourceControlHost.processOutput(answer(input.args[1]!))),
+            execute: (input) => {
+              const failure = input.args[1] === "graphql" ? graphqlFailures.shift() : undefined;
+              return failure === undefined
+                ? Effect.succeed(TestSourceControlHost.processOutput(answer(input.args[1]!)))
+                : Effect.fail(failure);
+            },
           }),
         ),
       );
+      const context = { operation: "execute", command: "glab", cwd: "/w" } as const;
+      // GitLab before 16.1 has no `Note.awardEmoji`; glab exits 1 on any query naming it.
+      const missingField = new GitLabCli.GitLabCliGraphqlFieldError({
+        ...context,
+        cause: new Error("glab: Field 'awardEmoji' doesn't exist on type 'Note'"),
+      });
+      graphqlFailures.push(missingField, missingField);
       const target = { cwd: "/w", host: "gitlab.example.com", scope: "acme/web", key: "42" };
       const issue = yield* api.getIssue(target);
       expect(issue.comments.map((comment) => [comment.id, comment.reactions])).toEqual([["7", []]]);
@@ -251,6 +253,21 @@ describe("GitLabIssueTracker", () => {
       ]);
       const later = yield* api.getComments({ ...target, cursor: "2:after-100" });
       expect(later.comments.map((comment) => comment.reactions)).toEqual([[]]);
+
+      // A host that has the field but times out fails the page rather than hand out a cursor
+      // without awards, so reactions come back on the next read.
+      const timedOut = new GitLabCli.GitLabCliCommandError({
+        ...context,
+        cause: new Error("glab timed out"),
+      });
+      graphqlFailures.push(timedOut, timedOut);
+      expect((yield* api.getIssue(target).pipe(Effect.flip)).reason).toBe("failed");
+      expect(
+        (yield* api.getComments({ ...target, cursor: "2:after-100" }).pipe(Effect.flip)).reason,
+      ).toBe("failed");
+      expect((yield* api.getIssue(target)).comments[0]?.reactions).toEqual([
+        { content: "thumbs-up", count: 2, actors: ["theo"], viewerHasReacted: true },
+      ]);
     }),
   );
 

@@ -168,6 +168,20 @@ export class GitLabCliCommandError extends Schema.TaggedError<GitLabCliCommandEr
   }
 }
 
+/** A GraphQL query naming a field this GitLab's schema lacks, as an older version does. */
+export class GitLabCliGraphqlFieldError extends Schema.TaggedError<GitLabCliGraphqlFieldError>()(
+  "GitLabCliGraphqlFieldError",
+  gitLabCliExecutionErrorContext,
+) {
+  get detail(): string {
+    return "This GitLab version does not have a field the query asked for.";
+  }
+
+  override get message(): string {
+    return `GitLab CLI failed in ${this.operation}: ${this.detail}`;
+  }
+}
+
 export class GitLabMergeRequestListDecodeError extends Schema.TaggedError<GitLabMergeRequestListDecodeError>()(
   "GitLabMergeRequestListDecodeError",
   {
@@ -264,6 +278,7 @@ export const GitLabCliError = Schema.Union([
   GitLabCliRateLimitError,
   GitLabMergeRequestNotFoundError,
   GitLabCliCommandError,
+  GitLabCliGraphqlFieldError,
   GitLabMergeRequestListDecodeError,
   GitLabMergeRequestDecodeError,
   GitLabRepositoryDecodeError,
@@ -480,6 +495,8 @@ const classifyGlabFailure = (stderr: string): VcsProcessExitFailureKind | null =
   return null;
 };
 
+const GRAPHQL_MISSING_FIELD = /Field '[^'\n]+' doesn't exist on type '[^'\n]+'/;
+
 /**
  * These are the login for glab's default host (GITLAB_HOST, GITLAB_URI or GL_HOST, else
  * gitlab.com). glab before 1.126 sends them to any host a command names, so a host a caller names
@@ -523,27 +540,45 @@ export const make = Effect.gen(function* () {
     input: Parameters<GitLabCli["Service"]["execute"]>[0],
     mapError: (error: VcsError) => GitLabCliError,
   ) =>
-    process
-      .run({
-        operation: "GitLabCli.execute",
-        command: "glab",
-        args: input.args,
-        cwd: input.cwd,
-        env: {
-          // glab may otherwise prefer a different checkout remote.
-          ...(input.host === undefined ? {} : { GITLAB_HOST: input.host }),
-          ...(input.callerNamedHost !== undefined &&
-          (defaultHost === undefined || hostOf(input.callerNamedHost, apiScheme) !== defaultHost)
-            ? WITHOUT_ENVIRONMENT_TOKEN
-            : {}),
-        },
-        classifyFailure: classifyGlabFailure,
-        notFoundDetail: "Merge request not found.",
-        timeoutMs: input.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-        ...(input.stdin === undefined ? {} : { stdin: input.stdin }),
-        ...(input.maxOutputBytes === undefined ? {} : { maxOutputBytes: input.maxOutputBytes }),
-      })
-      .pipe(Effect.mapError(mapError));
+    Effect.suspend(() => {
+      // The error keeps no stderr, so a schema refusal is recognised while stderr is at hand.
+      let missingField = false;
+      return process
+        .run({
+          operation: "GitLabCli.execute",
+          command: "glab",
+          args: input.args,
+          cwd: input.cwd,
+          env: {
+            // glab may otherwise prefer a different checkout remote.
+            ...(input.host === undefined ? {} : { GITLAB_HOST: input.host }),
+            ...(input.callerNamedHost !== undefined &&
+            (defaultHost === undefined || hostOf(input.callerNamedHost, apiScheme) !== defaultHost)
+              ? WITHOUT_ENVIRONMENT_TOKEN
+              : {}),
+          },
+          classifyFailure: (stderr) => {
+            missingField = GRAPHQL_MISSING_FIELD.test(stderr);
+            return classifyGlabFailure(stderr);
+          },
+          notFoundDetail: "Merge request not found.",
+          timeoutMs: input.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+          ...(input.stdin === undefined ? {} : { stdin: input.stdin }),
+          ...(input.maxOutputBytes === undefined ? {} : { maxOutputBytes: input.maxOutputBytes }),
+        })
+        .pipe(
+          Effect.mapError((error) =>
+            missingField && error._tag === "VcsProcessExitError"
+              ? new GitLabCliGraphqlFieldError({
+                  operation: "execute",
+                  command: "glab",
+                  cwd: input.cwd,
+                  cause: error,
+                })
+              : mapError(error),
+          ),
+        );
+    });
 
   const execute: GitLabCli["Service"]["execute"] = (input) =>
     run(input, (error) =>
