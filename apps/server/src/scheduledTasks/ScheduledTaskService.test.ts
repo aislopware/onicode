@@ -924,6 +924,15 @@ it.effect("a fresh-session task launches one thread, then starts each later run 
       );
       assert.equal(refused.message, "The task's thread changed while saving. Read the task again.");
       assert.equal((yield* service.list()).tasks[0]?.threadId, null);
+      // Nor does it bring back a task deleted meanwhile.
+      const gone = yield* raced(
+        service
+          .upsert({ ...input, workspaceStrategy: worktree }, { expectedThreadId: null })
+          .pipe(Effect.flip),
+        service.delete({ id: input.id }),
+      );
+      assert.equal(gone.message, "Schedule task not found.");
+      assert.deepEqual((yield* service.list()).tasks, []);
     }).pipe(Effect.provide(layer));
   }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
 );

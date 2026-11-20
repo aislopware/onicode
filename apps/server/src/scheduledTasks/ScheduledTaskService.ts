@@ -477,6 +477,7 @@ export const layer = Layer.effect(
           END,
           workspace_strategy_json = CASE
             WHEN ${destination.keepsWorkspace ? 1 : 0} = 1
+              AND excluded.project_id = scheduled_tasks.project_id
             THEN scheduled_tasks.workspace_strategy_json
             ELSE excluded.workspace_strategy_json
           END,
@@ -1239,9 +1240,17 @@ export const layer = Layer.effect(
         existingTask.projectId === input.projectId &&
         threadId === existingTask.threadId &&
         threadMode === scheduledTaskThreadMode(existingTask);
+      // Unbound since the read, this mode would have been refused.
+      const expectedThreadId =
+        options?.expectedThreadId !== undefined
+          ? options.expectedThreadId
+          : keepsStoredThread && unboundModeDenial !== undefined
+            ? threadId
+            : undefined;
       yield* saveTask(
         keepsStoredThread ? { ...task, threadId: null } : task,
-        input.requireExisting === true,
+        // A save checked against a binding cannot bring back a task deleted meanwhile.
+        input.requireExisting === true || expectedThreadId !== undefined,
         scheduleUnchanged ? existingTask.schedule : null,
         threadId === null && input.unbindThread === true ? (existingTask?.threadId ?? null) : null,
         {
@@ -1249,13 +1258,7 @@ export const layer = Layer.effect(
           keepsWorkspace:
             existingTask !== null &&
             NodeUtil.isDeepStrictEqual(workspaceStrategy, existingTask.workspaceStrategy),
-          // Unbound since the read, this mode would have been refused.
-          expectedThreadId:
-            options?.expectedThreadId !== undefined
-              ? options.expectedThreadId
-              : keepsStoredThread && unboundModeDenial !== undefined
-                ? threadId
-                : undefined,
+          expectedThreadId,
         },
       );
       yield* notifyChanged;

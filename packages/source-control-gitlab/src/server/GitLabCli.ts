@@ -174,7 +174,7 @@ export class GitLabCliUnreachableError extends Schema.TaggedError<GitLabCliUnrea
   gitLabCliExecutionErrorContext,
 ) {
   get detail(): string {
-    return "GitLab did not answer. Try again.";
+    return "GitLab did not answer.";
   }
 
   override get message(): string {
@@ -497,7 +497,7 @@ const classifyGlabFailure = (stderr: string): VcsProcessExitFailureKind | null =
 
 // A server error from GitLab or a proxy in front of it, or no connection at all.
 const UNREACHABLE =
-  /\b5(?:0[0-4]|2[0-4])\b|dial tcp|connection (?:refused|reset)|i\/o timeout|no such host|TLS handshake timeout|network is unreachable|unexpected EOF/i;
+  /(?:^|glab: |HTTP\/?[\d.]* |status:? )5(?:0[0-4]|2[0-4])\b(?!\/)|dial tcp|connection (?:refused|reset)|i\/o timeout|no such host|TLS handshake timeout|network is unreachable|unexpected EOF/im;
 
 /**
  * These are the login for glab's default host (GITLAB_HOST, GITLAB_URI or GL_HOST, else
@@ -560,8 +560,10 @@ export const make = Effect.gen(function* () {
               : {}),
           },
           classifyFailure: (stderr) => {
-            unreachable = UNREACHABLE.test(stderr);
-            return classifyGlabFailure(stderr);
+            const failureKind = classifyGlabFailure(stderr);
+            // Not found, sign-in and rate limits keep their meaning.
+            unreachable = failureKind === null && UNREACHABLE.test(stderr);
+            return failureKind;
           },
           notFoundDetail: "Merge request not found.",
           timeoutMs: input.timeoutMs ?? DEFAULT_TIMEOUT_MS,

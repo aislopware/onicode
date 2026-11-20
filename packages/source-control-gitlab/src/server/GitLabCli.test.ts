@@ -498,6 +498,11 @@ layer("GitLabCli.layer", (it) => {
         ],
         ["glab: Field 'awardEmoji' doesn't exist on type 'Note'", "GitLabCliCommandError"],
         ["glab: 403 Forbidden", "GitLabCliCommandError"],
+        // A 5xx-looking number in a URL is not a server error, and not-found still wins.
+        [
+          "GET https://gitlab.example.com/api/v4/projects/1/merge_requests/502: 404 Not Found",
+          "GitLabCliCommandError",
+        ],
       ] as const) {
         mockedRun.mockImplementationOnce((input) => {
           input.classifyFailure?.(stderr);
