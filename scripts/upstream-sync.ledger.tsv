@@ -2916,3 +2916,4 @@ c813e7db51	take	fix(linear): scope issue numbers to the named team
 e668e6141f	take	taken as is; import conflict only (Onicode's test no longer imports userEvent)
 f0a2aa10f5	take	taken as is
 524c757f82	take	taken as is
+6cbda0cd0a	take	taken as is; hasActiveSubprocess only probes threads with running terminal sessions, so the per-sweep cost stays small
