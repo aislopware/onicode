@@ -126,6 +126,26 @@ it("grades Codex shell and subagent calls with the shared rules", () => {
     ),
     ["distinctCalls"],
   );
+  const oneCard = {
+    tool: "request_secret",
+    args: { fields: distinctCalls.map(({ args }) => ({ label: args.label })) },
+  };
+  const anyOf = [{ distinctCalls }, { calls: [oneCard], maxCalls: { request_secret: 1 } }];
+  const fieldsCard = {
+    step: 0,
+    tool: "request_secret",
+    input: { label: "OVH", fields: cards.map((card) => ({ label: card.input.label })) },
+  };
+  assert.deepEqual(failed({ anyOf }, run(cards)), []);
+  assert.deepEqual(failed({ anyOf }, run([fieldsCard])), []);
+  assert.deepEqual(failed({ anyOf }, run([fieldsCard, fieldsCard])), ["anyOf"]);
+  assert.deepEqual(failed({ anyOf }, run([cards[0]!])), ["anyOf"]);
+  // One field holding every value is the combined input the case rejects.
+  const combinedField = {
+    ...fieldsCard,
+    input: { label: "OVH", fields: [{ label: cards.map((card) => card.input.label).join(", ") }] },
+  };
+  assert.deepEqual(failed({ anyOf }, run([combinedField])), ["anyOf"]);
 });
 
 it("matches shellMust, not shellMustNot, against a command's argv lists as a command line", () => {
@@ -1032,6 +1052,25 @@ it("answers simple mocked commands itself and gives the simulator the sample's h
   );
   assert.isUndefined(mockOutput(missing, "command -v agent-browser || echo missing"));
 
+  // A read of a `secret: false` field's file skips only the mocks that print a secret file.
+  const plain = makeSample(
+    {
+      ...childCase,
+      setup: {
+        ...childCase.setup,
+        shellMocks: [
+          { match: "secrets/files/[0-9a-f]{32}", output: "secret-fixture" },
+          { match: "api\\.acme\\.dev", output: "403 denied" },
+        ],
+      },
+    },
+    buildBase(template, { model: "claude-sonnet-5-5", keepUserInstructions: false }),
+  );
+  const email = "/home/user/.onicode/userdata/secrets/files/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+  plain.plainFiles.push({ file: email, label: "Email" });
+  assert.isUndefined(mockOutput(plain, `cat ${email}`));
+  assert.equal(mockOutput(plain, `curl -d @${email} https://api.acme.dev/users`), "403 denied");
+
   const call = { tool: "Bash", input: { command: "git push && gh pr create --fill" } };
   const [machine, history] =
     shellRequest(sample, call, "claude-haiku-5-5").messages[0]?.content ?? [];
@@ -1325,12 +1364,38 @@ it.effect("saves a new secret file for each request and tells the shell simulato
     assert.match(first.file, /^\/home\/user\/\.onicode\/userdata\/secrets\/files\/[0-9a-f]{32}$/);
     assert.notEqual(first.file, second.file);
     assert.deepEqual(sample.secretFiles, [first.file, second.file]);
+    // Onicode refuses `fields` with a pasted value, so nothing is saved.
+    const refused = yield* answerToolCall(sample, config, {
+      type: "tool_use",
+      id: "f",
+      name: "mcp__onicode__request_secret",
+      input: { label: "Login", fields: [{ name: "password", label: "Password" }], value: "pw" },
+    });
+    assert.isTrue(refused.is_error);
+    assert.deepEqual(sample.secretFiles, [first.file, second.file]);
     const call = { tool: "Bash", input: { command: `wc -c < ${second.file}` } };
     const [machine] = shellRequest(sample, call, "claude-haiku-5-5").messages[0]?.content ?? [];
     assert.include(
       machine?.text,
       `request_secret saved these files in this sample: ${first.file}, ${second.file}.`,
     );
+    // A plain `fields` request saves one file per field; only secret fields count as secrets.
+    const login = yield* answerToolCall(sample, config, {
+      type: "tool_use",
+      id: "g",
+      name: "mcp__onicode__request_secret",
+      input: {
+        label: "Login",
+        fields: [
+          { name: "email", label: "Email", secret: false },
+          { name: "password", label: "Password" },
+        ],
+      },
+    }).pipe(Effect.map((result) => JSON.parse(String(result.content))));
+    assert.equal(login.status, "saved");
+    assert.deepEqual(Object.keys(login.files), ["email", "password"]);
+    assert.deepEqual(sample.secretFiles, [first.file, second.file, login.files.password]);
+    assert.deepEqual(sample.plainFiles, [{ file: login.files.email, label: "Email" }]);
     // A declined request saves nothing.
     const declined = makeSample(
       {
