@@ -1626,49 +1626,6 @@ function queuedRunTargetProviderThread(input: {
       : storedProviderThread;
 }
 
-/**
- * Sessions a queued run's start can put it on, bound the way `startNextQueuedRun` binds it. A
- * thread with no session yet, or one on another instance, takes the instance's shared session
- * where its provider hosts several threads in one.
- */
-export function queuedRunProviderSessionIds(
-  projection: Pick<
-    OrchestrationV2ThreadProjection,
-    "providerThreads" | "thread" | "runs" | "turnItems" | "messages"
-  >,
-  run: OrchestrationV2Run,
-): ReadonlyArray<ProviderSessionId> {
-  const storedProviderThread = projection.providerThreads.find(
-    (candidate) => candidate.id === run.providerThreadId,
-  );
-  const message = projection.messages.find((candidate) => candidate.id === run.userMessageId);
-  if (storedProviderThread === undefined || message === undefined) return [];
-  const { instanceId } = queuedRunModelSelection(projection, run);
-  const freshContext = run.freshContext === true;
-  const contextBoundary = freshContext ? run.ordinal : contextBoundaryOrdinal(projection);
-  const target = queuedRunTargetProviderThread({
-    projection,
-    providerInstanceId: instanceId,
-    followsCurrent: followsCurrentConversation(message),
-    freshContext,
-    contextBoundary,
-    activeProviderThread: dispatchProviderThread(
-      projection,
-      message,
-      freshContext,
-      contextBoundary,
-    ),
-    storedProviderThread,
-  });
-  const own = target?.providerSessionId ?? null;
-  return own !== null && target?.providerInstanceId === instanceId
-    ? [own]
-    : [
-        ...(own === null ? [] : [own]),
-        IdAllocator.derive.providerSession({ providerInstanceId: instanceId }),
-      ];
-}
-
 function isHandoffSourceRun(run: OrchestrationV2Run): boolean {
   return (
     run.status === "completed" ||

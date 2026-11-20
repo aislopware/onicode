@@ -2003,71 +2003,180 @@ it.effect("ProviderSessionManagerV2 resumes a thread natively again after its st
   }),
 );
 
-it.effect("ProviderSessionManagerV2 still idles out a session releaseUnlessBusy kept", () =>
-  Effect.gen(function* () {
-    const state = yield* Ref.make(emptyState);
-    yield* Effect.gen(function* () {
-      const eventSink = yield* EventSink.EventSinkV2;
-      const idAllocator = yield* IdAllocator.IdAllocatorV2;
-      const manager = yield* ProviderSessionManager.ProviderSessionManagerV2;
-      const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
-      const now = yield* DateTime.now;
-      const threadId = ThreadId.make("thread-provider-session-manager-kept-idles");
-      const providerSessionId = idAllocator.derive.providerSession({
-        providerInstanceId: modelSelection.instanceId,
-      });
-      yield* eventSink.write({
-        events: [yield* makeThreadCreatedEvent({ idAllocator, threadId, now })],
-      });
-      const runtime = yield* manager.open({
-        threadId,
-        providerSessionId,
-        modelSelection,
-        runtimePolicy,
-      });
-      const providerThread = makeProviderThread({
-        idAllocator,
-        threadId,
-        providerSessionId,
-        now,
-        nativeThreadId: `native-${threadId}`,
-      });
-      const runId = idAllocator.derive.run({ threadId, ordinal: 1 });
-      yield* runtime.startTurn({
-        appThread: (yield* projectionStore.getThreadProjection(threadId)).thread,
-        threadId,
-        runId,
-        runOrdinal: 1,
-        providerTurnOrdinal: 1,
-        attemptId: idAllocator.derive.runAttempt({ runId, attemptOrdinal: 1 }),
-        rootNodeId: idAllocator.derive.rootNode({ runId }),
-        providerThread,
-        message: {
-          createdBy: "user",
-          creationSource: "web",
-          messageId: yield* idAllocator.allocate.message({ threadId, ordinal: 1 }),
-          text: "turn",
-          attachments: [],
-        },
-        modelSelection,
-        runtimePolicy,
-      });
+it.effect.each(["completes", "is interrupted"] as const)(
+  "ProviderSessionManagerV2 closes a retired session once `after` %s, and opens a new one before that",
+  (after) =>
+    Effect.gen(function* () {
+      const state = yield* Ref.make(emptyState);
+      yield* Effect.gen(function* () {
+        const eventSink = yield* EventSink.EventSinkV2;
+        const idAllocator = yield* IdAllocator.IdAllocatorV2;
+        const manager = yield* ProviderSessionManager.ProviderSessionManagerV2;
+        const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
+        const now = yield* DateTime.now;
+        const threadId = ThreadId.make("thread-provider-session-manager-retire");
+        const providerSessionId = idAllocator.derive.providerSession({
+          providerInstanceId: modelSelection.instanceId,
+        });
+        yield* eventSink.write({
+          events: [yield* makeThreadCreatedEvent({ idAllocator, threadId, now })],
+        });
+        const session = { threadId, providerSessionId, modelSelection, runtimePolicy };
+        const runtime = yield* manager.open(session);
+        const order: Array<string> = [];
+        const subscription = yield* runtime.subscribeEvents!;
+        const subscriber = yield* subscription.events.pipe(
+          Stream.runDrain,
+          Effect.exit,
+          Effect.tap(() => Effect.sync(() => order.push("old subscribers failed"))),
+          Effect.forkScoped,
+        );
+        const settled = yield* Deferred.make<void>();
 
-      assert.isFalse(
-        yield* manager.releaseUnlessBusy({
-          providerSessionId,
-          ownProviderThreadIds: [providerThread.id],
-          throughRunOrdinal: 1,
-          keepIf: Effect.succeed(true),
-          reason: "manual_shutdown",
-        }),
-      );
-      assert.isTrue(yield* manager.isLive(providerSessionId));
-      // The stopped run 1 never reports its end.
-      yield* TestClock.adjust("2 seconds");
-      assert.isFalse(yield* manager.isLive(providerSessionId));
-    }).pipe(Effect.provide(layerTest({ state, idleTimeoutMs: 1_000 })));
-  }),
+        const retired = yield* manager.retireThread({
+          threadId,
+          ownProviderThreadIds: [],
+          after: Deferred.await(settled),
+        });
+        assert.isFalse(retired.shared);
+        assert.isFalse(yield* manager.isLive(providerSessionId));
+        // A follow-up starts on a new runtime while the stopped run still has its subscribers.
+        yield* manager.open(session);
+        order.push("reopened");
+        assert.equal((yield* Ref.get(state)).openCount, 2);
+        assert.equal((yield* Ref.get(state)).closeCount, 0);
+
+        yield* after === "completes"
+          ? Deferred.succeed(settled, undefined)
+          : Deferred.interrupt(settled);
+        yield* retired.teardown;
+        assert.isTrue(Exit.isFailure(yield* Fiber.join(subscriber)));
+        assert.deepEqual(order, ["reopened", "old subscribers failed"]);
+        assert.equal((yield* Ref.get(state)).closeCount, 1);
+        // The retired runtime's records leave the replacement under the same id alone.
+        assert.isTrue(yield* manager.isLive(providerSessionId));
+        assert.equal(
+          (yield* projectionStore.getThreadProjection(threadId)).providerSessions.at(-1)?.status,
+          "ready",
+        );
+      }).pipe(Effect.provide(layerTest({ state, idleTimeoutMs: 60_000 })));
+    }),
+);
+
+it.effect.each([
+  { then: "unloads its native thread", reattaches: false },
+  { then: "leaves the native thread it attached again loaded", reattaches: true },
+])(
+  "ProviderSessionManagerV2 retires a thread from a process a sibling works on, $then, and still idles out",
+  ({ reattaches }) =>
+    Effect.gen(function* () {
+      const state = yield* Ref.make(emptyState);
+      const releaseRecorded = yield* Deferred.make<void>();
+      yield* Effect.gen(function* () {
+        const eventSink = yield* EventSink.EventSinkV2;
+        const idAllocator = yield* IdAllocator.IdAllocatorV2;
+        const manager = yield* ProviderSessionManager.ProviderSessionManagerV2;
+        const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
+        const now = yield* DateTime.now;
+        const stopping = ThreadId.make("thread-provider-session-manager-retire-stopping");
+        const sibling = ThreadId.make("thread-provider-session-manager-retire-sibling");
+        const providerSessionId = idAllocator.derive.providerSession({
+          providerInstanceId: modelSelection.instanceId,
+        });
+        const providerThreadOf = (threadId: ThreadId) =>
+          makeProviderThread({
+            idAllocator,
+            threadId,
+            providerSessionId,
+            now,
+            nativeThreadId: `native-${threadId}`,
+          });
+        yield* eventSink.write({
+          events: [
+            yield* makeThreadCreatedEvent({ idAllocator, threadId: stopping, now }),
+            yield* makeThreadCreatedEvent({ idAllocator, threadId: sibling, now }),
+            {
+              id: yield* idAllocator.allocate.event({ threadId: stopping }),
+              type: "provider-thread.updated",
+              threadId: stopping,
+              occurredAt: now,
+              payload: providerThreadOf(stopping),
+            },
+          ],
+        });
+        const openFor = (threadId: ThreadId) =>
+          manager.open({ threadId, providerSessionId, modelSelection, runtimePolicy });
+        const runtime = yield* openFor(stopping);
+        yield* openFor(sibling);
+        const startTurn = Effect.fnUntraced(function* (threadId: ThreadId) {
+          const runId = idAllocator.derive.run({ threadId, ordinal: 1 });
+          yield* runtime.startTurn({
+            appThread: (yield* projectionStore.getThreadProjection(threadId)).thread,
+            threadId,
+            runId,
+            runOrdinal: 1,
+            providerTurnOrdinal: 1,
+            attemptId: idAllocator.derive.runAttempt({ runId, attemptOrdinal: 1 }),
+            rootNodeId: idAllocator.derive.rootNode({ runId }),
+            providerThread: providerThreadOf(threadId),
+            message: {
+              createdBy: "user",
+              creationSource: "web",
+              messageId: yield* idAllocator.allocate.message({ threadId, ordinal: 1 }),
+              text: "turn",
+              attachments: [],
+            },
+            modelSelection,
+            runtimePolicy,
+          });
+        });
+        yield* startTurn(stopping);
+        yield* startTurn(sibling);
+        const settled = yield* Deferred.make<void>();
+
+        const retired = yield* manager.retireThread({
+          threadId: stopping,
+          ownProviderThreadIds: [providerThreadOf(stopping).id],
+          after: Deferred.await(settled),
+        });
+        assert.isTrue(retired.shared);
+        assert.isTrue(yield* manager.isLive(providerSessionId));
+        if (reattaches) yield* openFor(stopping);
+        assert.deepEqual((yield* Ref.get(state)).unloadedNativeThreadIds, []);
+        yield* Deferred.succeed(settled, undefined);
+        yield* retired.teardown;
+        assert.deepEqual(
+          (yield* Ref.get(state)).unloadedNativeThreadIds,
+          reattaches ? [] : [`native-${stopping}`],
+        );
+
+        // The stopped turn never reports its end; the sibling's does.
+        const subscription = yield* runtime.subscribeEvents!;
+        const terminal = yield* subscription.events.pipe(
+          Stream.filter((event) => event.type === "turn.terminal"),
+          Stream.runHead,
+          Effect.forkScoped,
+        );
+        const adapterQueue = (yield* Ref.get(state)).eventQueues.get(String(providerSessionId));
+        yield* Queue.offer(adapterQueue!, {
+          type: "turn.terminal",
+          driver: CODEX_DRIVER,
+          providerThreadId: providerThreadOf(sibling).id,
+          providerTurnId: idAllocator.derive.providerTurn({
+            driver: CODEX_DRIVER,
+            nativeTurnId: "native-retire-sibling-turn",
+          }),
+          runOrdinal: 1,
+          status: "completed",
+          failure: null,
+          threadDisposition: "reusable",
+        });
+        yield* Fiber.join(terminal);
+        yield* TestClock.adjust("2 seconds");
+        yield* Deferred.await(releaseRecorded);
+        assert.isFalse(yield* manager.isLive(providerSessionId));
+      }).pipe(Effect.provide(layerTest({ state, idleTimeoutMs: 1_000, releaseRecorded })));
+    }),
 );
 
 it.effect.each(["closes", "waits for shutdown", "keeps a reopened session"] as const)(
@@ -2090,28 +2199,12 @@ it.effect.each(["closes", "waits for shutdown", "keeps a reopened session"] as c
           events: [yield* makeThreadCreatedEvent({ idAllocator, threadId, now })],
         });
         yield* manager.open({ threadId, providerSessionId, modelSelection, runtimePolicy });
-        const deciding = yield* Deferred.make<void>();
-        const decided = yield* Deferred.make<void>();
         const release = yield* manager
-          .releaseUnlessBusy({
-            providerSessionId,
-            ownProviderThreadIds: [],
-            throughRunOrdinal: 0,
-            keepIf: Deferred.succeed(deciding, undefined).pipe(
-              Effect.andThen(Deferred.await(decided)),
-              Effect.as(false),
-            ),
-            reason: "manual_shutdown",
-          })
+          .release({ providerSessionId, reason: "manual_shutdown" })
           .pipe(Effect.forkChild);
-        yield* Deferred.await(deciding);
-        const interrupting = yield* Fiber.interrupt(release).pipe(
-          Effect.forkChild({ startImmediately: true }),
-        );
-        yield* Deferred.succeed(decided, undefined);
-        yield* Fiber.join(interrupting);
-
         yield* Deferred.await(scopeCloseReached);
+        yield* Fiber.interrupt(release);
+
         // Its caller stopped waiting; the release still has records to write.
         const shuttingDown =
           then === "waits for shutdown"
@@ -2153,7 +2246,7 @@ it.effect.each(["closes", "waits for shutdown", "keeps a reopened session"] as c
 );
 
 it.effect.each(["startTurn", "resumeTurn"] as const)(
-  "ProviderSessionManagerV2 keeps a shared session a sibling is busy on when releasing (%s)",
+  "ProviderSessionManagerV2 keeps a shared session a sibling is busy on when retiring (%s)",
   (start) =>
     Effect.gen(function* () {
       const state = yield* Ref.make(emptyState);
@@ -2220,17 +2313,19 @@ it.effect.each(["startTurn", "resumeTurn"] as const)(
               },
             })
           : runtime.resumeTurn!({ ...siblingTurn, messageId });
-        const release = (own: ThreadId) =>
-          manager.releaseUnlessBusy({
-            providerSessionId,
+        const retire = Effect.fnUntraced(function* (own: ThreadId) {
+          const retired = yield* manager.retireThread({
+            threadId: own,
             ownProviderThreadIds: [providerThreadOf(own).id],
-            throughRunOrdinal: 1,
-            reason: "manual_shutdown",
+            after: Effect.void,
           });
+          yield* retired.teardown;
+          return retired.shared;
+        });
 
-        assert.isFalse(yield* release(stopping));
+        assert.isTrue(yield* retire(stopping));
         assert.isTrue(yield* manager.isLive(providerSessionId));
-        assert.isTrue(yield* release(sibling));
+        assert.isFalse(yield* retire(sibling));
         assert.isFalse(yield* manager.isLive(providerSessionId));
 
         // A turn that starts on a runtime released meanwhile fails instead of running on it.
@@ -2268,7 +2363,8 @@ it.effect.each(["startTurn", "resumeTurn"] as const)(
           runtimePolicy,
         });
         assert.equal((yield* startOnReleasedRuntime)._tag, "ProviderAdapterTurnStartError");
-        assert.isTrue(yield* release(sibling));
+        assert.isFalse(yield* retire(sibling));
+        assert.isFalse(yield* manager.isLive(providerSessionId));
       }).pipe(Effect.provide(layerTest({ state, idleTimeoutMs: 60 * 60_000 })));
     }),
 );

@@ -36,7 +36,6 @@ import {
   ProjectId,
   PROVIDER_SEND_TURN_MAX_FILE_BYTES,
   ProviderInstanceId,
-  type ProviderSessionId,
   resolveProjectProviderInstanceEnabled,
   RunId,
   type ScheduledTaskId,
@@ -49,9 +48,9 @@ import { AgentScope } from "@onicode/shared/AgentScope";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
+import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
-import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
@@ -1391,203 +1390,97 @@ const make = Effect.gen(function* () {
     "ThreadManagementService.forceStopThread",
   )(
     function* (input) {
-      // Under the thread lock no new run can be created between the check and the kill. The
-      // settlement below dispatches, which takes that lock itself, so it runs after release.
-      const { records, target, killed } = yield* threadDispatch.withLock(
-        input.threadId,
-        Effect.gen(function* () {
-          const records = yield* orchestrator.getThreadRecords(input.threadId, [
-            "runs",
-            "providerThreads",
-            "providerTurns",
-          ]);
-          // The run Force stop acts on: the active one, else the latest that started. Queued
-          // follow-ups never ran, so they neither count as targets nor supersede the request.
-          const target =
-            latestActiveRun(records) ??
-            records.runs
-              .filter((run) => run.status !== "queued")
-              .reduce<OrchestrationV2Run | undefined>(
-                (current, run) =>
-                  current === undefined || run.ordinal > current.ordinal ? run : current,
-                undefined,
-              );
-          if (input.runId !== undefined && input.runId !== target?.id) {
-            return yield* new OrchestrationV2ForceStopThreadError({
-              threadId: input.threadId,
-              reason: "superseded",
-            });
-          }
-          // Shared scopes are never tracked per thread, so this only kills the thread's own agent.
-          const killed = yield* agentScope.kill(input.threadId);
-          return { records, target, killed };
-        }),
-      );
-      const sessionIds = new Set(
-        records.providerThreads.flatMap((providerThread) =>
-          providerThread.appThreadId === input.threadId && providerThread.providerSessionId !== null
-            ? [providerThread.providerSessionId]
-            : [],
-        ),
-      );
-      // A run that already ended may still hold background work; settling it is a no-op otherwise.
-      const run = target;
-      if (run !== undefined) {
-        const active = isActiveRun(run);
-        const providerTurn = records.providerTurns.findLast(
-          (turn) =>
-            turn.runAttemptId === run.activeAttemptId && (!active || turn.status === "running"),
-        );
-        const commandId = CommandId.make(
-          `server:force-stop:${run.id}:${yield* Clock.currentTimeMillis}`,
-        );
-        yield* providerTurn === undefined && !active
-          ? Effect.void
-          : providerTurn === undefined
-            ? orchestrator.dispatch({
-                type: "run.interrupt",
-                commandId,
+      // Completed however this ends: sessions retired below close only after it.
+      const settled = yield* Deferred.make<void>();
+      // Uninterruptible from retiring to the settlement: interrupted between them, the teardown
+      // would fail the stuck run's subscribers and end it as failed.
+      const { killed, retired } = yield* Effect.gen(function* () {
+        // Under the thread lock no new run can be created between the check and the kill. The
+        // settlement below dispatches, which takes that lock itself, so it runs after release.
+        const { records, target, killed, retired } = yield* threadDispatch.withLock(
+          input.threadId,
+          Effect.gen(function* () {
+            const records = yield* orchestrator.getThreadRecords(input.threadId, [
+              "runs",
+              "providerThreads",
+              "providerTurns",
+            ]);
+            // The run Force stop acts on: the active one, else the latest that started. Queued
+            // follow-ups never ran, so they neither count as targets nor supersede the request.
+            const target =
+              latestActiveRun(records) ??
+              records.runs
+                .filter((run) => run.status !== "queued")
+                .reduce<OrchestrationV2Run | undefined>(
+                  (current, run) =>
+                    current === undefined || run.ordinal > current.ordinal ? run : current,
+                  undefined,
+                );
+            if (input.runId !== undefined && input.runId !== target?.id) {
+              return yield* new OrchestrationV2ForceStopThreadError({
                 threadId: input.threadId,
-                runId: run.id,
-                reason: FORCE_STOP_REASON,
-              })
-            : orchestrator.dispatch({
-                type: "thread.background-work.settle",
-                commandId,
-                threadId: input.threadId,
-                providerThreadId: providerTurn.providerThreadId,
-                providerTurnId: providerTurn.id,
-                reason: FORCE_STOP_REASON,
+                reason: "superseded",
               });
-      }
-      const ownProviderThreadIds = records.providerThreads.flatMap((providerThread) =>
-        providerThread.appThreadId === input.threadId ? [providerThread.id] : [],
-      );
-      // A follow-up the settlement promotes onto this session is not Force stop's to end: a newer
-      // active run counts, and so does an unheld queued one the run-end reaction may not have
-      // promoted yet, bound as its promotion binds it (queue order is not ordinal order). An
-      // unreadable thread counts as one.
-      const throughRunOrdinal = target?.ordinal ?? 0;
-      const endedActiveTarget = target !== undefined && isActiveRun(target);
-      const laterRunActive = Effect.fn("ThreadManagementService.forceStopLaterRunActive")(
-        function* (providerSessionId: ProviderSessionId, includeQueued = true) {
-          const { runs, providerThreads } = yield* orchestrator.getThreadRecords(input.threadId, [
-            "runs",
-            "providerThreads",
-          ]);
-          const onSession = new Set(
-            providerThreads.flatMap((providerThread) =>
-              providerThread.providerSessionId === providerSessionId ? [providerThread.id] : [],
-            ),
-          );
-          if (
-            runs.some(
-              (run) =>
-                run.ordinal > throughRunOrdinal &&
-                isActiveRun(run) &&
-                run.providerThreadId !== null &&
-                onSession.has(run.providerThreadId),
-            )
-          ) {
-            return true;
-          }
-          const queued =
-            endedActiveTarget && includeQueued
-              ? runs.filter((run) => run.status === "queued" && run.queueHeld !== true)
-              : [];
-          if (queued.length === 0) return false;
-          // Turn items only tell which fresh runs a schedule started.
-          const freshRunIds = runs.flatMap((run) => (run.freshContext === true ? [run.id] : []));
-          const messageIds = queued.map((run) => run.userMessageId);
-          const context =
-            freshRunIds.length === 0
-              ? {
-                  ...(yield* orchestrator.getThreadRecords(input.threadId, ["messages"], {
-                    messageIds,
-                  })),
-                  turnItems: [],
-                }
-              : yield* orchestrator.getThreadRecords(input.threadId, ["messages", "turnItems"], {
-                  messageIds,
-                  turnItemTypes: ["user_message"],
-                  turnItemRunIds: freshRunIds,
-                });
-          return queued.some((run) =>
-            Orchestrator.queuedRunProviderSessionIds(
-              { ...context, runs, providerThreads },
-              run,
-            ).includes(providerSessionId),
-          );
-        },
-        Effect.orElseSucceed(() => true),
-      );
-      const detach = (providerSessionId: ProviderSessionId) =>
-        sessions
-          .detach({ providerSessionId, threadId: input.threadId, detail: FORCE_STOP_REASON })
-          .pipe(
-            Effect.catchCause((cause) =>
-              Effect.logWarning("orchestration-v2.force-stop-detach-failed", {
-                threadId: input.threadId,
-                cause,
-              }),
-            ),
-            Effect.forkIn(layerScope),
-          );
-      let shared = false;
-      const sharedWith = new Set<ThreadId>();
-      const releases: Array<{
-        readonly providerSessionId: ProviderSessionId;
-        readonly fiber: Fiber.Fiber<boolean, ProviderSessionManager.ProviderSessionManagerV2Error>;
-      }> = [];
-      for (const providerSessionId of sessionIds) {
-        if (!(yield* sessions.isLive(providerSessionId))) continue;
-        // Decided just before teardown, so the reply matches what happens to the process.
-        const others = yield* sessions.otherWorkingThreads({
-          providerSessionId,
-          threadId: input.threadId,
-        });
-        for (const threadId of others) sharedWith.add(threadId);
-        if (others.length > 0) {
-          shared = true;
-          // Detaching interrupts every native thread this thread has there, a running follow-up's
-          // too; a queued one loads its thread again when it starts.
-          if (!(yield* laterRunActive(providerSessionId, false))) {
-            yield* detach(providerSessionId);
-            continue;
-          }
-        }
-        // The session manager re-checks atomically with turn starts and keeps a session a
-        // sibling began using in the meantime.
-        const fiber = yield* sessions
-          .releaseUnlessBusy({
-            providerSessionId,
-            ownProviderThreadIds,
-            throughRunOrdinal,
-            // A promoted follow-up may not have marked its turn busy yet. A sibling's background
-            // work marks nothing busy, so with siblings working the process always stays.
-            keepIf: others.length > 0 ? Effect.succeed(true) : laterRunActive(providerSessionId),
-            reason: "manual_shutdown",
-            detail: FORCE_STOP_REASON,
-          })
-          .pipe(Effect.forkIn(layerScope));
-        releases.push({ providerSessionId, fiber });
-      }
-      // Teardown waits on the provider's own exit paths; past this bound it keeps going on its own.
-      let releasing = false;
-      for (const release of releases) {
-        const released = yield* Fiber.join(release.fiber).pipe(
-          Effect.timeoutOption(FORCE_STOP_RELEASE_WAIT),
+            }
+            // Shared scopes are not tracked per thread, so this only kills the thread's own agent.
+            const killed = yield* agentScope.kill(input.threadId);
+            // Retired before the settlement can promote a follow-up, so that one starts on a new
+            // session. The teardown waits for the settlement: failing the subscribers of a run
+            // that has not ended would end it as failed and hold the queue.
+            const retired = yield* sessions.retireThread({
+              threadId: input.threadId,
+              ownProviderThreadIds: records.providerThreads.flatMap((providerThread) =>
+                providerThread.appThreadId === input.threadId ? [providerThread.id] : [],
+              ),
+              detail: FORCE_STOP_REASON,
+              after: Deferred.await(settled),
+            });
+            return { records, target, killed, retired };
+          }),
         );
-        if (Option.isNone(released)) {
-          releasing = true;
-        } else if (!released.value && !(yield* laterRunActive(release.providerSessionId))) {
-          shared = true;
-          yield* detach(release.providerSessionId);
+        // A run that already ended may still hold background work; settling is a no-op otherwise.
+        const run = target;
+        if (run !== undefined) {
+          const active = isActiveRun(run);
+          const providerTurn = records.providerTurns.findLast(
+            (turn) =>
+              turn.runAttemptId === run.activeAttemptId && (!active || turn.status === "running"),
+          );
+          const commandId = CommandId.make(
+            `server:force-stop:${run.id}:${yield* Clock.currentTimeMillis}`,
+          );
+          yield* providerTurn === undefined && !active
+            ? Effect.void
+            : providerTurn === undefined
+              ? orchestrator.dispatch({
+                  type: "run.interrupt",
+                  commandId,
+                  threadId: input.threadId,
+                  runId: run.id,
+                  reason: FORCE_STOP_REASON,
+                })
+              : orchestrator.dispatch({
+                  type: "thread.background-work.settle",
+                  commandId,
+                  threadId: input.threadId,
+                  providerThreadId: providerTurn.providerThreadId,
+                  providerTurnId: providerTurn.id,
+                  reason: FORCE_STOP_REASON,
+                });
         }
-      }
+        return { killed, retired };
+      }).pipe(Effect.uninterruptible, Effect.ensuring(Deferred.succeed(settled, undefined)));
+      // Teardown waits on the provider's own exit paths; past this bound it keeps going on its own.
+      const released = yield* retired.teardown.pipe(Effect.timeoutOption(FORCE_STOP_RELEASE_WAIT));
       return {
-        outcome: killed ? "killed" : shared ? "shared" : releasing ? "releasing" : "released",
-        sharedWithThreadIds: [...sharedWith],
+        outcome: killed
+          ? "killed"
+          : retired.shared
+            ? "shared"
+            : Option.isNone(released)
+              ? "releasing"
+              : "released",
+        sharedWithThreadIds: retired.sharedWithThreadIds,
       } as const;
     },
     (effect, input) =>
