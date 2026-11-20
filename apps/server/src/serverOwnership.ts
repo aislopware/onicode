@@ -207,6 +207,15 @@ const openOwnershipLock = (stateDir: string) =>
         : new ServerOwnershipError({ stateDir, cause }),
   });
 
+/** No lock file means no lock-aware server ever ran here; a probe must not create one. */
+export const ownershipLockExists = (statePath: string) =>
+  Effect.sync(
+    () =>
+      NodeFS.statSync(ownershipLockPath(NodePath.dirname(statePath)), {
+        throwIfNoEntry: false,
+      }) !== undefined,
+  );
+
 /** Hold only the ownership lock until the scope closes, without claiming the runtime state. */
 export const holdServerOwnershipLock = Effect.fn("holdServerOwnershipLock")(function* (
   statePath: string,
