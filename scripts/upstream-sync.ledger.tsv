@@ -2899,3 +2899,4 @@ fe9baf8cbb	take	Onicode already wakes on merge/close (7dceb76f4c); budget CONFLI
 966e422c9f	take	taken as is
 563ba1af19	take	adapted: comment names any proxy in front of the server instead of T3 Connect; clients key off the port-refused header, so 403 is harmless and helps self-hosted Cloudflare tunnels
 1c379b63ba	take	Antigravity only; taken as is
+905346e0d0	take	taken as is (desktop WSL)
