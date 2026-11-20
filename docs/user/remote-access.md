@@ -333,7 +333,9 @@ access → Preview tunnel** on the host to stop other devices from loading its
 away, and open tunnels close. Tabs keep working by streaming from the host, so
 anyone who can use the host's browser tabs can still view its `localhost` pages
 there. An administrator can also turn it off with a
-[managed policy](./managed-policy.md#other-capabilities).
+[managed policy](./managed-policy.md#other-capabilities). While the host's
+`settings.json` is malformed, the preview tunnel stays off unless a managed
+policy turns it on.
 
 Tabs run in the same headless browser [HTML renders](html-renders.md) use: an
 up-to-date Chrome, Brave or Chromium installed on a macOS host, otherwise a

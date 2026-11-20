@@ -2440,6 +2440,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
       const settings = yield* serverSettings.getSettings;
       assert.isFalse(settings.projectSettingsFolded);
       assert.isFalse(settings.continueThreadsAfterServerUpdate);
+      assert.isFalse(settings.enablePreviewTunnel);
       assert.equal(settings.usageHistoryRetentionDays, "unlimited");
       assert.deepEqual(settings.projectSettingsOverrides, {});
 
