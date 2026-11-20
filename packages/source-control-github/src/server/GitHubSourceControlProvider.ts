@@ -1101,6 +1101,7 @@ export const make = Effect.gen(function* () {
         ),
       );
     }),
+    createsDraftChangeRequests: true,
     createChangeRequest: Effect.fn("GitHubSourceControlProvider.createChangeRequest")(
       function* (input) {
         const locator = yield* resolveRepository(input);
