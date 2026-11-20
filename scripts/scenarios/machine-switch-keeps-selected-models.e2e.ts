@@ -89,6 +89,7 @@ test(
       try {
         if (paired) {
           await app.open("/settings/connections");
+          await screen.getByRole("button", "List", { exact: true }).tap();
           await moreActions.tap();
           await screen.getByRole("menuitem", "Remove from this device…").tap();
           await screen.getByRole("button", "Confirm").tap();
