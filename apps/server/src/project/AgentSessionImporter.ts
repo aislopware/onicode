@@ -7,7 +7,6 @@ import {
   AgentSessionImportProjectChangedError,
   AgentSessionImportProjectNotFoundError,
   AgentSessionScanError,
-  AgentSessionSource,
   EventId,
   MessageId,
   ProjectId,
@@ -49,20 +48,6 @@ const isProjectionStoreThreadNotFoundError = Schema.is(
 );
 
 const IMPORT_EVENT_PREFIX = "agent-session-import:v2";
-const CLAUDE_SESSION_ID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-class AgentSessionUnresumableSessionError extends Schema.TaggedError<AgentSessionUnresumableSessionError>()(
-  "AgentSessionUnresumableSessionError",
-  {
-    source: AgentSessionSource,
-    providerSessionId: Schema.String,
-  },
-) {
-  override get message(): string {
-    return `Session '${this.providerSessionId}' from '${this.source}' cannot be resumed.`;
-  }
-}
 
 class AgentSessionThreadProjectConflictError extends Schema.TaggedError<AgentSessionThreadProjectConflictError>()(
   "AgentSessionThreadProjectConflictError",
@@ -284,22 +269,17 @@ const make = Effect.gen(function* () {
         }
         if (outcome._tag === "Duplicate") {
           if (importedThreadIds.has(threadId)) {
-            yield* runtimes.recordImportedTranscript({ threadId, source }).pipe(Effect.ignore);
+            yield* runtimes
+              .recordImportedTranscript({ threadId, source })
+              .pipe(Effect.catch(() => outcome.returnSlot));
+          } else {
+            yield* outcome.returnSlot;
           }
           return;
         }
 
         const imported = yield* Effect.gen(function* () {
           const thread = outcome.thread;
-          if (
-            thread.source === "claudeAgent" &&
-            !CLAUDE_SESSION_ID_PATTERN.test(thread.providerSessionId)
-          ) {
-            return yield* new AgentSessionUnresumableSessionError({
-              source: thread.source,
-              providerSessionId: thread.providerSessionId,
-            });
-          }
           const driver = ProviderDriverKind.make(thread.source);
           // Pi resumes by session file path; its session UUID only names the thread.
           const nativeThreadId =
@@ -474,7 +454,10 @@ const make = Effect.gen(function* () {
               },
             ],
           });
-          if (committed.length === 0) return null;
+          if (committed.length === 0) {
+            yield* outcome.returnSlot;
+            return null;
+          }
           yield* persistRuntime;
           yield* runtimes.recordImportedTranscript({ threadId, source });
           return true;
@@ -492,6 +475,7 @@ const make = Effect.gen(function* () {
           importedCount += 1;
         } else if (imported === false) {
           skippedCount += 1;
+          yield* outcome.returnSlot;
         }
       }),
     );

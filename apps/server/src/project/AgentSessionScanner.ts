@@ -182,6 +182,9 @@ const decodeCodexHistoryBase = Schema.decodeUnknownOption(
 // Original rollouts end in their thread ID, rewound ones in `<thread ID>_<rollout ID>`.
 const CODEX_ROLLOUT_ID_PATTERN =
   /-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:_([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}))?\.jsonl(?:\.zst)?$/i;
+// Claude Code resumes only a UUID session id.
+const CLAUDE_SESSION_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 // Codex zstd-compresses older rollouts; their byte limits and offsets count decompressed bytes.
 const COMPRESSED_TRANSCRIPT_SUFFIX = ".jsonl.zst";
 const isCompressedTranscript = (filePath: string) =>
@@ -226,9 +229,16 @@ export type AgentSessionRecentThread =
       readonly source: AgentSessionImportSource;
       /** The root's linked worktree the session ran in, or null when it ran in the root. */
       readonly worktree: { readonly path: string; readonly branch: string | null } | null;
+      /** Gives back this transcript's import slot when the importer records nothing for it. */
+      readonly returnSlot: Effect.Effect<void>;
     }
   | { readonly _tag: "AlreadyImported"; readonly source: AgentSessionImportSource }
-  | { readonly _tag: "Duplicate"; readonly source: AgentSessionImportSource }
+  | {
+      readonly _tag: "Duplicate";
+      readonly source: AgentSessionImportSource;
+      /** Gives back this copy's import slot when the importer records nothing for it. */
+      readonly returnSlot: Effect.Effect<void>;
+    }
   | { readonly _tag: "Skipped" };
 
 export class AgentSessionScanner extends Context.Service<
@@ -1314,6 +1324,8 @@ export const make = Effect.gen(function* () {
     expected: ReturnType<typeof transcriptIdentity>,
     source: AgentSessionSource,
     prefix?: { readonly endByteOffset: number; readonly historyBytes: number },
+    /** Pays for every decoded byte, as it is read, including a read that fails. */
+    decodedBytes?: { remaining: number },
   ) {
     const compressed = isCompressedTranscript(filePath);
     const readBytes =
@@ -1396,6 +1408,11 @@ export const make = Effect.gen(function* () {
               }
 
               bytesRead += next.value.byteLength;
+              if (decodedBytes !== undefined) {
+                const remaining = decodedBytes.remaining - next.value.byteLength;
+                decodedBytes.remaining = Math.max(0, remaining);
+                if (remaining < 0) return null;
+              }
               const withinBudget = yield* Effect.try({
                 try: () => {
                   let start = 0;
@@ -2181,7 +2198,7 @@ export const make = Effect.gen(function* () {
     );
     const importedSessions = new Set<string>();
     const codexThreadNamesByHome = new Map<string, ReadonlyMap<string, string>>();
-    let bytesRemaining = MAX_IMPORT_BYTES;
+    const importBytes = { remaining: MAX_IMPORT_BYTES };
     let transcriptsRemaining = MAX_IMPORT_TRANSCRIPTS;
     const codexRolloutPaths = new Map<ProviderInstanceId, ReadonlyMap<string, string>>();
     const codexRolloutPath = (providerInstanceId: ProviderInstanceId, rolloutId: string) => {
@@ -2215,16 +2232,16 @@ export const make = Effect.gen(function* () {
         const filePath = visited.has(base.thread_id)
           ? undefined
           : codexRolloutPath(providerInstanceId, base.thread_id);
-        if (filePath === undefined || base.end_byte_offset > bytesRemaining) return null;
+        if (filePath === undefined || base.end_byte_offset > importBytes.remaining) return null;
         visited.add(base.thread_id);
         const stats = yield* statOption(filePath);
         if (Option.isNone(stats) || stats.value.type !== "File") return null;
-        bytesRemaining -= base.end_byte_offset;
         const inherited = yield* readTranscript(
           filePath,
           transcriptIdentity(filePath, stats.value),
           "codex",
           { endByteOffset: base.end_byte_offset, historyBytes },
+          importBytes,
         );
         if (inherited === null) return null;
         historyBytes = inherited.historyBytes;
@@ -2240,7 +2257,10 @@ export const make = Effect.gen(function* () {
           const completed = completedByFile.get(
             `${candidate.providerInstanceId}\0${transcript.filePath}`,
           );
-          if (completed === undefined && (transcriptsRemaining === 0 || bytesRemaining === 0)) {
+          if (
+            completed === undefined &&
+            (transcriptsRemaining === 0 || importBytes.remaining === 0)
+          ) {
             return Option.some<AgentSessionRecentThread>({ _tag: "Skipped" });
           }
           const stats = yield* statOption(transcript.filePath);
@@ -2264,18 +2284,26 @@ export const make = Effect.gen(function* () {
           if (
             transcriptsRemaining === 0 ||
             identity.size > MAX_IMPORTED_TRANSCRIPT_BYTES ||
-            identity.size > bytesRemaining
+            identity.size > importBytes.remaining
           ) {
             return Option.some<AgentSessionRecentThread>({ _tag: "Skipped" });
           }
           transcriptsRemaining -= 1;
-          bytesRemaining -= identity.size;
+          // A compressed rollout's decoded size is known only as it decodes, so its read pays.
+          const compressed = isCompressedTranscript(transcript.filePath);
+          if (!compressed) importBytes.remaining -= identity.size;
           // Nothing records an unimported transcript, so keeping its slot would starve real sessions every run.
           const unused = () => {
             transcriptsRemaining += 1;
             return Option.some<AgentSessionRecentThread>({ _tag: "Skipped" });
           };
-          const snapshot = yield* readTranscript(transcript.filePath, identity, candidate.source);
+          const snapshot = yield* readTranscript(
+            transcript.filePath,
+            identity,
+            candidate.source,
+            undefined,
+            compressed ? importBytes : undefined,
+          );
           if (snapshot === null) return unused();
 
           if (Option.isNone(snapshot.cwd)) return unused();
@@ -2283,8 +2311,11 @@ export const make = Effect.gen(function* () {
             projectCwd(isExcludedProjectPath, snapshot.cwd.value, transcript.projectRoots).trim(),
             homeDir,
           );
-          if (!path.isAbsolute(expandedCwd) || !(yield* belongsToRoot(path.resolve(expandedCwd)))) {
-            return unused();
+          if (!path.isAbsolute(expandedCwd)) return unused();
+          // Another project's session is not a failed import here, or this project never finishes.
+          if (!(yield* belongsToRoot(path.resolve(expandedCwd)))) {
+            transcriptsRemaining += 1;
+            return Option.none<AgentSessionRecentThread>();
           }
           const worktree = yield* rootWorktree(path.resolve(expandedCwd));
 
@@ -2302,9 +2333,7 @@ export const make = Effect.gen(function* () {
               providerInstanceId: candidate.providerInstanceId,
               fallbackSessionId: path.basename(
                 transcript.filePath,
-                isCompressedTranscript(transcript.filePath)
-                  ? COMPRESSED_TRANSCRIPT_SUFFIX
-                  : ".jsonl",
+                compressed ? COMPRESSED_TRANSCRIPT_SUFFIX : ".jsonl",
               ),
               lastActiveAtMs: transcript.mtimeMs,
             },
@@ -2321,6 +2350,14 @@ export const make = Effect.gen(function* () {
             return Option.none<AgentSessionRecentThread>();
           }
           if (parsedThread === null) return unused();
+          // Claude Code cannot resume this id, so no retry makes the session importable.
+          if (
+            parsedThread.source === "claudeAgent" &&
+            !CLAUDE_SESSION_ID_PATTERN.test(parsedThread.providerSessionId)
+          ) {
+            transcriptsRemaining += 1;
+            return Option.none<AgentSessionRecentThread>();
+          }
           let savedTitle: string | undefined;
           if (candidate.source === "codex") {
             const names =
@@ -2337,8 +2374,11 @@ export const make = Effect.gen(function* () {
             providerSessionId: parsedThread.providerSessionId,
           };
           const sessionKey = `${parsedThread.providerInstanceId}\0${parsedThread.providerSessionId}`;
+          const returnSlot = Effect.sync(() => {
+            transcriptsRemaining += 1;
+          });
           if (importedSessions.has(sessionKey)) {
-            return Option.some<AgentSessionRecentThread>({ _tag: "Duplicate", source });
+            return Option.some<AgentSessionRecentThread>({ _tag: "Duplicate", source, returnSlot });
           }
           importedSessions.add(sessionKey);
           return Option.some<AgentSessionRecentThread>({
@@ -2347,6 +2387,7 @@ export const make = Effect.gen(function* () {
               savedTitle === undefined ? parsedThread : { ...parsedThread, title: savedTitle },
             source,
             worktree,
+            returnSlot,
           });
         }).pipe(importReadLock.withPermits(1)),
       ),

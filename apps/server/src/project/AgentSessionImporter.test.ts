@@ -97,6 +97,7 @@ function candidate(
       ],
     },
     worktree: null as { path: string; branch: string | null } | null,
+    returnSlot: Effect.void,
   } satisfies AgentSessionScanner.AgentSessionRecentThread;
 }
 
@@ -115,12 +116,14 @@ function importId(source: ReturnType<typeof candidate>) {
 const seedOwner = Effect.fn(function* (
   source: ReturnType<typeof candidate>,
   lifecycle: "active" | "archived" | "deleted" = "active",
+  owner: { readonly threadId?: ThreadId; readonly projectId?: ProjectId } = {},
 ) {
   const sink = yield* EventSink.EventSinkV2;
   const ids = yield* IdAllocator.IdAllocatorV2;
   const { providerInstanceId, providerSessionId, provider } = source.source;
   const nativeThreadId = nativeId(source);
-  const threadId = ThreadId.make(`owner:${providerInstanceId}:${providerSessionId}`);
+  const threadId =
+    owner.threadId ?? ThreadId.make(`owner:${providerInstanceId}:${providerSessionId}`);
   const driver = ProviderDriverKind.make(provider);
   const providerThread: OrchestrationV2ProviderThread = {
     id: ids.derive.providerThread({ driver, nativeThreadId }),
@@ -143,7 +146,7 @@ const seedOwner = Effect.fn(function* (
     createdBy: "user",
     creationSource: "web",
     id: threadId,
-    projectId,
+    projectId: owner.projectId ?? projectId,
     title: "Native thread",
     providerInstanceId,
     modelSelection: { instanceId: providerInstanceId, model: source.thread.model },
@@ -521,7 +524,7 @@ it.effect("counts only new threads when re-importing cached and recovered transc
     const repeated = yield* makeImporter([
       { _tag: "AlreadyImported", source: cached.source },
       recovered,
-      { _tag: "Duplicate", source: duplicate },
+      { _tag: "Duplicate", source: duplicate, returnSlot: Effect.void },
       fresh,
       { _tag: "Skipped" },
     ]);
@@ -573,6 +576,52 @@ it.effect("does not certify new native history after a partial import retry", ()
         (message) => message.text,
       ),
     ).toEqual(["Fix it", "Fixed"]);
+  }).pipe(Effect.scoped, Effect.provide(persistence)),
+);
+
+it.effect("gives back the scan slot of every session it records nothing for", () =>
+  Effect.gen(function* () {
+    const returned: Array<string> = [];
+    const tracked = (source: ReturnType<typeof candidate>) => ({
+      ...source,
+      returnSlot: Effect.sync(() => {
+        returned.push(source.source.providerSessionId);
+      }),
+    });
+    const changed = candidate(CODEX_MODEL_SELECTION, "changed");
+    expect(yield* (yield* makeImporter([changed])).run).toEqual({
+      importedCount: 1,
+      skippedCount: 0,
+    });
+    changed.source.size = 200;
+    changed.thread.messages.push({ role: "user", text: "Continue", createdAt: timestamp });
+    const elsewhere = candidate(CODEX_MODEL_SELECTION, "elsewhere");
+    yield* seedOwner(elsewhere, "active", {
+      threadId: importId(elsewhere),
+      projectId: ProjectId.make("another-project"),
+    });
+    const modified = candidate(CODEX_MODEL_SELECTION, "modified");
+    yield* seedOwner(modified, "active", { threadId: importId(modified) });
+    const owned = candidate(CODEX_MODEL_SELECTION, "owned");
+    yield* seedOwner(owned);
+    const fresh = candidate(CODEX_MODEL_SELECTION, "fresh");
+
+    const copy = (source: ReturnType<typeof candidate>) => ({
+      _tag: "Duplicate" as const,
+      source: { ...source.source, filePath: `/tmp/${source.source.providerSessionId}-copy.jsonl` },
+      returnSlot: Effect.sync(() => {
+        returned.push(`${source.source.providerSessionId} copy`);
+      }),
+    });
+
+    const importer = yield* makeImporter([
+      ...[changed, elsewhere, modified, owned, fresh].map(tracked),
+      copy(elsewhere),
+      copy(fresh),
+    ]);
+
+    expect(yield* importer.run).toEqual({ importedCount: 1, skippedCount: 3 });
+    expect(returned).toEqual(["changed", "elsewhere", "modified", "owned", "elsewhere copy"]);
   }).pipe(Effect.scoped, Effect.provide(persistence)),
 );
 

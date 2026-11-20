@@ -18,6 +18,7 @@ import {
 } from "@onicode/contracts";
 import * as HostProcess from "@onicode/shared/HostProcess";
 import { symlinksSupported } from "@onicode/shared/testing/symlinks";
+import * as ByteSize from "effect/ByteSize";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -1273,9 +1274,9 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
         yield* fileSystem.writeFileString(path.join(managed, ".git"), `gitdir: ${managedGitDir}\n`);
 
         for (const [index, [cwd, sessionId]] of [
-          [repo, "at-root"],
-          [worktree, "in-worktree"],
-          [managed, "in-managed"],
+          [repo, "00000000-0000-4000-8000-000000000a01"],
+          [worktree, "00000000-0000-4000-8000-000000000a02"],
+          [managed, "00000000-0000-4000-8000-000000000a03"],
         ].entries()) {
           yield* writeTranscript({
             filePath: path.join(claudeHomePath, "projects", `-slug-${index}`, `${sessionId}.jsonl`),
@@ -1306,8 +1307,11 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
               : [],
           ),
         ).toEqual([
-          { sessionId: "at-root", worktree: null },
-          { sessionId: "in-worktree", worktree: { path: worktree, branch: "feature" } },
+          { sessionId: "00000000-0000-4000-8000-000000000a01", worktree: null },
+          {
+            sessionId: "00000000-0000-4000-8000-000000000a02",
+            worktree: { path: worktree, branch: "feature" },
+          },
         ]);
       }),
     );
@@ -1602,6 +1606,71 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
       }),
     );
 
+    it.effect("charges a compressed rollout its decoded bytes against the import budget", () =>
+      Effect.gen(function* () {
+        const path = yield* Path.Path;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const nowMs = Date.parse("2026-08-24T12:00:00.000Z");
+        yield* TestClock.setTime(nowMs);
+        const claudeHomePath = yield* makeTempDir("onicode-claude-home-");
+        const codexHomePath = yield* makeTempDir("onicode-codex-home-");
+        const workspace = yield* makeTempDir("onicode-workspace-");
+        const rollout = (name: string, prompt: string) => ({
+          filePath: path.join(
+            codexHomePath,
+            "sessions",
+            "2026",
+            "08",
+            "24",
+            `rollout-${name}.jsonl.zst`,
+          ),
+          contents: [
+            encodeTranscriptRecord({ type: "session_meta", payload: { id: name, cwd: workspace } }),
+            encodeTranscriptRecord({
+              type: "event_msg",
+              payload: { type: "user_message", message: prompt },
+            }),
+          ].join("\n"),
+        });
+        // About 1 MiB decoded from a few hundred bytes on disk.
+        const newer = rollout("newer", "x".repeat(1024 * 1024));
+        const older = rollout("older", "Older prompt");
+        yield* writeCompressedTranscript({ ...newer, mtimeMs: nowMs });
+        yield* writeCompressedTranscript({ ...older, mtimeMs: nowMs - 60_000 });
+        // The older rollout claims exactly what the 4 GiB budget keeps if the newer one paid its size on disk.
+        const onDisk = Number((yield* fileSystem.stat(newer.filePath)).size);
+        const resized = (target: string, info: FileSystem.File.Info) =>
+          target === older.filePath
+            ? { ...info, size: ByteSize.bytes(4 * 1024 * 1024 * 1024 - onDisk) }
+            : info;
+        const simulatedFileSystem = FileSystem.FileSystem.of({
+          ...fileSystem,
+          stat: (target) =>
+            fileSystem.stat(target).pipe(Effect.map((info) => resized(target, info))),
+          open: (target, options) =>
+            fileSystem.open(target, options).pipe(
+              Effect.map((file) => ({
+                ...file,
+                stat: file.stat.pipe(Effect.map((info) => resized(target, info))),
+                readAlloc: (size: number) => file.readAlloc(size),
+              })),
+            ),
+        });
+
+        const outcomes = yield* runRecentThreadOutcomes({
+          claudeHomePath,
+          codexHomePath,
+          workspaceRoot: workspace,
+        }).pipe(Effect.provideService(FileSystem.FileSystem, simulatedFileSystem));
+
+        expect(
+          outcomes.map((outcome) =>
+            outcome._tag === "Importable" ? outcome.thread.providerSessionId : outcome._tag,
+          ),
+        ).toEqual(["newer", "Skipped"]);
+      }),
+    );
+
     it.effect("imports recent Claude, Codex, and Pi sessions for the selected project only", () =>
       Effect.gen(function* () {
         const path = yield* Path.Path;
@@ -1613,6 +1682,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
         const workspace = yield* makeTempDir("onicode-workspace-");
         const otherWorkspace = yield* makeTempDir("onicode-workspace-other-");
 
+        const claudeRecent = "00000000-0000-4000-8000-00000000c1a0";
         const claudeTranscript = (cwd: string, sessionId: string) =>
           `${JSON.stringify({
             type: "user",
@@ -1629,7 +1699,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
 
         yield* writeTranscript({
           filePath: path.join(claudeHomePath, "projects", "-selected", "claude-recent.jsonl"),
-          contents: claudeTranscript(workspace, "claude-recent"),
+          contents: claudeTranscript(workspace, claudeRecent),
           mtimeMs: nowMs - 24 * 60 * 60 * 1000,
         });
         yield* writeTranscript({
@@ -1753,7 +1823,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
         expect(threads.map((thread) => thread.providerSessionId)).toEqual([
           "pi-recent",
           "codex-recent",
-          "claude-recent",
+          claudeRecent,
           "pi-v1",
         ]);
         expect(threads.map((thread) => thread.messages.map((message) => message.text))).toEqual([
@@ -2076,6 +2146,78 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
       }),
     );
 
+    it.effect("charges a short compressed history base only the bytes it decoded", () =>
+      Effect.gen(function* () {
+        const path = yield* Path.Path;
+        const nowMs = Date.parse("2026-08-24T12:00:00.000Z");
+        yield* TestClock.setTime(nowMs);
+        const claudeHomePath = yield* makeTempDir("onicode-claude-home-");
+        const codexHomePath = yield* makeTempDir("onicode-codex-home-");
+        const workspace = yield* makeTempDir("onicode-workspace-");
+        const threadId = "019a0000-0000-7000-8000-000000000001";
+        const rolloutId = "019a0000-0000-7000-8000-000000000002";
+        const sessionsDir = path.join(codexHomePath, "sessions", "2026", "08", "24");
+        const prompt = (message: string) =>
+          encodeTranscriptRecord({ type: "event_msg", payload: { type: "user_message", message } });
+        // The ancestor ends long before the offset the rewound rollout declares for it.
+        yield* writeCompressedTranscript({
+          filePath: path.join(sessionsDir, `rollout-2026-08-24T09-00-00-${threadId}.jsonl.zst`),
+          contents: `${encodeTranscriptRecord({
+            type: "session_meta",
+            payload: { id: threadId, cwd: workspace, history_mode: "paginated" },
+          })}\n${prompt("Short ancestor")}\n`,
+          mtimeMs: nowMs - 120_000,
+        });
+        yield* writeTranscript({
+          filePath: path.join(
+            sessionsDir,
+            `rollout-2026-08-24T11-00-00-${threadId}_${rolloutId}.jsonl`,
+          ),
+          contents: [
+            encodeTranscriptRecord({
+              type: "session_meta",
+              payload: {
+                id: threadId,
+                cwd: workspace,
+                history_mode: "paginated",
+                history_base: {
+                  thread_id: threadId,
+                  end_ordinal_exclusive: 2,
+                  end_byte_offset: 4 * 1024 * 1024 * 1024 - 4096,
+                },
+              },
+            }),
+            prompt("Ask again"),
+          ].join("\n"),
+          mtimeMs: nowMs,
+        });
+        // Larger than what is left of the 4 GiB budget if the declared offset were charged.
+        yield* writeTranscript({
+          filePath: path.join(sessionsDir, "rollout-older.jsonl"),
+          contents: [
+            encodeTranscriptRecord({
+              type: "session_meta",
+              payload: { id: "older-session", cwd: workspace },
+            }),
+            prompt("x".repeat(8192)),
+          ].join("\n"),
+          mtimeMs: nowMs - 60_000,
+        });
+
+        const outcomes = yield* runRecentThreadOutcomes({
+          claudeHomePath,
+          codexHomePath,
+          workspaceRoot: workspace,
+        });
+
+        expect(
+          outcomes.flatMap((outcome) =>
+            outcome._tag === "Importable" ? [outcome.thread.providerSessionId] : [],
+          ),
+        ).toContain("older-session");
+      }),
+    );
+
     it.effect("excludes Codex subagents from discovery and the recent-thread budget", () =>
       Effect.gen(function* () {
         const path = yield* Path.Path;
@@ -2289,6 +2431,22 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
               {
                 type: "event_msg",
                 payload: { type: "user_message", message: "Import this prompt" },
+              },
+            ],
+          })),
+          // Claude Code resumes only a UUID session id, which here comes from the file name.
+          ...Array.from({ length: 100 }, (_, index) => ({
+            filePath: path.join(claudeHomePath, "projects", "-slug", `not-a-uuid-${index}.jsonl`),
+            records: [
+              {
+                type: "user",
+                message: { role: "user", content: `Prompt ${index}` },
+                cwd: workspace,
+              },
+              {
+                type: "assistant",
+                message: { role: "assistant", content: [{ type: "text", text: "Done" }] },
+                cwd: workspace,
               },
             ],
           })),
@@ -2579,6 +2737,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
               yield* fileSystem.makeDirectory(workspace);
               yield* fileSystem.makeDirectory(otherWorkspace);
               if (replacement === "symlink alias") yield* fileSystem.symlink(workspace, alias);
+              const replacementSession = "00000000-0000-4000-8000-0000000000e5";
               const filePath =
                 source === "codex"
                   ? path.join(
@@ -2594,14 +2753,14 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
                 [
                   ...(source === "codex"
                     ? [
-                        { type: "session_meta", payload: { id: "replacement-session", cwd } },
+                        { type: "session_meta", payload: { id: replacementSession, cwd } },
                         { type: "event_msg", payload: { type: "user_message", message: text } },
                       ]
                     : [
                         {
                           type: "user",
                           cwd,
-                          sessionId: "replacement-session",
+                          sessionId: replacementSession,
                           message: { content: text },
                         },
                       ]),
@@ -2643,7 +2802,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
                     thread: { messages: [{ text: "Replacement prompt" }] },
                   });
                 } else {
-                  expect(outcomes).toEqual([{ _tag: "Skipped" }]);
+                  expect(outcomes).toEqual([]);
                 }
               }).pipe(Effect.provide(layerScannerTest({ claudeHomePath, codexHomePath })));
             }),
@@ -2741,8 +2900,9 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
         const claudeHomePath = yield* makeTempDir("onicode-long-claude-");
         const codexHomePath = yield* makeTempDir("onicode-long-codex-");
         const workspace = yield* makeTempDir("onicode-long-workspace-");
+        const latestSession = "00000000-0000-4000-8000-0000000001a7";
         const record = (fields: Record<string, unknown>) =>
-          encodeTranscriptRecord({ sessionId: "first-session", ...fields });
+          encodeTranscriptRecord({ sessionId: "00000000-0000-4000-8000-000000000f15", ...fields });
         const toolResult = record({
           type: "user",
           cwd: path.join(workspace, "later-cwd"),
@@ -2783,7 +2943,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
             }),
             record({ type: "custom-title", customTitle: "Renamed conversation" }),
             record({ type: "ai-title", aiTitle: "Newest title" }),
-            record({ type: "attachment", sessionId: "latest-session" }),
+            record({ type: "attachment", sessionId: latestSession }),
           ].join("\n"),
           mtimeMs: nowMs,
         });
@@ -2796,7 +2956,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
 
         expect(threads).toMatchObject([
           {
-            providerSessionId: "latest-session",
+            providerSessionId: latestSession,
             title: "Renamed conversation",
             model: "claude-sonnet-5-5",
             messages: [
@@ -2818,7 +2978,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
         const codexHomePath = yield* makeTempDir("onicode-long-conversation-codex-");
         const workspace = yield* makeTempDir("onicode-long-conversation-workspace-");
         const record = (fields: Record<string, unknown>) =>
-          encodeTranscriptRecord({ sessionId: "claude-long", ...fields });
+          encodeTranscriptRecord({ sessionId: "00000000-0000-4000-8000-00000000010e", ...fields });
         const longText = "x".repeat(64 * 1024);
         const middleCount = 600;
         yield* writeTranscript({
@@ -2864,14 +3024,15 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
         const claudeHomePath = yield* makeTempDir("onicode-late-prompt-claude-");
         const codexHomePath = yield* makeTempDir("onicode-late-prompt-codex-");
         const workspace = yield* makeTempDir("onicode-late-prompt-workspace-");
+        const latePrompt = "00000000-0000-4000-8000-000000001a7e";
         const contents = [
-          encodeTranscriptRecord({ type: "attachment", sessionId: "late-prompt", cwd: workspace }),
+          encodeTranscriptRecord({ type: "attachment", sessionId: latePrompt, cwd: workspace }),
           // The first prompt is still among the latest 200 messages after older replies drop out.
           ...Array.from({ length: 250 }, (_, index) => {
             const role = index < 60 || index % 2 === 1 ? "assistant" : "user";
             return encodeTranscriptRecord({
               type: role,
-              sessionId: "late-prompt",
+              sessionId: latePrompt,
               message: { role, content: `${role} ${index}` },
             });
           }),
@@ -2890,7 +3051,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
           AgentSessionScanner.parseAgentSessionTranscript({
             source: "claudeAgent",
             providerInstanceId: ProviderInstanceId.make("claudeAgent"),
-            fallbackSessionId: "late-prompt",
+            fallbackSessionId: latePrompt,
             lastActiveAtMs: nowMs - 60_000,
             contents,
           }),
