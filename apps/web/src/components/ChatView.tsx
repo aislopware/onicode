@@ -296,6 +296,7 @@ import {
 import { useEnvironmentShellHasSnapshot } from "../state/shell";
 import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
 import { DraftHeroHeadline } from "./chat/DraftHeroHeadline";
+import { oldestWaitingSteer } from "./chat/TimelineUserMessageRow.logic";
 import { ExpandedImageDialogHost, openExpandedImagePreview } from "./chat/ExpandedImageDialog";
 import {
   BranchRestoreConfirmHost,
@@ -500,6 +501,8 @@ export default function ChatView(props: ChatViewProps) {
   const interruptThreadTurn = useOrchestrationCommand(threadEnvironment.interruptTurn, {
     reportFailure: false,
   });
+  const sendSteerNow = useAtomCommand(threadEnvironment.sendSteerNow);
+  const sendSteerNowInFlightRef = useRef(false);
   const loadEarlierThreadHistory = useAtomCommand(threadEnvironment.loadEarlierHistory, {
     label: "load earlier thread history",
     reportFailure: false,
@@ -1914,6 +1917,23 @@ export default function ChatView(props: ChatViewProps) {
     }
   };
   const onInterruptStable = useStableCallback(onInterrupt);
+  const sendWaitingSteerNow = async (messageId: MessageId) => {
+    if (!activeThread || sendSteerNowInFlightRef.current) return;
+    sendSteerNowInFlightRef.current = true;
+    const result = await sendSteerNow({
+      environmentId: activeThread.environmentId,
+      input: { threadId: activeThread.id, messageId },
+    });
+    sendSteerNowInFlightRef.current = false;
+    if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+      const error = squashAtomCommandFailure(result);
+      toastManager.add({
+        type: "error",
+        title: gt("Could not send steer now"),
+        description: thrownErrorMessage(error, m) ?? gt("An error occurred."),
+      });
+    }
+  };
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- window listener for the desktop snapshot event that focuses the composer
   useEffect(
     () => (embedded ? undefined : subscribeSnapShotComposerFocus(focusComposerStable)),
@@ -2844,8 +2864,17 @@ export default function ChatView(props: ChatViewProps) {
         const next = logicalProjectEnvironments[(index + 1) % logicalProjectEnvironments.length];
         if (next) onEnvironmentChangeStable(next.environmentId);
       },
-      "thread.steerQueuedMessage": ({ event }) =>
-        routeKind !== "draft" && queuedRunsControlRef.current?.steerNext(event.repeat) === true,
+      "thread.steerQueuedMessage": ({ event }) => {
+        if (routeKind === "draft") return false;
+        if (queuedRunsControlRef.current?.steerNext(event.repeat) === true) return true;
+        const waiting =
+          canOperateThread && serverProjection
+            ? oldestWaitingSteer(serverProjection.turnItems)
+            : undefined;
+        if (!waiting) return false;
+        if (!event.repeat) void sendWaitingSteerNow(waiting.messageId);
+        return true;
+      },
       "thread.editQueuedMessage": ({ event }) =>
         routeKind !== "draft" &&
         composerRef.current?.isCaretAtStart() === true &&

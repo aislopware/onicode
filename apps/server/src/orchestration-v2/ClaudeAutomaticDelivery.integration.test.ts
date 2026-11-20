@@ -1116,6 +1116,7 @@ it.effect.each([
   "Claude cancels it twice",
   "the Claude process exits",
   "the server restarts",
+  "the user sends it now",
   "Claude cancels it and the user stops",
   "a later steer lands before the run-end reaction",
   "a later client steer lands before the run-end reaction",
@@ -1157,6 +1158,7 @@ it.effect.each([
     let activeRunReads: number | undefined;
     let failNoticeRead = false;
     const offers: SDKUserMessage[] = [];
+    const takenBack: Array<string> = [];
     const adapter = yield* ClaudeAdapterV2.makeClaudeAdapterV2({
       instanceId: modelSelection.instanceId,
       settings,
@@ -1177,6 +1179,11 @@ it.effect.each([
             setPermissionMode: () => Effect.void,
             renameSession: () => Effect.void,
             backgroundTasks: () => Effect.succeed(false),
+            cancelQueuedMessage: (uuid) =>
+              Effect.sync(() => {
+                takenBack.push(uuid);
+                return true;
+              }),
             mcpServerStatus: Effect.succeed([]),
             readMcpResource: () => Effect.die("unexpected MCP resource read"),
             callMcpTool: () => Effect.die("unexpected MCP tool call"),
@@ -1819,14 +1826,34 @@ it.effect.each([
         return;
       }
 
+      if (outcome === "the user sends it now") {
+        yield* orchestrator.dispatch({
+          type: "steer.send-now",
+          commandId: CommandId.make("send-now"),
+          threadId,
+          messageId: steerId,
+        });
+        yield* worker.drain();
+        // Claude gets the same prompt again at "now"; the steer stays unread until Claude says so.
+        assert.deepEqual(takenBack, [offers[1]?.uuid ?? ""]);
+        assert.equal(offers.length, 3);
+        assert.equal(offers[2]?.priority, "now");
+        assert.deepEqual(offers[2]?.message, offers[1]?.message);
+        const item = (yield* orchestrator.getThreadProjection(threadId)).turnItems.find(
+          (candidate) => candidate.type === "user_message" && candidate.messageId === steerId,
+        );
+        assert.equal(item?.status, "pending");
+        assert.isTrue(item?.type === "user_message" && item.sentNow);
+        return;
+      }
+
       if (outcome === "Claude cancels it and the user stops") {
         yield* cancel(offers[1]!);
-        const dropped = yield* watch(
+        const steerStarting = yield* watch(
           (event) =>
-            event.type === "turn-item.updated" &&
-            event.payload.type === "user_message" &&
-            event.payload.messageId === steerId &&
-            event.payload.status === "cancelled",
+            event.type === "run.updated" &&
+            event.payload.userMessageId === steerId &&
+            event.payload.status === "starting",
         );
         yield* orchestrator.dispatch({
           type: "run.interrupt",
@@ -1836,18 +1863,11 @@ it.effect.each([
           holdQueue: true,
         });
         yield* worker.drain();
-        yield* Fiber.join(dropped);
+        yield* Fiber.join(steerStarting);
+        yield* worker.drain();
+        // Stop sends the steer its turn never read as the next turn. The queue stays held.
         const after = yield* orchestrator.getThreadProjection(threadId);
-        assert.equal(
-          after.turnItems.find((item) => item.type === "user_message" && item.messageId === steerId)
-            ?.status,
-          "cancelled",
-        );
-        assert.isTrue(
-          after.turnItems.some(
-            (item) => item.type === "system_notice" && item.message?.includes("Message steer"),
-          ),
-        );
+        assert.isFalse(after.turnItems.some((item) => item.type === "system_notice"));
         assert.deepEqual(yield* queuedOrder, [
           [MessageId.make("before"), true],
           [MessageId.make("after"), true],

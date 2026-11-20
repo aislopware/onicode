@@ -3868,6 +3868,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     readonly backgroundTasks?: (
       toolUseId: string,
     ) => Effect.Effect<boolean, ClaudeAdapterV2.ClaudeAgentSdkQueryRunnerError>;
+    readonly cancelQueuedMessage?: ClaudeAdapterV2.ClaudeAgentSdkQuerySession["cancelQueuedMessage"];
     readonly mcp?: Pick<
       ClaudeAdapterV2.ClaudeAgentSdkQuerySession,
       "mcpServerStatus" | "readMcpResource" | "callMcpTool"
@@ -4023,6 +4024,9 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                       renameCalls.push(title);
                     }).pipe(Effect.andThen(() => options?.renameSession?.(title) ?? Effect.void)),
                   backgroundTasks: options?.backgroundTasks ?? (() => Effect.succeed(false)),
+                  ...(options?.cancelQueuedMessage === undefined
+                    ? {}
+                    : { cancelQueuedMessage: options.cancelQueuedMessage }),
                   mcpServerStatus: Effect.succeed([]),
                   readMcpResource: () => Effect.die("unexpected MCP resource read"),
                   callMcpTool: () => Effect.die("unexpected MCP tool call"),
@@ -4072,6 +4076,9 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                     renameCalls.push(title);
                   }).pipe(Effect.andThen(() => options?.renameSession?.(title) ?? Effect.void)),
                 backgroundTasks: options?.backgroundTasks ?? (() => Effect.succeed(false)),
+                ...(options?.cancelQueuedMessage === undefined
+                  ? {}
+                  : { cancelQueuedMessage: options.cancelQueuedMessage }),
                 mcpServerStatus: options?.mcp?.mcpServerStatus ?? Effect.succeed([]),
                 readMcpResource:
                   options?.mcp?.readMcpResource ??
@@ -4684,16 +4691,12 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     ),
   );
 
-  it.effect("moves a foreground subagent to the background for the user's steer only", () =>
+  it.effect("moves foreground subagents to the background for the user's steer only", () =>
     Effect.gen(function* () {
       const idAllocator = yield* IdAllocator.IdAllocatorV2;
-      const moved: string[] = [];
+      const moved = yield* Queue.unbounded<string>();
       const harness = yield* makeWakeHarnessWithOptions({
-        backgroundTasks: (toolUseId) =>
-          Effect.sync(() => {
-            moved.push(toolUseId);
-            return true;
-          }),
+        backgroundTasks: (toolUseId) => Queue.offer(moved, toolUseId).pipe(Effect.as(true)),
       });
       const input = makeClaudeTestTurnInput({
         threadId: harness.threadId,
@@ -4714,21 +4717,23 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           user_message_uuids: [harness.promptUuid(0)],
         }),
       );
-      yield* harness.offerAndWait(
-        claudeSdkFrame({
-          type: "system",
-          subtype: "task_started",
-          task_id: "steer-foreground-task",
-          tool_use_id: "steer-foreground-tool",
-          description: "Audit",
-          subagent_type: "general-purpose",
-          is_backgrounded: false,
-          task_type: "local_agent",
-          prompt: "Audit.",
-          uuid: "00000000-0000-4000-8000-000000039528",
-          session_id: WAKE_NATIVE_SESSION,
-        }),
-      );
+      const startSubagent = (name: string, uuid: string) =>
+        harness.offerAndWait(
+          claudeSdkFrame({
+            type: "system",
+            subtype: "task_started",
+            task_id: `${name}-task`,
+            tool_use_id: `${name}-tool`,
+            description: "Audit",
+            subagent_type: "general-purpose",
+            is_backgrounded: false,
+            task_type: "local_agent",
+            prompt: "Audit.",
+            uuid,
+            session_id: WAKE_NATIVE_SESSION,
+          }),
+        );
+      yield* startSubagent("steer-foreground", "00000000-0000-4000-8000-000000039528");
       const steer = (createdBy: "agent" | "user") =>
         harness.runtime.steerTurn({
           threadId: harness.threadId,
@@ -4749,9 +4754,17 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         });
       // A notice waits for the subagent the turn is running; it does not cut that work loose.
       yield* steer("agent");
-      assert.deepEqual(moved, []);
+      yield* startSubagent("steer-after-notice", "00000000-0000-4000-8000-000000039529");
+      assert.strictEqual(yield* Queue.size(moved), 0);
       yield* steer("user");
-      assert.deepEqual(moved, ["steer-foreground-tool"]);
+      assert.deepEqual(yield* Queue.takeAll(moved), [
+        "steer-foreground-tool",
+        "steer-after-notice-tool",
+      ]);
+      // Claude starts each subagent as its tool call finishes streaming, which can be after the steer.
+      yield* startSubagent("steer-late", "00000000-0000-4000-8000-000000039530");
+      assert.strictEqual(yield* Queue.take(moved), "steer-late-tool");
+      assert.strictEqual(yield* Queue.size(moved), 0);
       assert.lengthOf(harness.offeredMessages, 3);
     }).pipe(
       Effect.provide(
@@ -4763,6 +4776,207 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         ),
       ),
     ),
+  );
+
+  it.effect("moves a subagent that starts while the steer waits on an earlier move", () =>
+    Effect.gen(function* () {
+      const idAllocator = yield* IdAllocator.IdAllocatorV2;
+      const moved = yield* Queue.unbounded<string>();
+      const release = yield* Deferred.make<void>();
+      const harness = yield* makeWakeHarnessWithOptions({
+        backgroundTasks: (toolUseId) =>
+          Queue.offer(moved, toolUseId).pipe(
+            Effect.andThen(Deferred.await(release)),
+            Effect.as(true),
+          ),
+      });
+      const input = makeClaudeTestTurnInput({
+        threadId: harness.threadId,
+        providerThread: harness.providerThread,
+        now: yield* DateTime.now,
+        attemptId: RunAttemptId.make("steer-waits-on-move"),
+        text: "Audit with subagents.",
+        attachments: [],
+      });
+      yield* harness.runtime.startTurn(input);
+      const startSubagent = (name: string, uuid: string) =>
+        harness.offerAndWait(
+          claudeSdkFrame({
+            type: "system",
+            subtype: "task_started",
+            task_id: `${name}-task`,
+            tool_use_id: `${name}-tool`,
+            description: "Audit",
+            subagent_type: "general-purpose",
+            is_backgrounded: false,
+            task_type: "local_agent",
+            prompt: "Audit.",
+            uuid,
+            session_id: WAKE_NATIVE_SESSION,
+          }),
+        );
+      yield* startSubagent("waits-first", "00000000-0000-4000-8000-000000039541");
+      const steer = yield* Effect.forkScoped(
+        harness.runtime.steerTurn({
+          threadId: harness.threadId,
+          runId: input.runId,
+          providerThread: harness.providerThread,
+          providerTurnId: idAllocator.derive.providerTurn({
+            driver: ClaudeAdapterV2.CLAUDE_PROVIDER,
+            nativeTurnId: `turn:${input.attemptId}`,
+          }),
+          message: {
+            createdBy: "user",
+            creationSource: "web",
+            messageId: MessageId.make("steer-waits-on-move"),
+            text: "Change of plan.",
+            attachments: [],
+          },
+        }),
+      );
+      assert.strictEqual(yield* Queue.take(moved), "waits-first-tool");
+      // The steer is not registered yet, so nothing but its own second pass can see this one.
+      yield* startSubagent("waits-second", "00000000-0000-4000-8000-000000039542");
+      yield* Deferred.succeed(release, undefined);
+      yield* Fiber.join(steer);
+      assert.strictEqual(yield* Queue.take(moved), "waits-second-tool");
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(
+        Layer.mergeAll(
+          IdAllocator.layer,
+          McpProviderSessions.layer,
+          NodeServices.layer,
+          NodeCrypto.layer,
+        ),
+      ),
+    ),
+  );
+
+  it.effect.each(["queued", "reading"] as const)(
+    "sends a waiting steer again at once when Claude still has it %s",
+    (state) =>
+      Effect.gen(function* () {
+        const idAllocator = yield* IdAllocator.IdAllocatorV2;
+        const cancelled: Array<string> = [];
+        const frames: { offer?: (message: SDKMessage) => Effect.Effect<void> } = {};
+        const harness = yield* makeWakeHarnessWithOptions({
+          // Claude reports the cancel on the stream before it answers the request.
+          cancelQueuedMessage: (uuid) =>
+            Effect.gen(function* () {
+              cancelled.push(uuid);
+              if (state === "reading") return false;
+              yield* frames.offer!(
+                claudeSdkFrame({
+                  type: "command_lifecycle",
+                  command_uuid: uuid,
+                  state: "cancelled",
+                  uuid: "00000000-0000-4000-8000-000000039601",
+                  session_id: WAKE_NATIVE_SESSION,
+                }),
+              );
+              return true;
+            }),
+        });
+        frames.offer = harness.offerAndWait;
+        const input = makeClaudeTestTurnInput({
+          threadId: harness.threadId,
+          providerThread: harness.providerThread,
+          now: yield* DateTime.now,
+          attemptId: RunAttemptId.make(`steer-send-now-${state}`),
+          text: "Run the build.",
+          attachments: [],
+        });
+        yield* harness.runtime.startTurn(input);
+        yield* harness.offerAndWait(
+          claudeSdkFrame({
+            ...makeAssistantTextFrame({
+              uuid: "00000000-0000-4000-8000-000000039602",
+              text: "Building.",
+            }),
+            user_message_uuids: [harness.promptUuid(0)],
+          }),
+        );
+        const providerTurnId = idAllocator.derive.providerTurn({
+          driver: ClaudeAdapterV2.CLAUDE_PROVIDER,
+          nativeTurnId: `turn:${input.attemptId}`,
+        });
+        const messageId = MessageId.make("steer-send-now");
+        yield* harness.runtime.steerTurn({
+          threadId: harness.threadId,
+          runId: input.runId,
+          providerThread: harness.providerThread,
+          providerTurnId,
+          message: {
+            createdBy: "user",
+            creationSource: "web",
+            messageId,
+            text: "Stop and look at this.",
+            attachments: [],
+          },
+        });
+        const queuedUuid = harness.promptUuid(1);
+        const sendNow = harness.runtime.sendSteerNow!({
+          providerThread: harness.providerThread,
+          providerTurnId,
+          messageId,
+        });
+        yield* sendNow;
+        const steerStatuses = () =>
+          harness.events.flatMap((event) => (event.type === "steer.updated" ? [event.status] : []));
+        const expectStatuses = (expected: ReadonlyArray<string>) =>
+          harness
+            .until(() => steerStatuses().length >= expected.length)
+            .pipe(Effect.andThen(Effect.sync(() => assert.deepEqual(steerStatuses(), expected))));
+        assert.deepEqual(cancelled, [queuedUuid]);
+        // Claude's own cancel frame for the prompt taken back settles nothing.
+        yield* expectStatuses(["pending"]);
+        if (state === "reading") {
+          assert.lengthOf(harness.offeredMessages, 2);
+          return;
+        }
+        assert.lengthOf(harness.offeredMessages, 3);
+        const resent = harness.offeredMessages[2]!;
+        assert.equal(resent.priority, "now");
+        assert.deepEqual(resent.origin, { kind: "human" });
+        assert.notEqual(resent.uuid, queuedUuid);
+        assert.deepEqual(resent.message, harness.offeredMessages[1]!.message);
+        // A second press has nothing left to hurry.
+        yield* sendNow;
+        assert.lengthOf(cancelled, 1);
+        // Claude cuts the step short for it: the turn stays open and the steer is read under
+        // its new uuid.
+        yield* harness.offerAndWait(
+          claudeSdkFrame({
+            ...makeResultFrame({ uuid: "00000000-0000-4000-8000-000000039603", result: "" }),
+            subtype: "error_during_execution",
+            is_error: true,
+            terminal_reason: "aborted_streaming",
+            user_message_uuid: harness.promptUuid(0),
+          }),
+        );
+        assert.isFalse(harness.events.some((event) => event.type === "turn.terminal"));
+        yield* harness.offerAndWait(
+          claudeSdkFrame({
+            type: "command_lifecycle",
+            command_uuid: resent.uuid,
+            state: "started",
+            uuid: "00000000-0000-4000-8000-000000039604",
+            session_id: WAKE_NATIVE_SESSION,
+          }),
+        );
+        yield* expectStatuses(["pending", "completed"]);
+      }).pipe(
+        Effect.scoped,
+        Effect.provide(
+          Layer.mergeAll(
+            IdAllocator.layer,
+            McpProviderSessions.layer,
+            NodeServices.layer,
+            NodeCrypto.layer,
+          ),
+        ),
+      ),
   );
 
   it.effect.each(["release-after", "cancel-after", "release-before", "resume-pending"] as const)(
@@ -6236,7 +6450,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       echoes: true,
       sender: "user",
       endsBy: "stop",
-      title: "warns that a steer Claude never read before Stop was not delivered",
+      title: "leaves a steer Claude never read before Stop pending",
     },
     {
       readBy: "none",
@@ -6414,23 +6628,10 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       const undelivered = notices.find((message) =>
         /not (have )?(been )?delivered|never (reached|delivered)/i.test(message ?? ""),
       );
-      if (sender === "notice") {
-        // Nobody wrote the notice, so nobody is asked to resend it: it stays pending and the
-        // orchestrator queues it again.
-        assert.isUndefined(undelivered);
-        assert.deepEqual(steerStatuses(), ["pending"]);
-        return;
-      }
-      if (readBy !== "none" || !echoes) {
-        assert.isUndefined(undelivered);
-        return;
-      }
-      assert.isDefined(
-        undelivered,
-        `expected an undelivered-steer notice, got ${JSON.stringify(notices)}`,
-      );
-      assert.match(undelivered ?? "", /resend|send it again|re-send/i);
-      assert.include(undelivered, "PELICAN");
+      // Nobody is asked to resend: what Claude never read stays pending, and the orchestrator
+      // returns it to the queue.
+      assert.isUndefined(undelivered);
+      if (readBy === "none" && echoes) assert.deepEqual(steerStatuses(), ["pending"]);
     }).pipe(
       Effect.scoped,
       Effect.provide(

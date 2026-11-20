@@ -103,6 +103,7 @@ function layerExecutorFor(input: {
       ProviderTurnControlService.ProviderTurnControlServiceV2.of({
         interrupt: input.interrupt ?? (() => Effect.void),
         steer: input.steer ?? (() => Effect.void),
+        sendSteerNow: () => Effect.void,
         applyModelSelection: () => Effect.void,
         applyThreadTitle: () => Effect.void,
         interruptAndAwaitTerminal: (request) =>

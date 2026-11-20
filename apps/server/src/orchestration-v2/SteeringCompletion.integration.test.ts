@@ -1873,7 +1873,7 @@ it.effect.each(["interrupted", "failed"] as const)(
     }),
 );
 
-it.effect("holds a steer that missed a completed turn once Stop reached it", () =>
+it.effect("queues a steer that missed a completed turn Stop reached without holding it", () =>
   Effect.gen(function* () {
     const { events, started, steered, layer, startFirstTurn } = yield* nextTurnSelectionHarness(
       "steering-missed-after-stop",
@@ -1932,13 +1932,14 @@ it.effect("holds a steer that missed a completed turn once Stop reached it", () 
       yield* Fiber.join(ended);
       yield* worker.drain();
 
+      // Stop does not hold the steer its turn never read: it runs once the stopped run settles.
       const projection = yield* orchestrator.getThreadProjection(threadId);
       assert.deepEqual(steered, []);
       assert.lengthOf(started, 1);
       const message = projection.messages.find((row) => row.id === "message:steer");
       const queued = projection.runs.find((run) => run.id === message?.runId);
       assert.equal(queued?.status, "queued");
-      assert.isTrue(queued?.queueHeld);
+      assert.isNotTrue(queued?.queueHeld);
     }).pipe(Effect.provide(layer));
   }),
 );
@@ -2347,12 +2348,13 @@ it.effect.each(declinedSteerTimings)(
           [["provider-turn.steer", "succeeded"]],
         );
         assert.equal(started.length, 1);
-        if (timing === "stop-before-decline") {
-          assert.isUndefined(queued);
-          return;
-        }
         assert.equal(queued?.status, "queued");
         assert.equal(queued?.userMessageId, messageId);
+        // Stop keeps a steer the provider then declines: it runs next, not held.
+        if (timing === "stop-before-decline") {
+          assert.isNotTrue(queued?.queueHeld);
+          return;
+        }
         if (timing === "queued-model") {
           assert.deepEqual(queued?.modelSelection, steerSelection);
           assert.deepEqual(
