@@ -2873,3 +2873,4 @@ b5453de6b5	take	adopted upstream's @cursor/sdk 1.4.1 + patch over Onicode's 1.4.
 e6d521012d	take	fix(server): a PR watch tells the agent when the checks finish after a failure (#39596)
 205400e778	take	test(server): expect the checks-finished wake in PR watch runtime tests (#39646)
 84eb429049	take	fix(acp-registry): detect droid, glm, and vibe flavors for local commands (#39618)
+898c22f990	take	fix(scheduled-tasks): clearing a task's thread no longer keeps the old one (#39639); webhook param dropped (Onicode removed webhooks)
