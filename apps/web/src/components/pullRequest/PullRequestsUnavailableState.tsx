@@ -1,3 +1,5 @@
+import type { ScopedThreadRef } from "@onicode/contracts";
+import { anchorOpenHandlers, useOpenLink } from "~/browser/useOpenLink";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { T, useGT } from "gt-react";
 import { ExternalLinkIcon } from "lucide-react";
@@ -12,14 +14,17 @@ export function PullRequestsUnavailableState({
   onRetry,
   refreshing = false,
   host,
+  threadRef = null,
 }: {
   title?: string;
   error: string;
   onRetry?: () => void;
   refreshing?: boolean;
   host?: { readonly url: string; readonly openLabel: string };
+  threadRef?: ScopedThreadRef | null;
 }) {
   const gt = useGT();
+  const openLink = useOpenLink(threadRef);
   return (
     <Empty className="scrollbar-gutter-both min-h-0 justify-center-safe overflow-y-auto [&>*]:shrink-0">
       <EmptyMedia variant="icon">
@@ -47,7 +52,14 @@ export function PullRequestsUnavailableState({
             <Button
               size="sm"
               variant="outline"
-              render={<a href={host.url} target="_blank" rel="noopener noreferrer" />}
+              render={
+                <a
+                  href={host.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  {...anchorOpenHandlers(openLink, host.url)}
+                />
+              }
             >
               <ExternalLinkIcon aria-hidden className="size-3.5" />
               {host.openLabel}

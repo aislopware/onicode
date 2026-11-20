@@ -1,7 +1,8 @@
-import type { SourceControlProviderKind } from "@onicode/contracts";
+import type { ScopedThreadRef, SourceControlProviderKind } from "@onicode/contracts";
 import { T, useMessages, Var } from "gt-react";
 import { ExternalLinkIcon, TriangleAlertIcon } from "lucide-react";
 
+import { anchorOpenHandlers, useOpenLink } from "~/browser/useOpenLink";
 import { getSourceControlPresentationForKind } from "~/sourceControlPresentation";
 
 import { Button } from "../ui/button";
@@ -14,14 +15,17 @@ export function PullRequestDiffUnavailableState({
   error,
   provider,
   url,
+  threadRef,
   onRetry,
 }: {
   error: string;
   provider: SourceControlProviderKind;
   url: string;
+  threadRef: ScopedThreadRef | null;
   onRetry: () => void;
 }) {
   const m = useMessages();
+  const openLink = useOpenLink(threadRef);
   const { providerName, terminology } = getSourceControlPresentationForKind(provider);
   const { title, description } = describePullRequestDiffError(
     error,
@@ -47,7 +51,14 @@ export function PullRequestDiffUnavailableState({
         <Button
           size="sm"
           variant="outline"
-          render={<a href={url} target="_blank" rel="noopener noreferrer" />}
+          render={
+            <a
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              {...anchorOpenHandlers(openLink, url)}
+            />
+          }
         >
           <ExternalLinkIcon aria-hidden />
           <T>

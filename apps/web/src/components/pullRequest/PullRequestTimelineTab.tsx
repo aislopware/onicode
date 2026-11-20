@@ -26,7 +26,14 @@ import {
 import { msg, T, useGT, useMessages, Var } from "gt-react";
 
 import { m } from "~/i18n/messages";
-import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
+} from "react";
 
 import { cn } from "~/lib/utils";
 import { useOpenLink } from "~/browser/useOpenLink";
@@ -219,7 +226,13 @@ function AddToChatButton({
   );
 }
 
-function OpenOnHostButton({ url, onOpen }: { url: string | null; onOpen: (url: string) => void }) {
+function OpenOnHostButton({
+  url,
+  onOpen,
+}: {
+  url: string | null;
+  onOpen: (url: string, event: ReactMouseEvent) => void;
+}) {
   const gt = useGT();
   return url === null ? null : (
     <Button
@@ -227,7 +240,10 @@ function OpenOnHostButton({ url, onOpen }: { url: string | null; onOpen: (url: s
       variant="ghost-muted"
       className="-mr-1 shrink-0"
       aria-label={gt("Open activity on host")}
-      onClick={() => onOpen(url)}
+      onClick={(event) => onOpen(url, event)}
+      onAuxClick={(event) => {
+        if (event.button === 1) onOpen(url, event);
+      }}
     >
       <ExternalLinkIcon className="size-3" />
     </Button>
@@ -247,7 +263,7 @@ function ConversationCard({
   event: PullRequestTimelineEvent;
   editable: PullRequestComment | null;
   cwd: string;
-  onOpen: (url: string) => void;
+  onOpen: (url: string, event: ReactMouseEvent) => void;
   reactions: ReactionSurface;
   showPath?: boolean;
   /** A reply goes with its conversation, from the card that heads it. */
@@ -402,7 +418,7 @@ function ConversationGroup({
   events: ReadonlyArray<PullRequestTimelineEvent>;
   editable: ReadonlyMap<string, PullRequestComment>;
   cwd: string;
-  onOpen: (url: string) => void;
+  onOpen: (url: string, event: ReactMouseEvent) => void;
   reactions: ReactionSurface;
 }) {
   const [open, setOpen] = useState(
@@ -493,7 +509,7 @@ function ReviewThreadEvent({
   detail: PullRequestDetailView;
   editable: ReadonlyMap<string, PullRequestComment>;
   cwd: string;
-  onOpen: (url: string) => void;
+  onOpen: (url: string, event: ReactMouseEvent) => void;
   reactions: ReactionSurface;
 }) {
   const gt = useGT();
@@ -609,7 +625,7 @@ function ReviewThreadEvent({
       ) : null}
       {thread.hasMoreReplies ? (
         <div className="px-2">
-          <PullRequestMoreReplies {...thread} />
+          <PullRequestMoreReplies {...thread} threadRef={reactions.threadRef} />
         </div>
       ) : null}
     </div>
@@ -734,7 +750,7 @@ function ReviewVerdictEvent({
   outcome: PullRequestReviewOutcome;
   stale: boolean;
   cwd: string;
-  onOpen: (url: string) => void;
+  onOpen: (url: string, event: ReactMouseEvent) => void;
   reactions: ReactionSurface;
 }) {
   const gt = useGT();
@@ -913,8 +929,8 @@ export function PullRequestTimelineTab({
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- the hold observes DOM outside React and must end with the tab
   useEffect(() => () => stopHolding.current?.(), []);
   const openLink = useOpenLink(threadRef);
-  const openOnHost = (url: string) => {
-    void openLink(url).catch(console.error);
+  const openOnHost = (url: string, event: ReactMouseEvent) => {
+    void openLink(url, { event }).catch(console.error);
   };
 
   const rowKey = (row: PullRequestTimelineRow) => {

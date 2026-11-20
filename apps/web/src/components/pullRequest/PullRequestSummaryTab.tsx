@@ -32,7 +32,7 @@ import { m, type MessageResolver } from "~/i18n/messages";
 import { pullRequestEnvironment } from "~/state/pullRequests";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
 import { cn } from "~/lib/utils";
-import { useOpenLink } from "~/browser/useOpenLink";
+import { anchorOpenHandlers, useOpenLink } from "~/browser/useOpenLink";
 import { RelativeTime } from "~/components/RelativeTime";
 import { useClientSettings } from "~/hooks/useSettings";
 import { formatFullTimestamp } from "~/timestampFormat";
@@ -111,11 +111,14 @@ function reviewerKey(login: string): string {
 function CommentIdentity({
   comment,
   detail,
+  threadRef,
 }: {
   comment: PullRequestComment;
   detail: PullRequestDetailView;
+  threadRef: ScopedThreadRef | null;
 }) {
   const gt = useGT();
+  const openLink = useOpenLink(threadRef);
   const timestampFormat = useClientSettings((settings) => settings.timestampFormat);
   const actor = comment.author;
   const profileUrl = actor
@@ -133,6 +136,7 @@ function CommentIdentity({
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-muted-foreground hover:text-foreground hover:underline"
+                {...anchorOpenHandlers(openLink, comment.url)}
               />
             ) : (
               <span className="text-muted-foreground" />
@@ -313,7 +317,7 @@ function CollapsedComment({
       <article className="group rounded-lg border border-border [contain-intrinsic-block-size:44px] [content-visibility:auto]">
         <div className="p-3">
           <div className="flex flex-wrap items-baseline gap-2">
-            <CommentIdentity comment={comment} detail={detail} />
+            <CommentIdentity comment={comment} detail={detail} threadRef={editing.threadRef} />
             {replyCount > 0 ? (
               <span className="shrink-0 py-1 text-xs text-muted-foreground">
                 {gt("{count, plural, one {{count} reply} other {{count} replies}}", {
@@ -777,7 +781,7 @@ export function PullRequestSummaryTab({
       >
         <div className="flex flex-wrap items-baseline gap-2 rounded-t-lg bg-muted px-3 py-2.5">
           <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-2 text-xs text-muted-foreground">
-            <CommentIdentity comment={comment} detail={detail} />
+            <CommentIdentity comment={comment} detail={detail} threadRef={threadRef} />
             {outcome ? (
               <PullRequestReviewOutcomeBadge outcome={outcome} />
             ) : comment.reviewState ? (
@@ -830,7 +834,9 @@ export function PullRequestSummaryTab({
         </div>
       ) : null;
     const moreReplies =
-      item.kind === "thread" && item.hasMoreReplies ? <PullRequestMoreReplies {...item} /> : null;
+      item.kind === "thread" && item.hasMoreReplies ? (
+        <PullRequestMoreReplies {...item} threadRef={threadRef} />
+      ) : null;
     if (isPullRequestCommentFinished(comment, thread)) {
       const chat = chatSubject(comment, thread);
       return (

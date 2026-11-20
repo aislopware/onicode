@@ -2074,6 +2074,7 @@ export function PullRequestDetailPanel({
               : { error: detailQuery.error })}
             refreshing={detailQuery.isPending}
             onRetry={refreshDetail}
+            threadRef={threadRef}
             {...(unavailableHostUrl
               ? {
                   host: {
@@ -2203,6 +2204,7 @@ export function PullRequestDetailPanel({
                 >
                   <PullRequestCodeTab
                     scrollerRef={scrollerRefs.code}
+                    threadRef={threadRef}
                     onAddToAgentSelection={addSelectionToAgent}
                     environmentId={environmentId}
                     reference={reference}
