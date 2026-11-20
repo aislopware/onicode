@@ -67,7 +67,7 @@ update it with `git pull` and a rebuild.
 
 ## Desktop app
 
-The desktop app is available for macOS on Apple silicon and for Linux on x86_64.
+The desktop app is available for macOS on Apple silicon, for Linux on x86_64 and for Windows on x64.
 Download the newest release:
 
 | Platform       | Download                                                                                                          |
@@ -75,6 +75,7 @@ Download the newest release:
 | macOS          | [Onicode for Mac](https://updates.jmango360.dev/feeds/59625ece-aea5-49b4-8978-1f045f907d92/macos/latest/download) |
 | Linux AppImage | [AppImage](https://updates.jmango360.dev/feeds/59625ece-aea5-49b4-8978-1f045f907d92/linux/latest/download)        |
 | Debian, Ubuntu | [.deb](https://updates.jmango360.dev/feeds/59625ece-aea5-49b4-8978-1f045f907d92/linux/latest/download?format=deb) |
+| Windows        | [Installer](https://updates.jmango360.dev/feeds/59625ece-aea5-49b4-8978-1f045f907d92/windows/latest/download)     |
 
 On macOS, unzip the download and move **Onicode** to Applications. The app updates
 itself from then on. If you used the earlier native Onicode, it updates to this app on its own.
@@ -118,12 +119,24 @@ the AppImage and asks for your password to install each update. If your desktop
 has no password prompt, that update fails; run `sudo apt upgrade` with the
 repository added, or download the new `.deb` and install it the same way.
 
+### Windows
+
+Run the downloaded installer. It installs Onicode for your user, with no
+administrator prompt, and the app updates itself from then on. The installer is
+not code-signed, so Windows SmartScreen may say it protected your PC: choose
+**More info**, then **Run anyway**.
+
+To run agents and projects in WSL, choose a distro in **Settings → Sharing &
+access**, and install the provider CLIs inside that distro. Onicode installs its
+own server runtime there; the first launch after an app update takes longer.
+
 ### The `onicode` command
 
 The desktop app includes the `onicode` command-line tool. A new install sets it up
 on first launch; after an update, or any time, choose **Install** next to
 **onicode command** in **Settings → About**. On macOS and Linux it adds a `onicode` link
-in `~/.local/bin` (or `~/bin`). Open a new terminal afterwards. If the folder is not on your
+in `~/.local/bin` (or `~/bin`); on Windows it adds the app's command folder to
+your `PATH`. Open a new terminal afterwards. If the folder is not on your
 `PATH`, **Add to PATH** on the Welcome page or in **Settings → About** adds one
 line to your shell's startup file. **Remove** takes it off, and the app does not
 add it again. If you already have another `onicode`, it stays as it is.

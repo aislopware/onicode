@@ -505,7 +505,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     }),
   );
 
-  it.effect("bakes the better-update feed into macOS and Linux builds", () =>
+  it.effect("bakes the better-update feed into macOS, Linux and Windows builds", () =>
     Effect.gen(function* () {
       const feed = "https://updates.jmango360.dev/feeds/59625ece-aea5-49b4-8978-1f045f907d92";
       const publish = (platform: "mac" | "linux" | "win", mockUpdates = false) =>
@@ -519,7 +519,9 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       assert.deepStrictEqual(yield* publish("linux"), [
         { provider: "generic", url: `${feed}/linux` },
       ]);
-      assert.isNull(yield* publish("win"));
+      assert.deepStrictEqual(yield* publish("win"), [
+        { provider: "generic", url: `${feed}/windows` },
+      ]);
       assert.deepStrictEqual(yield* publish("mac", true), [
         { provider: "generic", url: "http://localhost:3012" },
       ]);
@@ -1334,6 +1336,24 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         assert.instanceOf(error, WindowsPackagedPayloadValidationError);
         assert.equal(error.reason, "file-limit-exceeded");
         assert.isAbove(error.fileCount ?? 0, 2);
+
+        // Bytecode a native build prepares is a fixed set, not dependency sprawl.
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cacheDir = path.join(fixture.packagedAppDir, "resources/server-compile-cache");
+        yield* fs.makeDirectory(cacheDir, { recursive: true });
+        for (const name of ["a.bin", "b.bin", "c.bin"]) {
+          yield* fs.writeFileString(path.join(cacheDir, name), "bytecode");
+        }
+        const withCache = yield* validateWindowsPackagedPayload({
+          stageDistDir: fixture.stageDistDir,
+          appExecutableName: fixture.appExecutableName,
+          targetArch: "x64",
+          appVersion: WINDOWS_PAYLOAD_FIXTURE_VERSION,
+          fileLimit: 2,
+        }).pipe(Effect.flip);
+        assert.instanceOf(withCache, WindowsPackagedPayloadValidationError);
+        assert.equal(withCache.fileCount, error.fileCount);
       }),
     ),
   );

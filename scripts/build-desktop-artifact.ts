@@ -746,12 +746,16 @@ export class WindowsPackagedPayloadValidationError extends Schema.TaggedError<Wi
     missingFiles: Schema.optionalKey(Schema.Array(Schema.String)),
     fileCount: Schema.optionalKey(Schema.Int),
     fileLimit: Schema.optionalKey(Schema.Int),
+    largestFolders: Schema.optionalKey(Schema.Array(Schema.String)),
     cause: Schema.optionalKey(Schema.Defect()),
   },
 ) {
   override get message(): string {
     if (this.reason === "file-limit-exceeded") {
-      return `Windows packaged payload contains ${String(this.fileCount)} files; expected at most ${String(this.fileLimit)}.`;
+      const folders = this.largestFolders?.length
+        ? ` Most files: ${this.largestFolders.join(", ")}.`
+        : "";
+      return `Windows packaged payload contains ${String(this.fileCount)} files; expected at most ${String(this.fileLimit)}.${folders}`;
     }
     if (this.reason === "unpacked-native-missing") {
       return `Windows server sidecar is missing ${String(this.missingFiles?.length ?? 0)} unpacked native files.`;
@@ -2426,14 +2430,19 @@ export function resolveDesktopPublishConfig(input: {
   if (input.mockUpdates) {
     return [{ provider: "generic", url: resolveMockUpdateServerUrl(input.mockUpdateServerPort) }];
   }
-  if (input.platform === "win") return null;
   return [
     {
       provider: "generic",
-      url: `${BETTER_UPDATE_FEED_BASE_URL}/${input.platform === "mac" ? "macos" : "linux"}`,
+      url: `${BETTER_UPDATE_FEED_BASE_URL}/${BETTER_UPDATE_FEED_PLATFORM[input.platform]}`,
     },
   ];
 }
+
+const BETTER_UPDATE_FEED_PLATFORM = {
+  mac: "macos",
+  linux: "linux",
+  win: "windows",
+} as const satisfies Record<typeof BuildPlatform.Type, string>;
 
 const DESKTOP_BUILD_ICON_ASSETS: DesktopBuildIconAssets = {
   macIconComposerProject: BRAND_ASSET_PATHS.productionIconComposerProject,
@@ -2881,11 +2890,11 @@ function collectUnpackedAsarFiles(
   return output;
 }
 
-const countPayloadFiles = Effect.fn("desktopArtifact.countPayloadFiles")(function* (root: string) {
+const listPayloadFiles = Effect.fn("desktopArtifact.listPayloadFiles")(function* (root: string) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const pendingDirectories = [root];
-  let count = 0;
+  const files: Array<string> = [];
 
   while (pendingDirectories.length > 0) {
     const directory = pendingDirectories.pop();
@@ -2897,13 +2906,26 @@ const countPayloadFiles = Effect.fn("desktopArtifact.countPayloadFiles")(functio
       if (stat.type === "Directory") {
         pendingDirectories.push(entryPath);
       } else if (stat.type === "File") {
-        count += 1;
+        files.push(path.relative(root, entryPath));
       }
     }
   }
 
-  return count;
+  return files;
 });
+
+// The folders, three levels deep, that hold the most files, so a payload over the limit says where.
+function largestPayloadFolders(files: ReadonlyArray<string>, limit = 8): Array<string> {
+  const counts = new Map<string, number>();
+  for (const file of files) {
+    const folder = file.split(/[\\/]/).slice(0, -1).slice(0, 3).join("/") || ".";
+    counts.set(folder, (counts.get(folder) ?? 0) + 1);
+  }
+  return [...counts]
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, limit)
+    .map(([folder, count]) => `${folder} (${String(count)})`);
+}
 
 export const verifyWindowsPrimaryFffNativeLoad = Effect.fn(
   "desktopArtifact.verifyWindowsPrimaryFffNativeLoad",
@@ -3211,13 +3233,19 @@ export const validateWindowsPackagedPayload = Effect.fn(
     }
   }
 
-  const fileCount = yield* countPayloadFiles(packagedAppDir);
-  if (fileCount > fileLimit) {
+  // A native Windows build also prepares server bytecode: a fixed set of files that speeds the
+  // first backend start, not the dependency sprawl the limit guards against.
+  const compileCache = path.join("resources", "server-compile-cache") + path.sep;
+  const files = (yield* listPayloadFiles(packagedAppDir)).filter(
+    (file) => !file.startsWith(compileCache),
+  );
+  if (files.length > fileLimit) {
     return yield* new WindowsPackagedPayloadValidationError({
       reason: "file-limit-exceeded",
       packagedAppDir,
-      fileCount,
+      fileCount: files.length,
       fileLimit,
+      largestFolders: largestPayloadFolders(files),
     });
   }
 
@@ -3229,9 +3257,9 @@ export const validateWindowsPackagedPayload = Effect.fn(
   });
 
   yield* Effect.log(
-    `[desktop-artifact] Validated Windows payload (${String(fileCount)} files, ${String(unpackedFiles.length)} sidecar natives).`,
+    `[desktop-artifact] Validated Windows payload (${String(files.length)} files, ${String(unpackedFiles.length)} sidecar natives).`,
   );
-  return { packagedAppDir, fileCount, unpackedFiles } as const;
+  return { packagedAppDir, fileCount: files.length, unpackedFiles } as const;
 });
 
 export class MacPackagedAppMissingError extends Schema.TaggedError<MacPackagedAppMissingError>()(

@@ -1,5 +1,5 @@
 {
-  "version": "4.9.0",
+  "version": "4.9.1",
   "instructions": "Stealth browser driver. act interacts (navigate/click/type/fill/batch/eval), see reads (extract=\"auto\" first on list/search/product pages; mode=\"content\" for articles; format=\"json\" for pure JSON), state manages cookies/tabs/sessions, run executes step batches with branching and inline reads, vision screenshots (path= saves the PNG, size= sets the viewport, full= takes the whole page). WORK LOOP: navigate -> act by text (no see needed) or by ref (refs are page-scoped: refresh them after a navigation or tab switch; within a page they self-heal) -> every action returns an observation, so a see after acting is usually unnecessary. act eval answers one line, `result: <compact JSON>` (a returned string containing JSON is flagged in a note). Results disclose what the driver cannot verify: page_total/partial (lazy or paginated results), sponsored items, unwrapped redirect links, duplicates removed, and a URL range filter whose page prices fall outside it. Oversized payloads go to an artifact file, read back with see artifact=\"...\" - nothing is truncated silently. Errors carry the current page state; never blind-retry a submit. HOST: {{HOST_NOTE}}",
   "tools": [
     {

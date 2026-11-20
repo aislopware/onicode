@@ -1,0 +1,129 @@
+name: Desktop Windows
+
+# Builds the Windows x64 NSIS installer, unsigned, and hands it on as the `desktop-windows-x64`
+# artifact; release.yml uploads it to better-update. better-update builds macOS and Linux itself,
+# but its Windows build has never run on a Windows host, and the installer's native modules need
+# one, so Windows builds here.
+#
+# The installer embeds the Linux x64 CLI archive as its WSL runtime: the WSL backend runs it inside
+# the distro. Before anything leaves, the Windows job installs the installer silently, checks
+# `--version`, and opens the installed app on a seeded thread.
+on:
+  workflow_call:
+    secrets:
+      ONICODE_PUSH_GATEWAY_URL:
+        required: false
+
+permissions:
+  contents: read
+
+env:
+  ONICODE_RELEASE_CHANNEL: stable
+  # better-update's production environment hands the macOS and Linux builds the same gateway.
+  ONICODE_PUSH_GATEWAY_URLS: ${{ secrets.ONICODE_PUSH_GATEWAY_URL }}
+
+jobs:
+  wsl_runtime:
+    name: WSL runtime
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+        with:
+          toolchain: stable
+      - uses: ./.github/actions/setup-ci-deps
+        with:
+          install-args: --filter=!@onicode/mobile
+
+      - name: Build the server and its web client
+        run: |
+          vp run --filter onicode build
+          node scripts/apply-web-brand-assets.ts production apps/server/dist/client
+
+      - name: Build the CLI executable
+        run: node apps/server/scripts/cli.ts build-exe --verbose
+
+      - name: Build the resource monitor
+        run: |
+          cargo build --locked --release --manifest-path native/resource-monitor/Cargo.toml
+          dir="$RUNNER_TEMP/resource-monitor/linux-x64"
+          mkdir -p "$dir"
+          cp native/resource-monitor/target/release/oni-resource-monitor "$dir/"
+
+      # The Linux archive ships libatomic.so.1 and points the executable's RUNPATH at it.
+      - name: Build the CLI archive
+        run: |
+          command -v patchelf || { sudo apt-get update && sudo apt-get install -y patchelf; }
+          node scripts/build-cli-archive.ts --platform linux --arch x64 \
+            --version "$(node -p 'require("./apps/desktop/package.json").version')" \
+            --resource-monitor-dir "$RUNNER_TEMP/resource-monitor" --output-dir release-cli
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: wsl-runtime-x64
+          path: release-cli/*-linux-x64.tar.gz
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+
+  build:
+    name: Build Windows x64
+    needs: wsl_runtime
+    runs-on: windows-2025
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
+        with:
+          toolchain: stable
+          targets: x86_64-pc-windows-msvc
+      - uses: ./.github/actions/setup-ci-deps
+        with:
+          install-args: --filter=!@onicode/mobile
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: wsl-runtime-x64
+          path: wsl-runtime
+
+      # On a Windows host the build also checks the packaged natives load (scripts/build-desktop-artifact.ts).
+      - name: Build the installer
+        shell: bash
+        run: |
+          vp run dist:desktop:artifact --platform win --target nsis --arch x64 --verbose \
+            --wsl-runtime "$(ls "$GITHUB_WORKSPACE"/wsl-runtime/*-linux-x64.tar.gz)"
+
+      - name: Install it and check the version
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $version = node -p 'require("./apps/desktop/package.json").version'
+          $installer = Get-Item "release/Onicode-$version-x64.exe"
+          Start-Process -FilePath $installer.FullName -ArgumentList "/S" -Wait
+          $app = Get-ChildItem "$env:LOCALAPPDATA\Programs" -Recurse -Filter Onicode.exe | Select-Object -First 1
+          if (-not $app) { throw "Onicode.exe is not under $env:LOCALAPPDATA\Programs after a silent install" }
+          $reported = (& $app.FullName --version | Out-String).Trim()
+          if ($reported -ne "onicode $version") { throw "--version printed '$reported', want 'onicode $version'" }
+          "ONICODE_INSTALLED_EXE=$($app.FullName)" >> $env:GITHUB_ENV
+          Write-Output "Installed $($app.FullName): $reported"
+
+      - name: Open the installed app
+        shell: bash
+        run: node apps/desktop/scripts/smoke-packaged-app.mjs --executable "$ONICODE_INSTALLED_EXE" --artifacts-dir "$RUNNER_TEMP/desktop-launch-check"
+
+      - name: Keep the launch check output
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: desktop-launch-check-windows-x64
+          path: ${{ runner.temp }}/desktop-launch-check
+          if-no-files-found: ignore
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: desktop-windows-x64
+          path: release/Onicode-*-x64.exe
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0

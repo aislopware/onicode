@@ -1,6 +1,7 @@
 name: Release
 
-# Builds the desktop app at apps/desktop's version through better-update. With notes, it then
+# Builds the desktop app at apps/desktop's version through better-update (Windows builds in
+# desktop-windows.yml and is uploaded to better-update). With notes, it then
 # releases the builds to the `latest` feeds and publishes the GitHub release v<version> with the
 # notes. The feeds are the only place the app is downloaded from.
 # See docs/operations/release.md; scripts/release/publish.sh is the same release from a Mac.
@@ -36,7 +37,7 @@ on:
         type: boolean
         default: false
       desktop:
-        description: Build macOS and Linux. Releasing needs them.
+        description: Build macOS, Linux and Windows. Releasing needs them.
         type: boolean
         default: true
       mac_runner:
@@ -116,6 +117,34 @@ jobs:
         id: build
         run: |
           ids="$(scripts/release/build.sh linux "$ONICODE_RELEASE_MESSAGE")"
+          echo "builds=${ids//$'\n'/ }" >> "$GITHUB_OUTPUT"
+
+  windows_build:
+    name: Windows
+    if: github.ref == 'refs/heads/main' && inputs.desktop
+    uses: ./.github/workflows/desktop-windows.yml
+    secrets:
+      ONICODE_PUSH_GATEWAY_URL: ${{ secrets.ONICODE_PUSH_GATEWAY_URL }}
+
+  windows:
+    name: Upload Windows
+    needs: windows_build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    outputs:
+      builds: ${{ steps.upload.outputs.builds }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-release
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: desktop-windows-x64
+          path: ${{ runner.temp }}/windows
+
+      - name: Upload
+        id: upload
+        run: |
+          ids="$(scripts/release/build.sh windows "$ONICODE_RELEASE_MESSAGE" "$RUNNER_TEMP"/windows/Onicode-*-x64.exe)"
           echo "builds=${ids//$'\n'/ }" >> "$GITHUB_OUTPUT"
 
   mobile:
@@ -366,7 +395,7 @@ jobs:
 
   release:
     name: Release to latest
-    needs: [tag, macos, linux]
+    needs: [tag, macos, linux, windows]
     if: github.ref == 'refs/heads/main' && inputs.notes != ''
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -381,11 +410,14 @@ jobs:
           NOTES: ${{ inputs.notes }}
           MAC_BUILD: ${{ needs.macos.outputs.build }}
           LINUX_BUILDS: ${{ needs.linux.outputs.builds }}
+          WINDOWS_BUILDS: ${{ needs.windows.outputs.builds }}
         run: |
           printf '%s\n' "$NOTES" > "$RUNNER_TEMP/notes.md"
           better-update macos release create "$MAC_BUILD" --channel latest --notes-file "$RUNNER_TEMP/notes.md"
           read -ra linux_builds <<< "$LINUX_BUILDS"
           better-update linux release create "${linux_builds[@]}" --channel latest --notes-file "$RUNNER_TEMP/notes.md"
+          read -ra windows_builds <<< "$WINDOWS_BUILDS"
+          better-update windows release create "${windows_builds[@]}" --channel latest --notes-file "$RUNNER_TEMP/notes.md"
 
       - name: Publish the GitHub release
         env:

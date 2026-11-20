@@ -52,4 +52,4 @@ better-update linux release create "${linux_builds[@]}" --channel latest --notes
 
 # 5. GitHub release.
 scripts/release/github-release.sh "$version" "$notes"
-echo "publish.sh: Onicode $version is on the latest macOS and Linux feeds"
+echo "publish.sh: Onicode $version is on the latest macOS and Linux feeds. Windows needs a Windows host: the Release workflow ships it."
