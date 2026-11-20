@@ -22,9 +22,10 @@ export function SecretTextInput({ onMount, secret = true, ...props }: SecretText
         secureTextEntry={secret && !revealed}
         autoCorrect={false}
         autoCapitalize="none"
-        // Puts the Passwords key above the keyboard, which opens the person's password manager.
-        autoComplete="current-password"
-        textContentType="password"
+        // Puts the Passwords key above the keyboard, which opens the person's password manager. A
+        // field marked not secret, such as an email, is a login's username, never its password.
+        autoComplete={secret ? "current-password" : "username"}
+        textContentType={secret ? "password" : "username"}
         spellCheck={false}
         returnKeyType={returnKeyType}
         submitBehavior={returnKeyType === "next" ? "submit" : "blurAndSubmit"}
