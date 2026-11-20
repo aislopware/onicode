@@ -5226,6 +5226,16 @@ function claudeRewrittenVersion(
     : undefined;
 }
 
+// CLIProxyAPI nests upstream errors in its message; only its own cooldown counts.
+const CLIPROXY_COOLDOWN =
+  /^API Error: (?:Request rejected \(429\)|Server is temporarily limiting requests \(not your usage limit\)) · All credentials for model /;
+
+/** A gateway's own rate limit, whose text carries the reset its rate_limit_event lacks. */
+const isGatewayCooldown = (message: SDKResultMessage) =>
+  message.subtype === "success" &&
+  (CLIPROXY_COOLDOWN.test(message.result) ||
+    /^API Error: 503 \[[^\]\r\n]+\] \[429\]: /.test(message.result));
+
 function providerFailureFromResult(
   message: SDKResultMessage,
   receivedAt: DateTime.Utc,
@@ -5285,10 +5295,7 @@ function providerFailureFromResult(
   const resetAt =
     apiErrorStatus === 429 && message.result.startsWith("API Error:")
       ? gatewayCooldownResetAt(
-          // CLIProxyAPI nests upstream errors in its message; only its own cooldown counts.
-          /^API Error: (?:Request rejected \(429\)|Server is temporarily limiting requests \(not your usage limit\)) · All credentials for model /.test(
-            message.result,
-          )
+          CLIPROXY_COOLDOWN.test(message.result)
             ? (/^API Error: (?:Request rejected \(429\)|Server is temporarily limiting requests \(not your usage limit\)) · All credentials for model [^\s()]+ are cooling down \(reset after (?:(\d+)h ?)?(?:(\d+)m ?)?(?:(\d+)s)?\)/.exec(
                 message.result,
               ) ??
@@ -12875,9 +12882,10 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                   );
             const resultResetAt =
               resultFailure?.class === "usage_limit" ? resultFailure.resetAt : null;
+            const gatewayResetAt = isGatewayCooldown(message) ? resultResetAt : null;
             // An untyped rejection without a reset is the gateway's own 429; its text names the reset.
             const countsTowardReset = (type: string, time: string | null | undefined) =>
-              time !== undefined && !(type === "unknown" && time === null && resultResetAt != null);
+              time !== undefined && !(type === "unknown" && time === null && gatewayResetAt != null);
             const resetTimes = Array.from(context.rateLimitResetTimes)
               .filter(([type, time]) => countsTowardReset(type, time))
               .map(([, time]) => time);
