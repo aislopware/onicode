@@ -10989,6 +10989,15 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     },
     {
       status: 429,
+      cooldown: "untyped rejection beside another API's reset",
+      seconds: 0,
+      proxy: true,
+      sdkResetSeconds: null,
+      sdkLimitType: null,
+      result: "API Error: 429 rate_limit_error: Too many requests (reset after 1h)",
+    },
+    {
+      status: 429,
       cooldown: "nested 1m under an outer 2h",
       seconds: 7200,
       proxy: true,
