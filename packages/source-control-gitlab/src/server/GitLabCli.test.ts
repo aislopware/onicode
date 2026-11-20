@@ -6,7 +6,7 @@ import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import { ChildProcessSpawner } from "effect/process";
 
-import { VcsProcessExitError } from "@onicode/contracts";
+import { VcsProcessExitError, VcsProcessTimeoutError } from "@onicode/contracts";
 
 import * as HostProcess from "@onicode/shared/HostProcess";
 import type * as SourceControlHost from "@onicode/source-control-core/server/SourceControlHost";
@@ -462,7 +462,7 @@ layer("GitLabCli.layer", (it) => {
     }),
   );
 
-  it.effect("preserves rate-limit failures and GraphQL schema refusals as distinct errors", () =>
+  it.effect("tells rate limits and an unreachable GitLab from other failures", () =>
     Effect.gen(function* () {
       const cause = new VcsProcessExitError({
         operation: "GitLabCli.execute",
@@ -491,8 +491,13 @@ layer("GitLabCli.layer", (it) => {
         failureKind: "command-failed",
       });
       for (const [stderr, tag] of [
-        ["glab: Field 'awardEmoji' doesn't exist on type 'Note'", "GitLabCliGraphqlFieldError"],
-        ["glab: 502 Bad Gateway", "GitLabCliCommandError"],
+        ["glab: 502 Bad Gateway", "GitLabCliUnreachableError"],
+        [
+          'Post "https://gitlab.example.com/api/graphql": dial tcp: lookup gitlab.example.com: no such host',
+          "GitLabCliUnreachableError",
+        ],
+        ["glab: Field 'awardEmoji' doesn't exist on type 'Note'", "GitLabCliCommandError"],
+        ["glab: 403 Forbidden", "GitLabCliCommandError"],
       ] as const) {
         mockedRun.mockImplementationOnce((input) => {
           input.classifyFailure?.(stderr);
@@ -503,6 +508,20 @@ layer("GitLabCli.layer", (it) => {
           .pipe(Effect.flip);
         assert.strictEqual(failure._tag, tag);
       }
+      mockedRun.mockReturnValueOnce(
+        Effect.fail(
+          new VcsProcessTimeoutError({
+            operation: "GitLabCli.execute",
+            command: "glab",
+            cwd: "/repo",
+            timeoutMs: 30_000,
+          }),
+        ),
+      );
+      const timedOut = yield* glab
+        .execute({ cwd: "/repo", args: ["api", "graphql"] })
+        .pipe(Effect.flip);
+      assert.strictEqual(timedOut._tag, "GitLabCliUnreachableError");
     }),
   );
 });

@@ -168,13 +168,13 @@ export class GitLabCliCommandError extends Schema.TaggedError<GitLabCliCommandEr
   }
 }
 
-/** A GraphQL query naming a field this GitLab's schema lacks, as an older version does. */
-export class GitLabCliGraphqlFieldError extends Schema.TaggedError<GitLabCliGraphqlFieldError>()(
-  "GitLabCliGraphqlFieldError",
+/** GitLab or the network did not answer, a failure a later retry can outlast. */
+export class GitLabCliUnreachableError extends Schema.TaggedError<GitLabCliUnreachableError>()(
+  "GitLabCliUnreachableError",
   gitLabCliExecutionErrorContext,
 ) {
   get detail(): string {
-    return "This GitLab version does not have a field the query asked for.";
+    return "GitLab did not answer. Try again.";
   }
 
   override get message(): string {
@@ -278,7 +278,7 @@ export const GitLabCliError = Schema.Union([
   GitLabCliRateLimitError,
   GitLabMergeRequestNotFoundError,
   GitLabCliCommandError,
-  GitLabCliGraphqlFieldError,
+  GitLabCliUnreachableError,
   GitLabMergeRequestListDecodeError,
   GitLabMergeRequestDecodeError,
   GitLabRepositoryDecodeError,
@@ -495,7 +495,9 @@ const classifyGlabFailure = (stderr: string): VcsProcessExitFailureKind | null =
   return null;
 };
 
-const GRAPHQL_MISSING_FIELD = /Field '[^'\n]+' doesn't exist on type '[^'\n]+'/;
+// A server error from GitLab or a proxy in front of it, or no connection at all.
+const UNREACHABLE =
+  /\b5(?:0[0-4]|2[0-4])\b|dial tcp|connection (?:refused|reset)|i\/o timeout|no such host|TLS handshake timeout|network is unreachable|unexpected EOF/i;
 
 /**
  * These are the login for glab's default host (GITLAB_HOST, GITLAB_URI or GL_HOST, else
@@ -541,8 +543,8 @@ export const make = Effect.gen(function* () {
     mapError: (error: VcsError) => GitLabCliError,
   ) =>
     Effect.suspend(() => {
-      // The error keeps no stderr, so a schema refusal is recognised while stderr is at hand.
-      let missingField = false;
+      // The error keeps no stderr, so an unreachable GitLab is recognised while stderr is at hand.
+      let unreachable = false;
       return process
         .run({
           operation: "GitLabCli.execute",
@@ -558,7 +560,7 @@ export const make = Effect.gen(function* () {
               : {}),
           },
           classifyFailure: (stderr) => {
-            missingField = GRAPHQL_MISSING_FIELD.test(stderr);
+            unreachable = UNREACHABLE.test(stderr);
             return classifyGlabFailure(stderr);
           },
           notFoundDetail: "Merge request not found.",
@@ -568,8 +570,9 @@ export const make = Effect.gen(function* () {
         })
         .pipe(
           Effect.mapError((error) =>
-            missingField && error._tag === "VcsProcessExitError"
-              ? new GitLabCliGraphqlFieldError({
+            error._tag === "VcsProcessTimeoutError" ||
+            (unreachable && error._tag === "VcsProcessExitError")
+              ? new GitLabCliUnreachableError({
                   operation: "execute",
                   command: "glab",
                   cwd: input.cwd,
