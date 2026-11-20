@@ -9037,9 +9037,49 @@ describe("CodexAdapterV2 post-settle continuation", () => {
             },
             {
               type: "expect_outbound",
-              label: "resume unloaded native thread",
+              label: "read unloaded native thread",
               frame: {
                 id: 4,
+                method: "thread/read",
+                params: { threadId: nativeThreadId, includeTurns: false },
+              },
+            },
+            {
+              type: "emit_inbound",
+              label: "unloaded native thread metadata",
+              frame: {
+                id: 4,
+                result: {
+                  thread: {
+                    id: nativeThreadId,
+                    status: { type: "notLoaded" },
+                    cwd: "/workspace/project",
+                  },
+                },
+              },
+            },
+            {
+              type: "expect_outbound",
+              label: "read the thread project's config",
+              frame: {
+                id: 5,
+                method: "config/read",
+                params: { cwd: "/workspace/project", includeLayers: false },
+              },
+            },
+            {
+              type: "emit_inbound",
+              label: "project-only stdio MCP server",
+              frame: {
+                id: 5,
+                result: { config: { mcp_servers: { projtool: { command: "node" } } }, origins: {} },
+              },
+            },
+            {
+              type: "expect_outbound",
+              label: "resume unloaded native thread",
+              frame: {
+                id: 6,
                 method: "thread/resume",
                 params: {
                   threadId: nativeThreadId,
@@ -9052,7 +9092,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
               type: "emit_inbound",
               label: "native thread resumed",
               frame: {
-                id: 4,
+                id: 6,
                 result: {
                   thread: { id: nativeThreadId, updatedAt: 1782622450 },
                 },
@@ -9062,7 +9102,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
               type: "expect_outbound",
               label: "retry MCP resource read",
               frame: {
-                id: 5,
+                id: 7,
                 method: "mcpServer/resource/read",
                 params: {
                   threadId: nativeThreadId,
@@ -9074,17 +9114,20 @@ describe("CodexAdapterV2 post-settle continuation", () => {
             {
               type: "emit_inbound",
               label: "MCP resource read succeeds",
-              frame: { id: 5, result: resourceResult },
+              frame: { id: 7, result: resourceResult },
             },
           ],
         });
 
         const resumeParams: Array<unknown> = [];
+        const configReads: Array<unknown> = [];
         const harness = yield* makeCodexReplayHarness(transcript, undefined, (method, params) =>
           Effect.sync(() => {
             if (method === "thread/resume") resumeParams.push(params);
+            if (method === "config/read") configReads.push(params);
           }),
         );
+        const configReadsBeforeRecovery = configReads.length;
         const mcpApps = harness.runtime.mcpApps;
         assert.ok(mcpApps, "Codex runtime should expose MCP apps");
 
@@ -9101,6 +9144,14 @@ describe("CodexAdapterV2 post-settle continuation", () => {
         assert.equal(resumeParams.length, 1);
         assert.ok(!Predicate.hasProperty(resumeParams[0], "cwd"), "resume must not send a cwd");
         assert.ok(!Predicate.hasProperty(resumeParams[0], "model"), "resume must not send a model");
+        assert.deepEqual(configReads.slice(configReadsBeforeRecovery), [
+          { cwd: "/workspace/project", includeLayers: false },
+        ]);
+        assert.propertyVal(
+          Predicate.hasProperty(resumeParams[0], "config") ? resumeParams[0].config : undefined,
+          "mcp_servers.projtool.env.ONICODE_THREAD_ID",
+          `thread-${scenario}`,
+        );
       }).pipe(
         Effect.provide(
           Layer.mergeAll(
@@ -10880,6 +10931,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
                   id: nativeThreadId,
                   historyMode: "paginated",
                   status: { type: "notLoaded" },
+                  cwd: "/workspace/project",
                 },
               },
             },
@@ -10914,7 +10966,13 @@ describe("CodexAdapterV2 post-settle continuation", () => {
           ),
         ],
       });
-      const harness = yield* makeCodexReplayHarness(transcript);
+      const configReads: Array<unknown> = [];
+      const harness = yield* makeCodexReplayHarness(transcript, undefined, (method, params) =>
+        Effect.sync(() => {
+          if (method === "config/read") configReads.push(params);
+        }),
+      );
+      const configReadsBeforeRollback = configReads.length;
       const now = yield* DateTime.now;
       const firstTurn = codexReplaySourceTurn({
         id: "provider-turn-first",
@@ -10944,6 +11002,9 @@ describe("CodexAdapterV2 post-settle continuation", () => {
 
       assert.equal(snapshot.providerThread.nativeThreadRef?.nativeId, nativeThreadId);
       assert.deepEqual(snapshot.providerThread.nativeConversationHeadRef, firstTurn.nativeTurnRef);
+      assert.deepEqual(configReads.slice(configReadsBeforeRollback), [
+        { cwd: "/workspace/project", includeLayers: false },
+      ]);
     }).pipe(
       Effect.scoped,
       Effect.provide(
