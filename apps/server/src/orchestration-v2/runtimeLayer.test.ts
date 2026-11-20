@@ -7084,7 +7084,8 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
                   commits: [],
                 }),
               threadComments: (input) => {
-                pagesRead += 1;
+                // The layer is shared, so watches other tests left behind are swept with this one.
+                if (input.projectId === projectId) pagesRead += 1;
                 assert.equal(input.threadId, "review-thread");
                 if (input.cursor === "after-10") {
                   return Effect.succeed({ comments: [eleventh], nextCursor: "after-11" });
