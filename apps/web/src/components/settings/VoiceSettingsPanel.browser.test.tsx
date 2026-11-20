@@ -10,7 +10,7 @@ import {
 } from "@onicode/contracts";
 import { expect, it, vi } from "vite-plus/test";
 import { userEvent } from "vite-plus/test/browser";
-import { render } from "../../../test/render";
+import { act, render } from "../../../test/render";
 import { __setClientSettingsForTests, getClientSettings } from "../../hooks/useSettings";
 import { readBrowserClientSettings } from "../../clientPersistenceStorage";
 import { chooseRecordingMicrophone } from "../../speech/browserMicrophones";
@@ -672,6 +672,40 @@ it("keeps a dictionary term and alias draft on the Enter that confirms an IME ca
   alias.element().dispatchEvent(composingEnter());
   expect(getClientSettings().speechCustomWords).toEqual([{ term: "日本語", aliases: [] }]);
   await expect.element(alias).toHaveValue("にほん");
+});
+
+it("keeps a microphone plugged in while an older listing is still pending", async () => {
+  const previous = getClientSettings();
+  using cleanup = new DisposableStack();
+  cleanup.defer(() => __setClientSettingsForTests(previous));
+  __setClientSettingsForTests({ ...previous, voiceMicrophone: "", voiceMicrophones: [] });
+  const input = (deviceId: string, label: string) =>
+    ({ deviceId, label, groupId: deviceId, kind: "audioinput" }) as MediaDeviceInfo;
+  const yeti = input("yeti", "Blue Yeti");
+  const usb = input("usb", "USB Microphone");
+  const old = Promise.withResolvers<MediaDeviceInfo[]>();
+  const current = Promise.withResolvers<MediaDeviceInfo[]>();
+  const mediaDevices = navigator.mediaDevices;
+  using _devices = vi
+    .spyOn(mediaDevices, "enumerateDevices")
+    .mockReturnValueOnce(old.promise)
+    .mockReturnValueOnce(current.promise);
+  await using screen = await render(
+    <SettingsScopeProvider search={{}} onChange={() => {}}>
+      <VoiceSettingsPanel />
+    </SettingsScopeProvider>,
+  );
+  const list = screen.getByRole("list", { name: "Microphones, preferred first" });
+  await act(async () => {
+    mediaDevices.dispatchEvent(new Event("devicechange"));
+    current.resolve([yeti, usb]);
+  });
+  await expect.element(list.getByText("USB Microphone")).toBeInTheDocument();
+
+  await act(async () => old.resolve([yeti]));
+  const usbRow = list.getByRole("listitem").filter({ hasText: "USB Microphone" });
+  await expect.element(usbRow).toBeInTheDocument();
+  expect(usbRow.element().textContent).not.toContain("Not connected");
 });
 
 it("records from the first connected microphone in the saved order", async () => {

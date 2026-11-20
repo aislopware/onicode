@@ -29,7 +29,6 @@ import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 
-import { splitsSurrogatePair } from "@onicode/shared/assistantCitations";
 import { isBareGitConfig, parseOriginUrlFromGitConfig } from "@onicode/shared/git";
 import * as HostProcess from "@onicode/shared/HostProcess";
 import { normalizeProjectPathForComparison } from "@onicode/shared/path";
@@ -465,13 +464,27 @@ function claudeTitle(title: string | undefined): string | undefined {
 // envelope; title them after the prompt inside it.
 const WAKE_ENVELOPE = /^\s*<wake(?:\s[^>]*)?>([\s\S]*?)(?:<\/wake>|$)/;
 
+const TITLE_MAX_LENGTH = 100;
+const titleSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+// Cuts at a grapheme boundary, so a flag, skin tone or ZWJ emoji at the limit is dropped whole.
+function shortenTitle(line: string): string {
+  if (line.length <= TITLE_MAX_LENGTH) return line;
+  let end = 0;
+  for (const { index, segment } of titleSegmenter.segment(line.slice(0, TITLE_MAX_LENGTH * 2))) {
+    if (index + segment.length > TITLE_MAX_LENGTH) break;
+    end = index + segment.length;
+  }
+  return line.slice(0, end);
+}
+
 function deriveTitle(source: AgentSessionSource, text: string): string | undefined {
   const request = (source === "codex" ? text.replace(CODEX_TITLE_PREAMBLE, "") : text).replace(
     WAKE_ENVELOPE,
     "$1",
   );
   const line = request.trim().split("\n")[0] ?? "";
-  return line.slice(0, splitsSurrogatePair(line, 100) ? 99 : 100).trim() || undefined;
+  return shortenTitle(line).trim() || undefined;
 }
 
 // Pi keeps abandoned branches in the file; its active branch runs from the last entry to the root.

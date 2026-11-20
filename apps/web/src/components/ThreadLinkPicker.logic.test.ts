@@ -44,10 +44,11 @@ describe("threadLinkCandidates", () => {
 
 describe("threadLinkMatcher", () => {
   it.each([
-    ["cafe", "Café planning", undefined],
-    ["café", "Cafe\u0301 planning", undefined],
-    ["ışık", "Işık planı", "tr-TR"],
-  ])("matches %s against %s", (query, text, locale) => {
-    expect(threadLinkMatcher(query, locale)(text)).toBe(true);
+    ["cafe", "Café planning", undefined, true],
+    ["café", "Cafe\u0301 planning", undefined, true],
+    ["ışık", "Işık planı", "tr-TR", true],
+    ["\u0301", "Release notes", undefined, false],
+  ])("matches %s against %s", (query, text, locale, matches) => {
+    expect(threadLinkMatcher(query, locale)(text)).toBe(matches);
   });
 });

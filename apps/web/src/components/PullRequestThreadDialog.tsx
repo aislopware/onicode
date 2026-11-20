@@ -199,7 +199,10 @@ export function PullRequestThreadDialog({
   const errorMessage =
     validationMessage ??
     (checkoutError?.target === checkoutTarget ? checkoutError.message : null) ??
-    (resolvedPullRequest === null ? pullRequestResolution.error : null);
+    // The lookup is for the debounced reference; while typing it describes the previous one.
+    (resolvedPullRequest === null && parsedReference === parsedDebouncedReference
+      ? pullRequestResolution.error
+      : null);
 
   return (
     <Dialog

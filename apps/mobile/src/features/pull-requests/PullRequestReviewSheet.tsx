@@ -43,7 +43,8 @@ function useActionSubmission(params: PullRequestParams) {
       await operation();
       refreshDetail();
       refreshActivity();
-      navigation.goBack();
+      // Dismissed while submitting, goBack would pop the screen underneath.
+      if (navigation.isFocused()) navigation.goBack();
     });
     pending.current = false;
     setBusy(false);

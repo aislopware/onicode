@@ -23,6 +23,8 @@ const state = vi.hoisted(() => ({
   checkouts: [] as string[],
   setupScripts: 0,
   prepared: [] as { branch: string; worktreePath: string | null }[],
+  debouncedReference: undefined as string | undefined,
+  resolution: undefined as { data: null; error: string } | undefined,
 }));
 
 vi.mock("react", async (importOriginal) => ({
@@ -48,7 +50,10 @@ vi.mock("gt-react", async (importOriginal) => ({
   Var: ({ children }: { children: ReactNode }) => children,
 }));
 vi.mock("@tanstack/react-pacer", () => ({
-  useDebouncedValue: (value: unknown) => [value, { state: { isPending: false } }],
+  useDebouncedValue: (value: unknown) => [
+    state.debouncedReference ?? value,
+    { state: { isPending: false } },
+  ],
 }));
 vi.mock("~/state/session", () => ({
   useEnvironmentScope: (_environmentId: unknown, scope: string) =>
@@ -66,9 +71,10 @@ vi.mock("~/state/sourceControlActions", async () => {
   >("~/state/sourceControlActions");
   return {
     readCachedPullRequestResolution: () => null,
-    usePullRequestResolutionState: () => ({
-      data: { pullRequest: { number: 123, title: "Pull request", state: "open" } },
-    }),
+    usePullRequestResolutionState: () =>
+      state.resolution ?? {
+        data: { pullRequest: { number: 123, title: "Pull request", state: "open" } },
+      },
     usePreparePullRequestThreadAction,
   };
 });
@@ -139,14 +145,21 @@ function findAction(node: ReactNode, label: string): (() => unknown) | null {
   return findAction(node.props.children, label);
 }
 
-function renderDialog() {
+function hasText(node: ReactNode, text: string): boolean {
+  if (Array.isArray(node)) return node.some((child) => hasText(child, text));
+  if (node === text) return true;
+  if (!isValidElement<{ children?: ReactNode }>(node)) return false;
+  return hasText(node.props.children, text);
+}
+
+function renderDialog(initialReference = "123") {
   state.hookIndex = 0;
   return PullRequestThreadDialog({
     open: true,
     environmentId: EnvironmentId.make("environment"),
     threadId: ThreadId.make("thread"),
     cwd: "/repo",
-    initialReference: "123",
+    initialReference,
     onOpenChange: (open) => state.openChanges.push(open),
     onPrepared: (input) => {
       state.prepared.push(input);
@@ -175,6 +188,8 @@ describe("pull request worktree permissions", () => {
     state.checkouts = [];
     state.setupScripts = 0;
     state.prepared = [];
+    state.debouncedReference = undefined;
+    state.resolution = undefined;
   });
 
   it("rechecks task permission before invoking a retained worktree action", async () => {
@@ -185,5 +200,14 @@ describe("pull request worktree permissions", () => {
 
     expect(state.checkouts).toEqual([]);
     expect(state.setupScripts).toBe(0);
+  });
+
+  it.each([
+    { typed: "42", shown: true },
+    { typed: "43", shown: false },
+  ])("shows #42's lookup error only while #42 is typed ($typed)", ({ typed, shown }) => {
+    state.debouncedReference = "42";
+    state.resolution = { data: null, error: "Pull request #42 was not found." };
+    expect(hasText(renderDialog(typed), "Pull request #42 was not found.")).toBe(shown);
   });
 });

@@ -1,7 +1,7 @@
 import { threadTitleText } from "@onicode/client-runtime/operations";
 import type { EnvironmentId, ThreadId } from "@onicode/contracts";
 import { CheckIcon, MessageSquareIcon } from "lucide-react";
-import { T, useGT, useMessages } from "gt-react";
+import { T, useGT, useLocale, useMessages } from "gt-react";
 import { useState } from "react";
 
 import { useProjects, useVisibleThreadShells } from "~/state/entities";
@@ -26,6 +26,7 @@ export function ThreadLinkPicker({
 }) {
   const gt = useGT();
   const m = useMessages();
+  const locale = useLocale();
   const threads = useVisibleThreadShells();
   const projects = useProjects();
   const [query, setQuery] = useState("");
@@ -41,6 +42,7 @@ export function ThreadLinkPicker({
     environmentId,
     query,
     (thread) => `${threadTitleText(thread.title, m)} ${projectNames.get(thread.projectId) ?? ""}`,
+    locale,
   );
   return (
     <Command mode="none" value={query} onValueChange={setQuery} aria-label={gt("Choose a thread")}>

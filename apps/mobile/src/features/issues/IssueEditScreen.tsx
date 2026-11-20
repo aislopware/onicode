@@ -50,7 +50,8 @@ export function IssueEditScreen({ route }: StaticScreenProps<IssueEditParams>) {
       return;
     }
     refreshIssueLists(target.environmentId);
-    navigation.goBack();
+    // Dismissed while saving, goBack would pop the screen underneath.
+    if (navigation.isFocused()) navigation.goBack();
   };
   return (
     <PullRequestSheetContent
