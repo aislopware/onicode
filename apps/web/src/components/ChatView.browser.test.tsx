@@ -170,9 +170,18 @@ it.each([{ issueSummaries: false }, { issueSummaries: true }])(
       displayKey: issueRef.key,
       title: "Add keyboard support",
     };
-    using _environment = installFakeEnvironment([first, { ...linked, issues: [issue] }], {
-      issueSummaries,
-    });
+    const completed = {
+      ...issue,
+      key: "WEB-124",
+      displayKey: "WEB-124",
+      url: "https://linear.app/example/issue/WEB-124/keep-tabs-visible",
+      title: "Keep tabs visible",
+    };
+    const grouped = threadWithHistory("issue-grouped", 1);
+    using _environment = installFakeEnvironment(
+      [first, { ...linked, issues: [issue] }, { ...grouped, issues: [completed, issue] }],
+      { issueSummaries },
+    );
     const liveTitle = "Add keyboard shortcuts to the sidebar";
     const liveDetail = {
       ...issue,
@@ -214,28 +223,41 @@ it.each([{ issueSummaries: false }, { issueSummaries: true }])(
       events: [],
       linkedPullRequests: [],
     } satisfies IssueDetail;
+    const completedDetail = {
+      ...liveDetail,
+      key: completed.key,
+      displayKey: completed.displayKey,
+      url: completed.url,
+      title: completed.title,
+      state: { category: "closed", closeReason: "completed", name: "Done" },
+    } satisfies IssueDetail;
+    const detailFor = (input: IssueRef) => {
+      const isCompleted = input.key === completed.key;
+      expect(input).toEqual({ ...readRef, key: isCompleted ? completed.key : issue.key });
+      return isCompleted ? completedDetail : liveDetail;
+    };
     // Rows read the light summary; the panel the row opens reads the detail. Both keep the
     // workspace the linked URL names, so another workspace's WEB-123 is never read in its place.
     const readRef = { ...issueRef, workspace: "example" };
     using _summary = answerRpc(WS_METHODS.issuesSummary, (input: IssueRef) => {
       expect(issueSummaries).toBe(true);
-      expect(input).toEqual(readRef);
+      const read = detailFor(input);
       const summary: IssueSummary = {
-        tracker: liveDetail.tracker,
-        host: liveDetail.host,
-        scope: liveDetail.scope,
-        key: liveDetail.key,
-        displayKey: liveDetail.displayKey,
-        title: liveDetail.title,
-        url: liveDetail.url,
-        author: liveDetail.author,
-        state: liveDetail.state,
-        createdAt: liveDetail.createdAt,
-        updatedAt: liveDetail.updatedAt,
-        closedAt: liveDetail.closedAt,
-        assignees: liveDetail.assignees,
-        labels: liveDetail.labels,
-        commentCount: liveDetail.commentCount,
+        tracker: read.tracker,
+        host: read.host,
+        scope: read.scope,
+        key: read.key,
+        displayKey: read.displayKey,
+        title: read.title,
+        url: read.url,
+        author: read.author,
+        state: read.state,
+        createdAt: read.createdAt,
+        updatedAt: read.updatedAt,
+        closedAt: read.closedAt,
+        assignees: read.assignees,
+        labels: read.labels,
+        commentCount: read.commentCount,
       };
       return Effect.succeed(summary);
     });
@@ -243,8 +265,7 @@ it.each([{ issueSummaries: false }, { issueSummaries: true }])(
     using _detail = answerRpc(WS_METHODS.issuesDetail, (input: IssueRef) => {
       // With summaries, only the issue panel reads the full detail.
       if (issueSummaries) expect(panelOpened).toBe(true);
-      expect(input).toEqual(readRef);
-      return Effect.succeed(liveDetail);
+      return Effect.succeed(detailFor(input));
     });
     __setClientSettingsForTests({
       ...DEFAULT_CLIENT_SETTINGS,
@@ -265,6 +286,11 @@ it.each([{ issueSummaries: false }, { issueSummaries: true }])(
     });
     await expect.element(badge).toBeVisible();
     expect(badge.element().querySelector("svg")).toHaveClass(/text-emerald-600/);
+    // A group shows its open issue's state over a completed one.
+    const groupedBadge = page.getByRole("button", { name: "2 linked issues" });
+    await vi.waitFor(() =>
+      expect(groupedBadge.element().querySelector("svg")).toHaveClass(/text-emerald-600/),
+    );
     await userEvent.hover(badge);
     const issueName = `Issue ${issue.displayKey}: ${liveTitle}`;
     const previewLink = page.getByRole("link", { name: issueName });
