@@ -597,6 +597,7 @@ export const AuthorizedClientsHeaderAction = memo(function AuthorizedClientsHead
     setDialogOpen(open);
     if (!open) {
       pairingDialogSessionRef.current += 1;
+      setIsCreatingPairingLink(false);
       setPairingLabel("");
       setPairingScopes(
         AuthStandardClientScopes.filter((scope) => delegatableScopes.includes(scope)),
@@ -637,7 +638,8 @@ export const AuthorizedClientsHeaderAction = memo(function AuthorizedClientsHead
         }),
       );
     }
-    setIsCreatingPairingLink(false);
+    // A request from a closed dialog must not end a newer request's pending state.
+    if (dialogSession === pairingDialogSessionRef.current) setIsCreatingPairingLink(false);
   };
 
   const togglePairingScope = (scope: AuthGrantScope, checked: boolean) => {

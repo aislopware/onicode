@@ -35,6 +35,7 @@ test(
       await dialog.waitFor({ state: "hidden" });
       await open.tap();
       await openDialog.waitFor();
+      await expect(dialog.getByRole("button", "Create link", { exact: true })).toBeEnabled();
 
       release.resolve();
       await authorizedClients.getByText(label, { exact: true }).waitFor();
