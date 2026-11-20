@@ -1,19 +1,21 @@
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigate } from "@tanstack/react-router";
-import { HardDriveIcon, MemoryStickIcon } from "lucide-react";
+import { CpuIcon, HardDriveIcon, MemoryStickIcon } from "lucide-react";
 
 import { cn } from "../../lib/utils";
 import { hostHardwareAlertAtom } from "../../state/presentation";
 import { SidebarMenuButton, SidebarMenuItem, useSidebar } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
-/** In the sidebar's icon row only while a connected machine is running out of memory or storage. */
+const ALERT_ICONS = { cpu: CpuIcon, memory: MemoryStickIcon, storage: HardDriveIcon };
+
+/** In the sidebar's icon row only while a connected machine is short of memory, storage, or CPU. */
 export function SidebarHardwareAlert() {
   const navigate = useNavigate();
   const { isMobile, setOpenMobile } = useSidebar();
   const alert = useAtomValue(hostHardwareAlertAtom);
   if (alert === null) return null;
-  const Icon = alert.kind === "memory" ? MemoryStickIcon : HardDriveIcon;
+  const Icon = ALERT_ICONS[alert.kind];
 
   return (
     <SidebarMenuItem className="shrink-0">

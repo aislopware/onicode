@@ -12,6 +12,16 @@ export const HostResourcesSnapshot = Schema.Struct({
   cpuCount: NonNegativeInt,
   availableMemoryBytes: NonNegativeInt,
   totalMemoryBytes: NonNegativeInt,
+  /**
+   * Machine-wide load averages, as `uptime` shows them: runnable tasks over all logical CPUs,
+   * whatever cgroup the server runs in. Absent on Windows, which keeps none, and on older servers.
+   */
+  loadAverage: Schema.optionalKey(
+    Schema.Struct({
+      oneMinute: Schema.Number.check(Schema.isGreaterThanOrEqualTo(0)),
+      fiveMinutes: Schema.Number.check(Schema.isGreaterThanOrEqualTo(0)),
+    }),
+  ),
 });
 export type HostResourcesSnapshot = typeof HostResourcesSnapshot.Type;
 

@@ -2,6 +2,7 @@ import type {
   EnvironmentId,
   HostHardwareSnapshot,
   HostHardwareVolumeUse,
+  HostResourcesSnapshot,
 } from "@onicode/contracts";
 
 export type HostHardwareLevel = "normal" | "high" | "critical";
@@ -17,6 +18,8 @@ export interface HostHardwareGauge {
   /** The share in use, 0 to 1. */
   readonly fraction: number | null;
   readonly level: HostHardwareLevel;
+  /** What a warning says about this resource; null at the normal level. */
+  readonly warning: string | null;
 }
 
 export interface HostHardwareView {
@@ -80,6 +83,32 @@ function lowLevel(
   return below(limits.critical) ? "critical" : below(limits.high) ? "high" : "normal";
 }
 
+/** Runnable tasks per logical CPU; above 1, work waits for a processor. */
+const LOAD_LIMITS = { high: 1.5, critical: 3 } as const;
+
+/**
+ * The lower of the 1- and 5-minute averages, so a build that fills every core for a minute or
+ * two raises nothing, and a warning clears within a minute or so of the load passing.
+ */
+function sustainedLoad(usage: HostResourcesSnapshot): number | null {
+  const load = usage.loadAverage;
+  return load === undefined ? null : Math.min(load.oneMinute, load.fiveMinutes);
+}
+
+function loadLevel(load: number | null, cpus: number): HostHardwareLevel {
+  if (load === null || cpus <= 0) return "normal";
+  const perCpu = load / cpus;
+  return perCpu >= LOAD_LIMITS.critical
+    ? "critical"
+    : perCpu >= LOAD_LIMITS.high
+      ? "high"
+      : "normal";
+}
+
+function formatLoad(load: number): string {
+  return String(Number(load.toFixed(load >= 10 ? 0 : 1)));
+}
+
 function usedFraction(total: number, available: number): number | null {
   return total > 0 ? Math.min(1, Math.max(0, 1 - available / total)) : null;
 }
@@ -129,48 +158,71 @@ export function describeHostHardware(hardware: HostHardwareSnapshot): HostHardwa
   // A container's memory limit shows as a smaller usable total; sizes round, so allow 1%.
   const memoryLimited = memoryTotal < hardware.memoryBytes * 0.99;
 
+  // The load average counts the whole machine, so it is measured against all of its CPUs.
+  const load = sustainedLoad(usage);
+  const loadCpus = hardware.cpu.logicalCores;
+  const cpuLevel = loadLevel(load, loadCpus);
+  const memoryLevel = lowLevel(
+    usage.totalMemoryBytes,
+    usage.availableMemoryBytes,
+    LOW_LIMITS.memory,
+  );
+  const memoryTitle = `${formatCapacity(hardware.memoryBytes)} memory`;
+  const memoryValue =
+    memoryFraction === null ? null : `${formatCapacity(usage.availableMemoryBytes)} available`;
+
   const gauges: Array<HostHardwareGauge> = [
     {
       kind: "cpu",
       key: "cpu",
       title: hardware.cpu.model ?? "Processor",
-      detail: describeCores(hardware),
+      detail: [describeCores(hardware), load === null ? null : `Load ${formatLoad(load)}`]
+        .filter((part) => part !== null)
+        .join(" · "),
       value:
         usage.cpuUtilization === null ? null : `${Math.round(usage.cpuUtilization * 100)}% in use`,
+      // Busy is fine; agents and builds keep every core busy. Work queueing for them is not.
       fraction: usage.cpuUtilization,
-      // Agents and builds saturate the processor for minutes at a time; that is not a warning.
-      level: "normal",
+      level: cpuLevel,
+      warning:
+        cpuLevel === "normal" || load === null
+          ? null
+          : `Load ${formatLoad(load)} on ${plural(loadCpus, "CPU")}`,
     },
     {
       kind: "memory",
       key: "memory",
-      title: `${formatCapacity(hardware.memoryBytes)} memory`,
+      title: memoryTitle,
       detail:
         memoryFraction === null
           ? "Usage unavailable"
           : `${formatCapacity(memoryTotal - usage.availableMemoryBytes)} used${
               memoryLimited ? ` of ${formatCapacity(memoryTotal)} usable` : ""
             }`,
-      value:
-        memoryFraction === null ? null : `${formatCapacity(usage.availableMemoryBytes)} available`,
+      value: memoryValue,
       fraction: memoryFraction,
-      level: lowLevel(usage.totalMemoryBytes, usage.availableMemoryBytes, LOW_LIMITS.memory),
+      level: memoryLevel,
+      warning: memoryLevel === "normal" ? null : `${memoryValue} of ${memoryTitle}`,
     },
     ...hardware.volumes.map((volume): HostHardwareGauge => {
       const fraction = usedFraction(volume.totalBytes, volume.availableBytes);
       const used = `${formatCapacity(volume.totalBytes - volume.availableBytes)} used`;
+      const title = `${formatCapacity(volume.totalBytes)} storage`;
+      const value = `${formatCapacity(volume.availableBytes)} available`;
+      const level = lowLevel(volume.totalBytes, volume.availableBytes, LOW_LIMITS.storage);
       return {
         kind: "storage",
         key: `storage:${volume.mountPoint}`,
-        title: `${formatCapacity(volume.totalBytes)} storage`,
+        title,
         // One volume needs no name; several are told apart by where they mount and what they hold.
         detail:
           hardware.volumes.length === 1
             ? used
             : `${used} · ${volume.mountPoint} · ${describeVolumeUses(volume.uses)}`,
-        value: `${formatCapacity(volume.availableBytes)} available`,
+        value,
         fraction,
-        level: lowLevel(volume.totalBytes, volume.availableBytes, LOW_LIMITS.storage),
+        level,
+        warning: level === "normal" ? null : `${value} of ${title}`,
       };
     }),
   ];
@@ -179,18 +231,42 @@ export function describeHostHardware(hardware: HostHardwareSnapshot): HostHardwa
 }
 
 export interface HostHardwareAlert {
-  /** Names what is low and how badly; the same warning keeps the same key. */
+  /** Names what is strained and how badly; the same warning keeps the same key. */
   readonly key: string;
   readonly level: Exclude<HostHardwareLevel, "normal">;
   /** The resource in the worst state, for the icon. */
-  readonly kind: "memory" | "storage";
+  readonly kind: HostHardwareGauge["kind"];
   readonly title: string;
   readonly description: string;
   /** The machine in the worst state. */
   readonly environmentId: EnvironmentId;
 }
 
-/** What to warn about across the connected machines: memory or storage that is running out. */
+// At the same level, running out of memory or storage breaks work; a queue only slows it.
+const KIND_ORDER = ["memory", "storage", "cpu"] as const;
+
+const KIND_PHRASES: Record<HostHardwareGauge["kind"], string> = {
+  memory: "low memory",
+  storage: "low storage",
+  cpu: "heavy processor load",
+};
+
+function severity(gauge: HostHardwareGauge): number {
+  return (gauge.level === "critical" ? 0 : KIND_ORDER.length) + KIND_ORDER.indexOf(gauge.kind);
+}
+
+function joinPhrases(phrases: ReadonlyArray<string>): string {
+  const text =
+    phrases.length <= 2
+      ? phrases.join(" and ")
+      : `${phrases.slice(0, -1).join(", ")} and ${phrases[phrases.length - 1]}`;
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+/**
+ * What to warn about across the connected machines: memory or storage running out, or work
+ * queueing for the processor.
+ */
 export function describeHostHardwareAlert(
   machines: ReadonlyArray<{
     readonly environmentId: EnvironmentId;
@@ -198,43 +274,42 @@ export function describeHostHardwareAlert(
     readonly hardware: HostHardwareSnapshot;
   }>,
 ): HostHardwareAlert | null {
-  const low = machines
+  const strained = machines
     .map((machine) => ({
       ...machine,
       gauges: describeHostHardware(machine.hardware)
         .gauges.filter(
-          (gauge): gauge is HostHardwareGauge & { readonly kind: "memory" | "storage" } =>
-            gauge.kind !== "cpu" && gauge.level !== "normal",
+          (gauge): gauge is HostHardwareGauge & { readonly warning: string } =>
+            gauge.warning !== null,
         )
         // `filter` returned a new array; Hermes has no `toSorted`.
-        .sort((a, b) => Number(b.level === "critical") - Number(a.level === "critical")),
+        .sort((a, b) => severity(a) - severity(b)),
     }))
     .filter((machine) => machine.gauges.length > 0)
-    .sort(
-      (a, b) =>
-        Number(b.gauges[0]!.level === "critical") - Number(a.gauges[0]!.level === "critical"),
-    );
-  const worst = low[0];
+    .sort((a, b) => severity(a.gauges[0]!) - severity(b.gauges[0]!));
+  const worst = strained[0];
   if (worst === undefined) return null;
 
-  const kinds = (["memory", "storage"] as const).filter((kind) =>
-    low.some((machine) => machine.gauges.some((gauge) => gauge.kind === kind)),
+  const kinds = KIND_ORDER.filter((kind) =>
+    strained.some((machine) => machine.gauges.some((gauge) => gauge.kind === kind)),
   );
-  const readings = (machine: (typeof low)[number]) =>
-    machine.gauges.map((gauge) => `${gauge.value} of ${gauge.title}`).join(", ");
+  const readings = (machine: (typeof strained)[number]) =>
+    machine.gauges.map((gauge) => gauge.warning).join(", ");
   return {
-    key: low
+    key: strained
       .flatMap((machine) =>
         machine.gauges.map((gauge) => `${machine.environmentId}:${gauge.key}:${gauge.level}`),
       )
       .join("|"),
     level: worst.gauges[0]!.level === "critical" ? "critical" : "high",
     kind: worst.gauges[0]!.kind,
-    title: `Low ${kinds.join(" and ")} on ${low.length === 1 ? worst.label : plural(low.length, "machine")}`,
+    title: `${joinPhrases(kinds.map((kind) => KIND_PHRASES[kind]))} on ${
+      strained.length === 1 ? worst.label : plural(strained.length, "machine")
+    }`,
     description:
-      low.length === 1
+      strained.length === 1
         ? readings(worst)
-        : low.map((machine) => `${machine.label}: ${readings(machine)}`).join("\n"),
+        : strained.map((machine) => `${machine.label}: ${readings(machine)}`).join("\n"),
     environmentId: worst.environmentId,
   };
 }

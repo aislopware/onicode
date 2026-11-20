@@ -172,12 +172,15 @@ const make = Effect.fn("makeHostResources")(function* () {
         memoryMax - (memoryCurrent - reclaimable),
       );
     }
+    // libuv reports zeros on Windows, which keeps no load average.
+    const [oneMinute = 0, fiveMinutes = 0] = NodeOS.loadavg();
     return {
       sampledAt: DateTime.toEpochMillis(yield* DateTime.now),
       cpuUtilization,
       cpuCount,
       availableMemoryBytes: Math.min(totalMemoryBytes, Math.max(0, availableMemoryBytes)),
       totalMemoryBytes,
+      ...(platform === "win32" ? {} : { loadAverage: { oneMinute, fiveMinutes } }),
     };
   });
 
