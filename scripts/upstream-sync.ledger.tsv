@@ -2941,3 +2941,4 @@ a1b9e1cc87	take	taken as is
 f2ec853fbb	take	taken as is
 b985057d3f	take	taken; agentContextBudget re-measured on Onicode's text (mcpToolListJsonBytes 55614, same -55 delta as upstream); runtime instructions still point agents at the PR tools
 13e940a4e3	skip	T3 Connect managed tunnels (removed surface); apps/server/src/cloud does not exist in Onicode
+5e59fc677f	take	taken as is
