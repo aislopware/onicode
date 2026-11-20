@@ -2902,3 +2902,4 @@ fe9baf8cbb	take	Onicode already wakes on merge/close (7dceb76f4c); budget CONFLI
 905346e0d0	take	taken as is (desktop WSL)
 f08272f965	take	adopted upstream over Onicode's 3ec66ef35f draft flow: same draft passthrough plus createsDraftChangeRequests, which skips the post-create draft read on hosts that open drafts (dropped Onicode's duplicate trailing draft param); GitLab also sets the flag since it drafts via the title prefix
 e24f0c7154	take	ACP shared adapter; kept Onicode's SteerDeclinedError pass-through in steer mapError (a clean merge dropped it, breaking Onicode's steering.declines for Grok $skill); only the wake-turn decline is removed
+31e31c608d	take	ACP Registry (DeepSeek) only; taken as is
