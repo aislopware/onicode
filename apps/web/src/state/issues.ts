@@ -89,7 +89,10 @@ export function useLinkedIssueSummary(
 
 const emptySidebarIssue = Atom.make<IssueSummary | null>(null);
 
-/** The summary a sidebar row shows for its linked issues: an open one first, else a closed one. */
+// A visible row reads each counted issue, so a thread linking dozens costs dozens of reads.
+const SIDEBAR_GROUP_STATUS_LINKS = 10;
+
+/** The summary a sidebar row shows for its first linked issues: an open one first, else a closed one. */
 export function useSidebarLinkedIssue(
   environmentId: EnvironmentId,
   links: ReadonlyArray<ThreadIssueLink> | undefined,
@@ -102,7 +105,7 @@ export function useSidebarLinkedIssue(
   const aggregate =
     links?.length && readable
       ? Atom.make((get): IssueSummary | null => {
-          const summaries = links.map((link) => {
+          const summaries = links.slice(0, SIDEBAR_GROUP_STATUS_LINKS).map((link) => {
             const target = { environmentId, input: linkedIssueRef(link) };
             return selectEnvironmentQueryData(
               get(
