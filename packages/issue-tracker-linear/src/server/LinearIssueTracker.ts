@@ -531,7 +531,7 @@ export const make: Effect.Effect<StandaloneIssueTrackerApi, never, LinearApi.Lin
       getIssue: Effect.fn("LinearIssueTracker.getIssue")(function* (input) {
         const identifier = yield* requireIdentifier("getIssue", input.key);
         // One read of the viewer: the id matches reactions, the handle is what the client sees.
-        // A missing issue interrupts it rather than waiting for it.
+        // A missing issue, or one in another workspace, interrupts it rather than waiting for it.
         const [issue, me] = yield* Effect.all(
           [
             linear.getIssue(identifier, COMMENTS_PAGE).pipe(
@@ -539,6 +539,7 @@ export const make: Effect.Effect<StandaloneIssueTrackerApi, never, LinearApi.Lin
                 (issue) => issue !== null,
                 () => notFound("getIssue"),
               ),
+              Effect.tap((issue) => requireWorkspace("getIssue", issue.url, input.workspace)),
             ),
             linear.viewer().pipe(
               Effect.map((data) => data.viewer),
@@ -548,7 +549,6 @@ export const make: Effect.Effect<StandaloneIssueTrackerApi, never, LinearApi.Lin
           { concurrency: 2 },
         );
         const viewer = me?.id ?? null;
-        yield* requireWorkspace("getIssue", issue.url, input.workspace);
         return {
           ...toSummary(issue, issue.comments.nodes.length),
           body: issue.description ?? "",
