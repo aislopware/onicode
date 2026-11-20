@@ -6,7 +6,6 @@ import type { MouseEvent as ReactMouseEvent } from "react";
 
 import { useOpenLink } from "~/browser/useOpenLink";
 import { cn } from "~/lib/utils";
-import { readLocalApi } from "~/localApi";
 import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { openOnHostLabel, showPullRequestLinkContextMenu } from "./pullRequestLinkContextMenu";
@@ -21,13 +20,18 @@ interface CrumbsPullRequest {
   readonly title: string;
 }
 
-const openNumberContextMenu = (event: ReactMouseEvent, detail: CrumbsPullRequest): void => {
+const openNumberContextMenu = (
+  event: ReactMouseEvent,
+  detail: CrumbsPullRequest,
+  open: (url: string) => Promise<void>,
+): void => {
   event.preventDefault();
   event.stopPropagation();
   void showPullRequestLinkContextMenu({
     url: detail.url,
     openLabel: openOnHostLabel(sourceControlClients.get(detail.provider)),
     position: { x: event.clientX, y: event.clientY },
+    open,
   });
 };
 
@@ -85,7 +89,7 @@ function NumberLink({
             onAuxClick={(event) => {
               if (event.button === 1) void openLink(detail.url, { event }).catch(console.error);
             }}
-            onContextMenu={(event) => openNumberContextMenu(event, detail)}
+            onContextMenu={(event) => openNumberContextMenu(event, detail, openLink)}
             className={cn(
               "inline-flex shrink-0 cursor-pointer items-center gap-0.5 font-medium underline-offset-2 hover:underline",
               toneClassName,
@@ -132,6 +136,7 @@ export function PullRequestDetailCrumbs({
   onBack: (() => void) | undefined;
 }) {
   const gt = useGT();
+  const openLink = useOpenLink(threadRef);
   const ready = detail !== null && toneClassName !== null;
   return (
     <div className="pl-4 grid h-7 min-w-0 items-center overflow-hidden">
@@ -155,7 +160,9 @@ export function PullRequestDetailCrumbs({
                   repositoryUrl ? (
                     <button
                       type="button"
-                      onClick={() => void readLocalApi()?.shell.openExternal(repositoryUrl)}
+                      onClick={(event) =>
+                        void openLink(repositoryUrl, { event }).catch(console.error)
+                      }
                       className="min-w-0 cursor-pointer truncate text-left font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
                     >
                       {detail.repository}

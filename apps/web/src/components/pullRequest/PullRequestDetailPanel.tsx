@@ -1527,6 +1527,7 @@ export function PullRequestDetailPanel({
     return (
       <PullRequestDetailGhost
         seed={matchingListEntry}
+        threadRef={threadRef}
         summary={sharedSummary}
         checkoutCommand={checkoutCommand}
         onCheckoutError={reportCheckoutCommandError}

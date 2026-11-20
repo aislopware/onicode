@@ -12,7 +12,7 @@ const state = vi.hoisted(() => ({
   workspaceAvailable: true,
   navigate: vi.fn(),
   openPreview: vi.fn(),
-  setShortcuts: vi.fn(async () => undefined),
+  setShortcuts: vi.fn(async (_shortcuts: ReadonlyArray<{ readonly command: string }>) => undefined),
   toast: vi.fn(),
 }));
 
@@ -75,7 +75,12 @@ vi.mock(import("./ui/toast"), async (original) => {
 });
 
 import { useClosedViewStore } from "../closedViewStore";
-import { selectThreadRightPanelState, useRightPanelStore } from "../rightPanelStore";
+import {
+  ISSUES_PANEL_REF,
+  PULL_REQUESTS_PANEL_REF,
+  selectThreadRightPanelState,
+  useRightPanelStore,
+} from "../rightPanelStore";
 import { useTerminalUiStateStore } from "../terminalUiStateStore";
 import { ReopenClosedViewShortcut } from "./ReopenClosedViewShortcut";
 
@@ -107,7 +112,7 @@ function setup() {
   });
 }
 
-async function renderShortcut() {
+async function renderShortcut(route = "/") {
   await using stack = new AsyncDisposableStack();
   stack.use(vi.spyOn(navigator, "platform", "get").mockReturnValue("Linux x86_64"));
   window.desktopBridge = {
@@ -122,7 +127,7 @@ async function renderShortcut() {
   stack.defer(() => {
     delete window.desktopBridge;
   });
-  stack.use(await render(<ReopenClosedViewShortcut />));
+  stack.use(await render(<ReopenClosedViewShortcut />, { router: route }));
   const environment = stack.move();
   return {
     /** Attaches an element to the document until the test ends. */
@@ -281,4 +286,27 @@ describe("root reopen shortcut", () => {
       ),
     );
   });
+
+  it.each([
+    ["a thread", "/", ref],
+    ["the pull requests page", "/pull-requests", PULL_REQUESTS_PANEL_REF],
+    ["the issues page", "/issues", ISSUES_PANEL_REF],
+  ] as const)(
+    "leaves the new-surface chord to the page while %s has its right panel closed",
+    async (_, route, panelRef) => {
+      setup();
+      if (panelRef === ref) {
+        state.params = { environmentId: ref.environmentId, threadId: ref.threadId };
+      }
+      const forwards = (command: string) =>
+        (state.setShortcuts.mock.lastCall?.[0] ?? []).some((entry) => entry.command === command);
+      await using _shortcut = await renderShortcut(route);
+      expect(forwards("preview.focusUrl")).toBe(true);
+      expect(forwards("rightPanel.new")).toBe(false);
+      await act(() => {
+        useRightPanelStore.getState().open(panelRef, "files");
+      });
+      expect(forwards("rightPanel.new")).toBe(true);
+    },
+  );
 });

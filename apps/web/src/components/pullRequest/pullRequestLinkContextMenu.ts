@@ -35,10 +35,13 @@ export async function showPullRequestLinkContextMenu({
   url,
   openLabel,
   position,
+  open,
 }: {
   readonly url: string;
   readonly openLabel: string;
   readonly position: { readonly x: number; readonly y: number };
+  /** Opens as Settings → "Open links in" says, where a thread is known. */
+  readonly open?: (url: string) => Promise<void>;
 }): Promise<void> {
   const api = readLocalApi();
   if (!api) return;
@@ -55,7 +58,7 @@ export async function showPullRequestLinkContextMenu({
         unavailableMessage: msg("Clipboard API is unavailable while copying link."),
         failureMessage: msg("Failed to copy link to the clipboard."),
       });
-    else if (action === "open-external") await api.shell.openExternal(url);
+    else if (action === "open-external") await (open ?? api.shell.openExternal)(url);
   } catch {
     toastManager.add({
       type: "error",

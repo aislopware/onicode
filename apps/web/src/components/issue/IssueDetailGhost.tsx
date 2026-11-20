@@ -1,7 +1,8 @@
-import type { IssueListEntry } from "@onicode/contracts";
+import type { IssueListEntry, ScopedThreadRef } from "@onicode/contracts";
 import { T, useGT, useMessages, Var } from "gt-react";
 import { ExternalLinkIcon } from "lucide-react";
 
+import { anchorOpenHandlers, useOpenLink } from "~/browser/useOpenLink";
 import { cn } from "~/lib/utils";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
 
@@ -16,7 +17,14 @@ import {
 import { IssueStateGlyph, issueTrackerPresentation } from "./issuePresentation";
 
 /** The issue panel while its detail loads, showing what the list row already knows. */
-export function IssueDetailGhost({ seed }: { seed?: IssueListEntry | null }) {
+export function IssueDetailGhost({
+  seed,
+  threadRef = null,
+}: {
+  seed?: IssueListEntry | null;
+  threadRef?: ScopedThreadRef | null;
+}) {
+  const openLink = useOpenLink(threadRef);
   const gt = useGT();
   const messages = useMessages();
   const tracker = seed ? issueTrackerPresentation(seed.tracker) : null;
@@ -44,7 +52,14 @@ export function IssueDetailGhost({ seed }: { seed?: IssueListEntry | null }) {
               size="icon-xs"
               variant="ghost"
               aria-label={gt("Open on {provider}", { provider: tracker.providerName })}
-              render={<a href={seed.url} target="_blank" rel="noopener noreferrer" />}
+              render={
+                <a
+                  href={seed.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  {...anchorOpenHandlers(openLink, seed.url)}
+                />
+              }
             >
               <ExternalLinkIcon aria-hidden className="size-3.5" />
             </Button>

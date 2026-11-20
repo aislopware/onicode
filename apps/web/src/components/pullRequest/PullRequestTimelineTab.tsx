@@ -29,7 +29,7 @@ import { m } from "~/i18n/messages";
 import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
 
 import { cn } from "~/lib/utils";
-import { readLocalApi } from "~/localApi";
+import { useOpenLink } from "~/browser/useOpenLink";
 import { pullRequestEnvironment } from "~/state/pullRequests";
 import { RelativeTime } from "~/components/RelativeTime";
 
@@ -912,8 +912,9 @@ export function PullRequestTimelineTab({
   }, [revealUrl, targetIndex]);
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- the hold observes DOM outside React and must end with the tab
   useEffect(() => () => stopHolding.current?.(), []);
+  const openLink = useOpenLink(threadRef);
   const openOnHost = (url: string) => {
-    void readLocalApi()?.shell.openExternal(url);
+    void openLink(url).catch(console.error);
   };
 
   const rowKey = (row: PullRequestTimelineRow) => {
