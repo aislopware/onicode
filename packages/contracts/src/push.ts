@@ -30,6 +30,8 @@ export const PushRegistrationInfo = Schema.Struct({
   environmentKey: PushEnvironmentKey,
   /** The gateways this environment delivers through. A device on another gateway cannot register. */
   gatewayUrls: Schema.Array(Schema.String),
+  /** Whether this environment acts on `liveActivityLost`. One too old to sends no such key. */
+  acceptsLiveActivityLost: Schema.optionalKey(Schema.Boolean),
 });
 export type PushRegistrationInfo = typeof PushRegistrationInfo.Type;
 
@@ -41,6 +43,11 @@ export const PushRegisterDeviceRequest = Schema.Struct({
   notification: Schema.NullOr(PushGrant),
   /** iOS only: lets the environment start the Live Activity while the app is closed. */
   liveActivityStart: Schema.NullOr(PushGrant),
+  /**
+   * iOS only: the device shows no card of this environment and nothing here ended one, as after
+   * an app update. Work under way may start one again.
+   */
+  liveActivityLost: Schema.optionalKey(Schema.Boolean),
   preferences: PushDevicePreferences,
 });
 export type PushRegisterDeviceRequest = typeof PushRegisterDeviceRequest.Type;

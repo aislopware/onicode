@@ -128,6 +128,18 @@ const decodeActivityEnvironment = Schema.decodeUnknownOption(
   ),
 );
 
+async function activityEnvironment(activity: LiveActivity<AgentActivityProps>) {
+  const props = await activity.getProps().catch(() => null);
+  return props === null ? Option.none() : decodeActivityEnvironment(props);
+}
+
+async function hasLiveActivity(environmentId: EnvironmentId): Promise<boolean> {
+  const shown = await Promise.all(getAgentLiveActivities().map(activityEnvironment));
+  return shown.some(
+    (decoded) => Option.isSome(decoded) && decoded.value.environmentId === environmentId,
+  );
+}
+
 interface ObservedActivity {
   readonly environmentId: EnvironmentId;
   grant:
@@ -171,6 +183,7 @@ const loadContext = Effect.fn("AgentAwareness.loadContext")(function* () {
       gatewayUrl,
       deviceId,
       label: (Device.deviceName ?? Device.modelName ?? "Phone").slice(0, 120) || "Phone",
+      build: Application.nativeBuildVersion ?? "",
       allowUnattested: Constants.expoConfig?.extra?.appVariant === "development",
     },
     gateway,
@@ -283,6 +296,7 @@ const syncAll = Effect.fn("AgentAwareness.syncAll")(function* (input: Context) {
       server: yield* environmentClient(prepared),
       tokens: { notification: token, liveActivityStart: liveActivityStartToken },
       preferences: devicePreferences,
+      hasLiveActivity: Effect.promise(() => hasLiveActivity(environmentId)),
     });
     setEnvironmentStatus(environmentId, status);
   }
@@ -367,8 +381,7 @@ async function endDuplicateActivities(
   if (activities.length < 2) return activities;
   const described = await Promise.all(
     activities.map(async (activity) => {
-      const props = await activity.getProps().catch(() => null);
-      const decoded = props === null ? Option.none() : decodeActivityEnvironment(props);
+      const decoded = await activityEnvironment(activity);
       return Option.isNone(decoded)
         ? []
         : [{ id: activity.getId(), updatedAt: "", ...decoded.value }];
@@ -401,8 +414,7 @@ async function reconcileLiveActivities(input: Context): Promise<void> {
     activities.map(async (activity) => {
       let observed = observedActivities.get(activity.getId());
       if (!observed) {
-        const props = await activity.getProps().catch(() => null);
-        const decoded = props === null ? Option.none() : decodeActivityEnvironment(props);
+        const decoded = await activityEnvironment(activity);
         if (Option.isNone(decoded)) {
           await endActivity(activity);
           return;

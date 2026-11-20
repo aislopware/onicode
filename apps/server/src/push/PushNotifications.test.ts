@@ -565,7 +565,7 @@ describe("PushNotifications", () => {
     }),
   );
 
-  it.effect("starts a Live Activity again once it is turned back on", () =>
+  it.effect("starts a Live Activity again once it is turned back on, or the app lost it", () =>
     Effect.gen(function* () {
       const gate = makeGate();
       const { push, register, taken } = yield* setup({ onDeliver: gate.pass });
@@ -576,12 +576,9 @@ describe("PushNotifications", () => {
           liveActivityStart: grant("start"),
           preferences: { ...registration().preferences, activity },
         });
+      const update = { caller: callerOf(SESSION), deviceId: PHONE, grant: grant("update") };
       yield* register(ios(true));
-      yield* push.registerLiveActivity({
-        caller: callerOf(SESSION),
-        deviceId: PHONE,
-        grant: grant("update"),
-      });
+      yield* push.registerLiveActivity(update);
       yield* push.drain;
       taken();
 
@@ -590,6 +587,16 @@ describe("PushNotifications", () => {
       assert.deepStrictEqual(taken(), []);
       const started = [{ grant: "grant_start", alert: undefined, active: 1 }];
       yield* register(ios(true));
+      assert.deepStrictEqual(taken(), started);
+
+      // An app update takes the card and only the app sees it go: APNs still accepts updates.
+      yield* push.registerLiveActivity(update);
+      yield* push.drain;
+      const updated = [{ grant: "grant_update", alert: undefined, active: 1 }];
+      assert.deepStrictEqual(taken(), updated);
+      yield* register(ios(true));
+      assert.deepStrictEqual(taken(), updated);
+      yield* register({ ...ios(true), liveActivityLost: true });
       assert.deepStrictEqual(taken(), started);
 
       // A start still on its way when the setting goes off must not hold back the next one.

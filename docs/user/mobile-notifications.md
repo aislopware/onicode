@@ -26,7 +26,9 @@ thread that started it.
 
 If you swipe one away, it stays away until that environment has finished everything and starts
 new work. iOS keeps a Live Activity for at most eight hours, so work that runs longer gets a new
-one then, also after a swipe. Turning the switch off stops them and leaves alerts on.
+one then, also after a swipe. Updating the app removes its Live Activities; open the app once
+after an update and running work gets a new one. Turning the switch off stops them and leaves
+alerts on.
 
 ## Alerts
 

@@ -209,9 +209,9 @@ type Work =
   | { readonly _tag: "thread"; readonly threadId: ThreadId }
   /**
    * Bring devices up to date, resending to `deviceId` even what it was already sent.
-   * `activityOff` when that device just registered with its activity turned off.
+   * `noCard` when that device just registered showing no card of this environment.
    */
-  | { readonly _tag: "sync"; readonly deviceId?: PushDeviceId; readonly activityOff?: boolean }
+  | { readonly _tag: "sync"; readonly deviceId?: PushDeviceId; readonly noCard?: boolean }
   /** Publish again because time passed, not because a thread changed. */
   | { readonly _tag: "refresh" }
   /** Take the activity off a device that was just removed. */
@@ -723,9 +723,10 @@ const make = Effect.gen(function* () {
           return yield* endActivity(work.device);
         case "sync":
           if (work.deviceId !== undefined) delivered.delete(work.deviceId);
-          if (work.deviceId !== undefined && work.activityOff) {
-            // The app ends its card with the setting, so turning it back on starts from nothing.
-            // Done in turn here, so a start still on its way cannot record itself afterwards.
+          if (work.deviceId !== undefined && work.noCard) {
+            // The setting went off and the app ended its card, or an app update took it: the
+            // next start begins from nothing. Done in turn here, so a start still on its way
+            // cannot record itself afterwards.
             const { deviceId } = work;
             yield* devices.setGrant({ deviceId, kind: "liveActivityUpdate", grant: null });
             yield* devices.setLiveActivityStartedAt({ deviceId, at: null });
@@ -762,7 +763,11 @@ const make = Effect.gen(function* () {
   });
 
   return PushNotifications.of({
-    registrationInfo: { environmentKey: signingKey.publicKey, gatewayUrls },
+    registrationInfo: {
+      environmentKey: signingKey.publicKey,
+      gatewayUrls,
+      acceptsLiveActivityLost: true,
+    },
 
     alertsOnInput: Effect.gen(function* () {
       const now = yield* Clock.currentTimeMillis;
@@ -817,7 +822,7 @@ const make = Effect.gen(function* () {
       yield* enqueue({
         _tag: "sync",
         deviceId: input.deviceId,
-        activityOff: !request.preferences.activity,
+        noCard: !request.preferences.activity || request.liveActivityLost === true,
       });
     }),
 

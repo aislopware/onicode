@@ -57,6 +57,14 @@ decides what each registered device should see.
   ended card, and a late one: it keeps accepting updates for a card that is gone, then answers
   `410 Unregistered` after a delay Apple does not specify. So an accepted update does not mean
   the card is on screen, and a card's age, not APNs, says when to replace it.
+- **The app reports a card it lost to an update.** Installing an app update or reinstalling
+  removes its Live Activities while work goes on and the start's hold still runs. Nothing tells
+  the environment, and the app cannot tell a removed card from a swiped one by looking. A swipe
+  never changes the app's build, so the app remembers the build that last registered with each
+  environment, and when that changed and no card of the environment is left, its registration
+  says `liveActivityLost`. The environment then forgets the card and its start. The phone may be
+  updated before the environment is, so the app keeps the report for an environment that does not
+  yet say it accepts one.
 - **Only a changed count and the keepalive are sent to a Live Activity at high priority.** APNs
   holds a low-priority update back until the phone finds it convenient, which left a card a
   count behind for minutes, and would let a keepalive arrive after the card had called itself

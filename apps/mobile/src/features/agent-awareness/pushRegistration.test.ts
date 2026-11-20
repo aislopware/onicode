@@ -102,7 +102,7 @@ function fakeEnvironment(environmentKey = KEY_A, gatewayUrls = [GATEWAY]) {
     liveActivity: [] as Array<string>,
     unregister: 0,
   };
-  const current = { environmentKey, gatewayUrls, reachable: true };
+  const current = { environmentKey, gatewayUrls, reachable: true, acceptsLiveActivityLost: true };
   const client: PushEnvironmentClient = {
     registration: Effect.suspend(() => {
       calls.registration += 1;
@@ -110,6 +110,7 @@ function fakeEnvironment(environmentKey = KEY_A, gatewayUrls = [GATEWAY]) {
         ? Effect.succeed({
             environmentKey: current.environmentKey,
             gatewayUrls: current.gatewayUrls,
+            ...(current.acceptsLiveActivityLost ? { acceptsLiveActivityLost: true } : {}),
           })
         : Effect.fail(new PushEnvironmentRequestError({ message: "offline" }));
     }),
@@ -136,6 +137,7 @@ const CONFIG: PushRegistrarConfig = {
   gatewayUrl: GATEWAY,
   deviceId: "device-1234",
   label: "Test iPhone",
+  build: "100",
   allowUnattested: false,
 };
 
@@ -174,7 +176,15 @@ const sync = (
   },
   environmentId = ENV_A,
   preferences = PREFERENCES,
-) => registrar.syncEnvironment({ environmentId, server: client, tokens, preferences });
+  hasLiveActivity = true,
+) =>
+  registrar.syncEnvironment({
+    environmentId,
+    server: client,
+    tokens,
+    preferences,
+    hasLiveActivity: Effect.succeed(hasLiveActivity),
+  });
 
 describe("grantIsFresh", () => {
   it("refreshes on a new token or with a third of the lifetime left", () => {
@@ -252,7 +262,7 @@ describe("makePushRegistrar", () => {
     }),
   );
 
-  it.effect("reuses the credential and grants, registering again only after a relaunch", () =>
+  it.effect("reuses grants across relaunches, and reports a card an update took", () =>
     Effect.gen(function* () {
       const { registrar, gateway, stored } = yield* setup();
       const environment = fakeEnvironment();
@@ -266,6 +276,30 @@ describe("makePushRegistrar", () => {
       expect(gateway.calls.attest).toHaveLength(1);
       expect(gateway.calls.grants).toHaveLength(1);
       expect(environment.calls.register).toHaveLength(2);
+
+      // A card gone after an update was taken by iOS; one gone under the same build was swiped.
+      const withoutCard = (launched: Effect.Success<ReturnType<typeof setup>>) =>
+        sync(launched.registrar, environment.client, undefined, ENV_A, PREFERENCES, false);
+      const launch = (build: string) => setup({ gateway, stored, config: { build } });
+      yield* withoutCard(yield* launch(CONFIG.build));
+      yield* withoutCard(yield* launch("101"));
+      yield* withoutCard(yield* launch("101"));
+      // An environment too old to act on the report hears it once it has been updated.
+      environment.current.acceptsLiveActivityLost = false;
+      const waiting = yield* launch("102");
+      yield* withoutCard(waiting);
+      environment.current.acceptsLiveActivityLost = true;
+      yield* withoutCard(waiting);
+      yield* withoutCard(waiting);
+      expect(environment.calls.register.map((request) => request.liveActivityLost)).toEqual([
+        undefined,
+        undefined,
+        undefined,
+        true,
+        undefined,
+        undefined,
+        true,
+      ]);
     }),
   );
 
