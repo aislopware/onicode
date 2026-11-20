@@ -83,6 +83,19 @@ export interface ProviderTurnControlServiceV2Shape {
     void | ProviderAdapter.ProviderAdapterV2SteerResult,
     ProviderTurnControlError
   >;
+  /** A turn that ended or a session that is gone needs nothing: the unread steer is queued again. */
+  readonly sendSteerNow: (input: {
+    readonly threadId: ThreadId;
+    readonly providerSessionId: ProviderSessionId;
+    readonly providerThreadId: ProviderThreadId;
+    readonly providerTurnId: ProviderTurnId;
+    readonly messageId: MessageId;
+  }) => Effect.Effect<
+    void,
+    | ProjectionStore.ProjectionStoreV2Error
+    | ProviderSessionManager.ProviderSessionManagerV2Error
+    | ProviderAdapter.ProviderAdapterV2Error
+  >;
   /** Best effort: a turn that ended or moved sessions picks the selection up when it next starts. */
   readonly applyModelSelection: (input: {
     readonly threadId: ThreadId;
@@ -286,6 +299,26 @@ export const layer: Layer.Layer<
         const session = yield* sessions.get(providerThread.providerSessionId);
         if (Option.isNone(session) || session.value.applyThreadTitle === undefined) return;
         yield* session.value.applyThreadTitle({ providerThread, title: thread.title });
+      }),
+      sendSteerNow: Effect.fn("ProviderTurnControlService.sendSteerNow")(function* (input) {
+        const { providerThread, providerTurn } = yield* projections.getProviderControlContext(
+          input.threadId,
+          input,
+        );
+        if (
+          providerThread === undefined ||
+          providerTurn?.status !== "running" ||
+          providerThread.providerSessionId !== input.providerSessionId
+        ) {
+          return;
+        }
+        const session = yield* sessions.get(input.providerSessionId);
+        if (Option.isNone(session) || session.value.sendSteerNow === undefined) return;
+        yield* session.value.sendSteerNow({
+          providerThread,
+          providerTurnId: providerTurn.id,
+          messageId: input.messageId,
+        });
       }),
       interrupt: Effect.fn("ProviderTurnControlService.interrupt")(
         function* (input) {

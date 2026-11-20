@@ -678,6 +678,7 @@ function commandThreadId(command: OrchestrationV2ServerCommand): ThreadId {
     case "subagent.stop":
     case "run.interrupt":
     case "queued-message.promote-to-steer":
+    case "steer.send-now":
     case "queued-run.start":
     case "queued-run.steer-target-ended":
     case "queue.resume":
@@ -3607,7 +3608,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
   });
 
   // A steer still pending after its run ended was never read: the provider marks one it read
-  // completed, and one Stop dropped cancelled. It runs next, in its place among waiting messages.
+  // completed. It runs next, in its place among waiting messages. After Stop a person's steer
+  // still runs next and a notice waits held.
   const requeueUnreadSteers = Effect.fn("Orchestrator.requeueUnreadSteers")(function* (
     threadId: ThreadId,
     runIds?: ReadonlyArray<RunId>,
@@ -3683,50 +3685,6 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       }
       if (message === undefined) continue;
       const stopped = yield* projectionStore.hasRunInterruptRequest(threadId, run.id);
-      // Stop drops a steer it reached; say so, as the adapter does for steers it still held.
-      if (stopped && item.type === "user_message") {
-        yield* writeSystemEvents([
-          {
-            type: "turn-item.updated",
-            threadId,
-            runId: run.id,
-            ...(item.nodeId === null ? {} : { nodeId: item.nodeId }),
-            providerInstanceId: run.providerInstanceId,
-            occurredAt: now,
-            payload: { ...item, status: "cancelled" as const, completedAt: now, updatedAt: now },
-          },
-          {
-            type: "turn-item.updated",
-            threadId,
-            runId: run.id,
-            ...(item.nodeId === null ? {} : { nodeId: item.nodeId }),
-            providerInstanceId: run.providerInstanceId,
-            occurredAt: now,
-            payload: {
-              id: idAllocator.derive.runSignalTurnItem({
-                runId: run.id,
-                signal: `unread-steer:${message.id}`,
-              }),
-              threadId,
-              runId: run.id,
-              nodeId: item.nodeId,
-              providerThreadId: item.providerThreadId ?? null,
-              providerTurnId: item.providerTurnId ?? null,
-              nativeItemRef: null,
-              parentItemId: null,
-              ordinal: item.ordinal,
-              type: "system_notice" as const,
-              status: "completed" as const,
-              title: "Steer delivery not confirmed",
-              message: `The agent did not confirm reading your steer before Stop. It may not have been delivered. Resend it if needed: "${message.text}"`,
-              startedAt: now,
-              completedAt: now,
-              updatedAt: now,
-            },
-          },
-        ]);
-        continue;
-      }
       // The message's first steer effect recorded which runs were queued before it was sent; a
       // queued message that was promoted also stays behind only the runs queued before its own.
       const firstSteer = Option.getOrUndefined(
@@ -3744,7 +3702,14 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ),
       );
       // Nobody is told about a notice Stop dropped, so it waits held instead of being reported.
-      placed.push({ item, run, message, steer, afterRunOrdinal, held: stopped });
+      placed.push({
+        item,
+        run,
+        message,
+        steer,
+        afterRunOrdinal,
+        held: stopped && item.type === "notification",
+      });
     }
     // Each requeue starts the queue once it commits, so earlier places go first. A held notice
     // goes last: queued first, it would hold every steer placed behind it.
@@ -7319,13 +7284,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           (message) => message.id === command.messageId && message.runId === source.id,
         ) ||
         projection.thread.archivedAt !== null ||
-        projection.thread.deletedAt !== null ||
-        // A steer that missed a stopped turn returns to the queue, held; a declined one is
-        // dropped. Nobody can send a notice again, so Stop does not drop one here.
-        (command.steerFollowUpOfRunId !== undefined &&
-          command.notification === undefined &&
-          command.delegatedCompletion === undefined &&
-          (yield* stopReachedRun(command, command.threadId, source.id)))
+        projection.thread.deletedAt !== null
       ) {
         yield* emit(
           events,
@@ -8096,21 +8055,31 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       projection.thread.worktreePath === null
         ? latestRun
         : undefined;
-    // A steer that missed a failed or stopped turn waits for the user, as queued messages do
-    // then. One that missed a completed turn starts the next, unless Stop reached that turn.
     const steerMissedRun =
       command.steerMissedRunId === undefined
         ? undefined
         : projection.runs.find((run) => run.id === command.steerMissedRunId);
-    const steerMissedHeld =
-      steerMissedRun !== undefined &&
-      (dispatchMode.type === "queue_after_active" ||
-        (yield* stopReachedRun(command, command.threadId, steerMissedRun.id)));
     // A steer whose run already ended still keeps its place in the queue.
     const steerFollowUpSource =
       command.steerFollowUpOfRunId === undefined
         ? undefined
         : projection.runs.find((run) => run.id === command.steerFollowUpOfRunId);
+    const steerSource = steerMissedRun ?? steerFollowUpSource;
+    const stopReachedSteerSource =
+      steerSource !== undefined &&
+      (yield* stopReachedRun(command, command.threadId, steerSource.id));
+    // Stop sends a person's steer its turn never read as the next turn, ahead of the queue
+    // it holds. Nobody waits for a notice, so one stays held.
+    const steerRunsAfterStop =
+      stopReachedSteerSource &&
+      command.notification === undefined &&
+      command.delegatedCompletion === undefined;
+    // A steer that missed a failed turn waits for the user, as queued messages do then. One
+    // that missed a completed turn starts the next.
+    const steerMissedHeld =
+      steerMissedRun !== undefined &&
+      !steerRunsAfterStop &&
+      (dispatchMode.type === "queue_after_active" || stopReachedSteerSource);
     const queueBehindRun =
       activeRun ??
       worktreeMissingRun ??
@@ -8148,6 +8117,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       steerWhenReadyRunId === undefined &&
       command.steerFollowUpOfRunId === undefined &&
       !steerMissedHeld &&
+      !steerRunsAfterStop &&
       command.createdBy === "user" &&
       (command.creationSource === "web" || command.creationSource === "mobile") &&
       command.scheduledTaskId === undefined;
@@ -8281,9 +8251,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       // Stop holds the runs queued when it lands. A notice its run hands back after that, which
       // Stop does not drop, waits held like one the run's end queues again.
       const noticeFollowsStop =
-        steerFollowUpSource !== undefined &&
-        (command.notification !== undefined || command.delegatedCompletion !== undefined) &&
-        (yield* stopReachedRun(command, command.threadId, steerFollowUpSource.id));
+        steerFollowUpSource !== undefined && stopReachedSteerSource && !steerRunsAfterStop;
       let steerFollowUpQueuePosition: number | undefined;
       if (
         command.steerFollowUpOfRunId !== undefined &&
@@ -8343,6 +8311,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         (steerWhenReadyRunId === undefined &&
           heldRunsToRelease.length === 0 &&
           queueIsHeld &&
+          !steerRunsAfterStop &&
           !wakeSkipsHold &&
           queuedRunStop?.skipsHeldQueue !== true)
           ? { queueHeld: true }
@@ -12084,6 +12053,75 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       );
     },
   );
+
+  const dispatchSteerSendNow = Effect.fn("Orchestrator.dispatchSteerSendNow")(function* (
+    command: Extract<OrchestrationV2Command, { readonly type: "steer.send-now" }>,
+    events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
+    effects: Ref.Ref<Array<PendingOrchestrationEffectV2>>,
+  ) {
+    const projection = yield* loadProjectionForCommand(
+      command,
+      ["runs", "attempts", "providerThreads", "providerTurns", "turnItems"],
+      { turnItemTypes: ["user_message"], turnItemStatuses: ["pending"] },
+    );
+    const item = projection.turnItems.find(
+      (candidate) =>
+        candidate.type === "user_message" &&
+        candidate.messageId === command.messageId &&
+        candidate.status === "pending" &&
+        (candidate.inputIntent === "steer" || candidate.inputIntent === "promoted_queued_to_steer"),
+    );
+    const run = projection.runs.find((candidate) => candidate.id === item?.runId);
+    const providerTurn = run === undefined ? undefined : providerTurnForRun(projection, run);
+    const providerThread = projection.providerThreads.find(
+      (candidate) => candidate.id === providerTurn?.providerThreadId,
+    );
+    const providerSessionId = providerThread?.providerSessionId;
+    // Once the agent read the steer, or its turn ended, nothing is left to hurry.
+    if (
+      item?.type !== "user_message" ||
+      run === undefined ||
+      !isLiveRun(run) ||
+      providerTurn?.status !== "running" ||
+      providerThread === undefined ||
+      providerSessionId == null ||
+      (yield* stopReachedRun(command, command.threadId, run.id))
+    ) {
+      return yield* new OrchestratorDispatchError({
+        commandId: command.commandId,
+        commandType: command.type,
+        cause: `Message ${command.messageId} is not a steer waiting to be read.`,
+      });
+    }
+    const now = yield* DateTime.now;
+    yield* emit(
+      events,
+      command,
+    )({
+      type: "turn-item.updated",
+      threadId: command.threadId,
+      runId: run.id,
+      ...(item.nodeId === null ? {} : { nodeId: item.nodeId }),
+      providerInstanceId: run.providerInstanceId,
+      occurredAt: now,
+      payload: { ...item, sentNow: true, updatedAt: now },
+    });
+    yield* Ref.update(effects, (existing) => [
+      ...existing,
+      {
+        id: `effect:${command.commandId}:provider-turn.steer-now:${providerTurn.id}`,
+        commandId: command.commandId,
+        threadId: command.threadId,
+        request: {
+          type: "provider-turn.steer-now",
+          providerSessionId,
+          providerThreadId: providerThread.id,
+          providerTurnId: providerTurn.id,
+          messageId: command.messageId,
+        },
+      } satisfies PendingOrchestrationEffectV2,
+    ]);
+  });
 
   const dispatchQueuedMessagePromoteToSteer = Effect.fn(
     "Orchestrator.dispatchQueuedMessagePromoteToSteer",
@@ -16188,6 +16226,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           events,
           effects,
         );
+        break;
+      case "steer.send-now":
+        yield* dispatchSteerSendNow(command, events, effects);
         break;
       case "queued-run.steer-target-ended":
         yield* dispatchQueuedRunSteerTargetEnded(command, events);

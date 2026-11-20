@@ -1781,6 +1781,8 @@ export const OrchestrationV2TurnItem = Schema.Union([
     workflowScript: OrchestrationV2ConversationMessage.fields.workflowScript,
     freshContext: OrchestrationV2Run.fields.freshContext,
     inputIntent: OrchestrationV2UserMessageInputIntent,
+    /** The user asked for this unread steer to be sent at once. */
+    sentNow: Schema.optional(Schema.Boolean),
     text: Schema.String,
     /** Same as the text of message `messageId`. */
     textOmitted: DedupedBodyMarker,
@@ -2683,6 +2685,7 @@ export const OrchestrationV2TurnItemJson = Schema.Union([
     workflowScript: OrchestrationV2ConversationMessage.fields.workflowScript,
     freshContext: OrchestrationV2Run.fields.freshContext,
     inputIntent: OrchestrationV2UserMessageInputIntent,
+    sentNow: Schema.optional(Schema.Boolean),
     text: Schema.String,
     context: Schema.optional(OrchestrationMessageContext),
     attachments: Schema.Array(ChatAttachment),
@@ -3539,6 +3542,13 @@ export const OrchestrationV2Command = Schema.Union([
     threadId: ThreadId,
     queuedRunId: RunId,
     targetRunId: RunId,
+  }),
+  /** Sends a steer the agent has not read yet at once, moving or cutting the work in its way. */
+  Schema.Struct({
+    type: Schema.Literal("steer.send-now"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    messageId: MessageId,
   }),
   Schema.Struct({
     type: Schema.Literal("queue.resume"),

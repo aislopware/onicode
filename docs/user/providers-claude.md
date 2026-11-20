@@ -115,16 +115,26 @@ timestamp shows when the displayed wait started.
 
 ## Steering
 
-A steer waits until Claude finishes the tool calls it is running, then Claude reads it
-in the same turn. The message shows as unread until then. If Claude drops it before
-reading it, the message is sent as the next turn, after any messages queued before it.
-If Claude exits or the server restarts first, the message waits in the queue in that
-same place until you resume it. If you press Stop, Onicode shows a notice with the text
-of any steer Claude had not read.
+Steering follows Claude Code. A steer waits until Claude finishes the tool calls it is
+running, then Claude reads it in the same turn. The message shows as unread until then.
+Subagents do not hold it up: any subagent the turn is waiting on moves to the background
+and keeps running, including one that starts after you send the steer.
 
-Results and questions from delegated tasks reach Claude the same way and never appear in
-that notice. A question Claude had not read is queued again. A task result Claude had not
-read is queued again too, unless you press Stop, which discards it.
+A waiting steer shows an hourglass. To have Claude read it at once, select the arrow
+beside the hourglass (**Send now**), or press the
+steer shortcut (`thread.steerQueuedMessage`) when no queued message can take it. Running
+commands, subagents and MCP calls move to the background and keep running. When nothing
+can move, Claude stops the step it is on and continues from your message.
+
+If you press Stop, a steer Claude had not read is sent as the next turn, and messages you
+queued stay held. Press Stop again to stop that turn too. If Claude drops the steer before
+reading it, the message is also sent as the next turn, after any messages queued before
+it. If Claude exits or the server restarts first, the message waits in the queue in that
+same place until you resume it.
+
+Results and questions from delegated tasks reach Claude the same way. A question Claude
+had not read is queued again. A task result Claude had not read is queued again too,
+unless you press Stop, which discards it.
 
 ## Skills
 

@@ -1,5 +1,6 @@
 import { type ChatFileAttachment, type ChatImageAttachment } from "../../types";
 import type { ComposerContextRecord, KnownComposerContextRecord } from "@onicode/contracts";
+import type { ThreadStructureTurnItem } from "@onicode/client-runtime/state/shell";
 import { msg } from "gt-react";
 import { m, type MessageResolver } from "~/i18n/messages";
 import { asKnownContextRecord } from "~/lib/composerContextRecords";
@@ -30,5 +31,20 @@ export function resolvePreviewAnnotationImage(input: {
     ) ??
     input.previewImages[input.annotationRecordIds.indexOf(input.record.contextId)] ??
     null
+  );
+}
+
+type UserMessageTurnItem = Extract<ThreadStructureTurnItem, { type: "user_message" }>;
+
+/** The steer the steer shortcut sends now when no queued message can take it. */
+export function oldestWaitingSteer(
+  turnItems: ReadonlyArray<ThreadStructureTurnItem>,
+): UserMessageTurnItem | undefined {
+  return turnItems.find(
+    (item): item is UserMessageTurnItem =>
+      item.type === "user_message" &&
+      item.status === "pending" &&
+      (item.inputIntent === "steer" || item.inputIntent === "promoted_queued_to_steer") &&
+      item.sentNow !== true,
   );
 }

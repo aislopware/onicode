@@ -11,18 +11,31 @@ import {
   type EnvironmentId,
   type MessageId,
   type ScheduledTaskId,
+  type ScopedThreadRef,
   type ServerProviderSkill,
   ThreadId,
 } from "@onicode/contracts";
+import { useAtomValue } from "@effect/atom-react";
+import {
+  isAtomCommandInterrupted,
+  squashAtomCommandFailure,
+} from "@onicode/client-runtime/state/runtime";
+import { deriveThreadQueueWorkflowState } from "@onicode/client-runtime/state/thread-workflows";
+import { thrownErrorMessage } from "@onicode/client-runtime/errors";
 import { scopeThreadRef } from "@onicode/client-runtime/environment";
 import { resolveUserMessagePresentation } from "@onicode/client-runtime/user-message";
 import { Link } from "@tanstack/react-router";
-import { useQuietThreadShell } from "../../state/entities";
+import { useQuietThreadProjection, useQuietThreadShell } from "../../state/entities";
 import { useEnvironment } from "../../state/environments";
 import { useEnvironmentQuery } from "../../state/query";
-import { serverEnvironment } from "../../state/server";
+import { primaryServerKeybindingsAtom, serverEnvironment } from "../../state/server";
+import { threadEnvironment } from "../../state/threads";
+import { useAtomCommand } from "../../state/use-atom-command";
+import { shortcutLabelForCommand } from "../../keybindings";
+import { toastManager } from "../ui/toast";
+import { m } from "../../i18n/messages";
 import { replaceComposerContextReferences } from "@onicode/shared/composerContextReferences";
-import { memo, use, useState, type ReactNode } from "react";
+import { memo, use, useRef, useState, type ReactNode } from "react";
 import {
   createMessageAttachmentPreviewProjector,
   selectMessageImageResources,
@@ -35,10 +48,12 @@ import {
 } from "../../types";
 import ChatMarkdown from "../ChatMarkdown";
 import {
+  ArrowUpIcon,
   CalendarClockIcon,
   ChevronDownIcon,
   DownloadIcon,
   EyeIcon,
+  HourglassIcon,
   type LucideIcon,
   MessagesSquareIcon,
   Redo2Icon,
@@ -94,6 +109,7 @@ import {
 } from "./TimelineRowParts";
 import { UserMessageContextReferenceChip } from "./UserMessageContextChips";
 import {
+  oldestWaitingSteer,
   resolvePreviewAnnotationImage,
   userMessageFileLabel,
 } from "./TimelineUserMessageRow.logic";
@@ -316,7 +332,12 @@ function AutomationMessageRow({ row }: { row: Extract<TimelineRow, { kind: "mess
       row.message.inputIntent === "promoted_queued_to_steer" ? (
         <UserMessageIntentMarker
           intent={row.message.inputIntent}
+          messageId={row.message.id}
           unread={row.projectedItem?.item.status === "pending"}
+          sentNow={
+            row.projectedItem?.item.type === "user_message" &&
+            row.projectedItem.item.sentNow === true
+          }
         />
       ) : null}
       <div
@@ -904,7 +925,12 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
       !row.continuesSteer ? (
         <UserMessageIntentMarker
           intent={row.message.inputIntent}
+          messageId={row.message.id}
           unread={row.projectedItem?.item.status === "pending"}
+          sentNow={
+            row.projectedItem?.item.type === "user_message" &&
+            row.projectedItem.item.sentNow === true
+          }
         />
       ) : null}
       {mediaAboveText ? (
@@ -1114,35 +1140,126 @@ const ACTIONS_REVEAL_CLASS_NAME =
 
 function UserMessageIntentMarker({
   intent,
+  messageId,
   unread,
+  sentNow,
 }: {
   readonly intent: "steer" | "promoted_queued_to_steer";
+  readonly messageId: MessageId;
   readonly unread: boolean;
+  readonly sentNow: boolean;
+}) {
+  const ctx = use(TimelineRowCtx);
+  const gt = useGT();
+  return (
+    <div
+      className="me-1 flex h-4 items-center justify-end gap-1 text-xs leading-none text-muted-foreground"
+      data-user-message-intent={intent}
+    >
+      <Tooltip>
+        <TooltipTrigger render={<span className="flex items-center gap-1" />}>
+          <Redo2Icon aria-hidden="true" className="size-3" />
+          <span aria-hidden={unread}>
+            {gt("Steer", { $context: "noun, a message that steers the running turn" })}
+          </span>
+          {unread ? (
+            <>
+              <HourglassIcon aria-hidden="true" className="size-3" />
+              <span className="sr-only">
+                {sentNow ? gt("Steer · sending now") : gt("Steer · waiting to be read")}
+              </span>
+            </>
+          ) : null}
+        </TooltipTrigger>
+        <TooltipPopup side="top">
+          {unread
+            ? sentNow
+              ? gt("Making room for the agent to read this now.")
+              : gt(
+                  "Waiting for the agent to read this. It reads steers between steps, after a running command finishes.",
+                )
+            : intent === "promoted_queued_to_steer"
+              ? gt("Originally queued, then promoted to steer the active turn")
+              : gt("Steered the active turn")}
+        </TooltipPopup>
+      </Tooltip>
+      {unread && ctx.canOperateThread && ctx.threadRef !== null ? (
+        <SendSteerNowButton threadRef={ctx.threadRef} messageId={messageId} sent={sentNow} />
+      ) : null}
+    </div>
+  );
+}
+
+function SendSteerNowButton({
+  threadRef,
+  messageId,
+  sent,
+}: {
+  readonly threadRef: ScopedThreadRef;
+  readonly messageId: MessageId;
+  readonly sent: boolean;
 }) {
   const gt = useGT();
+  const sendSteerNow = useAtomCommand(threadEnvironment.sendSteerNow);
+  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  const projection = useQuietThreadProjection(threadRef)?.projection;
+  const [sending, setSending] = useState(false);
+  const sendingRef = useRef(false);
+  const shortcutLabel =
+    projection &&
+    oldestWaitingSteer(projection.turnItems)?.messageId === messageId &&
+    !deriveThreadQueueWorkflowState(projection).queuedRuns.some((run) => !run.awaitsCompaction)
+      ? shortcutLabelForCommand(keybindings, "thread.steerQueuedMessage", {
+          context: { terminalFocus: false },
+        })
+      : null;
+
+  const send = async () => {
+    if (sendingRef.current) return;
+    sendingRef.current = true;
+    setSending(true);
+    const result = await sendSteerNow({
+      environmentId: threadRef.environmentId,
+      input: { threadId: threadRef.threadId, messageId },
+    });
+    sendingRef.current = false;
+    setSending(false);
+    if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+      const error = squashAtomCommandFailure(result);
+      toastManager.add({
+        type: "error",
+        title: gt("Could not send steer now"),
+        description: thrownErrorMessage(error, m) ?? gt("An error occurred."),
+      });
+    }
+  };
+
   return (
     <Tooltip>
       <TooltipTrigger
         render={
-          <div
-            className="me-1 flex items-center justify-end gap-1 text-xs leading-none text-muted-foreground"
-            data-user-message-intent={intent}
+          <Button
+            type="button"
+            size="icon-tiny"
+            variant="default"
+            disabled={sending || sent}
+            onClick={() => void send()}
+            aria-label={gt("Send now")}
           />
         }
       >
-        <Redo2Icon aria-hidden="true" className="size-3" />
-        {unread
-          ? gt("Steer · waiting to be read")
-          : gt("Steer", { $context: "noun, a message that steers the running turn" })}
+        <ArrowUpIcon />
       </TooltipTrigger>
       <TooltipPopup side="top">
-        {unread
-          ? gt(
-              "Waiting for the agent to read this. It reads steers between steps, after a running command finishes.",
-            )
-          : intent === "promoted_queued_to_steer"
-            ? gt("Originally queued, then promoted to steer the active turn")
-            : gt("Steered the active turn")}
+        <div>
+          {gt("Send now")}
+          {shortcutLabel ? ` (${shortcutLabel})` : ""}
+        </div>
+        <div>
+          {gt(
+            "Moves running commands and subagents to the background, or stops the current step, so the agent reads this now.",
+          )}
+        </div>
       </TooltipPopup>
     </Tooltip>
   );

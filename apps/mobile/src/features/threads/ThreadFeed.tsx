@@ -1735,6 +1735,60 @@ function OpenSenderThreadButton(props: {
   );
 }
 
+function SendSteerNowButton(props: {
+  readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
+  readonly messageId: MessageId;
+  readonly sent: boolean;
+}) {
+  const sendSteerNow = useAtomCommand(threadEnvironment.sendSteerNow, "send steer now");
+  const [sending, setSending] = useState(false);
+  const sendingRef = useRef(false);
+  const send = async () => {
+    if (sendingRef.current) return;
+    sendingRef.current = true;
+    setSending(true);
+    void Haptics.selectionAsync();
+    const result = await sendSteerNow({
+      environmentId: props.environmentId,
+      input: { threadId: props.threadId, messageId: props.messageId },
+    });
+    sendingRef.current = false;
+    setSending(false);
+    if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+      const error = squashAtomCommandFailure(result);
+      Dialog.alert(
+        m(msg("Could not send steer now")),
+        errorDisplayMessage(error, m) ?? m(msg("Try again.")),
+      );
+    }
+  };
+  const disabled = sending || props.sent;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={m(msg("Send steer now"))}
+      accessibilityHint={m(
+        msg(
+          "Moves running commands and subagents to the background, or stops the current step, so the agent reads this now.",
+        ),
+      )}
+      accessibilityState={{ disabled }}
+      disabled={disabled}
+      hitSlop={10}
+      className="size-6 items-center justify-center rounded-full bg-primary active:opacity-70 disabled:opacity-40"
+      onPress={() => void send()}
+    >
+      <SymbolView
+        name="arrow.up"
+        size={11}
+        weight="semibold"
+        tintColorClassName="accent-primary-foreground"
+      />
+    </Pressable>
+  );
+}
+
 /** Automation prompts are long, repeated runbooks; a folded bubble keeps them out of the way. */
 function ThreadAutomationMessageRow(props: {
   readonly environmentId: EnvironmentId;
@@ -2362,6 +2416,8 @@ function renderFeedEntry(
         : resolveUserMessageIntentBadge(
             message.inputIntent,
             message.projectedItem?.item.status === "pending",
+            message.projectedItem?.item.type === "user_message" &&
+              message.projectedItem.item.sentNow === true,
             props.m,
           );
       const referenceIds = new Set(
@@ -2609,7 +2665,18 @@ function renderFeedEntry(
                   <Text className="font-oni-medium text-xs text-foreground-secondary">
                     {intentBadge.label}
                   </Text>
+                  {intentBadge.state === "read" ? null : (
+                    <SymbolView name="hourglass" size={12} tintColor={iconSubtleColor} />
+                  )}
                 </View>
+              ) : null}
+              {intentBadge && intentBadge.state !== "read" ? (
+                <SendSteerNowButton
+                  environmentId={props.environmentId}
+                  threadId={props.threadId}
+                  messageId={message.id}
+                  sent={intentBadge.state === "sending"}
+                />
               ) : null}
               {intentBadge ? (
                 <Text

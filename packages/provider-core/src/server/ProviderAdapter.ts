@@ -800,6 +800,15 @@ export interface ProviderAdapterV2SessionRuntime {
   readonly steerTurn: (
     input: ProviderAdapterV2SteerInput,
   ) => Effect.Effect<void | ProviderAdapterV2SteerResult, ProviderAdapterV2Error>;
+  /**
+   * Sends a steer the agent has not read yet at once, moving or cutting the work in its way.
+   * A steer already read, or one this process never held, is left alone.
+   */
+  readonly sendSteerNow?: (input: {
+    readonly providerThread: OrchestrationV2ProviderThread;
+    readonly providerTurnId: ProviderTurnId;
+    readonly messageId: MessageId;
+  }) => Effect.Effect<void, ProviderAdapterV2Error>;
   /** Applies a thread's new selection to its running process where the provider can; otherwise it waits for the next turn. */
   readonly applyModelSelection?: (input: {
     readonly providerThread: OrchestrationV2ProviderThread;

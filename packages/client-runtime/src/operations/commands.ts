@@ -261,6 +261,10 @@ export interface PromoteQueuedRunInput extends ThreadCommandInput {
   readonly targetRunId: RunId;
 }
 
+export interface SendSteerNowInput extends ThreadCommandInput {
+  readonly messageId: MessageId;
+}
+
 export interface CancelQueuedRunInput extends ThreadCommandInput {
   readonly runId: RunId;
 }
@@ -1104,6 +1108,17 @@ export const promoteQueuedRun = Effect.fn("EnvironmentCommands.promoteQueuedRun"
     threadId: input.threadId,
     queuedRunId: input.queuedRunId,
     targetRunId: input.targetRunId,
+  });
+});
+
+export const sendSteerNow = Effect.fn("EnvironmentCommands.sendSteerNow")(function* (
+  input: SendSteerNowInput,
+) {
+  return yield* dispatch({
+    type: "steer.send-now",
+    commandId: yield* allocateCommandId(input),
+    threadId: input.threadId,
+    messageId: input.messageId,
   });
 });
 

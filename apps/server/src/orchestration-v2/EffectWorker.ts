@@ -324,6 +324,19 @@ export const layerExecutor: Layer.Layer<
                 ),
               );
           }
+          case "provider-turn.steer-now":
+            return providerTurnControl
+              .sendSteerNow({ threadId: effect.threadId, ...effect.request })
+              .pipe(
+                Effect.mapError(
+                  (cause) =>
+                    new OrchestrationEffectExecutionError({
+                      effectId: effect.id,
+                      effectType: effect.request.type,
+                      cause,
+                    }),
+                ),
+              );
           case "provider-turn.steer":
             return providerTurnControl
               .steer({
