@@ -4199,9 +4199,11 @@ describe("OrchestratorMcpService provider resolution", () => {
           scheduledTaskId: existing.id,
           bindToCurrentThread: false,
         });
+        // An edit that leaves the destination alone sends no mode, so the stored one wins.
+        yield* mcp.updateScheduledTask(client, { scheduledTaskId: existing.id, title: "Renamed" });
         assert.deepEqual(
           (yield* Ref.get(inputs)).map((input) => input.threadMode),
-          ["continue", "new_thread"],
+          ["continue", "new_thread", undefined],
         );
       }),
     );

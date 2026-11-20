@@ -22,6 +22,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 import * as Fiber from "effect/Fiber";
 import * as Stream from "effect/Stream";
 import * as Deferred from "effect/Deferred";
+import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as TestClock from "effect/testing/TestClock";
@@ -772,8 +773,8 @@ it.effect("a fresh-session task launches one thread, then starts each later run 
     const launches = yield* Ref.make(0);
     const sends = yield* Ref.make<Array<{ threadId: ThreadId; freshContext?: boolean }>>([]);
     const launched = ThreadId.make("thread:fresh-session-task");
-    const staleSaveRead = yield* Deferred.make<void>();
-    const finishStaleSave = yield* Deferred.make<void>();
+    const holdNextSave = yield* Ref.make(false);
+    const heldSaves = yield* Queue.unbounded<Deferred.Deferred<void>>();
     const layer = ScheduledTaskService.layer.pipe(
       Layer.provide(
         Layer.mergeAll(
@@ -801,14 +802,17 @@ it.effect("a fresh-session task launches one thread, then starts each later run 
                 },
               ]).pipe(Effect.as({} as never)),
           }),
-          // Only a worktree save asks, which holds that save between its read and its write.
+          // Only a worktree save asks, so a held one waits between its read and its write.
           Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
             namedProjectsRoot: "/projects",
             isScratchProject: () =>
-              Deferred.succeed(staleSaveRead, undefined).pipe(
-                Effect.andThen(Deferred.await(finishStaleSave)),
-                Effect.as(false),
-              ),
+              Effect.gen(function* () {
+                if (!(yield* Ref.getAndSet(holdNextSave, false))) return false;
+                const release = yield* Deferred.make<void>();
+                yield* Queue.offer(heldSaves, release);
+                yield* Deferred.await(release);
+                return false;
+              }),
           }),
           NodeCrypto.layer,
           Layer.succeed(Scheduler.Scheduler, { register: () => Effect.void }),
@@ -817,6 +821,16 @@ it.effect("a fresh-session task launches one thread, then starts each later run 
     );
     yield* Effect.gen(function* () {
       const service = yield* ScheduledTaskService.ScheduledTaskService;
+      const raced = <A, E, E2>(stale: Effect.Effect<A, E>, concurrent: Effect.Effect<unknown, E2>) =>
+        Effect.gen(function* () {
+          yield* Ref.set(holdNextSave, true);
+          const fiber = yield* Effect.forkChild(stale);
+          const release = yield* Queue.take(heldSaves);
+          yield* concurrent;
+          yield* Deferred.succeed(release, undefined);
+          return yield* Fiber.join(fiber);
+        });
+      const worktree = { type: "worktree", baseRef: "main" } as const;
       const input = {
         id: ScheduledTaskId.make("task:fresh-session"),
         title: "Triage",
@@ -868,22 +882,45 @@ it.effect("a fresh-session task launches one thread, then starts each later run 
       });
       assert.equal(cleared.task.threadId, null);
       assert.equal(cleared.task.threadMode, "continue");
-      // A save that read the binding before another client cleared it leaves it cleared.
-      yield* service.upsert({ ...input, threadId: launched, threadMode: "continue" });
-      const staleSave = yield* Effect.forkChild(
-        service.upsert({ ...input, workspaceStrategy: { type: "worktree", baseRef: "main" } }),
-      );
-      yield* Deferred.await(staleSaveRead);
-      yield* service.upsert({
+      // A save that read the binding before another client cleared it leaves it cleared, whether
+      // it sends no thread or the thread it loaded.
+      const bind = service.upsert({ ...input, threadId: launched, threadMode: "continue" });
+      const unbind = service.upsert({
         ...input,
         threadId: null,
         unbindThread: true,
         threadMode: "continue",
       });
-      yield* Deferred.succeed(finishStaleSave, undefined);
-      const stale = yield* Fiber.join(staleSave);
-      assert.equal(stale.task.threadId, null);
-      assert.equal(stale.task.threadMode, "continue");
+      for (const staleInput of [
+        { ...input, workspaceStrategy: worktree },
+        { ...input, workspaceStrategy: worktree, threadId: launched, threadMode: "continue" },
+      ] as const) {
+        yield* bind;
+        const stale = yield* raced(service.upsert(staleInput), unbind);
+        assert.equal(stale.task.threadId, null);
+        assert.equal(stale.task.threadMode, "continue");
+      }
+      // Nor does a save that read a new-thread task undo a bind made meanwhile.
+      yield* service.upsert({ ...input, threadMode: "new_thread" });
+      const rebound = yield* raced(service.upsert({ ...input, workspaceStrategy: worktree }), bind);
+      assert.equal(rebound.task.threadId, launched);
+      assert.equal(rebound.task.threadMode, "continue");
+      // A save that leaves the workspace as it read it keeps another client's change.
+      const renamed = yield* raced(
+        service.upsert({ ...input, title: "Renamed", workspaceStrategy: worktree }),
+        service.upsert({ ...input, threadId: launched, workspaceStrategy: { type: "root" } }),
+      );
+      assert.equal(renamed.task.title, "Renamed");
+      assert.deepEqual(renamed.task.workspaceStrategy, { type: "root" });
+      // A save made for one binding is refused once the task is bound elsewhere.
+      const refused = yield* raced(
+        service
+          .upsert({ ...input, workspaceStrategy: worktree }, { expectedThreadId: launched })
+          .pipe(Effect.flip),
+        unbind,
+      );
+      assert.equal(refused.message, "The task's thread changed while saving. Read the task again.");
+      assert.equal((yield* service.list()).tasks[0]?.threadId, null);
     }).pipe(Effect.provide(layer));
   }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
 );
@@ -1120,6 +1157,8 @@ it.effect.each(["recreated under the same id", "moved to another project"] as co
 
 it.effect("refuses saving an enabled task above the policy ceiling", () =>
   Effect.gen(function* () {
+    const staleSaveRead = yield* Deferred.make<void>();
+    const finishStaleSave = yield* Deferred.make<void>();
     const layer = ScheduledTaskService.layer.pipe(
       Layer.provide(
         Layer.mergeAll(
@@ -1128,13 +1167,20 @@ it.effect("refuses saving an enabled task above the policy ceiling", () =>
             organization: "Example Corp",
             limits: { maxRuntimeMode: "auto-accept-edits" },
           }),
-          Layer.mock(ThreadLaunchService.ThreadLaunchService)({}),
+          Layer.mock(ThreadLaunchService.ThreadLaunchService)({
+            isNonGitProject: () => Effect.succeed(false),
+          }),
           Layer.mock(ThreadManagementService.ThreadManagementService)({
             getThreadShell: () => Effect.succeed(threadShell(ProjectId.make("project:test"))),
           }),
+          // Only a worktree save asks, which holds that save between its read and its write.
           Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
             namedProjectsRoot: "/projects",
-            isScratchProject: () => Effect.succeed(false),
+            isScratchProject: () =>
+              Deferred.succeed(staleSaveRead, undefined).pipe(
+                Effect.andThen(Deferred.await(finishStaleSave)),
+                Effect.as(false),
+              ),
           }),
           NodeCrypto.layer,
           Scheduler.layer,
@@ -1183,6 +1229,17 @@ it.effect("refuses saving an enabled task above the policy ceiling", () =>
       yield* service.upsert({ ...bound, threadId: ThreadId.make("thread:bound") });
       // Nor when an edit omits the thread it stays bound to.
       yield* service.upsert(bound);
+      // An edit that read the binding is refused once the task is unbound, as its mode would be.
+      const staleSave = yield* Effect.forkChild(
+        service.upsert({ ...bound, workspaceStrategy: { type: "worktree", baseRef: "main" } }),
+      );
+      yield* Deferred.await(staleSaveRead);
+      yield* service.upsert({ ...bound, unbindThread: true, runtimeMode: "auto-accept-edits" });
+      yield* Deferred.succeed(finishStaleSave, undefined);
+      const stale = yield* Fiber.join(staleSave).pipe(Effect.flip);
+      assert.equal(stale.message, "The task's thread changed while saving. Read the task again.");
+      const unbound = (yield* service.list()).tasks.find((task) => task.id === bound.id);
+      assert.equal(unbound?.runtimeMode, "auto-accept-edits");
     }).pipe(Effect.provide(layer));
   }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
 );
