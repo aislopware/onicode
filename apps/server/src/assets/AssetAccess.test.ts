@@ -47,7 +47,12 @@ import * as HostProcess from "@onicode/shared/HostProcess";
 
 vi.mock("node:fs/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof NodeFSP>();
-  return { ...actual, open: vi.fn(actual.open), realpath: vi.fn(actual.realpath) };
+  return {
+    ...actual,
+    open: vi.fn(actual.open),
+    realpath: vi.fn(actual.realpath),
+    stat: vi.fn(actual.stat),
+  };
 });
 
 const layerConfig = ServerConfig.ServerConfig.layerTest(process.cwd(), {
@@ -1377,6 +1382,14 @@ describe("AssetAccess", () => {
       const afterRemove = yield* revisions();
       expect(afterRemove[0]).not.toBe(afterCreate[0]);
       expect(afterRemove[1]).toBe(afterPageEdit[1]);
+      // A file that went away is no longer read: old hashed bundles do not pile up.
+      const canonicalPages = path.join(yield* fileSystem.realPath(root), "pages");
+      const statsUnder = (prefix: string) =>
+        vi.mocked(NodeFSP.stat).mock.calls.filter(([target]) => String(target).startsWith(prefix));
+      vi.mocked(NodeFSP.stat).mockClear();
+      expect((yield* mint("a.html")).fileRevision).toBe(afterRemove[0]);
+      expect(statsUnder(path.join(canonicalPages, "a.css"))).toEqual([]);
+      expect(statsUnder(canonicalPages)).not.toEqual([]);
 
       // Overlapping mints after one edit agree, so the edit reloads the page once.
       yield* write("late.js", "document.title = 'later';");
@@ -1397,6 +1410,11 @@ describe("AssetAccess", () => {
       );
       expect((yield* mint("b.html")).fileRevision).toBeUndefined();
       expect((yield* mint("a.html")).fileRevision).toBe(overlapping[0]?.fileRevision);
+      // Once it has given up on the page, it stops reading the files the page asks for.
+      vi.mocked(NodeFSP.stat).mockClear();
+      yield* load("b.html", ["chunk-0.js", "more.js"]);
+      expect((yield* mint("b.html")).fileRevision).toBeUndefined();
+      expect(statsUnder(canonicalPages)).toEqual([]);
     }).pipe(Effect.provide(layerTest)),
   );
 

@@ -54,13 +54,21 @@ const make = Effect.gen(function* () {
     JSON.stringify([document.workspaceRoot, document.entryRelativePath]);
 
   const record = (state: DocumentState, relativePath: string, revision: string | null) => {
+    if (state.overflowed) return;
     if (!state.files.has(relativePath)) {
-      if (state.files.size >= MAX_TRACKED_FILES_PER_DOCUMENT) state.overflowed = true;
-      else state.files.set(relativePath, revision);
+      if (state.files.size < MAX_TRACKED_FILES_PER_DOCUMENT) {
+        state.files.set(relativePath, revision);
+        return;
+      }
+      state.overflowed = true;
+      state.files.clear();
       return;
     }
     if (state.files.get(relativePath) === revision) return;
-    state.files.set(relativePath, revision);
+    // A file that went away is forgotten, so old hashed bundles do not pile up. The reload this
+    // revision causes tracks it again if the page still asks for it.
+    if (revision === null) state.files.delete(relativePath);
+    else state.files.set(relativePath, revision);
     state.version = ++versions;
   };
 
@@ -82,6 +90,7 @@ const make = Effect.gen(function* () {
         break;
       }
     }
+    if (state.overflowed) return undefined;
     return yield* state.comparing.withPermits(1)(
       Effect.gen(function* () {
         const relativePaths = [...new Set([document.entryRelativePath, ...state.files.keys()])];
@@ -104,7 +113,7 @@ const make = Effect.gen(function* () {
   ) {
     // A document nobody minted here gets a new revision on its next mint, which reloads it.
     const state = documents.get(documentKey(document));
-    if (state === undefined) return;
+    if (state === undefined || state.overflowed) return;
     yield* state.comparing.withPermits(1)(
       Effect.map(readFileRevision(path.join(document.workspaceRoot, relativePath)), (revision) =>
         record(state, relativePath, revision),
