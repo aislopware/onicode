@@ -184,7 +184,7 @@ function StreamControl(props: {
     return (
       <div
         data-stream-control
-        className="group/control pointer-events-auto flex h-7 items-center rounded-lg border border-border bg-popover p-0.5 text-xs shadow-lg/20"
+        className="group/control pointer-events-auto flex h-7 items-center rounded-lg bg-popover p-0.5 text-xs shadow-raised"
       >
         {locked ? (
           <span className="flex items-center gap-1.5 px-1.5 text-muted-foreground">

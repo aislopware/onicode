@@ -41,33 +41,34 @@ const buttonVariants = cva(
       },
       variant: {
         default:
-          "border-[color-mix(in_oklch,var(--primary)_80%,black)] bg-primary text-primary-foreground shadow-[inset_0_1px_oklch(100%_0_0/12%),var(--plate-shadow)] [--focus-ring:var(--primary-foreground)] [:disabled,:active,[data-pressed]]:shadow-none [:hover,[data-pressed]]:bg-(--primary-hover)",
+          "border-[color-mix(in_oklch,var(--primary)_80%,black)] bg-primary text-primary-foreground shadow-[inset_0_1px_oklch(100%_0_0/12%),var(--plate-shadow)] [--focus-ring:var(--primary-foreground)] [--focus-ring-offset:-3px] [:disabled,:active,[data-pressed]]:shadow-none hover:bg-(--primary-hover) data-pressed:bg-(--primary-hover)",
         destructive:
-          "border-[color-mix(in_oklch,var(--destructive)_80%,black)] bg-destructive text-white shadow-[inset_0_1px_oklch(100%_0_0/12%),var(--plate-shadow)] [--focus-ring:white] [:disabled,:active,[data-pressed]]:shadow-none [:hover,[data-pressed]]:bg-[color-mix(in_oklch,var(--destructive)_92%,black)]",
+          "border-[color-mix(in_oklch,var(--destructive-solid)_85%,black)] bg-destructive-solid text-white shadow-[inset_0_1px_oklch(100%_0_0/12%),var(--plate-shadow)] [--focus-ring:white] [--focus-ring-offset:-3px] [:disabled,:active,[data-pressed]]:shadow-none hover:bg-[color-mix(in_oklch,var(--destructive-solid)_92%,black)] data-pressed:bg-[color-mix(in_oklch,var(--destructive-solid)_92%,black)]",
         "destructive-outline":
-          "border-border-2 bg-card text-destructive-foreground shadow-[inset_0_1px_var(--highlight-top),var(--plate-shadow)] [:disabled,:active,[data-pressed]]:shadow-none [:hover,[data-pressed]]:border-destructive/32 [:hover,[data-pressed]]:bg-destructive/4",
+          "border-border-2 bg-card text-destructive-foreground shadow-[inset_0_1px_var(--highlight-top),var(--plate-shadow)] [:disabled,:active,[data-pressed]]:shadow-none hover:border-destructive/32 data-pressed:border-destructive/32 hover:bg-destructive/4 data-pressed:bg-destructive/4",
         ghost:
-          "[--control-icon-color:var(--contrast-muted-foreground)] border-transparent text-foreground [:hover,[data-pressed]]:bg-secondary",
+          "[--control-icon-color:var(--contrast-muted-foreground)] border-transparent text-foreground hover:bg-secondary data-pressed:bg-secondary",
         "ghost-muted":
-          "[--control-icon-color:currentColor] border-transparent text-muted-foreground [:hover,[data-pressed]]:bg-secondary [:hover,[data-pressed]]:text-foreground",
+          "[--control-icon-color:currentColor] border-transparent text-muted-foreground hover:bg-secondary data-pressed:bg-secondary hover:text-foreground data-pressed:text-foreground",
         "ghost-destructive":
-          "[--control-icon-color:currentColor] border-transparent text-muted-foreground [:hover,[data-pressed]]:bg-secondary [:hover,[data-pressed]]:text-destructive",
+          "[--control-icon-color:currentColor] border-transparent text-muted-foreground hover:bg-secondary data-pressed:bg-secondary hover:text-destructive data-pressed:text-destructive",
         glass:
           "surface-glass [--control-icon-color:var(--contrast-muted-foreground)] rounded-full border-border-2 text-foreground shadow-plate",
-        link: "border-transparent underline-offset-4 [:hover,[data-pressed]]:underline",
+        link: "border-transparent underline-offset-4 hover:underline data-pressed:underline",
         "media-close":
-          "[--control-icon-color:currentColor] border-transparent bg-black/65 text-white shadow-sm ring-1 ring-white/20 [--focus-ring:white] [:hover,[data-pressed]]:bg-black/80",
+          "[--control-icon-color:currentColor] border-transparent bg-black/65 text-white shadow-sm ring-1 ring-white/20 [--focus-ring:white] hover:bg-black/80 data-pressed:bg-black/80",
         "media-navigation":
-          "[--control-icon-color:currentColor] absolute top-1/2 z-20 -translate-y-1/2 border-transparent text-white/90 [--focus-ring:white] [:hover,[data-pressed]]:bg-white/10 [:hover,[data-pressed]]:text-white",
+          "[--control-icon-color:currentColor] absolute top-1/2 z-20 -translate-y-1/2 border-transparent text-white/90 [--focus-ring:white] hover:bg-white/10 data-pressed:bg-white/10 hover:text-white data-pressed:text-white",
         outline:
-          "[--control-icon-color:var(--contrast-muted-foreground)] border-border-2 bg-card text-foreground shadow-[inset_0_1px_var(--highlight-top),var(--plate-shadow)] [:disabled,:active,[data-pressed]]:shadow-none [:hover,[data-pressed]]:bg-card-hover",
-        overlay: "border-transparent bg-black/70 text-white/65 [:hover,[data-pressed]]:bg-black/90",
+          "[--control-icon-color:var(--contrast-muted-foreground)] border-border-2 bg-card text-foreground shadow-[inset_0_1px_var(--highlight-top),var(--plate-shadow)] [:disabled,:active,[data-pressed]]:shadow-none hover:bg-card-hover data-pressed:bg-card-hover",
+        overlay:
+          "border-transparent bg-black/70 text-white/65 hover:bg-black/90 data-pressed:bg-black/90",
         scenery:
-          "[--control-icon-color:currentColor] inset-shadow-[0_1px_--theme(--color-white/16%)] rounded-full border-transparent bg-(--sky-ridge) text-white/92 [--focus-ring:white] [:hover,[data-pressed]]:inset-shadow-none [:hover,[data-pressed]]:bg-(--sky-body) [:hover,[data-pressed]]:text-(--sky-ink) [:hover,[data-pressed]]:shadow-[0_0_10px_var(--sky-body-glow)]",
+          "[--control-icon-color:currentColor] inset-shadow-[0_1px_--theme(--color-white/16%)] rounded-full border-transparent bg-(--sky-ridge) text-white/92 [--focus-ring:white] hover:inset-shadow-none data-pressed:inset-shadow-none hover:bg-(--sky-body) data-pressed:bg-(--sky-body) hover:text-(--sky-ink) data-pressed:text-(--sky-ink) hover:shadow-[0_0_10px_var(--sky-body-glow)] data-pressed:shadow-[0_0_10px_var(--sky-body-glow)]",
         secondary:
-          "border-transparent bg-secondary text-secondary-foreground [:hover,[data-pressed]]:bg-secondary-hover",
+          "border-transparent bg-secondary text-secondary-foreground hover:bg-secondary-hover data-pressed:bg-secondary-hover",
         "warning-outline":
-          "border-warning/32 bg-warning-surface text-warning-foreground shadow-plate [:disabled,:active,[data-pressed]]:shadow-none [:hover,[data-pressed]]:border-warning/40 [:hover,[data-pressed]]:bg-warning/16 dark:[:hover,[data-pressed]]:bg-warning/24",
+          "border-warning/32 bg-warning-surface text-warning-foreground shadow-plate [:disabled,:active,[data-pressed]]:shadow-none hover:border-warning/40 data-pressed:border-warning/40 hover:bg-warning/16 data-pressed:bg-warning/16 dark:hover:bg-warning/24 dark:data-pressed:bg-warning/24",
       },
     },
   },
@@ -102,7 +103,7 @@ function Button({ className, variant, size, render, ...props }: ButtonProps) {
 export { Button, buttonVariants, type ButtonSize, type ButtonVariant };
 
 const inlineButtonVariants = cva(
-  "inline-flex shrink-0 cursor-pointer items-center gap-0.5 font-medium underline-offset-2 [text-align:var(--inline-button-text-align,center)] [white-space:var(--inline-button-white-space,nowrap)] hover:underline focus-visible:outline-1 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-55",
+  "inline-flex shrink-0 cursor-pointer items-center gap-0.5 font-medium underline-offset-2 [text-align:var(--inline-button-text-align,center)] [white-space:var(--inline-button-white-space,nowrap)] rounded-sm hover:underline focus-visible:outline-ring-inset disabled:pointer-events-none disabled:opacity-55",
   {
     defaultVariants: { tone: "default" },
     variants: {

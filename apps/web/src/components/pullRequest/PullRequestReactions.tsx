@@ -91,7 +91,7 @@ export function ReactionBar({
                   PILL_CLASS,
                   reaction.viewerHasReacted
                     ? "border-primary/60 bg-primary/10 text-foreground"
-                    : "border-border bg-muted/40 text-muted-foreground",
+                    : "border-border text-muted-foreground",
                   canReact ? "hover:border-primary/60" : "cursor-default",
                 )}
                 onClick={() => void toggle(reaction.content, !reaction.viewerHasReacted)}

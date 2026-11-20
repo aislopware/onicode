@@ -14,7 +14,7 @@ function Kbd({
     <kbd
       className={cn(
         "pointer-events-none inline-flex h-4.5 min-w-4.5 select-none items-center justify-center gap-0.5 rounded-sm px-1 font-normal font-sans text-muted-foreground text-xs [&_svg:not([class*='size-'])]:size-3",
-        variant === "outline" ? "border border-b-2 border-foreground/15 px-1.5" : "bg-secondary",
+        variant === "outline" ? "border border-b-2 border-border-3 px-1.5" : "bg-secondary",
         className,
       )}
       data-slot="kbd"

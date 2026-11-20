@@ -182,7 +182,7 @@ function UserMessagePreviewAnnotationDetails(props: {
           />
         </button>
       ) : (
-        <div className="border-b border-border bg-muted/40 px-3 py-2 text-secondary-label text-xs">
+        <div className="border-b border-border bg-muted px-3 py-2 text-secondary-label text-xs">
           <T>Screenshot unavailable</T>
         </div>
       )}
@@ -648,7 +648,7 @@ function UserMessageReviewCommentCard({ comment }: { comment: ReviewCommentConte
         </DiffWorkerPoolProvider>
       )}
       {renderablePatch?.kind === "raw" && (
-        <pre className="overflow-x-auto rounded-md bg-muted/40 p-2 text-xs">
+        <pre className="overflow-x-auto rounded-md bg-muted p-2 text-xs">
           {renderablePatch.text}
         </pre>
       )}

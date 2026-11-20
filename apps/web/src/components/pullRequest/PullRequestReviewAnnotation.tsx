@@ -43,7 +43,8 @@ import {
   type PullRequestCompletionScope,
 } from "./PullRequestMarkdownTextarea";
 
-const CARD_CLASS = "mx-3 my-2 rounded-xl border border-border bg-background p-3 text-sm shadow-sm";
+const CARD_CLASS =
+  "mx-3 my-2 rounded-xl border border-(--card-hairline) bg-card p-3 text-sm shadow-card";
 
 function submitKeys(input: {
   readonly value: string;
@@ -95,7 +96,7 @@ export function PendingReviewCommentCard({
   const gt = useGT();
   return (
     <div
-      className={cn(CARD_CLASS, "border-dashed")}
+      className={cn(CARD_CLASS, "border-dashed border-border shadow-none")}
       contentEditable={false}
       onPointerDown={(event) => event.stopPropagation()}
     >

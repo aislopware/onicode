@@ -135,7 +135,7 @@ export function SidebarUpdateReleaseNotes({
                   {releaseNote.intro}
                 </p>
               ) : releaseNote.items.length > 0 ? (
-                <ul className="space-y-1.5 pl-4 text-xs leading-5 text-popover-foreground/90">
+                <ul className="space-y-1.5 pl-4 text-xs leading-5 text-popover-foreground">
                   {keyReleaseNoteItems(releaseNote.items).map(({ item, key }) => {
                     const highlight = /^\*\*([^*]+)\*\* (.+)$/.exec(item);
                     return (

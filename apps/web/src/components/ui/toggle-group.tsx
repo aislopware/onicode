@@ -106,7 +106,7 @@ function SegmentedIndicator() {
   return (
     <span
       aria-hidden
-      className="pointer-events-none absolute top-0 left-0 -z-1 h-(--pressed-height) w-(--pressed-width) translate-x-(--pressed-left) translate-y-(--pressed-top) rounded-(--control-radius) border border-transparent bg-card shadow-[var(--card-shadow),var(--plate-shadow)] transition-[translate,width,height] duration-250 ease-[cubic-bezier(0.76,0,0.24,1)] not-data-placed:transition-none motion-reduce:transition-none in-[[data-slot=toggle-group]:has(:focus-visible)]:transition-none dark:border-white/10 dark:bg-white/8 dark:shadow-[inset_0_1px_0_rgb(255_255_255/4%),var(--plate-shadow)]"
+      className="pointer-events-none absolute top-0 left-0 -z-1 h-(--pressed-height) w-(--pressed-width) translate-x-(--pressed-left) translate-y-(--pressed-top) rounded-(--control-radius) border border-transparent bg-card shadow-raised transition-[translate,width,height] duration-200 ease-out-quint not-data-placed:transition-none motion-reduce:transition-none in-[[data-slot=toggle-group]:has(:focus-visible)]:transition-none dark:bg-white/8"
       data-slot="toggle-group-indicator"
       ref={ref}
     />

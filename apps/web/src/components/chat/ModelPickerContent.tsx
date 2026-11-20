@@ -30,7 +30,6 @@ import { ModelListRow, ModelPickerRowItem } from "./ModelListRow";
 import { useProviderWorkspaceSnapshotRefresh } from "./useProviderWorkspaceSnapshotRefresh";
 import { getProviderStatusMessage, hasProviderSetup } from "./ProviderStatusBanner";
 import {
-  MODEL_PICKER_ALL_MODELS_KEY,
   modelPickerFavoriteKey,
   modelPickerLegacySectionKey,
   modelPickerModelKey,
@@ -157,8 +156,6 @@ type ListRow =
       count: number;
       expanded: boolean;
     }
-  /** Opens every provider's models under Favorites and Recent. */
-  | { kind: "all"; key: string; count: number }
   /** Why a provider lists no models, with the way to set it up when there is one. */
   | { kind: "status"; key: string; entry: ProviderInstanceEntry; action: string | null }
   | { kind: "notice"; key: string; notice: string };
@@ -167,7 +164,6 @@ function isHighlightableRow(row: ListRow): boolean {
   return (
     row.kind === "model" ||
     row.kind === "legacy" ||
-    row.kind === "all" ||
     (row.kind === "subProvider" && row.unavailableReason === undefined)
   );
 }
@@ -494,7 +490,6 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     recents: readRecentModels(props.environmentId),
     active: activeModelSlug ? { instanceId: props.activeInstanceId, slug: activeModelSlug } : null,
   }));
-  const [showAll, setShowAll] = useState(false);
   const toggleFavorite = useToggleEnvironmentModelFavorite(props.environmentId);
 
   const toggleLegacySection = (instanceId: ProviderInstanceId) => {
@@ -641,12 +636,10 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   const recentPicks = isSearching
     ? []
     : recentModelsToShow({ ...opened, models: pickableModels, isFavorite });
-  // Favorites and Recent answer most opens. A single row between them would only hide the
-  // catalogue, so then the list opens whole, as it does for someone new. Decided once per open:
-  // a star must not fold or unfold the list under the pointer.
+  // One pick alone is the selected model, which its provider already lists. Decided once per
+  // open: a star must not add or drop a section under the pointer.
   const [leadsWithPicks] = useState(() => favoriteModels.length + recentPicks.length >= 2);
   const recentModels = leadsWithPicks ? recentPicks : [];
-  const collapsed = leadsWithPicks && !showAll && !isSearching;
 
   const rows = ((): ListRow[] => {
     if (isSearching) {
@@ -679,13 +672,6 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
         false,
         recentModels.map((model) => modelRow(model, "recent")),
       );
-    }
-    if (collapsed) {
-      out.push(
-        { kind: "rule", key: "rule:all" },
-        { kind: "all", key: MODEL_PICKER_ALL_MODELS_KEY, count: pickableModels.length },
-      );
-      return out;
     }
     const lockedOut: ProviderInstanceEntry[] = [];
     const offersSetup = (entry: ProviderInstanceEntry) =>
@@ -795,7 +781,6 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
       ...flatModels.map((model) => modelPickerModelKey(model.instanceId, model.slug)),
       ...favoriteModels.map((model) => modelPickerFavoriteKey(model.instanceId, model.slug)),
       ...recentModels.map((model) => modelPickerRecentKey(model.instanceId, model.slug)),
-      MODEL_PICKER_ALL_MODELS_KEY,
       ...flatModels
         .filter((model) => model.isLegacy)
         .map((model) => modelPickerLegacySectionKey(model.instanceId)),
@@ -946,12 +931,6 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
       event.preventDefault();
       event.stopPropagation();
       if (isSearching) setSearchQuery("");
-      // Providers show once the catalogue is open; the next press moves between them.
-      if (collapsed) {
-        setShowAll(true);
-        announce(gt("All models"), "model-picker");
-        return;
-      }
       scrollToSection(command === "modelPicker.nextProvider" ? 1 : -1);
       return;
     }
@@ -1017,10 +996,6 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                 comboValue.find((key) => !value.includes(key)))
               : value;
             if (typeof modelKey !== "string") {
-              return;
-            }
-            if (modelKey === MODEL_PICKER_ALL_MODELS_KEY) {
-              setShowAll(true);
               return;
             }
             const legacyInstanceId = parseModelPickerLegacySectionKey(modelKey);
@@ -1115,10 +1090,6 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                     ).preventBaseUIHandler?.();
                     e.preventDefault();
                     e.stopPropagation();
-                    if (highlightedModelKeyRef.current === MODEL_PICKER_ALL_MODELS_KEY) {
-                      setShowAll(true);
-                      return;
-                    }
                     const legacyInstanceId = parseModelPickerLegacySectionKey(
                       highlightedModelKeyRef.current,
                     );
@@ -1208,18 +1179,6 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                         </div>
                         <p className="mt-0.5">{row.unavailableReason}</p>
                       </div>
-                    );
-                  case "all":
-                    return (
-                      <ModelPickerRowItem
-                        index={comboIndexByKey.get(row.key) ?? -1}
-                        value={row.key}
-                        aria-expanded={false}
-                        className="justify-between text-muted-foreground data-highlighted:text-foreground"
-                      >
-                        <T>All models</T>
-                        <span className="tabular-nums">{row.count}</span>
-                      </ModelPickerRowItem>
                     );
                   case "model": {
                     const { model } = row;

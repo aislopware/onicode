@@ -88,6 +88,7 @@ import {
 } from "~/components/ui/menu";
 import { useBrowserDefaults } from "~/browser/browserDefaults";
 import { ScrollArea } from "~/components/ui/scroll-area";
+import { panelTabVariants } from "~/components/ui/panel-tab";
 import { PanelTabCloseButton } from "~/components/ui/panel-tab-close-button";
 import { faviconUrlForOrigin } from "@onicode/shared/favicon";
 import { useTheme } from "~/hooks/useTheme";
@@ -496,7 +497,7 @@ function RightPanelEmptyState(props: {
       )}
     >
       <div className="w-full max-w-xs py-6">
-        <h3 className="mb-3 text-center font-medium text-foreground text-sm">
+        <h3 className="mb-2 text-center text-xs font-medium text-muted-foreground">
           <T>Open a surface</T>
         </h3>
         <div className="flex flex-col gap-0.5">
@@ -516,7 +517,7 @@ function RightPanelEmptyState(props: {
                   type="button"
                   onClick={action.onClick}
                   className={cn(
-                    "flex h-8 w-full cursor-pointer items-center gap-2.5 rounded-(--control-radius) px-2.5 text-left text-sm transition-colors group-hover:bg-accent/60",
+                    "flex h-8 w-full cursor-pointer items-center gap-2.5 rounded-(--control-radius) px-2.5 text-left text-sm outline-none transition-colors group-hover:bg-accent/60 focus-visible:outline-ring-inset",
                     isHighlighted(action) && "bg-accent/60",
                   )}
                 >
@@ -631,8 +632,8 @@ function PreviewFavicon({ capturedUrl, url }: { capturedUrl: string | null; url:
   return (
     <FaviconImage
       sources={[capturedUrl, publicProviderUrl]}
-      fallback={<Globe2 className="size-3 shrink-0" />}
-      className="size-3 shrink-0 rounded-sm object-contain"
+      fallback={<Globe2 className="size-3.5 shrink-0" />}
+      className="size-3.5 shrink-0 rounded-sm object-contain"
     />
   );
 }
@@ -677,20 +678,20 @@ function SurfaceIcon({
     case "preview":
       return <PreviewFavicon capturedUrl={previewCapturedUrl} url={previewUrl} />;
     case "diff":
-      return <FileDiff className="size-3 shrink-0" />;
+      return <FileDiff className="size-3.5 shrink-0" />;
     case "files":
-      return <Files className="size-3 shrink-0" />;
+      return <Files className="size-3.5 shrink-0" />;
     case "file":
       return (
         <PierreEntryIcon
           pathValue={surface.relativePath}
           kind="file"
           theme={theme}
-          className="size-3"
+          className="size-3.5"
         />
       );
     case "terminal":
-      return <TerminalSquare className="size-3 shrink-0" />;
+      return <TerminalSquare className="size-3.5 shrink-0" />;
     case "pull-request":
       return (
         <PullRequestSurfaceIcon
@@ -700,18 +701,18 @@ function SurfaceIcon({
         />
       );
     case "pull-requests":
-      return <PullRequestGlyph.link className="size-3 shrink-0" />;
+      return <PullRequestGlyph.link className="size-3.5 shrink-0" />;
     case "issue":
       return <IssueSurfaceIcon surface={surface} environmentId={environmentId} />;
     case "side-chat":
       return <SideChatTabIcon environmentId={environmentId} threadId={surface.threadId} />;
     case "device":
       return surface.target?.platform === "ios" ? (
-        <AppleIcon className="size-3 shrink-0" />
+        <AppleIcon className="size-3.5 shrink-0" />
       ) : surface.target?.platform === "android" ? (
-        <AndroidIcon className="size-3 shrink-0" />
+        <AndroidIcon className="size-3.5 shrink-0" />
       ) : (
-        <Smartphone className="size-3 shrink-0" />
+        <Smartphone className="size-3.5 shrink-0" />
       );
   }
 }
@@ -743,7 +744,7 @@ function SideChatTabIcon(props: { environmentId: EnvironmentId | null; threadId:
   );
   return (
     <>
-      <MessagesSquare className="size-3 shrink-0" />
+      <MessagesSquare className="size-3.5 shrink-0" />
       {state === null ? null : (
         <span
           className={cn(
@@ -794,13 +795,13 @@ function IssueSurfaceIcon({
   // The state is all an icon shows. A tab opened from a linked row or hover card finds the
   // summary those read already.
   const summary = useIssueSummary(resolvedEnvironmentId, issueSurfaceRef(surface));
-  if (summary === null) return <CircleDotIcon className="size-3 shrink-0" />;
+  if (summary === null) return <CircleDotIcon className="size-3.5 shrink-0" />;
   const presentation = issueStatePresentation(summary.state);
   return (
     <presentation.Icon
       role="img"
       aria-label={presentation.label}
-      className={cn("size-3 shrink-0", presentation.toneClassName)}
+      className={cn("size-3.5 shrink-0", presentation.toneClassName)}
     />
   );
 }
@@ -860,13 +861,13 @@ function PullRequestSurfaceIcon({
   const sharedSummary = useSharedPullRequestSummary(resolvedEnvironmentId, reference);
   const status = linkedSnapshot ?? newestPullRequestSummary(detail, sharedSummary) ?? seed ?? null;
   if (status === null) {
-    return <PullRequestGlyph.pullRequest className="size-3 shrink-0 text-muted-foreground" />;
+    return <PullRequestGlyph.pullRequest className="size-3.5 shrink-0 text-muted-foreground" />;
   }
   const presentation = resolvePullRequestState({
     state: status.state,
     isDraft: status.isDraft ?? detail?.isDraft ?? seed?.isDraft ?? false,
   });
-  return <presentation.Icon className={cn("size-3 shrink-0", presentation.toneClassName)} />;
+  return <presentation.Icon className={cn("size-3.5 shrink-0", presentation.toneClassName)} />;
 }
 
 function SortableTabList(props: {
@@ -957,7 +958,7 @@ function RightPanelTab(
   const sideChatState = sideChatTabState(sideChatShell);
   const content = (
     <>
-      <PanelTabCloseButton label={gt("Close {title}", { title })} onClick={() => onClose(surface)}>
+      <span className="relative flex size-3.5 shrink-0 items-center justify-center">
         <SurfaceIcon
           surface={surface}
           previewUrl={props.previewUrl}
@@ -972,14 +973,14 @@ function RightPanelTab(
             aria-hidden
           />
         ) : null}
-      </PanelTabCloseButton>
+      </span>
       {audio === "none" || !audioRuntimeTabId ? null : (
         <Tooltip>
           <TooltipTrigger
             render={
               <button
                 type="button"
-                className="cursor-pointer flex size-4 shrink-0 items-center justify-center rounded-sm hover:bg-accent"
+                className="cursor-pointer flex size-4 shrink-0 items-center justify-center rounded-sm outline-none hover:bg-accent focus-visible:outline-ring-inset"
                 aria-label={
                   audio === "muted"
                     ? gt("Unmute {title}", { title })
@@ -1032,7 +1033,7 @@ function RightPanelTab(
                 onDoubleClick={() => {
                   if (surface.kind === "device" && props.canRename) onStartRename(surface.id);
                 }}
-                className="cursor-pointer flex min-w-0 items-center"
+                className="panel-tab-label flex min-w-0 flex-1 cursor-pointer items-center outline-none"
                 aria-label={
                   sideChatState === null
                     ? undefined
@@ -1060,6 +1061,12 @@ function RightPanelTab(
           </TooltipPopup>
         </Tooltip>
       )}
+      {props.renaming ? null : (
+        <PanelTabCloseButton
+          label={gt("Close {title}", { title })}
+          onClick={() => onClose(surface)}
+        />
+      )}
     </>
   );
   return (
@@ -1073,12 +1080,10 @@ function RightPanelTab(
       ref={setNodeRef}
       style={{ transform: CSS.Translate.toString(transform), transition }}
       className={cn(
-        "cursor-pointer group/tab flex h-6 max-w-36 shrink-0 items-center gap-0.5 rounded-md pr-2 pl-1.5 text-xs",
+        panelTabVariants({ active: props.active }),
+        "group/tab max-w-40 min-w-18 gap-1.5 pr-2.5 pl-2 motion-reduce:transition-[color,background-color]!",
         props.ownsDesktopTitleBar && "[-webkit-app-region:no-drag]",
-        props.active
-          ? "bg-accent text-foreground"
-          : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
-        isDragging && "relative z-10",
+        isDragging && "z-10",
       )}
     >
       {content}
@@ -1491,12 +1496,12 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                     <Button
                       aria-label={gt("Add panel surface")}
                       className="shrink-0"
-                      size="icon-xs"
+                      size="icon-sm"
                       variant="ghost-muted"
                     />
                   }
                 >
-                  <Plus className="size-3.5" />
+                  <Plus />
                 </MenuTrigger>
                 <MenuPopup
                   align="start"

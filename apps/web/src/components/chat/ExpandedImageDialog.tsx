@@ -229,7 +229,7 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
               accessibilityDetails ? (
                 <SnapShotAccessibilityData
                   details={accessibilityDetails}
-                  className="h-[min(var(--media-height),40rem)] w-[min(var(--media-width),42rem)] transition-opacity duration-150 ease-out starting:opacity-0 rounded-lg border border-border bg-background p-4 text-xs leading-5 shadow-2xl motion-reduce:transition-none"
+                  className="h-[min(var(--media-height),40rem)] w-[min(var(--media-width),42rem)] transition-opacity duration-150 ease-out-quint starting:opacity-0 rounded-lg border border-border bg-background p-4 text-xs leading-5 shadow-2xl motion-reduce:transition-none"
                 />
               ) : null
             ) : item.src === null || failedImageSrc === item.src ? (

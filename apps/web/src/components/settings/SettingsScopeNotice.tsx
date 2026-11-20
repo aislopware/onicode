@@ -167,7 +167,7 @@ export function SettingsScopeNotice({
   };
   const notice = (
     <div className="space-y-3">
-      <p role="status" className="px-3 text-sm text-muted-foreground sm:px-4">
+      <p role="status" className="text-sm text-muted-foreground">
         {children}
       </p>
       <div className="space-y-4">

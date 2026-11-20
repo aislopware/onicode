@@ -77,7 +77,7 @@ export function IssueCommentComposer({
             <textarea
               ref={textareaRef}
               rows={2}
-              className="field-sizing-content max-h-64 min-h-[2lh] w-full resize-none bg-transparent px-3.5 pt-3 pb-1 text-base text-foreground outline-none wrap-anywhere placeholder:text-muted-foreground disabled:opacity-64 sm:text-sm"
+              className="field-sizing-content max-h-64 min-h-[2lh] w-full resize-none bg-transparent px-3.5 pt-3 pb-1 text-base text-foreground outline-none wrap-anywhere placeholder:text-muted-foreground disabled:opacity-55 sm:text-sm"
               aria-label={gt("Add a comment")}
               placeholder={blocked ?? gt("Leave a comment")}
               value={body}
@@ -97,7 +97,7 @@ export function IssueCommentComposer({
               <TextFieldSpeechControls speech={speech} disabled={locked} />
               <button
                 type="submit"
-                className="flex size-8 items-center justify-center rounded-full bg-message-action text-message-action-foreground shadow-xs transition-all duration-150 enabled:cursor-pointer enabled:shadow-message-action/24 enabled:inset-shadow-control-highlight hover:scale-105 hover:bg-message-action-hover active:shadow-none active:inset-shadow-control-pressed disabled:pointer-events-none disabled:bg-foreground/12 disabled:text-muted-foreground disabled:shadow-none"
+                className="flex size-8 items-center justify-center rounded-full bg-message-action text-message-action-foreground shadow-xs transition-[background-color,color,box-shadow,scale] duration-150 enabled:cursor-pointer enabled:shadow-message-action/24 enabled:inset-shadow-control-highlight hover:bg-message-action-hover active:scale-[0.97] active:shadow-none active:inset-shadow-control-pressed disabled:pointer-events-none disabled:bg-foreground/12 disabled:text-muted-foreground disabled:shadow-none"
                 disabled={submitDisabled}
                 aria-label={
                   submitting

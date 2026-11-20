@@ -17,7 +17,7 @@ const alertVariants = cva(
         glass: "alert-glass",
       },
       variant: {
-        default: "bg-card shadow-card [&_svg]:text-muted-foreground",
+        default: "border-(--card-hairline) bg-card shadow-card [&_svg]:text-muted-foreground",
         sidebar:
           "rounded-lg border-sidebar-border bg-sidebar-control-surface px-2 py-1.5 text-2xs leading-4 [&_[data-slot=alert-description]]:block [&_[data-slot=alert-description]]:text-sidebar-muted-foreground",
         error:

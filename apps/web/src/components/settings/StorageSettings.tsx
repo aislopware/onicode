@@ -87,6 +87,7 @@ export function WorktreesDirectoryRow() {
       }
       control={
         <Input
+          size="sm"
           key={`${scopeKey}:${mixed}:${settings.worktreesDirectory}`}
           aria-label={gt("Worktree location")}
           autoCapitalize="none"

@@ -282,9 +282,9 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
                   isOptimisticallySelected || draftSelectedOptions?.[index] === true;
                 const className = cn(
                   questionTextAlign,
-                  "group flex w-full items-start gap-2.5 rounded-md bg-transparent py-1.5 ps-2 sm:ps-1.5 outline-none transition-colors duration-150 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-primary/25",
+                  "group flex w-full items-start gap-2.5 rounded-md bg-transparent py-1.5 ps-2 sm:ps-1.5 outline-none transition-colors duration-150 focus-visible:outline-ring-inset",
                   isSelected ? "text-foreground" : "text-foreground/80 hover:bg-accent/60",
-                  (disabled || isResponding) && "opacity-50 cursor-not-allowed",
+                  (disabled || isResponding) && "opacity-55 cursor-not-allowed",
                   !disabled && !isResponding && "cursor-pointer",
                 );
                 // The h-5 slots match the label's line box, so the indicator and shortcut stay on its first line.

@@ -220,7 +220,7 @@ function ThemeLibraryCard({
                               />
                             ) : null}
                             {isActive ? (
-                              <span className="pointer-events-none absolute -bottom-0.5 -right-0.5 flex size-4 items-center justify-center rounded-full border border-border bg-background text-foreground shadow-sm">
+                              <span className="pointer-events-none absolute -bottom-0.5 -right-0.5 flex size-4 items-center justify-center rounded-full bg-background text-foreground shadow-raised">
                                 {mode === "light" ? (
                                   <SunIcon className="size-2.5" />
                                 ) : (
@@ -282,7 +282,7 @@ function ThemeLibraryCard({
                                     style={{
                                       opacity: isOpen ? 1 : 0,
                                       pointerEvents: isOpen ? "auto" : "none",
-                                      transform: `translate(calc(-50% + ${isOpen ? childOffsetX : rootOffsetX}px), ${isOpen ? childOffsetY : 28}px) scale(${isOpen ? 1 : 0.55})`,
+                                      transform: `translate(calc(-50% + ${isOpen ? childOffsetX : rootOffsetX}px), ${isOpen ? childOffsetY : 28}px) scale(${isOpen ? 1 : 0.9})`,
                                       transitionDelay: isOpen ? `${optionIndex * 35}ms` : "0ms",
                                     }}
                                     type="button"
@@ -337,7 +337,7 @@ function ThemeLibraryCard({
                           : gt("Use {label} theme", { label: theme.label })
                     }
                     aria-pressed={isActive}
-                    className="min-w-0 cursor-pointer truncate rounded-sm text-left text-sm font-medium text-foreground outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+                    className="min-w-0 cursor-pointer truncate rounded-sm text-left text-sm font-medium text-foreground outline-none focus-visible:outline-ring-inset"
                     type="button"
                     onClick={(event) => {
                       event.stopPropagation();
@@ -733,11 +733,8 @@ export function ThemeLibrary({
             }
             aria-pressed={isActive}
             className={cn(
-              // The accent ring marks the picked tile; focus is a neutral ring set inside it with a gap.
-              "flex cursor-pointer flex-col items-stretch gap-1.5 rounded-xl border p-2 outline-none transition-colors focus-visible:outline-2 focus-visible:outline-solid focus-visible:-outline-offset-7 focus-visible:outline-foreground/60",
-              isActive
-                ? "border-transparent bg-accent/30 ring-2 ring-inset ring-ring"
-                : "border-border bg-card/60 hover:bg-accent/60",
+              "flex cursor-pointer flex-col items-stretch gap-1.5 rounded-xl border p-2 outline-none transition-colors focus-visible:outline-ring-inset",
+              isActive ? "border-primary bg-accent" : "border-border hover:bg-accent/60",
             )}
             key={mode}
             onClick={() => setMode(mode)}
@@ -862,12 +859,14 @@ export function ThemeLibrary({
 
   return (
     <div className="space-y-3">
-      <h3 className="flex min-h-7 items-center px-3 text-base font-semibold text-foreground sm:px-4">
+      <h3 className="flex min-h-7 items-center gap-2 text-sm font-medium tracking-tight text-foreground">
         {setting("color-scheme").title}
       </h3>
       {renderModeTiles()}
-      <div className="flex min-h-8 flex-wrap items-center justify-between gap-3 px-3 pt-5 sm:px-4">
-        <h3 className="text-base font-semibold text-foreground">{setting("theme").title}</h3>
+      <div className="flex min-h-8 flex-wrap items-center justify-between gap-3 pt-5">
+        <h3 className="flex min-h-7 items-center gap-2 text-sm font-medium tracking-tight text-foreground">
+          {setting("theme").title}
+        </h3>
         <div className="flex flex-wrap items-center justify-end gap-2">
           <Button
             size="xs"
@@ -966,7 +965,7 @@ export function ThemeLibrary({
                 const checkboxId = `remove-theme-${customTheme.id}`;
                 return (
                   <label
-                    className="group relative flex min-h-28 cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-border bg-muted/25 p-3 has-checked:border-ring has-checked:bg-accent/20 hover:bg-accent/60"
+                    className="group relative flex min-h-28 cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-border p-3 hover:bg-accent/60 has-checked:border-primary has-checked:bg-accent"
                     htmlFor={checkboxId}
                     key={customTheme.id}
                   >

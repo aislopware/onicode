@@ -110,7 +110,7 @@ function MicrophoneRow(props: {
       style={{ transform: CSS.Translate.toString(transform), transition }}
       className={cn(
         // Phones put the marker and controls on a second line so names stay readable.
-        "grid grid-cols-[1rem_minmax(0,1fr)_auto] items-center gap-x-2 py-1.5 ps-3 pe-1.5 @min-[32rem]/settings-row:grid-cols-[1rem_auto_minmax(0,1fr)_auto_auto]",
+        "grid grid-cols-[1rem_minmax(0,1fr)_auto] items-center gap-x-2 py-1.5 ps-3 pe-1.5 @min-[32rem]/settings-row:grid-cols-[1rem_auto_minmax(0,1fr)_auto_auto] motion-reduce:transition-none!",
         isDragging && "relative z-10 rounded-lg bg-background shadow-md",
       )}
     >

@@ -29,7 +29,11 @@ function CommandDialogTrigger(props: CommandDialogPrimitive.Trigger.Props) {
 function CommandDialogBackdrop({ className, ...props }: CommandDialogPrimitive.Backdrop.Props) {
   return (
     <CommandDialogPrimitive.Backdrop
-      className={cn(DIALOG_BACKDROP_CLASS, "data-ending-style:pointer-events-none", className)}
+      className={cn(
+        DIALOG_BACKDROP_CLASS,
+        "transition-none data-ending-style:pointer-events-none",
+        className,
+      )}
       data-slot="command-dialog-backdrop"
       {...props}
     />
@@ -75,7 +79,7 @@ function CommandDialogPopup({
           // No fade: half-faded glass only half-blurs, so the text behind shows through the rows.
           className={cn(
             DIALOG_POPUP_CLASS,
-            "pointer-events-auto max-h-105 max-w-xl text-foreground transition-none data-ending-style:pointer-events-none",
+            "pointer-events-auto max-h-105 max-w-xl text-foreground transition-none motion-reduce:transition-none data-ending-style:pointer-events-none",
             className,
           )}
           data-slot="command-dialog-popup"
@@ -162,7 +166,7 @@ function CommandPanel({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       className={cn(
-        "relative min-h-0 overflow-hidden rounded-t-xl not-has-[+[data-slot=command-footer]]:rounded-b-2xl bg-transparent **:data-[slot=scroll-area-scrollbar]:mt-2 [touch-action:pan-y]",
+        "relative min-h-0 overflow-hidden rounded-t-xl not-has-[+[data-slot=command-footer]]:rounded-b-xl bg-transparent **:data-[slot=scroll-area-scrollbar]:mt-2 [touch-action:pan-y]",
         className,
       )}
       {...props}
@@ -213,7 +217,7 @@ function CommandShortcut({ className, ...props }: React.ComponentProps<"kbd">) {
   return (
     <kbd
       className={cn(
-        "ms-auto font-medium font-sans text-secondary-label text-xs tracking-widest",
+        "ms-auto font-medium font-sans text-secondary-label text-xs tracking-wider",
         className,
       )}
       data-slot="command-shortcut"
@@ -226,7 +230,7 @@ function CommandFooter({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       className={cn(
-        "relative flex items-center justify-between gap-2 rounded-b-[calc(var(--radius-xl)-1px)] border-t border-foreground/7 bg-foreground/2.5 px-[var(--command-content-inset)] py-2.5 font-medium text-sm text-muted-foreground [&_[data-slot=kbd-group]]:font-sans [&_[data-slot=kbd]]:bg-foreground/[0.08] [&_[data-slot=kbd]]:text-foreground [&_[data-slot=kbd]]:ring-0",
+        "relative flex items-center justify-between gap-2 rounded-b-[calc(var(--radius-xl)-1px)] border-t border-border bg-muted px-[var(--command-content-inset)] py-2.5 font-medium text-sm text-muted-foreground [&_[data-slot=kbd-group]]:font-sans [&_[data-slot=kbd]]:bg-secondary [&_[data-slot=kbd]]:text-foreground [&_[data-slot=kbd]]:ring-0",
         className,
       )}
       data-slot="command-footer"

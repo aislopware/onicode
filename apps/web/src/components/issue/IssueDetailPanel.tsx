@@ -555,7 +555,7 @@ export function IssueDetailPanel({
             {/* An anchor, not InlineButton: the link takes the issue state's colour. */}
             <a
               className={cn(
-                "inline-flex shrink-0 items-center gap-0.5 font-medium underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-ring",
+                "inline-flex shrink-0 items-center gap-0.5 font-medium underline-offset-2 outline-none hover:underline focus-visible:outline-ring-inset",
                 currentState.toneClassName,
               )}
               aria-label={gt("Open {issue} on {provider}", {
@@ -764,6 +764,7 @@ export function IssueDetailPanel({
               />
             ) : (
               <PullRequestMarkdown
+                className="[&_:is(p,ul,ol,blockquote)]:max-w-[72ch]"
                 text={
                   detail.body.trim().length > 0 ? detail.body : gt("_No description provided._")
                 }

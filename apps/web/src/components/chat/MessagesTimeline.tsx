@@ -1533,7 +1533,7 @@ function TimelineHistoryControl(props: MessagesTimelineHistoryControls) {
             disabled={props.loading}
             aria-label={gt("Load earlier turns")}
             onClick={() => props.onLoadEarlier()}
-            className="flex w-full cursor-pointer items-center gap-3 py-1.5 text-muted-foreground text-xs hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring disabled:cursor-default"
+            className="flex w-full cursor-pointer items-center gap-3 py-1.5 text-muted-foreground text-xs outline-none hover:text-foreground focus-visible:outline-ring-inset disabled:cursor-default"
           >
             <span aria-hidden="true" className="h-px flex-1 bg-border" />
             <span className="shrink-0">
@@ -1904,14 +1904,14 @@ function AttemptFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "at
         data-superseded-attempt-id={row.attemptId}
         onClick={toggle}
         aria-busy={loading}
-        className="flex w-full cursor-pointer select-none items-center gap-2 rounded-md border border-border bg-muted/20 px-2.5 py-2 text-left transition-colors hover:bg-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        className="flex w-full cursor-pointer select-none items-center gap-2 rounded-md px-2.5 py-2 text-left text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
       >
         {row.expanded ? (
           <ChevronDownIcon className="size-3.5 shrink-0 text-muted-foreground" />
         ) : (
           <ChevronRightIcon className="size-3.5 shrink-0 text-muted-foreground" />
         )}
-        <span className="text-xs font-medium text-foreground/80">
+        <span className="text-xs font-medium">
           {row.label}
           {error ? ` · ${error}` : ""}
         </span>

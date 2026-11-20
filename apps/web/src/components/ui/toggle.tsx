@@ -4,7 +4,7 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "~/lib/utils";
 
 const toggleVariants = cva(
-  "[&_svg]:-mx-0.5 relative inline-flex shrink-0 cursor-pointer select-none items-center justify-center gap-2 whitespace-nowrap rounded-(--control-radius) border font-medium text-base text-foreground outline-none transition-[color,background-color,border-color,box-shadow] duration-100 pointer-coarse:after:absolute pointer-coarse:after:size-full pointer-coarse:after:min-h-11 pointer-coarse:after:min-w-11 hover:bg-secondary focus-visible:outline-ring-inset disabled:pointer-events-none disabled:opacity-55 aria-disabled:opacity-55 data-pressed:bg-secondary data-pressed:hover:bg-secondary-hover sm:text-ui [&_svg:not([class*='opacity-'])]:opacity-80 [&_svg:not([class*='size-'])]:size-4.5 sm:[&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
+  "[&_svg]:-mx-0.5 relative inline-flex shrink-0 cursor-pointer select-none items-center justify-center gap-2 whitespace-nowrap rounded-(--control-radius) border font-medium text-base text-foreground outline-none transition-[color,background-color,border-color,box-shadow] duration-100 pointer-coarse:after:absolute pointer-coarse:after:size-full pointer-coarse:after:min-h-11 pointer-coarse:after:min-w-11 hover:bg-secondary focus-visible:outline-ring-inset disabled:pointer-events-none disabled:opacity-55 aria-disabled:opacity-55 data-pressed:bg-accent data-pressed:hover:bg-accent-hover sm:text-ui [&_svg:not([class*='opacity-'])]:opacity-80 [&_svg:not([class*='size-'])]:size-4.5 sm:[&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
   {
     defaultVariants: {
       size: "default",
@@ -28,7 +28,7 @@ const toggleVariants = cva(
         outline:
           "border-border-2 bg-card shadow-[inset_0_1px_var(--highlight-top),var(--plate-shadow)] hover:bg-card-hover [:disabled,:active,[data-pressed]]:shadow-none",
         segmented:
-          "border-transparent text-muted-foreground hover:bg-transparent hover:text-foreground data-pressed:bg-card data-pressed:text-foreground data-pressed:shadow-[var(--card-shadow),var(--plate-shadow)] data-pressed:hover:bg-card dark:data-pressed:bg-white/9 dark:data-pressed:hover:bg-white/9",
+          "border-transparent text-muted-foreground hover:bg-transparent hover:text-foreground data-pressed:bg-card data-pressed:text-foreground data-pressed:shadow-raised data-pressed:hover:bg-card dark:data-pressed:bg-white/8 dark:data-pressed:hover:bg-white/8",
       },
     },
   },

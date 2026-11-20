@@ -29,7 +29,7 @@ export interface ComposerBannerStackItem {
 const GROUPS = ["environment", "attention"] as const;
 
 const FADE_IN =
-  "transition-opacity duration-150 ease-out starting:opacity-0 motion-reduce:transition-none";
+  "transition-opacity duration-150 ease-out-quint starting:opacity-0 motion-reduce:transition-none";
 
 /**
  * Notices about sending from this composer, each its own attached card. Consecutive cards join

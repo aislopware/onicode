@@ -1405,7 +1405,7 @@ export default function DiffPanel({
         <>
           <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background">
             {preview?.incomplete && (
-              <p className="shrink-0 border-b border-border bg-muted/40 px-3 py-1.5 text-2xs text-muted-foreground">
+              <p className="shrink-0 border-b border-border bg-muted px-3 py-1.5 text-2xs text-muted-foreground">
                 {selectedPatchError
                   ? gt(
                       "Showing tracked changes. Untracked changes could not be loaded. Refresh to retry.",
@@ -1414,7 +1414,7 @@ export default function DiffPanel({
               </p>
             )}
             {isSelectedPatchTruncated && !lazySource && (
-              <p className="shrink-0 border-b border-border bg-muted/40 px-3 py-1.5 text-2xs text-muted-foreground">
+              <p className="shrink-0 border-b border-border bg-muted px-3 py-1.5 text-2xs text-muted-foreground">
                 {isGitSelection && selectedGitSource?.files && !preview?.incomplete
                   ? gt(
                       "This preview exceeds the size limit. Changes shown are incomplete. Totals include all changes.",
@@ -1423,7 +1423,7 @@ export default function DiffPanel({
               </p>
             )}
             {omittedToolCallFiles > 0 && (
-              <p className="shrink-0 border-b border-border bg-muted/40 px-3 py-1.5 text-2xs text-muted-foreground">
+              <p className="shrink-0 border-b border-border bg-muted px-3 py-1.5 text-2xs text-muted-foreground">
                 {gt(
                   "This tool call changed {recorded} files. The recorded patch omits {omitted} of them.",
                   {

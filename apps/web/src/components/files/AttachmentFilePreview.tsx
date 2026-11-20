@@ -395,7 +395,7 @@ export function AttachmentFilePreview(props: {
       <p className="text-sm font-medium">
         <T>No preview for this file</T>
       </p>
-      <p className="max-w-sm text-xs leading-relaxed text-muted-foreground">
+      <p className="max-w-sm text-ui leading-relaxed text-muted-foreground">
         {props.name.split(".").at(-1) ? (
           <T>
             Save it to open in an app that supports <Var>{props.name.split(".").at(-1)}</Var> files.

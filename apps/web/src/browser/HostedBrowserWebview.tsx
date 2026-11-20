@@ -361,7 +361,7 @@ export function HostedBrowserWebview(props: {
   return (
     <div
       ref={wrapperRef}
-      className="fixed overflow-hidden bg-muted/35"
+      className="fixed overflow-hidden bg-muted"
       style={{ ...wrapperStyle, overscrollBehavior: "contain" }}
       onScroll={syncContentPresentation}
       onMouseDown={preventThumbButtonFocus}
@@ -419,7 +419,7 @@ export function HostedBrowserWebview(props: {
             aria-hidden={active ? undefined : true}
             className={cn(
               "absolute top-0 left-0 flex overflow-hidden bg-white",
-              active && !layout.fillsPanel && "ring-1 ring-border shadow-sm",
+              active && !layout.fillsPanel && "shadow-raised",
             )}
             style={{
               width: layout.viewportWidth / layout.viewportScale,

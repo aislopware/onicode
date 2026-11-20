@@ -482,7 +482,7 @@ function SidebarUpdateControl() {
               "text-(--sidebar-icon-color)",
               !isInteractionDisabled && "hover:bg-sidebar-row-hover hover:text-sidebar-foreground",
             ),
-        disabled && !showUpdateIconState && "opacity-60",
+        disabled && !showUpdateIconState && "opacity-55",
       )}
       onClick={handleAction}
       onBlur={() => {

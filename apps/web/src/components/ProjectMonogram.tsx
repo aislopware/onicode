@@ -34,8 +34,9 @@ export function ProjectMonogram({
           x="8"
           y="10.8"
           textAnchor="middle"
-          fill="currentColor"
           className="font-mono"
+          // The 600 shades are under 4.5:1 on their own tint in light; the letters go a step deeper.
+          style={{ fill: "color-mix(in oklch, currentColor var(--monogram-ink), black)" }}
           fontSize="8.25"
           fontWeight="700"
           textLength={Array.from(monogramSegmenter.segment(text)).length === 1 ? 6 : 12}

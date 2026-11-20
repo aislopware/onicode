@@ -123,6 +123,7 @@ export function AddCodexAccountDialog({
                 description={gt("Shown in the provider list and model picker.")}
                 control={
                   <Input
+                    size="sm"
                     aria-label={gt("Account name")}
                     value={name}
                     disabled={pending}

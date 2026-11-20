@@ -359,7 +359,7 @@ export function DevicePanel(props: {
                                 title={device.name}
                                 description={details}
                                 action={
-                                  <span className="grid size-6 shrink-0 place-items-center text-muted-foreground/70 group-hover:text-foreground [&>svg]:size-4">
+                                  <span className="grid size-6 shrink-0 place-items-center text-muted-foreground group-hover:text-foreground [&>svg]:size-4">
                                     {pendingDeviceKey === deviceKey(device) ? (
                                       <Spinner size="xs" />
                                     ) : device.booted ? (

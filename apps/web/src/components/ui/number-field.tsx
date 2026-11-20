@@ -47,7 +47,7 @@ export function NumberFieldDecrement({
   return (
     <NumberFieldPrimitive.Decrement
       className={cn(
-        "relative flex shrink-0 cursor-pointer items-center justify-center rounded-s-[calc(var(--control-radius)-1px)] in-data-[size=sm]:px-2 px-2.5 text-muted-foreground transition-colors duration-100 hover:text-foreground pointer-coarse:after:absolute pointer-coarse:after:size-full pointer-coarse:after:min-h-11 pointer-coarse:after:min-w-11 hover:bg-secondary",
+        "relative flex shrink-0 cursor-pointer items-center justify-center rounded-s-[calc(var(--control-radius)-1px)] in-data-[size=sm]:px-2 px-2.5 text-muted-foreground transition-colors duration-100 hover:text-foreground pointer-coarse:after:absolute pointer-coarse:after:size-full pointer-coarse:after:min-h-11 pointer-coarse:after:min-w-11 hover:bg-secondary [&_svg:not([class*='size-'])]:size-4.5 sm:[&_svg:not([class*='size-'])]:size-4",
         className,
       )}
       data-slot="number-field-decrement"
@@ -65,7 +65,7 @@ export function NumberFieldIncrement({
   return (
     <NumberFieldPrimitive.Increment
       className={cn(
-        "relative flex shrink-0 cursor-pointer items-center justify-center rounded-e-[calc(var(--control-radius)-1px)] in-data-[size=sm]:px-2 px-2.5 text-muted-foreground transition-colors duration-100 hover:text-foreground pointer-coarse:after:absolute pointer-coarse:after:size-full pointer-coarse:after:min-h-11 pointer-coarse:after:min-w-11 hover:bg-secondary",
+        "relative flex shrink-0 cursor-pointer items-center justify-center rounded-e-[calc(var(--control-radius)-1px)] in-data-[size=sm]:px-2 px-2.5 text-muted-foreground transition-colors duration-100 hover:text-foreground pointer-coarse:after:absolute pointer-coarse:after:size-full pointer-coarse:after:min-h-11 pointer-coarse:after:min-w-11 hover:bg-secondary [&_svg:not([class*='size-'])]:size-4.5 sm:[&_svg:not([class*='size-'])]:size-4",
         className,
       )}
       data-slot="number-field-increment"

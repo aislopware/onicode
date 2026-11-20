@@ -140,7 +140,7 @@ export function ThreadReadLabel({
     <Link
       to="/$environmentId/$threadId"
       params={{ environmentId, threadId: label.threadId }}
-      className="min-w-0 truncate rounded-sm text-foreground underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-ring"
+      className="min-w-0 truncate rounded-sm text-foreground underline-offset-2 outline-none hover:underline focus-visible:outline-ring-inset"
       onClick={stopRowToggle}
       onKeyDown={stopRowToggle}
     >
@@ -490,7 +490,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
             : iconConfig.className,
   );
   const headingClass = showWarningIndicator
-    ? "font-medium text-warning"
+    ? "font-medium text-warning-foreground"
     : showDestructiveRowStyle
       ? "font-medium text-destructive"
       : workLogEntryIsToolLike(workEntry)
@@ -622,13 +622,13 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
           {showFailedIndicator &&
           !showDestructiveRowStyle &&
           !toolIconAcceptsTint(entryToolIcon) ? (
-            <XIcon aria-hidden className={cn("size-3 shrink-0", failedToolIconClassName)} />
+            <XIcon aria-hidden className={cn("size-3.5 shrink-0", failedToolIconClassName)} />
           ) : null}
           {canExpandProjectedItem ? (
             <span className="flex size-4 shrink-0 items-center justify-center" aria-hidden>
               <ChevronRightIcon
                 className={cn(
-                  "size-3 shrink-0 text-icon-muted opacity-70 transition-transform duration-200",
+                  "size-3.5 shrink-0 text-icon-muted opacity-70 transition-transform duration-200",
                   expanded && "rotate-90",
                 )}
               />

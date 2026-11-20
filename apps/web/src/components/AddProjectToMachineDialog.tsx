@@ -522,7 +522,7 @@ function IgnoredFileRow({
   const gt = useGT();
   const tooLarge = file.byteLength > COPYABLE_FILE_MAX_BYTES;
   return (
-    <label className="flex cursor-pointer items-center gap-2 px-2.5 py-1.5 text-sm not-last:border-b has-disabled:cursor-not-allowed has-disabled:opacity-64">
+    <label className="flex cursor-pointer items-center gap-2 px-2.5 py-1.5 text-sm not-last:border-b has-disabled:cursor-not-allowed has-disabled:opacity-55">
       <Checkbox
         checked={checked}
         disabled={tooLarge || disabled}

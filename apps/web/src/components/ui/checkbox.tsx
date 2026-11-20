@@ -3,7 +3,7 @@ import { Checkbox as CheckboxPrimitive } from "@base-ui/react/checkbox";
 import { cn } from "~/lib/utils";
 
 const rootClassName =
-  "relative inline-flex size-4.5 shrink-0 items-center justify-center rounded-sm border border-border-3 bg-card outline-none transition-colors duration-100 focus-visible:outline-ring-inset aria-invalid:border-destructive data-disabled:opacity-55 sm:size-4 [[data-checked],[data-indeterminate]]:border-transparent [[data-checked],[data-indeterminate]]:bg-primary [[data-checked],[data-indeterminate]]:[--focus-ring:var(--primary-foreground)]";
+  "relative inline-flex size-4.5 shrink-0 cursor-pointer items-center justify-center rounded-sm border border-border-3 bg-card outline-none transition-colors duration-100 focus-visible:outline-ring-inset aria-invalid:border-destructive data-disabled:cursor-not-allowed data-disabled:opacity-55 sm:size-4 [[data-checked],[data-indeterminate]]:border-transparent [[data-checked],[data-indeterminate]]:bg-primary [--focus-ring-offset:1px]";
 
 const indicatorClassName =
   "flex items-center justify-center text-primary-foreground data-unchecked:hidden";

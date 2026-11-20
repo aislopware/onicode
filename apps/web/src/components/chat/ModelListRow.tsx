@@ -11,7 +11,7 @@ import { getDisplayModelName } from "./providerIconUtils";
 
 /** One look for every row the list highlights: model rows and the quiet "Show more" toggle. */
 const MODEL_PICKER_ROW =
-  "group/model-row flex h-7 w-full min-w-0 cursor-pointer items-center gap-2 rounded-md px-2 text-left text-sm text-foreground outline-none select-none data-highlighted:bg-row-highlight data-disabled:cursor-not-allowed data-disabled:opacity-50";
+  "group/model-row flex h-7 w-full min-w-0 cursor-pointer items-center gap-2 rounded-md px-2 text-left text-ui text-foreground outline-none select-none data-highlighted:bg-row-highlight data-disabled:cursor-not-allowed data-disabled:opacity-55";
 
 /** Passes every other prop on, so a tooltip can use the row as its trigger. */
 export function ModelPickerRowItem({
@@ -64,10 +64,16 @@ export const ModelListRow = memo(function ModelListRow(props: {
     name: props.name,
     subProvider: props.subProvider,
   });
-  // The star rests in view only where it tells favorites apart; elsewhere it shows for the pointer.
-  const starRests = props.isFavorite && !props.quietFavorite && !props.jumpLabel;
-  // Alone on the row, the check takes the row's end; the star then shows beside it for the pointer.
-  const checkEndsRow = props.isSelected && !props.jumpLabel && !starRests;
+  // Every row ends in one slot, so the star sits in the same place on each. At rest the slot
+  // holds the shortcut, the check, or the star where it tells favorites apart; the pointer
+  // brings the star in over any of them.
+  const hasStar = !props.disabledReason;
+  const checkInSlot = props.isSelected && !props.jumpLabel;
+  const starRests =
+    props.isFavorite && !props.quietFavorite && !props.jumpLabel && !props.isSelected;
+  const yieldsToStar =
+    hasStar &&
+    "group-hover/model-row:invisible group-has-[button:focus-visible]/model-row:invisible";
   const row = (
     <ModelPickerRowItem
       index={props.index}
@@ -125,32 +131,37 @@ export const ModelListRow = memo(function ModelListRow(props: {
         </Badge>
       ) : null}
       <span className="ms-auto flex shrink-0 items-center gap-2 ps-2 text-xs text-muted-foreground tabular-nums">
-        {props.isSelected && !checkEndsRow ? (
-          <CheckIcon aria-hidden="true" className="size-3.5 text-foreground" />
+        {/* Beside a shortcut, and where touch keeps the star in view, the check has its own place. */}
+        {props.isSelected && (!checkInSlot || hasStar) ? (
+          <CheckIcon
+            aria-hidden="true"
+            className={cn("size-3.5 text-foreground", checkInSlot && "hidden pointer-coarse:block")}
+          />
         ) : null}
-        {/* The shortcut and the star share one slot, so rows end on the same edge. */}
         <span className="relative flex h-5 min-w-5 items-center justify-end">
-          {checkEndsRow ? (
-            <CheckIcon aria-hidden="true" className="size-3.5 text-foreground" />
+          {checkInSlot ? (
+            <CheckIcon
+              aria-hidden="true"
+              className={cn(
+                "size-3.5 text-foreground",
+                hasStar && "pointer-coarse:hidden",
+                yieldsToStar,
+              )}
+            />
           ) : null}
           {props.jumpLabel ? (
-            <span
-              data-model-jump-label
-              className={cn(
-                !props.disabledReason && "group-hover/model-row:invisible pointer-coarse:invisible",
-              )}
-            >
+            <span data-model-jump-label className={cn(yieldsToStar, "pointer-coarse:invisible")}>
               {props.jumpLabel}
             </span>
           ) : null}
-          {props.disabledReason ? null : (
+          {!hasStar ? null : (
             <button
               type="button"
               aria-label={props.isFavorite ? gt("Remove from favorites") : gt("Add to favorites")}
               aria-pressed={props.isFavorite}
               className={cn(
-                "absolute inset-y-0 flex w-5 cursor-pointer items-center justify-center rounded-sm outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
-                checkEndsRow ? "right-full me-1" : "right-0",
+                // Hangs into the row's padding, so its glyph ends where the check and the shortcut do.
+                "absolute inset-y-0 -right-[0.1875rem] flex w-5 cursor-pointer items-center justify-center rounded-sm outline-none hover:text-foreground focus-visible:outline-ring-inset",
                 !starRests &&
                   "opacity-0 group-hover/model-row:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100",
               )}

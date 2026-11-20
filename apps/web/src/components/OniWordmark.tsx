@@ -74,14 +74,6 @@ const BLINK: Keyframe[] = [
   { transform: "scale(1, 1)" },
 ];
 
-const HOP: Keyframe[] = [
-  { transform: "translateY(0) scale(1, 1)", easing: "ease-out" },
-  { transform: "translateY(0) scale(1.08, 0.9)", offset: 0.15, easing: "ease-out" },
-  { transform: "translateY(-28%) scale(0.95, 1.06)", offset: 0.5, easing: "ease-in" },
-  { transform: "translateY(0) scale(1.07, 0.92)", offset: 0.8, easing: "ease-out" },
-  { transform: "translateY(0) scale(1, 1)" },
-];
-
 type Side = (typeof SIDES)[number];
 type Lean = Partial<Record<Side, number>>;
 
@@ -133,7 +125,7 @@ function turnKeyframes(flaps: ReadonlyArray<Flap>) {
 }
 
 /**
- * Ref callback for an element containing an `OniWordmark`: now and then it blinks, winks, hops, or
+ * Ref callback for an element containing an `OniWordmark`: now and then it blinks, winks, or
  * turns to face front and flaps its ears. Idle time is a plain timer so nothing animates between
  * moves.
  */
@@ -164,7 +156,6 @@ export function animateOniIdle(root: Element | null) {
     { weight: 30, run: () => blink() },
     { weight: 15, run: () => (blink(), blink(320)) },
     { weight: 10, run: () => blink(0, side()) },
-    { weight: 15, run: () => (body.animate(HOP, { duration: 560 }), blink(420)) },
     { weight: 20, run: faceFront },
   ];
   const totalWeight = moves.reduce((sum, move) => sum + move.weight, 0);

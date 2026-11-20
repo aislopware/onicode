@@ -28,7 +28,9 @@ export function CollapsibleSectionHeader({
       aria-expanded={expanded}
       className={cn(
         "flex h-8 w-full cursor-pointer items-center gap-2 rounded-md text-left text-xs font-medium focus-visible:outline-ring-inset",
-        variant === "panel" ? "ps-2 pe-2.5" : "px-2",
+        variant === "panel"
+          ? "ps-2 pe-2.5 hover:text-foreground"
+          : "px-2 hover:bg-sidebar-row-hover",
         tones[tone].label,
       )}
     >
@@ -49,6 +51,6 @@ export function CollapsibleSectionHeader({
 
 export function SectionHeaderStatus({ children }: { children: ReactNode }) {
   return (
-    <span className="shrink-0 text-3xs leading-none text-destructive-foreground">{children}</span>
+    <span className="shrink-0 text-xs leading-none text-destructive-foreground">{children}</span>
   );
 }

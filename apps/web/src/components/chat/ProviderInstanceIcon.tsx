@@ -151,7 +151,7 @@ export const ProviderInstanceIcon = memo(function ProviderInstanceIcon(props: {
           </span>
           <span
             className={cn(
-              "pointer-events-none absolute right-[-0.3125rem] bottom-[-0.3125rem] z-10 flex size-3 items-center justify-center rounded-full border bg-card text-foreground shadow-sm @max-[1.1rem]:hidden",
+              "pointer-events-none absolute right-[-0.3125rem] bottom-[-0.3125rem] z-10 flex size-3 items-center justify-center rounded-full border bg-card text-foreground @max-[1.1rem]:hidden",
               props.badgeClassName,
             )}
             style={{ borderColor: indicatorBackground }}
@@ -175,7 +175,7 @@ export const ProviderInstanceIcon = memo(function ProviderInstanceIcon(props: {
       {isCustomEndpoint ? null : props.showBadge ? (
         <span
           className={cn(
-            "pointer-events-none absolute right-0 bottom-0 z-10 flex h-3.5 min-w-3.5 items-center justify-center rounded-full border px-0.5 text-4xs font-semibold leading-none shadow-sm",
+            "pointer-events-none absolute right-0 bottom-0 z-10 flex h-3.5 min-w-3.5 items-center justify-center rounded-full border px-0.5 text-4xs font-semibold leading-none",
             accentColor
               ? "bg-(--provider-accent) text-(--provider-accent-foreground)"
               : "bg-card text-muted-foreground",

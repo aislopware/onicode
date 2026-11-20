@@ -129,7 +129,7 @@ function SnapShotAttachmentFrame({
       className={cn(
         animateArrival &&
           !animationId &&
-          "origin-center transition-[opacity,scale] duration-300 ease-drawer starting:scale-95 starting:opacity-0 motion-reduce:transition-none motion-reduce:starting:scale-100 motion-reduce:starting:opacity-100",
+          "origin-center transition-[opacity,scale] duration-200 ease-drawer starting:scale-95 starting:opacity-0 motion-reduce:transition-none motion-reduce:starting:scale-100 motion-reduce:starting:opacity-100",
         className,
       )}
       {...props}
@@ -490,7 +490,7 @@ export function ComposerAttachmentFileList({
             <button
               type="button"
               disabled={needsReattach}
-              className="min-w-0 flex-1 truncate text-left hover:underline focus-visible:outline-2"
+              className="min-w-0 flex-1 truncate text-left outline-none hover:underline focus-visible:outline-ring-inset"
               onClick={() => onPreviewFile(file.id)}
             >
               {file.name}
@@ -673,7 +673,7 @@ export function ComposerRestingImagePreviews({
       {counts.overflowCount > 0 ? (
         <button
           type="button"
-          className="flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md border border-border bg-muted/60 font-medium text-secondary-label text-xs tabular-nums outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
+          className="flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md border border-border bg-muted/60 font-medium text-secondary-label text-xs tabular-nums outline-none hover:bg-accent focus-visible:outline-ring-inset"
           aria-label={gt(
             "{count, plural, one {Show {count} more image attachments} other {Show {count} more image attachments}}",
             {

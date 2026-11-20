@@ -418,7 +418,7 @@ export function ThemeSearchSection({
             <p className="text-sm font-medium">
               <T>No supported open-source themes found</T>
             </p>
-            <p className="mt-1 text-muted-foreground text-xs">
+            <p className="mt-1 text-muted-foreground text-ui">
               <T>Try a broader search.</T>
             </p>
           </div>

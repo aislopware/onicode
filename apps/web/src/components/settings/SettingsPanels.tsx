@@ -773,7 +773,7 @@ export function GeneralSettingsPanel() {
                 }
               }}
             >
-              <SelectTrigger size="sm" className="w-full sm:w-44" aria-label={gt("Project order")}>
+              <SelectTrigger size="sm" className="w-full sm:w-40" aria-label={gt("Project order")}>
                 <SelectValue>
                   {m(SIDEBAR_PROJECT_SORT_ORDER_LABELS[settings.sidebarProjectSortOrder])}
                 </SelectValue>

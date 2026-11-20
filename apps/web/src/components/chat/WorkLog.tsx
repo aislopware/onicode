@@ -81,7 +81,7 @@ function WorkLogLine({ icon, label, trailing, wrapLabel }: RowContent) {
 }
 
 const interactionClassName =
-  "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring";
+  "cursor-pointer outline-none focus-visible:outline-ring-inset hover:[&_.text-secondary-label]:text-foreground";
 
 function useRowClassName(interactive: boolean) {
   const grouped = use(GroupedRows);

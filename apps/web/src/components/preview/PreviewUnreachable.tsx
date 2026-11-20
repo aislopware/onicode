@@ -93,7 +93,7 @@ export function PreviewUnreachable({
         </p>
 
         {showDetails ? (
-          <div className="mt-6 rounded-lg border border-border bg-muted/40 p-4 text-sm">
+          <div className="mt-6 rounded-lg border border-border p-4 text-sm">
             <p className="mb-2 font-medium text-foreground">
               <T>Try:</T>
             </p>

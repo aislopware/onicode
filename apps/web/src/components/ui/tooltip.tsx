@@ -140,7 +140,7 @@ function TooltipPopup({
       <TooltipPositioner align={align} anchor={anchor} side={side} sideOffset={sideOffset}>
         <TooltipPrimitive.Popup
           className={cn(
-            "relative flex origin-(--transform-origin) rounded-md font-medium text-popover-foreground text-xs transition-opacity duration-150 data-ending-style:opacity-0 data-ending-style:duration-100 data-starting-style:opacity-0 data-instant:duration-0",
+            "relative flex origin-(--transform-origin) rounded-md font-medium text-popover-foreground text-xs transition-opacity duration-150 ease-out-quint data-ending-style:opacity-0 data-ending-style:duration-100 data-starting-style:opacity-0 data-instant:duration-0",
             variant === "glass"
               ? "dropdown-glass shadow-popup dark:shadow-popup-dark"
               : "border border-border-2 bg-popover shadow-popup dark:shadow-popup-dark",
