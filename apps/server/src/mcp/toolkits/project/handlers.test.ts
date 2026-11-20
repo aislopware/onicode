@@ -58,6 +58,7 @@ const clientLaunchHarness = (input: {
   /** Where Settings saves a project's model; the legacy project field stays null. */
   readonly overrideModel?: ModelSelection;
   readonly overrideScripts?: readonly ProjectScript[];
+  readonly environmentScripts?: readonly ProjectScript[];
   readonly launched: Array<ThreadLaunch.ThreadLaunchInput>;
   readonly workspaceRoot?: string;
   readonly checkWorktreeBase?: ThreadLaunch.ThreadLaunchService["Service"]["checkWorktreeBase"];
@@ -89,6 +90,9 @@ const clientLaunchHarness = (input: {
       ...(input.defaultThreadEnvMode === undefined
         ? {}
         : { defaultThreadEnvMode: input.defaultThreadEnvMode }),
+      ...(input.environmentScripts === undefined
+        ? {}
+        : { defaultProjectScripts: input.environmentScripts }),
       ...(input.overrideModel === undefined
         ? {}
         : {
@@ -1180,60 +1184,72 @@ it.effect("an agent cannot delete the built-in scratch project, even with force"
   }),
 );
 
-it.effect("reading a project shows the default model and actions saved in Settings", () =>
-  Effect.gen(function* () {
-    const overrideModel = {
-      instanceId: ProviderInstanceId.make("claudeAgent"),
-      model: "claude-sonnet",
-    };
-    const overrideScripts = [
-      { id: "test", name: "Test", command: "pnpm test", icon: "test", runOnWorktreeCreate: false },
-    ] satisfies ProjectScript[];
-    const harness = clientLaunchHarness({
-      runtimeModeCeiling: "full-access",
-      overrideModel,
-      overrideScripts,
-      launched: [],
-    });
-    const dependencies = Layer.merge(
-      harness.dependencies,
-      Layer.mock(Project.ProjectService)({
-        getById: (projectId) =>
-          Effect.succeedSome({
-            id: projectId,
-            title: "Client target",
-            workspaceRoot: "/projects/client-target",
-            defaultModelSelection: null,
-            scripts: [
-              {
-                id: "stale",
-                name: "Stale",
-                command: "true",
-                icon: "play",
-                runOnWorktreeCreate: false,
-              },
-            ],
-            createdAt: "2026-01-01T00:00:00.000Z",
-            updatedAt: "2026-01-01T00:00:00.000Z",
-            deletedAt: null,
-          }),
-      }),
-    );
-    const toolkit = yield* ProjectToolkit.pipe(
-      Effect.provide(
-        McpToolAccess.HandlersLayer.layer(ProjectHandlers.layer).pipe(Layer.provide(dependencies)),
-      ),
-    );
+it.effect.each(["the project's own", "the environment's inherited"] as const)(
+  "reading a project shows the default model saved in Settings and %s actions",
+  (source) =>
+    Effect.gen(function* () {
+      const overrideModel = {
+        instanceId: ProviderInstanceId.make("claudeAgent"),
+        model: "claude-sonnet",
+      };
+      const overrideScripts = [
+        {
+          id: "test",
+          name: "Test",
+          command: "pnpm test",
+          icon: "test",
+          runOnWorktreeCreate: false,
+        },
+      ] satisfies ProjectScript[];
+      const harness = clientLaunchHarness({
+        runtimeModeCeiling: "full-access",
+        overrideModel,
+        ...(source === "the project's own"
+          ? { overrideScripts }
+          : { environmentScripts: overrideScripts }),
+        launched: [],
+      });
+      const dependencies = Layer.merge(
+        harness.dependencies,
+        Layer.mock(Project.ProjectService)({
+          getById: (projectId) =>
+            Effect.succeedSome({
+              id: projectId,
+              title: "Client target",
+              workspaceRoot: "/projects/client-target",
+              defaultModelSelection: null,
+              scripts: [
+                {
+                  id: "stale",
+                  name: "Stale",
+                  command: "true",
+                  icon: "play",
+                  runOnWorktreeCreate: false,
+                },
+              ],
+              createdAt: "2026-01-01T00:00:00.000Z",
+              updatedAt: "2026-01-01T00:00:00.000Z",
+              deletedAt: null,
+            }),
+        }),
+      );
+      const toolkit = yield* ProjectToolkit.pipe(
+        Effect.provide(
+          McpToolAccess.HandlersLayer.layer(ProjectHandlers.layer).pipe(
+            Layer.provide(dependencies),
+          ),
+        ),
+      );
 
-    const read = yield* toolkit
-      .handle("oni_project_read", { projectId: harness.projectId })
-      .pipe(Stream.unwrap, Stream.runCollect, Effect.provide(dependencies));
+      const read = yield* toolkit
+        .handle("oni_project_read", { projectId: harness.projectId })
+        .pipe(Stream.unwrap, Stream.runCollect, Effect.provide(dependencies));
 
-    expect(read.at(-1)?.result).toMatchObject({
-      defaultModelSelection: overrideModel,
-      scripts: overrideScripts,
-    });
-  }),
+      expect(read.at(-1)?.result).toMatchObject({
+        defaultModelSelection: overrideModel,
+        scripts: overrideScripts,
+      });
+    }),
 );
 
 it.effect("an update the project refuses tells the agent why", () =>

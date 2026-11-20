@@ -461,24 +461,27 @@ export const make = Effect.gen(function* () {
       return undefined;
     return Effect.gen(function* () {
       const { scripts } = input;
-      // Empty own scripts read the same whether the project inherits or chose none, so a
-      // caller echoing what it read must not flip one into the other.
-      const echoesOwnScripts =
+      // A caller echoing the scripts it read, the project's own or the environment's it
+      // inherits, must not flip inheriting into owning them or into choosing none.
+      const echoesReadScripts =
         scripts !== undefined &&
         previousScripts !== undefined &&
-        NodeUtil.isDeepStrictEqual(
-          scripts,
-          resolveProjectScripts(
-            { ...(yield* serverSettings.getSettings), defaultProjectScripts: [] },
-            { id: projectId, scripts: previousScripts },
+        (yield* serverSettings.getSettings.pipe(
+          Effect.map((settings) =>
+            [settings, { ...settings, defaultProjectScripts: [] }].some((read) =>
+              NodeUtil.isDeepStrictEqual(
+                scripts,
+                resolveProjectScripts(read, { id: projectId, scripts: previousScripts }),
+              ),
+            ),
           ),
-        );
+        ));
       yield* serverSettings.updateProjectSettingsOverride(projectId, {
         defaultModelSelection: input.defaultModelSelection,
         defaultThreadEnvMode: input.defaultThreadEnvMode,
         // Like empty scripts on the legacy record, an empty list uses the environment's.
         defaultProjectScripts:
-          scripts === undefined || echoesOwnScripts
+          scripts === undefined || echoesReadScripts
             ? undefined
             : scripts.length === 0
               ? null

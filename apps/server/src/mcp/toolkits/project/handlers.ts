@@ -204,8 +204,8 @@ const withSavedProjectSettings = Effect.gen(function* () {
       defaultThreadEnvMode:
         sources.defaultThreadEnvMode === "project" ? effective.defaultThreadEnvMode : null,
       autoPull: effective.defaultAutoPull,
-      // The project's own scripts; empty means it uses the environment's.
-      scripts: resolveProjectScripts({ ...settings, defaultProjectScripts: [] }, project),
+      // The scripts its threads get, so an agent adding one keeps the environment's it inherits.
+      scripts: resolveProjectScripts(settings, project),
     };
   };
 });

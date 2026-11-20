@@ -751,6 +751,18 @@ it.effect("project defaults reach new threads once legacy project settings are f
     assert.notProperty(cleared.overrides, "defaultProjectScripts");
     assert.isTrue(cleared.settings.defaultAutoPull);
 
+    // Echoing the environment's scripts it read keeps an inheriting project inheriting.
+    const environmentScripts = [
+      { id: "setup", name: "Setup", command: "vp i", icon: "play", runOnWorktreeCreate: true },
+    ] as const;
+    yield* settingsService.updateSettings({ defaultProjectScripts: environmentScripts });
+    yield* service.update({
+      commandId: CommandId.make("command:folded:echo-environment"),
+      projectId,
+      scripts: environmentScripts,
+    });
+    assert.notProperty((yield* resolve()).overrides, "defaultProjectScripts");
+
     // Echoing the empty scripts it read keeps a project's explicit "no scripts".
     yield* settingsService.updateSettings({
       projectSettingsOverrides: {
