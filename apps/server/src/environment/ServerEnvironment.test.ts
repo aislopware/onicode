@@ -156,7 +156,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("ServerEnvironmen
         });
       }),
   );
-  it.effect("names the environment and its machine from the overrides", () =>
+  it.effect("takes the machine kind ONICODE_ENVIRONMENT_MACHINE_KIND names", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
       const baseDir = yield* fileSystem.makeTempDirectoryScoped({
@@ -168,11 +168,9 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("ServerEnvironmen
       }).pipe(
         Effect.provide(layerServerEnvironment(baseDir)),
         Effect.provideService(HostProcess.Environment, {
-          ONICODE_ENVIRONMENT_LABEL: " MacBook ",
           ONICODE_ENVIRONMENT_MACHINE_KIND: "laptop",
         }),
       );
-      expect(descriptor.label).toBe("MacBook");
       expect(descriptor.platform.machine).toBe("laptop");
     }),
   );

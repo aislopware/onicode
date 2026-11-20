@@ -468,7 +468,7 @@ interface CursorShellStreamOutput {
 }
 
 // The SDK reports shell-output-delta only for user-started shell commands, so
-// patches/@cursor__sdk@1.4.1.patch publishes agent shell output on this hook.
+// patches/@cursor__sdk@1.4.2.patch publishes agent shell output on this hook.
 const SHELL_STREAM_OUTPUT_HOOK = Symbol.for("@cursor/sdk.shellStreamOutput");
 const shellStreamListeners = new Set<(output: CursorShellStreamOutput) => void>();
 
