@@ -106,7 +106,7 @@ function TimelineComment({
       tone={approved ? "success" : changes ? "danger" : undefined}
     >
       <View accessible accessibilityRole="header" className="flex-row items-center gap-2">
-        <PullRequestAvatar actor={comment.author} size={22} />
+        <PullRequestAvatar actor={comment.author} size={22} decorative />
         <View className="min-w-0 flex-1">
           <Text className="text-sm">
             {approved ? (
@@ -276,7 +276,7 @@ export function pullRequestTimelineRows(
       content: (
         <TimelineEvent icon="text.bubble" tone={thread.isResolved ? "success" : undefined}>
           <View accessible accessibilityRole="header" className="flex-row items-center gap-2">
-            <PullRequestAvatar actor={thread.comments[0]?.author ?? null} size={22} />
+            <PullRequestAvatar actor={thread.comments[0]?.author ?? null} size={22} decorative />
             <Text className="flex-1 text-sm">
               <T>
                 <Text className="font-oni-medium">

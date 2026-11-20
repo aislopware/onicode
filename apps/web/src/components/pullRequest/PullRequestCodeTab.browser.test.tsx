@@ -646,6 +646,7 @@ it("hides a resolved conversation behind avatars on its line until they are clic
   await marker.click();
   await expect.element(marker).toHaveAttribute("aria-expanded", "true");
   await expect.element(card("Resolved")).toHaveAttribute("aria-expanded", "true");
+  await expect.element(screen.getByRole("heading", { name: /reviewer/ })).toBeVisible();
   await screen.getByRole("button", { name: "Reply", exact: true }).click();
   await reply().fill("Unsent");
 
