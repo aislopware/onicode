@@ -48,7 +48,7 @@ index b701311..d61d29a 100644
  function getNetSession() {
      return require("electron").session.fromPartition(exports.NET_SESSION_NAME, {
          cache: false,
-@@ -16,27 +54,146 @@ class ElectronHttpExecutor extends builder_util_runtime_1.HttpExecutor {
+@@ -16,27 +54,147 @@ class ElectronHttpExecutor extends builder_util_runtime_1.HttpExecutor {
          this.cachedSession = null;
      }
      async download(url, destination, options) {
@@ -161,7 +161,8 @@ index b701311..d61d29a 100644
 +                            return;
 +                        }
 +                        const start = resumed ? offset : 0;
-+                        const total = resumed ? Number(/\/(\d+)$/.exec(contentRange)?.[1]) : NaN;
++                        // An unknown total (`/*`) leaves the range end as the most to expect.
++                        const total = resumed ? Number(/\/(\d+)$/.exec(contentRange)?.[1] ?? Number(/-(\d+)\/\*$/.exec(contentRange)?.[1]) + 1) : NaN;
 +                        const streams = [];
 +                        const contentLength = (0, builder_util_runtime_1.safeGetHeader)(response, "content-length");
 +                        if (options.onProgress != null && contentLength != null) {
@@ -190,7 +191,7 @@ index b701311..d61d29a 100644
 +                            }
 +                            fileOut.once("close", () => {
 +                                const end = start + fileOut.bytesWritten;
-+                                if (end > offset && end < total) {
++                                if (end < total || (resumed && end === start)) {
 +                                    callback(new Error(PARTIAL_CONTENT_ENDED));
 +                                    return;
 +                                }
@@ -211,7 +212,7 @@ index b701311..d61d29a 100644
          });
      }
      createRequest(options, callback) {
-@@ -61,6 +218,35 @@ class ElectronHttpExecutor extends builder_util_runtime_1.HttpExecutor {
+@@ -61,6 +219,35 @@ class ElectronHttpExecutor extends builder_util_runtime_1.HttpExecutor {
          }
          return request;
      }
