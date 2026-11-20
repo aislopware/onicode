@@ -40,6 +40,7 @@ import {
   resolveRuntimeMode,
   taskPrompt,
 } from "../mcp/delegatedTaskModes.ts";
+import { backgroundSubagentRunId } from "../mcp/threadAccess.ts";
 import { followUpOwnerRun } from "../orchestration-v2/CommandPolicy.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
@@ -273,9 +274,18 @@ const make = Effect.gen(function* () {
             }),
         ),
       );
-      const parentRun = parent.runs
-        .filter(ThreadManagement.isActiveRun)
-        .toSorted((left, right) => right.ordinal - left.ordinal)[0];
+      const backgroundRunId = parent.runs.some(ThreadManagement.isActiveRun)
+        ? undefined
+        : yield* threads.getThreadShell(scope.thread.threadId).pipe(
+            Effect.map((shell) => backgroundSubagentRunId(shell, scope.thread.providerInstanceId)),
+            Effect.orElseSucceed(() => undefined),
+          );
+      const parentRun =
+        backgroundRunId === undefined
+          ? parent.runs
+              .filter(ThreadManagement.isActiveRun)
+              .toSorted((left, right) => right.ordinal - left.ordinal)[0]
+          : parent.runs.find((run) => run.id === backgroundRunId);
       if (
         parentRun === undefined ||
         parentRun.rootNodeId === null ||

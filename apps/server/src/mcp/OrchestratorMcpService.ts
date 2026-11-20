@@ -128,7 +128,12 @@ import {
 } from "./McpInvocationContext.ts";
 import * as Metrics from "../observability/Metrics.ts";
 import { resolveInteractionMode, resolveRuntimeMode, taskPrompt } from "./delegatedTaskModes.ts";
-import { assertTargetWithinLimits, isLiveCallerShell, threadNotFound } from "./threadAccess.ts";
+import {
+  assertTargetWithinLimits,
+  backgroundSubagentRunId,
+  isLiveCallerShell,
+  threadNotFound,
+} from "./threadAccess.ts";
 import * as SecretRequests from "../secrets/SecretRequests.ts";
 import * as PeerForwarding from "../peer/PeerForwarding.ts";
 import * as RemoteDelegation from "../peer/RemoteDelegation.ts";
@@ -1496,16 +1501,9 @@ const make = Effect.gen(function* () {
       const shell = yield* threadManagement
         .getThreadShell(threadId)
         .pipe(Effect.mapError(threadManagementFailure));
-      if (
-        shell?.activeRunId !== null ||
-        shell.latestRunId === null ||
-        !isLiveCallerShell(shell, scope.thread?.providerInstanceId)
-      ) {
-        return undefined;
-      }
-      const { runs } = yield* loadThreadRecords(threadId, ["runs"], {
-        runIds: [shell.latestRunId],
-      });
+      const runId = backgroundSubagentRunId(shell, scope.thread?.providerInstanceId);
+      if (runId === undefined) return undefined;
+      const { runs } = yield* loadThreadRecords(threadId, ["runs"], { runIds: [runId] });
       return runs[0];
     },
   );

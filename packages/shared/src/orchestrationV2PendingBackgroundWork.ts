@@ -181,6 +181,7 @@ type PendingBackgroundWorkTurnItem = {
   readonly monitor?: boolean | undefined;
   readonly prompt?: string | undefined;
   readonly childThreadId?: ThreadId | null;
+  readonly origin?: string | undefined;
 };
 
 function isLatestRunSettledForBackgroundWait(
@@ -236,7 +237,8 @@ function pendingTaskFromTurnItem(
       return {
         ...named,
         kind: "subagent",
-        ...(item.owningProviderInstanceId === undefined
+        // An app-owned task is Onicode's, so it keeps no provider's background agent alive.
+        ...(item.owningProviderInstanceId === undefined || item.origin === "app_owned"
           ? {}
           : { providerInstanceId: item.owningProviderInstanceId }),
         ...(item.childThreadId == null ? {} : { childThreadId: item.childThreadId }),
