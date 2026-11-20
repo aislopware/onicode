@@ -238,6 +238,14 @@ describe("VcsProcess.run", () => {
         "fatal: update_ref failed for ref 'refs/onicode/checkpoints/x': cannot update ref 'refs/onicode/checkpoints/x': couldn't write '/Volumes/share/.git/refs/onicode/checkpoints/x.lock'",
       fsyncMethods: ["batch", "writeout-only"],
     },
+    {
+      stderr: `error: unable to write file .git/objects/pack/pack-${"4".repeat(40)}.pack: No such file or directory\nfatal: unable to rename temporary file to '.git/objects/pack/pack-${"4".repeat(40)}.pack'`,
+      fsyncMethods: ["batch", "writeout-only"],
+    },
+    {
+      stderr: `fatal: unable to rename temporary file to '.git/objects/pack/pack-${"4".repeat(40)}.pack'`,
+      fsyncMethods: ["fsync"],
+    },
   ] as const)(
     "falls back to writeout-only only for unsupported flushes on macOS ($fsyncMethods): $stderr",
     ({ stderr, fsyncMethods, ...scenario }) =>
