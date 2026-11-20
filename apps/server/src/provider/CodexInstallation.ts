@@ -34,7 +34,6 @@ import * as ServerSettings from "../serverSettings.ts";
 import { configuredBinaryPaths } from "./configuredBinaryPaths.ts";
 import { selectManagedRelease } from "./managedRelease.ts";
 import * as ModelManifest from "./ModelManifest.ts";
-import { resolveProviderCompatibility } from "./providerCompatibility.ts";
 
 const DRIVER = ProviderDriverKind.make("codex");
 const STAGING_STALE_AFTER_MS = 24 * 60 * 60_000;
@@ -384,15 +383,7 @@ export const makeCodexInstallation = Effect.fn("makeCodexInstallation")(function
           return false;
         }).pipe(Effect.orElseSucceed(() => ifUnreadable));
   const compatibility = Effect.fn("CodexInstallation.compatibility")(function* (version: string) {
-    const manifest = yield* manifestService.current;
-    return (
-      resolveProviderCompatibility(manifest.compatibility, DRIVER, version) ??
-      resolveProviderCompatibility(
-        ModelManifest.BUNDLED_MODEL_MANIFEST.compatibility,
-        DRIVER,
-        version,
-      )
-    );
+    return ModelManifest.providerCompatibility(yield* manifestService.current, DRIVER, version);
   });
   const isSupported = (version: string) =>
     compatibility(version).pipe(Effect.map((advisory) => advisory?.status === "supported"));
