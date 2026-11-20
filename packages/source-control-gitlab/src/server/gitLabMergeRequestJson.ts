@@ -319,6 +319,13 @@ function toChangedFiles(value: string | null | undefined): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
 }
 
+// GitLab ignores a failed or canceled job it was told may fail, as it does a `manual` one.
+const allowedFailureStatus = (
+  status: PullRequestCheckStatus,
+  allowFailure: boolean | null | undefined,
+): PullRequestCheckStatus =>
+  (status === "failure" || status === "cancelled") && allowFailure === true ? "neutral" : status;
+
 function toPipelineStatus(value: string | null | undefined): PullRequestCheckStatus {
   switch (value?.trim().toLowerCase()) {
     case "success":
@@ -498,8 +505,7 @@ export function decodePipelineStageChecksJson(
       const status = toPipelineStatus(downstream ? downstream.status : job.status);
       checks.push({
         name: `${name} / ${trimmed(job.name)}`,
-        // The same reading as `manual`: GitLab was told this failure does not fail the pipeline.
-        status: status === "failure" && job.allowFailure === true ? "neutral" : status,
+        status: allowedFailureStatus(status, job.allowFailure),
         description: downstream ? "Downstream pipeline" : trimmed(job.detailedStatus?.label),
         url: link(trimmed(downstream ? downstream.path : job.webPath)),
       });
@@ -685,8 +691,7 @@ export function decodeTriggerJobChecksJson(
     const status = toPipelineStatus(downstream.status);
     checks.push({
       name,
-      // The same reading as `manual`: GitLab was told this failure does not fail the pipeline.
-      status: status === "failure" && job.value.allow_failure === true ? "neutral" : status,
+      status: allowedFailureStatus(status, job.value.allow_failure),
       description: "Downstream pipeline",
       url: trimmed(downstream.web_url),
     });
