@@ -404,8 +404,9 @@ export const make: Effect.Effect<IssueTrackerApi, never, GitLabCli.GitLabCli> = 
         decode: decodeAwardEmojiJson,
       }).pipe(
         // GitLab before 16.1 has no `Note.awardEmoji`; comments then load without reactions.
+        // Any other failure fails the page, so a later page cannot lose its awards cursor to it.
         Effect.catchIf(
-          (error) => error.reason === "failed",
+          (error) => error.cause instanceof GitLabCli.GitLabCliGraphqlFieldError,
           () => Effect.succeed(null),
         ),
       );

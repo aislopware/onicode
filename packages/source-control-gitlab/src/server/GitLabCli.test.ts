@@ -462,7 +462,7 @@ layer("GitLabCli.layer", (it) => {
     }),
   );
 
-  it.effect("preserves rate-limit failures as a distinct error", () =>
+  it.effect("preserves rate-limit failures and GraphQL schema refusals as distinct errors", () =>
     Effect.gen(function* () {
       const cause = new VcsProcessExitError({
         operation: "GitLabCli.execute",
@@ -481,6 +481,28 @@ layer("GitLabCli.layer", (it) => {
 
       assert.strictEqual(error._tag, "GitLabCliRateLimitError");
       assert.strictEqual(error.cause, cause);
+
+      const refused = new VcsProcessExitError({
+        operation: "GitLabCli.execute",
+        command: "glab",
+        cwd: "/repo",
+        exitCode: 1,
+        detail: "Process exited with a non-zero status.",
+        failureKind: "command-failed",
+      });
+      for (const [stderr, tag] of [
+        ["glab: Field 'awardEmoji' doesn't exist on type 'Note'", "GitLabCliGraphqlFieldError"],
+        ["glab: 502 Bad Gateway", "GitLabCliCommandError"],
+      ] as const) {
+        mockedRun.mockImplementationOnce((input) => {
+          input.classifyFailure?.(stderr);
+          return Effect.fail(refused);
+        });
+        const failure = yield* glab
+          .execute({ cwd: "/repo", args: ["api", "graphql"] })
+          .pipe(Effect.flip);
+        assert.strictEqual(failure._tag, tag);
+      }
     }),
   );
 });
