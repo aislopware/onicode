@@ -168,32 +168,57 @@ describe("LinearIssueTracker", () => {
     }),
   );
 
-  it.effect("cancels the in-flight viewer read when the issue is missing", () =>
-    Effect.gen(function* () {
-      const viewerStarted = yield* Deferred.make<void>();
-      const viewerCanceled = yield* Deferred.make<void>();
-      const { tracker } = fakeLinear(
-        {
-          OniIssue: () =>
-            new Response(JSON.stringify({ errors: [{ message: "Issue not found" }] }), {
-              headers: { "content-type": "application/json" },
-            }),
-        },
-        "lin_api_stored",
-        (operation) =>
-          operation === "OniViewer"
-            ? Deferred.succeed(viewerStarted, undefined).pipe(
-                Effect.andThen(Effect.never),
-                Effect.onInterrupt(() => Deferred.succeed(viewerCanceled, undefined)),
-              )
-            : Deferred.await(viewerStarted),
-      );
+  it.effect(
+    "cancels the in-flight viewer read when the issue is missing or in another workspace",
+    () =>
+      Effect.forEach(
+        [
+          {
+            key: "ENG-1",
+            workspace: undefined,
+            answer: () =>
+              new Response(JSON.stringify({ errors: [{ message: "Issue not found" }] }), {
+                headers: { "content-type": "application/json" },
+              }),
+          },
+          // Team keys repeat across workspaces: a link naming another one is not this issue.
+          {
+            key: "ENG-7",
+            workspace: "othercorp",
+            answer: () => ({ issue: bareDetail("ENG-7") }),
+          },
+        ],
+        (row) =>
+          Effect.gen(function* () {
+            const viewerStarted = yield* Deferred.make<void>();
+            const viewerCanceled = yield* Deferred.make<void>();
+            const { tracker } = fakeLinear(
+              {
+                OniIssue: row.answer,
+                OniWorkspace: () => ({ organization: { urlKey: "acme", previousUrlKeys: [] } }),
+              },
+              "lin_api_stored",
+              (operation) =>
+                operation === "OniViewer"
+                  ? Deferred.succeed(viewerStarted, undefined).pipe(
+                      Effect.andThen(Effect.never),
+                      Effect.onInterrupt(() => Deferred.succeed(viewerCanceled, undefined)),
+                    )
+                  : Deferred.await(viewerStarted),
+            );
 
-      const api = yield* tracker;
-      const error = yield* Effect.flip(api.getIssue({ ...target, key: "ENG-1" }));
-      expect(error.reason).toBe("not-found");
-      expect(yield* Deferred.isDone(viewerCanceled)).toBe(true);
-    }),
+            const api = yield* tracker;
+            const error = yield* Effect.flip(
+              api.getIssue({
+                ...target,
+                key: row.key,
+                ...(row.workspace === undefined ? {} : { workspace: row.workspace }),
+              }),
+            );
+            expect(error.reason).toBe("not-found");
+            expect(yield* Deferred.isDone(viewerCanceled)).toBe(true);
+          }),
+      ),
   );
 
   it.effect("parses Linear issue links with their workspace and team", () =>
