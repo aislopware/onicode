@@ -537,6 +537,13 @@ export function useCheckpointDiff(
   return fullThreadTarget === null ? turn : fullThread;
 }
 
+/** Reads one item's detail from somewhere other than the environment, as a linked thread does. */
+export type TurnItemDetailSource = (input: {
+  readonly threadId: ThreadId;
+  readonly itemId: TurnItemId;
+  readonly revision: string;
+}) => Atom.Atom<AsyncResult.AsyncResult<OrchestrationV2GetTurnItemResult, unknown>>;
+
 export function useTurnItemDetail(
   target: {
     readonly environmentId: EnvironmentId;
@@ -544,6 +551,7 @@ export function useTurnItemDetail(
     readonly itemId: TurnItemId;
     readonly revision: string;
   } | null,
+  source?: TurnItemDetailSource,
 ) {
   const input =
     target === null
@@ -552,6 +560,8 @@ export function useTurnItemDetail(
   return useEnvironmentQuery<OrchestrationV2GetTurnItemResult, unknown>(
     target === null || input === null
       ? null
-      : orchestrationEnvironment.turnItem({ environmentId: target.environmentId, input }),
+      : source
+        ? source(input)
+        : orchestrationEnvironment.turnItem({ environmentId: target.environmentId, input }),
   );
 }

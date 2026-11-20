@@ -15,8 +15,7 @@ export const peerLinkEnvironment = createPeerLinkEnvironmentAtoms(connectionAtom
 
 /**
  * The machines `environmentId` links to, by name, while it offers links, and none otherwise.
- * Its agents can read threads there. Listing asks each linked machine whether it answers, so
- * every caller shares one briefly cached list.
+ * Its agents can read threads there, and so can a client allowed to read threads on it.
  */
 export function useLinkedEnvironments(
   environmentId: EnvironmentId | null,
@@ -27,7 +26,7 @@ export function useLinkedEnvironments(
   );
   const links = useEnvironmentQuery(
     offered && environmentId !== null
-      ? peerLinkEnvironment.list({ environmentId, input: {} })
+      ? peerLinkEnvironment.names({ environmentId, input: {} })
       : null,
   );
   return useMemo(
