@@ -2880,3 +2880,4 @@ d5a084c440	take	fix(web): the provider update pill no longer recounts dismissed 
 37e14f5c81	take	lockfile CONFLICT was only the patch hash; took upstream's hash (patch file identical)
 6c4758e31c	take	kept Onicode's ConnectionDiagnosisDetails without the T3 More info button; Legal screen removed in Onicode; also routed Onicode-only store-update and MCP auth URL opens through the helper
 abd47de64f	take	taken as is
+ec72de7d3f	take	kept Onicode's own-scripts read (empty = inherits), so a read-then-update round trip cannot freeze environment defaults into the project; adopted upstream's create-time Settings fallback and test
