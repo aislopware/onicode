@@ -2891,3 +2891,4 @@ c7157d376d	take	taken as is
 a4bf29e178	take	taken as is: mobile new-thread copy names the host with no model; all 10 locales
 df09ced768	take	taken as is: Antigravity command line text cut on code-point boundary
 e74b795535	take	Antigravity-only; CONFLICT in test resolved to upstream's table (its native-default row replaces Onicode's renamed single case)
+cf10320186	take	Azure DevOps only; taken as is
