@@ -108,6 +108,21 @@ function claudeErrorResult(stdout: string): string | undefined {
     .findLast((result) => result.length > 0);
 }
 
+// Quota, auth and other failures would fail again without the images, so only this one retries.
+const IMAGE_REJECTION = /\bimages?\b/i;
+
+function claudeFailureDetail(result: {
+  readonly stdout: string;
+  readonly stdoutText: string;
+  readonly stderr: string;
+}): string {
+  const stderrDetail = result.stderr.trim();
+  return (
+    claudeErrorResult(result.stdout.trim()) ??
+    (stderrDetail.length > 0 ? stderrDetail : result.stdoutText.trim())
+  );
+}
+
 export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(function* (
   claudeSettings: ClaudeSettings,
   environment?: NodeJS.ProcessEnv,
@@ -395,27 +410,23 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
 
     const rawStdout = yield* runClaudeAttempt(true).pipe(
       // Text-only models (custom models behind Anthropic-compatible endpoints) reject image blocks.
-      // A retry that fails too reports the original run's failure.
       Effect.filterOrElse(
-        (first) => first.exitCode === 0 || imageStdin === undefined,
-        (first) =>
-          runClaudeAttempt(false).pipe(
-            Effect.map((retry) => (retry.exitCode === 0 ? retry : first)),
-          ),
+        (result) =>
+          result.exitCode === 0 ||
+          imageStdin === undefined ||
+          !IMAGE_REJECTION.test(claudeFailureDetail(result)),
+        () => runClaudeAttempt(false),
       ),
-      Effect.flatMap(({ stdout, stdoutText, stderr, exitCode }) => {
-        if (exitCode === 0) return Effect.succeed(stdout);
-        const stderrDetail = stderr.trim();
-        const detail =
-          claudeErrorResult(stdout.trim()) ??
-          (stderrDetail.length > 0 ? stderrDetail : stdoutText.trim());
+      Effect.flatMap((result) => {
+        if (result.exitCode === 0) return Effect.succeed(result.stdout);
+        const detail = claudeFailureDetail(result);
         return Effect.fail(
           new TextGenerationError({
             operation,
             detail:
               detail.length > 0
                 ? `Claude CLI command failed: ${detail}`
-                : `Claude CLI command failed with code ${exitCode}.`,
+                : `Claude CLI command failed with code ${result.exitCode}.`,
           }),
         );
       }),

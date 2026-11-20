@@ -451,6 +451,21 @@ it.layer(layerClaudeTextGenerationTest)("ClaudeTextGeneration", (it) => {
     ),
   );
 
+  it.effect("reports the retry's failure when the run without images fails too", () =>
+    withFakeClaudeEnv(
+      {
+        output: JSON.stringify({ type: "result", is_error: true, result: "quota exceeded" }),
+        exitCode: 1,
+        rejectsImages: true,
+      },
+      (textGeneration) =>
+        Effect.gen(function* () {
+          const error = yield* Effect.flip(generateBranchNameWithImage(textGeneration));
+          expect(error.detail).toBe("Claude CLI command failed: quota exceeded");
+        }),
+    ),
+  );
+
   it.effect("runs Claude text generation with the configured CLAUDE_CONFIG_DIR", () =>
     Effect.gen(function* () {
       const path = yield* Path.Path;
