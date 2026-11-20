@@ -2881,3 +2881,4 @@ d5a084c440	take	fix(web): the provider update pill no longer recounts dismissed 
 6c4758e31c	take	kept Onicode's ConnectionDiagnosisDetails without the T3 More info button; Legal screen removed in Onicode; also routed Onicode-only store-update and MCP auth URL opens through the helper
 abd47de64f	take	taken as is
 ec72de7d3f	take	kept Onicode's own-scripts read (empty = inherits), so a read-then-update round trip cannot freeze environment defaults into the project; adopted upstream's create-time Settings fallback and test
+7fcec368cb	take	kept Onicode's prompt-budgeted readImageBlocks and stream-json error tests; a retry without images that also fails reports the first run's failure so Onicode's stream-json error detail survives; new test reuses Onicode's generateBranchNameWithImage helper
