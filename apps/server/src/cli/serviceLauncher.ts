@@ -1,4 +1,8 @@
-import { type LauncherOptions, main as runServiceLauncher } from "../serviceLauncher.ts";
+import {
+  type LauncherOptions,
+  main as runServiceLauncher,
+  writeDiagnostic,
+} from "../serviceLauncher.ts";
 
 /** The flags a Windows task passes, parsed here so the launcher starts without the full CLI. */
 export function parseServiceLauncherArgs(args: ReadonlyArray<string>): LauncherOptions | undefined {
@@ -22,7 +26,7 @@ export async function runServiceLauncherCli(options?: LauncherOptions): Promise<
     await runServiceLauncher(options);
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : String(cause);
-    process.stderr.write(`[service-launcher] ${message}\n`);
+    writeDiagnostic(`[service-launcher] ${message}\n`);
     process.exitCode = 1;
   }
 }

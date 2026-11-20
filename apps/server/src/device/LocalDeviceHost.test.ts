@@ -12,6 +12,7 @@ import * as Ref from "effect/Ref";
 import * as FileSystem from "effect/FileSystem";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
+import * as TestClock from "effect/testing/TestClock";
 
 import * as LocalDeviceHost from "./LocalDeviceHost.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -277,6 +278,40 @@ describe("AgentDevice startup", () => {
         yield* host.ensureReady(() => Effect.void);
         expect(hub.spawnedEnvironments.at(-1)?.EXPO_DEVICE_HUB_EMULATOR_EXTRA_ARGS).toBeUndefined();
       }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("searches for the Android SDK at most every 30 seconds per environment", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      let sdkProbes = 0;
+      const counting = FileSystem.FileSystem.of({
+        ...fs,
+        exists: (file) => {
+          if (file.includes("Android")) sdkProbes++;
+          return fs.exists(file);
+        },
+      });
+      const environment: NodeJS.ProcessEnv = { HOME: "/nonexistent-home", PATH: "" };
+      const { host } = yield* agentFixture(
+        () => Effect.succeed(processOutput(0)),
+        processOutput(0),
+        undefined,
+        environment,
+      ).pipe(Effect.provideService(FileSystem.FileSystem, counting));
+      const afterStart = sdkProbes;
+      yield* host.ensureReady(() => Effect.void);
+      yield* host.summary;
+      yield* host.ensureReady(() => Effect.void);
+      expect(sdkProbes).toBe(afterStart);
+
+      environment.ANDROID_HOME = "/opt/android-sdk";
+      yield* host.summary;
+      expect(sdkProbes).toBeGreaterThan(afterStart);
+      const afterChange = sdkProbes;
+      yield* TestClock.adjust("30 seconds");
+      yield* host.ensureReady(() => Effect.void);
+      expect(sdkProbes).toBeGreaterThan(afterChange);
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 
   it.effect("reports an incompatible lock immediately and retains it for manual repair", () =>

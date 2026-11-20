@@ -88,40 +88,123 @@ const runtimeSpawnArguments = (paths: ReturnType<typeof runtimePaths>) => ({
   args: ["serve"],
 });
 
-function isRegularFile(fd: number): boolean {
-  try {
-    return NodeFS.fstatSync(fd).isFile();
-  } catch {
-    return false;
-  }
-}
-
 const MAX_PENDING_OUTPUT_BYTES = 8 * 1024 * 1024;
 
+type AppendWrite = (
+  fd: number,
+  buffer: Buffer,
+  callback: (error: NodeJS.ErrnoException | null, written: number | undefined) => void,
+) => void;
+
+const droppedOutputMarker = (bytes: number) =>
+  Buffer.from(
+    `[service-launcher] Dropped ${bytes} bytes of output while the log was not accepting writes.\n`,
+  );
+
 /**
- * Node writes to a regular file synchronously, so a server whose output is the log file freezes
- * while the filesystem stalls one append. It gets a pipe instead, drained here without backpressure;
- * output beyond the cap is dropped while a write is stuck.
+ * Node writes to a regular file synchronously, so a writer whose output is the log file freezes
+ * while the filesystem stalls one append. Output queues here instead, without backpressure;
+ * output beyond the cap is dropped while a write is stuck, and a marker says how much.
  */
-function appendOutput(source: NodeJS.ReadableStream, fd: number): void {
+export function makeAppender(
+  fd: number,
+  options: { readonly write?: AppendWrite; readonly maxPendingBytes?: number } = {},
+): (output: Buffer | string) => void {
+  const write = options.write ?? NodeFS.write;
+  const maxPendingBytes = options.maxPendingBytes ?? MAX_PENDING_OUTPUT_BYTES;
   let pending: Array<Buffer> = [];
   let pendingBytes = 0;
+  // Markers already in `pending`, and the dropped bytes they report.
+  let pendingMarkerBytes = 0;
+  let pendingReports = 0;
+  // Output dropped at the cap, marked where it was dropped; output a failed write lost goes first.
+  let droppedBytes = 0;
+  let lostBytes = 0;
   let writing = false;
+  const markDropped = () => {
+    if (droppedBytes === 0) return;
+    const marker = droppedOutputMarker(droppedBytes);
+    pending.push(marker);
+    pendingBytes += marker.length;
+    pendingMarkerBytes += marker.length;
+    pendingReports += droppedBytes;
+    droppedBytes = 0;
+  };
+  const writeAll = (
+    chunk: Buffer,
+    batch: { readonly markerBytes: number; readonly reports: number },
+  ) =>
+    write(fd, chunk, (error, written) => {
+      if (error === null && written !== undefined && written < chunk.length) {
+        return writeAll(chunk.subarray(written), batch);
+      }
+      if (error !== null) {
+        // Best effort: the lost output, not marker text, is reported by the next write.
+        const unwritten = chunk.length - Math.max(written ?? 0, 0);
+        lostBytes += batch.reports + Math.max(0, unwritten - batch.markerBytes);
+        // A log that refuses writes is retried by the next output, never by itself.
+        if (pending.length === 0) {
+          writing = false;
+          return;
+        }
+      }
+      flush();
+    });
   const flush = (): void => {
-    writing = pending.length > 0;
+    markDropped();
+    const lost = lostBytes > 0 ? droppedOutputMarker(lostBytes) : Buffer.alloc(0);
+    const batch = {
+      markerBytes: lost.length + pendingMarkerBytes,
+      reports: lostBytes + pendingReports,
+    };
+    lostBytes = 0;
+    writing = lost.length > 0 || pending.length > 0;
     if (!writing) return;
-    const chunk = Buffer.concat(pending, pendingBytes);
+    const chunk = Buffer.concat([lost, ...pending], lost.length + pendingBytes);
     pending = [];
     pendingBytes = 0;
-    // Best effort, like the launcher's own diagnostics: a failed append drops that output.
-    NodeFS.write(fd, chunk, flush);
+    pendingMarkerBytes = 0;
+    pendingReports = 0;
+    writeAll(chunk, batch);
   };
-  source.on("data", (chunk: Buffer) => {
-    if (pendingBytes + chunk.length > MAX_PENDING_OUTPUT_BYTES) return;
-    pending.push(chunk);
-    pendingBytes += chunk.length;
+  return (output) => {
+    const chunk = typeof output === "string" ? Buffer.from(output) : output;
+    if (pendingBytes + chunk.length > maxPendingBytes) droppedBytes += chunk.length;
+    else {
+      markDropped();
+      pending.push(chunk);
+      pendingBytes += chunk.length;
+    }
     if (!writing) flush();
-  });
+  };
+}
+
+const fileAppenders = new Map<string, (output: Buffer | string) => void>();
+
+/** One queue per log file, so stdout and stderr that share a file keep their order. */
+export function fileAppender(fd: number): ((output: Buffer | string) => void) | undefined {
+  let stats: NodeFS.BigIntStats;
+  try {
+    stats = NodeFS.fstatSync(fd, { bigint: true });
+  } catch {
+    return undefined;
+  }
+  if (!stats.isFile()) return undefined;
+  const key = `${stats.dev}:${stats.ino}`;
+  const existing = fileAppenders.get(key);
+  if (existing) return existing;
+  const appender = makeAppender(fd);
+  fileAppenders.set(key, appender);
+  return appender;
+}
+
+// Diagnostics are best-effort: a full log filesystem must not stop the launcher waiting for space.
+export function writeDiagnostic(line: string): void {
+  try {
+    const append = fileAppender(2);
+    if (append) append(line);
+    else process.stderr.write(line);
+  } catch {}
 }
 
 /**
@@ -528,7 +611,7 @@ async function startOnlineDatabaseBackup(
     NodeFSP.rm(stagingDir, { recursive: true, force: true }).catch(() => undefined);
   const fallBack = async (cause: unknown) => {
     await discardStaging();
-    process.stderr.write(
+    writeDiagnostic(
       `[service-launcher] Copying the database while the server runs failed; backing it up offline: ${cause instanceof Error ? cause.message : String(cause)}\n`,
     );
     return undefined;
@@ -996,11 +1079,10 @@ export class Launcher {
     return terminateChild(child, signal, this.#stopChildOverIpc);
   }
 
-  // Diagnostics are best-effort: a full log filesystem must not stop the launcher waiting for space.
   #log(line: string): void {
+    if (this.#output === undefined) return writeDiagnostic(line);
     try {
-      if (this.#output === undefined) process.stderr.write(line);
-      else NodeFS.writeSync(this.#output, line);
+      NodeFS.writeSync(this.#output, line);
     } catch {}
   }
 
@@ -1150,7 +1232,7 @@ export class Launcher {
         release();
       }
     } catch (error) {
-      process.stderr.write(
+      writeDiagnostic(
         `[service-launcher] Could not clear ${restartPending}: ${error instanceof Error ? error.message : String(error)}\n`,
       );
     }
@@ -1216,8 +1298,8 @@ export class Launcher {
       ...(update === undefined ? {} : { update }),
     };
     const spawnArguments = runtimeSpawnArguments(paths);
-    const appendStdout = this.#output === undefined && isRegularFile(1);
-    const appendStderr = this.#output === undefined && isRegularFile(2);
+    const appendStdout = this.#output === undefined ? fileAppender(1) : undefined;
+    const appendStderr = this.#output === undefined ? fileAppender(2) : undefined;
     const child = NodeChildProcess.spawn(spawnArguments.command, spawnArguments.args, {
       env: { ...this.#environment, [SERVICE_LAUNCHER_CONTEXT_ENV]: JSON.stringify(context) },
       stdio:
@@ -1225,8 +1307,8 @@ export class Launcher {
           ? ["inherit", appendStdout ? "pipe" : "inherit", appendStderr ? "pipe" : "inherit", "ipc"]
           : ["ignore", this.#output, this.#output, "ipc"],
     });
-    if (child.stdout !== null) appendOutput(child.stdout, 1);
-    if (child.stderr !== null) appendOutput(child.stderr, 2);
+    if (appendStdout) child.stdout?.on("data", appendStdout);
+    if (appendStderr) child.stderr?.on("data", appendStderr);
     await new Promise<void>((resolve, reject) => {
       const onError = (error: Error) => reject(error);
       child.once("error", onError);
@@ -1426,7 +1508,7 @@ export class Launcher {
         release();
       }
     } catch (error) {
-      process.stderr.write(
+      writeDiagnostic(
         `[service-launcher] Could not point ${unit.path} at onicode@${version}: ${error instanceof Error ? error.message : String(error)}\n`,
       );
     }
