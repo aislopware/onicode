@@ -231,7 +231,7 @@ diff --git a/ios/Shared/MenuViewImplementation.swift b/ios/Shared/MenuViewImplem
      private var _title: String = "";
      @objc public var title: NSString? {
          didSet {
-@@ -60,17 +100,119 @@
+@@ -60,17 +100,129 @@
      }
     
      public override func contextMenuInteraction(_ interaction: UIContextMenuInteraction, configurationForMenuAtLocation location: CGPoint) -> UIContextMenuConfiguration? {
@@ -279,6 +279,7 @@ diff --git a/ios/Shared/MenuViewImplementation.swift b/ios/Shared/MenuViewImplem
 +
 +    private func finishDismissal() {
 +        isMenuDismissing = false
++        if !isMenuPresented { presentedPreview = nil }
 +        if pendingMenu != nil, !isMenuPresented {
 +            // Re-run the full assignment now that presentation is over, so
 +            // any props deferred by the presented-guard (menu contents, press
@@ -290,6 +291,7 @@ diff --git a/ios/Shared/MenuViewImplementation.swift b/ios/Shared/MenuViewImplem
 +
 +    public override func didMoveToWindow() {
 +        super.didMoveToWindow()
++        if self.window == nil { presentedPreview = nil }
 +        if self.window == nil, isMenuDismissing {
 +            finishDismissal()
 +        }
@@ -299,14 +301,22 @@ diff --git a/ios/Shared/MenuViewImplementation.swift b/ios/Shared/MenuViewImplem
 +    // menu starts to close, instead of morphing the menu back into it.
 +    @available(iOS 16.0, *)
 +    public override func contextMenuInteraction(_ interaction: UIContextMenuInteraction, configuration: UIContextMenuConfiguration, highlightPreviewForItemWithIdentifier identifier: NSCopying) -> UITargetedPreview? {
-+        return contentPreview() ?? super.contextMenuInteraction(interaction, previewForHighlightingMenuWithConfiguration: configuration)
++        presentedPreview = contentPreview()
++        return presentedPreview ?? super.contextMenuInteraction(interaction, previewForHighlightingMenuWithConfiguration: configuration)
 +    }
 +
-+    // A held selection has already moved or resized the trigger, so the preview from presentation is stale.
++    // A held selection has already moved or resized the trigger, so the preview from presentation points
++    // at its old place. Retarget that one: for a preview it did not present, UIKit drops the morph of a
++    // menu that is still opening and hides the trigger until the animation ends.
 +    @available(iOS 16.0, *)
 +    public override func contextMenuInteraction(_ interaction: UIContextMenuInteraction, configuration: UIContextMenuConfiguration, dismissalPreviewForItemWithIdentifier identifier: NSCopying) -> UITargetedPreview? {
++        if let presented = presentedPreview, presented.view.window != nil, let container = presented.view.superview {
++            return presented.retargetedPreview(with: UIPreviewTarget(container: container, center: presented.view.center))
++        }
 +        return contentPreview() ?? super.contextMenuInteraction(interaction, previewForDismissingMenuWithConfiguration: configuration)
 +    }
++
++    private var presentedPreview: UITargetedPreview?
 +
 +    // The button is a transparent overlay: morph from the React content so UIKit hides and restores it.
 +    // iOS 26 only, and only for content with its own corner radius; otherwise keep UIButton's default.
@@ -353,7 +363,7 @@ diff --git a/ios/Shared/MenuViewImplementation.swift b/ios/Shared/MenuViewImplem
      func setup () {
          let menu = UIMenu(title: _title,
              identifier: nil,
-@@ -86,8 +228,113 @@
+@@ -86,8 +238,113 @@
              }
          }
  
@@ -467,7 +477,7 @@ diff --git a/ios/Shared/MenuViewImplementation.swift b/ios/Shared/MenuViewImplem
      }
  
      public override func reactSetFrame(_ frame: CGRect) {
-@@ -124,4 +371,8 @@
+@@ -124,4 +381,8 @@
      @objc func sendMenuOpen() {
          // NO-OP (should be overriden by parent)
      }

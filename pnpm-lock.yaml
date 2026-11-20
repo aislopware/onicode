@@ -330,7 +330,7 @@ patchedDependencies:
   '@ff-labs/fff-node@0.11.0': febc131287f6c71cd2a0c8bbdada299a22f16a9ce1fd720815c8d0083bcb86a0
   '@pierre/diffs@1.7.0-beta.4': 7edcdd484a99c7ec0b2667499c4cb21d113ec9bea1f8570c0b0a030d33bbf1cd
   '@react-native-ai/apple@0.13.0': 8093a5adf949f7a2ea94d2437021e683682d7f1e1ae9afc1f60818232080dc72
-  '@react-native-menu/menu@2.1.2': 498ad13f71d4ebbdeadcde10c5b2e33bff21335039007fcd0964b69347361e8b
+  '@react-native-menu/menu@2.1.2': 87d0c7ce09aea4bae58b3502b2f4d8b840ba835f6ac3a984fb1fb9594d98f1e4
   '@react-navigation/native-stack@7.21.1': 9c599e52aaf2f653faf27e48dd4b11cd99d0b420b5d724e8221787125c518cae
   app-builder-lib@26.18.1: 9f74d395be438c1e2d4e790bf4e01ac04574c8d90020c6fbd07c0f0e3b45d17a
   electron-updater@6.8.12: 9a871c1428f69161ddf12e9cf7af8fc19fee562247cb443305fb16429149e7f1
@@ -521,7 +521,7 @@ importers:
         version: 0.13.0(patch_hash=8093a5adf949f7a2ea94d2437021e683682d7f1e1ae9afc1f60818232080dc72)(expo@58.0.25)(react-native@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))
       '@react-native-menu/menu':
         specifier: 2.1.2
-        version: 2.1.2(patch_hash=498ad13f71d4ebbdeadcde10c5b2e33bff21335039007fcd0964b69347361e8b)(react-native@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(react@19.3.0)
+        version: 2.1.2(patch_hash=87d0c7ce09aea4bae58b3502b2f4d8b840ba835f6ac3a984fb1fb9594d98f1e4)(react-native@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(react@19.3.0)
       '@react-navigation/elements':
         specifier: 2.9.46
         version: 2.9.46(eb32ee46e78610843a2e85d2cf58438f)
@@ -14820,7 +14820,7 @@ snapshots:
       react-native: 0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(supports-color@8.1.1)(utf-8-validate@6.0.6)
     optional: true
 
-  '@react-native-menu/menu@2.1.2(patch_hash=498ad13f71d4ebbdeadcde10c5b2e33bff21335039007fcd0964b69347361e8b)(react-native@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(react@19.3.0)':
+  '@react-native-menu/menu@2.1.2(patch_hash=87d0c7ce09aea4bae58b3502b2f4d8b840ba835f6ac3a984fb1fb9594d98f1e4)(react-native@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(react@19.3.0)':
     dependencies:
       react: 19.3.0
       react-native: 0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(supports-color@8.1.1)(utf-8-validate@6.0.6)
