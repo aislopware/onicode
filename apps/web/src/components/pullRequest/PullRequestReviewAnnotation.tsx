@@ -376,10 +376,12 @@ export function ReviewThreadCard({
             {comments.map((comment) => (
               <article key={comment.id} className="group min-w-0">
                 <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                  <PullRequestActorLabel actor={comment.author} />
-                  <span>
-                    <RelativeTime timestamp={comment.createdAt} />
-                  </span>
+                  <h3 className="flex min-w-0 flex-wrap items-center gap-2">
+                    <PullRequestActorLabel actor={comment.author} />
+                    <span>
+                      <RelativeTime timestamp={comment.createdAt} />
+                    </span>
+                  </h3>
                   <PullRequestReactionBar
                     className="ml-auto justify-end"
                     reactions={comment.reactions ?? []}

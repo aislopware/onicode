@@ -394,7 +394,7 @@ function IssueCommentCard(props: {
   return (
     <View className="gap-3 rounded-2xl bg-grouped-card p-3">
       <View accessible accessibilityRole="header" className="flex-row items-center gap-2">
-        <PullRequestAvatar actor={comment.author} size={22} />
+        <PullRequestAvatar actor={comment.author} size={22} decorative />
         <Text className="min-w-0 flex-1 text-sm font-oni-medium" numberOfLines={1}>
           {comment.author?.login ?? gt("Unknown author")}
         </Text>

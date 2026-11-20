@@ -262,8 +262,8 @@ function Discussion({ params }: { params: PullRequestParams & { readonly discuss
                     : "gap-3 border-b border-border-subtle py-4"
                 }
               >
-                <View className="flex-row items-center gap-2">
-                  <PullRequestAvatar actor={comment.author} size={28} />
+                <View accessible accessibilityRole="header" className="flex-row items-center gap-2">
+                  <PullRequestAvatar actor={comment.author} size={28} decorative />
                   <Text className="min-w-0 flex-1 text-sm font-oni-medium">
                     {comment.author?.login ?? gt("Unknown author")}
                   </Text>

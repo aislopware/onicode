@@ -50,18 +50,22 @@ export function PullRequestConflictBadge(props: { readonly surfaceClassName: str
 export function PullRequestAvatar(props: {
   readonly actor: PullRequestActor | null;
   readonly size?: number;
+  /** Beside the login in an accessible header, where reading it would repeat the name. */
+  readonly decorative?: boolean;
 }) {
   const size = props.size ?? 24;
   return props.actor?.avatarUrl ? (
     <Image
       source={{ uri: props.actor.avatarUrl }}
       recyclingKey={props.actor.avatarUrl}
-      accessibilityLabel={props.actor.login}
+      accessibilityLabel={props.decorative ? undefined : props.actor.login}
       style={{ width: size, height: size, borderRadius: size / 2 }}
       cachePolicy="memory-disk"
     />
   ) : (
     <View
+      accessibilityElementsHidden={props.decorative}
+      importantForAccessibility={props.decorative ? "no-hide-descendants" : "auto"}
       className="items-center justify-center rounded-full bg-grouped-card"
       style={{ width: size, height: size }}
     >
