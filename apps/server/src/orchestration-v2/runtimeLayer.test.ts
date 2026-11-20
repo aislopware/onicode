@@ -12832,7 +12832,7 @@ it.layer(layerSharedApplicationDataPlaneTest)("shared application data plane", (
 });
 
 it.layer(layerTest)("usage-limit recovery", (it) => {
-  it.effect.each(["interrupted", "usage_limit"] as const)(
+  it.effect.each(["interrupted", "usage_limit", "scheduled-session"] as const)(
     "manually resumes an %s run ahead of its queued message only once",
     (reason) =>
       Effect.gen(function* () {
@@ -12863,6 +12863,32 @@ it.layer(layerTest)("usage-limit recovery", (it) => {
           createdBy: "user",
           creationSource: "web",
         });
+        if (reason === "scheduled-session") {
+          // The conversation's own session ran first; the limited run is a fresh scheduled session.
+          yield* orchestrator.dispatch({
+            type: "message.dispatch",
+            commandId: CommandId.make(`manual-resume:conversation:${reason}`),
+            threadId,
+            messageId: MessageId.make(`manual-resume:conversation:${reason}`),
+            text: "Talk first.",
+            attachments: [],
+            dispatchMode: { type: "defer_start" },
+            createdBy: "user",
+            creationSource: "web",
+          });
+          const [conversation] = (yield* orchestrator.getThreadProjection(threadId)).runs;
+          yield* events.write({
+            events: [
+              {
+                id: EventId.make(`manual-resume:conversation-done:${reason}`),
+                type: "run.updated",
+                threadId,
+                occurredAt: now,
+                payload: { ...conversation!, status: "completed", completedAt: now },
+              },
+            ],
+          });
+        }
         yield* orchestrator.dispatch({
           type: "message.dispatch",
           commandId: CommandId.make(`manual-resume:start:${reason}`),
@@ -12873,6 +12899,9 @@ it.layer(layerTest)("usage-limit recovery", (it) => {
           dispatchMode: { type: "defer_start" },
           createdBy: "user",
           creationSource: "web",
+          ...(reason === "scheduled-session"
+            ? { scheduledTaskId: ScheduledTaskId.make("manual-resume:task"), freshContext: true }
+            : {}),
         });
         yield* orchestrator.dispatch({
           type: "message.dispatch",
@@ -12885,10 +12914,8 @@ it.layer(layerTest)("usage-limit recovery", (it) => {
           createdBy: "user",
           creationSource: "web",
         });
-        const [source, queued] = (yield* orchestrator.getThreadProjection(threadId)).runs as [
-          OrchestrationV2Run,
-          OrchestrationV2Run,
-        ];
+        const before = (yield* orchestrator.getThreadProjection(threadId)).runs;
+        const [source, queued] = before.slice(-2) as [OrchestrationV2Run, OrchestrationV2Run];
         // Hold the queue like user Stop so the terminal worker cannot start it before explicit resume.
         yield* events.write({
           events: [
@@ -12913,7 +12940,7 @@ it.layer(layerTest)("usage-limit recovery", (it) => {
           ],
         });
         let scheduledResume: ReturnType<typeof limitRecoveryCommand> = null;
-        if (reason === "usage_limit") {
+        if (reason !== "interrupted") {
           const resetAt = DateTime.formatIso(DateTime.add(now, { minutes: 1 }));
           yield* events.write({
             events: [
@@ -12973,12 +13000,39 @@ it.layer(layerTest)("usage-limit recovery", (it) => {
           createdBy: "user" as const,
           creationSource: "web" as const,
         });
+        if (reason === "scheduled-session") {
+          // The conversation's session reports last, as a process exit or recovery would.
+          const current = yield* orchestrator.getThreadProjection(threadId);
+          const conversationThread = current.providerThreads.find(
+            (candidate) => candidate.id !== source.providerThreadId,
+          )!;
+          yield* events.write({
+            events: [
+              {
+                id: EventId.make(`manual-resume:conversation-updated:${reason}`),
+                type: "provider-thread.updated",
+                threadId,
+                driver: conversationThread.driver,
+                providerInstanceId: conversationThread.providerInstanceId,
+                occurredAt: now,
+                payload: { ...conversationThread, updatedAt: now },
+              },
+            ],
+          });
+          assert.equal(
+            (yield* orchestrator.getThreadProjection(threadId)).thread.activeProviderThreadId,
+            conversationThread.id,
+          );
+        }
         yield* orchestrator.dispatch(resume("first"));
         const after = yield* orchestrator.getThreadProjection(threadId);
-        assert.lengthOf(after.runs, 3);
-        assert.equal(after.runs[1]?.status, "queued");
-        assert.equal(after.runs[2]?.status, "starting");
-        assert.equal(after.runs[2]?.manualContinuationOfRunId, source.id);
+        const resumed = after.runs[before.length];
+        assert.lengthOf(after.runs, before.length + 1);
+        assert.equal(after.runs[before.length - 1]?.status, "queued");
+        assert.equal(resumed?.status, "starting");
+        assert.equal(resumed?.manualContinuationOfRunId, source.id);
+        // A fresh scheduled session resumes in that session, not the conversation's.
+        assert.equal(resumed?.providerThreadId, source.providerThreadId);
         const resumeMessage = after.messages.find(
           (message) => message.id === resume("first").messageId,
         );
@@ -12986,7 +13040,7 @@ it.layer(layerTest)("usage-limit recovery", (it) => {
         assert.equal(resumeMessage?.notification?.summary, "Resumed thread");
         assert.isFalse(
           after.turnItems.some(
-            (item) => item.runId === after.runs[2]?.id && item.type === "user_message",
+            (item) => item.runId === resumed?.id && item.type === "user_message",
           ),
         );
         assert.equal(
@@ -12997,7 +13051,10 @@ it.layer(layerTest)("usage-limit recovery", (it) => {
           yield* TestClock.adjust("1 minute");
           yield* orchestrator.dispatch(scheduledResume);
         }
-        assert.lengthOf((yield* orchestrator.getThreadProjection(threadId)).runs, 3);
+        assert.lengthOf(
+          (yield* orchestrator.getThreadProjection(threadId)).runs,
+          before.length + 1,
+        );
       }),
   );
 
