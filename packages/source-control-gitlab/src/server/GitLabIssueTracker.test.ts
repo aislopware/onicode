@@ -247,7 +247,10 @@ describe("GitLabIssueTracker", () => {
         "glab: 403 Forbidden",
         "glab: Query has complexity of 300, which exceeds max complexity of 250",
       ]) {
-        const refused = new GitLabCli.GitLabCliCommandError({ ...context, cause: new Error(stderr) });
+        const refused = new GitLabCli.GitLabCliCommandError({
+          ...context,
+          cause: new Error(stderr),
+        });
         graphqlFailures.push(refused, refused);
         const issue = yield* api.getIssue(target);
         expect(issue.comments.map((comment) => [comment.id, comment.reactions])).toEqual([
@@ -263,8 +266,14 @@ describe("GitLabIssueTracker", () => {
       // A timeout, server error or rate limit fails the page rather than hand out a cursor
       // without awards, so reactions come back on the next read.
       for (const [transient, reason] of [
-        [new GitLabCli.GitLabCliUnreachableError({ ...context, cause: new Error("timed out") }), "failed"],
-        [new GitLabCli.GitLabCliRateLimitError({ ...context, cause: new Error("429") }), "rate-limited"],
+        [
+          new GitLabCli.GitLabCliUnreachableError({ ...context, cause: new Error("timed out") }),
+          "failed",
+        ],
+        [
+          new GitLabCli.GitLabCliRateLimitError({ ...context, cause: new Error("429") }),
+          "rate-limited",
+        ],
       ] as const) {
         graphqlFailures.push(transient, transient);
         expect((yield* api.getIssue(target).pipe(Effect.flip)).reason).toBe(reason);
