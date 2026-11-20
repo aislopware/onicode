@@ -2937,3 +2937,4 @@ a1acd7aa12	skip	T3 Connect profile page only; Onicode removed T3 Connect
 f68d36d8aa	take	hand-resolved ActiveAcpTurn field conflict: kept Onicode's recordPromptDelivery beside upstream's outcomeResumed
 21d7feaff7	take	hand-resolved ThemeEditorPanel.browser.test.tsx: kept Onicode's CSS preview debounce test and fakeTimers beside upstream's hex tests
 a1b9e1cc87	take	taken as is
+8d37736cdd	take	taken; kept Onicode's 'Saving…' ellipsis in the resolved hunk
