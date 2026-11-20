@@ -7913,12 +7913,20 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
 
     const ordinal = nextRunOrdinal(projection);
     const contextBoundary = freshContext ? ordinal : contextBoundaryOrdinal(projection);
-    const activeProviderThread = dispatchProviderThread(
-      projection,
-      { ...command, delegatedCompletion },
-      freshContext,
-      contextBoundary,
-    );
+    // A resume continues the session of the run it resumes, which need not be the latest updated.
+    const resumedRunProviderThreadId =
+      command.manualContinuationOfRunId === undefined
+        ? undefined
+        : projection.runs.find((run) => run.id === command.manualContinuationOfRunId)
+            ?.providerThreadId;
+    const activeProviderThread =
+      projection.providerThreads.find((candidate) => candidate.id === resumedRunProviderThreadId) ??
+      dispatchProviderThread(
+        projection,
+        { delegatedCompletion, notification },
+        freshContext,
+        contextBoundary,
+      );
     const activeRun = projection.runs.find(isActiveRun);
     // Messages after failed or stopped worktree setup must wait for a worktree,
     // rather than start in the project checkout.
