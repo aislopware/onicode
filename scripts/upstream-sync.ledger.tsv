@@ -2869,3 +2869,4 @@ ed203c46cb	take	taken as is
 aa725f4bd4	take	lockfile regenerated for the new patch hash
 8a7035ffb5	take	taken as is
 b5453de6b5	take	adopted upstream's @cursor/sdk 1.4.1 + patch over Onicode's 1.4.0 patch; kept Onicode deps elsewhere; budget remeasured
+0a1773aec9	take	taken as is
