@@ -69,7 +69,7 @@ describe("withAndroidWindowDisplayMetrics", () => {
     expect(onCreate).toContain("applyTabletOrientation()");
     expect(onCreate).not.toContain("DisplayMetricsHolder.initDisplayMetrics(this)");
     expect(methodBody(result, "applyTabletOrientation")).toMatch(
-      /requestedOrientation = if \(resources\.configuration\.smallestScreenWidthDp >= 600\) \{\s+ActivityInfo\.SCREEN_ORIENTATION_FULL_USER\s+\} else \{\s+ActivityInfo\.SCREEN_ORIENTATION_PORTRAIT\s+\}/,
+      /requestedOrientation = if \(widthDp >= 600\) \{\s+ActivityInfo\.SCREEN_ORIENTATION_FULL_USER\s+\} else \{\s+ActivityInfo\.SCREEN_ORIENTATION_PORTRAIT\s+\}/,
     );
 
     expect(result).toContain("import android.view.View");

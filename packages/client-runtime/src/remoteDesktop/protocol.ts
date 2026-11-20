@@ -25,9 +25,46 @@ export type RemoteDesktopViewerMessage =
     };
 
 /** What the host tells a viewer, over the same channel. */
-export interface RemoteDesktopHostMessage {
-  readonly type: "clipboard";
-  readonly text: string;
+export type RemoteDesktopHostMessage =
+  | { readonly type: "clipboard"; readonly text: string }
+  /** Where the host's pointer is as the session starts, 0 to 1 across the shared display. */
+  | { readonly type: "pointer"; readonly x: number; readonly y: number };
+
+/** What an empty soft-keyboard field holds: a zero-width space the keyboard can always delete. */
+export const REMOTE_DESKTOP_KEYBOARD_SENTINEL = "\u200b";
+const KEYBOARD_BUFFER_LIMIT = 64;
+
+/** What one change to a soft-keyboard field types on the host. */
+export interface RemoteDesktopKeyboardEdit {
+  readonly backspaces: number;
+  /** Text to type, with Enter between one line and the next. */
+  readonly lines: ReadonlyArray<string>;
+  /** The field has grown or lost its sentinel, and starts over from the sentinel alone. */
+  readonly reset: boolean;
+}
+
+/**
+ * Keyboards rewrite what they already typed (autocorrect, Telex, IME), so this is the difference
+ * between the field before and after, not what any one event said was typed.
+ */
+export function remoteDesktopKeyboardEdit(
+  before: string,
+  after: string,
+): RemoteDesktopKeyboardEdit {
+  let shared = 0;
+  while (shared < before.length && shared < after.length && before[shared] === after[shared]) {
+    shared += 1;
+  }
+  const lines = after.slice(shared).split("\n");
+  return {
+    // Counted in code points: one Backspace deletes a whole emoji.
+    backspaces: Array.from(before.slice(shared)).length,
+    lines,
+    reset:
+      lines.length > 1 ||
+      !after.startsWith(REMOTE_DESKTOP_KEYBOARD_SENTINEL) ||
+      after.length > KEYBOARD_BUFFER_LIMIT,
+  };
 }
 
 /**

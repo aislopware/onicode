@@ -8,6 +8,8 @@ export const RemoteDesktopDisplay = Schema.Struct({
   /** Physical pixels, which is what the stream carries at most. */
   width: PositiveInt,
   height: PositiveInt,
+  /** Physical pixels in one of the display's points. Absent from a host older than this field. */
+  scaleFactor: Schema.optionalKey(Schema.Finite.check(Schema.isGreaterThan(0))),
   primary: Schema.Boolean,
 });
 export type RemoteDesktopDisplay = typeof RemoteDesktopDisplay.Type;

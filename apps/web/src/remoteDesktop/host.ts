@@ -262,6 +262,15 @@ export function createRemoteDesktopHost(
             if (capabilities.inputControl === true && sessions.get(id) === session) {
               session.clipboard = channel;
               publish();
+              // A trackpad viewer moves the pointer from where it is, so it has to know where.
+              const sharePointer = async () => {
+                const point = await bridge.pointer(request.displayId).catch(() => null);
+                if (point === null || channel.readyState !== "open") return;
+                const message: RemoteDesktopHostMessage = { type: "pointer", ...point };
+                channel.send(JSON.stringify(message));
+              };
+              if (channel.readyState === "open") void sharePointer();
+              else channel.addEventListener("open", () => void sharePointer(), { once: true });
             }
             channel.addEventListener("message", (message) => {
               let viewport: RemoteDesktopViewerMessage;

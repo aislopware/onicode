@@ -2,10 +2,24 @@ import { useAtomValue } from "@effect/atom-react";
 import { useIsFocused, useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import type { MenuAction } from "@react-native-menu/menu";
 import { EnvironmentId } from "@onicode/contracts";
+import { requireOptionalNativeModule } from "expo";
 import * as Clipboard from "expo-clipboard";
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ScrollView, StatusBar, View } from "react-native";
-import { KeyboardController, useKeyboardState } from "react-native-keyboard-controller";
+import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
+import { msg, useGT, useMessages } from "gt-react-native";
+import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
+import {
+  REMOTE_DESKTOP_KEYBOARD_SENTINEL,
+  remoteDesktopKeyboardEdit,
+} from "@onicode/client-runtime/remote-desktop/protocol";
+import {
+  ScrollView,
+  StatusBar,
+  TextInput,
+  useWindowDimensions,
+  View,
+  type TextInputInstance,
+} from "react-native";
+import { KeyboardEvents, KeyboardStickyView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ComposerToolbarButton } from "../../components/ComposerToolbar";
@@ -25,7 +39,7 @@ import { environmentSession } from "../../state/session";
 import { EnvironmentConnectionNotice } from "../connection/EnvironmentConnectionNotice";
 import { useRetryEnvironment } from "../connection/useRetryEnvironment";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
-import type { RemoteDesktopTouchMode } from "./remote-desktop-document";
+import type { RemoteDesktopTouchMode, RemoteDesktopView } from "./remote-desktop-document";
 import { RemoteDesktopWebView, type RemoteDesktopViewRef } from "./RemoteDesktopWebView";
 
 const KEYS = [
@@ -52,23 +66,51 @@ const MORE_KEYS = [
 
 // Chords a phone keyboard cannot type, or that take three taps on the strip.
 const SHORTCUTS = [
-  { title: "Copy", subtitle: "⌘C", codes: ["MetaLeft", "KeyC"] },
-  { title: "Paste", subtitle: "⌘V", codes: ["MetaLeft", "KeyV"] },
-  { title: "Undo", subtitle: "⌘Z", codes: ["MetaLeft", "KeyZ"] },
-  { title: "Select all", subtitle: "⌘A", codes: ["MetaLeft", "KeyA"] },
-  { title: "App switcher", subtitle: "⌘Tab", codes: ["MetaLeft", "Tab"] },
-  { title: "Spotlight", subtitle: "⌘Space", codes: ["MetaLeft", "Space"] },
-  { title: "Mission Control", subtitle: "⌃↑", codes: ["ControlLeft", "ArrowUp"] },
-  { title: "Lock screen", subtitle: "⌃⌘Q", codes: ["ControlLeft", "MetaLeft", "KeyQ"] },
+  { id: "copy", title: msg("Copy"), subtitle: "⌘C", codes: ["MetaLeft", "KeyC"] },
+  { id: "paste", title: msg("Paste"), subtitle: "⌘V", codes: ["MetaLeft", "KeyV"] },
+  { id: "undo", title: msg("Undo"), subtitle: "⌘Z", codes: ["MetaLeft", "KeyZ"] },
+  { id: "select-all", title: msg("Select all"), subtitle: "⌘A", codes: ["MetaLeft", "KeyA"] },
+  { id: "switcher", title: msg("App switcher"), subtitle: "⌘Tab", codes: ["MetaLeft", "Tab"] },
+  { id: "spotlight", title: msg("Spotlight"), subtitle: "⌘Space", codes: ["MetaLeft", "Space"] },
+  {
+    id: "mission-control",
+    title: msg("Mission Control"),
+    subtitle: "⌃↑",
+    codes: ["ControlLeft", "ArrowUp"],
+  },
+  {
+    id: "lock",
+    title: msg("Lock screen"),
+    subtitle: "⌃⌘Q",
+    codes: ["ControlLeft", "MetaLeft", "KeyQ"],
+  },
 ] as const;
 
-// Sticky: each holds until the next key, from this strip or the soft keyboard, goes out with it.
+// Sticky: each holds until the next key, click or drag goes out with it. A second press locks it.
 const MODIFIERS = [
   { code: "ControlLeft", label: "⌃", accessibilityLabel: "Control" },
   { code: "AltLeft", label: "⌥", accessibilityLabel: "Option" },
   { code: "ShiftLeft", label: "⇧", accessibilityLabel: "Shift" },
   { code: "MetaLeft", label: "⌘", accessibilityLabel: "Command" },
 ] as const;
+
+// The toolbar's own padding, and its row of 48 point buttons.
+const TOOLBAR_PADDING = 4;
+const TOOLBAR_ROW_HEIGHT = 48;
+// Sideways on a phone the toolbar stands at the side, where it costs width instead of height.
+const RAIL_WIDTH = 56;
+const RAIL_MAX_HEIGHT = 520;
+const KEEP_AWAKE_TAG = "remote-desktop";
+
+/** Where each display was last being read, so coming back to it does not start over. */
+const lastViews = new Map<string, RemoteDesktopView>();
+
+const nativeControls = () =>
+  requireOptionalNativeModule<{ setFreeRotation?: (enabled: boolean) => Promise<void> }>(
+    "OniNativeControls",
+  );
+// What a keyboard that reports no duration is given.
+const KEYBOARD_MOVE_MS = 250;
 
 type RemoteDesktopRouteScreenProps = StaticScreenProps<{
   readonly environmentId: string;
@@ -101,6 +143,8 @@ function RemoteDesktopScreen({
   readonly onClose: () => void;
 }) {
   const insets = useSafeAreaInsets();
+  const gt = useGT();
+  const m = useMessages();
   const { themeVariables } = useAppearancePreferences();
   const background = themeVariables["--color-sheet-solid"];
   const focused = useIsFocused();
@@ -127,36 +171,108 @@ function RemoteDesktopScreen({
   const [attempt, setAttempt] = useState(0);
   const [streaming, setStreaming] = useState(false);
   const [modifiers, setModifiers] = useState<ReadonlyArray<string>>([]);
+  const [lockedModifiers, setLockedModifiers] = useState<ReadonlyArray<string>>([]);
   const [touchMode, setTouchMode] = useState<RemoteDesktopTouchMode>("trackpad");
+  const [zoomed, setZoomed] = useState(false);
   const viewer = useRef<RemoteDesktopViewRef>(null);
-  const keyboardVisible = useKeyboardState((keyboard) => keyboard.isVisible);
-  const keyboardHeight = useKeyboardState((keyboard) => keyboard.height);
-  const label = environment.presentation?.entry.target.label ?? "this machine";
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const window = useWindowDimensions();
+  const sideways = window.width > window.height && window.height < RAIL_MAX_HEIGHT;
+  const label = environment.presentation?.entry.target.label ?? gt("this machine");
   const control = host?.control === true;
   const showKeys = control && streaming;
+  const toolbarPadding = Math.max(insets.bottom, TOOLBAR_PADDING);
+  // With the keyboard up, the toolbar's safe-area padding tucks under it.
+  const toolbarTuck = toolbarPadding - TOOLBAR_PADDING;
+  const toolbarHeight = TOOLBAR_PADDING + TOOLBAR_ROW_HEIGHT + toolbarPadding;
+  /** How much of the picture the keyboard and the toolbar riding it cover. */
+  const covered = useRef(0);
+  const coverPicture = useEffectEvent((keyboardHeight: number, durationMs: number) => {
+    setKeyboardVisible(keyboardHeight > 0);
+    // Sideways the toolbar is not below the picture until the keyboard brings it up over it.
+    const toolbar = sideways && keyboardHeight > 0 ? toolbarHeight : 0;
+    covered.current = Math.max(0, keyboardHeight - toolbarTuck) + toolbar;
+    viewer.current?.setBottomInset(covered.current, durationMs > 0 ? durationMs : KEYBOARD_MOVE_MS);
+  });
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- lets a phone turn sideways only while this screen is the one showing
+  useEffect(() => {
+    if (!focused) return;
+    const controls = nativeControls();
+    void controls?.setFreeRotation?.(true).catch(() => {});
+    return () => void controls?.setFreeRotation?.(false).catch(() => {});
+  }, [focused]);
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- follows the keyboard's own show and hide events, so the picture moves as the keyboard starts to
+  useEffect(() => {
+    const shown = KeyboardEvents.addListener("keyboardWillShow", (event) =>
+      coverPicture(event.height, event.duration),
+    );
+    const hidden = KeyboardEvents.addListener("keyboardWillHide", (event) => {
+      coverPicture(0, event.duration);
+      // A keyboard the system closed leaves the field focused, and focusing it again does nothing.
+      field.current?.blur();
+    });
+    return () => {
+      shown.remove();
+      hidden.remove();
+    };
+  }, []);
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- holds the device awake for as long as a picture is streaming
+  useEffect(() => {
+    if (!streaming) return;
+    const activation = activateKeepAwakeAsync(KEEP_AWAKE_TAG);
+    void activation.catch(() => {});
+    return () => void activation.then(() => deactivateKeepAwake(KEEP_AWAKE_TAG)).catch(() => {});
+  }, [streaming]);
 
   const onStreamingChange = (next: boolean) => {
     setStreaming(next);
-    // A new viewer starts with no modifiers held.
-    if (!next) setModifiers([]);
+    // A new viewer starts with no modifiers held, and has not been told about the keyboard.
+    if (next) viewer.current?.setBottomInset(covered.current, 0);
+    else {
+      setModifiers([]);
+      setLockedModifiers([]);
+      setZoomed(false);
+    }
   };
+  // Off, then held for one use, then locked until pressed again.
   const toggleModifier = (code: string) => {
+    const wasLocked = lockedModifiers.includes(code);
+    const held = wasLocked
+      ? lockedModifiers.filter((candidate) => candidate !== code)
+      : modifiers.includes(code)
+        ? [...lockedModifiers, code]
+        : lockedModifiers;
     const next = MODIFIERS.map((modifier) => modifier.code).filter((candidate) =>
-      candidate === code ? !modifiers.includes(candidate) : modifiers.includes(candidate),
+      candidate === code ? !wasLocked : modifiers.includes(candidate),
     );
     setModifiers(next);
-    viewer.current?.setModifiers(next);
+    setLockedModifiers(held);
+    viewer.current?.setModifiers(next, held);
   };
   const pressKey = (code: string) => {
     viewer.current?.chord([...modifiers, code]);
-    setModifiers([]);
+    setModifiers(lockedModifiers);
+  };
+  // A WebView raises no keyboard for a field focused from outside it: never on Android, and on iOS
+  // not until the picture has been touched. A native field raises it instead. A touch on the
+  // picture then hands the WebView focus, and the viewer's own field takes the typing from there.
+  const field = useRef<TextInputInstance>(null);
+  const fieldText = useRef(REMOTE_DESKTOP_KEYBOARD_SENTINEL);
+  const typeField = (text: string) => {
+    const edit = remoteDesktopKeyboardEdit(fieldText.current, text);
+    fieldText.current = edit.reset ? REMOTE_DESKTOP_KEYBOARD_SENTINEL : text;
+    if (edit.reset) field.current?.setNativeProps({ text: REMOTE_DESKTOP_KEYBOARD_SENTINEL });
+    viewer.current?.typeEdit(edit.backspaces, edit.lines);
   };
   const toggleKeyboard = () => {
     if (keyboardVisible) {
+      // Blur the fields and nothing more: a native dismiss on top leaves iOS unable to raise the
+      // keyboard again on the next press.
+      field.current?.blur();
       viewer.current?.blurKeyboard();
-      void KeyboardController.dismiss();
     } else {
       viewer.current?.focusKeyboard();
+      field.current?.focus();
     }
   };
   const chooseTouchMode = (mode: RemoteDesktopTouchMode) => {
@@ -178,34 +294,41 @@ function RemoteDesktopScreen({
       ? [
           {
             id: "pointer:trackpad",
-            title: "Trackpad",
-            subtitle: "Drag to move the pointer, tap to click",
+            title: gt("Trackpad"),
+            subtitle: gt("Drag to move the pointer, tap to click"),
             state: touchMode === "trackpad" ? ("on" as const) : undefined,
           },
           {
             id: "pointer:touch",
-            title: "Direct touch",
-            subtitle: "Tap where you want to click",
+            title: gt("Direct touch"),
+            subtitle: gt("Tap to click, hold then drag to drag"),
             state: touchMode === "touch" ? ("on" as const) : undefined,
           },
-          { id: "paste", title: "Paste from this device" },
+          { id: "paste", title: gt("Paste from this device") },
           {
             id: "shortcuts",
-            title: "Shortcuts",
+            title: gt("Shortcuts"),
             subactions: SHORTCUTS.map((shortcut) => ({
-              id: `shortcut:${shortcut.title}`,
-              title: shortcut.title,
+              id: `shortcut:${shortcut.id}`,
+              title: m(shortcut.title),
               subtitle: shortcut.subtitle,
             })),
           },
         ]
       : []),
     ...(displayActions.length > 1
-      ? [{ id: "displays", title: "Display", displayInline: !showKeys, subactions: displayActions }]
+      ? [
+          {
+            id: "displays",
+            title: gt("Display"),
+            displayInline: !showKeys,
+            subactions: displayActions,
+          },
+        ]
       : []),
   ];
   const runMenuAction = (id: string) => {
-    const shortcut = SHORTCUTS.find((candidate) => id === `shortcut:${candidate.title}`);
+    const shortcut = SHORTCUTS.find((candidate) => id === `shortcut:${candidate.id}`);
     if (shortcut) viewer.current?.chord(shortcut.codes);
     else if (id === "paste") void pasteClipboard();
     else if (id === "pointer:trackpad") chooseTouchMode("trackpad");
@@ -218,11 +341,11 @@ function RemoteDesktopScreen({
     content = environment.isReady ? (
       <EmptyState
         variant="plain"
-        title="Environment not found"
-        detail="This environment is no longer saved on this device."
+        title={gt("Environment not found")}
+        detail={gt("This environment is no longer saved on this device.")}
       />
     ) : (
-      <Waiting message="Opening remote desktop…" />
+      <Waiting message={gt("Opening remote desktop…")} />
     );
   } else if (!connected) {
     content = (
@@ -234,26 +357,31 @@ function RemoteDesktopScreen({
       />
     );
   } else if (config === null) {
-    content = <Waiting message={`Connecting to ${label}…`} />;
+    content = <Waiting message={gt("Connecting to {label}…", { label })} />;
   } else if (!supported) {
     content = (
       <EmptyState
         variant="plain"
-        title="Update Onicode on that machine"
-        detail={`The version of Onicode on ${label} cannot share its screen. Update it there to use remote desktop.`}
+        title={gt("Update Onicode on that machine")}
+        detail={gt(
+          "The version of Onicode on {label} cannot share its screen. Update it there to use remote desktop.",
+          { label },
+        )}
       />
     );
   } else if (!canConnect) {
     content =
       session.data === null && session.error === null ? (
-        <Waiting message="Checking permissions…" />
+        <Waiting message={gt("Checking permissions…")} />
       ) : (
         <EmptyState
           variant="plain"
-          title="Remote desktop unavailable"
+          title={gt("Remote desktop unavailable")}
           detail={
             session.error ??
-            "This connection does not have permission to use terminals, which remote desktop needs. Pair this device again with that permission."
+            gt(
+              "This connection does not have permission to use terminals, which remote desktop needs. Pair this device again with that permission.",
+            )
           }
         />
       );
@@ -261,27 +389,27 @@ function RemoteDesktopScreen({
     content = (
       <EmptyState
         variant="plain"
-        title="Could not check for a shared screen"
+        title={gt("Could not check for a shared screen")}
         detail={state.error}
-        action={<Button label="Retry" tone="secondary" onPress={state.refresh} />}
+        action={<Button label={gt("Retry")} tone="secondary" onPress={state.refresh} />}
       />
     );
   } else if (state.data === null) {
-    content = <Waiting message="Checking for a shared screen…" />;
+    content = <Waiting message={gt("Checking for a shared screen…")} />;
   } else if (host === null) {
     content = (
       <EmptyState
         variant="plain"
-        title="Screen sharing is off"
-        detail="Open Onicode on that machine and turn on Remote desktop in Settings."
+        title={gt("Screen sharing is off")}
+        detail={gt("Open Onicode on that machine and turn on Remote desktop in Settings.")}
       />
     );
   } else if (display === null) {
     content = (
       <EmptyState
         variant="plain"
-        title="No display to show"
-        detail={`Onicode on ${label} found no display to share.`}
+        title={gt("No display to show")}
+        detail={gt("Onicode on {label} found no display to share.", { label })}
       />
     );
   } else if (focused && foreground) {
@@ -293,9 +421,19 @@ function RemoteDesktopScreen({
         displayId={display.id}
         control={control}
         touchMode={touchMode}
+        display={{
+          width: display.width,
+          height: display.height,
+          // A host older than the field: its high-resolution displays are the wide ones.
+          scaleFactor: display.scaleFactor ?? (display.width > 2000 ? 2 : 1),
+        }}
+        view={lastViews.get(`${environmentId}:${display.id}`)}
+        retriesItself={attempt === 0}
         background={background}
         onStreamingChange={onStreamingChange}
-        onModifiersUsed={() => setModifiers([])}
+        onModifiersUsed={() => setModifiers(lockedModifiers)}
+        onZoomedChange={setZoomed}
+        onViewChange={(view) => lastViews.set(`${environmentId}:${display.id}`, view)}
         onRetry={() => setAttempt((current) => current + 1)}
       />
     );
@@ -303,90 +441,174 @@ function RemoteDesktopScreen({
     content = null;
   }
 
+  const keyButtons = [
+    ...KEYS.map((key) => ({ ...key, modifier: false })),
+    ...MODIFIERS.map((key) => ({ ...key, modifier: true })),
+    ...MORE_KEYS.map((key) => ({ ...key, modifier: false })),
+  ].map((key) => {
+    const locked = key.modifier && lockedModifiers.includes(key.code);
+    return (
+      <ComposerToolbarButton
+        key={key.code}
+        label={key.label}
+        accessibilityLabel={
+          locked
+            ? gt("{modifier}, locked", { modifier: key.accessibilityLabel })
+            : key.accessibilityLabel
+        }
+        variant={locked ? "primary" : "default"}
+        // Held for one use: tinted, so it reads as armed but lighter than locked.
+        className={
+          key.modifier && !locked && modifiers.includes(key.code)
+            ? "border-primary/60 bg-primary/25"
+            : undefined
+        }
+        minWidth={44}
+        showChevron={false}
+        style={sideways && !keyboardVisible ? { width: 48, paddingHorizontal: 0 } : undefined}
+        onPress={() => (key.modifier ? toggleModifier(key.code) : pressKey(key.code))}
+      />
+    );
+  });
+  const closeButton = (
+    <SheetCloseButton accessibilityLabel={gt("Close remote desktop")} onClose={onClose} />
+  );
+  const viewButtons = (
+    <>
+      {streaming ? (
+        <IconButton
+          icon={zoomed ? "minus.magnifyingglass" : "plus.magnifyingglass"}
+          accessibilityLabel={zoomed ? gt("Show the whole screen") : gt("Zoom in to read")}
+          onPress={() => viewer.current?.toggleZoom()}
+        />
+      ) : null}
+      {menuActions.length > 0 ? (
+        <Menu
+          actions={menuActions}
+          isAnchoredToRight
+          onPressAction={({ nativeEvent }) => runMenuAction(nativeEvent.event)}
+        >
+          <IconButton icon="ellipsis" accessibilityLabel={gt("Remote desktop options")} />
+        </Menu>
+      ) : null}
+      {showKeys ? (
+        <IconButton
+          icon={
+            keyboardVisible
+              ? { ios: "keyboard.chevron.compact.down", android: "keyboard_hide" }
+              : "keyboard"
+          }
+          accessibilityLabel={keyboardVisible ? gt("Hide keyboard") : gt("Show keyboard")}
+          onPress={toggleKeyboard}
+        />
+      ) : null}
+    </>
+  );
+  // Sideways the bar waits below the screen and comes up with the keyboard; the rail does its job until then.
+  const barHidden = sideways && !keyboardVisible;
+
   return (
     <View
       className="flex-1"
       style={{
-        backgroundColor: background,
+        // Sideways with the keyboard up the rail's column is empty, so it joins the picture's black.
+        backgroundColor: sideways && keyboardVisible ? "#000000" : background,
         paddingTop: insets.top,
-        paddingLeft: insets.left,
-        paddingRight: insets.right,
+        paddingLeft: sideways ? 0 : insets.left,
+        paddingRight: insets.right + (sideways ? RAIL_WIDTH : 0),
       }}
     >
       <StatusBar hidden animated />
-      <View className="flex-1 justify-center">{content}</View>
+      {showKeys ? (
+        <TextInput
+          ref={field}
+          multiline
+          autoCapitalize="none"
+          autoCorrect={false}
+          spellCheck={false}
+          caretHidden
+          contextMenuHidden
+          // Sideways, Android would otherwise cover the picture with a full-screen editor.
+          disableFullscreenUI
+          importantForAutofill="no"
+          importantForAccessibility="no-hide-descendants"
+          defaultValue={REMOTE_DESKTOP_KEYBOARD_SENTINEL}
+          onChangeText={typeField}
+          style={{ position: "absolute", top: 0, left: 0, width: 1, height: 1, opacity: 0 }}
+        />
+      ) : null}
+      {/* The picture keeps its size when the keyboard opens; the toolbar rides up over it. */}
       <View
-        className="flex-row items-center gap-1 px-1 pt-1"
-        style={{ paddingBottom: keyboardVisible ? 4 : Math.max(insets.bottom, 4) }}
+        className="flex-1 justify-center"
+        style={
+          // Sideways the strip beside the camera continues the picture's black, not the toolbar's colour.
+          sideways
+            ? { paddingLeft: insets.left, backgroundColor: "#000000" }
+            : { marginBottom: toolbarHeight }
+        }
       >
-        <SheetCloseButton accessibilityLabel="Close remote desktop" onClose={onClose} />
-        {showKeys ? (
-          <ScrollView
-            horizontal
-            keyboardShouldPersistTaps="always"
-            showsHorizontalScrollIndicator={false}
-            className="flex-1"
-            contentContainerClassName="items-center gap-1.5 px-1"
-          >
-            {KEYS.map((key) => (
-              <ComposerToolbarButton
-                key={key.code}
-                label={key.label}
-                accessibilityLabel={key.accessibilityLabel}
-                minWidth={44}
-                showChevron={false}
-                onPress={() => pressKey(key.code)}
-              />
-            ))}
-            {MODIFIERS.map((modifier) => (
-              <ComposerToolbarButton
-                key={modifier.code}
-                label={modifier.label}
-                accessibilityLabel={modifier.accessibilityLabel}
-                active={modifiers.includes(modifier.code)}
-                minWidth={44}
-                showChevron={false}
-                onPress={() => toggleModifier(modifier.code)}
-              />
-            ))}
-            {MORE_KEYS.map((key) => (
-              <ComposerToolbarButton
-                key={key.code}
-                label={key.label}
-                accessibilityLabel={key.accessibilityLabel}
-                minWidth={44}
-                showChevron={false}
-                onPress={() => pressKey(key.code)}
-              />
-            ))}
-          </ScrollView>
-        ) : (
-          <AppText numberOfLines={1} className="flex-1 px-1 text-sm text-foreground-muted">
-            {host !== null && !control && streaming ? "Input is off on the host" : label}
-          </AppText>
-        )}
-        {menuActions.length > 0 ? (
-          <Menu
-            actions={menuActions}
-            isAnchoredToRight
-            onPressAction={({ nativeEvent }) => runMenuAction(nativeEvent.event)}
-          >
-            <IconButton icon="ellipsis" accessibilityLabel="Remote desktop options" />
-          </Menu>
-        ) : null}
-        {showKeys ? (
-          <IconButton
-            icon={
-              keyboardVisible
-                ? { ios: "keyboard.chevron.compact.down", android: "keyboard_hide" }
-                : "keyboard"
-            }
-            accessibilityLabel={keyboardVisible ? "Hide keyboard" : "Show keyboard"}
-            onPress={toggleKeyboard}
-          />
-        ) : null}
+        {content}
       </View>
-      <View style={{ height: keyboardVisible ? keyboardHeight : 0 }} />
+      {barHidden ? (
+        <View
+          className="absolute items-center"
+          style={{
+            top: insets.top,
+            bottom: Math.max(insets.bottom, TOOLBAR_PADDING),
+            right: insets.right,
+            width: RAIL_WIDTH,
+          }}
+        >
+          {closeButton}
+          {showKeys ? (
+            <ScrollView
+              keyboardShouldPersistTaps="always"
+              showsVerticalScrollIndicator={false}
+              className="flex-1"
+              contentContainerClassName="items-center gap-1.5 py-1"
+            >
+              {keyButtons}
+            </ScrollView>
+          ) : (
+            <View className="flex-1" />
+          )}
+          {viewButtons}
+        </View>
+      ) : null}
+      <KeyboardStickyView
+        offset={{ closed: sideways ? toolbarHeight : 0, opened: toolbarTuck }}
+        style={{ position: "absolute", bottom: 0, left: insets.left, right: insets.right }}
+      >
+        <View
+          className="flex-row items-center gap-1 px-1"
+          pointerEvents={barHidden ? "none" : "auto"}
+          accessibilityElementsHidden={barHidden}
+          importantForAccessibility={barHidden ? "no-hide-descendants" : "auto"}
+          style={{
+            backgroundColor: background,
+            paddingTop: TOOLBAR_PADDING,
+            paddingBottom: toolbarPadding,
+          }}
+        >
+          {closeButton}
+          {showKeys ? (
+            <ScrollView
+              horizontal
+              keyboardShouldPersistTaps="always"
+              showsHorizontalScrollIndicator={false}
+              className="flex-1"
+              contentContainerClassName="items-center gap-1.5 px-1"
+            >
+              {keyButtons}
+            </ScrollView>
+          ) : (
+            <AppText numberOfLines={1} className="flex-1 px-1 text-sm text-foreground-muted">
+              {host !== null && !control && streaming ? gt("Input is off on the host") : label}
+            </AppText>
+          )}
+          {viewButtons}
+        </View>
+      </KeyboardStickyView>
     </View>
   );
 }

@@ -33,6 +33,12 @@ describe("native remote desktop messages", () => {
       { type: "status", status: "error", detail: "The host refused." },
     ],
     ['{"type":"modifiersUsed"}', { type: "modifiersUsed" }],
+    ['{"type":"longPress"}', { type: "longPress" }],
+    ['{"type":"zoomed","zoomed":true}', { type: "zoomed", zoomed: true }],
+    [
+      '{"type":"view","view":{"width":800,"x":0.4,"y":0.6,"pointer":{"x":0.3,"y":0.7},"extra":1}}',
+      { type: "view", view: { width: 800, x: 0.4, y: 0.6, pointer: { x: 0.3, y: 0.7 } } },
+    ],
     ['{"type":"status","status":"reconnecting"}', { type: "status", status: "reconnecting" }],
     ['{"type":"clipboard","text":"copied"}', { type: "clipboard", text: "copied" }],
   ])("reads %s", (data, expected) => expect(remoteDesktopMessage(data)).toEqual(expected));
@@ -51,6 +57,11 @@ describe("native remote desktop messages", () => {
     '{"type":"status","status":"error","detail":42}',
     '{"type":"clipboard"}',
     '{"type":"clipboard","text":""}',
+    '{"type":"zoomed","zoomed":"yes"}',
+    '{"type":"view"}',
+    '{"type":"view","view":{"width":0,"x":0.4,"y":0.6,"pointer":{"x":0.3,"y":0.7}}}',
+    '{"type":"view","view":{"width":800,"x":1.4,"y":0.6,"pointer":{"x":0.3,"y":0.7}}}',
+    '{"type":"view","view":{"width":800,"x":0.4,"y":0.6,"pointer":{"x":0.3}}}',
     JSON.stringify({ type: "clipboard", text: "a".repeat(64_001) }),
   ])("ignores invalid bridge messages: %s", (data) =>
     expect(remoteDesktopMessage(data)).toBeNull(),

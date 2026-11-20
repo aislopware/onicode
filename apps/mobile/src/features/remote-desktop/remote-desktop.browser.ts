@@ -40,14 +40,24 @@ interface Session {
 
 let session: Session | null = null;
 let modifiers: ReadonlyArray<string> = [];
+/** The modifiers that stay held after they are used, until the toolbar lets go of them. */
+let locked: ReadonlyArray<string> = [];
 
 // oxlint-disable-next-line unicorn/require-post-message-target-origin -- The native WebView bridge takes one string.
 const post = (message: object) => window.ReactNativeWebView.postMessage(JSON.stringify(message));
+
+/** Lets go of the modifiers that were held for one use, and tells the toolbar. */
+function releaseModifiers(current: Session) {
+  modifiers = locked;
+  current.viewer?.setModifiers(locked);
+  post({ type: "modifiersUsed" });
+}
 
 export function stop() {
   const current = session;
   session = null;
   modifiers = [];
+  locked = [];
   current?.signal?.reject(new Error("The viewer stopped."));
   current?.viewer?.stop();
 }
@@ -69,6 +79,21 @@ export function start(configuration: RemoteDesktopConfiguration) {
     container: document.body,
     control: configuration.control,
     touchMode: configuration.touchMode,
+    display: configuration.display,
+    startReadable: true,
+    ...(configuration.view ? { view: configuration.view } : {}),
+    onView: (view) => {
+      if (session === current) post({ type: "view", view });
+    },
+    onZoomed: (zoomed) => {
+      if (session === current) post({ type: "zoomed", zoomed });
+    },
+    onLongPress: () => {
+      if (session === current) post({ type: "longPress" });
+    },
+    onModifiersUsed: () => {
+      if (session === current) releaseModifiers(current);
+    },
     onClipboard: (text) => {
       if (session === current) post({ type: "clipboard", text });
     },
@@ -86,8 +111,7 @@ export function start(configuration: RemoteDesktopConfiguration) {
       if (session !== current || modifiers.length === 0) return false;
       const code = [...text].length === 1 ? keyCode(text) : null;
       const held = modifiers;
-      modifiers = [];
-      post({ type: "modifiersUsed" });
+      releaseModifiers(current);
       if (code === null) return false;
       current.viewer?.chord([...held, code]);
       return true;
@@ -111,13 +135,25 @@ export function fail(message: string) {
 }
 
 export function chord(codes: ReadonlyArray<string>) {
-  modifiers = [];
+  modifiers = locked;
+  session?.viewer?.setModifiers(locked);
   session?.viewer?.chord(codes);
 }
 
-/** Sticky modifiers the next typed character is sent with, as a chord. */
-export function setModifiers(codes: ReadonlyArray<string>) {
+/** Sticky modifiers the next typed character, click or drag is sent with; `held` ones stay after it. */
+export function setModifiers(codes: ReadonlyArray<string>, held: ReadonlyArray<string> = []) {
   modifiers = codes;
+  locked = held;
+  session?.viewer?.setModifiers(codes);
+}
+
+/** How much of the picture's bottom the keyboard and its toolbar cover. */
+export function setBottomInset(inset: number, durationMs: number) {
+  session?.viewer?.setBottomInset(inset, durationMs);
+}
+
+export function toggleZoom() {
+  session?.viewer?.toggleZoom();
 }
 
 export function setTouchMode(mode: RemoteDesktopTouchMode) {
@@ -127,6 +163,11 @@ export function setTouchMode(mode: RemoteDesktopTouchMode) {
 /** Puts this device's clipboard text on the host's clipboard and pastes it there. */
 export function paste(text: string) {
   session?.viewer?.sendClipboard(text, true);
+}
+
+/** Types a change made in the native keyboard field Android uses in place of the viewer's own. */
+export function typeEdit(backspaces: number, lines: ReadonlyArray<string>) {
+  session?.viewer?.typeEdit({ backspaces, lines });
 }
 
 export function focusKeyboard() {

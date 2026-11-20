@@ -39,6 +39,7 @@ const displays = (): ReadonlyArray<RemoteDesktopDisplay> => {
     label: display.label.trim() || `Display ${index + 1}`,
     width: Math.max(1, Math.round(display.size.width * display.scaleFactor)),
     height: Math.max(1, Math.round(display.size.height * display.scaleFactor)),
+    scaleFactor: display.scaleFactor,
     primary: display.id === primary,
   }));
 };
@@ -312,6 +313,26 @@ export const installRemoteDesktop = Effect.fn("desktop.ipc.installRemoteDesktop"
         if (clipboardSeen !== null) {
           clipboardSeen = (yield* Effect.promise(loadMacHost)).clipboardChangeCount();
         }
+      }),
+    }),
+  );
+
+  yield* ipc.handle(
+    DesktopIpc.makeIpcMethod({
+      channel: IpcChannels.REMOTE_DESKTOP_POINTER_CHANNEL,
+      payload: Schema.String,
+      result: Schema.NullOr(Schema.Struct({ x: Schema.Finite, y: Schema.Finite })),
+      handler: Effect.fn("desktop.ipc.remoteDesktop.pointer")(function* (displayId, event) {
+        yield* mainWindow(event);
+        if (!mayControl()) return null;
+        const display = Electron.screen
+          .getAllDisplays()
+          .find((candidate) => String(candidate.id) === displayId);
+        if (!display) return null;
+        const point = Electron.screen.getCursorScreenPoint();
+        const x = (point.x - display.bounds.x) / display.bounds.width;
+        const y = (point.y - display.bounds.y) / display.bounds.height;
+        return x >= 0 && x <= 1 && y >= 0 && y <= 1 ? { x, y } : null;
       }),
     }),
   );

@@ -3,6 +3,7 @@ package expo.modules.oninativecontrols
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -21,6 +22,16 @@ import java.net.URI
 class OniNativeControlsModule : Module() {
   private var filePreviewPromise: Promise? = null
 
+  private fun setFreeRotation(enabled: Boolean) {
+    val activity = appContext.currentActivity ?: return
+    if (activity.resources.configuration.smallestScreenWidthDp >= 600) return
+    activity.requestedOrientation = if (enabled) {
+      ActivityInfo.SCREEN_ORIENTATION_USER
+    } else {
+      ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+    }
+  }
+
   @Suppress("TooGenericExceptionCaught") // Clear the pending promise before rethrowing.
   override fun definition() = ModuleDefinition {
     Name("OniNativeControls")
@@ -33,6 +44,16 @@ class OniNativeControlsModule : Module() {
       val controller = WindowCompat.getInsetsController(window, window.decorView)
       controller.isAppearanceLightNavigationBars = light
     }.runOnQueue(Queues.MAIN)
+
+    // Lets a phone turn sideways while a screen that needs the width is open. Tablets always turn.
+    AsyncFunction("setFreeRotation") { enabled: Boolean ->
+      setFreeRotation(enabled)
+    }.runOnQueue(Queues.MAIN)
+
+    // A reload drops the screen that asked for rotation without telling it to let go.
+    OnDestroy {
+      appContext.currentActivity?.runOnUiThread { setFreeRotation(false) }
+    }
 
     Function("is24HourFormat") {
       val context = appContext.reactContext ?: error("The app is not active.")

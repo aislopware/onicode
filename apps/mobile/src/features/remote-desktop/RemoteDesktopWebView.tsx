@@ -2,6 +2,8 @@ import remoteDesktopScript from "@onicode/mobile-remote-desktop";
 import { squashAtomCommandFailure } from "@onicode/client-runtime/state/runtime";
 import type { EnvironmentId } from "@onicode/contracts";
 import * as Clipboard from "expo-clipboard";
+import * as Haptics from "expo-haptics";
+import { useGT } from "gt-react-native";
 import {
   useEffectEvent,
   useImperativeHandle,
@@ -23,18 +25,28 @@ import {
   remoteDesktopBaseUrl,
   remoteDesktopDocument,
   remoteDesktopMessage,
+  type RemoteDesktopConfiguration,
   type RemoteDesktopTouchMode,
+  type RemoteDesktopView,
 } from "./remote-desktop-document";
 
 export interface RemoteDesktopViewRef {
   /** Presses the keys in order and releases them in reverse. */
   chord: (codes: ReadonlyArray<string>) => void;
-  setModifiers: (codes: ReadonlyArray<string>) => void;
+  /** `held` are the ones that stay down after the next key, click or drag. */
+  setModifiers: (codes: ReadonlyArray<string>, held: ReadonlyArray<string>) => void;
+  /** Focuses the viewer's own field, which takes the typing once the picture has been touched. */
   focusKeyboard: () => void;
   blurKeyboard: () => void;
+  /** Types a change made in a keyboard field outside the viewer. */
+  typeEdit: (backspaces: number, lines: ReadonlyArray<string>) => void;
   setTouchMode: (mode: RemoteDesktopTouchMode) => void;
   /** Pastes this device's clipboard text into the host. */
   paste: (text: string) => void;
+  /** How much of the picture's bottom the keyboard and its toolbar cover, in points. */
+  setBottomInset: (inset: number, durationMs: number) => void;
+  /** Switches between the whole display and the readable zoom. */
+  toggleZoom: () => void;
 }
 
 // The viewer letterboxes the host's picture in black, so the page behind it matches.
@@ -46,8 +58,13 @@ export function RemoteDesktopWebView({
   displayId,
   control,
   touchMode,
+  display,
+  view,
+  retriesItself,
   onStreamingChange,
   onModifiersUsed,
+  onZoomedChange,
+  onViewChange,
   onRetry,
   background,
 }: {
@@ -57,8 +74,15 @@ export function RemoteDesktopWebView({
   readonly control: boolean;
   /** The mode to start in; later changes go through the ref, without reloading the viewer. */
   readonly touchMode: RemoteDesktopTouchMode;
+  readonly display: RemoteDesktopConfiguration["display"];
+  /** Where to open; later changes are the viewer's own and come back through `onViewChange`. */
+  readonly view: RemoteDesktopView | undefined;
+  /** A viewer that never started is replaced once without asking. */
+  readonly retriesItself: boolean;
   readonly onStreamingChange: (streaming: boolean) => void;
   readonly onModifiersUsed: () => void;
+  readonly onZoomedChange: (zoomed: boolean) => void;
+  readonly onViewChange: (view: RemoteDesktopView) => void;
   readonly onRetry: () => void;
   /** Behind the status shown while there is no picture. */
   readonly background: string;
@@ -70,8 +94,15 @@ export function RemoteDesktopWebView({
   const [status, setStatus] = useState<"connecting" | "streaming" | "reconnecting" | "error">(
     "connecting",
   );
-  const [initialTouchMode] = useState(touchMode);
+  // The document is built once: a later change to any of these would reload it, and the session.
+  const [configuration] = useState<RemoteDesktopConfiguration>({
+    control,
+    touchMode,
+    display,
+    ...(view ? { view } : {}),
+  });
   const [error, setError] = useState<string | null>(null);
+  const gt = useGT();
   const connect = useAtomCommand(remoteDesktopEnvironment.connect, { reportFailure: false });
   const inject = (call: string) => {
     if (active.current)
@@ -91,9 +122,11 @@ export function RemoteDesktopWebView({
     setStatus("error");
     onStreamingChange(false);
   };
-  const bootstrapTimedOut = useEffectEvent(() =>
-    fail("The remote desktop viewer could not start. Retry to connect again."),
-  );
+  const bootstrapTimedOut = useEffectEvent(() => {
+    // A WebView that never ran its page usually runs it on the second load.
+    if (retriesItself) onRetry();
+    else fail(gt("The remote desktop viewer could not start. Retry to connect again."));
+  });
   const streamEnded = useEffectEvent(() => onStreamingChange(false));
   // The connection lives exactly as long as this view.
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- starts the bootstrap timeout and stops the WebView's peer connection when this view unmounts
@@ -111,15 +144,16 @@ export function RemoteDesktopWebView({
   }, []);
   useImperativeHandle(ref, () => ({
     chord: (codes) => inject(`chord(${JSON.stringify(codes)})`),
-    setModifiers: (codes) => inject(`setModifiers(${JSON.stringify(codes)})`),
-    focusKeyboard: () => {
-      // Android raises the keyboard for a focused field only while the WebView itself has focus.
-      if (Platform.OS === "android") webView.current?.requestFocus();
-      inject("focusKeyboard()");
-    },
+    setModifiers: (codes, held) =>
+      inject(`setModifiers(${JSON.stringify(codes)},${JSON.stringify(held)})`),
+    focusKeyboard: () => inject("focusKeyboard()"),
     blurKeyboard: () => inject("blurKeyboard()"),
+    typeEdit: (backspaces, lines) => inject(`typeEdit(${backspaces},${JSON.stringify(lines)})`),
     setTouchMode: (mode) => inject(`setTouchMode(${JSON.stringify(mode)})`),
     paste: (text) => inject(`paste(${JSON.stringify(text)})`),
+    setBottomInset: (inset, durationMs) =>
+      inject(`setBottomInset(${Math.round(inset)},${Math.round(durationMs)})`),
+    toggleZoom: () => inject("toggleZoom()"),
   }));
   const signal = async (offer: string) => {
     const result = await connect({ environmentId, input: { displayId, offer } });
@@ -133,16 +167,15 @@ export function RemoteDesktopWebView({
     const message =
       cause instanceof Error && cause.message.trim().length > 0
         ? cause.message
-        : "Could not reach the host. Retry to connect again.";
+        : gt("Could not reach the host. Retry to connect again.");
     inject(`fail(${JSON.stringify(message)})`);
   };
   const processTerminated = () =>
-    fail("The remote desktop viewer stopped. Retry to connect again.");
+    fail(gt("The remote desktop viewer stopped. Retry to connect again."));
+  const loadFailed = () =>
+    fail(gt("The remote desktop viewer could not load. Retry to connect again."));
   const source = {
-    html: remoteDesktopDocument(
-      JSON.stringify({ control, touchMode: initialTouchMode }),
-      remoteDesktopScript,
-    ),
+    html: remoteDesktopDocument(JSON.stringify(configuration), remoteDesktopScript),
     baseUrl: remoteDesktopBaseUrl(Platform.OS),
   };
   return (
@@ -164,10 +197,8 @@ export function RemoteDesktopWebView({
         keyboardDisplayRequiresUserAction={false}
         hideKeyboardAccessoryView
         style={{ flex: 1, backgroundColor: PICTURE_BACKGROUND }}
-        onError={() => fail("The remote desktop viewer could not load. Retry to connect again.")}
-        onHttpError={() =>
-          fail("The remote desktop viewer could not load. Retry to connect again.")
-        }
+        onError={loadFailed}
+        onHttpError={loadFailed}
         onContentProcessDidTerminate={processTerminated}
         onRenderProcessGone={processTerminated}
         onShouldStartLoadWithRequest={(request) =>
@@ -178,11 +209,15 @@ export function RemoteDesktopWebView({
           const message = remoteDesktopMessage(event.nativeEvent.data);
           if (message?.type === "offer") void signal(message.sdp);
           else if (message?.type === "modifiersUsed") onModifiersUsed();
-          else if (message?.type === "clipboard") void Clipboard.setStringAsync(message.text);
+          else if (message?.type === "zoomed") onZoomedChange(message.zoomed);
+          else if (message?.type === "view") onViewChange(message.view);
+          else if (message?.type === "longPress") {
+            void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          } else if (message?.type === "clipboard") void Clipboard.setStringAsync(message.text);
           else if (message?.type === "status") {
             clearBootstrapTimer();
             if (message.status === "error") {
-              fail(message.detail ?? "The remote desktop connection failed.");
+              fail(message.detail ?? gt("The remote desktop connection failed."));
               return;
             }
             setStatus(message.status);
@@ -205,12 +240,12 @@ export function RemoteDesktopWebView({
             {status === "error"
               ? error
               : status === "reconnecting"
-                ? "Reconnecting..."
-                : "Connecting to the host..."}
+                ? gt("Reconnecting...")
+                : gt("Connecting to the host...")}
           </AppText>
           {status === "error" ? (
             <View className="items-center">
-              <Button label="Retry" tone="secondary" onPress={onRetry} />
+              <Button label={gt("Retry")} tone="secondary" onPress={onRetry} />
             </View>
           ) : null}
         </View>

@@ -10,8 +10,14 @@ const ORIENTATION_METHODS = `
     applyTabletOrientation()
   }
 
+  private var orientationWidthDp = -1
+
   private fun applyTabletOrientation() {
-    requestedOrientation = if (resources.configuration.smallestScreenWidthDp >= 600) {
+    // A rotation leaves this width alone, so a screen that unlocked rotation keeps it.
+    val widthDp = resources.configuration.smallestScreenWidthDp
+    if (widthDp == orientationWidthDp) return
+    orientationWidthDp = widthDp
+    requestedOrientation = if (widthDp >= 600) {
       ActivityInfo.SCREEN_ORIENTATION_FULL_USER
     } else {
       ActivityInfo.SCREEN_ORIENTATION_PORTRAIT

@@ -157,6 +157,7 @@ export const REMOTE_DESKTOP_CAPTURE_KEYBOARD_CHANNEL = "desktop:remote-desktop-c
 export const REMOTE_DESKTOP_SET_VIEWERS_CHANNEL = "desktop:remote-desktop-set-viewers";
 export const REMOTE_DESKTOP_READ_CLIPBOARD_CHANNEL = "desktop:remote-desktop-read-clipboard";
 export const REMOTE_DESKTOP_WRITE_CLIPBOARD_CHANNEL = "desktop:remote-desktop-write-clipboard";
+export const REMOTE_DESKTOP_POINTER_CHANNEL = "desktop:remote-desktop-pointer";
 
 export const RESTART_AUDIO_SERVICE_CHANNEL = "desktop:restart-audio-service";
 

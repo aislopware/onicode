@@ -143,6 +143,8 @@ import IconWifi from "@tabler/icons-react-native/IconWifi";
 import IconWifiOff from "@tabler/icons-react-native/IconWifiOff";
 import IconWorld from "@tabler/icons-react-native/IconWorld";
 import IconX from "@tabler/icons-react-native/IconX";
+import IconZoomIn from "@tabler/icons-react-native/IconZoomIn";
+import IconZoomOut from "@tabler/icons-react-native/IconZoomOut";
 import { IconHardDrive } from "./IconHardDrive";
 import type { AndroidSymbol, SFSymbol, SymbolViewProps } from "expo-symbols";
 import { StyleSheet, View } from "react-native";
@@ -262,6 +264,8 @@ const ANDROID_ICON_BY_SF_SYMBOL = {
   pause: IconPlayerPause,
   plus: IconPlus,
   minus: IconMinus,
+  "plus.magnifyingglass": IconZoomIn,
+  "minus.magnifyingglass": IconZoomOut,
   "slash.circle": IconBan,
   "qrcode.viewfinder": IconQrcode,
   "point.3.connected.trianglepath.dotted": IconNetwork,
