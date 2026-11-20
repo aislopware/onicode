@@ -795,7 +795,10 @@ export const make = Effect.gen(function* () {
   const revokeOtherClientSessions: EnvironmentAuth["Service"]["revokeOtherClientSessions"] = (
     currentSessionId,
   ) =>
-    revokeOtherSessionsExcept(currentSessionId).pipe(
+    // "Revoke all others" promises every other way in is gone, so unspent codes go too.
+    bootstrapCredentials.revokeUnspent().pipe(
+      Effect.mapError((cause) => new ServerAuthOtherSessionsRevocationError({ cause })),
+      Effect.andThen(revokeOtherSessionsExcept(currentSessionId)),
       Effect.withSpan("EnvironmentAuth.revokeOtherClientSessions"),
     );
 
