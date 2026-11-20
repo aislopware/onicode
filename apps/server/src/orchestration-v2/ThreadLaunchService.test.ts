@@ -2555,6 +2555,65 @@ it.effect("prepares a launch whose caller goes away after its first message comm
   }),
 );
 
+it.effect("prepares a retry whose caller goes away after the retry commits", () =>
+  Effect.gen(function* () {
+    const retryCommitted = yield* Deferred.make<void>();
+    const release = yield* Deferred.make<void>();
+    const refetched = yield* Deferred.make<void>();
+    let fetchAttempts = 0;
+    const harness = makeHarness({
+      fetchWorktreeBaseCommit: () =>
+        fetchAttempts++ === 0
+          ? Effect.fail(
+              new GitCommandError({
+                operation: "GitVcsDriver.fetchRemote",
+                command: "git",
+                cwd: project.workspaceRoot,
+                detail: "Git could not reach the remote.",
+                exitCode: 128,
+              }),
+            )
+          : Deferred.succeed(refetched, undefined).pipe(
+              Effect.as({ commitSha: "remote-main-sha", remoteRefName: "origin/main" }),
+            ),
+      dispatch: (command, dispatch) =>
+        dispatch(command).pipe(
+          Effect.tap(() =>
+            command.type === "prepared-run.retry"
+              ? Deferred.succeed(retryCommitted, undefined).pipe(
+                  Effect.andThen(Deferred.await(release)),
+                )
+              : Effect.void,
+          ),
+        ),
+    });
+    yield* Effect.gen(function* () {
+      const launches = yield* ThreadLaunch.ThreadLaunchService;
+      const launched = yield* launches.launch(
+        launchInput({
+          command: "command:launch:retry-caller-gone",
+          thread: "thread:launch:retry-caller-gone",
+          message: "Start from origin",
+          workspace: worktreeStrategy,
+        }),
+      );
+      yield* preparationSettled(launched.threadId);
+      const retry = yield* Effect.forkChild(
+        launches.retryPreparation({
+          commandId: CommandId.make("command:launch:retry-caller-gone:retry"),
+          threadId: launched.threadId,
+          runId: launched.projection.runs[0]!.id,
+        }),
+      );
+      yield* Deferred.await(retryCommitted);
+      yield* Effect.sync(() => retry.interruptUnsafe());
+      yield* Deferred.succeed(release, undefined);
+      yield* Fiber.await(retry);
+      yield* Deferred.await(refetched);
+    }).pipe(Effect.provide(harness.layer));
+  }),
+);
+
 it.effect("creates a strong provider-thread mapping for an imported native session", () => {
   const harness = makeHarness();
   return Effect.gen(function* () {

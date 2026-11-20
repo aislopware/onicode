@@ -1550,16 +1550,21 @@ const make = Effect.gen(function* () {
 
   const retryPreparation: ThreadLaunchService["Service"]["retryPreparation"] = Effect.fn(
     "ThreadLaunchService.retryPreparation",
-  )(function* (input) {
-    const dispatched = yield* threads.dispatch({
-      type: "prepared-run.retry",
-      commandId: input.commandId,
-      threadId: input.threadId,
-      runId: input.runId,
-    });
-    yield* prepareRun(input);
-    return dispatched;
-  });
+  )(
+    function* (input) {
+      const dispatched = yield* threads.dispatch({
+        type: "prepared-run.retry",
+        commandId: input.commandId,
+        threadId: input.threadId,
+        runId: input.runId,
+      });
+      yield* prepareRun(input);
+      return dispatched;
+    },
+    // The retry commits a preparing run that only this call schedules, and only a failed run
+    // can be retried, so a caller that goes away must not stop it between the two.
+    Effect.uninterruptible,
+  );
 
   const scheduleRunPreparation = Effect.fn("ThreadLaunchService.scheduleRunPreparation")(function* (
     input: ThreadLaunchPreparationInput,

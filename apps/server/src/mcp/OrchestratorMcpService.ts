@@ -2728,14 +2728,18 @@ const make = Effect.gen(function* () {
       if (input.target !== undefined && environmentId !== undefined) {
         yield* requireCapability(callerScope);
         const scope = yield* requireThreadScope(callerScope, "delegate_task");
+        const target = { ...input.target, environmentId };
         // The task's child runs as an ordinary thread there; this thread keeps the task.
-        const { taskId } = yield* remoteDelegation.delegate(scope, {
-          ...input,
-          target: { ...input.target, environmentId },
-        });
-        return yield* input.mode === "wait"
-          ? awaitTask(scope, taskId, taskId, input.timeoutMs)
-          : readTask(scope, taskId, false, true);
+        // A recorded task is only followed by this call, so a caller that goes away
+        // must not stop it between the record and the follower.
+        return yield* Effect.uninterruptibleMask((restore) =>
+          Effect.gen(function* () {
+            const { taskId } = yield* remoteDelegation.delegate(scope, { ...input, target });
+            return yield* input.mode === "wait"
+              ? awaitTask(scope, taskId, taskId, input.timeoutMs, restore)
+              : restore(readTask(scope, taskId, false, true));
+          }),
+        );
       }
       const { scope, parent } = yield* loadThreadCaller(callerScope, "delegate_task");
       if (

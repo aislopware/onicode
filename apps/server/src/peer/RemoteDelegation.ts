@@ -313,11 +313,13 @@ const make = Effect.gen(function* () {
       const instanceId =
         target.driverKind === undefined
           ? (target.providerInstanceId ?? inherited.instanceId)
-          : yield* resolveRemoteInstance(scope, target.environmentId, {
-              driverKind: target.driverKind,
-              providerInstanceId: target.providerInstanceId,
-              inheritedInstanceId: inherited.instanceId,
-            });
+          : yield* Effect.interruptible(
+              resolveRemoteInstance(scope, target.environmentId, {
+                driverKind: target.driverKind,
+                providerInstanceId: target.providerInstanceId,
+                inheritedInstanceId: inherited.instanceId,
+              }),
+            );
       const model =
         target.model ?? (instanceId === inherited.instanceId ? inherited.model : undefined);
       if (model === undefined) {
@@ -342,11 +344,13 @@ const make = Effect.gen(function* () {
         input.interactionMode === undefined || input.interactionMode === "inherit"
           ? undefined
           : yield* resolveInteractionMode(parent.thread.interactionMode, input.interactionMode);
-      const projectId = yield* resolveRemoteProject(
-        scope,
-        target.environmentId,
-        parent.thread.projectId,
-        target.projectId,
+      const projectId = yield* Effect.interruptible(
+        resolveRemoteProject(
+          scope,
+          target.environmentId,
+          parent.thread.projectId,
+          target.projectId,
+        ),
       );
       // One key for the launch there and the record here, so a retry finds both.
       // Both are scoped to the provider session, as every key a caller passes is:
@@ -354,11 +358,11 @@ const make = Effect.gen(function* () {
       const key = input.clientRequestId ?? (yield* random.uuidV4());
       const task = taskPrompt(input);
       const title = input.title ?? parent.thread.title;
-      const launched = yield* forwarding.call(
-        scope,
-        ProjectToolkit.tools.oni_thread_launch,
-        target.environmentId,
-        {
+      // The launch there has no deadline, so a caller that goes away stops waiting for it (the
+      // launch itself may still finish there). One gone after it returns leaves the record and
+      // its follower to finish below.
+      const launched = yield* Effect.interruptible(
+        forwarding.call(scope, ProjectToolkit.tools.oni_thread_launch, target.environmentId, {
           projectId,
           title,
           modelSelection: { instanceId, model, ...(options === undefined ? {} : { options }) },
@@ -372,7 +376,7 @@ const make = Effect.gen(function* () {
             threadId: parent.thread.id,
             title: parent.thread.title,
           },
-        },
+        }),
       );
       const link = yield* links.get(target.environmentId).pipe(
         Effect.map(Option.getOrUndefined),
@@ -421,8 +425,11 @@ const make = Effect.gen(function* () {
           // Nothing here follows a thread the task was never recorded for, so stop it there.
           // A crash between the launch and this record still leaves it running there
           // until a retry with the same clientRequestId records it.
+          // Bounded: this runs uninterruptibly, and a silent peer must not pin the caller.
           Effect.tapError(() =>
             stopThere(followScope(scope.thread, remoteChild), remoteChild, "stop").pipe(
+              Effect.interruptible,
+              Effect.timeout(Duration.seconds(10)),
               Effect.ignoreCause({ log: true }),
             ),
           ),
@@ -450,6 +457,9 @@ const make = Effect.gen(function* () {
       yield* followOne(scope.thread.threadId, taskId).pipe(Effect.forkIn(followers));
       return { taskId };
     },
+    // Only this call follows the task it records, so its remote reads and launch are the only
+    // waits a caller that goes away may stop.
+    Effect.uninterruptible,
   );
 
   const followUp: RemoteDelegation["Service"]["followUp"] = Effect.fn("RemoteDelegation.followUp")(
@@ -534,6 +544,9 @@ const make = Effect.gen(function* () {
       yield* followOne(parentThreadId, taskId).pipe(Effect.forkIn(followers));
       return { ...sent, taskId };
     },
+    // Only this call follows the task it records, so a caller that goes away must not stop it
+    // in between.
+    Effect.uninterruptible,
   );
 
   /**
