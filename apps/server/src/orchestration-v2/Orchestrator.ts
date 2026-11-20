@@ -13246,6 +13246,29 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           updatedAt: input.now,
         },
       });
+      // Its tool call node too, unless this command already ended it.
+      const node =
+        item.nodeId === null
+          ? undefined
+          : input.projection.nodes.find((candidate) => candidate.id === item.nodeId);
+      if (
+        node !== undefined &&
+        node.kind === "tool_call" &&
+        isOrchestrationV2WorkActive(node.status) &&
+        !(yield* Ref.get(input.events)).some(
+          (event) => event.type === "node.updated" && event.nodeId === node.id,
+        )
+      ) {
+        yield* emitEvent({
+          type: "node.updated",
+          threadId: input.command.threadId,
+          ...(node.runId === null ? {} : { runId: node.runId }),
+          nodeId: node.id,
+          ...(run === undefined ? {} : { providerInstanceId: run.providerInstanceId }),
+          occurredAt: input.now,
+          payload: { ...node, status: "interrupted", completedAt: input.now },
+        });
+      }
       if (item.type !== "subagent") continue;
       // A native subagent died with the process too.
       yield* endNativeSubagentTrees({
