@@ -10,6 +10,7 @@ import { EMPTY_ENVIRONMENT_THREAD_STATE } from "@onicode/client-runtime/state/th
 import { ThreadId } from "@onicode/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Option from "effect/Option";
+import { linkedThreadRouteParams } from "./linkedThreadSurface";
 import { makeThreadProjectionFixture } from "./test-fixtures";
 
 import {
@@ -67,6 +68,17 @@ describe("threadRoutes", () => {
     expect(router.matchRoutes(location).at(-1)?.params).toEqual(ref);
     expect(isThreadRoutePathname(location.pathname, ref)).toBe(true);
     expect(isThreadRoutePathname("/new", ref)).toBe(false);
+  });
+
+  it("does not take a linked environment's thread route for a thread this client can open", () => {
+    // The layout reads every match's params untyped, as here.
+    const params: Record<string, string> = linkedThreadRouteParams({
+      viaEnvironmentId: "env-1" as never,
+      environmentId: "env-2" as never,
+      threadId: ThreadId.make("thread-there"),
+    });
+
+    expect(resolveThreadRouteTarget(params)).toBeNull();
   });
 
   it("resolves the backing thread while a draft route is being promoted", () => {

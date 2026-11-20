@@ -796,6 +796,11 @@ const RootStackConfig = createWorkspaceStackNavigator({
       screen: LinkedThreadSheet,
       options: sheetRoute({ detent: 0.9, android: "fullScreen" }),
     }),
+    // Maximized from the inspector, like ThreadInspectorFullscreen.
+    LinkedThreadFullscreen: createNativeStackScreen({
+      screen: LinkedThreadSheet,
+      options: modalRoute({ header: "glass", itemStyle: "editor", duoMinimize: "onScrollUp" }),
+    }),
     GitOverview: createNativeStackScreen({
       screen: GitOverviewSheet,
       linking: `${THREAD_LINKING_PREFIX}/git`,

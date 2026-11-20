@@ -1,8 +1,10 @@
 import { T, Var, msg, useGT, useMessages } from "gt-react";
 import { ThreadHoverCardPopup } from "../ThreadHoverCard";
 import { AgentElapsed } from "./AgentElapsed";
-import type { ReactNode } from "react";
+import { use, type ReactNode } from "react";
 import { useThreadShell, useProject } from "../../state/entities";
+import type { SideThreadOpenIntent } from "@onicode/client-runtime/side-thread";
+import { SideThreadsOpenContext, useSideThreadTrigger } from "../../hooks/useSideThreadTrigger";
 import { useLinkedThreadOpener } from "../../state/linkedThreadView";
 import { SubagentTooltipContent } from "./SubagentTooltipContent";
 import { useAtomValue } from "@effect/atom-react";
@@ -74,7 +76,11 @@ export function V2LifecycleRow(props: {
   readonly environmentId: EnvironmentId;
   readonly resourceSummary?: boolean | undefined;
   readonly runs: ReadonlyArray<HandoffTimelineRun>;
-  readonly onOpenThread: (threadId: ThreadId) => void;
+  readonly onOpenThread: (
+    threadId: ThreadId,
+    environmentId?: EnvironmentId,
+    intent?: SideThreadOpenIntent,
+  ) => void;
 }) {
   const { item } = props;
   const gt = useGT();
@@ -376,7 +382,11 @@ export function SubagentNotificationLink(props: {
   readonly outcome: OrchestrationV2Notification["outcome"];
   readonly createdAt: string;
   readonly timestampFormat: TimestampFormat;
-  readonly onOpenThread: (threadId: ThreadId) => void;
+  readonly onOpenThread: (
+    threadId: ThreadId,
+    environmentId?: EnvironmentId,
+    intent?: SideThreadOpenIntent,
+  ) => void;
   readonly fallback: ReactNode;
 }) {
   const gt = useGT();
@@ -441,7 +451,11 @@ function SubagentTimelineLink(props: {
   /** The row's copy, for a task whose record this client does not hold. */
   readonly model?: string | undefined;
   readonly modelSelection?: OrchestrationV2Subagent["modelSelection"];
-  readonly onOpenThread: (threadId: ThreadId) => void;
+  readonly onOpenThread: (
+    threadId: ThreadId,
+    environmentId?: EnvironmentId,
+    intent?: SideThreadOpenIntent,
+  ) => void;
   readonly event?: {
     readonly status: OrchestrationV2TurnItem["status"] | null;
     readonly label: string;
@@ -458,8 +472,15 @@ function SubagentTimelineLink(props: {
   const threadId = props.threadId;
   // A task in a linked environment opens there, or read-only through this one.
   const remoteOpener = useLinkedThreadOpener(props.parentRef, remote, props.title);
-  const open =
-    threadId !== null ? () => props.onOpenThread(threadId) : (remoteOpener?.open ?? null);
+  const trigger = useSideThreadTrigger();
+  const canOpen = use(SideThreadsOpenContext);
+  const open = !canOpen
+    ? null
+    : threadId !== null
+      ? (intent: SideThreadOpenIntent) => props.onOpenThread(threadId, undefined, intent)
+      : (remoteOpener?.open ?? null);
+  // A task on a connected linked environment opens there, on the main screen only.
+  const panel = threadId !== null || remoteOpener?.mode === "linked";
   const liveStatus = agent?.status ?? props.status;
   const status = props.event ? props.event.status : liveStatus;
   const statusLabel = props.event?.label ?? m(subagentStatusVisual(liveStatus).label);
@@ -551,7 +572,7 @@ function SubagentTimelineLink(props: {
               data-v2-item-type="subagent"
               aria-label={gt("Open {title}", { title: props.title })}
               aria-description={statusLabel}
-              onClick={open}
+              {...trigger(open, { panel })}
               className={cn(
                 className,
                 "cursor-pointer transition-colors hover:bg-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",

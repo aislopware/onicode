@@ -3,6 +3,8 @@ import {
   type SubagentWorkflowGroup,
   type RuntimeSubagent,
 } from "@onicode/client-runtime/state/subagentRuntime";
+import type { SideThreadOpenIntent } from "@onicode/client-runtime/side-thread";
+import { useSideThreadTrigger } from "../../hooks/useSideThreadTrigger";
 import type {
   EnvironmentId,
   ProviderDriverKind,
@@ -80,9 +82,10 @@ function WorkflowMemberRow({
   providers: ReadonlyArray<ServerProvider> | undefined;
   providerEntries: ReadonlyArray<ProviderInstanceEntry>;
   driver: ProviderDriverKind | undefined;
-  onOpen: (threadId: string) => void;
+  onOpen: (threadId: string, intent: SideThreadOpenIntent) => void;
 }) {
   const gt = useGT();
+  const trigger = useSideThreadTrigger();
   const threadId = member.childThreadId;
   const canOpen = threadId !== null;
   return (
@@ -95,7 +98,7 @@ function WorkflowMemberRow({
               part="row"
               aria-label={gt("Open {title} chat", { title: member.title })}
               disabled={!canOpen}
-              onClick={() => canOpen && onOpen(threadId)}
+              {...(canOpen ? trigger((intent) => onOpen(threadId, intent)) : {})}
             />
           }
         >
@@ -156,7 +159,7 @@ export function ThreadLineageWorkflowRow({
   readonly providers: ReadonlyArray<ServerProvider> | undefined;
   readonly providerEntries: ReadonlyArray<ProviderInstanceEntry>;
   readonly driver: ProviderDriverKind | undefined;
-  readonly onOpenThread: (threadId: string) => void;
+  readonly onOpenThread: (threadId: string, intent: SideThreadOpenIntent) => void;
   readonly onStop?: (() => void) | undefined;
   readonly stopping: boolean;
   readonly stopDisabled: boolean;

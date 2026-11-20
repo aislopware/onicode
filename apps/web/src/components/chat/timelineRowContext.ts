@@ -1,4 +1,5 @@
 import type { ToolCallDiffTarget } from "../../diffPanelStore";
+import type { SideThreadOpenIntent } from "@onicode/client-runtime/side-thread";
 import type {
   ProviderApprovalDecision,
   ResponseContextRecord,
@@ -78,6 +79,8 @@ export interface TimelineRowSharedState {
   onOpenThread: (
     threadId: OrchestrationV2TurnItem["threadId"],
     environmentId?: EnvironmentId,
+    /** How the click asked to open a subagent or side chat; a plain click when absent. */
+    intent?: SideThreadOpenIntent,
   ) => void;
   /**
    * Draws a published HTML visual. Unset, the row loads it from the environment; a linked
