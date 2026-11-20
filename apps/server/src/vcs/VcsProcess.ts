@@ -209,10 +209,31 @@ const WRITEOUT_ONLY_FSYNC_ARG = "core.fsyncMethod=writeout-only";
 const canRetryFullFsync = (stderr: string) =>
   /fsync error on [^\r\n]+: operation not supported\r?$/im.test(stderr) ||
   /cannot update ref [^\r\n]+: couldn't write '[^\r\n]+\.lock'\r?$/im.test(stderr);
+const gitSubcommand = (args: ReadonlyArray<string>) => {
+  for (let index = 0; index < args.length; index++) {
+    const arg = args[index];
+    if (arg === "-c") index++;
+    else if (arg !== undefined && !arg.startsWith("-")) return arg;
+  }
+  return undefined;
+};
 // Batch fsync moves its temporary objects away before Git renames a large file's bulk-checkin
 // pack, so an add that streams one and then runs a clean filter fails (Git 2.54 and 2.56).
-const isBatchFsyncPackRename = (stderr: string) =>
-  /^fatal: unable to rename temporary file to '[^\r\n]*pack-[0-9a-f]+\.pack'\r?$/im.test(stderr);
+const isBatchFsyncPackRename = (args: ReadonlyArray<string>, stderr: string) =>
+  args.includes(BATCH_FSYNC_ARG) &&
+  gitSubcommand(args) === "add" &&
+  /^fatal: unable to rename temporary file to '[^\r\n]*\/pack\/pack-[0-9a-f]+\.pack'\r?$/im.test(
+    stderr,
+  );
+const fsyncRetryArgs = (args: ReadonlyArray<string>, stderr: string) =>
+  isBatchFsyncPackRename(args, stderr)
+    ? args.map((arg) => (arg === BATCH_FSYNC_ARG ? FULL_FSYNC_ARG : arg))
+    : (args.includes(FULL_FSYNC_ARG) || args.includes(BATCH_FSYNC_ARG)) &&
+        canRetryFullFsync(stderr)
+      ? args.map((arg) =>
+          arg === FULL_FSYNC_ARG || arg === BATCH_FSYNC_ARG ? WRITEOUT_ONLY_FSYNC_ARG : arg,
+        )
+      : undefined;
 
 export const make = Effect.gen(function* () {
   const processRunner = yield* ProcessRunner.ProcessRunner;
@@ -320,26 +341,18 @@ export const make = Effect.gen(function* () {
 
     let result = yield* spawn(input, baseError);
 
-    if (
+    const retriesFsync =
       hostPlatform === "darwin" &&
       input.operation === CHECKPOINT_CAPTURE_OPERATION &&
       !input.allowNonZeroExit &&
-      result.code !== null &&
-      result.code !== 0 &&
-      input.command === "git" &&
-      (((input.args.includes(FULL_FSYNC_ARG) || input.args.includes(BATCH_FSYNC_ARG)) &&
-        canRetryFullFsync(result.stderr)) ||
-        (input.args.includes(BATCH_FSYNC_ARG) && isBatchFsyncPackRename(result.stderr)))
-    ) {
-      result = yield* spawn(
-        {
-          ...input,
-          args: input.args.map((arg) =>
-            arg === FULL_FSYNC_ARG || arg === BATCH_FSYNC_ARG ? WRITEOUT_ONLY_FSYNC_ARG : arg,
-          ),
-        },
-        baseError,
-      );
+      input.command === "git";
+    // A batch pack-rename failure retries with full fsync, which can then hit an unsupported flush.
+    let args = input.args;
+    while (retriesFsync && result.code !== null && result.code !== 0) {
+      const retryArgs = fsyncRetryArgs(args, result.stderr);
+      if (retryArgs === undefined) break;
+      args = retryArgs;
+      result = yield* spawn({ ...input, args }, baseError);
     }
 
     if (result.code === null) {
