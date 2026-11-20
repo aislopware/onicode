@@ -8,7 +8,9 @@ import {
 } from "@onicode/client-runtime/state/issues";
 import { useAtomValue } from "@effect/atom-react";
 import { issueLinkWorkspace } from "@onicode/client-runtime/issue-links";
+import { selectEnvironmentQueryData } from "@onicode/client-runtime/state/runtime";
 import type { EnvironmentId, IssueRef, IssueSummary, ThreadIssueLink } from "@onicode/contracts";
+import { Atom } from "effect/reactivity";
 
 import { connectionAtomRuntime } from "../connection/runtime";
 import { appAtomRegistry } from "../rpc/atomRegistry";
@@ -60,26 +62,70 @@ export function useIssueSummary(
  * A linked issue's live row, read in the workspace its link kept, or for older links the one
  * its URL names. A URL can name a renamed workspace's old key, which costs the server a lookup.
  */
+/** A link's reference, read in the workspace it kept, or for older links the one its URL names. */
+function linkedIssueRef(link: ThreadIssueLink): IssueRef {
+  const workspace = link.workspace ?? issueLinkWorkspace(link.url);
+  return {
+    projectId: link.projectId,
+    tracker: link.tracker,
+    host: link.host,
+    scope: link.scope,
+    key: link.key,
+    ...(workspace === undefined ? {} : { workspace }),
+  };
+}
+
+/**
+ * A linked issue's live row. A URL can name a renamed workspace's old key, which costs the
+ * server a lookup.
+ */
 export function useLinkedIssueSummary(
   environmentId: EnvironmentId,
   link: ThreadIssueLink | undefined,
   mountScope?: IssueReadScope,
 ) {
-  const workspace = link?.workspace ?? issueLinkWorkspace(link?.url);
   return useIssueSummary(
     environmentId,
-    link === undefined
-      ? null
-      : {
-          projectId: link.projectId,
-          tracker: link.tracker,
-          host: link.host,
-          scope: link.scope,
-          key: link.key,
-          ...(workspace === undefined ? {} : { workspace }),
-        },
+    link === undefined ? null : linkedIssueRef(link),
     mountScope,
   );
+}
+
+const emptySidebarIssue = Atom.make<IssueSummary | null>(null);
+
+/** The summary a sidebar row shows for its linked issues: an open one first, else a closed one. */
+export function useSidebarLinkedIssue(
+  environmentId: EnvironmentId,
+  links: ReadonlyArray<ThreadIssueLink> | undefined,
+) {
+  const configs = useServerConfigs();
+  const capabilities = configs.get(environmentId)?.environment.capabilities;
+  const aggregate =
+    links?.length && capabilities?.issues === true
+      ? Atom.make((get): IssueSummary | null => {
+          const summaries = links.map((link) => {
+            const target = { environmentId, input: linkedIssueRef(link) };
+            return selectEnvironmentQueryData(
+              get(
+                capabilities.issueSummaries === true
+                  ? issueEnvironment.summary(target, "sidebar")
+                  : issueEnvironment.detail(target, "sidebar"),
+              ),
+            );
+          });
+          const open = summaries.find((summary) => summary?.state.category === "open");
+          if (open) return open;
+          if (summaries.includes(null)) return null;
+          return (
+            summaries.find(
+              (summary) => summary?.state.closeReason && summary.state.closeReason !== "completed",
+            ) ??
+            summaries[0] ??
+            null
+          );
+        })
+      : emptySidebarIssue;
+  return useAtomValue(aggregate);
 }
 
 const mergedIssueLists = createMergedIssueListAtoms(issueEnvironment, formatEnvironmentQueryError);
