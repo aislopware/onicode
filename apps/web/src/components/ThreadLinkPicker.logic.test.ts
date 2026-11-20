@@ -45,7 +45,7 @@ describe("threadLinkCandidates", () => {
 describe("threadLinkMatcher", () => {
   it.each([
     ["cafe", "Café planning", undefined],
-    ["café", "Café planning", undefined],
+    ["café", "Cafe\u0301 planning", undefined],
     ["ışık", "Işık planı", "tr-TR"],
   ])("matches %s against %s", (query, text, locale) => {
     expect(threadLinkMatcher(query, locale)(text)).toBe(true);
