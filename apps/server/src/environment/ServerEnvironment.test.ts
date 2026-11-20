@@ -156,6 +156,26 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("ServerEnvironmen
         });
       }),
   );
+  it.effect("names the environment and its machine from the overrides", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const baseDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "oni-server-environment-override-test-",
+      });
+      const descriptor = yield* Effect.gen(function* () {
+        const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;
+        return yield* serverEnvironment.getDescriptor;
+      }).pipe(
+        Effect.provide(layerServerEnvironment(baseDir)),
+        Effect.provideService(HostProcess.Environment, {
+          ONICODE_ENVIRONMENT_LABEL: " MacBook ",
+          ONICODE_ENVIRONMENT_MACHINE_KIND: "laptop",
+        }),
+      );
+      expect(descriptor.label).toBe("MacBook");
+      expect(descriptor.platform.machine).toBe("laptop");
+    }),
+  );
   it.effect.each([
     { platform: "darwin", architecture: "arm64", supported: true },
     { platform: "linux", architecture: "x64", supported: true },

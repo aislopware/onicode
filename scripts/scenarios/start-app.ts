@@ -50,6 +50,12 @@ const REAL_PROVIDERS = [
  */
 export const ENVIRONMENT_LABEL = "Scenario";
 
+/** Captures must not depend on, or show, the machine that made them. */
+export const SCENARIO_MACHINE_ENV = {
+  ONICODE_ENVIRONMENT_LABEL: ENVIRONMENT_LABEL,
+  ONICODE_ENVIRONMENT_MACHINE_KIND: "laptop",
+};
+
 const encodeSettings = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 const encodeDesktopStack = Schema.encodeEffect(Schema.fromJsonString(DesktopStack));
 
@@ -249,7 +255,7 @@ const startApp = Effect.fn("startApp")(function* (input: {
     ...hostEnvironment,
     PATH: `${path.join(input.home, "bin")}:${hostEnvironment.PATH ?? ""}`,
     ONICODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD: "0",
-    ONICODE_ENVIRONMENT_LABEL: ENVIRONMENT_LABEL,
+    ...SCENARIO_MACHINE_ENV,
   };
   const devRunner = (mode: string, args: ReadonlyArray<string>) => [
     "scripts/dev-runner.ts",
