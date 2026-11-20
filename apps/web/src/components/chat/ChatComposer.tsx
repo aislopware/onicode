@@ -16,6 +16,7 @@ import { usePrimaryEnvironmentId } from "../../state/environments";
 import { useRightPanelStore } from "~/rightPanelStore";
 import { importPastedComposerText, readPastedComposerContext } from "../composerInlineTokenPaste";
 import {
+  countMovedQuestionImports,
   questionAttachmentDraftId,
   trackOpenQuestionAttachmentDraft,
   useQuestionAttachmentPreparation,
@@ -1316,11 +1317,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     setComposerDraftPrompt(composerDraftTarget, nextPrompt);
   };
 
-  const addComposerImage = (image: ComposerImageAttachment) =>
-    addComposerDraftImages(attachmentDraftTarget, [image]);
-
-  const addComposerImagesToDraft = (images: ComposerImageAttachment[]) =>
-    addComposerDraftImages(attachmentDraftTarget, images);
+  const addComposerImagesToDraft = (
+    images: ComposerImageAttachment[],
+    options: { readonly onCapacityExceeded: (image: ComposerImageAttachment) => void },
+  ) => addComposerDraftImages(attachmentDraftTarget, images, options);
 
   const addComposerFilesToDraft = (files: ComposerFileAttachment[]) =>
     addComposerDraftFiles(attachmentDraftTarget, files, {
@@ -2282,7 +2282,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       toastManager.add({
         type: "info",
         title: gt("Still bringing attached context into this message."),
-        description: gt("Send again once its chip resolves."),
+        // An attachment that followed a closed question here has no chip.
+        description:
+          countMovedQuestionImports(attachmentTargetKey) > 0
+            ? gt("Send again when it's ready.")
+            : gt("Send again once its chip resolves."),
       });
       return false;
     }
@@ -2787,7 +2791,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       isRevertingCheckpointRef,
       setThreadError,
       countReservedAttachments,
-      addComposerImage,
       addComposerImagesToDraft,
       addComposerFilesToDraft,
       removeComposerImageFromDraft,

@@ -36,6 +36,7 @@ import { compressImageForStash } from "../../lib/imageCompression";
 import { formatInlineContextReference } from "~/lib/composerContextReferences";
 import { isCommandPaletteOpen } from "../../commandPaletteBus";
 import { pendingDraftWork } from "./pendingDraftWork";
+import { countMovedQuestionImports } from "../../questionAttachments";
 import { countPreparingComposerImages } from "./preparingComposerImages";
 import {
   isResponseContextRecord,
@@ -508,10 +509,13 @@ export function useComposerStash(input: {
     // Stashing clears the draft. A pasted attachment still downloading would then land in the
     // emptied composer instead of travelling with the entry it belongs to.
     if (pendingDraftWork.has(attachmentTargetKey)) {
+      // An attachment that followed a closed question here has no chip to wait for.
       toastManager.add({
         type: "info",
         title: m(msg("Still bringing attached context into this message.")),
-        description: m(msg("Stash again once its chip resolves.")),
+        ...(countMovedQuestionImports(attachmentTargetKey) > 0
+          ? {}
+          : { description: m(msg("Stash again once its chip resolves.")) }),
       });
       return;
     }

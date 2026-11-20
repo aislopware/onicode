@@ -61,6 +61,7 @@ import {
 } from "../../state/use-composer-drafts";
 import type { ComposerDocumentAttachment } from "../../lib/composerContext";
 import { appAtomRegistry } from "../../state/atom-registry";
+import { nativeImagePasteKey, nativeImagePastePending } from "../../state/composerDraftOperations";
 import {
   recallComposerPrompt,
   useComposerPromptRecallActive,
@@ -120,7 +121,7 @@ import {
   resolveComposerSendPresentation,
   type ComposerSendPresentation,
 } from "./composerSendPresentation";
-import { nativeImagePasteKey, useSubmitAfterNativeImages } from "./useSubmitAfterNativeImages";
+import { useSubmitAfterNativeImages } from "./useSubmitAfterNativeImages";
 import { ComposerCommandPopover } from "./ComposerCommandPopover";
 import { ComposerPopoverAnchor } from "./ComposerPopoverAnchor";
 import { ComposerQueuedEditAttachments } from "./ComposerQueuedEdit";
@@ -304,8 +305,6 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
   const inputRef = props.editorRef ?? fallbackInputRef;
   const [isFocused, setIsFocused] = useState(false);
   const pendingPastedTextAttachmentCountRef = useRef(0);
-  // Keyed like the image hold, so a paste aborted with its draft does not hold up the one shown now.
-  const pendingNativeImagePastesRef = useRef(new Map<string, number>());
   const [pendingPastedTextAttachmentCount, setPendingPastedTextAttachmentCount] = useState(0);
   const settingsRoutePresentedRef = useRef(false);
   const settingsSheetPresentation = useThreadSettingsSheetPresentation({
@@ -636,7 +635,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
       const draft = getComposerDraftSnapshot(composerDraftKey);
       return (
         pendingPastedTextAttachmentCountRef.current === 0 &&
-        !pendingNativeImagePastesRef.current.has(nativeImagePasteKey(composerDraftKey)) &&
+        !nativeImagePastePending(nativeImagePasteKey(composerDraftKey)) &&
         draft.text === draftAtSend.text &&
         draft.attachments.length === draftAtSend.attachments.length &&
         draft.attachments.every(
@@ -1003,14 +1002,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
                   onSelectionChange={composerMenu.onSelectionChange}
                   onPasteImages={(uris) => {
                     if (isSubmissionLocked) return;
-                    const pastes = pendingNativeImagePastesRef.current;
-                    const key = nativeImagePasteKey(composerDraftKey);
-                    pastes.set(key, (pastes.get(key) ?? 0) + 1);
-                    void nativeImageSubmit.pasteImages(uris).finally(() => {
-                      const left = (pastes.get(key) ?? 1) - 1;
-                      if (left > 0) pastes.set(key, left);
-                      else pastes.delete(key);
-                    });
+                    void nativeImageSubmit.pasteImages(uris);
                   }}
                   onPasteText={(paste) => {
                     if (isSubmissionLocked) return;

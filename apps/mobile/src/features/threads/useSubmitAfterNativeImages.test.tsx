@@ -6,6 +6,7 @@ import { expect, it, vi } from "vite-plus/test";
 import {
   abortComposerDraftOperations,
   startComposerDraftOperation,
+  startNativeImagePaste,
 } from "../../state/composerDraftOperations";
 import type { ComposerDraftSendSettings } from "../../state/use-composer-drafts";
 import { useSubmitAfterNativeImages } from "./useSubmitAfterNativeImages";
@@ -206,6 +207,14 @@ it("waits for a paste that still lands in its draft after the draft was cleared"
   expect(state.queue.deferSend()).toBe(true);
   await state.finish(true);
   await paste;
+  expect(state.onSubmit).toHaveBeenCalledOnce();
+});
+
+it("waits for an image this composer did not paste, such as a closed question's", async () => {
+  using state = setup();
+  const finish = startNativeImagePaste("draft");
+  expect(state.queue.deferSend()).toBe(true);
+  await act(async () => finish(true));
   expect(state.onSubmit).toHaveBeenCalledOnce();
 });
 

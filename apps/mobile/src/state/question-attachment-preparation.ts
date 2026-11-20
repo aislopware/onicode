@@ -3,7 +3,7 @@ import {
   pickComposerMedia,
   type DraftComposerAttachment,
 } from "../lib/composerImages";
-import { startComposerDraftOperation } from "./composerDraftOperations";
+import { startComposerDraftOperation, startNativeImagePaste } from "./composerDraftOperations";
 import { changeQuestionAttachmentPreparation } from "./question-attachments";
 import {
   appendComposerDraftAttachments,
@@ -17,9 +17,13 @@ const imagePreparations = new Map<string, Set<(threadKey: string | null) => void
 export function startQuestionImagePreparation(key: string, waitingForSelection = false) {
   let destination: string | null = key;
   let threadOperation: ReturnType<typeof startComposerDraftOperation> | undefined;
+  let finishThreadPaste: ((success: boolean) => void) | undefined;
+  let landedInThread = false;
   const resolve = (threadKey: string | null) => {
     destination = waitingForSelection ? null : threadKey;
-    if (destination !== null) threadOperation = startComposerDraftOperation(destination);
+    if (destination === null) return;
+    threadOperation = startComposerDraftOperation(destination);
+    finishThreadPaste = startNativeImagePaste(destination);
   };
   const pending = imagePreparations.get(key) ?? new Set();
   pending.add(resolve);
@@ -46,10 +50,12 @@ export function startQuestionImagePreparation(key: string, waitingForSelection =
         target === key
           ? scope.append(result.attachments)
           : appendUnsentQuestionAttachments(target, result.attachments);
+      landedInThread = !result.error && rejected === 0 && result.attachments.length > 0;
       return { error: result.error, rejected };
     },
     finish: () => {
       threadOperation?.finish();
+      finishThreadPaste?.(landedInThread);
       if (imagePreparations.get(key) !== pending || !pending.delete(resolve)) return;
       if (pending.size === 0) imagePreparations.delete(key);
       changeQuestionAttachmentPreparation(key, -1);

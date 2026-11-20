@@ -83,8 +83,10 @@ export function useComposerAttachmentIntake(input: {
   readonly isRevertingCheckpointRef: RefObject<boolean>;
   readonly setThreadError: ChatComposerProps["setThreadError"];
   readonly countReservedAttachments: () => number;
-  readonly addComposerImage: (image: ComposerImageAttachment) => string[];
-  readonly addComposerImagesToDraft: (images: ComposerImageAttachment[]) => string[];
+  readonly addComposerImagesToDraft: (
+    images: ComposerImageAttachment[],
+    options: { readonly onCapacityExceeded: (image: ComposerImageAttachment) => void },
+  ) => string[];
   readonly addComposerFilesToDraft: (files: ComposerFileAttachment[]) => string[];
   readonly removeComposerImageFromDraft: (imageId: string) => void;
   readonly insertAttachmentReferences: (
@@ -111,7 +113,6 @@ export function useComposerAttachmentIntake(input: {
     isRevertingCheckpointRef,
     setThreadError,
     countReservedAttachments,
-    addComposerImage,
     addComposerImagesToDraft,
     addComposerFilesToDraft,
     removeComposerImageFromDraft,
@@ -336,25 +337,23 @@ export function useComposerAttachmentIntake(input: {
         previewUrl: URL.createObjectURL(file),
         file,
       }));
-    const unrestoredImageNames: string[] = [];
+    // A recovered image can finish first and take the slot this one reserved.
+    const rejectedImageNames: string[] = [];
+    const capacityOptions = {
+      onCapacityExceeded: (image: ComposerImageAttachment) => rejectedImageNames.push(image.name),
+    };
     const draftStore = useComposerDraftStore.getState();
     const storedImageIds = new Set(
       movedThread
-        ? draftStore.addImages(movedThread, nextImages, {
-            onCapacityExceeded: (image) => unrestoredImageNames.push(image.name),
-          })
-        : nextImages.length === 1 && nextImages[0]
-          ? addComposerImage(nextImages[0])
-          : nextImages.length > 1
-            ? addComposerImagesToDraft(nextImages)
-            : [],
+        ? draftStore.addImages(movedThread, nextImages, capacityOptions)
+        : addComposerImagesToDraft(nextImages, capacityOptions),
     );
-    // Keep the placeholders until the draft decides whether the recovered images fit,
+    // Keep the placeholders until the draft decides whether the images fit,
     // so a held send can be cancelled before the last placeholder disappears.
     const stillPreparingIds = removePreparingComposerImages(
       completionTargetKey,
       new Set(preparingImages.map((image) => image.id)),
-      { cancelSubmission: compressionErrors.size > 0 || unrestoredImageNames.length > 0 },
+      { cancelSubmission: compressionErrors.size > 0 || rejectedImageNames.length > 0 },
     );
     if (questionAttachmentTarget && !movedThread)
       changeQuestionAttachmentPreparation(questionAttachmentTarget, -stillPreparingIds.size);
@@ -379,14 +378,20 @@ export function useComposerAttachmentIntake(input: {
       .filter(([id]) => stillPreparingIds.has(id))
       .map(([, message]) => message)
       .slice(-1);
-    if (unrestoredImageNames.length > 0) {
+    if (rejectedImageNames.length > 0) {
       completionErrors.push(
-        m(
-          msg("{names} could not be restored: the composer is at its {limit}-attachment limit.", {
-            names: unrestoredImageNames.join(", "),
-            limit: PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
-          }),
-        ),
+        movedThread
+          ? m(
+              msg(
+                "{names} could not be restored: the composer is at its {limit}-attachment limit.",
+                { names: rejectedImageNames.join(", "), limit: PROVIDER_SEND_TURN_MAX_ATTACHMENTS },
+              ),
+            )
+          : m(
+              msg("You can attach up to {max} files per message.", {
+                max: PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
+              }),
+            ),
       );
     }
     if (completionErrors.length > 0) {

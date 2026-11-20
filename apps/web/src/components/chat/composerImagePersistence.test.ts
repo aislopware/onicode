@@ -89,8 +89,14 @@ describe("serializeComposerImages", () => {
     );
 
     const serialized = serializeComposerImages([large, small], []);
+    // A second serialization of the same image while its read is pending shares that read.
+    const concurrent = serializeComposerImages([large], []);
     finishLargeRead("data:image/png;base64,bGFyZ2U=");
     expect((await serialized).map(({ id }) => id)).toEqual(["large", "small"]);
+    expect((await concurrent).map(({ dataUrl }) => dataUrl)).toEqual([
+      "data:image/png;base64,bGFyZ2U=",
+    ]);
+    expect(readFileAsDataUrl).toHaveBeenCalledTimes(2);
   });
 
   it("omits failed uncached reads while keeping successfully serialized images", async () => {

@@ -78,7 +78,8 @@ const compress = async (source: File) => {
 const visiblePreparing = (targetKey: string) =>
   getPreparingComposerImages(targetKey).filter((image) => !image.hidden);
 
-it.each(["available", "full", "duplicate"] as const)(
+// "contended": the thread's own image, still compressing, loses the last slot to the recovered one.
+it.each(["available", "full", "duplicate", "contended"] as const)(
   "finishes a cancelled question's screenshot and handles a waiting send (%s)",
   async (capacity) => {
     const store = useComposerDraftStore.getState();
@@ -92,7 +93,7 @@ it.each(["available", "full", "duplicate"] as const)(
       store.addFiles(
         target,
         Array.from(
-          { length: PROVIDER_SEND_TURN_MAX_ATTACHMENTS - (capacity === "duplicate" ? 1 : 0) },
+          { length: PROVIDER_SEND_TURN_MAX_ATTACHMENTS - (capacity === "full" ? 0 : 1) },
           (_, index) => {
             const name = `notes-${index}.txt`;
             return {
@@ -123,45 +124,55 @@ it.each(["available", "full", "duplicate"] as const)(
       ]);
     }
     const resumeCompression = deferred<void>();
+    const resumeThreadCompression = deferred<void>();
     compression.prepare.mockReset().mockImplementation(async (file: File) => {
-      await resumeCompression.promise;
+      await (file.name === "thread.png" ? resumeThreadCompression : resumeCompression).promise;
       return compress(file);
     });
     const setThreadError = vi.fn();
     let intake!: Intake;
+    let threadIntake!: Intake;
     let holdSend!: ReturnType<typeof useSubmitAfterPreparingImages>;
     const send = vi.fn();
+    const intakeInput = (draft: typeof question | typeof target): IntakeInput => ({
+      activeThreadId: threadId,
+      activePendingProgress: null,
+      activePendingIsResponding: false,
+      pendingUserInputs: [],
+      supportsQuestionAttachments: true,
+      isLiteralPendingAnswer: true,
+      projectSelectionRequired: false,
+      questionAttachmentTarget: draft === question ? question : null,
+      attachmentTargetKey: composerTargetKey(draft),
+      fileStagingLimit: null,
+      promptRef: { current: "" },
+      composerImagesRef: { current: [] },
+      composerFilesRef: { current: [] },
+      composerEditorRef: { current: null },
+      isRevertingCheckpointRef: { current: false },
+      setThreadError,
+      countReservedAttachments: () => 0,
+      addComposerImagesToDraft: (images, options) => store.addImages(draft, images, options),
+      addComposerFilesToDraft: () => [],
+      removeComposerImageFromDraft: () => {},
+      insertAttachmentReferences: () => false,
+    });
     await using _screen = await render(
       <>
         <Harness
-          input={{
-            activeThreadId: threadId,
-            activePendingProgress: null,
-            activePendingIsResponding: false,
-            pendingUserInputs: [],
-            supportsQuestionAttachments: true,
-            isLiteralPendingAnswer: true,
-            projectSelectionRequired: false,
-            questionAttachmentTarget: question,
-            attachmentTargetKey: question,
-            fileStagingLimit: null,
-            promptRef: { current: "" },
-            composerImagesRef: { current: [] },
-            composerFilesRef: { current: [] },
-            composerEditorRef: { current: null },
-            isRevertingCheckpointRef: { current: false },
-            setThreadError,
-            countReservedAttachments: () => 0,
-            addComposerImage: (image) => store.addImages(question, [image]),
-            addComposerImagesToDraft: (images) => store.addImages(question, images),
-            addComposerFilesToDraft: () => [],
-            removeComposerImageFromDraft: () => {},
-            insertAttachmentReferences: () => false,
-          }}
+          input={intakeInput(question)}
           ready={(value) => {
             intake = value;
           }}
         />
+        {capacity === "contended" && (
+          <Harness
+            input={intakeInput(target)}
+            ready={(value) => {
+              threadIntake = value;
+            }}
+          />
+        )}
         {capacity !== "available" && (
           <SendProbe
             target={composerTargetKey(target)}
@@ -172,6 +183,12 @@ it.each(["available", "full", "duplicate"] as const)(
         )}
       </>,
     );
+    const threadAttaching =
+      capacity === "contended"
+        ? threadIntake.addComposerAttachments([
+            new File([new Uint8Array(100).fill(1)], "thread.png", { type: "image/png" }),
+          ])
+        : undefined;
     const attaching = intake.addComposerAttachments([pastedImage()]);
     makeThreadRequestsResolvedAnnouncer(
       environmentId,
@@ -184,6 +201,10 @@ it.each(["available", "full", "duplicate"] as const)(
       resumeCompression.resolve();
       await attaching;
     });
+    await act(async () => {
+      resumeThreadCompression.resolve();
+      await threadAttaching;
+    });
 
     if (capacity === "full") {
       expect(send).not.toHaveBeenCalled();
@@ -191,6 +212,13 @@ it.each(["available", "full", "duplicate"] as const)(
       expect(setThreadError).toHaveBeenLastCalledWith(
         threadId,
         expect.stringContaining("image.png could not be restored"),
+      );
+    } else if (capacity === "contended") {
+      expect(send).not.toHaveBeenCalled();
+      expect(store.getComposerDraft(target)?.images).toHaveLength(1);
+      expect(setThreadError).toHaveBeenLastCalledWith(
+        threadId,
+        expect.stringContaining("You can attach up to"),
       );
     } else if (capacity === "duplicate") {
       expect(send).toHaveBeenCalledOnce();
@@ -275,7 +303,6 @@ it("prepares a repeated paste without a tile, and still keeps a different image"
     setThreadError: () => {},
     countReservedAttachments: () =>
       composerImagesRef.current.length + getPreparingComposerImages(target).length,
-    addComposerImage: (image) => addImages([image]),
     addComposerImagesToDraft: addImages,
     addComposerFilesToDraft: () => [],
     removeComposerImageFromDraft: () => {},
@@ -359,8 +386,7 @@ it.each(["thread", "session"] as const)(
       isRevertingCheckpointRef: { current: false },
       setThreadError: () => {},
       countReservedAttachments: () => getPreparingComposerImages(targetKey).length,
-      addComposerImage: (image) => store.addImages(target, [image]),
-      addComposerImagesToDraft: (images) => store.addImages(target, images),
+      addComposerImagesToDraft: (images, options) => store.addImages(target, images, options),
       addComposerFilesToDraft: () => [],
       removeComposerImageFromDraft: (id) => store.removeImage(target, id),
       insertAttachmentReferences: () => false,
