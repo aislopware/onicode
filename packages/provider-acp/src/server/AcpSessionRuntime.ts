@@ -1405,6 +1405,14 @@ export const make = Effect.fn("AcpSessionRuntime.make")(function* (
     logRequest({ method, payload, status: "started" }).pipe(
       Effect.flatMap(() =>
         (options.onStderr ? Effect.raceFirst(effect, Deferred.await(stderrFailure)) : effect).pipe(
+          // A request that reaches the client after the agent exited is interrupted by its shutdown.
+          Effect.catchCauseIf(Cause.hasInterruptsOnly, (cause) =>
+            Ref.get(terminationErrorRef).pipe(
+              Effect.flatMap(
+                Option.match({ onNone: () => Effect.failCause(cause), onSome: Effect.fail }),
+              ),
+            ),
+          ),
           Effect.catch((error) =>
             enrichProcessExitWithStderr(error).pipe(Effect.flatMap(Effect.fail)),
           ),
