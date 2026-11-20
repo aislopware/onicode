@@ -228,8 +228,7 @@ const isBatchFsyncPackRename = (args: ReadonlyArray<string>, stderr: string) =>
 const fsyncRetryArgs = (args: ReadonlyArray<string>, stderr: string) =>
   isBatchFsyncPackRename(args, stderr)
     ? args.map((arg) => (arg === BATCH_FSYNC_ARG ? FULL_FSYNC_ARG : arg))
-    : (args.includes(FULL_FSYNC_ARG) || args.includes(BATCH_FSYNC_ARG)) &&
-        canRetryFullFsync(stderr)
+    : (args.includes(FULL_FSYNC_ARG) || args.includes(BATCH_FSYNC_ARG)) && canRetryFullFsync(stderr)
       ? args.map((arg) =>
           arg === FULL_FSYNC_ARG || arg === BATCH_FSYNC_ARG ? WRITEOUT_ONLY_FSYNC_ARG : arg,
         )
@@ -348,8 +347,8 @@ export const make = Effect.gen(function* () {
       input.command === "git";
     // A batch pack-rename failure retries with full fsync, which can then hit an unsupported flush.
     let args = input.args;
-    while (retriesFsync && result.code !== null && result.code !== 0) {
-      const retryArgs = fsyncRetryArgs(args, result.stderr);
+    while (result.code !== null && result.code !== 0) {
+      const retryArgs = retriesFsync ? fsyncRetryArgs(args, result.stderr) : undefined;
       if (retryArgs === undefined) break;
       args = retryArgs;
       result = yield* spawn({ ...input, args }, baseError);

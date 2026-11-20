@@ -68,7 +68,7 @@ const ProjectListTool = Tool.make("oni_project_list", {
   .annotate(Tool.Destructive, false);
 const ProjectReadTool = Tool.make("oni_project_read", {
   ...shared,
-  description: "Read one project: workspace and the scripts its threads get.",
+  description: "Read one project: workspace and its scripts.",
   parameters: Schema.Struct({
     environmentId: OrchestratorMcpEnvironmentTarget,
     projectId: ProjectId,
