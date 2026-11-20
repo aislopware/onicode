@@ -2807,3 +2807,4 @@ cb391b5b57	skip	relay AgentAwarenessRelay only, removed in Onicode; Onicode's pu
 944d1820e2	take	taken as is
 9f6f5540cf	take	taken as is
 dcf158c591	take	adapted: dropped webhook/telemetry/T3 Connect parts; kept Onicode's per-URL preview runtime and mobile blocker model, folding the setting/policy into readEnvironmentSupportsPreviewTunnel, useLocalPreviewUrl and a new 'off' blocker
+5ee1c2f652	take	fix(server): accept Antigravity model IDs with thinking levels when delegating
