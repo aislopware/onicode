@@ -1212,16 +1212,23 @@ export function chatActionErrorMessage(error: unknown, resolve: MessageResolver 
   return thrownErrorMessage(error, resolve) ?? resolve(msg("An error occurred."));
 }
 
-/** A local copy of the runtime's error shares the runtime's key, so one dismissal covers both. */
-export function threadErrorIsServerRuntime(input: {
+/**
+ * A local copy of the runtime's error shares the runtime's key, so one dismissal covers both.
+ * Other local errors are keyed by when they were raised, so a repeat shows after a dismissal.
+ */
+export function threadErrorBannerSource(input: {
   readonly isServerThread: boolean;
-  readonly localServerError: string | null;
+  readonly localError: LocalThreadErrorEntry | undefined;
   readonly runtimeError: string | null;
-}): boolean {
-  return (
-    input.isServerThread &&
-    (input.localServerError === null || input.localServerError === input.runtimeError)
-  );
+  readonly runtimeSource: string | null;
+}): string | null {
+  const localMessage = input.localError?.message ?? null;
+  if (input.isServerThread && (localMessage === null || localMessage === input.runtimeError)) {
+    return input.runtimeSource;
+  }
+  return input.localError === undefined || localMessage === null
+    ? null
+    : `local@${input.localError.at}`;
 }
 
 export function releaseChatTimelineAnchor<T extends { readonly messageId: MessageId | null }>(
