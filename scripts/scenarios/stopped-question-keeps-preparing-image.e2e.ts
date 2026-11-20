@@ -83,46 +83,59 @@ test(
         });
       }).pipe(Effect.scoped),
     );
-    const { cli } = makeState(ONICODE_HOME);
-    const started = await runPromise(
-      cli(
-        [
-          "thread",
-          "start",
-          project,
-          "Ask for a screenshot.",
-          "--title",
-          "Screenshot question thread",
-          "--provider",
-          instanceId,
-          "--model",
-          "default",
-          "--wait",
-          "--json",
-        ],
-        [2],
-      ),
-    );
-    const { threadId } = JSON.parse(started.stdout) as { threadId: string };
-    await onicode.open({ threadId });
+    try {
+      const { cli } = makeState(ONICODE_HOME);
+      const started = await runPromise(
+        cli(
+          [
+            "thread",
+            "start",
+            project,
+            "Ask for a screenshot.",
+            "--title",
+            "Screenshot question thread",
+            "--provider",
+            instanceId,
+            "--model",
+            "default",
+            "--wait",
+            "--json",
+          ],
+          [2],
+        ),
+      );
+      const { threadId } = JSON.parse(started.stdout) as { threadId: string };
+      await onicode.open({ threadId });
 
-    const composer = browser.locator('[data-chat-composer-form="true"]');
-    const question = browser.locator(
-      '[data-chat-composer-form="true"] [data-pending-user-input-toggle]',
-    );
-    await question.waitFor({ timeout: 60_000 });
-    await composer.getByRole("textbox").fill("Here is the screenshot.");
-    await pasteWideScreenshot(browser);
-    await expectHeldImageCompressions(browser, 1);
-    await composer.getByRole("button", "Stop generation").tap();
-    await question.waitFor({ state: "hidden" });
+      const composer = browser.locator('[data-chat-composer-form="true"]');
+      const question = browser.locator(
+        '[data-chat-composer-form="true"] [data-pending-user-input-toggle]',
+      );
+      await question.waitFor({ timeout: 60_000 });
+      await composer.getByRole("textbox").fill("Here is the screenshot.");
+      await pasteWideScreenshot(browser);
+      await expectHeldImageCompressions(browser, 1);
+      await composer.getByRole("button", "Stop generation").tap();
+      await question.waitFor({ state: "hidden" });
 
-    await finishImageCompression(browser);
-    await app.screenshot("draft-after-stopping-question");
-    await expect(
-      browser.locator(
-        '[data-chat-composer-form="true"] button[aria-label="Preview screenshot.png"]:enabled',
-      ),
-    ).toBeVisible();
+      await finishImageCompression(browser);
+      await app.screenshot("draft-after-stopping-question");
+      await expect(
+        browser.locator(
+          '[data-chat-composer-form="true"] button[aria-label="Preview screenshot.png"]:enabled',
+        ),
+      ).toBeVisible();
+    } finally {
+      // The server outlives the test; a second enabled provider breaks later scenarios.
+      await runPromise(
+        Effect.gen(function* () {
+          const client = yield* rpcClient(ONICODE_HOME, app.baseUrl ?? "");
+          yield* client["server.updateSettings"]({
+            patch: {},
+            providerInstanceMutation: { operation: "remove", instanceId },
+          });
+        }).pipe(Effect.scoped, Effect.ignore),
+      );
+    }
   },
 );
