@@ -2816,3 +2816,4 @@ dcf158c591	take	adapted: dropped webhook/telemetry/T3 Connect parts; kept Onicod
 9fde959ac0	take	adopted upstream's hide-projects filter over Onicode's single-project filter and its issueProjectScope 'Project unavailable' state (a hidden project that disappears hides nothing); kept Onicode's whole-id parsing for the project pairs and issueSurfaceTargetFromSearch
 38d27db746	take	perf(server): refreshing a branch list frees the snapshot it replaces
 bb1a66a3a4	take	feat(web): reference a side chat from its main thread with Add to chat and @ (mobile keeps merge-back, as upstream)
+90a86d5cb1	take	fix(server): refuse Antigravity runtimes below 1.5 (manifest gate >=0.12.0 kept: Onicode v0.12.0 is the first release that installs the agy CLI)
