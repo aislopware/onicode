@@ -2819,3 +2819,4 @@ bb1a66a3a4	take	feat(web): reference a side chat from its main thread with Add t
 90a86d5cb1	take	fix(server): refuse Antigravity runtimes below 1.5 (manifest gate >=0.12.0 kept: Onicode v0.12.0 is the first release that installs the agy CLI)
 90aa7669a8	take	fix(server): one compatibility lookup and one refusal for broken provider versions (kept Onicode's >=0.12.0 Antigravity boundary over upstream's >=0.1.10: the range is the Onicode release that installs the agy CLI)
 f75eb015a3	take	fix(server): OpenCode and Pi read their minimum version from the manifest (Onicode-only obu MCP test mock gains the compatibility lookup)
+c79f618bf8	take	feat(issues): a fork lists its upstream's issues and its own (kept Onicode's indexed createIssueLinkResolver, now indexing every binding, and issueFilterScopes' per-environment/tracker dedupe)
