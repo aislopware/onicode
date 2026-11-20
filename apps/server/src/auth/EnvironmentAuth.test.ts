@@ -386,12 +386,31 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodePlatformCrypto.layer))(
           const clientsBeforeRevoke = yield* serverAuth.listClientSessions(
             administrativeSession.sessionId,
           );
+          const unspentCode = yield* serverAuth.issuePairingCredential({ label: "unspent" });
+          const unspentApproval = yield* serverAuth.issuePairingCredential({
+            purpose: "peer-link",
+            access: "read-only",
+          });
           const revokedCount = yield* serverAuth.revokeOtherClientSessions(
             administrativeSession.sessionId,
           );
           const clientsAfterRevoke = yield* serverAuth.listClientSessions(
             administrativeSession.sessionId,
           );
+          expect(
+            (yield* serverAuth
+              .exchangeBootstrapCredentialForAccessToken(
+                unspentCode.credential,
+                undefined,
+                requestMetadata,
+              )
+              .pipe(Effect.exit))._tag,
+          ).toBe("Failure");
+          expect(
+            (yield* serverAuth
+              .consumeMcpApprovalCode(unspentApproval.credential, "read-only")
+              .pipe(Effect.exit))._tag,
+          ).toBe("Failure");
 
           expect(listedPairingLinks.map((entry) => entry.id)).toContain(pairingCredential.id);
           expect(listedPairingLinks.find((entry) => entry.id === pairingCredential.id)?.label).toBe(
