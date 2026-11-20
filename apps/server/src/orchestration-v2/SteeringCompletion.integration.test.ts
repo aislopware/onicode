@@ -546,12 +546,17 @@ const nextTurnSelectionHarness = Effect.fn("nextTurnSelectionHarness")(function*
   };
   // Pauses a command that asks for capabilities, while it holds the thread's lock.
   const capabilitiesGate = { entered: Effect.void as Effect.Effect<void> };
+  // Pauses a steer that changes the selection after it read the target run, holding the lock.
+  const selectionGate = { entered: Effect.void as Effect.Effect<void> };
   const adapter: ProviderAdapter.ProviderAdapterV2["Service"] = {
     instanceId,
     driver,
     getCapabilities: () =>
       Effect.suspend(() => capabilitiesGate.entered).pipe(Effect.as(capabilities)),
-    planSelectionTransition: () => Effect.succeed({ type: "apply_on_next_turn" }),
+    planSelectionTransition: () =>
+      Effect.suspend(() => selectionGate.entered).pipe(
+        Effect.as({ type: "apply_on_next_turn" as const }),
+      ),
     openSession: (input) =>
       Effect.gen(function* () {
         const now = yield* DateTime.now;
@@ -722,6 +727,7 @@ const nextTurnSelectionHarness = Effect.fn("nextTurnSelectionHarness")(function*
     layer,
     startFirstTurn,
     capabilitiesGate,
+    selectionGate,
   };
 });
 
@@ -3685,6 +3691,106 @@ it.effect.each([
         );
       }).pipe(Effect.provide(layer));
     }),
+);
+
+it.effect("completes a run restarted while its turn was ending", () =>
+  Effect.gen(function* () {
+    const { events, started, layer, startFirstTurn, selectionGate } =
+      yield* nextTurnSelectionHarness("restart-races-turn-end", true);
+    yield* Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+      const threadId = yield* startFirstTurn;
+      const first = started[0]!;
+      const endTurn = (turn: ProviderAdapter.ProviderAdapterV2TurnInput) =>
+        Effect.gen(function* () {
+          const waiting = yield* orchestrator.streamDomainEvents.pipe(
+            Stream.filter(
+              (event) =>
+                event.type === "run.updated" &&
+                event.payload.id === turn.runId &&
+                event.payload.activeAttemptId === turn.attemptId &&
+                event.payload.status === "waiting",
+            ),
+            Stream.take(1),
+            Stream.runDrain,
+            Effect.forkScoped,
+          );
+          const providerTurn = (yield* orchestrator.getThreadProjection(
+            threadId,
+          )).providerTurns.find((candidate) => candidate.runAttemptId === turn.attemptId)!;
+          yield* Queue.offer(events, {
+            type: "provider_turn.updated",
+            driver,
+            providerTurn: {
+              ...providerTurn,
+              status: "completed",
+              completedAt: yield* DateTime.now,
+            },
+          });
+          yield* Queue.offer(events, {
+            type: "turn.terminal",
+            driver,
+            providerThreadId: providerTurn.providerThreadId,
+            providerTurnId: providerTurn.id,
+            runOrdinal: turn.runOrdinal,
+            status: "completed",
+            failure: null,
+            threadDisposition: "reusable",
+          });
+          yield* Fiber.join(waiting);
+        });
+
+      const paused = yield* Deferred.make<void>();
+      const resume = yield* Deferred.make<void>();
+      selectionGate.entered = Deferred.succeed(paused, undefined).pipe(
+        Effect.andThen(Deferred.await(resume)),
+      );
+      const restarting = yield* orchestrator
+        .dispatch({
+          type: "message.dispatch",
+          commandId: CommandId.make("restart"),
+          threadId,
+          messageId: MessageId.make("message:restart"),
+          text: "restart",
+          attachments: [],
+          modelSelection: composerSelection,
+          dispatchMode: { type: "restart_active", targetRunId: first.runId },
+          createdBy: "user",
+          creationSource: "web",
+        })
+        .pipe(Effect.forkChild);
+      // The restart read the run as running; its turn ends and the run waits before it commits.
+      yield* Deferred.await(paused);
+      selectionGate.entered = Effect.void;
+      yield* endTurn(first);
+      const restartRunning = yield* orchestrator.streamDomainEvents.pipe(
+        Stream.filter(
+          (event) =>
+            event.type === "provider-turn.updated" &&
+            event.payload.status === "running" &&
+            event.payload.runAttemptId !== first.attemptId,
+        ),
+        Stream.take(1),
+        Stream.runDrain,
+        Effect.forkScoped,
+      );
+      yield* Deferred.succeed(resume, undefined);
+      yield* Fiber.join(restarting);
+      yield* worker.drain();
+      assert.deepEqual(
+        started.map((turn) => turn.message.text),
+        ["first", "restart"],
+      );
+      yield* Fiber.join(restartRunning);
+      yield* (yield* ThreadCommandExecutor.ThreadCommandExecutor).withLock(threadId, Effect.void);
+
+      yield* endTurn(started[1]!);
+      yield* worker.drain();
+      const projection = yield* orchestrator.getThreadProjection(threadId);
+      assert.equal(projection.runs.find((run) => run.id === first.runId)?.status, "completed");
+    }).pipe(Effect.provide(layer));
+  }),
 );
 
 // regression: #32891 a restart into a failed provider turn is lost

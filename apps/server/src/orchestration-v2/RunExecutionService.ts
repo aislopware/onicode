@@ -835,6 +835,7 @@ export const layer: Layer.Layer<
           `command:effect:checkpoint.capture:${input.run.id}`,
         );
         // Stopped runs capture rollback points for the next message; enqueue before later starts on this effect lane.
+        // The effect id names the attempt: a steering restart can supersede an attempt whose capture was already enqueued.
         const finalization = {
           effects:
             input.terminal.status === "completed" ||
@@ -842,7 +843,7 @@ export const layer: Layer.Layer<
             input.terminal.status === "cancelled"
               ? [
                   {
-                    id: `effect:checkpoint.capture:${input.run.id}`,
+                    id: `effect:checkpoint.capture:${input.run.id}:${input.attempt.id}`,
                     commandId: checkpointCaptureCommandId,
                     threadId: input.run.threadId,
                     request: {
