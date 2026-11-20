@@ -41,6 +41,9 @@ test(
         await dialog.getByRole("button", "Creating…", { exact: true }).isVisible(),
         "The reopened dialog does not wait on the closed one's request",
       ).toBe(false);
+      expect(await dialog.getByRole("button", "Create link", { exact: true }).isEnabled()).toBe(
+        true,
+      );
 
       release.resolve();
       await authorizedClients.getByText(label, { exact: true }).waitFor();
