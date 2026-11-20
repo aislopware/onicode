@@ -1128,6 +1128,8 @@ export interface DesktopBridge {
     setViewers: (count: number) => Promise<void>;
     /** The clipboard's text if it changed since the last call, while viewers may control. */
     readClipboard: () => Promise<string | null>;
+    /** Where the pointer is on that display, 0 to 1 from its top-left, or null when it is elsewhere. */
+    pointer: (displayId: string) => Promise<{ readonly x: number; readonly y: number } | null>;
     writeClipboard: (text: string) => Promise<void>;
   };
   requestSnapShotPermissions: (includeAccessibility: boolean) => Promise<void>;

@@ -7,6 +7,7 @@ import * as HostProcess from "@onicode/shared/HostProcess";
 const native = vi.hoisted(() => ({
   trusted: vi.fn(() => true),
   post: vi.fn(),
+  cursor: { x: 250, y: 400 },
   clipboard: { text: "", changes: 0, access: "allowed", wakes: 0 },
   blocker: { start: vi.fn(() => 7), stop: vi.fn() },
   appListeners: new Map<string, () => void>(),
@@ -17,6 +18,7 @@ vi.mock("electron", () => ({
     removeListener: (event: string) => native.appListeners.delete(event),
   },
   screen: {
+    getCursorScreenPoint: () => native.cursor,
     getPrimaryDisplay: () => ({ id: 5 }),
     getAllDisplays: () => [
       {
@@ -112,6 +114,14 @@ it.effect("posts input and keeps its window only while the main window is hostin
         expect(native.post).toHaveBeenLastCalledWith(
           expect.objectContaining({ kind: "mouse", x: 500, y: 250 }),
         );
+
+        // A viewer opens on the host's pointer, unless it is on another display.
+        expect(yield* call("desktop:remote-desktop-pointer", main, "5")).toEqual({
+          x: 0.25,
+          y: 0.8,
+        });
+        native.cursor = { x: 1250, y: 400 };
+        expect(yield* call("desktop:remote-desktop-pointer", main, "5")).toBeNull();
 
         // Ending the session lets go of the button the viewer still held.
         const posted = native.post.mock.calls.length;

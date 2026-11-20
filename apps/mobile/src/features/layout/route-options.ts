@@ -154,12 +154,15 @@ export function immersiveRoute(
      * spans the full width. Where the rail stays, the screen spans it and insets its content.
      */
     readonly fullWidth?: boolean;
+    /** The screen lays out against the side safe areas itself, as one that turns sideways does. */
+    readonly ownsSideInsets?: boolean;
   } = {},
 ) {
   return {
     presentation: "fullScreenModal",
     headerShown: false,
     gestureEnabled: false,
+    ...(options.ownsSideInsets ? { nativeContentInsetHorizontally: false } : undefined),
     ...(options.fullWidth
       ? { sheetPrefersHorizontalBars: true, nativeContentInsetHorizontally: false }
       : undefined),

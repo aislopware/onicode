@@ -175,6 +175,8 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     readClipboard: () => ipcRenderer.invoke(IpcChannels.REMOTE_DESKTOP_READ_CLIPBOARD_CHANNEL),
     writeClipboard: (text) =>
       ipcRenderer.invoke(IpcChannels.REMOTE_DESKTOP_WRITE_CLIPBOARD_CHANNEL, text),
+    pointer: (displayId) =>
+      ipcRenderer.invoke(IpcChannels.REMOTE_DESKTOP_POINTER_CHANNEL, displayId),
   },
   requestSnapShotPermissions: (includeAccessibility) =>
     ipcRenderer.invoke(IpcChannels.REQUEST_SNAP_SHOT_PERMISSIONS_CHANNEL, includeAccessibility),

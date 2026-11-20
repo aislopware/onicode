@@ -117,6 +117,8 @@ public final class OniNativeControlsModule: Module {
         presentation?.dismiss()
         file?.dismiss()
         images?.dismiss()
+        // A reload drops the screen that asked for rotation without telling it to let go.
+        OniWorkspaceOrientationSubscriber.freeRotation = false
       }
     }
 
@@ -178,6 +180,13 @@ public final class OniNativeControlsModule: Module {
   @MainActor
   func dismissFile(identifier: String) async {
     dismissFilePresentation(identifier: identifier)
+  }
+
+  // Lets an iPhone turn sideways while a screen that needs the width is open. iPads always turn.
+  @JS
+  @MainActor
+  func setFreeRotation(enabled: Bool) async {
+    OniWorkspaceOrientationSubscriber.freeRotation = enabled
   }
 
   // Rotates the interface without Simulator menu UI scripting, which CI

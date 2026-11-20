@@ -450,12 +450,24 @@ is easy to hit:
 | Drag with two fingers          | Scroll                             |
 | Pinch                          | Zoom; the view follows the pointer |
 
+The screen opens zoomed in far enough to read, on the machine's pointer, and
+coming back to a screen returns to where you were reading. The magnifier in
+the toolbar switches between that and the whole screen. Opening the keyboard
+does not resize the picture: it only slides up when the keyboard would cover
+the pointer, and slides back when the keyboard closes.
+
+Turn the phone sideways for a wider picture. The toolbar moves to the side,
+and comes back above the keyboard while you type.
+
 The **⋯** menu switches to **Direct touch**, where a tap clicks under your
-finger, a long press right-clicks, and one finger drags. It also has
-**Paste from this device**, which pastes your phone's clipboard into the
-machine, and the shortcuts a phone cannot type, such as ⌘Tab. The toolbar
+finger, one finger moves the picture, a long press right-clicks, and a long
+press followed by a drag drags, with a magnifier above your finger showing
+what is under it. Two fingers scroll and pinch as before. It
+also has **Paste from this device**, which pastes your phone's clipboard into
+the machine, and the shortcuts a phone cannot type, such as ⌘Tab. The toolbar
 opens the keyboard and has the keys a phone keyboard lacks, through F12;
-⌃ ⌥ ⇧ ⌘ apply to the next key you press.
+⌃ ⌥ ⇧ ⌘ apply to the next key, click or drag. Press one twice to keep it held
+until you press it again.
 
 Things to know:
 

@@ -721,7 +721,7 @@ const RootStackConfig = createWorkspaceStackNavigator({
     RemoteDesktop: createNativeStackScreen({
       screen: RemoteDesktopRouteScreen,
       linking: "remote-desktop/:environmentId",
-      options: immersiveRoute({ hideSystemBars: true }),
+      options: immersiveRoute({ hideSystemBars: true, ownsSideInsets: true }),
     }),
     ThreadBrowserPreview: createNativeStackScreen({
       screen: BrowserPreviewRouteScreen,
