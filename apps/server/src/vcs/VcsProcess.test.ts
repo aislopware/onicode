@@ -240,14 +240,26 @@ describe("VcsProcess.run", () => {
     },
     {
       stderr: `error: unable to write file .git/objects/pack/pack-${"4".repeat(40)}.pack: No such file or directory\nfatal: unable to rename temporary file to '.git/objects/pack/pack-${"4".repeat(40)}.pack'`,
-      fsyncMethods: ["batch", "writeout-only"],
+      fsyncMethods: ["batch", "fsync"],
+    },
+    {
+      stderr: [
+        `fatal: unable to rename temporary file to '.git/objects/pack/pack-${"4".repeat(40)}.pack'`,
+        "fatal: fsync error on '.git/objects/a5/tmp_obj_Pseg66': Operation not supported",
+      ],
+      fsyncMethods: ["batch", "fsync", "writeout-only"],
+    },
+    {
+      subcommand: "write-tree",
+      stderr: `fatal: unable to rename temporary file to '.git/objects/pack/pack-${"4".repeat(40)}.pack'`,
+      fsyncMethods: ["batch"],
     },
     {
       stderr: `fatal: unable to rename temporary file to '.git/objects/pack/pack-${"4".repeat(40)}.pack'`,
       fsyncMethods: ["fsync"],
     },
   ] as const)(
-    "falls back to writeout-only only for unsupported flushes on macOS ($fsyncMethods): $stderr",
+    "retries a macOS checkpoint's fsync only for known failures ($fsyncMethods): $stderr",
     ({ stderr, fsyncMethods, ...scenario }) =>
       Effect.gen(function* () {
         const seen: Array<ReadonlyArray<string>> = [];
@@ -260,12 +272,15 @@ describe("VcsProcess.run", () => {
             run: (input) =>
               Effect.sync(() => {
                 seen.push(input.args);
+                const attemptStderr = typeof stderr === "string" ? stderr : stderr[seen.length - 1];
                 const failed =
-                  input.args.includes(`core.fsyncMethod=${fsyncMethods[0]}`) ||
-                  ("fallbackFails" in scenario && scenario.fallbackFails);
+                  typeof stderr === "string"
+                    ? input.args.includes(`core.fsyncMethod=${fsyncMethods[0]}`) ||
+                      ("fallbackFails" in scenario && scenario.fallbackFails)
+                    : attemptStderr !== undefined;
                 return {
                   stdout: "",
-                  stderr: failed ? stderr : "",
+                  stderr: failed ? (attemptStderr ?? "") : "",
                   code: ChildProcessSpawner.ExitCode(failed ? 128 : 0),
                   timedOut: false,
                   stdoutTruncated: false,
@@ -289,7 +304,7 @@ describe("VcsProcess.run", () => {
               "-c",
               ...(fsyncMethods[0] === "batch" ? ["core.fsyncMethod=fsync", "-c"] : []),
               `core.fsyncMethod=${fsyncMethods[0]}`,
-              "add",
+              "subcommand" in scenario ? scenario.subcommand : "add",
             ],
           })
           .pipe(Effect.exit);
@@ -302,11 +317,11 @@ describe("VcsProcess.run", () => {
               ? [`core.fsyncMethod=${method === "batch" ? "fsync" : method}`, "-c"]
               : []),
             `core.fsyncMethod=${method}`,
-            "add",
+            "subcommand" in scenario ? scenario.subcommand : "add",
           ]),
         );
         expect(Exit.isSuccess(exit)).toBe(
-          fsyncMethods.length === 2 && !("fallbackFails" in scenario && scenario.fallbackFails),
+          fsyncMethods.length > 1 && !("fallbackFails" in scenario && scenario.fallbackFails),
         );
         if (Exit.isFailure(exit)) {
           expect(Cause.findErrorOption(exit.cause)).toMatchObject({
