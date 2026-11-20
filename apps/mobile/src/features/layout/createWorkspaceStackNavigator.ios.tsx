@@ -141,6 +141,9 @@ function ColumnScreen(props: {
     descriptor.options,
   );
   const [presented, setPresented] = useState(false);
+  // A tab UIKit prewarms off screen fires appearance events too. Every tab shares the routes and
+  // the collapsed-split state, so only this column's own `presented` follows them.
+  const prewarming = use(NativeWorkspaceTabActivityContext)?.headerOnly === true;
   const primaryColumn = props.primary
     ? {
         presented,
@@ -159,20 +162,24 @@ function ColumnScreen(props: {
         props.onDismiss(key, event.nativeEvent.isNativeDismiss);
       }}
       onWillAppear={() => {
+        if (prewarming) return;
         props.onAppearance("willAppear", key);
         props.navigation.emit({ type: "transitionStart", target: key, data: { closing: false } });
       }}
       onDidAppear={() => {
         setPresented(true);
+        if (prewarming) return;
         props.onAppearance("didAppear", key);
         props.navigation.emit({ type: "transitionEnd", target: key, data: { closing: false } });
       }}
       onWillDisappear={() => {
         setPresented(false);
+        if (prewarming) return;
         props.onAppearance("willDisappear", key);
         props.navigation.emit({ type: "transitionStart", target: key, data: { closing: true } });
       }}
       onDidDisappear={() => {
+        if (prewarming) return;
         props.onAppearance("didDisappear", key);
         props.navigation.emit({ type: "transitionEnd", target: key, data: { closing: true } });
       }}
