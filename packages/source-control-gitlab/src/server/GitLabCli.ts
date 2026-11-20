@@ -800,7 +800,7 @@ export const make = Effect.gen(function* () {
             : ["--raw-field", `target_project_id=${targetProjectId}`]),
           "--raw-field",
           // The REST create has no draft field; GitLab drafts a title with one of these prefixes.
-          `title=${input.draft === true && !/^\s*(\[draft\]|\(draft\)|draft:|wip:)/iu.test(input.title) ? `Draft: ${input.title}` : input.title}`,
+          `title=${input.draft === true && !/^\s*(\[draft\]|\(draft\)|draft:)/iu.test(input.title) ? `Draft: ${input.title}` : input.title}`,
           "--field",
           "description=@-",
         ],
