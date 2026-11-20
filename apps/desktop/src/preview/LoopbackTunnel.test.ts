@@ -4,9 +4,11 @@ import { EnvironmentId } from "@onicode/contracts";
 import * as HostProcess from "@onicode/shared/HostProcess";
 import { expect, it } from "@effect/vitest";
 import * as NodeNet from "node:net";
+import * as NodeOS from "node:os";
 import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Queue from "effect/Queue";
 import * as Result from "effect/Result";
@@ -30,20 +32,21 @@ const closeServer = (server: NodeNet.Server | NodeWS.WebSocketServer) =>
   );
 
 /** A local listener that must never see a connection: the reviewer's own localhost server. */
-const listenDecoy = Effect.acquireRelease(
-  Effect.promise(
-    () =>
-      new Promise<{ server: NodeNet.Server; connections: () => number }>((resolve) => {
-        let connections = 0;
-        const server = NodeNet.createServer((socket) => {
-          connections++;
-          socket.destroy();
-        });
-        server.listen(0, "127.0.0.1", () => resolve({ server, connections: () => connections }));
-      }),
-  ),
-  ({ server }) => closeServer(server),
-);
+const listenDecoy = (host = "127.0.0.1") =>
+  Effect.acquireRelease(
+    Effect.promise(
+      () =>
+        new Promise<{ server: NodeNet.Server; connections: () => number }>((resolve) => {
+          let connections = 0;
+          const server = NodeNet.createServer((socket) => {
+            connections++;
+            socket.destroy();
+          });
+          server.listen(0, host, () => resolve({ server, connections: () => connections }));
+        }),
+    ),
+    ({ server }) => closeServer(server),
+  );
 
 /**
  * Stands in for the environment's /api/preview/tunnel. Echoes each frame behind a 0xee byte, or
@@ -60,37 +63,43 @@ const listenEndpoint = (reply?: {
   Effect.acquireRelease(
     Effect.promise(
       () =>
-        new Promise<{ server: NodeWS.WebSocketServer; requests: string[]; received: string[] }>(
-          (resolve) => {
-            const requests: string[] = [];
-            const received: string[] = [];
-            const server: NodeWS.WebSocketServer = new NodeWS.WebSocketServer(
-              { port: 0, host: "127.0.0.1" },
-              () => resolve({ server, requests, received }),
-            );
-            let replied = 0;
-            server.on("connection", (socket: NodeWS.WebSocket, request: { url?: string }) => {
-              requests.push(request.url ?? "");
-              socket.on("message", (data: Buffer) => {
-                received.push(data.toString("latin1"));
-                if (reply === undefined) {
-                  socket.send(Buffer.concat([Uint8Array.of(0xee), data]));
-                } else if (
-                  (replied === 0 || reply.keepOpen) &&
-                  received.join("").split(reply.after ?? "").length - 1 > replied
-                ) {
-                  const frames = reply.frames?.[replied] ?? [reply.text];
-                  replied++;
-                  frames.forEach((frame, index) =>
-                    socket.send(Buffer.from(frame, "latin1"), () => {
-                      if (index === frames.length - 1 && !reply.keepOpen) socket.close();
-                    }),
-                  );
-                }
-              });
+        new Promise<{
+          server: NodeWS.WebSocketServer;
+          requests: string[];
+          received: string[];
+          /** Settles when the first frame arrives. */
+          messaged: Promise<void>;
+        }>((resolve) => {
+          const requests: string[] = [];
+          const received: string[] = [];
+          const { promise: messaged, resolve: onMessage } = Promise.withResolvers<void>();
+          const server: NodeWS.WebSocketServer = new NodeWS.WebSocketServer(
+            { port: 0, host: "127.0.0.1" },
+            () => resolve({ server, requests, received, messaged }),
+          );
+          let replied = 0;
+          server.on("connection", (socket: NodeWS.WebSocket, request: { url?: string }) => {
+            requests.push(request.url ?? "");
+            socket.on("message", (data: Buffer) => {
+              received.push(data.toString("latin1"));
+              onMessage();
+              if (reply === undefined) {
+                socket.send(Buffer.concat([Uint8Array.of(0xee), data]));
+              } else if (
+                (replied === 0 || reply.keepOpen) &&
+                received.join("").split(reply.after ?? "").length - 1 > replied
+              ) {
+                const frames = reply.frames?.[replied] ?? [reply.text];
+                replied++;
+                frames.forEach((frame, index) =>
+                  socket.send(Buffer.from(frame, "latin1"), () => {
+                    if (index === frames.length - 1 && !reply.keepOpen) socket.close();
+                  }),
+                );
+              }
             });
-          },
-        ),
+          });
+        }),
     ),
     ({ server }) => closeServer(server),
   );
@@ -128,6 +137,7 @@ const makeTunnel = (
   /** A function answers each access request with its current value. */
   tunnelUrl: string | null | (() => string | null),
   host: Layer.Layer<never> = Layer.empty,
+  { answerAccess = true }: { readonly answerAccess?: boolean } = {},
 ) =>
   Effect.gen(function* () {
     const accessRequests = yield* Queue.unbounded<string>();
@@ -160,17 +170,19 @@ const makeTunnel = (
       ),
     );
     const tunnel = Context.get(services, LoopbackTunnel.LoopbackTunnel);
-    yield* Queue.take(accessRequests).pipe(
-      Effect.flatMap((requestId) =>
-        tunnel.resolveAccess({
-          requestId,
-          url: typeof tunnelUrl === "function" ? tunnelUrl() : tunnelUrl,
-        }),
-      ),
-      Effect.forever,
-      Effect.forkScoped,
-    );
-    return { tunnel, login: login! };
+    if (answerAccess) {
+      yield* Queue.take(accessRequests).pipe(
+        Effect.flatMap((requestId) =>
+          tunnel.resolveAccess({
+            requestId,
+            url: typeof tunnelUrl === "function" ? tunnelUrl() : tunnelUrl,
+          }),
+        ),
+        Effect.forever,
+        Effect.forkScoped,
+      );
+    }
+    return { tunnel, login: login!, accessRequests };
   });
 
 /** Routes a stand-in session through the tunnel; returns its proxy port and Chromium's credentials. */
@@ -243,7 +255,7 @@ it.effect.each([
   "carries a CONNECT to $authority over the tunnel WebSocket, not to local listeners",
   ({ authority, host }) =>
     Effect.gen(function* () {
-      const decoy = yield* listenDecoy;
+      const decoy = yield* listenDecoy();
       const endpoint = yield* listenEndpoint();
       const { proxyPort, authorization } = yield* routeThroughTunnel(
         `ws://127.0.0.1:${addressPort(endpoint.server)}/api/preview/tunnel?wsTicket=t`,
@@ -460,7 +472,7 @@ it.effect.each([
   { case: "a forwarded request with no tunnel URL", request: "forward", tunnel: "none", reply: "" },
 ] as const)("refuses $case without dialling locally", ({ request, tunnel, reply }) =>
   Effect.gen(function* () {
-    const decoy = yield* listenDecoy;
+    const decoy = yield* listenDecoy();
     const endpoint = yield* listenEndpoint();
     const endpointPort =
       tunnel === "unreachable" ? yield* unusedPort : addressPort(endpoint.server);
@@ -547,11 +559,11 @@ it.effect("connects straight to the environment's own forwarded origin port", ()
 );
 
 /** Connects to a local port, sends `bytes`, and resolves with the first chunk back. */
-const exchangeWithPort = (port: number, bytes: Uint8Array) =>
+const exchangeWithPort = (port: number, bytes: Uint8Array, host = "127.0.0.1") =>
   Effect.promise(
     () =>
       new Promise<number[]>((resolve, reject) => {
-        const socket = NodeNet.connect(port, "127.0.0.1", () => socket.write(bytes));
+        const socket = NodeNet.connect(port, host, () => socket.write(bytes));
         socket.once("data", (chunk: Buffer) => {
           resolve([...chunk]);
           socket.destroy();
@@ -629,9 +641,20 @@ it.effect("closes another OS user's connection to a forward without tunnelling i
   }),
 );
 
-it.effect("moves a forward to a free port when its own is taken here", () =>
+// A container without IPv6 has no ::1 to listen on.
+const hasIpv6Loopback = Object.values(NodeOS.networkInterfaces()).some((addresses) =>
+  addresses?.some(({ address }) => address === "::1"),
+);
+
+it.effect.each(
+  [
+    { case: "an IPv4 server", host: "127.0.0.1" },
+    // `localhost` may resolve to it first, and a forward on 127.0.0.1 alone would leave it there.
+    { case: "an IPv6 server", host: "::1" },
+  ].filter(({ host }) => host !== "::1" || hasIpv6Loopback),
+)("moves a forward to a free port when $case takes its own here", ({ host }) =>
   Effect.gen(function* () {
-    const decoy = yield* listenDecoy;
+    const decoy = yield* listenDecoy(host);
     const endpoint = yield* listenEndpoint();
     const remotePort = addressPort(decoy.server);
     const { tunnel } = yield* makeTunnel(
@@ -643,9 +666,66 @@ it.effect("moves a forward to a free port when its own is taken here", () =>
     });
     expect(forward.localPort).not.toBe(remotePort);
 
-    expect(yield* exchangeWithPort(forward.localPort, Uint8Array.of(6))).toEqual([0xee, 6]);
+    expect(yield* exchangeWithPort(forward.localPort, Uint8Array.of(6), host)).toEqual([0xee, 6]);
     expect(endpoint.requests.at(-1)).toBe(`/api/preview/tunnel?port=${remotePort}`);
     expect(decoy.connections()).toBe(0);
+  }),
+);
+
+it.effect("forwards the port of the environment's own SSH forward over the tunnel", () =>
+  Effect.gen(function* () {
+    // Over SSH the tunnel endpoint is a local port; that port number there is another server.
+    const endpoint = yield* listenEndpoint();
+    const endpointPort = addressPort(endpoint.server);
+    const { tunnel } = yield* makeTunnel(`ws://127.0.0.1:${endpointPort}/api/preview/tunnel`);
+    const forward = yield* tunnel.forward({
+      environmentId: EnvironmentId.make("remote"),
+      remotePort: endpointPort,
+    });
+    expect(yield* exchangeWithPort(forward.localPort, Uint8Array.of(5))).toEqual([0xee, 5]);
+    expect(endpoint.requests.at(-1)).toBe(`/api/preview/tunnel?port=${endpointPort}`);
+  }),
+);
+
+it.effect("stops a forward while another waits on its environment's answer", () =>
+  Effect.gen(function* () {
+    const endpoint = yield* listenEndpoint();
+    // Takes the same-machine probe and never answers it.
+    const silent = yield* listenEndpoint({ text: "", after: "never sent" });
+    let access = `ws://127.0.0.1:${addressPort(endpoint.server)}/api/preview/tunnel`;
+    const { tunnel } = yield* makeTunnel(() => access);
+    const environmentId = EnvironmentId.make("remote");
+    const remotePort = yield* unusedPort;
+    yield* tunnel.forward({ environmentId, remotePort });
+
+    access = `ws://127.0.0.1:${addressPort(silent.server)}/api/preview/tunnel`;
+    yield* tunnel.forward({ environmentId, remotePort: yield* unusedPort }).pipe(Effect.forkScoped);
+    yield* Effect.promise(() => silent.messaged);
+    yield* tunnel.stopForward({ environmentId, remotePort });
+    expect(yield* refusesConnections(remotePort)).toBe(true);
+  }),
+);
+
+it.effect("fails a forward stopped while it was starting, though a later start bound it", () =>
+  Effect.gen(function* () {
+    const endpoint = yield* listenEndpoint();
+    const url = `ws://127.0.0.1:${addressPort(endpoint.server)}/api/preview/tunnel`;
+    const { tunnel, accessRequests } = yield* makeTunnel(url, Layer.empty, {
+      answerAccess: false,
+    });
+    const environmentId = EnvironmentId.make("remote");
+    const remotePort = yield* unusedPort;
+    const starting = yield* tunnel
+      .forward({ environmentId, remotePort })
+      .pipe(Effect.flip, Effect.forkScoped);
+    const requestId = yield* Queue.take(accessRequests);
+    yield* tunnel.stopForward({ environmentId, remotePort });
+    const replacing = yield* tunnel.forward({ environmentId, remotePort }).pipe(Effect.forkScoped);
+    yield* tunnel.resolveAccess({ requestId: yield* Queue.take(accessRequests), url });
+    const replacement = yield* Fiber.join(replacing);
+    yield* tunnel.resolveAccess({ requestId, url });
+    expect((yield* Fiber.join(starting))._tag).toBe("LoopbackTunnelForwardError");
+    expect(yield* tunnel.forwards).toEqual([replacement]);
   }),
 );
 
