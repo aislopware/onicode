@@ -2,9 +2,9 @@ import { requireNativeView } from "expo";
 import { useState, type Ref } from "react";
 import { processColor, View, type NativeSyntheticEvent, type ViewProps } from "react-native";
 
-import { cn } from "../../lib/cn";
 import { flattenThemeColor } from "../../lib/mobileTheme";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
+import { AppTextInput } from "./AppText";
 import { SecretRevealButton } from "./SecretRevealButton";
 import type { SecretTextInputProps } from "./SecretTextInput.types";
 
@@ -46,13 +46,30 @@ export function SecretTextInput({ onMount, secret = true, ...props }: SecretText
   const theme = useUniwindTheme();
   const surface = theme["--color-input"];
   const [revealed, setRevealed] = useState(false);
+  // The native field always offers a login's password; a field marked not secret, such as an
+  // email, takes the username instead.
+  if (!secret) {
+    const returnKeyType = props.returnKeyType ?? "done";
+    return (
+      <AppTextInput
+        ref={onMount}
+        accessibilityLabel={props.accessibilityLabel}
+        placeholder={props.placeholder}
+        value={props.value}
+        onChangeText={props.onChangeText}
+        editable={props.editable}
+        autoCorrect={false}
+        autoCapitalize="none"
+        autoComplete="username"
+        spellCheck={false}
+        returnKeyType={returnKeyType}
+        submitBehavior={returnKeyType === "next" ? "submit" : "blurAndSubmit"}
+        onSubmitEditing={(event) => props.onSubmitEditing(event.nativeEvent.text)}
+      />
+    );
+  }
   return (
-    <View
-      className={cn(
-        "min-h-13.5 flex-row items-center gap-1 rounded-2xl border border-input-border bg-input pl-3.5",
-        secret ? "pr-1.5" : "pr-3.5",
-      )}
-    >
+    <View className="min-h-13.5 flex-row items-center gap-1 rounded-2xl border border-input-border bg-input pr-1.5 pl-3.5">
       <NativeSecretInput
         ref={
           onMount === undefined
@@ -72,15 +89,13 @@ export function SecretTextInput({ onMount, secret = true, ...props }: SecretText
         cursorColor={nativeColor(flattenThemeColor(theme["--color-focus"], surface))}
         fontSize={FONT_SIZE}
         editable={props.editable}
-        revealed={!secret || revealed}
+        revealed={revealed}
         returnKey={props.returnKeyType ?? "done"}
         onChangeText={(event) => props.onChangeText(event.nativeEvent.value)}
         onSubmit={(event) => props.onSubmitEditing(event.nativeEvent.value)}
         style={{ flex: 1, height: LINE_HEIGHT }}
       />
-      {secret ? (
-        <SecretRevealButton revealed={revealed} onPress={() => setRevealed(!revealed)} />
-      ) : null}
+      <SecretRevealButton revealed={revealed} onPress={() => setRevealed(!revealed)} />
     </View>
   );
 }
