@@ -12831,13 +12831,23 @@ it.layer(layerSharedApplicationDataPlaneTest)("shared application data plane", (
   );
 });
 
+const manualResumeReasons = [
+  "interrupted",
+  "usage_limit",
+  "scheduled-session",
+  "scheduled-session-switch",
+] as const;
+
 it.layer(layerTest)("usage-limit recovery", (it) => {
-  it.effect.each(["interrupted", "usage_limit", "scheduled-session"] as const)(
+  it.effect.each(manualResumeReasons)(
     "manually resumes an %s run ahead of its queued message only once",
     (reason) =>
       Effect.gen(function* () {
         const orchestrator = yield* Orchestrator.OrchestratorV2;
         const events = yield* EventSink.EventSinkV2;
+        const scheduled = reason === "scheduled-session" || reason === "scheduled-session-switch";
+        // Resumed with another provider's model picked in the composer.
+        const switched = reason === "scheduled-session-switch";
         const threadId = ThreadId.make(`manual-resume:${reason}`);
         const projectId = ProjectId.make(`manual-resume:project:${reason}`);
         const now = yield* DateTime.now;
@@ -12863,7 +12873,7 @@ it.layer(layerTest)("usage-limit recovery", (it) => {
           createdBy: "user",
           creationSource: "web",
         });
-        if (reason === "scheduled-session") {
+        if (scheduled) {
           // The conversation's own session ran first; the limited run is a fresh scheduled session.
           yield* orchestrator.dispatch({
             type: "message.dispatch",
@@ -12899,7 +12909,7 @@ it.layer(layerTest)("usage-limit recovery", (it) => {
           dispatchMode: { type: "defer_start" },
           createdBy: "user",
           creationSource: "web",
-          ...(reason === "scheduled-session"
+          ...(scheduled
             ? { scheduledTaskId: ScheduledTaskId.make("manual-resume:task"), freshContext: true }
             : {}),
         });
@@ -12933,14 +12943,14 @@ it.layer(layerTest)("usage-limit recovery", (it) => {
               occurredAt: now,
               payload: {
                 ...source,
-                status: reason === "interrupted" ? "interrupted" : "failed",
+                status: reason === "interrupted" || switched ? "interrupted" : "failed",
                 completedAt: now,
               },
             },
           ],
         });
         let scheduledResume: ReturnType<typeof limitRecoveryCommand> = null;
-        if (reason !== "interrupted") {
+        if (reason !== "interrupted" && !switched) {
           const resetAt = DateTime.formatIso(DateTime.add(now, { minutes: 1 }));
           yield* events.write({
             events: [
@@ -12994,13 +13004,16 @@ it.layer(layerTest)("usage-limit recovery", (it) => {
           threadId,
           messageId: MessageId.make(`manual-resume:${suffix}:${reason}`),
           manualContinuationOfRunId: source.id,
+          ...(switched
+            ? { modelSelection: { ...modelSelection, instanceId: claudeInstanceId } }
+            : {}),
           text: "Continue where you left off.",
           attachments: [],
           dispatchMode: { type: "start_immediately" as const },
           createdBy: "user" as const,
           creationSource: "web" as const,
         });
-        if (reason === "scheduled-session") {
+        if (scheduled) {
           // The conversation's session reports last, as a process exit or recovery would.
           const current = yield* orchestrator.getThreadProjection(threadId);
           const conversationThread = current.providerThreads.find(
@@ -13031,8 +13044,23 @@ it.layer(layerTest)("usage-limit recovery", (it) => {
         assert.equal(after.runs[before.length - 1]?.status, "queued");
         assert.equal(resumed?.status, "starting");
         assert.equal(resumed?.manualContinuationOfRunId, source.id);
-        // A fresh scheduled session resumes in that session, not the conversation's.
-        assert.equal(resumed?.providerThreadId, source.providerThreadId);
+        if (switched) {
+          // On another provider the session moves to a provider thread of its own, carrying only
+          // the session's runs.
+          const resumedProviderThread = after.providerThreads.find(
+            (candidate) => candidate.id === resumed?.providerThreadId,
+          );
+          assert.equal(resumedProviderThread?.providerInstanceId, claudeInstanceId);
+          assert.equal(resumedProviderThread?.firstRunOrdinal, source.ordinal);
+          assert.equal(
+            after.contextHandoffs.find((handoff) => handoff.targetRunId === resumed?.id)
+              ?.coveredRunOrdinals.from,
+            source.ordinal,
+          );
+        } else {
+          // A fresh scheduled session resumes in that session, not the conversation's.
+          assert.equal(resumed?.providerThreadId, source.providerThreadId);
+        }
         const resumeMessage = after.messages.find(
           (message) => message.id === resume("first").messageId,
         );

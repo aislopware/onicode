@@ -5123,6 +5123,30 @@ describe("orchestration v2 provider switching", () => {
         assert.isFalse(
           (yield* Ref.get(capturedTurns)).some((turn) => turn.text.includes(IDLE_COMPACTION_TEXT)),
         );
+
+        // A client offering compaction on return read the scheduled session's usage.
+        const turnsBeforeReturn = (yield* Ref.get(capturedTurns)).length;
+        yield* orchestrator.dispatch({
+          type: "message.dispatch",
+          createdBy: "user",
+          creationSource: "web",
+          commandId: CommandId.make("command:scheduled-fresh-user-chat:compact-on-return"),
+          threadId,
+          messageId: MessageId.make("message:scheduled-fresh-user-chat:compact-on-return"),
+          text: "/compact",
+          attachments: [],
+          idleCompaction: "onReturn",
+          modelSelection: CLAUDE_MODEL_SELECTION,
+          dispatchMode: { type: "queue_after_active" },
+        });
+        yield* worker.drain();
+        yield* waitForIdle(threadId);
+        assert.lengthOf(yield* Ref.get(capturedTurns), turnsBeforeReturn);
+        assert.isFalse(
+          (yield* orchestrator.getThreadProjection(threadId)).runs.some(
+            (run) => run.userMessageId === "message:scheduled-fresh-user-chat:compact-on-return",
+          ),
+        );
       }).pipe(
         Effect.provide(
           ProviderReplayHarness.layerWithRegistry(
