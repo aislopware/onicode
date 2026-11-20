@@ -2825,3 +2825,4 @@ c79f618bf8	take	feat(issues): a fork lists its upstream's issues and its own (ke
 5dd565d6b1	take	feat(antigravity): Auto uses agy's own Auto review (#39378)
 ec275c7a19	take	fix(server): compacting a subagent thread no longer adds a task to its parent (#39455)
 ff8a831067	take	fix(antigravity): accept UTF-16 text attachments with a BOM (#39456)
+c57ccdaf52	take	fix(server): signed URLs stay out of HTTP request logs (#39464); webhook route parts dropped (Onicode has no webhooks)
