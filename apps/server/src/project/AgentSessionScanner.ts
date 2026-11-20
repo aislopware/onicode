@@ -475,6 +475,8 @@ function claudeTitle(title: string | undefined): string | undefined {
 const WAKE_ENVELOPE = /^\s*<wake(?:\s[^>]*)?>([\s\S]*?)(?:<\/wake>|$)/;
 
 const TITLE_MAX_LENGTH = 100;
+// Format characters and marks alone, such as U+0600, draw nothing a title could show.
+const VISIBLE_CHARACTER = /[^\s\p{Cc}\p{Cf}\p{M}]/u;
 const titleSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
 // Cuts at a grapheme boundary, so a flag, skin tone or ZWJ emoji at the limit is dropped whole.
@@ -493,8 +495,8 @@ function deriveTitle(source: AgentSessionSource, text: string): string | undefin
     WAKE_ENVELOPE,
     "$1",
   );
-  const line = request.trim().split("\n")[0] ?? "";
-  return shortenTitle(line).trim() || undefined;
+  const title = shortenTitle(request.trim().split("\n")[0] ?? "").trim();
+  return VISIBLE_CHARACTER.test(title) ? title : undefined;
 }
 
 // Pi keeps abandoned branches in the file; its active branch runs from the last entry to the root.

@@ -4089,6 +4089,27 @@ describe("parseAgentSessionTranscript", () => {
     expect(thread?.title).toBe("a".repeat(kept));
   });
 
+  it("titles a session after the first message with something visible to show", () => {
+    const thread = AgentSessionScanner.parseAgentSessionTranscript({
+      contents: ["؀ ", "Fix the flaky login test"]
+        .map((content) =>
+          JSON.stringify({
+            type: "user",
+            sessionId: "claude-session",
+            timestamp: "2026-08-25T08:00:00.000Z",
+            message: { role: "user", content },
+          }),
+        )
+        .join("\n"),
+      source: "claudeAgent",
+      providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+      fallbackSessionId: "fallback",
+      lastActiveAtMs: Date.parse("2026-08-25T08:00:00.000Z"),
+    });
+
+    expect(thread?.title).toBe("Fix the flaky login test");
+  });
+
   it.each([
     "Explain <external_codex_apps_open_page> in this transcript",
     "<external_codex_apps_open_page>Keep this incomplete example",
