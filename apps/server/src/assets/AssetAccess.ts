@@ -63,7 +63,13 @@ import { toHostDrivePath } from "../workspace/hostDrivePath.ts";
 import * as NativeAppIconResolver from "./NativeAppIconResolver.ts";
 import { sourceControlDefinitions } from "../sourceControl/sourceControlDefinitions.ts";
 import { extractIcnsPng } from "./icns.ts";
-import { openMediaFile, readMediaFileHeader, type OpenMediaFile } from "./MediaFile.ts";
+import {
+  mediaFileRevision,
+  openMediaFile,
+  readMediaFileHeader,
+  type OpenMediaFile,
+} from "./MediaFile.ts";
+import * as WorkspacePreviewRevisions from "./WorkspacePreviewRevisions.ts";
 import * as HostProcess from "@onicode/shared/HostProcess";
 
 export const ASSET_ROUTE_PREFIX = "/api/assets";
@@ -131,6 +137,8 @@ const AssetClaimsSchema = Schema.Union([
     baseRelativePath: Schema.String,
     /** Where the entry's folder resolved when the URL was issued; the hidden-folder exemption holds only there. */
     canonicalBaseRelativePath: Schema.optionalKey(Schema.String),
+    /** The opened page, which the files it requests are tracked under; absent on older URLs. */
+    entryFileName: Schema.optionalKey(Schema.String),
     expiresAt: Schema.Number,
   }),
   Schema.Struct({
@@ -467,7 +475,7 @@ const finalizeAbsoluteMediaFileAsset = Effect.fn("AssetAccess.finalizeAbsoluteMe
                 : Effect.succeed(null),
               (dimensions) => ({
                 identity: { device: file.info.dev.toString(), inode: file.info.ino.toString() },
-                fileRevision: `${file.info.dev}:${file.info.ino}:${file.info.size}:${file.info.mtimeNs}:${file.info.ctimeNs}`,
+                fileRevision: mediaFileRevision(file.info),
                 dimensions,
               }),
             ),
@@ -576,37 +584,45 @@ const finalizeWorkspaceFileAsset = Effect.fn("AssetAccess.finalizeWorkspaceFileA
     )
       ? yield* readImageDimensionsFromHeader(canonicalFile)
       : null;
+    if (!/\.html?$/i.test(resolved.relativePath)) {
+      return {
+        claims: {
+          version: 1 as const,
+          kind: "workspace-file-exact" as const,
+          workspaceRoot: canonicalWorkspaceRoot,
+          relativePath: resolved.relativePath,
+          expiresAt: input.expiresAt,
+        },
+        fileName: path.basename(resolved.relativePath),
+        imageDimensions,
+        fileRevision: undefined,
+      };
+    }
     const baseRelativePath = path.dirname(resolved.relativePath);
+    const canonicalBase = yield* fileSystem
+      .realPath(path.join(canonicalWorkspaceRoot, baseRelativePath))
+      .pipe(
+        Effect.mapError(
+          (cause) => new AssetWorkspaceResolutionError({ resource: input.resource, cause }),
+        ),
+      );
+    const revisions = yield* WorkspacePreviewRevisions.WorkspacePreviewRevisions;
     return {
-      claims: !/\.html?$/i.test(resolved.relativePath)
-        ? {
-            version: 1 as const,
-            kind: "workspace-file-exact" as const,
-            workspaceRoot: canonicalWorkspaceRoot,
-            relativePath: resolved.relativePath,
-            expiresAt: input.expiresAt,
-          }
-        : {
-            version: 1 as const,
-            kind: "workspace-file" as const,
-            workspaceRoot: canonicalWorkspaceRoot,
-            baseRelativePath,
-            canonicalBaseRelativePath: path.relative(
-              canonicalWorkspaceRoot,
-              yield* fileSystem
-                .realPath(path.join(canonicalWorkspaceRoot, baseRelativePath))
-                .pipe(
-                  Effect.mapError(
-                    (cause) =>
-                      new AssetWorkspaceResolutionError({ resource: input.resource, cause }),
-                  ),
-                ),
-            ),
-            expiresAt: input.expiresAt,
-          },
+      claims: {
+        version: 1 as const,
+        kind: "workspace-file" as const,
+        workspaceRoot: canonicalWorkspaceRoot,
+        baseRelativePath,
+        canonicalBaseRelativePath: path.relative(canonicalWorkspaceRoot, canonicalBase),
+        entryFileName: path.basename(resolved.relativePath),
+        expiresAt: input.expiresAt,
+      },
       fileName: path.basename(resolved.relativePath),
       imageDimensions,
-      fileRevision: undefined,
+      fileRevision: yield* revisions.revision({
+        workspaceRoot: canonicalWorkspaceRoot,
+        entryRelativePath: resolved.relativePath,
+      }),
     };
   },
 );
@@ -684,6 +700,7 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
       claims = finalized.claims;
       fileName = finalized.fileName;
       imageDimensions = finalized.imageDimensions;
+      fileRevision = finalized.fileRevision;
       break;
     }
     case "draft-workspace-file": {
@@ -1139,6 +1156,17 @@ export const resolveAsset = Effect.fn("AssetAccess.resolveAsset")(function* (
   if (!isPreviewDependencyPath(decodedPath, path)) return null;
   const joinedRelativePath =
     claims.baseRelativePath === "." ? decodedPath : path.join(claims.baseRelativePath, decodedPath);
+  if (claims.entryFileName !== undefined) {
+    // Before the file is resolved and read, so the recorded state is never newer than the response.
+    const revisions = yield* WorkspacePreviewRevisions.WorkspacePreviewRevisions;
+    yield* revisions.observe(
+      {
+        workspaceRoot: claims.workspaceRoot,
+        entryRelativePath: path.join(claims.baseRelativePath, claims.entryFileName),
+      },
+      joinedRelativePath,
+    );
+  }
   const workspaceFile = yield* resolveCanonicalWorkspaceFileForRequest({
     workspaceRoot: claims.workspaceRoot,
     relativePath: joinedRelativePath,
