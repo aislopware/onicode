@@ -209,6 +209,10 @@ const WRITEOUT_ONLY_FSYNC_ARG = "core.fsyncMethod=writeout-only";
 const canRetryFullFsync = (stderr: string) =>
   /fsync error on [^\r\n]+: operation not supported\r?$/im.test(stderr) ||
   /cannot update ref [^\r\n]+: couldn't write '[^\r\n]+\.lock'\r?$/im.test(stderr);
+// Batch fsync moves its temporary objects away before Git renames a large file's bulk-checkin
+// pack, so an add that streams one and then runs a clean filter fails (Git 2.54 and 2.56).
+const isBatchFsyncPackRename = (stderr: string) =>
+  /^fatal: unable to rename temporary file to '[^\r\n]*pack-[0-9a-f]+\.pack'\r?$/im.test(stderr);
 
 export const make = Effect.gen(function* () {
   const processRunner = yield* ProcessRunner.ProcessRunner;
@@ -323,8 +327,9 @@ export const make = Effect.gen(function* () {
       result.code !== null &&
       result.code !== 0 &&
       input.command === "git" &&
-      (input.args.includes(FULL_FSYNC_ARG) || input.args.includes(BATCH_FSYNC_ARG)) &&
-      canRetryFullFsync(result.stderr)
+      (((input.args.includes(FULL_FSYNC_ARG) || input.args.includes(BATCH_FSYNC_ARG)) &&
+        canRetryFullFsync(result.stderr)) ||
+        (input.args.includes(BATCH_FSYNC_ARG) && isBatchFsyncPackRename(result.stderr)))
     ) {
       result = yield* spawn(
         {
