@@ -232,19 +232,12 @@ const isTunnelEndpoint = (
 /** Set by the environment's /api/preview/tunnel when it reached the port and nothing listens. */
 const PORT_REFUSED_HEADER = "x-oni-tunnel-port-refused";
 
-/** Opens a connection to the destination; `ws` pauses its socket, so a slow page slows the tunnel. */
-const dialDestination = Effect.fn("LoopbackTunnel.dialDestination")(function* (
+/** Opens a connection through the tunnel; `ws` pauses its socket, so a slow page slows the tunnel. */
+const dialTunnel = Effect.fn("LoopbackTunnel.dialTunnel")(function* (
   tunnelUrl: string,
   destination: { readonly host: string; readonly port: number },
   onPortRefused?: () => void,
 ) {
-  if (isTunnelEndpoint(tunnelUrl, destination)) {
-    const endpoint = yield* NodeSocket.makeNet({
-      ...tunnelEndpoint(tunnelUrl),
-      openTimeout: CONNECT_TIMEOUT,
-    });
-    return { pull: yield* Socket.readerBytes(endpoint), writer: yield* endpoint.writer };
-  }
   const url = new URL(tunnelUrl);
   url.searchParams.set("port", String(destination.port));
   // A name is the environment's `localhost`; an address must reach that exact address there.
@@ -281,11 +274,26 @@ const dialDestination = Effect.fn("LoopbackTunnel.dialDestination")(function* (
   };
 });
 
+const dialDestination = Effect.fn("LoopbackTunnel.dialDestination")(function* (
+  tunnelUrl: string,
+  destination: { readonly host: string; readonly port: number },
+) {
+  if (!isTunnelEndpoint(tunnelUrl, destination)) return yield* dialTunnel(tunnelUrl, destination);
+  const endpoint = yield* NodeSocket.makeNet({
+    ...tunnelEndpoint(tunnelUrl),
+    openTimeout: CONNECT_TIMEOUT,
+  });
+  return { pull: yield* Socket.readerBytes(endpoint), writer: yield* endpoint.writer };
+});
+
 const TCP_TABLES = ["/proc/net/tcp", "/proc/net/tcp6"];
 
 // Rows read `sl local_address rem_address st queues timer retransmits uid ...`, with addresses
-// as HEXIP:HEXPORT and IPv4 bytes in little-endian order; tcp6 holds IPv4 as ::ffff:a.b.c.d.
+// as HEXIP:HEXPORT and each 32-bit word of the IP in little-endian order; tcp6 holds IPv4 as
+// ::ffff:a.b.c.d. Forwards listen only on 127.0.0.1 and ::1.
 const procAddresses = (ip: string, port: number) => {
+  const hexPort = port.toString(16).padStart(4, "0").toUpperCase();
+  if (ip === "::1") return [`00000000000000000000000001000000:${hexPort}`];
   const octets = ip
     .replace(/^::ffff:/i, "")
     .split(".")
@@ -295,7 +303,6 @@ const procAddresses = (ip: string, port: number) => {
     .map((octet) => octet.toString(16).padStart(2, "0"))
     .join("")
     .toUpperCase();
-  const hexPort = port.toString(16).padStart(4, "0").toUpperCase();
   return [`${v4}:${hexPort}`, `0000000000000000FFFF0000${v4}:${hexPort}`];
 };
 
@@ -423,6 +430,8 @@ const make = Effect.gen(function* () {
     string,
     { readonly forward: DesktopPortForward; readonly scope: Scope.Closeable }
   >();
+  // Counts Stops per forward, so a start still probing when Stop came does not bind after it.
+  const forwardStops = new Map<string, number>();
   const forwardListeners = new Set<
     (forwards: ReadonlyArray<DesktopPortForward>) => Effect.Effect<void>
   >();
@@ -606,7 +615,7 @@ const make = Effect.gen(function* () {
         if (!(yield* isOwnConnection())) return;
         const tunnelUrl = yield* requestAccess(environmentId);
         if (tunnelUrl === null) return;
-        const destination = yield* dialDestination(tunnelUrl, { host: "localhost", port });
+        const destination = yield* dialTunnel(tunnelUrl, { host: "localhost", port });
         return yield* Effect.raceFirst(
           pump(pull, destination.writer.writeAll),
           pump(destination.pull, writer.writeAll),
@@ -659,7 +668,7 @@ const make = Effect.gen(function* () {
         )
         .pipe(Effect.forkScoped);
       let portRefused = false;
-      const destination = yield* dialDestination(
+      const destination = yield* dialTunnel(
         tunnelUrl,
         { host: "localhost", port: (probe.address as NetAddress.InetAddress).port },
         () => {
@@ -699,41 +708,86 @@ const make = Effect.gen(function* () {
     });
   });
 
+  // `localhost` may resolve to ::1 first, so a forward holds the port there too; a local server
+  // on [::1] alone would otherwise answer the forward's `localhost` address.
+  const bindLoopback = Effect.fn("LoopbackTunnel.bindLoopback")(function* (port: number) {
+    const v4 = yield* NodeSocketServer.make({ port, host: "127.0.0.1" });
+    const boundPort = (v4.address as NetAddress.InetAddress).port;
+    const v6 = yield* NodeSocketServer.make({ port: boundPort, host: "::1" }).pipe(
+      Effect.asSome,
+      Effect.catchIf(
+        // A host without IPv6 has no ::1 for anything to listen on.
+        (error) =>
+          ["EADDRNOTAVAIL", "EAFNOSUPPORT"].includes(
+            (error.reason.cause as NodeJS.ErrnoException | undefined)?.code ?? "",
+          ),
+        () => Effect.succeedNone,
+      ),
+    );
+    return { port: boundPort, servers: [v4, ...Option.toArray(v6)] };
+  });
+
+  const listenForward = Effect.fn("LoopbackTunnel.listenForward")(function* (
+    environmentId: EnvironmentId,
+    remotePort: number,
+    stopsBefore: number,
+  ) {
+    const key = forwardKey(environmentId, remotePort);
+    if ((forwardStops.get(key) ?? 0) !== stopsBefore) {
+      return yield* new LoopbackTunnelForwardError({
+        environmentId,
+        port: remotePort,
+        cause: new Error("The forward was stopped while it started."),
+      });
+    }
+    const existing = forwarded.get(key);
+    if (existing) return existing.forward;
+    const scope = yield* Scope.fork(listenerScope);
+    // Each attempt binds in its own scope, so a half-bound pair is released before the next.
+    const bind = (port: number) =>
+      Scope.fork(scope).pipe(
+        Effect.flatMap((attempt) =>
+          bindLoopback(port).pipe(
+            Scope.provide(attempt),
+            Effect.onError(() => Scope.close(attempt, Exit.void)),
+          ),
+        ),
+      );
+    const bound = yield* bind(remotePort).pipe(
+      // Taken here, or privileged: any free port still reaches the environment's.
+      Effect.catch(() => bind(0)),
+      Effect.onError(() => Scope.close(scope, Exit.void)),
+      Effect.mapError(
+        (cause) => new LoopbackTunnelForwardError({ environmentId, port: remotePort, cause }),
+      ),
+    );
+    const handler = serveForward(environmentId, remotePort);
+    yield* Effect.forEach(
+      bound.servers,
+      (server) => server.run(handler).pipe(Effect.forkIn(scope)),
+      { discard: true },
+    );
+    const forward = { environmentId, remotePort, localPort: bound.port };
+    forwarded.set(key, { forward, scope });
+    yield* announceForwards;
+    return forward;
+  }, forwarding.withPermits(1));
+
   const forward: LoopbackTunnel["Service"]["forward"] = Effect.fn("LoopbackTunnel.forward")(
     function* ({ environmentId, remotePort }) {
-      const existing = forwarded.get(forwardKey(environmentId, remotePort));
+      const key = forwardKey(environmentId, remotePort);
+      const existing = forwarded.get(key);
       if (existing) return existing.forward;
+      const stopsBefore = forwardStops.get(key) ?? 0;
+      // Outside the permit: the probe can take seconds, and Stop must not wait on it.
       if (yield* sharesLoopback(environmentId)) {
         return yield* new LoopbackTunnelSameMachineError({ environmentId, port: remotePort });
       }
-      const scope = yield* Scope.fork(listenerScope);
-      const bind = (port: number) =>
-        NodeSocketServer.make({ port, host: "127.0.0.1" }).pipe(Scope.provide(scope));
-      const server = yield* bind(remotePort).pipe(
-        // Taken here, or privileged: any free port still reaches the environment's.
-        Effect.catch(() => bind(0)),
-        Effect.onError(() => Scope.close(scope, Exit.void)),
-        Effect.mapError(
-          (cause) => new LoopbackTunnelForwardError({ environmentId, port: remotePort, cause }),
-        ),
-      );
-      yield* server.run(serveForward(environmentId, remotePort)).pipe(Effect.forkIn(scope));
-      const forward = {
-        environmentId,
-        remotePort,
-        localPort: (server.address as NetAddress.InetAddress).port,
-      };
-      forwarded.set(forwardKey(environmentId, remotePort), { forward, scope });
-      yield* announceForwards;
-      return forward;
+      return yield* listenForward(environmentId, remotePort, stopsBefore);
     },
-    forwarding.withPermits(1),
   );
 
-  const stopForward: LoopbackTunnel["Service"]["stopForward"] = Effect.fn(
-    "LoopbackTunnel.stopForward",
-  )(function* ({ environmentId, remotePort }) {
-    const key = forwardKey(environmentId, remotePort);
+  const closeForward = Effect.fn("LoopbackTunnel.closeForward")(function* (key: string) {
     const existing = forwarded.get(key);
     if (!existing) return;
     forwarded.delete(key);
@@ -741,6 +795,15 @@ const make = Effect.gen(function* () {
     yield* Scope.close(existing.scope, Exit.void);
     yield* announceForwards;
   }, forwarding.withPermits(1));
+
+  const stopForward: LoopbackTunnel["Service"]["stopForward"] = Effect.fn(
+    "LoopbackTunnel.stopForward",
+  )(function* ({ environmentId, remotePort }) {
+    const key = forwardKey(environmentId, remotePort);
+    // Counted before the permit, so only starts already underway see this Stop.
+    forwardStops.set(key, (forwardStops.get(key) ?? 0) + 1);
+    yield* closeForward(key);
+  });
 
   const subscribeForwards: LoopbackTunnel["Service"]["subscribeForwards"] = (listener) =>
     Effect.acquireRelease(
