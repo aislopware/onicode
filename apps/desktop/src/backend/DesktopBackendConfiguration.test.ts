@@ -460,6 +460,7 @@ describe("DesktopBackendConfiguration", () => {
           assert.notInclude(config.args, "/usr/bin/node");
           assert.equal(config.wslRuntimeId, `sha256-${archiveHash}`);
           assert.equal(config.wslOniHome, oniHome);
+          assert.equal(config.bootstrap.oniHome, oniHome);
           assert.equal(legacyCleanupCount, 1);
           assert.isTrue(Option.isNone(config.preflightFailure));
         }),
@@ -645,7 +646,12 @@ describe("DesktopBackendConfiguration", () => {
                   isAvailable: true,
                   distros: [{ name: "Ubuntu", isDefault: true, version: 2 }],
                   windowsToWslPath: () => Option.some(linuxAppRoot),
-                  ensureNodePty: () => ({ ok: true, nodePath, resolvedPath, oniHome: null }),
+                  ensureNodePty: () => ({
+                    ok: true,
+                    nodePath,
+                    resolvedPath,
+                    oniHome: "/home/test/.onicode",
+                  }),
                   getDistroIp: () => Option.some("172.27.0.99"),
                 }),
               ),
@@ -677,6 +683,8 @@ describe("DesktopBackendConfiguration", () => {
           "0",
           "--dev",
         ]);
+        // The distro's home goes in the bootstrap, so --dev keeps its dev/ state there.
+        assert.equal(config.bootstrap.oniHome, "/home/test/.onicode");
         assert.notInclude(config.args, "bash");
         assert.notInclude(config.args, "/bin/sh");
         assert.notInclude(config.args, "-c");

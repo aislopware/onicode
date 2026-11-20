@@ -248,10 +248,12 @@ const runWslShell = (
   } = {},
 ): Effect.Effect<ShellResult, never, ChildProcessSpawner.ChildProcessSpawner> => {
   const resolveNode = options.resolveNode !== false;
+  // A Windows ONICODE_HOME shared through WSLENV arrives as a /mnt/c path. Unset it before the
+  // login profile runs, so only a home the distro itself sets reaches the probes.
   return runWslProcess(
     resolveNode
-      ? [...buildDistroArgs(distro), "--", "bash", "-l", "-s"]
-      : [...buildDistroArgs(distro), "--exec", "sh", "-s"],
+      ? [...buildDistroArgs(distro), "--", "env", "-u", "ONICODE_HOME", "bash", "-l", "-s"]
+      : [...buildDistroArgs(distro), "--exec", "env", "-u", "ONICODE_HOME", "sh", "-s"],
     Stream.encodeText(
       Stream.make(
         resolveNode
