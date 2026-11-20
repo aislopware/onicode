@@ -329,6 +329,19 @@ export function withStoredThreadModelOptions(
   return { ...selection, options: stored.options };
 }
 
+/** Whether the picker leaves out a usable provider only because the project or policy turns it off. */
+export function hasReadyProviderTurnedOff(
+  config: OniServerConfig | null | undefined,
+  projectId: ProjectId | null,
+): boolean {
+  return (config?.providers ?? []).some(
+    (provider) =>
+      isProviderPickerReady({ ...provider, enabled: true }) &&
+      (isDriverDisallowed(config, provider.driver) ||
+        !isProviderEnabledForProject(config, provider, projectId)),
+  );
+}
+
 export function buildModelOptions(
   config: OniServerConfig | null | undefined,
   fallbackModelSelection: ModelSelection | null,

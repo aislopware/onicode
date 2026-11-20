@@ -3979,6 +3979,15 @@
     },
     " no tiene ningún modelo disponible. Instala un proveedor o inicia sesión en uno allí para elegir uno."
   ],
+  "5dc2710a40895938": [
+    "Tu borrador está guardado en este dispositivo. ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " tiene un proveedor listo que está desactivado para este proyecto o no permitido por una política. Revisa la configuración de sus proveedores para elegir un modelo."
+  ],
   "3a3930717d8d73b4": "Tu borrador está guardado en este dispositivo. Conéctate a un entorno para elegir su primer modelo.",
   "8b53cd9e9e107f7c": "Añade un entorno antes de crear una tarea.",
   "b369a312b533f975": "Cargando proyectos del entorno guardado.",
