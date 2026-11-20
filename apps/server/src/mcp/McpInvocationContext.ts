@@ -45,7 +45,7 @@ export interface McpClientCaller {
    * session as `linkOrigin`, and it changes only that work (`linkOrigin.ts`).
    */
   readonly linked?: boolean | undefined;
-  /** When a peer link's session ends unless it is used again, answered as `Onicode-Link-Expires-At`. */
+  /** When a peer link's session ends unless it is used again, answered as `oni-link-expires-at`. */
   readonly linkExpiresAt?: DateTime.Utc | undefined;
   /**
    * Narrower modes the client asked for on this request (`Onicode-Mode-Limit`):
@@ -65,7 +65,7 @@ export interface McpClientCaller {
 export const MODE_LIMIT_HEADER = "oni-mode-limit";
 
 /**
- * `Onicode-Link-Expires-At: <ISO time>` answers a peer link's request with when its
+ * `oni-link-expires-at: <ISO time>` answers a peer link's request with when its
  * session now ends. Using a link renews it, so the linking side keeps this.
  */
 export const LINK_EXPIRES_AT_HEADER = "oni-link-expires-at";
