@@ -107,6 +107,7 @@ import * as PairingGrantStore from "./auth/PairingGrantStore.ts";
 import * as RpcAuthorization from "./auth/RpcAuthorization.ts";
 import * as PeerLinkRequests from "./peer/PeerLinkRequests.ts";
 import * as PeerThreadRelay from "./peer/PeerThreadRelay.ts";
+import * as PeerClientPairing from "./peer/PeerClientPairing.ts";
 import * as PeerLinks from "./peer/PeerLinks.ts";
 import * as TailnetAccess from "./tailnet/TailnetAccess.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
@@ -863,6 +864,7 @@ const layerUnusedConfigRpcServices = Layer.mergeAll(
   Layer.mock(PeerLinkRequests.PeerLinkRequests)({}),
   Layer.mock(TailnetAccess.TailnetAccess)({}),
   Layer.mock(PeerThreadRelay.PeerThreadRelay)({}),
+  Layer.mock(PeerClientPairing.PeerClientPairing)({}),
   Layer.mock(PortScanner.PortDiscovery)({ trackAgent: () => () => undefined }),
   Layer.mock(PreviewManager.PreviewManager)({}),
   Layer.mock(ProcessDiagnostics.ProcessDiagnostics)({}),
