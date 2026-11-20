@@ -263,6 +263,9 @@ undo by accident:
   absolute URLs for other ports to the phone and break its `location.hostname === "localhost"`
   checks. Other bodies, and everything after an upgrade, pass byte for byte. The cost is
   uncompressed text over the tunnel.
+- **Off stays routed.** `allowsPreviewTunnel` (setting plus policy) gates the route and, from
+  server config, the clients, which then stream. The partition keeps its tunnel proxy anyway, so a
+  desktop tab left open fails instead of loading the reviewer's own localhost.
 - **System browser links** have no tunnel. They keep the private-network rewrite in
   [`browserTargetResolver.ts`](../../apps/web/src/browser/browserTargetResolver.ts), and are not
   offered over SSH or a public relay, where `localhost` would be this machine.

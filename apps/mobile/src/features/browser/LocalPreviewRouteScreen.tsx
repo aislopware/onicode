@@ -111,17 +111,27 @@ export function LocalPreviewScreen(props: {
               <View className="w-full max-w-md">
                 <EmptyState
                   variant="plain"
-                  title={gt("Can't open {environment}’s localhost pages here", {
-                    environment: environmentLabel,
-                  })}
-                  detail={
-                    blocker === "update"
-                      ? gt("Update Onicode on {environment} to open them on this device.", {
+                  title={
+                    blocker === "off"
+                      ? gt("{environment} doesn't share its localhost", {
                           environment: environmentLabel,
                         })
-                      : gt(
-                          "This connection needs the Use terminals permission. Pair again using a new link with the permissions you need.",
+                      : gt("Can't open {environment}’s localhost pages here", {
+                          environment: environmentLabel,
+                        })
+                  }
+                  detail={
+                    blocker === "off"
+                      ? gt(
+                          "The preview tunnel is off there, so its local servers only open in the streamed browser.",
                         )
+                      : blocker === "update"
+                        ? gt("Update Onicode on {environment} to open them on this device.", {
+                            environment: environmentLabel,
+                          })
+                        : gt(
+                            "This connection needs the Use terminals permission. Pair again using a new link with the permissions you need.",
+                          )
                   }
                 />
               </View>

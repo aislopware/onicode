@@ -19,7 +19,11 @@ import {
   parseThreadKey,
   threadKey,
 } from "@onicode/client-runtime/state/entities";
-import type { ScopedProjectRef, ScopedThreadRef } from "@onicode/contracts";
+import {
+  allowsPreviewTunnel,
+  type ScopedProjectRef,
+  type ScopedThreadRef,
+} from "@onicode/contracts";
 import type {
   EnvironmentId,
   OrchestrationV2ProjectedTurnItem,
@@ -366,11 +370,10 @@ export function readEnvironmentSupportsServerBrowser(environmentId: EnvironmentI
   );
 }
 
+/** The host serves the tunnel: it has one, and neither its setting nor a policy turns it off. */
 export function readEnvironmentSupportsPreviewTunnel(environmentId: EnvironmentId): boolean {
-  return (
-    appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId)?.environment.capabilities
-      .previewTunnel === true
-  );
+  const config = appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId);
+  return config?.environment.capabilities.previewTunnel === true && allowsPreviewTunnel(config);
 }
 
 export function readEnvironmentServerConfigLoaded(environmentId: EnvironmentId): boolean {

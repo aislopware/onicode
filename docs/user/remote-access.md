@@ -327,6 +327,14 @@ access, `localhost` tabs you open in the desktop app stream from the host
 instead, and the mobile app doesn't offer **Open on this device**; tapping a
 `localhost` link in a chat says why it can't open there.
 
+All of this rides the host's preview tunnel. Turn off **Settings → Sharing &
+access → Preview tunnel** on the host to stop other devices from loading its
+`localhost` pages themselves: port forwarding and **Open on this device** go
+away, and open tunnels close. Tabs keep working by streaming from the host, so
+anyone who can use the host's browser tabs can still view its `localhost` pages
+there. An administrator can also turn it off with a
+[managed policy](./managed-policy.md#other-capabilities).
+
 Tabs run in the same headless browser [HTML renders](html-renders.md) use: an
 up-to-date Chrome, Brave or Chromium installed on a macOS host, otherwise a
 headless Chrome, about 120 MB, that the first tab downloads into the Onicode
