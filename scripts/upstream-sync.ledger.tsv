@@ -2810,3 +2810,4 @@ dcf158c591	take	adapted: dropped webhook/telemetry/T3 Connect parts; kept Onicod
 5ee1c2f652	take	fix(server): accept Antigravity model IDs with thinking levels when delegating
 38bac7091a	take	adapted: relay tracing (TracedAttemptFailure, traceRelayEstablishment) dropped, failures stay ConnectionAttemptError; tests use SSH/LAN entries instead of relay; scenario ported for the desktop target
 490a0d687b	take	fix(server): Antigravity usage skips agy index databases instead of reporting partial history
+5872b0a488	take	fix(web): a later thread error with the same text shows its banner again
