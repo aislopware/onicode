@@ -17,6 +17,7 @@ import {
   idleCompactionPatch,
   PROJECT_SCOPED_SERVER_SETTING_KEYS,
   requiredScopesForProjectMutation,
+  requiredScopesForServerSettingsPatch,
   resolveIdleCompaction,
   resolveProjectProviderInstanceEnabled,
   resolveProviderInstanceEnabled,
@@ -553,5 +554,19 @@ describe("server model preferences", () => {
     const input = { favorites: [], providerModelPreferences: {} };
     expect(encodeServerSettings(decodeServerSettings(input))).toMatchObject(input);
     expect(decodeServerSettingsPatch(input)).toEqual(input);
+  });
+});
+
+describe("requiredScopesForServerSettingsPatch", () => {
+  it.each([
+    { patch: {}, scopes: ["settings:write"] },
+    { patch: { enablePreviewTunnel: false }, scopes: ["access:write"] },
+    { patch: { tailnetSignIn: true }, scopes: ["settings:write", "access:write"] },
+    {
+      patch: { enablePreviewTunnel: false, keepAwakeWhileAgentsWork: true },
+      scopes: ["settings:write", "access:write"],
+    },
+  ] as const)("$patch needs $scopes", ({ patch, scopes }) => {
+    expect(requiredScopesForServerSettingsPatch(patch)).toEqual(scopes);
   });
 });
