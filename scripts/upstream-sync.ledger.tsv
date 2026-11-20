@@ -2850,3 +2850,4 @@ db51b6719f	take	perf(server): rank queued provider snapshots by focus and coales
 d1822be5a9	take	fix(server): stop managed Antigravity CLI from self-updating in place and recover on reinstall
 194726492b	take	fix(server): a killed Antigravity subagent no longer keeps its turn running
 c6ad9be183	take	fix(server): Claude history import skips sessions answered only by a synthetic error
+be9176761c	skip	deferred: steering child results into a running Claude turn marks them delivered on hand-off (EffectWorker accept), so Stop, a Claude-dropped steer or CLI exit loses the result and requeue is rejected; port together with read-confirmed delivery (queued for the batch fix thread)
