@@ -14983,6 +14983,79 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       ),
   );
 
+  it.effect(
+    "forgets a dead native session's buffered wake once its thread moves to a new one",
+    () =>
+      Effect.gen(function* () {
+        const sessionIds = [WAKE_NATIVE_SESSION, `${WAKE_NATIVE_SESSION}-replacement`];
+        const harness = yield* makeWakeHarnessWithOptions({
+          freshQueueOnReopen: true,
+          allocateSessionId: Effect.sync(() => sessionIds.shift() ?? "native-thread-unexpected"),
+        });
+        const now = yield* DateTime.now;
+        yield* harness.runtime.startTurn(
+          makeClaudeTestTurnInput({
+            threadId: harness.threadId,
+            providerThread: harness.providerThread,
+            now,
+            attemptId: RunAttemptId.make("attempt-claude-abandoned-session-a"),
+            text: "Start the build.",
+            attachments: [],
+          }),
+        );
+        yield* harness.offerAndWait(
+          makeResultFrame({ uuid: "00000000-0000-4000-8000-000000002601", result: "Started." }),
+        );
+        yield* harness.awaitTerminal(1);
+        // Output Claude produced on its own after the turn, then the process died.
+        yield* harness.offerAndWait(
+          makeAssistantTextFrame({
+            uuid: "00000000-0000-4000-8000-000000002602",
+            text: WAKE_ASSISTANT_TEXT,
+          }),
+        );
+        yield* harness.offerAndWait(
+          makeResultFrame({
+            uuid: "00000000-0000-4000-8000-000000002603",
+            result: WAKE_RESULT_TEXT,
+          }),
+        );
+        yield* harness.awaitContinuation(1);
+        yield* Queue.shutdown(harness.sdkMessages);
+        assert.isTrue(yield* harness.hasPendingBackgroundWork);
+
+        // A resume fallback keeps the thread row and gives it a fresh native session.
+        const replacement = yield* harness.runtime.ensureThread({
+          threadId: harness.threadId,
+          modelSelection: CLAUDE_TEST_MODEL_SELECTION,
+          runtimePolicy: CLAUDE_TEST_RUNTIME_POLICY,
+        });
+        yield* harness.runtime.startTurn(
+          makeClaudeTestTurnInput({
+            threadId: harness.threadId,
+            providerThread: { ...replacement, id: harness.providerThread.id },
+            now: yield* DateTime.now,
+            attemptId: RunAttemptId.make("attempt-claude-abandoned-session-b"),
+            text: "Background task completed.",
+            attachments: [],
+          }),
+        );
+        assert.isFalse(
+          yield* harness.hasPendingBackgroundWork,
+          "the dead session's undrainable output still reads as background work",
+        );
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            IdAllocator.layer,
+            McpProviderSessions.layer,
+            NodeServices.layer,
+            NodeCrypto.layer,
+          ),
+        ),
+      ),
+  );
+
   it.effect("a failed turn on a live Claude process keeps the pending wakeup's hold", () =>
     Effect.gen(function* () {
       const harness = yield* makeWakeHarness;
@@ -16020,12 +16093,19 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     const attachmentsDir = yield* fileSystem.makeTempDirectoryScoped({
       prefix: `oni-claude-v2-${name}-`,
     });
+    // Keeps transcript lookups out of the developer's own Claude config.
+    const claudeConfigDir = yield* fileSystem.makeTempDirectoryScoped({
+      prefix: `oni-claude-v2-${name}-config-`,
+    });
+    yield* fileSystem.makeDirectory(`${claudeConfigDir}/projects`);
     const deadStreamEnded = yield* Deferred.make<void>();
     let opened = 0;
+    const openedOptions: Array<ClaudeAdapterV2.ClaudeAgentSdkQueryOpenInput["options"]> = [];
+    let continuationOffers = 0;
     const adapter = yield* ClaudeAdapterV2.makeClaudeAdapterV2({
       instanceId: ClaudeAdapterV2.CLAUDE_DEFAULT_INSTANCE_ID,
       settings: DEFAULT_CLAUDE_SETTINGS,
-      environment: {},
+      environment: { CLAUDE_CONFIG_DIR: claudeConfigDir },
       attachmentsDir,
       // startTurn reads the auto-compact window from settings between opening the query and
       // attaching the turn; holding that read until the CLI's stream has ended pins the race.
@@ -16041,12 +16121,18 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       path: yield* Path.Path,
       random: yield* SecureRandom.SecureRandom,
       idAllocator,
-      continuationRequests: { offer: () => Effect.void },
+      continuationRequests: {
+        offer: () =>
+          Effect.sync(() => {
+            continuationOffers += 1;
+          }),
+      },
       queryRunner: {
         allocateSessionId: Effect.succeed(`native-${name}`),
-        open: () =>
+        open: (openInput) =>
           Effect.gen(function* () {
             opened += 1;
+            openedOptions.push(openInput.options);
             const sdkMessages = yield* Queue.unbounded<SDKMessage>();
             return {
               // The first CLI exits without writing a frame.
@@ -16109,7 +16195,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         attachments: [],
         providerTurnOrdinal,
       });
-    return { runtime, turnInput };
+    return { runtime, turnInput, openedOptions, continuationOffers: () => continuationOffers };
   });
 
   it.effect("shows Claude's root refusal when its query exits before the turn starts", () =>
@@ -16153,17 +16239,34 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     Effect.gen(function* () {
       const harness = yield* openAdapterWhoseFirstQueryEndsBeforeItsFirstFrame(
         "claude-query-conversation-missing",
-        Stream.fail(
-          new ClaudeAdapterV2.ClaudeAgentSdkQueryRunnerError({
-            method: "fromAsyncIterable",
-            cause: new ClaudeAdapterV2.ClaudeConversationNotFoundError({
-              cause: new Error("Claude Code process exited with code 1"),
+        // The CLI reports the missing conversation in a result frame before it exits.
+        Stream.concat(
+          Stream.make(
+            makeResultFrame({
+              uuid: "00000000-0000-4000-8000-000000002201",
+              result: "",
+              subtype: "error_during_execution",
+              isError: true,
+              numTurns: 0,
+              errors: [
+                "No conversation found with session ID: native-claude-query-conversation-missing",
+              ],
             }),
-          }),
+          ),
+          Stream.fail(
+            new ClaudeAdapterV2.ClaudeAgentSdkQueryRunnerError({
+              method: "fromAsyncIterable",
+              cause: new ClaudeAdapterV2.ClaudeConversationNotFoundError({
+                cause: new Error("Claude Code process exited with code 1"),
+              }),
+            }),
+          ),
         ),
       );
-      const turnInput = harness.turnInput("a", 1);
+      // A later turn resumes the session.
+      const turnInput = harness.turnInput("a", 2);
       const started = yield* harness.runtime.startTurn(turnInput).pipe(Effect.exit);
+      assert.isString(harness.openedOptions[0]?.resume);
       assert.isTrue(Exit.isFailure(started));
       if (Exit.isFailure(started)) {
         assert.include(
@@ -16171,6 +16274,9 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           "could not find this conversation",
         );
       }
+      // That frame is the failed start's own, not background output to wake the thread for.
+      assert.equal(harness.continuationOffers(), 0);
+      assert.isFalse(yield* harness.runtime.hasPendingBackgroundWork!);
       // A failed resume is what sends the next turn to a fresh native session.
       const resumed = yield* harness.runtime
         .resumeThread({
@@ -16209,8 +16315,9 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           "Claude provider query ended before the turn could start.",
         );
       }
+      // The failed turn recorded no provider turn, so the retry is the thread's first again.
       const followUp = yield* harness.runtime
-        .startTurn(harness.turnInput("b", 2))
+        .startTurn(harness.turnInput("b", 1))
         .pipe(Effect.exit);
       assert.isTrue(
         Exit.isSuccess(followUp),
@@ -16218,6 +16325,11 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           Exit.isFailure(followUp) ? Cause.pretty(followUp.cause) : ""
         }`,
       );
+      assert.isUndefined(
+        harness.openedOptions[1]?.resume,
+        "the retry resumed a session Claude never saved",
+      );
+      assert.equal(harness.openedOptions[1]?.sessionId, "native-claude-query-dies-before-frame");
     }).pipe(
       Effect.provide(
         Layer.mergeAll(

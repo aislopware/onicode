@@ -89,6 +89,7 @@ interface CapturedTurn {
   readonly nativeThreadId?: string | null;
   readonly providerTurnOrdinal?: number;
   readonly nativeThreadHasTurns?: boolean;
+  readonly creationSource?: string;
 }
 
 function unimplemented(driver: ProviderDriverKind, detail: string) {
@@ -317,6 +318,7 @@ function makeTestAdapter(input: {
                   attachments: turnInput.message.attachments,
                   nativeThreadId: turnInput.providerThread.nativeThreadRef?.nativeId ?? null,
                   providerTurnOrdinal: turnInput.providerTurnOrdinal,
+                  creationSource: turnInput.message.creationSource,
                   ...(turnInput.nativeThreadHasTurns === undefined
                     ? {}
                     : { nativeThreadHasTurns: turnInput.nativeThreadHasTurns }),
@@ -1769,7 +1771,7 @@ describe("orchestration v2 provider switching", () => {
     importedNativeSessionScenario("edit-imported-first-turn"),
   );
 
-  it.live.each(["native", "legacy"] as const)(
+  it.live.each(["native", "legacy", "buffered wake"] as const)(
     "starts a replacement native thread as new after the resume fallback with %s attempts",
     (attempts) =>
       Effect.gen(function* () {
@@ -1792,18 +1794,30 @@ describe("orchestration v2 provider switching", () => {
         yield* Effect.gen(function* () {
           const orchestrator = yield* Orchestrator.OrchestratorV2;
           const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
-          const runToCompletion = Effect.fn("runToCompletion")(function* (ordinal: number) {
+          const runToCompletion = Effect.fn("runToCompletion")(function* (
+            ordinal: number,
+            wake = false,
+          ) {
             yield* orchestrator.dispatch({
               type: "message.dispatch",
               commandId: CommandId.make(`resume-fallback:${ordinal}`),
               threadId,
               messageId: MessageId.make(`resume-fallback:${ordinal}`),
-              createdBy: "user",
-              creationSource: "web",
+              ...(wake
+                ? {
+                    createdBy: "agent" as const,
+                    creationSource: "provider" as const,
+                    notification: {
+                      source: { kind: "background_task" as const },
+                      outcome: "updated" as const,
+                      summary: "Background activity updated",
+                    },
+                  }
+                : { createdBy: "user" as const, creationSource: "web" as const }),
               text: `Request ${ordinal}`,
               attachments: [],
               modelSelection: CLAUDE_MODEL_SELECTION,
-              dispatchMode: { type: "start_immediately" },
+              dispatchMode: wake ? { type: "queue_after_active" } : { type: "start_immediately" },
             });
             yield* orchestrator.streamStoredEvents.pipe(
               Stream.filter(
@@ -1863,7 +1877,7 @@ describe("orchestration v2 provider switching", () => {
             });
           }
           yield* Ref.set(failResumeOnce, true);
-          yield* runToCompletion(2);
+          yield* runToCompletion(2, attempts === "buffered wake");
           yield* runToCompletion(3);
 
           const turns = yield* Ref.get(capturedTurns);
@@ -1874,6 +1888,12 @@ describe("orchestration v2 provider switching", () => {
           assert.isFalse(turns[1]?.nativeThreadHasTurns);
           assert.equal(turns[2]?.nativeThreadId, turns[1]?.nativeThreadId);
           assert.isTrue(turns[2]?.nativeThreadHasTurns);
+          // Buffered wake output stays with the lost session, so the fresh one gets a prompt.
+          if (attempts === "buffered wake") {
+            assert.equal(turns[1]?.creationSource, "server");
+            assert.include(turns[1]?.text, "Request 1");
+            assert.include(turns[1]?.text, "can no longer be resumed");
+          }
 
           const projection = yield* orchestrator.getThreadProjection(threadId);
           const run2 = projection.runs[1]!;
@@ -1886,7 +1906,7 @@ describe("orchestration v2 provider switching", () => {
               .toSorted((left, right) => left.ordinal - right.ordinal)
               .slice(0, 2)
               .map((item) => (item.type === "handoff" ? item.contextHandoffId : item.type)),
-            [handoff?.id, "user_message"],
+            [handoff?.id, attempts === "buffered wake" ? "notification" : "user_message"],
           );
         }).pipe(
           Effect.provide(
