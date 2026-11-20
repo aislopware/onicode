@@ -294,6 +294,7 @@ interface WslPreflightSuccess {
   readonly windowsEntryPath: string;
   readonly runtime: WslPreflightRuntime;
   readonly resolvedPath: string;
+  readonly oniHome: string | null;
   readonly runtimeId?: string;
 }
 
@@ -413,7 +414,7 @@ const runWslPreflight = Effect.fn("desktop.backendConfiguration.wslPreflight")(f
       : ({ ok: true, windowsEntryPath, linuxAppRoot: mountedAppRoot.value } as const);
   });
 
-  let stagedFailure: { readonly runtimeId?: string; readonly reason: string } | undefined;
+  let stagedFailure: { readonly reason: string } | undefined;
   const failedStaged = (failure: { readonly reason: string }) =>
     ({
       _tag: "Failed",
@@ -422,11 +423,16 @@ const runWslPreflight = Effect.fn("desktop.backendConfiguration.wslPreflight")(f
     }) as const;
 
   if (input.runtimeArchive !== null) {
-    const runtime = yield* wslEnv.prepareRuntime(runningDistro, input.runtimeArchive);
-    if (runtime.ok) {
-      // Staged runtimes bundle Node and node-pty; provider PATH discovery must not require them.
-      const stagedProbe = yield* wslEnv.probeRuntime(runningDistro);
-      if (stagedProbe.ok) {
+    // Staged runtimes bundle Node and node-pty; provider PATH discovery must not require them.
+    // Probe first: the runtime cache lives under the login shell's ONICODE_HOME.
+    const stagedProbe = yield* wslEnv.probeRuntime(runningDistro);
+    if (stagedProbe.ok) {
+      const runtime = yield* wslEnv.prepareRuntime(
+        runningDistro,
+        input.runtimeArchive,
+        stagedProbe.oniHome,
+      );
+      if (runtime.ok) {
         yield* wslServerTree.cleanupLegacy;
         return {
           _tag: "Ready",
@@ -434,20 +440,21 @@ const runWslPreflight = Effect.fn("desktop.backendConfiguration.wslPreflight")(f
           windowsEntryPath: environment.backendEntryPath,
           runtime: { kind: "executable", entryPath: `${runtime.linuxAppRoot}/onicode` },
           resolvedPath: stagedProbe.resolvedPath,
+          oniHome: stagedProbe.oniHome,
           runtimeId: input.runtimeArchive.runtimeId,
         } as const;
       }
-      yield* Effect.logWarning(
-        "The staged WSL runtime probe failed; retrying from the mounted server tree.",
-        { reason: stagedProbe.reason },
-      );
-      stagedFailure = { runtimeId: input.runtimeArchive.runtimeId, reason: stagedProbe.reason };
-    } else {
       stagedFailure = { reason: runtime.reason };
       yield* Effect.logWarning(
         "Could not stage the WSL runtime; launching from the mounted server tree instead.",
         { reason: runtime.reason },
       );
+    } else {
+      yield* Effect.logWarning(
+        "The staged WSL runtime probe failed; retrying from the mounted server tree.",
+        { reason: stagedProbe.reason },
+      );
+      stagedFailure = { reason: stagedProbe.reason };
     }
   }
 
@@ -470,10 +477,6 @@ const runWslPreflight = Effect.fn("desktop.backendConfiguration.wslPreflight")(f
       : failedNodePty(nodePtyResult);
   }
 
-  if (stagedFailure?.runtimeId) {
-    yield* wslEnv.invalidateRuntime(runningDistro, stagedFailure.runtimeId);
-  }
-
   return {
     _tag: "Ready",
     runningDistro,
@@ -484,6 +487,7 @@ const runWslPreflight = Effect.fn("desktop.backendConfiguration.wslPreflight")(f
       linuxEntryPath: `${mounted.linuxAppRoot}/apps/server/dist/bin.mjs`,
     },
     resolvedPath: nodePtyResult.resolvedPath,
+    oniHome: nodePtyResult.oniHome,
   } as const;
 });
 
@@ -743,13 +747,16 @@ const resolveWslStartConfig = Effect.fn("desktop.backendConfiguration.resolveWsl
       "--exec",
       "env",
       `PATH=${launchPath}`,
+      ...(preflight.oniHome === null ? [] : [`ONICODE_HOME=${preflight.oniHome}`]),
       ...command,
       "--bootstrap-fd",
       "0",
       ...devArgs,
     ],
     preflightFailure: Option.none(),
-    ...(preflight.runtimeId === undefined ? {} : { wslRuntimeId: preflight.runtimeId }),
+    ...(preflight.runtimeId === undefined
+      ? {}
+      : { wslRuntimeId: preflight.runtimeId, wslOniHome: preflight.oniHome }),
   } satisfies DesktopBackendManager.DesktopBackendStartConfig;
 });
 
