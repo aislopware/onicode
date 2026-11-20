@@ -3,6 +3,7 @@ import {
   latestRootProviderFailure,
   latestRootProviderFailureItem,
   latestUnheldRun,
+  runRanAfter,
   threadErrorSummary,
   usageLimitRunPresentedAsLatest,
 } from "@onicode/shared/orchestrationV2ThreadError";
@@ -55,6 +56,7 @@ import type { MFunctionType } from "gt-i18n/types";
 
 const ACTIVITY_RUN_STATUSES = new Set(["preparing", "starting", "running", "waiting"]);
 const INTERRUPTIBLE_RUN_STATUSES = new Set(["preparing", "starting", "running"]);
+const ENDED_RUN_STATUSES = new Set(["completed", "failed", "interrupted", "cancelled"]);
 // Preparing runs show their workspace setup instead.
 const PROVIDER_STARTING_RUN_STATUSES = new Set(["starting", "running"]);
 
@@ -425,8 +427,11 @@ function threadErrorSource(
   if (sessionError === null) return null;
   let ended: ThreadStructure["runs"][number] | null = null;
   for (const run of projection.runs) {
-    if (run.status !== "failed" && run.status !== "completed") continue;
-    if (ended === null || run.ordinal > ended.ordinal) ended = run;
+    if (!ENDED_RUN_STATUSES.has(run.status)) continue;
+    if ((run.status === "cancelled" || run.status === "interrupted") && run.startedAt === null) {
+      continue;
+    }
+    if (ended === null || runRanAfter(run, ended)) ended = run;
   }
   if (ended === null) return null;
   const endedFailure =
