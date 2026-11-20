@@ -330,6 +330,7 @@
   "262cd2c6c05667db": "Use {max} characters or fewer.",
   "3a85d6e4f8a78c72": "A view with this name already exists.",
   "81f613bb68d85bb7": "Kept out of chat, in a private file this agent's commands can read for 24 hours",
+  "07b56c0c12bd2de1": "Kept out of chat, in private files this agent's commands can read for 24 hours",
   "8c2d901183b4e219": "Paste the secret",
   "a8037118a8422648": "Also on your phone, where your password manager can fill it",
   "610aea624f895a78": "Saved securely and kept private",

@@ -2905,3 +2905,4 @@ e24f0c7154	take	ACP shared adapter; kept Onicode's SteerDeclinedError pass-throu
 31e31c608d	take	ACP Registry (DeepSeek) only; taken as is
 9cc4018c75	take	fix(server): idle threads compact while a delegated task runs
 7085c47776	take	fix(mobile): a settings row an older environment left mixed can be set off
+0bc9b57b93	take	CONFLICTs resolved for Onicode's file-only request_secret: no delivery/secretRef, so a fields card always returns files and only a pasted value is refused beside fields; kept Onicode's destination, phone and Saving… card notes and added the fields inputs, show/hide toggle and plural privacy note (secretRequestPrivacyNote now keyed on fields); eval cases and runner adapted without delivery; i18n catalogs merged by key; agentContextBudget re-measured on Onicode's text (mcpToolListJsonBytes 55671, +429). Old mobile builds see a fields card as one input and get fields_mismatch, nothing saved

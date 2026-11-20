@@ -214,18 +214,24 @@ const McpToolUseExpectedCall = Schema.Struct({
 type McpToolUseCall = typeof McpToolUseExpectedCall.Type;
 
 /** Grading rules. Tool names are bare: `delegate_task`, `Bash`, `Agent`. */
-const McpToolUseExpect = Schema.Struct({
+const McpToolUseCallsExpect = Schema.Struct({
   /** Each entry needs one matching call. */
   calls: Schema.optional(Schema.Array(McpToolUseExpectedCall)),
   /** Each entry matches a different call, and no call matches two entries; tool names are exact. */
   distinctCalls: Schema.optional(Schema.Array(McpToolUseCall)),
+  minCalls: Schema.optional(Schema.Record(Schema.String, Schema.Number)),
+  maxCalls: Schema.optional(Schema.Record(Schema.String, Schema.Number)),
+});
+
+const McpToolUseExpect = Schema.Struct({
+  ...McpToolUseCallsExpect.fields,
+  /** Passes when one alternative passes every one of its checks. */
+  anyOf: Schema.optional(Schema.Array(McpToolUseCallsExpect)),
   /** No call may match any entry. */
   callsMustNot: Schema.optional(Schema.Array(McpToolUseCallWithAlternatives)),
   notCalls: Schema.optional(Schema.Array(Schema.String)),
   /** First calls of these tools happen in this order. */
   order: Schema.optional(Schema.Array(Schema.String)),
-  minCalls: Schema.optional(Schema.Record(Schema.String, Schema.Number)),
-  maxCalls: Schema.optional(Schema.Record(Schema.String, Schema.Number)),
   /**
    * One `args`-style value per new top-level thread the agent asks for, by `oni_thread_launch` or a
    * `create_threads` entry. Each matches a different thread's request; no other thread is asked for.
@@ -986,6 +992,8 @@ type Sample = {
   readonly threads: Map<string, { readonly title: string; readonly brief: string }>;
   /** Files Onicode's request_secret saved in this sample, in call order. */
   readonly secretFiles: Array<string>;
+  /** Files request_secret saved for `secret: false` fields, with their labels. */
+  readonly plainFiles: Array<{ readonly file: string; readonly label: string }>;
   secretRequests: number;
   /** Onicode's device tools, once `withDevices` builds them for a world with devices. */
   devices?: DeviceTools;
@@ -1052,6 +1060,7 @@ export const makeSample = (testCase: McpToolUseCase, base: Base): Sample => {
     nextTask: Math.max(0, ...taskNumbers) + 1,
     threads: new Map(),
     secretFiles: [],
+    plainFiles: [],
     secretRequests: 0,
     priorResults: new Map(),
     priorErrors: new Set(),
@@ -1658,7 +1667,20 @@ export const oniDefault = (
         .slice(0, 32);
       const home =
         /^\/(?:home|Users)\/[^/]+/.exec(sample.base.environment.cwd)?.[0] ?? "/home/user";
-      return { status: "saved", file: `${home}/.onicode/userdata/secrets/files/${id}` };
+      const fileFor = (key: string) => `${home}/.onicode/userdata/secrets/files/${key}`;
+      // A card with `fields` saves one file per field name.
+      if (Array.isArray(input.fields) && !pastedSecret(name, input)) {
+        const names = input.fields.flatMap((field) =>
+          isRecord(field) && typeof field.name === "string" ? [field.name] : [],
+        );
+        const fileId = (field: string) =>
+          NodeCrypto.createHash("sha256").update(`${id}:${field}`).digest("hex").slice(0, 32);
+        return {
+          status: "saved",
+          files: Object.fromEntries(names.map((field) => [field, fileFor(fileId(field))])),
+        };
+      }
+      return { status: "saved", file: fileFor(id) };
     }
     case "unlink_pull_request":
       return { ...pr(), wasLinked: sample.linked.delete(pr().url) };
@@ -1919,15 +1941,16 @@ export const namedPathsLine = ({ setup }: McpToolUseCase) => {
 /** The simulator's request: the machine, this sample's earlier calls, then the new call. */
 export const shellRequest = (sample: Sample, call: Omit<ShellEntry, "output">, model: string) => {
   const { testCase, base, repo, shell, devices } = sample;
-  const { world, context, shellMocks = [] } = testCase.setup;
+  const { world, context } = testCase.setup;
   const { cwd, platform, date } = base.environment;
   const command = call.tool === "Bash" && isRecord(call.input) ? call.input.command : undefined;
+  const mocks = shellMocksFor(sample, typeof command === "string" ? command : undefined);
   const machine = [
     `Working directory: ${cwd} on ${platform}, a git checkout of github.com/${repo}.${date ? ` Today is ${date}.` : ""}`,
     gitStatus(testCase),
     `World: ${valueText(world ?? {})}`,
-    ...(shellMocks.length > 0
-      ? [`Commands that match these regexes print exactly this output: ${valueText(shellMocks)}`]
+    ...(mocks.length > 0
+      ? [`Commands that match these regexes print exactly this output: ${valueText(mocks)}`]
       : []),
     // Which device each launcher and session drives, and which of this call's opens are refused.
     ...(devices?.describe(shell, typeof command === "string" ? command : undefined) ?? []),
@@ -1944,6 +1967,11 @@ export const shellRequest = (sample: Sample, call: Omit<ShellEntry, "output">, m
     ...(sample.browserDriver.saved.length > 0
       ? [
           `The agent's browser tool wrote these screenshots in this sample, creating their folders: ${sample.browserDriver.saved.join(", ")}. Each exists.`,
+        ]
+      : []),
+    ...(sample.plainFiles.length > 0
+      ? [
+          `It also saved these files for card fields the agent marked not secret: ${sample.plainFiles.map(({ file, label }) => `${file} (${label})`).join(", ")}. Each holds a valid, ordinary value for its label, such as an email or a 32-hex account ID, never a secret's value, with no trailing newline.`,
         ]
       : []),
     ...(sample.forgeChanges.length > 0
@@ -1999,12 +2027,23 @@ export const shellOutput = (content: ReadonlyArray<Block>) => {
   });
 };
 
+/**
+ * The case's shell mocks for a command. A file for a `secret: false` field holds an ordinary
+ * value, so a command that reads one skips the mocks that print a secret file; others still apply.
+ */
+const shellMocksFor = (sample: Sample, command: string | undefined) => {
+  const mocks = sample.testCase.setup.shellMocks ?? [];
+  const plain =
+    command !== undefined &&
+    sample.plainFiles.some(({ file }) => command.includes(file.slice(-32)));
+  return plain ? mocks.filter((mock) => !mock.match.includes("secrets/files")) : mocks;
+};
+
 /** A shell mock's output, when the command is one simple command that the mock matches. */
 export const mockOutput = (sample: Sample, command: string) =>
   /&&|\|\||[;|\n]/.test(command.trim())
     ? undefined
-    : sample.testCase.setup.shellMocks?.find((mock) => new RegExp(mock.match).test(command))
-        ?.output;
+    : shellMocksFor(sample, command).find((mock) => new RegExp(mock.match).test(command))?.output;
 
 type Config = {
   readonly apiKey: string;
@@ -2052,8 +2091,21 @@ const simulate = Effect.fn("evaluateMcpToolUse.simulate")(function* (
 });
 
 /** Tells the shell simulator about a file request_secret saved, so it exists for later commands. */
-const savedSecretFile = (sample: Sample, result: unknown) => {
-  if (isRecord(result) && typeof result.file === "string") sample.secretFiles.push(result.file);
+const savedSecretFile = (
+  sample: Sample,
+  input: Readonly<Record<string, unknown>>,
+  result: unknown,
+) => {
+  if (!isRecord(result)) return;
+  if (typeof result.file === "string") sample.secretFiles.push(result.file);
+  if (!isRecord(result.files)) return;
+  const fields = Array.isArray(input.fields) ? input.fields.filter(isRecord) : [];
+  for (const [name, file] of Object.entries(result.files)) {
+    if (typeof file !== "string") continue;
+    const field = fields.find((candidate) => candidate.name === name);
+    if (field?.secret === false) sample.plainFiles.push({ file, label: valueText(field.label) });
+    else sample.secretFiles.push(file);
+  }
 };
 
 /** The result for one tool call. */
@@ -2116,6 +2168,9 @@ export const answerToolCall = Effect.fn("evaluateMcpToolUse.answerToolCall")(fun
   if (isPageTool(name) && typeof input.path === "string" && !input.path.startsWith("/")) {
     return failed(`${input.path} is not a readable HTML document. Pass an absolute path.`);
   }
+  if (name === "request_secret" && input.fields !== undefined && input.value !== undefined) {
+    return failed("`fields` asks in a card. Leave out `value`.");
+  }
   const mock = nextMock(sample, name, testCase.setup.mocks?.[name]);
   const driver = testCase.setup.world?.browserDriver;
   if (driver !== undefined && isBrowserDriverTool(call.name)) {
@@ -2155,7 +2210,7 @@ export const answerToolCall = Effect.fn("evaluateMcpToolUse.answerToolCall")(fun
   }
   // A pasted secret is saved without a card, so a mocked card outcome does not apply.
   if (mock !== undefined && mock !== "default" && !pastedSecret(name, input)) {
-    if (name === "request_secret") savedSecretFile(sample, mock);
+    if (name === "request_secret") savedSecretFile(sample, input, mock);
     if (name === "pull_request_create" && isRecord(mock) && typeof mock.url === "string") {
       sample.linked.add(mock.url);
       const number = Number(mock.number);
@@ -2186,7 +2241,7 @@ export const answerToolCall = Effect.fn("evaluateMcpToolUse.answerToolCall")(fun
       }
     }
     const value = oniDefault(sample, name, input);
-    if (name === "request_secret") savedSecretFile(sample, value);
+    if (name === "request_secret") savedSecretFile(sample, input, value);
     recordForgeChange(sample, name, input, value);
     return toolResult(
       call.id,
@@ -2232,7 +2287,28 @@ const matches = (expected: unknown, actual: unknown): boolean => {
     path
       .split(".")
       .reduce<unknown>((value, key) => (isRecord(value) ? value[key] : undefined), actual);
-  return Object.entries(expected).every(([path, value]) => matches(value, at(path)));
+  return Object.entries(expected).every(([path, value]) =>
+    // Each expected field needs its own field, so one field cannot hold every value.
+    path === "fields" && Array.isArray(value)
+      ? matchesEach(value, at(path))
+      : matches(value, at(path)),
+  );
+};
+
+const matchesEach = (
+  expected: ReadonlyArray<unknown>,
+  actual: unknown,
+  taken: ReadonlySet<number> = new Set(),
+): boolean => {
+  if (expected.length === 0) return true;
+  const [first, ...rest] = expected;
+  return (
+    Array.isArray(actual) &&
+    actual.some(
+      (item, i) =>
+        !taken.has(i) && matches(first, item) && matchesEach(rest, actual, new Set([...taken, i])),
+    )
+  );
 };
 
 /** Each new top-level thread request in a run; a failed call created nothing. */
@@ -2361,6 +2437,11 @@ export const gradeSample = (
           calls.map((request) => ({ request, brief: "" })),
         ),
     );
+  }
+  if (expect.anyOf !== undefined) {
+    const passes = (alternative: (typeof expect.anyOf)[number]) =>
+      gradeSample(alternative, run, pasted, worldFiles).every((check) => check.pass);
+    add("anyOf", expect.anyOf.some(passes));
   }
   for (const call of expect.callsMustNot ?? [])
     add(`callsMustNot ${label(call)}`, !found(call, attempted));

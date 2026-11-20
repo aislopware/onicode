@@ -2486,6 +2486,9 @@ const make = Effect.gen(function* () {
           "Asking for a secret requires an active run owned by this MCP provider session.",
         );
       }
+      if (input.fields !== undefined && input.value !== undefined) {
+        return yield* failure("invalid_request", "`fields` asks in a card. Leave out `value`.");
+      }
       // A secret the user already pasted needs no card: it goes straight to a file.
       if (input.value !== undefined) {
         const file = yield* secretRequests
@@ -2523,6 +2526,7 @@ const make = Effect.gen(function* () {
             reason: input.reason,
             ...(input.url === undefined ? {} : { url: input.url }),
             ...(input.placeholder === undefined ? {} : { placeholder: input.placeholder }),
+            ...(input.fields === undefined ? {} : { fields: input.fields }),
             secretStatus,
           })
           .pipe(
@@ -2611,10 +2615,10 @@ const make = Effect.gen(function* () {
       yield* Effect.annotateCurrentSpan({ "secret_request.status": status });
       yield* Metrics.increment(Metrics.secretRequestsTotal, { status });
       if (status !== "saved") return { status, note: SECRET_REQUEST_UNSAVED_NOTE[status] };
-      const file = yield* secretRequests
+      const saved = yield* secretRequests
         .saveToFile({ threadId, turnItemId })
         .pipe(Effect.mapError((error) => failure("orchestration_error", error.message)));
-      return { status, file };
+      return { status, ...saved };
     }),
 
     capabilities: Effect.fn("OrchestratorMcpService.capabilities")(function* (scope, input = {}) {
