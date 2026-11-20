@@ -262,7 +262,9 @@ it.each([{ issueSummaries: false }, { issueSummaries: true }])(
       return Effect.succeed(summary);
     });
     let panelOpened = false;
+    const detailKeys: Array<string> = [];
     using _detail = answerRpc(WS_METHODS.issuesDetail, (input: IssueRef) => {
+      detailKeys.push(input.key);
       // With summaries, only the issue panel reads the full detail.
       if (issueSummaries) expect(panelOpened).toBe(true);
       return Effect.succeed(detailFor(input));
@@ -286,11 +288,17 @@ it.each([{ issueSummaries: false }, { issueSummaries: true }])(
     });
     await expect.element(badge).toBeVisible();
     expect(badge.element().querySelector("svg")).toHaveClass(/text-emerald-600/);
-    // A group shows its open issue's state over a completed one.
     const groupedBadge = page.getByRole("button", { name: "2 linked issues" });
-    await vi.waitFor(() =>
-      expect(groupedBadge.element().querySelector("svg")).toHaveClass(/text-emerald-600/),
-    );
+    await expect.element(groupedBadge).toBeVisible();
+    if (issueSummaries) {
+      // A group shows its open issue's state over a completed one.
+      await vi.waitFor(() =>
+        expect(groupedBadge.element().querySelector("svg")).toHaveClass(/text-emerald-600/),
+      );
+    } else {
+      // An older server has no summaries, and a group never reads full details for an icon.
+      expect(detailKeys).not.toContain(completed.key);
+    }
     await userEvent.hover(badge);
     const issueName = `Issue ${issue.displayKey}: ${liveTitle}`;
     const previewLink = page.getByRole("link", { name: issueName });
