@@ -4735,24 +4735,51 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
         yield* initRepoWithCommit(upstream);
         yield* git(upstream, ["branch", "-M", "main"]);
         const cwd = yield* makeTmpDir();
-        const driver = yield* GitVcsDriver.GitVcsDriver;
+        // The unborn-HEAD fallback matches English stderr.
+        const headDiffLocales: Array<CommandLine.Word | undefined> = [];
+        const delegate = yield* ChildProcessSpawner.ChildProcessSpawner;
+        const spawner = ChildProcessSpawner.make((command) => {
+          if (
+            ChildProcess.isStandardCommand(command) &&
+            command.args.includes("--numstat") &&
+            command.args.includes("HEAD")
+          ) {
+            headDiffLocales.push(command.options.env?.LANGUAGE);
+          }
+          return delegate.spawn(command);
+        });
+        const driver = yield* makeGitVcsDriverCore().pipe(
+          Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+          Effect.provide(layerServerConfig),
+        );
         yield* git(cwd, ["init", "-b", "main"]);
         yield* git(cwd, ["remote", "add", "origin", upstream]);
         yield* git(cwd, ["fetch", "origin"]);
         yield* writeTextFile(cwd, "new.txt", "one\ntwo\n");
 
-        const preview = yield* driver.getReviewDiffPreview({ cwd });
+        const hostEnv = yield* HostProcess.Environment;
+        const german = Effect.provideService(HostProcess.Environment, {
+          ...hostEnv,
+          LANGUAGE: "de",
+        });
+
+        const preview = yield* driver.getReviewDiffPreview({ cwd }).pipe(german);
         const changes = preview.sources.find((source) => source.kind === "branch-range")!;
         assert.isNull(changes.baseRef);
         assert.deepStrictEqual(changes.files, [
           { path: "new.txt", previousPath: null, changeType: "new", additions: 2, deletions: 0 },
         ]);
-        const status = yield* driver.statusDetailsLocal(cwd, { includeBranchChanges: true });
+        assert.deepStrictEqual(headDiffLocales.splice(0), ["C"]);
+        const status = yield* driver
+          .statusDetailsLocal(cwd, { includeBranchChanges: true })
+          .pipe(german);
         assert.deepStrictEqual(status.branchChanges, {
           baseRef: null,
           insertions: 2,
           deletions: 0,
         });
+        assert.isNotEmpty(headDiffLocales);
+        assert.deepStrictEqual(new Set(headDiffLocales), new Set(["C"]));
       }),
     );
 

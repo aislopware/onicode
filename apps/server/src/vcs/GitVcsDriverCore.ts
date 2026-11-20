@@ -4147,7 +4147,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     }
     untrackedTotalsFailures.delete(cwd);
     const readNumstat = (ref: string) =>
-      executeGit(
+      executeGitWithStableDiagnostics(
         "GitVcsDriver.readBranchChangeTotals",
         cwd,
         // Plumbing: porcelain diff refreshes and rewrites the real index, taking index.lock.
@@ -4447,7 +4447,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       env?: NodeJS.ProcessEnv,
     ) {
       const args = [...diffArgs, "--raw", "--numstat", "-z"];
-      const result = yield* executeGit(
+      const result = yield* executeGitWithStableDiagnostics(
         "GitVcsDriver.getReviewDiffPreview.stat",
         cwd,
         [...args, ref, "--", ...pathArgs],
