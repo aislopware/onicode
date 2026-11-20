@@ -419,6 +419,8 @@ export class EnvironmentAuth extends Context.Service<
       code: string,
       access: AuthMcpClientAccess,
     ) => Effect.Effect<void, ServerAuthMcpApprovalCodeError | ServerAuthInternalError>;
+    /** Changes whenever other clients are revoked; a sign-in begun before then must not finish. */
+    readonly otherClientsRevocation: Effect.Effect<number>;
   }
 >()("onicode/auth/EnvironmentAuth") {}
 
@@ -792,12 +794,20 @@ export const make = Effect.gen(function* () {
     return yield* revokeSession(targetSessionId);
   });
 
+  let otherClientsRevocation = 0;
   const revokeOtherClientSessions: EnvironmentAuth["Service"]["revokeOtherClientSessions"] = (
     currentSessionId,
   ) =>
-    // "Revoke all others" promises every other way in is gone, so unspent codes go too.
+    // "Revoke all others" promises every other way in is gone, so unspent codes go too. The count
+    // changes between the two sweeps: a sign-in that consumed a code before the first then fails,
+    // and one that issues a session before the second loses it there.
     bootstrapCredentials.revokeUnspent().pipe(
       Effect.mapError((cause) => new ServerAuthOtherSessionsRevocationError({ cause })),
+      Effect.andThen(
+        Effect.sync(() => {
+          otherClientsRevocation += 1;
+        }),
+      ),
       Effect.andThen(revokeOtherSessionsExcept(currentSessionId)),
       Effect.withSpan("EnvironmentAuth.revokeOtherClientSessions"),
     );
@@ -978,6 +988,7 @@ export const make = Effect.gen(function* () {
     authenticateMcpClient,
     issueMcpClientSession,
     consumeMcpApprovalCode,
+    otherClientsRevocation: Effect.sync(() => otherClientsRevocation),
   });
 });
 

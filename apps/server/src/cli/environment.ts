@@ -132,9 +132,10 @@ const linkBatchEntryName = (entry: { readonly line: number; readonly url: string
 
 /** One `<url> <pairing-code>` per line; blank lines and `#` comments are skipped. */
 const parseLinkBatch = (text: string) =>
-  text.split(/\r?\n/).flatMap((raw, index) => {
+  text.split(/\r?\n/).flatMap((line, index) => {
+    const raw = line.replace(/(?:^|\s)#.*$/, "");
     const fields = raw.trim().split(/\s+/);
-    if (raw.trim().length === 0 || raw.trim().startsWith("#")) return [];
+    if (raw.trim().length === 0) return [];
     const [url, pairingCode] = fields;
     return [
       url !== undefined && pairingCode !== undefined && fields.length === 2
@@ -216,7 +217,7 @@ const environmentLinkCommand = Command.make("link", {
   ),
   from: Flag.String("from").pipe(
     Flag.withDescription(
-      "Link several environments: a file with one `<url> <pairing-code>` per line, or - for stdin. Environments already linked are left as they are.",
+      "Link several environments: a file with one `<url> <pairing-code>` per line, or - for stdin. Environments already linked at that address are left as they are.",
     ),
     Flag.optional,
   ),

@@ -2,6 +2,7 @@ import { type DesktopWslState, EnvironmentId } from "@onicode/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 import {
   applyWslEnableSelection,
+  canRevokeOtherClients,
   isServerNetworkAccessible,
   parseManualDesktopSshTarget,
   resolveAccessEnvironmentId,
@@ -42,6 +43,27 @@ describe("togglePairingScopeSelection", () => {
     },
   ] as const)("$label", ({ current, scope, checked, expected }) => {
     expect(togglePairingScopeSelection(current, scope, checked)).toEqual(expected);
+  });
+});
+
+describe("canRevokeOtherClients", () => {
+  it.each([
+    { name: "only this client", sessions: [{ current: true }], pairingLinks: 0, expected: false },
+    {
+      name: "another client",
+      sessions: [{ current: true }, { current: false }],
+      pairingLinks: 0,
+      expected: true,
+    },
+    {
+      name: "an unused pairing link",
+      sessions: [{ current: true }],
+      pairingLinks: 1,
+      expected: true,
+    },
+    { name: "sessions still loading", sessions: null, pairingLinks: 0, expected: true },
+  ])("with $name: $expected", ({ sessions, pairingLinks, expected }) => {
+    expect(canRevokeOtherClients(sessions, pairingLinks)).toBe(expected);
   });
 });
 

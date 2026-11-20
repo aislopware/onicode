@@ -703,9 +703,11 @@ function ConnectionsSettingsContent({
       toastManager.add({
         type: "success",
         title:
-          result.value === 1
-            ? gt("Revoked 1 other client")
-            : gt("{count, plural, other {Revoked {count} clients}}", { count: result.value }),
+          result.value === 0
+            ? gt("Revoked unused pairing links")
+            : result.value === 1
+              ? gt("Revoked 1 other client")
+              : gt("{count, plural, other {Revoked {count} clients}}", { count: result.value }),
         description: gt("Other paired clients will need a new pairing link before reconnecting."),
       });
     } else if (!isAtomCommandInterrupted(result)) {
@@ -1457,6 +1459,7 @@ function ConnectionsSettingsContent({
                         ? desktopClientSessions
                         : null
                     }
+                    pairingLinkCount={visibleDesktopPairingLinks.length}
                     isRevokingOtherClients={isRevokingOtherDesktopClients}
                     onRevokeOtherClients={handleRevokeOtherDesktopClients}
                   />

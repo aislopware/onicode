@@ -7137,6 +7137,7 @@
   "0badb0dc1c68223f": "Kopplungslink konnte nicht widerrufen werden",
   "7d86e527ad36e0ba": "Der Client-Zugriff konnte nicht widerrufen werden.",
   "f0289c9a9258fc11": "Client-Zugriff konnte nicht widerrufen werden",
+  "740103bb1653c20b": "Unbenutzte Kopplungslinks widerrufen",
   "2686e86a255edb3f": "1 anderer Client widerrufen",
   "23601766b7c2d13e": "{count, plural, one {{count} Client widerrufen} other {{count} Clients widerrufen}}",
   "ca0bfbc3cb91e6b9": "Andere gekoppelte Clients brauchen einen neuen Kopplungslink, bevor sie sich wieder verbinden.",

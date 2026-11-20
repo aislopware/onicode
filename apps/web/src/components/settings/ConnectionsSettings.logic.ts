@@ -49,10 +49,16 @@ export function togglePairingScopeSelection(
     : next;
 }
 
+/** Revoking others also revokes unused pairing links, so they alone are enough. */
 export function canRevokeOtherClients(
   clientSessions: ReadonlyArray<{ readonly current: boolean }> | null,
+  pairingLinkCount: number,
 ): boolean {
-  return clientSessions === null || clientSessions.some((session) => !session.current);
+  return (
+    clientSessions === null ||
+    pairingLinkCount > 0 ||
+    clientSessions.some((session) => !session.current)
+  );
 }
 
 type WslEnableBridge = Pick<DesktopBridge, "setWslBackendEnabled" | "setWslDistro" | "setWslOnly">;

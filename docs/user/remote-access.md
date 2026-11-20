@@ -512,9 +512,10 @@ only those again. Machines already linked are left as they are.
 For machines no app is connected to, put one `<address> <pairing-code>` per
 line in a file (make each code with `onicode pair` on that machine) and run
 `onicode environment link --from <file> --access <mode>`, or `--from -` to read
-standard input. It prints a result per line, leaves machines already linked as
-they are, and exits non-zero if any line failed, so the same file can be run
-again with fresh codes for the failures.
+standard input. It prints a result per line, leaves machines already linked at
+that address as they are, and exits non-zero if any line failed, so the same
+file can be run again with fresh codes for the failures. A machine linked at
+another address is refused: forget that link first if it moved.
 
 You can also ask an agent to link a machine by name, such as "delegate this to
 my vps". It shows a card in the thread where you pick the machine the same way

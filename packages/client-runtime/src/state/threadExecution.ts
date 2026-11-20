@@ -418,13 +418,7 @@ function threadErrorSource(
 ): string | null {
   const itemSource = (item: NonNullable<typeof failureItem>) =>
     `${item.id}@${isoOrEmpty(item.completedAt)}`;
-  if (
-    failureItem !== null &&
-    (sessionError === null || sessionError === failureItem.failure.message)
-  ) {
-    return itemSource(failureItem);
-  }
-  if (sessionError === null) return null;
+  if (sessionError === null) return failureItem === null ? null : itemSource(failureItem);
   let ended: ThreadStructure["runs"][number] | null = null;
   for (const run of projection.runs) {
     if (!ENDED_RUN_STATUSES.has(run.status)) continue;
@@ -433,14 +427,15 @@ function threadErrorSource(
     }
     if (ended === null || runRanAfter(run, ended)) ended = run;
   }
-  if (ended === null) return null;
   const endedFailure =
-    failureItem?.runId === ended.id
-      ? failureItem
-      : latestRootProviderFailureItem(ended, projection.turnItems);
-  return endedFailure?.failure.message === sessionError
-    ? itemSource(endedFailure)
-    : `${ended.id}@${isoOrEmpty(ended.completedAt)}`;
+    ended === null
+      ? null
+      : failureItem?.runId === ended.id
+        ? failureItem
+        : latestRootProviderFailureItem(ended, projection.turnItems);
+  if (endedFailure?.failure.message === sessionError) return itemSource(endedFailure);
+  if (failureItem?.failure.message === sessionError) return itemSource(failureItem);
+  return ended === null ? null : `${ended.id}@${isoOrEmpty(ended.completedAt)}`;
 }
 
 export interface UsageLimitNoticeRows {

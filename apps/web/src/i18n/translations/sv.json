@@ -7141,6 +7141,7 @@
   "0badb0dc1c68223f": "Kunde inte återkalla parkopplingslänken",
   "7d86e527ad36e0ba": "Det gick inte att återkalla klientåtkomsten.",
   "f0289c9a9258fc11": "Kunde inte återkalla klientåtkomsten",
+  "740103bb1653c20b": "Oanvända parkopplingslänkar återkallade",
   "2686e86a255edb3f": "Återkallade 1 annan klient",
   "23601766b7c2d13e": "{count, plural, one {Återkallade {count} klient} other {Återkallade {count} klienter}}",
   "ca0bfbc3cb91e6b9": "Andra parkopplade klienter behöver en ny parkopplingslänk innan de kan återansluta.",

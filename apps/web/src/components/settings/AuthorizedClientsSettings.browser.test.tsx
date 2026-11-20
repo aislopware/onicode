@@ -53,6 +53,7 @@ const renderHeader = (environmentId: EnvironmentId) =>
       environmentId={environmentId}
       onPairingLinkCreated={() => {}}
       clientSessions={null}
+      pairingLinkCount={0}
       isRevokingOtherClients={false}
       onRevokeOtherClients={() => {}}
       delegatableScopes={[]}
