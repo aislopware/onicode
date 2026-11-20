@@ -70,6 +70,7 @@ function withFakeClaudeEnv<A, E, R>(
     argsMustNotContain?: string;
     stdinMustContain?: string;
     stdinMustNotContain?: ReadonlyArray<string>;
+    rejectsImages?: boolean;
     configDirMustBe?: string;
     cwdMustNotBe?: string;
     claudeConfig?: Partial<ClaudeSettings>;
@@ -98,6 +99,7 @@ function withFakeClaudeEnv<A, E, R>(
         input.stdinMustNotContain === undefined
           ? undefined
           : JSON.stringify(input.stdinMustNotContain),
+      ONICODE_FAKE_CLAUDE_REJECTS_IMAGES: input.rejectsImages ? "1" : undefined,
       ONICODE_FAKE_CLAUDE_CWD_MUST_NOT_BE: input.cwdMustNotBe,
       ONICODE_FAKE_CLAUDE_CONFIG_DIR_MUST_BE: input.configDirMustBe,
     };
@@ -431,6 +433,20 @@ it.layer(layerClaudeTextGenerationTest)("ClaudeTextGeneration", (it) => {
         Effect.gen(function* () {
           const error = yield* Effect.flip(generateBranchNameWithImage(textGeneration));
           expect(error.detail).toBe(expected);
+        }),
+    ),
+  );
+
+  it.effect("still generates text when a text-only model rejects image attachments", () =>
+    withFakeClaudeEnv(
+      {
+        output: JSON.stringify({ structured_output: { branch: "fix/login-button" } }),
+        rejectsImages: true,
+      },
+      (textGeneration) =>
+        Effect.gen(function* () {
+          const result = yield* generateBranchNameWithImage(textGeneration);
+          expect(result.branch).toBe("fix/login-button");
         }),
     ),
   );
