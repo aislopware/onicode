@@ -210,7 +210,7 @@ const withSavedProjectSettings = Effect.gen(function* () {
   };
 });
 
-// The project is already committed, so a failed Settings read must not report the create as failed.
+// A project started from its title saves no defaults, so its record is accurate when the read fails.
 const withSavedProjectSettingsAfterCreate = withSavedProjectSettings.pipe(
   Effect.orElseSucceed(() => (project: ProjectRecord) => project),
 );
@@ -551,7 +551,8 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
         const created = yield* projects
           .create({ ...input, workspaceRoot, commandId, projectId: ProjectId.make(commandId) })
           .pipe(Effect.mapError(projectFailure));
-        return (yield* withSavedProjectSettingsAfterCreate)(created);
+        // Creation saved the requested defaults, so the bare record would report them as unset.
+        return (yield* withSavedProjectSettings)(created);
       }),
     // Linked work may bring the repository it works in; an existing
     // registered workspace is still refused.
