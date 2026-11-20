@@ -1154,15 +1154,19 @@ export const resolveAsset = Effect.fn("AssetAccess.resolveAsset")(function* (
       : null;
   }
   if (!isPreviewDependencyPath(decodedPath, path)) return null;
+  // `/`-separated on Windows too, like the entry path the revision was minted under.
   const joinedRelativePath =
-    claims.baseRelativePath === "." ? decodedPath : path.join(claims.baseRelativePath, decodedPath);
+    claims.baseRelativePath === "." ? decodedPath : `${claims.baseRelativePath}/${decodedPath}`;
   if (claims.entryFileName !== undefined) {
     // Before the file is resolved and read, so the recorded state is never newer than the response.
     const revisions = yield* WorkspacePreviewRevisions.WorkspacePreviewRevisions;
     yield* revisions.observe(
       {
         workspaceRoot: claims.workspaceRoot,
-        entryRelativePath: path.join(claims.baseRelativePath, claims.entryFileName),
+        entryRelativePath:
+          claims.baseRelativePath === "."
+            ? claims.entryFileName
+            : `${claims.baseRelativePath}/${claims.entryFileName}`,
       },
       joinedRelativePath,
     );

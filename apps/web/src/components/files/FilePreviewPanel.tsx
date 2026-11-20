@@ -248,7 +248,9 @@ interface HtmlPreviewFrame {
 const HTML_PREVIEW_RENEW_BEFORE_EXPIRY_MS = 2 * 60_000;
 // Grants last an hour. A client clock far from the server's would otherwise renew at once, forever.
 const HTML_PREVIEW_MIN_GRANT_HOLD_MS = 3 * 60_000;
-const HTML_PREVIEW_MAX_GRANT_HOLD_MS = 60 * 60_000;
+const HTML_PREVIEW_MAX_GRANT_HOLD_MS = 60 * 60_000 - HTML_PREVIEW_RENEW_BEFORE_EXPIRY_MS;
+const HTML_PREVIEW_RENEW_RETRY_MS = 30_000;
+const HTML_PREVIEW_RENEW_MAX_RETRY_MS = 5 * 60_000;
 
 const htmlPreviewFrame = (
   minted: { readonly revision: string | null; readonly url: string; readonly expiresAt: number },
@@ -292,8 +294,14 @@ export function WorkspaceBrowserPreview(props: {
   const latestRevision = fileRevision ?? props.workspaceMutationId;
   // The HTML frame keeps the URL it loaded, so it moves only once a re-minted URL has arrived.
   const [frame, setFrame] = useState<HtmlPreviewFrame | null>(null);
-  const [endingGrant, setEndingGrant] = useState<string | null>(null);
-  const grantEnding = frame !== null && endingGrant === frame.url;
+  const [endingGrant, setEndingGrant] = useState<{
+    readonly url: string;
+    readonly attempt: number;
+    /** The page was still loading fine when its grant began to end, so a failed ask keeps it. */
+    readonly keep: boolean;
+    readonly workspaceMutationId: string | null;
+  } | null>(null);
+  const grantEnding = frame !== null && endingGrant?.url === frame.url;
   if (
     !pdf &&
     assetUrl._tag === "Success" &&
@@ -305,27 +313,61 @@ export function WorkspaceBrowserPreview(props: {
     setFrame(() => htmlPreviewFrame({ revision: latestRevision, url, expiresAt }, Date.now()));
   }
   const renewGrant = useEffectEvent((url: string) => {
-    setEndingGrant(url);
+    setEndingGrant((ending) =>
+      ending?.url === url
+        ? { ...ending, attempt: ending.attempt + 1 }
+        : {
+            url,
+            attempt: 0,
+            keep: assetUrl._tag !== "Failure",
+            workspaceMutationId: props.workspaceMutationId,
+          },
+    );
     // A command may have minted the next URL already; otherwise ask for it.
-    if (assetUrl._tag === "Success" && assetUrl.url === url) {
+    if (assetUrl._tag === "Failure" || (assetUrl._tag === "Success" && assetUrl.url === url)) {
       void refreshAssetUrl().catch(() => undefined);
     }
   });
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- mints a fresh URL shortly before the loaded page's grant expires
   useEffect(() => {
     if (frame === null) return;
-    const timer = setTimeout(() => renewGrant(frame.url), frame.renewAt - Date.now());
+    // Asks again while the page stays on the ending grant: a refresh can fail, or come back as
+    // the same URL while this client's clock says the grant still has time.
+    const delay =
+      endingGrant?.url === frame.url
+        ? Math.min(
+            HTML_PREVIEW_RENEW_RETRY_MS * 2 ** endingGrant.attempt,
+            HTML_PREVIEW_RENEW_MAX_RETRY_MS,
+          )
+        : frame.renewAt - Date.now();
+    const timer = setTimeout(() => renewGrant(frame.url), delay);
     return () => clearTimeout(timer);
-  }, [frame]);
+  }, [frame, endingGrant]);
+  // A failed renewal keeps the loaded page while it asks again; a failure a command caused does not.
+  const keptFrame =
+    !pdf &&
+    frame !== null &&
+    endingGrant?.url === frame.url &&
+    endingGrant.keep &&
+    endingGrant.workspaceMutationId === props.workspaceMutationId &&
+    assetUrl._tag === "Failure"
+      ? frame
+      : null;
   const revision = pdf ? latestRevision : (frame?.revision ?? latestRevision);
   const url =
-    assetUrl._tag !== "Success" ? null : pdf ? assetUrl.url : (frame?.url ?? assetUrl.url);
+    keptFrame !== null
+      ? keptFrame.url
+      : assetUrl._tag !== "Success"
+        ? null
+        : pdf
+          ? assetUrl.url
+          : (frame?.url ?? assetUrl.url);
   const revisionSuffix =
     revision === null
       ? ""
       : `${url?.includes("?") ? "&" : "?"}${fileRevision !== undefined ? "file" : "workspace"}-revision=${encodeURIComponent(revision)}`;
 
-  if (assetUrl._tag === "Failure") {
+  if (assetUrl._tag === "Failure" && keptFrame === null) {
     return (
       <div className="flex min-h-0 flex-1 items-center justify-center px-6 text-center text-xs leading-relaxed text-destructive">
         <T>Unable to load file preview.</T>
@@ -333,8 +375,9 @@ export function WorkspaceBrowserPreview(props: {
     );
   }
   if (
-    assetUrl._tag !== "Success" ||
-    (pdf && assetUrl.fileRevision === undefined && assetUrl.waiting)
+    keptFrame === null &&
+    (assetUrl._tag !== "Success" ||
+      (pdf && assetUrl.fileRevision === undefined && assetUrl.waiting))
   ) {
     return (
       <div className="flex min-h-0 flex-1 items-center justify-center text-muted-foreground">

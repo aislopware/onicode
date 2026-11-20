@@ -1660,10 +1660,22 @@ it("keeps an unchanged workspace HTML page loaded across commands and renews its
   expect(shownSrc(screen)).toMatch(/^data:text\/html,renewed/);
   expect(refresh).not.toHaveBeenCalled();
 
-  // With no command since, the page asks for a fresh URL itself and moves to it.
-  refresh.mockResolvedValue(null);
+  // With no command since, the page asks for a fresh URL itself. A failed ask keeps the page
+  // and asks again, as does one answered with the URL the page already has.
+  refresh.mockRejectedValueOnce(new Error("offline")).mockResolvedValue(null);
   await act(() => vi.advanceTimersByTime(30 * 60_000));
   expect(refresh).toHaveBeenCalledTimes(1);
+  const renewing = screen.container.querySelector("iframe");
+  assetUrlState.mockReturnValue({ _tag: "Failure" });
+  await screen.rerender(preview("third"));
+  expect(screen.container.querySelector("iframe")).toBe(renewing);
+  expect(shownSrc(screen)).toMatch(/^data:text\/html,renewed/);
+  await act(() => vi.advanceTimersByTime(30_000));
+  expect(refresh).toHaveBeenCalledTimes(2);
+  minted("data:text/html,renewed", "one", expiresAt + 30 * 60_000);
+  await screen.rerender(preview("third"));
+  await act(() => vi.advanceTimersByTime(60_000));
+  expect(refresh).toHaveBeenCalledTimes(3);
   minted("data:text/html,renewed-again", "one", expiresAt + 90 * 60_000);
   await screen.rerender(preview("third"));
   expect(shownSrc(screen)).toMatch(/^data:text\/html,renewed-again/);
@@ -1671,6 +1683,13 @@ it("keeps an unchanged workspace HTML page loaded across commands and renews its
   minted("data:text/html,edited", "two", expiresAt + 90 * 60_000);
   await screen.rerender(preview("fourth"));
   expect(shownSrc(screen)).toMatch(/^data:text\/html,edited/);
+
+  // A failure a command caused, such as deleting the file, stays shown past the grant's renewal.
+  assetUrlState.mockReturnValue({ _tag: "Failure" });
+  await screen.rerender(preview("fifth"));
+  await act(() => vi.advanceTimersByTime(60 * 60_000));
+  expect(screen.container.querySelector("iframe")).toBeNull();
+  expect(screen.getByText("Unable to load file preview.")).toBeInTheDocument();
 });
 
 function planningPdf(
