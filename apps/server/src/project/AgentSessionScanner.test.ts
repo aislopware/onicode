@@ -2280,9 +2280,10 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
         const transcripts = [
           ...errorSessions,
           ...emptySessions,
-          {
-            // Without session_meta there is no resumable session ID.
-            filePath: codexRollout("unusable"),
+          // Without session_meta there is no resumable session ID. Skipped, never recorded,
+          // so these would also spend the budget on every run.
+          ...Array.from({ length: 100 }, (_, index) => ({
+            filePath: codexRollout(`unusable-${index}`),
             records: [
               { type: "turn_context", payload: { cwd: workspace } },
               {
@@ -2290,7 +2291,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
                 payload: { type: "user_message", message: "Import this prompt" },
               },
             ],
-          },
+          })),
           {
             filePath: codexRollout("real"),
             records: [
@@ -2320,7 +2321,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
           outcomes.map((outcome) =>
             outcome._tag === "Importable" ? outcome.thread.providerSessionId : outcome._tag,
           ),
-        ).toEqual(["Skipped", "real-session"]);
+        ).toEqual([...Array.from({ length: 100 }, () => "Skipped"), "real-session"]);
       }),
     );
 

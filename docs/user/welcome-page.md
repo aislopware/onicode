@@ -98,8 +98,9 @@ records every time, so opening the page again does not import it. It ignores
 malformed records and conversations with no messages, such as a session opened
 in an editor but never used. It skips unreadable or unparseable conversations.
 
-Each import attempt reads up to 100 conversations and 4 GiB per project.
-Conversations with no messages count toward the 4 GiB but not the 100. To
+Each import attempt takes up to 100 conversations and reads up to 4 GiB per
+project. Conversations it cannot use, such as unreadable ones, ones from another
+folder or ones with no messages, count toward the 4 GiB but not the 100. To
 continue a large batch, open the Welcome page again and pick the project in
 **Review all**. Completed conversations are not imported again. You can continue
 without the remaining history.

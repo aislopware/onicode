@@ -2270,20 +2270,21 @@ export const make = Effect.gen(function* () {
           }
           transcriptsRemaining -= 1;
           bytesRemaining -= identity.size;
+          // Nothing records an unimported transcript, so keeping its slot would starve real sessions every run.
+          const unused = () => {
+            transcriptsRemaining += 1;
+            return Option.some<AgentSessionRecentThread>({ _tag: "Skipped" });
+          };
           const snapshot = yield* readTranscript(transcript.filePath, identity, candidate.source);
-          if (snapshot === null) {
-            return Option.some<AgentSessionRecentThread>({ _tag: "Skipped" });
-          }
+          if (snapshot === null) return unused();
 
-          if (Option.isNone(snapshot.cwd)) {
-            return Option.some<AgentSessionRecentThread>({ _tag: "Skipped" });
-          }
+          if (Option.isNone(snapshot.cwd)) return unused();
           const expandedCwd = expandHomePath(
             projectCwd(isExcludedProjectPath, snapshot.cwd.value, transcript.projectRoots).trim(),
             homeDir,
           );
           if (!path.isAbsolute(expandedCwd) || !(yield* belongsToRoot(path.resolve(expandedCwd)))) {
-            return Option.some<AgentSessionRecentThread>({ _tag: "Skipped" });
+            return unused();
           }
           const worktree = yield* rootWorktree(path.resolve(expandedCwd));
 
@@ -2315,16 +2316,11 @@ export const make = Effect.gen(function* () {
           );
           if (parsedThread === "empty") {
             // null means an unreadable history base, which may hold the conversation.
-            if (candidate.source === "codex" && inheritedRecords === null) {
-              return Option.some<AgentSessionRecentThread>({ _tag: "Skipped" });
-            }
-            // Never recorded as imported, so charging them would starve real sessions every run.
+            if (candidate.source === "codex" && inheritedRecords === null) return unused();
             transcriptsRemaining += 1;
             return Option.none<AgentSessionRecentThread>();
           }
-          if (parsedThread === null) {
-            return Option.some<AgentSessionRecentThread>({ _tag: "Skipped" });
-          }
+          if (parsedThread === null) return unused();
           let savedTitle: string | undefined;
           if (candidate.source === "codex") {
             const names =
