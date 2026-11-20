@@ -2846,3 +2846,4 @@ ebf7b9a4c5	take	fix(server): revoking all other clients also revokes unspent pai
 20b8a9e695	take	fix(web): the preview only embeds PDFs from its own environment (shared helper also covers mobile)
 badd5f6d18	skip	relay only: infra/relay mobile telemetry source maps are removed in Onicode
 db51b6719f	take	perf(server): rank queued provider snapshots by focus and coalesce superseded ones; adopted upstream over Onicode's single FIFO commit queue: per-stream queues ranked viewed>main>subagent with coalescing cut writes and websocket traffic; kept Onicode's cross-thread ordering (write reservations, EOF waits for all earlier work, controls wait for their threads): upstream's scheduler does not order a stream's snapshots against other streams' writes; ownThreadIds folded into priority.threadId
+21fc0c1438	take	fix(gitlab): keep the environment token off hosts a caller names
