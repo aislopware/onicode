@@ -29,6 +29,7 @@ import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 
+import { splitsSurrogatePair } from "@onicode/shared/assistantCitations";
 import { isBareGitConfig, parseOriginUrlFromGitConfig } from "@onicode/shared/git";
 import * as HostProcess from "@onicode/shared/HostProcess";
 import { normalizeProjectPathForComparison } from "@onicode/shared/path";
@@ -469,7 +470,8 @@ function deriveTitle(source: AgentSessionSource, text: string): string | undefin
     WAKE_ENVELOPE,
     "$1",
   );
-  return request.trim().split("\n")[0]?.slice(0, 100).trim() || undefined;
+  const line = request.trim().split("\n")[0] ?? "";
+  return line.slice(0, splitsSurrogatePair(line, 100) ? 99 : 100).trim() || undefined;
 }
 
 // Pi keeps abandoned branches in the file; its active branch runs from the last entry to the root.
