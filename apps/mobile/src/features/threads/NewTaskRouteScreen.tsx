@@ -263,11 +263,13 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
   });
 
   async function selectProject(project: EnvironmentProject, signal?: AbortSignal): Promise<void> {
+    // Dismissed while saving, navigating would act on the screen underneath.
+    const left = () => signal?.aborted === true || !navigation.isFocused();
     if (incomingShare?.destination && !reservedDestinationProject) {
       try {
         await releaseShareReservation(incomingShare.id, incomingShare.destination);
       } catch (error) {
-        if (signal?.aborted) return;
+        if (left()) return;
         Dialog.alert(
           gt("Could not change project"),
           errorDisplayMessage(error, m) ??
@@ -275,7 +277,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
         );
         return;
       }
-      if (signal?.aborted) return;
+      if (left()) return;
     }
     const stacked = stackedNewDraftRoot();
     if (stacked) {
@@ -295,7 +297,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
             (found) => found,
             () => null,
           );
-    if (signal?.aborted) return;
+    if (left()) return;
     if (retargeted === null) {
       Dialog.alert(
         gt("Could not change project"),

@@ -40,6 +40,7 @@ const harness = vi.hoisted(() => ({
     }),
     getParent: () => undefined,
     canGoBack: () => true,
+    isFocused: (): boolean => true,
     dispatch: vi.fn(),
     navigate: vi.fn(),
   },
@@ -221,4 +222,16 @@ it("cancels the No project draft retarget when another project is picked", async
   await act(async () => screen.retargeting.resolve(true));
 
   expect(harness.selectDetail.mock.calls).toEqual(appDraftSelection);
+});
+
+it("does not open the draft when the picker was dismissed while the draft was retargeting", async () => {
+  using screen = renderWithSavedDraft();
+  const retargeting = Promise.withResolvers<boolean>();
+  vi.mocked(retargetSavedNewTaskDraft).mockReturnValue(retargeting.promise);
+
+  await act(async () => screen.row("app").click());
+  using _dismissed = vi.spyOn(harness.navigation, "isFocused").mockReturnValue(false);
+  await act(async () => retargeting.resolve(true));
+
+  expect(harness.selectDetail).not.toHaveBeenCalled();
 });
