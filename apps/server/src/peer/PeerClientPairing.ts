@@ -148,7 +148,7 @@ const make = Effect.gen(function* () {
     auth.listClientSessions(sessionId).pipe(
       Effect.map((sessions) => {
         const client = sessions.find((session) => session.sessionId === sessionId)?.client;
-        return client?.label ?? client?.os ?? "Onicode client";
+        return client?.label?.trim() || client?.os?.trim() || "Onicode client";
       }),
       Effect.orElseSucceed(() => "Onicode client"),
     );
