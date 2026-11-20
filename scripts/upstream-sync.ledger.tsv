@@ -2919,3 +2919,4 @@ f0a2aa10f5	take	taken as is
 6cbda0cd0a	take	taken as is; hasActiveSubprocess only probes threads with running terminal sessions, so the per-sweep cost stays small
 338352dee2	take	taken as is
 ad4d0f0659	take	taken as is (Antigravity-only fix)
+0702c6fdca	take	taken as is
