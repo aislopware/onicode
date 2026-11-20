@@ -96,14 +96,17 @@ export function useSidebarLinkedIssue(
 ) {
   const configs = useServerConfigs();
   const capabilities = configs.get(environmentId)?.environment.capabilities;
+  // Without summaries a group would read every issue's full detail just to pick an icon.
+  const readable =
+    capabilities?.issues === true && (capabilities.issueSummaries === true || links?.length === 1);
   const aggregate =
-    links?.length && capabilities?.issues === true
+    links?.length && readable
       ? Atom.make((get): IssueSummary | null => {
           const summaries = links.map((link) => {
             const target = { environmentId, input: linkedIssueRef(link) };
             return selectEnvironmentQueryData(
               get(
-                capabilities.issueSummaries === true
+                capabilities?.issueSummaries === true
                   ? issueEnvironment.summary(target, "sidebar")
                   : issueEnvironment.detail(target, "sidebar"),
               ),
