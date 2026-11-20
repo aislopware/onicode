@@ -2849,3 +2849,4 @@ db51b6719f	take	perf(server): rank queued provider snapshots by focus and coales
 21fc0c1438	take	fix(gitlab): keep the environment token off hosts a caller names
 d1822be5a9	take	fix(server): stop managed Antigravity CLI from self-updating in place and recover on reinstall
 194726492b	take	fix(server): a killed Antigravity subagent no longer keeps its turn running
+c6ad9be183	take	fix(server): Claude history import skips sessions answered only by a synthetic error
