@@ -63,6 +63,7 @@ it.layer(NodeServices.layer)("providerStatusCache", (it) => {
         },
       ],
       message: "Pending refresh",
+      checking: true,
     });
 
     assert.deepStrictEqual(

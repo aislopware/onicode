@@ -4062,14 +4062,41 @@
     },
     " har ingen tillgänglig modell. Installera eller logga in hos en leverantör där för att välja en."
   ],
-  "5dc2710a40895938": [
+  "6e9353e533b8e30a": [
     "Ditt utkast är sparat på den här enheten. ",
     {
       "i": 1,
       "k": "_gt_value_1",
       "v": "v"
     },
-    " har en redo leverantör som är avstängd för det här projektet eller inte tillåten av en policy. Kontrollera leverantörsinställningarna där för att välja en modell."
+    " kontrollerar fortfarande sina leverantörer. Modellerna visas här när det är klart."
+  ],
+  "2cb533ac599f0495": [
+    "Ditt utkast är sparat på den här enheten. ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " har en redo leverantör, men dess hanterade policy tillåter den inte."
+  ],
+  "f8917cd665a6ad7a": [
+    "Ditt utkast är sparat på den här enheten. ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " har en redo leverantör som är avstängd för det här projektet. Slå på den i projektets leverantörsinställningar för att välja en modell."
+  ],
+  "fff0b36c9d3141ea": [
+    "Ditt utkast är sparat på den här enheten. ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " har en redo leverantör som är avstängd. Slå på den i leverantörsinställningarna där för att välja en modell."
   ],
   "3a3930717d8d73b4": "Ditt utkast är sparat på den här enheten. Anslut till en miljö för att välja dess första modell.",
   "8b53cd9e9e107f7c": "Lägg till en miljö innan du skapar en uppgift.",

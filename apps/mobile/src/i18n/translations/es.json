@@ -4055,14 +4055,41 @@
     },
     " no tiene ningún modelo disponible. Instala un proveedor o inicia sesión en uno allí para elegir uno."
   ],
-  "5dc2710a40895938": [
+  "6e9353e533b8e30a": [
     "Tu borrador está guardado en este dispositivo. ",
     {
       "i": 1,
       "k": "_gt_value_1",
       "v": "v"
     },
-    " tiene un proveedor listo que está desactivado para este proyecto o no permitido por una política. Revisa la configuración de sus proveedores para elegir un modelo."
+    " todavía está comprobando sus proveedores. Los modelos aparecerán aquí cuando termine."
+  ],
+  "2cb533ac599f0495": [
+    "Tu borrador está guardado en este dispositivo. ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " tiene un proveedor listo, pero su política administrada no lo permite."
+  ],
+  "f8917cd665a6ad7a": [
+    "Tu borrador está guardado en este dispositivo. ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " tiene un proveedor listo que está desactivado para este proyecto. Actívalo en la configuración de proveedores del proyecto para elegir un modelo."
+  ],
+  "fff0b36c9d3141ea": [
+    "Tu borrador está guardado en este dispositivo. ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " tiene un proveedor listo que está desactivado. Actívalo en su configuración de proveedores para elegir un modelo."
   ],
   "3a3930717d8d73b4": "Tu borrador está guardado en este dispositivo. Conéctate a un entorno para elegir su primer modelo.",
   "8b53cd9e9e107f7c": "Añade un entorno antes de crear una tarea.",

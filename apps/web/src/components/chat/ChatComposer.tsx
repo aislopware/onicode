@@ -929,7 +929,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   });
   const noProviderAvailable =
     selectedProviderEntry === undefined && multipleModelSelections === null;
-  const providerCatalogPending = noProviderAvailable && !providerCatalogKnown;
+  const providerCatalogPending =
+    noProviderAvailable &&
+    (!providerCatalogKnown ||
+      // A first check after the server started can still make a model available.
+      providerInstanceEntries.some((entry) => entry.enabled && entry.snapshot.checking === true));
   const showProviderUnavailable = noProviderAvailable && !providerCatalogPending;
   const providerSetupInstanceId = noProviderAvailable
     ? (unavailableProviderInstanceId ??

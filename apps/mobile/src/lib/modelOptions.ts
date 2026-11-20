@@ -329,16 +329,35 @@ export function withStoredThreadModelOptions(
   return { ...selection, options: stored.options };
 }
 
-/** Whether the picker leaves out a usable provider only because the project or policy turns it off. */
-export function hasReadyProviderTurnedOff(
+export type NoModelReason = "checking" | "policy" | "project" | "environment";
+
+/** Why the picker offers no model when the cause is not a missing provider, or null. */
+export function noModelReason(
   config: OniServerConfig | null | undefined,
   projectId: ProjectId | null,
-): boolean {
-  return (config?.providers ?? []).some(
-    (provider) =>
-      isProviderPickerReady({ ...provider, enabled: true }) &&
-      (isDriverDisallowed(config, provider.driver) ||
-        !isProviderEnabledForProject(config, provider, projectId)),
+): NoModelReason | null {
+  const providers = config?.providers ?? [];
+  if (
+    providers.some(
+      (provider) =>
+        provider.checking === true &&
+        !isDriverDisallowed(config, provider.driver) &&
+        isProviderEnabledForProject(config, provider, projectId),
+    )
+  ) {
+    return "checking";
+  }
+  const reasons = new Set<NoModelReason>();
+  for (const provider of providers) {
+    if (!isProviderPickerReady({ ...provider, enabled: true })) continue;
+    if (isDriverDisallowed(config, provider.driver)) reasons.add("policy");
+    else if (isProjectDisabledOverride(config, provider.instanceId, projectId))
+      reasons.add("project");
+    else if (!isProviderEnabledForProject(config, provider, projectId)) reasons.add("environment");
+  }
+  // A setting the user can change is the more useful pointer.
+  return (
+    (["project", "environment", "policy"] as const).find((reason) => reasons.has(reason)) ?? null
   );
 }
 

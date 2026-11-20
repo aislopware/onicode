@@ -4056,14 +4056,41 @@
     },
     " n’a aucun modèle disponible. Installez un fournisseur ou connectez-vous à l’un d’eux sur cet environnement pour en choisir un."
   ],
-  "5dc2710a40895938": [
+  "6e9353e533b8e30a": [
     "Votre brouillon est enregistré sur cet appareil. ",
     {
       "i": 1,
       "k": "_gt_value_1",
       "v": "v"
     },
-    " a un fournisseur prêt, mais désactivé pour ce projet ou non autorisé par une stratégie. Vérifiez ses réglages de fournisseurs pour choisir un modèle."
+    " vérifie encore ses fournisseurs. Les modèles s’afficheront ici une fois la vérification terminée."
+  ],
+  "2cb533ac599f0495": [
+    "Votre brouillon est enregistré sur cet appareil. ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " a un fournisseur prêt, mais sa stratégie gérée ne l’autorise pas."
+  ],
+  "f8917cd665a6ad7a": [
+    "Votre brouillon est enregistré sur cet appareil. ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " a un fournisseur prêt, mais désactivé pour ce projet. Activez-le dans les réglages de fournisseurs du projet pour choisir un modèle."
+  ],
+  "fff0b36c9d3141ea": [
+    "Votre brouillon est enregistré sur cet appareil. ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " a un fournisseur prêt, mais désactivé. Activez-le dans ses réglages de fournisseurs pour choisir un modèle."
   ],
   "3a3930717d8d73b4": "Votre brouillon est enregistré sur cet appareil. Connectez-vous à un environnement pour choisir son premier modèle.",
   "8b53cd9e9e107f7c": "Ajoutez un environnement avant de créer une tâche.",

@@ -14,7 +14,7 @@ import {
   buildModelOptions,
   describeUnavailableModelSelection,
   groupByProvider,
-  hasReadyProviderTurnedOff,
+  noModelReason,
   isModelSelectionUnavailable,
   resolveDefaultableModelSelection,
   resolveNewTaskModelSelection,
@@ -141,7 +141,23 @@ describe("mobile model options", () => {
     expect(
       buildModelOptions(config, null, undefined, null).map((option) => option.providerKey),
     ).toEqual(["codex", "codex_retained"]);
-    expect(hasReadyProviderTurnedOff(config, null)).toBe(false);
+    expect(noModelReason(config, null)).toBe(null);
+    const checking = {
+      providers: [
+        provider("codex_failed", { status: "error" }),
+        provider("codex_booting", { status: "warning", installed: false, checking: true }),
+      ],
+    } as unknown as ServerConfig;
+    expect(noModelReason(checking, null)).toBe("checking");
+    const disallowedChecking = {
+      ...checking,
+      managedPolicy: {
+        organization: "Example Corp",
+        lockedSettings: [],
+        limits: { providers: { allowedDrivers: [ProviderDriverKind.make("claudeAgent")] } },
+      },
+    } as unknown as ServerConfig;
+    expect(noModelReason(disallowedChecking, null)).toBe(null);
     // A saved selection on a provider the picker leaves out stays, but cannot be picked.
     const saved = { instanceId: ProviderInstanceId.make("codex_failed"), model: "test" };
     expect(buildModelOptions(config, saved, undefined, null).at(-1)).toMatchObject({
@@ -732,8 +748,8 @@ describe("mobile model options", () => {
       };
 
       expect(buildModelOptions(configWith(settings), null, undefined, projectId)).toEqual([]);
-      expect(hasReadyProviderTurnedOff(configWith(settings), projectId)).toBe(true);
-      expect(hasReadyProviderTurnedOff(configWith(settings), null)).toBe(false);
+      expect(noModelReason(configWith(settings), projectId)).toBe("project");
+      expect(noModelReason(configWith(settings), null)).toBe(null);
     });
 
     it("hides a machine-disabled instance for a project with no override, even though another project's keep-alive left it running", () => {
@@ -749,6 +765,7 @@ describe("mobile model options", () => {
       };
 
       expect(buildModelOptions(configWith(settings), null, undefined, projectId)).toEqual([]);
+      expect(noModelReason(configWith(settings), projectId)).toBe("environment");
     });
 
     it("refuses to send an instance the project merely inherits as disabled, not just an explicit override", () => {
@@ -958,7 +975,7 @@ describe("synchronized mobile model visibility", () => {
       expect(
         buildModelOptions(config, null, undefined, null).map((option) => option.providerKey),
       ).toEqual(["codex"]);
-      expect(hasReadyProviderTurnedOff(config, null)).toBe(true);
+      expect(noModelReason(config, null)).toBe("policy");
     });
 
     it("marks a thread's selection on a disallowed driver unavailable with the policy reason", () => {
