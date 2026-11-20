@@ -223,7 +223,7 @@ it.effect("answers a port nothing listens on with 403, marked as about the port"
 );
 
 it.effect.each([
-  { case: "an IPv6 loopback address", host: "::1", status: 502 },
+  { case: "an IPv6 loopback address", host: "::1", status: 403 },
   { case: "a non-loopback address", host: "192.168.1.20", status: 400 },
 ] as const)(
   "never dials 127.0.0.1 for $case, even when a server listens there",
