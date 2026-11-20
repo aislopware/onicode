@@ -2856,3 +2856,4 @@ da54e47f26	take	taken as is; edited regions identical to upstream
 084ad5e1a0	take	Antigravity-only; taken as is
 59651c1761	take	taken as is; mobile has no multi-environment Retry (pull-to-refresh reloads all)
 d6cdb4f161	take	taken as is; desktop scenario ported (WEB = desktop renderer target)
+22936ae669	take	taken as is; voice UI matches upstream, desktop scenario ported
