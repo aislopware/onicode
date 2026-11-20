@@ -2853,3 +2853,4 @@ c6ad9be183	take	fix(server): Claude history import skips sessions answered only 
 be9176761c	skip	deferred: steering child results into a running Claude turn marks them delivered on hand-off (EffectWorker accept), so Stop, a Claude-dropped steer or CLI exit loses the result and requeue is rejected; port together with read-confirmed delivery (queued for the batch fix thread)
 e923b5d8d8	take	Antigravity-only; Windows copy path taken as upstream (manifest named .oni-rule-copies.json)
 da54e47f26	take	taken as is; edited regions identical to upstream
+084ad5e1a0	take	Antigravity-only; taken as is
