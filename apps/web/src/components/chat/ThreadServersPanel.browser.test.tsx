@@ -18,6 +18,13 @@ vi.mock(import("../../portDiscoveryState"), async (importOriginal) => ({
     ),
 }));
 
+vi.mock(import("../../state/portForwards"), async (importOriginal) => ({
+  ...(await importOriginal()),
+  usePortForwards: () => [
+    { environmentId: EnvironmentId.make("env"), remotePort: 3000, localPort: 3000 },
+  ],
+}));
+
 import { render } from "../../../test/render";
 import { ThreadServersPanel } from "./ThreadServersPanel";
 
@@ -48,4 +55,15 @@ it("pages servers four at a time, collapses back, and resets on thread switch", 
   await expectRows(4);
   await screen.rerender(panel("a"));
   await expectRows(4);
+});
+
+it("keeps a held forward stoppable where new ports cannot be forwarded", async () => {
+  await using _screen = await render(panel("a"));
+
+  await expect
+    .element(page.getByRole("button", { name: "Stop forwarding localhost:3000" }))
+    .toBeVisible();
+  await expect
+    .element(page.getByRole("button", { name: "Forward localhost:3001 to this machine" }))
+    .not.toBeInTheDocument();
 });

@@ -170,7 +170,9 @@ function ThreadServersList(props: ThreadServersPanelProps) {
           const key = serverKey(server);
           const stoppable = canStop && supportsStop && server.pid !== null;
           const forward = findPortForward(forwards, props.environmentId, server.port);
-          const actionCount = Number(stoppable) + Number(canForward);
+          // A forward the desktop holds stays stoppable while forwarding new ports is unavailable.
+          const forwardControl = canForward || forward !== undefined;
+          const actionCount = Number(stoppable) + Number(forwardControl);
           return (
             <li
               key={key}
@@ -238,7 +240,7 @@ function ThreadServersList(props: ThreadServersPanelProps) {
                       "pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 pointer-coarse:pointer-events-auto pointer-coarse:opacity-100 [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100",
                   )}
                 >
-                  {canForward ? (
+                  {forwardControl ? (
                     <Tooltip>
                       <TooltipTrigger
                         render={
