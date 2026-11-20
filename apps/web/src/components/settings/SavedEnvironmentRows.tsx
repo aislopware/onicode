@@ -60,9 +60,11 @@ type SavedBackendListRowProps = {
   onSetEnabled: (environmentId: EnvironmentId, enabled: boolean) => void;
   onRemove: (environment: EnvironmentPresentation) => void;
   onAddRoute: (environment: EnvironmentPresentation) => void;
+  /** The map's details open on a machine's routes; the list keeps them folded. */
+  initialRoutesOpen?: boolean;
 };
 
-function savedBackendStatus(
+export function savedBackendStatus(
   environment: EnvironmentPresentation,
   resolve: MessageResolver = m,
 ): {
@@ -107,10 +109,11 @@ export function SavedBackendListRow({
   onSetEnabled,
   onRemove,
   onAddRoute,
+  initialRoutesOpen = false,
 }: SavedBackendListRowProps) {
   const messages = useMessages();
   const gt = useGT();
-  const [routesOpen, setRoutesOpen] = useState(false);
+  const [routesOpen, setRoutesOpen] = useState(initialRoutesOpen);
   const [permissionsOpen, setPermissionsOpen] = useState(false);
   const [diagnosisOpen, setDiagnosisOpen] = useState(false);
   const environmentId = environment.environmentId;
