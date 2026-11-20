@@ -2822,3 +2822,4 @@ f75eb015a3	take	fix(server): OpenCode and Pi read their minimum version from the
 c79f618bf8	take	feat(issues): a fork lists its upstream's issues and its own (kept Onicode's indexed createIssueLinkResolver, now indexing every binding, and issueFilterScopes' per-environment/tracker dedupe)
 3a60d0996a	take	fix(server): background subagents can delegate after their parent's turn ends
 29b42d409c	take	fix(web): show status for grouped sidebar issues (kept Onicode's issue summaries over upstream's detail reads for rows, with the link's workspace, and the live title for a single issue)
+5dd565d6b1	take	feat(antigravity): Auto uses agy's own Auto review (#39378)
