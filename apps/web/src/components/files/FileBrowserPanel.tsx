@@ -555,8 +555,9 @@ export default function FileBrowserPanel({
       onWheel={stopFollowingReveal}
       onPointerDown={stopFollowingReveal}
       onTouchStart={stopFollowingReveal}
+      // Capture: the tree stops propagation of the navigation keys it handles.
+      onKeyDownCapture={stopFollowingReveal}
       onKeyDown={(event) => {
-        stopFollowingReveal();
         const isModPressed = isMacPlatform(navigator.platform) ? event.metaKey : event.ctrlKey;
         if (!isModPressed || event.altKey || event.shiftKey || event.key.toLowerCase() !== "f")
           return;
