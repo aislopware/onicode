@@ -3,6 +3,7 @@ import {
   CheckpointId,
   CheckpointScopeId,
   CommandId,
+  MessageId,
   NodeId,
   ProjectId,
   ProviderInstanceId,
@@ -91,6 +92,7 @@ function layerExecutorFor(input: {
   readonly threads?: Partial<ThreadManagementService.ThreadManagementService["Service"]>;
   readonly continueAfterRestart?: boolean;
   readonly interrupt?: ProviderTurnControlService.ProviderTurnControlServiceV2Shape["interrupt"];
+  readonly steer?: ProviderTurnControlService.ProviderTurnControlServiceV2Shape["steer"];
   readonly rollback?: CheckpointRollbackService.CheckpointRollbackServiceV2Shape["execute"];
   readonly respond?: RuntimeRequestService.RuntimeRequestServiceV2["Service"]["respond"];
 }) {
@@ -100,7 +102,7 @@ function layerExecutorFor(input: {
       ProviderTurnControlService.ProviderTurnControlServiceV2,
       ProviderTurnControlService.ProviderTurnControlServiceV2.of({
         interrupt: input.interrupt ?? (() => Effect.void),
-        steer: () => Effect.void,
+        steer: input.steer ?? (() => Effect.void),
         applyModelSelection: () => Effect.void,
         applyThreadTitle: () => Effect.void,
         interruptAndAwaitTerminal: (request) =>
@@ -780,6 +782,78 @@ it.effect.each(["confirmed", "unconfirmed", "failed"] as const)(
         outcome === "confirmed" ? ["stop-child", "settle-child"] : ["stop-child"],
       );
     }),
+);
+
+// A steer that missed its turn is sent again from the run it steered. Once that run's requeue
+// has moved the message into another run's turn, that turn delivers it.
+it.effect.each([
+  { held: "still in the run it steered", holder: runId, sources: [runId] },
+  {
+    held: "moved into another run's turn",
+    holder: RunId.make("run:effect-worker-later"),
+    sources: [],
+  },
+])("follows up a steer that missed its turn when the message is $held", ({ holder, sources }) =>
+  Effect.gen(function* () {
+    const now = yield* DateTime.now;
+    const followUps: Array<RunId | undefined> = [];
+    const messageId = MessageId.make("message:effect-worker-steer");
+    const layer = layerExecutorFor({
+      events: yield* Ref.make<ReadonlyArray<string>>([]),
+      steer: () =>
+        Effect.fail(
+          new ProviderTurnControlService.ProviderTurnControlError({
+            threadId,
+            providerTurnId,
+            operation: "steer",
+            turnCompleted: true,
+            cause: "The provider turn ended before the steering message was delivered.",
+          }),
+        ),
+      threads: {
+        getThreadRecords: () =>
+          Effect.succeed({
+            messages: [
+              {
+                id: messageId,
+                runId: holder,
+                text: "Delegated task has a question",
+                attachments: [],
+                createdBy: "agent",
+                creationSource: "server",
+                notification: {
+                  source: { kind: "delegated_task", taskIds: [NodeId.make("asking-child")] },
+                  outcome: "updated",
+                  summary: "Delegated task has a question",
+                },
+              },
+            ],
+            runs: [{ id: runId }, { id: holder }],
+            attempts: [{ id: attemptId, runId }],
+            providerTurns: [{ id: providerTurnId, runAttemptId: attemptId }],
+          } as never),
+        dispatch: (command) =>
+          Effect.sync(() => {
+            if (command.type === "message.dispatch") followUps.push(command.steerFollowUpOfRunId);
+            return { sequence: 1, storedEvents: [] };
+          }),
+      },
+    });
+    yield* Effect.gen(function* () {
+      const executor = yield* EffectWorker.OrchestrationEffectExecutorV2;
+      yield* executor.execute({
+        ...restartEffect(now, { type: "detach" }),
+        request: {
+          type: "provider-turn.steer",
+          providerSessionId: oldSessionId,
+          providerThreadId,
+          providerTurnId,
+          messageId,
+        },
+      });
+    }).pipe(Effect.provide(layer));
+    assert.deepEqual(followUps, sources);
+  }),
 );
 
 it.effect.each([3, 4])(

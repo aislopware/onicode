@@ -5152,6 +5152,14 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                   AND CASE WHEN json_valid(item.payload_json)
                     THEN json_extract(item.payload_json, '$.inputIntent') IN ('steer', 'promoted_queued_to_steer')
                     ELSE 0 END
+                UNION
+                -- A notification is pending only as a steer. Naming the live statuses lets
+                -- the partial index on them serve the read.
+                SELECT item.thread_id FROM orchestration_v2_projection_turn_items AS item
+                JOIN orchestration_v2_projection_runs AS run ON run.run_id = item.run_id
+                WHERE item.type = 'notification' AND item.status = 'pending'
+                  AND item.status IN ('pending', 'running', 'waiting')
+                  AND run.status IN ('completed', 'interrupted', 'failed', 'cancelled')
               `;
             case "delegated-completions":
               return sql`

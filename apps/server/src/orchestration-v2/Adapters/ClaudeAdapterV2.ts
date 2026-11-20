@@ -628,7 +628,8 @@ export const ClaudeProviderCapabilitiesV2 = {
     supportsInterrupt: true,
     supportsNativeResume: true,
     supportsActiveSteering: true,
-    activeSteeringInterruptsTools: true,
+    activeSteeringInterruptsTools: false,
+    activeSteeringConfirmsRead: true,
     supportsSteeringByInterruptRestart: false,
     supportsQueuedMessages: true,
     terminalStatusQuality: "strong",
@@ -5094,6 +5095,10 @@ function claudePromptLifecycle(
   return typeof uuid === "string" && typeof state === "string" ? { uuid, state } : null;
 }
 
+// Only a CLI proven to echo prompt uuids can leave a steer unconfirmed.
+const claudeConfirmsSteerRead = (liveQuery: Pick<ClaudeLiveQueryContext, "promptEchoMode">) =>
+  liveQuery.promptEchoMode === "early" || liveQuery.promptEchoMode === "result_only";
+
 // Without an echo, non-human origin proves a foreign turn only on CLIs known to echo prompts.
 function isClaudeResultForOtherTurn(input: {
   readonly message: SDKResultMessage;
@@ -5544,6 +5549,8 @@ interface ActiveClaudeTurnContext {
     {
       readonly messageId: MessageId;
       readonly text: string;
+      // A notice the app sent, not the user: unread, it is queued again instead of reported.
+      readonly automatic: boolean;
       readonly liveQuery: ClaudeLiveQueryContext;
       readonly pdfReservation: Effect.Success<ReturnType<typeof reserveClaudePdfBudget>>;
       // Set when Claude takes the offer: the notes it sent, the history's notes before it, and
@@ -9971,7 +9978,10 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           const droppedSteers = [...input.context.pendingSteers];
           input.context.pendingSteers.clear();
           const currentQuery = yield* Ref.get(queryContext);
-          for (const [, { messageId, liveQuery }] of droppedSteers) {
+          for (const [, { messageId, liveQuery, automatic }] of droppedSteers) {
+            // Only Claude's echo or start of a notice says it was read. Without one it stays
+            // pending however the turn ended, so the orchestrator queues it again.
+            if (automatic) continue;
             if (input.status !== "interrupted" && liveQuery !== currentQuery) continue;
             yield* emitSteerStatus(
               input.context,
@@ -10126,14 +10136,8 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           }
 
           if (input.status === "interrupted") {
-            for (const [uuid, { text, liveQuery }] of droppedSteers) {
-              // Only a CLI proven to echo prompt uuids can leave a steer unconfirmed.
-              if (
-                liveQuery.promptEchoMode !== "early" &&
-                liveQuery.promptEchoMode !== "result_only"
-              ) {
-                continue;
-              }
+            for (const [uuid, { text, liveQuery, automatic }] of droppedSteers) {
+              if (automatic || !claudeConfirmsSteerRead(liveQuery)) continue;
               const nativeItemId = `unread-steer:${uuid}`;
               const notice = `Claude did not confirm reading your steer before Stop. It may not have been delivered. Resend it if needed: "${text}"`;
               yield* emitProviderEvent({
@@ -14617,6 +14621,17 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 detail: `Claude provider turn ${turnInput.providerTurnId} is not the active turn.`,
               });
             }
+            // A notice is delivered once Claude says it read it. A process that has echoed no
+            // prompt yet could not say so, so the notice waits for the next turn instead.
+            // Another agent's own message is a steer like the user's, not a notice.
+            const automatic = turnInput.notice === true;
+            if (automatic && !claudeConfirmsSteerRead(existing)) {
+              return yield* new ProviderAdapter.ProviderAdapterSteerDeclinedError({
+                driver: CLAUDE_PROVIDER,
+                providerThreadId: turnInput.providerThread.id,
+                providerTurnId: turnInput.providerTurnId,
+              });
+            }
             // Claude echoes this uuid once it accepts the steer.
             const steerUuid = yield* random.uuidV4().pipe(
               Effect.filterOrFail(isClaudePromptUuid),
@@ -14674,7 +14689,8 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
               Effect.provideService(Path.Path, path),
             );
-            yield* backgroundForegroundSubagents(existing, backgroundDeadline);
+            // A notice is not worth moving a foreground subagent out of the way.
+            if (!automatic) yield* backgroundForegroundSubagents(existing, backgroundDeadline);
             if (liveSteerSelection !== undefined) {
               yield* applySelectionLive(existing, liveSteerSelection);
             }
@@ -14698,6 +14714,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             const pendingSteer = {
               messageId,
               text: turnInput.message.text,
+              automatic,
               liveQuery: existing,
               pdfReservation,
               appContextSent: undefined as ReadonlyMap<string, string> | undefined,
@@ -14754,24 +14771,27 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 Effect.tap(() => Effect.sync(commitOffer)),
               ),
             ).pipe(
+              // A notice that fails to send stays pending: `completed` would say Claude read it.
               Effect.onError(() =>
-                currentTurn.pendingSteers.delete(steerUuid)
+                currentTurn.pendingSteers.delete(steerUuid) && !automatic
                   ? emitSteerStatus(currentTurn, messageId, "completed")
                   : Effect.void,
               ),
             );
+            return claudeConfirmsSteerRead(existing) ? ({ awaitsRead: true } as const) : undefined;
           },
           (effect, turnInput) =>
             effect.pipe(
               Effect.scoped,
-              Effect.mapError(
-                (cause) =>
-                  new ProviderAdapter.ProviderAdapterSteerRunError({
-                    driver: CLAUDE_PROVIDER,
-                    providerThreadId: turnInput.providerThread.id,
-                    providerTurnId: turnInput.providerTurnId,
-                    cause,
-                  }),
+              Effect.mapError((cause) =>
+                cause._tag === "ProviderAdapterSteerDeclinedError"
+                  ? cause
+                  : new ProviderAdapter.ProviderAdapterSteerRunError({
+                      driver: CLAUDE_PROVIDER,
+                      providerThreadId: turnInput.providerThread.id,
+                      providerTurnId: turnInput.providerTurnId,
+                      cause,
+                    }),
               ),
             ),
         );

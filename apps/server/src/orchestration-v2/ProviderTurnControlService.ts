@@ -21,6 +21,7 @@ import * as Stream from "effect/Stream";
 import * as ProviderAdapter from "@onicode/provider-core/server/ProviderAdapter";
 import * as McpAppModelContext from "../mcpApps/McpAppModelContext.ts";
 import * as EventSink from "./EventSink.ts";
+import { delegatedTaskQuestionRequestId } from "./NotificationMailbox.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ProviderSessionManager from "./ProviderSessionManager.ts";
 
@@ -78,7 +79,10 @@ export interface ProviderTurnControlServiceV2Shape {
     readonly providerTurnId: ProviderTurnId;
     readonly messageId: MessageId;
     readonly modelSelection?: ModelSelection;
-  }) => Effect.Effect<void, ProviderTurnControlError>;
+  }) => Effect.Effect<
+    void | ProviderAdapter.ProviderAdapterV2SteerResult,
+    ProviderTurnControlError
+  >;
   /** Best effort: a turn that ended or moved sessions picks the selection up when it next starts. */
   readonly applyModelSelection: (input: {
     readonly threadId: ThreadId;
@@ -460,7 +464,22 @@ export const layer: Layer.Layer<
             mcpAppModelContext,
             input.threadId,
           );
-          yield* loaded.session.value
+          // The reactor cancels only a queued wake; one steered here can be answered first.
+          // Read last: an answer that commits while the offer is prepared still stops it.
+          const questionId = delegatedTaskQuestionRequestId(input.threadId, input.messageId);
+          const question = message.notification?.source;
+          if (
+            questionId !== undefined &&
+            question?.kind === "delegated_task" &&
+            question.childThreadId !== undefined
+          ) {
+            // A child that cannot be read gives no evidence the question is obsolete.
+            const request = yield* projections
+              .getRuntimeRequest(question.childThreadId, questionId)
+              .pipe(Effect.orElseSucceed(() => undefined));
+            if (request !== undefined && request.status !== "pending") return;
+          }
+          return yield* loaded.session.value
             .steerTurn({
               threadId: input.threadId,
               runId: run.id,
@@ -470,6 +489,9 @@ export const layer: Layer.Layer<
                 ? {}
                 : { modelSelection: input.modelSelection }),
               ...(appContext.length === 0 ? {} : { appContext }),
+              ...(message.notification !== undefined || message.delegatedCompletion !== undefined
+                ? { notice: true }
+                : {}),
               message: {
                 messageId: message.id,
                 text: withMessageSenderNote(

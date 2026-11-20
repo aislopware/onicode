@@ -1,6 +1,5 @@
 import {
   CommandId,
-  MessageId,
   type OrchestrationV2DomainEvent,
   type OrchestrationV2RuntimeRequest,
   type OrchestrationV2Subagent,
@@ -17,6 +16,7 @@ import { reportLabel } from "@onicode/provider-core/server/notification";
 import * as KeyedLock from "@onicode/shared/KeyedLock";
 
 import { forkParked } from "../serverActivation.ts";
+import { delegatedTaskQuestionMessageId } from "./NotificationMailbox.ts";
 import * as Orchestrator from "./Orchestrator.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 
@@ -47,7 +47,7 @@ const make = Effect.gen(function* () {
       type: "message.dispatch",
       commandId: CommandId.make(`server:delegated-task-question:${key}`),
       threadId: task.threadId,
-      messageId: MessageId.make(`message:delegated-task-question:${key}`),
+      messageId: delegatedTaskQuestionMessageId(task.threadId, request.id),
       text: `${situation} Read it with oni_pending_request action read, threadId ${task.childThreadId}, and requestId ${request.id}. Answer it with action respond when the answer follows from the task or the user's instructions; otherwise ask the user, then answer it. If it is no longer pending, it was answered or dismissed.`,
       notification: {
         source: { kind: "delegated_task", taskIds: [task.id], childThreadId: task.childThreadId },
@@ -68,7 +68,7 @@ const make = Effect.gen(function* () {
     const parent = yield* projections.getThreadRecords(parentThreadId, ["runs"]);
     for (const requestId of requestIds) {
       const key = `${parentThreadId}:${requestId}`;
-      const messageId = MessageId.make(`message:delegated-task-question:${key}`);
+      const messageId = delegatedTaskQuestionMessageId(parentThreadId, requestId);
       const queued = parent.runs.find(
         (run) => run.status === "queued" && run.userMessageId === messageId,
       );

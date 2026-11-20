@@ -778,12 +778,14 @@ export const make = Effect.gen(function* () {
             !isAppOwnedDelegationItem(candidate) &&
             // A link card waits on the user, not the run, and answers by message.
             candidate.type !== "link_request" &&
-            // The orchestrator queues a steer the provider never reported reading.
+            // The orchestrator queues a steer the provider never reported reading. A notice is
+            // pending only as one.
             !(
-              candidate.type === "user_message" &&
               candidate.status === "pending" &&
-              (candidate.inputIntent === "steer" ||
-                candidate.inputIntent === "promoted_queued_to_steer")
+              (candidate.type === "notification" ||
+                (candidate.type === "user_message" &&
+                  (candidate.inputIntent === "steer" ||
+                    candidate.inputIntent === "promoted_queued_to_steer")))
             ) &&
             (candidate.status === "pending" ||
               candidate.status === "running" ||

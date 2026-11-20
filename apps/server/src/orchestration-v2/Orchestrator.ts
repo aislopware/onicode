@@ -150,6 +150,7 @@ import {
   runOutcome,
 } from "./RestartBackgroundNote.ts";
 import {
+  delegatedTaskQuestionMessageId,
   isBufferedProviderNotification,
   isUndeliveredMailboxSteer,
 } from "./NotificationMailbox.ts";
@@ -777,6 +778,9 @@ function delegatedTasksStopEffect(command: {
 }
 
 const WORKSPACE_PREPARATION_INPUT = "Preparing workspace";
+// Each pass that finds a notice still unread, or read and unaccepted, sends the same id again.
+const UNREAD_STEER_COMMAND_PREFIX = "command:unread-steer:";
+const READ_RESULT_COMMAND_PREFIX = "command:mailbox-read:";
 const RUNTIME_REQUEST_DELIVERY_FAILED_MESSAGE =
   "Onicode could not confirm that your answer reached the agent. If the run stays stuck, stop it and try again.";
 
@@ -2148,6 +2152,18 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       const message = messages.messages[0];
       if (message !== undefined) {
         if (message.delegatedCompletion === undefined || message.runId === null) return;
+        // A result the agent read in the run it was steered into is accepted, and that commit
+        // offers the next one. Every path here, startup included, would offer it a second time,
+        // so nothing is offered while the accept fails either.
+        const accepted = yield* acceptReadResults(threadId, [message.runId]).pipe(
+          Effect.catchCause((cause) =>
+            Effect.logWarning("Failed to accept a delegated result the agent read", {
+              threadId,
+              cause,
+            }).pipe(Effect.as(true)),
+          ),
+        );
+        if (accepted) return;
         const runs = yield* projectionStore.getThreadRecords(threadId, ["runs"], {
           runIds: [message.runId],
         });
@@ -2472,7 +2488,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       (request) =>
         request.kind === "user_input" &&
         request.status === "pending" &&
-        messageId === `message:delegated-task-question:${threadId}:${request.id}`,
+        messageId === delegatedTaskQuestionMessageId(threadId, request.id),
     );
   });
 
@@ -3527,6 +3543,69 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     );
   });
 
+  // A provider that reports reads delivers a steered result when the agent reads it, and the
+  // read commits apart from its accept. A result read in these runs that its cohort still
+  // claims, after a crash or a failed accept, is accepted here before anything offers it again.
+  // The accept names the item, so a failed one is planned again by the next pass.
+  const acceptReadResults = Effect.fn("Orchestrator.acceptReadResults")(function* (
+    threadId: ThreadId,
+    hostRunIds: ReadonlyArray<RunId>,
+  ) {
+    if (hostRunIds.length === 0) return false;
+    const { turnItems } = yield* projectionStore.getThreadRecords(threadId, ["turnItems"], {
+      turnItemTypes: ["notification"],
+      turnItemStatuses: ["completed"],
+      turnItemRunIds: hostRunIds,
+    });
+    if (turnItems.length === 0) return false;
+    const { messages } = yield* projectionStore.getThreadRecords(threadId, ["messages"], {
+      messageRunIds: hostRunIds,
+      messageRoles: ["user"],
+    });
+    // A notification item names no message, so its run's messages are matched by item id.
+    const read = messages.flatMap((message) => {
+      const ownership = message.delegatedCompletion;
+      const itemId = idAllocator.derive.userTurnItem({ messageId: message.id });
+      return ownership !== undefined &&
+        turnItems.some((item) => item.id === itemId && item.runId === message.runId)
+        ? [{ message, ownership, itemId }]
+        : [];
+    });
+    if (read.length === 0) return false;
+    const { runs } = yield* projectionStore.getThreadRecords(threadId, ["runs"], {
+      runIds: [...hostRunIds, ...read.map(({ ownership }) => ownership.parentRunId)],
+    });
+    let accepted = false;
+    for (const { message, ownership, itemId } of read) {
+      const host = runs.find((run) => run.id === message.runId);
+      const cohort = runs.find((run) => run.id === ownership.parentRunId)?.delegatedCompletion;
+      if (
+        host === undefined ||
+        // A result that started its own run is delivered when that run ends.
+        host.userMessageId === message.id ||
+        cohort?.disposition !== "open" ||
+        cohort.delivery?.messageId !== message.id ||
+        cohort.delivery.generation !== ownership.generation
+      )
+        continue;
+      // Any other provider's notice is completed from the moment it is planned, read or not.
+      const confirmsRead = yield* providerAdapters.get(host.providerInstanceId).pipe(
+        Effect.flatMap((adapter) => adapter.getCapabilities()),
+        Effect.map((capabilities) => capabilities.turns.activeSteeringConfirmsRead === true),
+        Effect.orElseSucceed(() => false),
+      );
+      if (!confirmsRead) continue;
+      yield* dispatchWithReceiptEffect({
+        type: "notification.delivery.accept",
+        commandId: CommandId.make(`${READ_RESULT_COMMAND_PREFIX}${itemId}`),
+        threadId,
+        messageId: message.id,
+      });
+      accepted = true;
+    }
+    return accepted;
+  });
+
   // A steer still pending after its run ended was never read: the provider marks one it read
   // completed, and one Stop dropped cancelled. It runs next, in its place among waiting messages.
   const requeueUnreadSteers = Effect.fn("Orchestrator.requeueUnreadSteers")(function* (
@@ -3534,32 +3613,78 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     runIds?: ReadonlyArray<RunId>,
   ) {
     const { turnItems } = yield* projectionStore.getThreadRecords(threadId, ["turnItems"], {
-      turnItemTypes: ["user_message"],
+      turnItemTypes: ["user_message", "notification"],
       turnItemStatuses: ["pending"],
       ...(runIds === undefined ? {} : { turnItemRunIds: runIds }),
     });
+    // A notification is pending only as a steer; a user message also waits pending in the queue.
     const unread = turnItems.filter(
       (item) =>
-        item.type === "user_message" &&
-        (item.inputIntent === "steer" || item.inputIntent === "promoted_queued_to_steer"),
+        item.type === "notification" ||
+        (item.type === "user_message" &&
+          (item.inputIntent === "steer" || item.inputIntent === "promoted_queued_to_steer")),
     );
     if (unread.length === 0) return;
     const projection = yield* projectionStore.getThreadRecords(threadId, ["runs", "messages"], {
       messageIds: unread.flatMap((item) => (item.type === "user_message" ? [item.messageId] : [])),
     });
+    // A notification item names no message, so its run's messages are matched by item id.
+    const noticeRunIds = [
+      ...new Set(
+        unread.flatMap((item) =>
+          item.type === "notification" && item.runId !== null ? [item.runId] : [],
+        ),
+      ),
+    ];
+    const notices =
+      noticeRunIds.length === 0
+        ? []
+        : (yield* projectionStore.getThreadRecords(threadId, ["messages"], {
+            messageRunIds: noticeRunIds,
+            messageRoles: ["user"],
+          })).messages;
     const placed = [];
     for (const item of unread) {
       const run = projection.runs.find((candidate) => candidate.id === item.runId);
-      const message = projection.messages.find(
+      if (run === undefined || isActiveRun(run)) continue;
+      const message = (item.type === "user_message" ? projection.messages : notices).find(
         (candidate) =>
-          item.type === "user_message" &&
-          candidate.id === item.messageId &&
-          candidate.runId === item.runId,
+          candidate.runId === item.runId &&
+          (item.type === "user_message"
+            ? candidate.id === item.messageId
+            : idAllocator.derive.userTurnItem({ messageId: candidate.id }) === item.id),
       );
-      if (run === undefined || message === undefined || isActiveRun(run)) continue;
+      const now = yield* DateTime.now;
+      if (item.type === "notification") {
+        const cohort = projection.runs.find(
+          (candidate) => candidate.id === message?.delegatedCompletion?.parentRunId,
+        )?.delegatedCompletion;
+        // Nothing is left to deliver: the message moved on without this item, or its result
+        // was accepted or disposed. A notice queued again is closed by the commit that queues
+        // it, so one whose dispatch fails or never runs stays pending for the next pass.
+        if (
+          message === undefined ||
+          (message.delegatedCompletion !== undefined &&
+            (cohort?.disposition !== "open" || cohort.delivery?.messageId !== message.id))
+        ) {
+          yield* writeSystemEvents([
+            {
+              type: "turn-item.updated",
+              threadId,
+              runId: run.id,
+              ...(item.nodeId === null ? {} : { nodeId: item.nodeId }),
+              providerInstanceId: run.providerInstanceId,
+              occurredAt: now,
+              payload: { ...item, status: "cancelled" as const, completedAt: now, updatedAt: now },
+            },
+          ]);
+          continue;
+        }
+      }
+      if (message === undefined) continue;
+      const stopped = yield* projectionStore.hasRunInterruptRequest(threadId, run.id);
       // Stop drops a steer it reached; say so, as the adapter does for steers it still held.
-      if (yield* projectionStore.hasRunInterruptRequest(threadId, run.id)) {
-        const now = yield* DateTime.now;
+      if (stopped && item.type === "user_message") {
         yield* writeSystemEvents([
           {
             type: "turn-item.updated",
@@ -3618,21 +3743,26 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           ),
         ),
       );
-      placed.push({ item, run, message, steer, afterRunOrdinal });
+      // Nobody is told about a notice Stop dropped, so it waits held instead of being reported.
+      placed.push({ item, run, message, steer, afterRunOrdinal, held: stopped });
     }
-    // Each requeue starts the queue once it commits, so earlier places go first.
+    // Each requeue starts the queue once it commits, so earlier places go first. A held notice
+    // goes last: queued first, it would hold every steer placed behind it.
     placed.sort(
       (left, right) =>
-        left.afterRunOrdinal - right.afterRunOrdinal || left.item.ordinal - right.item.ordinal,
+        Number(left.held) - Number(right.held) ||
+        left.afterRunOrdinal - right.afterRunOrdinal ||
+        left.item.ordinal - right.item.ordinal,
     );
-    for (const { run, message, steer, afterRunOrdinal } of placed) {
+    for (const { run, message, steer, afterRunOrdinal, held } of placed) {
       yield* dispatchWithReceiptEffect({
         type: "message.dispatch",
-        commandId: CommandId.make(`command:unread-steer:${run.id}:${message.id}`),
+        commandId: CommandId.make(`${UNREAD_STEER_COMMAND_PREFIX}${run.id}:${message.id}`),
         threadId,
         messageId: message.id,
-        steerFollowUpOfRunId: run.id,
-        steerFollowUpAfterRunOrdinal: afterRunOrdinal,
+        ...(held
+          ? { steerMissedRunId: run.id }
+          : { steerFollowUpOfRunId: run.id, steerFollowUpAfterRunOrdinal: afterRunOrdinal }),
         modelSelection: steer?.modelSelection ?? run.modelSelection,
         text: message.text,
         ...(message.context ? { context: message.context } : {}),
@@ -6443,6 +6573,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         readonly providerInstanceId: ProviderInstanceId;
         readonly modelSwitch?: OrchestrationV2ModelSwitch | undefined;
         readonly ordinal?: number;
+        readonly awaitsRead?: boolean;
       }) {
         const message: OrchestrationV2ConversationMessage = {
           createdBy: input.createdBy,
@@ -6487,10 +6618,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           nativeItemRef: null,
           parentItemId: null,
           ordinal: messageInput.ordinal ?? (yield* nextTurnItemOrdinal(input.projection)),
-          status: "completed",
+          status: messageInput.awaitsRead === true ? "pending" : "completed",
           title: null,
           startedAt: now,
-          completedAt: now,
+          completedAt: messageInput.awaitsRead === true ? null : now,
           updatedAt: now,
           type: "user_message",
           messageId: input.messageId,
@@ -6579,6 +6710,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         providerTurnId: providerTurn.id,
         providerThreadId: providerThread.id,
         providerInstanceId: targetRun.providerInstanceId,
+        // A notice whose provider reports reads is pending from this commit, not from the
+        // worker's hand-off: a restart in between would leave one nobody read looking read.
+        awaitsRead:
+          !steerCarriesSelection &&
+          session.providerSession.capabilities.turns.activeSteeringConfirmsRead === true,
       });
       yield* Ref.update(input.effects, (existing) => [
         ...existing,
@@ -7129,6 +7265,49 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         : undefined,
     );
     const steerSourceRunId = command.steerFollowUpOfRunId ?? command.steerMissedRunId;
+    // The command projection holds no notifications. These are the source run's unread ones
+    // and those already queued again, which the requeue closed as cancelled.
+    const sourceNotices =
+      steerSourceRunId === undefined
+        ? []
+        : (yield* projectionStore
+            .getThreadRecords(command.threadId, ["turnItems"], {
+              turnItemTypes: ["notification"],
+              turnItemStatuses: ["pending", "cancelled"],
+              turnItemRunIds: [steerSourceRunId],
+            })
+            .pipe(mapDispatchError(command))).turnItems;
+    // A notice its provider never read stays pending in the run it was steered into. The commit
+    // that queues it again, or finds nothing left to deliver, closes that item with it, so no
+    // crash between the two can lose the notice.
+    const noticeItemId = idAllocator.derive.userTurnItem({ messageId: command.messageId });
+    const unreadNotice = sourceNotices.find(
+      (item) => item.id === noticeItemId && item.status === "pending",
+    );
+    const retireUnreadNotice = Effect.gen(function* () {
+      if (unreadNotice === undefined || unreadNotice.runId === null) return;
+      const now = yield* DateTime.now;
+      const providerInstanceId = projection.runs.find(
+        (run) => run.id === unreadNotice.runId,
+      )?.providerInstanceId;
+      yield* emit(
+        events,
+        command,
+      )({
+        type: "turn-item.updated",
+        threadId: command.threadId,
+        runId: unreadNotice.runId,
+        ...(unreadNotice.nodeId === null ? {} : { nodeId: unreadNotice.nodeId }),
+        ...(providerInstanceId === undefined ? {} : { providerInstanceId }),
+        occurredAt: now,
+        payload: {
+          ...unreadNotice,
+          status: "cancelled" as const,
+          completedAt: now,
+          updatedAt: now,
+        },
+      });
+    });
     if (steerSourceRunId !== undefined) {
       const source = projection.runs.find((run) => run.id === steerSourceRunId);
       if (
@@ -7141,8 +7320,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ) ||
         projection.thread.archivedAt !== null ||
         projection.thread.deletedAt !== null ||
-        // A steer that missed a stopped turn returns to the queue, held; a declined one is dropped.
+        // A steer that missed a stopped turn returns to the queue, held; a declined one is
+        // dropped. Nobody can send a notice again, so Stop does not drop one here.
         (command.steerFollowUpOfRunId !== undefined &&
+          command.notification === undefined &&
+          command.delegatedCompletion === undefined &&
           (yield* stopReachedRun(command, command.threadId, source.id)))
       ) {
         yield* emit(
@@ -7154,6 +7336,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           occurredAt: yield* DateTime.now,
           payload: projection.thread,
         });
+        yield* retireUnreadNotice;
         return;
       }
     }
@@ -7167,6 +7350,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         occurredAt: yield* DateTime.now,
         payload: projection.thread,
       });
+      yield* retireUnreadNotice;
       return;
     }
     const activeProviderInstanceId = projection.providerThreads.find(
@@ -7628,6 +7812,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         delivery.generation !== requestedCompletion.generation ||
         delivery.messageId !== command.messageId ||
         (projection.messages.some((candidate) => candidate.id === command.messageId) &&
+          // A result its run still holds unread moves on while that run's turn goes on.
+          unreadNotice === undefined &&
           !isUndeliveredMailboxSteer(projection, command.messageId))
       ) {
         return yield* new OrchestratorDispatchError({
@@ -7724,6 +7910,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       if (
         active !== undefined &&
         activeTurn !== undefined &&
+        // A run that still holds this notice unread declined it; it waits for the next turn.
+        unreadNotice?.runId !== active.id &&
         providerThread?.providerSessionId != null &&
         (!commandNotice || providerThread.goal?.status === "active") &&
         (activeMessage === undefined || !isNativeMaintenanceCommand(activeMessage))
@@ -7735,7 +7923,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           Option.isSome(session) &&
           session.value.providerSession.capabilities.turns.supportsActiveSteering &&
           session.value.providerSession.capabilities.turns.activeSteeringInterruptsTools !== true &&
-          !(yield* stopReachedRun(command, command.threadId, active.id))
+          !(yield* stopReachedRun(command, command.threadId, active.id)) &&
+          // A steer aborts a compaction; only a goal's command notice is worth that.
+          (commandNotice ||
+            !(yield* compactionHoldsSteer(projection, active).pipe(mapDispatchError(command))))
         ) {
           dispatchMode = { type: "steer_active", targetRunId: active.id };
         }
@@ -8087,6 +8278,12 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         command.createdBy === "agent" &&
         command.creationSource === "provider" &&
         !(yield* stopReachedRun(command, command.threadId, activeRun.id));
+      // Stop holds the runs queued when it lands. A notice its run hands back after that, which
+      // Stop does not drop, waits held like one the run's end queues again.
+      const noticeFollowsStop =
+        steerFollowUpSource !== undefined &&
+        (command.notification !== undefined || command.delegatedCompletion !== undefined) &&
+        (yield* stopReachedRun(command, command.threadId, steerFollowUpSource.id));
       let steerFollowUpQueuePosition: number | undefined;
       if (
         command.steerFollowUpOfRunId !== undefined &&
@@ -8094,14 +8291,21 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       ) {
         const afterRunOrdinal = command.steerFollowUpAfterRunOrdinal;
         const steerOrdinal =
-          projection.turnItems.find(
-            (item) => item.type === "user_message" && item.messageId === command.messageId,
+          // A notice's item is a notification, which the command projection leaves out.
+          (
+            projection.turnItems.find(
+              (item) => item.type === "user_message" && item.messageId === command.messageId,
+            ) ?? unreadNotice
           )?.ordinal ?? -1;
         // Earlier declined steers have newer runs but retain their original turn-item ordinals.
         const earlierSteerMessageIds = new Set(
           projection.turnItems.flatMap((item) =>
             item.type === "user_message" && item.ordinal < steerOrdinal ? [item.messageId] : [],
           ),
+        );
+        // So do the run's earlier notices queued again. Their items name no message.
+        const earlierNoticeItemIds = new Set(
+          sourceNotices.flatMap((item) => (item.ordinal < steerOrdinal ? [item.id] : [])),
         );
         steerFollowUpQueuePosition =
           Math.max(
@@ -8111,7 +8315,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                 (candidate) =>
                   candidate.status === "queued" &&
                   (candidate.ordinal <= afterRunOrdinal ||
-                    earlierSteerMessageIds.has(candidate.userMessageId)),
+                    earlierSteerMessageIds.has(candidate.userMessageId) ||
+                    earlierNoticeItemIds.has(
+                      idAllocator.derive.userTurnItem({ messageId: candidate.userMessageId }),
+                    )),
               )
               .map((candidate) => candidate.queuePosition ?? candidate.ordinal),
           ) + 1;
@@ -8132,6 +8339,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ...(worktreeMissingRun !== undefined ||
         steerMissedHeld ||
         steerFollowUpSource?.status === "cancelled" ||
+        noticeFollowsStop ||
         (steerWhenReadyRunId === undefined &&
           heldRunsToRelease.length === 0 &&
           queueIsHeld &&
@@ -8323,6 +8531,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           },
         });
       }
+      yield* retireUnreadNotice;
       if (queuedRunStop !== undefined) {
         return yield* stopRunForQueuedCommand({
           command,
@@ -16272,8 +16481,13 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           ),
         );
       const steerTarget = command.deliveryIntent === "steer" ? yield* latestActiveRunId : undefined;
+      // Only the requeue sends a notice that names a missed run, after it placed the rest. That
+      // notice stays pending until this commits, so a second read here would send it without end.
+      const requeuesHeldNotice =
+        command.steerMissedRunId !== undefined &&
+        (command.notification !== undefined || command.delegatedCompletion !== undefined);
       const placeEndedRunsSteers = mapDispatchError(command)(
-        requeueUnreadSteers(command.threadId).pipe(
+        (requeuesHeldNotice ? Effect.void : requeueUnreadSteers(command.threadId)).pipe(
           Effect.andThen(startNextQueuedRun(command.threadId, { latestRunEnded: true })),
         ),
       );
@@ -16320,6 +16534,14 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           if (
             cause._tag === "OrchestratorThreadAboveModeLimitError" ||
             cause._tag === "OrchestratorRuntimeModeAboveCeilingError"
+          ) {
+            return yield* cause;
+          }
+          // Each pass over a notice still unread or unaccepted sends the same id. A recorded
+          // rejection would answer them all, so one failed plan would strand the notice.
+          if (
+            command.commandId.startsWith(UNREAD_STEER_COMMAND_PREFIX) ||
+            command.commandId.startsWith(READ_RESULT_COMMAND_PREFIX)
           ) {
             return yield* cause;
           }
@@ -16618,6 +16840,16 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
               : Effect.void
             ).pipe(
               Effect.andThen(
+                acceptReadResults(threadId, [run.id]).pipe(
+                  Effect.catchCause((cause) =>
+                    Effect.logWarning("Failed to accept a delegated result the agent read", {
+                      threadId,
+                      cause,
+                    }),
+                  ),
+                ),
+              ),
+              Effect.andThen(
                 requeueUnreadSteers(threadId, [run.id]).pipe(
                   Effect.catchCause((cause) =>
                     Effect.logWarning("Failed to read unread steers", { threadId, cause }),
@@ -16848,16 +17080,40 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       Effect.forkScoped,
     );
 
+  // A provider that only queues a steer reports the read later, and a delegated result steered
+  // that way is delivered only then. Until it is, the run's end queues the result again.
+  const acceptReadDelivery = Effect.fn("Orchestrator.acceptReadDelivery")(
+    function* (stored: OrchestrationV2StoredEvent) {
+      const { event } = stored;
+      if (event.type !== "turn-item.updated" || event.payload.runId === null) return;
+      yield* acceptReadResults(event.threadId, [event.payload.runId]);
+    },
+    (effect, stored) => threadDispatch.withLock(stored.event.threadId, effect),
+    Effect.catchCause((cause) =>
+      Effect.logWarning("Failed to accept a delegated result the agent read", { cause }),
+    ),
+    (effect, stored) => threadReactions.run(stored.event.threadId, effect),
+  );
+  // Only a provider's `steer.updated` carries a driver; the orchestrator's own item writes do not.
+  const confirmsSteerRead = (stored: OrchestrationV2StoredEvent) =>
+    stored.event.type === "turn-item.updated" &&
+    stored.event.payload.type === "notification" &&
+    stored.event.payload.status === "completed" &&
+    stored.event.driver !== undefined;
+
   yield* eventSink
     .stream({ afterSequence: terminalEventsAfterSequence, eventType: "turn-item.updated" })
     .pipe(
       Stream.filter(
         (stored) =>
-          stored.event.type === "turn-item.updated" &&
-          stored.event.payload.type === "compaction" &&
-          stored.event.payload.status === "completed",
+          confirmsSteerRead(stored) ||
+          (stored.event.type === "turn-item.updated" &&
+            stored.event.payload.type === "compaction" &&
+            stored.event.payload.status === "completed"),
       ),
-      Stream.runForEach(deliverDeferredSteers),
+      Stream.runForEach((stored) =>
+        confirmsSteerRead(stored) ? acceptReadDelivery(stored) : deliverDeferredSteers(stored),
+      ),
       Effect.forkScoped,
     );
 
@@ -16941,6 +17197,28 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         }),
       ),
     );
+    // Recovery leaves a steer the provider had not read pending, and no run update follows it.
+    // Before the completion offers: a result requeued held after a Stop must not start unheld.
+    yield* projectionStore.getRecoveryThreadIds("unread-steers").pipe(
+      Effect.flatMap((threadIds) =>
+        Effect.forEach(
+          threadIds,
+          (threadId) =>
+            threadDispatch.withLock(threadId, requeueUnreadSteers(threadId)).pipe(
+              Effect.catchCause((cause) =>
+                Effect.logWarning("Failed to requeue an unread steer during recovery", {
+                  threadId,
+                  cause,
+                }),
+              ),
+            ),
+          { discard: true },
+        ),
+      ),
+      Effect.catchCause((cause) =>
+        Effect.logWarning("Failed to inspect unread steers during recovery", { cause }),
+      ),
+    );
     yield* projectionStore.getRecoveryThreadIds("delegated-completions").pipe(
       Effect.tap((threadIds) =>
         Effect.annotateCurrentSpan("recovery.delegatedCompletionThreads", threadIds.length),
@@ -17001,27 +17279,6 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         Effect.logWarning("Failed to inspect delegated completion delivery during recovery", {
           cause,
         }),
-      ),
-    );
-    // Recovery leaves a steer the provider had not read pending, and no run update follows it.
-    yield* projectionStore.getRecoveryThreadIds("unread-steers").pipe(
-      Effect.flatMap((threadIds) =>
-        Effect.forEach(
-          threadIds,
-          (threadId) =>
-            threadDispatch.withLock(threadId, requeueUnreadSteers(threadId)).pipe(
-              Effect.catchCause((cause) =>
-                Effect.logWarning("Failed to requeue an unread steer during recovery", {
-                  threadId,
-                  cause,
-                }),
-              ),
-            ),
-          { discard: true },
-        ),
-      ),
-      Effect.catchCause((cause) =>
-        Effect.logWarning("Failed to inspect unread steers during recovery", { cause }),
       ),
     );
   });
