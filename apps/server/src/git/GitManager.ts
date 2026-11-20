@@ -2698,10 +2698,15 @@ export const make = Effect.gen(function* () {
     );
     // The thread's branch PR comes from status, which may hold the lookup from before.
     if (result.status === "created") yield* invalidateStatus(input.cwd);
+    if (input.draft !== true) return result;
+    // The PR exists either way; without the provider, the draft check below decides.
     const openedAsDraft =
       result.status === "created" &&
-      (yield* sourceControlProvider(input.cwd)).createsDraftChangeRequests === true;
-    if (input.draft === true && !openedAsDraft && !(yield* draftOpened(input, result))) {
+      (yield* sourceControlProvider(input.cwd).pipe(
+        Effect.map((provider) => provider.createsDraftChangeRequests === true),
+        Effect.orElseSucceed(() => false),
+      ));
+    if (!openedAsDraft && !(yield* draftOpened(input, result))) {
       // A retry finds the open PR and drafts it then.
       return yield* new GitManagerError({
         operation: "createPullRequest",

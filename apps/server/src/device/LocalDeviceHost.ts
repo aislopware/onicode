@@ -106,6 +106,7 @@ interface RunningHost {
 
 const platformReason = Effect.fn("LocalDeviceHost.platformReason")(function* (
   platform: DevicePlatform,
+  currentSdk: typeof androidSdk = androidSdk,
 ): Effect.fn.Return<string | null, never, FileSystem.FileSystem | Path.Path> {
   const hostPlatform = yield* HostProcess.Platform;
   if (platform === "ios") {
@@ -113,7 +114,7 @@ const platformReason = Effect.fn("LocalDeviceHost.platformReason")(function* (
     if (!(yield* isCommandAvailable("xcrun"))) return "Xcode command line tools were not found.";
     return null;
   }
-  const sdk = yield* androidSdk;
+  const sdk = yield* currentSdk;
   if (!sdk.root)
     return "Android SDK was not found. Install it with Android Studio or set ANDROID_HOME to your SDK directory.";
   if (!sdk.adb)
@@ -127,6 +128,17 @@ const platformReason = Effect.fn("LocalDeviceHost.platformReason")(function* (
   }
   return null;
 });
+
+const SDK_RECHECK_MS = 30_000;
+const SDK_ENVIRONMENT_KEYS = [
+  "ANDROID_HOME",
+  "ANDROID_SDK_ROOT",
+  "HOME",
+  "USERPROFILE",
+  "LOCALAPPDATA",
+  "PATH",
+  "Path",
+] as const;
 
 const androidSdk = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
@@ -268,8 +280,27 @@ export const make = Effect.fn("LocalDeviceHost.make")(function* () {
   const environment = yield* HostProcess.Environment;
   const workingDirectory = yield* HostProcess.WorkingDirectory;
   const hostPlatform = yield* HostProcess.Platform;
-  // Resolved per use: the desktop shell snapshot can select another SDK after the host exists.
-  const currentSdk = androidSdk.pipe(
+  const sdkCacheRef = yield* Ref.make<{
+    readonly key: string;
+    readonly checkedAt: number;
+    readonly sdk: Effect.Success<typeof androidSdk>;
+  } | null>(null);
+  // The search can stat every PATH entry, so a result serves the readiness checks of the next
+  // 30 s. The desktop shell snapshot can select another SDK after the host exists, so a changed
+  // environment searches again at once.
+  const currentSdk = Effect.gen(function* () {
+    // An unset variable differs from an empty one: the search falls back past unset ones.
+    const key = SDK_ENVIRONMENT_KEYS.map((name) => {
+      const value = environment[name];
+      return value === undefined ? "-" : `=${value}`;
+    }).join("\0");
+    const now = yield* Clock.currentTimeMillis;
+    const cached = yield* Ref.get(sdkCacheRef);
+    if (cached?.key === key && now - cached.checkedAt < SDK_RECHECK_MS) return cached.sdk;
+    const sdk = yield* androidSdk;
+    yield* Ref.set(sdkCacheRef, { key, checkedAt: now, sdk });
+    return sdk;
+  }).pipe(
     Effect.provideService(FileSystem.FileSystem, fs),
     Effect.provideService(Path.Path, path),
     Effect.provideService(HostProcess.Environment, environment),
@@ -286,7 +317,7 @@ export const make = Effect.fn("LocalDeviceHost.make")(function* () {
   const platformAvailability = Effect.fn("LocalDeviceHost.platformAvailability")(function* (
     platform: DevicePlatform,
   ): Effect.fn.Return<DevicePlatformAvailability> {
-    const reason = yield* platformReason(platform).pipe(
+    const reason = yield* platformReason(platform, currentSdk).pipe(
       Effect.provideService(FileSystem.FileSystem, fs),
       Effect.provideService(Path.Path, path),
     );

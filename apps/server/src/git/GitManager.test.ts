@@ -636,6 +636,8 @@ function makeManager(input?: {
   providerScenario?: FakeProviderScenario;
   pullRequests?: Partial<PullRequestService.PullRequestService["Service"]>;
   sourceControlProvider?: SourceControlProvider["Service"];
+  /** Provider resolution fails once the host has created a change request. */
+  resolveFailsAfterCreate?: boolean;
   textGeneration?: Partial<FakeGitTextGeneration>;
   serverSettings?: Parameters<typeof ServerSettings.layerTest>[0];
   setupScriptRunner?: ProjectSetupScriptRunner.ProjectSetupScriptRunner["Service"];
@@ -734,7 +736,17 @@ function makeManager(input?: {
           resolveLink: (input) => provider.resolveLink?.(input),
           get: () => Effect.succeed(provider),
           resolveHandle: () => Effect.succeed({ provider, context: null }),
-          resolve: () => Effect.succeed(provider),
+          resolve: ({ cwd }) =>
+            input?.resolveFailsAfterCreate === true && created(providerCalls).length > 0
+              ? Effect.fail(
+                  new SourceControlProviderFailure({
+                    provider: provider.kind,
+                    operation: "resolve",
+                    cwd,
+                    detail: "git remote failed",
+                  }),
+                )
+              : Effect.succeed(provider),
           discover: Effect.succeed([]),
         }),
       ),
@@ -4544,6 +4556,19 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         ),
       ).toEqual([true]);
       expect(newActions).toEqual([]);
+
+      // A ready PR the host created stands even when a later provider lookup fails.
+      const lookupFails = yield* makeManager({
+        providerScenario: { prListSequence: [[], [open]] },
+        resolveFailsAfterCreate: true,
+      });
+      const ready = yield* lookupFails.manager.createPullRequest({
+        cwd: repoDir,
+        projectId: ProjectId.make("project-1"),
+        title: "Feature",
+        body: "Body",
+      });
+      expect(ready.status).toBe("created");
     }),
   );
 

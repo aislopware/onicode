@@ -2,6 +2,7 @@
 import type * as NodeChildProcess from "node:child_process";
 // @effect-diagnostics-next-line nodeBuiltinImport:off - the free-space probe is a plain Promise callback.
 import * as NodeFS from "node:fs";
+import * as NodeOS from "node:os";
 // @effect-diagnostics-next-line nodeBuiltinImport:off - models the service manager reading disk through the launcher's Promise callback.
 import * as NodeFSP from "node:fs/promises";
 import * as NodeSqlite from "node:sqlite";
@@ -22,7 +23,9 @@ import {
 } from "./service/bootService.ts";
 import {
   databaseBackupBlocker,
+  fileAppender,
   Launcher,
+  makeAppender,
   main,
   readServiceEnvironment,
   type BackupSpaceProbe,
@@ -79,6 +82,64 @@ const writeSparseFile = (filePath: string, size: number) =>
     yield* fileSystem.writeFileString(filePath, "");
     yield* fileSystem.truncate(filePath, size);
   });
+
+it("appends server output in order, finishing short writes and marking what it dropped", () => {
+  const writes: Array<{
+    readonly chunk: string;
+    readonly done: (error: NodeJS.ErrnoException | null, written: number | undefined) => void;
+  }> = [];
+  const append = makeAppender(1, {
+    write: (_fd, buffer, done) => writes.push({ chunk: buffer.toString(), done }),
+    maxPendingBytes: 8,
+  });
+  const log: Array<string> = [];
+  const complete = (written = writes[0]!.chunk.length) => {
+    const write = writes.shift()!;
+    log.push(write.chunk.slice(0, written));
+    write.done(null, written);
+  };
+
+  append("first\n");
+  append("two\n");
+  append("three\n");
+  // The first write stalls: "two" fits under the cap and "three" does not.
+  complete(3);
+  complete();
+  complete();
+  expect(writes).toEqual([]);
+  expect(log.join("")).toBe(
+    "first\ntwo\n[service-launcher] Dropped 6 bytes of output while the log was not accepting writes.\n",
+  );
+  // A log that refuses writes waits for the next output instead of retrying, and the
+  // next write reports what was lost, an oversized chunk included.
+  const refuse = () =>
+    writes.shift()!.done(Object.assign(new Error("ENOSPC"), { code: "ENOSPC" }), undefined);
+  append("lost\n");
+  refuse();
+  append("much too long\n");
+  refuse();
+  expect(writes).toEqual([]);
+  append("x\n");
+  complete();
+  expect(writes).toEqual([]);
+  expect(log.at(-1)).toBe(
+    "[service-launcher] Dropped 19 bytes of output while the log was not accepting writes.\nx\n",
+  );
+});
+
+it("shares one output queue between descriptors of the same log file", () => {
+  const directory = NodeFS.mkdtempSync(`${NodeOS.tmpdir()}/oni-launcher-log-`);
+  const stdout = NodeFS.openSync(`${directory}/service.log`, "a");
+  const stderr = NodeFS.openSync(`${directory}/service.log`, "a");
+  const other = NodeFS.openSync(`${directory}/other.log`, "a");
+  try {
+    expect(fileAppender(stderr)).toBe(fileAppender(stdout));
+    expect(fileAppender(other)).not.toBe(fileAppender(stdout));
+  } finally {
+    for (const fd of [stdout, stderr, other]) NodeFS.closeSync(fd);
+    NodeFS.rmSync(directory, { recursive: true, force: true });
+  }
+});
 
 it("accepts only exact semantic versions", () => {
   for (const version of ["0.0.0", "1.2.3", "1.2.3-alpha.1", "1.2.3-0", "1.2.3+001"]) {
