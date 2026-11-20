@@ -2862,3 +2862,4 @@ d6cdb4f161	take	taken as is; desktop scenario ported (WEB = desktop renderer tar
 de0466fd80	skip	T3's release version bump (0.1.11); Onicode versions its own releases through better-update (currently 0.20.0)
 16d40942ac	take	taken as is
 019e55bad5	take	mobile test import conflict resolved (kept both)
+d15123668e	take	import conflict: kept Onicode's buildPairingAppLink and icons
