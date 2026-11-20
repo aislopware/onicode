@@ -463,6 +463,8 @@ const make = Effect.gen(function* () {
         operation: "ManagedProjectFolders.commit",
         cwd,
         args: ["commit", "--message", "Initial commit"],
+        // describeCommitFailure reads English; execute passes the host's language to Git otherwise.
+        env: { LANGUAGE: "C" },
         allowNonZeroExit: true,
         timeoutMs: 30_000,
       })

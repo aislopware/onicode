@@ -18,7 +18,7 @@ import * as Logger from "effect/Logger";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
-import { ChildProcessSpawner } from "effect/process";
+import { ChildProcess, ChildProcessSpawner, CommandLine } from "effect/process";
 import * as Scope from "effect/Scope";
 
 import * as ServerConfig from "../config.ts";
@@ -500,34 +500,48 @@ it.effect("gives concurrent named projects with the same name distinct folders",
   ),
 );
 
-it.effect("keeps a named project and reports why when Git cannot commit", () =>
-  withScratch(({ baseDir }) =>
-    withGitEnv(
-      {},
-      Effect.gen(function* () {
-        const folders = yield* ManagedProjectFolders.ManagedProjectFolders;
-        const projects = yield* ProjectService.ProjectService;
-        const fileSystem = yield* FileSystem.FileSystem;
-        const path = yield* Path.Path;
-        yield* fileSystem.writeFileString(
-          path.join(baseDir, "no-identity.gitconfig"),
-          "[user]\n\tuseConfigOnly = true\n",
-        );
-        (yield* HostProcess.Environment).GIT_CONFIG_GLOBAL = path.join(
-          baseDir,
-          "no-identity.gitconfig",
-        );
-
-        const result = yield* folders.createNamedProject({ name: "No Identity" });
-
-        assert.include(result.commitError ?? "", "no name or email");
-        assert.isTrue(Option.isSome(yield* projects.getById(result.projectId)));
-        assert.isTrue(yield* fileSystem.exists(path.join(result.workspaceRoot, "README.md")));
-        assert.isTrue(yield* fileSystem.exists(path.join(result.workspaceRoot, ".git")));
+it.effect("keeps a named project and reports why when Git cannot commit", () => {
+  const commitLocales: Array<CommandLine.Word | undefined> = [];
+  const spawner = Layer.effect(
+    ChildProcessSpawner.ChildProcessSpawner,
+    Effect.map(ChildProcessSpawner.ChildProcessSpawner, (delegate) =>
+      ChildProcessSpawner.make((command) => {
+        if (ChildProcess.isStandardCommand(command) && command.args.includes("commit")) {
+          commitLocales.push(command.options.env?.LANGUAGE);
+        }
+        return delegate.spawn(command);
       }),
     ),
-  ),
-);
+  );
+  return withScratch(
+    ({ baseDir }) =>
+      withGitEnv(
+        {},
+        Effect.gen(function* () {
+          const folders = yield* ManagedProjectFolders.ManagedProjectFolders;
+          const projects = yield* ProjectService.ProjectService;
+          const fileSystem = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          yield* fileSystem.writeFileString(
+            path.join(baseDir, "no-identity.gitconfig"),
+            "[user]\n\tuseConfigOnly = true\n",
+          );
+          const env = yield* HostProcess.Environment;
+          env.GIT_CONFIG_GLOBAL = path.join(baseDir, "no-identity.gitconfig");
+          env.LANGUAGE = "de";
+
+          const result = yield* folders.createNamedProject({ name: "No Identity" });
+
+          assert.include(result.commitError ?? "", "no name or email");
+          assert.deepStrictEqual(commitLocales, ["C"]);
+          assert.isTrue(Option.isSome(yield* projects.getById(result.projectId)));
+          assert.isTrue(yield* fileSystem.exists(path.join(result.workspaceRoot, "README.md")));
+          assert.isTrue(yield* fileSystem.exists(path.join(result.workspaceRoot, ".git")));
+        }),
+      ),
+    { git: layerRealGit.pipe(Layer.provide(spawner)) },
+  );
+});
 
 it.effect("says Git is not installed when a named project cannot start Git", () =>
   withScratch(
