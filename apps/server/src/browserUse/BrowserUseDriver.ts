@@ -9,15 +9,19 @@ import * as PinnedTool from "../tools/PinnedTool.ts";
 
 // Update the version, sizes and hashes together from the assets of
 // https://github.com/aislopware/oni-browser-use/releases (tag v<version>).
-export const VERSION = "4.9.0";
+export const VERSION = "4.9.1";
 const BINARIES = {
   "darwin-arm64": {
-    bytes: 7_220_160,
-    sha256: "e84a4c47b133510c0bc82c0f54ddc05669962209b62e5e540443d9e31b77d39e",
+    bytes: 7_220_112,
+    sha256: "b96e0339bbe1548ef6f799ac3754b54e6a12f8c2a8fbc80189506ae726cd71ab",
   },
   "linux-x64": {
     bytes: 8_504_504,
-    sha256: "f0a4f15c8ed9714d1d339307eda75bb6419761baf334d9629953d586c351c359",
+    sha256: "40088813219497467b0ceaa4430105919829938b28dc0adec50fdb96c58439d1",
+  },
+  "windows-x64": {
+    bytes: 7_935_488,
+    sha256: "093af399cd3dc2db379129e4be820187a7513322baf1ad32a9cac79aa1a69ade",
   },
 } as const;
 
@@ -25,13 +29,14 @@ const driverPlatform = (
   platform: NodeJS.Platform,
   arch: NodeJS.Architecture,
 ): keyof typeof BINARIES | null => {
-  // The fork publishes these two builds and no others.
+  // The fork publishes these three builds and no others.
   if (platform === "darwin" && arch === "arm64") return "darwin-arm64";
   if (platform === "linux" && arch === "x64") return "linux-x64";
+  if (platform === "win32" && arch === "x64") return "windows-x64";
   return null;
 };
 
-const browserUseRelease = (
+export const browserUseRelease = (
   platform: NodeJS.Platform,
   arch: NodeJS.Architecture,
 ): PinnedTool.PinnedToolRelease | null => {
@@ -39,7 +44,7 @@ const browserUseRelease = (
   if (target === null) return null;
   return {
     version: VERSION,
-    url: `https://github.com/aislopware/oni-browser-use/releases/download/v${VERSION}/obu-${target}`,
+    url: `https://github.com/aislopware/oni-browser-use/releases/download/v${VERSION}/obu-${target}${target === "windows-x64" ? ".exe" : ""}`,
     ...BINARIES[target],
   };
 };
@@ -73,7 +78,7 @@ export const makeBrowserUseDriver = Effect.fn("BrowserUseDriver.make")(function*
   const tool = yield* PinnedTool.makePinnedTool({
     name: "obu",
     baseDir: options.baseDir,
-    executableName: "obu",
+    executableName: platform === "win32" ? "obu.exe" : "obu",
     release,
     payload: { kind: "binary" },
   });

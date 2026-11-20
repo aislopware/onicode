@@ -4,8 +4,8 @@ Agents can browse with [obu](https://github.com/aislopware/oni-browser-use), a
 browser driver built for agents. It sends an agent less of each page than a
 general automation tool does, keeps working when a page changes under it, and
 gets through sites that block automated browsers. Onicode downloads obu and
-runs it itself. It works where the server runs on a Mac with Apple silicon or
-on Linux x64.
+runs it itself. It works where the server runs on a Mac with Apple silicon, on
+Linux x64 or on Windows x64.
 
 ## Turn it off or on
 

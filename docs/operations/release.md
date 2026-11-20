@@ -2,8 +2,8 @@
 
 > For maintainers. Using Onicode? See [docs/user](../user/).
 
-Onicode has one release channel. Desktop (macOS on Apple silicon; Linux AppImage and deb) and
-mobile (iOS and Android) build and release through better-update at
+Onicode has one release channel. Desktop (macOS on Apple silicon; Linux AppImage and deb; Windows
+x64 NSIS installer) and mobile (iOS and Android) build and release through better-update at
 `https://updates.jmango360.dev`, project `onicode`
 (`59625ece-aea5-49b4-8978-1f045f907d92`). Desktop, server and mobile share one version.
 
@@ -55,9 +55,10 @@ gh workflow run release.yml --ref main -f notes="$(cat notes.md)"
 ```
 
 Without notes it only builds, which is how to try a build before releasing it. From a Mac, a clean
-checkout of `main` as pushed does the same with `scripts/release/publish.sh notes.md`.
+checkout of `main` as pushed does the same with `scripts/release/publish.sh notes.md`, but for
+macOS and Linux only: Windows needs a Windows host, so only the workflow ships it.
 
-Both tag the commit `v<version>` first, build macOS and Linux, check the macOS zip, release both
+Both tag the commit `v<version>` first, build each platform, check the macOS zip, release the
 builds to `latest`, then publish the GitHub release for that tag with the notes
 (`scripts/release/github-release.sh`). The feeds are the only place the app is downloaded from:
 the GitHub release carries no builds, and there is no Homebrew cask. The steps it runs, for doing
@@ -69,9 +70,11 @@ better-update build --platform linux --profile production
 better-update builds list --json
 better-update macos release create <build-id> --channel latest --notes-file notes.md
 better-update linux release create <build-id>... --channel latest --notes-file notes.md
+better-update builds upload --platform windows --profile production release/Onicode-<version>-x64.exe
+better-update windows release create <build-id> --channel latest --notes-file notes.md
 ```
 
-The root `eas.json` holds both profiles:
+The root `eas.json` holds the profiles:
 
 - **macOS** runs `scripts/build-desktop-artifact.ts --target dir --signed` in better-update's
   staged copy, signing with the vault identity it passes as `CSC_NAME`/`CSC_KEYCHAIN`. better-update
@@ -80,12 +83,22 @@ The root `eas.json` holds both profiles:
   and Rust helpers are Linux builds. It writes `release/linux/`. To build without better-update, run
   `scripts/release/build-linux.sh` yourself and upload with
   `better-update builds upload --platform linux`.
+- **Windows** is built by [desktop-windows.yml](../../.github/workflows/desktop-windows.yml) on a
+  hosted Windows runner, not by better-update, whose Windows build has not run on a Windows host:
+  the installer's native modules need one. It embeds the Linux CLI archive as the WSL runtime,
+  installs the result silently, checks `--version` and opens the app on a seeded thread
+  (`apps/desktop/scripts/smoke-packaged-app.mjs`) before the Release workflow uploads it. The
+  installer is not code-signed, so `app-update.yml` carries no `publisherName` and electron-updater
+  does not check signatures. Signing it later means every update after that must carry the same
+  publisher. The push gateway reaches this build from the `ONICODE_PUSH_GATEWAY_URL` secret, not
+  better-update's environment.
 
 electron-builder downloads its 7-Zip, AppImage and fpm tools from GitHub on first use. If that
 fails, point `ELECTRON_BUILDER_7ZIP_PATH` at a local `7zz` (`brew install sevenzip`); the macOS
 build needs nothing else from there.
 
-Apps read their feed from `app-update.yml`: `…/feeds/<project-id>/macos` and `…/linux`. A managed
+Apps read their feed from `app-update.yml`: `…/feeds/<project-id>/macos`, `…/linux` and
+`…/windows`. A managed
 `feedUrl` policy overrides it.
 
 better-update also serves every deb release as a signed APT repository at `…/linux/apt`, suite
