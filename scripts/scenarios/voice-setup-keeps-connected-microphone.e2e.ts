@@ -104,14 +104,14 @@ test(
     });
 
     await onicode.open(thread);
-    const threadPath = new URL(await browser.url()).pathname;
     const voice = screen.getByRole("button", "Start voice input");
     await voice.tap();
     const destination = screen.getByRole("combobox", "Transcribe with");
     await destination.tap();
     // The only paired environment is the first choice after Off.
     await screen.getByRole("option").nth(1).tap();
-    await app.open(threadPath);
+    // The desktop window routes through the URL hash, so reopen the thread rather than its pathname.
+    await onicode.open(thread);
     await voice.tap();
 
     const download = screen.getByRole("button", "Download model", { exact: true });
