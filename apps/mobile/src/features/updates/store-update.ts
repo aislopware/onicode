@@ -3,10 +3,11 @@ import * as SecureStore from "expo-secure-store";
 import * as Updates from "expo-updates";
 import { msg } from "gt-react-native";
 // Metro namespace imports evaluate unrelated React Native getters, including unavailable native modules.
-import { AppState, Linking, Platform } from "react-native";
+import { AppState, Platform } from "react-native";
 
 import * as Dialog from "../../components/ui/Dialog";
 import { m } from "../../i18n/messages";
+import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
 import { whenProtectedDataAvailable } from "../../lib/protectedData";
 import { isAppUpdateCheckAvailable, NOTHING_IS_LOST, runAppUpdateCheck } from "./app-updates";
 import {
@@ -103,7 +104,7 @@ export function installStoreUpdateChecks(): () => void {
   let appliedOverTheAir = false;
 
   const openStore = () => {
-    void Linking.openURL(config.storeUrl).catch(() => {});
+    void tryOpenExternalUrl(config.storeUrl);
   };
 
   const check = async () => {
