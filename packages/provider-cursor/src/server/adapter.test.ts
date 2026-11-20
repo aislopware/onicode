@@ -2375,7 +2375,12 @@ describe("CursorAdapterV2", () => {
         let report: (
           event: CursorAgentSdk.CursorBackgroundShellEvent,
         ) => Effect.Effect<void> = () => Effect.void;
-        const shell = (id: string) => ({ id, pid: Number(id) * 10, command: `sleep ${id}` });
+        // Shell 7 runs a long heredoc, which the roster carries only as a preview.
+        const shell = (id: string) => ({
+          id,
+          pid: Number(id) * 10,
+          command: id === "7" ? `cat <<EOF\n${"x".repeat(2_000)}\nEOF` : `sleep ${id}`,
+        });
         const adapter = yield* makeCursorAdapterV2({
           instanceId,
           environment: { HOME: workspace },
@@ -2506,6 +2511,15 @@ describe("CursorAdapterV2", () => {
           Effect.map(listed),
         );
         assert.deepStrictEqual(listed(events).at(-1), { tasks: ["7", "8"], sessionScoped: false });
+        const longShell = events
+          .flatMap((event) =>
+            event.type === "provider_thread.updated"
+              ? (event.providerThread.pendingBackgroundTasks ?? [])
+              : [],
+          )
+          .findLast((task) => task.taskId === "7");
+        assert.strictEqual(longShell?.command?.length, 1_000);
+        assert.strictEqual(longShell?.description?.length, 1_000);
         // Idle release keeps the session while a shell runs.
         assert.isTrue(yield* runtime.hasPendingBackgroundWork!);
 

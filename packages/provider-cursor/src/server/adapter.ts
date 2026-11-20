@@ -11,6 +11,7 @@ import type {
 } from "@cursor/sdk";
 import { formatReadToolLabel, formatSearchToolLabel } from "@onicode/shared/toolActivity";
 import * as HostProcess from "@onicode/shared/HostProcess";
+import { backgroundWorkTextPreview } from "@onicode/shared/orchestrationV2PendingBackgroundWork";
 import {
   isOrchestrationV2WorkActive,
   defaultInstanceIdForDriver,
@@ -1148,10 +1149,10 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
                   {
                     taskId,
                     kind: "command" as const,
-                    command: shell.command,
+                    command: backgroundWorkTextPreview(shell.command),
                     ...(shell.command.trim().length === 0
                       ? {}
-                      : { description: shell.command.trim() }),
+                      : { description: backgroundWorkTextPreview(shell.command.trim()) }),
                     ...(shell.awaited ? { awaited: true as const } : {}),
                   },
                 ]
