@@ -26,8 +26,10 @@ type ConnectionStatus = WorkspaceConnectionStatusPresentation & {
   readonly fadeIn: boolean;
 };
 
+const ALERT_SYMBOLS = { cpu: "cpu", memory: "memorychip", storage: "internaldrive" } as const;
+
 const ConnectionStatusContext = createContext<ConnectionStatus | null>(null);
-/** Set while a connected machine is running out of memory or storage. */
+/** Set while a connected machine is short of memory, storage, or CPU. */
 const HardwareAlertContext = createContext<HostHardwareAlert | null>(null);
 
 /**
@@ -147,7 +149,7 @@ export function WorkspaceConnectionTitle(props: {
             style={{ height: 26 * scale, width: 26 * scale }}
           >
             <SymbolView
-              name={hardwareAlert.kind === "memory" ? "memorychip" : "internaldrive"}
+              name={ALERT_SYMBOLS[hardwareAlert.kind]}
               size={Math.round(15 * scale)}
               tintColorClassName={
                 critical ? "accent-danger-foreground" : "accent-warning-foreground"

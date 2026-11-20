@@ -121,11 +121,16 @@ Storage lists only the volumes Onicode keeps work on: your home folder, Onicode'
 worktrees, and project folders. A machine on an older Onicode version shows its
 hardware after it updates.
 
-When a connected machine is running out of memory or storage, a warning icon appears
-among the icons at the bottom of the desktop sidebar and beside the Onicode name on
-mobile, and leads to the machine's hardware. It appears when less than 10% is left, or
-on a large machine less than 4 GB of memory or 25 GB of storage, and turns red below
-5%, 2 GB, or 10 GB. A busy processor does not raise a warning.
+When a connected machine is running out of memory or storage, or its processor is
+overloaded, a warning icon appears among the icons at the bottom of the desktop sidebar
+and beside the Onicode name on mobile, and leads to the machine's hardware. Memory and
+storage warn when less than 10% is left, or on a large machine less than 4 GB of memory
+or 25 GB of storage, and turn red below 5%, 2 GB, or 10 GB.
+
+A processor that is merely busy does not warn, since agents and builds often use every
+core. It warns when work queues for it: when the load average, over both the last minute
+and the last 5 minutes, reaches 1.5 times the machine's CPU count, and turns red at 3
+times. Windows keeps no load average, so its processor never warns.
 
 ### Balance new threads across machines
 

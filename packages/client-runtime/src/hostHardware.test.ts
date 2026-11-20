@@ -29,6 +29,7 @@ const mac: HostHardwareSnapshot = {
     cpuCount: 14,
     availableMemoryBytes: 16.8 * GiB,
     totalMemoryBytes: 48 * GiB,
+    loadAverage: { oneMinute: 4.24, fiveMinutes: 6.3 },
   },
 };
 
@@ -58,10 +59,11 @@ describe("describeHostHardware", () => {
           kind: "cpu",
           key: "cpu",
           title: "Apple M4 Pro",
-          detail: "14 cores (10 performance, 4 efficiency)",
+          detail: "14 cores (10 performance, 4 efficiency) · Load 4.2",
           value: "23% in use",
           fraction: 0.234,
           level: "normal",
+          warning: null,
         },
         {
           kind: "memory",
@@ -71,6 +73,7 @@ describe("describeHostHardware", () => {
           value: "16.8 GB available",
           fraction: expect.closeTo(0.65, 9),
           level: "normal",
+          warning: null,
         },
         {
           kind: "storage",
@@ -80,6 +83,7 @@ describe("describeHostHardware", () => {
           value: "175 GB available",
           fraction: expect.closeTo(1 - 175 / 926, 9),
           level: "normal",
+          warning: null,
         },
       ],
     });
@@ -155,20 +159,92 @@ describe("describeHostHardwareAlert", () => {
     usage: { ...mac.usage, availableMemoryBytes: memoryGiB * GiB },
   });
 
+  const withLoad = (
+    hardware: HostHardwareSnapshot,
+    oneMinute: number,
+    fiveMinutes: number,
+  ): HostHardwareSnapshot => ({
+    ...hardware,
+    usage: { ...hardware.usage, loadAverage: { oneMinute, fiveMinutes } },
+  });
+
   it.each([
     // 94% of a 926 GB disk is used, yet 60 GB is plenty; a saturated processor is no warning.
     [withFree(16, 60), null],
     [{ ...withFree(16, 60), usage: { ...mac.usage, cpuUtilization: 1 } }, null],
-    [withFree(16, 24), { level: "high", kind: "storage", title: "Low storage on Studio" }],
-    [withFree(3.5, 60), { level: "high", kind: "memory", title: "Low memory on Studio" }],
+    [
+      withFree(16, 24),
+      {
+        level: "high",
+        kind: "storage",
+        title: "Low storage on Studio",
+        description: "24 GB available of 926 GB storage",
+      },
+    ],
+    [
+      withFree(3.5, 60),
+      {
+        level: "high",
+        kind: "memory",
+        title: "Low memory on Studio",
+        description: "3.5 GB available of 48 GB memory",
+      },
+    ],
     [
       withFree(1.5, 24),
-      { level: "critical", kind: "memory", title: "Low memory and storage on Studio" },
+      {
+        level: "critical",
+        kind: "memory",
+        title: "Low memory and low storage on Studio",
+        description: "1.5 GB available of 48 GB memory, 24 GB available of 926 GB storage",
+      },
     ],
-  ])("warns when memory or storage is running out (%#)", (hardware, expected) => {
-    const alert = describeHostHardwareAlert([{ environmentId: studio, label: "Studio", hardware }]);
-    expect(alert && { level: alert.level, kind: alert.kind, title: alert.title }).toEqual(expected);
-  });
+    // A minute-long burst over 14 CPUs is no warning; the 5-minute average has to agree.
+    [withLoad(withFree(16, 60), 60, 18), null],
+    [
+      withLoad(withFree(16, 60), 46.28, 37.06),
+      {
+        level: "high",
+        kind: "cpu",
+        title: "Heavy processor load on Studio",
+        description: "Load 37 on 14 CPUs",
+      },
+    ],
+    [
+      withLoad(withFree(3.5, 60), 45, 50),
+      {
+        level: "critical",
+        kind: "cpu",
+        title: "Low memory and heavy processor load on Studio",
+        description: "Load 45 on 14 CPUs, 3.5 GB available of 48 GB memory",
+      },
+    ],
+    [
+      withLoad(withFree(1.5, 9), 46.28, 37.06),
+      {
+        level: "critical",
+        kind: "memory",
+        title: "Low memory, low storage and heavy processor load on Studio",
+        description:
+          "1.5 GB available of 48 GB memory, 9 GB available of 926 GB storage, Load 37 on 14 CPUs",
+      },
+    ],
+  ])(
+    "warns when memory or storage runs out or work queues for the processor (%#)",
+    (hardware, expected) => {
+      const alert = describeHostHardwareAlert([
+        { environmentId: studio, label: "Studio", hardware },
+      ]);
+      expect(
+        alert && {
+          level: alert.level,
+          kind: alert.kind,
+          title: alert.title,
+          description: alert.description,
+        },
+      ).toEqual(expected);
+    },
+  );
 
   it("leads to the machine in the worst state and keys on what is low", () => {
     const machines = [

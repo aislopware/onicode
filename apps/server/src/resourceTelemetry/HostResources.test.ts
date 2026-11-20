@@ -19,6 +19,7 @@ vi.mock("node:os", async (importOriginal) => {
   return {
     ...actual,
     totalmem: () => 4 * 1024 ** 3,
+    loadavg: () => [12, 9, 6],
     cpus: () => {
       const elapsed = 100 * host.reads++;
       const times = {
@@ -204,6 +205,7 @@ describe("HostResources.layer", () => {
       assert.strictEqual(snapshot.cpuCount, 8);
       assert.closeTo(snapshot.cpuUtilization ?? Number.NaN, 0.25, 1e-9);
       assert.strictEqual(snapshot.availableMemoryBytes, 2 * GiB);
+      assert.deepStrictEqual(snapshot.loadAverage, { oneMinute: 12, fiveMinutes: 9 });
     }).pipe(Effect.provide(linuxHost(unlimitedCgroup))),
   );
 
