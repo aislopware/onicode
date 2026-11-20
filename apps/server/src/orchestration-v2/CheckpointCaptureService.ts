@@ -80,7 +80,11 @@ export const layer: Layer.Layer<
       const { run, rootNode, scope, providerThread, preservedCheckpointOrdinals, sideChat } =
         yield* projections.getCheckpointCaptureContext(input.threadId, input);
 
-      if (run !== undefined && isSettled(run)) {
+      // A steering restart superseded the attempt this capture was for; the new attempt enqueues its own.
+      if (
+        run !== undefined &&
+        (isSettled(run) || run.status === "starting" || run.status === "running")
+      ) {
         return;
       }
 
