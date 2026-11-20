@@ -2942,3 +2942,4 @@ f2ec853fbb	take	taken as is
 b985057d3f	take	taken; agentContextBudget re-measured on Onicode's text (mcpToolListJsonBytes 55614, same -55 delta as upstream); runtime instructions still point agents at the PR tools
 13e940a4e3	skip	T3 Connect managed tunnels (removed surface); apps/server/src/cloud does not exist in Onicode
 5e59fc677f	take	taken as is
+b076d8c8bf	take	CONFLICT: took upstream's already-ended result (merged or closed) instead of PullRequestNotOpenError; kept Onicode's seed rule that a read without a checks verdict (undefined/null) leaves checksPending to the link, since upstream's would seed 'not pending' and replay an old pass as news
