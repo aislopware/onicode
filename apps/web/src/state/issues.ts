@@ -58,10 +58,6 @@ export function useIssueSummary(
   return summary ?? detail;
 }
 
-/**
- * A linked issue's live row, read in the workspace its link kept, or for older links the one
- * its URL names. A URL can name a renamed workspace's old key, which costs the server a lookup.
- */
 /** A link's reference, read in the workspace it kept, or for older links the one its URL names. */
 function linkedIssueRef(link: ThreadIssueLink): IssueRef {
   const workspace = link.workspace ?? issueLinkWorkspace(link.url);
