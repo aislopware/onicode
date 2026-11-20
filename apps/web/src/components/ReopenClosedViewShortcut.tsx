@@ -7,7 +7,7 @@ import {
   scopeThreadRef,
 } from "@onicode/client-runtime/environment";
 import type { ScopedThreadRef } from "@onicode/contracts";
-import { useNavigate, useParams } from "@tanstack/react-router";
+import { useLocation, useNavigate, useParams } from "@tanstack/react-router";
 import { useGT } from "gt-react";
 import { useEffect, useEffectEvent, useRef } from "react";
 
@@ -89,6 +89,19 @@ export function ReopenClosedViewShortcut() {
   );
   const previewOpen = useRightPanelStore(
     (state) => selectActiveRightPanel(state.byThreadKey, threadRef) === "preview",
+  );
+  const pathname = useLocation({ select: (location) => location.pathname });
+  // The pull request and issue pages own a panel without a thread route.
+  const panelRef =
+    threadRef ??
+    (pathname === "/pull-requests"
+      ? PULL_REQUESTS_PANEL_REF
+      : pathname === "/issues"
+        ? ISSUES_PANEL_REF
+        : null);
+  // Other routes keep forwarding, as before, rather than guess whether a panel listens.
+  const rightPanelOpen = useRightPanelStore(
+    (state) => panelRef === null || selectThreadRightPanelState(state.byThreadKey, panelRef).isOpen,
   );
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const hasHistory = useClosedViewStore((state) => state.entries.length > 0);
@@ -216,7 +229,7 @@ export function ReopenClosedViewShortcut() {
       context: {
         previewFocus: true,
         previewOpen: true,
-        rightPanelOpen: true,
+        rightPanelOpen,
         terminalFocus: false,
         terminalOpen,
         editableFocus: false,
@@ -241,7 +254,7 @@ export function ReopenClosedViewShortcut() {
     return () => {
       void preview.setForwardedShortcuts([]).catch(() => undefined);
     };
-  }, [hasHistory, keybindings, terminalOpen]);
+  }, [hasHistory, keybindings, rightPanelOpen, terminalOpen]);
 
   return null;
 }

@@ -1,4 +1,4 @@
-import type { PullRequestListEntry, PullRequestSummary } from "@onicode/contracts";
+import type { PullRequestListEntry, PullRequestSummary, ScopedThreadRef } from "@onicode/contracts";
 import {
   ArrowLeftIcon,
   ChevronRightIcon,
@@ -16,7 +16,7 @@ import {
   type ChangeRequestTerminology,
 } from "@onicode/client-runtime/source-control-clients";
 
-import { readLocalApi } from "~/localApi";
+import { useOpenLink } from "~/browser/useOpenLink";
 import { cn } from "~/lib/utils";
 import { RelativeTime } from "~/components/RelativeTime";
 
@@ -95,6 +95,7 @@ export function PullRequestDetailGhost({
   onBack,
   onClose,
   onCheckoutError,
+  threadRef = null,
 }: {
   seed?: PullRequestListEntry | null;
   summary?: PullRequestSummary | null;
@@ -106,9 +107,11 @@ export function PullRequestDetailGhost({
   onBack?: (() => void) | undefined;
   onClose?: (() => void) | undefined;
   onCheckoutError?: ((error: Error) => void) | undefined;
+  threadRef?: ScopedThreadRef | null;
 }) {
   const gt = useGT();
   const resolve = useMessages();
+  const openLink = useOpenLink(threadRef);
   const tabs = requestedTabs ?? resolveFilterOptions(DEFAULT_DETAIL_TABS, resolve);
   const seed = summary
     ? {
@@ -167,7 +170,7 @@ export function PullRequestDetailGhost({
               <>
                 <span className="min-w-0 truncate font-medium">{seed.repository}</span>
                 <InlineButton
-                  onClick={() => void readLocalApi()?.shell.openExternal(seed.url)}
+                  onClick={(event) => void openLink(seed.url, { event }).catch(console.error)}
                   aria-label={gt(
                     "Open {term, select, mr {merge request} cr {change request} other {pull request}} #{number} on host",
                     {

@@ -35,6 +35,8 @@ import {
   UsersIcon,
 } from "lucide-react";
 import { msg, T, useGT, useMessages, Var } from "gt-react";
+
+import { anchorOpenHandlers, useOpenLink } from "~/browser/useOpenLink";
 import { useContext, useState, type ReactNode } from "react";
 
 import { RefreshIcon } from "~/components/ui/refresh-icon";
@@ -340,11 +342,13 @@ function LinkedPullRequestRow({
   link,
   scope,
   onSelect,
+  openLink,
 }: {
   link: IssueLinkedPullRequest;
   /** The issue's own repository, left off a pull request that lives in it. */
   scope: string;
   onSelect: (() => void) | null;
+  openLink: ReturnType<typeof useOpenLink>;
 }) {
   const body = (
     <>
@@ -370,7 +374,13 @@ function LinkedPullRequestRow({
       {body}
     </button>
   ) : (
-    <a href={link.url} target="_blank" rel="noopener noreferrer" className={className}>
+    <a
+      href={link.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={className}
+      {...anchorOpenHandlers(openLink, link.url)}
+    >
       {body}
     </a>
   );
@@ -393,6 +403,7 @@ export function IssueDetailPanel({
 }) {
   const gt = useGT();
   const messages = useMessages();
+  const openLink = useOpenLink(threadRef);
   const detailAtom = issueEnvironment.detail({ environmentId, input: reference });
   const detailQuery = useEnvironmentQuery(detailAtom);
   const registry = useContext(RegistryContext);
@@ -423,7 +434,7 @@ export function IssueDetailPanel({
         />
       );
     }
-    return <IssueDetailGhost seed={listEntry} />;
+    return <IssueDetailGhost seed={listEntry} threadRef={threadRef} />;
   }
 
   const timeline: ReadonlyArray<TimelineItem> = [
@@ -565,6 +576,7 @@ export function IssueDetailPanel({
               href={detail.url}
               target="_blank"
               rel="noopener noreferrer"
+              {...anchorOpenHandlers(openLink, detail.url)}
             >
               {detail.displayKey}
               <ExternalLinkIcon aria-hidden className="size-2.5" />
@@ -792,6 +804,7 @@ export function IssueDetailPanel({
                   key={`${link.repository}#${link.number}`}
                   link={link}
                   scope={detail.scope}
+                  openLink={openLink}
                   onSelect={
                     onSelectPullRequest
                       ? () =>
@@ -847,7 +860,12 @@ export function IssueDetailPanel({
                         <InlineButton
                           tone="muted"
                           render={
-                            <a href={item.comment.url} target="_blank" rel="noopener noreferrer" />
+                            <a
+                              href={item.comment.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              {...anchorOpenHandlers(openLink, item.comment.url)}
+                            />
                           }
                         >
                           {formatRelativeTimeLabel(item.comment.createdAt, undefined, messages)}
