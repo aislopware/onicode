@@ -14,9 +14,12 @@ import {
   type ServerProviderSkill,
   type RunId,
   ThreadId,
+  type TurnItemId,
 } from "@onicode/contracts";
+import type { AsyncResult, Atom } from "effect/reactivity";
+import type { CommandOutputView } from "@onicode/client-runtime/state/command-output";
 import type { WorkflowOpening } from "@onicode/client-runtime/state/subagentRuntime";
-import { useEffect, useRef, createContext, type MouseEvent } from "react";
+import { useEffect, useRef, createContext, type MouseEvent, type ReactNode } from "react";
 import { type LegendListRef } from "@legendapp/list/react";
 import type { CodexArtifactTemplate } from "@onicode/shared/codexArtifactTemplates";
 import type { PendingApproval } from "../../session-logic";
@@ -26,6 +29,20 @@ import { type AssistantCitationTarget } from "./AssistantCitationSource";
 import { type MessagesTimelineRow, type WorkGroupScrollAnchor } from "./MessagesTimeline.logic";
 import { type TimestampFormat } from "@onicode/contracts/settings";
 import { type HandoffTimelineRun } from "./V2LifecycleRow";
+import type { TurnItemDetailSource } from "../../state/queries";
+
+/**
+ * Where an expanded row reads an item's detail and a command's output. The owner's rows read them
+ * from the environment; a linked environment's thread reads them through the link.
+ */
+export interface TurnItemSource {
+  readonly detail: TurnItemDetailSource;
+  /** Unset where output does not stream: a command row then shows the output its detail holds. */
+  readonly commandOutput?: (target: {
+    readonly threadId: ThreadId;
+    readonly itemId: TurnItemId;
+  }) => Atom.Atom<AsyncResult.AsyncResult<CommandOutputView, unknown>>;
+}
 
 export interface TimelineRowSharedState {
   pendingApprovals: ReadonlyMap<RuntimeRequestId, PendingApproval>;
@@ -62,6 +79,13 @@ export interface TimelineRowSharedState {
     threadId: OrchestrationV2TurnItem["threadId"],
     environmentId?: EnvironmentId,
   ) => void;
+  /**
+   * Draws a published HTML visual. Unset, the row loads it from the environment; a linked
+   * environment's thread shows a placeholder, since its files stay on that machine.
+   */
+  renderHtmlRender: ((row: Extract<TimelineRow, { kind: "html-render" }>) => ReactNode) | undefined;
+  /** Unset, expanded rows read detail and command output from the environment. */
+  turnItemSource: TurnItemSource | undefined;
   workflowOpening: WorkflowOpening | null;
   /** Absent hides "Fork from this response", as in the guest view. */
   onForkFromRun:

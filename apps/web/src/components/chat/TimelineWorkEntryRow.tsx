@@ -731,6 +731,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
               workspaceRoot={workspaceRoot}
               onOpenToolDiff={ctx.onOpenToolDiff}
               onImageExpand={expandImage}
+              source={ctx.turnItemSource}
             />
           ) : (
             <>
@@ -743,6 +744,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
                   projectedItem={workEntry.projectedItem}
                   environmentId={ctx.activeThreadEnvironmentId}
                   onImageExpand={expandImage}
+                  source={ctx.turnItemSource}
                 />
               ) : null}
             </>

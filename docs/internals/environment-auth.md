@@ -47,7 +47,9 @@ declared as reads in [McpToolAccess](../../apps/server/src/mcp/McpToolAccess.ts)
 where every tool must declare who may call it to compile. Any other grant adds
 `orchestration:operate` and a signed ceiling. Links get subject `mcp-client`
 plus a signed peer-link claim; the thread CLI gets `thread-cli`. `/mcp` admits
-nothing else, so an `mcp-client` session without the claim is refused. Every
+nothing else, so an `mcp-client` session without the claim is refused. A
+[peer link](remote.md#peer-links)'s session is also admitted by the thread routes in
+[linkThreadHttp](../../apps/server/src/peer/linkThreadHttp.ts), which only read. Every
 other HTTP and WebSocket
 path rejects both subjects, because the RPC surface would let the caller act
 above its ceiling. Inside MCP the credential sets the limits and tool

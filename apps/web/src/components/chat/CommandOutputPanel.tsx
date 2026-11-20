@@ -8,7 +8,7 @@ import { useTheme } from "../../hooks/useTheme";
 import { useServerConfigs } from "../../state/entities";
 import { orchestrationEnvironment } from "../../state/orchestration";
 import { useEnvironmentQuery } from "../../state/query";
-import { useInitialOutputReady } from "./timelineRowContext";
+import { useInitialOutputReady, type TurnItemSource } from "./timelineRowContext";
 
 const FOLLOW_SLACK_PX = 8;
 
@@ -20,7 +20,8 @@ export function useCommandOutputStreaming(environmentId: EnvironmentId): boolean
 
 /**
  * Output of one expanded command row: streams while the command runs, then
- * shows its final output. Mount it only when `useCommandOutputStreaming` holds.
+ * shows its final output. Mount it only when `useCommandOutputStreaming` holds
+ * or a `source` serves the output.
  * It subscribes only while mounted, so collapsed rows and other threads receive nothing.
  */
 export function CommandOutputPanel(props: {
@@ -28,10 +29,13 @@ export function CommandOutputPanel(props: {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
   readonly itemId: TurnItemId;
+  readonly source?: TurnItemSource["commandOutput"] | undefined;
 }) {
   const input = { threadId: props.threadId, itemId: props.itemId };
   const { data, error } = useEnvironmentQuery<CommandOutputView, unknown>(
-    orchestrationEnvironment.v2.commandOutput({ environmentId: props.environmentId, input }),
+    props.source
+      ? props.source(input)
+      : orchestrationEnvironment.v2.commandOutput({ environmentId: props.environmentId, input }),
   );
   useInitialOutputReady(data === null && !error, props.onInitialOutputReady);
   const scrollRef = useRef<HTMLDivElement>(null);

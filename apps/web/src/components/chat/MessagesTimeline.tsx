@@ -272,6 +272,8 @@ interface MessagesTimelineProps {
     threadId: OrchestrationV2TurnItem["threadId"],
     environmentId?: EnvironmentId,
   ) => void;
+  renderHtmlRender?: TimelineRowSharedState["renderHtmlRender"];
+  turnItemSource?: TimelineRowSharedState["turnItemSource"];
   /**
    * The thread this one is a subagent or side chat of; `open` is absent when it cannot be
    * opened from here.
@@ -386,6 +388,8 @@ const ConversationTimeline = memo(function ConversationTimeline({
   onOpenToolDiff,
   onOpenTurnDiff,
   onOpenThread,
+  renderHtmlRender,
+  turnItemSource,
   parentThreadLink = null,
   workflowOpening = null,
   onForkFromRun,
@@ -1129,6 +1133,8 @@ const ConversationTimeline = memo(function ConversationTimeline({
     onOpenToolDiff,
     onOpenTurnDiff,
     onOpenThread,
+    renderHtmlRender,
+    turnItemSource,
     workflowOpening,
     onForkFromRun,
     onToggleTurnFold,

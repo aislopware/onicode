@@ -297,6 +297,7 @@ export const make = Effect.gen(function* () {
       peerLinks: true,
       mcpModeLimitHeader: true,
       linkFence: true,
+      linkThreadStream: true,
       peerLinkPairingCodes: true,
       shellThreadFamilies: true,
       shellOlderSettled: true,

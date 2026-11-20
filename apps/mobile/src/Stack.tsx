@@ -74,6 +74,7 @@ import {
   ThreadMcpServersSheet,
 } from "./features/threads/ProviderSessionSheets";
 import { ThreadSessionSettingsSheet } from "./features/threads/ProviderSessionSettingsSheets";
+import { LinkedThreadSheet } from "./features/threads/LinkedThreadSheet";
 import { ThreadBackgroundWorkSheet } from "./features/threads/ThreadBackgroundWorkSheet";
 import { ThreadQueueSheet } from "./features/threads/ThreadQueueControl";
 import {
@@ -790,6 +791,10 @@ const RootStackConfig = createWorkspaceStackNavigator({
     ThreadSessionSettings: createNativeStackScreen({
       screen: ThreadSessionSettingsSheet,
       options: sheetRoute({ detent: 0.65, androidMaxDetent: 0.95 }),
+    }),
+    LinkedThread: createNativeStackScreen({
+      screen: LinkedThreadSheet,
+      options: sheetRoute({ detent: 0.9, android: "fullScreen" }),
     }),
     GitOverview: createNativeStackScreen({
       screen: GitOverviewSheet,

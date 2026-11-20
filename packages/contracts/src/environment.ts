@@ -186,6 +186,9 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
       (`linkOrigin`). Another environment links to this one only when it is
       set, since without it that work could change the user's own threads. */
   linkFence: Schema.optionalKey(Schema.Boolean),
+  /** Serves a thread's stream, history pages and item detail to a link's session
+      (`PEER_LINK_THREAD_STREAM_ROUTE`), so a client of the linking environment can read it. */
+  linkThreadStream: Schema.optionalKey(Schema.Boolean),
   /** Mints pairing codes only a peer link at a set level can spend. */
   peerLinkPairingCodes: Schema.optionalKey(Schema.Boolean),
   /** Server answers server.prepareTriage. */
