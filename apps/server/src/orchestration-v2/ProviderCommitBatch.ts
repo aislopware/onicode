@@ -77,6 +77,8 @@ interface StreamState {
   /** Queued snapshots not yet taken into a batch, in stream order. */
   readonly jobs: Array<Job>;
   unsettled: number;
+  /** Jobs of this stream that a write, control or EOF elsewhere is waiting on. */
+  awaited: number;
   servedAt: number;
   /** A control, failure or EOF of this stream waits for its queued snapshots. */
   finishing: boolean;
@@ -186,15 +188,25 @@ export const make = Effect.fn("ProviderCommitBatch.make")(function* (
     yield* backlog.releaseAll;
   });
   yield* Effect.addFinalizer(() => shutdown);
-  // Snapshots and writes registered so far on `threadIds`; omitted, on every thread.
-  const earlierWork = (threadIds?: ReadonlyArray<string>) => [
-    ...Array.from(pending)
-      .filter((job) => overlaps(threadIds, [job.threadId]))
-      .map((job) => job.settled),
-    ...Array.from(reservations)
+  // Waits for snapshots and writes registered so far on `threadIds`; omitted, on every thread.
+  // Streams holding those snapshots rank first meanwhile, so a busier stream cannot starve them.
+  const earlierWork = (threadIds?: ReadonlyArray<string>) => {
+    const jobs = Array.from(pending).filter((job) => overlaps(threadIds, [job.threadId]));
+    const writes = Array.from(reservations)
       .filter((reservation) => overlaps(threadIds, reservation.threadIds))
-      .map((reservation) => Deferred.await(reservation.done)),
-  ];
+      .map((reservation) => Deferred.await(reservation.done));
+    if (jobs.length === 0) return Effect.all(writes, { discard: true });
+    return Effect.acquireUseRelease(
+      Effect.sync(() => {
+        for (const job of jobs) job.stream.awaited++;
+      }),
+      () => Effect.all([...jobs.map((job) => job.settled), ...writes], { discard: true }),
+      () =>
+        Effect.sync(() => {
+          for (const job of jobs) job.stream.awaited--;
+        }),
+    );
+  };
   // These helpers run once per raw event; the shared transaction owns the tracing span.
   const enqueue = Effect.fnUntraced(function* <A, E, R>(
     effect: Effect.Effect<A, E, R>,
@@ -295,10 +307,14 @@ export const make = Effect.fn("ProviderCommitBatch.make")(function* (
             ? 2
             : 1;
     const starved = now - stream.jobs[0]!.queuedAt >= STARVATION_MILLIS;
-    return [starved ? Math.min(tier, 1) : tier, stream.finishing ? 0 : 1, stream.servedAt];
+    return [
+      stream.awaited > 0 ? -1 : starved ? Math.min(tier, 1) : tier,
+      stream.finishing ? 0 : 1,
+      stream.servedAt,
+    ];
   };
-  // Viewed streams first, then main threads, then subagents; within a tier, streams finishing a
-  // control first, then the stream served longest ago.
+  // Streams a waiter needs first, then viewed streams, main threads, then subagents; within a
+  // tier, streams finishing a control first, then the stream served longest ago.
   const nextBatch = (now: number): Batch | undefined => {
     const ready = Array.from(streams, (stream) =>
       stream.jobs.length === 0 ? [] : [{ stream, rank: rank(stream, now) }],
@@ -428,7 +444,7 @@ export const make = Effect.fn("ProviderCommitBatch.make")(function* (
       waitingWriters++;
       return restore(
         Effect.gen(function* () {
-          yield* Effect.all(earlier, { discard: true });
+          yield* earlier;
           if (closed) return yield* Effect.interrupt;
           return yield* effect;
         }),
@@ -461,6 +477,7 @@ export const make = Effect.fn("ProviderCommitBatch.make")(function* (
       priority,
       jobs: [],
       unsettled: 0,
+      awaited: 0,
       servedAt: 0,
       finishing: false,
     };
@@ -503,11 +520,12 @@ export const make = Effect.fn("ProviderCommitBatch.make")(function* (
               // Cleanup after a stream ends reads other threads' work, so let what they queued land.
               const end =
                 signal._tag === "End" ? Effect.succeed(true) : Effect.failCause(signal.cause);
-              reply = Effect.all(earlierWork(), { discard: true }).pipe(Effect.andThen(end));
+              reply = earlierWork().pipe(Effect.andThen(end));
             } else {
               const event = signal.event;
-              const earlier = threadIds.size === 0 ? [] : earlierWork(Array.from(threadIds));
-              reply = Effect.all(earlier, { discard: true }).pipe(
+              const earlier =
+                threadIds.size === 0 ? Effect.void : earlierWork(Array.from(threadIds));
+              reply = earlier.pipe(
                 Effect.andThen(
                   Effect.sync(() => {
                     stream.finishing = false;

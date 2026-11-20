@@ -624,6 +624,54 @@ it.effect.each([false, true])(
     }),
 );
 
+it.effect("ranks a stream first while a write waits on its snapshots", () =>
+  Effect.gen(function* () {
+    const writer = yield* blockFirstCommit;
+    const recorder = yield* recordBatches(writer.block, (threadId) => threadId === "focused");
+    const leading = yield* recorder
+      .consume(Stream.make(event(-1)), recorder.process, Effect.succeed(false))
+      .pipe(Effect.forkScoped({ startImmediately: true }));
+    yield* Deferred.await(writer.started);
+    const streams = [
+      { name: "subagent", delegated: true },
+      { name: "main", delegated: false },
+      { name: "focused", delegated: false },
+    ];
+    const pulled = yield* Deferred.make<void>();
+    let arrivals = 0;
+    const consumers = yield* Effect.forEach(streams, ({ name, delegated }) =>
+      recorder
+        .consume(
+          Stream.concat(Stream.make(snapshot(name, name, name)), Stream.never).pipe(
+            Stream.tap(() =>
+              ++arrivals === streams.length ? Deferred.succeed(pulled, undefined) : Effect.void,
+            ),
+          ),
+          recorder.process,
+          Effect.succeed(false),
+          Effect.succeed(true),
+          { threadId: name, delegated },
+        )
+        .pipe(Effect.forkScoped({ startImmediately: true })),
+    );
+    yield* Deferred.await(pulled);
+    const write = yield* recorder
+      .barrier(Queue.offer(recorder.output, [secondWrite]).pipe(Effect.asVoid), ["subagent"])
+      .pipe(Effect.forkScoped({ startImmediately: true }));
+    yield* TestClock.adjust(0);
+    yield* Deferred.succeed(writer.release, undefined);
+    yield* Fiber.join(leading);
+    yield* Fiber.join(write);
+    const outputs = yield* Queue.takeAll(recorder.output);
+    yield* Effect.forEach(consumers, Fiber.interrupt, { discard: true });
+    assert.deepEqual(Array.from(outputs).slice(0, 2), [
+      [event(-1)],
+      ["subagent", "focused", "main"].map((name) => snapshot(name, name, name)),
+    ]);
+    assert.deepEqual(Array.from(outputs).at(-1), [secondWrite]);
+  }),
+);
+
 it.effect.each(["failure", "stop"] as const)(
   "flushes the prefix and respects a source %s barrier",
   (mode) =>
