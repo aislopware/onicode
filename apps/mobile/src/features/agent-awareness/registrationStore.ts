@@ -34,6 +34,7 @@ const StoredEnvironments = Schema.Struct({
     Schema.Struct({
       environmentKey: Schema.String,
       gatewayUrls: Schema.Array(Schema.String),
+      build: Schema.optionalKey(Schema.String),
       grants: Schema.Struct({
         notification: Schema.optionalKey(Grant),
         liveActivityStart: Schema.optionalKey(Grant),

@@ -139,6 +139,8 @@ type RegistrationGrantKind = "notification" | "liveActivityStart";
 export interface StoredEnvironment {
   readonly environmentKey: string;
   readonly gatewayUrls: ReadonlyArray<string>;
+  /** The app build that last registered with this environment. */
+  readonly build?: string;
   readonly grants: Partial<Record<RegistrationGrantKind, StoredGrant>>;
 }
 
@@ -170,6 +172,8 @@ export interface PushRegistrarConfig {
   readonly gatewayUrl: string;
   readonly deviceId: string;
   readonly label: string;
+  /** The native build number, which changes when an update is installed. */
+  readonly build: string;
   /** Development builds may fall back to an unattested key where the hardware cannot attest. */
   readonly allowUnattested: boolean;
 }
@@ -234,6 +238,17 @@ export function makePushRegistrar(input: {
       yield* input.save(next);
       return next;
     });
+
+    const updateEnvironment = (environmentId: EnvironmentId, change: Partial<StoredEnvironment>) =>
+      update((current) => {
+        const stored = current.environments[environmentId];
+        return stored === undefined
+          ? current
+          : {
+              ...current,
+              environments: { ...current.environments, [environmentId]: { ...stored, ...change } },
+            };
+      });
 
     const attestUnattested = Effect.fn("PushRegistrar.attestUnattested")(function* () {
       const { challenge } = yield* gateway.challenge;
@@ -351,6 +366,7 @@ export function makePushRegistrar(input: {
           environments: {
             ...current.environments,
             [environmentId]: {
+              ...previous,
               environmentKey: info.environmentKey,
               gatewayUrls: info.gatewayUrls,
               grants,
@@ -358,7 +374,10 @@ export function makePushRegistrar(input: {
           },
         };
       });
-      return next.environments[environmentId]!;
+      return {
+        environment: next.environments[environmentId]!,
+        acceptsLiveActivityLost: info.acceptsLiveActivityLost === true,
+      };
     });
 
     const syncGrants = Effect.fn("PushRegistrar.syncGrants")(function* (
@@ -391,15 +410,7 @@ export function makePushRegistrar(input: {
           expiresAt: grant.expiresAt,
         };
       }
-      yield* update((current) => {
-        const stored = current.environments[environmentId];
-        return stored === undefined
-          ? current
-          : {
-              ...current,
-              environments: { ...current.environments, [environmentId]: { ...stored, grants } },
-            };
-      });
+      yield* updateEnvironment(environmentId, { grants });
       return grants;
     });
 
@@ -408,8 +419,13 @@ export function makePushRegistrar(input: {
       readonly server: PushEnvironmentClient;
       readonly tokens: PushTokens;
       readonly preferences: PushDevicePreferences;
+      /** Whether the device shows a card of this environment. Read only after an update. */
+      readonly hasLiveActivity: Effect.Effect<boolean>;
     }) {
-      const environment = yield* readRegistration(request.environmentId, request.server);
+      const { environment, acceptsLiveActivityLost } = yield* readRegistration(
+        request.environmentId,
+        request.server,
+      );
       if (!environment.gatewayUrls.includes(config.gatewayUrl)) {
         return { _tag: "gateway-not-allowed" } as const;
       }
@@ -432,9 +448,21 @@ export function makePushRegistrar(input: {
         preferences: request.preferences,
       };
       const signature = yield* encodeRegistration(body);
-      if (registered.get(request.environmentId) !== signature) {
-        yield* request.server.register(config.deviceId, body);
+      // iOS takes the cards with an update or a reinstall, and the environment, which starts one
+      // per stretch of work, goes on updating a card that is gone. A swipe changes no build.
+      const updated = environment.build !== config.build;
+      const cardGone = updated && config.platform === "ios" && !(yield* request.hasLiveActivity);
+      // An environment too old to act on the report is told once it can.
+      const liveActivityLost = cardGone && acceptsLiveActivityLost;
+      if (liveActivityLost || registered.get(request.environmentId) !== signature) {
+        yield* request.server.register(
+          config.deviceId,
+          liveActivityLost ? { ...body, liveActivityLost } : body,
+        );
         registered.set(request.environmentId, signature);
+      }
+      if (updated && cardGone === liveActivityLost) {
+        yield* updateEnvironment(request.environmentId, { build: config.build });
       }
       return { _tag: "registered" } as const;
     });
@@ -467,7 +495,7 @@ export function makePushRegistrar(input: {
       }) {
         const cached = (yield* Ref.get(state)).environments[request.environmentId];
         const environment =
-          cached ?? (yield* readRegistration(request.environmentId, request.server));
+          cached ?? (yield* readRegistration(request.environmentId, request.server)).environment;
         if (!environment.gatewayUrls.includes(config.gatewayUrl)) return null;
         const issued = yield* lock.withPermit(
           issueGrants(environment.environmentKey, [
