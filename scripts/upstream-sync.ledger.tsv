@@ -2909,3 +2909,4 @@ e24f0c7154	take	ACP shared adapter; kept Onicode's SteerDeclinedError pass-throu
 d817e61487	take	fix(ssh): a slow remote server keeps its SSH forward on reconnect
 6edb53026b	take	fix(antigravity): a scheduled wake keeps its run open instead of looking finished
 ccc1feb155	take	fix(ssh): reconnect stops waiting on a remote server that is shutting down; old remote helpers exit 1, which keeps the previous behavior
+f60c747568	take	fix(web): open PDF attachments no longer reload while the agent works
