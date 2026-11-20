@@ -1,5 +1,12 @@
 import { assert, it } from "@effect/vitest";
-import { MessageId, ProviderDriverKind, ProviderTurnId, ThreadId } from "@onicode/contracts";
+import {
+  MessageId,
+  NodeId,
+  PlanId,
+  ProviderDriverKind,
+  ProviderTurnId,
+  ThreadId,
+} from "@onicode/contracts";
 import * as KeyedLock from "@onicode/shared/KeyedLock";
 import * as ProviderAdapter from "@onicode/provider-core/server/ProviderAdapter";
 import * as Cause from "effect/Cause";
@@ -48,6 +55,23 @@ function snapshot(id: string, text: string, threadId = "single-thread") {
         message: { ...base.message, id: MessageId.make(id), threadId: ThreadId.make(threadId) },
       }
     : base;
+}
+function plan(step: "running" | "completed" | "proposed"): ProviderAdapter.ProviderAdapterV2Event {
+  const base = {
+    id: PlanId.make("plan"),
+    threadId: ThreadId.make("single-thread"),
+    runId: null,
+    nodeId: NodeId.make("node"),
+    status: "active",
+  } as const;
+  return {
+    type: "plan.updated",
+    driver,
+    plan:
+      step === "proposed"
+        ? { ...base, kind: "proposed_plan", markdown: "Build" }
+        : { ...base, kind: "todo_list", steps: [{ id: "step", text: "Build", status: step }] },
+  };
 }
 const control: ProviderAdapter.ProviderAdapterV2Event = {
   type: "background_work.updated",
@@ -497,6 +521,10 @@ it.effect.each([
   { keys: ["a", "b", "a", "b", "a", "b"], kept: [0, 4, 5] },
   // A first appearance between two snapshots of an entity keeps the earlier snapshot.
   { keys: ["a", "b", "a", "b", "c", "a", "b"], kept: [0, 2, 3, 4, 5, 6] },
+  // A step completed and reopened keeps its completion, which step durations are measured from.
+  { keys: ["running", "completed", "running"], kept: [0, 1, 2] },
+  // Nor does another kind of plan under the same ID fold into a todo list.
+  { keys: ["running", "proposed", "running"], kept: [0, 1, 2] },
 ])("combines superseded snapshots queued behind a busy commit: $keys", ({ keys, kept }) =>
   Effect.gen(function* () {
     const writer = yield* blockFirstCommit;
@@ -505,11 +533,15 @@ it.effect.each([
       .consume(Stream.make(event(-1)), recorder.process, Effect.succeed(false))
       .pipe(Effect.forkScoped({ startImmediately: true }));
     yield* Deferred.await(writer.started);
-    const snapshots = keys.map((key, index) => snapshot(key, `${key}:${index}`));
+    const snapshots = keys.map((key, index) =>
+      key === "running" || key === "completed" || key === "proposed"
+        ? plan(key)
+        : snapshot(key, `${key}:${index}`),
+    );
     const pulled = yield* Deferred.make<void>();
     const consumer = yield* recorder
       .consume(
-        Stream.fromIterable(snapshots).pipe(
+        Stream.fromIterable<ProviderAdapter.ProviderAdapterV2Event>(snapshots).pipe(
           Stream.tap((raw) =>
             raw === snapshots.at(-1) ? Deferred.succeed(pulled, undefined) : Effect.void,
           ),
@@ -528,6 +560,114 @@ it.effect.each([
       kept.map((index) => snapshots[index]!),
     ]);
   }),
+);
+
+it.effect("fails a stream with its write error when a combined earlier snapshot is dropped", () =>
+  Effect.gen(function* () {
+    const writer = yield* blockFirstCommit;
+    const recorder = yield* recordBatches(writer.block);
+    const leading = yield* recorder
+      .consume(Stream.make(event(-1)), recorder.process, Effect.succeed(false))
+      .pipe(Effect.forkScoped({ startImmediately: true }));
+    yield* Deferred.await(writer.started);
+    // "a:1" is combined into "a:3", which follows the failed "b:2".
+    const snapshots = ["b", "a", "b", "a"].map((key, index) => snapshot(key, `${key}:${index}`));
+    const pulled = yield* Deferred.make<void>();
+    const consumer = yield* recorder
+      .consume(
+        Stream.fromIterable(snapshots).pipe(
+          Stream.tap((raw) =>
+            raw === snapshots.at(-1) ? Deferred.succeed(pulled, undefined) : Effect.void,
+          ),
+        ),
+        (raw) => (raw === snapshots[2] ? Effect.fail("write failed") : recorder.process(raw)),
+        Effect.succeed(false),
+      )
+      .pipe(Effect.exit, Effect.forkScoped({ startImmediately: true }));
+    yield* Deferred.await(pulled);
+    yield* TestClock.adjust(0);
+    yield* Deferred.succeed(writer.release, undefined);
+    yield* Fiber.join(leading);
+    const exit = yield* Fiber.join(consumer);
+    assert.isTrue(Exit.isFailure(exit));
+    if (Exit.isFailure(exit)) {
+      assert.isFalse(Cause.hasInterruptsOnly(exit.cause));
+      const error = Cause.squash(exit.cause);
+      assert.strictEqual(
+        ProviderCommitBatch.isCommitBatchError(error) ? error.cause : error,
+        "write failed",
+      );
+    }
+  }),
+);
+
+it.effect.each([
+  // "b:2" fails in the transaction that holds "a:3", and that transaction fails.
+  { name: "the transaction holding the rest fails", slow: [0], failure: "disk full" },
+  // "b:2" fails alone in a transaction that fails; "a:3" lands in a later one.
+  { name: "the failed write's own transaction fails", slow: [0, 2], failure: "disk full" },
+  // "b:2" fails in a transaction that commits; the later one holding "a:3" fails.
+  { name: "a later transaction fails", slow: [2], failure: "write failed" },
+])(
+  "fails a combined earlier snapshot with what stopped its stream when $name",
+  ({ slow, failure }) =>
+    Effect.gen(function* () {
+      const writer = yield* blockFirstCommit;
+      let commits = 0;
+      const coordinator = yield* ProviderCommitBatch.make(
+        (work) =>
+          Effect.gen(function* () {
+            yield* writer.block;
+            const commit = ++commits;
+            yield* work;
+            if (commit === 3)
+              return yield* new ProviderCommitBatch.CommitBatchError({ cause: "disk full" });
+          }),
+        true,
+      );
+      const leading = yield* coordinator
+        .consume(Stream.make(event(-1)), () => Effect.void, Effect.succeed(false))
+        .pipe(Effect.forkScoped({ startImmediately: true }));
+      yield* Deferred.await(writer.started);
+      // "a:1" is combined into "a:3". A waiting write splits the batch after a slow snapshot.
+      const snapshots = ["b", "a", "b", "a"].map((key, index) => snapshot(key, `${key}:${index}`));
+      const pulled = yield* Deferred.make<void>();
+      const consumer = yield* coordinator
+        .consume(
+          Stream.fromIterable(snapshots).pipe(
+            Stream.tap((raw) =>
+              raw === snapshots.at(-1) ? Deferred.succeed(pulled, undefined) : Effect.void,
+            ),
+          ),
+          (raw) =>
+            (slow.includes(snapshots.indexOf(raw))
+              ? TestClock.adjust("100 millis")
+              : Effect.void
+            ).pipe(
+              Effect.andThen(raw === snapshots[2] ? Effect.fail("write failed") : Effect.void),
+            ),
+          Effect.succeed(false),
+        )
+        .pipe(Effect.exit, Effect.forkScoped({ startImmediately: true }));
+      yield* Deferred.await(pulled);
+      yield* TestClock.adjust(0);
+      const writerFree = yield* Deferred.make<void>();
+      const write = yield* coordinator
+        .barrier(Deferred.await(writerFree), ["other-thread"])
+        .pipe(Effect.forkScoped({ startImmediately: true }));
+      yield* Deferred.succeed(writer.release, undefined);
+      yield* Fiber.join(leading);
+      const exit = yield* Fiber.join(consumer);
+      yield* Deferred.succeed(writerFree, undefined);
+      yield* Fiber.join(write);
+      assert.isAtLeast(commits, 3);
+      assert.isTrue(Exit.isFailure(exit));
+      if (Exit.isFailure(exit)) {
+        let error = Cause.squash(exit.cause);
+        while (ProviderCommitBatch.isCommitBatchError(error)) error = error.cause;
+        assert.strictEqual(error, failure);
+      }
+    }),
 );
 
 it.effect("makes streams wait to read more once the shared backlog is full", () =>
