@@ -35,7 +35,12 @@ test(
       await dialog.waitFor({ state: "hidden" });
       await open.tap();
       await openDialog.waitFor();
-      await expect(dialog.getByRole("button", "Create link", { exact: true })).toBeEnabled();
+      await app.screenshot("reopened-while-first-link-pending");
+      // Read once: a retrying matcher waits out the held request, which then gives up.
+      expect(
+        await dialog.getByRole("button", "Creating…", { exact: true }).isVisible(),
+        "The reopened dialog does not wait on the closed one's request",
+      ).toBe(false);
 
       release.resolve();
       await authorizedClients.getByText(label, { exact: true }).waitFor();
