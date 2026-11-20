@@ -22,7 +22,7 @@ import {
   isThreadEnvironmentLocked,
   recallCheckoutIsRepo,
   rememberCheckoutIsRepo,
-  threadErrorIsServerRuntime,
+  threadErrorBannerSource,
 } from "./ChatView.logic";
 import { ProviderDriverKind, type ServerProvider } from "@onicode/contracts";
 import { deriveProviderInstanceEntries } from "../providerInstances";
@@ -1642,38 +1642,50 @@ describe("prepareRevertedMessageAttachments", () => {
   });
 });
 
-describe("threadErrorIsServerRuntime", () => {
-  it("is true for a server thread's runtime error, and for a local copy of that same error", () => {
+describe("threadErrorBannerSource", () => {
+  const runtime = { runtimeError: "E", runtimeSource: "run-1" } as const;
+
+  it("uses the runtime source for a server thread's runtime error and a local copy of it", () => {
     expect(
-      threadErrorIsServerRuntime({
-        isServerThread: true,
-        localServerError: null,
-        runtimeError: "E",
-      }),
-    ).toBe(true);
+      threadErrorBannerSource({ isServerThread: true, localError: undefined, ...runtime }),
+    ).toBe("run-1");
     expect(
-      threadErrorIsServerRuntime({
+      threadErrorBannerSource({
         isServerThread: true,
-        localServerError: "E",
-        runtimeError: "E",
+        localError: { message: "E", at: 1 },
+        ...runtime,
       }),
-    ).toBe(true);
+    ).toBe("run-1");
   });
 
-  it("is false for a local error that differs from the runtime error, and for draft threads", () => {
+  it("keys other local errors by when they were raised, on server and draft threads", () => {
     expect(
-      threadErrorIsServerRuntime({
+      threadErrorBannerSource({
         isServerThread: true,
-        localServerError: "E2",
-        runtimeError: "E",
+        localError: { message: "E2", at: 1 },
+        ...runtime,
       }),
-    ).toBe(false);
+    ).toBe("local@1");
     expect(
-      threadErrorIsServerRuntime({
+      threadErrorBannerSource({
         isServerThread: false,
-        localServerError: null,
-        runtimeError: "E",
+        localError: { message: "E", at: 1 },
+        ...runtime,
       }),
-    ).toBe(false);
+    ).toBe("local@1");
+    expect(
+      threadErrorBannerSource({ isServerThread: false, localError: undefined, ...runtime }),
+    ).toBeNull();
+  });
+
+  it("gives the same local message raised again a different source", () => {
+    const source = (at: number) =>
+      threadErrorBannerSource({
+        isServerThread: false,
+        localError: { message: "Too many attachments", at },
+        runtimeError: null,
+        runtimeSource: null,
+      });
+    expect(source(1)).not.toBe(source(2));
   });
 });
