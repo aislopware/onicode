@@ -219,6 +219,28 @@ describe("thread execution presentation", () => {
     expect(source({ runs: starting, providerSessions: [session("Plan limit reached")] })).toBe(
       "limit-error@2026-07-28T10:00:00.000Z",
     );
+    // A held run that ends after a later-ordinal run is the latest ended run.
+    expect(
+      source({
+        runs: [
+          { ...ended, completedAt: later },
+          { ...run("overtook", 2, "completed"), completedAt: now },
+        ],
+        providerSessions: [session("Session failed")],
+      }),
+    ).toBe("limited@2026-07-28T10:05:00.000Z");
+    // An interrupted run ends too; a run stopped or cancelled before it started never ran.
+    expect(
+      source({
+        runs: [
+          ended,
+          { ...run("stopped", 2, "interrupted"), completedAt: later },
+          { ...run("dropped", 3, "cancelled"), startedAt: null, completedAt: later },
+          { ...run("preparing", 4, "interrupted"), startedAt: null, completedAt: later },
+        ],
+        providerSessions: [session("Session failed")],
+      }),
+    ).toBe("stopped@2026-07-28T10:05:00.000Z");
     expect(deriveResumableRunId(projection, deriveThreadRuntime(projection))).toBe(failed.id);
     expect(
       deriveThreadRuntime({
