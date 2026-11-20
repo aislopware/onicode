@@ -1885,6 +1885,22 @@ describe("SSH launch during desktop update", () => {
       }),
   );
 
+  it.effect("reuses a recorded server its runtime record names after one readiness probe", () =>
+    Effect.gen(function* () {
+      const result = runLauncher(yield* captureLauncher, {
+        recordedKind: "managed",
+        initialPort: 5999,
+      });
+      assert.deepEqual(result.output, { remotePort: 5999, serverKind: "managed" });
+      // A second probe could catch a stall right after the first answer and fail the reconnect.
+      assert.lengthOf(
+        result.events.filter((event) => event.startsWith("probe 5999 ")),
+        1,
+        result.events.join("\n"),
+      );
+    }),
+  );
+
   it.effect.each([
     ["malformed", "broken"],
     ["future", { startedAt: 1_000, expiresAt: 61_000 }],

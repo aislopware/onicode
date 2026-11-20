@@ -758,7 +758,9 @@ keeps_running_server() {
 # The server publishes its runtime record only after it answers, so one that
 # has published and now refuses every connection has closed its listener to
 # shut down; a starting server has not published yet. Exit 2 means refused.
+# READY_STATUS keeps the probe's answer, so a server that was ready is not probed again.
 managed_server_stopping() {
+  READY_STATUS=""
   [ "$DEFAULT_RUNTIME_PID" = "$REMOTE_PID" ] || return 1
   READY_STATUS=0
   wait_ready "@@ONICODE_REUSE_READY_TIMEOUT_MS@@" || READY_STATUS=$?
@@ -942,6 +944,8 @@ elif [ -n "$REMOTE_PORT" ] && managed_server_running "$REMOTE_PID"; then
     REMOTE_PID=""
     REMOTE_PORT=""
     REMOTE_MANAGED=""
+  elif [ "$READY_STATUS" = 0 ]; then
+    :
   elif ! wait_ready "@@ONICODE_READY_TIMEOUT_MS@@"; then
     printf 'Remote Onicode server is still running but did not become ready. Retry the connection; the server was left running.\\n' >&2
     exit 1
@@ -1552,8 +1556,10 @@ const startSshTunnel = Effect.fn("ssh/tunnel.startSshTunnel")(function* (input: 
     "ControlPath=none",
     "-o",
     "ControlPersist=no",
+    // sshd answers these however slow the server is, so only a dead connection (after
+    // sleep or a network change) exits, in 15-20 s, and reconnect stops reusing it.
     "-o",
-    "ServerAliveInterval=15",
+    "ServerAliveInterval=5",
     "-o",
     "ServerAliveCountMax=3",
     "-n",
