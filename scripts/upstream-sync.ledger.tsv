@@ -2897,3 +2897,4 @@ cf10320186	take	Azure DevOps only; taken as is
 fe9baf8cbb	take	Onicode already wakes on merge/close (7dceb76f4c); budget CONFLICT kept Onicode's numbers with mcpToolListJsonBytes recomputed (55242)
 71adede0f9	take	taken as is
 966e422c9f	take	taken as is
+563ba1af19	take	adapted: comment names any proxy in front of the server instead of T3 Connect; clients key off the port-refused header, so 403 is harmless and helps self-hosted Cloudflare tunnels
