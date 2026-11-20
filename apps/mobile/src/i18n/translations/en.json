@@ -4063,14 +4063,41 @@
     },
     " has no model available. Install or sign in to a provider there to choose one."
   ],
-  "5dc2710a40895938": [
+  "6e9353e533b8e30a": [
     "Your draft is saved on this device. ",
     {
       "i": 1,
       "k": "_gt_value_1",
       "v": "v"
     },
-    " has a ready provider that is turned off for this project or not allowed by policy. Check its provider settings to choose a model."
+    " is still checking its providers. Models show here when it finishes."
+  ],
+  "2cb533ac599f0495": [
+    "Your draft is saved on this device. ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " has a ready provider, but its managed policy does not allow it."
+  ],
+  "f8917cd665a6ad7a": [
+    "Your draft is saved on this device. ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " has a ready provider that is turned off for this project. Turn it on in the project's provider settings to choose a model."
+  ],
+  "fff0b36c9d3141ea": [
+    "Your draft is saved on this device. ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " has a ready provider that is turned off. Turn it on in its provider settings to choose a model."
   ],
   "3a3930717d8d73b4": "Your draft is saved on this device. Connect to an environment to choose its first model.",
   "8b53cd9e9e107f7c": "Add an environment before creating a task.",

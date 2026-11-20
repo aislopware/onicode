@@ -91,7 +91,7 @@ export const makeManagedServerProvider = Effect.fn("makeManagedServerProvider")(
   const initialSettings = yield* input.getSettings;
   const initialSnapshot = yield* input.initialSnapshot(initialSettings);
   const snapshotStateRef = yield* Ref.make<ProviderSnapshotState>({
-    snapshot: initialSnapshot,
+    snapshot: { ...initialSnapshot, checking: true },
     enrichmentGeneration: 0,
     usageAuthLabel: undefined,
     checked: false,
@@ -451,6 +451,15 @@ export const makeManagedServerProvider = Effect.fn("makeManagedServerProvider")(
     ),
   ).pipe(Effect.forkScoped);
 
+  const stopChecking = Effect.gen(function* () {
+    const snapshot = yield* Ref.modify(snapshotStateRef, (state) => {
+      if (state.snapshot.checking !== true) return [null, state] as const;
+      const { checking: _checking, ...next } = state.snapshot;
+      return [next, { ...state, snapshot: next }] as const;
+    });
+    if (snapshot !== null) yield* PubSub.publish(changesPubSub, snapshot);
+  });
+
   // Probes spawn provider CLIs; starting them during server startup slows the first client load.
   yield* (host.awaitServerReady ?? Effect.void).pipe(
     Effect.andThen(
@@ -461,6 +470,8 @@ export const makeManagedServerProvider = Effect.fn("makeManagedServerProvider")(
         ),
       ),
     ),
+    // A failed first check leaves the pre-check snapshot, which must stop saying it is checking.
+    Effect.tapCause(() => stopChecking),
     Effect.ignoreCause({ log: true }),
     Effect.forkScoped,
   );

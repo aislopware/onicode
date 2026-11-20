@@ -74,7 +74,7 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { ProjectCloneBanner } from "./ProjectCloneBanner";
 import {
   describeUnavailableModelSelection,
-  hasReadyProviderTurnedOff,
+  noModelReason,
   isModelSelectionUnavailable,
   resolveSelectableModelSelection,
 } from "../../lib/modelOptions";
@@ -995,28 +995,43 @@ export function NewTaskDraftScreen(props: {
   );
 
   if (!flow.selectedModel) {
+    const missingModelReason = noModelReason(selectedEnvironmentServerConfig, selectedProject.id);
     return (
       <ThreadScreenFallback header={<AppBar title={gt("New thread")} onBack={goBack} />}>
         <View className="flex-1 justify-end gap-3 p-4">
           {environmentControl}
           <Text className="text-foreground-muted">
-            {environmentConnected &&
-            selectedEnvironmentServerConfig &&
-            hasReadyProviderTurnedOff(selectedEnvironmentServerConfig, selectedProject.id) ? (
-              <T>
-                Your draft is saved on this device. <Var>{selectedEnvironmentLabel}</Var> has a
-                ready provider that is turned off for this project or not allowed by policy. Check
-                its provider settings to choose a model.
-              </T>
-            ) : environmentConnected && selectedEnvironmentServerConfig ? (
-              <T>
-                Your draft is saved on this device. <Var>{selectedEnvironmentLabel}</Var> has no
-                model available. Install or sign in to a provider there to choose one.
-              </T>
-            ) : (
+            {!environmentConnected || !selectedEnvironmentServerConfig ? (
               <T>
                 Your draft is saved on this device. Connect to an environment to choose its first
                 model.
+              </T>
+            ) : missingModelReason === "checking" ? (
+              <T>
+                Your draft is saved on this device. <Var>{selectedEnvironmentLabel}</Var> is still
+                checking its providers. Models show here when it finishes.
+              </T>
+            ) : missingModelReason === "policy" ? (
+              <T>
+                Your draft is saved on this device. <Var>{selectedEnvironmentLabel}</Var> has a
+                ready provider, but its managed policy does not allow it.
+              </T>
+            ) : missingModelReason === "project" ? (
+              <T>
+                Your draft is saved on this device. <Var>{selectedEnvironmentLabel}</Var> has a
+                ready provider that is turned off for this project. Turn it on in the project's
+                provider settings to choose a model.
+              </T>
+            ) : missingModelReason === "environment" ? (
+              <T>
+                Your draft is saved on this device. <Var>{selectedEnvironmentLabel}</Var> has a
+                ready provider that is turned off. Turn it on in its provider settings to choose a
+                model.
+              </T>
+            ) : (
+              <T>
+                Your draft is saved on this device. <Var>{selectedEnvironmentLabel}</Var> has no
+                model available. Install or sign in to a provider there to choose one.
               </T>
             )}
           </Text>

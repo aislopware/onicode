@@ -4062,14 +4062,41 @@
     },
     " hat kein verfügbares Modell. Installiere dort einen Anbieter oder melde dich an, um eines zu wählen."
   ],
-  "5dc2710a40895938": [
+  "6e9353e533b8e30a": [
     "Dein Entwurf ist auf diesem Gerät gespeichert. ",
     {
       "i": 1,
       "k": "_gt_value_1",
       "v": "v"
     },
-    " hat einen bereiten Anbieter, der für dieses Projekt ausgeschaltet oder durch eine Richtlinie nicht erlaubt ist. Prüfe die Anbietereinstellungen dort, um ein Modell zu wählen."
+    " prüft noch seine Anbieter. Modelle erscheinen hier, sobald die Prüfung fertig ist."
+  ],
+  "2cb533ac599f0495": [
+    "Dein Entwurf ist auf diesem Gerät gespeichert. ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " hat einen bereiten Anbieter, aber die verwaltete Richtlinie dort erlaubt ihn nicht."
+  ],
+  "f8917cd665a6ad7a": [
+    "Dein Entwurf ist auf diesem Gerät gespeichert. ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " hat einen bereiten Anbieter, der für dieses Projekt ausgeschaltet ist. Schalte ihn in den Anbietereinstellungen des Projekts ein, um ein Modell zu wählen."
+  ],
+  "fff0b36c9d3141ea": [
+    "Dein Entwurf ist auf diesem Gerät gespeichert. ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " hat einen bereiten Anbieter, der ausgeschaltet ist. Schalte ihn in den Anbietereinstellungen dort ein, um ein Modell zu wählen."
   ],
   "3a3930717d8d73b4": "Dein Entwurf ist auf diesem Gerät gespeichert. Verbinde dich mit einer Umgebung, um ihr erstes Modell zu wählen.",
   "8b53cd9e9e107f7c": "Füge eine Umgebung hinzu, bevor du eine Aufgabe erstellst.",

@@ -274,7 +274,7 @@ describe("makeManagedServerProvider", () => {
           });
 
           const initial = yield* provider.getSnapshot;
-          assert.deepStrictEqual(initial, initialSnapshot);
+          assert.deepStrictEqual(initial, { ...initialSnapshot, checking: true });
           assert.strictEqual(yield* provider.isAwaitingFirstCheck!, true);
 
           const updatesFiber = yield* Stream.take(provider.streamChanges, 1).pipe(
@@ -319,7 +319,10 @@ describe("makeManagedServerProvider", () => {
 
           yield* TestClock.adjust("10 seconds");
           assert.strictEqual(yield* Ref.get(checkCalls), 0);
-          assert.deepStrictEqual(yield* provider.getSnapshot, initialSnapshot);
+          assert.deepStrictEqual(yield* provider.getSnapshot, {
+            ...initialSnapshot,
+            checking: true,
+          });
           assert.isTrue(yield* provider.isAwaitingFirstCheck!);
 
           yield* Deferred.succeed(serverReady, undefined);
@@ -502,6 +505,41 @@ describe("makeManagedServerProvider", () => {
         assert.deepStrictEqual(updates, [refreshedSnapshot, refreshedSnapshotSecond]);
         assert.deepStrictEqual(latest, refreshedSnapshotSecond);
         assert.strictEqual(yield* Ref.get(checkCalls), 2);
+      }),
+    ).pipe(Effect.provide(layerAlwaysRunTest)),
+  );
+
+  it.effect("stops reporting the provider as checking when its first check fails", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const releaseCheck = yield* Deferred.make<void>();
+        const provider = yield* makeManagedServerProvider<TestSettings>({
+          resolveMaintenance: () => Effect.succeed(maintenanceCapabilities),
+          getSettings: Effect.succeed({ enabled: true }),
+          streamSettings: Stream.empty,
+          haveSettingsChanged: (previous, next) => previous.enabled !== next.enabled,
+          initialSnapshot: () => Effect.succeed(initialSnapshot),
+          checkProvider: Deferred.await(releaseCheck).pipe(
+            Effect.andThen(
+              Effect.fail(
+                new ServerSettingsError({
+                  settingsPath: "/onicode/userdata/settings.json",
+                  operation: "read-file",
+                }),
+              ),
+            ),
+          ),
+          refreshInterval: "1 hour",
+        });
+        const updatesFiber = yield* Stream.take(provider.streamChanges, 1).pipe(
+          Stream.runCollect,
+          Effect.forkChild,
+        );
+        yield* Effect.yieldNow;
+        yield* Deferred.succeed(releaseCheck, undefined);
+
+        assert.deepStrictEqual(Array.from(yield* Fiber.join(updatesFiber)), [initialSnapshot]);
+        assert.deepStrictEqual(yield* provider.getSnapshot, initialSnapshot);
       }),
     ).pipe(Effect.provide(layerAlwaysRunTest)),
   );

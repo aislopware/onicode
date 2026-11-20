@@ -662,6 +662,36 @@ export const layer = Layer.effect(
       return providers;
     });
 
+    // Before its first check, an instance booted from the cache publishes only pre-check
+    // snapshots (usage, or a failed check); they update the cached status instead of replacing it.
+    const syncStreamedProvider = Effect.fn("syncStreamedProvider")(function* (
+      instance: ProviderInstance,
+      provider: ServerProvider,
+    ) {
+      const cached = awaitingBootInstances.has(instance)
+        ? (yield* Ref.get(providersRef)).find(
+            (candidate) => candidate.instanceId === provider.instanceId,
+          )
+        : undefined;
+      if (
+        cached === undefined ||
+        !(yield* instance.snapshot.isAwaitingFirstCheck ?? Effect.succeed(false))
+      ) {
+        return yield* syncProvider(provider);
+      }
+      const { checking: _checking, usageLimits: _usageLimits, ...status } = cached;
+      return yield* upsertProviders(
+        [
+          {
+            ...status,
+            ...(provider.checking === true ? { checking: true } : {}),
+            ...(provider.usageLimits === undefined ? {} : { usageLimits: provider.usageLimits }),
+          },
+        ],
+        { persist: false, replace: true },
+      );
+    });
+
     const compatibilityRefreshRunning = yield* Ref.make(false);
     // Reclassify the current model after fetch; republishing the old probe could overwrite newer health results.
     const refreshCompatibility = Effect.gen(function* () {
@@ -1017,7 +1047,9 @@ export const layer = Layer.effect(
         for (const [, instance] of newlyAdded) {
           const source = buildSnapshotSource(instance);
           yield* Stream.runForEach(source.streamChanges, (provider) =>
-            correlateSnapshotWithSource(source, provider).pipe(Effect.flatMap(syncProvider)),
+            correlateSnapshotWithSource(source, provider).pipe(
+              Effect.flatMap((provider) => syncStreamedProvider(instance, provider)),
+            ),
           ).pipe(Effect.forkScoped);
           if (instance.workspaceRescans) {
             yield* Stream.runForEach(instance.workspaceRescans, (cwd) =>

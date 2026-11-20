@@ -4056,14 +4056,41 @@
     },
     " não tem nenhum modelo disponível. Instale um provedor ou entre em um lá para escolher um."
   ],
-  "5dc2710a40895938": [
+  "6e9353e533b8e30a": [
     "Seu rascunho está salvo neste dispositivo. ",
     {
       "i": 1,
       "k": "_gt_value_1",
       "v": "v"
     },
-    " tem um provedor pronto, mas desativado neste projeto ou não permitido por uma política. Verifique as configurações de provedores para escolher um modelo."
+    " ainda está verificando seus provedores. Os modelos aparecem aqui quando terminar."
+  ],
+  "2cb533ac599f0495": [
+    "Seu rascunho está salvo neste dispositivo. ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " tem um provedor pronto, mas a política gerenciada dele não o permite."
+  ],
+  "f8917cd665a6ad7a": [
+    "Seu rascunho está salvo neste dispositivo. ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " tem um provedor pronto, mas desativado neste projeto. Ative-o nas configurações de provedores do projeto para escolher um modelo."
+  ],
+  "fff0b36c9d3141ea": [
+    "Seu rascunho está salvo neste dispositivo. ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " tem um provedor pronto, mas desativado. Ative-o nas configurações de provedores para escolher um modelo."
   ],
   "3a3930717d8d73b4": "Seu rascunho está salvo neste dispositivo. Conecte-se a um ambiente para escolher o primeiro modelo.",
   "8b53cd9e9e107f7c": "Adicione um ambiente antes de criar uma tarefa.",
