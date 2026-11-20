@@ -7544,19 +7544,30 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       command.createdBy === "agent" &&
       (dispatchMode.type === "steer_active" || dispatchMode.type === "restart_active")
     ) {
-      const queuedRuns = projection.runs.filter(
-        (run) => run.status === "queued" && run.queueHeld !== true,
+      const missing = new Set(
+        projection.runs
+          .filter((run) => run.status === "queued" && run.queueHeld !== true)
+          .map((run) => run.userMessageId),
       );
-      if (queuedRuns.length > 0) {
-        const queuedMessages = yield* projectionStore
-          .getMessagesById(
-            command.threadId,
-            queuedRuns.map((run) => run.userMessageId),
-          )
-          .pipe(mapDispatchError(command));
-        if ([...queuedMessages.values()].some((message) => message.createdBy === "agent")) {
-          dispatchMode = { type: "queue_after_active" };
+      // The command projection already holds queued messages; read only any it lacks.
+      let agentQueued = false;
+      if (missing.size > 0) {
+        for (const message of projection.messages) {
+          if (!missing.delete(message.id)) continue;
+          if (message.createdBy === "agent") {
+            agentQueued = true;
+            break;
+          }
         }
+      }
+      if (!agentQueued && missing.size > 0) {
+        const read = yield* projectionStore
+          .getMessagesById(command.threadId, [...missing])
+          .pipe(mapDispatchError(command));
+        agentQueued = [...read.values()].some((message) => message.createdBy === "agent");
+      }
+      if (agentQueued) {
+        dispatchMode = { type: "queue_after_active" };
       }
     }
     // An explicit restart that Stop reached has only its start left, so it
