@@ -288,6 +288,36 @@ describe("environment theme", () => {
             encodeThemeFile(NIGHTFALL_THEME),
           );
           assert.deepEqual(yield* Queue.take(snapshots), ["Nightfall", "Shared Light"]);
+
+          // themes -> current -> v1, then `current` is atomically repointed to v2. Windows cannot
+          // rename a directory link over another.
+          if ((yield* HostProcess.Platform) === "win32") return;
+          const nextSnapshot = (names: ReadonlyArray<string>) =>
+            Stream.fromQueue(snapshots).pipe(
+              Stream.filter((snapshot) => snapshot.join("\n") === names.join("\n")),
+              Stream.runHead,
+            );
+          const current = path.join(outside, "current");
+          const v1 = path.join(outside, "v1");
+          const v2 = path.join(outside, "v2");
+          yield* fs.makeDirectory(v1);
+          yield* fs.makeDirectory(v2);
+          yield* fs.writeFileString(
+            path.join(v1, "shared-light.json"),
+            encodeThemeFile(SHARED_THEME),
+          );
+          yield* fs.writeFileString(
+            path.join(v2, "nightfall.json"),
+            encodeThemeFile(NIGHTFALL_THEME),
+          );
+          yield* fs.symlink(v1, current);
+          yield* fs.symlink(current, path.join(outside, "themes-next"));
+          yield* fs.rename(path.join(outside, "themes-next"), environmentThemesDir);
+          yield* nextSnapshot(["Shared Light"]);
+
+          yield* fs.symlink(v2, path.join(outside, "current-next"));
+          yield* fs.rename(path.join(outside, "current-next"), current);
+          yield* nextSnapshot(["Nightfall"]);
         }),
       ),
   );
