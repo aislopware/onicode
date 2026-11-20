@@ -138,7 +138,9 @@ ONICODE_APPLE_TEAM_ID=ABCDE12345
 
 `ONICODE_MOBILE_APP_ID` is the iOS bundle identifier and the Android package of the `production`
 variant. With it set, the build inherits nothing of the maintainers': no Apple team, and no update
-feed unless you name one with `ONICODE_MOBILE_UPDATES_URL`. The `development` variant keeps the
+feed unless you name one with `ONICODE_MOBILE_UPDATES_URL`, and no store-update notice unless you
+name its feed root with `ONICODE_MOBILE_FEEDS_URL` and, on iOS, the store link with
+`ONICODE_MOBILE_IOS_STORE_URL`. The `development` variant keeps the
 shared `Onicode Dev` identity, so cached dev clients still match.
 
 Then run `vp run ios:release` or `vp run android:prod`.

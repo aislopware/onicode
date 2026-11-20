@@ -71,7 +71,7 @@ const runMainContentsCommand = Effect.fn("desktop.menu.runMainContentsCommand")(
 const checkForUpdatesFromMenu = Effect.gen(function* () {
   const updates = yield* DesktopUpdates.DesktopUpdates;
   const electronDialog = yield* ElectronDialog.ElectronDialog;
-  const result = yield* updates.check("menu");
+  const result = yield* updates.checkAndDownload("menu");
   const updateState = result.state;
 
   if (updateState.status === "up-to-date") {
@@ -83,35 +83,17 @@ const checkForUpdatesFromMenu = Effect.gen(function* () {
       }),
       buttons: [m(msg("OK"))],
     });
-  } else if (updateState.status === "available") {
-    const { response } = yield* electronDialog.showMessageBox({
-      type: "info",
-      title: m(msg("Update available")),
-      message:
-        updateState.availableVersion === null
-          ? m(msg("A new version of Onicode is available."))
-          : m(msg("Onicode {version} is available."), { version: updateState.availableVersion }),
-      detail: m(msg("You're running Onicode {version}."), {
-        version: updateState.currentVersion,
-      }),
-      buttons: [
-        m(msg("Download", { $context: "button, downloads an app update" })),
-        m(msg("Later")),
-      ],
-      defaultId: 0,
-      cancelId: 1,
-    });
-    if (response === 0) yield* updates.download;
-  } else if (updateState.status === "downloading") {
+  } else if (updateState.status === "available" || updateState.status === "downloading") {
     yield* electronDialog.showMessageBox({
       type: "info",
       title: m(msg("Update downloading")),
       message:
         updateState.availableVersion === null
-          ? m(msg("A new version of Onicode is already downloading."))
-          : m(msg("Onicode {version} is already downloading."), {
+          ? m(msg("A new version of Onicode is downloading."))
+          : m(msg("Onicode {version} is downloading."), {
               version: updateState.availableVersion,
             }),
+      detail: m(msg("Onicode asks you to restart when it is ready.")),
       buttons: [m(msg("OK"))],
     });
   } else if (updateState.status === "downloaded") {
@@ -123,7 +105,7 @@ const checkForUpdatesFromMenu = Effect.gen(function* () {
         version === null
           ? m(msg("A new version of Onicode is ready to install."))
           : m(msg("Onicode {version} is ready to install."), { version }),
-      detail: m(msg("Onicode will restart to install it. Any running tasks will be interrupted.")),
+      detail: m(msg("Onicode restarts to install it. Your threads and drafts are saved.")),
       buttons: [m(msg("Restart", { $context: "button, restarts the app" })), m(msg("Later"))],
       defaultId: 0,
       cancelId: 1,

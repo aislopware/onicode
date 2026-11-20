@@ -49,6 +49,6 @@ export const checkForUpdate = DesktopIpc.makeIpcMethod({
   result: DesktopUpdateCheckResultSchema,
   handler: Effect.fn("desktop.ipc.updates.check")(function* () {
     const updates = yield* DesktopUpdates.DesktopUpdates;
-    return yield* updates.check("web-ui");
+    return yield* updates.checkAndDownload("web-ui");
   }),
 });

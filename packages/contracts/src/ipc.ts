@@ -287,6 +287,8 @@ export interface DesktopUpdateState {
   errorContext: "check" | "download" | "install" | null;
   canRetry: boolean;
   notAppliedVersion?: string;
+  /** The feed no longer supports the running version, so the app blocks until this update installs. */
+  required?: boolean;
 }
 
 export interface DesktopUpdateReleaseNote {
@@ -329,6 +331,7 @@ export const DesktopUpdateStateSchema = Schema.Struct({
   errorContext: Schema.NullOr(Schema.Literals(["check", "download", "install"])),
   canRetry: Schema.Boolean,
   notAppliedVersion: Schema.optionalKey(Schema.String),
+  required: Schema.optionalKey(Schema.Boolean),
 });
 
 export const DesktopCliCommandStateSchema = Schema.Struct({

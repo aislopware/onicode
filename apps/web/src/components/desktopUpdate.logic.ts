@@ -162,23 +162,93 @@ export function getDesktopUpdateButtonTooltip(
   return resolve(msg("Up to date"));
 }
 
-export function getDesktopUpdateInstallConfirmationMessage(
-  state: Pick<DesktopUpdateState, "availableVersion" | "downloadedVersion">,
+export function getDesktopUpdateRestartNote(
+  continuesThreads: boolean,
   resolve: MessageResolver = m,
 ): string {
-  const version = state.downloadedVersion ?? state.availableVersion;
-  return version
+  return continuesThreads
     ? resolve(
         msg(
-          "Install update {version} and restart Onicode?\n\nAny running tasks will be interrupted. Make sure you're ready before continuing.",
-          { version },
+          "Restarting takes a moment. Your threads and drafts are saved, and running threads continue on their own.",
         ),
       )
     : resolve(
         msg(
-          "Install update and restart Onicode?\n\nAny running tasks will be interrupted. Make sure you're ready before continuing.",
+          "Restarting takes a moment. Your threads and drafts are saved, but running threads stop until you message them again.",
         ),
       );
+}
+
+export function getDesktopUpdateInstallConfirmationMessage(
+  state: Pick<DesktopUpdateState, "availableVersion" | "downloadedVersion">,
+  continuesThreads: boolean,
+  resolve: MessageResolver = m,
+): string {
+  const version = state.downloadedVersion ?? state.availableVersion;
+  const question = version
+    ? resolve(msg("Restart Onicode to install update {version}?", { version }))
+    : resolve(msg("Restart Onicode to install the update?"));
+  return `${question}\n\n${getDesktopUpdateRestartNote(continuesThreads, resolve)}`;
+}
+
+export const DESKTOP_UPDATE_PROMPT_SNOOZE_MS = 4 * 60 * 60 * 1000;
+
+export interface DesktopUpdatePromptSnooze {
+  readonly version: string;
+  readonly until: number;
+}
+
+/** The downloaded version the restart prompt offers, or null while the prompt stays away. */
+export function getDesktopUpdatePromptVersion(
+  state: DesktopUpdateState | null,
+  snooze: DesktopUpdatePromptSnooze | null,
+  now: number,
+): string | null {
+  if (!state || state.required === true) return null;
+  const version = state.downloadedVersion;
+  if (state.status !== "downloaded" || version === null || state.errorContext !== null) return null;
+  // A restart already failed to apply this version; asking for another would repeat it.
+  if (state.notAppliedVersion === version) return null;
+  if (snooze !== null && snooze.version === version && now < snooze.until) return null;
+  return version;
+}
+
+export type RequiredDesktopUpdateView =
+  | {
+      readonly phase: "downloading";
+      readonly version: string | null;
+      readonly percent: number | null;
+    }
+  | { readonly phase: "ready"; readonly version: string | null }
+  | {
+      readonly phase: "failed";
+      readonly version: string | null;
+      readonly retry: "check" | "download" | "install";
+    };
+
+/** What the blocking dialog shows for a required update, or null when none is required. */
+export function getRequiredDesktopUpdateView(
+  state: DesktopUpdateState | null,
+): RequiredDesktopUpdateView | null {
+  if (!state || state.required !== true) return null;
+  const version = getDesktopUpdateDownloadedVersion(state);
+  const action = resolveDesktopUpdateButtonAction(state);
+  if (action === "install") {
+    return state.errorContext === "install" || state.notAppliedVersion === version
+      ? { phase: "failed", version, retry: "install" }
+      : { phase: "ready", version };
+  }
+  if (state.status === "downloading") {
+    return { phase: "downloading", version, percent: state.downloadPercent };
+  }
+  // A found update starts downloading on its own, and a check leads to one.
+  if (
+    state.status === "checking" ||
+    (state.status === "available" && state.errorContext === null)
+  ) {
+    return { phase: "downloading", version, percent: null };
+  }
+  return { phase: "failed", version, retry: action === "download" ? "download" : "check" };
 }
 
 export function getDesktopUpdateActionError(result: DesktopUpdateActionResult): string | null {

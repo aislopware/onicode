@@ -4,6 +4,36 @@ The app you use and the server running your agents can be on different machines.
 When a server is behind your web or desktop app, the update button at the bottom
 of the sidebar and **Settings → Environments** offer to update it.
 
+## When a new version is out
+
+The desktop app looks for a new version shortly after it starts and every four hours, and downloads
+it in the background. When it is ready, a prompt offers **Restart to update**. **Later** hides the
+prompt for four hours; the update button at the bottom of the sidebar installs it any time before
+then.
+
+Restarting takes a moment. Threads, drafts, and settings are saved, and running threads continue on
+their own unless you turned off **Continue threads after restarts**. See **Before you update**.
+
+Some releases are required. When the version you run is no longer supported, Onicode shows **Update
+required** and stays there until you restart into the new version. Once the download is ready it
+restarts by itself after a one-minute countdown, so a machine nobody is watching updates too. With
+**Continue threads after restarts** off it waits for you to click instead, because running threads
+would stop. If the download or the install fails, **Not now** lets you keep working and the update
+button retries.
+
+After a restart into a new version, Onicode confirms that the app was updated.
+
+### On your phone or tablet
+
+The mobile app downloads small updates by itself and installs them the next time you leave the app.
+If you stay in the app, it asks after five minutes whether to install now, and again every half hour.
+Installing takes a second. Your threads run on your machines, so nothing stops while the app
+restarts.
+
+Some versions need a new app from TestFlight or Google Play. The app tells you when one is there and
+**Update** opens it; **Later** hides the notice for four hours. When the version you run is no longer
+supported, **Update required** comes back until you install the new one.
+
 ## Update everything at once
 
 The update button at the bottom of the sidebar updates every connected machine

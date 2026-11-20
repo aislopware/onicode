@@ -103,6 +103,15 @@ const appleServicesEnvironment = APP_VARIANT === "development" ? "development" :
 const updatesUrl =
   repoEnv.ONICODE_MOBILE_UPDATES_URL?.trim() ||
   (identity.own ? undefined : `https://updates.jmango360.dev/manifest/${BETTER_UPDATE_PROJECT_ID}`);
+// A store binary asks these feeds for a newer one and for the oldest supported version; another
+// app names its own or has none.
+const updateFeedsUrl =
+  repoEnv.ONICODE_MOBILE_FEEDS_URL?.trim() ||
+  (identity.own ? undefined : `https://updates.jmango360.dev/feeds/${BETTER_UPDATE_PROJECT_ID}`);
+// iOS ships through TestFlight; the Android listing follows from the package.
+const iosStoreUrl =
+  repoEnv.ONICODE_MOBILE_IOS_STORE_URL?.trim() ||
+  (identity.own ? undefined : "itms-beta://beta.itunes.apple.com/v1/app/6832999338");
 // Push and App Attest need capabilities on the App ID, which another app with no gateway can skip.
 const iosPushEntitlements =
   !isIosPersonalTeamBuild && (!identity.own || identity.pushGatewayUrl !== undefined);
@@ -439,6 +448,11 @@ const config: ExpoConfig = {
     pushGatewayUrl: identity.pushGatewayUrl ?? null,
     betterUpdate: {
       projectId: BETTER_UPDATE_PROJECT_ID,
+    },
+    storeUpdate: {
+      feedsUrl: updateFeedsUrl ?? null,
+      iosUrl: iosStoreUrl ?? null,
+      androidUrl: `https://play.google.com/store/apps/details?id=${variant.androidPackage}`,
     },
   },
   experiments: {

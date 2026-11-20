@@ -3,30 +3,38 @@ import { managedUpdatesDenial } from "@onicode/client-runtime/contract-labels";
 import { type DesktopBridge, type DesktopUpdateState } from "@onicode/contracts";
 import { TriangleAlertIcon } from "lucide-react";
 import { msg, T, useGT, useMessages } from "gt-react";
-import { type ComponentProps, useId, useRef, useState } from "react";
+import { useAtomValue } from "@effect/atom-react";
+import * as Schema from "effect/Schema";
+import { type ComponentProps, useEffect, useEffectEvent, useId, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { settlePromise, squashAtomCommandFailure } from "@onicode/client-runtime/state/runtime";
 import { m } from "../../i18n/messages";
+import { useLocalStorage } from "../../hooks/useLocalStorage";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { cn } from "../../lib/utils";
 import { ensureLocalApi } from "../../localApi";
 import { useDesktopUpdateState } from "../../state/desktopUpdate";
 import { usePrimaryManagedPolicy } from "../../state/managedPolicy";
+import { primaryServerSettingsAtom } from "../../state/server";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import {
   canCheckForUpdate,
+  DESKTOP_UPDATE_PROMPT_SNOOZE_MS,
   getArm64IntelBuildWarningDescription,
   getDesktopUpdateActionError,
   getDesktopUpdateButtonTooltip,
   getDesktopUpdateDownloadedVersion,
   getDesktopUpdateIdleTooltip,
   getDesktopUpdateInstallConfirmationMessage,
+  getDesktopUpdatePromptVersion,
+  getDesktopUpdateRestartNote,
+  getRequiredDesktopUpdateView,
   isDesktopUpdateButtonDisabled,
   resolveDesktopUpdateButtonAction,
   shouldShowArm64IntelBuildWarning,
   shouldToastDesktopUpdateActionResult,
 } from "../desktopUpdate.logic";
-import { showDesktopUpdateDownloadedToast } from "../desktopUpdate.toast";
+import { showDesktopUpdatePrompt } from "../desktopUpdate.toast";
 import { useCheckProviderUpdates } from "../ProviderUpdatesAction";
 import { Alert, AlertDescription, AlertTitle } from "../ui/alert";
 import { Popover, PopoverCreateHandle, PopoverPopup, PopoverTrigger } from "../ui/popover";
@@ -38,6 +46,7 @@ import {
   shouldContinueDesktopUpdateCheckAnimation,
   shouldShowDesktopUpdateCheckIcon,
 } from "./DesktopUpdateStatusIcon";
+import { RequiredUpdateDialog } from "./RequiredUpdateDialog";
 import { SidebarUpdateReleaseNotes } from "./SidebarUpdateReleaseNotes";
 import { SidebarUpdateCapsule } from "./SidebarUpdateCapsule";
 import { UpdateEverythingDialog } from "./UpdateEverythingDialog";
@@ -139,18 +148,17 @@ const toastUpdateError: ReportLocalUpdateError = (title, description) => {
   toastManager.add(stackedThreadToast({ type: "error", title, description }));
 };
 
+// Long enough to read the dialog, short enough that an unattended machine updates the same minute.
+const REQUIRED_UPDATE_RESTART_DELAY_MS = 60_000;
+const PROMPT_SNOOZE_KEY = "onicode:desktop-update-prompt:snooze";
+const PromptSnooze = Schema.NullOr(Schema.Struct({ version: Schema.String, until: Schema.Number }));
+
 export async function downloadLocalUpdate(
   bridge: DesktopBridge,
-  {
-    notifyDownloaded,
-    reportError = toastUpdateError,
-  }: { readonly notifyDownloaded: boolean; readonly reportError?: ReportLocalUpdateError },
+  reportError: ReportLocalUpdateError = toastUpdateError,
 ): Promise<boolean> {
   try {
     const result = await bridge.downloadUpdate();
-    if (result.completed && notifyDownloaded) {
-      showDesktopUpdateDownloadedToast(bridge, result.state);
-    }
     const actionError = shouldToastDesktopUpdateActionResult(result)
       ? getDesktopUpdateActionError(result)
       : null;
@@ -173,7 +181,10 @@ async function installLocalUpdate(
   try {
     const result = await bridge.installUpdate(expectedVersion);
     if (!result.accepted) {
-      showDesktopUpdateDownloadedToast(bridge, result.state);
+      reportError(
+        m(msg("Could not install update")),
+        m(msg("Onicode is busy with another update step. Try again in a moment.")),
+      );
       return false;
     }
     const actionError = shouldToastDesktopUpdateActionResult(result)
@@ -191,6 +202,23 @@ async function installLocalUpdate(
   }
 }
 
+/** Installs outside an update-everything run; the relaunched app then confirms the new version. */
+export async function installLocalUpdateWithNotice(
+  bridge: DesktopBridge,
+  version: string | null,
+): Promise<boolean> {
+  saveUpdateEverythingResult({
+    localVersion: version,
+    updatedServers: 0,
+    updatedProviders: 0,
+    failures: [],
+    restarting: [],
+  });
+  const installed = await installLocalUpdate(bridge);
+  if (!installed) clearSavedUpdateEverythingResult();
+  return installed;
+}
+
 export function SidebarUpdatePill() {
   return <SidebarUpdateControl />;
 }
@@ -201,6 +229,11 @@ function SidebarUpdateControl() {
   const messages = useMessages();
   // The desktop updates this machine, whose policy the primary environment reports.
   const updatesDenial = managedUpdatesDenial(usePrimaryManagedPolicy(), messages);
+  const continuesThreads = useAtomValue(primaryServerSettingsAtom).continueThreadsAfterServerUpdate;
+  const restartNote = getDesktopUpdateRestartNote(continuesThreads, messages);
+  const [promptSnooze, setPromptSnooze] = useLocalStorage(PROMPT_SNOOZE_KEY, null, PromptSnooze);
+  const [promptClock, setPromptClock] = useState(() => Date.now());
+  const [requiredSkipped, setRequiredSkipped] = useState(false);
   const [isActionPending, setIsActionPending] = useState(false);
   const [providerCheck, setProviderCheck] = useState<"button" | "dialog" | null>(null);
   const isCheckingProviders = providerCheck === "button";
@@ -284,7 +317,7 @@ function SidebarUpdateControl() {
     setReleaseNotesOpen(showReleaseNotesPopover && releaseNotesTriggerFocusVisible);
   }
 
-  const handleAction = async () => {
+  const handleAction = async ({ skipConfirm = false }: { readonly skipConfirm?: boolean } = {}) => {
     const bridge = window.desktopBridge;
     if (isInteractionDisabled) return;
 
@@ -300,19 +333,19 @@ function SidebarUpdateControl() {
     setIsActionPending(true);
 
     if (action === "download") {
-      void downloadLocalUpdate(bridge, { notifyDownloaded: true }).finally(() =>
-        setIsActionPending(false),
-      );
+      void downloadLocalUpdate(bridge).finally(() => setIsActionPending(false));
       return;
     }
 
     if (action === "install") {
-      let confirmed = false;
+      let confirmed = skipConfirm;
       try {
-        confirmed = await ensureLocalApi().dialogs.confirm(
-          getDesktopUpdateInstallConfirmationMessage(state),
-          { initialFocus: "confirm" },
-        );
+        if (!confirmed) {
+          confirmed = await ensureLocalApi().dialogs.confirm(
+            getDesktopUpdateInstallConfirmationMessage(state, continuesThreads),
+            { initialFocus: "confirm" },
+          );
+        }
       } catch (error) {
         setIsActionPending(false);
         toastManager.add(
@@ -328,7 +361,9 @@ function SidebarUpdateControl() {
         setIsActionPending(false);
         return;
       }
-      void installLocalUpdate(bridge).finally(() => setIsActionPending(false));
+      void installLocalUpdateWithNotice(bridge, localUpdateVersion).finally(() =>
+        setIsActionPending(false),
+      );
       return;
     }
 
@@ -373,8 +408,7 @@ function SidebarUpdateControl() {
       everything.run({
         ...(bridge && action === "download"
           ? {
-              downloadLocal: (reportError) =>
-                downloadLocalUpdate(bridge, { notifyDownloaded: false, reportError }),
+              downloadLocal: (reportError) => downloadLocalUpdate(bridge, reportError),
             }
           : {}),
         ...(bridge && action !== "none"
@@ -394,6 +428,78 @@ function SidebarUpdateControl() {
     }
     setIsActionPending(false);
   };
+
+  const promptVersion =
+    run === null && !isActionPending && !isConfirmingEverything
+      ? getDesktopUpdatePromptVersion(state, promptSnooze, promptClock)
+      : null;
+  const promptTitle = gt("Onicode {version} is ready", { version: promptVersion ?? "" });
+  const promptActionLabel = runsEverything
+    ? gt("Update", { $context: "verb, confirms the update" })
+    : gt("Restart to update");
+  const runPromptAction = useEffectEvent(() => void handleAction({ skipConfirm: true }));
+  const snoozePrompt = useEffectEvent((version: string) =>
+    setPromptSnooze({ version, until: Date.now() + DESKTOP_UPDATE_PROMPT_SNOOZE_MS }),
+  );
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- toasts live in a manager outside React; the prompt stays up while a downloaded update waits
+  useEffect(() => {
+    if (promptVersion === null) return;
+    return showDesktopUpdatePrompt({
+      shell: window.desktopBridge,
+      version: promptVersion,
+      title: promptTitle,
+      note: restartNote,
+      actionLabel: promptActionLabel,
+      onAction: runPromptAction,
+      onDismiss: () => snoozePrompt(promptVersion),
+    });
+  }, [promptVersion, promptTitle, restartNote, promptActionLabel]);
+  const snoozedUntil = promptSnooze?.until ?? null;
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- only a timer knows when the snooze runs out and the prompt is due again
+  useEffect(() => {
+    if (snoozedUntil === null) return;
+    const timer = window.setTimeout(
+      () => setPromptClock(Date.now()),
+      Math.max(0, snoozedUntil - Date.now()),
+    );
+    return () => window.clearTimeout(timer);
+  }, [snoozedUntil]);
+
+  const requiredUpdate = getRequiredDesktopUpdateView(state);
+  const handleRequiredAction = async () => {
+    const bridge = window.desktopBridge;
+    if (!bridge || requiredUpdate === null || isActionPending) return;
+    if (requiredUpdate.phase === "downloading") return;
+    setIsActionPending(true);
+    if (requiredUpdate.phase === "ready" || requiredUpdate.retry === "install") {
+      await installLocalUpdateWithNotice(bridge, requiredUpdate.version);
+    } else if (requiredUpdate.retry === "download") {
+      await downloadLocalUpdate(bridge);
+    } else {
+      await bridge
+        .checkForUpdate()
+        .catch((error: unknown) =>
+          toastUpdateError(
+            gt("Could not check for updates"),
+            thrownErrorMessage(error, m) ?? gt("Update check failed."),
+          ),
+        );
+    }
+    setIsActionPending(false);
+  };
+  // Restarting by itself is only safe when running threads pick up again afterwards.
+  const restartsRequiredUpdate =
+    requiredUpdate?.phase === "ready" && continuesThreads && !isActionPending;
+  const requiredDialog = (
+    <RequiredUpdateDialog
+      view={requiredSkipped && requiredUpdate?.phase === "failed" ? null : requiredUpdate}
+      note={restartNote}
+      pending={isActionPending}
+      restartDelayMs={restartsRequiredUpdate ? REQUIRED_UPDATE_RESTART_DELAY_MS : null}
+      onAction={() => void handleRequiredAction()}
+      onSkip={() => setRequiredSkipped(true)}
+    />
+  );
 
   const handleCheckAnimationIteration = () => {
     setIsCheckAnimationLatched(
@@ -442,21 +548,13 @@ function SidebarUpdateControl() {
           {...(run.localVersion === null && action === "install" && window.desktopBridge
             ? {
                 onRestart: async () => {
-                  saveUpdateEverythingResult({
-                    localVersion: localUpdateVersion,
-                    updatedServers: 0,
-                    updatedProviders: 0,
-                    failures: [],
-                    restarting: [],
-                  });
-                  if (!(await installLocalUpdate(window.desktopBridge!))) {
-                    clearSavedUpdateEverythingResult();
-                  }
+                  await installLocalUpdateWithNotice(window.desktopBridge!, localUpdateVersion);
                 },
               }
             : {})}
         />
         {confirmDialog}
+        {requiredDialog}
       </SidebarMenuItem>
     );
   }
@@ -484,7 +582,7 @@ function SidebarUpdateControl() {
             ),
         disabled && !showUpdateIconState && "opacity-55",
       )}
-      onClick={handleAction}
+      onClick={() => void handleAction()}
       onBlur={() => {
         suppressReleaseNotesFocusOpen.current = false;
         setReleaseNotesTriggerFocusVisible(false);
@@ -590,6 +688,7 @@ function SidebarUpdateControl() {
         ) : null}
       </Popover>
       {confirmDialog}
+      {requiredDialog}
     </SidebarMenuItem>
   );
 }

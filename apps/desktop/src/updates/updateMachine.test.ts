@@ -2,12 +2,14 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   createInitialDesktopUpdateState,
+  isUpdateRequired,
   reduceDesktopUpdateStateOnCheckFailure,
   reduceDesktopUpdateStateOnCheckStart,
   reduceDesktopUpdateStateOnDownloadComplete,
   reduceDesktopUpdateStateOnDownloadFailure,
   reduceDesktopUpdateStateOnInstallFailure,
   reduceDesktopUpdateStateOnNoUpdate,
+  reduceDesktopUpdateStateOnUpdateAvailable,
 } from "./updateMachine.ts";
 
 const runtimeInfo = {
@@ -112,5 +114,36 @@ describe("updateMachine", () => {
     expect(state.omittedReleaseCount).toBe(0);
     expect(state.message).toBeNull();
     expect(state.errorContext).toBeNull();
+  });
+
+  it.each([
+    { minimum: "1.1.0", required: true },
+    { minimum: "v1.1", required: true },
+    { minimum: "1.0.0", required: false },
+    { minimum: "0.9.0", required: false },
+    { minimum: "latest", required: false },
+    { minimum: 2, required: false },
+    { minimum: undefined, required: false },
+  ])("requires an update below the feed's minimum $minimum: $required", ({ minimum, required }) => {
+    expect(isUpdateRequired("1.0.0", minimum)).toBe(required);
+  });
+
+  it("keeps a required offer required until the feed stops offering it", () => {
+    const offered = reduceDesktopUpdateStateOnUpdateAvailable(
+      { ...createInitialDesktopUpdateState("1.0.0", runtimeInfo), enabled: true, status: "idle" },
+      "1.1.0",
+      "2026-03-04T00:00:00.000Z",
+      [],
+      0,
+      true,
+    );
+    expect(offered.required).toBe(true);
+    expect(reduceDesktopUpdateStateOnDownloadComplete(offered, "1.1.0").required).toBe(true);
+    expect(
+      reduceDesktopUpdateStateOnUpdateAvailable(offered, "1.1.0", "2026-03-04T01:00:00.000Z"),
+    ).not.toHaveProperty("required");
+    expect(
+      reduceDesktopUpdateStateOnNoUpdate(offered, "2026-03-04T01:00:00.000Z"),
+    ).not.toHaveProperty("required");
   });
 });

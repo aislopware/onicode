@@ -3,7 +3,8 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
-import { act, render } from "../../../test/render";
+import { act, fakeTimers, render, stubGlobal } from "../../../test/render";
+import { ToastProvider } from "../ui/toast";
 import { SidebarUpdatePill } from "./SidebarUpdatePill";
 import type { UpdateEverythingRow } from "./updateEverything.logic";
 
@@ -60,6 +61,18 @@ function availableUpdate(releaseNotes: DesktopUpdateState["releaseNotes"]): Desk
     canRetry: false,
   };
 }
+
+function downloadedUpdate(overrides: Partial<DesktopUpdateState> = {}): DesktopUpdateState {
+  return {
+    ...availableUpdate([]),
+    status: "downloaded",
+    downloadedVersion: "0.0.51",
+    downloadPercent: 100,
+    ...overrides,
+  };
+}
+
+const PROMPT_SNOOZE_KEY = "onicode:desktop-update-prompt:snooze";
 
 const RELEASE_NOTES: DesktopUpdateState["releaseNotes"] = [
   { version: "0.0.51", items: ["Faster sidebar."], totalItems: 1 },
@@ -160,5 +173,65 @@ describe("SidebarUpdatePill update everything", () => {
     const row = table.getByRole("row", { name: new RegExp(label) });
     await expect.element(row.getByRole("cell", { name: label, exact: true })).toBeVisible();
     await expect.element(row.getByRole("cell", { name: "Claude", exact: true })).toBeVisible();
+  });
+});
+
+describe("SidebarUpdatePill restart prompt", () => {
+  it("snoozes when the user dismisses it, not when the update stops being ready", async () => {
+    localStorage.removeItem(PROMPT_SNOOZE_KEY);
+    setup(downloadedUpdate());
+    await using _screen = await render(
+      <ToastProvider>
+        <SidebarUpdatePill />
+      </ToastProvider>,
+    );
+    const prompt = page.getByText("Onicode 0.0.51 is ready");
+    await expect.element(prompt).toBeVisible();
+
+    await publish(availableUpdate([]));
+    await expect.element(prompt).not.toBeInTheDocument();
+    expect(localStorage.getItem(PROMPT_SNOOZE_KEY)).toBeNull();
+
+    await publish(downloadedUpdate());
+    await userEvent.click(page.getByRole("button", { name: "Later" }));
+    await expect.element(prompt).not.toBeInTheDocument();
+    expect(JSON.parse(localStorage.getItem(PROMPT_SNOOZE_KEY) ?? "null")).toMatchObject({
+      version: "0.0.51",
+    });
+  });
+
+  it("keeps a required update on screen, then restarts into it without a click", async () => {
+    localStorage.removeItem(PROMPT_SNOOZE_KEY);
+    const installUpdate = vi.fn(async () => ({
+      accepted: true,
+      completed: true,
+      failed: false,
+      state: mocks.update,
+    }));
+    using _bridge = stubGlobal("desktopBridge", { installUpdate });
+    setup({
+      ...downloadedUpdate({ required: true }),
+      status: "downloading",
+      downloadedVersion: null,
+    });
+    await using _screen = await render(
+      <ToastProvider>
+        <SidebarUpdatePill />
+      </ToastProvider>,
+    );
+    const dialog = page.getByRole("alertdialog", { name: "Update required" });
+    await expect.element(dialog.getByRole("button", { name: "Restart to update" })).toBeDisabled();
+    await userEvent.keyboard("{Escape}");
+    await expect.element(dialog).toBeVisible();
+
+    using _timers = fakeTimers();
+    await publish(downloadedUpdate({ required: true }));
+    expect(dialog.getByRole("button", { name: "Restart now" }).query()).not.toBeNull();
+    expect(page.getByText("Onicode 0.0.51 is ready").query()).toBeNull();
+    expect(installUpdate).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(installUpdate).toHaveBeenCalledOnce();
+    localStorage.removeItem("onicode:update-everything-result:v1");
   });
 });

@@ -42,7 +42,8 @@ export interface AppUpdateEnvironment {
   readonly isSafeToRestartInBackground: () => Promise<boolean>;
   /** includeCurrent covers module-load backgrounding; omit after failure to prevent tight same-session retries. */
   readonly onNextBackground: (apply: () => void, includeCurrent: boolean) => void;
-  readonly onForegroundStay: (apply: () => void) => void;
+  /** Runs `apply` once the app has stayed in the foreground for `afterMs`. */
+  readonly onForegroundStay: (apply: () => void, afterMs: number) => void;
 }
 
 export interface AppUpdateDeferral {
@@ -82,6 +83,11 @@ interface Deferred {
   readonly reject: (cause: unknown) => void;
   readonly resolve: () => void;
 }
+
+/** One sentence every update prompt ends with: on a phone, the work is on another machine. */
+export const NOTHING_IS_LOST = msg(
+  "Nothing is lost: your threads keep running on your machines while the app updates.",
+);
 
 const HIDDEN_UPDATE_TAP_COUNT = 5;
 const UPDATE_CHECK_UNAVAILABLE_ERROR_CODES = new Set([
@@ -325,9 +331,18 @@ function armDeferredAppUpdateInstall(
   if (deferral.pendingInstall) return;
   deferral.pendingInstall = true;
   scheduleDeferredAppUpdateInstall(client, environment, deferral, true);
+  promptDeferredAppUpdateInstallAfter(client, environment, deferral, FIRST_INSTALL_PROMPT_AFTER_MS);
+}
+
+function promptDeferredAppUpdateInstallAfter(
+  client: AppUpdateClient,
+  environment: AppUpdateEnvironment,
+  deferral: AppUpdateDeferral,
+  afterMs: number,
+): void {
   environment.onForegroundStay(() => {
     void promptDeferredAppUpdateInstall(client, environment, deferral);
-  });
+  }, afterMs);
 }
 
 async function promptDeferredAppUpdateInstall(
@@ -337,9 +352,17 @@ async function promptDeferredAppUpdateInstall(
 ): Promise<void> {
   if (!deferral.pendingInstall || deferral.installInProgress) return;
   const installNow = await settlePromise(() => environment.confirmInstallNow());
-  if (installNow._tag !== "Success" || !installNow.value) return;
   // Backgrounding may already have started deferred restart while the alert was open; ignore stale acceptance.
   if (!deferral.pendingInstall || deferral.installInProgress) return;
+  if (installNow._tag !== "Success" || !installNow.value) {
+    promptDeferredAppUpdateInstallAfter(
+      client,
+      environment,
+      deferral,
+      NEXT_INSTALL_PROMPT_AFTER_MS,
+    );
+    return;
+  }
   await installPendingAppUpdate(client, environment, deferral, {});
 }
 
@@ -385,11 +408,11 @@ async function defaultConfirmInstallNow(): Promise<boolean> {
   return new Promise<boolean>((resolve) => {
     Dialog.alert(
       m(msg("Update ready")),
-      m(
+      `${m(
         msg(
           "A new version has been downloaded and installs automatically the next time you leave the app. Install it now instead?",
         ),
-      ),
+      )} ${m(NOTHING_IS_LOST)}`,
       [
         { onPress: () => resolve(false), style: "cancel", text: m(msg("Later")) },
         { onPress: () => resolve(true), text: m(msg("Install Now")) },
@@ -428,16 +451,18 @@ function defaultOnNextBackground(apply: () => void, includeCurrent: boolean): vo
   }
 }
 
-const DEFERRED_INSTALL_PROMPT_AFTER_MS = 30 * 60 * 1000;
+// Long enough to finish what the app was opened for; the update installs by itself on leaving.
+const FIRST_INSTALL_PROMPT_AFTER_MS = 5 * 60 * 1000;
+const NEXT_INSTALL_PROMPT_AFTER_MS = 30 * 60 * 1000;
 
 /** iOS inactive blips, including the app switcher, leave this timer running. */
-function defaultOnForegroundStay(apply: () => void): void {
+function defaultOnForegroundStay(apply: () => void, afterMs: number): void {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const arm = () => {
     timer ??= setTimeout(() => {
       subscription.remove();
       apply();
-    }, DEFERRED_INSTALL_PROMPT_AFTER_MS);
+    }, afterMs);
   };
   const disarm = () => {
     if (timer === undefined) return;
@@ -479,6 +504,8 @@ function isAppUpdateUnavailableError(error: unknown): boolean {
 }
 
 const FOREGROUND_APP_UPDATE_RECHECK_AFTER_MS = 15 * 60 * 1000;
+// A tablet left open never returns from the background, so the foreground polls too.
+const FOREGROUND_APP_UPDATE_POLL_MS = 60 * 60 * 1000;
 
 function shouldRecheckAppUpdateOnForeground(
   backgroundedAtMs: number | null,
@@ -517,5 +544,13 @@ export function installAppUpdateChecks(
     backgroundedAtMs = null;
     if (shouldCheck) void runAppUpdateCheck({ client, deferral });
   });
-  return () => subscription.remove();
+  const poll = setInterval(() => {
+    if (AppState.currentState === "active" && !deferral.pendingInstall) {
+      void runAppUpdateCheck({ client, deferral });
+    }
+  }, FOREGROUND_APP_UPDATE_POLL_MS);
+  return () => {
+    subscription.remove();
+    clearInterval(poll);
+  };
 }
