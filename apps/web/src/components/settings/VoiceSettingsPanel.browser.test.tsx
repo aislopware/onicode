@@ -708,6 +708,39 @@ it("keeps a microphone plugged in while an older listing is still pending", asyn
   expect(usbRow.element().textContent).not.toContain("Not connected");
 });
 
+it("does not remember microphones from a listing that lands after leaving voice settings", async () => {
+  const previous = getClientSettings();
+  using cleanup = new DisposableStack();
+  cleanup.defer(() => __setClientSettingsForTests(previous));
+  __setClientSettingsForTests({ ...previous, voiceMicrophone: "", voiceMicrophones: [] });
+  const input = (deviceId: string, label: string) =>
+    ({ deviceId, label, groupId: deviceId, kind: "audioinput" }) as MediaDeviceInfo;
+  const left = Promise.withResolvers<MediaDeviceInfo[]>();
+  using devices = vi
+    .spyOn(navigator.mediaDevices, "enumerateDevices")
+    .mockReturnValueOnce(left.promise)
+    .mockResolvedValue([input("usb", "USB Microphone")]);
+  const panel = () => (
+    <SettingsScopeProvider search={{}} onChange={() => {}}>
+      <VoiceSettingsPanel />
+    </SettingsScopeProvider>
+  );
+  {
+    await using _left = await render(panel());
+    await vi.waitFor(() => expect(devices).toHaveBeenCalledTimes(1));
+  }
+  left.resolve([input("yeti", "Blue Yeti")]);
+
+  // The listing that settled first is the one from the closed panel.
+  await using screen = await render(panel());
+  const list = screen.getByRole("list", { name: "Microphones, preferred first" });
+  await expect.element(list.getByText("USB Microphone")).toBeInTheDocument();
+  const saved = getClientSettings().voiceMicrophones.flatMap((entry) =>
+    entry.kind === "device" ? [entry.label] : [],
+  );
+  expect(saved).toEqual(["USB Microphone"]);
+});
+
 it("records from the first connected microphone in the saved order", async () => {
   const previous = getClientSettings();
   using cleanup = new DisposableStack();
