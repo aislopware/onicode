@@ -2813,3 +2813,4 @@ dcf158c591	take	adapted: dropped webhook/telemetry/T3 Connect parts; kept Onicod
 5872b0a488	take	fix(web): a later thread error with the same text shows its banner again
 003d53ace1	take	adapted: no T3 Connect wakeup filter (reachesConnectionSupervisor came with skipped 757f71a7f6); tests use LAN and LAN-then-SSH entries instead of relay
 57e92b0b98	take	fix(cursor): Max Mode tiers keep working after Cursor changes a model
+9fde959ac0	take	adopted upstream's hide-projects filter over Onicode's single-project filter and its issueProjectScope 'Project unavailable' state (a hidden project that disappears hides nothing); kept Onicode's whole-id parsing for the project pairs and issueSurfaceTargetFromSearch

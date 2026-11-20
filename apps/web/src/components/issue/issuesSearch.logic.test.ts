@@ -5,7 +5,7 @@ import { EnvironmentId, ProjectId } from "@onicode/contracts";
 
 import {
   issueFilterProjects,
-  issueProjectScope,
+  issueListTargets,
   issueSurfaceTargetFromSearch,
   issuesSearchFromUrl,
 } from "./issuesSearch.logic";
@@ -24,13 +24,49 @@ describe("issuesSearchFromUrl", () => {
       label: ["bug", "ui"],
       order: "created",
     });
+    expect(
+      issuesSearchFromUrl({ hideProjects: [["env", "web"], ["env"], "api", ["env", 3]] })
+        .hideProjects,
+    ).toEqual([
+      ["env", "web"],
+      ["env", "3"],
+    ]);
+  });
+});
+
+describe("issueListTargets", () => {
+  it("leaves hidden projects out and skips an environment with every project hidden", () => {
+    const laptop = EnvironmentId.make("laptop");
+    const vps = EnvironmentId.make("vps");
+    const projects = [
+      { environmentId: laptop, id: ProjectId.make("web") },
+      { environmentId: laptop, id: ProjectId.make("api") },
+      { environmentId: vps, id: ProjectId.make("docs") },
+    ];
+    const input = { state: "open" } as const;
+    const hidden = [
+      [laptop, ProjectId.make("api")],
+      [laptop, ProjectId.make("removed")],
+      [vps, ProjectId.make("docs")],
+    ] as const;
+    expect(issueListTargets([laptop, vps], projects, hidden, input)).toEqual([
+      { environmentId: laptop, input: { state: "open", excludeProjectIds: ["api"] } },
+    ]);
+    // Before the project list loads, the saved choice still leaves its projects out.
+    expect(issueListTargets([laptop, vps], [], hidden, input)).toEqual([
+      { environmentId: laptop, input: { state: "open", excludeProjectIds: ["api", "removed"] } },
+      { environmentId: vps, input: { state: "open", excludeProjectIds: ["docs"] } },
+    ]);
+    expect(issueListTargets([laptop, vps], projects, undefined, input)).toEqual([
+      { environmentId: laptop, input },
+      { environmentId: vps, input },
+    ]);
   });
 
   it("keeps ids and the selected issue whole, however long", () => {
     const long = (prefix: string) => `${prefix}-${"x".repeat(220)}`;
     const raw = {
-      issueServer: long("server"),
-      issueProject: long("project"),
+      hideProjects: [[long("server"), long("project")]],
       selectedEnvironmentId: ` ${long("selected-server")} `,
       selectedProjectId: long("selected-project"),
       selectedHost: long("host"),
@@ -42,7 +78,9 @@ describe("issuesSearchFromUrl", () => {
       ...raw,
       selectedEnvironmentId: raw.selectedEnvironmentId.trim(),
     });
-    expect(issuesSearchFromUrl({ issueProject: 42 }).issueProject).toBe("42");
+    expect(issuesSearchFromUrl({ hideProjects: [["server", 42]] }).hideProjects).toEqual([
+      ["server", "42"],
+    ]);
     expect(issuesSearchFromUrl({ q: long("query") }).q).toHaveLength(200);
   });
 
@@ -72,7 +110,7 @@ describe("issuesSearchFromUrl", () => {
 });
 
 describe("issueFilterProjects", () => {
-  it("keeps every project on one repository as its own choice", () => {
+  it("keeps every project, scratch ones too, as its own choice", () => {
     const environmentId = EnvironmentId.make("env");
     const project = (id: string, isScratch = false) =>
       ({
@@ -89,23 +127,8 @@ describe("issueFilterProjects", () => {
     );
     expect(choices.map((choice) => [choice.id, choice.title])).toEqual([
       ["main", "onicode · laptop · /work/main"],
+      ["scratch", "onicode · laptop · /work/scratch"],
       ["worktree", "onicode · laptop · /work/worktree"],
     ]);
-  });
-});
-
-describe("issueProjectScope", () => {
-  it("calls a project filter unavailable only once every environment's projects are known", () => {
-    const listed = {
-      environmentId: EnvironmentId.make("laptop"),
-      projectId: ProjectId.make("app"),
-    };
-    const gone = { environmentId: EnvironmentId.make("removed"), projectId: ProjectId.make("app") };
-    const projects = [{ id: listed.projectId, environmentId: listed.environmentId }];
-    expect(issueProjectScope(undefined, projects, false)).toBe("all");
-    expect(issueProjectScope(listed, projects, false)).toBe("listed");
-    // A remote environment still connecting has not listed its projects yet.
-    expect(issueProjectScope(gone, projects, false)).toBe("pending");
-    expect(issueProjectScope(gone, projects, true)).toBe("unavailable");
   });
 });
