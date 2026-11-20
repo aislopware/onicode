@@ -15,7 +15,7 @@ import type {
 import { formatTokens } from "@onicode/shared/usageFormat";
 import { StackActions, useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { useEffect, useState } from "react";
-import { Linking, Pressable, ScrollView, View } from "react-native";
+import { Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText as Text } from "../../components/ui/AppText";
@@ -26,6 +26,7 @@ import { SheetHeader } from "../../components/ui/SheetHeader";
 import { ThemedSwitch } from "../../components/ui/ThemedSwitch";
 import { cn } from "../../lib/cn";
 import { contextChipAccent, contextChipPresentation } from "../../lib/composerChipPresentation";
+import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { providerSessionEnvironment } from "../../state/providerSession";
 import { useEnvironmentQuery } from "../../state/query";
@@ -365,7 +366,7 @@ function McpServerRow(props: {
     }
     if (action === "authenticate" && result.value.authUrl) {
       setAwaitingCallback(true);
-      void Linking.openURL(result.value.authUrl).catch(() => undefined);
+      void tryOpenExternalUrl(result.value.authUrl, "provider-auth");
     }
     props.onChanged();
   };
