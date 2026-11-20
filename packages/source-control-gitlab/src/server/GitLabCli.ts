@@ -481,28 +481,43 @@ const classifyGlabFailure = (stderr: string): VcsProcessExitFailureKind | null =
 };
 
 /**
- * These are the login for glab's default host (GITLAB_HOST, else gitlab.com). glab before 1.131
- * sends them to any host a command names, so a host a caller names runs without them and falls
- * back to that host's own `glab auth login`.
+ * These are the login for glab's default host (GITLAB_HOST, GITLAB_URI or GL_HOST, else
+ * gitlab.com). glab before 1.126 sends them to any host a command names, so a host a caller names
+ * runs without them and falls back to that host's own `glab auth login`.
  */
 const ENVIRONMENT_TOKEN_VARIABLES = ["GITLAB_TOKEN", "GITLAB_ACCESS_TOKEN", "OAUTH_TOKEN"] as const;
 const WITHOUT_ENVIRONMENT_TOKEN = Object.fromEntries(
   ENVIRONMENT_TOKEN_VARIABLES.map((name) => [name, ""]),
 );
 
-const hostOf = (value: string) =>
-  value
-    .trim()
-    .toLowerCase()
-    .replace(/^[a-z][a-z0-9+.-]*:\/\//, "")
-    .replace(/\/.*$/, "");
+const URL_SCHEME = /^[a-z][a-z0-9+.-]*:\/\//i;
+// glab also reads a host from a reference without a scheme, such as `//host/group/project/...`.
+const URL_REFERENCE = /^(?:[a-z][a-z0-9+.-]*:)?\/\//i;
+
+// The authority glab's API calls reach over `apiScheme`, whatever the scheme the host is spelled
+// with; an unparseable host matches nothing.
+const hostOf = (value: string, apiScheme: "http" | "https") => {
+  try {
+    return new URL(`${apiScheme}://${value.trim().replace(URL_SCHEME, "")}`).host;
+  } catch {
+    return undefined;
+  }
+};
 
 /** @public */
 export const make = Effect.gen(function* () {
   const { process } = yield* SourceControlHost.SourceControlHost;
   const fileSystem = yield* FileSystem.FileSystem;
   const environment = yield* HostProcess.Environment;
-  const defaultHost = hostOf(environment.GITLAB_HOST?.trim() || "gitlab.com");
+  // A per-host api_protocol in glab's config is not read; there, explicit ports still differ.
+  const apiScheme =
+    environment.GLAB_API_PROTOCOL?.trim().toLowerCase() === "http" ? "http" : "https";
+  // Like glab, the first set variable wins, even a blank one.
+  const defaultHost = hostOf(
+    [environment.GITLAB_HOST, environment.GITLAB_URI, environment.GL_HOST].find(Boolean) ??
+      "gitlab.com",
+    apiScheme,
+  );
 
   const run = (
     input: Parameters<GitLabCli["Service"]["execute"]>[0],
@@ -517,7 +532,8 @@ export const make = Effect.gen(function* () {
         env: {
           // glab may otherwise prefer a different checkout remote.
           ...(input.host === undefined ? {} : { GITLAB_HOST: input.host }),
-          ...(input.callerNamedHost !== undefined && hostOf(input.callerNamedHost) !== defaultHost
+          ...(input.callerNamedHost !== undefined &&
+          (defaultHost === undefined || hostOf(input.callerNamedHost, apiScheme) !== defaultHost)
             ? WITHOUT_ENVIRONMENT_TOKEN
             : {}),
         },
@@ -542,16 +558,21 @@ export const make = Effect.gen(function* () {
     readonly reference: string;
     readonly args: ReadonlyArray<string>;
   }) =>
-    run(input, (error) =>
-      GitLabMergeRequestNotFoundError.fromVcsError(
-        {
-          operation: "execute",
-          command: "glab",
-          cwd: input.cwd,
-          reference: input.reference,
-        },
-        error,
-      ),
+    run(
+      // glab reads the host from a merge request URL, so a URL names its host.
+      URL_REFERENCE.test(input.reference.trim())
+        ? { ...input, callerNamedHost: input.reference }
+        : input,
+      (error) =>
+        GitLabMergeRequestNotFoundError.fromVcsError(
+          {
+            operation: "execute",
+            command: "glab",
+            cwd: input.cwd,
+            reference: input.reference,
+          },
+          error,
+        ),
     );
 
   return GitLabCli.of({

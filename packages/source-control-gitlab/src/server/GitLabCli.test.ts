@@ -8,6 +8,7 @@ import { ChildProcessSpawner } from "effect/process";
 
 import { VcsProcessExitError } from "@onicode/contracts";
 
+import * as HostProcess from "@onicode/shared/HostProcess";
 import type * as SourceControlHost from "@onicode/source-control-core/server/SourceControlHost";
 import * as TestSourceControlHost from "@onicode/source-control-testing/TestSourceControlHost";
 import * as GitLabCli from "./GitLabCli.ts";
@@ -16,6 +17,10 @@ const mockedRun = vi.fn<SourceControlHost.SourceControlHost["Service"]["process"
 const layer = it.layer(
   GitLabCli.layer.pipe(
     Layer.provide(TestSourceControlHost.layer({ process: { run: mockedRun } })),
+    // The default host as GITLAB_HOST may spell it, with its default port.
+    Layer.provide(
+      Layer.succeed(HostProcess.Environment, { GITLAB_HOST: "https://gitlab.com:443" }),
+    ),
     Layer.provideMerge(NodeServices.layer),
   ),
 );
@@ -384,6 +389,42 @@ layer("GitLabCli.layer", (it) => {
     }),
   );
 
+  it.effect.each(
+    (["getMergeRequest", "checkoutMergeRequest"] as const).flatMap((method) => [
+      { method, reference: "42", env: {} },
+      { method, reference: "feature/mr-threads", env: {} },
+      { method, reference: "https://gitlab.com/group/project/-/merge_requests/42", env: {} },
+      {
+        method,
+        reference: "https://gitlab.example.com/group/project/-/merge_requests/42",
+        // The environment token is the default host's login, not this host's.
+        env: { GITLAB_TOKEN: "", GITLAB_ACCESS_TOKEN: "", OAUTH_TOKEN: "" },
+      },
+      {
+        method,
+        reference: "//gitlab.example.com/group/project/-/merge_requests/42",
+        env: { GITLAB_TOKEN: "", GITLAB_ACCESS_TOKEN: "", OAUTH_TOKEN: "" },
+      },
+      {
+        method,
+        // Another port on the default host, which glab still reaches over https.
+        reference: "http://gitlab.com:80/group/project/-/merge_requests/42",
+        env: { GITLAB_TOKEN: "", GITLAB_ACCESS_TOKEN: "", OAUTH_TOKEN: "" },
+      },
+    ]),
+  )(
+    "$method $reference keeps the environment token only for its host",
+    ({ method, reference, env }) =>
+      Effect.gen(function* () {
+        mockedRun.mockReturnValueOnce(Effect.succeed(processOutput("")));
+
+        const glab = yield* GitLabCli.GitLabCli;
+        yield* glab[method]({ cwd: "/repo", reference }).pipe(Effect.ignore);
+
+        expect(mockedRun).toHaveBeenCalledWith(expect.objectContaining({ command: "glab", env }));
+      }),
+  );
+
   it.effect("keeps non-merge-request not-found failures generic", () =>
     Effect.gen(function* () {
       const cause = new VcsProcessExitError({
@@ -431,3 +472,49 @@ layer("GitLabCli.layer", (it) => {
     }),
   );
 });
+
+it.effect.each([
+  // glab takes the first set variable, so a blank one is its (unusable) default host.
+  {
+    environment: { GITLAB_HOST: " ", GL_HOST: "gitlab.com" },
+    reference: "https://gitlab.com/group/project/-/merge_requests/42",
+    stripped: true,
+  },
+  {
+    environment: { GL_HOST: "gitlab.example.com" },
+    reference: "https://gitlab.example.com/group/project/-/merge_requests/42",
+    stripped: false,
+  },
+  // Over http API calls, an explicit :443 is another port than the default host's.
+  {
+    environment: { GITLAB_HOST: "gitlab.example.com", GLAB_API_PROTOCOL: "http" },
+    reference: "https://gitlab.example.com:443/group/project/-/merge_requests/42",
+    stripped: true,
+  },
+  {
+    environment: { GITLAB_HOST: "gitlab.example.com", GLAB_API_PROTOCOL: "http" },
+    reference: "http://gitlab.example.com:80/group/project/-/merge_requests/42",
+    stripped: false,
+  },
+])(
+  "names the default host as glab does: $environment, $reference",
+  ({ environment, reference, stripped }) =>
+    Effect.gen(function* () {
+      const run = vi.fn<SourceControlHost.SourceControlHost["Service"]["process"]["run"]>(() =>
+        Effect.succeed(processOutput("")),
+      );
+      const glab = yield* GitLabCli.make.pipe(
+        Effect.provideService(HostProcess.Environment, environment),
+        Effect.provide(
+          Layer.mergeAll(TestSourceControlHost.layer({ process: { run } }), NodeServices.layer),
+        ),
+      );
+      yield* glab.checkoutMergeRequest({ cwd: "/repo", reference }).pipe(Effect.ignore);
+
+      expect(run).toHaveBeenCalledWith(
+        expect.objectContaining({
+          env: stripped ? { GITLAB_TOKEN: "", GITLAB_ACCESS_TOKEN: "", OAUTH_TOKEN: "" } : {},
+        }),
+      );
+    }),
+);
