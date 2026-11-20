@@ -437,7 +437,6 @@
   "693cb5c4fb40f109": "Only saved bearer environments can be edited.",
   "5f5844b910cb1544": "The saved bearer credential is unavailable.",
   "51b0133f1ed3cf5c": "Environment label cannot be empty.",
-  "0c0150a90b582a7a": "The environment URL is invalid.",
   "d1626c30301e2073": "Update Onicode on {host} manually; it cannot update itself.",
   "5e6058eb33826290": "{host} did not come back on a compatible Onicode version.",
   "e77ac580a4ddcd3b": "Available",

@@ -417,7 +417,9 @@ function ConnectionsSettingsContent({
     setAddBackendDialogOpen(true);
   };
   // The map is the page's main view where there is room; the list is its equivalent everywhere.
-  const roomForMap = useMediaQuery("md");
+  const wideEnough = useMediaQuery("md");
+  // With nothing saved the map has nothing to draw, and the list's empty state says how to add one.
+  const roomForMap = wideEnough && savedEnvironments.length > 0;
   const [pickedEnvironmentsView, setPickedEnvironmentsView] = useState<"map" | "list" | null>(null);
   const environmentsView = roomForMap ? (pickedEnvironmentsView ?? "map") : "list";
   const [removingSavedEnvironmentId, setRemovingSavedEnvironmentId] =

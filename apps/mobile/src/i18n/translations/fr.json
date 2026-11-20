@@ -437,7 +437,6 @@
   "693cb5c4fb40f109": "Seuls les environnements bearer enregistrés peuvent être modifiés.",
   "5f5844b910cb1544": "Les identifiants bearer enregistrés ne sont pas disponibles.",
   "51b0133f1ed3cf5c": "Le libellé de l’environnement ne peut pas être vide.",
-  "0c0150a90b582a7a": "L’URL de l’environnement n’est pas valide.",
   "d1626c30301e2073": "Mettez à jour Onicode sur {host} manuellement ; il ne peut pas se mettre à jour seul.",
   "5e6058eb33826290": "{host} n’est pas revenu sur une version compatible de Onicode.",
   "e77ac580a4ddcd3b": "Disponible",
