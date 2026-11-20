@@ -1813,6 +1813,11 @@ function pendingRuntimeRequestSummary(
   };
 }
 
+/** A secret card holds its run, so it outranks a newer link card. */
+const waitingCardOrder = (left: OrchestrationV2TurnItem, right: OrchestrationV2TurnItem) =>
+  Number(right.type === "secret_request") - Number(left.type === "secret_request") ||
+  DateTime.toEpochMillis(right.updatedAt) - DateTime.toEpochMillis(left.updatedAt);
+
 function secretRequestAsPendingInput(
   item: OrchestrationV2TurnItem | null,
 ): OrchestrationV2PendingRuntimeRequestSummary | null {
@@ -1822,7 +1827,8 @@ function secretRequestAsPendingInput(
     id: RuntimeRequestId.make(item.id),
     kind: "user_input",
     createdAt: item.startedAt ?? item.updatedAt,
-    blocking: true,
+    // A link card's agent asked without waiting for it.
+    blocking: item.type === "secret_request",
     userOnly: true,
   };
 }
@@ -1899,10 +1905,7 @@ export function threadShellFromProjection(
           (item) =>
             item.status === "waiting" && waitsOnUser(item, liveRunIds, latestUserAuthoredMessageAt),
         )
-        .toSorted(
-          (left, right) =>
-            DateTime.toEpochMillis(right.updatedAt) - DateTime.toEpochMillis(left.updatedAt),
-        )[0] ?? null,
+        .toSorted(waitingCardOrder)[0] ?? null,
     );
     if (
       waitingCard !== null &&
@@ -9075,10 +9078,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
           waitingCards.length > 0
         ) {
           const waitingCard = secretRequestAsPendingInput(
-            waitingCards.toSorted(
-              (left, right) =>
-                DateTime.toEpochMillis(right.updatedAt) - DateTime.toEpochMillis(left.updatedAt),
-            )[0] ?? null,
+            waitingCards.toSorted(waitingCardOrder)[0] ?? null,
           );
           if (
             waitingCard !== null &&

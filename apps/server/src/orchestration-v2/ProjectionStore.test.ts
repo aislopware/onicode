@@ -9785,6 +9785,50 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
         assert.isTrue(shell?.pendingRuntimeRequest?.userOnly);
       }
 
+      // A newer link card does not hide the secret card that holds the run.
+      const addLink = (status: "waiting" | "completed") =>
+        projectionStore.apply({
+          id: EventId.make(`event:link:${status}`),
+          type: "turn-item.updated",
+          threadId,
+          runId,
+          nodeId,
+          driver,
+          occurredAt: now,
+          payload: {
+            id: TurnItemId.make("link:a"),
+            threadId,
+            runId,
+            nodeId,
+            providerThreadId: null,
+            providerTurnId: null,
+            nativeItemRef: null,
+            parentItemId: null,
+            ordinal: 5,
+            status,
+            title: null,
+            startedAt: now,
+            completedAt: null,
+            updatedAt: DateTime.add(now, { seconds: 5 }),
+            type: "link_request",
+            linkStatus: status === "waiting" ? "pending" : "linked",
+            url: "https://box.example.ts.net",
+            reason: "Run the suite there.",
+          },
+        });
+      yield* addLink("waiting");
+      for (const shell of [
+        (yield* projectionStore.getShellSnapshot()).threads.find(
+          (thread) => thread.id === threadId,
+        ),
+        ProjectionStore.threadShellFromProjection(
+          yield* projectionStore.getThreadProjection(threadId),
+        ),
+      ]) {
+        assert.equal(shell?.pendingRuntimeRequest?.id, "secret:b");
+      }
+      yield* addLink("completed");
+
       const requestId = RuntimeRequestId.make(`request:${suffix}:async`);
       yield* projectionStore.apply({
         id: EventId.make(`event:${suffix}:async`),

@@ -1357,7 +1357,7 @@ it.effect("saves a new secret file for each request and tells the shell simulato
         type: "tool_use",
         id,
         name: "mcp__onicode__request_secret",
-        input: { label: "Token" },
+        input: { label: "Token", reason: "Used as GH_TOKEN." },
       }).pipe(Effect.map((result) => JSON.parse(String(result.content))));
     const first = yield* request("a");
     const second = yield* request("b");
@@ -1372,6 +1372,21 @@ it.effect("saves a new secret file for each request and tells the shell simulato
       input: { label: "Login", fields: [{ name: "password", label: "Password" }], value: "pw" },
     });
     assert.isTrue(refused.is_error);
+    // So are duplicate field names, which the card could not keep apart.
+    const duplicate = yield* answerToolCall(sample, config, {
+      type: "tool_use",
+      id: "d",
+      name: "mcp__onicode__request_secret",
+      input: {
+        label: "Login",
+        reason: "Sign in to the staging site.",
+        fields: [
+          { name: "password", label: "Password" },
+          { name: "password", label: "Password again" },
+        ],
+      },
+    });
+    assert.isTrue(duplicate.is_error);
     assert.deepEqual(sample.secretFiles, [first.file, second.file]);
     const call = { tool: "Bash", input: { command: `wc -c < ${second.file}` } };
     const [machine] = shellRequest(sample, call, "claude-haiku-5-5").messages[0]?.content ?? [];
@@ -1386,6 +1401,7 @@ it.effect("saves a new secret file for each request and tells the shell simulato
       name: "mcp__onicode__request_secret",
       input: {
         label: "Login",
+        reason: "Sign in to the staging site.",
         fields: [
           { name: "email", label: "Email", secret: false },
           { name: "password", label: "Password" },
@@ -1498,7 +1514,7 @@ it.effect("saves a pasted value with no card where request_secret takes one", ()
       type: "tool_use",
       id: "a",
       name: "mcp__onicode__request_secret",
-      input: { label: "Pixel PIN", value: "482916" },
+      input: { label: "Pixel PIN", reason: "Pairs the phone over ADB.", value: "482916" },
     }).pipe(Effect.map((block) => JSON.parse(String(block.content))));
     if (!savesPastedSecrets) {
       // On refs without `value`, Onicode ignores it and the card runs.

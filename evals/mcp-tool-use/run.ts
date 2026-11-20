@@ -2171,6 +2171,16 @@ export const answerToolCall = Effect.fn("evaluateMcpToolUse.answerToolCall")(fun
   if (name === "request_secret" && input.fields !== undefined && input.value !== undefined) {
     return failed("`fields` asks in a card. Leave out `value`.");
   }
+  // Onicode decodes the input first, so a card it would refuse (duplicate field names, too many
+  // fields) is refused here too, mocked or not.
+  const decodeSecretRequest = oniInputDecoders.get("request_secret");
+  if (
+    name === "request_secret" &&
+    decodeSecretRequest !== undefined &&
+    Option.isNone(decodeSecretRequest(call.input))
+  ) {
+    return failed("Invalid request_secret input: check `label`, `reason` and `fields`.");
+  }
   const mock = nextMock(sample, name, testCase.setup.mocks?.[name]);
   const driver = testCase.setup.world?.browserDriver;
   if (driver !== undefined && isBrowserDriverTool(call.name)) {

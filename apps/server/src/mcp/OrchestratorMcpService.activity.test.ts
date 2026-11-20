@@ -9,6 +9,7 @@ import {
   ProviderInstanceId,
   RunAttemptId,
   RunId,
+  RuntimeRequestId,
   ScheduledTaskId,
   SECRET_REQUEST_UNSAVED_NOTE,
   ThreadId,
@@ -126,6 +127,7 @@ function makeRun(input: {
 
 it("readThread preserves caller access errors and prefers activity-run status over a newer cancelled queued run", async () => {
   let callerUnavailable = false;
+  let pendingRuntimeRequest: OrchestrationV2ThreadShell["pendingRuntimeRequest"] = null;
   let pendingBackgroundTasks: OrchestrationV2ThreadShell["pendingBackgroundTasks"] = [
     {
       taskId: "task-subagent",
@@ -214,6 +216,7 @@ it("readThread preserves caller access errors and prefers activity-run status ov
                         pinnedAt: now,
                         blockedOnThreadWait: true,
                         pendingBackgroundTasks,
+                        pendingRuntimeRequest,
                       } as unknown as OrchestrationV2ThreadShell)
                     : null,
                 ),
@@ -249,6 +252,7 @@ it("readThread preserves caller access errors and prefers activity-run status ov
     expect(result.thread.activeRunId).toBe(activeRunId);
     expect(result.thread.pinned).toBe(true);
     expect(result.thread.blockedOnThreadWait).toBe(true);
+    expect(result.thread.pendingRequestCount).toBe(0);
     expect(result.thread.pendingBackgroundTasks).toEqual([
       { taskId: "task-subagent", kind: "subagent", childThreadId },
     ]);
@@ -273,6 +277,22 @@ it("readThread preserves caller access errors and prefers activity-run status ov
     });
     const awaiting = yield* service.readThread(makeScope(), { threadId: parentThreadId });
     expect(awaiting.thread.status).toBe("waiting");
+
+    // A secret card is a turn item, not a runtime request, and still waits on the user.
+    pendingRuntimeRequest = {
+      id: RuntimeRequestId.make("turn-item:secret-request:card"),
+      kind: "user_input",
+      createdAt: now,
+      blocking: true,
+      userOnly: true,
+    };
+    const asking = yield* service.readThread(makeScope(), { threadId: parentThreadId });
+    expect(asking.thread.pendingRequestCount).toBe(1);
+    // A link card's agent did not wait for it, so the thread is not held up.
+    pendingRuntimeRequest = { ...pendingRuntimeRequest, blocking: false };
+    const linking = yield* service.readThread(makeScope(), { threadId: parentThreadId });
+    expect(linking.thread.pendingRequestCount).toBe(0);
+    pendingRuntimeRequest = null;
 
     Object.assign(projection, {
       runs: [makeRun({ id: activeRunId, ordinal: 1, status: "failed" })],

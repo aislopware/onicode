@@ -1053,9 +1053,13 @@ function threadDetail(
       : { delegatedFrom: projection.thread.delegatedFrom }),
     runCount,
     itemCount,
-    pendingRequestCount: projection.runtimeRequests.filter(
-      (request) => request.status === "pending",
-    ).length,
+    // A waiting secret card is a turn item the shell reports as a blocking user-only request.
+    pendingRequestCount:
+      projection.runtimeRequests.filter((request) => request.status === "pending").length +
+      (shell.pendingRuntimeRequest?.userOnly === true &&
+      shell.pendingRuntimeRequest.blocking === true
+        ? 1
+        : 0),
     archived: projection.thread.archivedAt !== null,
     ...threadSettlement(projection.thread),
     ...threadSnooze(shell, nowMs),

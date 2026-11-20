@@ -300,6 +300,40 @@ export function secretRequestAnswerInput(
 
 const USER_FACING_FAILURE_TAGS = new Set(["SecretRequestError", "EnvironmentAuthorizationError"]);
 
+/** The reasons an answer can fail with, in the active language; the server sends English only. */
+function answerFailureText(failure: object, resolve: MFunctionType): string | undefined {
+  if (!("_tag" in failure) || failure._tag !== "SecretRequestError" || !("reason" in failure)) {
+    return undefined;
+  }
+  switch (failure.reason) {
+    case "load_failed":
+      return resolve(msg("Could not load the secret request."));
+    case "not_found":
+      return resolve(msg("This secret request no longer exists."));
+    case "already_answered":
+      return resolve(msg("This secret request was already answered."));
+    case "fields_mismatch":
+      return resolve(msg("This request asks for different values. Update the app and try again."));
+    case "agent_stopped":
+      return resolve(msg("The agent that asked has stopped, so this secret can't be used."));
+    case "store_failed":
+      return resolve(msg("Could not store the secret."));
+    case "record_failed":
+      return resolve(msg("Could not save the secret. Try again."));
+    case "reference_unreadable":
+      return "provider" in failure && typeof failure.provider === "string"
+        ? resolve(
+            msg(
+              'Could not read the secret from the secret provider "{provider}". Unlock it and try again, or enter the value.',
+              { provider: failure.provider },
+            ),
+          )
+        : resolve(msg("Could not read the secret from the secret provider."));
+    default:
+      return undefined;
+  }
+}
+
 /**
  * Only known server errors pass their message through: anything else (transport or encoding
  * failures) gets the generic copy, so the typed value can never surface in the UI.
@@ -318,7 +352,11 @@ export function secretRequestFailureMessage(
     typeof failure.message === "string" &&
     failure.message.trim().length > 0
   ) {
-    return errorDisplayMessage(failure, resolve) ?? failure.message;
+    return (
+      answerFailureText(failure, resolve) ??
+      errorDisplayMessage(failure, resolve) ??
+      failure.message
+    );
   }
   return resolve(msg("Could not answer the request. Try again."));
 }
