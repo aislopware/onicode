@@ -112,7 +112,7 @@ function ThemeJsonEditor({
   };
 
   return (
-    <div className="relative overflow-hidden rounded-xl border border-input bg-background shadow-xs/5 focus-within:border-ring focus-within:ring-3 focus-within:ring-inset focus-within:ring-ring/24">
+    <div className="relative overflow-hidden rounded-xl border border-input bg-card focus-within:outline-ring-inset">
       {isPlainText ? null : (
         <pre
           ref={highlightRef}
@@ -498,7 +498,7 @@ function ThemeImportBody({
         if (conflicts) {
           return (
             <div className="space-y-3">
-              <div className="rounded-xl border border-border bg-muted/20 p-3">
+              <div className="rounded-xl border border-border p-3">
                 <p className="text-sm font-medium">
                   <T>Already installed</T>
                 </p>
@@ -528,7 +528,7 @@ function ThemeImportBody({
             <div
               className={cn(
                 "flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed px-3 py-3 transition-colors",
-                isDropTarget ? "border-ring bg-accent/20" : "border-border bg-muted/20",
+                isDropTarget ? "border-ring bg-accent/20" : "border-border",
               )}
               {...dropHandlers}
             >

@@ -1,31 +1,26 @@
 import { X } from "lucide-react";
-import type { ReactNode } from "react";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 
 interface PanelTabCloseButtonProps {
-  children: ReactNode;
   label: string;
   onClick: () => void;
   tooltip?: string;
 }
 
-export function PanelTabCloseButton({
-  children,
-  label,
-  onClick,
-  tooltip,
-}: PanelTabCloseButtonProps) {
+/** Sits over the end of a `relative group/tab`, hidden until the tab is hovered or holds focus.
+ *  The tab's label takes `panel-tab-label` so its end fades under the button. */
+export function PanelTabCloseButton({ label, onClick, tooltip }: PanelTabCloseButtonProps) {
   const button = (
     <button
       type="button"
-      className="cursor-pointer group/close relative flex size-4 shrink-0 items-center justify-center rounded-sm hover:bg-accent"
+      className="absolute top-1/2 right-1 flex size-4 -translate-y-1/2 cursor-pointer items-center justify-center rounded-sm after:absolute after:-inset-1 text-muted-foreground opacity-0 outline-none hover:bg-accent hover:text-foreground focus-visible:outline-ring-inset group-hover/tab:opacity-100 group-has-[:focus-visible]/tab:opacity-100 any-pointer-coarse:opacity-100"
       aria-label={label}
-      onClick={onClick}
+      onClick={(event) => {
+        event.stopPropagation();
+        onClick();
+      }}
     >
-      <span className="relative flex size-3 items-center justify-center group-hover/tab:hidden group-focus-visible/close:hidden">
-        {children}
-      </span>
-      <X className="hidden size-3 group-hover/tab:block group-focus-visible/close:block" />
+      <X className="size-3" />
     </button>
   );
 

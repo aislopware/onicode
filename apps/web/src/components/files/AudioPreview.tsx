@@ -149,7 +149,7 @@ function AudioChip(props: AudioPreviewProps) {
         {open ? (
           <button
             type="button"
-            className="block max-w-full cursor-pointer truncate rounded-sm text-left focus-visible:outline-2 focus-visible:outline-foreground"
+            className="block max-w-full cursor-pointer truncate rounded-sm text-left outline-none focus-visible:outline-ring-inset"
             onClick={open}
             aria-label={
               props.failed && !props.onOpen

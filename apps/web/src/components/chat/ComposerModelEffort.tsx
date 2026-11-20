@@ -178,13 +178,13 @@ export function describeComposerEffort(
 }
 
 const OPTION_ROW =
-  "flex h-7 w-full shrink-0 cursor-pointer items-center gap-2 rounded-md px-2 text-left text-sm text-foreground outline-none hover:bg-row-highlight focus-visible:bg-row-highlight disabled:cursor-not-allowed disabled:opacity-50";
+  "flex h-7 w-full shrink-0 cursor-pointer items-center gap-2 rounded-md px-2 text-left text-sm text-foreground outline-none hover:bg-row-highlight focus-visible:bg-row-highlight disabled:cursor-not-allowed disabled:opacity-55";
 const COLUMN_LABEL = "px-2 pt-1.5 pb-1 font-medium text-muted-foreground text-xs";
 
 /** The track a group of segments sits in; the picker's footer uses the same one. */
 const SEGMENT_TRACK = "flex rounded-lg bg-input/40 p-0.5";
 const SEGMENT =
-  "flex h-6 cursor-pointer items-center justify-center gap-1 rounded-md px-2 text-muted-foreground text-xs outline-none hover:text-foreground data-checked:bg-input/72 data-checked:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset disabled:cursor-not-allowed disabled:opacity-64";
+  "flex h-6 cursor-pointer items-center justify-center gap-1 rounded-md px-2 text-muted-foreground text-xs outline-none hover:text-foreground data-checked:bg-input/72 data-checked:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset disabled:cursor-not-allowed disabled:opacity-55";
 
 function LevelSegment(props: {
   label: string;
@@ -322,7 +322,7 @@ function EffortSlider(props: {
       }}
       className="group/effort flex"
     >
-      <Slider.Control className="effort-slider-track relative flex h-7 min-w-0 flex-1 cursor-pointer touch-none items-center overflow-hidden rounded-lg select-none data-disabled:cursor-not-allowed data-disabled:opacity-64">
+      <Slider.Control className="effort-slider-track relative flex h-7 min-w-0 flex-1 cursor-pointer touch-none items-center overflow-hidden rounded-lg select-none data-disabled:cursor-not-allowed data-disabled:opacity-55">
         {props.shownIndex < 0 ? null : (
           <EffortSliderField level={shown} top={last} tone={props.tone} />
         )}
@@ -750,7 +750,7 @@ export function ComposerPickerFooter(props: {
                     tabIndex={checked ? 0 : -1}
                     className={cn(
                       SEGMENT,
-                      "w-7 px-0 aria-disabled:cursor-not-allowed aria-disabled:opacity-40",
+                      "w-7 px-0 aria-disabled:cursor-not-allowed aria-disabled:opacity-55",
                     )}
                     onPointerEnter={() => setPreviewMode(option.mode)}
                     onPointerLeave={() => setPreviewMode(null)}

@@ -82,7 +82,7 @@ export function WizardSteps({
   const Step = onStepChange ? "button" : "div";
   return (
     <ol
-      className="grid auto-cols-fr grid-flow-col gap-1 rounded-xl bg-background p-1 ring-1 ring-black/5 dark:bg-white/4 dark:ring-white/5"
+      className="grid auto-cols-fr grid-flow-col gap-1 rounded-xl bg-secondary p-1"
       role="list"
       aria-label={gt("Setup progress")}
     >
@@ -93,11 +93,10 @@ export function WizardSteps({
               ? { type: "button" as const, disabled: isStepDisabled?.(index) }
               : {})}
             className={cn(
-              "flex w-full min-w-0 items-center gap-2 rounded-lg px-2.5 py-2 text-left outline-none focus-visible:outline-ring-inset max-sm:justify-center max-sm:px-2",
+              "flex w-full min-w-0 items-center gap-2 rounded-lg px-2.5 py-2 text-left text-muted-foreground outline-none focus-visible:outline-ring-inset max-sm:justify-center max-sm:px-2",
               onStepChange &&
-                "cursor-pointer hover:bg-card disabled:cursor-default disabled:hover:bg-transparent",
-              index === currentStep &&
-                "bg-card text-foreground shadow-xs ring-1 ring-inset ring-black/5 hover:bg-card dark:shadow-none dark:ring-white/5",
+                "cursor-pointer hover:text-foreground disabled:cursor-default disabled:hover:text-muted-foreground",
+              index === currentStep && "bg-card text-foreground shadow-raised",
             )}
             aria-current={index === currentStep ? "step" : undefined}
             aria-label={
@@ -118,18 +117,13 @@ export function WizardSteps({
                   ? "bg-primary text-primary-foreground ring-primary"
                   : index === currentStep
                     ? "bg-primary/10 text-primary ring-primary/30"
-                    : "bg-card text-muted-foreground ring-black/10 dark:bg-white/5 dark:ring-white/10",
+                    : "bg-card text-muted-foreground ring-border-3",
               )}
               aria-hidden
             >
               {index < currentStep ? <CheckIcon className="size-4 shrink-0" /> : index + 1}
             </span>
-            <span
-              className={cn(
-                "min-w-0 truncate text-sm font-medium max-sm:hidden",
-                index === currentStep ? "text-foreground" : "text-muted-foreground",
-              )}
-            >
+            <span className={cn("min-w-0 truncate text-sm font-medium max-sm:hidden")}>
               {step}
               {showSummaries && index < currentStep && summaries?.[index]
                 ? `: ${summaries[index]}`
@@ -152,13 +146,7 @@ export function WizardPanel({
   readonly className?: string;
 }) {
   return (
-    <div
-      data-slot="dialog-panel"
-      className={cn(
-        "min-w-0 space-y-4 bg-background/80 px-6 py-5 ring-1 ring-black/5 dark:bg-white/2 dark:ring-white/5",
-        className,
-      )}
-    >
+    <div data-slot="dialog-panel" className={cn("min-w-0 space-y-4 bg-muted px-6 py-5", className)}>
       <AnimatedHeight holdHeight={holdHeight}>{children}</AnimatedHeight>
     </div>
   );

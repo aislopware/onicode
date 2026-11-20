@@ -19,7 +19,7 @@ export function DeviceLoadingView(props: {
       className="flex size-full items-center justify-center bg-background px-6 py-10"
     >
       <div className="flex max-w-sm flex-col items-center gap-3 text-center">
-        <div className="grid size-12 place-items-center rounded-xl border bg-muted/30">
+        <div className="grid size-12 place-items-center rounded-xl border">
           <Smartphone className="size-6 text-muted-foreground" />
         </div>
         <div className="space-y-1">

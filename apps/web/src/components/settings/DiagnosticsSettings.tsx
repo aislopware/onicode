@@ -86,7 +86,7 @@ function StatBlock({
 }) {
   return (
     <div className="min-w-0 border-border px-4 py-3 sm:px-5">
-      <div className="flex min-w-0 items-center gap-1.5 text-2xs font-medium uppercase tracking-widest text-muted-foreground">
+      <div className="flex min-w-0 items-center gap-1.5 text-2xs font-medium uppercase tracking-wider text-muted-foreground">
         <span className="min-w-0 truncate">{label}</span>
         {tooltip ? (
           <Tooltip>
@@ -175,7 +175,7 @@ function DiagnosticsTable({
             ))}
           </colgroup>
         ) : null}
-        <thead className="border-b border-border text-2xs uppercase tracking-widest text-muted-foreground">
+        <thead className="border-b border-border text-2xs uppercase tracking-wider text-muted-foreground">
           <tr>
             {headers.map((header, index) => (
               <th
@@ -376,7 +376,7 @@ function ProcessDiagnosticsTable({
             <col className="w-[11%]" />
             <col className="w-[6%]" />
           </colgroup>
-          <thead className="sticky top-0 z-10 border-b border-border bg-card text-2xs uppercase tracking-widest text-muted-foreground">
+          <thead className="sticky top-0 z-10 border-b border-border bg-card text-2xs uppercase tracking-wider text-muted-foreground">
             <tr>
               <th className="px-4 py-2 font-semibold sm:pl-5">
                 <T>Name</T>
@@ -520,7 +520,7 @@ function ProcessResourceHistoryChart({
 
   return (
     <div className="border-t border-border px-4 py-3 sm:px-5">
-      <div className="flex h-28 items-end gap-1 overflow-hidden rounded-sm bg-muted/10 p-2">
+      <div className="flex h-28 items-end gap-1 overflow-hidden rounded-sm bg-muted p-2">
         {buckets.map((bucket) => {
           const peakHeight = Math.max(2, (bucket.maxCpuPercent / maxCpuPercent) * 100);
           const averageHeight = Math.max(2, (bucket.avgCpuPercent / maxCpuPercent) * 100);
@@ -623,7 +623,7 @@ function ProcessResourceHistoryTable({
             <col className="w-[16%]" />
             <col className="w-[10%]" />
           </colgroup>
-          <thead className="sticky top-0 z-10 border-b border-border bg-card text-2xs uppercase tracking-widest text-muted-foreground">
+          <thead className="sticky top-0 z-10 border-b border-border bg-card text-2xs uppercase tracking-wider text-muted-foreground">
             <tr>
               <th className="px-4 py-2 font-semibold sm:pl-5">
                 <T>Process</T>
@@ -1349,7 +1349,7 @@ function DiagnosticsSettingsBody() {
                 <col className="w-[26%]" />
                 <col className="w-[30%]" />
               </colgroup>
-              <thead className="border-b border-border text-2xs uppercase tracking-widest text-muted-foreground">
+              <thead className="border-b border-border text-2xs uppercase tracking-wider text-muted-foreground">
                 <tr>
                   <th className="whitespace-nowrap px-4 py-2.5 font-semibold sm:pl-5">
                     <T>Time</T>

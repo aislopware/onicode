@@ -447,8 +447,8 @@ export function AddEnvironmentDialog({
         type="button"
         aria-pressed={selected}
         className={cn(
-          "group flex min-h-24 items-start gap-3 rounded-lg border p-4 text-left",
-          selected ? "border-primary/50 bg-primary/5" : "border-border hover:bg-accent/60",
+          "group flex min-h-24 items-start gap-3 rounded-lg border p-4 text-left outline-none focus-visible:outline-ring-inset",
+          selected ? "border-primary bg-accent" : "border-border hover:bg-accent/60",
         )}
         disabled={isAddingSavedBackend}
         onClick={() => {

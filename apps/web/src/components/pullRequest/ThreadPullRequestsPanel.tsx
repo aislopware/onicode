@@ -550,7 +550,7 @@ function EnabledThreadPullRequestsPanel({ threadRef }: { threadRef: ScopedThread
         <p className="text-sm font-medium">
           <T>No linked pull requests</T>
         </p>
-        <p className="max-w-60 text-xs text-muted-foreground">
+        <p className="max-w-60 text-ui text-muted-foreground">
           <T>
             Pull requests the agent opens from this thread land here. Link one yourself from a URL
             or a number.
@@ -580,7 +580,7 @@ function EnabledThreadPullRequestsPanel({ threadRef }: { threadRef: ScopedThread
                 <T>Issues</T>
               </h2>
             ) : item.kind === "pull-requests-heading" ? (
-              <h2 className="mt-2 border-t border-border/60 px-3 pt-2 pb-1 text-xs font-medium text-muted-foreground">
+              <h2 className="mt-2 border-t border-border px-3 pt-2 pb-1 text-xs font-medium text-muted-foreground">
                 <T>Pull requests</T>
               </h2>
             ) : item.kind === "issue" ? (

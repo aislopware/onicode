@@ -122,7 +122,7 @@ function AccessScopeSummary({
 function endpointRowClassName(isAvailable: boolean) {
   return cn(
     "relative first:rounded-t-xl last:rounded-b-xl px-3 py-3 sm:px-4",
-    !isAvailable && "bg-muted/15",
+    !isAvailable && "bg-muted",
   );
 }
 
@@ -341,7 +341,7 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
                   onClick={(event) => event.currentTarget.select()}
                 />
                 {isRevealValueUrl && isRevealValueQrShareable ? (
-                  <div className="flex justify-center rounded-xl border border-border bg-muted/30 p-4">
+                  <div className="flex justify-center rounded-xl border border-border p-4">
                     <QRCodeSvg
                       value={buildPairingAppLink(revealValue)}
                       size={132}
@@ -398,9 +398,9 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
                       role="radio"
                       aria-checked={isSelected}
                       className={cn(
-                        "flex w-full items-baseline gap-2 rounded-lg border px-2.5 py-1.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                        "flex w-full items-baseline gap-2 rounded-lg border px-2.5 py-1.5 text-left outline-none focus-visible:outline-ring-inset",
                         isSelected
-                          ? "border-foreground/60 bg-muted/30"
+                          ? "border-primary bg-accent"
                           : "border-border hover:bg-accent/60",
                       )}
                       onClick={() => setQrEndpointId(option.id)}
@@ -421,7 +421,7 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
                 })}
               </div>
             ) : null}
-            <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-2.5 py-1.5">
+            <div className="flex items-center gap-2 rounded-lg border border-border px-2.5 py-1.5">
               <Tooltip>
                 <TooltipTrigger
                   render={
@@ -519,11 +519,11 @@ const ConnectedClientListRow = memo(function ConnectedClientListRow({
             <ConnectionStatusDot
               tooltipText={statusTooltip}
               dotClassName={isLive ? "bg-success" : "bg-muted-foreground/30"}
-              pingClassName={isLive ? "bg-success/60 duration-2000" : null}
+              pingClassName={isLive ? "bg-success/60" : null}
             />
             <h3 className="text-sm font-medium text-foreground">{primaryLabel}</h3>
             {clientSession.current ? (
-              <span className="text-3xs text-muted-foreground rounded-md border border-border bg-muted/50 px-1 py-0.5">
+              <span className="text-3xs text-muted-foreground rounded-md border border-border px-1 py-0.5">
                 <T>This device</T>
               </span>
             ) : null}
@@ -744,7 +744,7 @@ export const AuthorizedClientsHeaderAction = memo(function AuthorizedClientsHead
                   </Button>
                 </div>
               </div>
-              <div className="divide-y divide-border rounded-lg border border-input bg-muted/25">
+              <div className="divide-y divide-border rounded-lg border border-input">
                 {PAIRING_SCOPE_OPTIONS.filter(({ scope }) => delegatableScopes.includes(scope)).map(
                   ({ scope, title, description }) => (
                     <label

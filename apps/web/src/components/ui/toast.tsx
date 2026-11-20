@@ -129,8 +129,8 @@ function errorDescriptionClampClass(type: unknown, description: unknown): string
 
 const toastCornerDismissClass = "absolute z-20 -top-1.5 -right-1.5";
 const toastCornerOrbClass = cn(
-  "inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-full border border-border bg-popover/92 text-muted-foreground shadow-sm outline-none backdrop-blur-sm",
-  "transition-[color,background-color,box-shadow] hover:bg-popover hover:text-foreground",
+  "inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-full bg-popover text-muted-foreground shadow-raised outline-none",
+  "transition-[color,background-color,box-shadow] hover:text-foreground",
   "focus-visible:outline-ring-inset",
 );
 
@@ -261,7 +261,7 @@ function ToastDescriptionAndExpandable({
               aria-label={open ? collapseLabel : expandLabel}
               aria-expanded={open}
               className={cn(
-                "group flex min-w-0 w-full cursor-pointer select-none items-start gap-1.5 rounded-sm text-left outline-none ring-offset-background",
+                "group flex min-w-0 w-full cursor-pointer select-none items-start gap-1.5 rounded-sm text-left outline-none",
                 "transition-colors hover:bg-accent/60",
                 "focus-visible:outline-ring-inset",
               )}
@@ -623,7 +623,7 @@ function Toasts({ position }: { position: ToastPosition }) {
           return (
             <Toast.Root
               className={cn(
-                "dropdown-glass absolute z-[calc(9999-var(--toast-index))] w-full overflow-visible select-none rounded-lg text-popover-foreground shadow-popup dark:shadow-popup-dark [transition:transform_.5s_cubic-bezier(.22,1,.36,1),opacity_.5s,height_.15s]",
+                "dropdown-glass absolute z-[calc(9999-var(--toast-index))] w-full overflow-visible select-none rounded-lg text-popover-foreground shadow-popup dark:shadow-popup-dark [transition:transform_.4s_var(--ease-out-quint),opacity_.4s,height_.15s] motion-reduce:[transition:opacity_.2s]",
                 "data-[position*=right]:right-0 data-[position*=right]:left-auto",
                 "data-[position*=left]:right-auto data-[position*=left]:left-0",
                 "data-[position*=center]:right-0 data-[position*=center]:left-0",

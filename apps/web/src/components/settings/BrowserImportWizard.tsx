@@ -467,8 +467,8 @@ function SelectableTile({
       aria-pressed={selected}
       onClick={onSelect}
       className={cn(
-        "flex w-full cursor-pointer items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
-        selected ? "border-primary bg-primary/8" : "border-border hover:bg-accent/60",
+        "flex w-full cursor-pointer items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left outline-none transition-colors focus-visible:outline-ring-inset",
+        selected ? "border-primary bg-accent" : "border-border hover:bg-accent/60",
       )}
     >
       <span className="min-w-0">

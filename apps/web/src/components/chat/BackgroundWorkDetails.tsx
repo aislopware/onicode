@@ -84,7 +84,7 @@ export function BackgroundWorkDetails(props: {
                     </span>
                   </div>
                   {command ? (
-                    <div className="rounded-md border border-border bg-muted/20 p-3 font-mono text-xs whitespace-pre-wrap break-words">
+                    <div className="rounded-md border border-border p-3 font-mono text-xs whitespace-pre-wrap break-words">
                       <ShellCommandBlock command={command} />
                     </div>
                   ) : null}

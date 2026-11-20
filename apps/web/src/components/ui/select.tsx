@@ -19,9 +19,9 @@ const selectTriggerVariants = cva(
     variants: {
       variant: {
         default:
-          "w-full min-w-36 border-input bg-card text-foreground shadow-[inset_0_1px_var(--highlight-top),var(--plate-shadow)] pointer-coarse:after:absolute pointer-coarse:after:size-full pointer-coarse:after:min-h-11 aria-invalid:border-destructive aria-invalid:[--focus-ring:var(--destructive)] [&_svg:not([class*='opacity-'])]:opacity-80 [&_svg:not([class*='text-'])]:text-icon-muted [:hover,[data-pressed]]:bg-card-hover [[data-disabled],[data-pressed]]:shadow-none",
+          "w-full min-w-36 border-input bg-card text-foreground shadow-[inset_0_1px_var(--highlight-top),var(--plate-shadow)] pointer-coarse:after:absolute pointer-coarse:after:size-full pointer-coarse:after:min-h-11 aria-invalid:border-destructive aria-invalid:[--focus-ring:var(--destructive)] [&_svg:not([class*='opacity-'])]:opacity-80 [&_svg:not([class*='text-'])]:text-icon-muted hover:bg-card-hover data-pressed:bg-card-hover [[data-disabled],[data-pressed]]:shadow-none",
         ghost:
-          "border-transparent text-secondary-label [:hover,[data-pressed]]:bg-secondary [:hover,[data-pressed]]:text-foreground",
+          "border-transparent text-secondary-label hover:bg-secondary data-pressed:bg-secondary hover:text-foreground data-pressed:text-foreground",
       },
       size: {
         compact: "h-7 gap-1 px-2 text-xs sm:text-xs [&_svg:not([class*='size-'])]:size-3.5",
@@ -174,7 +174,7 @@ function SelectItem({
   return (
     <SelectPrimitive.Item
       className={cn(
-        "flex min-h-8 in-data-[side=none]:min-w-[calc(var(--anchor-width)+1.25rem)] cursor-pointer items-center rounded-md px-2 py-1 text-base outline-none data-selected:bg-row-selected data-disabled:pointer-events-none data-disabled:cursor-not-allowed data-highlighted:bg-row-highlight data-highlighted:text-foreground data-disabled:opacity-55 sm:min-h-7 sm:text-ui [&_svg:not([class*='size-'])]:size-4.5 sm:[&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
+        "flex min-h-8 in-data-[side=none]:min-w-[calc(var(--anchor-width)+1.25rem)] cursor-pointer items-center rounded-md px-2 py-1 text-base outline-none data-selected:bg-row-selected data-disabled:pointer-events-none data-highlighted:bg-row-highlight data-highlighted:text-foreground data-disabled:opacity-55 sm:min-h-7 sm:text-ui [&_svg:not([class*='size-'])]:size-4.5 sm:[&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0",
         className,
       )}
       data-slot="select-item"

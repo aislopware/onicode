@@ -233,7 +233,7 @@ function WarningTooltipIcon({
             tabIndex={focusable ? 0 : undefined}
             aria-label={label}
             className={cn(
-              "inline-flex size-5 shrink-0 items-center justify-center rounded-sm text-warning outline-none transition-colors hover:bg-warning/10 focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-warning/25",
+              "inline-flex size-5 shrink-0 items-center justify-center rounded-sm text-warning outline-none transition-colors hover:bg-warning/10 focus-visible:outline-ring-inset",
               className,
             )}
           />
@@ -407,7 +407,7 @@ function WhenExpressionNodeEditor({
     return (
       <div
         className={cn(
-          "space-y-2 rounded-lg border border-border bg-muted/20 p-2",
+          "space-y-2 rounded-lg border border-border p-2",
           depth > 0 && "bg-background/50",
         )}
       >
@@ -509,7 +509,7 @@ function WhenExpressionNodeEditor({
   return (
     <div
       className={cn(
-        "space-y-2 rounded-lg border border-border bg-muted/10 p-2",
+        "space-y-2 rounded-lg border border-border p-2",
         depth > 0 && "bg-background/55",
       )}
     >
@@ -667,7 +667,7 @@ function WhenExpressionBuilder({
             onRemove={() => updateExpressionValue(undefined)}
           />
         ) : (
-          <div className="rounded-md border border-dashed border-border bg-muted/15 p-3">
+          <div className="rounded-md border border-dashed border-border p-3">
             <div className="flex flex-wrap gap-2">
               <Button type="button" size="compact" onClick={addRootCondition}>
                 <PlusIcon className="size-3.5" />
@@ -876,7 +876,7 @@ function KeybindingKeyControl({
               : formatShortcutLabel(row.binding.shortcut),
           })}
           className={cn(
-            "inline-flex h-8 cursor-pointer items-center rounded-md border border-transparent px-1.5 sm:h-7 outline-none transition-colors hover:border-border hover:bg-accent focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-ring/24",
+            "inline-flex h-8 cursor-pointer items-center rounded-md border border-transparent px-1.5 sm:h-7 outline-none transition-colors hover:border-border hover:bg-accent focus-visible:outline-ring-inset",
             pillClassName,
           )}
         >
@@ -1325,7 +1325,7 @@ function NewKeybindingSettingsRow(props: NewKeybindingProps) {
 
   return (
     <SettingsRow
-      className="bg-muted/15"
+      className="bg-muted"
       title={gt("New keybinding")}
       description={
         <span className="flex h-6 items-center gap-1.5">

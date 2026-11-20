@@ -674,10 +674,8 @@ export function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
                     value={option.value}
                     className={cn(
                       "relative flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-3 text-left outline-none transition-[background-color,border-color,box-shadow]",
-                      "focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
-                      isSelected
-                        ? "border-primary bg-background shadow-sm ring-2 ring-inset ring-primary/35 dark:border-transparent dark:bg-primary/10 dark:shadow-none dark:ring-1 dark:ring-primary/30"
-                        : "border-border bg-background hover:border-foreground/20 hover:bg-accent/60 dark:border-transparent dark:bg-muted dark:hover:bg-accent",
+                      "focus-visible:outline-ring-inset",
+                      isSelected ? "border-primary bg-accent" : "border-border hover:bg-accent/60",
                     )}
                   >
                     <option.Icon className="size-5 shrink-0" aria-hidden />
@@ -699,7 +697,7 @@ export function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
                 <T>Repository</T>
               </label>
               <div className="flex items-stretch overflow-hidden rounded-md border border-input bg-background focus-within:outline-2 focus-within:-outline-offset-2 focus-within:outline-ring">
-                <span className="flex shrink-0 items-center gap-1.5 border-r border-input bg-muted/50 px-2.5 font-mono text-xs text-muted-foreground">
+                <span className="flex shrink-0 items-center gap-1.5 border-r border-input bg-muted px-2.5 font-mono text-xs text-muted-foreground">
                   <currentPublishProvider.Icon className="size-3.5" />
                   {publishHost}/
                 </span>
@@ -764,10 +762,10 @@ export function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
                       value={option.value}
                       className={cn(
                         "relative flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 text-left outline-none transition-[background-color,border-color,box-shadow]",
-                        "focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
+                        "focus-visible:outline-ring-inset",
                         isSelected
-                          ? "border-primary bg-background shadow-sm ring-2 ring-inset ring-primary/35 dark:border-transparent dark:bg-primary/10 dark:shadow-none dark:ring-1 dark:ring-primary/30"
-                          : "border-border bg-background hover:border-foreground/20 hover:bg-accent/60 dark:border-transparent dark:bg-muted dark:hover:bg-accent",
+                          ? "border-primary bg-accent"
+                          : "border-border hover:bg-accent/60",
                       )}
                     >
                       <option.Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
@@ -844,7 +842,7 @@ export function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
               <div
                 role="status"
                 aria-live="polite"
-                className="flex items-center gap-2 rounded-md border border-input bg-muted/40 px-3 py-2 text-xs text-muted-foreground dark:border-transparent dark:bg-muted"
+                className="flex items-center gap-2 rounded-md border border-input px-3 py-2 text-xs text-muted-foreground dark:border-transparent dark:bg-muted"
               >
                 <Spinner size="sm" aria-hidden />
                 <T>
@@ -889,7 +887,7 @@ export function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
                         )}
                   </p>
                 </div>
-                <div className="flex items-center gap-2 rounded-lg border border-input bg-muted/40 px-3 py-2 dark:border-transparent dark:bg-muted">
+                <div className="flex items-center gap-2 rounded-lg border border-input px-3 py-2 dark:border-transparent dark:bg-muted">
                   <currentPublishProvider.Icon className="size-3.5 shrink-0 text-muted-foreground" />
                   <span className="min-w-0 flex-1 truncate font-mono text-xs text-foreground">
                     {publishResult.repository.nameWithOwner}
@@ -1869,7 +1867,7 @@ function CheckoutGitActionsControl({
             <DialogDescription>{messages(COMMIT_DIALOG_DESCRIPTION)}</DialogDescription>
           </DialogHeader>
           <DialogPanel>
-            <div className="space-y-3 rounded-xl bg-zinc-25 p-3 text-sm ring-1 ring-black/5 dark:bg-muted dark:ring-white/5">
+            <div className="space-y-3 rounded-xl bg-muted p-3 text-sm">
               <div className="grid grid-cols-[auto_1fr] items-center gap-x-2 gap-y-1">
                 <span className="text-muted-foreground">
                   <T context="git branch">Branch</T>
@@ -1932,7 +1930,7 @@ function CheckoutGitActionsControl({
                   </p>
                 ) : (
                   <div className="space-y-2">
-                    <div className="h-44 rounded-lg bg-card ring-1 ring-black/5 dark:bg-muted dark:ring-white/5">
+                    <div className="h-44 rounded-lg bg-card shadow-card">
                       <ScrollArea>
                         <div className="space-y-1 p-1">
                           {allFiles.map((file) => {
@@ -1977,11 +1975,11 @@ function CheckoutGitActionsControl({
                                       </span>
                                     ) : (
                                       <>
-                                        <span className="text-diff-addition">
+                                        <span className="text-diff-addition-foreground">
                                           +{formatDiffCount(file.insertions)}
                                         </span>
                                         <span className="text-muted-foreground"> / </span>
-                                        <span className="text-diff-deletion">
+                                        <span className="text-diff-deletion-foreground">
                                           −{formatDiffCount(file.deletions)}
                                         </span>
                                       </>
@@ -1995,11 +1993,11 @@ function CheckoutGitActionsControl({
                       </ScrollArea>
                     </div>
                     <div className="flex justify-end font-mono">
-                      <span className="text-diff-addition">
+                      <span className="text-diff-addition-foreground">
                         +{formatDiffCount(selectedFiles.reduce((sum, f) => sum + f.insertions, 0))}
                       </span>
                       <span className="text-muted-foreground"> / </span>
-                      <span className="text-diff-deletion">
+                      <span className="text-diff-deletion-foreground">
                         −{formatDiffCount(selectedFiles.reduce((sum, f) => sum + f.deletions, 0))}
                       </span>
                     </div>

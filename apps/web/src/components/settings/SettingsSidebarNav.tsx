@@ -249,7 +249,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                 !compactSearchOpen && "max-md:hidden",
               )}
             >
-              <SearchIcon className="size-4 shrink-0 text-sidebar-muted-foreground/80" />
+              <SearchIcon className="size-4 shrink-0 text-sidebar-muted-foreground" />
               {/* Native search inputs clear on Escape even during IME composition. */}
               <SidebarInput
                 ref={searchInputRef}
@@ -336,7 +336,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                         <span className="block truncate text-sm font-medium text-sidebar-foreground">
                           {m(item.title)}
                         </span>
-                        <span className="block truncate text-2xs text-sidebar-muted-foreground/75">
+                        <span className="block truncate text-2xs text-sidebar-muted-foreground">
                           {m(SETTINGS_SECTION_LABELS[item.to])}
                         </span>
                       </span>
@@ -367,7 +367,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                       <h3
                         id={`settings-nav-group-${index}`}
                         className={cn(
-                          "px-2 text-xs font-medium text-sidebar-muted-foreground/80",
+                          "px-2 text-xs font-medium text-sidebar-muted-foreground",
                           group.headingHidden ? "sr-only" : !compactSearchOpen && "max-md:sr-only",
                         )}
                       >

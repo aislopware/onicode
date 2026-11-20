@@ -457,7 +457,7 @@ function DictionaryEditor(props: {
           {words.map(({ term, aliases }) => (
             <li
               key={term}
-              className="flex items-center gap-1 rounded-md border border-border bg-muted/30 py-0.5 pl-2 pr-0.5 text-xs"
+              className="flex items-center gap-1 rounded-md border border-border py-0.5 pl-2 pr-0.5 text-xs"
             >
               <span className="font-medium">{term}</span>
               {aliases.length > 0 ? (
@@ -1254,7 +1254,7 @@ function TranscriptionTest(props: {
         }
       >
         {showTranscript ? (
-          <div className="mt-3 flex items-start gap-3 rounded-lg border border-border bg-muted/30 py-1 ps-3 pe-1">
+          <div className="mt-3 flex items-start gap-3 rounded-lg border border-border py-1 ps-3 pe-1">
             <div className="min-w-0 flex-1 py-1.5">
               {speech.preview || transcript !== null ? null : (
                 <p className="text-xs text-muted-foreground">
@@ -1827,6 +1827,7 @@ export function VoiceSettingsPanel() {
             description={gt("The phrase you say to fix a mistake, like “scratch that”.")}
             control={
               <Input
+                size="sm"
                 key={settings.speechCorrectionWord}
                 defaultValue={settings.speechCorrectionWord}
                 maxLength={50}

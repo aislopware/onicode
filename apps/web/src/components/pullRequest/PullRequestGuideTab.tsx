@@ -119,7 +119,7 @@ export function PullRequestGuideTab({
               ? gt("No review guide yet")
               : gt("Could not write a review guide")}
         </p>
-        <p className="max-w-md text-xs text-muted-foreground">
+        <p className="max-w-md text-ui text-muted-foreground">
           {running
             ? gt(
                 "An agent is reading the change. A large one takes a few minutes. You can leave; you will be told when it is ready.",
@@ -193,7 +193,7 @@ function FailureDetails({ detail }: { detail: string }) {
       <summary className="cursor-pointer rounded-sm -outline-offset-2 hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring">
         <T>Technical details</T>
       </summary>
-      <pre className="scrollbar-gutter-both mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-border bg-muted/40 p-3 text-left font-mono text-xs">
+      <pre className="scrollbar-gutter-both mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-border p-3 text-left font-mono text-xs">
         {detail}
       </pre>
     </details>

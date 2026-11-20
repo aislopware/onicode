@@ -306,7 +306,7 @@ export function CustomModelEditor({
 
   return (
     <div
-      className="mx-2 mt-1 mb-2 flex flex-col gap-3 rounded-md border border-border bg-muted/20 p-3"
+      className="mx-2 mt-1 mb-2 flex flex-col gap-3 rounded-md border border-border p-3"
       onKeyDown={(event) => {
         if (event.key === "Escape") {
           event.preventDefault();

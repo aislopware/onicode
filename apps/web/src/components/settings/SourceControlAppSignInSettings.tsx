@@ -73,7 +73,7 @@ function DeviceCode(props: { readonly code: string }) {
           <span
             key={index}
             aria-hidden
-            className="grid h-10 w-8 place-items-center rounded-md border border-border bg-background shadow-xs"
+            className="grid h-10 w-8 place-items-center rounded-md border border-border bg-background"
           >
             {char}
           </span>
@@ -233,7 +233,7 @@ export function SourceControlAppSignInSettings({
       </div>
 
       {waiting !== null ? (
-        <div className="grid gap-4 border-t border-border bg-muted/40 px-3 py-4 sm:grid-cols-[auto_1fr] sm:items-center sm:gap-6">
+        <div className="grid gap-4 border-t border-border bg-muted px-3 py-4 sm:grid-cols-[auto_1fr] sm:items-center sm:gap-6">
           <div className="flex items-center gap-2">
             <DeviceCode code={waiting.userCode} />
             <Button
@@ -267,7 +267,7 @@ export function SourceControlAppSignInSettings({
       ) : null}
 
       {signedIn ? (
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border bg-muted px-3 py-2 text-xs text-muted-foreground">
           <span className="min-w-0 flex-1">
             <T>Reaches repositories in accounts and organizations that installed the app.</T>
           </span>

@@ -44,9 +44,8 @@ To change effort one step without opening the picker, bind
 Both are unbound by default. Increase wraps from the highest level to the
 lowest, and decrease wraps from the lowest level to the highest.
 
-The model picker opens on your favorites and the models you picked recently on this device.
-Choose **All models** to list every provider, or type to search them all. With fewer than two
-favorites and recent models, it lists every provider from the start.
+The model picker lists your favorites first, then the models you picked recently on this
+device, then every provider. Type to search them all.
 
 In the model picker, Up/Down move through the models and Enter chooses one. The
 chosen model's effort levels and options sit next to the list: Right at the end of the

@@ -1467,7 +1467,7 @@ function BrowserProfilesSetting() {
                   <span
                     className={cn(
                       "truncate text-sm text-foreground",
-                      profileWritesDisabled && "opacity-64",
+                      profileWritesDisabled && "opacity-55",
                     )}
                   >
                     {profile.name}
@@ -1485,7 +1485,7 @@ function BrowserProfilesSetting() {
                   />
                 )}
                 {isDefault ? (
-                  <span className={cn("flex", profileWritesDisabled && "opacity-64")}>
+                  <span className={cn("flex", profileWritesDisabled && "opacity-55")}>
                     <Badge>{gt("Default", { $context: "default browser profile badge" })}</Badge>
                   </span>
                 ) : null}

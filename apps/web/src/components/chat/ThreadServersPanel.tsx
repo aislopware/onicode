@@ -323,7 +323,7 @@ function ThreadServersList(props: ThreadServersPanelProps) {
           }
           part="row"
           tone="muted"
-          className="w-full active:scale-100"
+          className="w-full [&:active:not([aria-haspopup])]:scale-100"
         >
           {hiddenCount > 0 ? (
             <ChevronDownIcon aria-hidden className="size-4 shrink-0" />

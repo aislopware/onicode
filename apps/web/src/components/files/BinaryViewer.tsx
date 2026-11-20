@@ -408,7 +408,7 @@ export default function BinaryViewer(props: {
             </thead>
             <tbody>
               {rows.rows.map((row, index) => (
-                <tr key={index} className="even:bg-muted/30">
+                <tr key={index} className="even:bg-muted">
                   {row.map((cell, column) => (
                     <td
                       key={column}

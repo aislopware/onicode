@@ -35,7 +35,7 @@ export function PullRequestActivityUnavailableState({
           activity
         </T>
       </p>
-      <p className="max-w-md text-xs text-muted-foreground">{error}</p>
+      <p className="max-w-md text-ui text-muted-foreground">{error}</p>
       <Button size="sm" variant="outline" onClick={onRetry}>
         <RefreshIcon aria-hidden size="sm" />
         <T>Retry</T>

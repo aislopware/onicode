@@ -210,7 +210,7 @@ function ProviderLastChecked({ environmentId }: { environmentId: EnvironmentId }
       {lastCheckedRelative.suffix ? (
         <T context="the time is an elapsed time such as 5m">
           Checked{" "}
-          <span className="font-mono tabular-nums">
+          <span className="tabular-nums">
             <Var>{lastCheckedRelative.value}</Var>
           </span>{" "}
           ago
@@ -252,9 +252,7 @@ function ProviderSettingsPlaceholder({
   const searchableSetting = useSearchableSetting();
   return (
     <SettingsSection {...searchableSetting("providers")} variant="plain">
-      {deviceTabs ? (
-        <div className="flex min-h-11 min-w-0 items-center px-3 sm:px-4">{deviceTabs}</div>
-      ) : null}
+      {deviceTabs ? <div className="flex min-h-11 min-w-0 items-center">{deviceTabs}</div> : null}
       <SettingsGroup
         divided={false}
         className={cn(
@@ -1086,7 +1084,7 @@ export function EnvironmentProviderSettings({
         }
       >
         {deviceTabs ? (
-          <div className="flex min-h-11 min-w-0 items-center gap-2 px-3 sm:px-4">{deviceTabs}</div>
+          <div className="flex min-h-11 min-w-0 items-center gap-2">{deviceTabs}</div>
         ) : null}
         {readOnly ? (
           <SettingsGroup divided={false} className="overflow-hidden">
@@ -1106,7 +1104,7 @@ export function EnvironmentProviderSettings({
             "overflow-hidden @min-[48rem]/providers:grid @min-[48rem]/providers:grid-cols-[17rem_minmax(0,1fr)]",
           )}
         >
-          <div className="border-b border-border bg-muted/10 @min-[48rem]/providers:flex @min-[48rem]/providers:min-h-0 @min-[48rem]/providers:flex-col @min-[48rem]/providers:border-r @min-[48rem]/providers:border-b-0">
+          <div className="border-b border-border bg-muted @min-[48rem]/providers:flex @min-[48rem]/providers:min-h-0 @min-[48rem]/providers:flex-col @min-[48rem]/providers:border-r @min-[48rem]/providers:border-b-0">
             <ScrollArea
               scrollFade
               chainVerticalScroll

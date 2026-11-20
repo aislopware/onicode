@@ -3,10 +3,9 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "~/lib/utils";
 
 const emptySizeClassName = {
-  compact:
-    "min-h-64 gap-4 p-6 md:p-10 [&_[data-slot=empty-media]]:mb-0 [&_[data-slot=empty-title]]:text-base [&_[data-slot=empty-title]]:leading-6 [&_[data-slot=empty-description]]:text-sm [&_[data-slot=empty-description]]:leading-[1.125rem]",
+  compact: "min-h-64 gap-4 p-6 md:p-10 [&_[data-slot=empty-media]]:mb-0",
   default: "gap-6 p-6 md:p-12",
-  hero: "gap-6 p-6 md:p-12 [&_[data-slot=empty-title]]:text-2xl sm:[&_[data-slot=empty-title]]:text-3xl",
+  hero: "gap-6 p-6 md:p-12 [&_[data-slot=empty-title]]:font-semibold [&_[data-slot=empty-title]]:text-2xl sm:[&_[data-slot=empty-title]]:text-3xl [&_[data-slot=empty-description]]:text-sm",
 } as const;
 
 function Empty({
@@ -89,7 +88,11 @@ function EmptyMedia({
 
 function EmptyTitle({ className, ...props }: React.ComponentProps<"div">) {
   return (
-    <div className={cn("font-semibold text-xl", className)} data-slot="empty-title" {...props} />
+    <div
+      className={cn("font-medium text-foreground text-sm", className)}
+      data-slot="empty-title"
+      {...props}
+    />
   );
 }
 
@@ -97,7 +100,7 @@ function EmptyDescription({ className, ...props }: React.ComponentProps<"p">) {
   return (
     <div
       className={cn(
-        "text-muted-foreground text-sm [&>a:hover]:text-primary [&>a]:underline [&>a]:underline-offset-4 [[data-slot=empty-title]+&]:mt-1 [[data-slot=empty-description]+&]:mt-1",
+        "text-muted-foreground text-ui [&>a:hover]:text-primary [&>a]:underline [&>a]:underline-offset-4 [[data-slot=empty-title]+&]:mt-1 [[data-slot=empty-description]+&]:mt-1",
         className,
       )}
       data-slot="empty-description"

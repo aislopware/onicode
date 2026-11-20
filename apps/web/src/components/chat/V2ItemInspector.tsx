@@ -250,7 +250,7 @@ export const V2ItemInspector = memo(function V2ItemInspector(props: V2ItemInspec
   return (
     <div className="space-y-2 text-xs" data-v2-item-inspector={item.type}>
       {item.type === "reasoning" && item.text ? (
-        <div className="rounded-md border border-border bg-muted/15 p-2 italic text-muted-foreground">
+        <div className="rounded-md border border-border p-2 italic text-muted-foreground">
           <ChatMarkdown
             text={item.text}
             cwd={props.cwd}
@@ -290,8 +290,12 @@ export const V2ItemInspector = memo(function V2ItemInspector(props: V2ItemInspec
             </span>
             {item.additions !== undefined || item.deletions !== undefined ? (
               <span>
-                <span className="text-diff-addition">+{formatDiffCount(item.additions ?? 0)}</span>{" "}
-                <span className="text-diff-deletion">−{formatDiffCount(item.deletions ?? 0)}</span>
+                <span className="text-diff-addition-foreground">
+                  +{formatDiffCount(item.additions ?? 0)}
+                </span>{" "}
+                <span className="text-diff-deletion-foreground">
+                  −{formatDiffCount(item.deletions ?? 0)}
+                </span>
               </span>
             ) : null}
             {props.onOpenToolDiff ? (

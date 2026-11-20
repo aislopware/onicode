@@ -1,5 +1,7 @@
 import * as Schema from "effect/Schema";
+import { panelTabVariants } from "~/components/ui/panel-tab";
 import { observeResize } from "~/lib/observeResize";
+import { cn } from "~/lib/utils";
 import { msg, useGT } from "gt-react";
 import { useEffect, useRef, useState } from "react";
 import { m } from "~/i18n/messages";
@@ -154,7 +156,10 @@ export default function Spreadsheet(props: {
             aria-selected={tab.index === opened.layout.info.activeSheet}
             tabIndex={tab.index === opened.layout.info.activeSheet ? 0 : -1}
             onClick={() => show(tab.index)}
-            className="h-7 shrink-0 rounded-md px-2.5 text-xs text-muted-foreground hover:bg-accent aria-selected:bg-accent aria-selected:text-foreground"
+            className={cn(
+              panelTabVariants({ active: tab.index === opened.layout.info.activeSheet }),
+              "px-2.5",
+            )}
           >
             {tab.name}
           </button>

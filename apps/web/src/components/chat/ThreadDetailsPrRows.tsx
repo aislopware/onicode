@@ -147,7 +147,7 @@ function ThreadDetailsPrRows({
         onClick={() => setExpanded(!expanded)}
         part="row"
         tone="muted"
-        className="w-full active:scale-100"
+        className="w-full [&:active:not([aria-haspopup])]:scale-100"
       >
         {/* Chevrons, not plus and minus: the plus already means "add" in this card. */}
         {expanded ? (

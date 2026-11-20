@@ -21,16 +21,25 @@ Style with Tailwind classes in the component that renders the element.
   runtime are fine.
 - Theme-only rules use `@variant dark` and `@variant light`, not `.dark` selectors.
 - Text has four greys: `text-foreground`, `text-foreground/80` for softened text,
-  `text-muted-foreground` for secondary text, and `text-subtle-foreground` for the description
-  under a label. Borders are hairlines (`border` is 0.5px) in three strengths: `border-border` for
+  `text-muted-foreground` for secondary text, including the description under a label, and
+  `text-subtle-foreground` for placeholders and hints only: it is under 4.5:1, too faint for a
+  sentence. Borders are hairlines (`border` is 0.5px) in three strengths: `border-border` for
   dividers and cards, `border-border-2` for controls and popups, `border-border-3` for a small
   control that must read on a card, such as a checkbox. Don't put another opacity on these
   colours; each extra step is a grey nobody can tell apart, and the faint ones fail contrast. To
   dim a state, use `opacity-*` on the element.
+- Selection is a wash, not a lift: a selected row, tab or toggle takes `bg-accent` (sidebar rows
+  take `bg-sidebar-row-active`) and hover is the same wash, lighter. Only a surface that really
+  sits above its ground is raised (a segmented thumb in its track, a floating toolbar, a card, a
+  popup), and a raised surface always has an edge: `shadow-raised` draws a hairline ring and a
+  short drop in light and an inner light hairline in dark. A lighter fill with no edge reads as a
+  flat patch.
 - A control's height sits on the element that draws its border. A hairline is one device pixel,
   so a height added up from content plus borders differs between 1x and 2x displays.
-- Focus is `focus-visible:outline-ring-inset`: a 1px outline inside the control, no glow. A filled
-  control sets `--focus-ring` to its text colour so the outline stays visible on the fill.
+- Focus is `focus-visible:outline-ring-inset`: a 2px outline inside the control, no glow. A
+  filled control sets `--focus-ring` to its text colour and `--focus-ring-offset` to `-3px`, so
+  a line of fill frames the ring on a ground of the ring's colour. A checkbox, radio or switch
+  has no room inside and draws it outside (`1px`, switch `2px`).
 
 ## Composition
 

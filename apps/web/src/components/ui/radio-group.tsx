@@ -17,7 +17,7 @@ function Radio({ className, ...props }: RadioPrimitive.Root.Props) {
   return (
     <RadioPrimitive.Root
       className={cn(
-        "relative inline-flex size-4.5 shrink-0 items-center justify-center rounded-full border border-border-3 bg-card outline-none transition-colors duration-100 focus-visible:outline-ring-inset aria-invalid:border-destructive data-disabled:opacity-55 data-checked:border-transparent data-checked:bg-primary data-checked:[--focus-ring:var(--primary-foreground)] sm:size-4",
+        "relative inline-flex size-4.5 shrink-0 cursor-pointer items-center justify-center rounded-full border border-border-3 bg-card outline-none transition-colors duration-100 focus-visible:outline-ring-inset aria-invalid:border-destructive data-disabled:cursor-not-allowed data-disabled:opacity-55 data-checked:border-transparent data-checked:bg-primary [--focus-ring-offset:1px] sm:size-4",
         className,
       )}
       data-slot="radio"

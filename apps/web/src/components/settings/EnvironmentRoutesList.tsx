@@ -173,7 +173,7 @@ function SortableRouteRow({
       ref={setNodeRef}
       style={{ transform: CSS.Translate.toString(transform), transition }}
       className={cn(
-        "flex items-center gap-2 py-2",
+        "flex items-center gap-2 py-2 motion-reduce:transition-none!",
         isDragging && "relative z-10 rounded-md bg-background shadow-md",
       )}
     >

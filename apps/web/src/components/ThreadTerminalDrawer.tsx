@@ -1278,7 +1278,7 @@ function TerminalActionButton({
         render={
           <button
             type="button"
-            className={cn(className, disabled && "opacity-64 cursor-not-allowed")}
+            className={cn(className, disabled && "opacity-55 cursor-not-allowed")}
             onClick={disabled ? undefined : onClick}
             aria-label={label}
             aria-disabled={disabled}
@@ -1456,30 +1456,30 @@ function TerminalSidebarGroup({
             <div
               key={terminalId}
               className={cn(
-                "group/tab flex h-6 w-full items-center gap-0.5 rounded-md pr-2 pl-1.5 text-xs",
+                "group/tab relative flex h-6 w-full items-center gap-1 rounded-md pr-2 pl-1.5 text-xs",
                 isActive
                   ? "bg-accent text-foreground"
                   : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
               )}
             >
+              <TerminalSquare className="size-3.5 shrink-0" />
+              <button
+                type="button"
+                className={cn(
+                  "flex min-w-0 flex-1 cursor-pointer items-center gap-1 text-left",
+                  canOperateTerminal && "panel-tab-label",
+                )}
+                onClick={() => onActiveTerminalChange(terminalId)}
+              >
+                <span className="truncate">{terminalLabel}</span>
+              </button>
               {canOperateTerminal ? (
                 <PanelTabCloseButton
                   label={closeTerminalLabel}
                   onClick={() => onCloseTerminal(terminalId)}
                   tooltip={closeTerminalLabel}
-                >
-                  <TerminalSquare className="size-3 shrink-0" />
-                </PanelTabCloseButton>
-              ) : (
-                <TerminalSquare className="size-3 shrink-0" />
-              )}
-              <button
-                type="button"
-                className="flex min-w-0 flex-1 cursor-pointer items-center gap-1 text-left"
-                onClick={() => onActiveTerminalChange(terminalId)}
-              >
-                <span className="truncate">{terminalLabel}</span>
-              </button>
+                />
+              ) : null}
             </div>
           );
         })}
@@ -1863,12 +1863,12 @@ export default function ThreadTerminalDrawer({
       {!hasTerminalSidebar && (
         // Hidden until the pointer is over the terminal, so the buttons never sit on its output.
         <div className="pointer-events-none absolute right-2 top-2 z-20 opacity-0 transition-opacity duration-150 focus-within:opacity-100 group-hover/terminal-drawer:opacity-100 any-pointer-coarse:opacity-100">
-          <div className="pointer-events-auto inline-flex items-center overflow-hidden rounded-md border border-border bg-background shadow-xs">
+          <div className="pointer-events-auto inline-flex items-center overflow-hidden rounded-md bg-background shadow-raised">
             <TerminalActionButton
               disabled={!canOperateTerminal}
-              className={`p-1 text-foreground transition-colors ${
+              className={`flex size-6 items-center justify-center text-foreground transition-colors ${
                 hasReachedSplitLimit
-                  ? "cursor-not-allowed opacity-64 hover:bg-transparent"
+                  ? "cursor-not-allowed opacity-55 hover:bg-transparent"
                   : "hover:bg-accent"
               }`}
               onClick={onSplitTerminalAction}
@@ -1879,9 +1879,9 @@ export default function ThreadTerminalDrawer({
             <div className="h-4 w-px bg-border" />
             <TerminalActionButton
               disabled={!canOperateTerminal}
-              className={`p-1 text-foreground transition-colors ${
+              className={`flex size-6 items-center justify-center text-foreground transition-colors ${
                 hasReachedSplitLimit
-                  ? "cursor-not-allowed opacity-64 hover:bg-transparent"
+                  ? "cursor-not-allowed opacity-55 hover:bg-transparent"
                   : "hover:bg-accent"
               }`}
               onClick={onSplitTerminalVerticalAction}
@@ -1892,7 +1892,7 @@ export default function ThreadTerminalDrawer({
             <div className="h-4 w-px bg-border" />
             <TerminalActionButton
               disabled={!canOperateTerminal}
-              className="p-1 text-foreground transition-colors hover:bg-accent"
+              className="flex size-6 items-center justify-center text-foreground transition-colors hover:bg-accent"
               onClick={onNewTerminalAction}
               label={newTerminalActionLabel}
             >
@@ -1901,7 +1901,7 @@ export default function ThreadTerminalDrawer({
             <div className="h-4 w-px bg-border" />
             <TerminalActionButton
               disabled={!canOperateTerminal}
-              className="p-1 text-foreground transition-colors hover:bg-accent"
+              className="flex size-6 items-center justify-center text-foreground transition-colors hover:bg-accent"
               onClick={() => confirmCloseTerminal(resolvedActiveTerminalId)}
               label={closeTerminalActionLabel}
             >
@@ -1937,7 +1937,7 @@ export default function ThreadTerminalDrawer({
           </div>
 
           {hasTerminalSidebar && (
-            <aside className="flex w-36 min-w-36 flex-col border border-border bg-muted/10">
+            <aside className="flex w-36 min-w-36 flex-col border border-border">
               <div className="flex h-[22px] items-stretch justify-end border-b border-border">
                 {/* Sits above the taller touch resize handle so its buttons keep their taps. */}
                 <div className="inline-flex h-full items-stretch any-pointer-coarse:relative any-pointer-coarse:z-30">
@@ -1945,7 +1945,7 @@ export default function ThreadTerminalDrawer({
                     disabled={!canOperateTerminal}
                     className={`inline-flex h-full items-center px-1 text-foreground transition-colors ${
                       hasReachedSplitLimit
-                        ? "cursor-not-allowed opacity-64 hover:bg-transparent"
+                        ? "cursor-not-allowed opacity-55 hover:bg-transparent"
                         : "hover:bg-accent/60"
                     }`}
                     onClick={onSplitTerminalAction}
@@ -1957,7 +1957,7 @@ export default function ThreadTerminalDrawer({
                     disabled={!canOperateTerminal}
                     className={`inline-flex h-full items-center border-l border-border px-1 text-foreground transition-colors ${
                       hasReachedSplitLimit
-                        ? "cursor-not-allowed opacity-64 hover:bg-transparent"
+                        ? "cursor-not-allowed opacity-55 hover:bg-transparent"
                         : "hover:bg-accent/60"
                     }`}
                     onClick={onSplitTerminalVerticalAction}

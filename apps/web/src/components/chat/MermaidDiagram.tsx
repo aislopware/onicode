@@ -280,7 +280,7 @@ export function MermaidDiagram({
         type="button"
         aria-label={gt("Expand diagram")}
         hidden={renderError !== null}
-        className="block w-full cursor-zoom-in rounded-md focus-visible:outline-2 focus-visible:outline-ring"
+        className="block w-full cursor-zoom-in rounded-md outline-none focus-visible:outline-ring-inset"
         onClick={(event) => {
           const svg = event.currentTarget.querySelector("svg");
           if (svg) onExpand(diagramImageUrl(svg));

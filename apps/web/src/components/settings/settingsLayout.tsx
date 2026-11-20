@@ -183,7 +183,7 @@ export function SettingsSearchTarget({
 
 // Settings pickers reuse composer controls but match the bordered selects beside them.
 export const SETTINGS_PICKER_TRIGGER_CLASSNAME =
-  "min-w-0 max-w-none shrink-0 border-input bg-card font-normal text-foreground shadow-plate hover:bg-card-hover [&_svg[data-composer-control-chevron]]:stroke-[1.75] [&_svg[data-composer-control-chevron]]:opacity-70";
+  "min-w-0 max-w-none shrink-0 border-input bg-card font-normal text-foreground shadow-[inset_0_1px_var(--highlight-top),var(--plate-shadow)] hover:bg-card-hover [&_svg[data-composer-control-chevron]]:stroke-[1.75] [&_svg[data-composer-control-chevron]]:opacity-70";
 
 export function PolicyTooltip({ children }: { readonly children: string }) {
   const gt = useGT();
@@ -239,7 +239,8 @@ export function SettingsSection({
       ) : (
         <div
           data-settings-scroll-target
-          className="flex min-h-7 flex-wrap items-start justify-between gap-x-4 gap-y-1"
+          // Flush with the card below; inside the provider detail card it takes a row's inset.
+          className="flex min-h-7 flex-wrap items-start justify-between gap-x-4 gap-y-1 in-[[data-provider-detail]]:px-4"
         >
           <div className="flex min-w-0 items-center gap-1">
             <h2 className="flex min-h-7 items-center gap-2 text-sm font-medium tracking-tight text-foreground">
@@ -270,7 +271,7 @@ export function SettingsUnavailableGroup({
   if (message === undefined) return children;
 
   return (
-    <div className="border-border bg-muted/20 py-1.5">
+    <div className="bg-muted py-1.5">
       <div className="flex items-start gap-2 px-3 py-2 text-xs leading-relaxed text-muted-foreground sm:px-4">
         <InfoIcon className="mt-0.5 size-3.5 shrink-0 text-warning" />
         <p>{message}</p>
@@ -429,7 +430,7 @@ export function SettingsRow({
       >
         <div
           inert
-          className="flex w-full items-center gap-2 opacity-50 @min-[32rem]/settings-row:w-auto"
+          className="flex w-full items-center gap-2 opacity-55 @min-[32rem]/settings-row:w-auto"
         >
           {control}
         </div>
@@ -549,7 +550,9 @@ export function SettingsRow({
             </span>
           </div>
           {description ? (
-            <p className="max-w-2xl text-pretty text-ui text-subtle-foreground">{description}</p>
+            <p className="max-w-2xl text-pretty text-ui leading-5 text-muted-foreground">
+              {description}
+            </p>
           ) : null}
           {renderedStatus ? (
             <div className="pt-0.5 text-xs text-muted-foreground">{renderedStatus}</div>
@@ -562,7 +565,7 @@ export function SettingsRow({
         ) : null}
       </div>
       {unavailable && children ? (
-        <div inert className="opacity-50">
+        <div inert className="opacity-55">
           {children}
         </div>
       ) : (

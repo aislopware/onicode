@@ -55,7 +55,7 @@ export function ThreadDetailsControl({
         type: render ? undefined : "button",
         // The touch target stays centered within the panel's 32px rows; spilling past them makes scrolling lists overflow.
         className: cn(
-          "relative inline-flex shrink-0 cursor-pointer items-center whitespace-nowrap border outline-none transition-[box-shadow,scale] [&:hover:not([aria-haspopup]):not(:disabled):not([aria-disabled=true])]:will-change-[scale] [&:active:not([aria-haspopup])]:scale-[0.97] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background pointer-coarse:after:absolute pointer-coarse:after:top-1/2 pointer-coarse:after:left-1/2 pointer-coarse:after:size-full pointer-coarse:after:min-h-8 pointer-coarse:after:min-w-8 pointer-coarse:after:-translate-x-1/2 pointer-coarse:after:-translate-y-1/2 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 disabled:pointer-events-none disabled:opacity-64 aria-disabled:cursor-not-allowed aria-disabled:opacity-64 [&_svg]:shrink-0",
+          "relative inline-flex shrink-0 cursor-pointer items-center whitespace-nowrap border outline-none transition-[box-shadow,scale] [&:hover:not([aria-haspopup]):not(:disabled):not([aria-disabled=true])]:will-change-[scale] [&:active:not([aria-haspopup])]:scale-[0.97] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring pointer-coarse:after:absolute pointer-coarse:after:top-1/2 pointer-coarse:after:left-1/2 pointer-coarse:after:size-full pointer-coarse:after:min-h-8 pointer-coarse:after:min-w-8 pointer-coarse:after:-translate-x-1/2 pointer-coarse:after:-translate-y-1/2 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 disabled:pointer-events-none disabled:opacity-55 aria-disabled:cursor-not-allowed aria-disabled:opacity-55 [&_svg]:shrink-0",
           parts[part],
           multiline && "h-auto min-h-8 py-1.5 disabled:opacity-100 sm:h-auto",
           tone === "muted" && "text-muted-foreground hover:text-foreground/80",
@@ -67,7 +67,7 @@ export function ThreadDetailsControl({
           // Keep the inset focus ring clear of the 20px PR action label.
           part === "meta" &&
             (tone === "primary" || tone === "destructive") &&
-            "h-5 focus-visible:ring-1 focus-visible:ring-offset-0",
+            "h-5 focus-visible:ring-1",
           part === "meta" &&
             tone === "destructive" &&
             "bg-destructive/10 hover:!bg-destructive/16 data-pressed:!bg-destructive/16 dark:hover:!bg-destructive/16 dark:data-pressed:!bg-destructive/16",

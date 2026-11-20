@@ -143,8 +143,8 @@ function DialogPopup({
         {showCloseButton && (
           <DialogPrimitive.Close
             aria-label={gt("Close", { $context: "button, closes the dialog" })}
-            className="absolute end-2 top-2"
-            render={<Button size="icon" variant="ghost" />}
+            className="absolute end-3 top-3.25"
+            render={<Button size="icon-sm" variant="ghost" />}
           >
             <XIcon />
           </DialogPrimitive.Close>
@@ -211,7 +211,7 @@ function DialogFooter({
     <div
       className={cn(
         "flex flex-col-reverse gap-2 px-5 sm:flex-row sm:justify-end sm:rounded-b-[calc(var(--radius-xl)-1px)]",
-        variant === "default" && "border-t bg-muted/72 py-3",
+        variant === "default" && "border-t bg-muted py-3",
         variant === "bare" && "py-4",
         className,
       )}
@@ -224,7 +224,7 @@ function DialogFooter({
 function DialogTitle({ className, ...props }: DialogPrimitive.Title.Props) {
   return (
     <DialogPrimitive.Title
-      className={cn("wrap-anywhere font-medium text-base leading-snug sm:text-sm", className)}
+      className={cn("wrap-anywhere font-medium text-base leading-snug", className)}
       data-slot="dialog-title"
       {...props}
     />

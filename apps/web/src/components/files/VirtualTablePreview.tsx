@@ -206,7 +206,7 @@ function RowPage(
             className={
               props.source
                 ? `flex min-h-[29px] font-mono ${props.revealLine != null && Math.min(props.count, Math.max(1, props.revealLine)) === index + 1 ? "bg-primary/10" : ""}`
-                : `flex min-h-[29px] border-b border-border ${(index - (props.header ? 1 : 0)) % 2 ? "bg-muted/30" : ""}`
+                : `flex min-h-[29px] border-b border-border ${(index - (props.header ? 1 : 0)) % 2 ? "bg-muted" : ""}`
             }
             data-preview-reveal={
               props.revealLine != null &&

@@ -356,7 +356,7 @@ function AutomationMessageRow({ row }: { row: Extract<TimelineRow, { kind: "mess
               <Link
                 to="/settings/scheduled-tasks"
                 search={{ environmentId: ctx.activeThreadEnvironmentId, taskId: scheduledTaskId }}
-                className="rounded-sm text-xs text-muted-foreground hover:underline focus-visible:outline-2 focus-visible:outline-ring"
+                className="rounded-sm text-xs text-muted-foreground outline-none hover:underline focus-visible:outline-ring-inset"
               >
                 <T>Open automation</T>
               </Link>
@@ -413,7 +413,7 @@ export function FoldedMessageHeader(props: {
       aria-expanded={props.expanded}
       data-scroll-anchor-ignore
       onClick={props.onToggle}
-      className="flex w-full min-w-0 items-center gap-1.5 rounded-2xl px-3 py-2 text-left text-sm focus-visible:outline-2 focus-visible:outline-ring"
+      className="flex w-full min-w-0 items-center gap-1.5 rounded-2xl px-3 py-2 text-left text-sm outline-none focus-visible:outline-ring-inset"
     >
       <Icon className="size-4 shrink-0 stroke-2 text-muted-foreground" />
       <span

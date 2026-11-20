@@ -242,7 +242,7 @@ export function AcpRegistrySearchStep({
             <p className="text-sm font-medium">
               <T>No compatible agents found</T>
             </p>
-            <p className="mt-1 text-xs text-muted-foreground">
+            <p className="mt-1 text-ui text-muted-foreground">
               <T>Try a broader search.</T>
             </p>
           </div>

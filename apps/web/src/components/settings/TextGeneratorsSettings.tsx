@@ -393,8 +393,8 @@ function TextGeneratorWizard({
                             aria-checked={selected}
                             className={
                               selected
-                                ? "flex flex-col items-center gap-2 rounded-lg border border-primary bg-primary/5 px-2 py-3 text-sm font-medium text-foreground ring-1 ring-primary ring-inset outline-none focus-visible:ring-2 focus-visible:ring-inset"
-                                : "flex flex-col items-center gap-2 rounded-lg border bg-background px-2 py-3 text-sm text-muted-foreground outline-none hover:bg-accent/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+                                ? "flex flex-col items-center gap-2 rounded-lg border border-primary bg-accent px-2 py-3 text-sm font-medium text-foreground outline-none focus-visible:outline-ring-inset"
+                                : "flex flex-col items-center gap-2 rounded-lg border border-border px-2 py-3 text-sm font-medium text-muted-foreground outline-none hover:bg-accent/60 hover:text-foreground focus-visible:outline-ring-inset"
                             }
                             onClick={() => {
                               setPreset(candidate);

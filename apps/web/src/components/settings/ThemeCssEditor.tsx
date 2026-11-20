@@ -77,7 +77,7 @@ export function ThemeCssEditor({
 
   return (
     <div className="space-y-2">
-      <div className="overflow-hidden rounded-lg border border-input bg-code text-foreground focus-within:border-ring focus-within:ring-3 focus-within:ring-inset focus-within:ring-ring/24">
+      <div className="overflow-hidden rounded-lg border border-input bg-code text-foreground focus-within:outline-ring-inset">
         <textarea
           aria-label={gt("Custom CSS")}
           aria-describedby={hintId}

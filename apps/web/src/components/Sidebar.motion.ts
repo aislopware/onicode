@@ -1,4 +1,4 @@
-const motionTiming = { duration: 150, easing: "ease-out" };
+const motionTiming = { duration: 150, easing: "cubic-bezier(0.23, 1, 0.32, 1)" };
 const rowTravel = (height: number) => Math.min(height, 40);
 // Fades clone removed rows and animate clones and entries; intervening layout reads force reflows.
 const MAX_FADED_ROWS_PER_UPDATE = 40;

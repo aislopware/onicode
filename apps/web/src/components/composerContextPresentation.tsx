@@ -424,7 +424,7 @@ function ComposerPreviewAnnotationDetails({
           className="max-h-64 w-full border-border border-b bg-muted object-contain"
         />
       ) : (
-        <div className="border-border border-b bg-muted/40 px-3 py-2 text-secondary-label text-xs">
+        <div className="border-border border-b bg-muted px-3 py-2 text-secondary-label text-xs">
           <T>Screenshot unavailable</T>
         </div>
       )}

@@ -5,8 +5,6 @@ const LEGACY_SECTION_KEY_PREFIX = "legacy-models:";
 const FAVORITE_KEY_PREFIX = "favorite:";
 const RECENT_KEY_PREFIX = "recent:";
 const SUB_PROVIDER_SECTION_KEY_PREFIX = "sub-provider:";
-/** The row that opens the whole catalogue under Favorites and Recent. */
-export const MODEL_PICKER_ALL_MODELS_KEY = "all-models";
 
 export function modelPickerModelKey(instanceId: ProviderInstanceId, slug: string): string {
   return `${MODEL_KEY_PREFIX}${instanceId.length}:${instanceId}${slug}`;

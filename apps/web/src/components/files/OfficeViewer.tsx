@@ -171,7 +171,7 @@ function ExtendedOfficeViewer(props: {
         <p className="text-sm font-medium">
           <T>No preview for this file</T>
         </p>
-        <p className="max-w-sm text-xs leading-relaxed text-muted-foreground">
+        <p className="max-w-sm text-ui leading-relaxed text-muted-foreground">
           {gt("{error} Save it or open it in another app.", { error })}
         </p>
       </div>

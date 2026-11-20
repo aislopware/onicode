@@ -467,7 +467,7 @@ export function ThinkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind:
   return (
     <button
       type="button"
-      className="group/live-work flex min-h-6 w-full max-w-full cursor-pointer items-center rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+      className="group/live-work flex min-h-6 w-full max-w-full cursor-pointer items-center rounded-md text-left outline-none focus-visible:outline-ring-inset hover:[&_.text-secondary-label]:text-foreground"
       aria-expanded={row.expanded === true}
       onClick={() => ctx.onToggleWorkGroup(groupId, row.id)}
     >
@@ -574,7 +574,7 @@ function LiveActivityContent({
       }
       trailing={
         showTrailingFailureMark ? (
-          <XIcon aria-hidden className={cn("size-3 shrink-0", failedToolIconClassName)} />
+          <XIcon aria-hidden className={cn("size-3.5 shrink-0", failedToolIconClassName)} />
         ) : null
       }
     />
@@ -609,7 +609,7 @@ export function LiveWorkEntryTimelineRow({
     <button
       type="button"
       className={cn(
-        "group/live-work flex w-full max-w-full cursor-pointer rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+        "group/live-work flex w-full max-w-full cursor-pointer rounded-md text-left outline-none focus-visible:outline-ring-inset hover:[&_.text-secondary-label]:text-foreground",
         thoughtLine ? "flex-col items-start" : "min-h-6 items-center",
       )}
       aria-label={

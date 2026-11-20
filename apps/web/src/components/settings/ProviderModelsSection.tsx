@@ -540,7 +540,7 @@ const ProviderModelRow = memo(function ProviderModelRow({
         <TooltipTrigger
           render={
             <Button
-              size="icon-micro"
+              size="icon-xs"
               variant="ghost-muted"
               disabled={!canWritePreferences}
               onClick={() => onToggleFavorite(model.slug)}
@@ -597,7 +597,7 @@ const ProviderModelRow = memo(function ProviderModelRow({
               <TooltipTrigger
                 render={
                   <Button
-                    size="icon-micro"
+                    size="icon-xs"
                     variant="ghost-muted"
                     disabled={!canWritePreferences || !canMoveUp}
                     onClick={() => onMove(model.slug, -1)}
@@ -615,7 +615,7 @@ const ProviderModelRow = memo(function ProviderModelRow({
               <TooltipTrigger
                 render={
                   <Button
-                    size="icon-micro"
+                    size="icon-xs"
                     variant="ghost-muted"
                     disabled={!canWritePreferences || !canMoveDown}
                     onClick={() => onMove(model.slug, 1)}
@@ -637,7 +637,7 @@ const ProviderModelRow = memo(function ProviderModelRow({
               <TooltipTrigger
                 render={
                   <Button
-                    size="icon-micro"
+                    size="icon-xs"
                     variant="ghost-muted"
                     disabled={!canManageCustomModels}
                     aria-label={gt("Edit {name}", { name: model.slug })}
@@ -655,7 +655,7 @@ const ProviderModelRow = memo(function ProviderModelRow({
               <TooltipTrigger
                 render={
                   <Button
-                    size="icon-micro"
+                    size="icon-xs"
                     variant="ghost-muted"
                     disabled={!canManageCustomModels}
                     aria-label={gt("Remove {name}", { name: model.slug })}

@@ -485,7 +485,7 @@ export default function PdfViewer(props: {
         role="region"
         aria-label={props.title}
         tabIndex={0}
-        className="relative min-h-0 min-w-0 w-full flex-1 overflow-auto scrollbar-gutter-stable bg-muted/40"
+        className="relative min-h-0 min-w-0 w-full flex-1 overflow-auto scrollbar-gutter-stable bg-muted"
         onScroll={(event) => {
           const top = event.currentTarget.scrollTop;
           setScrollTop(top);

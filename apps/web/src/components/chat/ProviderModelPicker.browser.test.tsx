@@ -357,7 +357,7 @@ it("opens on the active provider when every favorite belongs to a disabled provi
   await expect.element(page.getByRole("option", { name: /Codex model/ })).toBeVisible();
 });
 
-it("opens on favorites and recent picks, with every other model behind All models", async () => {
+it("opens on favorites and recent picks, with every provider listed under them", async () => {
   const entries = deriveProviderInstanceEntries(
     [
       { name: "Claude", models: ["Opus", "Haiku", "Sonnet"] },
@@ -420,29 +420,28 @@ it("opens on favorites and recent picks, with every other model behind All model
       .getByRole("option")
       .elements()
       .map((row) => [
-        row.textContent?.match(/Haiku|Opus|Sonnet|Sol|All models/)?.[0],
+        row.textContent?.match(/Haiku|Opus|Sonnet|Sol/)?.[0],
         row.querySelector("[data-model-jump-label]")?.textContent?.slice(-1),
       ]);
   const names = () => rows().map(([name]) => name);
-  // The favorite, then the selected model as the newest pick, which Recent marks as selected.
-  await vi.waitFor(() => expect(names()).toEqual(["Haiku", "Opus", "All models"]));
+  // The favorite, then the selected model as the newest pick, which Recent marks as selected,
+  // then every provider's models.
+  const whole = ["Haiku", "Opus", "Opus", "Haiku", "Sonnet", "Sol"];
+  await vi.waitFor(() => expect(names()).toEqual(whole));
   await expect
-    .element(page.getByRole("option", { name: /Opus/ }))
+    .element(page.getByRole("option", { name: /Opus/ }).first())
     .toHaveAttribute("aria-selected", "true");
 
   // Typing searches every model, not only the ones in view.
   await userEvent.keyboard("sol");
   await vi.waitFor(() => expect(names()).toContain("Sol"));
   await userEvent.clear(page.getByPlaceholder("Search models"));
-  await vi.waitFor(() => expect(names()).toEqual(["Haiku", "Opus", "All models"]));
+  await vi.waitFor(() => expect(names()).toEqual(whole));
 
-  // A star changed while the list is open leaves it folded the way it opened.
+  // Without favorites the first models take the jump shortcuts. Opus is listed under Recent
+  // and under its provider, and takes one, on its first row.
   __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, favorites: [] });
   await screen.rerender(picker());
-  await vi.waitFor(() => expect(names()).toEqual(["Opus", "All models"]));
-
-  // Opus is listed under Recent and under its provider, and takes one jump shortcut.
-  await page.getByRole("option", { name: /All models/ }).click();
   await vi.waitFor(() =>
     expect(rows()).toEqual([
       ["Opus", "1"],

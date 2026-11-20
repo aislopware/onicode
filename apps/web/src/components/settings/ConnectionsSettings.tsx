@@ -226,7 +226,7 @@ function AccessSettings() {
   });
   const picker =
     candidates.length > 1 && accessEnvironmentId !== null ? (
-      <div className="flex min-w-0 items-center gap-1.5 px-3 text-sm text-muted-foreground sm:px-4">
+      <div className="flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground">
         <span className="shrink-0">
           <T>Showing access for</T>
         </span>
@@ -820,7 +820,7 @@ function ConnectionsSettingsContent({
     >
       <SelectTrigger
         size="sm"
-        className="w-full sm:w-44"
+        className="w-full sm:w-40"
         aria-label={gt("Network access")}
         disabled={!desktopServerExposureState || isUpdatingDesktopServerExposure}
       >
@@ -1092,7 +1092,7 @@ function ConnectionsSettingsContent({
           <SettingsRow
             title={gt("WSL only")}
             description={gt("Run only the WSL backend. Onicode restarts when this changes.")}
-            className="bg-muted/20 pl-7 sm:pl-8"
+            className="bg-muted pl-7 sm:pl-8"
             control={
               <Switch
                 checked={desktopWslState.wslOnly}
@@ -1735,7 +1735,7 @@ function ConnectionsSettingsContent({
                     <T>Enter a port from 1 to 65535.</T>
                   </p>
                 ) : null}
-                <div className="rounded-md border border-border bg-muted/20 px-3 py-2">
+                <div className="rounded-md border border-border px-3 py-2">
                   <p className="text-xs font-medium text-muted-foreground">
                     <T>HTTPS endpoint</T>
                   </p>

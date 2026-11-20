@@ -198,7 +198,7 @@ export function ThemePreviewCircles({
                       />
                       <span
                         aria-hidden
-                        className="pointer-events-none absolute bottom-0.5 right-0.5 flex size-5 items-center justify-center rounded-full border border-border bg-background text-foreground shadow-sm"
+                        className="pointer-events-none absolute bottom-0.5 right-0.5 flex size-5 items-center justify-center rounded-full bg-background text-foreground shadow-raised"
                       >
                         {mode === "light" ? (
                           <SunIcon className="size-3" />

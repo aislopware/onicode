@@ -121,7 +121,7 @@ export default function NotebookPreview(props: {
               aria-label={gt("Cell {number}", { number: String(index + 1) })}
               className="min-w-0 overflow-hidden rounded-md border border-border"
             >
-              <div className="border-b border-border bg-muted/30 px-3 py-1.5 text-xs text-muted-foreground">
+              <div className="border-b border-border bg-muted px-3 py-1.5 text-xs text-muted-foreground">
                 {cell.kind === "code" ? props.notebook.language : cell.kind} · {index + 1}
               </div>
               {cell.kind === "markdown" ? (

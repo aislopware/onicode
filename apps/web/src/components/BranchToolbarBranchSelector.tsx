@@ -882,7 +882,7 @@ export function BranchToolbarBranchSelector({
                 <ComposerControl size="xs" />
               )
             }
-            className="min-w-0 max-w-full active:scale-100"
+            className="min-w-0 max-w-full [&:active:not([aria-haspopup])]:scale-100"
             disabled={isInitialBranchesLoadPending || isBranchActionPending}
             // NVDA browse mode re-reads a combobox when its attributes change, not when its text does.
             aria-label={gt("Branch: {branch}", { branch: triggerLabel })}

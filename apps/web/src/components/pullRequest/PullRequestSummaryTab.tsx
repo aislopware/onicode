@@ -775,7 +775,7 @@ export function PullRequestSummaryTab({
         key={`${detail.url}:${comment.id}`}
         className="group rounded-lg border border-border bg-background [contain-intrinsic-block-size:160px] [content-visibility:auto]"
       >
-        <div className="flex flex-wrap items-baseline gap-2 rounded-t-lg bg-muted/25 px-3 py-2.5">
+        <div className="flex flex-wrap items-baseline gap-2 rounded-t-lg bg-muted px-3 py-2.5">
           <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-2 text-xs text-muted-foreground">
             <CommentIdentity comment={comment} detail={detail} />
             {outcome ? (
@@ -1014,7 +1014,7 @@ export function PullRequestSummaryTab({
           ) : (
             <div className="flex items-start gap-1" data-pr-description>
               <PullRequestMarkdown
-                className="min-w-0 flex-1"
+                className="min-w-0 flex-1 [&_:is(p,ul,ol,blockquote)]:max-w-[72ch]"
                 text={
                   description.trim().length > 0 ? description : gt("_No description provided._")
                 }
