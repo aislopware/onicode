@@ -3,7 +3,7 @@ import { m as resolveMessage } from "~/i18n/messages";
 import { managedCapabilityDenial } from "@onicode/client-runtime/contract-labels";
 import { SessionPermissions } from "./SessionPermissions";
 import { ChevronRightIcon, EllipsisIcon } from "lucide-react";
-import { useAtomValue } from "@effect/atom-react";
+import { useAtom, useAtomValue } from "@effect/atom-react";
 import { type ReactNode, useState } from "react";
 import { msg, T, useGT, useMessages, Var } from "gt-react";
 import {
@@ -49,6 +49,7 @@ import { EnvironmentIconMenu } from "./EnvironmentIconPicker";
 import { FoldedSettingsSection } from "./FoldedSettingsSection";
 import { RemoteDesktopHostSettings } from "./RemoteDesktopHostSettings";
 import { LinkedEnvironmentsSettings } from "./LinkedEnvironmentsSettings";
+import { addEnvironmentPrefillAtom } from "~/state/linkedThreadView";
 import { usePeerLinkHosts } from "~/state/peerLinks";
 import { LoadBalancingSettings } from "./LoadBalancingSettings";
 import { PullRequestRoutingSettings } from "./PullRequestRoutingSettings";
@@ -386,12 +387,15 @@ function ConnectionsSettingsContent({
   const [addBackendDialogOpen, setAddBackendDialogOpen] = useState(false);
   const [routeTarget, setRouteTarget] = useState<EnvironmentPresentation | null>(null);
   const [savedBackendError, setSavedBackendError] = useState<string | null>(null);
+  // Set by a read-only linked thread whose machine this client is about to pair with.
+  const [addPrefill, setAddPrefill] = useAtom(addEnvironmentPrefillAtom);
   const handleAddBackendDialogOpenChange = (open: boolean) => {
     setAddBackendDialogOpen(open);
     if (open) {
       setRouteTarget(null);
     } else {
       setSavedBackendError(null);
+      setAddPrefill(null);
     }
   };
   const [removingSavedEnvironmentId, setRemovingSavedEnvironmentId] =
@@ -1806,7 +1810,9 @@ function ConnectionsSettingsContent({
               <ServerUpdatesAction targets={savedServerUpdateTargets} variant="ghost-muted" />
             ) : null}
             <AddEnvironmentDialog
-              open={addBackendDialogOpen}
+              key={addPrefill?.environmentId ?? "any"}
+              open={addBackendDialogOpen || addPrefill !== null}
+              prefill={addPrefill}
               routeTarget={routeTarget}
               error={savedBackendError}
               savedEnvironments={savedEnvironments}

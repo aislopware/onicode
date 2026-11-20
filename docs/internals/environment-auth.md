@@ -49,7 +49,8 @@ where every tool must declare who may call it to compile. Any other grant adds
 plus a signed peer-link claim; the thread CLI gets `thread-cli`. `/mcp` admits
 nothing else, so an `mcp-client` session without the claim is refused. A
 [peer link](remote.md#peer-links)'s session is also admitted by the thread routes in
-[linkThreadHttp](../../apps/server/src/peer/linkThreadHttp.ts), which only read. Every
+[linkThreadHttp](../../apps/server/src/peer/linkThreadHttp.ts), which only read, and by the
+client pairing described below. Every
 other HTTP and WebSocket
 path rejects both subjects, because the RPC surface would let the caller act
 above its ceiling. Inside MCP the credential sets the limits and tool
@@ -61,6 +62,17 @@ act as one, such as `request_secret` or `delegate_task`. Hiding is only
 discovery: the handlers still refuse such a call with
 `thread_credential_required`. A secret card belongs to a thread's run, so an
 outside agent that needs a secret starts a thread and lets that agent ask.
+
+A full-access [peer link](../../apps/server/src/peer/PeerClientPairing.ts) may
+mint a one-time pairing for a client of the environment that holds it. Its
+agents already run as this machine's user and could run `onicode auth pairing create`,
+so this adds no authority; a narrower link would gain some, so it is refused
+here, on the linked side, whatever the linking side sent. The pairing carries
+the client's scopes on the linking environment intersected with a normal
+pairing's. A person starts it: the linking environment exposes it as a WebSocket
+RPC behind `access:write`, and the linked side as an HTTP route that accepts only
+a link's session. It is not an MCP tool, because a tool is reachable by whatever
+holds a thread credential, and hiding one from tool listings is only discovery.
 
 The issuer URL comes from the request's Host and `X-Forwarded-Proto`, so one
 server answers links over loopback, the LAN and Tailscale Serve. A proxy that
