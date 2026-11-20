@@ -102,17 +102,36 @@ const resolveWatchTarget = Effect.fn("watchDirectoryReplacements.resolveWatchTar
 // Past this many links the chain is a loop; its final target is watched as before.
 const MAX_SYMLINK_HOPS = 40;
 
+const linkTarget = Effect.fn("watchDirectoryReplacements.linkTarget")(function* (entry: string) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const link = yield* fs.readLink(entry).pipe(Effect.option);
+  if (Option.isNone(link)) return undefined;
+  return path.isAbsolute(link.value)
+    ? link.value
+    : `${path.dirname(entry)}${path.sep}${link.value}`;
+});
+
+/** The directory `entry` links into, when that directory is itself reached through a symlink. */
+const linkedTargetParent = Effect.fn("watchDirectoryReplacements.linkedTargetParent")(function* (
+  entry: string,
+) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const rawTarget = yield* linkTarget(entry);
+  if (rawTarget === undefined) return undefined;
+  const parent = path.dirname(rawTarget);
+  return Option.isSome(yield* fs.readLink(parent).pipe(Effect.option)) ? parent : undefined;
+});
+
 /** The next link in a chain `entry` starts, when its target is itself a symlink. */
 const nextSymlinkHop = Effect.fn("watchDirectoryReplacements.nextSymlinkHop")(function* (
   entry: string,
 ) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const link = yield* fs.readLink(entry).pipe(Effect.option);
-  if (Option.isNone(link)) return undefined;
-  const rawTarget = path.isAbsolute(link.value)
-    ? link.value
-    : `${path.dirname(entry)}${path.sep}${link.value}`;
+  const rawTarget = yield* linkTarget(entry);
+  if (rawTarget === undefined) return undefined;
   const name = path.basename(rawTarget);
   if (name === "." || name === "..") return undefined;
   const parent = yield* realPath(path.dirname(rawTarget)).pipe(Effect.option);
@@ -122,20 +141,25 @@ const nextSymlinkHop = Effect.fn("watchDirectoryReplacements.nextSymlinkHop")(fu
 });
 
 /**
- * Watch replacements of a configured directory, every symlink it reaches the directory through,
- * the final target, and the target's parent.
+ * Watch replacements of a configured directory, every symlink it reaches the directory through
+ * (including a link's target directory that is itself a link), the final target, and the target's
+ * parent.
  */
 export const watchDirectoryPath = (
   directory: string,
-  watchChild: Stream.Stream<void>,
+  watchChild: Stream.Stream<void, never, FileSystem.FileSystem | Path.Path>,
   hops = 0,
 ): Stream.Stream<void, never, FileSystem.FileSystem | Path.Path> => {
   const entry = NodePath.resolve(directory);
-  return watchDirectoryReplacements(
-    (ready) => watchDirectoryEntry(entry, ready),
+  const followLink = (
+    throughParent: boolean,
+  ): Stream.Stream<void, never, FileSystem.FileSystem | Path.Path> =>
     Stream.unwrap(
       Effect.gen(function* () {
-        const hop = hops < MAX_SYMLINK_HOPS ? yield* nextSymlinkHop(entry) : undefined;
+        const following = hops < MAX_SYMLINK_HOPS;
+        const parent = following && throughParent ? yield* linkedTargetParent(entry) : undefined;
+        if (parent !== undefined) return watchDirectoryPath(parent, followLink(false), hops + 1);
+        const hop = following ? yield* nextSymlinkHop(entry) : undefined;
         if (hop !== undefined) return watchDirectoryPath(hop, watchChild, hops + 1);
         const target = yield* resolveWatchTarget(entry);
         if (target === entry) return watchChild;
@@ -144,6 +168,6 @@ export const watchDirectoryPath = (
           watchDirectoryReplacements((ready) => watchDirectoryEntry(target, ready), watchChild),
         );
       }),
-    ),
-  );
+    );
+  return watchDirectoryReplacements((ready) => watchDirectoryEntry(entry, ready), followLink(true));
 };
