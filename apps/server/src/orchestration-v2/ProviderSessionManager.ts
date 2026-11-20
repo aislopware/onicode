@@ -665,6 +665,14 @@ export const layerWithOptions = (
                 if (browserToolsAvailable) capabilities.add("preview");
                 if (drivesPanel) capabilities.add("preview-driver");
                 if (deviceToolsAvailable) capabilities.add("device");
+                const backgroundWait = yield* registry.get(providerInstanceId).pipe(
+                  Effect.flatMap((adapter) => adapter.getCapabilities()),
+                  Effect.map((adapter) => adapter.tools.supportsBackgroundWait === true),
+                  Effect.option,
+                );
+                if (Option.getOrElse(backgroundWait, () => false)) {
+                  capabilities.add("background-wait");
+                }
                 const subagent = yield* projectionStore.getThread(threadId).pipe(
                   Effect.map((thread) => thread.lineage.relationshipToParent === "subagent"),
                   Effect.orElseSucceed(() => false),
@@ -691,6 +699,9 @@ export const layerWithOptions = (
                     resolved.capabilities.has("preview") === browserToolsAvailable &&
                     resolved.capabilities.has("device") === deviceToolsAvailable &&
                     resolved.capabilities.has("preview-driver") === drivesPanel &&
+                    // A failed capability read cannot tell that the live credential is wrong.
+                    (Option.isNone(backgroundWait) ||
+                      resolved.capabilities.has("background-wait") === backgroundWait.value) &&
                     // A credential issued while the lineage read failed is replaced once it works.
                     (resolved.thread.subagent === true) === subagent
                   ) {
