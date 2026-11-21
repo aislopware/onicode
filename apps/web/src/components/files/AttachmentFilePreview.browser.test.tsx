@@ -1096,6 +1096,60 @@ describe("large text preview recovery", () => {
     expect(probeLayouts()).toHaveLength(2);
   });
 
+  it("reveals a line just before the native tail of a compressed multi-million-line track", async () => {
+    await using screen = await render(
+      <div style={{ display: "flex", height: 800, width: 600 }}>
+        <VirtualTablePreview
+          name="huge.log"
+          count={5_000_000}
+          columns={1}
+          source
+          revealLine={4_999_973}
+          revealRequestId={1}
+          getRows={(page) => Array.from({ length: 32 }, (_, i) => ["line-" + (page * 32 + i + 1)])}
+        />
+      </div>,
+    );
+    const viewport = () => screen.container.querySelector<HTMLElement>('[tabindex="0"]')!;
+    await vi.waitFor(() => {
+      const row = screen.container.querySelector<HTMLElement>('[data-preview-reveal="true"]');
+      expect(row?.textContent).toContain("line-4999973");
+      expect(row!.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+        viewport().getBoundingClientRect().top - 1,
+      );
+      expect(row!.getBoundingClientRect().bottom).toBeLessThanOrEqual(
+        viewport().getBoundingClientRect().bottom + 1,
+      );
+    });
+  });
+
+  it("covers the viewport top a pixel before the native tail", async () => {
+    await using screen = await render(
+      <div style={{ display: "flex", height: 400, width: 600 }}>
+        <VirtualTablePreview
+          name="short.log"
+          count={100}
+          columns={1}
+          source
+          getRows={(page) => Array.from({ length: 32 }, (_, i) => ["line-" + (page * 32 + i + 1)])}
+        />
+      </div>,
+    );
+    const viewport = () => screen.container.querySelector<HTMLElement>('[tabindex="0"]')!;
+    // The scaled track ends where the native tail is pinned; stop one pixel short of it.
+    const trackEnd = 100 * 29 - viewport().clientHeight;
+    await act(() => {
+      viewport().scrollTop = trackEnd - 1;
+      viewport().dispatchEvent(new Event("scroll", { bubbles: true }));
+    });
+    await vi.waitFor(() => {
+      const rows = screen.container.querySelectorAll<HTMLElement>("[data-preview-row]");
+      expect(rows[0]!.getBoundingClientRect().top).toBeLessThanOrEqual(
+        viewport().getBoundingClientRect().top,
+      );
+    });
+  });
+
   it("reveals and highlights requested source lines again for a new request", async () => {
     const view = (line: number, request: number, loaded = true) => (
       <div style={{ display: "flex", height: 400, width: 600 }}>

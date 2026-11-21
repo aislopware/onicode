@@ -297,23 +297,22 @@ function ScaledRows(
   const headerRows = props.header ? 1 : 0;
   const maxFirst = Math.max(0, props.count - headerRows - Math.floor(position.height / 29));
   const scale = Math.max(1, scrollHeight - position.height) / Math.max(1, maxFirst * 29);
-  // Zoom and float error can leave the real bottom a pixel short of the track's nominal end.
-  const atTrackEnd = position.top >= maxFirst * 29 * scale - 2;
-  const first =
-    (atTrackEnd ? maxFirst : Math.min(maxFirst, Math.floor(position.top / scale / 29))) +
-    headerRows;
-  const rowFraction = Math.max(0, position.top / scale / 29 - (first - headerRows));
-  // The final mounted rows keep their measured height and scroll natively.
-  const nativeTail = first - headerRows === maxFirst;
+  const logicalTop = position.top / scale / 29;
+  const first = Math.min(maxFirst, Math.floor(logicalTop)) + headerRows;
+  const rowFraction = logicalTop - (first - headerRows);
+  // Past the track's end the content is pinned and the final rows scroll natively.
+  const tailPinned = first - headerRows === maxFirst;
+  // Zoom and float error can leave the real bottom a pixel short of that end, so every row to the
+  // end mounts from there and its scroll extent can reach the pinned tail.
+  const nativeTail = tailPinned || position.top >= maxFirst * 29 * scale - 2;
   const scrollModel = useRef({ scale, maxFirst, heights: [] as number[] });
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- Measure native tail rows and preserve the DOM scroll position when the virtual track scale changes.
   useLayoutEffect(() => {
     const previous = scrollModel.current;
     const heights = nativeTail
-      ? Array.from(
-          contentRef.current?.querySelectorAll<HTMLElement>("[data-preview-row]") ?? [],
-          (row) => row.offsetHeight,
-        )
+      ? Array.from(contentRef.current?.querySelectorAll<HTMLElement>("[data-preview-row]") ?? [])
+          .filter((row) => Number(row.dataset.previewRow) >= maxFirst + headerRows)
+          .map((row) => row.offsetHeight)
       : [];
     scrollModel.current = { scale, maxFirst, heights };
     const node = ref.current;
@@ -608,7 +607,7 @@ function ScaledRows(
           ref={contentRef}
           className="absolute inset-x-0"
           style={{
-            top: nativeTail ? maxFirst * scale * 29 : position.top - rowFraction * layout.rowHeight,
+            top: tailPinned ? maxFirst * scale * 29 : position.top - rowFraction * layout.rowHeight,
           }}
         >
           {Array.from({ length: pageCount }, (_, offset) => (
