@@ -98,7 +98,11 @@ describe("resolveIssueLinkTarget", () => {
       ],
       bindings: {
         [ProjectId.make("p1")]: { tracker: IssueTrackerKind.make("linear"), scope: "API" },
-        [ProjectId.make("p2")]: { tracker: IssueTrackerKind.make("linear"), scope: "WEB" },
+        [ProjectId.make("p2")]: {
+          tracker: IssueTrackerKind.make("linear"),
+          scope: "WEB",
+          additionalScopes: ["DOCS"],
+        },
       },
     };
     const resolve = (url: string) => resolveIssueLinkTarget({ url, projects, trackers });
@@ -110,6 +114,10 @@ describe("resolveIssueLinkTarget", () => {
       key: "WEB-17",
       // The server refuses the key in any other workspace, should the credential move to one.
       workspace: "acme",
+    });
+    expect(resolve("https://linear.app/acme/issue/DOCS-4")?.ref).toMatchObject({
+      projectId: "p2",
+      scope: "DOCS",
     });
     expect(resolve("https://linear.app/acme/issue/OPS-3")?.ref).toMatchObject({
       projectId: "p1",
