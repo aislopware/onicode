@@ -64,11 +64,12 @@ test(
         messages: ["Change the file"],
         model: "approval",
       });
-      await runPromise(
-        makeState(ONICODE_HOME).cli(["thread", "send", waiting.threadId, "/compact"]),
-      );
+      // Send now hides on a command already first in the queue, so a follow-up waits ahead of it.
+      const state = makeState(ONICODE_HOME);
+      await runPromise(state.cli(["thread", "send", waiting.threadId, "Then tidy up"]));
+      await runPromise(state.cli(["thread", "send", waiting.threadId, "/compact"]));
       await onicode.open(waiting);
-      await screen.getByRole("button", "Send now").hover();
+      await screen.getByRole("button", "Send now").last().hover();
       await expect(
         screen.getByText("Move this command to the front of the queue", { exact: false }),
       ).toBeVisible();
