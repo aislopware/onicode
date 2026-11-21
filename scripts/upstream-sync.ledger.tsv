@@ -3037,3 +3037,4 @@ e97290a064	skip	already on main: Onicode's ebf6f662c4 moved the catalog, patches
 4d4ec7be5c	take	taken as is
 ed3b241eaa	skip	kept Onicode's signed-URL prefix guard (untraced and unlogged): upstream's route-level redactedParams only applies after the router matches, and the global CORS middleware answers OPTIONS preflights (desktop uploads to a remote environment) before matching, so the raw token reaches spans and request logs; unmatched methods leak the same way. Webhook parts are a removed surface.
 26b48d2da8	take	taken as is
+7f67ad9bcb	skip	Onicode has no agent-context-budget workflow (skipped with d63c0ec8eb); comment-only change
