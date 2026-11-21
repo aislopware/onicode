@@ -169,7 +169,9 @@ function makeService(input: {
   readonly projects: ReadonlyArray<OrchestrationProjectShell>;
   readonly trackers: ReadonlyArray<IssueTrackerApi>;
   readonly bindings?: Record<string, IssueTrackerProjectBinding>;
-  readonly readBindings?: IssueTrackerBindings.IssueTrackerBindingsRepository["Service"]["list"];
+  readonly readBindings?: ReturnType<
+    IssueTrackerBindings.IssueTrackerBindingsRepository["Service"]["list"]
+  >;
 }) {
   return IssueService.IssueService.pipe(
     Effect.provide(
@@ -177,7 +179,7 @@ function makeService(input: {
         Layer.provide(
           Layer.mergeAll(
             Layer.mock(IssueTrackerBindings.IssueTrackerBindingsRepository)({
-              list:
+              list: () =>
                 input.readBindings ??
                 Effect.succeed(
                   new Map(
