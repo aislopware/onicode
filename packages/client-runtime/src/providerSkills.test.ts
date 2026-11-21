@@ -13,6 +13,7 @@ import {
   getProviderSkillsForSlashMenu,
   hasCompleteProviderWorkspaceSnapshot,
   isProviderWorkspaceSnapshotScanning,
+  providerSkillInstructionsPath,
   resolveProviderSkillsForCwd,
   resolveProviderSlashCommandsForCwd,
   resolveProvidersForCwd,
@@ -82,6 +83,22 @@ describe("getProviderSkillsForSlashMenu", () => {
     ];
 
     expect(getProviderSkillsForSlashMenu(skills, true)).toEqual([enabledSkill]);
+  });
+});
+
+describe("providerSkillInstructionsPath", () => {
+  it.each([
+    ["/Users/matt/.claude/skills/review/SKILL.md", "/Users/matt/.claude/skills/review/SKILL.md"],
+    [
+      "C:\\plugins\\tools\\skills\\review\\SKILL.md",
+      "C:\\plugins\\tools\\skills\\review\\SKILL.md",
+    ],
+    ["/Users/matt/plugins/tools.zip/skills/review/SKILL.md", undefined],
+    ["C:\\plugins\\Tools.ZIP\\SKILL.md", undefined],
+    ["https://example.com/skills/review/SKILL.md", undefined],
+    [undefined, undefined],
+  ])("opens %s as %s", (path, expected) => {
+    expect(providerSkillInstructionsPath({ path })).toBe(expected);
   });
 });
 

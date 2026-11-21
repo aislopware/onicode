@@ -60,6 +60,16 @@ export function getProviderSlashCommandsForSlashMenu(
   return slashCommands.filter((command) => !skillNames.has(command.name.trim().toLowerCase()));
 }
 
+/** The SKILL.md a client may open, or none for a URL or a member of a plugin zip. */
+export function providerSkillInstructionsPath(skill: {
+  readonly path?: string | undefined;
+}): string | undefined {
+  const path = skill.path;
+  if (!path || /^[a-z][a-z\d+.-]*:\/\//i.test(path)) return undefined;
+  // Claude Code loads `--plugin-dir` zips without unpacking them, so their skills have no file.
+  return /\.zip\//i.test(normalizePathSeparators(path)) ? undefined : path;
+}
+
 export function resolveProviderSkillSourceKind(
   skill: Pick<ServerProviderSkill, "path" | "scope">,
 ): ProviderSkillSourceKind {

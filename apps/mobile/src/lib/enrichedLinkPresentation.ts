@@ -120,10 +120,6 @@ export function enrichedSkillReference(
   return match ? skills?.find((skill) => skill.name === match[1]) : undefined;
 }
 
-export function enrichedSkillInstructionsPath(skill: SelectableMarkdownSkill) {
-  return skill.path && !/^[a-z][a-z\d+.-]*:\/\//i.test(skill.path) ? skill.path : undefined;
-}
-
 export function buildEnrichedModelReferences(
   providers: ReadonlyArray<{
     readonly instanceId: string;

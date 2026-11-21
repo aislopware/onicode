@@ -531,6 +531,38 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
     }).pipe(Effect.provide(layerTest)),
   );
 
+  it.live("probes Claude with the provider host environment, not the server's own", () =>
+    Effect.gen(function* () {
+      if (yield* HostProcess.isWindows) return;
+
+      const fixtures = yield* makeTildeProviderFixtures();
+      const claudeId = ProviderInstanceId.make("claude_host_environment");
+      const hostEnvironment = {
+        ...(yield* HostProcess.Environment),
+        ONICODE_CLAUDE_FAIL_STDERR: "claude: seen through the provider host environment\n",
+      };
+      const snapshot = yield* Effect.gen(function* () {
+        const { registry } = yield* makeProviderInstanceRegistry<ClaudeDriverEnv>({
+          drivers: [ClaudeDriver],
+          configMap: {
+            [claudeId]: {
+              driver: ProviderDriverKind.make("claudeAgent"),
+              enabled: true,
+              config: makeClaudeConfig({
+                enabled: true,
+                binaryPath: fixtures.claudeBinaryPath,
+                homePath: fixtures.claudeHomePath,
+              }),
+            },
+          },
+        });
+        return yield* (yield* registry.getInstance(claudeId))!.snapshot.refresh;
+      }).pipe(Effect.provideService(HostProcess.Environment, hostEnvironment));
+
+      expect(snapshot.message).toContain("seen through the provider host environment");
+    }).pipe(Effect.provide(layerTest)),
+  );
+
   it.live("applies the lowest maxEffortLevel across Claude's settings sources", () =>
     Effect.gen(function* () {
       if (yield* HostProcess.isWindows) return;

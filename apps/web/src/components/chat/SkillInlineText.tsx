@@ -1,4 +1,5 @@
 import { collectComposerModelMentions } from "@onicode/client-runtime/composer-model-mentions";
+import { providerSkillInstructionsPath } from "@onicode/client-runtime/providerSkills";
 import type { EnvironmentId, ScopedThreadRef, ServerProviderSkill } from "@onicode/contracts";
 import { formatProviderSkillDisplayName } from "@onicode/shared/inlineSkills";
 import { T, useGT } from "gt-react";
@@ -115,8 +116,9 @@ export function skillInstructionsOpener(
   threadRef: ScopedThreadRef | null | undefined,
   skill: Pick<ServerProviderSkill, "path"> | undefined,
 ) {
-  if (!threadRef || !skill?.path) return undefined;
-  return () => useRightPanelStore.getState().openFile(threadRef, skill.path);
+  const path = skill ? providerSkillInstructionsPath(skill) : undefined;
+  if (!threadRef || !path) return undefined;
+  return () => useRightPanelStore.getState().openFile(threadRef, path);
 }
 
 export function SkillChipPopover(props: {
