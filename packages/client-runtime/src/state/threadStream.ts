@@ -79,11 +79,21 @@ export function applyThreadHistoryPage(
   page: OrchestrationV2ThreadHistoryPage,
 ): ThreadStreamState {
   // A snapshot since the request replaced the thread and its cursor.
-  if (state.projection === null || state.historyCursor !== cursor) return state;
+  if (state.historyCursor !== cursor) return state;
+  return prependThreadHistory(state, page, page.hasMoreHistory ? page.nextCursor : null);
+}
+
+/** Adds older timeline rows, with the cursor that follows them. */
+export function prependThreadHistory(
+  state: ThreadStreamState,
+  history: Pick<OrchestrationV2ThreadHistoryPage, "items">,
+  nextCursor: string | null,
+): ThreadStreamState {
+  if (state.projection === null) return state;
   return {
     ...state,
     // Older subagent rows carry their model themselves; the page has no records to merge.
-    projection: mergeOlderHistoryIntoProjection(state.projection, page.items),
-    historyCursor: page.hasMoreHistory ? page.nextCursor : null,
+    projection: mergeOlderHistoryIntoProjection(state.projection, history.items),
+    historyCursor: nextCursor,
   };
 }
