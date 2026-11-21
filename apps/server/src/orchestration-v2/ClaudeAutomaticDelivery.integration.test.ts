@@ -27,6 +27,7 @@ import * as Path from "effect/Path";
 import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
+import * as TestClock from "effect/testing/TestClock";
 import * as ScheduledTaskService from "../scheduledTasks/ScheduledTaskService.ts";
 import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
 import * as SecretRequests from "../secrets/SecretRequests.ts";
@@ -1133,6 +1134,15 @@ it.effect.each([
   "the user stops with a child result unread",
   "Claude cancels a task question",
   "the user stops with a task question unread",
+  // A result that echoes no prompt cannot prove Claude will start the notice, so Claude is
+  // asked to give it back. One it took runs as its next turn; only one it gives back, or one
+  // it never answers for, is queued again.
+  "the turn ends with no echo and Claude gives a child result back",
+  "the turn ends with no echo after Claude took a child result",
+  "the turn ends with no echo and Claude refuses the child result it took",
+  "the turn ends with no echo and Claude completes the child result it took unstarted",
+  "the turn ends with no echo and Claude never answers for a child result",
+  "the turn ends with no echo and Claude never starts the child result it kept",
   // Until Claude echoes a prompt uuid it could not say it read a notice, so it is handed none.
   "a child result arrives before Claude echoes a prompt",
   // Stop lands first, so the question Claude then hands back must not start a turn.
@@ -1159,6 +1169,7 @@ it.effect.each([
     let failNoticeRead = false;
     const offers: SDKUserMessage[] = [];
     const takenBack: Array<string> = [];
+    const cancelAsked = yield* Deferred.make<void>();
     const adapter = yield* ClaudeAdapterV2.makeClaudeAdapterV2({
       instanceId: modelSelection.instanceId,
       settings,
@@ -1180,9 +1191,18 @@ it.effect.each([
             renameSession: () => Effect.void,
             backgroundTasks: () => Effect.succeed(false),
             cancelQueuedMessage: (uuid) =>
-              Effect.sync(() => {
+              Effect.suspend(() => {
                 takenBack.push(uuid);
-                return true;
+                // Claude never answers: the cancel's deadline settles it.
+                return outcome.endsWith("never answers for a child result")
+                  ? Deferred.succeed(cancelAsked, undefined).pipe(Effect.andThen(Effect.never))
+                  : outcome.endsWith("never starts the child result it kept")
+                    ? Deferred.succeed(cancelAsked, undefined).pipe(Effect.as(false))
+                    : Effect.succeed(
+                        !outcome.endsWith("after Claude took a child result") &&
+                          !outcome.endsWith("refuses the child result it took") &&
+                          !outcome.endsWith("child result it took unstarted"),
+                      );
               }),
             mcpServerStatus: Effect.succeed([]),
             readMcpResource: () => Effect.die("unexpected MCP resource read"),
@@ -1558,6 +1578,60 @@ it.effect.each([
           yield* Fiber.join(reran);
           yield* worker.drain();
           yield* Fiber.join(delivered);
+          return;
+        }
+
+        if (outcome.startsWith("the turn ends with no echo")) {
+          const read = outcome.endsWith("after Claude took a child result");
+          // The unread notice is closed when it is queued again, and completed when Claude read it.
+          const settledNotice = yield* watch(
+            (event) =>
+              event.type === "turn-item.updated" &&
+              event.payload.type === "notification" &&
+              (event.payload.status === "cancelled" || event.payload.status === "completed"),
+          );
+          const requeued = yield* noticeRun("run.created", () => true);
+          const ended = yield* settled(parent.id, "waiting");
+          yield* Queue.offer(sdkMessages, toolResult("build", false));
+          for (const id of statusIds) yield* Queue.offer(sdkMessages, toolResult(id, false));
+          yield* Queue.offer(sdkMessages, result("result-without-echo", false));
+          const dropped = outcome.endsWith("refuses the child result it took")
+            ? "refused"
+            : outcome.endsWith("child result it took unstarted")
+              ? "completed"
+              : undefined;
+          if (read || dropped !== undefined) {
+            const lifecycle = (state: "started" | "refused" | "completed") =>
+              frame({
+                type: "command_lifecycle",
+                command_uuid: offers[1]?.uuid,
+                state,
+                uuid: `${state}-notice`,
+                session_id: sessionId,
+              });
+            yield* Queue.offer(sdkMessages, lifecycle(dropped ?? "started"));
+            if (read) yield* answer(offers[1]!);
+          }
+          if (outcome.endsWith("never answers for a child result")) {
+            yield* Deferred.await(cancelAsked);
+            yield* TestClock.adjust("2 seconds");
+          }
+          if (outcome.endsWith("never starts the child result it kept")) {
+            yield* Deferred.await(cancelAsked);
+            yield* TestClock.adjust("10 seconds");
+          }
+          yield* Fiber.join(ended);
+          yield* worker.drain();
+          yield* Fiber.join(settledNotice);
+          if (!read) yield* Fiber.join(requeued);
+          yield* worker.drain();
+          assert.equal((yield* notice)?.status, read ? "completed" : "cancelled");
+          assert.lengthOf(yield* noticeRuns, read ? 0 : 1);
+          assert.equal(yield* task, read ? "delivered" : "claimed");
+          assert.deepEqual(
+            takenBack.map((uuid) => offers.findIndex((offer) => offer.uuid === uuid)),
+            [1],
+          );
           return;
         }
 

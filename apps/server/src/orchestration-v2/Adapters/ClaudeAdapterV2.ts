@@ -410,6 +410,8 @@ const WORKFLOW_MEMBER_TRANSCRIPT_FLUSH_MS = 500;
 const BACKGROUND_MOVE_TIMEOUT_MS = 5_000;
 // How long a Stop waits for the CLI to exit before the user is offered Force stop.
 const CLAUDE_STOP_CONFIRM_TIMEOUT_MS = 10_000;
+const CLAUDE_CANCEL_QUEUED_NOTICE_TIMEOUT_MS = 2_000;
+const CLAUDE_QUEUED_NOTICE_START_TIMEOUT_MS = 10_000;
 // Matches the stderr tail the SDK keeps for a CLI it spawns itself.
 const CLAUDE_STDERR_TAIL_LENGTH = 2_048;
 // The process group is killed on exit, so its stderr closes promptly.
@@ -2097,7 +2099,16 @@ export const layerQueryRunner: Layer.Layer<
               }),
             catch: (cause) => queryRunnerError(cause, "cancelQueuedMessage"),
           }).pipe(
-            Effect.map((reply) => Predicate.isObject(reply) && reply.cancelled === true),
+            Effect.flatMap((reply) =>
+              Predicate.isObject(reply) && typeof reply.cancelled === "boolean"
+                ? Effect.succeed(reply.cancelled)
+                : Effect.fail(
+                    queryRunnerError(
+                      new Error("Claude answered a queued message cancel without a verdict."),
+                      "cancelQueuedMessage",
+                    ),
+                  ),
+            ),
             Effect.tap((cancelled) =>
               logProtocolEvent({
                 direction: "outgoing",
@@ -10039,15 +10050,24 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           }
           // Claude removed the steer before reading it. Its item stays pending, so the orchestrator
           // sends it as the next turn once this run ends.
-          const dropped =
+          if (
             lifecycle !== null &&
             (lifecycle.state === "cancelled" ||
               lifecycle.state === "discarded" ||
-              lifecycle.state === "refused")
-              ? context.pendingSteers.get(lifecycle.uuid)
-              : undefined;
-          if (dropped === undefined || lifecycle === null || dropped.resending) return;
-          const droppedUuid = lifecycle.uuid;
+              lifecycle.state === "refused" ||
+              // Completed unstarted while the turn waits for it: Claude will not run it.
+              (lifecycle.state === "completed" && context.heldResult !== undefined))
+          ) {
+            yield* dropSteer(context, lifecycle.uuid);
+          }
+        });
+
+        const dropSteer = Effect.fnUntraced(function* (
+          context: ActiveClaudeTurnContext,
+          droppedUuid: string,
+        ) {
+          const dropped = context.pendingSteers.get(droppedUuid);
+          if (dropped === undefined || dropped.resending) return;
           context.pendingSteers.delete(droppedUuid);
           // The follow-up turn sends the same files and notes again. Only notes this steer still
           // holds go back, and a steer that replaced one now replaced what this steer did.
@@ -10080,16 +10100,71 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             dropped.pdfReservation.refund();
             yield* persistAttachmentBudget(context.nativeThreadId);
           }
-          if (context.pendingSteers.size === 0 && context.heldResult !== undefined) {
-            // Stop cancels the steers Claude still holds.
-            const interrupted = (yield* Ref.get(interruptedTurns)).has(context.providerTurnId);
-            yield* finalizeActiveTurn({
-              context,
-              status: interrupted ? "interrupted" : "completed",
-              completedAt: yield* DateTime.now,
-              result: context.heldResult,
-            });
+          yield* releaseHeldResult(context);
+        });
+
+        // A result held for steers Claude has not started settles the turn once none is left.
+        const releaseHeldResult = Effect.fnUntraced(function* (context: ActiveClaudeTurnContext) {
+          const heldResult = context.heldResult;
+          if (context.pendingSteers.size > 0 || heldResult === undefined) return;
+          // Stop cancels the steers Claude still holds.
+          const interrupted = (yield* Ref.get(interruptedTurns)).has(context.providerTurnId);
+          yield* finalizeActiveTurn({
+            context,
+            status: interrupted ? "interrupted" : "completed",
+            completedAt: yield* DateTime.now,
+            result: heldResult,
+          });
+        });
+
+        // A live Claude runs a notice it still queues as its next native turn, which starts it.
+        // Asked to give each back, it answers false for one it already took. The turn waits for
+        // that start; one given back is dropped, and the orchestrator queues it again.
+        const askClaudeForQueuedNotices = Effect.fnUntraced(function* (
+          context: ActiveClaudeTurnContext,
+          liveQuery: ClaudeLiveQueryContext,
+        ) {
+          const cancelQueuedMessage = liveQuery.query.cancelQueuedMessage;
+          const notices = [...context.pendingSteers].filter(
+            ([, steer]) => steer.automatic && steer.liveQuery === liveQuery,
+          );
+          if (cancelQueuedMessage === undefined || liveQuery.stopping || notices.length === 0) {
+            return false;
           }
+          // One not offered yet starts Claude's next turn once the offer lands.
+          for (const [uuid, steer] of notices) {
+            if (steer.offered === undefined) continue;
+            yield* cancelQueuedMessage(uuid).pipe(
+              Effect.timeoutOption(CLAUDE_CANCEL_QUEUED_NOTICE_TIMEOUT_MS),
+              Effect.catch((error) =>
+                Effect.logWarning("orchestration-v2.claude-cancel-queued-notice-failed", {
+                  providerTurnId: context.providerTurnId,
+                  error: error.message,
+                }).pipe(Effect.as(Option.none<boolean>())),
+              ),
+              // One Claude kept starts at once. Given back, unanswered, or kept and never
+              // started, nothing proves it will run, so it is dropped.
+              Effect.flatMap((answer) =>
+                Option.getOrElse(answer, () => true)
+                  ? Effect.void
+                  : Effect.sleep(CLAUDE_QUEUED_NOTICE_START_TIMEOUT_MS),
+              ),
+              Effect.andThen(
+                sdkMessageLock.withPermits(1)(
+                  Effect.gen(function* () {
+                    if (
+                      (yield* Ref.get(activeTurn)) === context &&
+                      context.pendingSteers.get(uuid) === steer
+                    ) {
+                      yield* dropSteer(context, uuid);
+                    }
+                  }),
+                ),
+              ),
+              Effect.forkIn(sessionScope),
+            );
+          }
+          return true;
         });
 
         const finalizeActiveTurn = Effect.fnUntraced(function* (requested: {
@@ -10103,6 +10178,8 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           readonly threadDisposition?: "reusable" | "broken";
           readonly result?: SDKResultMessage;
         }) {
+          // Settled already: a held result's release can race the query's exit.
+          if (requested.context.steersClosed) return;
           // A turn stopped by the retry budget settles as failed with the retry's error.
           const retryBudgetFailure = requested.context.retryBudgetFailure;
           const input =
@@ -12974,12 +13051,13 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 ? "failed"
                 : terminalStatusFromResult(message, failureHint);
             // Claude answers a steer it has not read yet as the next native turn, which echoes
-            // the steer. A result without echoes cannot prove that turn will come.
+            // the steer. Without an echo, Claude is asked whether it still holds its notices.
             if (
               status === "completed" &&
               terminalFailure === null &&
               context.pendingSteers.size > 0 &&
-              claudeEchoedPromptUuids(message).length > 0
+              (claudeEchoedPromptUuids(message).length > 0 ||
+                (yield* askClaudeForQueuedNotices(context, liveQuery)))
             ) {
               context.heldResult = message;
               yield* endReplySegment(context);
@@ -14935,9 +15013,15 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             ).pipe(
               // A notice that fails to send stays pending: `completed` would say Claude read it.
               Effect.onError(() =>
-                currentTurn.pendingSteers.delete(steerUuid) && !automatic
-                  ? emitSteerStatus(currentTurn, messageId, "completed")
-                  : Effect.void,
+                sdkMessageLock.withPermits(1)(
+                  Effect.gen(function* () {
+                    if (!currentTurn.pendingSteers.delete(steerUuid)) return;
+                    if (!automatic) yield* emitSteerStatus(currentTurn, messageId, "completed");
+                    if ((yield* Ref.get(activeTurn)) === currentTurn) {
+                      yield* releaseHeldResult(currentTurn);
+                    }
+                  }),
+                ),
               ),
             );
             return claudeConfirmsSteerRead(existing) ? ({ awaitsRead: true } as const) : undefined;
