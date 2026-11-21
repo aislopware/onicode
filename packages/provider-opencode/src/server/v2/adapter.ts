@@ -75,7 +75,7 @@ import { HTML_RENDER_TOOL_NAME } from "@onicode/shared/htmlRender";
 import { htmlRenderFromToolItem } from "@onicode/shared/toolOutput";
 import { compareSemverVersions } from "@onicode/shared/semver";
 import * as KeyedLock from "@onicode/shared/KeyedLock";
-import { getModelSelectionStringOptionValue, modelSelectionsEqual } from "@onicode/shared/model";
+import { modelSelectionsEqual } from "@onicode/shared/model";
 import { causeErrorTag } from "@onicode/shared/observability";
 
 import {
@@ -770,7 +770,7 @@ const modelRef = (
 ) => {
   const parsed = OpenCodeRuntime.parseOpenCodeModelSlug(selection.model);
   if (parsed === null) return undefined;
-  const selected = getModelSelectionStringOptionValue(selection, "variant");
+  const selected = OpenCodeRuntime.openCodeVariant(selection);
   const variant =
     selected === undefined || listedVariants === undefined || listedVariants.has(selected)
       ? selected
@@ -783,6 +783,7 @@ const modelRef = (
 };
 const malformedModel = (model: string) =>
   `OpenCode model '${model}' must use provider/model format`;
+// OpenCode 2 reports a session created without a variant as variant "default".
 const sameModel = (left: ModelRef, right: ModelRef | undefined) =>
   left.providerID === right?.providerID &&
   left.id === right?.id &&

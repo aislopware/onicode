@@ -1,7 +1,7 @@
 import { resolveProviderProbeTimeoutMs } from "@onicode/provider-core/server/snapshotProbe";
 import * as NodeURL from "node:url";
 
-import type { ChatAttachment, ProviderApprovalDecision } from "@onicode/contracts";
+import type { ChatAttachment, ModelSelection, ProviderApprovalDecision } from "@onicode/contracts";
 import {
   createOpencodeClient,
   type Agent,
@@ -37,6 +37,10 @@ import { collectStreamAsString } from "@onicode/provider-core/server/snapshotPro
 import * as NetService from "@onicode/shared/Net";
 import { AgentScope } from "@onicode/shared/AgentScope";
 import * as HostProcess from "@onicode/shared/HostProcess";
+import {
+  DEFAULT_VARIANT_CHOICE_ID,
+  getModelSelectionStringOptionValue,
+} from "@onicode/shared/model";
 import { parseSemver } from "@onicode/shared/semver";
 import { resolveSpawnCommand } from "@onicode/shared/shell";
 const encodeUnknownJsonStringExit = Schema.encodeUnknownExit(Schema.fromJsonString(Schema.Unknown));
@@ -387,6 +391,11 @@ export function parseOpenCodeModelSlug(
     providerID: trimmed.slice(0, separator),
     modelID: trimmed.slice(separator + 1),
   };
+}
+
+export function openCodeVariant(selection: ModelSelection): string | undefined {
+  const variant = getModelSelectionStringOptionValue(selection, "variant");
+  return variant === DEFAULT_VARIANT_CHOICE_ID ? undefined : variant;
 }
 
 export function openCodeQuestionId(
