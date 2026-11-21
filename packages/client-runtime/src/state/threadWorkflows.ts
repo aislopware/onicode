@@ -8,6 +8,7 @@ import { copySorted } from "@onicode/shared/Array";
 import { mFallback, msg } from "gt-i18n";
 import type { MFunctionType } from "gt-i18n/types";
 
+import { commandNeverSteers } from "./composerDispatch.ts";
 import type { ThreadStructure } from "./models.ts";
 
 type Projection = ThreadStructure;
@@ -145,6 +146,17 @@ export function getUserQueuedThreadRuns(
   );
 }
 
+/** Delivery order: the queue position the server set, else the order sent. */
+export function compareQueuedRuns(
+  left: Pick<Run, "queuePosition" | "ordinal">,
+  right: Pick<Run, "queuePosition" | "ordinal">,
+): number {
+  return (
+    (left.queuePosition ?? left.ordinal) - (right.queuePosition ?? right.ordinal) ||
+    left.ordinal - right.ordinal
+  );
+}
+
 export function deriveThreadQueueWorkflowState(
   projection: Projection,
   resolve: MFunctionType = mFallback,
@@ -163,32 +175,31 @@ export function deriveThreadQueueWorkflowState(
     projection.providerTurns.some(
       (turn) => turn.runAttemptId === activeRun.activeAttemptId && turn.status === "running",
     );
-  const queuedRuns = copySorted(
-    getUserQueuedThreadRuns(projection),
-    (left, right) =>
-      (left.queuePosition ?? left.ordinal) - (right.queuePosition ?? right.ordinal) ||
-      left.ordinal - right.ordinal,
-  ).map((run) => {
-    const message = projection.messages.find((candidate) => candidate.id === run.userMessageId);
-    return {
-      run,
-      // The server keeps the field after the turn or its compaction ends, so the running
-      // compaction decides, not the field alone.
-      awaitsCompaction:
-        run.steerWhenReadyRunId !== undefined &&
-        activeRun?.status === "running" &&
-        run.steerWhenReadyRunId === activeRun.id &&
-        projection.turnItems.some(
-          (item) =>
-            item.type === "compaction" && item.runId === activeRun.id && item.status === "running",
-        ),
-      text: message?.text ?? resolve(msg("Queued message")),
-      attachments: message?.attachments ?? [],
-      messageId: run.userMessageId,
-      ...(message?.context ? { context: message.context } : {}),
-      ...(message ? { message } : {}),
-    };
-  });
+  const queuedRuns = copySorted(getUserQueuedThreadRuns(projection), compareQueuedRuns).map(
+    (run) => {
+      const message = projection.messages.find((candidate) => candidate.id === run.userMessageId);
+      return {
+        run,
+        // The server keeps the field after the turn or its compaction ends, so the running
+        // compaction decides, not the field alone.
+        awaitsCompaction:
+          run.steerWhenReadyRunId !== undefined &&
+          activeRun?.status === "running" &&
+          run.steerWhenReadyRunId === activeRun.id &&
+          projection.turnItems.some(
+            (item) =>
+              item.type === "compaction" &&
+              item.runId === activeRun.id &&
+              item.status === "running",
+          ),
+        text: message?.text ?? resolve(msg("Queued message")),
+        attachments: message?.attachments ?? [],
+        messageId: run.userMessageId,
+        ...(message?.context ? { context: message.context } : {}),
+        ...(message ? { message } : {}),
+      };
+    },
+  );
 
   return {
     activeRun,
@@ -221,6 +232,38 @@ export function canPromoteQueuedRun(
     (workflow.promoteSkipsCompaction ||
       (run.freshContext !== true && run.outputSchema === undefined))
   );
+}
+
+export type QueuedRunSendNow =
+  | { readonly type: "start" }
+  | { readonly type: "steer"; readonly targetRunId: Run["id"] }
+  | { readonly type: "move-first"; readonly beforeRunId: Run["id"] };
+
+/**
+ * What a queued row's Send now does, or null when it can't. While a turn runs, a command that
+ * never steers is only moved to the front, which needs no steering capability either.
+ */
+export function resolveQueuedRunSendNow(
+  workflow: ThreadQueueWorkflowState,
+  runId: Run["id"],
+  /** The text just saved for it, which the projection may not show yet. */
+  saved?: { readonly text: string; readonly attachments: ReadonlyArray<unknown> },
+): QueuedRunSendNow | null {
+  const queued = workflow.queuedRuns.find(({ run }) => run.id === runId);
+  if (queued === undefined) return null;
+  if (workflow.canSendNow) return { type: "start" };
+  if (workflow.activeRun === null) return null;
+  const message = saved ?? {
+    text: queued.message?.text ?? queued.text,
+    attachments: queued.attachments,
+  };
+  if (!workflow.promoteSkipsCompaction && commandNeverSteers(message)) {
+    const first = workflow.queuedRuns[0]!.run.id;
+    return first === runId ? null : { type: "move-first", beforeRunId: first };
+  }
+  return canPromoteQueuedRun(workflow, queued.run)
+    ? { type: "steer", targetRunId: workflow.activeRun.id }
+    : null;
 }
 
 export function canForkProjectedAssistantItem(input: {

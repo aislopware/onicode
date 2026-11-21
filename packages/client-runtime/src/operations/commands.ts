@@ -48,6 +48,8 @@ import {
   request,
 } from "../rpc/client.ts";
 import { repositoryCheckpointScopeIds } from "../state/threadRepositories.ts";
+import { compareQueuedRuns, getUserQueuedThreadRuns } from "../state/threadWorkflows.ts";
+import { copySorted } from "@onicode/shared/Array";
 
 interface CommandMetadata {
   readonly commandId?: CommandId;
@@ -269,6 +271,12 @@ export interface ResumeThreadQueueInput extends ThreadCommandInput {
 export interface PromoteQueuedRunInput extends ThreadCommandInput {
   readonly queuedRunId: RunId;
   readonly targetRunId: RunId;
+}
+
+export interface MoveQueuedRunFirstInput extends ThreadCommandInput {
+  readonly runId: RunId;
+  /** The queue's first run as last seen. */
+  readonly beforeRunId: RunId;
 }
 
 export interface SendSteerNowInput extends ThreadCommandInput {
@@ -1134,6 +1142,33 @@ export const promoteQueuedRun = Effect.fn("EnvironmentCommands.promoteQueuedRun"
     queuedRunId: input.queuedRunId,
     targetRunId: input.targetRunId,
   });
+});
+
+export const moveQueuedRunFirst = Effect.fn("EnvironmentCommands.moveQueuedRunFirst")(function* (
+  input: MoveQueuedRunFirstInput,
+) {
+  return yield* dispatch({
+    type: "queued-run.reorder",
+    commandId: yield* allocateCommandId(input),
+    threadId: input.threadId,
+    runId: input.runId,
+    beforeRunId: input.beforeRunId,
+  }).pipe(
+    // The first run can start between the tap and the command, which leaves this one first.
+    Effect.catchTags({
+      OrchestrationV2DispatchCommandError: (error) =>
+        getProjection(input.threadId).pipe(
+          Effect.flatMap((projection) => {
+            const queued = getUserQueuedThreadRuns(projection);
+            const first = copySorted(queued, compareQueuedRuns)[0];
+            return queued.some((run) => run.id === input.runId) && first?.id !== input.runId
+              ? Effect.fail(error)
+              : Effect.void;
+          }),
+          Effect.mapError(() => error),
+        ),
+    }),
+  );
 });
 
 export const sendSteerNow = Effect.fn("EnvironmentCommands.sendSteerNow")(function* (

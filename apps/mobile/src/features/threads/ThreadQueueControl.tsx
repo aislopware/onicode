@@ -10,7 +10,7 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@onicode/client-runtime/state/runtime";
-import { canPromoteQueuedRun } from "@onicode/client-runtime/state/thread-workflows";
+import { resolveQueuedRunSendNow } from "@onicode/client-runtime/state/thread-workflows";
 import { isSlashCommand } from "@onicode/shared/composerTrigger";
 import { resolveUserMessagePresentation } from "@onicode/client-runtime/user-message";
 import type { ChatAttachment, EnvironmentId, RunId, ThreadId } from "@onicode/contracts";
@@ -147,6 +147,10 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
     m,
   );
   const promote = useAtomCommand(threadEnvironment.promoteQueuedRun, "promote queued message");
+  const moveFirst = useAtomCommand(
+    threadEnvironment.moveQueuedRunFirst,
+    "move queued command first",
+  );
   const cancel = useAtomCommand(threadEnvironment.cancelQueuedRun, "remove queued message");
   const resume = useAtomCommand(threadEnvironment.resumeThreadQueue, "resume queue");
   const resumeHeldQueue = useAtomCommand(threadEnvironment.resumeThreadQueue, {
@@ -199,24 +203,28 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
       return;
     }
     if (action !== "steer" && action !== "remove") return;
+    const sendNow = workflow ? resolveQueuedRunSendNow(workflow, runId) : null;
+    if (action === "steer" && sendNow === null) return;
     busyRef.current = true;
     setBusyRunId(runId);
     void Haptics.selectionAsync();
+    const { threadId } = target;
     const result =
       action === "remove"
         ? await cancel(buildCancelQueuedRunCommand({ ...target, runId }))
-        : workflow?.canSendNow
-          ? await resume({ ...target, input: { threadId: target.threadId, runId } })
-          : workflow?.activeRun && workflow.canPromoteToSteer
-            ? await promote({
+        : sendNow?.type === "start"
+          ? await resume({ ...target, input: { threadId, runId } })
+          : sendNow?.type === "move-first"
+            ? await moveFirst({
                 ...target,
-                input: {
-                  threadId: target.threadId,
-                  queuedRunId: runId,
-                  targetRunId: workflow.activeRun.id,
-                },
+                input: { threadId, runId, beforeRunId: sendNow.beforeRunId },
               })
-            : null;
+            : sendNow?.type === "steer"
+              ? await promote({
+                  ...target,
+                  input: { threadId, queuedRunId: runId, targetRunId: sendNow.targetRunId },
+                })
+              : null;
     busyRef.current = false;
     setBusyRunId(null);
     if (action === "steer" && result?._tag === "Failure" && !isAtomCommandInterrupted(result)) {
@@ -281,10 +289,14 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
           !workflow?.canSendNow &&
           !workflow?.promoteSkipsCompaction &&
           isSlashCommand({ text: message?.text ?? text, attachments });
+        const sendNow = workflow ? resolveQueuedRunSendNow(workflow, run.id) : null;
+        // A command moves first without steering, so it keeps Send now on a provider that can't steer.
+        const offersSendNow =
+          sendNow !== null || workflow?.canPromoteToSteer === true || workflow?.canSendNow === true;
         const controls = resolveThreadQueueRowControls({
           awaitsCompaction,
           busy: busyRunId !== null || resuming,
-          canPromoteToSteer: workflow != null && canPromoteQueuedRun(workflow, run),
+          canPromoteToSteer: sendNow !== null,
           canSendNow: workflow?.canSendNow ?? false,
           editBlocked: editBlockedReason !== null,
           isEditing: editing?.runId === run.id,
@@ -318,7 +330,7 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
                             image: "hourglass",
                           },
                         ]
-                      : workflow?.canPromoteToSteer || workflow?.canSendNow
+                      : offersSendNow
                         ? [
                             {
                               id: "steer",
@@ -403,7 +415,7 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
                       />
                     </View>
                   </View>
-                ) : workflow?.canPromoteToSteer || workflow?.canSendNow ? (
+                ) : offersSendNow ? (
                   // Outside the edit row and full row height, so a near miss never opens the editor.
                   <Pressable
                     accessibilityRole="button"

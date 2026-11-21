@@ -18,8 +18,8 @@ import {
 } from "@onicode/contracts";
 import * as Result from "effect/Result";
 import { T, useGT, useMessages } from "gt-react-native";
-import { useMemo, useRef, useState } from "react";
-import { Pressable, ScrollView, View } from "react-native";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { AccessibilityInfo, Platform, Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { EnvironmentMachineSymbol } from "../../components/EnvironmentMachineSymbol";
@@ -163,6 +163,34 @@ function LinkSeveralSheet(props: {
   const chosen = selectable.filter((machine) => selected.has(machine.environmentId));
   const busy = linking.size > 0;
   const summary = linkBatchSummary(outcomes);
+  const outcomeText =
+    outcomes.size === 0 || busy
+      ? undefined
+      : summary.failed.length === 0
+        ? gt("{linked, plural, one {Linked # machine.} other {Linked # machines.}}", {
+            linked: summary.linked,
+          })
+        : gt(
+            "Linked {linked} of {total}. The ones that failed stay selected, so you can try them again.",
+            { linked: summary.linked, total: outcomes.size },
+          );
+  const disconnectedText =
+    props.sourceConnected || busy
+      ? undefined
+      : gt("{environment} is not connected.", { environment: props.environmentLabel });
+  // Live regions reach TalkBack; VoiceOver needs an explicit announcement. Each text is announced
+  // when it changes, so a reconnect does not read the earlier result out again.
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- announces the result to VoiceOver through AccessibilityInfo
+  useEffect(() => {
+    if (outcomeText && Platform.OS === "ios")
+      AccessibilityInfo.announceForAccessibility(outcomeText);
+  }, [outcomeText]);
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- announces a disconnect to VoiceOver through AccessibilityInfo
+  useEffect(() => {
+    if (disconnectedText && Platform.OS === "ios") {
+      AccessibilityInfo.announceForAccessibility(disconnectedText);
+    }
+  }, [disconnectedText]);
   const allChosen = selectable.length > 0 && chosen.length === selectable.length;
 
   const toggle = (id: EnvironmentId) =>
@@ -376,29 +404,22 @@ function LinkSeveralSheet(props: {
             />
           ))}
         </SettingsSection>
-        {outcomes.size > 0 && !busy ? (
+        {outcomeText ? (
           <Text
             accessibilityLiveRegion="polite"
             className="font-sans text-sm leading-5 text-foreground-muted"
           >
-            {summary.failed.length === 0
-              ? gt("{linked, plural, one {Linked # machine.} other {Linked # machines.}}", {
-                  linked: summary.linked,
-                })
-              : gt(
-                  "Linked {linked} of {total}. The ones that failed stay selected, so you can try them again.",
-                  { linked: summary.linked, total: outcomes.size },
-                )}
+            {outcomeText}
           </Text>
         ) : null}
-        {props.sourceConnected || busy ? null : (
+        {disconnectedText ? (
           <Text
             accessibilityLiveRegion="polite"
             className="font-sans text-sm leading-5 text-foreground-muted"
           >
-            {gt("{environment} is not connected.", { environment: props.environmentLabel })}
+            {disconnectedText}
           </Text>
-        )}
+        ) : null}
         <Button
           label={
             busy

@@ -1391,10 +1391,22 @@ describe("planComposerTurn", () => {
       shouldQueueBehindActiveRun: false,
       baseBranchForWorktree: null,
     });
-    // The server queues a typed command sent as a steer; a path or an attachment still steers.
+    // A typed command is sent as a queue, so no server steers it; /goal may stop the turn first,
+    // which only a steer asks for. A path or an attachment still steers.
     expect(
       planComposerTurn({ ...running, dispatchMode: "steer", messageText: "/review" }),
+    ).toMatchObject({ turnDispatchMode: "queue", shouldQueueBehindActiveRun: true });
+    expect(
+      planComposerTurn({ ...running, dispatchMode: "steer", messageText: "/goal pause" }),
     ).toMatchObject({ turnDispatchMode: "steer", shouldQueueBehindActiveRun: true });
+    expect(
+      planComposerTurn({
+        ...running,
+        phase: "connecting",
+        dispatchMode: "steer",
+        messageText: "/review",
+      }).turnDispatchMode,
+    ).toBe("queue");
     for (const command of [
       { messageText: "/src/a.ts" },
       { messageText: "/review", attachmentCount: 1 },

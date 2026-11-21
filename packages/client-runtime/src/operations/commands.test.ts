@@ -3,10 +3,12 @@ import {
   CheckpointRef,
   CheckpointScopeId,
   CommandId,
+  EnvironmentAuthorizationError,
   EnvironmentId,
   MessageId,
   NodeId,
   ORCHESTRATION_V2_WS_METHODS,
+  OrchestrationV2DispatchCommandError,
   ProjectId,
   ProviderInstanceId,
   ProviderDriverKind,
@@ -45,6 +47,7 @@ import { v2Now, v2Projection, v2ThreadId } from "../state/orchestrationV2TestFix
 import {
   archiveThread,
   interruptThreadTurn,
+  moveQueuedRunFirst,
   revertThreadCheckpoint,
   resumeThreadQueue,
   startThreadTurn,
@@ -164,6 +167,69 @@ describe("V2 environment commands", () => {
         { type: "queue.resume", commandId: "resume-queue", threadId },
       ]);
     }).pipe(Effect.provide(layerTestRandom)),
+  );
+
+  it.effect.each([
+    { queued: ["command"], denied: false, moved: true },
+    { queued: ["later"], denied: false, moved: true },
+    { queued: ["later", "command"], denied: false, moved: false },
+    // A refusal for this client is not a stale queue, wherever the run stands.
+    { queued: ["command"], denied: true, moved: false },
+  ])(
+    "moves a command first, or finds it there, queued=$queued denied=$denied",
+    ({ queued, denied, moved }) =>
+      Effect.gen(function* () {
+        const commands: OrchestrationV2Command[] = [];
+        const supervisor = yield* makeSupervisor({
+          commands,
+          projects: [],
+          projection: {
+            ...v2Projection,
+            messages: [],
+            runs: queued.map((id, index) => ({
+              ...v2Projection.runs[0]!,
+              id: RunId.make(id),
+              status: "queued" as const,
+              ordinal: index + 2,
+              queuePosition: index + 1,
+            })),
+          },
+        });
+        const session = Option.getOrThrow(yield* SubscriptionRef.get(supervisor.session));
+        // The head started before the reorder arrived, so the server no longer finds it queued.
+        const rejecting = {
+          ...session.client,
+          [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: () =>
+            Effect.fail(
+              denied
+                ? new EnvironmentAuthorizationError({
+                    message: "Not allowed.",
+                    requiredScope: "orchestration:operate",
+                  })
+                : new OrchestrationV2DispatchCommandError({
+                    commandId: CommandId.make("move-first"),
+                    commandType: "queued-run.reorder",
+                    message: "Queue target head is not queued.",
+                  }),
+            ),
+        } as unknown as WsRpcProtocolClient;
+        yield* SubscriptionRef.set(
+          supervisor.session,
+          Option.some({ ...session, client: rejecting }),
+        );
+
+        const exit = yield* moveQueuedRunFirst({
+          commandId: CommandId.make("move-first"),
+          threadId: v2ThreadId,
+          runId: RunId.make("command"),
+          beforeRunId: RunId.make("head"),
+        }).pipe(
+          Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor),
+          Effect.exit,
+        );
+
+        expect(Exit.isSuccess(exit)).toBe(moved);
+      }).pipe(Effect.provide(layerTestRandom)),
   );
 
   it.effect("preserves caller command ids for idempotent V2 commands", () =>

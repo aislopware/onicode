@@ -94,7 +94,10 @@ import {
   reviewCommentContextLabel,
   terminalContextReference,
 } from "../lib/composerContextRecords";
-import type { ComposerDispatchMode } from "@onicode/client-runtime/state/composer-dispatch";
+import {
+  commandNeverSteers,
+  type ComposerDispatchMode,
+} from "@onicode/client-runtime/state/composer-dispatch";
 import type { DraftThreadEnvMode } from "../composerDraftStore";
 import { type ComposerSubmissionIntent } from "../composer-logic";
 import type { ReviewCommentContext } from "../reviewCommentContext";
@@ -1444,8 +1447,13 @@ export function planComposerTurn(input: {
     input.resumeCompactionTokens !== null &&
     !input.keepFullHistory &&
     !COMPACT_COMMAND_PATTERN.test(input.messageText);
+  const message = {
+    text: input.messageText,
+    attachments: Array.from({ length: input.attachmentCount }),
+  };
   const dispatchMode =
-    input.freshContext && (input.dispatchMode === "steer" || input.dispatchMode === "restart")
+    (input.freshContext && (input.dispatchMode === "steer" || input.dispatchMode === "restart")) ||
+    (input.dispatchMode === "steer" && commandNeverSteers(message))
       ? "queue"
       : input.dispatchMode;
   return {
@@ -1467,17 +1475,12 @@ export function planComposerTurn(input: {
       compactBeforeSend || (input.sendQueuesBehindSetup && dispatchMode !== "steer")
         ? ("queue" as const)
         : dispatchMode,
-    // The server queues a slash command sent as a steer, so it is shown waiting, not steering.
+    // The server queues /goal sent as a steer, so it is shown waiting, not steering.
     shouldQueueBehindActiveRun:
       compactBeforeSend ||
       input.sendQueuesBehindSetup ||
       (input.phase === "running" &&
-        (dispatchMode === "queue" ||
-          (dispatchMode === "steer" &&
-            isSlashCommand({
-              text: input.messageText,
-              attachments: Array.from({ length: input.attachmentCount }),
-            })))),
+        (dispatchMode === "queue" || (dispatchMode === "steer" && isSlashCommand(message)))),
   };
 }
 

@@ -18,6 +18,8 @@ const INLINE_INSTRUCTIONS_BUDGET = 64 * 1024;
 export type ClaudeSkillTarget = Pick<ServerProviderSkill, "path" | "userInvocationOnly"> & {
   /** The SKILL.md of a skill with no readable file, such as one inside a plugin zip. */
   readonly instructions?: string;
+  /** The plugin zip that holds it. */
+  readonly archive?: string;
 };
 
 export interface ClaudeSkillDispatch {
@@ -25,6 +27,17 @@ export interface ClaudeSkillDispatch {
   readonly leadingText: string | undefined;
   /** `/name` plus the trailing text, ready to be the message's last text block. */
   readonly commandText: string;
+}
+
+/** Files a zipped skill names beside its SKILL.md stay in the archive. */
+function archivedFilesNote({ archive, path }: ClaudeSkillTarget): string {
+  if (archive === undefined || !path.startsWith(archive)) return "";
+  // Zip members always use `/`, whatever the host's separator.
+  const member = path.slice(archive.length + 1).replaceAll("\\", "/");
+  const folder = member.slice(0, member.lastIndexOf("/") + 1);
+  return folder
+    ? `\nIts other files are in ${folder} inside the archive ${archive}.`
+    : `\nIts other files are inside the archive ${archive}.`;
 }
 
 export function planClaudeSkillDispatch(
@@ -67,7 +80,7 @@ export function planClaudeSkillDispatch(
             ? `${body.slice(0, inlineBudget).replace(/[\uD800-\uDBFF]$/, "")}\n[Truncated]`
             : body;
         inlineBudget = Math.max(0, inlineBudget - body.length);
-        promptWithInlineSlashes += ` [The user invoked this skill. Follow its instructions:\n<skill name="${mention.name}">\n${kept}\n</skill>]`;
+        promptWithInlineSlashes += ` [The user invoked this skill. Follow its instructions:\n<skill name="${mention.name}">\n${kept}\n</skill>${archivedFilesNote(mention.skill)}]`;
       }
       annotated.add(mention.name);
     }
