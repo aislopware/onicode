@@ -189,6 +189,8 @@ it.layer(NodeServices.layer)("WorkspaceFolders", (it) => {
           ["web", repository("web")],
           ["Outside", outside],
         ]);
+        // A folder that cannot be read says nothing about the repositories inside it.
+        assert.isNull(yield* WorkspaceFolders.discoverFolders(path.join(tmp, "unmounted")));
       }).pipe(Effect.provide(layerFor({ workspaceRoot, trackedFolders })));
     }),
   );

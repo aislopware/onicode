@@ -209,7 +209,8 @@ export const layer: Layer.Layer<
         );
 
       // A run ends under the dispatch lock, so a dispatch that read it active acts before it ends.
-      yield* threadCommands.withLock(
+      // True when the repository snapshots above went unrecorded and no other capture owns them.
+      const unrecorded = yield* threadCommands.withLock(
         input.threadId,
         Effect.gen(function* () {
           const current = yield* projections.getCheckpointCaptureContext(input.threadId, input);
@@ -221,7 +222,7 @@ export const layer: Layer.Layer<
             isSettled(currentRun) ||
             (currentRun.status !== "waiting" && !isStopped(currentRun))
           ) {
-            return;
+            return currentRun?.checkpointId == null || currentRun.status === "rolled_back";
           }
           // Stopped runs remain terminal; their checkpoint is the next message's rollback point.
           const stopped = isStopped(currentRun);
@@ -367,8 +368,17 @@ export const layer: Layer.Layer<
                   ]),
             ],
           });
+          return false;
         }),
       );
+      if (unrecorded && repositoryScopes.length > 0 && context.thread !== undefined) {
+        // Left behind, a snapshot at this ordinal would pass for a later turn's baseline.
+        yield* checkpoints.discardRepositorySnapshots({
+          rootScope: scope,
+          thread: context.thread,
+          ordinals: [run.ordinal],
+        });
+      }
     });
 
     return CheckpointCaptureServiceV2.of({

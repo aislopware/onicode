@@ -252,6 +252,8 @@ export const make = Effect.gen(function* () {
       Effect.provideService(FileSystem.FileSystem, fileSystem),
       Effect.provideService(Path.Path, path),
     );
+    // An unmounted or unreadable folder keeps what it tracks until it can be read again.
+    if (discovered === null) return;
     if (sameProjectFolders(mergeProjectFolders(discovered, row.trackedFolders), row.trackedFolders))
       return;
     const command = {
@@ -422,6 +424,9 @@ export const make = Effect.gen(function* () {
       new ProjectOperationError({ operation: "dispatch-project-command", projectId, cause });
     const workspaceRoot = initial.type === "project.delete" ? undefined : initial.workspaceRoot;
     const planAndCommit = Effect.gen(function* () {
+      // A retry gets the first outcome, though the row it would be refined against has moved on.
+      const decided = yield* eventSink.projectCommandReceipt(initial.commandId);
+      if (Option.isSome(decided)) return { receipt: decided.value };
       const project = Option.getOrUndefined(yield* readRow(projectId, { includeDeleted: true }));
       let command = initial;
       if (refine !== undefined) {
@@ -449,12 +454,7 @@ export const make = Effect.gen(function* () {
         now,
       });
       if (Result.isSuccess(planned)) {
-        if (
-          beforeCommit !== undefined &&
-          Option.isNone(yield* eventSink.projectCommandReceipt(command.commandId))
-        ) {
-          yield* beforeCommit;
-        }
+        if (beforeCommit !== undefined) yield* beforeCommit;
         const { receipt } = yield* eventSink.commitProjectCommand({
           commandId: command.commandId,
           projectId,

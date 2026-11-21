@@ -34,6 +34,7 @@ import * as ServerSettings from "../serverSettings.ts";
 import * as GitWorkflow from "../git/GitWorkflowService.ts";
 import { withTurnStartReservation, withWorkspaceLease } from "../workspace/workspaceLease.ts";
 import { ProviderWorkspaceMissingError } from "../provider/Errors.ts";
+import * as TaskFolders from "../workspace/TaskFolders.ts";
 import { resolveCodexRollbackTurnCount } from "./Adapters/CodexAdapterV2.ts";
 import * as CheckpointService from "./CheckpointService.ts";
 import * as CheckpointRollbackService from "./CheckpointRollbackService.ts";
@@ -401,9 +402,13 @@ it.effect.each([
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
 
-it.effect.each([{ restoreFiles: true }, { restoreFiles: false }])(
-  "holds turn starts inside the worktree during rollback with restoreFiles $restoreFiles",
-  ({ restoreFiles }) =>
+it.effect.each([
+  { restoreFiles: true, taskFolder: false },
+  { restoreFiles: false, taskFolder: false },
+  { restoreFiles: true, taskFolder: true },
+])(
+  "holds turn starts and Git actions in the thread's checkouts during rollback with restoreFiles $restoreFiles, taskFolder $taskFolder",
+  ({ restoreFiles, taskFolder }) =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
@@ -411,8 +416,12 @@ it.effect.each([{ restoreFiles: true }, { restoreFiles: false }])(
         yield* fileSystem.makeTempDirectoryScoped({ prefix: "oni-rollback-reservation-" }),
       );
       const worktreesDir = path.join(workspaceRoot, "worktrees");
-      const worktreePath = path.join(worktreesDir, "repo", "feature");
+      const taskFolderRoot = path.join(worktreesDir, "repo", "feature");
+      const worktreePath = taskFolder ? path.join(taskFolderRoot, "app") : taskFolderRoot;
+      // A sibling repository's worktree: outside the thread's worktree, inside its task folder.
+      const repositoryWorktree = path.join(taskFolderRoot, "api");
       yield* fileSystem.makeDirectory(path.join(worktreePath, ".git"), { recursive: true });
+      yield* fileSystem.makeDirectory(repositoryWorktree, { recursive: true });
       const threadId = ThreadId.make("rollback-reservation");
       const providerThreadId = ProviderThreadId.make("rollback-reservation-provider-thread");
       const providerInstanceId = ProviderInstanceId.make("rollback-reservation-provider");
@@ -457,10 +466,31 @@ it.effect.each([{ restoreFiles: true }, { restoreFiles: false }])(
             Layer.mock(ProjectStore.ProjectStoreV2)({
               get: () => Effect.succeedSome({ workspaceRoot } as never),
             }),
-            layerNoTaskFolders,
+            taskFolder
+              ? Layer.mock(TaskFolders.TaskFolders)({
+                  find: () =>
+                    Effect.succeed({
+                      root: taskFolderRoot,
+                      projectId: ProjectId.make("rollback-reservation-project"),
+                      projectRoot: path.join(workspaceRoot, "project", "app"),
+                      anchor: path.join(workspaceRoot, "project"),
+                      projectPath: worktreePath,
+                      projectIsWorktree: true,
+                      repositories: [
+                        {
+                          repositoryPath: path.join(workspaceRoot, "project", "api"),
+                          worktreePath: repositoryWorktree,
+                          name: "api",
+                        },
+                      ],
+                    }),
+                  restore: () => Effect.void,
+                })
+              : layerNoTaskFolders,
             Layer.mock(GitWorkflow.GitWorkflowService)({}),
             Layer.mock(CheckpointService.CheckpointServiceV2)({
               discardRepositorySnapshots: () => Effect.void,
+              repositoryScopesIfReadable: () => Effect.succeed([]),
               restore: () =>
                 Deferred.succeed(restoreEntered, undefined).pipe(
                   Effect.andThen(Deferred.await(releaseRestore)),
@@ -504,7 +534,7 @@ it.effect.each([{ restoreFiles: true }, { restoreFiles: false }])(
         const startTurn = withTurnStartReservation(
           FileSystem.makeNoop({ realPath: (target) => Effect.succeed(target) }),
           path,
-          path.join(worktreePath, "packages", "app"),
+          taskFolder ? repositoryWorktree : path.join(worktreePath, "packages", "app"),
           Effect.sync(() => calls.push("turn start")),
         ).pipe(Effect.forkChild({ startImmediately: true }));
         const turnStart = yield* startTurn;
@@ -515,9 +545,17 @@ it.effect.each([{ restoreFiles: true }, { restoreFiles: false }])(
           // not only while the provider rollback is in flight.
           yield* Deferred.await(restoreEntered);
           const duringRestore = yield* startTurn;
+          // GitWorkflowService leases a checkout by its real path.
+          const gitAction = taskFolder
+            ? yield* withWorkspaceLease(
+                repositoryWorktree,
+                Effect.sync(() => calls.push("git action")),
+              ).pipe(Effect.forkChild({ startImmediately: true }))
+            : undefined;
           assert.deepEqual(calls, []);
           yield* Deferred.succeed(releaseRestore, undefined);
           yield* Fiber.join(duringRestore);
+          if (gitAction !== undefined) yield* Fiber.join(gitAction);
         } else {
           // Nothing is rewritten, so the turn start must not wait for the provider.
           yield* Fiber.join(turnStart);
@@ -525,9 +563,12 @@ it.effect.each([{ restoreFiles: true }, { restoreFiles: false }])(
         }
         yield* Fiber.join(rollback);
         yield* Fiber.join(turnStart);
-        assert.deepEqual(
+        assert.deepEqual(calls[0], restoreFiles ? "files" : "turn start");
+        assert.sameMembers(
           calls,
-          restoreFiles ? ["files", "turn start", "turn start"] : ["turn start"],
+          restoreFiles
+            ? ["files", "turn start", "turn start", ...(taskFolder ? ["git action"] : [])]
+            : ["turn start"],
         );
       }).pipe(Effect.provide(testLayer));
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
