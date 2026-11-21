@@ -3147,3 +3147,4 @@ ba4f99ae43	take	fix(web,mobile): Limits shows why a provider's limits are unavai
 c3fb01dc05	take	fix(server): preview snapshots no longer report an empty interactiveElements list; eval CONFLICT resolved by removing interactiveElements from Onicode's rebranded fixtures (same 13 lines as upstream), evals not re-run (fixture-only change)
 23e6e913d5	take	fix(web): ODT previews no longer print an index's title twice or its entry separators; test CONFLICT kept Onicode's Map archive fixture
 c6ca01b373	take	fix(web): preserve newer navigation when reopening closed views; CONFLICTs kept Onicode's useLocation import and route-param test render; scenario ported for the desktop target
+cea19e450b	take	fix(server): ODT attachments no longer repeat index titles or template separators
