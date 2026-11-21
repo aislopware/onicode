@@ -363,6 +363,7 @@ export const GitCommandFailureReason = Schema.Literals([
   "branch_checked_out_in_worktree",
   "config_locked",
   "host_key_unverified",
+  "local_changes_would_be_overwritten",
   "not_a_repository",
   "path_already_exists",
   "push_rejected_by_remote",

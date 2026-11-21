@@ -524,6 +524,10 @@ const GIT_FAILURE_REASON_PATTERNS: ReadonlyArray<readonly [RegExp, GitCommandFai
   ],
   [/host key verification failed/i, "host_key_unverified"],
   [
+    /^error: Your local changes to the following files would be overwritten by checkout:/m,
+    "local_changes_would_be_overwritten",
+  ],
+  [
     /(?:could not read from remote repository|does not appear to be a git repository|repository .+ not found)/i,
     "remote_unreachable",
   ],

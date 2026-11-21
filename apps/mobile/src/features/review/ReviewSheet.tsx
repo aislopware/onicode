@@ -6,7 +6,7 @@ import { LegendList } from "@legendapp/list/react-native";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { AppBar } from "../../components/ui/AppBar";
 import type { AppBarMenuItem } from "../../components/ui/AppBar.types";
-import type { ReviewSectionItem } from "./reviewModel";
+import { reviewRawPatchForFiles, type ReviewSectionItem } from "./reviewModel";
 import { useReviewHeaderPresentation } from "./useReviewHeaderPresentation";
 import { T, useGT, Var } from "gt-react-native";
 import { type Ref, type ReactElement, useImperativeHandle, useRef, useState } from "react";
@@ -856,7 +856,7 @@ export function ReviewSheet(props: ReviewSheetProps) {
                   </Text>
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} bounces={false}>
                     <Text selectable className="font-mono text-xs leading-relaxed text-foreground">
-                      {selectedSection?.diff ?? ""}
+                      {reviewRawPatchForFiles(selectedSection.diff ?? "", reviewFiles)}
                     </Text>
                   </ScrollView>
                 </ContentBand>

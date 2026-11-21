@@ -1,5 +1,5 @@
 import { useAtomMount } from "@effect/atom-react";
-import { errorDisplayMessage } from "@onicode/client-runtime/errors";
+import { errorDisplayMessage, gitCommandErrorMessage } from "@onicode/client-runtime/errors";
 
 import { EnvironmentProject, EnvironmentThreadShell } from "@onicode/client-runtime/state/shell";
 import type { AtomCommandResult } from "@onicode/client-runtime/state/runtime";
@@ -44,7 +44,11 @@ import { useSelectedThreadWorktree } from "./use-selected-thread-worktree";
 
 function refreshFailureMessage(cause: Cause.Cause<unknown>): string {
   const error = Cause.squash(cause);
-  return errorDisplayMessage(error, m) ?? m(msg("Failed to refresh git status."));
+  return (
+    gitCommandErrorMessage(error, m) ??
+    errorDisplayMessage(error, m) ??
+    m(msg("Failed to refresh git status."))
+  );
 }
 
 // Selecting a thread or reconnecting its environment refreshes the checkout's
@@ -223,7 +227,10 @@ export function useSelectedThreadGitActions(repository?: GitRepositoryTarget) {
         : await vcsActionManager.track(appAtomRegistry, target, { operation, label }, run);
     if (AsyncResult.isFailure(result)) {
       const error = Cause.squash(result.cause);
-      const message = errorDisplayMessage(error, m) ?? m(msg("Git action failed."));
+      const message =
+        gitCommandErrorMessage(error, m) ??
+        errorDisplayMessage(error, m) ??
+        m(msg("Git action failed."));
       setPendingConnectionError(message);
       showGitActionResult({
         type: "error",
@@ -243,7 +250,10 @@ export function useSelectedThreadGitActions(repository?: GitRepositoryTarget) {
     });
     if (AsyncResult.isFailure(result)) {
       const error = Cause.squash(result.cause);
-      const message = errorDisplayMessage(error, m) ?? m(msg("Failed to refresh branches."));
+      const message =
+        gitCommandErrorMessage(error, m) ??
+        errorDisplayMessage(error, m) ??
+        m(msg("Failed to refresh branches."));
       setPendingConnectionError(message);
       showGitActionResult({
         type: "error",

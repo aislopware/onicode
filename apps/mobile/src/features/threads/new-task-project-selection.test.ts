@@ -20,6 +20,7 @@ function makeProject(
     readonly title?: string;
     readonly workspaceRoot?: string;
     readonly repositoryKey?: string;
+    readonly rootPath?: string;
   } = {},
 ): EnvironmentProject {
   return {
@@ -35,6 +36,7 @@ function makeProject(
             remoteName: "origin",
             remoteUrl: `https://${options.repositoryKey}.git`,
           },
+          ...(options.rootPath ? { rootPath: options.rootPath } : {}),
         }
       : null,
     defaultModelSelection: null,
@@ -167,6 +169,32 @@ describe("resolveEnvironmentProjectMatch", () => {
     expect(isSameRepository(target[1]!, selected)).toBe(true);
     const archived = { ...target[1]!, archivedAt: "2026-07-02T00:00:00.000Z" };
     expect(resolveEnvironmentProjectMatch([archived], selected)).toBeNull();
+  });
+
+  it("keeps the same folder of the repository, else its root, over an earlier sub-folder", () => {
+    const local = { repositoryKey: "github.com/onicode/onicode", rootPath: "/Users/me/repo" };
+    const remote = { repositoryKey: "github.com/onicode/onicode", rootPath: "/srv/repo" };
+    const localRoot = makeProject("root", "mac", { ...local, workspaceRoot: "/Users/me/repo" });
+    const localTools = makeProject("tools", "mac", {
+      ...local,
+      workspaceRoot: "/Users/me/repo/tools",
+    });
+    const localDocs = makeProject("docs", "mac", {
+      ...local,
+      workspaceRoot: "/Users/me/repo/docs",
+    });
+    const remoteTools = makeProject("remote-tools", "server", {
+      ...remote,
+      workspaceRoot: "/srv/repo/tools",
+    });
+    const remoteRoot = makeProject("remote-root", "server", {
+      ...remote,
+      workspaceRoot: "/srv/repo",
+    });
+    const target = [remoteTools, remoteRoot];
+    expect(resolveEnvironmentProjectMatch(target, localRoot)).toBe(remoteRoot);
+    expect(resolveEnvironmentProjectMatch(target, localTools)).toBe(remoteTools);
+    expect(resolveEnvironmentProjectMatch(target, localDocs)).toBe(remoteRoot);
   });
 
   it("falls back to workspace basename, then title, for unindexed projects", () => {

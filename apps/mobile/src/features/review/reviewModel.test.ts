@@ -15,6 +15,7 @@ import {
   buildReviewSectionItems,
   filterReviewParsedDiffToFolder,
   resolveReviewSelectedSectionId,
+  reviewRawPatchForFiles,
   type ReviewRenderableFile,
   type ReviewSectionItem,
 } from "./reviewModel";
@@ -30,12 +31,42 @@ function makeSection(id: string): ReviewSectionItem {
   };
 }
 
+function makeGitSection(kind: "working-tree" | "branch-range"): ReviewSectionItem {
+  const diff = "diff --git a/a.ts b/a.ts\n";
+  return {
+    ...makeSection(`git:${kind}`),
+    kind,
+    diff,
+    source: {
+      id: kind,
+      kind,
+      title: kind,
+      baseRef: "HEAD",
+      headRef: null,
+      diff,
+      diffHash: kind,
+      truncated: false,
+    },
+  };
+}
+
 describe("resolveReviewSelectedSectionId", () => {
   const turn = makeSection("turn:2");
-  const changes = makeSection("git:branch-range");
+  const changes = makeGitSection("branch-range");
 
   it("shows Changes before anything is picked, not the first section", () => {
     expect(resolveReviewSelectedSectionId([turn, changes], null)).toBe("git:branch-range");
+    const loading = { ...makeSection("git:branch-range"), isLoading: true };
+    expect(resolveReviewSelectedSectionId([turn, loading], null)).toBe("git:branch-range");
+  });
+
+  it("opens Uncommitted, not the empty placeholder, when the branch comparison failed", () => {
+    const failed = makeSection("git:branch-range");
+    const uncommitted = makeGitSection("working-tree");
+    expect(resolveReviewSelectedSectionId([turn, uncommitted, failed], null)).toBe(
+      "git:working-tree",
+    );
+    expect(resolveReviewSelectedSectionId([turn, failed], null)).toBe("turn:2");
   });
 
   it("shows the default while the picked section loads and returns to the pick once it does", () => {
@@ -152,6 +183,27 @@ describe("filterReviewParsedDiffToFolder", () => {
       additions: 2,
       deletions: 1,
     });
+  });
+});
+
+describe("reviewRawPatchForFiles", () => {
+  it("keeps only the shown files' blocks of the raw patch", () => {
+    const block = (from: string, to = from) =>
+      `diff --git a/${from} b/${to}\n--- a/${from}\n+++ b/${to}\n@@ -1 +1 @@\n-a\n+b\n`;
+    const diff = [
+      block("src/a.ts"),
+      block("src/a.test.ts"),
+      block("old.ts", "new.ts"),
+      block("my file.ts"),
+    ].join("");
+    const shown = [
+      { path: "src/a.ts", previousPath: null },
+      { path: "new.ts", previousPath: "old.ts" },
+      { path: "my file.ts", previousPath: null },
+    ];
+    expect(reviewRawPatchForFiles(diff, shown)).toBe(
+      block("src/a.ts") + block("old.ts", "new.ts") + block("my file.ts"),
+    );
   });
 });
 

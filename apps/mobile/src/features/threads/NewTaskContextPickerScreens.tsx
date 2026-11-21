@@ -1,5 +1,5 @@
 import { NativeScrollView } from "../../native/NativeScrollViewMarker";
-import { errorDisplayMessage } from "@onicode/client-runtime/errors";
+import { errorDisplayMessage, gitCommandErrorMessage } from "@onicode/client-runtime/errors";
 import { Button } from "../../components/ui/Button";
 import * as Dialog from "../../components/ui/Dialog";
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
@@ -295,7 +295,9 @@ export function NewTaskBranchPickerRouteScreen() {
         const error = squashAtomCommandFailure(result);
         Dialog.alert(
           gt("Could not switch branch"),
-          errorDisplayMessage(error, m) ?? gt("The branch could not be checked out."),
+          gitCommandErrorMessage(error, m) ??
+            errorDisplayMessage(error, m) ??
+            gt("The branch could not be checked out."),
         );
       }
       return;

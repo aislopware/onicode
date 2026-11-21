@@ -11,10 +11,10 @@ import {
   sourceControlClients,
   type ChangeRequestTerminology,
 } from "@onicode/client-runtime/source-control-clients";
+import { gitCommandErrorMessage } from "@onicode/client-runtime/errors";
 import * as Schema from "effect/Schema";
 import {
   COMPOSER_CONTEXT_REVIEW_TEXT_MAX_CHARS,
-  GitCommandError,
   PullRequestDetail,
   PullRequestOperationError,
   type PullRequestAction,
@@ -1562,14 +1562,8 @@ export function readableFailure(failure: unknown, hint: string): string {
   return bounded;
 }
 
-const isGitCommandError = Schema.is(GitCommandError);
-
 export function checkoutFailureDescription(failure: unknown): string {
-  const description = isGitCommandError(failure)
-    ? failure.reason === undefined
-      ? failure.detail
-      : `${failure.detail} (${failure.reason})`
-    : failure;
+  const description = gitCommandErrorMessage(failure, m) ?? failure;
   return readableFailure(
     description,
     m(msg("Check that the branch still exists and is not checked out elsewhere, then try again.")),

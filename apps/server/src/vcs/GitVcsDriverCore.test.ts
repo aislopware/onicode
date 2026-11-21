@@ -6656,6 +6656,7 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
 
         assert.match(error.detail, /local changes/i);
         assert.match(error.detail, /commit|stash|discard/i);
+        assert.equal(error.reason, "local_changes_would_be_overwritten");
         assert.equal(yield* git(cwd, ["branch", "--show-current"]), initialBranch);
       }),
     );

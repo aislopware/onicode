@@ -10,7 +10,9 @@ import {
 import type { EnvironmentOption } from "../components/BranchToolbar.logic";
 import {
   deriveLogicalProjectKeyFromSettings,
+  isPickableProjectMember,
   selectProjectGroupingSettings,
+  selectRepositoryCounterpart,
 } from "@onicode/client-runtime/state/project-grouping";
 import { useProjects } from "../state/entities";
 import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
@@ -59,12 +61,20 @@ export function useLogicalProjectEnvironments(
     }
   } else {
     const logicalKey = deriveLogicalProjectKeyFromSettings(activeProject, projectGroupingSettings);
-    const seen = new Set<string>();
+    const membersByEnvironment = new Map<EnvironmentId, EnvironmentProject[]>();
     for (const p of allProjects) {
-      if (seen.has(p.environmentId)) continue;
       if (deriveLogicalProjectKeyFromSettings(p, projectGroupingSettings) !== logicalKey) continue;
-      seen.add(p.environmentId);
-      pushEnvironment(p.environmentId, p.id);
+      const members = membersByEnvironment.get(p.environmentId);
+      if (members) members.push(p);
+      else membersByEnvironment.set(p.environmentId, [p]);
+    }
+    for (const [environmentId, members] of membersByEnvironment) {
+      const open = members.filter(isPickableProjectMember);
+      const project =
+        environmentId === activeProject.environmentId
+          ? activeProject
+          : selectRepositoryCounterpart(activeProject, open.length > 0 ? open : members);
+      pushEnvironment(environmentId, project?.id ?? null);
     }
   }
   envs.sort((a, b) => {

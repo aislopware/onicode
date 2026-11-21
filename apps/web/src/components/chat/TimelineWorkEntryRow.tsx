@@ -222,17 +222,16 @@ export function ReasoningTraceContent({ entries }: { entries: ReadonlyArray<Time
 
 const NOTICE_COLLAPSED_LINES = "line-clamp-3";
 
-/** Whether a line-clamped element hides text. Ignores it while `data-expanded`, when nothing is clamped. */
-function useClampedText() {
+/** Whether a line-clamped element hides text, measured while collapsed, when the clamp applies. */
+function useClampedText(expanded: boolean) {
   const [clamped, setClamped] = useState(false);
-  const [observe] = useState(() => (element: HTMLElement | null) => {
-    if (!element) return;
+  // A new ref per `expanded` re-observes on collapse, so a resize while open is measured too.
+  const observe = (element: HTMLElement | null) => {
+    if (!element || expanded) return;
     return observeResize(element, () => {
-      if (element.dataset.expanded === undefined) {
-        setClamped(element.scrollHeight > element.clientHeight + 1);
-      }
+      setClamped(element.scrollHeight > element.clientHeight + 1);
     });
-  });
+  };
   return [clamped, observe] as const;
 }
 
@@ -314,10 +313,10 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
       ? notificationChildThreadId(workEntry.projectedItem.item.source)
       : undefined;
   const groupView = use(WorkGroupViewCtx);
-  const [noticeClamped, observeNoticeClamp] = useClampedText();
   const [expanded, setExpanded] = useState(
     () => groupView?.state.expandedEntries.has(workEntry.id) ?? false,
   );
+  const [noticeClamped, observeNoticeClamp] = useClampedText(expanded);
   const onInitialOutputReady = () => {
     if (groupView) groupView.onContentReady?.(workEntry.id);
     else props.onContentReady?.();
@@ -567,7 +566,6 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
         isNotice ? (
           <p
             ref={observeNoticeClamp}
-            data-expanded={expanded ? "" : undefined}
             className={cn(
               "wrap-anywhere whitespace-pre-line text-sm leading-relaxed",
               headingClass,

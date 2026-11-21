@@ -84,6 +84,23 @@ export function selectGroupDefaultProject<
   return projects.find(isRepositoryRootProject) ?? projects[0];
 }
 
+/** `project`'s checkout among another environment's copies of its repository: the same folder, else the root. */
+export function selectRepositoryCounterpart<
+  TProject extends Pick<EnvironmentProject, "workspaceRoot" | "repositoryIdentity">,
+>(
+  project: Pick<EnvironmentProject, "workspaceRoot" | "repositoryIdentity">,
+  candidates: ReadonlyArray<TProject>,
+): TProject | undefined {
+  const relativePath = deriveRepositoryRelativeProjectPath(project);
+  return (
+    (relativePath === null
+      ? undefined
+      : candidates.find(
+          (candidate) => deriveRepositoryRelativeProjectPath(candidate) === relativePath,
+        )) ?? selectGroupDefaultProject(candidates)
+  );
+}
+
 export function derivePhysicalProjectKeyFromPath(environmentId: string, cwd: string): string {
   return `${environmentId}:${normalizeProjectPathForComparison(cwd)}`;
 }

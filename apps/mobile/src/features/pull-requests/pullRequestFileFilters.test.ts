@@ -77,6 +77,7 @@ describe("mobile PR test file filter", () => {
     );
     expect(shownPatchIndices(files, true, null)).toEqual([3, 5, 6]);
     expect(shownPatchIndices(files, true, 5)).toEqual([5, 6]);
+    expect(shownPatchIndices(files, true, 1)).toEqual([1]);
     expect(shownPatchIndices(files, false, null)).toEqual([0, 1, 2]);
   });
 });

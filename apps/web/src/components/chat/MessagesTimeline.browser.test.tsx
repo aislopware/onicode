@@ -532,6 +532,38 @@ describe("MessagesTimeline work rows", () => {
     expect(row.querySelector("[aria-expanded]")).toBeNull();
     expect(screen.text()).toContain("Context compacted");
   });
+
+  it("stops offering to expand a notice that fits after widening while open", async () => {
+    setup();
+    const message = "Long notice text ".repeat(9);
+    await using screen = await renderTimeline([
+      work("notice-long", {
+        label: message,
+        tone: "info",
+        itemType: "system_notice",
+        projectedItem: v2Item("system_notice", { id: "notice-long", message, title: message }),
+      }),
+    ]);
+    const row = document.querySelector<HTMLElement>('[data-work-entry-id="notice-long"]')!;
+    const toggle = () => row.querySelector<HTMLElement>('[role="button"]');
+    screen.container.style.width = "320px";
+    await vi.waitFor(() => expect(toggle()).not.toBeNull());
+    await click(toggle()!);
+    expect(toggle()?.getAttribute("aria-expanded")).toBe("true");
+    // Observed after the row's own observer, so the row has seen the open resize too.
+    const notice = row.querySelector("p")!;
+    const openHeight = notice.clientHeight;
+    const resizedWhileOpen = Promise.withResolvers<void>();
+    const observer = new ResizeObserver(() => {
+      if (notice.clientHeight < openHeight) resizedWhileOpen.resolve();
+    });
+    observer.observe(notice);
+    screen.container.style.width = "900px";
+    await resizedWhileOpen.promise;
+    observer.disconnect();
+    await click(toggle()!);
+    await vi.waitFor(() => expect(toggle()).toBeNull());
+  });
 });
 
 describe("MessagesTimeline messages", () => {

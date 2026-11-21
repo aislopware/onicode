@@ -26,10 +26,12 @@ export function shownPatchIndices(
   hideTestFiles: boolean,
   index: number | null,
 ): ReadonlyArray<number> {
-  const shown = files.flatMap((file, position) =>
-    hideTestFiles && isTestChangedFile(file.path) ? [] : [position],
-  );
-  if (index === null) return shown.slice(0, 3);
-  const position = shown.indexOf(index);
-  return position < 0 ? [index] : shown.slice(position, position + 3);
+  const isShown = (file: { readonly path: string } | undefined) =>
+    file !== undefined && !(hideTestFiles && isTestChangedFile(file.path));
+  if (index !== null && !isShown(files[index])) return [index];
+  const shown: number[] = [];
+  for (let position = index ?? 0; position < files.length && shown.length < 3; position++) {
+    if (isShown(files[position])) shown.push(position);
+  }
+  return shown;
 }
