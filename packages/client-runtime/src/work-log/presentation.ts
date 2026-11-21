@@ -671,6 +671,7 @@ function summaryActionPriority(action: ToolGroupAction | OniMcpToolSummaryAction
     case "task-cancel":
     case "thread-create":
     case "thread-send":
+    case "output-submit":
     case "thread-interrupt":
     case "workflow-stop":
     case "background-wait":

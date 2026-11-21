@@ -361,7 +361,8 @@ class SpawnWorker {
       command,
       args: [...args],
       // A worker's process.env is a copy from when it started; children get the server's current one.
-      options: { ...rest, stdio, env: rest.env ?? { ...process.env } },
+      // The copy is also what lets an environment view (a Proxy) through the structured clone.
+      options: { ...rest, stdio, env: { ...(rest.env ?? process.env) } },
     });
     return child;
   }

@@ -211,13 +211,37 @@ it.layer(NodeServices.layer)("ManagedPolicy.load", (it) => {
         "environment",
       ]);
       // The host variable that replaces Codex's launch arguments is ignored too.
-      const host = { PATH: "/usr/bin", ONICODE_CODEX_LAUNCH_ARGS: "-c mcp_servers.x.command=sh" };
-      const managedHost = providerHostEnvironment(policy.summary, host);
+      const host: NodeJS.ProcessEnv = {
+        PATH: "/usr/bin",
+        ONICODE_CODEX_LAUNCH_ARGS: "-c mcp_servers.x.command=sh",
+      };
+      const managedHost = providerHostEnvironment(policy.summary, host, "linux");
       assert.deepEqual(managedHost, { PATH: "/usr/bin" });
-      // A PATH refresh after launch reaches drivers that hold the managed copy.
+      // The desktop shell snapshot updates the host after launch; drivers holding the managed
+      // view see it, and still never see a launch override.
       host.PATH = "/opt/new/bin:/usr/bin";
+      host.NODE_EXTRA_CA_CERTS = "/etc/proxy-ca.pem";
+      host.onicode_codex_launch_args = "--yolo";
       assert.strictEqual(managedHost.PATH, "/opt/new/bin:/usr/bin");
-      assert.strictEqual(providerHostEnvironment(undefined, host), host);
+      assert.deepEqual(
+        { ...managedHost },
+        { PATH: "/opt/new/bin:/usr/bin", NODE_EXTRA_CA_CERTS: "/etc/proxy-ca.pem" },
+      );
+      assert.isFalse("onicode_codex_launch_args" in managedHost);
+      // A driver's own change stays in its view.
+      managedHost.EXTRA = "1";
+      delete managedHost.NODE_EXTRA_CA_CERTS;
+      assert.deepEqual(Object.entries(managedHost), [
+        ["PATH", "/opt/new/bin:/usr/bin"],
+        ["EXTRA", "1"],
+      ]);
+      assert.deepEqual(host, {
+        PATH: "/opt/new/bin:/usr/bin",
+        ONICODE_CODEX_LAUNCH_ARGS: "-c mcp_servers.x.command=sh",
+        NODE_EXTRA_CA_CERTS: "/etc/proxy-ca.pem",
+        onicode_codex_launch_args: "--yolo",
+      });
+      assert.strictEqual(providerHostEnvironment(undefined, host, "linux"), host);
     }),
   );
 
@@ -349,9 +373,10 @@ it.layer(NodeServices.layer)("ManagedPolicy.load", (it) => {
         );
         // The same override from the environment that starts the server is ignored too.
         const host = { PATH: "/usr/bin", ONICODE_CODEX_LAUNCH_ARGS: "--yolo" };
-        assert.deepEqual(providerHostEnvironment((yield* policyOn("linux")).summary, host), {
-          PATH: "/usr/bin",
-        });
+        assert.deepEqual(
+          providerHostEnvironment((yield* policyOn("linux")).summary, host, "linux"),
+          { PATH: "/usr/bin" },
+        );
       }),
   );
 

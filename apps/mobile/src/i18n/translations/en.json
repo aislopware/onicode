@@ -241,6 +241,8 @@
   "42b96626eb49fc73": "{count, plural, one {Tried to list threads {count} time} other {Tried to list threads {count} times}}",
   "28d3809da9e7feb9": "{count, plural, one {Checked task status {count} time} other {Checked task status {count} times}}",
   "ba261addab1f7b9b": "{count, plural, one {Tried to check task status {count} time} other {Tried to check task status {count} times}}",
+  "cb4f1b30497b3e8c": "{count, plural, one {Submitted {count} result} other {Submitted {count} results}}",
+  "8a8376b42d058123": "{count, plural, one {Tried to submit {count} result} other {Tried to submit {count} results}}",
   "9e410f60344c6772": "{count, plural, one {Updated background waits {count} time} other {Updated background waits {count} times}}",
   "5ca35b5a769eadcd": "{count, plural, one {Tried to update background waits {count} time} other {Tried to update background waits {count} times}}",
   "7f78d45ac7d49ffa": "{count, plural, one {Listed scheduled tasks {count} time} other {Listed scheduled tasks {count} times}}",

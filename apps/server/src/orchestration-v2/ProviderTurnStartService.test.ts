@@ -454,6 +454,7 @@ it.each([
 function makeLocalCommandHarness(input: {
   readonly text: string;
   readonly manualContinuation?: boolean;
+  readonly outputSchema?: OrchestrationV2ThreadProjection["runs"][number]["outputSchema"];
   readonly nativeResumeUnsupported?: boolean;
   readonly steeringRestart?: boolean;
   readonly nativeGoals?: boolean;
@@ -524,6 +525,7 @@ function makeLocalCommandHarness(input: {
   const messageId = MessageId.make("message-native-account-command");
   const run: OrchestrationV2ThreadProjection["runs"][number] = {
     ...(input.manualContinuation ? { manualContinuationOfRunId: RunId.make("stopped-run") } : {}),
+    ...(input.outputSchema === undefined ? {} : { outputSchema: input.outputSchema }),
     id: runId,
     threadId,
     ordinal: 2,
@@ -2272,6 +2274,12 @@ effectIt.effect("prompts providers without native resume to continue", () =>
 
 effectIt.effect.each([
   { contextRun: "current", runtimeMode: "full-access", context: "SIDE_CHAT_CONTEXT" },
+  {
+    contextRun: "current",
+    runtimeMode: "full-access",
+    context: "SIDE_CHAT_CONTEXT",
+    asksResult: true,
+  },
   { contextRun: "failed", runtimeMode: "full-access", context: "SIDE_CHAT_CONTEXT" },
   { contextRun: "cancelled", runtimeMode: "full-access", context: "SIDE_CHAT_CONTEXT" },
   {
@@ -2317,6 +2325,7 @@ effectIt.effect.each([
       const harness = makeLocalCommandHarness({
         text: "",
         manualContinuation: true,
+        ...("asksResult" in sideChat ? { outputSchema: { type: "object" } } : {}),
         sideChat,
       });
 
@@ -2339,6 +2348,10 @@ effectIt.effect.each([
         const contextPrefix = withInlineContext(context, "");
         expect(texts[0]?.startsWith(contextPrefix)).toBe(true);
         expect(texts[0]?.slice(contextPrefix.length).trim()).not.toBe("");
+        if ("asksResult" in sideChat) {
+          expect(texts[0]).toContain("Continue where you left off.");
+          expect(texts[0]).toContain("oni_submit_output");
+        }
       }
       expect(harness.startTurn.mock.calls[0]?.[0].resume === true).toBe(
         context === "" && !resendsOriginal,

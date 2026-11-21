@@ -9265,6 +9265,8 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
 
         // Keyed by native thread and server: one notice per server for as long as the session runs.
         const announcedMcpSignIns = new Set<string>();
+        const mcpSignInKey = (liveQuery: ClaudeLiveQueryContext, server: string) =>
+          `${liveQuery.nativeThreadId}\u0000${server}`;
         /** Claude reports a server that needs a sign-in only in its status, which settles after start. */
         const announceMcpSignIns = Effect.fn("ClaudeAdapterV2.announceMcpSignIns")(function* (
           liveQuery: ClaudeLiveQueryContext,
@@ -9278,11 +9280,19 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             }),
             Effect.orElseSucceed((): ReadonlyArray<ClaudeMcpServerStatus> => []),
           );
-          liveQuery.checkMcpSignIns = statuses.some((status) => status.status === "pending");
-          for (const status of statuses) {
+          // Onicode's own server answers 401 when its credential expires; Onicode renews it.
+          const userStatuses = statuses.filter(
+            (status) => status.name !== ONICODE_CLAUDE_MCP_SERVER,
+          );
+          liveQuery.checkMcpSignIns = userStatuses.some(
+            (status) =>
+              status.status === "pending" &&
+              !announcedMcpSignIns.has(mcpSignInKey(liveQuery, status.name)),
+          );
+          for (const status of userStatuses) {
             // Every claude.ai connector the user never connected reports this too.
             if (status.status !== "needs-auth" || status.scope === "claudeai") continue;
-            const key = `${liveQuery.nativeThreadId}\u0000${status.name}`;
+            const key = mcpSignInKey(liveQuery, status.name);
             if (announcedMcpSignIns.has(key)) continue;
             announcedMcpSignIns.add(key);
             const nativeItemId = `mcp-sign-in:${context.providerTurnId}:${status.name}`;
@@ -9320,16 +9330,28 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           }
         });
 
+        /** Whether the live process runs this thread, including after /clear moved it on. */
+        const liveQueryServes = (
+          liveQuery: ClaudeLiveQueryContext | null,
+          providerThread: OrchestrationV2ProviderThread,
+        ): liveQuery is ClaudeLiveQueryContext => {
+          const nativeId = providerThread.nativeThreadRef?.nativeId;
+          // After /clear the thread carries the new session id; the live query keeps the old one.
+          return (
+            liveQuery !== null &&
+            !liveQuery.stopping &&
+            nativeId !== undefined &&
+            (liveQuery.nativeThreadId === nativeId ||
+              clearedNativeSessions.get(liveQuery.nativeThreadId) === nativeId)
+          );
+        };
+
         // App requests never start a CLI; they reuse the live process that ran the tool.
         const mcpAppQuery = Effect.fn("ClaudeAdapterV2.mcpAppQuery")(function* (
           providerThread: OrchestrationV2ProviderThread,
         ) {
           const liveQuery = yield* Ref.get(queryContext);
-          if (
-            liveQuery === null ||
-            liveQuery.stopping ||
-            liveQuery.nativeThreadId !== providerThread.nativeThreadRef?.nativeId
-          ) {
+          if (!liveQueryServes(liveQuery, providerThread)) {
             return yield* new ProviderAdapter.ProviderAdapterSessionStoppedError({
               driver: CLAUDE_PROVIDER,
             });
@@ -9348,15 +9370,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           providerThread: OrchestrationV2ProviderThread,
         ) {
           const liveQuery = yield* Ref.get(queryContext);
-          const nativeId = providerThread.nativeThreadRef?.nativeId;
-          // After /clear the thread carries the new session id; the live query keeps the old one.
-          if (
-            liveQuery === null ||
-            liveQuery.stopping ||
-            nativeId === undefined ||
-            (liveQuery.nativeThreadId !== nativeId &&
-              clearedNativeSessions.get(liveQuery.nativeThreadId) !== nativeId)
-          ) {
+          if (!liveQueryServes(liveQuery, providerThread)) {
             return yield* new ProviderAdapter.ProviderAdapterSessionStoppedError({
               driver: CLAUDE_PROVIDER,
             });
@@ -14171,8 +14185,11 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                     context.checkMcpSignIns = (message.mcp_servers ?? []).some(
                       (server) =>
                         (server.status === "pending" || server.status === "needs-auth") &&
+                        server.name !== ONICODE_CLAUDE_MCP_SERVER &&
                         // claude.ai connectors the user never connected need a sign-in too.
-                        !server.name.startsWith("claude.ai "),
+                        !server.name.startsWith("claude.ai ") &&
+                        // A server reports this every turn until signed in; its notice shows once.
+                        !announcedMcpSignIns.has(mcpSignInKey(context, server.name)),
                     );
                   }
                   if (
@@ -15708,13 +15725,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             modelSelection,
           }) {
             const live = yield* Ref.get(queryContext);
-            if (
-              live === null ||
-              live.stopping ||
-              live.nativeThreadId !== providerThread.nativeThreadRef?.nativeId
-            ) {
-              return;
-            }
+            if (!liveQueryServes(live, providerThread)) return;
             const selection = compileClaudeModelSelection(
               modelSelection,
               yield* routedCatalogFor(live),
@@ -15739,13 +15750,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             title,
           }) {
             const live = yield* Ref.get(queryContext);
-            if (
-              live === null ||
-              live.stopping ||
-              live.nativeThreadId !== providerThread.nativeThreadRef?.nativeId
-            ) {
-              return;
-            }
+            if (!liveQueryServes(live, providerThread)) return;
             yield* applySessionTitle(live.query, live.nativeThreadId, title);
           }),
           draftActivity: Effect.fn("ClaudeAdapterV2.draftActivity")(function* ({ providerThread }) {
@@ -15753,13 +15758,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             const outcome = (value: string) =>
               Effect.annotateCurrentSpan({ "claude.draft_activity": value });
             const live = yield* Ref.get(queryContext);
-            if (
-              live === null ||
-              live.stopping ||
-              live.nativeThreadId !== providerThread.nativeThreadRef?.nativeId
-            ) {
-              return yield* outcome("no_process");
-            }
+            if (!liveQueryServes(live, providerThread)) return yield* outcome("no_process");
             const report = live.query.draftActivity;
             if (report === undefined || live.draftActivityRefused) {
               return yield* outcome("refused");
@@ -15792,6 +15791,12 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               providerThread,
               server,
             }) {
+              if (server === ONICODE_CLAUDE_MCP_SERVER) {
+                return yield* new ProviderMcpSignInError({
+                  server,
+                  detail: "Onicode's own MCP server is managed by Onicode.",
+                });
+              }
               const liveQuery = yield* liveSessionContext(providerThread);
               const authorizationUrl = yield* liveQuery.query.mcpAuthenticate(server).pipe(
                 Effect.mapError(
@@ -15846,9 +15851,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             const liveQuery = yield* Ref.get(queryContext);
             const task = (yield* Ref.get(sessionSubagentsByTaskId)).get(taskId);
             if (
-              liveQuery === null ||
-              liveQuery.stopping ||
-              liveQuery.nativeThreadId !== providerThread.nativeThreadRef?.nativeId ||
+              !liveQueryServes(liveQuery, providerThread) ||
               task === undefined ||
               task.task.threadId !== providerThread.appThreadId ||
               task.task.workflow === undefined ||

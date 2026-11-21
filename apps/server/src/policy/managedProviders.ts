@@ -25,6 +25,7 @@ import { museClient } from "@onicode/provider-muse/client";
 import { openCodeClient } from "@onicode/provider-opencode/client";
 import { piClient } from "@onicode/provider-pi/client";
 import type { ProviderClientDefinition } from "@onicode/provider-core/client";
+import { environmentView } from "@onicode/provider-core/server/instanceEnvironment";
 
 interface KnownDriver {
   readonly label: string;
@@ -162,33 +163,13 @@ const LAUNCH_OVERRIDE_VARIABLES = ["ONICODE_CODEX_LAUNCH_ARGS"] as const;
 export const providerHostEnvironment = (
   summary: ManagedPolicySummary | undefined,
   environment: NodeJS.ProcessEnv,
-): NodeJS.ProcessEnv => {
-  if (summary === undefined) return environment;
-  const next = { ...environment };
-  for (const name of Object.keys(next)) {
-    if (LAUNCH_OVERRIDE_VARIABLES.some((override) => override === name.toUpperCase())) {
-      delete next[name];
-    }
-  }
-  // Drivers keep this object, so PATH reads through to the host for a refresh after launch to reach them.
-  const pathKeys = Object.keys(next).filter((name) => name.toUpperCase() === "PATH");
-  if (pathKeys.length > 0) {
-    for (const name of pathKeys) delete next[name];
-    Object.defineProperty(next, "PATH", {
-      enumerable: true,
-      configurable: true,
-      get: () => environment.PATH ?? environment.Path ?? environment.path,
-      set: (value) =>
-        Object.defineProperty(next, "PATH", {
-          value,
-          enumerable: true,
-          writable: true,
-          configurable: true,
-        }),
-    });
-  }
-  return next;
-};
+  platform: NodeJS.Platform,
+): NodeJS.ProcessEnv =>
+  summary === undefined
+    ? environment
+    : environmentView(environment, platform, (name) =>
+        LAUNCH_OVERRIDE_VARIABLES.some((override) => override === name.toUpperCase()),
+      );
 
 /** Each driver's home variable, and the settings that rewrite it at launch. */
 const HOME_VARIABLES: ReadonlyMap<

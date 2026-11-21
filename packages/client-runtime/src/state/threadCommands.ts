@@ -74,6 +74,33 @@ export type LoadEarlierThreadHistoryInput = {
   readonly workAnchorId?: string;
 };
 
+type McpSignInTarget = { readonly threadId: ThreadId; readonly server: string };
+
+// The environment's time of the last sign-in to a server in a thread, until the app reloads.
+// Shared with /mcp's sign-in (providerSession.ts), so each surface sees the other's.
+const mcpSignedInAtFamily = Atom.family((_key: string) =>
+  Atom.make<number | null>(null).pipe(Atom.keepAlive),
+);
+const mcpSignInKey = (environmentId: EnvironmentId, input: McpSignInTarget) =>
+  JSON.stringify([environmentId, input.threadId, input.server]);
+
+/** Records a sign-in at `signedInAt`, epoch milliseconds on the environment's clock. */
+export const markMcpSignedIn = (
+  registry: AtomRegistry.AtomRegistry,
+  environmentId: EnvironmentId,
+  input: McpSignInTarget,
+  signedInAt: number,
+) =>
+  registry.update(mcpSignedInAtFamily(mcpSignInKey(environmentId, input)), (current) =>
+    Math.max(current ?? 0, signedInAt),
+  );
+
+export const clearMcpSignedIn = (
+  registry: AtomRegistry.AtomRegistry,
+  environmentId: EnvironmentId,
+  input: McpSignInTarget,
+) => registry.set(mcpSignedInAtFamily(mcpSignInKey(environmentId, input)), null);
+
 export function createThreadEnvironmentAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | SecureRandom.SecureRandom | R, E>,
   snapshotAtom: (environmentId: EnvironmentId) => Atom.Atom<OrchestrationV2ShellSnapshot | null>,
@@ -153,23 +180,6 @@ export function createThreadEnvironmentAtoms<R, E>(
       }),
   });
 
-  // The environment's time of the last sign-in to a server in a thread, until the app reloads.
-  const mcpSignedInAtFamily = Atom.family((_key: string) =>
-    Atom.make<number | null>(null).pipe(Atom.keepAlive),
-  );
-  const mcpSignInKey = (
-    environmentId: EnvironmentId,
-    input: { readonly threadId: ThreadId; readonly server: string },
-  ) => JSON.stringify([environmentId, input.threadId, input.server]);
-  const markMcpSignedIn = (
-    registry: AtomRegistry.AtomRegistry,
-    environmentId: EnvironmentId,
-    input: { readonly threadId: ThreadId; readonly server: string },
-    signedInAt: string,
-  ) =>
-    registry.update(mcpSignedInAtFamily(mcpSignInKey(environmentId, input)), (current) =>
-      Math.max(current ?? 0, Date.parse(signedInAt)),
-    );
   const mcpNoticeSignedInFamily = Atom.family((key: string) => {
     const [signInKey, noticeAt] = JSON.parse(key) as [string, number];
     // A notice newer than the sign-in means the server needs one again.
@@ -466,7 +476,7 @@ export function createThreadEnvironmentAtoms<R, E>(
       onSuccess: ({ environmentId, input }, registry, result) =>
         Effect.sync(() => {
           if (result.signedInAt !== null) {
-            markMcpSignedIn(registry, environmentId, input, result.signedInAt);
+            markMcpSignedIn(registry, environmentId, input, Date.parse(result.signedInAt));
           }
         }),
     }),
@@ -474,7 +484,9 @@ export function createThreadEnvironmentAtoms<R, E>(
       label: "environment-data:commands:thread:mcp-sign-in-complete",
       tag: WS_METHODS.providerMcpSignInComplete,
       onSuccess: ({ environmentId, input }, registry, result) =>
-        Effect.sync(() => markMcpSignedIn(registry, environmentId, input, result.signedInAt)),
+        Effect.sync(() =>
+          markMcpSignedIn(registry, environmentId, input, Date.parse(result.signedInAt)),
+        ),
     }),
   };
   const commands = {

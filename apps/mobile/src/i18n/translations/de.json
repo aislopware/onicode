@@ -241,6 +241,8 @@
   "42b96626eb49fc73": "{count, plural, one {Versucht, Threads {count}-mal aufzulisten} other {Versucht, Threads {count}-mal aufzulisten}}",
   "28d3809da9e7feb9": "{count, plural, one {Aufgabenstatus {count}-mal geprüft} other {Aufgabenstatus {count}-mal geprüft}}",
   "ba261addab1f7b9b": "{count, plural, one {Versucht, den Aufgabenstatus {count}-mal zu prüfen} other {Versucht, den Aufgabenstatus {count}-mal zu prüfen}}",
+  "cb4f1b30497b3e8c": "{count, plural, one {{count} Ergebnis übermittelt} other {{count} Ergebnisse übermittelt}}",
+  "8a8376b42d058123": "{count, plural, one {Versucht, {count} Ergebnis zu übermitteln} other {Versucht, {count} Ergebnisse zu übermitteln}}",
   "9e410f60344c6772": "{count, plural, one {Hintergrund-Wartevorgänge {count}-mal aktualisiert} other {Hintergrund-Wartevorgänge {count}-mal aktualisiert}}",
   "5ca35b5a769eadcd": "{count, plural, one {Versucht, Hintergrund-Wartevorgänge {count}-mal zu aktualisieren} other {Versucht, Hintergrund-Wartevorgänge {count}-mal zu aktualisieren}}",
   "7f78d45ac7d49ffa": "{count, plural, one {Geplante Aufgaben {count}-mal aufgelistet} other {Geplante Aufgaben {count}-mal aufgelistet}}",

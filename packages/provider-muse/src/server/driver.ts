@@ -90,7 +90,7 @@ export const MuseDriver: ProviderDriver<
     // Drop an inherited META_API_KEY so Muse uses its login; an instance value still wins.
     const processEnvironment = yield* mergeProviderInstanceEnvironment(
       environment,
-      makeMuseEnvironment(hostEnvironment),
+      makeMuseEnvironment(hostEnvironment, yield* HostProcess.Platform),
     );
     const effectiveConfig = {
       ...config,

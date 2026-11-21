@@ -514,28 +514,34 @@ const ReadComment = Schema.Struct({
 
 export const ReadPullRequestResult = Schema.Struct({
   ...PullRequestIdentity,
-  title: Schema.String,
-  state: PullRequestState,
-  isDraft: Schema.Boolean,
-  author: Schema.NullOr(Schema.String),
-  headBranch: Schema.String,
-  baseBranch: Schema.String,
-  headSha: Schema.NullOr(Schema.String),
-  mergeability: PullRequestMergeability,
-  behindBy: Schema.NullOr(Schema.Int),
-  autoMergeEnabled: Schema.NullOr(Schema.Boolean),
-  checks: Schema.Struct({
-    passed: Schema.Int,
-    pending: Schema.Int,
-    failed: Schema.Array(Schema.String),
-    incomplete: Schema.optional(Schema.Literal(true)).annotate({
-      description: "The host could not list some checks; checkRuns says which.",
-    }),
+  title: Schema.optional(Schema.String).annotate({
+    description: "With the other PR fields, omitted on a later diff page the host cannot refresh.",
   }),
-  unresolvedThreads: Schema.Int,
+  state: Schema.optional(PullRequestState),
+  isDraft: Schema.optional(Schema.Boolean),
+  author: Schema.optional(Schema.NullOr(Schema.String)),
+  headBranch: Schema.optional(Schema.String),
+  baseBranch: Schema.optional(Schema.String),
+  headSha: Schema.optional(Schema.NullOr(Schema.String)),
+  mergeability: Schema.optional(PullRequestMergeability),
+  behindBy: Schema.optional(Schema.NullOr(Schema.Int)),
+  autoMergeEnabled: Schema.optional(Schema.NullOr(Schema.Boolean)),
+  checks: Schema.optional(
+    Schema.Struct({
+      passed: Schema.Int,
+      pending: Schema.Int,
+      failed: Schema.Array(Schema.String),
+      incomplete: Schema.optional(Schema.Literal(true)).annotate({
+        description: "The host could not list some checks; checkRuns says which.",
+      }),
+    }),
+  ),
+  unresolvedThreads: Schema.optional(Schema.Int),
   unresolvedThreadsTruncated: Schema.optional(Schema.Literal(true)).annotate({
     description: "unresolvedThreads is a lower bound.",
   }),
+  labels: Schema.optional(Schema.Array(Schema.String)),
+  requestedReviewers: Schema.optional(Schema.Array(Schema.String)),
   body: Schema.optional(Schema.String),
   checkRuns: Schema.optional(Schema.Array(PullRequestCheck)),
   conversation: Schema.optional(
@@ -544,7 +550,9 @@ export const ReadPullRequestResult = Schema.Struct({
         Schema.Array(
           Schema.Struct({
             id: Schema.String,
-            path: Schema.String,
+            path: Schema.NullOr(Schema.String).annotate({
+              description: "Null for a thread on the whole PR.",
+            }),
             line: Schema.NullOr(Schema.Int),
             isResolved: Schema.Boolean,
             isOutdated: Schema.Boolean,

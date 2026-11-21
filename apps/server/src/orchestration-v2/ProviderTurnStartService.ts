@@ -232,6 +232,9 @@ export const isProviderTurnStartRunStateMissingError = Schema.is(
 
 const RESUME_PROMPT = "Continue where you left off.";
 
+const joinPrompt = (...parts: ReadonlyArray<string>) =>
+  parts.filter((part) => part !== "").join("\n\n");
+
 const START_GAVE_UP_MESSAGE =
   "Onicode could not start this turn. Send the message again; if it keeps failing, check the server logs.";
 
@@ -1040,10 +1043,12 @@ export const layer: Layer.Layer<
         session.providerSession.capabilities.turns.supportsNativeGoals === true;
       const goalCommand = goalDriver && parseGoalCommand(providerMessage) !== null;
       // Part of the user text, so every way a turn starts carries it, after the user's own words.
-      let userText =
+      let userText = joinPrompt(
+        messageText,
         run.outputSchema === undefined || goalCommand || isProviderCommand(providerMessage)
-          ? messageText
-          : `${messageText}\n\n${outputInstructions(run.outputSchema)}`;
+          ? ""
+          : outputInstructions(run.outputSchema),
+      );
       // The provider turn marks cancellation work delivered; restart continuations use their own text or resume natively.
       const noteContinuation = isRestartNoteContinuation(
         run,
@@ -2167,7 +2172,9 @@ export const layer: Layer.Layer<
           const prompted = context !== "" || missedAttachments.length > 0;
           // A resume that must be prompted still needs a request, or the agent has nothing to do.
           const requestText =
-            turnInput.resume && prompted && userText === "" ? RESUME_PROMPT : userText;
+            turnInput.resume && prompted && messageText === ""
+              ? joinPrompt(RESUME_PROMPT, userText)
+              : userText;
           const text = goalCommand ? userText : withInlineContext(context, requestText);
           const operation =
             turnInput.resume && !prompted && session.resumeTurn !== undefined

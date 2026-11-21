@@ -13,7 +13,7 @@ export interface ProviderInstanceRegistryMutatorShape {
   readonly reloadSecrets: (instanceId?: ProviderInstanceId) => Effect.Effect<void>;
   /**
    * Rebuilds the instances `select` names from the host environment, once per change of the host
-   * PATH since instances were built on it. Drivers copy the environment when built.
+   * PATH since instances were built on it. Drivers find their CLI on the PATH they were built on.
    */
   readonly rebuildOnHostPathChange: (
     select: Effect.Effect<ReadonlyArray<ProviderInstanceId>>,

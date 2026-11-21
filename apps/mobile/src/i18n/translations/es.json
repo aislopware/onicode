@@ -241,6 +241,8 @@
   "42b96626eb49fc73": "{count, plural, one {Intentó listar hilos {count} vez} other {Intentó listar hilos {count} veces}}",
   "28d3809da9e7feb9": "{count, plural, one {Consultó el estado de tareas {count} vez} other {Consultó el estado de tareas {count} veces}}",
   "ba261addab1f7b9b": "{count, plural, one {Intentó consultar el estado de tareas {count} vez} other {Intentó consultar el estado de tareas {count} veces}}",
+  "cb4f1b30497b3e8c": "{count, plural, one {Envió {count} resultado} other {Envió {count} resultados}}",
+  "8a8376b42d058123": "{count, plural, one {Intentó enviar {count} resultado} other {Intentó enviar {count} resultados}}",
   "9e410f60344c6772": "{count, plural, one {Actualizó esperas en segundo plano {count} vez} other {Actualizó esperas en segundo plano {count} veces}}",
   "5ca35b5a769eadcd": "{count, plural, one {Intentó actualizar esperas en segundo plano {count} vez} other {Intentó actualizar esperas en segundo plano {count} veces}}",
   "7f78d45ac7d49ffa": "{count, plural, one {Listó tareas programadas {count} vez} other {Listó tareas programadas {count} veces}}",

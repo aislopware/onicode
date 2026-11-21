@@ -884,6 +884,23 @@ export function summarizeOniToolCalls(
           );
       break;
     }
+    case "output-submit": {
+      const count = selected.length;
+      label = done
+        ? resolve(
+            msg(
+              "{count, plural, one {Submitted {count} result} other {Submitted {count} results}}",
+              { count },
+            ),
+          )
+        : resolve(
+            msg(
+              "{count, plural, one {Tried to submit {count} result} other {Tried to submit {count} results}}",
+              { count },
+            ),
+          );
+      break;
+    }
     case "background-wait": {
       const count = selected.length;
       label = done

@@ -882,12 +882,32 @@ describe("source control tools", () => {
   it.effect("reads the thread's branch PR compactly, adding only the sections asked", () =>
     Effect.gen(function* () {
       const asked: Array<PullRequestRef> = [];
-      let reviewThreadsTruncated = false;
+      let reviewThreadsTruncated: boolean | undefined = false;
+      let commentsTruncated = false;
+      let overviewThreads: PullRequestActivity["overviewThreads"];
+      let labelled = false;
       const harness = yield* makeHarness({
         thread: branchThread,
         pullRequests: {
-          detail: (ref) => Effect.sync(() => asked.push(ref)).pipe(Effect.as(detail)),
-          activity: () => Effect.sync(() => ({ ...activity, reviewThreadsTruncated })),
+          detail: (ref) =>
+            Effect.sync(() => asked.push(ref)).pipe(
+              Effect.as(
+                labelled
+                  ? ({
+                      ...detail,
+                      labels: [{ name: "bug", color: null }],
+                      reviewers: [{ login: "ana", name: null, avatarUrl: null }],
+                    } as PullRequestDetail)
+                  : detail,
+              ),
+            ),
+          activity: () =>
+            Effect.sync(() => ({
+              ...activity,
+              commentsTruncated,
+              ...(reviewThreadsTruncated === undefined ? {} : { reviewThreadsTruncated }),
+              ...(overviewThreads === undefined ? {} : { overviewThreads }),
+            })),
         },
       });
       const compact = yield* harness.call("pull_request_read", {});
@@ -900,6 +920,8 @@ describe("source control tools", () => {
       expect(compact.checkRuns).toBeUndefined();
       expect(compact.conversation).toBeUndefined();
       expect(compact.unresolvedThreadsTruncated).toBeUndefined();
+      expect(compact.labels).toBeUndefined();
+      expect(compact.requestedReviewers).toBeUndefined();
       const result = yield* harness.call("pull_request_read", { include: ["body", "threads"] });
       expect(asked[1]).toEqual({
         projectId: PROJECT_ID,
@@ -924,6 +946,29 @@ describe("source control tools", () => {
       expect(commentsOnly.conversation?.truncated).toBe(false);
       const threadsOnly = yield* harness.call("pull_request_read", { include: ["threads"] });
       expect(threadsOnly.conversation?.truncated).toBe(true);
+
+      // GitLab lists threads on the whole MR apart, and says only that its comment read was cut.
+      reviewThreadsTruncated = undefined;
+      commentsTruncated = true;
+      overviewThreads = [
+        { ...reviewThread("overview-open", false), path: null, line: null },
+        { ...reviewThread("overview-done", true), path: null, line: null },
+      ];
+      labelled = true;
+      const gitLab = yield* harness.call("pull_request_read", { include: ["threads"] });
+      expect(gitLab).toMatchObject({
+        unresolvedThreads: 2,
+        unresolvedThreadsTruncated: true,
+        labels: ["bug"],
+        requestedReviewers: ["ana"],
+        conversation: {
+          truncated: true,
+          reviewThreads: [
+            { id: "open-thread", path: "a.ts" },
+            { id: "overview-open", path: null, line: null },
+          ],
+        },
+      });
     }),
   );
 
@@ -937,23 +982,38 @@ describe("source control tools", () => {
       });
       const listed: Array<PullRequestListInput> = [];
       let firstResolved = false;
+      let hostDown = false;
+      let snapshotKept = true;
+      const down = new PullRequestOperationError({ operation: "read", detail: "Down." });
       const harness = yield* makeHarness({
         thread: branchThread,
         pullRequests: {
-          detail: () => Effect.succeed(detail),
+          // A stale read is the snapshot the first page recorded, while it is kept.
+          detail: (ref) =>
+            hostDown && (ref.allowStale === false || !snapshotKept)
+              ? Effect.fail(down)
+              : Effect.succeed(detail),
+          diff: (input) =>
+            Effect.succeed({
+              patch: input.cursor === undefined ? "first" : "second",
+              truncated: false,
+              nextCursor: input.cursor === undefined ? "diff-2" : null,
+            }),
           activity: () =>
-            Effect.sync(() => ({
-              ...activity,
-              reviewThreads: [
-                {
-                  ...long("first"),
-                  isResolved: firstResolved,
-                  nextCommentsCursor: "later",
-                },
-                long("second"),
-                reviewThread("done-thread", true),
-              ],
-            })),
+            hostDown
+              ? Effect.fail(down)
+              : Effect.sync(() => ({
+                  ...activity,
+                  reviewThreads: [
+                    {
+                      ...long("first"),
+                      isResolved: firstResolved,
+                      nextCommentsCursor: "later",
+                    },
+                    long("second"),
+                    reviewThread("done-thread", true),
+                  ],
+                })),
           threadComments: (input) =>
             Effect.succeed(
               input.cursor === "later"
@@ -991,6 +1051,27 @@ describe("source control tools", () => {
       );
       const past = yield* harness.call("pull_request_read", { cursor: stale });
       expect(past.conversation).toMatchObject({ reviewThreads: [], nextCursor: null });
+
+      const firstDiff = yield* harness.call("pull_request_read", { include: ["diff"] });
+      // A later diff page survives a failed refresh of what the first page already reported.
+      hostDown = true;
+      const nextDiff = yield* harness.call("pull_request_read", {
+        cursor: firstDiff.diff!.nextCursor!,
+      });
+      expect(nextDiff).toMatchObject({
+        title: "Add tools",
+        unresolvedThreads: 0,
+        unresolvedThreadsTruncated: true,
+        diff: { patch: "second", nextCursor: null },
+      });
+      // With no snapshot left, as after a restart, the page stands on the diff alone.
+      snapshotKept = false;
+      const bareDiff = yield* harness.call("pull_request_read", {
+        cursor: firstDiff.diff!.nextCursor!,
+      });
+      expect(bareDiff).toMatchObject({ diff: { patch: "second", nextCursor: null } });
+      expect(bareDiff.title).toBeUndefined();
+      hostDown = false;
 
       const page = yield* harness.call("pull_request_list", {});
       yield* harness.call("pull_request_list", { cursor: page.nextCursor! });

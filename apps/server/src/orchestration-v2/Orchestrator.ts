@@ -12647,7 +12647,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
   ) {
     const projection = yield* projectionStore
-      .getThreadRecords(command.threadId, ["runs"])
+      .getThreadRecords(command.threadId, ["runs"], { runIds: [command.runId] })
       .pipe(mapDispatchError(command));
     const run = projection.runs.find((candidate) => candidate.id === command.runId);
     if (run?.outputSchema === undefined) {
@@ -12658,9 +12658,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       });
     }
     // The service picks the active run, but the run can end before this command is its turn. A
-    // turn that completed without its result still owes it, and a later turn may give it.
-    const owes = run.status === "completed" && run.output === undefined;
-    if (!isActiveRun(run) && !owes) {
+    // completed turn takes its result, or a correction, from a turn woken for it.
+    if (!isActiveRun(run) && run.status !== "completed") {
       return yield* new OrchestratorDispatchError({
         commandId: command.commandId,
         commandType: command.type,

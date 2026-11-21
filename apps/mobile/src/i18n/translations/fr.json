@@ -241,6 +241,8 @@
   "42b96626eb49fc73": "{count, plural, one {Tentative de lister les fils {count} fois} other {Tentative de lister les fils {count} fois}}",
   "28d3809da9e7feb9": "{count, plural, one {Statut des tâches vérifié {count} fois} other {Statut des tâches vérifié {count} fois}}",
   "ba261addab1f7b9b": "{count, plural, one {Tentative de vérifier le statut des tâches {count} fois} other {Tentative de vérifier le statut des tâches {count} fois}}",
+  "cb4f1b30497b3e8c": "{count, plural, one {{count} résultat soumis} other {{count} résultats soumis}}",
+  "8a8376b42d058123": "{count, plural, one {Tentative de soumettre {count} résultat} other {Tentative de soumettre {count} résultats}}",
   "9e410f60344c6772": "{count, plural, one {Attentes en arrière-plan mises à jour {count} fois} other {Attentes en arrière-plan mises à jour {count} fois}}",
   "5ca35b5a769eadcd": "{count, plural, one {Tentative de mettre à jour les attentes en arrière-plan {count} fois} other {Tentative de mettre à jour les attentes en arrière-plan {count} fois}}",
   "7f78d45ac7d49ffa": "{count, plural, one {Tâches planifiées listées {count} fois} other {Tâches planifiées listées {count} fois}}",

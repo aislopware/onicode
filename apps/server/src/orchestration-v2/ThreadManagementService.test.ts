@@ -403,6 +403,58 @@ it.effect("waitForThread follows a restart continuation instead of the cut run",
   }),
 );
 
+it.effect.each(["usageLimitContinuationOfRunId", "manualContinuationOfRunId"] as const)(
+  "waitForThread takes the result from a run's %s",
+  (link) =>
+    Effect.gen(function* () {
+      const projectId = ProjectId.make("project:thread-management:wait-continued");
+      const threadId = ThreadId.make("thread:thread-management:wait-continued");
+      const runId = RunId.make("run:thread-management:wait-continued");
+      const continuationId = RunId.make("run:thread-management:wait-continued:2");
+      const outputSchema = { type: "object" };
+      const output = { value: { head: "abc" }, submittedAt: "2026-11-21T00:00:00.000Z" };
+      const layerTest = ThreadManagementService.layer.pipe(
+        Layer.provide(Layer.mock(ProviderSessionManager.ProviderSessionManagerV2)({})),
+        Layer.provide(
+          Layer.mock(Orchestrator.OrchestratorV2)({
+            getThreadEventSequence: () => Effect.succeed(0),
+            restartContinuationPending: () => Effect.succeed(false),
+            streamStoredEventsFrom: () => Stream.never,
+            getThreadRecords: () =>
+              Effect.succeed({
+                thread: { id: threadId, projectId, deletedAt: null },
+                runs: [
+                  { id: runId, ordinal: 1, status: "failed", outputSchema },
+                  {
+                    id: continuationId,
+                    ordinal: 2,
+                    status: "completed",
+                    outputSchema,
+                    output,
+                    [link]: runId,
+                  },
+                ],
+              } as unknown as OrchestrationV2ThreadProjection),
+          }),
+        ),
+        Layer.provide(ServerSettings.layerTest()),
+        Layer.provide(layerReceiptsTest),
+      );
+      const service = yield* ThreadManagementService.ThreadManagementService.pipe(
+        Effect.provide(layerTest),
+      );
+      const result = yield* service.waitForThread({
+        projectId,
+        threadId,
+        runId,
+        timeoutMs: 1_000,
+        untilOutput: true,
+      });
+
+      expect(result).toMatchObject({ timedOut: false, run: { id: continuationId, output } });
+    }),
+);
+
 it.effect.each([
   { steer: "read" },
   // The run-end reaction moves a message Claude dropped unread to a run of its own.

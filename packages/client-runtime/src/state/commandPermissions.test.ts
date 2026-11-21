@@ -155,6 +155,7 @@ describe("command permissions", () => {
     { method: WS_METHODS.serverReclaimDatabaseSpace, scope: AuthEnvironmentMaintainScope },
     { method: WS_METHODS.providerMcpSignInStart, scope: AuthProvidersManageScope },
     { method: WS_METHODS.providerMcpSignInComplete, scope: AuthProvidersManageScope },
+    { method: WS_METHODS.providerSessionMcpOAuthCallback, scope: AuthProvidersManageScope },
   ])("requires the destination $scope grant for $method", ({ method, scope }) =>
     Effect.gen(function* () {
       const registry = yield* setup;
@@ -359,6 +360,45 @@ it.effect(
       );
       expect(registry.get(prepare.permissionAtom(env, input))).toBe(true);
       yield* prepare.authorize(registry, env, input);
+    }),
+);
+
+it.effect.each(["reconnect", "enable", "disable", "authenticate", "clear-auth"] as const)(
+  "the /mcp %s action needs provider management only when it changes a sign-in",
+  (action) =>
+    Effect.gen(function* () {
+      const registry = yield* setup;
+      const command = createCommandPermissions(runtime, WS_METHODS.providerSessionMcpServerAction);
+      const input = { threadId: ThreadId.make("thread"), server: "linear", action };
+      const changesSignIn = action === "authenticate" || action === "clear-auth";
+      registry.set(sessions(env), AsyncResult.success(grant(true)));
+      expect(registry.get(command.permissionAtom(env, input))).toBe(!changesSignIn);
+      if (changesSignIn) {
+        expect(yield* command.authorize(registry, env, input).pipe(Effect.flip)).toMatchObject({
+          requiredPermission: AuthProvidersManageScope,
+        });
+      } else {
+        yield* command.authorize(registry, env, input);
+      }
+      registry.set(
+        sessions(env),
+        AsyncResult.success({
+          ...grant(false),
+          scopes: [AuthProvidersManageScope],
+          permissions: [AuthProvidersManageScope],
+        }),
+      );
+      expect(registry.get(command.permissionAtom(env, input))).toBe(false);
+      registry.set(
+        sessions(env),
+        AsyncResult.success({
+          ...grant(false),
+          scopes: [AuthOrchestrationOperateScope, AuthProvidersManageScope],
+          permissions: [AuthOrchestrationOperateScope, AuthProvidersManageScope],
+        }),
+      );
+      expect(registry.get(command.permissionAtom(env, input))).toBe(true);
+      yield* command.authorize(registry, env, input);
     }),
 );
 

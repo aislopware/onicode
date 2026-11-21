@@ -241,6 +241,8 @@
   "42b96626eb49fc73": "{count, plural, one {Tentou listar as threads {count} vez} other {Tentou listar as threads {count} vezes}}",
   "28d3809da9e7feb9": "{count, plural, one {Verificou o status de tarefas {count} vez} other {Verificou o status de tarefas {count} vezes}}",
   "ba261addab1f7b9b": "{count, plural, one {Tentou verificar o status de tarefas {count} vez} other {Tentou verificar o status de tarefas {count} vezes}}",
+  "cb4f1b30497b3e8c": "{count, plural, one {Enviou {count} resultado} other {Enviou {count} resultados}}",
+  "8a8376b42d058123": "{count, plural, one {Tentou enviar {count} resultado} other {Tentou enviar {count} resultados}}",
   "9e410f60344c6772": "{count, plural, one {Atualizou esperas em segundo plano {count} vez} other {Atualizou esperas em segundo plano {count} vezes}}",
   "5ca35b5a769eadcd": "{count, plural, one {Tentou atualizar esperas em segundo plano {count} vez} other {Tentou atualizar esperas em segundo plano {count} vezes}}",
   "7f78d45ac7d49ffa": "{count, plural, one {Listou as tarefas agendadas {count} vez} other {Listou as tarefas agendadas {count} vezes}}",

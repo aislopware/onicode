@@ -30,6 +30,7 @@ import {
 import { codexContinuationIdentity } from "./CodexHomeLayout.ts";
 import { withInstanceIdentity } from "@onicode/provider-core/server/instanceIdentity";
 import { HttpClient } from "effect/http";
+import * as HostProcess from "@onicode/shared/HostProcess";
 const DRIVER = ProviderDriverKind.make("codex");
 
 export const makeManagedCodexProvider = Effect.fn("makeManagedCodexProvider")(function* (
@@ -45,7 +46,10 @@ export const makeManagedCodexProvider = Effect.fn("makeManagedCodexProvider")(fu
     instanceId,
     enabled,
     config,
-    environment: yield* mergeProviderInstanceEnvironment(input.environment),
+    environment: yield* mergeProviderInstanceEnvironment(
+      input.environment,
+      yield* HostProcess.Environment,
+    ),
   });
   const continuationIdentity = codexContinuationIdentity(runtime.homeLayout);
   const stamp = withInstanceIdentity({

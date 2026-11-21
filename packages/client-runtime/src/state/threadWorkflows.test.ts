@@ -3,6 +3,7 @@ import type { OrchestrationV2ThreadProjection } from "@onicode/contracts";
 
 import {
   canForkProjectedAssistantItem,
+  canPromoteQueuedRun,
   deriveThreadQueueWorkflowState,
   getUserQueuedThreadRuns,
   resolveLatestMergeBackRun,
@@ -213,6 +214,20 @@ describe("thread workflows", () => {
     expect(state.canPromoteToSteer).toBe(true);
     expect(state.promoteSkipsCompaction).toBe(true);
   });
+
+  it.each([
+    { run: {}, skipsCompaction: false, expected: true },
+    { run: { freshContext: true }, skipsCompaction: false, expected: false },
+    { run: { outputSchema: { type: "object" } }, skipsCompaction: false, expected: false },
+    { run: { freshContext: true }, skipsCompaction: true, expected: true },
+    { run: { outputSchema: { type: "object" } }, skipsCompaction: true, expected: true },
+  ])(
+    "steers with $run into a turn only when it needs no turn of its own, skipsCompaction=$skipsCompaction",
+    ({ run, skipsCompaction, expected }) => {
+      const workflow = { canPromoteToSteer: true, promoteSkipsCompaction: skipsCompaction };
+      expect(canPromoteQueuedRun(workflow, run)).toBe(expected);
+    },
+  );
 
   it("marks a held steer as waiting only while its turn is compacting", () => {
     const waiting = (

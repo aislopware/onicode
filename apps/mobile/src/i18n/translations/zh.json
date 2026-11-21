@@ -241,6 +241,8 @@
   "42b96626eb49fc73": "{count, plural, other {尝试列出会话 {count} 次}}",
   "28d3809da9e7feb9": "{count, plural, other {已检查任务状态 {count} 次}}",
   "ba261addab1f7b9b": "{count, plural, other {尝试检查任务状态 {count} 次}}",
+  "cb4f1b30497b3e8c": "{count, plural, other {已提交 {count} 个结果}}",
+  "8a8376b42d058123": "{count, plural, other {尝试提交 {count} 个结果}}",
   "9e410f60344c6772": "{count, plural, other {已更新后台等待 {count} 次}}",
   "5ca35b5a769eadcd": "{count, plural, other {尝试更新后台等待 {count} 次}}",
   "7f78d45ac7d49ffa": "{count, plural, other {已列出定时任务 {count} 次}}",

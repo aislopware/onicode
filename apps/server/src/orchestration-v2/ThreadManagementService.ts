@@ -594,13 +594,18 @@ export function latestRun(
   return projection.runs.toSorted((left, right) => right.ordinal - left.ordinal)[0];
 }
 
-function latestRestartContinuation(
+function latestContinuation(
   runs: ReadonlyArray<OrchestrationV2Run>,
   run: OrchestrationV2Run,
 ): OrchestrationV2Run {
   let current = run;
   for (let hops = 0; hops < runs.length; hops++) {
-    const next = runs.find((candidate) => candidate.restartContinuationOfRunId === current.id);
+    const next = runs.find(
+      (candidate) =>
+        (candidate.restartContinuationOfRunId ??
+          candidate.usageLimitContinuationOfRunId ??
+          candidate.manualContinuationOfRunId) === current.id,
+    );
     if (next === undefined) break;
     current = next;
   }
@@ -631,6 +636,7 @@ function latestSteerableRun(
 }
 
 const SETTLE_AFTER_RUN_WAIT_MS = 24 * 60 * 60 * 1_000;
+const MAX_WAKE_HOPS = 32;
 const FORCE_STOP_REASON = "Force stopped by user";
 const FORCE_STOP_RELEASE_WAIT = "10 seconds";
 const isForceStopThreadError = Schema.is(OrchestrationV2ForceStopThreadError);
@@ -1040,20 +1046,42 @@ const make = Effect.gen(function* () {
   const submitRunOutput: ThreadManagementServiceShape["submitRunOutput"] = Effect.fn(
     "ThreadManagementService.submitRunOutput",
   )(function* (input) {
-    const records = yield* orchestrator.getThreadRecords(input.threadId, ["runs"]);
-    const active = latestActiveRun(records);
+    const active = latestActiveRun(
+      yield* orchestrator.getThreadRecords(input.threadId, ["runs"], {
+        runStatuses: ACTIVE_RUN_STATUSES,
+      }),
+    );
+    let run = active?.outputSchema === undefined ? undefined : active;
     // A turn that ended without its result still owes it: the agent may have ended it to wait
-    // for something, and answer from the turn that woke it.
+    // for something, and answer from the turn that woke it. A turn woken for a run's delegated
+    // work answers for that run, a correction included, through any wakes and restarts between.
+    let wake = active;
+    for (let hops = 0; run === undefined && wake !== undefined && hops < MAX_WAKE_HOPS; hops++) {
+      const parentRunId =
+        wake.restartContinuationOfRunId ??
+        wake.usageLimitContinuationOfRunId ??
+        wake.manualContinuationOfRunId ??
+        (yield* orchestrator.getThreadRecords(input.threadId, ["messages"], {
+          messageIds: [wake.userMessageId],
+        })).messages[0]?.delegatedCompletion?.parentRunId;
+      if (parentRunId === undefined) break;
+      wake = (yield* orchestrator.getThreadRecords(input.threadId, ["runs"], {
+        runIds: [parentRunId],
+      })).runs[0];
+      if (wake?.outputSchema !== undefined) run = wake;
+    }
+    // A turn the provider woke names no run, so it answers for the newest one still owed.
     // Only an ended turn can owe one; a queued or running turn asked for one answers for itself.
-    const owed = records.runs
-      .filter(
-        (candidate) =>
-          candidate.outputSchema !== undefined &&
-          candidate.output === undefined &&
-          candidate.status === "completed",
-      )
-      .toSorted((left, right) => right.ordinal - left.ordinal)[0];
-    const run = active?.outputSchema !== undefined ? active : owed;
+    if (active !== undefined && run === undefined) {
+      run = (yield* orchestrator.getThreadRecords(input.threadId, ["runs"])).runs
+        .filter(
+          (candidate) =>
+            candidate.outputSchema !== undefined &&
+            candidate.output === undefined &&
+            candidate.status === "completed",
+        )
+        .toSorted((left, right) => right.ordinal - left.ordinal)[0];
+    }
     if (active === undefined || run?.outputSchema === undefined) {
       return yield* new ThreadManagementRunOutputRejectedError({
         threadId: input.threadId,
@@ -1093,10 +1121,37 @@ const make = Effect.gen(function* () {
       .getThreadEventSequence(input.threadId)
       .pipe(Effect.mapError(loadError));
     const target = yield* getProjectThreadRecords(input, ["runs"]);
+    const runForOutput = Effect.gen(function* () {
+      const asked = target.runs.filter((run) => run.outputSchema !== undefined);
+      const owing = latestRun({
+        runs: asked.filter(
+          (run) =>
+            !isTerminalRunStatus(run.status) ||
+            (run.status === "completed" && run.output === undefined),
+        ),
+      });
+      if (owing !== undefined) return owing;
+      const answered = latestRun({ runs: asked });
+      const latest = latestRun(target);
+      if (answered === undefined || latest === undefined || latest.id === answered.id) {
+        return latest;
+      }
+      // A turn woken for delegated or provider background work may have given the asked run's result.
+      const { messages } = yield* getProjectThreadRecords(input, ["messages"], {
+        messageIds: [latest.userMessageId],
+      });
+      const message = messages[0];
+      const woken =
+        message?.delegatedCompletion !== undefined ||
+        (message?.createdBy === "agent" && message.creationSource === "provider");
+      return woken ? answered : latest;
+    });
     const selectedRun =
-      input.runId === undefined
-        ? latestRun(target)
-        : target.runs.find((candidate) => candidate.id === input.runId);
+      input.runId !== undefined
+        ? target.runs.find((candidate) => candidate.id === input.runId)
+        : input.untilOutput === true
+          ? yield* runForOutput
+          : latestRun(target);
     if (input.runId !== undefined && selectedRun === undefined) {
       return yield* new ThreadManagementRunNotFoundError({
         threadId: input.threadId,
@@ -1106,14 +1161,14 @@ const make = Effect.gen(function* () {
     if (selectedRun === undefined) {
       return { threadId: input.threadId, run: null, timedOut: false };
     }
-    // A restart cuts a run and continues it as a new run. Follow that chain,
-    // so a cut run is not the answer while its continuation is pending.
+    // A restart cuts a run and continues it as a new run, as do Resume and usage-limit recovery.
+    // Follow that chain, so a cut run is not the answer while its continuation is pending.
     // Runs per matching event and is already covered by the waitForThread span.
     const pastRestarts = Effect.fnUntraced(function* (
       runs: ReadonlyArray<OrchestrationV2Run>,
       current: OrchestrationV2Run,
     ) {
-      const run = latestRestartContinuation(runs, current);
+      const run = latestContinuation(runs, current);
       const pending =
         isTerminalRunStatus(run.status) && (yield* orchestrator.restartContinuationPending(run));
       const owesOutput =

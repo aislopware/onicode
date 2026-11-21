@@ -4665,12 +4665,13 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
           yield* runGit(repoDir, ["add", file]);
           yield* runGit(repoDir, ["commit", "-m", file]);
         });
-      const createPr = (manager: GitManager.GitManager["Service"]) =>
+      const createPr = (manager: GitManager.GitManager["Service"], baseBranch?: string) =>
         manager.createPullRequest({
           cwd: repoDir,
           projectId: ProjectId.make("project-1"),
           title: "Feature",
           body: "Body",
+          ...(baseBranch === undefined ? {} : { baseBranch }),
         });
 
       // Commits on the base branch are never pushed to it.
@@ -4682,6 +4683,24 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       expect(yield* readOrigin("main")).toBe(originMain);
       expect(created(onBase.providerCalls)).toEqual([]);
       yield* runGit(repoDir, ["reset", "--hard", "origin/main"]);
+
+      // The base asked for is the one guarded: release onto itself is refused before a push.
+      yield* runGit(repoDir, ["checkout", "-b", "release"]);
+      yield* runGit(repoDir, ["push", "-u", "origin", "release"]);
+      yield* commit("on-release.txt");
+      const originRelease = yield* readOrigin("release");
+      const onRelease = yield* makeManager({ providerScenario: { prListSequence: [[]] } });
+      const releaseError = yield* Effect.flip(createPr(onRelease.manager, "release"));
+      expect(releaseError.message).toContain("release is the base branch");
+      expect(yield* readOrigin("release")).toBe(originRelease);
+      expect(created(onRelease.providerCalls)).toEqual([]);
+
+      // And main onto develop is a PR like any other.
+      yield* runGit(repoDir, ["checkout", "main"]);
+      yield* commit("for-develop.txt");
+      const toDevelop = yield* makeManager();
+      expect((yield* createPr(toDevelop.manager, "develop")).status).toBe("created");
+      expect(created(toDevelop.providerCalls)).toMatchObject([{ baseRefName: "develop" }]);
 
       // A push to a separate push remote leaves the upstream behind, and still opens the PR.
       yield* runGit(repoDir, ["checkout", "-b", "topic"]);

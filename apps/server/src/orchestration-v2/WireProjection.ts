@@ -5,6 +5,8 @@ import type {
   OrchestrationV2Checkpoint,
   OrchestrationV2DomainEvent,
   OrchestrationV2ContextHandoff,
+  OrchestrationV2Run,
+  OrchestrationV2RunOutput,
   OrchestrationV2StoredEvent,
   OrchestrationV2Subagent,
   OrchestrationV2ThreadProjection,
@@ -301,6 +303,21 @@ export function projectContextHandoffForWire(
   return { ...projected, summaryText: "" };
 }
 
+// Clients only show that a run asks for a result and has one; the schema and value stay here.
+const projectRunOutputForWire = (output: OrchestrationV2RunOutput): OrchestrationV2RunOutput => ({
+  ...output,
+  value: null,
+});
+
+function projectRunForWire(run: OrchestrationV2Run): OrchestrationV2Run {
+  if (run.outputSchema === undefined && run.output === undefined) return run;
+  return {
+    ...run,
+    ...(run.outputSchema === undefined ? {} : { outputSchema: {} }),
+    ...(run.output === undefined ? {} : { output: projectRunOutputForWire(run.output) }),
+  };
+}
+
 export function projectThreadProjectionForWire(
   projection: OrchestrationV2ThreadProjection,
 ): OrchestrationV2ThreadProjection {
@@ -315,6 +332,7 @@ export function projectThreadProjectionForWire(
   };
   return {
     ...projection,
+    runs: projection.runs.map(projectRunForWire),
     checkpoints: projection.checkpoints.map(capCheckpointFiles),
     contextHandoffs: projection.contextHandoffs.map(projectContextHandoffForWire),
     turnItems: projection.turnItems.map(project),
@@ -328,13 +346,26 @@ export function projectThreadProjectionForWire(
 export function projectDomainEventForWire(
   event: OrchestrationV2DomainEvent,
 ): OrchestrationV2DomainEvent {
-  return event.type === "turn-item.updated"
-    ? { ...event, payload: projectTurnItemForWire(event.payload) }
-    : event.type === "context-handoff.updated"
-      ? { ...event, payload: projectContextHandoffForWire(event.payload) }
-      : event.type === "checkpoint.captured"
-        ? { ...event, payload: capCheckpointFiles(event.payload) }
-        : event;
+  switch (event.type) {
+    case "turn-item.updated":
+      return { ...event, payload: projectTurnItemForWire(event.payload) };
+    case "context-handoff.updated":
+      return { ...event, payload: projectContextHandoffForWire(event.payload) };
+    case "checkpoint.captured":
+      return { ...event, payload: capCheckpointFiles(event.payload) };
+    case "run.created":
+    case "run.updated": {
+      const payload = projectRunForWire(event.payload);
+      return payload === event.payload ? event : { ...event, payload };
+    }
+    case "run.output-submitted":
+      return {
+        ...event,
+        payload: { ...event.payload, output: projectRunOutputForWire(event.payload.output) },
+      };
+    default:
+      return event;
+  }
 }
 
 // Keyed on the stored event PubSub hands every subscriber, so all of them share one projection

@@ -803,3 +803,72 @@ it.effect("requires provider management to send /logout through chat", () =>
     ]);
   }).pipe(Effect.scoped),
 );
+
+it.effect("requires provider management to sign an MCP server in or out through /mcp", () =>
+  Effect.gen(function* () {
+    const tested = [
+      WS_METHODS.providerSessionMcpServerAction,
+      WS_METHODS.providerSessionMcpOAuthCallback,
+    ] as const;
+    const group = WsRpcGroup.omit(
+      ...[...WsRpcGroup.requests.keys()].filter(
+        (tag): tag is Exclude<keyof typeof RPC_REQUIRED_SCOPES, (typeof tested)[number]> =>
+          !(tested as ReadonlyArray<string>).includes(tag),
+      ),
+    );
+    const handled: string[] = [];
+    const handlers = Layer.mergeAll(
+      group.toLayerHandler(WS_METHODS.providerSessionMcpServerAction, ({ action }) =>
+        Effect.sync(() => {
+          handled.push(action);
+          return {};
+        }),
+      ),
+      group.toLayerHandler(WS_METHODS.providerSessionMcpOAuthCallback, () =>
+        Effect.sync(() => {
+          handled.push("callback");
+        }),
+      ),
+    );
+    const threadId = ThreadId.make("thread");
+    const callback = { threadId, server: "linear", callbackUrl: "http://localhost/cb?code=1" };
+    const operator = yield* RpcTest.makeClient(group).pipe(
+      Effect.provide(
+        Layer.merge(handlers, RpcAuthorization.layer([AuthOrchestrationOperateScope])),
+      ),
+    );
+    yield* operator[WS_METHODS.providerSessionMcpServerAction]({
+      threadId,
+      server: "linear",
+      action: "reconnect",
+    });
+    for (const action of ["authenticate", "clear-auth"] as const) {
+      expect(
+        yield* operator[WS_METHODS.providerSessionMcpServerAction]({
+          threadId,
+          server: "linear",
+          action,
+        }).pipe(Effect.flip),
+      ).toMatchObject({ requiredPermission: AuthProvidersManageScope });
+    }
+    expect(
+      yield* operator[WS_METHODS.providerSessionMcpOAuthCallback](callback).pipe(Effect.flip),
+    ).toMatchObject({ requiredPermission: AuthProvidersManageScope });
+
+    const manager = yield* RpcTest.makeClient(group).pipe(
+      Effect.provide(
+        Layer.merge(
+          handlers,
+          RpcAuthorization.layer([AuthOrchestrationOperateScope, AuthProvidersManageScope]),
+        ),
+      ),
+    );
+    yield* manager[WS_METHODS.providerSessionMcpServerAction]({
+      threadId,
+      server: "linear",
+      action: "authenticate",
+    });
+    yield* manager[WS_METHODS.providerSessionMcpOAuthCallback](callback);
+    expect(handled).toEqual(["reconnect", "authenticate", "callback"]);
+  }).pipe(Effect.scoped),
+);

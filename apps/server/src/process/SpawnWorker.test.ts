@@ -2,6 +2,7 @@
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
+import * as NodeStreamConsumers from "node:stream/consumers";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import { vi } from "vite-plus/test";
@@ -201,6 +202,16 @@ describe("SpawnWorker", () => {
       });
       const exited = new Promise((resolve) => direct.once("exit", () => resolve(direct.killed)));
       expect(yield* Effect.promise(() => exited)).toBe(true);
+      // Claude's adapter passes its environment view, a Proxy, which postMessage cannot clone.
+      const view = new Proxy({ ...process.env, SPAWN_WORKER_VIEW: "view value" }, {});
+      const viewed = SpawnWorker.spawnPiped(
+        process.execPath,
+        ["-e", "process.stdout.write(process.env.SPAWN_WORKER_VIEW)"],
+        { env: view },
+      );
+      expect(yield* Effect.promise(() => NodeStreamConsumers.text(viewed.stdout))).toBe(
+        "view value",
+      );
     }).pipe(Effect.scoped, Effect.provide(layer)),
   );
 });

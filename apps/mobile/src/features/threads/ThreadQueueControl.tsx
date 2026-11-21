@@ -10,6 +10,7 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@onicode/client-runtime/state/runtime";
+import { canPromoteQueuedRun } from "@onicode/client-runtime/state/thread-workflows";
 import { resolveUserMessagePresentation } from "@onicode/client-runtime/user-message";
 import type { ChatAttachment, EnvironmentId, RunId, ThreadId } from "@onicode/contracts";
 import { Atom } from "effect/reactivity";
@@ -277,10 +278,7 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
         const controls = resolveThreadQueueRowControls({
           awaitsCompaction,
           busy: busyRunId !== null || resuming,
-          // A fresh message starts its own turn: it may skip compaction, but not steer into a turn.
-          canPromoteToSteer:
-            (workflow?.canPromoteToSteer ?? false) &&
-            (run.freshContext !== true || workflow?.promoteSkipsCompaction === true),
+          canPromoteToSteer: workflow != null && canPromoteQueuedRun(workflow, run),
           canSendNow: workflow?.canSendNow ?? false,
           editBlocked: editBlockedReason !== null,
           isEditing: editing?.runId === run.id,

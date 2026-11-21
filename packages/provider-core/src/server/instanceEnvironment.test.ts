@@ -5,7 +5,7 @@ import * as Effect from "effect/Effect";
 import * as Path from "effect/Path";
 import * as HostProcess from "@onicode/shared/HostProcess";
 
-import { mergeProviderInstanceEnvironment } from "./instanceEnvironment.ts";
+import { environmentView, mergeProviderInstanceEnvironment } from "./instanceEnvironment.ts";
 
 describe("mergeProviderInstanceEnvironment", () => {
   it.effect.each([
@@ -56,6 +56,25 @@ describe("mergeProviderInstanceEnvironment", () => {
           baseEnv,
         ),
       ).toEqual({ ...baseEnv, CUSTOM_VALUE: "~/.custom" });
+    }),
+  );
+
+  it.effect("keeps reading host variables it does not set", () =>
+    Effect.gen(function* () {
+      const host: NodeJS.ProcessEnv = { PATH: "/bin" };
+      const environment = yield* mergeProviderInstanceEnvironment(
+        [{ name: "CUSTOM_VALUE", value: "1", sensitive: false }],
+        host,
+      );
+      // The desktop's shell snapshot reaches the host after drivers are built.
+      host.PATH = "/opt/bin:/bin";
+      host.NODE_EXTRA_CA_CERTS = "/etc/ca.pem";
+      expect({ ...environment }).toEqual({
+        PATH: "/opt/bin:/bin",
+        NODE_EXTRA_CA_CERTS: "/etc/ca.pem",
+        CUSTOM_VALUE: "1",
+      });
+      expect(host).toEqual({ PATH: "/opt/bin:/bin", NODE_EXTRA_CA_CERTS: "/etc/ca.pem" });
     }),
   );
 
@@ -112,4 +131,25 @@ describe("mergeProviderInstanceEnvironment", () => {
       });
     }),
   );
+
+  it("replaces every host spelling of a name a view writes or deletes on Windows", () => {
+    const host: NodeJS.ProcessEnv = { Path: "C:\\bin", Temp: "C:\\tmp" };
+    const view = environmentView(host, "win32");
+    view.PATH = "C:\\tools";
+    delete view.TEMP;
+    Object.defineProperty(view, "Extra", {
+      value: "1",
+      enumerable: true,
+      configurable: true,
+      writable: true,
+    });
+    expect({ ...view }).toEqual({ PATH: "C:\\tools", Extra: "1" });
+    expect([view.Path, view.extra, "temp" in view]).toEqual(["C:\\tools", "1", false]);
+    expect([view.toString, "toString" in view, Object.hasOwn(view, "constructor")]).toEqual([
+      undefined,
+      false,
+      false,
+    ]);
+    expect(host).toEqual({ Path: "C:\\bin", Temp: "C:\\tmp" });
+  });
 });

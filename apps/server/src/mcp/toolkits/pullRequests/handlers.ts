@@ -2,11 +2,12 @@ import {
   CommandId,
   NonNegativeInt,
   type PullRequestActivity,
+  type PullRequestDiffResult,
   PullRequestListCursors,
   type PullRequestRef,
   type PullRequestReviewCommentDraft,
   type PullRequestCheck,
-  type PullRequestReviewThread,
+  type PullRequestConversationThread,
   type OrchestrationProjectShell,
   type PullRequestState,
   type PullRequestWatchUntil,
@@ -14,6 +15,7 @@ import {
   type ThreadId,
   type ThreadPullRequestLink,
   TrimmedNonEmptyString,
+  pullRequestConversationThreads,
 } from "@onicode/contracts";
 import * as Cause from "effect/Cause";
 import * as SecureRandom from "effect/crypto/SecureRandom";
@@ -101,6 +103,12 @@ const readCursors = {
     ),
 };
 
+const diffPage = (diff: PullRequestDiffResult) => ({
+  patch: diff.patch,
+  truncated: diff.truncated,
+  nextCursor: diff.nextCursor === null ? null : readCursors.encode({ diff: diff.nextCursor }),
+});
+
 const listCursors = {
   encode: (value: PullRequestListCursors) => Base64Url.encode(encodeListCursorsJson(value)),
   decode: (cursor: string) =>
@@ -122,8 +130,9 @@ function conversationPage(
   includeResolved: boolean,
 ) {
   // Offsets index the unfiltered lists, whose order resolving a thread does not change.
-  const { reviewThreads, comments } = activity;
-  const pageThreads: Array<PullRequestReviewThread> = [];
+  const reviewThreads = pullRequestConversationThreads(activity);
+  const { comments } = activity;
+  const pageThreads: Array<PullRequestConversationThread> = [];
   const pageComments: Array<PullRequestActivity["comments"][number]> = [];
   let size = 0;
   let thread = start.threads === null ? null : Math.min(start.threads, reviewThreads.length);
@@ -158,6 +167,11 @@ function conversationPage(
     next: done ? null : { threads: thread, comments: comment, includeResolved },
   };
 }
+
+// Comment cursors cannot account for missing threads unless the host says it listed them all.
+const threadsTruncated = (activity: PullRequestActivity) =>
+  activity.reviewThreadsTruncated === true ||
+  (activity.commentsTruncated && activity.reviewThreadsTruncated === undefined);
 
 function checksSummary(checks: ReadonlyArray<PullRequestCheck>) {
   let passed = 0;
@@ -558,9 +572,9 @@ const make = Effect.gen(function* () {
   /** The thread's comments past its first page, when the host pages them. */
   const restOfThread = Effect.fn("PullRequestsToolkit.restOfThread")(function* (
     ref: PullRequestRef,
-    thread: PullRequestReviewThread,
+    thread: PullRequestConversationThread,
   ) {
-    const comments: Array<PullRequestReviewThread["comments"][number]> = [];
+    const comments: Array<PullRequestConversationThread["comments"][number]> = [];
     let cursor = thread.nextCommentsCursor;
     for (let page = 0; cursor !== undefined && page < THREAD_COMMENT_PAGES; page += 1) {
       const read = yield* pullRequests
@@ -581,11 +595,17 @@ const make = Effect.gen(function* () {
   ) {
     const wants = (section: PullRequestReadSection) => sections.includes(section);
     const diffCursor = cursor !== undefined && "diff" in cursor ? cursor.diff : undefined;
-    const [detail, activity, diff] = yield* Effect.all(
+    // A later diff page already has its summary, so a failed refresh must not lose the page.
+    const continuesDiff = diffCursor !== undefined;
+    const [detailRead, activity, diff] = yield* Effect.all(
       [
-        // Agents pin merges to this headSha, so it must not come from a stale snapshot.
-        pullRequests.detail({ ...ref, allowStale: false }),
-        pullRequests.activity(ref),
+        // Agents pin merges to this headSha, so a first read must not come from a stale snapshot.
+        continuesDiff
+          ? pullRequests.detail(ref).pipe(Effect.option)
+          : pullRequests.detail({ ...ref, allowStale: false }).pipe(Effect.asSome),
+        continuesDiff
+          ? pullRequests.activity(ref).pipe(Effect.option)
+          : pullRequests.activity(ref).pipe(Effect.asSome),
         wants("diff")
           ? pullRequests
               .diff({ ...ref, ...(diffCursor === undefined ? {} : { cursor: diffCursor }) })
@@ -594,13 +614,17 @@ const make = Effect.gen(function* () {
       ],
       { concurrency: "unbounded" },
     ).pipe(Effect.mapError(forgeFailure));
+    if (Option.isNone(detailRead)) {
+      return Option.isSome(diff) ? { diff: diffPage(diff.value) } : {};
+    }
+    const detail = detailRead.value;
     const wantsThreads = wants("threads");
     const wantsComments = wants("comments");
     const page =
-      wantsThreads || wantsComments
+      Option.isSome(activity) && (wantsThreads || wantsComments)
         ? Option.some(
             conversationPage(
-              activity,
+              activity.value,
               cursor !== undefined && "threads" in cursor
                 ? cursor
                 : { threads: wantsThreads ? 0 : null, comments: wantsComments ? 0 : null },
@@ -625,11 +649,21 @@ const make = Effect.gen(function* () {
       behindBy: detail.behindBy ?? null,
       autoMergeEnabled: detail.autoMergeEnabled ?? null,
       checks: checksSummary(detail.checks),
-      unresolvedThreads: activity.reviewThreads.filter((thread) => !thread.isResolved).length,
-      ...(activity.reviewThreadsTruncated === true ? { unresolvedThreadsTruncated: true } : {}),
+      unresolvedThreads: Option.match(activity, {
+        onNone: () => 0,
+        onSome: (value) =>
+          pullRequestConversationThreads(value).filter((thread) => !thread.isResolved).length,
+      }),
+      ...(Option.match(activity, { onNone: () => true, onSome: threadsTruncated })
+        ? { unresolvedThreadsTruncated: true as const }
+        : {}),
+      ...(detail.labels.length > 0 ? { labels: detail.labels.map((label) => label.name) } : {}),
+      ...(detail.reviewers.length > 0
+        ? { requestedReviewers: detail.reviewers.map((reviewer) => reviewer.login) }
+        : {}),
       ...(wants("body") ? { body: detail.body } : {}),
       ...(wants("checks") ? { checkRuns: detail.checks } : {}),
-      ...(Option.isSome(page)
+      ...(Option.isSome(activity) && Option.isSome(page)
         ? {
             conversation: {
               ...(wantsThreads
@@ -665,24 +699,13 @@ const make = Effect.gen(function* () {
                   }
                 : {}),
               truncated:
-                (wantsComments && activity.commentsTruncated) ||
-                (wantsThreads && activity.reviewThreadsTruncated === true),
+                (wantsComments && activity.value.commentsTruncated) ||
+                (wantsThreads && threadsTruncated(activity.value)),
               nextCursor: page.value.next === null ? null : readCursors.encode(page.value.next),
             },
           }
         : {}),
-      ...(Option.isSome(diff)
-        ? {
-            diff: {
-              patch: diff.value.patch,
-              truncated: diff.value.truncated,
-              nextCursor:
-                diff.value.nextCursor === null
-                  ? null
-                  : readCursors.encode({ diff: diff.value.nextCursor }),
-            },
-          }
-        : {}),
+      ...(Option.isSome(diff) ? { diff: diffPage(diff.value) } : {}),
     };
     return result;
   });

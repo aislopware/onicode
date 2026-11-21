@@ -12,6 +12,7 @@ import {
   type SpawnedMspConnection,
 } from "@muse-code/sdk";
 import type { RuntimeMode } from "@onicode/contracts";
+import { environmentView } from "@onicode/provider-core/server/instanceEnvironment";
 import { envTrampoline, supportsEnvChdir } from "@onicode/shared/envTrampoline";
 import * as HostProcess from "@onicode/shared/HostProcess";
 import { SpawnExecutableResolution } from "@onicode/shared/shell";
@@ -67,15 +68,16 @@ export interface MuseSdkHostOptions {
 
 export function makeMuseEnvironment(
   environment: NodeJS.ProcessEnv = process.env,
+  // oxlint-disable-next-line onicode/no-global-process-runtime -- default for callers outside Effect; the driver injects HostProcess.Platform
+  platform: NodeJS.Platform = process.platform,
 ): NodeJS.ProcessEnv {
-  return {
-    ...Object.fromEntries(
-      Object.keys(environment)
-        .filter((key) => key.toUpperCase() !== "META_API_KEY")
-        .map((key) => [key, environment[key]]),
-    ),
-    MUSE_NO_AUTO_UPDATE: "1",
-  };
+  const view = environmentView(
+    environment,
+    platform,
+    (key) => key.toUpperCase() === "META_API_KEY",
+  );
+  view.MUSE_NO_AUTO_UPDATE = "1";
+  return view;
 }
 
 export function museVerbatimPath(path: string): string {
