@@ -1,10 +1,12 @@
-import type {
-  EnvironmentId,
-  EnvironmentMachineKind,
-  VcsRef,
-  ProjectId,
-  WorktreeSubmodules,
+import {
+  GitCommandError,
+  type EnvironmentId,
+  type EnvironmentMachineKind,
+  type VcsRef,
+  type ProjectId,
+  type WorktreeSubmodules,
 } from "@onicode/contracts";
+import { thrownErrorMessage } from "@onicode/client-runtime/errors";
 import type { ThreadStructureRuntime } from "@onicode/client-runtime/state/shell";
 import * as Schema from "effect/Schema";
 import { msg } from "gt-react";
@@ -14,6 +16,17 @@ import { toSortableTimestamp } from "@onicode/client-runtime/state/thread-sort";
 import { m, type MessageResolver } from "../i18n/messages";
 import { deriveCanInterruptRunningThread } from "../session-logic";
 export { deriveLocalBranchNameFromRemoteRef, sanitizeNewRefName } from "@onicode/shared/git";
+
+const isGitCommandError = Schema.is(GitCommandError);
+
+// A toast clamps to a few lines, so Git failures show their sanitized detail
+// rather than the message's operation and cwd prefix.
+export function toBranchActionErrorMessage(error: unknown): string {
+  if (isGitCommandError(error)) {
+    return error.reason === undefined ? error.detail : `${error.detail} (${error.reason})`;
+  }
+  return thrownErrorMessage(error, m) ?? m(msg("An error occurred."));
+}
 
 export interface EnvironmentOption {
   environmentId: EnvironmentId;
