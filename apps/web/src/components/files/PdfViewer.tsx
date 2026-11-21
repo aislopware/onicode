@@ -230,6 +230,12 @@ function PdfPage(props: {
                   event.preventDefault();
                   props.onOpenLink(link.url, event);
                 }}
+                // Electron's window-open handler would bypass "Open links in" on middle-click.
+                onAuxClick={(event) => {
+                  if (!props.onOpenLink || event.button !== 1) return;
+                  event.preventDefault();
+                  props.onOpenLink(link.url, event);
+                }}
               />
             ) : (
               <a
