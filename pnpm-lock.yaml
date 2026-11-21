@@ -328,7 +328,6 @@ patchedDependencies:
   '@expo/ui@58.0.29': 7d96dca3621b6a757f4fbf854cf85948e00dd4070398f4d9dc94ebb37cdf33aa
   '@ff-labs/fff-node@0.11.0': febc131287f6c71cd2a0c8bbdada299a22f16a9ce1fd720815c8d0083bcb86a0
   '@pierre/diffs@1.7.0-beta.4': 2ab9d5968ca7dd49071f25a7f1dfa9a50e11d048632ad619d9f82cb967b0b815
-  '@react-native-ai/apple@0.13.0': 8093a5adf949f7a2ea94d2437021e683682d7f1e1ae9afc1f60818232080dc72
   '@react-native-menu/menu@2.2.1': c020365aa69f7dbb471817e92738264950983e5f8044db732841a157b575180a
   '@react-navigation/native-stack@7.21.1': 9c599e52aaf2f653faf27e48dd4b11cd99d0b420b5d724e8221787125c518cae
   app-builder-lib@26.18.1: 9f74d395be438c1e2d4e790bf4e01ac04574c8d90020c6fbd07c0f0e3b45d17a
@@ -514,9 +513,6 @@ importers:
       '@pierre/highlights':
         specifier: 'catalog:'
         version: 0.5.2
-      '@react-native-ai/apple':
-        specifier: 0.13.0
-        version: 0.13.0(patch_hash=8093a5adf949f7a2ea94d2437021e683682d7f1e1ae9afc1f60818232080dc72)(expo@58.0.26)(react-native@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))
       '@react-native-menu/menu':
         specifier: 2.2.1
         version: 2.2.1(patch_hash=c020365aa69f7dbb471817e92738264950983e5f8044db732841a157b575180a)(react-native@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(react@19.3.0)
@@ -2501,20 +2497,6 @@ packages:
     peerDependenciesMeta:
       typescript:
         optional: true
-
-  '@ai-sdk/provider-utils@5.0.81':
-    resolution: {integrity: sha512-pfvvdQ3d1WxdBuug/mnGEP6E48cPokwD8dMBnsFeeAUp0/rb/H2aj0f3mwOiY62gu/Cu5GO44e+SE5nDHyBWMA==}
-    engines: {node: '>=22'}
-    peerDependencies:
-      zod: ^3.25.76 || ^4.1.8
-
-  '@ai-sdk/provider@4.0.37':
-    resolution: {integrity: sha512-4uPgZ3qiX/JaQFr0dQoibUzHImZit9u05ro2BxGUnJwU4fV28BOAbKUa2OjQvqtM1tMac3bTKkaXdyzGovQXqg==}
-    engines: {node: '>=22'}
-
-  '@ai-sdk/provider@4.0.38':
-    resolution: {integrity: sha512-GElz70UUCuDFFyD6m6aQJFgRY0HEABQzB5otzgkrisYaF5mnss7o0upAmbBTSD6KWiM9h7lZm1ls2c7xzHR8CA==}
-    engines: {node: '>=22'}
 
   '@ai-sdk/provider@4.0.39':
     resolution: {integrity: sha512-jRvAhvW23+TeMGVCME2WGejP/TjzyDg7TplUep3t8HcEYnC2/8zqhCy9RRrjjVs1ljcygABZ8pQ21MbCRdF01w==}
@@ -6026,15 +6008,6 @@ packages:
     resolution: {integrity: sha512-LVfA+j5cFT0Szd958WRD8W/B8ucCtz4ViiveDKWLqAwBkZFW9VRW1ZvwOUhp/M3SmVPtjDaRkW12GvAuTArP+Q==}
     hasBin: true
 
-  '@react-native-ai/apple@0.13.0':
-    resolution: {integrity: sha512-331s87+bf1w4spJArHylqfC+Toz6KH+z+zSa2EHY/duby3UFS73rtYgCKZsdjMTrN//cBflGjbE2Z5tT1oK7sg==}
-    peerDependencies:
-      expo: '*'
-      react-native: '>=0.76.0'
-    peerDependenciesMeta:
-      expo:
-        optional: true
-
   '@react-native-masked-view/masked-view@0.3.2':
     resolution: {integrity: sha512-XwuQoW7/GEgWRMovOQtX3A4PrXhyaZm0lVUiY8qJDvdngjLms9Cpdck6SmGAUNqQwcj2EadHC1HwL0bEyoa/SQ==}
     peerDependencies:
@@ -7246,9 +7219,6 @@ packages:
 
   '@vue/shared@3.5.45':
     resolution: {integrity: sha512-ue9fgHmVNPlP7iW3+cxoBX/Cnlw53dHlVSw0JKGY6z1lObg8pHoj928M2nzG4/yVsMZ3NaRZ2s2z61uC16NDwQ==}
-
-  '@workflow/serde@4.1.0':
-    resolution: {integrity: sha512-pav4F2BoirECWR7Nf1TKt+2eETcBj7jj4cBefQ8VXQCA6NPkaKeLfj/zMgi+3zYV5ZIBT4GuUiphsj0/b9hPQQ==}
 
   '@xmldom/xmldom@0.8.15':
     resolution: {integrity: sha512-/5NV/vDALVFDXgLmfsy9TRCBlKwO2LNBFzpzvb9iIj+jR+eSc6DLYYvVOdivT/jm7MtU6TebYuRmzEOI7w40UA==}
@@ -11870,22 +11840,6 @@ snapshots:
     optionalDependencies:
       typescript: 7.0.2
 
-  '@ai-sdk/provider-utils@5.0.81(zod@4.6.7)':
-    dependencies:
-      '@ai-sdk/provider': 4.0.38
-      '@standard-schema/spec': 1.1.0
-      '@workflow/serde': 4.1.0
-      eventsource-parser: 3.1.0
-      zod: 4.6.7
-
-  '@ai-sdk/provider@4.0.37':
-    dependencies:
-      json-schema: 0.4.0
-
-  '@ai-sdk/provider@4.0.38':
-    dependencies:
-      json-schema: 0.4.0
-
   '@ai-sdk/provider@4.0.39':
     dependencies:
       json-schema: 0.4.0
@@ -15032,15 +14986,6 @@ snapshots:
       prompts: 2.4.2
       tinyexec: 1.3.1
 
-  '@react-native-ai/apple@0.13.0(patch_hash=8093a5adf949f7a2ea94d2437021e683682d7f1e1ae9afc1f60818232080dc72)(expo@58.0.26)(react-native@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))':
-    dependencies:
-      '@ai-sdk/provider': 4.0.37
-      '@ai-sdk/provider-utils': 5.0.81(zod@4.6.7)
-      react-native: 0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(supports-color@8.1.1)(utf-8-validate@6.0.6)
-      zod: 4.6.7
-    optionalDependencies:
-      expo: 58.0.26(70d7723f147a653253dfb19cdb8448dc)
-
   '@react-native-masked-view/masked-view@0.3.2(react-native@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(react@19.3.0)':
     dependencies:
       react: 19.3.0
@@ -16171,8 +16116,6 @@ snapshots:
     optional: true
 
   '@vue/shared@3.5.45': {}
-
-  '@workflow/serde@4.1.0': {}
 
   '@xmldom/xmldom@0.8.15': {}
 

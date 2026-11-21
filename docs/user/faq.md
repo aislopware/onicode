@@ -67,7 +67,7 @@ Open **Settings → Worktrees → Cleanup** and turn on automatic worktree clean
 
 ## Is there voice input?
 
-Yes. On iPhone and Android, dictation uses on-device speech by default; you can opt in to a paired environment instead. Desktop requires you to choose an environment first. The transcript goes into your draft for review. See [Voice input](./voice-input.md).
+Yes. On iPhone and Android, dictation uses on-device speech by default, with the option to use a paired environment. On macOS 26 or later, desktop users can choose Apple Speech directly under **On this Mac** or choose an environment. On other desktops, choose an environment. The transcript goes into your draft for review. See [Voice input](./voice-input.md).
 
 ## Does it work on Windows, Mac, and Linux?
 
