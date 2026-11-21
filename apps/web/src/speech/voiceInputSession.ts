@@ -19,8 +19,9 @@ import type {
   SpeechStreamText,
   SpeechTranscriptionOptions,
 } from "@onicode/contracts";
-import { DEFAULT_CLIENT_SETTINGS } from "@onicode/contracts";
+import { DEFAULT_CLIENT_SETTINGS, EnvironmentInternalError } from "@onicode/contracts";
 import { resolveSpeechVocabulary } from "@onicode/shared/speech";
+import * as Schema from "effect/Schema";
 import { useEffect, useSyncExternalStore } from "react";
 
 import { toastManager } from "../components/ui/toast";
@@ -33,6 +34,8 @@ import { runEnvironmentSpeech } from "./runEnvironmentSpeech";
 import { bindAudioGrant, readCleanupGrant } from "./voiceConsent";
 import { msg } from "gt-react";
 import { m } from "../i18n/messages";
+
+const isEnvironmentInternalError = Schema.is(EnvironmentInternalError);
 
 export const IDLE_VOICE_STATE: VoiceInputState = { phase: "idle", error: null, errorAction: null };
 
@@ -220,12 +223,15 @@ export class VoiceInputSession {
       releaseRecording: async () => platform.cancelRecording(),
       deleteRecording: platform.deleteRecording,
       postProcess,
-      onPostProcessingError: () =>
+      onPostProcessingError: (error) => {
+        const added = m(msg("The original transcript was added."));
+        const detail = isEnvironmentInternalError(error) ? error.detail : undefined;
         toastManager.add({
           type: "warning",
           title: m(msg("Transcript cleanup failed")),
-          description: m(msg("The original transcript was added.")),
-        }),
+          description: detail ? `${detail} ${added}` : added,
+        });
+      },
       readDraft: (): VoiceDraftSnapshot | null => {
         const target = this.target;
         const draft = target?.readDraft();
