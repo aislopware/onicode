@@ -2603,6 +2603,8 @@ export const layerWsRpc = (
           ),
         [WS_METHODS.peerLinksPairClient]: (input) =>
           peerClientPairing.request(input, currentSession),
+        [WS_METHODS.peerLinksPairLink]: (input) =>
+          peerClientPairing.requestForLink(input, currentSession),
         [WS_METHODS.peerLinksAnswerRequest]: (input) =>
           Effect.annotateCurrentSpan({ "orchestration_v2.thread_id": input.threadId }).pipe(
             Effect.andThen(peerLinkRequests.answer(input)),

@@ -2993,3 +2993,4 @@ f680c2026b	skip	launch-video skill (marketing launch videos) is not in Onicode, 
 c3f348a409	take	expo-audio patch delta 3-way merged into Onicode's expo-audio@58.0.12 patch (same resulting patch hash as upstream); lockfile hash from vp i
 f8779522a3	take	taken as is (Onicode's remote-desktop keys use variant, not active)
 c43e073123	take	CONFLICTs: kept Onicode's … ellipsis strings (existing translations) in the new loading placeholders and the timeline rail's bg-border; both new tests kept
+6f644f6e91	take	CONFLICTs: kept Onicode's removal of serverGetSettings and mcpApprovalCodes, added only peerLinksPairLink and linkPairingForLink (optional, wire-compatible); translations keep Onicode's rebranded keys plus the new strings
