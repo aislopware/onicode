@@ -31,6 +31,7 @@ import { applyGitStatusStreamEvent } from "@onicode/shared/git";
 import * as VcsAutomaticFetchInterval from "./VcsAutomaticFetchInterval.ts";
 import * as VcsStatusBroadcaster from "./VcsStatusBroadcaster.ts";
 import * as BackgroundPolicy from "../background/BackgroundPolicy.ts";
+import type { GitRemoteStatusRead } from "../git/GitManager.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import { symlinksSupported } from "@onicode/shared/testing/symlinks";
 
@@ -75,7 +76,7 @@ const reachHeadCheck = TestClock.adjust("250 millis");
 
 function layerTestFor(state: {
   currentLocalStatus: VcsStatusLocalResult;
-  currentRemoteStatus: VcsStatusRemoteResult | null;
+  currentRemoteStatus: GitRemoteStatusRead | null;
   currentDivergence?: Pick<VcsStatusRemoteResult, "aheadCount" | "behindCount">;
   localStatusCalls: number;
   remoteStatusCalls: number;
@@ -1104,6 +1105,58 @@ describe("VcsStatusBroadcaster", () => {
         remoteStatusWithPr.pr,
       );
     }).pipe(Effect.provide(layer));
+  });
+
+  it.effect("keeps the last counts when a refresh cannot read ahead and behind", () => {
+    let autoPullEnabled = false;
+    let pullCalls = 0;
+    const state: Parameters<typeof layerTestFor>[0] = {
+      currentLocalStatus: { ...baseLocalStatus, isDefaultRef: true, refName: "main" },
+      currentRemoteStatus: { ...baseRemoteStatus, behindCount: 2 },
+      localStatusCalls: 0,
+      remoteStatusCalls: 0,
+      localInvalidationCalls: 0,
+      remoteInvalidationCalls: 0,
+      pullCurrentBranch: () =>
+        Effect.sync(() => {
+          pullCalls += 1;
+          return { status: "pulled" as const, refName: "main", upstreamRef: "origin/main" };
+        }),
+    };
+
+    return Effect.gen(function* () {
+      const broadcaster = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
+      yield* broadcaster.getStatus({ cwd: "/repo" });
+
+      autoPullEnabled = true;
+      state.currentRemoteStatus = {
+        ...baseRemoteStatus,
+        pr: remoteStatusWithPr.pr,
+        divergenceUnknown: true,
+      };
+      const refreshed = yield* broadcaster.refreshStatus("/repo");
+      assert.equal(refreshed.aheadCount, 0);
+      assert.equal(refreshed.behindCount, 2);
+      assert.equal(refreshed.pr?.number, remoteStatusWithPr.pr?.number);
+      assert.notProperty(refreshed, "divergenceUnknown");
+      // Kept counts may describe other commits, so they never start an automatic pull.
+      assert.equal(pullCalls, 0);
+
+      // Another branch has no last counts to keep.
+      state.currentLocalStatus = { ...baseLocalStatus, refName: "feature/next" };
+      const otherBranch = yield* broadcaster.refreshStatus("/repo");
+      assert.equal(otherBranch.behindCount, 0);
+    }).pipe(
+      Effect.provide(
+        layerTestFor(state).pipe(
+          Layer.provide(
+            Layer.succeed(VcsStatusBroadcaster.VcsAutoPullPolicy, {
+              isEnabled: () => Effect.sync(() => autoPullEnabled),
+            }),
+          ),
+        ),
+      ),
+    );
   });
 
   it.effect("keeps the published local snapshot when a refresh remote read fails", () => {

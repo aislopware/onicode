@@ -113,6 +113,9 @@ export interface GitRemoteStatusOptions extends GitVcsDriver.GitRemoteStatusOpti
   readonly refreshMissingPullRequest?: boolean;
 }
 
+/** Server-only: `divergenceUnknown` says the ahead/behind read failed and its zeros mean nothing. */
+export type GitRemoteStatusRead = VcsStatusRemoteResult & { readonly divergenceUnknown?: true };
+
 export type GitBranchPullRequest = NonNullable<VcsStatusResult["pr"]> & {
   readonly repositoryKey: string | null;
   readonly updatedAt: string | null;
@@ -154,7 +157,7 @@ export class GitManager extends Context.Service<
     readonly remoteStatus: (
       input: VcsStatusInput,
       options?: GitRemoteStatusOptions,
-    ) => Effect.Effect<VcsStatusRemoteResult | null, GitManagerServiceError>;
+    ) => Effect.Effect<GitRemoteStatusRead | null, GitManagerServiceError>;
     /**
      * refresh queries the host; freshGitState rereads only git state and is required before persisting.
      * A merged or closed answer is confirmed against git state unless confirmTerminal is false;
@@ -1679,7 +1682,8 @@ export const make = Effect.gen(function* () {
       behindCount: details.behindCount,
       aheadOfDefaultCount: shippedByMergedPr ? 0 : details.aheadOfDefaultCount,
       pr,
-    } satisfies VcsStatusRemoteResult;
+      ...(details.divergenceUnknown === true ? { divergenceUnknown: true as const } : {}),
+    } satisfies GitRemoteStatusRead;
   });
   const remoteStatusResultCache = yield* Cache.makeWith((cwd: string) => readRemoteStatus(cwd), {
     capacity: STATUS_RESULT_CACHE_CAPACITY,

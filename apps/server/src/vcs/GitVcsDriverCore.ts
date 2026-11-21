@@ -1784,6 +1784,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       ["rev-parse", "--git-common-dir", "--show-toplevel"],
       { timeoutMs: 5_000, allowNonZeroExit: true },
     );
+    if (layout.exitCode !== 0 && isNonRepositoryGitStderr(layout.stderr)) return null;
     // --show-toplevel fails outside a work tree (a bare repository), and a newline in either
     // path splits the output further; both fall back to separate reads.
     const fields = layout.stdout.replace(/\n$/, "").split("\n");
@@ -2008,30 +2009,37 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     "GitVcsDriver.readRefSnapshot",
   )(
     function* (cwd) {
+      // What the branch list shows: branch, remote and tag tips with their symrefs (origin/HEAD)
+      // and upstreams. Checkpoint refs stay out, or every agent turn would read as a ref move.
       const result = yield* executeGit(
         "GitVcsDriver.readRefSnapshot",
         cwd,
-        ["show-ref", "--head"],
+        [
+          "for-each-ref",
+          "--format=%(objectname) %(refname) %(symref) %(upstream)",
+          "refs/heads",
+          "refs/remotes",
+          "refs/tags",
+          // Replacements move merge bases without moving any tip.
+          "refs/replace",
+        ],
         {
           allowNonZeroExit: true,
           maxOutputBytes: REF_SNAPSHOT_MAX_OUTPUT_BYTES,
         },
       );
       if (result.exitCode !== 0) return null;
-      const symbolicHead = yield* executeGit(
-        "GitVcsDriver.readRefSnapshot",
-        cwd,
-        ["symbolic-ref", "--quiet", "HEAD"],
-        { allowNonZeroExit: true },
-      );
-      // Exit 1 means detached HEAD; other failures require a full status read.
-      if (symbolicHead.exitCode !== 0 && symbolicHead.exitCode !== 1) return null;
+      // Each worktree's HEAD, branch and path, this one's included.
+      const worktrees = yield* executeWorktreeList("GitVcsDriver.readRefSnapshot", cwd, [], {
+        allowNonZeroExit: true,
+      });
+      if (worktrees.exitCode !== 0) return null;
       // Deepening a shallow clone changes ancestry without moving refs.
       const shallowPath = path.join(yield* resolveGitCommonDir(cwd), "shallow");
       const shallow = (yield* fileSystem.exists(shallowPath))
         ? yield* fileSystem.readFileString(shallowPath)
         : "";
-      return `${result.stdout}\0${symbolicHead.stdout}\0${shallow}`;
+      return `${result.stdout}\0${worktrees.stdout}\0${shallow}`;
     },
     Effect.orElseSucceed(() => null),
   );
@@ -4057,12 +4065,30 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         if (!claimed) yield* Fiber.await(pending.fiber);
       }
     }
-    const beforeSha = yield* runGitStdout(
-      "GitVcsDriver.pullCurrentBranch.beforeSha",
-      cwd,
-      ["rev-parse", "HEAD"],
-      true,
-    ).pipe(Effect.map((stdout) => stdout.trim()));
+    const [beforeSha, branchAfterWait] = yield* Effect.all(
+      [
+        runGitStdout(
+          "GitVcsDriver.pullCurrentBranch.beforeSha",
+          cwd,
+          ["rev-parse", "HEAD"],
+          true,
+        ).pipe(Effect.map((stdout) => stdout.trim())),
+        readCurrentBranch("GitVcsDriver.pullCurrentBranch.branch", cwd),
+      ],
+      { concurrency: 2 },
+    );
+    // `git pull` acts on whatever is checked out, so a checkout during the wait would pull the
+    // wrong branch under this one's name.
+    if (branchAfterWait !== refName) {
+      return yield* new GitCommandError({
+        ...gitCommandContext({
+          operation: "GitVcsDriver.pullCurrentBranch",
+          cwd,
+          args: ["pull", "--ff-only"],
+        }),
+        detail: "The branch changed while pulling. Try again.",
+      });
+    }
     // After a successful pull, HEAD before and after decides the result, so its output is not
     // needed. A large fast-forward's diffstat can exceed the output cap, which must not fail a
     // pull Git applied.
@@ -5670,10 +5696,19 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       }
     }
   });
+  // Single-flight only: concurrent ref lists share one read, and a ref change drops
+  // the one in flight, so a list started after a checkout never joins a read from before it.
+  const listRefsCurrentBranchCache = yield* Cache.makeWith(
+    (cwd: string) => readCurrentBranch("GitVcsDriver.listRefs.currentBranch", cwd),
+    { capacity: REPOSITORY_PATHS_CACHE_CAPACITY, timeToLive: () => Duration.zero },
+  );
+
   const invalidateListRefsSnapshot = Effect.fn("invalidateListRefsSnapshot")(function* (
     cwd: string,
     gitCommonDir?: string | null,
   ) {
+    // Every spelling: a list through a symlink or subdirectory must not join a read from before it.
+    yield* Cache.invalidateAll(listRefsCurrentBranchCache);
     const cacheKey = yield* repositoryPathsCacheKey(cwd);
     const commonDir =
       gitCommonDir === undefined
@@ -5693,12 +5728,6 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     yield* Cache.invalidate(repositoryPathsRefreshCache, cacheKey);
     yield* Cache.invalidate(repositoryPathsCache, cacheKey);
   });
-
-  // Single-flight only: concurrent ref lists share one read, and none outlives a checkout.
-  const listRefsCurrentBranchCache = yield* Cache.makeWith(
-    (cwd: string) => readCurrentBranch("GitVcsDriver.listRefs.currentBranch", cwd),
-    { capacity: REPOSITORY_PATHS_CACHE_CAPACITY, timeToLive: () => Duration.zero },
-  );
 
   const listRefs: GitVcsDriver.GitVcsDriver["Service"]["listRefs"] = Effect.fn("listRefs")(
     function* (input) {
