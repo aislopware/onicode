@@ -349,7 +349,10 @@ it.layer(layerClaudeTextGenerationTest)("ClaudeTextGeneration", (it) => {
     structured_output: { branch: "fix/login-button" },
   });
   // One image attachment switches Claude to stream-json input and output.
-  const generateBranchNameWithImage = (textGeneration: TextGeneration.TextGeneration["Service"]) =>
+  const generateBranchNameWithImage = (
+    textGeneration: TextGeneration.TextGeneration["Service"],
+    cwd = process.cwd(),
+  ) =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
@@ -360,7 +363,7 @@ it.layer(layerClaudeTextGenerationTest)("ClaudeTextGeneration", (it) => {
       yield* fs.writeFile(imagePath, Buffer.from("hello")).pipe(Effect.orDie);
       return yield* textGeneration
         .generateBranchName({
-          cwd: process.cwd(),
+          cwd,
           message: "fix this",
           attachments: [
             {
@@ -448,29 +451,42 @@ it.layer(layerClaudeTextGenerationTest)("ClaudeTextGeneration", (it) => {
         "At least one of the image dimensions exceed max allowed size for many-image requests: 2000 pixels",
       imageAttempts: 2,
     },
-  ])("still generates text when images are rejected: $rejection", ({ rejection, imageAttempts }) =>
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const logDir = yield* fs.makeTempDirectoryScoped({ prefix: "onicode-claude-image-log-" });
-      const imageAttemptLog = path.join(logDir, "image-attempts.log");
-      return yield* withFakeClaudeEnv(
-        {
-          output: JSON.stringify({ structured_output: { branch: "fix/login-button" } }),
-          imageRejection: rejection,
-          imageAttemptLog,
-        },
-        (textGeneration) =>
-          Effect.gen(function* () {
-            const first = yield* generateBranchNameWithImage(textGeneration);
-            const second = yield* generateBranchNameWithImage(textGeneration);
-            expect(first.branch).toBe("fix/login-button");
-            expect(second.branch).toBe("fix/login-button");
-            const attempts = yield* fs.readFileString(imageAttemptLog);
-            expect(attempts.trim().split("\n")).toHaveLength(imageAttempts);
-          }),
-      );
-    }).pipe(Effect.scoped),
+    // A vision model can still reject one image's format.
+    { rejection: "Unsupported image format: image/heic", imageAttempts: 2 },
+    // Another project's settings can route the same model id to an endpoint that takes images.
+    {
+      rejection: "Image inputs are not supported by this model",
+      imageAttempts: 2,
+      secondCallInOtherProject: true,
+    },
+  ])(
+    "still generates text when images are rejected: $rejection",
+    ({ rejection, imageAttempts, secondCallInOtherProject }) =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const logDir = yield* fs.makeTempDirectoryScoped({ prefix: "onicode-claude-image-log-" });
+        const imageAttemptLog = path.join(logDir, "image-attempts.log");
+        return yield* withFakeClaudeEnv(
+          {
+            output: JSON.stringify({ structured_output: { branch: "fix/login-button" } }),
+            imageRejection: rejection,
+            imageAttemptLog,
+          },
+          (textGeneration) =>
+            Effect.gen(function* () {
+              const first = yield* generateBranchNameWithImage(textGeneration);
+              const second = yield* generateBranchNameWithImage(
+                textGeneration,
+                secondCallInOtherProject ? logDir : undefined,
+              );
+              expect(first.branch).toBe("fix/login-button");
+              expect(second.branch).toBe("fix/login-button");
+              const attempts = yield* fs.readFileString(imageAttemptLog);
+              expect(attempts.trim().split("\n")).toHaveLength(imageAttempts);
+            }),
+        );
+      }).pipe(Effect.scoped),
   );
 
   it.effect("reports the retry's failure when the run without images fails too", () =>
