@@ -2978,3 +2978,4 @@ c436409da0	take	taken as is; contracts field optional (wire-safe); mobile passes
 c5514042ad	take	webhookAddress test left out (Onicode has no webhooks); imageAttachmentSize test taken
 8cfd2b5211	take	adapted: hosted-https-app compatibility cases dropped (Onicode removed the hosted web app and that field); kept normalization and ws/wss derivation
 3d31ffcd9a	take	taken as is
+76bd3bb098	take	updatedAt conflict resolved to upstream's later timestamp
