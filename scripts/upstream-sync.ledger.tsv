@@ -3015,10 +3015,10 @@ a6e81f3002	take	taken as is
 e8b28328da	take	test fixture URL t3.chat replaced with example.com
 f32d9e11c4	take	device tool versions, launcher flags and eval help ported; scripts/package.json already had agent-device 0.21.41 (kept Onicode's e2e 0.24.0, no @onicode/tailscale), lockfile unchanged; mobile-showcase-screenshots workflow not in Onicode
 c440fd19db	take	taken as is
-bac0508e08	take	thread chips show the sidebar's thread card on hover
-fd108784cb	take	local mobile:audit CLI
-b568fcbaa6	take	several Linear teams; upstream migration 103 renumbered to Onicode 108
-908e02ee6a	take	settings reset keeps the page in place
-5d42431ec8	take	sessionPermissionsUnavailableMessage precedence tests
-1ec7f234ab	take	oni_thread_read on a linked environment returns the newest page; refusal regex uses oni_thread_read
-71ff113795	take	mobile review sheet hides test files
+bac0508e08	take	taken as is
+fd108784cb	take	taken as is
+b568fcbaa6	take	upstream migration 103 renumbered to Onicode 108 (test toMigrationInclusive 107, reconcileV2PreviewMigration row)
+908e02ee6a	take	taken as is
+5d42431ec8	take	taken as is
+1ec7f234ab	take	tool name and older-peer refusal regex use oni_thread_read
+71ff113795	take	taken as is
