@@ -37,7 +37,7 @@ jobs:
           echo "base_sha=$base_sha" >> "$GITHUB_OUTPUT"
           paths=$(git diff --no-renames --name-only "$base_sha" HEAD -- \
             apps/mobile/ packages/client-runtime/ packages/contracts/ packages/shared/ \
-            assets/ scripts/ patches/ package.json pnpm-lock.yaml pnpm-workspace.yaml \
+            assets/ scripts/ patches/ native/apple-speech/ package.json pnpm-lock.yaml pnpm-workspace.yaml \
             .github/workflows/mobile-fingerprint-check.yml)
           if [[ -n "$paths" ]]; then
             echo "relevant=true" >> "$GITHUB_OUTPUT"

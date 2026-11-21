@@ -23,6 +23,7 @@ on:
       - assets/**
       - scripts/**
       - patches/**
+      - native/apple-speech/**
       - package.json
       - pnpm-lock.yaml
       - pnpm-workspace.yaml
