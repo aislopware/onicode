@@ -26,5 +26,9 @@ describe("error display messages", () => {
       );
       expect(display(new Error("boom"), resolve)).toBe("boom");
     }
+    // A Git failure with no reason and no detail still says something.
+    const blank = new GitCommandError({ operation: "push", command: "git", cwd: "/r", detail: "" });
+    expect(thrownErrorMessage(blank, resolve)).toBe(blank.message);
+    expect(errorDisplayMessage(blank, resolve)).toBeNull();
   });
 });

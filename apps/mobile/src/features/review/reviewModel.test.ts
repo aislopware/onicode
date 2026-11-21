@@ -205,6 +205,12 @@ describe("filterReviewParsedDiffToFolder", () => {
     expect(filterReviewParsedDiffToFolder(raw, "docs", [...folders, "docs"])).toEqual({
       kind: "empty",
     });
+    // A root file `api` is not under a repository named `api b`.
+    const spaced = { ...raw, text: block("api") + block("api b/x.ts") };
+    expect(filterReviewParsedDiffToFolder(spaced, "", ["", "api b"])).toEqual({
+      ...raw,
+      text: block("api"),
+    });
   });
 });
 

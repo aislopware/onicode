@@ -667,7 +667,7 @@ it.effect("runs any tool that takes a linked environment there", () =>
         threadId: boxThread,
       });
       expect(read.isError).toBe(false);
-      // A client's asks for the start, which some peers would otherwise serve newest first.
+      // A client's read asks for the start, which some peers would otherwise serve newest first.
       const clientRead = yield* a.call(CLI, "oni_thread_read", {
         environmentId: box.environmentId,
         threadId: boxThread,

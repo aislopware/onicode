@@ -1673,14 +1673,10 @@ it.effect.each([
             status,
             result: `${reply ?? "(The thread in the linked environment ended without a reply.)"}\n\n${notice}`,
           });
-          // Both stop items are asked at once, each without the runs an item read never uses.
+          // The reads stop at the notice found, each without the runs an item read never uses.
           const noticeReads = reads.filter((read) => read.itemId !== undefined);
-          expect(noticeReads.map((read) => read.itemId).toSorted()).toEqual(
-            [PROVIDER_STOP_REASON_SIGNAL, "interrupt-result"]
-              .map((each) =>
-                IdAllocator.derive.runSignalTurnItem({ runId: boxRunId, signal: each }),
-              )
-              .toSorted(),
+          expect(noticeReads.at(-1)?.itemId).toBe(
+            IdAllocator.derive.runSignalTurnItem({ runId: boxRunId, signal }),
           );
           expect(noticeReads.every((read) => read.runLimit === 1)).toBe(true);
         }),
