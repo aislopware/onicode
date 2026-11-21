@@ -358,10 +358,12 @@ describe("ThreadTitleRegenerationService", () => {
         const threads = yield* ThreadManagement.ThreadManagementService;
         const outbox = yield* EffectOutbox.EffectOutboxV2;
         // An MCP launch names the thread, or leaves a placeholder, and sends no message.
-        for (const [key, title, expectedTitle, generates, compactsFirst] of [
+        for (const [key, title, expectedTitle, generates, compactsFirst, titleRenamed] of [
           ["preset", "[API] #4821 — retry webhook deliveries after a timeout", undefined, false],
           ["placeholder", placeholderThreadTitle("Parent", 0), seed, true],
+          ["named like a placeholder", "Release thread 2", undefined, false, false, true],
           ["preset, then compacted", "Release checklist", undefined, false, true],
+          ["named, then compacted", "Release notes", undefined, false, true, true],
           // An agent that gives only a prompt gets the prompt as the title.
           ["prompt-titled, then compacted", "/compact", seed, true, true],
         ] as const) {
@@ -372,6 +374,7 @@ describe("ThreadTitleRegenerationService", () => {
             threadId,
             projectId,
             title,
+            ...(titleRenamed ? { titleRenamed } : {}),
             modelSelection,
             runtimeMode: "full-access",
             interactionMode: "default",
