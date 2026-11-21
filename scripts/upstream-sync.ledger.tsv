@@ -3049,3 +3049,4 @@ b84cd4b9a5	skip	kept Onicode's tests: httpObservability.test.ts drives a real HT
 6f82dd9e79	take	adopted upstream's text-only model memo; kept Onicode's image-rejection retry gate and request-budget image filter
 3a91757430	take	taken as is
 ef9b826f53	take	taken as is
+3d6336137b	take	taken as is
