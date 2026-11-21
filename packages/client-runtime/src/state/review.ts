@@ -24,6 +24,8 @@ interface PreviewRevisionState {
   readonly key: string | null;
   /** When the preview's pending read was first seen; set only while it waits. */
   readonly requestedAt: number | undefined;
+  /** Whether the patch was already being read at `requestedAt`, so it may hold older contents. */
+  readonly patchPendingAtRequest: boolean;
   /** The revision patches are read under. */
   readonly revision: string | null;
 }
@@ -75,7 +77,7 @@ export function createReviewEnvironmentAtoms<R, E>(
     ...(options.onDiffPreviewAnswer === undefined ? {} : { onAnswer: options.onDiffPreviewAnswer }),
   });
   // A file patch is a slice of the comparison its preview generated, so a preview revision
-  // requested after the patch was read makes it stale. A read that overlaps the revision's own
+  // requested after the patch was read makes it stale. A read started while the revision was being
   // read, such as the Diff panel's patches requested as it revalidates on show, is as fresh as it.
   const previewRevision = (
     target: Parameters<typeof diffPreview>[0],
@@ -96,17 +98,25 @@ export function createReviewEnvironmentAtoms<R, E>(
         ? // @effect-diagnostics-next-line globalDate:off - Compared with `AsyncResult` timestamps, which come from `Date.now`.
           (previous?.requestedAt ?? Date.now())
         : undefined;
+      const patchPendingAtRequest =
+        result.waiting &&
+        (previous?.requestedAt !== undefined
+          ? previous.patchPendingAtRequest
+          : previous !== undefined && get.once(patch).waiting);
       let revision = key;
       if (previous !== undefined && key === previous.key) revision = previous.revision;
       else if (previous !== undefined) {
         const since = requestedAt ?? previous.requestedAt;
+        const pendingAtSince =
+          requestedAt === undefined ? previous.patchPendingAtRequest : patchPendingAtRequest;
         const read = get.once(patch);
         const fresh =
           since !== undefined &&
+          !pendingAtSince &&
           (read.waiting || (read._tag === "Success" && read.timestamp >= since));
         if (fresh) revision = previous.revision;
       }
-      states.set(get.registry, { key, requestedAt, revision });
+      states.set(get.registry, { key, requestedAt, patchPendingAtRequest, revision });
       return revision;
     });
   };

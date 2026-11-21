@@ -273,16 +273,29 @@ it.effect("does not re-read a file patch read while its preview was revalidating
     using _now = vi.spyOn(Date, "now").mockImplementation(() => now);
     const previewStarted = yield* Deferred.make<void>();
     const releasePreview = yield* Deferred.make<void>();
+    const latePreviewStarted = yield* Deferred.make<void>();
+    const releaseLatePreview = yield* Deferred.make<void>();
+    const latePatchStarted = yield* Deferred.make<void>();
+    const releaseLatePatch = yield* Deferred.make<void>();
     let previewReads = 0;
     let patchReads = 0;
+    let latePatchReads = 0;
     const rpcSession = {
       client: {
         [WS_METHODS.reviewGetDiffPreview]: (input: ReviewDiffPreviewInput) =>
           Effect.gen(function* () {
-            if (input.file) patchReads += 1;
-            else if (++previewReads > 1) {
+            if (input.file?.path === "b.ts") {
+              if (++latePatchReads === 1) {
+                yield* Deferred.succeed(latePatchStarted, undefined);
+                yield* Deferred.await(releaseLatePatch);
+              }
+            } else if (input.file) patchReads += 1;
+            else if (++previewReads === 2) {
               yield* Deferred.succeed(previewStarted, undefined);
               yield* Deferred.await(releasePreview);
+            } else if (previewReads === 4) {
+              yield* Deferred.succeed(latePreviewStarted, undefined);
+              yield* Deferred.await(releaseLatePreview);
             }
             return {
               cwd: input.cwd,
@@ -349,6 +362,30 @@ it.effect("does not re-read a file patch read while its preview was revalidating
     yield* readEnvironmentQuery(registry, preview);
     yield* readEnvironmentQuery(registry, patch);
     expect(patchReads).toBe(2);
+
+    // So does one requested while a patch read is in flight: it may answer with older contents.
+    const latePatch = review.diffFilePatch({
+      environmentId: QUERY_ENVIRONMENT.environmentId,
+      input: {
+        request: {
+          cwd: "/project",
+          sourceKind: "working-tree",
+          file: { sourceKind: "working-tree", path: "b.ts", previousPath: null },
+        },
+        cacheKey: "b.ts",
+        preview: previewInput,
+      },
+    });
+    registry.mount(latePatch);
+    yield* Deferred.await(latePatchStarted);
+    now = 2;
+    registry.refresh(preview);
+    yield* Deferred.await(latePreviewStarted);
+    yield* Deferred.succeed(releaseLatePreview, undefined);
+    yield* readEnvironmentQuery(registry, preview);
+    yield* Deferred.succeed(releaseLatePatch, undefined);
+    yield* readEnvironmentQuery(registry, latePatch);
+    expect(latePatchReads).toBe(2);
   }),
 );
 
