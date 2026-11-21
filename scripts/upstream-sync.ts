@@ -77,7 +77,20 @@ const rebrand = (text: string) => {
   return out + applyRules(text.slice(last), RULES);
 };
 
-export const translateText = (text: string) => applyRules(rebrand(text), REPO_RULES);
+const translateAll = (text: string) => applyRules(rebrand(text), REPO_RULES);
+// Upstream issue, PR and commit references keep pointing upstream, except in tests, whose
+// fixtures pair them with repository names and queries the rules translate.
+const UPSTREAM_REF =
+  /(pingdotgg\/t3code)(?=#\d|\/(?:(?:pull|issues|discussions)\/\d|commit\/[0-9a-f]))/i;
+const isTestFile = (path: string) => /\.test\.[^/]+$/.test(path);
+
+export const translateText = (text: string, path = "") =>
+  isTestFile(path)
+    ? translateAll(text)
+    : text
+        .split(UPSTREAM_REF)
+        .map((part, index) => (index % 2 === 1 ? part : translateAll(part)))
+        .join("");
 export const translatePath = (path: string) => path.split("/").map(rebrand).join("/");
 
 const git = (args: ReadonlyArray<string>, input?: Buffer) =>
@@ -95,8 +108,8 @@ const blobAt = (rev: string, path: string): Buffer | undefined => {
   return result.status === 0 ? result.stdout : undefined;
 };
 const isBinary = (data: Buffer) => data.subarray(0, 8192).includes(0);
-const translateBlob = (data: Buffer) =>
-  isBinary(data) ? data : Buffer.from(translateText(data.toString("utf8")), "utf8");
+const translateBlob = (data: Buffer, path: string) =>
+  isBinary(data) ? data : Buffer.from(translateText(data.toString("utf8"), path), "utf8");
 
 const readLedger = () =>
   NodeFS.existsSync(ledgerPath)
@@ -227,8 +240,8 @@ const port = (sha: string) => {
     const before = blobAt(`${full}^`, from);
     const after = status.startsWith("D") ? undefined : blobAt(full, to);
     const ours = blobAt("HEAD", ourFrom);
-    const base = before === undefined ? Buffer.alloc(0) : translateBlob(before);
-    const theirs = after === undefined ? undefined : translateBlob(after);
+    const base = before === undefined ? Buffer.alloc(0) : translateBlob(before, from);
+    const theirs = after === undefined ? undefined : translateBlob(after, to);
 
     if (theirs === undefined) {
       if (ours === undefined) report.push(`gone      ${ourFrom} (already absent here)`);

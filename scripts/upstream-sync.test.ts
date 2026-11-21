@@ -14,8 +14,20 @@ describe("upstream-sync translation", () => {
     ["T3 Code keeps a t3code checkpoint", "Onicode keeps a onicode checkpoint"],
     ["new T3ConnectClient()", "new T3ConnectClient()"],
     [
-      "see https://github.com/pingdotgg/t3code/pull/42",
-      "see https://github.com/aislopware/onicode/pull/42",
+      "see https://github.com/pingdotgg/t3code/pull/42, pingdotgg/t3code#7 and https://github.com/pingdotgg/t3code/commit/1bc8e2d",
+      "see https://github.com/pingdotgg/t3code/pull/42, pingdotgg/t3code#7 and https://github.com/pingdotgg/t3code/commit/1bc8e2d",
+    ],
+    [
+      "https://github.com/PingDotGG/T3Code/pull/42 and pingdotgg/t3code/commit/ABC1234",
+      "https://github.com/PingDotGG/T3Code/pull/42 and pingdotgg/t3code/commit/ABC1234",
+    ],
+    [
+      "git clone https://github.com/pingdotgg/t3code",
+      "git clone https://github.com/aislopware/onicode",
+    ],
+    [
+      "https://github.com/pingdotgg/t3code/issues/new?template=bug.yml",
+      "https://github.com/aislopware/onicode/issues/new?template=bug.yml",
     ],
     [
       "curl -fsSL https://t3.codes/install.sh | sh",
@@ -45,6 +57,20 @@ describe("upstream-sync translation", () => {
     ["java/com/t3tools/t3code/MainActivity.kt", "java/dev/aislopware/onicode/MainActivity.kt"],
   ])("%s", (upstream, onicode) => {
     expect(translateText(upstream)).toBe(onicode);
+  });
+
+  it.each([
+    "packages/shared/src/paletteSearch.test.ts",
+    ".github/scripts/stage-preview-bundle.test.py",
+  ])("translates upstream references in %s with the repository name beside them", (path) => {
+    expect(
+      translateText(
+        'repository: "pingdotgg/t3code", url: "https://github.com/pingdotgg/t3code/pull/42"',
+        path,
+      ),
+    ).toBe(
+      'repository: "aislopware/onicode", url: "https://github.com/aislopware/onicode/pull/42"',
+    );
   });
 
   it("renames t3 paths the way the rebrand did", () => {
