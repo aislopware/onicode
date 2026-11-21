@@ -8264,6 +8264,27 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
       }),
     );
 
+    it.effect("reports a rename as done when Git moved the ref but kept the config locked", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        yield* initRepoWithCommit(cwd);
+        yield* git(cwd, ["checkout", "-b", "onicode/abcd1234"]);
+        yield* writeTextFile(cwd, ".git/config.lock", "");
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+
+        const renamed = yield* TestClock.withLive(
+          driver.renameBranch({
+            cwd,
+            oldBranch: "onicode/abcd1234",
+            newBranch: "onicode/fix-login",
+          }),
+        );
+
+        assert.equal(renamed.branch, "onicode/fix-login");
+        assert.equal(yield* git(cwd, ["branch", "--show-current"]), "onicode/fix-login");
+      }),
+    );
+
     it.effect.each([false, true])(
       "cleans up links left by successful worktree removal, preserving ordinary files: %s",
       (keepFile) =>
