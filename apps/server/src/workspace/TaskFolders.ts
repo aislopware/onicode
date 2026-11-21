@@ -256,6 +256,17 @@ const make = Effect.gen(function* () {
       (yield* fileSystem.readDirectory(target).pipe(Effect.orElseSucceed(() => [""]))).length > 0
     );
   });
+  // Git writes a worktree through a link, even one to an empty folder outside the task folder,
+  // and none fits under a file. Null when nothing on the way from `root` blocks `target`.
+  const blockedOnTheWay = Effect.fnUntraced(function* (root: string, target: string) {
+    for (let at = target; at !== root && isWithinRoot(path, at, root); at = path.dirname(at)) {
+      const info = yield* fileSystem.lstat(at).pipe(Effect.option);
+      if (Option.isNone(info)) continue;
+      if (info.value.type === "SymbolicLink") return "a link";
+      if (at !== target && info.value.type !== "Directory") return "a file";
+    }
+    return null;
+  });
   const trackedFolders = (project: {
     readonly workspaceRoot: string;
     readonly trackedFolders: ReadonlyArray<ProjectTrackedFolder>;
@@ -365,8 +376,10 @@ const make = Effect.gen(function* () {
     const registered = (yield* fileSystem
       .readFileString(path.join(resolved, "gitdir"))
       .pipe(Effect.orElseSucceed(() => ""))).trim();
+    // Relative under `worktree.useRelativePaths`: Git reads it from the administrative directory.
     return registered !== "" &&
-      (yield* real(path.dirname(registered))) === (yield* real(checkout.worktreePath))
+      (yield* real(path.dirname(path.resolve(resolved, registered)))) ===
+        (yield* real(checkout.worktreePath))
       ? resolved
       : null;
   });
@@ -899,12 +912,24 @@ const make = Effect.gen(function* () {
   ) {
     const worktreePath = mapped(taskFolder, repository.path);
     // The project's own checkout (a post-checkout hook, say) already provided this repository.
-    // A link counts even to an empty folder: Git would write the worktree through it.
-    if (
-      Option.isSome(yield* fileSystem.readLink(worktreePath).pipe(Effect.option)) ||
-      (yield* occupied(worktreePath))
-    )
+    const blocked = yield* blockedOnTheWay(taskFolder.root, worktreePath);
+    if (blocked !== null || (yield* occupied(worktreePath))) {
+      const checkout = { repositoryPath: repository.path, worktreePath };
+      // A worktree it made on the thread's branch is the thread's, as a layout command's is.
+      if (blocked === null && (yield* unadoptable(checkout, branch)) === null) {
+        if (!listed) madeIn.add(repository.path);
+        return {
+          repository: { ...checkout, name: repository.name } satisfies TaskFolderRepository,
+          fromOrigin: false,
+        };
+      }
+      yield* Effect.logInfo("The project's checkout already provided a repository's folder", {
+        repositoryPath: repository.path,
+        worktreePath,
+        blocked,
+      });
       return null;
+    }
     yield* fileSystem.makeDirectory(path.dirname(worktreePath), { recursive: true });
     const start = yield* repositoryStart(repository.path, startFromOrigin, baseBranch);
     yield* makingBranch(
@@ -1060,8 +1085,6 @@ const make = Effect.gen(function* () {
           yield* linkFolder(taskPlan.projectRoot, empty.projectPath, taskPlan.trackedRepositories);
         }
         let finished = 0;
-        // Whatever the project put at a skipped path also stands for the repositories inside it.
-        const skipped: string[] = [];
         // A repository inside another waits for the one that holds it.
         const levels = Map.groupBy(
           taskPlan.repositories,
@@ -1077,23 +1100,19 @@ const make = Effect.gen(function* () {
           const exits = yield* Effect.forEach(
             levels.get(level)!,
             (repository) =>
-              (skipped.some((outer) => isWithinRoot(path, repository.path, outer))
-                ? Effect.succeed(null)
-                : createRepositoryWorktree(
-                    empty,
-                    repository,
-                    branch,
-                    input.startFromOrigin,
-                    input.baseBranch,
-                    madeIn,
-                    names[taskPlan.repositories.indexOf(repository)]!.includes(branch),
-                  )
+              createRepositoryWorktree(
+                empty,
+                repository,
+                branch,
+                input.startFromOrigin,
+                input.baseBranch,
+                madeIn,
+                names[taskPlan.repositories.indexOf(repository)]!.includes(branch),
               ).pipe(
                 Effect.tap((worktree) =>
                   Effect.suspend(() => {
                     finished += 1;
-                    if (worktree === null) skipped.push(repository.path);
-                    else {
+                    if (worktree !== null) {
                       created.push(worktree.repository);
                       repositoriesStartedFromOrigin ||= worktree.fromOrigin;
                     }
@@ -1246,14 +1265,21 @@ const make = Effect.gen(function* () {
         const wasLinked =
           insideLinkedProject &&
           Option.isSome(yield* fileSystem.readLink(worktreePath).pipe(Effect.option));
+        const blocked = insideLinkedProject
+          ? null
+          : yield* blockedOnTheWay(taskFolder.root, worktreePath);
         const opened = insideLinkedProject
           ? yield* openLinkedPath(
               taskFolder.projectRoot,
               taskFolder.projectPath,
               path.relative(taskFolder.projectRoot, repositoryPath),
             ).pipe(Effect.mapError(fail("add-repository", "Could not prepare the folder")))
-          : true;
-        if (!opened || (yield* occupied(worktreePath)))
+          : blocked === null;
+        if (!opened)
+          return yield* refuse(
+            `${worktreePath} lies behind ${blocked ?? "a link"}, so no worktree can go there.`,
+          );
+        if (yield* occupied(worktreePath))
           return yield* refuse(`${worktreePath} already holds files, so no worktree can go there.`);
         // The link the worktree took the place of comes back when the worktree does not stay.
         const relink = wasLinked
@@ -1456,6 +1482,13 @@ const make = Effect.gen(function* () {
         return yield* new TaskFolderError({
           operation: "create",
           detail: `${checkout.worktreePath} holds a checkout that is not a worktree of ${checkout.repositoryPath}. Move it away to restore the thread's worktree.`,
+        });
+      }
+      const blocked = yield* blockedOnTheWay(taskFolder.root, checkout.worktreePath);
+      if (blocked !== null) {
+        return yield* new TaskFolderError({
+          operation: "create",
+          detail: `${checkout.worktreePath} lies behind ${blocked}, so no worktree can go there.`,
         });
       }
       yield* fileSystem

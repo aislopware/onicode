@@ -16,7 +16,9 @@ import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
+import * as TestClock from "effect/testing/TestClock";
 
 import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
 import * as EventSink from "./EventSink.ts";
@@ -43,14 +45,25 @@ const adapter = {
   openSession: () => Effect.die("No provider process needed for delegated task records"),
 } as ProviderAdapter.ProviderAdapterV2["Service"];
 
-/** Every parent wake the orchestrator offers, for the tests to read. */
+type Wake = ProviderContinuationRequests.ProviderContinuationRequest;
+/** Every parent wake the orchestrator offers, for the tests to read; `refusing` wakes fail. */
 class Offers extends Context.Service<
   Offers,
-  Ref.Ref<ReadonlyArray<ProviderContinuationRequests.ProviderContinuationRequest>>
+  {
+    readonly seen: Ref.Ref<ReadonlyArray<Wake>>;
+    readonly next: Queue.Queue<Wake>;
+    readonly refusing: Ref.Ref<number>;
+    readonly refused: Queue.Queue<Wake>;
+  }
 >()("onicode/orchestration-v2/RemoteDelegatedTask.test/Offers") {}
 const layerOffers = Layer.effect(
   Offers,
-  Ref.make<ReadonlyArray<ProviderContinuationRequests.ProviderContinuationRequest>>([]),
+  Effect.all({
+    seen: Ref.make<ReadonlyArray<Wake>>([]),
+    next: Queue.unbounded<Wake>(),
+    refusing: Ref.make(0),
+    refused: Queue.unbounded<Wake>(),
+  }),
 );
 const layerDatabase = SqlitePersistence.layerMemory;
 const layerTest = Layer.mergeAll(
@@ -67,8 +80,19 @@ const layerTest = Layer.mergeAll(
       ProviderContinuationRequests.ProviderContinuationRequests,
       Offers.pipe(
         Effect.map((offers) => ({
-          offer: (request: ProviderContinuationRequests.ProviderContinuationRequest) =>
-            Ref.update(offers, (seen) => [...seen, request]),
+          offer: (request: Wake) =>
+            Ref.modify(offers.refusing, (left) => [left > 0, Math.max(0, left - 1)] as const).pipe(
+              Effect.flatMap((refuse) =>
+                refuse
+                  ? Queue.offer(offers.refused, request).pipe(
+                      Effect.andThen(Effect.die("wake offer failed")),
+                    )
+                  : Ref.update(offers.seen, (seen) => [...seen, request]).pipe(
+                      Effect.andThen(Queue.offer(offers.next, request)),
+                      Effect.asVoid,
+                    ),
+              ),
+            ),
           take: Effect.never,
         })),
       ),
@@ -354,7 +378,7 @@ it.layer(layerTest)("a delegated task in a linked environment", (it) => {
     }),
   );
 
-  it.effect("wakes its parent with the result when it completes there", () =>
+  it.effect("wakes its parent once with the result when it completes there", () =>
     Effect.gen(function* () {
       const orchestrator = yield* Orchestrator.OrchestratorV2;
       const parent = yield* seedLiveParent("completes");
@@ -383,7 +407,7 @@ it.layer(layerTest)("a delegated task in a linked environment", (it) => {
       );
       assert.deepEqual(yield* openFor, [{ parentThreadId: parent.threadId, taskId: taskId! }]);
       const offers = yield* Offers;
-      yield* Ref.set(offers, []);
+      yield* Ref.set(offers.seen, []);
       const complete = (result: string) =>
         orchestrator.dispatch({
           type: "delegated_task.remote.complete",
@@ -394,7 +418,15 @@ it.layer(layerTest)("a delegated task in a linked environment", (it) => {
           result,
           stoppedThere: "ran-out",
         });
+      // The result commits before its wake is offered. The offer fails there and in the
+      // retry that follows at once; the next retry, a second later, offers it once.
+      yield* Ref.set(offers.refusing, 2);
       yield* complete("All 412 tests pass on the box.");
+      yield* Queue.take(offers.refused);
+      yield* Queue.take(offers.refused);
+      yield* TestClock.adjust("1 second");
+      let wake = yield* Queue.take(offers.next);
+      while (wake.threadId !== parent.threadId) wake = yield* Queue.take(offers.next);
       // A second report is refused, so the first result stands.
       const late = yield* complete("A late, different answer.").pipe(Effect.flip);
       assert.equal(late._tag, "OrchestratorDispatchError");
@@ -415,7 +447,7 @@ it.layer(layerTest)("a delegated task in a linked environment", (it) => {
       const delivery = projection.runs.find((run) => run.id === parent.runId)?.delegatedCompletion
         ?.delivery;
       assert.deepEqual(delivery?.taskIds, [taskId]);
-      const offered = yield* Ref.get(offers);
+      const offered = yield* Ref.get(offers.seen);
       assert.equal(offered.length, 1);
       assert.equal(offered[0]?.threadId, parent.threadId);
     }),

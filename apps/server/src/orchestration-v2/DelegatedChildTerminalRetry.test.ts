@@ -270,6 +270,13 @@ const runDelegation = (input: {
           event.payload.threadId === childThreadId &&
           event.payload.status === "failed",
       );
+      // Its wake is offered only after the task holds the child's result.
+      const parentWoken = yield* watch(
+        (event) =>
+          event.type === "message.updated" &&
+          event.threadId === parentThreadId &&
+          event.payload.delegatedCompletion?.taskIds.includes(task.id) === true,
+      );
       for (let attempt = 0; attempt < 5; attempt++) {
         yield* worker.drain();
         yield* TestClock.adjust("1 second");
@@ -277,10 +284,7 @@ const runDelegation = (input: {
       yield* Fiber.join(childFailed);
 
       if (!input.parentEndsFirst) yield* endParentTurn;
-      for (let attempt = 0; attempt < 5; attempt++) {
-        yield* worker.drain();
-        yield* TestClock.adjust("30 seconds");
-      }
+      yield* Fiber.join(parentWoken);
 
       assert.isFalse(armed, "the injected read failed once");
       const parent = yield* orchestrator.getThreadProjection(parentThreadId);

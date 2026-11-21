@@ -730,6 +730,11 @@ it.layer(layerClaudeTextGenerationTest)("ClaudeTextGeneration", (it) => {
       }),
       "error: unknown option '--no-session-persistence'",
     ],
+    [
+      "a stdout error with its credential redacted",
+      JSON.stringify({ is_error: true, result: "Request rejected: api_key=abc123" }),
+      "Request rejected: api_key=[REDACTED]",
+    ],
   ] as const)("reports %s when the Claude CLI fails", ([, output, expected]) =>
     withFakeClaudeEnv({ output, stderr: wrapperNotice, exitCode: 1 }, (textGeneration) =>
       Effect.gen(function* () {

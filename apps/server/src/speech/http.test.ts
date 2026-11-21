@@ -378,61 +378,69 @@ effectIt.effect.each([
     }),
 );
 
-effectIt.effect("tells the client why transcript cleanup failed", () =>
-  Effect.gen(function* () {
-    const detail = "OpenCode returned invalid structured output.";
-    const failingCleanup = Layer.mergeAll(
-      dependencies,
-      Layer.succeed(
-        TextGeneration.TextGeneration,
-        TextGeneration.TextGeneration.of({
-          generateCommitMessage: () => Effect.die("not used"),
-          generatePrContent: () => Effect.die("not used"),
-          generateBranchName: () => Effect.die("not used"),
-          generateThreadTitle: () => Effect.die("not used"),
-          generateReviewGuide: () => Effect.die("not used"),
-          generateTranscriptionPostProcessing: () =>
-            Effect.fail(
-              new TextGenerationError({
-                operation: "generateTranscriptionPostProcessing",
-                detail,
-              }),
-            ),
-        }),
-      ),
-    );
-    const { handler, dispose } = HttpRouter.toWebHandler(
-      HttpApiBuilder.layer(HttpApi.make("environment").add(EnvironmentVoiceHttpApi)).pipe(
-        Layer.provide(speechHttpApiLayer),
-        Layer.provide(principal(AuthOrchestrationOperateScope)),
-        Layer.provide(Layer.mock(SpeechService.SpeechService)({})),
-        Layer.provide(failingCleanup),
-        // Cleanup makes a real temporary directory; the HTTP services only carry a no-op filesystem.
-        Layer.provide(NodeServices.layer),
-        Layer.provide(HttpServer.layerServices),
-      ),
-      { disableLogger: true },
-    );
-    yield* Effect.addFinalizer(() => Effect.promise(dispose));
-    const context = yield* Layer.build(Layer.mergeAll(failingCleanup, NodeServices.layer));
-    const response = yield* Effect.promise(() =>
-      handler(
-        new Request("http://localhost/api/voice/post-process", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            options: {
-              speechCustomWords: [],
-              speechPostProcessingPrompt: { mode: "default", customInstructions: "" },
-            },
-            transcript: "um so hello world",
-            draft: { text: "", selection: { start: 0, end: 0 } },
+effectIt.effect(
+  "tells the client why transcript cleanup failed, without secrets or raw output",
+  () =>
+    Effect.gen(function* () {
+      const reason = "OpenCode returned invalid structured output.";
+      const secret = "sk-test0123456789abcdefghij";
+      // CLI output: banner and echoed prompt first, the error last.
+      const detail = `${"stderr line\n".repeat(2_000)}Authorization: Bearer ${secret}\n${reason}`;
+      const failingCleanup = Layer.mergeAll(
+        dependencies,
+        Layer.succeed(
+          TextGeneration.TextGeneration,
+          TextGeneration.TextGeneration.of({
+            generateCommitMessage: () => Effect.die("not used"),
+            generatePrContent: () => Effect.die("not used"),
+            generateBranchName: () => Effect.die("not used"),
+            generateThreadTitle: () => Effect.die("not used"),
+            generateReviewGuide: () => Effect.die("not used"),
+            generateTranscriptionPostProcessing: () =>
+              Effect.fail(
+                new TextGenerationError({
+                  operation: "generateTranscriptionPostProcessing",
+                  detail,
+                }),
+              ),
           }),
-        }),
-        context,
-      ),
-    );
-    expect(response.ok).toBe(false);
-    expect(yield* Effect.promise(() => response.text())).toContain(detail);
-  }),
+        ),
+      );
+      const { handler, dispose } = HttpRouter.toWebHandler(
+        HttpApiBuilder.layer(HttpApi.make("environment").add(EnvironmentVoiceHttpApi)).pipe(
+          Layer.provide(speechHttpApiLayer),
+          Layer.provide(principal(AuthOrchestrationOperateScope)),
+          Layer.provide(Layer.mock(SpeechService.SpeechService)({})),
+          Layer.provide(failingCleanup),
+          // Cleanup makes a real temporary directory; the HTTP services only carry a no-op filesystem.
+          Layer.provide(NodeServices.layer),
+          Layer.provide(HttpServer.layerServices),
+        ),
+        { disableLogger: true },
+      );
+      yield* Effect.addFinalizer(() => Effect.promise(dispose));
+      const context = yield* Layer.build(Layer.mergeAll(failingCleanup, NodeServices.layer));
+      const response = yield* Effect.promise(() =>
+        handler(
+          new Request("http://localhost/api/voice/post-process", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              options: {
+                speechCustomWords: [],
+                speechPostProcessingPrompt: { mode: "default", customInstructions: "" },
+              },
+              transcript: "um so hello world",
+              draft: { text: "", selection: { start: 0, end: 0 } },
+            }),
+          }),
+          context,
+        ),
+      );
+      expect(response.ok).toBe(false);
+      const body = yield* Effect.promise(() => response.text());
+      expect(body).toContain(reason);
+      expect(body).not.toContain(secret);
+      expect(body.length).toBeLessThan(1_000);
+    }),
 );

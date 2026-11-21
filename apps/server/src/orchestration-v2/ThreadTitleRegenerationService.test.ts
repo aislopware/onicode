@@ -1063,7 +1063,7 @@ describe("ThreadTitleRegenerationService", () => {
             new TextGenerationError({
               operation: "generateThreadTitle",
               detail:
-                "Codex CLI command failed: OpenAI Codex\nuser\nConversation text\nmodel unavailable\n",
+                "Codex CLI command failed: OpenAI Codex\nuser\nConversation text\nmodel unavailable: token=abc123\n",
             }),
           ),
       });
@@ -1090,7 +1090,7 @@ describe("ThreadTitleRegenerationService", () => {
         assert.deepInclude(projection.thread.lastTitleRegeneration, {
           requestId,
           status: "failed",
-          message: "model unavailable",
+          message: "model unavailable: token=[REDACTED]",
         });
       }).pipe(Effect.provide(harness.layer));
     }),

@@ -10,6 +10,10 @@ import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import { type ClaudeSettings, TextGenerationError } from "@onicode/contracts";
 import { resolveSpawnCommand } from "@onicode/shared/shell";
 
+import {
+  boundedRedactedText,
+  MAX_PROVIDER_FAILURE_MESSAGE_LENGTH,
+} from "@onicode/provider-core/server/failure";
 import * as TextGenerationOperations from "@onicode/provider-core/server/textGenerationOperations";
 import {
   normalizeCliError,
@@ -444,7 +448,10 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
       ),
       Effect.flatMap((result) => {
         if (result.exitCode === 0) return Effect.succeed(result.stdout);
-        const detail = claudeFailureDetail(result);
+        const detail = boundedRedactedText(
+          claudeFailureDetail(result),
+          MAX_PROVIDER_FAILURE_MESSAGE_LENGTH,
+        );
         return Effect.fail(
           new TextGenerationError({
             operation,

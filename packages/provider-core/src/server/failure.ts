@@ -287,7 +287,7 @@ function redactProviderFailureText(value: string): string {
     .trim();
 }
 
-function boundedText(value: string, maxLength: number): string {
+export function boundedRedactedText(value: string, maxLength: number): string {
   const redacted = redactProviderFailureText(value);
   if (redacted.length <= maxLength) return redacted;
   let end = Math.max(0, maxLength - 1);
@@ -296,6 +296,16 @@ function boundedText(value: string, maxLength: number): string {
     end -= 1;
   }
   return `${redacted.slice(0, end)}…`;
+}
+
+/** Like boundedRedactedText, but keeps the end, where CLI output usually puts the error. */
+export function boundedRedactedTail(value: string, maxLength: number): string {
+  const redacted = redactProviderFailureText(value);
+  if (redacted.length <= maxLength) return redacted;
+  let start = redacted.length - Math.max(0, maxLength - 1);
+  const firstCodeUnit = redacted.charCodeAt(start);
+  if (firstCodeUnit >= 0xdc00 && firstCodeUnit <= 0xdfff) start += 1;
+  return `…${redacted.slice(start)}`;
 }
 
 export function makeProviderFailure(input: {
@@ -313,10 +323,12 @@ export function makeProviderFailure(input: {
   const rawMessage = requestTooLarge
     ? REQUEST_TOO_LARGE_MESSAGE
     : (input.message ?? curated.known ?? curated.category ?? DEFAULT_PROVIDER_FAILURE_MESSAGE);
-  const message = boundedText(rawMessage, MAX_PROVIDER_FAILURE_MESSAGE_LENGTH);
+  const message = boundedRedactedText(rawMessage, MAX_PROVIDER_FAILURE_MESSAGE_LENGTH);
   const rawCode = input.code ?? stringField(input.cause, "code") ?? null;
   const code =
-    rawCode === null ? null : boundedText(rawCode, MAX_PROVIDER_FAILURE_CODE_LENGTH) || null;
+    rawCode === null
+      ? null
+      : boundedRedactedText(rawCode, MAX_PROVIDER_FAILURE_CODE_LENGTH) || null;
 
   return {
     class: input.class ?? "unknown",

@@ -371,14 +371,58 @@ it.live("creates the task folder when the project's checkout hook already linked
       state.workspaceRoot = project;
       state.trackedFolders = tracked(lib);
 
-      const created = yield* create("feature").pipe(Effect.exit);
+      const { taskFolder } = yield* create("feature");
 
-      assert.isTrue(Exit.isSuccess(created), String(Exit.isFailure(created) && created.cause));
+      assert.deepEqual(taskFolder.repositories, []);
+      assert.equal(yield* fileSystem.readLink(path.join(taskFolder.root, "vendor", "lib")), lib);
     }),
   ),
 );
 
-it.live("leaves a hook's link to an empty folder alone", () =>
+it.live.each([
+  { at: "vendor/lib", behind: "a link", hook: 'mkdir -p vendor && ln -s "$target" vendor/lib' },
+  { at: "vendor", behind: "a link", hook: 'ln -s "$target" vendor' },
+  { at: "vendor", behind: "a file", hook: "echo notes > vendor" },
+])(
+  "leaves what a checkout hook put on a repository's path alone, $behind at $at",
+  ({ behind, hook }) =>
+    withState((state) =>
+      Effect.gen(function* () {
+        const { fileSystem, path, tmp, run, repository } = yield* fixture;
+        const taskFolders = yield* TaskFolders.TaskFolders;
+        const project = yield* repository("p");
+        yield* fileSystem.writeFileString(path.join(project, ".gitignore"), "vendor/\n");
+        yield* run(project, "add", ".");
+        yield* run(project, "commit", "-m", "ignore vendor");
+        const lib = yield* repository("p/vendor/lib");
+        const target = path.join(tmp, "empty");
+        yield* fileSystem.makeDirectory(target);
+        const hooks = path.join(tmp, "hooks");
+        yield* fileSystem.makeDirectory(hooks);
+        yield* fileSystem.writeFileString(
+          path.join(hooks, "post-checkout"),
+          `#!/bin/sh\ntarget="${target}"\n${hook}\n`,
+          { mode: 0o755 },
+        );
+        yield* run(project, "config", "core.hooksPath", hooks);
+        state.workspaceRoot = project;
+        state.trackedFolders = tracked(lib);
+
+        const { taskFolder } = yield* create("feature");
+        assert.deepEqual(taskFolder.repositories, []);
+        assert.deepStrictEqual(yield* fileSystem.readDirectory(target), []);
+
+        state.thread = { worktreePath: taskFolder.root, branch: "feature" };
+        const refused = yield* taskFolders
+          .addRepository({ threadId, repositoryPath: lib })
+          .pipe(Effect.flip);
+        assert.include(refused.detail, `lies behind ${behind}`);
+        assert.deepStrictEqual(yield* fileSystem.readDirectory(target), []);
+      }),
+    ),
+);
+
+it.live("adopts a worktree the project's checkout hook made on the thread's branch", () =>
   withState((state) =>
     Effect.gen(function* () {
       const { fileSystem, path, tmp, run, repository } = yield* fixture;
@@ -387,23 +431,67 @@ it.live("leaves a hook's link to an empty folder alone", () =>
       yield* run(project, "add", ".");
       yield* run(project, "commit", "-m", "ignore vendor");
       const lib = yield* repository("p/vendor/lib");
-      const target = path.join(tmp, "empty");
-      yield* fileSystem.makeDirectory(target);
       const hooks = path.join(tmp, "hooks");
       yield* fileSystem.makeDirectory(hooks);
       yield* fileSystem.writeFileString(
         path.join(hooks, "post-checkout"),
-        `#!/bin/sh\nmkdir -p vendor && ln -s "${target}" vendor/lib\n`,
+        [
+          "#!/bin/sh",
+          "unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE",
+          'branch="$(git symbolic-ref --short HEAD)" && into="$(pwd)/vendor/lib"',
+          "mkdir -p vendor",
+          // Older Git ignores the setting and records absolute paths, which also must adopt.
+          `git -c worktree.useRelativePaths=true -C "${lib}" worktree add -q -b "$branch" "$into"`,
+          "",
+        ].join("\n"),
         { mode: 0o755 },
       );
       yield* run(project, "config", "core.hooksPath", hooks);
       state.workspaceRoot = project;
       state.trackedFolders = tracked(lib);
 
-      const created = yield* create("feature").pipe(Effect.exit);
+      const { taskFolder } = yield* create("feature");
 
-      assert.isTrue(Exit.isSuccess(created), String(Exit.isFailure(created) && created.cause));
-      assert.deepStrictEqual(yield* fileSystem.readDirectory(target), []);
+      assert.deepEqual(taskFolder.repositories, [
+        {
+          repositoryPath: lib,
+          worktreePath: path.join(taskFolder.root, "vendor", "lib"),
+          name: "lib",
+        },
+      ]);
+    }),
+  ),
+);
+
+it.live("checks a repository inside one the project's checkout hook filled on its own", () =>
+  withState((state) =>
+    Effect.gen(function* () {
+      const { fileSystem, path, tmp, run, repository } = yield* fixture;
+      const project = yield* repository("p");
+      yield* fileSystem.writeFileString(path.join(project, ".gitignore"), "vendor/\n");
+      yield* run(project, "add", ".");
+      yield* run(project, "commit", "-m", "ignore vendor");
+      const vendor = yield* repository("p/vendor");
+      const tool = yield* repository("p/vendor/tool");
+      const hooks = path.join(tmp, "hooks");
+      yield* fileSystem.makeDirectory(hooks);
+      yield* fileSystem.writeFileString(
+        path.join(hooks, "post-checkout"),
+        "#!/bin/sh\nmkdir -p vendor && echo notes > vendor/README\n",
+        { mode: 0o755 },
+      );
+      yield* run(project, "config", "core.hooksPath", hooks);
+      state.workspaceRoot = project;
+      state.trackedFolders = tracked(vendor, tool);
+
+      const { taskFolder } = yield* create("feature");
+
+      const toolWorktree = path.join(taskFolder.root, "vendor", "tool");
+      assert.deepEqual(
+        taskFolder.repositories.map((entry) => entry.worktreePath),
+        [toolWorktree],
+      );
+      assert.equal(yield* run(toolWorktree, "symbolic-ref", "--short", "HEAD"), "feature");
     }),
   ),
 );
@@ -1069,7 +1157,8 @@ it.live("restores a recorded repository the project stopped tracking as its work
         path.join(shop, "onicode.json"),
         JSON.stringify({ ignoreRepositories: ["web"] }),
       );
-      yield* (yield* TaskFolders.TaskFolders).restore({
+      const taskFolders = yield* TaskFolders.TaskFolders;
+      yield* taskFolders.restore({
         taskFolder,
         branch: "feature",
         recreate: ({ repositoryPath, worktreePath }) =>
@@ -1085,6 +1174,20 @@ it.live("restores a recorded repository the project stopped tracking as its work
         assert.equal(yield* run(worktree, "symbolic-ref", "--short", "HEAD"), "feature");
       }
       assert.isTrue(yield* isLink(path.join(root, "onicode.json")));
+
+      // A link in a missing checkout's place, even to an empty folder, is never written through.
+      const elsewhere = path.join(tmp, "elsewhere");
+      yield* fileSystem.makeDirectory(elsewhere);
+      yield* fileSystem.remove(path.join(root, "api"), { recursive: true });
+      yield* fileSystem.symlink(elsewhere, path.join(root, "api"));
+      const refused = yield* taskFolders
+        .restore({
+          taskFolder,
+          branch: "feature",
+          recreate: () => Effect.die("a checkout behind a link is never recreated"),
+        })
+        .pipe(Effect.flip);
+      assert.include(refused.detail, "lies behind a link");
     }),
   ),
 );
