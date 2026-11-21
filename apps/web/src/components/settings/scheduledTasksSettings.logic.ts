@@ -16,6 +16,7 @@ import {
 } from "@onicode/contracts";
 import type { EnvironmentThreadShell } from "@onicode/client-runtime/state/models";
 import { scheduleTimeZoneLabel } from "@onicode/client-runtime/scheduled-task-time-zone";
+import type { TimestampFormat } from "@onicode/contracts/settings";
 import { msg } from "gt-react";
 
 import {
@@ -24,6 +25,7 @@ import {
 } from "@onicode/shared/projectSettings";
 import { getActiveLocale, m, type MessageResolver } from "../../i18n/messages";
 import type { ProviderInstanceEntry } from "../../providerInstances";
+import { formatDateTimeTimestamp, formatTimeOfDay } from "../../timestampFormat";
 
 import type { ResolvedSettingsScope } from "./settingsScope";
 
@@ -35,20 +37,18 @@ export function weekdayShortLabel(day: number, locale: string = getActiveLocale(
   );
 }
 
-const ONCE_FORMATTER = new Intl.DateTimeFormat(undefined, {
-  dateStyle: "medium",
-  timeStyle: "short",
-});
-
 export function scheduleLabel(
   schedule: ScheduledTaskSchedule,
+  timestampFormat: TimestampFormat,
   timeZone?: string,
   runAt?: string | null,
   resolve: MessageResolver = m,
   locale: string = getActiveLocale(),
 ): string {
   if (schedule.type === "once") {
-    return resolve(msg("Once, {time}", { time: ONCE_FORMATTER.format(new Date(schedule.runAt)) }));
+    return resolve(
+      msg("Once, {time}", { time: formatDateTimeTimestamp(schedule.runAt, timestampFormat) }),
+    );
   }
   if (schedule.type === "interval") {
     const minutes = schedule.everyMs / 60_000;
@@ -57,7 +57,7 @@ export function scheduleLabel(
       : resolve(msg("Every {seconds} sec", { seconds: Math.round(schedule.everyMs / 1000) }));
   }
   const weekdays = schedule.weekdays ?? [];
-  const time = schedule.timeOfDay;
+  const time = formatTimeOfDay(schedule.timeOfDay, timestampFormat);
   const zone = scheduleTimeZoneLabel(timeZone, runAt);
   if (weekdays.length === 0) {
     return zone === undefined
