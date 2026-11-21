@@ -2960,3 +2960,4 @@ d2bb611134	take	taken as is
 e19193db45	take	agentContextBudget re-measured on Onicode's text (mcpToolListJsonBytes 56325, -2 like upstream); eval cases taken with the change
 3d54dc96f9	take	CONFLICTs: took upstream's <label> wrapper, kept Onicode's border-border (Onicode's divider colour)
 a23085273f	take	taken as is
+3027c2c840	take	expo-audio patch: Onicode is on 58.0.12 with a patch identical to upstream's 58.0.11 one (index lines aside), so upstream's updated patch is carried to patches/expo-audio@58.0.12.patch (applies cleanly; verified in node_modules); lockfile patch hash regenerated. Native iOS change: new mobile fingerprint.
