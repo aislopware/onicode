@@ -891,7 +891,13 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
     (yield* readClaudeSettingsEnv(claudeSettings, cwd, resolvedEnvironment)).ANTHROPIC_BASE_URL ??
     resolvedEnvironment.ANTHROPIC_BASE_URL;
   const customApiEndpoint = customClaudeApiEndpointHost(baseUrl) !== undefined;
-  const endpoint = customApiEndpoint ? URL.parse(baseUrl?.trim() ?? "")?.origin : undefined;
+  const baseAddress = customApiEndpoint ? URL.parse(baseUrl?.trim() ?? "") : null;
+  const endpoint = baseAddress
+    ? {
+        endpoint: baseAddress.origin,
+        endpointUrl: `${baseAddress.origin}${baseAddress.pathname.replace(/\/+$/, "")}`,
+      }
+    : undefined;
   if (!customApiEndpoint && claudeAuthStatus(capabilities) === "unauthenticated") {
     const path = yield* Path.Path;
     const configDir = (yield* makeClaudeEnvironment(claudeSettings, resolvedEnvironment))
@@ -921,7 +927,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
   const authMetadata =
     apiProviderAuthMetadata(capabilities.apiProvider) ??
     (customApiEndpoint
-      ? { type: "customEndpoint", label: "Custom API endpoint", ...(endpoint ? { endpoint } : {}) }
+      ? { type: "customEndpoint", label: "Custom API endpoint", ...endpoint }
       : undefined) ??
     claudeAuthMetadata({
       subscriptionType: capabilities.subscriptionType,

@@ -570,7 +570,8 @@ it needs no pairing code.
 A machine this app is not connected to, shown only because another environment
 links to it, can still be linked without a code when that link has full access:
 drop the plus on it and the environment holding the link gets the pairing code
-from it. Your session on that environment must manage access there. The result
+from it. Your session on that environment must manage access there, and it must
+run a version of Onicode that can get the code. The result
 is a separate link with the access you pick, listed and revocable on the linked
 machine like any other. Links still do not chain.
 
@@ -586,8 +587,8 @@ To link one environment to several machines at once, Shift-click the machines
 drag the environment's plus onto any of them, or use **Link several…** above
 the map. Dropping the plus on a stack offers the stack's machines. The dialog
 ticks the machines it can link without a pairing code and says why for the
-rest. When this app is connected to none of them, each needs a pairing code,
-so the map says so and offers to link one at a time instead.
+rest. When this app is connected to none of them, the map offers to link them one
+at a time instead and says how many need a pairing code.
 
 Large setups fold: machines known only through links that share the same
 linking environments and access levels become one stack, and once this app
@@ -626,8 +627,10 @@ any other thread on desktop, and a shorter read-only list on mobile.
   or stop the thread, choose **Connect to interact**. When the link has full
   access, this app pairs with that machine in one step and opens the thread
   there; you need permission to manage access on the machine you are connected
-  to. Otherwise the add-environment form opens for that machine and asks for a
-  pairing code you create on it.
+  to. Otherwise, if that machine has **Tailscale sign-in** on and this device
+  reaches it over Tailscale, it signs this device in. Failing that, the
+  add-environment form opens for that machine and asks for a pairing code you
+  create on it.
 - This app connects to that machine directly, so it must be able to reach one of
   the addresses the link uses. If it cannot, the view says so and stays
   read-only. The new connection appears in that machine's **Settings → Sharing &

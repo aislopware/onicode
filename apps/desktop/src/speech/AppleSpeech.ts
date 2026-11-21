@@ -1,5 +1,6 @@
 import type { DesktopAppleSpeechResult } from "@onicode/contracts";
 import * as HostProcess from "@onicode/shared/HostProcess";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -17,6 +18,7 @@ const MAX_PCM_BYTES = SAMPLE_RATE * Float32Array.BYTES_PER_ELEMENT * 5 * 60;
 // Preparing a language for the first time downloads Apple's model.
 const PREPARE_TIMEOUT = Duration.minutes(10);
 const TRANSCRIBE_TIMEOUT = Duration.minutes(5);
+const PROBE_RETRY = Duration.minutes(1);
 
 const decodeOutput = Schema.decodeUnknownEffect(
   Schema.fromJsonString(Schema.Struct({ value: Schema.String })),
@@ -63,7 +65,7 @@ function encodeSpeechWav(pcmBytes: Uint8Array): Uint8Array {
 export class AppleSpeech extends Context.Service<
   AppleSpeech,
   {
-    readonly supportedLocales: Effect.Effect<readonly string[]>;
+    readonly supportedLocales: Effect.Effect<readonly string[] | null>;
     readonly prepare: (locale: string) => Effect.Effect<DesktopAppleSpeechResult>;
     readonly transcribe: (
       locale: string,
@@ -136,19 +138,20 @@ export const layer = Layer.effect(
         ),
       );
 
-    // Only a definite answer is kept; a slow or failed probe is asked again next time.
+    // Only a definite answer is kept; a slow or failed probe answers null and is asked again
+    // after PROBE_RETRY, so window focus does not spawn a helper each time.
     let locales: readonly string[] | undefined;
-    const supportedLocales = Effect.suspend(() =>
-      locales === undefined
-        ? run(["available"], Duration.seconds(10)).pipe(
-            Effect.map((result) => {
-              if (result.ok) locales = result.value.split(",").filter(Boolean);
-              else if (result.code === "unavailable") locales = [];
-              return locales ?? [];
-            }),
-          )
-        : Effect.succeed(locales),
-    );
+    let retryAt = 0;
+    const supportedLocales = Effect.gen(function* () {
+      if (locales !== undefined) return locales;
+      const now = yield* Clock.currentTimeMillis;
+      if (now < retryAt) return null;
+      const result = yield* run(["available"], Duration.seconds(10));
+      if (result.ok) locales = result.value.split(",").filter(Boolean);
+      else if (result.code === "unavailable") locales = [];
+      else retryAt = now + Duration.toMillis(PROBE_RETRY);
+      return locales ?? null;
+    });
 
     const pending = new Map<string, Effect.Effect<DesktopAppleSpeechResult>>();
     const preparePermit = yield* Semaphore.make(1);

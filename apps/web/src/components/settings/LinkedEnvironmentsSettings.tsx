@@ -2,6 +2,7 @@ import { useAtomValue } from "@effect/atom-react";
 import {
   linkBackBlockLabel,
   linkBatchFailureLabel,
+  linkListState,
   linkWithMintedCode,
 } from "@onicode/client-runtime/link-batch";
 import { ANOTHER_ADDRESS, linkRequestFailureMessage } from "@onicode/client-runtime/link-request";
@@ -257,24 +258,15 @@ export function LinkEnvironmentDialog({
   const setOpen = onOpenChange;
   // Named in the title: from the map, nothing else on screen says which machine is linking.
   const source = useEnvironment(environmentId);
-  const saved = useLinkableMachines(environmentId, open);
   const routes = useLinkThroughRoutes(environmentId, open);
   // Machines this app has no entry for are still pickable when one of its environments links
   // to them at full access.
-  const machines = [
-    ...saved,
-    ...[...routes.values()]
-      .filter((route) => saved.every((machine) => machine.environmentId !== route.environmentId))
-      .map((route) => ({
-        environmentId: route.environmentId,
-        label: route.label,
-        machine: "server" as const,
-        connected: false,
-        connectOnly: false,
-        linked: false,
-        urls: route.urls,
-      })),
-  ];
+  const machines = useLinkableMachines(environmentId, open, [...routes.values()]);
+  // The same shared list `useLinkableMachines` reads `linked` from.
+  const sourceLinks = useEnvironmentQuery(
+    open ? peerLinkEnvironment.list({ environmentId, input: {} }) : null,
+  );
+  const sourceLinksState = linkListState(sourceLinks);
   // Null until the user picks; with no other machines known, only an address is left.
   const [choice, setChoice] = useState<string | null>(prefill?.choice ?? null);
   const [address, setAddress] = useState(prefill?.address ?? "");
@@ -283,6 +275,8 @@ export function LinkEnvironmentDialog({
   const [busy, setBusy] = useState(false);
   // Machines whose minting already failed, so the dialog asks for a code instead.
   const [mintFailed, setMintFailed] = useState<ReadonlySet<EnvironmentId>>(new Set());
+  // Machines that would not give a code through a link, so the dialog asks for one instead.
+  const [throughFailed, setThroughFailed] = useState<ReadonlySet<EnvironmentId>>(new Set());
   // Enter then a click can both run before a re-render; this guard is synchronous.
   const inFlight = useRef(false);
   const formId = useId();
@@ -299,8 +293,6 @@ export function LinkEnvironmentDialog({
     reportFailure: false,
     reportDefect: false,
   });
-  // Machines that would not give a code through a link, so the dialog asks for one instead.
-  const [throughFailed, setThroughFailed] = useState<ReadonlySet<EnvironmentId>>(new Set());
   const [alsoLinkBack, setAlsoLinkBack] = useState(false);
   const selected = choice ?? (machines.length === 0 ? ANOTHER_ADDRESS : null);
   // Only for the machine the dialog opened for: another choice or address is another machine.
@@ -314,8 +306,11 @@ export function LinkEnvironmentDialog({
   const targetId = machine?.environmentId ?? null;
   const connected = usePreparedConnection(targetId);
   const mayMint = useEnvironmentScope(targetId, AuthAccessWriteScope);
-  // A picked machine that left the list has no address here either.
-  const needsAddress = selected !== null && (machine === null || machine.urls.length === 0);
+  // A picked machine that left the list has no address here either. After linking through
+  // another environment failed, this app's own addresses may not answer from the source either.
+  const needsAddress =
+    selected !== null &&
+    (machine === null || machine.urls.length === 0 || throughFailed.has(machine.environmentId));
   // This client mints a code there when it is connected with a session that may
   // create pairing links, and only for its own addresses: anything can answer
   // as that machine at one typed in, so that one gets a code the user fetched.
@@ -333,13 +328,23 @@ export function LinkEnvironmentDialog({
     throughCandidate !== null && via !== null && !throughFailed.has(throughCandidate.environmentId)
       ? throughCandidate
       : null;
+  // From the map, a machine reached through another environment opens as an address.
+  const renews = (
+    machine ??
+    (through === null
+      ? undefined
+      : machines.find((known) => known.environmentId === through.environmentId))
+  )?.linked;
   const linkBack = useLinkBackOffers(environmentId, targetId === null ? [] : [targetId], open);
   const backOffer = linkBack.offerFor(targetId);
+  // Linking a machine that is linked already replaces that link, so wait to know whether it is.
+  const renewalPending = (machine !== null || through !== null) && sourceLinksState === "loading";
   const ready =
-    through !== null ||
-    (selected !== null &&
-      (!needsAddress || address.trim().length > 0) &&
-      (canMint || pairingCode.trim().length > 0));
+    !renewalPending &&
+    (through !== null ||
+      (selected !== null &&
+        (!needsAddress || address.trim().length > 0) &&
+        (canMint || pairingCode.trim().length > 0)));
   const handleOpenChange = (next: boolean) => {
     setOpen(next);
     if (!next) {
@@ -350,6 +355,12 @@ export function LinkEnvironmentDialog({
       setMintFailed(new Set());
       setThroughFailed(new Set());
       setAlsoLinkBack(false);
+    }
+  };
+  const markThroughFailed = (failedId: EnvironmentId) => {
+    setThroughFailed((failed) => new Set(failed).add(failedId));
+    if (machine?.environmentId === failedId && address.trim() === "") {
+      setAddress(machine.urls[0] ?? "");
     }
   };
   // Settles to what to link with, or null after reporting why the linked machine gave no code.
@@ -371,7 +382,7 @@ export function LinkEnvironmentDialog({
       }
     }
     if (asked._tag === "Failure" && isAtomCommandInterrupted(asked)) return null;
-    setThroughFailed((failed) => new Set(failed).add(target.environmentId));
+    markThroughFailed(target.environmentId);
     failureToast(
       gt("{via} could not get a pairing code from {target}", {
         via: via?.label ?? "",
@@ -462,6 +473,8 @@ export function LinkEnvironmentDialog({
       }
       handleOpenChange(false);
     } else if (!isAtomCommandInterrupted(result)) {
+      // The addresses the other environment has for it may not answer from this one: ask for one.
+      if (through !== null) markThroughFailed(through.environmentId);
       failureToast(gt("Could not link the environment"), String(squashAtomCommandFailure(result)));
     }
   };
@@ -516,9 +529,16 @@ export function LinkEnvironmentDialog({
                 }}
               />
             ) : null}
-            {machine?.linked ? (
+            {renews ? (
               <p className="text-xs text-muted-foreground">
                 <T>Already linked. Linking again renews it with the access you pick.</T>
+              </p>
+            ) : (machine !== null || through !== null) && sourceLinksState === "failed" ? (
+              <p className="text-xs text-muted-foreground">
+                <T>
+                  Could not check whether it is linked already. If it is, linking again renews it
+                  with the access you pick.
+                </T>
               </p>
             ) : null}
             {through !== null ? (
@@ -547,7 +567,7 @@ export function LinkEnvironmentDialog({
                   nativeInput
                   spellCheck={false}
                 />
-                {machine !== null ? (
+                {machine !== null && machine.urls.length === 0 ? (
                   <span className="block text-xs text-muted-foreground">
                     <T>
                       This app has no address for <Var>{machine.label}</Var> that another machine

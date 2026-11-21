@@ -8,7 +8,10 @@ import {
 } from "@onicode/contracts";
 import { type TimestampFormat } from "@onicode/contracts/settings";
 import { deadlineStore } from "@onicode/client-runtime/clock";
-import { limitRecoveryOwnsSnooze } from "@onicode/client-runtime/state/thread-execution";
+import {
+  limitRecoveryOwnsSnooze,
+  limitRecoveryResumeTiming,
+} from "@onicode/client-runtime/state/thread-execution";
 import {
   CHATGPT_USAGE_LIMIT_CODE,
   CHATGPT_WORKSPACE_USAGE_LIMIT_CODE,
@@ -158,8 +161,13 @@ function RecoveryActions({ runId, resetAt, recovery, snoozedUntil, onChange }: R
   // The server leaves snoozedUntil in place after the timer wakes the thread,
   // so a snooze whose reset has passed is no longer active.
   const resetPassed = useDeadlinePassed(resetAt === null ? null : Date.parse(resetAt));
+  const snoozePassed = useDeadlinePassed(snoozedUntil === null ? null : Date.parse(snoozedUntil));
   const snoozed =
     limitRecoveryOwnsSnooze({ runId, resetAt, recovery, snoozedUntil }) && !resetPassed;
+  const resumeTiming =
+    resetAt === null
+      ? "atReset"
+      : limitRecoveryResumeTiming({ resetAt, snoozedUntil, resetPassed, snoozePassed });
   async function toggle(action: "resume" | "snooze") {
     if (resetAt === null) return;
     if (action === "snooze" && !snoozed && Date.parse(resetAt) <= Date.now()) {
@@ -199,9 +207,11 @@ function RecoveryActions({ runId, resetAt, recovery, snoozedUntil, onChange }: R
           ? gt("Saving…")
           : scheduled
             ? gt("Cancel auto-resume")
-            : resetPassed
-              ? gt("Resume now")
-              : gt("Resume at reset")}
+            : resumeTiming === "afterSnooze"
+              ? gt("Resume after snooze")
+              : resumeTiming === "now"
+                ? gt("Resume now")
+                : gt("Resume at reset")}
       </InlineButton>
       <InlineButton
         touchTarget="padded"

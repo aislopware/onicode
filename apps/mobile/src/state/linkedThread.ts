@@ -6,7 +6,7 @@ import {
 import type { EnvironmentId, OrchestrationV2Subagent } from "@onicode/contracts";
 import { useState } from "react";
 
-import { connectPairingUrl, reachesEnvironment } from "../connection/onboarding";
+import { connectPairingUrl, connectTailnet, reachesEnvironment } from "../connection/onboarding";
 import { linkedEnvironmentPrefillAtom } from "../features/connection/linkedEnvironmentPrefill";
 import { buildPairingUrl } from "../features/connection/pairing";
 import { useEnvironments } from "./environments";
@@ -58,6 +58,7 @@ export function useConnectLinkedEnvironment(target: LinkedThreadTarget) {
   const requestPairing = useAtomCommand(peerLinkEnvironment.pairClient, quiet);
   const reaches = useAtomCommand(reachesEnvironment, quiet);
   const pair = useAtomCommand(connectPairingUrl, quiet);
+  const tailnetSignIn = useAtomCommand(connectTailnet, quiet);
   const [state, setState] = useState<LinkedEnvironmentConnectState>({ phase: "idle" });
   const connect = async () => {
     setState({ phase: "connecting" });
@@ -79,6 +80,13 @@ export function useConnectLinkedEnvironment(target: LinkedThreadTarget) {
       pair: async ({ host, pairingCode }) => {
         const result = await pair({
           pairingUrl: buildPairingUrl(host, pairingCode),
+          expectedEnvironmentId: target.environmentId,
+        });
+        return result._tag === "Success";
+      },
+      signIn: async (host) => {
+        const result = await tailnetSignIn({
+          httpBaseUrl: host,
           expectedEnvironmentId: target.environmentId,
         });
         return result._tag === "Success";

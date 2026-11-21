@@ -116,8 +116,8 @@ const browserTestProject = {
   },
 } satisfies TestProjectInlineConfiguration;
 
-// Render scenarios count React commits; they run only through scripts/render-metrics.ts,
-// which reads the per-scenario reports this command writes.
+// Render scenarios count React commits. scripts/render-metrics.ts reads the per-scenario reports
+// this command writes; a plain test run sets no report directory and writes none.
 const renderScenariosProject = {
   ...browserTestProject,
   test: {
@@ -136,7 +136,7 @@ const renderScenariosProject = {
         ...browserTestProject.test.browser.commands,
         writeRenderReport: async (_context, scenario: string, json: string) => {
           const directory = process.env.ONICODE_RENDER_REPORT_DIR;
-          if (!directory) throw new Error("ONICODE_RENDER_REPORT_DIR is not set");
+          if (!directory) return;
           await NodeFSP.writeFile(`${directory}/${scenario}.json`, json);
         },
       },

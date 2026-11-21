@@ -50,6 +50,8 @@ export interface FleetEnvironmentInput {
   readonly canWriteAccess: boolean;
   /** An address another machine can reach it at, so a link to it needs no typed address. */
   readonly hasLinkAddress: boolean;
+  /** It can get a pairing code from a machine it links to, for another environment's link. */
+  readonly offersLinkThrough: boolean;
 }
 
 /**
@@ -87,6 +89,7 @@ export type FleetNode =
       readonly mintable: boolean;
       readonly canWriteAccess: boolean;
       readonly hasLinkAddress: boolean;
+      readonly offersLinkThrough: boolean;
     }
   /** Seen only as another environment's link target; the client is not connected to it. */
   | {
@@ -193,6 +196,7 @@ export function buildFleetGraph(input: {
         environment.hasLinkAddress,
       canWriteAccess: environment.canWriteAccess,
       hasLinkAddress: environment.hasLinkAddress,
+      offersLinkThrough: environment.offersLinkThrough,
     });
     for (const route of environment.routes) {
       const edgeId = `route:${id}:${route.id}`;
@@ -626,7 +630,8 @@ export function fleetLinkOffer(
             node.id === edge.from &&
             node.kind === "environment" &&
             node.phase === "connected" &&
-            node.canWriteAccess,
+            node.canWriteAccess &&
+            node.offersLinkThrough,
         ),
     );
     return {
@@ -1688,13 +1693,15 @@ export type FleetLinkAction =
     }
   /**
    * None of the machines dropped on can be linked from here in one go: this client has no
-   * session on any of them, so each needs a pairing code. `machineIds` are the map's nodes.
+   * session on any of them, so each is linked alone. `machineIds` are the map's nodes, and
+   * `needCode` how many of them need a pairing code: the rest link through another environment.
    */
   | {
-      readonly kind: "code-only";
+      readonly kind: "one-by-one";
       readonly sourceId: string;
       readonly sourceEnvironmentId: EnvironmentId;
       readonly machineIds: ReadonlyArray<string>;
+      readonly needCode: number;
     }
   /** The single link flow; `offer` is null when no machine was named. */
   | {
@@ -1733,9 +1740,13 @@ export function fleetLinkAction(
     if (known) return { kind: "batch", sourceEnvironmentId, environmentIds: [...environmentIds] };
     const [only, ...rest] = machineIds;
     if (rest.length > 0 || only === undefined) {
-      return { kind: "code-only", sourceId: source.id, sourceEnvironmentId, machineIds };
+      const needCode = machineIds.filter((id) => {
+        const offer = fleetLinkOffer(graph, sourceId, id);
+        return offer.kind === "link" && offer.path === "pairing-code";
+      }).length;
+      return { kind: "one-by-one", sourceId: source.id, sourceEnvironmentId, machineIds, needCode };
     }
-    // One such machine is the single flow's, which asks for its code.
+    // One such machine is the single flow's, which asks for its code or links through another.
     const offer = fleetLinkOffer(graph, sourceId, only);
     return offer.kind === "link" ? { kind: "single", sourceEnvironmentId, offer } : null;
   };

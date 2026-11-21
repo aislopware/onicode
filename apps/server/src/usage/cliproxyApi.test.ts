@@ -1,7 +1,9 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as HostProcess from "@onicode/shared/HostProcess";
 import { describe, expect, it } from "@effect/vitest";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Schema from "effect/Schema";
 import * as TestClock from "effect/testing/TestClock";
 import { HttpClient, HttpClientError, HttpClientResponse } from "effect/http";
@@ -60,12 +62,21 @@ function fixture(
     }>;
     upstream?: (request: RequestBody) => { status: number; body: unknown };
     cooldownStatus?: number;
-    models?: (name: string) => Response;
+    /** `null` holds the lookup open. */
+    models?: (name: string) => Response | null;
   } = {},
 ) {
   const requests: Array<{ path: string; body?: RequestBody }> = [];
-  const http = HttpClient.make((request) =>
-    Effect.sync(() => {
+  const modelsStalled = Deferred.makeUnsafe<void>();
+  const http = HttpClient.make((request) => {
+    const url = new URL(request.url);
+    const listed = url.pathname.endsWith("/auth-files/models")
+      ? options.models?.(url.searchParams.get("name")!)
+      : undefined;
+    if (listed === null) {
+      return Deferred.succeed(modelsStalled, undefined).pipe(Effect.andThen(Effect.never));
+    }
+    return Effect.sync(() => {
       expect(request.headers.authorization).toBe("Bearer management-secret");
       const path = new URL(request.url).pathname;
       const body =
@@ -74,11 +85,7 @@ function fixture(
           : undefined;
       requests.push({ path, ...(body ? { body } : {}) });
       if (path.endsWith("/auth-files/models"))
-        return HttpClientResponse.fromWeb(
-          request,
-          options.models?.(new URL(request.url).searchParams.get("name")!) ??
-            Response.json({}, { status: 404 }),
-        );
+        return HttpClientResponse.fromWeb(request, listed ?? Response.json({}, { status: 404 }));
       if (path.endsWith("/auth-files"))
         return HttpClientResponse.fromWeb(
           request,
@@ -119,10 +126,11 @@ function fixture(
         request,
         Response.json({ status_code: upstream.status, body: encodeJson(upstream.body) }),
       );
-    }),
-  );
+    });
+  });
   return {
     requests,
+    modelsStalled,
     api: makeCliproxyApi.pipe(
       Effect.provideService(HttpClient.HttpClient, http),
       Effect.provide(NodeCrypto.layer),
@@ -237,19 +245,75 @@ describe("CLIProxyAPI built-in management API", () => {
 
   it.effect("names the models the hub routes to each account, when the hub lists them", () =>
     Effect.gen(function* () {
+      let stalled = false;
+      let asking = Deferred.makeUnsafe<void>();
+      const asked: string[] = [];
+      const slow = ["s1", "s2", "s3", "s4"].map((index) => ({
+        ...accounts[1]!,
+        id: `${index}.json`,
+        auth_index: index,
+      }));
+      const hubAccounts = [
+        ...accounts,
+        ...slow,
+        { ...accounts[1]!, id: "third.json", auth_index: "c" },
+      ];
       const test = fixture({
-        accounts: [...accounts, { ...accounts[1]!, id: "third.json", auth_index: "c" }],
-        models: (name) =>
-          name === "first.json"
-            ? Response.json({ models: [{ id: "gpt-5.6-sol" }, { id: " " }] })
-            : name === "third.json"
-              ? Response.json({ models: [] })
-              : Response.json({}, { status: 404 }),
+        accounts: hubAccounts,
+        models: (name) => {
+          asked.push(name);
+          Deferred.doneUnsafe(asking, Effect.void);
+          if (name === "fresh.json") return Response.json({ models: [{ id: "gpt-5.6-sol" }] });
+          if (name === "first.json")
+            return Response.json({
+              models: [{ id: stalled ? "gpt-5.6-luna" : "gpt-5.6-sol" }, { id: " " }],
+            });
+          if (name === "third.json")
+            return Response.json({ models: stalled ? [{ id: "gpt-5.6-sol" }] : [] });
+          if (name === "second.json") return Response.json({}, { status: 404 });
+          return stalled ? null : Response.json({ models: [{ id: "gpt-5.6-sol" }] });
+        },
       });
       const api = yield* test.api;
       const result = yield* api.readAccounts(config);
-      expect(result.map((account) => account.models)).toEqual([["gpt-5.6-sol"], undefined, []]);
+      expect(result.map((account) => account.models)).toEqual([
+        ["gpt-5.6-sol"],
+        undefined,
+        ...slow.map(() => ["gpt-5.6-sol"]),
+        [],
+      ]);
       expect(result[1]?.usageLimits.windows).toHaveLength(1);
+      // One deadline covers every lookup: those that answered in time take their new list, the
+      // rest keep their last, and a hub that 404s an account is not asked again.
+      stalled = true;
+      const next = yield* Effect.forkChild(api.readAccounts(config));
+      yield* Deferred.await(test.modelsStalled);
+      yield* TestClock.adjust("2 seconds");
+      expect((yield* Fiber.join(next)).map((account) => account.models)).toEqual([
+        ["gpt-5.6-luna"],
+        undefined,
+        ...slow.map(() => ["gpt-5.6-sol"]),
+        [],
+      ]);
+      expect(asked.filter((name) => name === "second.json")).toHaveLength(1);
+      // The next refresh asks a new account first, then the one that waited longest.
+      hubAccounts.push({ ...accounts[1]!, id: "fresh.json", auth_index: "d" });
+      asking = Deferred.makeUnsafe<void>();
+      const later = yield* Effect.forkChild(api.readAccounts(config));
+      yield* Deferred.await(asking);
+      yield* TestClock.adjust("2 seconds");
+      expect((yield* Fiber.join(later)).map((account) => account.models)).toEqual([
+        ["gpt-5.6-luna"],
+        undefined,
+        ...slow.map(() => ["gpt-5.6-sol"]),
+        ["gpt-5.6-sol"],
+        ["gpt-5.6-sol"],
+      ]);
+      // A hub removed from settings leaves nothing behind.
+      stalled = false;
+      yield* api.retainHubs(["http://other.test:8317"]);
+      yield* api.readAccounts(config);
+      expect(asked.filter((name) => name === "second.json")).toHaveLength(2);
     }),
   );
 

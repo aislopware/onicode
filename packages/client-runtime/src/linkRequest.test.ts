@@ -201,6 +201,27 @@ describe("linkableMachines", () => {
       ["Mini", true],
     ]);
   });
+
+  it("adds machines only another environment links to, linked when the thread's environment is", () => {
+    const here = presentation("environment-here", "Here", { saved: ["http://localhost:3773"] });
+    const vps = presentation("environment-vps", "VPS", { saved: ["https://vps.ts.net"] });
+    const box = EnvironmentId.make("environment-box");
+    const listed = linkableMachines({
+      environments: [here, vps],
+      threadEnvironmentId: here.environmentId,
+      links: [{ environmentId: box, status: "reachable" }],
+      through: [
+        { environmentId: vps.environmentId, label: "vps" },
+        { environmentId: here.environmentId, label: "here" },
+        { environmentId: box, label: "Box" },
+      ],
+    });
+    // The other environment's addresses for it are no address this one can use.
+    expect(listed.map((machine) => [machine.label, machine.linked, machine.urls])).toEqual([
+      ["VPS", false, ["https://vps.ts.net"]],
+      ["Box", true, []],
+    ]);
+  });
 });
 
 describe("linkedEnvironmentNames", () => {

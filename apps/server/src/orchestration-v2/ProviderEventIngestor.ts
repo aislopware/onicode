@@ -27,6 +27,7 @@ import * as SqlError from "effect/sql/SqlError";
 
 import { AgentScope } from "@onicode/shared/AgentScope";
 import { modelSelectionsEqual } from "@onicode/shared/model";
+import { instanceEndpoint } from "@onicode/shared/usageLimits";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
 import { UsageLimitResetFallback } from "../usage/UsageLimitSources.ts";
@@ -686,13 +687,14 @@ export const layer: Layer.Layer<
                 ? { ...input.event.failure, message: "Killed: out of memory.", code: "oom_kill" }
                 : input.event.failure;
               // A proxied CLI can drop the reset time; the hub still knows when its pool refills.
-              const endpoint =
+              const snapshot =
                 reported.class === "usage_limit" && reported.resetAt == null
-                  ? (yield* Effect.flatMap(
+                  ? yield* Effect.flatMap(
                       instances.getInstance(input.providerInstanceId),
                       (instance) => instance?.snapshot.getSnapshot ?? Effect.undefined,
-                    ))?.auth.endpoint
+                    )
                   : undefined;
+              const endpoint = snapshot && instanceEndpoint(snapshot);
               const hubResetAt =
                 endpoint === undefined
                   ? null

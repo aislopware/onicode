@@ -1,9 +1,10 @@
-import type { ProjectCloneStage } from "@onicode/contracts";
+import { gitLfsDownloadDetail, type ProjectCloneStage } from "@onicode/contracts";
 
 export interface GitCloneProgressLine {
   readonly stage: ProjectCloneStage;
   readonly percent: number | null;
   readonly detail: string | null;
+  readonly lfsDownloadBytes?: number;
 }
 
 const STAGE_PREFIXES: ReadonlyArray<readonly [RegExp, ProjectCloneStage]> = [
@@ -53,9 +54,10 @@ export function gitLfsDownloadProgressLine(
   partialBytes: number,
   percent: number | null,
 ): GitCloneProgressLine {
-  const size =
-    partialBytes >= 1024 ** 3
-      ? `${(partialBytes / 1024 ** 3).toFixed(2)} GiB`
-      : `${(partialBytes / 1024 ** 2).toFixed(1)} MiB`;
-  return { stage: "checkout", percent, detail: `Downloading Git LFS objects: ${size} in progress` };
+  return {
+    stage: "checkout",
+    percent,
+    detail: gitLfsDownloadDetail(partialBytes),
+    lfsDownloadBytes: partialBytes,
+  };
 }

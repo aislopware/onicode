@@ -111,11 +111,18 @@ const models: ServerProviderModel[] = ["a", "b", "c", "d", "e"].map((id) => ({
   capabilities: null,
 }));
 
-function StatefulModelsSection() {
+function StatefulModelsSection({ shown = [] }: { readonly shown?: ReadonlyArray<string> }) {
   const [hiddenModels, setHiddenModels] = useState<ReadonlyArray<string>>(
-    models.map((model) => model.slug),
+    models.map((model) => model.slug).filter((slug) => !shown.includes(slug)),
   );
-  return section({ models, hiddenModels, onHiddenModelsChange: setHiddenModels });
+  const [modelOrder, setModelOrder] = useState<ReadonlyArray<string>>([]);
+  return section({
+    models,
+    hiddenModels,
+    onHiddenModelsChange: setHiddenModels,
+    modelOrder,
+    onModelOrderChange: setModelOrder,
+  });
 }
 
 const rowSlugs = (container: HTMLElement) =>
@@ -146,4 +153,39 @@ it("regroups the list when all models are disabled and enabled again", async () 
   await expect.element(toggle).toBeChecked();
 
   expect(rowSlugs(screen.container)).toEqual(models.map((model) => model.slug));
+});
+
+it("moves a model shown in place past its visible neighbour", async () => {
+  await using screen = await render(<StatefulModelsSection shown={["model-a"]} />);
+  const toggle = screen.getByRole("switch", { name: "Show Model B in the model picker" });
+  await toggle.click();
+  await expect.element(toggle).toBeChecked();
+
+  const moveUp = screen.getByRole("button", { name: "Move Model B up" });
+  await expect.element(moveUp).toBeEnabled();
+  await expect.element(screen.getByRole("button", { name: "Move Model B down" })).toBeDisabled();
+  await moveUp.click();
+  await expect.element(screen.getByRole("button", { name: "Move Model B up" })).toBeDisabled();
+  expect(rowSlugs(screen.container)).toEqual([
+    "model-b",
+    "model-a",
+    "model-c",
+    "model-d",
+    "model-e",
+  ]);
+
+  // Shown below a model still hidden, it moves up to the nearest visible one.
+  const showD = screen.getByRole("switch", { name: "Show Model D in the model picker" });
+  await showD.click();
+  await expect.element(showD).toBeChecked();
+  await expect.element(screen.getByRole("button", { name: "Move Model D down" })).toBeDisabled();
+  await screen.getByRole("button", { name: "Move Model D up" }).click();
+  await expect.element(screen.getByRole("button", { name: "Move Model D down" })).toBeEnabled();
+  expect(rowSlugs(screen.container)).toEqual([
+    "model-b",
+    "model-d",
+    "model-a",
+    "model-c",
+    "model-e",
+  ]);
 });

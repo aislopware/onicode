@@ -1,7 +1,13 @@
 import type { KeybindingCommand, ResolvedKeybindingsConfig } from "@onicode/contracts";
+import { compileResolvedKeybindingRule } from "@onicode/shared/keybindings";
 import { describe, expect, it, vi } from "vite-plus/test";
 
-import { dispatchMenuAction, registerCommands, registerMenuAction } from "./dispatcher";
+import {
+  dispatchMenuAction,
+  registerCommands,
+  registerMenuAction,
+  registerShortcutContext,
+} from "./dispatcher";
 
 function bindings(entries: ReadonlyArray<[string, KeybindingCommand]>): ResolvedKeybindingsConfig {
   return entries.map(([key, command]) => ({
@@ -61,6 +67,26 @@ describe("command dispatcher", () => {
     expect(guarded).not.toHaveBeenCalled();
     expect(declined).toHaveBeenCalledOnce();
     expect(global).toHaveBeenCalledOnce();
+  });
+
+  it("matches when clauses against the shown chat's context", () => {
+    const command = vi.fn();
+    let composerEmpty = false;
+    using stack = new DisposableStack();
+    stack.defer(registerShortcutContext(() => ({ composerEmpty })));
+    const rule = compileResolvedKeybindingRule({
+      key: "k",
+      command: "chat.new",
+      when: "composerEmpty",
+    })!;
+    stack.defer(registerCommands({ "chat.new": command }, { keybindings: () => [rule] }));
+
+    press("k");
+    expect(command).not.toHaveBeenCalled();
+
+    composerEmpty = true;
+    press("k");
+    expect(command).toHaveBeenCalledOnce();
   });
 
   it("stops once a handler prevents default, and unregisters on cleanup", () => {

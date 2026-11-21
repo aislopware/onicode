@@ -11,7 +11,11 @@ import {
   type UsageLimitSourceSnapshot,
 } from "@onicode/contracts";
 import { resolveServerBackgroundActivitySettings } from "@onicode/shared/backgroundActivitySettings";
-import { antigravityWindowLimitsModel, hubRoutes } from "@onicode/shared/usageLimits";
+import {
+  antigravityWindowLimitsModel,
+  hubRoutes,
+  hubsAtEndpoint,
+} from "@onicode/shared/usageLimits";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
@@ -169,6 +173,7 @@ export const make = Effect.gen(function* () {
       ([id, config]) => readSource(id as UsageLimitSourceId, config),
       { concurrency: 4 },
     );
+    if (settings) yield* api.retainHubs(entries.map(([, config]) => config.url));
     yield* publish(keepLastGoodReadings(yield* Ref.get(stateRef), snapshots));
   }).pipe(refreshLock.withPermits(1), Effect.ignoreCause({ log: true }));
 
@@ -298,7 +303,7 @@ export const layerResetFallback = Layer.effect(
       resetAt: Effect.fn("UsageLimitResetFallback.resetAt")(function* (driver, endpoint, model) {
         // Only the hub at the instance's endpoint serves its turns.
         const atEndpoint = Effect.map(sources.current, (current) =>
-          current.filter((source) => source.origin === endpoint),
+          hubsAtEndpoint(endpoint, current),
         );
         if ((yield* atEndpoint).length === 0) return null;
         // The pool usually ran out after the last poll, so the cached accounts still show room.

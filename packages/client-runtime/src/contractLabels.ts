@@ -4,6 +4,7 @@
  */
 import {
   type BrowserImportFailureReason,
+  formatGitLfsDownloadSize,
   isRuntimeModeAbove,
   managedCapabilityDenial as contractsManagedCapabilityDenial,
   managedUpdatesDenial as contractsManagedUpdatesDenial,
@@ -54,13 +55,24 @@ export function projectCloneStageLabel(
 
 /** @public */
 export function projectCloneProgressSummary(
-  snapshot: Pick<ProjectCloneSnapshot, "stage" | "percent" | "detail" | "stalled">,
+  snapshot: Pick<
+    ProjectCloneSnapshot,
+    "stage" | "percent" | "detail" | "stalled" | "lfsDownloadBytes"
+  >,
   resolve: MFunctionType = mFallback,
 ): string {
   const parts = [projectCloneStageLabel(snapshot.stage, resolve)];
   if (snapshot.percent !== null) parts.push(`${snapshot.percent}%`);
   // The detail carries git's last transfer speed, which a stall makes a lie.
   if (snapshot.stalled) parts.push(resolve(msg("Stalled", { $context: "git clone progress" })));
+  else if (typeof snapshot.lfsDownloadBytes === "number")
+    parts.push(
+      resolve(
+        msg("Downloading Git LFS objects: {size} in progress", {
+          size: formatGitLfsDownloadSize(snapshot.lfsDownloadBytes),
+        }),
+      ),
+    );
   else if (snapshot.detail) parts.push(snapshot.detail);
   return parts.join(" · ");
 }

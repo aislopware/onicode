@@ -1,3 +1,4 @@
+import { isSharedAddressSpaceHost, isTailnetHost } from "@onicode/shared/hostClassification";
 import type {
   EnvironmentId,
   OrchestrationV2ThreadHistoryPage,
@@ -68,7 +69,8 @@ export type LinkedEnvironmentConnection =
 /**
  * Connects this client to a linked environment. The linking environment asks it for a one-time
  * pairing over a full-access link, and the client redeems that at an address it can reach itself.
- * Anything short of that leaves the user to pair by hand.
+ * A link that cannot do that still names the addresses, where the machine may sign this device in
+ * over Tailscale. Anything short of that leaves the user to pair by hand.
  */
 export async function connectLinkedEnvironment(options: {
   readonly label: string;
@@ -81,6 +83,8 @@ export async function connectLinkedEnvironment(options: {
     readonly host: string;
     readonly pairingCode: string;
   }) => Promise<boolean>;
+  /** Signs in at `host` by this device's tailnet identity and saves the environment. */
+  readonly signIn: (host: string) => Promise<boolean>;
 }): Promise<LinkedEnvironmentConnection> {
   const pairing = await options.requestPairing();
   if (pairing === null) return { type: "manual", label: options.label, host: null };
@@ -89,6 +93,12 @@ export async function connectLinkedEnvironment(options: {
   const answers = await Promise.all(urls.map((url) => options.reaches(url)));
   const host = urls.find((_, index) => answers[index]) ?? null;
   if (pairing.type === "unsupported") {
+    // Only an address reached over the tailnet signs in, and it need not be the first that answers.
+    for (const [index, url] of urls.entries()) {
+      if (answers[index] && isTailnetUrl(url) && (await options.signIn(url))) {
+        return { type: "connected" };
+      }
+    }
     return { type: "manual", label, host: host ?? urls[0] ?? null };
   }
   if (host === null) return { type: "unreachable", label };
@@ -96,6 +106,16 @@ export async function connectLinkedEnvironment(options: {
     ? { type: "connected" }
     : { type: "manual", label, host };
 }
+
+// Tailscale's IPv4 addresses are in 100.64.0.0/10, which `isTailnetHost` leaves out.
+const isTailnetUrl = (url: string): boolean => {
+  try {
+    const { hostname } = new URL(url);
+    return isTailnetHost(hostname) || isSharedAddressSpaceHost(hostname);
+  } catch {
+    return false;
+  }
+};
 
 const hasStringField = <K extends string>(value: unknown, key: K): value is Record<K, string> =>
   typeof value === "object" &&

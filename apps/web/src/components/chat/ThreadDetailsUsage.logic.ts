@@ -11,6 +11,7 @@ import {
   collectLimitPools,
   collectProviderUsageLimits,
   displayLimitWindows,
+  hubAccountLogins,
   hubRoutes,
   instanceHubs,
   type LimitPoolWindow,
@@ -82,15 +83,7 @@ function hubPool(
     .filter((account) => limitsNotice(account.usageLimits) === null);
   if (readable.length === 0) return null;
   // A signed-in login joins the pool only as a fresher reading of an account the hub routes to.
-  const signedIn = providers.filter((provider) =>
-    readable.some(
-      (account) =>
-        account.driver === provider.driver &&
-        account.workspaceId === provider.auth.workspaceId &&
-        account.email !== undefined &&
-        account.email.toLowerCase() === provider.auth.email?.toLowerCase(),
-    ),
-  );
+  const signedIn = hubAccountLogins(providers, readable);
   const presentations = new Map([
     [
       CARD_ENVIRONMENT,

@@ -33,6 +33,7 @@ import {
   deriveThreadRuntime,
   formatModelSelectionEffort,
   isBackgroundWorkStopPending,
+  limitRecoveryResumeTiming,
   presentPendingBackgroundWork,
   presentProviderGoal,
   presentRunStop,
@@ -552,6 +553,27 @@ describe("thread execution presentation", () => {
     });
     expect(threadRuntimeHasInterruptibleRun(runtime)).toBe(false);
   });
+});
+
+describe("limitRecoveryResumeTiming", () => {
+  const resetAt = "2026-10-20T15:00:00.000Z";
+  it.each([
+    [null, false, false, "atReset"],
+    [null, true, false, "now"],
+    // Snoozing until the reset is the recovery's own snooze, which the reset ends.
+    [resetAt, true, true, "now"],
+    // A later snooze holds the thread past the reset, so auto-resume waits for it.
+    ["2026-10-20T16:00:00.000Z", false, false, "afterSnooze"],
+    ["2026-10-20T16:00:00.000Z", true, false, "afterSnooze"],
+    ["2026-10-20T16:00:00.000Z", true, true, "now"],
+  ] as const)(
+    "snoozed until %s, reset passed %s, snooze passed %s: %s",
+    (snoozedUntil, resetPassed, snoozePassed, expected) => {
+      expect(limitRecoveryResumeTiming({ resetAt, snoozedUntil, resetPassed, snoozePassed })).toBe(
+        expected,
+      );
+    },
+  );
 });
 
 describe("presentRunStop", () => {

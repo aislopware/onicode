@@ -43,6 +43,7 @@ interface CommandScope {
 const globalScopes: CommandScope[] = [];
 const captureScopes: CommandScope[] = [];
 const observerScopes: CommandScope[] = [];
+const sharedContexts: Array<(event: KeyboardEvent) => Partial<ShortcutMatchContext>> = [];
 
 function readFocusContext(event: KeyboardEvent): Partial<ShortcutMatchContext> {
   return {
@@ -62,7 +63,13 @@ function scopeCommandHandler(scope: CommandScope, event: KeyboardEvent) {
   const command = resolveShortcutCommand(
     event,
     options.keybindings?.() ?? appAtomRegistry.get(primaryServerKeybindingsAtom),
-    { context: { ...readFocusContext(event), ...options.context?.() } },
+    {
+      context: {
+        ...sharedContexts.at(-1)?.(event),
+        ...readFocusContext(event),
+        ...options.context?.(),
+      },
+    },
   );
   return command === null ? undefined : commands[command];
 }
@@ -142,6 +149,20 @@ export function registerCommands(
 ): () => void {
   const scopes = options.observe ? observerScopes : options.capture ? captureScopes : globalScopes;
   return pushScope(scopes, { commands, options });
+}
+
+/**
+ * When-clause context a mounted view owns (the chat's composerEmpty, turnRunning), seen by
+ * every scope. The newest provider wins; focus keys and a scope's own context override it.
+ */
+export function registerShortcutContext(
+  read: (event: KeyboardEvent) => Partial<ShortcutMatchContext>,
+): () => void {
+  sharedContexts.push(read);
+  return () => {
+    const index = sharedContexts.lastIndexOf(read);
+    if (index !== -1) sharedContexts.splice(index, 1);
+  };
 }
 
 type MenuActionHandler = () => void;

@@ -4,10 +4,11 @@ import {
   scopeProjectRef,
   scopeThreadRef,
 } from "@onicode/client-runtime/environment";
-import type { ScopedThreadRef } from "@onicode/contracts";
+import { PROVIDER_SEND_TURN_MAX_ATTACHMENTS, type ScopedThreadRef } from "@onicode/contracts";
 import type { ClientSettings } from "@onicode/contracts/settings";
 import { createHashHistory } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
+import { msg } from "gt-react";
 
 import { applyAppearanceContrast } from "./appearanceContrast";
 import { applyAppearanceFontVariables, TYPOGRAPHY_ADVANCED_STORAGE_KEY } from "./appearanceFonts";
@@ -59,6 +60,8 @@ import { environmentShell } from "./state/shell";
 import { installChatRouteCommands } from "./shortcuts/chatRouteCommands";
 import { startWorkspaceFocus } from "./lib/workspaceFocus";
 import { m } from "./i18n/messages";
+import { onUnrestoredQuestionAttachments } from "./questionAttachments";
+import { toastManager } from "./components/ui/toast";
 import { startI18n, subscribeI18n } from "./i18n/runtime";
 import { installCommandPaletteCommands } from "./shortcuts/commandPaletteCommands";
 import { registerOpenFavoriteEditorCommand } from "./components/chat/OpenInPickerShortcut";
@@ -237,6 +240,21 @@ function startThreadOverlayRetention(router: AppRouter): void {
   });
 }
 
+function startUnrestoredQuestionAttachmentToasts(): void {
+  onUnrestoredQuestionAttachments((names) =>
+    toastManager.add({
+      type: "warning",
+      title: m(msg("Some attachments were not restored")),
+      description: m(
+        msg("{names} could not be restored: the composer is at its {limit}-attachment limit.", {
+          names: names.join(", "),
+          limit: PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
+        }),
+      ),
+    }),
+  );
+}
+
 /**
  * Starts every app-lifetime service once, before the first render, and returns the router.
  * They run for the life of the page, so their disposers are dropped here.
@@ -286,6 +304,7 @@ export function startAppServices(): AppRouter {
   startBackgroundThreadAnnouncements(appAtomRegistry, router);
   startThreadVisitedMigration(appAtomRegistry);
   startSshPasswordPromptQueue();
+  startUnrestoredQuestionAttachmentToasts();
 
   startKeybindingsUpdateToasts();
   startSlowRpcRequestToasts();

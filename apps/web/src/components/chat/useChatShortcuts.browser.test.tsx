@@ -1,9 +1,11 @@
 import type { KeybindingCommand, ResolvedKeybindingsConfig } from "@onicode/contracts";
+import { compileResolvedKeybindingRule } from "@onicode/shared/keybindings";
 import { useEffect, useState } from "react";
 import { expect, it } from "vite-plus/test";
 import { userEvent } from "vite-plus/test/browser";
 
 import { surfaceShortcutKey } from "~/lib/surfaceShortcutKey";
+import { registerCommands } from "~/shortcuts/dispatcher";
 import { render } from "../../../test/render";
 import type { ChatComposerHandle } from "./ChatComposer";
 import { useChatShortcuts } from "./useChatShortcuts";
@@ -201,7 +203,7 @@ function ChatWithSideChatPane(props: { ran: string[] }) {
       ctrlShift("x", "thread.stop"),
     ],
     scriptKeybindings: [],
-    getShortcutContext: () => shortcutContext,
+    getShortcutContext: () => ({ ...shortcutContext, composerEmpty: true }),
     threadFindActive: false,
     composerRef: {
       current: {
@@ -221,12 +223,15 @@ function ChatWithSideChatPane(props: { ran: string[] }) {
     fallback: () => undefined,
   });
   return (
-    <div data-side-chat-pane>
-      <div role="region" aria-label="Conversation" tabIndex={0}>
-        A side chat message
+    <>
+      <div data-side-chat-pane>
+        <div role="region" aria-label="Conversation" tabIndex={0}>
+          A side chat message
+        </div>
+        <textarea aria-label="Message Side chat" />
       </div>
-      <textarea aria-label="Message Side chat" />
-    </div>
+      <textarea aria-label="Message main chat" />
+    </>
   );
 }
 
@@ -242,4 +247,28 @@ it("runs right panel commands from inside a side chat pane, but not thread comma
   await userEvent.keyboard("q");
 
   expect(ran).toEqual(["toggle", "close", "toggle"]);
+});
+
+it("lends app commands its context only outside a side chat pane", async () => {
+  const ran: string[] = [];
+  const rule = compileResolvedKeybindingRule({
+    key: "ctrl+alt+n",
+    command: "chat.new",
+    when: "composerEmpty",
+  })!;
+  using _commands = {
+    [Symbol.dispose]: registerCommands(
+      { "chat.new": () => void ran.push("new") },
+      { keybindings: () => [rule] },
+    ),
+  };
+  await using screen = await render(<ChatWithSideChatPane ran={ran} />, options);
+
+  await userEvent.click(screen.getByLabelText("Message Side chat"));
+  await userEvent.keyboard("{Control>}{Alt>}N{/Alt}{/Control}");
+  expect(ran).toEqual([]);
+
+  await userEvent.click(screen.getByLabelText("Message main chat"));
+  await userEvent.keyboard("{Control>}{Alt>}N{/Alt}{/Control}");
+  expect(ran).toEqual(["new"]);
 });

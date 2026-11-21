@@ -366,14 +366,16 @@ it.effect("reports clone progress from git's stderr and keeps its error text on 
   }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
-it.effect("reports a Git LFS download as progress only while its partial files change", () =>
+it.effect("reports a Git LFS download in lfs.storage as progress only while its parts change", () =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const parent = yield* fs.makeTempDirectoryScoped({ prefix: "oni-source-control-clone-lfs-" });
     const destinationPath = path.join(parent, "onicode");
-    const incomplete = path.join(destinationPath, ".git", "lfs", "incomplete");
+    const incomplete = path.join(destinationPath, ".git", "custom-lfs", "incomplete");
     const progress = yield* Queue.unbounded<GitCloneProgressLine>();
+    const storageUnready = yield* Deferred.make<void>();
+    let storageReads = 0;
     const firstDownloading = yield* Deferred.make<void>();
     const firstLanded = yield* Deferred.make<void>();
     const secondDownloading = yield* Deferred.make<void>();
@@ -392,6 +394,13 @@ it.effect("reports a Git LFS download as progress only while its partial files c
           git: {
             execute: (input) =>
               Effect.gen(function* () {
+                if (input.args.includes("lfs.storage")) {
+                  storageReads += 1;
+                  if (storageReads > 1) return { ...processOutput(), stdout: "custom-lfs\n" };
+                  // Clone has not created the git dir yet.
+                  yield* Deferred.succeed(storageUnready, undefined);
+                  return { ...processOutput(), exitCode: ChildProcessSpawner.ExitCode(128) };
+                }
                 yield* (
                   input.progress?.onStderrLine?.("Updating files: 100% (3/3), done.") ?? Effect.void
                 );
@@ -415,12 +424,15 @@ it.effect("reports a Git LFS download as progress only while its partial files c
 
     yield* Deferred.await(firstDownloading);
     yield* TestClock.adjust("2 seconds");
+    yield* Deferred.await(storageUnready);
+    yield* TestClock.adjust("2 seconds");
     assert.deepStrictEqual(yield* Queue.takeN(progress, 2), [
       { stage: "checkout", percent: 100, detail: null },
       {
         stage: "checkout",
         percent: null,
         detail: "Downloading Git LFS objects: 1.5 MiB in progress",
+        lfsDownloadBytes: 1536 * 1024,
       },
     ]);
 
@@ -433,6 +445,7 @@ it.effect("reports a Git LFS download as progress only while its partial files c
         stage: "checkout",
         percent: 50,
         detail: "Downloading Git LFS objects: 0.5 MiB in progress",
+        lfsDownloadBytes: 512 * 1024,
       },
     ]);
 

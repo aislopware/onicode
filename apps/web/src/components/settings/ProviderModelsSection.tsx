@@ -290,21 +290,54 @@ export function ProviderModelsSection({
     onToggleFavorite(slug);
   };
 
-  const groupOf = (model: (typeof displayModels)[number]) =>
+  const groupIn = (hiddenSet: ReadonlySet<string>) => (model: (typeof displayModels)[number]) =>
     favoriteModelSet.has(model.slug)
       ? "favorite"
-      : !model.isCustom && placedHiddenSet.has(model.slug)
+      : !model.isCustom && hiddenSet.has(model.slug)
         ? "hidden"
         : "visible";
+  const groupOf = groupIn(placedHiddenSet);
+  const membershipOf = groupIn(hiddenModelSet);
+  // The nearest row of the same group by current membership, past rows held in another one.
+  const neighbourOf = (index: number, direction: -1 | 1) => {
+    const membership = membershipOf(displayModels[index]!);
+    let next = index + direction;
+    while (
+      next >= 0 &&
+      next < displayModels.length &&
+      membershipOf(displayModels[next]!) !== membership
+    ) {
+      next += direction;
+    }
+    return displayModels[next];
+  };
   const handleMove = (slug: string, direction: -1 | 1) => {
     if (!canWritePreferences) return;
     const index = displayModels.findIndex((model) => model.slug === slug);
-    const nextIndex = index + direction;
-    if (index < 0 || nextIndex < 0 || nextIndex >= displayModels.length) return;
-    if (groupOf(displayModels[index]!) !== groupOf(displayModels[nextIndex]!)) return;
-    const next = displayModels.map((model) => model.slug);
-    [next[index], next[nextIndex]] = [next[nextIndex]!, next[index]!];
-    onModelOrderChange(next);
+    if (index < 0) return;
+    const moved = displayModels[index]!;
+    const neighbour = neighbourOf(index, direction);
+    if (neighbour === undefined) return;
+    // Rows held across a section boundary regroup, or the swap would not show.
+    if (groupOf(moved) !== groupOf(neighbour)) {
+      setHeldPlacements((current) => {
+        const released = new Map(current);
+        released.delete(moved.slug);
+        released.delete(neighbour.slug);
+        return released;
+      });
+    }
+    onModelOrderChange(
+      displayModels.flatMap((model) =>
+        model === moved
+          ? []
+          : model === neighbour
+            ? direction < 0
+              ? [moved.slug, model.slug]
+              : [model.slug, moved.slug]
+            : [model.slug],
+      ),
+    );
   };
 
   const handleToggleEdit = useStableCallback((slug: string) => {
@@ -323,16 +356,14 @@ export function ProviderModelsSection({
   const renderRow = (model: (typeof displayModels)[number]) => {
     const group = groupOf(model);
     const index = displayModels.indexOf(model);
-    const previousModel = displayModels[index - 1];
-    const nextModel = displayModels[index + 1];
     return (
       <ProviderModelRow
         key={`${instanceId}:${model.slug}`}
         model={model}
         isHidden={!model.isCustom && hiddenModelSet.has(model.slug)}
         isFavorite={group === "favorite"}
-        canMoveUp={!isFiltering && previousModel !== undefined && groupOf(previousModel) === group}
-        canMoveDown={!isFiltering && nextModel !== undefined && groupOf(nextModel) === group}
+        canMoveUp={!isFiltering && neighbourOf(index, -1) !== undefined}
+        canMoveDown={!isFiltering && neighbourOf(index, 1) !== undefined}
         isFiltering={isFiltering}
         flagMissingReasoning={flagMissingReasoning}
         canWritePreferences={canWritePreferences}

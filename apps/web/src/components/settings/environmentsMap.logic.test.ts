@@ -71,6 +71,7 @@ const environment = (
   offersLinks: true,
   canWriteAccess: true,
   hasLinkAddress: true,
+  offersLinkThrough: true,
   outgoing:
     typeof links !== "string"
       ? { state: "loaded", links }
@@ -483,6 +484,10 @@ describe("fleetLinkOffer", () => {
       ["an expired link", environment("nucbox", [{ ...full, status: "expired" }])],
       ["a link that does not answer", environment("nucbox", [{ ...full, status: "unreachable" }])],
       ["no access management", environment("nucbox", [full], { canWriteAccess: false })],
+      [
+        "a version that cannot get a code for a link",
+        environment("nucbox", [full], { offersLinkThrough: false }),
+      ],
     ] as const) {
       expect(through([environment("mbp"), nucbox]), why).toMatchObject(["pairing-code", {}]);
     }
@@ -550,11 +555,26 @@ describe("fleetLinkAction", () => {
     const members = ["fs-1", "fs-2", "fs-3", "fs-4", "fs-5", "fs-6"].map(node);
     // A stack of machines known only through links: each needs a code, so no batch can link one.
     expect(fleetLinkAction(graph, stacks, new Set(), node("cups"), stacks[0]!.id)).toEqual({
-      kind: "code-only",
+      kind: "one-by-one",
       sourceId: node("cups"),
       sourceEnvironmentId: id("cups"),
       machineIds: members,
+      needCode: 6,
     });
+    // One that another environment links to at full access gets its code through that one.
+    const through = build([
+      environment("nucbox", [link("fs-1", { access: "full-access" }), link("fs-2")]),
+      environment("cups"),
+    ]);
+    expect(
+      fleetLinkAction(
+        through,
+        fleetStacks(through, new Set()),
+        new Set([node("fs-1"), node("fs-2")]),
+        node("cups"),
+        node("fs-1"),
+      ),
+    ).toMatchObject({ kind: "one-by-one", machineIds: [node("fs-1"), node("fs-2")], needCode: 1 });
     // One such machine alone, ticked and dropped on, is asked for its code like any other.
     expect(
       fleetLinkAction(graph, stacks, new Set([node("fs-1")]), node("cups"), node("fs-1")),

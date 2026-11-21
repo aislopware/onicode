@@ -13,6 +13,7 @@ import {
   displayLimitWindows,
   cursorUsageWindowDetails,
   collectProviderUsageLimits,
+  instanceHubs,
   sameUsageLimitCommandCoverage,
   withUsageLimitsCommands,
   collectLimitAccounts,
@@ -1388,6 +1389,7 @@ describe("/usage-limits", () => {
       kind: "cliproxy" as const,
       label: "Accounts",
       origin: "http://hub:8317",
+      endpoint: "http://hub:8317",
       checkedAt: limits.checkedAt,
       accounts: [
         {
@@ -1561,7 +1563,11 @@ describe("/usage-limits", () => {
       {
         ...sources[0]!,
         accounts: sources[0]!.accounts.map((account) =>
-          account.id === "oss" ? { ...account, models: ["gpt-5.6-sol"] } : account,
+          account.id === "oss"
+            ? { ...account, models: ["gpt-5.6-sol"] }
+            : account.id === "other-provider"
+              ? { ...account, models: ["claude-sonnet-4-6"] }
+              : account,
         ),
       },
     ];
@@ -1590,6 +1596,7 @@ describe("/usage-limits", () => {
       ...routed[0]!,
       id: UsageLimitSourceId.make("other"),
       origin: "http://other:8317",
+      endpoint: "http://other:8317",
       accounts: [
         {
           id: "x",
@@ -1620,6 +1627,95 @@ describe("/usage-limits", () => {
       ),
     ).toBeNull();
     expect(ids(selected, "gpt-5.6-sol")).toEqual(["codex", "codex-personal", "hub:oss"]);
+  });
+
+  it("follows a proxied instance to the hub at its address path, under any loopback name", () => {
+    const team = (
+      name: string,
+      resetCredits?: { availableCount: number; nextCreditId: string },
+    ) => ({
+      ...sources[0]!,
+      id: UsageLimitSourceId.make(name),
+      origin: "http://127.0.0.1:8317",
+      endpoint: `http://127.0.0.1:8317/${name}`,
+      accounts: [
+        {
+          id: `${name}-seat`,
+          driver: selected.driver,
+          usageLimits: resetCredits ? { ...limits, resetCredits } : limits,
+        },
+      ],
+    });
+    const proxy = provider({
+      instanceId: ProviderInstanceId.make("team-a"),
+      auth: {
+        status: "authenticated",
+        endpoint: "http://localhost:8317",
+        endpointUrl: "http://localhost:8317/team-a/v1",
+      },
+    });
+    const report = collectProviderUsageLimits(
+      proxy.instanceId,
+      [proxy],
+      [team("team-a"), team("team-b", { availableCount: 1, nextCreditId: "b-credit" })],
+      now,
+    );
+    expect(report?.accounts.map((account) => account.id)).toEqual(["team-a:team-a-seat"]);
+    expect(report?.accounts.flatMap((account) => account.resetCreditInput ?? [])).toEqual([]);
+  });
+
+  const hubAt = (id: string, path: string | null) => ({
+    id: UsageLimitSourceId.make(id),
+    kind: "cliproxy" as const,
+    label: id,
+    origin: "http://hub:8317",
+    ...(path === null ? {} : { endpoint: `http://hub:8317${path}` }),
+    checkedAt: limits.checkedAt,
+    accounts: [],
+  });
+  it.each([
+    [
+      "a sibling path that shares a prefix",
+      { endpoint: "http://hub:8317", endpointUrl: "http://hub:8317/team-a/v1" },
+      [hubAt("team", "/team"), hubAt("team-a", "/team-a")],
+      ["team-a"],
+    ],
+    [
+      "the deepest hub over the root",
+      { endpoint: "http://hub:8317", endpointUrl: "http://hub:8317/team/v1" },
+      [hubAt("root", ""), hubAt("team", "/team")],
+      ["team"],
+    ],
+    [
+      "the root hub for another path",
+      { endpoint: "http://hub:8317", endpointUrl: "http://hub:8317/v1" },
+      [hubAt("root", ""), hubAt("team", "/team")],
+      ["root"],
+    ],
+    [
+      "a hub from a server that sends only its origin",
+      { endpoint: "http://hub:8317", endpointUrl: "http://hub:8317/v1" },
+      [hubAt("old", null)],
+      ["old"],
+    ],
+    [
+      "every hub at its origin for an instance from a server that sends only its origin",
+      { endpoint: "http://hub:8317" },
+      [hubAt("root", ""), hubAt("team", "/team")],
+      ["root", "team"],
+    ],
+    [
+      "only the loopback address it names",
+      { endpoint: "http://localhost:8317", endpointUrl: "http://localhost:8317/team/v1" },
+      [
+        { ...hubAt("first", "/team"), endpoint: "http://127.0.0.1:8317/team" },
+        { ...hubAt("second", "/team"), endpoint: "http://127.0.0.2:8317/team" },
+      ],
+      ["first"],
+    ],
+  ])("matches an instance to %s", (_name, endpoints, hubs, expected) => {
+    const proxy = provider({ auth: { status: "authenticated", ...endpoints } });
+    expect(instanceHubs(proxy, hubs).map((hub) => hub.id)).toEqual(expected);
   });
 
   it("keeps the freshest usable native duplicate and the freshest native credits in either order", () => {

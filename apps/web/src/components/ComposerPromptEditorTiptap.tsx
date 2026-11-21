@@ -23,11 +23,13 @@ import {
   NodeSelection,
   Plugin,
   PluginKey,
+  type SelectionBookmark,
   TextSelection,
   type Transaction,
 } from "@tiptap/pm/state";
+import type { Step } from "@tiptap/pm/transform";
 import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
-import type { NodeType, ResolvedPos } from "@tiptap/pm/model";
+import type { Node as ProseMirrorNode, NodeType, ResolvedPos } from "@tiptap/pm/model";
 import type {
   AssistantCitation,
   ComposerContextClipboardFragment,
@@ -732,10 +734,32 @@ function isInCodeBlock(view: EditorView): boolean {
 
 const ChipSelectionPluginKey = new PluginKey<DecorationSet>("composer-chip-range-selection");
 
+/** The selection an IME composition replaced, deleted at its start since Chrome would not. */
+interface CompositionReplace {
+  readonly after: ProseMirrorNode;
+  readonly selection: SelectionBookmark;
+  readonly deletion: ReadonlyArray<Step>;
+  readonly restore: ReadonlyArray<Step>;
+}
+
 /** Highlights chips inside a text selection; their node views draw no native highlight. */
-const ComposerChipSelectionExtension = Extension.create({
+const ComposerChipSelectionExtension = Extension.create<
+  Record<string, never>,
+  { replace: CompositionReplace | null }
+>({
   name: "composer-chip-range-selection",
+  addStorage() {
+    return { replace: null };
+  },
+  // Until the composition settles its edits stay out of history, so a cancel keeps redo.
+  dispatchTransaction({ transaction, next }) {
+    if (this.storage.replace !== null && transaction.docChanged) {
+      transaction.setMeta("addToHistory", false);
+    }
+    next(transaction);
+  },
   addProseMirrorPlugins() {
+    const storage = this.storage;
     return [
       new Plugin<DecorationSet>({
         key: ChipSelectionPluginKey,
@@ -749,9 +773,28 @@ const ComposerChipSelectionExtension = Extension.create({
           handleDOMEvents: {
             // Chrome's IME skips deleting a range bounded by a user-select: none chip.
             compositionstart: (view) => {
-              if (ChipSelectionPluginKey.getState(view.state)?.find().length) {
-                view.dispatch(markAsCompositionReplace(view.state.tr.deleteSelection()));
-              }
+              storage.replace = null;
+              if (!ChipSelectionPluginKey.getState(view.state)?.find().length) return false;
+              const { selection } = view.state;
+              const tr = view.state.tr.deleteSelection();
+              storage.replace = {
+                after: tr.doc,
+                selection: selection.getBookmark(),
+                deletion: tr.steps,
+                restore: tr.steps.map((step, index) => step.invert(tr.docs[index]!)).reverse(),
+              };
+              view.dispatch(tr);
+              return false;
+            },
+            compositionend: (view) => {
+              const replace = storage.replace;
+              if (replace === null) return false;
+              // After ProseMirror has read the committed or removed preedit text from the DOM.
+              setTimeout(() => {
+                if (storage.replace !== replace) return;
+                storage.replace = null;
+                if (!view.isDestroyed && !view.composing) settleCompositionReplace(view, replace);
+              });
               return false;
             },
           },
@@ -760,6 +803,39 @@ const ComposerChipSelectionExtension = Extension.create({
     ];
   },
 });
+
+/**
+ * Gives a canceled composition its selection back, and records a committed one as a single undo
+ * step that replaces the selection, as typing over it would.
+ */
+function settleCompositionReplace(view: EditorView, replace: CompositionReplace) {
+  const { doc } = view.state;
+  const start = replace.after.content.findDiffStart(doc.content);
+  const size = doc.content.size - replace.after.content.size;
+  const inserted =
+    start === null || size <= 0 ? null : { at: start, slice: doc.slice(start, start + size) };
+  // Anything but text put where the selection was is not this composition's to settle.
+  if (
+    start !== null &&
+    (inserted === null || !replace.after.replace(inserted.at, inserted.at, inserted.slice).eq(doc))
+  ) {
+    return;
+  }
+  const committedSelection = view.state.selection.getBookmark();
+  const restore = view.state.tr;
+  if (inserted !== null) restore.delete(inserted.at, inserted.at + size);
+  for (const step of replace.restore) restore.step(step);
+  view.dispatch(
+    restore.setSelection(replace.selection.resolve(restore.doc)).setMeta("addToHistory", false),
+  );
+  if (inserted === null) return;
+  const commit = view.state.tr;
+  for (const step of replace.deletion) commit.step(step);
+  commit.replace(inserted.at, inserted.at, inserted.slice);
+  view.dispatch(
+    markAsCompositionReplace(commit.setSelection(committedSelection.resolve(commit.doc))),
+  );
+}
 
 function chipSelectionDecorations({ doc, selection }: EditorState): DecorationSet {
   if (selection.empty) return DecorationSet.empty;
