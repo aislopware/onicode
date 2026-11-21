@@ -5,6 +5,7 @@ import {
   OrchestratorMcpFailure,
   type OrchestrationV2ThreadLaunchWorkspaceStrategy,
   ProjectId,
+  type TaskFolderError,
   type Project as ProjectRecord,
   type ServerProvider,
   ONICODE_PROJECT_FILE_NAME,
@@ -68,9 +69,12 @@ function worktreeCheckHint(
     | ThreadLaunch.ThreadLaunchBaseRefError
     | ThreadLaunch.ThreadLaunchBranchExistsError
     | ThreadLaunch.ThreadLaunchBranchConflictError
-    | ThreadLaunch.ThreadLaunchNotRepositoryError,
+    | ThreadLaunch.ThreadLaunchNotRepositoryError
+    | TaskFolderError,
   strategy: { readonly startFromOrigin?: boolean | undefined },
 ) {
+  if (error._tag === "TaskFolderError")
+    return "Pass `repositories` paths from the project's tracked Git folders.";
   if (error._tag === "ThreadLaunchNotRepositoryError")
     return `Use workspaceStrategy: {type: "root"}, or pass the projectId of a Git repository.`;
   if (error._tag === "ThreadLaunchBranchExistsError")
@@ -536,6 +540,7 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
           // Only updates record model defaults; reject defaults that creation would silently drop.
           if (
             input.scripts !== undefined ||
+            input.trackedFolders !== undefined ||
             input.createWorkspaceRootIfMissing !== undefined ||
             input.defaultModelSelection !== undefined
           )

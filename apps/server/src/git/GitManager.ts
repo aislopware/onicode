@@ -2808,7 +2808,7 @@ export const make = Effect.gen(function* () {
         Effect.map(Option.getOrUndefined),
         Effect.orElseSucceed(() => undefined),
       );
-      const key = createdPullRequestKey({ pr: result }, project);
+      const key = createdPullRequestKey({ pr: result }, project?.repositoryIdentity);
       if (key === null) return false;
       const ref = { projectId: input.projectId, ...key };
       // A created PR is a draft already where the host opened it as one.

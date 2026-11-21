@@ -8,6 +8,7 @@ import type { ProjectScopedServerSettingKey, ServerSettings } from "./settings.t
 export const ONICODE_PROJECT_FILE_NAME = "onicode.json";
 
 const ONICODE_PROJECT_FILE_PATH_MAX_LENGTH = 512;
+const ONICODE_PROJECT_FILE_COMMAND_MAX_LENGTH = 4096;
 const ONICODE_PROJECT_FILE_MAX_SCRIPTS = 50;
 
 // Encoded-side annotations survive into JSON Schema; decoding still trims and rejects empty strings.
@@ -96,6 +97,35 @@ export const OniProjectFile = Schema.Struct({
     WorktreeSubmodules.annotate({
       description:
         'How new worktrees populate git submodules: "recursive" (the default) initializes nested submodules too, "top-level" initializes only those declared by this repository, and "none" leaves every submodule empty for a setup script to handle. A project or environment setting in Onicode overrides this.',
+    }),
+  ),
+  ignoreRepositories: Schema.optionalKey(
+    Schema.Array(Schema.String).annotate({
+      description:
+        "Repositories inside the project folder that Onicode should leave out of the project, as paths relative to it, such as vendor/big. They are then neither reviewed on their own nor given worktrees.",
+    }),
+  ),
+  worktreeLayout: Schema.optionalKey(
+    Schema.Struct({
+      create: trimmedNonEmpty(
+        {
+          description:
+            "Shell command that lays out a thread's folder for a project tracking several repositories, in place of Onicode's own worktrees and links. It runs in the project folder with ONICODE_WORKTREE_ROOT (the folder to fill), ONICODE_WORKTREE_PROJECT_PATH (where the project folder goes inside it), ONICODE_WORKTREE_BRANCH, ONICODE_WORKTREE_BASE, ONICODE_WORKTREE_REPOSITORIES (the chosen repositories, one path per line) and ONICODE_PROJECT_ROOT set. Each of the project's repositories it checks out at the same relative place is adopted as the thread's checkout of it, and must be a git worktree of that repository on ONICODE_WORKTREE_BRANCH. It runs again when the folder goes missing, so it must cope with the branch already existing. It has ten minutes.",
+        },
+        ONICODE_PROJECT_FILE_COMMAND_MAX_LENGTH,
+      ),
+      remove: Schema.optionalKey(
+        trimmedNonEmpty(
+          {
+            description:
+              "Shell command that takes the thread's folder down again, with the same variables. It can run on a folder that is partly gone, and should delete what create generated. Onicode removes the checkouts it leaves behind.",
+          },
+          ONICODE_PROJECT_FILE_COMMAND_MAX_LENGTH,
+        ),
+      ),
+    }).annotate({
+      description:
+        "Lets the project create and remove a worktree thread's folder itself, for layouts with shared build output or workspace metadata.",
     }),
   ),
   worktreeSparsePatternsPath: Schema.optionalKey(

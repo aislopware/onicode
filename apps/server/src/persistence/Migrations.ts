@@ -116,6 +116,8 @@ import Migration0105 from "./Migrations/105_TurnStartReadIndexes.ts";
 import Migration0106 from "./Migrations/106_DelegatedTaskReadIndexes.ts";
 import Migration0107 from "./Migrations/107_ThreadItemCounts.ts";
 import Migration0108 from "./Migrations/108_IssueTrackerAdditionalScopes.ts";
+import Migration0109 from "./Migrations/109_ProjectionProjectsTrackedFolders.ts";
+import Migration0110 from "./Migrations/110_TaskFolders.ts";
 
 const migrationEntries = [
   [1, "OrchestrationEvents", Migration0001],
@@ -227,6 +229,8 @@ const migrationEntries = [
   [106, "DelegatedTaskReadIndexes", Migration0106],
   [107, "ThreadItemCounts", Migration0107],
   [108, "IssueTrackerAdditionalScopes", Migration0108],
+  [109, "ProjectionProjectsTrackedFolders", Migration0109],
+  [110, "TaskFolders", Migration0110],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);
