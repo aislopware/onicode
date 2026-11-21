@@ -29,6 +29,8 @@ test(
       await dialog.getByPlaceholder("backend.example.com").fill(second.host);
       await dialog.getByPlaceholder("PAIRCODE").fill(credential);
       await dialog.getByRole("button", "Add environment").tap();
+      // The map is the default view; its rows carry no actions menu.
+      await screen.getByRole("button", "List", { exact: true }).tap();
 
       const notice = screen.getByText(`Permissions have changed for ${ENVIRONMENT_LABEL}`, {
         exact: true,

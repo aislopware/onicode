@@ -144,6 +144,8 @@ test(
       await dialog.getByRole("textbox", "Host").fill(remote.host);
       await dialog.getByRole("textbox", "Pairing code").fill(remote.token);
       await dialog.getByRole("button", "Add environment").tap();
+      // The map is the default view; its rows carry no actions menu.
+      await screen.getByRole("button", "List", { exact: true }).tap();
       await moreActions.waitFor({ timeout: 60_000 });
       paired = true;
       await app.open(`/issues?${link}`);
@@ -168,6 +170,7 @@ test(
       try {
         if (paired) {
           await app.open("/settings/connections");
+          await screen.getByRole("button", "List", { exact: true }).tap();
           await moreActions.tap();
           await screen.getByRole("menuitem", "Remove from this device…").tap();
           await screen.getByRole("button", "Confirm").tap();
