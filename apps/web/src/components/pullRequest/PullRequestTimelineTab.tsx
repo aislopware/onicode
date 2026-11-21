@@ -989,7 +989,12 @@ export function PullRequestTimelineTab({
 
   if (events.length === 0) {
     return (
-      <div ref={scrollerRef} className="scrollbar-gutter-both h-full overflow-y-auto px-4 py-5">
+      <div
+        ref={scrollerRef}
+        tabIndex={-1}
+        data-workspace-focus-default
+        className="scrollbar-gutter-both h-full overflow-y-auto px-4 py-5 outline-none"
+      >
         <div className="flex flex-col items-center justify-center py-16 text-center text-muted-foreground">
           <PullRequestGlyph.pullRequest className="mb-2 size-5" />
           <p className="text-xs">
@@ -1013,7 +1018,9 @@ export function PullRequestTimelineTab({
       keyExtractor={rowKey}
       renderItem={renderRow}
       estimatedItemSize={140}
-      className="scrollbar-gutter-both h-full px-4"
+      tabIndex={-1}
+      data-workspace-focus-default
+      className="scrollbar-gutter-both h-full px-4 outline-none"
       contentContainerClassName="relative mx-auto w-full max-w-3xl before:absolute before:bottom-10 before:left-[15px] before:top-6 before:w-px before:bg-border"
       ListHeaderComponent={
         anchor !== null && targetIndex < 0 && revealUrl === undefined ? (
