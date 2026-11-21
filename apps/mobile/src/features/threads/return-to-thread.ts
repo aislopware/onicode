@@ -10,10 +10,18 @@ export function returnToThreadAction(
   routes: ReadonlyArray<{ readonly name: string; readonly params?: object }> | undefined,
   thread: ThreadRef,
 ) {
+  return isNearestThreadRoute(routes, thread)
+    ? StackActions.popTo("Thread", thread, { merge: true })
+    : StackActions.replace("Thread", thread);
+}
+
+// `Thread` has no `getId`, so `popTo("Thread")` lands on the nearest one whatever thread it shows.
+export function isNearestThreadRoute(
+  routes: ReadonlyArray<{ readonly name: string; readonly params?: object }> | undefined,
+  thread: ThreadRef,
+) {
   const below = routes?.findLast((route) => route.name === "Thread")?.params as
     | Partial<ThreadRef>
     | undefined;
-  return below?.environmentId === thread.environmentId && below.threadId === thread.threadId
-    ? StackActions.popTo("Thread", thread, { merge: true })
-    : StackActions.replace("Thread", thread);
+  return below?.environmentId === thread.environmentId && below.threadId === thread.threadId;
 }
