@@ -50,10 +50,14 @@ const REAL_PROVIDERS = [
  */
 export const ENVIRONMENT_LABEL = "Scenario";
 
+/** Where a scenario serves a fake Linear API; nothing listens there unless one does. */
+export const SCENARIO_LINEAR_PORT = 13_997;
+
 /** Captures must not depend on, or show, the machine that made them. */
 export const SCENARIO_MACHINE_ENV = {
   ONICODE_ENVIRONMENT_LABEL: ENVIRONMENT_LABEL,
   ONICODE_ENVIRONMENT_MACHINE_KIND: "laptop",
+  ONICODE_LINEAR_API_URL: `http://127.0.0.1:${SCENARIO_LINEAR_PORT}/graphql`,
 };
 
 const encodeSettings = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
