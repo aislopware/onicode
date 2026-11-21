@@ -7304,8 +7304,13 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       steerReply: "streamed, then a second one result-only",
       replies: ["Built.", "Done.", "Checked."],
     },
+    // A result-only steer reply held for a second steer must not republish the streamed build answer.
+    {
+      steerReply: "result-only after a streamed answer, then a second one result-only",
+      replies: ["Built.", "Done.\n\nChecked."],
+    },
   ] as const)(
-    "keeps a steered turn's result-only first reply when the steer's reply is $steerReply",
+    "keeps a steered turn's replies in order when the steer's reply is $steerReply",
     ({ steerReply, replies }) =>
       Effect.gen(function* () {
         const harness = yield* makeWakeHarness;
@@ -7319,7 +7324,8 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           text: "Run the build.",
           attachments: [],
         });
-        const second = steerReply === "streamed, then a second one result-only";
+        const buildStreamed = steerReply.includes("after a streamed answer");
+        const second = steerReply.endsWith("then a second one result-only");
         yield* harness.runtime.startTurn(input);
         for (const messageId of second ? ["first", "second"] : ["first"]) {
           yield* harness.runtime.steerTurn({
@@ -7349,6 +7355,14 @@ describe("ClaudeAdapterV2 background wake turns", () => {
               session_id: WAKE_NATIVE_SESSION,
             }),
           );
+        if (buildStreamed) {
+          yield* harness.offerAndWait(
+            makeAssistantTextFrame({
+              uuid: "00000000-0000-4000-8000-000000002516",
+              text: "Built.",
+            }),
+          );
+        }
         yield* harness.offerAndWait(
           claudeSdkFrame({
             ...makeResultFrame({ uuid: "00000000-0000-4000-8000-000000002510", result: "Built." }),
@@ -7358,7 +7372,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         if (steerReply !== "streamed unacknowledged") {
           yield* started(1, "00000000-0000-4000-8000-000000002511");
         }
-        if (steerReply !== "result-only") {
+        if (steerReply.startsWith("streamed")) {
           yield* harness.offerAndWait(
             makeAssistantTextFrame({ uuid: "00000000-0000-4000-8000-000000002513", text: "Done." }),
           );
@@ -7383,13 +7397,29 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         }
         yield* harness.awaitTerminal(1);
         // The event sink places each item where it first appears, whatever its ordinal says.
-        const shown = new Map<string, string>();
+        const shown = new Map<string, { text: string; phase: string | undefined }>();
         for (const event of harness.events) {
           if (event.type === "turn_item.updated" && event.turnItem.type === "assistant_message") {
-            shown.set(event.turnItem.id, event.turnItem.text);
+            // An earlier reply is never touched again once a later one shows.
+            assert.equal(
+              shown.has(event.turnItem.id) ? [...shown.keys()].at(-1) : event.turnItem.id,
+              event.turnItem.id,
+            );
+            shown.set(event.turnItem.id, {
+              text: event.turnItem.text,
+              phase: event.turnItem.phase,
+            });
           }
         }
-        assert.deepEqual([...shown.values()], [...replies]);
+        assert.deepEqual(
+          [...shown.values()].map((reply) => reply.text),
+          [...replies],
+        );
+        // Each reply Claude ended a native turn on stays a final answer, not a progress note.
+        assert.deepEqual(
+          [...shown.values()].slice(0, -1).map((reply) => reply.phase),
+          replies.slice(0, -1).map(() => "final_answer"),
+        );
       }).pipe(
         Effect.scoped,
         Effect.provide(
