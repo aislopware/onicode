@@ -23,7 +23,11 @@ type ClaudeSkillRoot = {
   readonly scope: ClaudeSkillScope;
   readonly prefix?: string;
   /** For a plugin zip: SKILL.md contents by path in the plugin, and this root's folder there. */
-  readonly archive?: { readonly skillFiles: ReadonlyMap<string, string>; readonly folder: string };
+  readonly archive?: {
+    readonly path: string;
+    readonly skillFiles: ReadonlyMap<string, string>;
+    readonly folder: string;
+  };
 };
 
 type SkillFrontmatter =
@@ -561,7 +565,7 @@ function archivePluginSkillRoots(
     directory: path.join(archivePath, archive.root, ...folder.split("/")),
     scope: "user",
     prefix,
-    archive: { skillFiles: archive.skillFiles, folder },
+    archive: { path: archivePath, skillFiles: archive.skillFiles, folder },
   });
   const roots: Array<ClaudeSkillRoot> = [];
   const hasDefaultDirectory = archive.entries.some((name) => name.startsWith("skills/"));
@@ -868,7 +872,10 @@ export function claudeLaunchArgPluginDirectories(launchArgs?: string): ReadonlyA
 }
 
 /** A skill from a plugin zip also carries its SKILL.md, which Claude's Read tool cannot open. */
-export type ClaudeDiscoveredSkill = ServerProviderSkill & { readonly instructions?: string };
+export type ClaudeDiscoveredSkill = ServerProviderSkill & {
+  readonly instructions?: string;
+  readonly archive?: string;
+};
 
 /** First name wins: managed skills, then user skills, then project skills. */
 export const discoverClaudeSkillTargets = Effect.fn("discoverClaudeSkillTargets")(function* (
@@ -994,7 +1001,7 @@ export const discoverClaudeSkillTargets = Effect.fn("discoverClaudeSkillTargets"
         ...(frontmatter.kind === "parsed" && frontmatter.userInvocable === false
           ? { userInvocable: false }
           : {}),
-        ...(archive ? { instructions: contents } : {}),
+        ...(archive ? { instructions: contents, archive: archive.path } : {}),
       });
     }
   }
@@ -1006,5 +1013,7 @@ export const discoverClaudeSkills = Effect.fn("discoverClaudeSkills")(function* 
   ...args: Parameters<typeof discoverClaudeSkillTargets>
 ) {
   const skills = yield* discoverClaudeSkillTargets(...args);
-  return skills.map(({ instructions: _instructions, ...skill }): ServerProviderSkill => skill);
+  return skills.map(
+    ({ instructions: _instructions, archive: _archive, ...skill }): ServerProviderSkill => skill,
+  );
 });

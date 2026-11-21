@@ -28,7 +28,8 @@ send shortcut. Click the send button to use the configured follow-up behavior.
 
 When a thread has queued messages, `mod+Shift+Enter` sends the first one as a steer
 while a turn is running, or as a new turn when the thread is stopped. It passes over a
-message that already waits for compaction, and leaves one you are editing alone. With
+message that already waits for compaction and, unless a `/compact` sent on its own is
+running, a slash command, which never joins the turn. It leaves one you are editing alone. With
 no queued message to send, it sends the oldest steer Claude has not read yet at once.
 Change it under **Queue: Send First Queued Message** in Keybindings.
 

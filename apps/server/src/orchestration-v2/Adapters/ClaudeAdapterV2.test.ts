@@ -6577,7 +6577,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         });
         yield* harness.runtime.startTurn(input);
 
-        const leadingText = `Ultrathink:\n/interrogate [The user invoked this skill. Follow the instructions at: ${path.join(homePath, "skills", "interrogate", "SKILL.md")}] then /zipped:plan [The user invoked this skill. Follow its instructions:\n<skill name="zipped:plan">\nWrite the plan.\n</skill>] then /review then /implement the fixes`;
+        const leadingText = `Ultrathink:\n/interrogate [The user invoked this skill. Follow the instructions at: ${path.join(homePath, "skills", "interrogate", "SKILL.md")}] then /zipped:plan [The user invoked this skill. Follow its instructions:\n<skill name="zipped:plan">\nWrite the plan.\n</skill>\nIts other files are in skills/plan/ inside the archive ${plugin}.] then /review then /implement the fixes`;
         assert.deepEqual(harness.offeredMessages[0]?.message.content, [
           { type: "text", text: leadingText },
           { type: "text", text: "/implement the fixes" },

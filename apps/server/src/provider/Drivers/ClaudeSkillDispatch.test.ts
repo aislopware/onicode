@@ -35,6 +35,21 @@ describe("planClaudeSkillDispatch", () => {
       leadingText: "/review the diff, then /implement the fixes",
       commandText: "/implement the fixes",
     });
+    const windows = new Map<string, ClaudeSkillTarget>([
+      [
+        "zipped:plan",
+        {
+          path: "C:\\cache.zip\\plugin.zip\\skills\\plan\\SKILL.md",
+          archive: "C:\\cache.zip\\plugin.zip",
+          userInvocationOnly: true,
+          instructions: "Write the plan.",
+        },
+      ],
+      ["implement", { path: skillPath("implement") }],
+    ]);
+    expect(planClaudeSkillDispatch("$zipped:plan then $implement", windows)?.leadingText).toContain(
+      "Its other files are in skills/plan/ inside the archive C:\\cache.zip\\plugin.zip.]",
+    );
   });
 
   it("dispatches currency-prefixed mentions and preserves their source boundaries", () => {
@@ -71,6 +86,7 @@ describe("planClaudeSkillDispatch", () => {
   it("caps inlined skill instructions and adds no note for an empty one", () => {
     const inline = (instructions: string) => ({
       path: "/plugins/skills.zip/SKILL.md",
+      archive: "/plugins/skills.zip",
       userInvocationOnly: true,
       instructions,
     });
@@ -87,7 +103,7 @@ describe("planClaudeSkillDispatch", () => {
     );
     expect(plan?.leadingText).toBe(
       [
-        `/zipped:big [The user invoked this skill. Follow its instructions:\n<skill name="zipped:big">\n${"x".repeat(64 * 1024 - 1)}\n[Truncated]\n</skill>]`,
+        `/zipped:big [The user invoked this skill. Follow its instructions:\n<skill name="zipped:big">\n${"x".repeat(64 * 1024 - 1)}\n[Truncated]\n</skill>\nIts other files are inside the archive /plugins/skills.zip.]`,
         "/zipped:more [The user invoked this skill; its instructions did not fit.]",
         "/zipped:empty",
         "/implement",
@@ -102,6 +118,7 @@ describe("planClaudeSkillDispatch", () => {
         "zipped:plan",
         {
           path: "/home/me/plugin.zip/skills/plan/SKILL.md",
+          archive: "/home/me/plugin.zip",
           userInvocationOnly: true,
           instructions: "---\nuser-invocable-only: true\n---\n# Plan\nWrite the plan.\n",
         },
@@ -114,7 +131,7 @@ describe("planClaudeSkillDispatch", () => {
         skills,
       ),
     ).toEqual({
-      leadingText: `/interrogate [The user invoked this skill. Follow the instructions at: ${skillPath("interrogate")}] then /interrogate then /zipped:plan [The user invoked this skill. Follow its instructions:\n<skill name="zipped:plan">\n# Plan\nWrite the plan.\n</skill>] then /implement and /implement the fixes`,
+      leadingText: `/interrogate [The user invoked this skill. Follow the instructions at: ${skillPath("interrogate")}] then /interrogate then /zipped:plan [The user invoked this skill. Follow its instructions:\n<skill name="zipped:plan">\n# Plan\nWrite the plan.\n</skill>\nIts other files are in skills/plan/ inside the archive /home/me/plugin.zip.] then /implement and /implement the fixes`,
       commandText: "/implement the fixes",
     });
   });

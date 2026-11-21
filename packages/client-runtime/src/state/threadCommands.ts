@@ -34,6 +34,7 @@ import {
   markThreadUnread,
   mergeThreadBack,
   promoteQueuedRun,
+  moveQueuedRunFirst,
   sendSteerNow,
   resumeThreadQueue,
   retryWorkspacePreparation,
@@ -426,6 +427,12 @@ export function createThreadEnvironmentAtoms<R, E>(
     promoteQueuedRun: createEnvironmentCommand(runtime, {
       label: "environment-data:commands:thread:promote-queued-run",
       execute: promoteQueuedRun,
+      scheduler,
+      concurrency,
+    }),
+    moveQueuedRunFirst: createEnvironmentCommand(runtime, {
+      label: "environment-data:commands:thread:move-queued-run-first",
+      execute: moveQueuedRunFirst,
       scheduler,
       concurrency,
     }),

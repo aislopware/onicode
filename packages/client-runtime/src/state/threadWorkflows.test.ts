@@ -7,6 +7,7 @@ import {
   deriveThreadQueueWorkflowState,
   getUserQueuedThreadRuns,
   resolveLatestMergeBackRun,
+  resolveQueuedRunSendNow,
   threadSupportsProviderHandoff,
 } from "./threadWorkflows.ts";
 
@@ -201,10 +202,12 @@ describe("thread workflows", () => {
       runs: [
         { id: "compact", status: "running", userMessageId: "message-compact", ordinal: 1 },
         { id: "queued", status: "queued", userMessageId: "message-queued", ordinal: 2 },
+        { id: "command", status: "queued", userMessageId: "message-command", ordinal: 3 },
       ],
       messages: [
         { id: "message-compact", role: "user", text: "/compact", attachments: [] },
         { id: "message-queued", role: "user", text: "Next", attachments: [] },
+        { id: "message-command", role: "user", text: "/review", attachments: [] },
       ],
       providerThreads: [],
       providerTurns: [],
@@ -213,6 +216,11 @@ describe("thread workflows", () => {
 
     expect(state.canPromoteToSteer).toBe(true);
     expect(state.promoteSkipsCompaction).toBe(true);
+    // Skipping compaction starts a command as its own turn, so it is not just moved first.
+    expect(resolveQueuedRunSendNow(state, "command" as never)).toEqual({
+      type: "steer",
+      targetRunId: "compact",
+    });
   });
 
   it.each([
@@ -228,6 +236,78 @@ describe("thread workflows", () => {
       expect(canPromoteQueuedRun(workflow, run)).toBe(expected);
     },
   );
+
+  it.each([
+    { steer: false, plain: null, review: { type: "move-first", beforeRunId: "plain" }, goal: null },
+    {
+      steer: true,
+      plain: { type: "steer", targetRunId: "active" },
+      review: { type: "move-first", beforeRunId: "plain" },
+      goal: { type: "steer", targetRunId: "active" },
+    },
+  ])("moves a queued command first instead of steering it, steer=$steer", (row) => {
+    const queued = ["plain", "review", "goal"];
+    const text = { plain: "Next", review: "/review", goal: "/goal pause" } as const;
+    const projection = (activeStatus: string) =>
+      ({
+        thread: { id: "thread", activeProviderThreadId: "provider-thread" },
+        runs: [
+          {
+            id: "active",
+            status: activeStatus,
+            providerThreadId: "provider-thread",
+            activeAttemptId: "attempt-active",
+            ordinal: 1,
+          },
+          ...queued.map((id, index) => ({
+            id,
+            status: "queued",
+            userMessageId: `message-${id}`,
+            ordinal: index + 2,
+          })),
+        ],
+        messages: queued.map((id) => ({
+          id: `message-${id}`,
+          text: text[id as keyof typeof text],
+          attachments: [],
+        })),
+        providerTurns: [{ id: "turn", runAttemptId: "attempt-active", status: "running" }],
+        providerThreads: [
+          { id: "provider-thread", appThreadId: "thread", providerSessionId: "session" },
+        ],
+        providerSessions: [
+          {
+            id: "session",
+            status: "running",
+            capabilities: capabilities({ queued: true, steer: row.steer }),
+          },
+        ],
+      }) as never;
+    const running = deriveThreadQueueWorkflowState(projection("running"));
+    expect(queued.map((id) => resolveQueuedRunSendNow(running, id as never))).toEqual([
+      row.plain,
+      row.review,
+      row.goal,
+    ]);
+    // Moving first needs no turn of its own, so a fresh-session command still moves.
+    const fresh = deriveThreadQueueWorkflowState({
+      ...(projection("running") as object),
+      runs: (projection("running") as { runs: ReadonlyArray<object> }).runs.map((run) =>
+        (run as { id: string }).id === "review" ? { ...run, freshContext: true } : run,
+      ),
+    } as never);
+    expect(resolveQueuedRunSendNow(fresh, "review" as never)).toEqual(row.review);
+    // A command already at the front has nowhere to move.
+    const reviewFirst = deriveThreadQueueWorkflowState({
+      ...(projection("running") as object),
+      runs: (projection("running") as { runs: ReadonlyArray<object> }).runs.map((run) =>
+        (run as { id: string }).id === "review" ? { ...run, queuePosition: 1 } : run,
+      ),
+    } as never);
+    expect(resolveQueuedRunSendNow(reviewFirst, "review" as never)).toBeNull();
+    const idle = deriveThreadQueueWorkflowState(projection("completed"));
+    expect(resolveQueuedRunSendNow(idle, "review" as never)).toEqual({ type: "start" });
+  });
 
   it("marks a held steer as waiting only while its turn is compacting", () => {
     const waiting = (

@@ -104,6 +104,7 @@ import { isClearComposerCommand, parseSideChatCommand } from "@onicode/shared/co
 import { orchestrationV2WorktreePending } from "@onicode/shared/orchestrationV2ThreadError";
 import {
   compactionBlocksSteering,
+  commandNeverSteers,
   resolveComposerDispatchMode,
   type ActiveTurnComposerAction,
 } from "@onicode/client-runtime/state/composer-dispatch";
@@ -890,13 +891,14 @@ export function useThreadComposerState(input: {
     const setupRunning = [selectedThreadActivityRun?.status, selectedThreadRuntime?.status].some(
       (status) => status === "preparing" || status === "starting",
     );
-    const followUpDispatchMode = setupRunning
-      ? "queue"
-      : followUpAction === "auto"
-        ? null
-        : followUpAction === "queue"
-          ? "queue"
-          : "auto";
+    const followUpDispatchMode =
+      setupRunning || (followUpAction === "steer" && commandNeverSteers({ text, attachments }))
+        ? "queue"
+        : followUpAction === "auto"
+          ? null
+          : followUpAction === "queue"
+            ? "queue"
+            : "auto";
 
     // A redirect belongs to the approval it answers; the armed session waits for the next message.
     const freshContext = beforeDispatch === undefined && isFreshSessionPending(threadKey);

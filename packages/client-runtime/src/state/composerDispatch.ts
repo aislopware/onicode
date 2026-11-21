@@ -1,4 +1,9 @@
-import { isClearComposerCommand, parseSideChatCommand } from "@onicode/shared/composerTrigger";
+import { parseGoalCommand } from "@onicode/contracts";
+import {
+  isClearComposerCommand,
+  isSlashCommand,
+  parseSideChatCommand,
+} from "@onicode/shared/composerTrigger";
 import { isUsageLimitsCommand } from "@onicode/shared/usageLimits";
 
 import { providerSessionViewForPrompt, type ProviderSessionView } from "../providerSessionViews.ts";
@@ -6,6 +11,18 @@ import { parseCodexFeedbackCommand } from "./threadFeedback.ts";
 
 export type ComposerDispatchMode = "auto" | "queue" | "steer" | "restart";
 export type ActiveTurnComposerAction = Exclude<ComposerDispatchMode, "auto">;
+
+/**
+ * A command waits for the turn instead of joining it. Current servers queue one sent as a steer
+ * and older ones steer it, so clients send it as a queue; only /goal needs the steer, to stop the
+ * turn first.
+ */
+export function commandNeverSteers(message: {
+  readonly text: string;
+  readonly attachments: ReadonlyArray<unknown>;
+}): boolean {
+  return isSlashCommand(message) && parseGoalCommand(message) === null;
+}
 
 export function resolveComposerDispatchMode(input: {
   readonly running: boolean;

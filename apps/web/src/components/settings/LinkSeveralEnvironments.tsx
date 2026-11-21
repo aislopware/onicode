@@ -121,6 +121,32 @@ export function LinkSeveralEnvironmentsDialog({
   const backFailed = [...outcomes.values()].filter(
     (outcome) => outcome.kind === "linked" && outcome.back?.kind === "failed",
   ).length;
+  const outcomeText =
+    outcomes.size === 0 || busy
+      ? undefined
+      : `${
+          summary.failed.length === 0
+            ? gt("{linked, plural, one {Linked # machine.} other {Linked # machines.}}", {
+                linked: summary.linked,
+              })
+            : gt(
+                "Linked {linked} of {total}. The ones that failed stay selected, so you can try them again.",
+                { linked: summary.linked, total: outcomes.size },
+              )
+        }${
+          backFailed > 0
+            ? ` ${gt(
+                "{count, plural, one {# machine could not link back.} other {# machines could not link back.}}",
+                { count: backFailed },
+              )}`
+            : ""
+        }`;
+  const disconnectedText =
+    sourceConnected || busy
+      ? undefined
+      : sourceLabel === undefined
+        ? gt("The environment is not connected.")
+        : gt("{environment} is not connected.", { environment: sourceLabel });
   // Picked on the map, but only another machine's link names them: this app has no session there.
   const unlisted = (preset ?? []).filter(
     (id) => !candidates.some(({ machine }) => machine.environmentId === id),
@@ -359,31 +385,18 @@ export function LinkSeveralEnvironmentsDialog({
                 )}
               </p>
             ) : null}
-            {outcomes.size > 0 && !busy ? (
-              <p role="status" className="text-xs text-muted-foreground">
-                {summary.failed.length === 0
-                  ? gt("{linked, plural, one {Linked # machine.} other {Linked # machines.}}", {
-                      linked: summary.linked,
-                    })
-                  : gt(
-                      "Linked {linked} of {total}. The ones that failed stay selected, so you can try them again.",
-                      { linked: summary.linked, total: outcomes.size },
-                    )}
-                {backFailed > 0
-                  ? ` ${gt(
-                      "{count, plural, one {# machine could not link back.} other {# machines could not link back.}}",
-                      { count: backFailed },
-                    )}`
-                  : null}
-              </p>
+            {outcomeText ? <p className="text-xs text-muted-foreground">{outcomeText}</p> : null}
+            {disconnectedText ? (
+              <p className="text-xs text-muted-foreground">{disconnectedText}</p>
             ) : null}
-            {sourceConnected || busy ? null : (
-              <p role="status" className="text-xs text-muted-foreground">
-                {sourceLabel === undefined
-                  ? gt("The environment is not connected.")
-                  : gt("{environment} is not connected.", { environment: sourceLabel })}
-              </p>
-            )}
+            {/* Mounted throughout: a live region that mounts with its text may not be announced.
+                Two, so a reconnect does not read the earlier result out again. */}
+            <p role="status" className="sr-only">
+              {outcomeText}
+            </p>
+            <p role="status" className="sr-only">
+              {disconnectedText}
+            </p>
             <LinkAccessPicker value={access} onChange={setAccess} disabled={busy} />
             {backOffered && sourceLabel !== undefined ? (
               <label className="flex cursor-pointer items-start gap-2.5 text-sm has-data-disabled:cursor-default">

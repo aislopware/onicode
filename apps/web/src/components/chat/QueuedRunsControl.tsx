@@ -6,6 +6,7 @@ import {
 import {
   canPromoteQueuedRun,
   deriveThreadQueueWorkflowState,
+  resolveQueuedRunSendNow,
 } from "@onicode/client-runtime/state/thread-workflows";
 import { assistantCitationsToPlainText } from "@onicode/shared/assistantCitations";
 import { isSlashCommand } from "@onicode/shared/composerTrigger";
@@ -14,11 +15,9 @@ import {
   replaceComposerContextReferences,
 } from "@onicode/shared/composerContextReferences";
 import {
-  parseGoalCommand,
   type ChatAttachment as ContractChatAttachment,
   type EnvironmentId,
   type MessageId,
-  type OrchestrationV2Run,
   type RunId,
   type ThreadId,
 } from "@onicode/contracts";
@@ -83,14 +82,6 @@ function queuedImageResources(projection: ThreadQueueProjection | undefined) {
   );
 }
 
-// The server decides on the agent's text, and a goal command can stop the turn.
-function movesCommandFirst(message: {
-  readonly text: string;
-  readonly attachments: ReadonlyArray<unknown>;
-}): boolean {
-  return isSlashCommand(message) && parseGoalCommand(message) === null;
-}
-
 export function QueuedRunsControl({
   ref,
   ...props
@@ -118,6 +109,7 @@ export function QueuedRunsControl({
     scopeThreadRef(props.environmentId, props.threadId),
   )?.projection;
   const promote = useAtomCommand(threadEnvironment.promoteQueuedRun);
+  const moveFirst = useAtomCommand(threadEnvironment.moveQueuedRunFirst);
   const resume = useAtomCommand(threadEnvironment.resumeThreadQueue);
   const cancel = useAtomCommand(threadEnvironment.cancelQueuedRun);
   const [showAll, setShowAll] = useState(false);
@@ -133,24 +125,23 @@ export function QueuedRunsControl({
   );
   const workflow = projection ? deriveThreadQueueWorkflowState(projection, messages) : null;
   const queued = workflow?.queuedRuns ?? [];
-  const activeRun = workflow?.activeRun ?? null;
   const steersIntoTurn =
     workflow !== null && !workflow.canSendNow && !workflow.promoteSkipsCompaction;
-  // A row waiting on compaction is already headed into the turn, and a command only moves first
-  // instead of steering, so the steer key takes the next row or the waiting steer.
+  // A row waiting on compaction is already headed into the turn, and Send now never steers a
+  // command, /goal included, so the steer key takes the next row or the waiting steer.
   const steerTarget = queued.find(
     (queuedRun) =>
       !queuedRun.awaitsCompaction &&
       !(
         steersIntoTurn &&
-        movesCommandFirst({
+        isSlashCommand({
           text: queuedRun.message?.text ?? queuedRun.text,
           attachments: queuedRun.attachments,
         })
       ),
   );
-  const canSendRun = (run: Pick<OrchestrationV2Run, "freshContext" | "outputSchema">) =>
-    workflow !== null && (workflow.canSendNow || canPromoteQueuedRun(workflow, run));
+  const sendNowFor = (runId: RunId) =>
+    workflow === null ? null : resolveQueuedRunSendNow(workflow, runId);
   const queuedImageUrlById = new Map(
     queuedImageAttachmentUrls.flatMap((url, index) => {
       const resource = queuedImageAttachmentResources[index];
@@ -167,7 +158,7 @@ export function QueuedRunsControl({
       message,
       runId: run.id,
       messageId: run.userMessageId,
-      canSend: canSendRun(run),
+      canSend: sendNowFor(run.id) !== null,
       serverIndex,
       text,
       attachments,
@@ -187,7 +178,7 @@ export function QueuedRunsControl({
       message: undefined,
       runId: null,
       messageId: null,
-      canSend: canSendRun({}),
+      canSend: workflow !== null && (workflow.canSendNow || canPromoteQueuedRun(workflow, {})),
       serverIndex: null,
       text: message.text,
       attachments: [] as ReadonlyArray<ContractChatAttachment>,
@@ -197,21 +188,23 @@ export function QueuedRunsControl({
   ];
 
   const sendQueuedMessage = async (queuedRunId: RunId) => {
-    const queuedRun = queued.find(({ run }) => run.id === queuedRunId)?.run;
-    if (!canSendRun(queuedRun ?? {}) || steerInFlightRef.current) return;
+    const sendNow = sendNowFor(queuedRunId);
+    if (sendNow === null || steerInFlightRef.current) return;
     steerInFlightRef.current = true;
     setBusyRunId(queuedRunId);
-    const result = workflow?.canSendNow
-      ? await resume({
-          environmentId: props.environmentId,
-          input: { threadId: props.threadId, runId: queuedRunId },
-        })
-      : activeRun !== null
-        ? await promote({
-            environmentId: props.environmentId,
-            input: { threadId: props.threadId, queuedRunId, targetRunId: activeRun.id },
-          })
-        : null;
+    const { environmentId, threadId } = props;
+    const result =
+      sendNow.type === "start"
+        ? await resume({ environmentId, input: { threadId, runId: queuedRunId } })
+        : sendNow.type === "move-first"
+          ? await moveFirst({
+              environmentId,
+              input: { threadId, runId: queuedRunId, beforeRunId: sendNow.beforeRunId },
+            })
+          : await promote({
+              environmentId,
+              input: { threadId, queuedRunId, targetRunId: sendNow.targetRunId },
+            });
     steerInFlightRef.current = false;
     setBusyRunId(null);
     if (result?._tag === "Failure" && !isAtomCommandInterrupted(result)) {
@@ -232,7 +225,7 @@ export function QueuedRunsControl({
       const next = steerTarget;
       // A row being edited has no Send now either: its saved text is about to change.
       if (!next || next.run.id === props.editingRunId) return false;
-      if (!canSendRun(next.run)) return false;
+      if (sendNowFor(next.run.id) === null) return false;
       if (!repeat && busyRunId === null) void sendQueuedMessage(next.run.id);
       return true;
     },

@@ -9,8 +9,8 @@ import {
 import type { ComposerDispatchMode } from "@onicode/client-runtime/state/composer-dispatch";
 import type { ThreadStructure } from "@onicode/client-runtime/state/shell";
 import {
-  canPromoteQueuedRun,
   deriveThreadQueueWorkflowState,
+  resolveQueuedRunSendNow,
 } from "@onicode/client-runtime/state/thread-workflows";
 import {
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
@@ -227,6 +227,7 @@ export function useQueuedRunEdit(input: {
   } = input;
   const editQueuedRunCommand = useEditQueuedRunCommand();
   const promoteQueuedRun = useAtomCommand(threadEnvironment.promoteQueuedRun);
+  const moveQueuedRunFirst = useAtomCommand(threadEnvironment.moveQueuedRunFirst);
   const editKey = scopedThreadKey(routeThreadRef);
   const storedEdit = useAtomValue(queuedRunEdits.atom)[editKey] ?? null;
   const editing = activeThreadId === null ? null : storedEdit;
@@ -357,28 +358,34 @@ export function useQueuedRunEdit(input: {
   });
 
   // The same move as the queued row's "Send now" while a turn runs.
-  const steerSavedRun = async (edited: EditingQueuedRun) => {
+  const steerSavedRun = async (
+    edited: EditingQueuedRun,
+    saved: { readonly text: string; readonly attachments: ReadonlyArray<unknown> },
+  ) => {
     const projection = appAtomRegistry.get(
       environmentThreadDetails.quietThreadAtom({ environmentId, threadId: edited.threadId }),
     )?.projection;
     if (!projection) return;
-    const workflow = deriveThreadQueueWorkflowState(projection);
-    const queued = workflow.queuedRuns.find(({ run }) => run.id === edited.runId);
-    if (
-      queued === undefined ||
-      workflow.activeRun === null ||
-      !canPromoteQueuedRun(workflow, queued.run)
-    ) {
-      return;
+    const sendNow = resolveQueuedRunSendNow(
+      deriveThreadQueueWorkflowState(projection),
+      edited.runId,
+      saved,
+    );
+    if (sendNow?.type === "steer") {
+      await promoteQueuedRun({
+        environmentId,
+        input: {
+          threadId: edited.threadId,
+          queuedRunId: edited.runId,
+          targetRunId: sendNow.targetRunId,
+        },
+      });
+    } else if (sendNow?.type === "move-first") {
+      await moveQueuedRunFirst({
+        environmentId,
+        input: { threadId: edited.threadId, runId: edited.runId, beforeRunId: sendNow.beforeRunId },
+      });
     }
-    await promoteQueuedRun({
-      environmentId,
-      input: {
-        threadId: edited.threadId,
-        queuedRunId: edited.runId,
-        targetRunId: workflow.activeRun.id,
-      },
-    });
   };
 
   const saveEdit = async (
@@ -469,7 +476,10 @@ export function useQueuedRunEdit(input: {
     // A plain submit means "Update queued message"; only the opposite-action shortcut or
     // modifier-click asks to steer, as it does for a new follow-up.
     if (submission?.submissionIntent === "alternate" && submission.dispatchMode === "steer") {
-      await steerSavedRun(editing);
+      await steerSavedRun(editing, {
+        text: content.prompt,
+        attachments: [...editing.existingAttachments, ...newAttachments],
+      });
     }
   };
 
