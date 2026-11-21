@@ -41,26 +41,6 @@ import { LinkAccessPicker } from "./LinkAccessPicker";
 const NO_MACHINES: ReadonlySet<EnvironmentId> = new Set();
 const NO_OUTCOMES: ReadonlyMap<EnvironmentId, LinkBatchOutcome> = new Map();
 
-export function LinkSeveralEnvironmentsAction({
-  environmentId,
-}: {
-  readonly environmentId: EnvironmentId;
-}) {
-  const [open, setOpen] = useState(false);
-  return (
-    <>
-      <Button size="xs" variant="outline" onClick={() => setOpen(true)}>
-        <T>Link several…</T>
-      </Button>
-      <LinkSeveralEnvironmentsDialog
-        environmentId={environmentId}
-        open={open}
-        onOpenChange={setOpen}
-      />
-    </>
-  );
-}
-
 /**
  * Links the machines this app already reaches in one go. Each pairing code is
  * minted on its machine and passed straight to the linking environment; none

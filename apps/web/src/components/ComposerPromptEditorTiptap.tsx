@@ -2,7 +2,10 @@ import { useNativeFileDrag } from "../useNativeFileDrag";
 import { resolvePathLinkTarget } from "@onicode/shared/fileLinks";
 import { useAtomValue } from "@effect/atom-react";
 import { documentChipKindForFileName } from "~/pierre-icons";
-import { isProviderSkillUserInvocable } from "@onicode/client-runtime/providerSkills";
+import {
+  isProviderSkillUserInvocable,
+  providerSkillInstructionsPath,
+} from "@onicode/client-runtime/providerSkills";
 import { formatProviderSkillDisplayName } from "@onicode/shared/inlineSkills";
 import {
   Extension,
@@ -426,13 +429,16 @@ function ComposerSkillNodeView({ node }: NodeViewProps) {
   const skillLabel = skill
     ? formatProviderSkillDisplayName(skill)
     : (node.attrs.skillLabel as string) || skillName;
+  const instructionsPath = skill ? providerSkillInstructionsPath(skill) : undefined;
   return (
     <NodeViewWrapper as="span" className={CHIP_NODE_SELECTION_CLASS_NAME}>
       <SkillChipPopover
         label={skillLabel}
         description={skill ? skillPopoverDescription(skill) : skillDescription}
         onViewInstructions={
-          skill?.path && actions.environmentId ? () => actions.openMention(skill.path) : undefined
+          instructionsPath && actions.environmentId
+            ? () => actions.openMention(instructionsPath)
+            : undefined
         }
       />
     </NodeViewWrapper>

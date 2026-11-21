@@ -118,7 +118,8 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
     const modelCatalog = catalogService
       .current(DRIVER_KIND)
       .pipe(Effect.map(resolveClaudeModelCatalog));
-    const processEnv = yield* mergeClaudeProcessEnvironment(config, environment, process.env);
+    const hostEnvironment = yield* HostProcess.Environment;
+    const processEnv = yield* mergeClaudeProcessEnvironment(config, environment, hostEnvironment);
     const fallbackContinuationIdentity = defaultProviderContinuationIdentity({
       driverKind: DRIVER_KIND,
       instanceId,
@@ -157,7 +158,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
     // The SDK's user source is the host's home, not a custom one; same rule as the adapter.
     const customHome =
       effectiveConfig.homePath.trim().length > 0 ||
-      processEnv.CLAUDE_CONFIG_DIR !== (yield* HostProcess.Environment).CLAUDE_CONFIG_DIR;
+      processEnv.CLAUDE_CONFIG_DIR !== hostEnvironment.CLAUDE_CONFIG_DIR;
     // Only a successful probe records routes, so a failed one never sends turns back to slugs
     // the backend rejects.
     const modelRoutes = yield* makeClaudeCodeModelRoutes(

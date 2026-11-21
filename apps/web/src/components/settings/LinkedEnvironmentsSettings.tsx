@@ -57,7 +57,6 @@ import { stackedThreadToast, toastManager } from "../ui/toast";
 import { ITEM_ROW_CLASSNAME, ITEM_ROW_INNER_CLASSNAME } from "./itemRows";
 import { LinkAccessPicker } from "./LinkAccessPicker";
 import { LinkAddressWarning, LinkMachineSelect } from "./LinkMachineSelect";
-import { LinkSeveralEnvironmentsAction } from "./LinkSeveralEnvironments";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
 import { useLiveRefresh } from "../../hooks/useLiveRefresh";
 import { m as resolveMessage } from "../../i18n/messages";
@@ -75,10 +74,12 @@ export function LinkedEnvironmentsSettings({
   environmentId,
   environmentLabel,
   isSearchTarget,
+  onLinkSeveral,
 }: {
   readonly environmentId: EnvironmentId;
   readonly environmentLabel: string | null;
   readonly isSearchTarget: boolean;
+  readonly onLinkSeveral: () => void;
 }) {
   const searchableSetting = useSearchableSetting();
   const gt = useGT();
@@ -111,7 +112,9 @@ export function LinkedEnvironmentsSettings({
         canLink ? (
           <div className="flex items-center gap-2">
             {otherMachines > 1 ? (
-              <LinkSeveralEnvironmentsAction environmentId={environmentId} />
+              <Button size="xs" variant="outline" onClick={onLinkSeveral}>
+                <T>Link several…</T>
+              </Button>
             ) : null}
             <LinkEnvironmentAction environmentId={environmentId} />
           </div>

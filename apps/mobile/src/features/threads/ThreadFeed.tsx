@@ -26,10 +26,8 @@ import {
   enrichedThreadLinkCustomization,
   withChipIcon,
 } from "../../native/useEnrichedLinkVariants";
-import {
-  enrichedSkillInstructionsPath,
-  enrichedSkillReference,
-} from "../../lib/enrichedLinkPresentation";
+import { enrichedSkillReference } from "../../lib/enrichedLinkPresentation";
+import { providerSkillInstructionsPath } from "@onicode/client-runtime/providerSkills";
 import { formatProviderSkillDisplayName } from "@onicode/shared/inlineSkills";
 import {
   ThreadContextDivider,
@@ -3557,7 +3555,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     markdownLinkRequest.current = request;
     const skill = enrichedSkillReference(href, props.skills);
     if (skill) {
-      const instructionsPath = enrichedSkillInstructionsPath(skill);
+      const instructionsPath = providerSkillInstructionsPath(skill);
       if (instructionsPath) openSkillInstructions(instructionsPath);
       return;
     }
@@ -3677,7 +3675,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
             {
               id: "open-skill",
               title: gt("View instructions"),
-              disabled: !enrichedSkillInstructionsPath(skill),
+              disabled: !providerSkillInstructionsPath(skill),
             },
             { id: "copy-skill", title: gt("Copy skill") },
           ],
@@ -3708,7 +3706,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     onFileContextMenuAction: (href, actionId, reply) => {
       const skill = enrichedSkillReference(href, props.skills);
       if (skill) {
-        const instructionsPath = enrichedSkillInstructionsPath(skill);
+        const instructionsPath = providerSkillInstructionsPath(skill);
         if (actionId === "open-skill" && instructionsPath) openSkillInstructions(instructionsPath);
         else if (actionId === "copy-skill") copyTextWithHaptic(`$${skill.name}`);
         return;

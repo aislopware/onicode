@@ -1,4 +1,5 @@
 import { errorDisplayMessage } from "@onicode/client-runtime/errors";
+import { providerSkillInstructionsPath } from "@onicode/client-runtime/providerSkills";
 import * as Dialog from "./ui/Dialog";
 import { ComposerContextId } from "@onicode/contracts";
 import { useAtomValue } from "@effect/atom-react";
@@ -199,6 +200,9 @@ export function ComposerEditor({
   const selectedSkill = selectedSkillName
     ? props.skills?.find((skill) => skill.name === selectedSkillName)
     : undefined;
+  const selectedSkillInstructions = selectedSkill
+    ? providerSkillInstructionsPath(selectedSkill)
+    : undefined;
   const record = draft.context?.records.find(
     (entry) => entry.contextId === selectedReference?.contextId,
   );
@@ -330,11 +334,11 @@ export function ComposerEditor({
               : undefined)
           }
           {...(selectedSkill?.description ? { skillDescription: selectedSkill.description } : {})}
-          {...(selectedSkill?.path && onOpenMention
+          {...(selectedSkillInstructions && onOpenMention
             ? {
                 onOpenSkill: () => {
                   setSelected(null);
-                  onOpenMention(selectedSkill.path!);
+                  onOpenMention(selectedSkillInstructions);
                 },
               }
             : {})}

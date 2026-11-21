@@ -52,9 +52,11 @@ const NO_OUTCOMES: ReadonlyMap<EnvironmentId, LinkBatchOutcome> = new Map();
 export function LinkSeveralEnvironmentsAction(props: {
   readonly environmentId: EnvironmentId;
   readonly environmentLabel: string;
+  readonly open: boolean;
+  readonly onOpenChange: (open: boolean) => void;
 }) {
   const gt = useGT();
-  const [open, setOpen] = useState(false);
+  const { open, onOpenChange } = props;
   const config = useEnvironmentServerConfig(props.environmentId);
   const canLink = useAtomValue(peerLinkEnvironment.link.permissionAtom(props.environmentId));
   const { environments } = useEnvironments();
@@ -76,14 +78,14 @@ export function LinkSeveralEnvironmentsAction(props: {
         label={gt("Link several machines to {environment}…", {
           environment: props.environmentLabel,
         })}
-        onPress={() => setOpen(true)}
+        onPress={() => onOpenChange(true)}
         fullWidth
       />
       {open ? (
         <LinkSeveralSheet
           environmentId={props.environmentId}
           canSubmit={sourceReady}
-          onClose={() => setOpen(false)}
+          onClose={() => onOpenChange(false)}
         />
       ) : null}
     </View>

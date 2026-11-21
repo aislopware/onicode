@@ -149,6 +149,7 @@ describe("LinkedEnvironmentsSettings", () => {
           environmentId={hostId}
           environmentLabel={null}
           isSearchTarget={false}
+          onLinkSeveral={() => {}}
         />
       </RegistryContext.Provider>,
     );
@@ -173,6 +174,7 @@ describe("LinkedEnvironmentsSettings", () => {
           environmentId={loadingHostId}
           environmentLabel={null}
           isSearchTarget={false}
+          onLinkSeveral={() => {}}
         />
       </RegistryContext.Provider>,
     );

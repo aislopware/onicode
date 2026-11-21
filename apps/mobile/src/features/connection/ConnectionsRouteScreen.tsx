@@ -26,6 +26,8 @@ export function ConnectionsRouteScreen() {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const [expandedId, setExpandedId] = useState<EnvironmentId | null>(null);
+  // Held here so the sheet outlives its environment disconnecting mid-batch and shows the failure.
+  const [linkSeveralFor, setLinkSeveralFor] = useState<EnvironmentId | null>(null);
   const handleToggle = (environmentId: EnvironmentId) => {
     setExpandedId((prev) => (prev === environmentId ? null : environmentId));
   };
@@ -63,20 +65,27 @@ export function ConnectionsRouteScreen() {
           onSetEnabled={onSetEnvironmentEnabled}
           onUpdate={onUpdateEnvironment}
         />
-        {connectedEnvironments
-          .filter((environment) => environment.connectionState === "connected")
-          .map((environment) => (
+        {connectedEnvironments.map((environment) => {
+          const connected = environment.connectionState === "connected";
+          const linkingSeveral = linkSeveralFor === environment.environmentId;
+          if (!connected && !linkingSeveral) return null;
+          return (
             <Fragment key={environment.environmentId}>
-              <LinkedEnvironmentsSection
-                environmentId={environment.environmentId}
-                environmentLabel={environment.environmentLabel}
-              />
+              {connected ? (
+                <LinkedEnvironmentsSection
+                  environmentId={environment.environmentId}
+                  environmentLabel={environment.environmentLabel}
+                />
+              ) : null}
               <LinkSeveralEnvironmentsAction
                 environmentId={environment.environmentId}
                 environmentLabel={environment.environmentLabel}
+                open={linkingSeveral}
+                onOpenChange={(open) => setLinkSeveralFor(open ? environment.environmentId : null)}
               />
             </Fragment>
-          ))}
+          );
+        })}
         <PullRequestRoutingSettings />
       </ScrollView>
     </View>

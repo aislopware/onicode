@@ -50,6 +50,7 @@ import { FoldedSettingsSection } from "./FoldedSettingsSection";
 import { RemoteDesktopHostSettings } from "./RemoteDesktopHostSettings";
 import { EnvironmentsMap } from "./EnvironmentsMap";
 import { LinkedEnvironmentsSettings } from "./LinkedEnvironmentsSettings";
+import { LinkSeveralEnvironmentsDialog } from "./LinkSeveralEnvironments";
 import { addEnvironmentPrefillAtom } from "~/state/linkedThreadView";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { useMediaQuery } from "~/hooks/useMediaQuery";
@@ -305,6 +306,11 @@ function ConnectionsSettingsContent({
   const { environments } = useEnvironments();
   const primaryEnvironment = usePrimaryEnvironment();
   const peerLinkHosts = usePeerLinkHosts();
+  // Held above the hosts list so the dialog outlives its environment disconnecting mid-batch.
+  const [linkSeveral, setLinkSeveral] = useState<{
+    readonly environmentId: EnvironmentId;
+    readonly open: boolean;
+  } | null>(null);
   const removeEnvironment = useAtomCommand(environmentCatalog.remove, { reportFailure: false });
   const setEnvironmentEnabled = useAtomCommand(environmentCatalog.setEnabled, {
     reportFailure: false,
@@ -1911,9 +1917,22 @@ function ConnectionsSettingsContent({
               environmentId={environment.environmentId}
               environmentLabel={peerLinkHosts.length > 1 ? environment.label : null}
               isSearchTarget={index === 0}
+              onLinkSeveral={() =>
+                setLinkSeveral({ environmentId: environment.environmentId, open: true })
+              }
             />
           ))
         : null}
+      {linkSeveral ? (
+        <LinkSeveralEnvironmentsDialog
+          key={linkSeveral.environmentId}
+          environmentId={linkSeveral.environmentId}
+          open={linkSeveral.open}
+          onOpenChange={(open) =>
+            setLinkSeveral((current) => (current === null ? null : { ...current, open }))
+          }
+        />
+      ) : null}
       <LoadBalancingSettings environments={loadBalancingEnvironments} />
       <PullRequestRoutingSettings environments={loadBalancingEnvironments} />
     </SettingsPageContainer>
