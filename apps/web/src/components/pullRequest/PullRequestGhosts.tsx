@@ -107,7 +107,7 @@ export function PullRequestDetailGhost({
   onBack?: (() => void) | undefined;
   onClose?: (() => void) | undefined;
   onCheckoutError?: ((error: Error) => void) | undefined;
-  threadRef?: ScopedThreadRef | null;
+  threadRef?: ScopedThreadRef | null | undefined;
 }) {
   const gt = useGT();
   const resolve = useMessages();
@@ -171,6 +171,9 @@ export function PullRequestDetailGhost({
                 <span className="min-w-0 truncate font-medium">{seed.repository}</span>
                 <InlineButton
                   onClick={(event) => void openLink(seed.url, { event }).catch(console.error)}
+                  onAuxClick={(event) => {
+                    if (event.button === 1) void openLink(seed.url, { event }).catch(console.error);
+                  }}
                   aria-label={gt(
                     "Open {term, select, mr {merge request} cr {change request} other {pull request}} #{number} on host",
                     {
