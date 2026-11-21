@@ -3047,3 +3047,4 @@ d46cbd0881	take	took upstream's queued-follow-up test; kept Onicode's live-fold 
 b84cd4b9a5	skip	kept Onicode's tests: httpObservability.test.ts drives a real HTTP client span and checks url.full/url.query redaction (wsTicket, dpop), not just the configured names; http.test.ts 'untraced requests' tests the signed-URL prefix guard Onicode kept over ed3b241eaa; webhookRoute.test.ts is a removed surface
 220a2b86e2	skip	left status stale: idle polls stopped re-reading local status unless a ref moved, and the HEAD watcher sees no working-tree edits, so edits or git add made outside a turn (another terminal, Onicode's terminal panel) never reach mobile or remote clients, which do not refetch on focus; queued for a fix that keeps the saving
 6f82dd9e79	take	adopted upstream's text-only model memo; kept Onicode's image-rejection retry gate and request-budget image filter
+3a91757430	take	taken as is
