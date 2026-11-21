@@ -3095,3 +3095,4 @@ bb0d718b31	take	taken as is
 d5f8a7573a	take	fix(web): RTF previews hide tracked deletions (#40264)
 0dc32b5c8b	take	perf(server): an untracked file's Diff panel patch no longer copies the whole Git index
 c1464d6774	take	perf(server): status of a repository without a remote skips remote lookups
+3d8a02371b	take	fix(forgejo): issue links on a self-hosted Forgejo hostname resolve
