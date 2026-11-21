@@ -3153,3 +3153,4 @@ cea19e450b	take	fix(server): ODT attachments no longer repeat index titles or te
 227ac64b74	take	fix(web): downscaled image attachments keep Display P3 colors
 1a9a858d45	take	fix(keybindings): preserve sibling shortcuts when editing an inherited rule; scenario ported for the desktop target (macOS ⌘ labels accepted)
 464e8f7e60	take	taken; kept Onicode's subagent-free history pages (98f772ea76): prependThreadHistory merges rows only
+da57ea2bf9	take	taken as is
