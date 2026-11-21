@@ -2544,7 +2544,7 @@ describe("EnvironmentThreads", () => {
       yield* Queue.offer(harness.inputs, TEST_DEFECT);
       yield* awaitThreadState(harness.observed, (value) => Option.isSome(value.error));
       yield* TestClock.adjust("250 millis");
-      yield* awaitSubscriptions(5);
+      expect(yield* SubscriptionRef.get(harness.subscriptionCount)).toBe(5);
       yield* Queue.offerAll(harness.inputs, [
         snapshot(BASE_PROJECTION, CACHED_SNAPSHOT_SEQUENCE + 5),
         synchronized(),

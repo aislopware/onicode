@@ -76,7 +76,7 @@ export function thrownErrorMessage(
 ): string | null {
   if (!(error instanceof Error)) return null;
   const git = gitCommandErrorMessage(error, resolve);
-  if (git !== null) return git;
+  if (git !== null) return git.trim().length > 0 ? git : error.message;
   const text = errorI18nMessage(error);
   return text === undefined ? error.message : resolveMarkedText(text, resolve);
 }

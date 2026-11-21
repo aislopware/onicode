@@ -731,20 +731,14 @@ const make = Effect.gen(function* () {
     remote: OrchestrationV2RemoteTaskChild,
     runId: RunId,
   ) {
-    // Most runs leave neither item, so both are asked at once.
-    const reads = yield* Effect.forEach(
-      subagentStopNoticeIds(runId),
-      (itemId) =>
-        forwarding.readThread(scope, remote.environmentId, {
-          threadId: remote.threadId,
-          itemId,
-          // An item read needs no runs; 1 is the least the peer accepts.
-          runLimit: 1,
-          maxCharsPerItem: 20_000,
-        }),
-      { concurrency: "unbounded" },
-    );
-    for (const read of reads) {
+    for (const itemId of subagentStopNoticeIds(runId)) {
+      const read = yield* forwarding.readThread(scope, remote.environmentId, {
+        threadId: remote.threadId,
+        itemId,
+        // An item read needs no runs; 1 is the least the peer accepts.
+        runLimit: 1,
+        maxCharsPerItem: 20_000,
+      });
       const notice = read.items[0]?.text;
       if (notice) return notice;
     }

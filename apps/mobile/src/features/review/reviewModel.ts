@@ -817,6 +817,23 @@ function decodedGitDiffHeader(block: string): string {
   );
 }
 
+/** A block's new path, as parsed files are placed; `a/x b/x` reads as `x` even with spaces. */
+function gitDiffHeaderPath(header: string): string {
+  if (!header.startsWith("diff --git a/")) return "";
+  const paths = header.slice("diff --git a/".length);
+  const half = (paths.length - " b/".length) / 2;
+  if (
+    Number.isInteger(half) &&
+    half > 0 &&
+    paths.slice(half, half + " b/".length) === " b/" &&
+    paths.slice(0, half) === paths.slice(-half)
+  ) {
+    return paths.slice(-half);
+  }
+  const split = paths.lastIndexOf(" b/");
+  return split === -1 ? paths : paths.slice(split + " b/".length);
+}
+
 function splitGitPatchBlocks(diff: string): string[] {
   return diff.split(/(?=^diff --git )/m);
 }
@@ -857,9 +874,7 @@ export function filterReviewParsedDiffToFolder(
   if (parsedDiff.kind === "raw" && /^diff --git /m.test(parsedDiff.text)) {
     const text = splitGitPatchBlocks(parsedDiff.text)
       .filter((block) => {
-        const header = decodedGitDiffHeader(block);
-        const path = header.startsWith("diff --git a/") ? header.slice("diff --git a/".length) : "";
-        return folderOwning(path, folders) === folder;
+        return folderOwning(gitDiffHeaderPath(decodedGitDiffHeader(block)), folders) === folder;
       })
       .join("");
     return text.length === 0 ? { kind: "empty" } : { ...parsedDiff, text };
