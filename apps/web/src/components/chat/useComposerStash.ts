@@ -275,7 +275,7 @@ export function useComposerStash(input: {
       setComposerTrigger(null);
     }
 
-    // The store, not the refs, since restored files must count before the images are restored.
+    // The store, not the refs: those follow an open question's draft, and lag restored files.
     const remainingRestoreSlots = () => {
       const draft = getComposerDraft(composerDraftTarget);
       return Math.max(
@@ -290,7 +290,7 @@ export function useComposerStash(input: {
     const expiredFileNames: string[] = [];
     const stashedFiles = entry.files ?? [];
     if (stashedFiles.length > 0) {
-      const composerFilesNow = readAttachmentDraft().files;
+      const composerFilesNow = getComposerDraft(composerDraftTarget)?.files ?? [];
       const existingFileIds = new Set(composerFilesNow.map((file) => file.id));
       const retainedUploadIds = new Set(
         composerFilesNow.flatMap((file) =>
@@ -396,12 +396,12 @@ export function useComposerStash(input: {
 
     let unrestoredImageNames: string[] = [];
     if (entry.attachments.length > 0) {
-      const attachmentDraft = readAttachmentDraft();
-      const existingIds = new Set(attachmentDraft.images.map((image) => image.id));
+      const threadImages = getComposerDraft(composerDraftTarget)?.images ?? [];
+      const existingIds = new Set(threadImages.map((image) => image.id));
       // Filter on the draft store's dedupe key here. Counting a duplicate
       // against capacity would burn a slot the store then refuses to fill,
       // pushing a genuinely unique image into the overflow list for nothing.
-      const existingDedupKeys = new Set(attachmentDraft.images.map(composerImageDedupKey));
+      const existingDedupKeys = new Set(threadImages.map(composerImageDedupKey));
       const capacity = remainingRestoreSlots();
       const pending = hydrateImagesFromPersisted(entry.attachments).filter(
         (image) =>

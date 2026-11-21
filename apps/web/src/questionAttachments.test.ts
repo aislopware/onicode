@@ -11,6 +11,7 @@ import {
   cancelPreparingComposerImages,
   getPreparingComposerImages,
 } from "./components/chat/preparingComposerImages";
+import { pendingThreadImports } from "./components/chat/pendingThreadImports";
 import { formatInlineContextReference } from "./lib/composerContextReferences";
 import { threadContextReference } from "./lib/composerContextRecords";
 import {
@@ -127,6 +128,9 @@ it("counts files, images, and pending preparation across the shared question bud
   expect(countQuestionAttachments([second])).toBe(7);
   changeQuestionAttachmentPreparation(second, -1);
   expect(countQuestionAttachments([first, second])).toBe(7);
+  pendingThreadImports.set(first, 1);
+  using _import = { [Symbol.dispose]: () => pendingThreadImports.delete(first) };
+  expect(countQuestionAttachments([first, second])).toBe(8);
 });
 
 it("clears attachment drafts for requests the thread resolved, wherever they were answered", () => {

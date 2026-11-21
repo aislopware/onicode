@@ -5,6 +5,7 @@ import {
   DEFAULT_PREVIEW_ZOOM_FACTOR,
   EnvironmentId,
   FILL_PREVIEW_VIEWPORT,
+  PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   ThreadId,
 } from "@onicode/contracts";
 import { type ComponentProps } from "react";
@@ -181,7 +182,11 @@ vi.mock(import("~/browser/ServerBrowserSurface"), async (original) => ({
   )) as never,
 }));
 
-import { useComposerDraftStore } from "~/composerDraftStore";
+import { composerTargetKey, useComposerDraftStore } from "~/composerDraftStore";
+import {
+  addPreparingComposerImages,
+  removePreparingComposerImages,
+} from "../chat/preparingComposerImages";
 import { commitBrowserViewportChange } from "~/browser/browserViewportActions";
 import { resolveResponsiveBrowserViewportSize } from "~/browser/browserViewportLayout";
 import { useBrowserPointerStore } from "~/browser/browserPointerStore";
@@ -191,6 +196,7 @@ import { dispatchPreviewAction } from "./previewActionBus";
 import { PreviewView } from "./PreviewView";
 import { ToastProvider } from "~/components/ui/toast";
 
+const PNG = "data:image/png;base64,iVBORw0KGgo=";
 const TEST_THREAD_REF = {
   environmentId: EnvironmentId.make("environment-1"),
   threadId: ThreadId.make("thread-1"),
@@ -348,10 +354,36 @@ describe("PreviewView", () => {
     expect(mocks.setAnnotationSendEnabled).toHaveBeenLastCalledWith(TEST_RUNTIME_TAB_ID, true);
   });
 
-  it("still sends annotation text when the picked element's crop is malformed", async () => {
+  it.each([
+    { reason: "its crop is malformed", dataUrl: "data:image/png;base64,%%%", full: false },
+    { reason: "pending attachments hold the last slot", dataUrl: PNG, full: true },
+  ])("still sends annotation text without the screenshot when $reason", async (row) => {
     setup();
+    const key = composerTargetKey(TEST_THREAD_REF);
+    using _draft = {
+      [Symbol.dispose]: () => {
+        useComposerDraftStore.getState().clearComposerContent(TEST_THREAD_REF);
+        removePreparingComposerImages(key, new Set(["reserved"]));
+      },
+    };
+    if (row.full) {
+      useComposerDraftStore.getState().addFiles(
+        TEST_THREAD_REF,
+        Array.from({ length: PROVIDER_SEND_TURN_MAX_ATTACHMENTS - 1 }, (_, index) => ({
+          type: "file" as const,
+          id: `held-${index}`,
+          name: `held-${index}.txt`,
+          mimeType: "text/plain",
+          sizeBytes: 1,
+          file: new File(["x"], `held-${index}.txt`),
+        })),
+      );
+      addPreparingComposerImages(key, [
+        { id: "reserved", name: "shot.png", file: new File(["png"], "shot.png"), hidden: false },
+      ]);
+    }
     const picked = annotation("annotation-2", {
-      dataUrl: "data:image/png;base64,%%%",
+      dataUrl: row.dataUrl,
       width: 10,
       height: 10,
       cropRect: { x: 0, y: 0, width: 10, height: 10 },

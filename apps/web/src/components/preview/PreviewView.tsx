@@ -19,6 +19,7 @@ import {
   DEFAULT_PREVIEW_ZOOM_FACTOR,
   PREVIEW_ZOOM_LEVELS,
   type PreviewAdjustInput,
+  PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
 } from "@onicode/contracts";
 import {
   normalizePreviewUrl,
@@ -36,9 +37,14 @@ import {
   removeUrlForThread,
   useThreadRecentHistory,
 } from "~/browserHistoryStore";
-import { type ComposerImageAttachment, useComposerDraftStore } from "~/composerDraftStore";
+import {
+  type ComposerImageAttachment,
+  composerTargetKey,
+  useComposerDraftStore,
+} from "~/composerDraftStore";
 import { capturePreviewAnnotationScreenshot } from "~/lib/previewAnnotation";
 import { readComposerImageBytes } from "../chat/composerAttachmentFiles";
+import { countReservedComposerSlots } from "../chat/composerThreadImport";
 import { ensureLocalApi } from "~/localApi";
 import { getClientSettings } from "~/hooks/useSettings";
 import {
@@ -878,14 +884,24 @@ export function PreviewView({
       // claim an attachment.
       const capture = capturePreviewAnnotationScreenshot(picked);
       const cropDropped = screenshotFailed || capture.status === "failed";
-      const annotation = capture.status === "failed" ? { ...picked, screenshot: null } : picked;
       if (capture.status === "captured") await readComposerImageBytes(capture.file);
+      const draft = useComposerDraftStore.getState().getComposerDraft(threadRef);
+      const noRoom =
+        capture.status === "captured" &&
+        (draft?.images.length ?? 0) +
+          (draft?.files.length ?? 0) +
+          countReservedComposerSlots(composerTargetKey(threadRef)) >=
+          PROVIDER_SEND_TURN_MAX_ATTACHMENTS;
+      const annotation =
+        capture.status === "failed" || noRoom ? { ...picked, screenshot: null } : picked;
       addPreviewAnnotation(threadRef, annotation);
-      if (cropDropped) {
+      if (cropDropped || noRoom) {
         toastManager.add(
           stackedThreadToast({
             type: "error",
-            title: gt("Could not capture the picked element"),
+            title: cropDropped
+              ? gt("Could not capture the picked element")
+              : gt("The attachment limit has been reached."),
             description: gt("The annotation was kept without the screenshot."),
           }),
         );

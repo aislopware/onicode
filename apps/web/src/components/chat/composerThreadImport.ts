@@ -1,10 +1,8 @@
 import { PROVIDER_SEND_TURN_MAX_ATTACHMENTS } from "@onicode/contracts";
 
 import { countMovedQuestionImports } from "../../questionAttachments";
+import { pendingThreadImports } from "./pendingThreadImports";
 import { countPreparingComposerImages } from "./preparingComposerImages";
-
-/** Dropped threads still loading, by the draft target key they will land in. */
-export const pendingThreadImports = new Map<string, number>();
 
 /** Slots in a draft held for attachments still on their way into it. */
 export function countReservedComposerSlots(targetKey: string): number {

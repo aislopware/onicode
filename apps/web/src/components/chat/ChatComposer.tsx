@@ -247,7 +247,8 @@ import {
 import type { ComposerModelSettings, SendAtPress } from "./composerSend.logic";
 import { ComposerPromptLengthValidation } from "./ComposerPromptLengthValidation";
 import { pendingDraftWork } from "./pendingDraftWork";
-import { importComposerThreadAttachment, pendingThreadImports } from "./composerThreadImport";
+import { importComposerThreadAttachment } from "./composerThreadImport";
+import { pendingThreadImports } from "./pendingThreadImports";
 import { observeResize } from "~/lib/observeResize";
 
 const isEnvironmentRequestInvalidError = Schema.is(EnvironmentRequestInvalidError);

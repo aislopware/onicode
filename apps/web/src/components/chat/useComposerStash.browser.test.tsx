@@ -162,3 +162,64 @@ it("restores only into slots no pending attachment has reserved", async () => {
   expect(draft?.files.at(-1)?.name).toBe("notes.txt");
   expect(draft?.images.map(({ name }) => name)).toEqual(["first.png"]);
 });
+
+it("matches reattach markers in the draft it restores into, not an open answer's", async () => {
+  const target = DraftId.make("stash-answer-marker");
+  const store = useComposerDraftStore.getState();
+  using _draft = { [Symbol.dispose]: () => store.clearComposerContent(target) };
+  using _stash = {
+    [Symbol.dispose]: () => {
+      writePromptStashStorageForTest("");
+      removeLocalStorageItem(PROMPT_STASH_STORAGE_KEY);
+    },
+  };
+  store.addFiles(
+    target,
+    Array.from({ length: PROVIDER_SEND_TURN_MAX_ATTACHMENTS - 1 }, (_, index) => ({
+      type: "file" as const,
+      id: `held-${index}`,
+      name: `held-${index}.txt`,
+      mimeType: "text/plain",
+      sizeBytes: 1,
+      file: new File(["x"], `held-${index}.txt`),
+    })),
+  );
+  addPreparingComposerImages(target, [preparingImage("reserved")]);
+  using _preparing = {
+    [Symbol.dispose]: () => removePreparingComposerImages(target, new Set(["reserved"])),
+  };
+  const notes = { name: "notes.txt", mimeType: "text/plain", sizeBytes: 5 };
+  // An open question's answer draft holds a marker for the stashed file.
+  const input = {
+    ...stashInput(target, { current: "" }),
+    readAttachmentDraft: () => ({
+      images: [],
+      files: [{ type: "file" as const, id: "marker", ...notes, file: null }],
+    }),
+  };
+  usePromptStashStore.getState().stashEntry({
+    id: "entry",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    prompt: "Stashed",
+    attachments: [],
+    files: [
+      { id: "notes", ...notes, attachmentId: "notes-upload", environmentId: input.environmentId },
+    ],
+    droppedImageNames: [],
+  });
+  let stash!: Stash;
+  await using _screen = await render(
+    <Harness
+      input={input}
+      ready={(value) => {
+        stash = value;
+      }}
+    />,
+  );
+
+  await act(() => stash.restoreStashEntryStable(usePromptStashStore.getState().entries[0]!));
+
+  expect(store.getComposerDraft(target)?.files).toHaveLength(
+    PROVIDER_SEND_TURN_MAX_ATTACHMENTS - 1,
+  );
+});

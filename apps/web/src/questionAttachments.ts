@@ -16,6 +16,7 @@ import type {
 import { create } from "zustand";
 import { DraftId, composerTargetKey, useComposerDraftStore } from "./composerDraftStore";
 import { pendingDraftWork } from "./components/chat/pendingDraftWork";
+import { pendingThreadImports } from "./components/chat/pendingThreadImports";
 import {
   cancelPreparingComposerImages,
   countPreparingComposerImages,
@@ -91,7 +92,13 @@ export function countQuestionAttachments(keys: ReadonlyArray<DraftId>): number {
   const { counts } = useQuestionAttachmentPreparation.getState();
   return keys.reduce((total, key) => {
     const draft = store.getComposerDraft(key);
-    return total + (draft?.images.length ?? 0) + (draft?.files.length ?? 0) + (counts[key] ?? 0);
+    return (
+      total +
+      (draft?.images.length ?? 0) +
+      (draft?.files.length ?? 0) +
+      (counts[key] ?? 0) +
+      (pendingThreadImports.get(key) ?? 0)
+    );
   }, 0);
 }
 

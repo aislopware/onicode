@@ -17,6 +17,7 @@ import { DraftId, composerTargetKey, useComposerDraftStore } from "../../compose
 import { formatInlineContextReference } from "../../lib/composerContextReferences";
 import { rememberCopiedComposerAttachments } from "../../lib/copiedComposerAttachments";
 import { countMovedQuestionImports, questionAttachmentDraftId } from "../../questionAttachments";
+import { toastManager } from "../ui/toast";
 import { pendingDraftWork } from "./pendingDraftWork";
 import {
   addPreparingComposerImages,
@@ -66,13 +67,15 @@ it.each([
   { kind: "image", edit: "question" },
   { kind: "file", edit: "stopped-question" },
   { kind: "image", edit: "stopped-question" },
+  { kind: "image", edit: "stopped-question-last-slot" },
+  { kind: "image", edit: "stopped-question-full" },
   { kind: "image", edit: "answered-question" },
   { kind: "image", edit: "annotation" },
   { kind: "image", edit: "delete-annotation" },
 ] as const)("settles a delayed $kind import after $edit", async ({ kind, edit }) => {
   // A stopped question returns its unsent answer, and the import, to the thread draft. One
   // answered on another device drops it, even with this composer unmounted and its ref stale.
-  const stopped = edit === "stopped-question";
+  const stopped = edit.startsWith("stopped-question");
   const answered = edit === "answered-question";
   const question = edit === "question" || stopped || answered;
   const environmentId = EnvironmentId.make("clipboard-target");
@@ -226,6 +229,30 @@ it.each([
     expect(pendingDraftWork.has(composerTargetKey(thread))).toBe(true);
     expect(countMovedQuestionImports(composerTargetKey(thread))).toBe(1);
   }
+  // Filling the thread's other slots, the import lands only while its own slot is free.
+  if (edit === "stopped-question-last-slot" || edit === "stopped-question-full") {
+    store.addFiles(
+      thread,
+      Array.from({ length: PROVIDER_SEND_TURN_MAX_ATTACHMENTS - 1 }, (_, index) => ({
+        type: "file" as const,
+        id: `held-${index}`,
+        name: `held-${index}.txt`,
+        mimeType: "text/plain",
+        sizeBytes: 1,
+        file: new File(["x"], `held-${index}.txt`),
+      })),
+      { appendReference: false },
+    );
+  }
+  if (edit === "stopped-question-full") {
+    addPreparingComposerImages(composerTargetKey(thread), [
+      { id: "reserved", name: "shot.png", file: new File(["png"], "shot.png"), hidden: false },
+    ]);
+  }
+  using _preparing = {
+    [Symbol.dispose]: () =>
+      removePreparingComposerImages(composerTargetKey(thread), new Set(["reserved"])),
+  };
   await act(async () => {
     downloaded.resolve(new Response("notes", { headers: { "Content-Type": attachment.mimeType } }));
     await settled.promise;
@@ -245,7 +272,7 @@ it.each([
       edit === "retain" ||
       edit === "annotation" ||
       edit === "cached" ||
-      (question && !answered)
+      (question && !answered && edit !== "stopped-question-full")
       ? ["notes.txt"]
       : [],
   );
@@ -372,6 +399,7 @@ it("refuses a cached attachment paste into a slot a pending attachment has reser
     />,
   );
 
+  using toasts = vi.spyOn(toastManager, "add");
   await act(() => {
     importer.importContextRecords(
       [
@@ -392,4 +420,9 @@ it("refuses a cached attachment paste into a slot a pending attachment has reser
 
   await vi.waitFor(() => expect(pendingDraftWork.has(target)).toBe(false));
   expect(store.getComposerDraft(target)?.files.map(({ name }) => name)).not.toContain("notes.txt");
+  expect(toasts).toHaveBeenCalledWith(
+    expect.objectContaining({
+      description: expect.stringContaining("The attachment limit has been reached."),
+    }),
+  );
 });
