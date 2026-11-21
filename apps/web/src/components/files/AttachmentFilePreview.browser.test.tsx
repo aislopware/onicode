@@ -947,6 +947,31 @@ describe("large text preview recovery", () => {
     }
   });
 
+  it("measures more huge offscreen cells than React's nested-update limit across frames", async () => {
+    // Each cell fills one 128K-character measuring batch, so every row needs its own pass.
+    const huge = "word ".repeat(26_000);
+    const rows = Array.from({ length: 60 }, (_, index) => [`r${index}`, "", "", huge]);
+    // 128px columns in a 300px viewport keep column 3 offscreen; 1800px tall mounts all 60 rows.
+    await using screen = await render(
+      <div style={{ display: "flex", height: 1800, width: 300 }}>
+        <VirtualTablePreview
+          name="huge-cells.csv"
+          count={rows.length}
+          columns={4}
+          // Two 32-row pages.
+          getRows={(page) => rows.slice(page * 32, page * 32 + 32)}
+        />
+      </div>,
+    );
+    const row = (index: number) =>
+      screen.container.querySelector<HTMLElement>(`[data-preview-row="${index}"]`);
+
+    await vi.waitFor(() => expect(row(59)?.getBoundingClientRect().height).toBeGreaterThan(1_000), {
+      timeout: 10_000,
+    });
+    expect(screen.container.querySelector('[role="table"]')).not.toBeNull();
+  });
+
   it("reveals and highlights requested source lines again for a new request", async () => {
     const view = (line: number, request: number, loaded = true) => (
       <div style={{ display: "flex", height: 400, width: 600 }}>

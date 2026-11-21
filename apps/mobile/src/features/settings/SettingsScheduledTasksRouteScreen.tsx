@@ -58,6 +58,7 @@ import { usePaginatedBranches } from "../../state/queries";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { resolveNewTaskBranchLabel } from "../threads/new-task-context-presentation";
+import { useSystem24HourClock } from "../threads/useMessageTimeFormatter";
 import { useVoiceInputController } from "../voice-input/useVoiceInputController";
 import { ScheduledTaskPromptField } from "./components/ScheduledTaskPromptField";
 import { useSettingsEnvironmentMenu } from "./components/SettingsEnvironmentFilterHeader";
@@ -87,7 +88,9 @@ import {
 } from "./scheduled-task-editor-state";
 import {
   formatNextScheduledTaskRun,
+  formatScheduledRunTime,
   formatScheduledTaskInterval,
+  formatScheduledTimeOfDay,
 } from "./scheduledTaskPresentation";
 
 type ScheduledTaskRoutes = {
@@ -118,11 +121,15 @@ function describeSchedule(
   timeZone: string | undefined,
   resolve: MessageResolver,
   locale: string,
+  is24Hour: boolean | undefined,
 ): string {
   if (task.schedule.type === "once") {
     const runAt = new Date(task.schedule.runAt);
     return resolve(
-      msg("Once, {date} at {time}", { date: formatRunAtDate(runAt), time: formatRunAtTime(runAt) }),
+      msg("Once, {date} at {time}", {
+        date: formatRunAtDate(runAt),
+        time: formatScheduledRunTime(runAt, is24Hour),
+      }),
     );
   }
   if (task.schedule.type === "interval")
@@ -131,38 +138,26 @@ function describeSchedule(
     ? repeatLabel(task.schedule.weekdays, resolve, locale)
     : resolve(msg("Every day"));
   const zone = scheduleTimeZoneLabel(timeZone, task.nextRunAt);
-  const time = formatTime(task.schedule.timeOfDay);
+  const time = formatScheduledTimeOfDay(task.schedule.timeOfDay, is24Hour);
   return zone === undefined
     ? resolve(msg("{days} at {time}", { days, time }))
     : resolve(msg("{days} at {time} {zone}", { days, time, zone }));
-}
-
-function formatTime(value: string): string {
-  const [hours, minutes] = value.split(":").map(Number);
-  if (!Number.isInteger(hours) || !Number.isInteger(minutes)) return value;
-  const time = new Date();
-  time.setHours(hours ?? 9, minutes ?? 0, 0, 0);
-  return time.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
 function formatRunAtDate(value: Date): string {
   return value.toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
 }
 
-function formatRunAtTime(value: Date): string {
-  return value.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-}
-
+// A fixed date with no DST change, so today's gap cannot move the picker to another hour.
 function timePickerValue(value: string): Date {
   const [hours, minutes] = value.split(":").map(Number);
-  const time = new Date();
-  time.setHours(
+  return new Date(
+    2000,
+    0,
+    1,
     Number.isInteger(hours) ? (hours ?? 9) : 9,
     Number.isInteger(minutes) ? (minutes ?? 0) : 0,
-    0,
-    0,
   );
-  return time;
 }
 
 function isWeekdays(weekdays: ReadonlyArray<number>): boolean {
@@ -639,6 +634,8 @@ function TaskForm({
   const gt = useGT();
   const m = useMessages();
   const locale = useLocale();
+  const is24Hour = useSystem24HourClock();
+  const timeOfDayLabel = formatScheduledTimeOfDay(draft.schedule.timeOfDay, is24Hour);
   const { readEditor } = useScheduledTaskEditor();
   const navigation = useNavigation<NativeStackNavigationProp<ScheduledTaskRoutes>>();
   const tasks = useEnvironmentQuery(
@@ -1062,10 +1059,10 @@ function TaskForm({
                 accessibilityLabel={
                   runAtZone
                     ? gt("Time, {time} {zone}", {
-                        time: formatTime(draft.schedule.timeOfDay),
+                        time: timeOfDayLabel,
                         zone: runAtZone,
                       })
-                    : gt("Time, {time}", { time: formatTime(draft.schedule.timeOfDay) })
+                    : gt("Time, {time}", { time: timeOfDayLabel })
                 }
                 onPress={() => setTimePickerOpen((open) => !open)}
                 className="min-h-14 flex-row items-center gap-3 border-t border-border-subtle px-4 py-3 active:opacity-70"
@@ -1077,7 +1074,7 @@ function TaskForm({
                   textRole="footnote"
                   className="min-w-0 flex-1 text-right text-foreground-muted"
                 >
-                  {formatTime(draft.schedule.timeOfDay)}
+                  {timeOfDayLabel}
                   {runAtZone ? ` ${runAtZone}` : ""}
                 </Text>
                 <SymbolView
@@ -1091,6 +1088,7 @@ function TaskForm({
                 <DateTimePicker
                   value={timePickerValue(draft.schedule.timeOfDay)}
                   mode="time"
+                  is24Hour={is24Hour}
                   display={Platform.OS === "ios" ? "spinner" : "default"}
                   onDismiss={() => setTimePickerOpen(false)}
                   onValueChange={(_, selected) => {
@@ -1149,7 +1147,8 @@ function TaskForm({
           ) : draft.schedule.mode === "once" ? (
             (["date", "time"] as const).map((field) => {
               const runAt = new Date(draft.schedule.runAt);
-              const label = field === "date" ? formatRunAtDate(runAt) : formatRunAtTime(runAt);
+              const label =
+                field === "date" ? formatRunAtDate(runAt) : formatScheduledRunTime(runAt, is24Hour);
               return (
                 <View key={field}>
                   <Pressable
@@ -1182,6 +1181,7 @@ function TaskForm({
                     <DateTimePicker
                       value={runAt}
                       mode={field}
+                      is24Hour={is24Hour}
                       display={Platform.OS === "ios" ? "spinner" : "default"}
                       onDismiss={() => setRunAtPicker(null)}
                       onValueChange={(_, selected) => {
@@ -1276,10 +1276,13 @@ function EnvironmentTasks({
   const gt = useGT();
   const m = useMessages();
   const locale = useLocale();
+  const is24Hour = useSystem24HourClock();
   const environmentId = environment.environmentId;
   const tasks = useEnvironmentQuery(
     serverEnvironment.scheduledTasksLive({ environmentId, input: {} }),
   );
+  const scheduleLabel = (task: ScheduledTask) =>
+    describeSchedule(task, tasks.data?.timeZone, m, locale, is24Hour);
   const visibleTasks = tasks.data?.tasks.filter(
     (task) => projectIds === null || projectIds.includes(task.projectId),
   );
@@ -1370,14 +1373,14 @@ function EnvironmentTasks({
               <Text className="text-sm text-foreground-muted" numberOfLines={2}>
                 {!task.enabled
                   ? gt("{schedule} · Paused", {
-                      schedule: describeSchedule(task, tasks.data?.timeZone, m, locale),
+                      schedule: scheduleLabel(task),
                     })
                   : task.nextRunAt
                     ? gt("{schedule} · {nextRun}", {
-                        schedule: describeSchedule(task, tasks.data?.timeZone, m, locale),
-                        nextRun: formatNextScheduledTaskRun(task.nextRunAt, now, m),
+                        schedule: scheduleLabel(task),
+                        nextRun: formatNextScheduledTaskRun(task.nextRunAt, now, m, is24Hour),
                       })
-                    : describeSchedule(task, tasks.data?.timeZone, m, locale)}
+                    : scheduleLabel(task)}
               </Text>
               {task.lastRunError ? (
                 <Text className="text-sm text-danger-foreground" numberOfLines={2}>

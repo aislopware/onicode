@@ -286,8 +286,9 @@ host cannot be reached, the tab shows a connection error; a `localhost`,
 Other names that point at your computer, such as `/etc/hosts` entries, still
 do. These tabs keep their own cookies and site data, apart from anything your
 own `localhost` servers set. They ignore your system proxy settings, so they
-can't reach a site you reach only through a proxy. Over SSH or a relay, your
-system browser can't reach the host's `localhost`, so Open in browser isn't
+can't reach a site you reach only through a proxy. Over SSH, a relay, or a
+connection saved at a `localhost` address (such as your own `ssh -L` forward),
+your system browser can't reach the host's `localhost`, so Open in browser isn't
 offered for those pages. The mobile app streams tabs from the host.
 
 The desktop app can also forward a port on the host to your computer, so any

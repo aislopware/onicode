@@ -285,7 +285,9 @@ undo by accident:
   desktop tab left open fails instead of loading the reviewer's own localhost.
 - **System browser links** have no tunnel. They keep the private-network rewrite in
   [`browserTargetResolver.ts`](../../apps/web/src/browser/browserTargetResolver.ts), and are not
-  offered over SSH or a public relay, where `localhost` would be this machine.
+  offered over SSH, a public relay, or a saved connection at a loopback address (such as the
+  user's own `ssh -L`), where `localhost` would be this machine. The desktop's own primary
+  and WSL backends keep `localhost`.
 
 ## Access and process ownership are different
 
