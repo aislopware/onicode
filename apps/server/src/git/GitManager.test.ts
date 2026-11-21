@@ -1961,14 +1961,15 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         });
         expect(unpublished).toBeNull();
         expect(listed(providerCalls)).toHaveLength(0);
-        expect(countMatching((cmd) => cmd === "remote")).toBe(1);
+        // The second remote read confirms the remote list before the negative is cached.
+        expect(countMatching((cmd) => cmd === "remote")).toBe(2);
         expect(
           countMatching((cmd) => cmd === "config --get branch.feature/no-upstream.remote"),
         ).toBe(1);
         expect(countMatching((cmd) => cmd === "config --get-all remote.origin.url")).toBe(1);
-        expect(gitCommands.length).toBeLessThanOrEqual(9);
+        expect(gitCommands.length).toBeLessThanOrEqual(10);
 
-        // Unpublished refresh lookup does not query the provider, so it keeps the 9-git budget.
+        // Unpublished refresh lookup does not query the provider, so it keeps the 10-git budget.
         gitCommands.length = 0;
         expect(
           yield* manager.branchPullRequest(
@@ -1976,12 +1977,12 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
             { refresh: true },
           ),
         ).toBeNull();
-        expect(countMatching((cmd) => cmd === "remote")).toBe(1);
+        expect(countMatching((cmd) => cmd === "remote")).toBe(2);
         expect(
           countMatching((cmd) => cmd === "config --get branch.feature/no-upstream.remote"),
         ).toBe(1);
         expect(countMatching((cmd) => cmd === "config --get-all remote.origin.url")).toBe(1);
-        expect(gitCommands.length).toBeLessThanOrEqual(9);
+        expect(gitCommands.length).toBeLessThanOrEqual(10);
 
         // External remote added while remembered remotes TTL (<5m) is still warm must still be seen
         // by the loader on a default (!freshGitState) lookup for another branch, with one git remote.
@@ -2109,6 +2110,68 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         expect(raced?.repositoryKey).toBe("github.com/new-owner/new-repository");
         expect(gitCommands).toContain("config --get-all remote.origin.url");
       }),
+  );
+
+  it.effect("branch PR lookup sees a fork remote added after it read the remote list", () =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("onicode-git-manager-");
+      yield* initRepo(repoDir);
+      const remoteDir = yield* createBareRemote();
+      yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
+      yield* runGit(repoDir, ["push", "-u", "origin", "main"]);
+      yield* configureVisibleRemoteUrlWithLocalRewrite(
+        repoDir,
+        "origin",
+        "https://github.com/aislopware/onicode.git",
+        remoteDir,
+      );
+      yield* runGit(repoDir, ["checkout", "-b", "feature/fork-mid-lookup"]);
+      NodeFS.writeFileSync(NodePath.join(repoDir, "fork.txt"), "fork work\n");
+      yield* runGit(repoDir, ["add", "fork.txt"]);
+      yield* runGit(repoDir, ["commit", "-m", "Fork work"]);
+
+      const gate = {
+        matches: (args: ReadonlyArray<string>) => args.length === 1 && args[0] === "remote",
+        reached: yield* Deferred.make<void>(),
+        release: yield* Deferred.make<void>(),
+      };
+      const { manager } = yield* makeManager({
+        gitSpawnGate: gate,
+        providerScenario: {
+          prListByHeadSelector: {
+            "feature/fork-mid-lookup": [
+              {
+                number: 514,
+                title: "Fork PR",
+                url: "https://github.com/aislopware/onicode/pull/514",
+                baseRefName: "main",
+                headRefName: "feature/fork-mid-lookup",
+                state: "open",
+                headRepositoryNameWithOwner: "contributor/onicode",
+                headRepositoryOwnerLogin: "contributor",
+              },
+            ],
+          },
+        },
+      });
+
+      const inFlight = yield* Effect.forkChild(
+        manager.branchPullRequest({ cwd: repoDir, branch: "feature/fork-mid-lookup" }),
+      );
+      yield* Deferred.await(gate.reached);
+      const forkDir = yield* createBareRemote();
+      yield* runGit(repoDir, ["remote", "add", "fork", forkDir]);
+      yield* configureVisibleRemoteUrlWithLocalRewrite(
+        repoDir,
+        "fork",
+        "https://github.com/contributor/onicode.git",
+        forkDir,
+      );
+      yield* runGit(repoDir, ["push", "fork", "feature/fork-mid-lookup"]);
+      yield* Deferred.succeed(gate.release, undefined);
+
+      expect((yield* Fiber.join(inFlight))?.number).toBe(514);
+    }),
   );
 
   it.effect(

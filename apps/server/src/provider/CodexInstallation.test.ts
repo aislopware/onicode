@@ -268,6 +268,7 @@ it.effect.each([
   { layout: "npm bin symlink", persists: true },
   { layout: "npm shim", persists: true },
   { layout: "wrapper script", persists: false },
+  { layout: "wrapper beside an unused npm install", persists: false },
 ])(
   "re-probes a $layout Codex after a restart only when its payload can change",
   ({ layout, persists }) =>
@@ -275,18 +276,19 @@ it.effect.each([
       const fs = yield* FileSystem.FileSystem;
       const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "onicodex-install-test-" });
       const packageDirectory =
-        layout === "npm shim"
-          ? `${baseDir}/local/node_modules/@openai/codex`
-          : `${baseDir}/npm/lib/node_modules/@openai/codex`;
-      const payload =
-        layout === "wrapper script" ? `${baseDir}/payload` : `${packageDirectory}/bin/codex.js`;
+        layout === "npm bin symlink" || layout === "wrapper script"
+          ? `${baseDir}/npm/lib/node_modules/@openai/codex`
+          : `${baseDir}/local/node_modules/@openai/codex`;
+      const wrapsPayload = layout.startsWith("wrapper");
+      const payload = wrapsPayload ? `${baseDir}/payload` : `${packageDirectory}/bin/codex.js`;
+      const writeManifest = (version: string) =>
+        fs.writeFileString(
+          `${packageDirectory}/package.json`,
+          JSON.stringify({ name: "@openai/codex", version }),
+        );
       const install = Effect.fn("test.installPayload")(function* (version: string) {
         yield* fs.makeDirectory(`${packageDirectory}/bin`, { recursive: true });
-        if (layout !== "wrapper script")
-          yield* fs.writeFileString(
-            `${packageDirectory}/package.json`,
-            JSON.stringify({ name: "@openai/codex", version }),
-          );
+        if (!wrapsPayload) yield* writeManifest(version);
         yield* fs.writeFileString(
           payload,
           `#!/bin/sh\nprintf '%s\\n' "$*" >> '${baseDir}/local-probes.txt'\ncase "$1" in --version) printf 'codex-cli ${version}\\n';; esac\n`,
@@ -294,6 +296,8 @@ it.effect.each([
         );
       });
       yield* install("0.156.1");
+      // The wrapper never runs this install, so its version never follows the payload.
+      if (layout === "wrapper beside an unused npm install") yield* writeManifest("0.156.1");
       yield* fs.makeDirectory(`${baseDir}/local`, { recursive: true });
       if (layout === "npm bin symlink") yield* fs.symlink(payload, `${baseDir}/local/codex`);
       else

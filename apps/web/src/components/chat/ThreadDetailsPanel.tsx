@@ -119,7 +119,8 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
   // A worktree thread reaches tracked repositories only through its own task folder.
   const taskFolderQuery = useEnvironmentQuery(
     // Asked whatever the project tracks now: a thread keeps its task folder when that changes.
-    props.isServerThread && props.worktreePath !== null
+    // A server that sends no folder list predates task folders.
+    props.isServerThread && props.worktreePath !== null && project?.trackedFolders !== undefined
       ? filesystemEnvironment.taskFolder({
           environmentId: props.environmentId,
           input: { worktreePath: props.worktreePath },

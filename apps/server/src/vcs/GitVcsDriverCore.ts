@@ -195,9 +195,15 @@ function statusUpstreamRefreshFailureCooldown(consecutiveFailures: number): Dura
 
 class BaseBranchCacheKey extends Data.Class<{
   cwd: string;
+  gitCommonDir: string;
   refName: string;
   allowRemoteOfCurrent: boolean;
   inputsStamp: string;
+}> {}
+
+class BaseBranchInputsStampKey extends Data.Class<{
+  cwd: string;
+  gitCommonDir: string;
 }> {}
 
 class GitRefsSnapshotCacheKey extends Data.Class<{
@@ -1813,11 +1819,18 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       }),
     },
   );
-  const normalizeRepositoryPathsCacheKey = (cwd: string) => path.normalize(path.resolve(cwd));
-  const resolveRepositoryPaths = (cwd: string, refresh = false) => {
-    const cacheKey = normalizeRepositoryPathsCacheKey(cwd);
-    return Cache.get(refresh ? repositoryPathsRefreshCache : repositoryPathsCache, cacheKey);
-  };
+  // Callers switch to Git's physical worktree root, so a symlinked cwd must share its entry.
+  const repositoryPathsCacheKey = (cwd: string) =>
+    fileSystem.realPath(cwd).pipe(
+      Effect.orElseSucceed(() => cwd),
+      Effect.map((resolved) => path.normalize(path.resolve(resolved))),
+    );
+  const resolveRepositoryPaths = (cwd: string, refresh = false) =>
+    repositoryPathsCacheKey(cwd).pipe(
+      Effect.flatMap((cacheKey) =>
+        Cache.get(refresh ? repositoryPathsRefreshCache : repositoryPathsCache, cacheKey),
+      ),
+    );
 
   const resolveReviewRepository = Effect.fn("resolveReviewRepository")(function* (
     cwd: string,
@@ -1885,7 +1898,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
               Effect.catchTags({ GitCommandError: () => Effect.succeed(null) }),
             )
           : gitCommonDir;
-      const cacheKey = commonDir ?? normalizeRepositoryPathsCacheKey(cwd);
+      const cacheKey = commonDir ?? path.normalize(path.resolve(cwd));
       yield* Cache.invalidate(defaultBranchCache, cacheKey);
       yield* Cache.invalidate(primaryRemoteExistsCache, cacheKey);
     },
@@ -2479,8 +2492,16 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         }
       }
       tokens.push(configHash);
-      return tokens.join("\0");
+      return Hex.encode(
+        yield* digest.digest(Digest.sha256, new TextEncoder().encode(tokens.join("\0"))),
+      );
     },
+  );
+  // Nothing outlives a read; concurrent reads, such as one status read's ahead count and branch
+  // totals, share one stamp.
+  const baseBranchInputsStampCache = yield* Cache.makeWith(
+    (key: BaseBranchInputsStampKey) => readBaseBranchInputsStamp(key.cwd, key.gitCommonDir),
+    { capacity: 2_048, timeToLive: () => Duration.zero },
   );
   const baseBranchCache = yield* Cache.makeWith(
     Effect.fnUntraced(function* (key: BaseBranchCacheKey) {
@@ -2491,7 +2512,13 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         { allowRemoteOfCurrent: key.allowRemoteOfCurrent },
         trace,
       );
-      return { base, ...trace };
+      // Deleting a packed ref rewrites packed-refs, but a loose ref deleted within one mtime tick
+      // can leave the stamp unchanged.
+      const looseRef = base === null ? null : path.join(key.gitCommonDir, base.comparisonRef);
+      const isLoose =
+        looseRef !== null &&
+        (yield* fileSystem.exists(looseRef).pipe(Effect.orElseSucceed(() => false)));
+      return { base, looseBaseRef: isLoose ? looseRef : null, ...trace };
     }),
     {
       capacity: 2_048,
@@ -2507,35 +2534,41 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       refName: string,
       options?: { readonly allowRemoteOfCurrent?: boolean },
     ) {
-      const gitCommonDir = (yield* resolveRepositoryPaths(cwd).pipe(
+      const cacheCwd = yield* repositoryPathsCacheKey(cwd);
+      const gitCommonDir = (yield* Cache.get(repositoryPathsCache, cacheCwd).pipe(
         Effect.orElseSucceed(() => null),
       ))?.gitCommonDir;
       const inputsStamp =
         gitCommonDir === undefined
           ? null
-          : yield* readBaseBranchInputsStamp(cwd, gitCommonDir).pipe(
-              Effect.orElseSucceed(() => null),
-            );
-      if (inputsStamp === null) {
+          : yield* Cache.get(
+              baseBranchInputsStampCache,
+              new BaseBranchInputsStampKey({ cwd: cacheCwd, gitCommonDir }),
+            ).pipe(Effect.orElseSucceed(() => null));
+      if (gitCommonDir === undefined || inputsStamp === null) {
         return yield* findBaseBranchForNoUpstream(cwd, refName, options);
       }
-      const key = {
-        cwd: normalizeRepositoryPathsCacheKey(cwd),
-        refName,
-        inputsStamp,
-      };
+      const key = { cwd: cacheCwd, gitCommonDir, refName, inputsStamp };
       const allowRemoteOfCurrent = options?.allowRemoteOfCurrent === true;
       const cacheKey = new BaseBranchCacheKey({ ...key, allowRemoteOfCurrent });
-      const entry = yield* Cache.get(baseBranchCache, cacheKey);
+      const otherKey = new BaseBranchCacheKey({
+        ...key,
+        allowRemoteOfCurrent: !allowRemoteOfCurrent,
+      });
+      let entry = yield* Cache.get(baseBranchCache, cacheKey);
+      if (
+        entry.looseBaseRef !== null &&
+        !(yield* fileSystem.exists(entry.looseBaseRef).pipe(Effect.orElseSucceed(() => true)))
+      ) {
+        yield* Cache.invalidate(baseBranchCache, cacheKey);
+        yield* Cache.invalidate(baseBranchCache, otherKey);
+        entry = yield* Cache.get(baseBranchCache, cacheKey);
+      }
       // A fallback forced by a failed remote lookup must not outlive the failure.
       if (entry.degraded) {
         yield* Cache.invalidate(baseBranchCache, cacheKey);
       } else if (!entry.dependsOnRemoteOfCurrent) {
-        yield* Cache.set(
-          baseBranchCache,
-          new BaseBranchCacheKey({ ...key, allowRemoteOfCurrent: !allowRemoteOfCurrent }),
-          entry,
-        );
+        yield* Cache.set(baseBranchCache, otherKey, entry);
       }
       return entry.base;
     },
@@ -2930,7 +2963,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
 
     if (commonDir && root && repositoryPaths?.worktreeRoot) {
       const { gitCommonDir, worktreeRoot } = repositoryPaths;
-      const cacheKey = normalizeRepositoryPathsCacheKey(cwd);
+      const cacheKey = yield* repositoryPathsCacheKey(cwd);
       if (!(yield* Cache.has(repositoryPathsCache, cacheKey))) {
         const isAtRepositoryRoot = yield* fileSystem.realPath(cwd).pipe(
           Effect.map((physicalCwd) => path.relative(worktreeRoot, physicalCwd) === ""),
@@ -5412,10 +5445,10 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     cwd: string,
     gitCommonDir?: string | null,
   ) {
-    const repositoryPathsCacheKey = normalizeRepositoryPathsCacheKey(cwd);
+    const cacheKey = yield* repositoryPathsCacheKey(cwd);
     const commonDir =
       gitCommonDir === undefined
-        ? (yield* Cache.get(repositoryPathsCache, repositoryPathsCacheKey))?.gitCommonDir
+        ? (yield* Cache.get(repositoryPathsCache, cacheKey))?.gitCommonDir
         : gitCommonDir;
     if (commonDir == null) return;
     const previousGeneration = currentListRefsGeneration(commonDir);
@@ -5428,8 +5461,8 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         generation: previousGeneration,
       }),
     );
-    yield* Cache.invalidate(repositoryPathsRefreshCache, repositoryPathsCacheKey);
-    yield* Cache.invalidate(repositoryPathsCache, repositoryPathsCacheKey);
+    yield* Cache.invalidate(repositoryPathsRefreshCache, cacheKey);
+    yield* Cache.invalidate(repositoryPathsCache, cacheKey);
   });
 
   const listRefs: GitVcsDriver.GitVcsDriver["Service"]["listRefs"] = Effect.fn("listRefs")(
@@ -6799,7 +6832,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     if (gitCommonDir === null) {
       gitCommonDir = yield* Cache.getOption(
         repositoryPathsCache,
-        normalizeRepositoryPathsCacheKey(cwd),
+        yield* repositoryPathsCacheKey(cwd),
       ).pipe(
         Effect.map((cached) => Option.getOrNull(cached)?.gitCommonDir ?? null),
         Effect.orElseSucceed(() => null),
@@ -6816,7 +6849,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     initRepo(input).pipe(
       Effect.ensuring(
         Effect.gen(function* () {
-          const cacheKey = normalizeRepositoryPathsCacheKey(input.cwd);
+          const cacheKey = yield* repositoryPathsCacheKey(input.cwd);
           yield* Cache.invalidate(repositoryPathsRefreshCache, cacheKey);
           yield* Cache.invalidate(repositoryPathsCache, cacheKey);
           yield* invalidateListRefsSnapshot(input.cwd).pipe(Effect.ignore);
@@ -6923,7 +6956,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     initRepo: initRepoWithListRefsInvalidation,
     invalidateRefs: Effect.fn("GitVcsDriver.invalidateRefs")(function* (cwd) {
       // First, so a cached "not a repository" cannot end the ref invalidation early.
-      const cacheKey = normalizeRepositoryPathsCacheKey(cwd);
+      const cacheKey = yield* repositoryPathsCacheKey(cwd);
       yield* Cache.invalidate(repositoryPathsRefreshCache, cacheKey);
       yield* Cache.invalidate(repositoryPathsCache, cacheKey);
       return yield* withListRefsInvalidation(cwd, Effect.void);

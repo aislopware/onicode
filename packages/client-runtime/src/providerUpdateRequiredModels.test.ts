@@ -50,5 +50,18 @@ describe("formatProviderUpdateRequiredNotice", () => {
         versionAdvisory: { ...homebrewClaude.versionAdvisory, latestVersion: "2.1.330" },
       }),
     ).toBe(false);
+    // A model the channel can reach still offers the update beside one it cannot.
+    const mixed = {
+      ...homebrewClaude,
+      updateRequiredModels: [
+        { slug: "claude-opus-5-5", name: "Claude Opus 5.5", minVersion: "2.1.300" },
+        ...homebrewClaude.updateRequiredModels,
+      ],
+      versionAdvisory: { ...homebrewClaude.versionAdvisory, updateCommand: null },
+    };
+    expect(formatProviderUpdateRequiredNotice(mixed)).toBe(
+      "Update Claude Code to v2.1.300 or newer to use Claude Opus 5.5. Using Claude Fable 5.2 requires Claude Code v2.1.321 or newer, but the newest this install can update to is v2.1.311. Install Claude Code another way or wait for a newer release.",
+    );
+    expect(providerUpdateChannelLags(mixed)).toBe(false);
   });
 });
