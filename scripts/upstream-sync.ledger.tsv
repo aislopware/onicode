@@ -3059,3 +3059,4 @@ e97e360cfc	take	fix(web): Option + a letter records the letter, not the macOS gl
 386c8b68ca	take	fix(mobile): the iOS status pill stays below the header above a tall question; kept Onicode's dependency-less useDerivedValue from the deps pass
 2c42752892	take	fix(server): explain host CLI failures when PR watches stop
 1de7eaecec	take	fix(server): merged-worktree cleanup finds pull requests merged inside a fork
+c6c796e37f	take	fix(mobile): iOS settings switches center on rows with a description
