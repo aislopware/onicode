@@ -3069,3 +3069,4 @@ a0ca0bfaf2	take	perf(server): resolve a branch's base once while its refs and co
 dcd8df806d	take	fix(web): hub accounts whose usage read fails no longer vanish silently
 d9fdd02523	take	fix(client-runtime): @ menu offers machines the thread's server links to
 1dd69850c9	take	fix(server): a desktop preview resize the window never draws now fails
+367f9d3759	take	fix(antigravity): skills.json ~/ entries no longer list skills agy never loads
