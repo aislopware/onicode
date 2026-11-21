@@ -3007,3 +3007,4 @@ e28b2819ee	take	taken as is
 b662d9b1ee	take	CONFLICT was a misaligned hunk: upstream's headless hint belongs on the linksEnabled refusal, not the software_id check (kept Onicode's message there); docs: Onicode serves no browser UI, so the headless option is pairing desktop or phone instead of opening the address in a browser
 67db3936e6	take	taken as is
 d52798ef49	take	taken as is
+26d81d88c1	take	kept Onicode's notice presentation (wraps, clamps, expands only when clamped; always-visible timestamp) over upstream's single-line truncate + resize measurement: it already gives 'notices expand only when cut off' with no per-row ResizeObserver and shows short notices whole; adopted upstream's timestamp-first ordering for non-notice rows so hover no longer moves their controls
