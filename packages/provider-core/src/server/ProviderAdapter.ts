@@ -31,6 +31,7 @@ import {
   ProviderInteractionMode,
   ProviderDriverKind,
   ProviderInstanceId,
+  ProviderMcpSignInError,
   PositiveInt,
   ProviderUserInputAnswers,
   ProviderSessionId,
@@ -736,6 +737,26 @@ export interface ProviderAdapterV2SessionSettings {
 /** The provider only queued the steer; a `steer.updated` event says whether the agent read it. */
 export type ProviderAdapterV2SteerResult = { readonly awaitsRead: true };
 
+/**
+ * Signs one of the session's MCP servers in. `start` returns the page to approve
+ * on; `complete` takes the address the browser was sent back to afterwards,
+ * usually a localhost page that may sit on another machine, and finishes here.
+ */
+export interface ProviderAdapterV2McpSignIn {
+  readonly start: (input: {
+    readonly providerThread: OrchestrationV2ProviderThread;
+    readonly server: string;
+  }) => Effect.Effect<
+    { readonly authorizationUrl: string | null },
+    ProviderMcpSignInError | ProviderAdapterV2Error
+  >;
+  readonly complete: (input: {
+    readonly providerThread: OrchestrationV2ProviderThread;
+    readonly server: string;
+    readonly callbackUrl: string;
+  }) => Effect.Effect<void, ProviderMcpSignInError | ProviderAdapterV2Error>;
+}
+
 export type ProviderAdapterV2SubagentOutcome = {
   readonly status: "completed" | "failed" | "cancelled";
   readonly completedAt: NonNullable<OrchestrationV2Subagent["completedAt"]>;
@@ -870,6 +891,8 @@ export interface ProviderAdapterV2SessionRuntime {
   readonly draftActivity?: (input: {
     readonly providerThread: OrchestrationV2ProviderThread;
   }) => Effect.Effect<void, ProviderAdapterV2Error>;
+  /** Absent when the agent has no way to sign an MCP server in. */
+  readonly mcpSignIn?: ProviderAdapterV2McpSignIn;
   readonly rollbackThread: (
     input: ProviderAdapterV2RollbackThreadInput,
   ) => Effect.Effect<ProviderAdapterV2ThreadSnapshot, ProviderAdapterV2Error>;
