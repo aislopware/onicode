@@ -1029,15 +1029,20 @@ it("a subagent tab shows its read-only bar under no header of its own", async ()
     .toBeVisible();
 });
 
-it("/side sends the draft's attachments and context, and keeps them until it starts", async () => {
+// What the /side tests share: a thread with a reply, another thread to leave to, and uploads and
+// forks the test can hold.
+async function openSideChatThread(name: string) {
+  await using stack = new AsyncDisposableStack();
   await page.viewport(1400, 900);
-  const thread = threadWithHistory("side-attachments", 1);
-  const other = threadWithHistory("side-attachments-other", 1);
-  let holdFork = false;
-  using _environment = installFakeEnvironment([thread, other], {
-    acceptCommands: true,
-    holdCommand: (command) => holdFork && command.type === "thread.fork",
-  });
+  const thread = threadWithHistory(name, 1);
+  const other = threadWithHistory(`${name}-other`, 1);
+  const held = { fork: false, upload: null as Promise<void> | null, uploadsStarted: 0 };
+  stack.use(
+    installFakeEnvironment([thread, other], {
+      acceptCommands: true,
+      holdCommand: (command) => held.fork && command.type === "thread.fork",
+    }),
+  );
   __setClientSettingsForTests({
     ...DEFAULT_CLIENT_SETTINGS,
     onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
@@ -1046,16 +1051,18 @@ it("/side sends the draft's attachments and context, and keeps them until it sta
     createMemoryHistory({ initialEntries: [`/${ENVIRONMENT_ID}/${thread.id}`] }),
   );
   await router.load();
-  await using _app = await render(<AppRoot router={router} />, {
-    // AppRoot brings its own router.
-    router: false,
-  });
-  let uploadsStarted = 0;
-  let uploadGate: Promise<void> | null = null;
-  using _uploads = acceptAttachmentUploads(() => {
-    uploadsStarted += 1;
-    return uploadGate ?? Promise.resolve();
-  });
+  stack.use(
+    await render(<AppRoot router={router} />, {
+      // AppRoot brings its own router.
+      router: false,
+    }),
+  );
+  stack.use(
+    acceptAttachmentUploads(() => {
+      held.uploadsStarted += 1;
+      return held.upload ?? Promise.resolve();
+    }),
+  );
   await expect.element(page.getByText(`Answer 0 for ${thread.id}.`)).toBeVisible();
 
   const editor = page.getByRole("textbox", { name: `Message ${thread.title}`, exact: true });
@@ -1071,29 +1078,59 @@ it("/side sends the draft's attachments and context, and keeps them until it sta
       );
     await expect.element(image).toBeVisible();
   };
-  const sendImageToSideChat = async () => {
-    await pasteImage();
-    await insertText("/side what is this?");
-    await userEvent.keyboard("{Enter}");
-  };
-  const sentMessage = (fields: Record<string, unknown>) =>
-    vi.waitFor(() =>
-      expect(dispatchedCommands()).toContainEqual(
-        expect.objectContaining({ type: "message.dispatch", ...fields }),
+  return {
+    mounted: stack.move(),
+    thread,
+    other,
+    held,
+    editor,
+    image,
+    draftTarget: scopeThreadRef(ENVIRONMENT_ID, thread.id),
+    pasteImage,
+    sendImageToSideChat: async () => {
+      await pasteImage();
+      await insertText("/side what is this?");
+      await userEvent.keyboard("{Enter}");
+    },
+    // Holds the uploads that start from now on, and returns what lets them finish.
+    holdUploads: () => {
+      let release = () => {};
+      held.upload = new Promise((resolve) => {
+        release = resolve;
+      });
+      return () => {
+        release();
+        held.upload = null;
+      };
+    },
+    sentMessage: (fields: Record<string, unknown>) =>
+      vi.waitFor(() =>
+        expect(dispatchedCommands()).toContainEqual(
+          expect.objectContaining({ type: "message.dispatch", ...fields }),
+        ),
       ),
-    );
-  const forks = () => dispatchedCommands().filter((command) => command.type === "thread.fork");
-  const open = async (threadId: ThreadId, text: string) => {
-    await act(() =>
-      router.navigate({
-        to: "/$environmentId/$threadId",
-        params: { environmentId: ENVIRONMENT_ID, threadId },
-      }),
-    );
-    await expect.element(page.getByText(text).first()).toBeVisible();
+    forks: () => dispatchedCommands().filter((command) => command.type === "thread.fork"),
+    open: async (threadId: ThreadId, text: string) => {
+      await act(() =>
+        router.navigate({
+          to: "/$environmentId/$threadId",
+          params: { environmentId: ENVIRONMENT_ID, threadId },
+        }),
+      );
+      await expect.element(page.getByText(text).first()).toBeVisible();
+    },
+    openSettings: () => act(() => router.navigate({ to: "/settings/general" })),
   };
+}
 
-  await sendImageToSideChat();
+const DRAFT_CHANGED = "Draft changed while preparing this message. Review it and send again.";
+
+it("/side sends the draft's attachments and context, and keeps them until it starts", async () => {
+  const side = await openSideChatThread("side-attachments");
+  await using _mounted = side.mounted;
+  const { thread, other, held, editor, image, draftTarget, sentMessage, forks } = side;
+
+  await side.sendImageToSideChat();
   await sentMessage({
     text: "what is this?",
     attachments: [expect.objectContaining({ type: "image", id: "upload-1" })],
@@ -1119,20 +1156,15 @@ it("/side sends the draft's attachments and context, and keeps them until it sta
 
   // While the upload runs the draft keeps showing it. The side chat takes the mode the
   // composer had at Send, and starts from its thread after the user leaves.
-  const draftTarget = scopeThreadRef(ENVIRONMENT_ID, thread.id);
   useComposerDraftStore.getState().setRuntimeMode(draftTarget, "approval-required");
-  let releaseUpload = () => {};
-  uploadGate = new Promise((resolve) => {
-    releaseUpload = resolve;
-  });
-  const startedBefore = uploadsStarted;
-  await sendImageToSideChat();
-  await vi.waitFor(() => expect(uploadsStarted).toBeGreaterThan(startedBefore));
+  const releaseUpload = side.holdUploads();
+  const startedBefore = held.uploadsStarted;
+  await side.sendImageToSideChat();
+  await vi.waitFor(() => expect(held.uploadsStarted).toBeGreaterThan(startedBefore));
   await expect.element(image).toBeVisible();
   useComposerDraftStore.getState().setRuntimeMode(draftTarget, "full-access");
-  await open(other.id, `Answer 0 for ${other.id}.`);
+  await side.open(other.id, `Answer 0 for ${other.id}.`);
   releaseUpload();
-  uploadGate = null;
   await vi.waitFor(() => expect(forks()).toHaveLength(3));
   const fork = forks()[2]!;
   expect(fork).toMatchObject({ sourceThreadId: thread.id });
@@ -1146,14 +1178,20 @@ it("/side sends the draft's attachments and context, and keeps them until it sta
     ),
   );
   await sentMessage({ threadId: fork.type === "thread.fork" ? fork.targetThreadId : null });
-  await open(thread.id, `Answer 0 for ${thread.id}.`);
+  await side.open(thread.id, `Answer 0 for ${thread.id}.`);
   await expect.element(image).not.toBeInTheDocument();
   await expect.element(editor).not.toHaveTextContent("/side");
+});
+
+it("/side keeps a question whose start failed or whose draft changed for the next Send", async () => {
+  const side = await openSideChatThread("side-kept");
+  await using _mounted = side.mounted;
+  const { held, editor, image, sentMessage, forks } = side;
 
   // A failed start leaves the question where it was, so sending again starts a side chat.
-  holdFork = true;
-  await sendImageToSideChat();
-  await vi.waitFor(() => expect(forks()).toHaveLength(4));
+  held.fork = true;
+  await side.sendImageToSideChat();
+  await vi.waitFor(() => expect(forks()).toHaveLength(1));
   await expect.element(image).toBeVisible();
   await insertText(" next");
   await rejectPendingCommand("Side chats are paused.");
@@ -1161,67 +1199,56 @@ it("/side sends the draft's attachments and context, and keeps them until it sta
   await vi.waitFor(() =>
     expect((editor.element() as HTMLElement).innerText.trim()).toBe("/side what is this? next"),
   );
-  holdFork = false;
+  held.fork = false;
   await userEvent.keyboard("{Enter}");
   await sentMessage({ text: "what is this? next" });
   await expect.element(image).not.toBeInTheDocument();
   await expect.element(page.getByText("Side chats are paused.")).not.toBeInTheDocument();
 
   // A change before the fork, such as removing an attachment and its upload, waits for Send.
-  uploadGate = new Promise((resolve) => {
-    releaseUpload = resolve;
-  });
-  const uploadsBeforeEdit = uploadsStarted;
-  await pasteImage();
-  // Typed key by key: with instant input, the next pasteImage click lands within 500 ms of two
-  // earlier ones, a ProseMirror triple-click that selects the draft for the paste to replace.
-  await userEvent.keyboard("/side what is this?{Enter}");
-  await vi.waitFor(() => expect(uploadsStarted).toBeGreaterThan(uploadsBeforeEdit));
+  const releaseUpload = side.holdUploads();
+  const uploadsBeforeEdit = held.uploadsStarted;
+  await side.sendImageToSideChat();
+  await vi.waitFor(() => expect(held.uploadsStarted).toBeGreaterThan(uploadsBeforeEdit));
   await page.getByRole("button", { name: "Remove shot.png" }).click();
   releaseUpload();
-  uploadGate = null;
-  await expect
-    .element(
-      page.getByText("Draft changed while preparing this message. Review it and send again."),
-    )
-    .toBeVisible();
-  expect(forks()).toHaveLength(5);
+  await expect.element(page.getByText(DRAFT_CHANGED)).toBeVisible();
+  expect(forks()).toHaveLength(2);
   await expect.element(image).not.toBeInTheDocument();
+});
+
+it("/side says where the user is that a start failed after they left its thread", async () => {
+  const side = await openSideChatThread("side-left");
+  await using _mounted = side.mounted;
+  const { thread, other, held, editor, image, forks } = side;
+
+  // A draft changed while the user was away is not sent.
+  const releaseUpload = side.holdUploads();
+  await side.sendImageToSideChat();
+  await vi.waitFor(() => expect(held.uploadsStarted).toBeGreaterThan(0));
+  await side.open(other.id, `Answer 0 for ${other.id}.`);
+  useComposerDraftStore.getState().setPrompt(side.draftTarget, "/side what is this? more");
+  releaseUpload();
+  await expect.element(page.getByText(DRAFT_CHANGED)).toBeVisible();
+  expect(forks()).toHaveLength(0);
 
   // A start that fails after the user left says so where they are.
-  uploadGate = new Promise((resolve) => {
-    releaseUpload = resolve;
-  });
-  const uploadsBeforeLeaving = uploadsStarted;
-  await pasteImage();
-  await userEvent.keyboard("{Enter}");
-  await vi.waitFor(() => expect(uploadsStarted).toBeGreaterThan(uploadsBeforeLeaving));
-  await open(other.id, `Answer 0 for ${other.id}.`);
-  useComposerDraftStore.getState().setPrompt(draftTarget, "/side what is this? more");
-  releaseUpload();
-  uploadGate = null;
-  await expect
-    .element(
-      page.getByText("Draft changed while preparing this message. Review it and send again."),
-    )
-    .toBeVisible();
-  expect(forks()).toHaveLength(5);
-  await open(thread.id, `Answer 0 for ${thread.id}.`);
+  await side.open(thread.id, `Answer 0 for ${thread.id}.`);
   await expect.element(image).toBeVisible();
   await userEvent.click(editor);
-  holdFork = true;
+  held.fork = true;
   await userEvent.keyboard("{Enter}");
-  await vi.waitFor(() => expect(forks()).toHaveLength(6));
-  await open(other.id, `Answer 0 for ${other.id}.`);
+  await vi.waitFor(() => expect(forks()).toHaveLength(1));
+  await side.open(other.id, `Answer 0 for ${other.id}.`);
   await rejectPendingCommand("Side chats are paused.");
   await expect.element(page.getByText("Side chats are paused.")).toBeVisible();
 
   // So does one that fails while Settings covers its thread.
-  await open(thread.id, `Answer 0 for ${thread.id}.`);
+  await side.open(thread.id, `Answer 0 for ${thread.id}.`);
   await userEvent.click(editor);
   await userEvent.keyboard("{Enter}");
-  await vi.waitFor(() => expect(forks()).toHaveLength(7));
-  await act(() => router.navigate({ to: "/settings/general" }));
+  await vi.waitFor(() => expect(forks()).toHaveLength(2));
+  await side.openSettings();
   await expect
     .element(page.getByRole("heading", { name: "Time format", exact: true }))
     .toBeVisible();
