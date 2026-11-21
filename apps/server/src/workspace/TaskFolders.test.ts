@@ -22,6 +22,7 @@ import {
   taskFoldersTestProjectId as projectId,
   type TaskFoldersTestState,
 } from "./TaskFolders.testkit.ts";
+import { canonicalize, withWorkspaceLease } from "./workspaceLease.ts";
 
 const threadId = ThreadId.make("thread:task-folders");
 
@@ -876,11 +877,13 @@ it.live("removing a task folder waits for a repository being added to it", () =>
         .addRepository({ threadId, repositoryPath: web })
         .pipe(Effect.forkChild);
       yield* Deferred.await(adding);
-      // The removal reads the record while the repository is still being added to it.
+      // The removal reads the record while the repository is still being added to it, and names
+      // the folder by a symlink, which is the same folder.
+      yield* fileSystem.symlink(root, path.join(tmp, "feature-alias"));
       const removalRead = yield* Deferred.make<void>();
       state.afterFindContaining = Deferred.succeed(removalRead, undefined).pipe(Effect.asVoid);
       const remove = yield* taskFolders
-        .removeIfTaskFolder({ path: root, force: true })
+        .removeIfTaskFolder({ cwd: tmp, path: "feature-alias", force: true })
         .pipe(Effect.forkChild);
       yield* Deferred.await(removalRead);
       yield* Deferred.succeed(proceed, undefined);
@@ -891,6 +894,52 @@ it.live("removing a task folder waits for a repository being added to it", () =>
       assert.isNull(yield* taskFolders.find(root));
       assert.isFalse(yield* fileSystem.exists(root));
       assert.equal(yield* worktreeCount(web), 1);
+      assert.equal(yield* worktreeCount(api), 1);
+    }),
+  ),
+);
+
+it.live("removing a task folder waits for a turn in one of its worktrees", () =>
+  withState((state) =>
+    Effect.gen(function* () {
+      const { fileSystem, path, tmp, repository, worktreeCount } = yield* fixture;
+      const taskFolders = yield* TaskFolders.TaskFolders;
+      const api = yield* repository("shop/api");
+      state.workspaceRoot = path.join(tmp, "shop");
+      const { taskFolder } = yield* create("feature", [{ path: api }]);
+      const root = taskFolder.root;
+      // Resolved up front, so a synchronous realPath queues the turn on the lease right away.
+      const apiCheckout = yield* canonicalize(
+        fileSystem,
+        path,
+        taskFolder.repositories[0]!.worktreePath,
+      );
+      const leased = yield* Deferred.make<void>();
+      const proceed = yield* Deferred.make<void>();
+      let reads = 0;
+      // The second read is the one under the leases.
+      state.afterFindContaining = Effect.suspend(() =>
+        ++reads === 2
+          ? Deferred.succeed(leased, undefined).pipe(Effect.andThen(Deferred.await(proceed)))
+          : Effect.void,
+      );
+      const remove = yield* taskFolders
+        .removeIfTaskFolder({ cwd: path.dirname(root), path: path.basename(root), force: true })
+        .pipe(Effect.forkChild);
+      yield* Deferred.await(leased);
+
+      const calls: string[] = [];
+      const turn = yield* withWorkspaceLease(
+        FileSystem.makeNoop({ realPath: (target) => Effect.succeed(target) }),
+        path,
+        apiCheckout,
+        Effect.sync(() => calls.push("turn")),
+      ).pipe(Effect.forkChild({ startImmediately: true }));
+      assert.deepEqual(calls, []);
+      yield* Deferred.succeed(proceed, undefined);
+      assert.isTrue(yield* Fiber.join(remove));
+      yield* Fiber.join(turn);
+      assert.isFalse(yield* fileSystem.exists(root));
       assert.equal(yield* worktreeCount(api), 1);
     }),
   ),

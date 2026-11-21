@@ -2341,7 +2341,9 @@ export const layer: Layer.Layer<
                   thread.worktreePath === null
                     ? start(input, captureStartingRun)
                     : withWorkspaceLease(
-                        path.resolve(thread.worktreePath),
+                        fileSystem,
+                        path,
+                        thread.worktreePath,
                         start(input, captureStartingRun),
                       ),
                 );

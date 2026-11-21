@@ -23,6 +23,7 @@ interface GitDiffFileContentsSource {
   readonly sourceKind: ReviewDiffPreviewSourceKind;
   readonly baseRef: string | null;
   readonly headRef: string | null;
+  readonly mergeBase?: string | undefined;
   readonly cacheKey: string;
 }
 
@@ -157,6 +158,7 @@ export function createGitDiffFileContentsLoader<E>(
         changeType,
         baseRef: source.baseRef,
         headRef: source.headRef,
+        ...(source.mergeBase === undefined ? {} : { mergeBase: source.mergeBase }),
         oldPath,
         newPath,
       },

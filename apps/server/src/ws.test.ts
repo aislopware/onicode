@@ -1982,6 +1982,7 @@ it.effect(
       const path = yield* Path.Path;
       const removing = yield* Deferred.make<void>();
       const proceed = yield* Deferred.make<void>();
+      const refreshed = yield* Deferred.make<string>();
       const exits = yield* Queue.unbounded<Exit.Exit<unknown, unknown>>();
       const services = Layer.mergeAll(
         layerUnusedConfigRpcServices,
@@ -1992,7 +1993,8 @@ it.effect(
         }),
         Layer.mock(VcsStatusBroadcaster.VcsStatusBroadcaster)({
           refreshStatus: () => Effect.succeed({} as never),
-          refreshLocalStatus: () => Effect.succeed({} as never),
+          refreshLocalStatus: (cwd) =>
+            Deferred.succeed(refreshed, cwd).pipe(Effect.as({} as never)),
         }),
         Layer.mock(ExternalLauncher.ExternalLauncher)({}),
         Layer.mock(ProviderRegistry.ProviderRegistry)({}),
@@ -2035,7 +2037,10 @@ it.effect(
       yield* Deferred.await(removing);
       // GitWorkflowService leases a checkout by its path, which Git resolved against the cwd.
       const calls: string[] = [];
+      // A synchronous realPath leaves the action waiting on the lease by the next assertion.
       const gitAction = yield* withWorkspaceLease(
+        FileSystem.makeNoop({ realPath: (target) => Effect.succeed(target) }),
+        yield* Path.Path,
         path.resolve("/repo", "worktrees/feature"),
         Effect.sync(() => calls.push("git action")),
       ).pipe(Effect.forkChild({ startImmediately: true }));
@@ -2043,6 +2048,7 @@ it.effect(
       yield* Deferred.succeed(proceed, undefined);
       yield* Fiber.join(gitAction);
       assert.isTrue(Exit.isSuccess(yield* Queue.take(exits)));
+      assert.equal(yield* Deferred.await(refreshed), "/repo/worktrees/feature");
     }).pipe(
       Effect.provide(
         Layer.mergeAll(

@@ -256,13 +256,14 @@ export class ThreadWorktreeRestore extends Context.Service<
 export const layerThreadWorktreeRestore = Layer.effect(
   ThreadWorktreeRestore,
   Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const restore = yield* makeRestoreMissingWorktree;
     return {
       restore: Effect.fn("ThreadWorktreeRestore.restore")(function* (thread: WorktreeThread) {
         return yield* thread.worktreePath === null
           ? restore(thread)
-          : withWorkspaceLease(path.resolve(thread.worktreePath), restore(thread));
+          : withWorkspaceLease(fileSystem, path, thread.worktreePath, restore(thread));
       }),
     };
   }),

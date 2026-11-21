@@ -99,6 +99,8 @@ export const ReviewDiffFileContentsInput = Schema.Struct({
   changeType: ReviewDiffChangeType,
   baseRef: Schema.NullOr(TrimmedNonEmptyString),
   headRef: Schema.NullOr(TrimmedNonEmptyString),
+  // Branch-range only: the preview's merge base, so expanded context matches its hunks.
+  mergeBase: Schema.optionalKey(ReviewMergeBase),
   oldPath: Schema.NonEmptyString,
   newPath: Schema.NonEmptyString,
 });

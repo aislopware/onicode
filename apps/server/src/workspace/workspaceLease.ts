@@ -6,23 +6,31 @@ import * as Semaphore from "effect/Semaphore";
 
 const leases = new Map<string, { semaphore: Semaphore.Semaphore; users: number }>();
 
-export const withWorkspaceLease = <A, E, R>(
-  cwd: string,
-  effect: Effect.Effect<A, E, R>,
-): Effect.Effect<A, E, R> =>
+const holdLease = <A, E, R>(key: string, effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
   Effect.suspend(() => {
-    const lease = leases.get(cwd) ?? { semaphore: Semaphore.makeUnsafe(1), users: 0 };
-    leases.set(cwd, lease);
+    const lease = leases.get(key) ?? { semaphore: Semaphore.makeUnsafe(1), users: 0 };
+    leases.set(key, lease);
     lease.users++;
     return lease.semaphore.withPermit(effect).pipe(
       Effect.ensuring(
         Effect.sync(() => {
           lease.users--;
-          if (lease.users === 0) leases.delete(cwd);
+          if (lease.users === 0) leases.delete(key);
         }),
       ),
     );
   });
+
+/** Keyed by the real path, so callers that name one checkout through a symlink share its lease. */
+export const withWorkspaceLease = <A, E, R>(
+  fileSystem: FileSystem.FileSystem,
+  path: Path.Path,
+  cwd: string,
+  effect: Effect.Effect<A, E, R>,
+): Effect.Effect<A, E, R> =>
+  canonicalize(fileSystem, path, path.resolve(cwd)).pipe(
+    Effect.flatMap((key) => holdLease(key, effect)),
+  );
 
 /**
  * Every lease in `cwds`, each once. They are taken in sorted order, so two callers that hold
@@ -30,10 +38,16 @@ export const withWorkspaceLease = <A, E, R>(
  * ask for more.
  */
 export const withWorkspaceLeases = <A, E, R>(
+  fileSystem: FileSystem.FileSystem,
+  path: Path.Path,
   cwds: Iterable<string>,
   effect: Effect.Effect<A, E, R>,
 ): Effect.Effect<A, E, R> =>
-  [...new Set(cwds)].toSorted().reduceRight((inner, cwd) => withWorkspaceLease(cwd, inner), effect);
+  Effect.forEach([...cwds], (cwd) => canonicalize(fileSystem, path, path.resolve(cwd))).pipe(
+    Effect.flatMap((keys) =>
+      [...new Set(keys)].toSorted().reduceRight((inner, key) => holdLease(key, inner), effect),
+    ),
+  );
 
 // A restore rewrites files under its directory, so it must exclude provider
 // startup in any overlapping workspace: symlink aliases, parents, and children.

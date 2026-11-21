@@ -2456,12 +2456,18 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       yield* runGit(repoDir, ["add", "follow-up.txt"]);
       yield* runGit(repoDir, ["commit", "-m", "Follow-up work"]);
       yield* runGit(repoDir, ["fetch", "--prune", "origin"]);
+      const gate = { started: yield* Deferred.make<void>(), release: yield* Deferred.make<void>() };
 
       const { manager } = yield* makeManager({
-        providerScenario: { prListSequence: [[squashMergedPr(branch, headSha)]] },
+        providerScenario: { prListSequence: [[squashMergedPr(branch, headSha)]], prListGate: gate },
       });
 
-      const status = yield* manager.status({ cwd: repoDir });
+      const pending = yield* Effect.forkChild(manager.status({ cwd: repoDir }));
+      yield* Deferred.await(gate.started);
+      // A checkout during the lookup must not answer for the branch status was read for.
+      yield* runGit(repoDir, ["checkout", "--quiet", "--detach", headSha]);
+      yield* Deferred.succeed(gate.release, undefined);
+      const status = yield* Fiber.join(pending);
 
       expect(status.pr?.state).toBe("merged");
       expect(status.aheadCount).toBe(1);
@@ -3694,6 +3700,22 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       expect(skipped.commit.status).toBe("skipped_no_changes");
       expect((yield* runGit(repoDir, ["rev-parse", "HEAD"])).stdout).toBe(head);
       expect((yield* runGit(repoDir, ["show", ":README.md"])).stdout).toBe("staged\n");
+
+      // A selected file whose edit was reverted resets the index first, so a staged gitlink must
+      // count even when diffs hide it.
+      yield* runGit(repoDir, ["reset", "--quiet"]);
+      yield* runGit(repoDir, ["config", "diff.ignoreSubmodules", "all"]);
+      yield* runGit(repoDir, ["update-index", "--add", "--cacheinfo", `160000,${head.trim()},sub`]);
+      const selected = yield* runStackedAction(manager, {
+        cwd: repoDir,
+        action: "commit",
+        commitMessage: "Nothing selected to commit",
+        filePaths: ["README.md"],
+      });
+      expect(selected.commit.status).toBe("skipped_no_changes");
+      expect((yield* runGit(repoDir, ["ls-files", "--stage", "sub"])).stdout).toContain("160000");
+      yield* runGit(repoDir, ["config", "--unset", "diff.ignoreSubmodules"]);
+      yield* runGit(repoDir, ["rm", "--cached", "--quiet", "sub"]);
 
       // A generated message already checked a scratch index, so staging again stays at two.
       NodeFS.writeFileSync(NodePath.join(repoDir, "README.md"), "generated\n");

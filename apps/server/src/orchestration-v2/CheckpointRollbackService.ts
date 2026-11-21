@@ -25,7 +25,6 @@ import type * as ServerSettings from "../serverSettings.ts";
 import { makeIsManagedWorktreePath } from "../worktreesDirectory.ts";
 import * as TaskFolders from "../workspace/TaskFolders.ts";
 import {
-  canonicalize,
   withCheckpointRestoreReservation,
   withWorkspaceLease,
   withWorkspaceLeases,
@@ -548,10 +547,10 @@ export const layer: Layer.Layer<
           // touch no files; reserving for them would stall turn starts on the
           // slow provider rollback for nothing.
           if (input.restoreFiles === false) {
-            return yield* withWorkspaceLease(worktreePath, execute(input));
+            return yield* withWorkspaceLease(fileSystem, path, worktreePath, execute(input));
           }
           // A file restore also rewrites the repositories it restores: the task folder's other
-          // worktrees and their submodules. Git actions lease each checkout by its real path.
+          // worktrees and their submodules.
           const taskFolder = yield* taskFolders.find(worktreePath);
           const { scope } =
             taskFolder === null
@@ -577,18 +576,12 @@ export const layer: Layer.Layer<
             worktreePath,
             ...(taskFolder === null ? [] : [taskFolder.projectPath]),
             ...repositories,
-          ].map((checkout) => path.resolve(checkout));
-          const leases = [
-            ...checkouts,
-            ...(yield* Effect.forEach(checkouts, (checkout) =>
-              canonicalize(fileSystem, path, checkout),
-            )),
           ];
           yield* withCheckpointRestoreReservation(
             fileSystem,
             path,
             taskFolder?.root ?? worktreePath,
-            withWorkspaceLeases(leases, execute(input)),
+            withWorkspaceLeases(fileSystem, path, checkouts, execute(input)),
           );
         },
         (effect, input) =>

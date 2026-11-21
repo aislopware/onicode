@@ -11,7 +11,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
-import type * as Path from "effect/Path";
+import * as Path from "effect/Path";
 import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import { SCAN_CACHE_FILE_NAME } from "./usage/usageScanCache.ts";
@@ -44,7 +44,7 @@ import * as ThreadManagement from "./orchestration-v2/ThreadManagementService.ts
 import * as TerminalManager from "./terminal/Manager.ts";
 import { CodexProviderCapabilitiesV2 } from "./orchestration-v2/Adapters/CodexAdapterV2.ts";
 import { ServerActivation } from "./serverActivation.ts";
-import { withWorkspaceLease } from "./workspace/workspaceLease.ts";
+import { canonicalize, withWorkspaceLease } from "./workspace/workspaceLease.ts";
 import { describe, expect, it } from "@effect/vitest";
 import {
   CheckpointScopeId,
@@ -3254,6 +3254,8 @@ describe("storage cleanup reports and local file policies", () => {
         const cleanup = yield* fixture.service.runNow.pipe(Effect.forkChild);
         yield* Deferred.await(fixture.measuring);
         yield* withWorkspaceLease(
+          fixture.fs,
+          yield* Path.Path,
           fixture.worktree,
           Effect.sync(() => {
             fixture.setThreads([
@@ -4270,11 +4272,20 @@ describe("settled worktree rechecks", () => {
         yield* Deferred.await(removing);
         // A repository being added holds the project folder's lease, a turn start its thread's.
         const calls: string[] = [];
+        const path = yield* Path.Path;
+        // Keys resolved first, so a synchronous realPath leaves each waiting by the assertion.
+        const syncRealPath = FileSystem.makeNoop({ realPath: (target) => Effect.succeed(target) });
         const waiting = yield* Effect.forEach([projectPath, sibling], (checkout) =>
-          withWorkspaceLease(
-            checkout,
-            Effect.sync(() => calls.push(checkout)),
-          ).pipe(Effect.forkChild({ startImmediately: true })),
+          canonicalize(fixture.fs, path, checkout).pipe(
+            Effect.flatMap((key) =>
+              withWorkspaceLease(
+                syncRealPath,
+                path,
+                key,
+                Effect.sync(() => calls.push(checkout)),
+              ).pipe(Effect.forkChild({ startImmediately: true })),
+            ),
+          ),
         );
         expect(calls).toEqual([]);
         yield* Deferred.succeed(proceed, undefined);
@@ -4324,9 +4335,13 @@ describe("settled worktree rechecks", () => {
         });
         // An add holds the project folder's lease and records its checkout before letting go.
         const added = yield* Deferred.make<void>();
+        const holding = yield* Deferred.make<void>();
         const adding = yield* withWorkspaceLease(
+          fixture.fs,
+          yield* Path.Path,
           projectPath,
-          Deferred.await(added).pipe(
+          Deferred.succeed(holding, undefined).pipe(
+            Effect.andThen(Deferred.await(added)),
             Effect.andThen(
               Effect.sync(() => {
                 repositories = [
@@ -4340,6 +4355,7 @@ describe("settled worktree rechecks", () => {
             ),
           ),
         ).pipe(Effect.forkChild({ startImmediately: true }));
+        yield* Deferred.await(holding);
         const run = yield* fixture.service.runNow.pipe(Effect.forkChild);
         yield* Deferred.await(read);
         yield* Deferred.succeed(added, undefined);
