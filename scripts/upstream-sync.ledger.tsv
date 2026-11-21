@@ -3110,3 +3110,4 @@ c385377544	take	fix(server): slash commands sent during a turn wait instead of s
 d3bb8f8108	take	perf(server): deleting a thread's worktree refreshes git status once, not twice (#40337)
 ece4964b8e	take	fix(antigravity): accept null skill manifest lists (#40287)
 e0f3ab9e78	take	fix(mobile): text selection menu items follow the UI language (#40297)
+997575be5f	take	perf(server): pull no longer scans the working tree twice (#40338)
