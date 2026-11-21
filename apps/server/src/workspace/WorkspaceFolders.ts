@@ -134,17 +134,9 @@ const folderProbes = Effect.gen(function* () {
       Effect.orElseSucceed(() => false),
     );
 
-  // A folder that is gone or is not one has none. `strict` fails on one that cannot be read,
-  // which says nothing about what is inside it.
-  const childFolders = (folder: string, strict = false) =>
+  const childFolders = (folder: string) =>
     fileSystem.readDirectory(folder).pipe(
-      Effect.catch((error) =>
-        strict && error.reason._tag !== "NotFound" && error.reason._tag !== "BadResource"
-          ? Effect.fail(
-              new WorkspaceFoldersError({ operation: "scan", detail: `Could not read ${folder}.` }),
-            )
-          : Effect.succeed<ReadonlyArray<string>>([]),
-      ),
+      Effect.orElseSucceed((): ReadonlyArray<string> => []),
       Effect.map((names) =>
         names
           .filter((name) => !name.startsWith(".") && name !== "node_modules")
@@ -185,8 +177,6 @@ const readCodeWorkspaceFolders = Effect.fn("WorkspaceFolders.readCodeWorkspaceFo
 const scanFolders = Effect.fn("WorkspaceFolders.scan")(function* (
   input: WorkspaceScanFoldersInput,
   limit: number = PROJECT_TRACKED_FOLDERS_MAX,
-  /** Fails on a child folder that cannot be read, instead of finding nothing in it. */
-  strict = false,
 ): Effect.fn.Return<
   WorkspaceScanFoldersResult,
   WorkspaceFoldersError,
@@ -218,7 +208,7 @@ const scanFolders = Effect.fn("WorkspaceFolders.scan")(function* (
       return Effect.gen(function* () {
         if (yield* ownsHistory(folderPath)) return [{ path: folderPath, name: boundedName(name) }];
         if (yield* exists(path.join(folderPath, ".git"))) return [];
-        const nested = yield* Effect.filter(yield* childFolders(folderPath, strict), ownsHistory, {
+        const nested = yield* Effect.filter(yield* childFolders(folderPath), ownsHistory, {
           concurrency: DETECTION_CONCURRENCY,
         });
         return nested.map((nestedPath) => ({
@@ -280,8 +270,8 @@ const scanFolders = Effect.fn("WorkspaceFolders.scan")(function* (
 /**
  * The repositories inside a project folder, read from disk: the ones a scan finds there, less
  * those the project's `onicode.json` leaves out. A folder outside it is never found this way, since
- * tracking one grants agents a place they could not reach before. Null when the folder, or one
- * inside it, cannot be read: that says nothing about what is inside it.
+ * tracking one grants agents a place they could not reach before. Null when the folder cannot be
+ * read, which says nothing about what is inside it.
  */
 export const discoverFolders = Effect.fn("WorkspaceFolders.discover")(function* (
   workspaceRoot: string,
@@ -294,9 +284,7 @@ export const discoverFolders = Effect.fn("WorkspaceFolders.discover")(function* 
   const path = yield* Path.Path;
   const { realPath, ownsHistory } = yield* folderProbes;
   // Uncapped: the folders outside the project are dropped below, and must not use up the room.
-  const scan = yield* scanFolders({ workspaceRoot }, Number.POSITIVE_INFINITY, true).pipe(
-    Effect.option,
-  );
+  const scan = yield* scanFolders({ workspaceRoot }, Number.POSITIVE_INFINITY).pipe(Effect.option);
   if (Option.isNone(scan)) return null;
   const root = scan.value.workspaceRoot;
   const realRoot = yield* realPath(root);
@@ -354,7 +342,9 @@ export const projectFolders = Effect.fn("WorkspaceFolders.projectFolders")(funct
   FileSystem.FileSystem | Path.Path
 > {
   return mergeProjectFolders(
-    (yield* discoverFolders(project.workspaceRoot)) ?? [],
+    // What could not be read keeps the repositories found there before.
+    (yield* discoverFolders(project.workspaceRoot)) ??
+      project.trackedFolders.filter((folder) => folder.discovered === true),
     project.trackedFolders,
   );
 });

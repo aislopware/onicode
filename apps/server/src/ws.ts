@@ -3143,9 +3143,13 @@ export const layerWsRpc = (
             Effect.flatMap((removed) =>
               removed
                 ? Effect.void
-                : // Under the lease a turn start in it takes, as for a whole task folder.
+                : // Under the lease a turn start in it takes, as for a whole task folder. Git
+                  // resolves a relative path against the command's cwd.
                   Effect.flatMap(Effect.service(Path.Path), (path) =>
-                    withWorkspaceLease(path.resolve(input.path), gitWorkflow.removeWorktree(input)),
+                    withWorkspaceLease(
+                      path.resolve(input.cwd, input.path),
+                      gitWorkflow.removeWorktree(input),
+                    ),
                   ),
             ),
             Effect.tap(() => refreshGitStatus(input.cwd)),

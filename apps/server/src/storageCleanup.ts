@@ -61,7 +61,11 @@ import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
 import { isNonRepositoryGitStderr } from "./vcs/GitVcsDriverCore.ts";
 import { isLinkedWorktree, removeLinkedWorktree } from "./vcs/worktreeRemoval.ts";
 import * as TaskFolders from "./workspace/TaskFolders.ts";
-import { withWorkspaceLease, withWorkspaceLeases } from "./workspace/workspaceLease.ts";
+import {
+  canonicalize,
+  withWorkspaceLease,
+  withWorkspaceLeases,
+} from "./workspace/workspaceLease.ts";
 import * as HostProcess from "@onicode/shared/HostProcess";
 import * as NodeSqliteClient from "@onicode/shared/nodeSqliteClient";
 import { isNetworkPath } from "@onicode/shared/path";
@@ -1307,29 +1311,6 @@ const make = Effect.gen(function* () {
       ),
       ...deletedThreads.filter((_thread, index) => !groups.has(deletedKeys[index]!)),
     ];
-    // Another thread in a task folder past its own retention does not hold the folder: removing
-    // its checkout is what cleanup would do anyway, and two such threads must not hold each other.
-    const dueForRemoval = (other: OrchestrationV2ThreadShell) => {
-      const rules = resolveWorktreeCleanup(serverSettings, other.projectId);
-      if (!worktreeCleanupEnabled(rules) || !storageCleanupThreadIdle(other, now, serverSettings))
-        return false;
-      const activityAt = storageCleanupActivityAt(other);
-      const settledAt = worktreeSettlementChain(other, threadsById, now, serverSettings).at(
-        -1,
-      )?.settledAt;
-      if (
-        other.settledAt !== null &&
-        now - Math.max(DateTime.toEpochMillis(other.updatedAt), activityAt) < SETTLE_SCRIPT_GRACE_MS
-      )
-        return false;
-      return (
-        (rules.worktreeAfterDays !== null && activityAt < now - rules.worktreeAfterDays * DAY_MS) ||
-        (settledAt != null &&
-          rules.worktreeSettledAfterDays !== null &&
-          now - Math.max(DateTime.toEpochMillis(settledAt), activityAt) >=
-            rules.worktreeSettledAfterDays * DAY_MS)
-      );
-    };
     for (const thread of candidates) {
       const settings = resolveWorktreeCleanup(serverSettings, thread.projectId);
       if (!worktreeCleanupEnabled(settings)) continue;
@@ -1465,15 +1446,15 @@ const make = Effect.gen(function* () {
           );
           const latest = bindings.filter((_binding, index) => bindingKeys[index] === worktreeKey);
           // The checks below cover the threads on this checkout; removal takes every checkout.
-          if (taskFolder !== null) {
-            for (const [index, binding] of bindings.entries()) {
-              const key = bindingKeys[index]!;
-              if (key === worktreeKey || (key !== guardedKey && !inside(guardedKey, key))) continue;
-              const other = yield* projections.getThreadShell(binding.threadId);
-              if (other !== null && !dueForRemoval(other))
-                return "another thread works in this task folder";
-            }
-          }
+          // Another thread's checkout is not this one's to remove, even when that thread is
+          // past its own retention: removal would leave it bound to nothing.
+          if (
+            taskFolder !== null &&
+            bindingKeys.some(
+              (key) => key !== worktreeKey && (key === guardedKey || inside(guardedKey, key)),
+            )
+          )
+            return "another thread works in this task folder";
           if (yield* hasTerminal(guardedPaths)) return waitForStop("open terminal");
           if (deleted) {
             if (
@@ -1617,11 +1598,22 @@ const make = Effect.gen(function* () {
             ...taskFolder.repositories.map((repository) => repository.worktreePath),
           ].map((checkout) => path.resolve(checkout));
           const realCheckouts = yield* Effect.forEach(checkouts, (checkout) =>
-            fs.realPath(checkout).pipe(Effect.orElseSucceed(() => checkout)),
+            canonicalize(fs, path, checkout),
           );
+          const checkoutsOf = (folder: NonNullable<typeof taskFolder>) =>
+            [
+              folder.projectPath,
+              ...folder.repositories.map((repository) => repository.worktreePath).toSorted(),
+            ].join("\0");
+          const leasedCheckouts = checkoutsOf(taskFolder);
           return yield* withWorkspaceLeases(
             [...checkouts, ...realCheckouts],
             Effect.gen(function* () {
+              // Removal reads the record again, so a checkout added before the leases were taken
+              // would go without its lease.
+              const current = yield* taskFolders.find(taskFolder.root);
+              if (current === null || checkoutsOf(current) !== leasedCheckouts)
+                return keep("task folder changed since check");
               const blockedSinceLease = yield* blockedSinceCheck();
               if (blockedSinceLease !== null) return keep(blockedSinceLease);
               if (yield* settingsChangedSinceCheck) return keep("settings changed since check");

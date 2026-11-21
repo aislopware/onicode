@@ -83,7 +83,7 @@ const release = (reservation: Reservation) =>
 // A worktree removed by storage cleanup is recreated inside the reserved
 // section, so resolve its nearest existing ancestor: a symlink alias above it
 // must still canonicalize the same on both sides. Walks at most the path depth.
-const canonicalize = (
+export const canonicalize = (
   fileSystem: FileSystem.FileSystem,
   path: Path.Path,
   target: string,

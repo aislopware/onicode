@@ -158,6 +158,7 @@ import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as WorkspaceFolders from "./workspace/WorkspaceFolders.ts";
 import * as TaskFolders from "./workspace/TaskFolders.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
+import { withWorkspaceLease } from "./workspace/workspaceLease.ts";
 import * as WorktreeSetupTracker from "./project/WorktreeSetupTracker.ts";
 import * as ProjectFaviconResolver from "./project/ProjectFaviconResolver.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
@@ -1972,6 +1973,85 @@ it.effect("a git action that fails partway still refreshes the repository status
       ),
     ),
   ),
+);
+
+it.effect(
+  "removing a worktree by a relative path holds the lease of the checkout Git removes",
+  () =>
+    Effect.gen(function* () {
+      const path = yield* Path.Path;
+      const removing = yield* Deferred.make<void>();
+      const proceed = yield* Deferred.make<void>();
+      const exits = yield* Queue.unbounded<Exit.Exit<unknown, unknown>>();
+      const services = Layer.mergeAll(
+        layerUnusedConfigRpcServices,
+        Layer.mock(TaskFolders.TaskFolders)({ removeIfTaskFolder: () => Effect.succeed(false) }),
+        Layer.mock(GitWorkflowService.GitWorkflowService)({
+          removeWorktree: () =>
+            Deferred.succeed(removing, undefined).pipe(Effect.andThen(Deferred.await(proceed))),
+        }),
+        Layer.mock(VcsStatusBroadcaster.VcsStatusBroadcaster)({
+          refreshStatus: () => Effect.succeed({} as never),
+          refreshLocalStatus: () => Effect.succeed({} as never),
+        }),
+        Layer.mock(ExternalLauncher.ExternalLauncher)({}),
+        Layer.mock(ProviderRegistry.ProviderRegistry)({}),
+        Layer.mock(UsageLimitSources.UsageLimitSources)({}),
+        Layer.mock(RemoteOpenTargets.RemoteOpenTargets)({}),
+        Layer.mock(DirectEndpoints.DirectEndpoints)({}),
+        Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({ namedProjectsRoot: "/unused" }),
+        Layer.mock(ScratchThreadPromotion.ScratchThreadPromotion)({}),
+        Layer.mock(ServerEnvironment.ServerEnvironment)({}),
+        Layer.mock(EnvironmentAuth.EnvironmentAuth)({}),
+      );
+      const server = yield* RpcServer.makeNoSerialization(WsRpcGroup, {
+        ...WS_RPC_SERVER_OPTIONS,
+        onFromServer: (response) =>
+          response._tag === "Exit" ? Queue.offer(exits, response.exit) : Effect.void,
+      }).pipe(
+        Effect.provide(
+          layerWsRpc(
+            {
+              sessionId: AuthSessionId.make("git-test"),
+              subject: "git-test",
+              scopes: [AuthSourceControlWriteScope],
+            },
+            yield* ServerBrowser.ServerBrowser,
+            () => Effect.void,
+            { secretReferences: true },
+          ).pipe(
+            Layer.provide(services),
+            Layer.merge(RpcAuthorization.layer([AuthSourceControlWriteScope])),
+          ),
+        ),
+      );
+      yield* server.write(0, {
+        _tag: "Request",
+        id: RpcMessage.RequestId("remove"),
+        tag: WS_METHODS.vcsRemoveWorktree,
+        payload: { cwd: "/repo", path: "worktrees/feature" },
+        headers: Headers.empty,
+      });
+      yield* Deferred.await(removing);
+      // GitWorkflowService leases a checkout by its path, which Git resolved against the cwd.
+      const calls: string[] = [];
+      const gitAction = yield* withWorkspaceLease(
+        path.resolve("/repo", "worktrees/feature"),
+        Effect.sync(() => calls.push("git action")),
+      ).pipe(Effect.forkChild({ startImmediately: true }));
+      assert.deepEqual(calls, []);
+      yield* Deferred.succeed(proceed, undefined);
+      yield* Fiber.join(gitAction);
+      assert.isTrue(Exit.isSuccess(yield* Queue.take(exits)));
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          Layer.fresh(layerConfigSources),
+          Layer.mock(PreviewAutomationBroker.PreviewAutomationBroker)({}),
+          Layer.mock(ServerBrowser.ServerBrowser)({}),
+        ),
+      ),
+    ),
 );
 
 it.effect("a publish whose push fails still refreshes the new remote", () =>

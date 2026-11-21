@@ -547,6 +547,14 @@ export const make = Effect.gen(function* () {
     return true;
   });
 
+  // A first attempt may have stopped between its commit and its metadata refresh.
+  const refreshReplayed = Effect.fn("ProjectService.refreshReplayed")(function* (
+    projectId: ProjectId,
+  ) {
+    const row = yield* readRow(projectId, { includeDeleted: true });
+    if (Option.isSome(row)) yield* projectEnrichment.invalidate([row.value.workspaceRoot]);
+  });
+
   const readCommitted = Effect.fn("ProjectService.readCommitted")(function* (projectId: ProjectId) {
     const row = yield* readRow(projectId, { includeDeleted: true });
     if (Option.isNone(row)) {
@@ -664,8 +672,10 @@ export const make = Effect.gen(function* () {
           projectId: input.projectId,
           type: "project.create",
         })
-      )
+      ) {
+        yield* refreshReplayed(input.projectId);
         return yield* readCommitted(input.projectId);
+      }
       yield* rejectUntrimmedWorkspaceRoot(input.projectId, input.workspaceRoot);
       // `foo /` and `foo /.` resolve to `foo `, which normalizing may create.
       yield* rejectUntrimmedWorkspaceRoot(input.projectId, path.resolve(input.workspaceRoot));
@@ -713,8 +723,12 @@ export const make = Effect.gen(function* () {
           projectId: input.projectId,
           type: "project.meta.update",
         })
-      )
+      ) {
+        // The folder it moved from is no longer known.
+        if (input.workspaceRoot !== undefined || input.faviconPath !== undefined)
+          yield* refreshReplayed(input.projectId);
         return yield* readCommitted(input.projectId);
+      }
       const existing = yield* readRow(input.projectId);
       if (Option.isNone(existing)) {
         return yield* new ProjectNotFoundError({ projectId: input.projectId });

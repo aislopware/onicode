@@ -1076,44 +1076,40 @@ it.live("removes a task folder's clean worktrees and keeps the one with uncommit
       // A nested worktree's uncommitted work must survive its thread's cleanup.
       yield* fs.writeFileString(`${root}/dist/api/tracked.txt`, "uncommitted\n");
       setTaskFolders(taskFolders);
-      const webThread = shell({
-        id: ThreadId.make("thread-web"),
-        lineage: {
-          rootThreadId: ThreadId.make("thread-web"),
-          parentThreadId: null,
-          relationshipToParent: null,
-        },
-        branch: "task",
-        worktreePath: `${root}/dist/web`,
-      });
-      // A thread working in one of the folder's checkouts keeps every checkout.
+      // A thread bound inside the folder keeps every checkout, even when it is past its own
+      // retention: removing the folder would leave it bound to nothing.
       setThreads([
         shell({ branch: "task", worktreePath: root }),
-        { ...webThread, status: "running" },
+        shell({
+          id: ThreadId.make("thread-web"),
+          lineage: {
+            rootThreadId: ThreadId.make("thread-web"),
+            parentThreadId: null,
+            relationshipToParent: null,
+          },
+          branch: "task",
+          worktreePath: `${root}/dist/web`,
+        }),
       ]);
       const shared = yield* service.runNow;
       expect(
         shared.entries
           .filter((entry) => entry.path?.startsWith(root))
           .map(({ path, reason }) => ({ path, reason })),
-      ).toEqual([
-        { path: root, reason: "Another thread works in this task folder" },
-        { path: `${root}/dist/web`, reason: "Thread is running or has pending work" },
-      ]);
+      ).toEqual(
+        [root, `${root}/dist/web`].map((path) => ({
+          path,
+          reason: "Another thread works in this task folder",
+        })),
+      );
       expect(yield* fs.exists(`${root}/dist/web`)).toBe(true);
-      // One past its own retention does not: two stale threads must not keep each other.
-      setThreads([shell({ branch: "task", worktreePath: root }), webThread]);
+      setThreads([shell({ branch: "task", worktreePath: root })]);
 
       const report = yield* service.runNow;
 
-      expect(report.entries.map((entry) => entry.reason)).not.toContain(
-        "Another thread works in this task folder",
-      );
       expect(
         report.entries
-          .filter(
-            (entry) => entry.threadId === ThreadId.make("thread-1") && entry.path?.startsWith(root),
-          )
+          .filter((entry) => entry.path?.startsWith(root))
           .map(({ path, outcome, reason }) => ({ path, outcome, reason }))
           .toSorted((left, right) => left.path!.localeCompare(right.path!)),
       ).toEqual([
@@ -4285,6 +4281,75 @@ describe("settled worktree rechecks", () => {
         yield* Fiber.joinAll(waiting);
         yield* Fiber.join(run);
         expect(calls.toSorted()).toEqual([projectPath, sibling].toSorted());
+      }),
+    ),
+  );
+  it.effect("keeps a task folder that gained a checkout before its leases were held", () =>
+    runCleanupTest(
+      Effect.gen(function* () {
+        yield* TestClock.setTime(NOW_MS);
+        const fixture = yield* cleanupFixture();
+        fixture.setSettings({
+          storageCleanup: {
+            ...DEFAULT_SERVER_SETTINGS.storageCleanup,
+            worktreeSettledAfterDays: 0,
+          },
+        });
+        fixture.setThreads([
+          shell({ branch: "feature", worktreePath: fixture.worktree, settledAt: at(0) }),
+        ]);
+        const projectPath = `${fixture.worktree}/app`;
+        let repositories: Array<{ repositoryPath: string; worktreePath: string; name: string }> =
+          [];
+        const read = yield* Deferred.make<void>();
+        let removals = 0;
+        fixture.setTaskFolders({
+          find: () =>
+            Deferred.succeed(read, undefined).pipe(
+              Effect.as({
+                root: fixture.worktree,
+                projectId: ProjectId.make("project-1"),
+                projectRoot: fixture.repo,
+                anchor: fixture.repo,
+                projectPath,
+                projectIsWorktree: true,
+                repositories,
+              }),
+            ),
+          remove: () =>
+            Effect.sync(() => {
+              removals += 1;
+              return { removed: [], kept: [] };
+            }),
+        });
+        // An add holds the project folder's lease and records its checkout before letting go.
+        const added = yield* Deferred.make<void>();
+        const adding = yield* withWorkspaceLease(
+          projectPath,
+          Deferred.await(added).pipe(
+            Effect.andThen(
+              Effect.sync(() => {
+                repositories = [
+                  {
+                    repositoryPath: `${fixture.repo}-api`,
+                    worktreePath: `${fixture.worktree}/api`,
+                    name: "api",
+                  },
+                ];
+              }),
+            ),
+          ),
+        ).pipe(Effect.forkChild({ startImmediately: true }));
+        const run = yield* fixture.service.runNow.pipe(Effect.forkChild);
+        yield* Deferred.await(read);
+        yield* Deferred.succeed(added, undefined);
+        yield* Fiber.join(adding);
+        const report = yield* Fiber.join(run);
+        expect(report.entries[0]).toMatchObject({
+          outcome: "kept",
+          reason: "Task folder changed since check",
+        });
+        expect(removals).toBe(0);
       }),
     ),
   );
