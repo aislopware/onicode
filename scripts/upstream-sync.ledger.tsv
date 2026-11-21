@@ -2958,3 +2958,4 @@ a8f5237a3c	take	CONFLICTs: Onicode already routed these links through useOpenLin
 d2329add05	skip	relay worker only; relay removed from Onicode
 d2bb611134	take	taken as is
 e19193db45	take	agentContextBudget re-measured on Onicode's text (mcpToolListJsonBytes 56325, -2 like upstream); eval cases taken with the change
+3d54dc96f9	take	CONFLICTs: took upstream's <label> wrapper, kept Onicode's border-border (Onicode's divider colour)
