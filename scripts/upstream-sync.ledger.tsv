@@ -3129,3 +3129,4 @@ d4d54658f9	take	fix(server): delegated task reaches its parent when its first up
 630f2e1444	take	fix(desktop): forward moves off a port served on IPv6; CONFLICT. Kept Onicode's dual 127.0.0.1+::1 bind (1ee545e27a), adopted upstream's :: probe and dual-stack test case: a :: server does not collide with specific binds on macOS
 8ee2a8a9a0	take	fix(web): RTF previews no longer join text across section and column breaks
 e2035934a6	take	fix(azure-devops): project-less pull request URLs can be pasted to check out
+28b413fe12	take	fix(server): queued messages no longer wait out every timed-out checkpoint in a shared folder
