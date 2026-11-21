@@ -5,6 +5,7 @@ import { Platform } from "react-native";
 import { resolveMobileSideThreadPresentation } from "@onicode/client-runtime/side-thread";
 
 import { useWorkspacePaneState } from "../layout/AdaptiveWorkspaceLayout";
+import { isNearestThreadRoute } from "./return-to-thread";
 
 export type ThreadInspectorMode = "route" | "git" | "files" | "preview";
 
@@ -41,15 +42,7 @@ export function useOpenThreadInspector() {
     if (presentation === "full-screen") return false;
     if (openInInspector) openInInspector(target);
     else {
-      const parent = navigation.getState()?.routes.findLast((route) => route.name === "Thread");
-      if (
-        !parent?.params ||
-        !("environmentId" in parent.params) ||
-        parent.params.environmentId !== source.environmentId ||
-        !("threadId" in parent.params) ||
-        parent.params.threadId !== source.threadId
-      )
-        return false;
+      if (!isNearestThreadRoute(navigation.getState()?.routes, source)) return false;
       navigation.dispatch(
         StackActions.popTo("Thread", { ...source, inspector: target }, { merge: true }),
       );
