@@ -441,6 +441,8 @@ function ProjectOverviewContent(props: {
         })}
       </SettingsSection>
       {props.members.map((member) => {
+        // A server that sends no folder list has no repositories to manage.
+        if (member.trackedFolders === undefined) return null;
         const environment = props.environments.find(
           (entry) => entry.environmentId === member.environmentId,
         )?.label;

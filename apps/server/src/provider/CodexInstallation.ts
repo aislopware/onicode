@@ -579,16 +579,31 @@ export const makeCodexInstallation = Effect.fn("makeCodexInstallation")(function
     executablePath: string,
     realExecutablePath: string,
   ) {
-    for (const manifest of [
-      path.join(path.dirname(executablePath), "node_modules", "@openai", "codex", "package.json"),
+    const readVersion = (manifest: string) =>
+      fs.readFileString(manifest).pipe(
+        Effect.flatMap(decodeNpmCodexPackage),
+        Effect.map((pkg) => pkg.version),
+        Effect.orElseSucceed(() => null),
+      );
+    const binVersion = yield* readVersion(
       path.join(path.dirname(realExecutablePath), "..", "package.json"),
-    ]) {
-      const pkg = yield* fs
-        .readFileString(manifest)
-        .pipe(Effect.flatMap(decodeNpmCodexPackage), Effect.option);
-      if (Option.isSome(pkg)) return pkg.value.version;
-    }
-    return null;
+    );
+    if (binVersion !== null) return binVersion;
+    // A version-manager wrapper can sit beside an npm install it never runs.
+    const runsAdjacentPackage = yield* fs.open(executablePath, { flag: "r" }).pipe(
+      Effect.flatMap((file) => file.readAlloc(4_096)),
+      Effect.map(
+        (head) =>
+          Option.isSome(head) &&
+          /node_modules[\\/]@openai[\\/]codex[\\/]/u.test(new TextDecoder().decode(head.value)),
+      ),
+      Effect.scoped,
+      Effect.orElseSucceed(() => false),
+    );
+    if (!runsAdjacentPackage) return null;
+    return yield* readVersion(
+      path.join(path.dirname(executablePath), "node_modules", "@openai", "codex", "package.json"),
+    );
   });
   const localCache = new Map<string, { fingerprint: string; executable: CodexExecutable | null }>();
   const resolveLocal = Effect.fn("CodexInstallation.resolveLocal")(

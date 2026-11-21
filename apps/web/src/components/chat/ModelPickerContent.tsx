@@ -269,7 +269,7 @@ function ProviderWorkspaceModels(props: {
 
 function UpdateRequiredNotice(props: {
   notice: string;
-  // False when the provider's own update cannot reach the version the notice asks for.
+  // False when the provider's own update cannot unlock any model the notice names.
   canUpdateInSettings: boolean;
   onRequestClose: (() => void) | undefined;
   className?: string;
