@@ -3093,3 +3093,4 @@ bb0d718b31	take	taken as is
 714997c420	take	fix(acp-registry): reinstall the current version when a cached build was removed upstream (#40261)
 0b02be3d5f	take	fix(server): Claude's answer before a late-read steer stays visible (#40265); CONFLICT resolved: kept Onicode's endReplySegment alongside upstream's final_answer publish
 d5f8a7573a	take	fix(web): RTF previews hide tracked deletions (#40264)
+0dc32b5c8b	take	perf(server): an untracked file's Diff panel patch no longer copies the whole Git index
