@@ -11,6 +11,7 @@ import type {
   EnvironmentId,
 } from "@onicode/contracts";
 import * as HostProcess from "@onicode/shared/HostProcess";
+import * as NetService from "@onicode/shared/Net";
 import type { NonEmptyReadonlyArray } from "effect/Array";
 import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
@@ -423,6 +424,7 @@ const make = Effect.gen(function* () {
   const platform = yield* HostProcess.Platform;
   const userId = yield* HostProcess.UserId;
   const random = yield* SecureRandom.SecureRandom;
+  const net = yield* NetService.NetService;
   const listenerScope = yield* Effect.scope;
   const routing = yield* Semaphore.make(1);
   const forwarding = yield* Semaphore.make(1);
@@ -753,7 +755,10 @@ const make = Effect.gen(function* () {
           ),
         ),
       );
-    const bound = yield* bind(remotePort).pipe(
+    // A dual-stack server on :: does not collide with the specific loopback binds on macOS, and
+    // would lose `localhost` to the forward, so the forward moves off its port instead.
+    const servedOnWildcard = !(yield* net.canListenOnHost(remotePort, "::"));
+    const bound = yield* bind(servedOnWildcard ? 0 : remotePort).pipe(
       // Taken here, or privileged: any free port still reaches the environment's.
       Effect.catch(() => bind(0)),
       Effect.onError(() => Scope.close(scope, Exit.void)),
