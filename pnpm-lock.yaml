@@ -835,6 +835,9 @@ importers:
       '@onicode/source-control-gitlab':
         specifier: workspace:*
         version: link:../../packages/source-control-gitlab
+      '@onicode/source-control-tanstack-source':
+        specifier: workspace:*
+        version: link:../../packages/source-control-tanstack-source
       character-entities:
         specifier: 2.0.2
         version: 2.0.2
@@ -2220,6 +2223,9 @@ importers:
       '@onicode/source-control-gitlab':
         specifier: workspace:*
         version: link:../source-control-gitlab
+      '@onicode/source-control-tanstack-source':
+        specifier: workspace:*
+        version: link:../source-control-tanstack-source
 
   packages/source-control-forgejo:
     dependencies:
@@ -2344,6 +2350,34 @@ importers:
       '@effect/platform-node':
         specifier: 4.1.5
         version: 4.1.5(bufferutil@4.1.0)(effect@4.1.5)(redis@6.2.1)(utf-8-validate@6.0.6)
+      '@effect/vitest':
+        specifier: 4.1.5
+        version: 4.1.5(patch_hash=78875d7920cfc710feed7e07e016ac9ff899acffcf40cb6342f11c08f28aa2b7)(@astrojs/compiler-rs@0.5.1)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.0)(@vitest/ui@5.1.0)(@volar/typescript@2.4.28(typescript@7.0.2))(bufferutil@4.1.0)(effect@4.1.5)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.0.13)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.48.0)(typescript@7.0.2)(unrun@0.2.39)(utf-8-validate@6.0.6)(yaml@2.9.1)
+      '@onicode/source-control-testing':
+        specifier: workspace:*
+        version: link:../source-control-testing
+      '@types/node':
+        specifier: 26.6.6
+        version: 26.6.6
+      vite-plus:
+        specifier: 1.7.0
+        version: 1.7.0(@astrojs/compiler-rs@0.5.1)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.0)(@vitest/ui@5.1.0)(@volar/typescript@2.4.28(typescript@7.0.2))(bufferutil@4.1.0)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.0.13)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.48.0)(typescript@7.0.2)(unrun@0.2.39)(utf-8-validate@6.0.6)(yaml@2.9.1)
+
+  packages/source-control-tanstack-source:
+    dependencies:
+      '@onicode/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@onicode/shared':
+        specifier: workspace:*
+        version: link:../shared
+      '@onicode/source-control-core':
+        specifier: workspace:*
+        version: link:../source-control-core
+      effect:
+        specifier: 4.1.5
+        version: 4.1.5
+    devDependencies:
       '@effect/vitest':
         specifier: 4.1.5
         version: 4.1.5(patch_hash=78875d7920cfc710feed7e07e016ac9ff899acffcf40cb6342f11c08f28aa2b7)(@astrojs/compiler-rs@0.5.1)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.0)(@vitest/ui@5.1.0)(@volar/typescript@2.4.28(typescript@7.0.2))(bufferutil@4.1.0)(effect@4.1.5)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.0.13)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.48.0)(typescript@7.0.2)(unrun@0.2.39)(utf-8-validate@6.0.6)(yaml@2.9.1)

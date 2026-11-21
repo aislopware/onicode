@@ -63,6 +63,7 @@
     "@onicode/source-control-gitcafe": "workspace:*",
     "@onicode/source-control-github": "workspace:*",
     "@onicode/source-control-gitlab": "workspace:*",
+    "@onicode/source-control-tanstack-source": "workspace:*",
     "character-entities": "2.0.2",
     "diff": "9.0.0",
     "effect": "catalog:",
