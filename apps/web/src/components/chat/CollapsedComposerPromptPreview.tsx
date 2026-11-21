@@ -2,7 +2,7 @@ import { isProviderSkillUserInvocable } from "@onicode/client-runtime/providerSk
 import type { ServerProviderSkill } from "@onicode/contracts";
 import { assistantCitationLabel } from "@onicode/shared/assistantCitations";
 import { formatProviderSkillDisplayName } from "@onicode/shared/inlineSkills";
-import { fileBasename } from "@onicode/shared/path";
+import { fileDisplayName } from "@onicode/shared/path";
 import {
   CircleDashedIcon,
   ImageIcon,
@@ -89,7 +89,7 @@ export function CollapsedComposerPromptPreview(props: {
             key={key}
             kind="mention"
             icon={<PierreEntryIcon pathValue={segment.path} kind="file" theme={props.theme} />}
-            label={fileBasename(segment.path)}
+            label={fileDisplayName(segment.path)}
           />
         );
       case "context-reference": {
