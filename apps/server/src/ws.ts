@@ -211,6 +211,7 @@ import * as DirectorySearch from "./workspace/DirectorySearch.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as WorkspaceFolders from "./workspace/WorkspaceFolders.ts";
 import * as TaskFolders from "./workspace/TaskFolders.ts";
+import { withWorkspaceLease } from "./workspace/workspaceLease.ts";
 import * as KnownWorkspaces from "./workspace/KnownWorkspaces.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
 import { readWorkflowScript } from "./orchestration-v2/workflowScriptQuery.ts";
@@ -3140,7 +3141,12 @@ export const layerWsRpc = (
                 }),
             ),
             Effect.flatMap((removed) =>
-              removed ? Effect.void : gitWorkflow.removeWorktree(input),
+              removed
+                ? Effect.void
+                : // Under the lease a turn start in it takes, as for a whole task folder.
+                  Effect.flatMap(Effect.service(Path.Path), (path) =>
+                    withWorkspaceLease(path.resolve(input.path), gitWorkflow.removeWorktree(input)),
+                  ),
             ),
             Effect.tap(() => refreshGitStatus(input.cwd)),
             // Subscribers of the removed checkout learn it is no longer a repository.

@@ -791,28 +791,32 @@ describe("checkpoint ref cleanup", () => {
     ),
   );
 
-  it.live("keeps refs of threads deleted in a git worktree's seeded dev home", () =>
-    runCleanupTest(
-      Effect.gen(function* () {
-        const fs = yield* FileSystem.FileSystem;
-        const config = yield* ServerConfig.ServerConfig;
-        const checkout = yield* fs.makeTempDirectoryScoped({ prefix: "cleanup-dev-checkout-" });
-        yield* fs.writeFileString(`${checkout}/.git`, "gitdir: /repo/.git/worktrees/dev\n");
-        const baseDir = `${checkout}/.onicode`;
-        yield* Effect.gen(function* () {
-          const { service, addThread, listRefs } = yield* checkpointCleanupFixture();
-          const refs = yield* addThread("deleted-in-copy", { deleted: true });
-          yield* service.runNow;
-          expect(yield* listRefs()).toEqual(refs.toSorted());
-        }).pipe(
-          Effect.provideService(ServerConfig.ServerConfig, {
-            ...config,
-            baseDir,
-            worktreesDir: `${baseDir}/worktrees`,
-          }),
-        );
-      }).pipe(Effect.provide(Sqlite.layerMemory)),
-    ),
+  it.live.each([{ home: "a git worktree's", worktreeHome: true }, { home: "a dev server's" }])(
+    "keeps refs of threads deleted in $home seeded dev home",
+    ({ worktreeHome = false }) =>
+      runCleanupTest(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const config = yield* ServerConfig.ServerConfig;
+          const checkout = yield* fs.makeTempDirectoryScoped({ prefix: "cleanup-dev-checkout-" });
+          yield* fs.writeFileString(`${checkout}/.git`, "gitdir: /repo/.git/worktrees/dev\n");
+          const baseDir = worktreeHome ? `${checkout}/.onicode` : config.baseDir;
+          yield* Effect.gen(function* () {
+            const { service, addThread, listRefs } = yield* checkpointCleanupFixture();
+            const refs = yield* addThread("deleted-in-copy", { deleted: true });
+            yield* service.runNow;
+            expect(yield* listRefs()).toEqual(refs.toSorted());
+          }).pipe(
+            Effect.provideService(ServerConfig.ServerConfig, {
+              ...config,
+              baseDir,
+              worktreesDir: `${baseDir}/worktrees`,
+              // The dev runner passes --dev to every server it starts.
+              dev: !worktreeHome,
+            }),
+          );
+        }).pipe(Effect.provide(Sqlite.layerMemory)),
+      ),
   );
 
   it.live("keeps deleted fork ancestry while a live or archived descendant needs it", () =>
@@ -1072,39 +1076,44 @@ it.live("removes a task folder's clean worktrees and keeps the one with uncommit
       // A nested worktree's uncommitted work must survive its thread's cleanup.
       yield* fs.writeFileString(`${root}/dist/api/tracked.txt`, "uncommitted\n");
       setTaskFolders(taskFolders);
+      const webThread = shell({
+        id: ThreadId.make("thread-web"),
+        lineage: {
+          rootThreadId: ThreadId.make("thread-web"),
+          parentThreadId: null,
+          relationshipToParent: null,
+        },
+        branch: "task",
+        worktreePath: `${root}/dist/web`,
+      });
       // A thread working in one of the folder's checkouts keeps every checkout.
       setThreads([
         shell({ branch: "task", worktreePath: root }),
-        shell({
-          id: ThreadId.make("thread-web"),
-          lineage: {
-            rootThreadId: ThreadId.make("thread-web"),
-            parentThreadId: null,
-            relationshipToParent: null,
-          },
-          branch: "task",
-          worktreePath: `${root}/dist/web`,
-        }),
+        { ...webThread, status: "running" },
       ]);
       const shared = yield* service.runNow;
       expect(
         shared.entries
           .filter((entry) => entry.path?.startsWith(root))
           .map(({ path, reason }) => ({ path, reason })),
-      ).toEqual(
-        [root, `${root}/dist/web`].map((path) => ({
-          path,
-          reason: "Another thread works in this task folder",
-        })),
-      );
+      ).toEqual([
+        { path: root, reason: "Another thread works in this task folder" },
+        { path: `${root}/dist/web`, reason: "Thread is running or has pending work" },
+      ]);
       expect(yield* fs.exists(`${root}/dist/web`)).toBe(true);
-      setThreads([shell({ branch: "task", worktreePath: root })]);
+      // One past its own retention does not: two stale threads must not keep each other.
+      setThreads([shell({ branch: "task", worktreePath: root }), webThread]);
 
       const report = yield* service.runNow;
 
+      expect(report.entries.map((entry) => entry.reason)).not.toContain(
+        "Another thread works in this task folder",
+      );
       expect(
         report.entries
-          .filter((entry) => entry.path?.startsWith(root))
+          .filter(
+            (entry) => entry.threadId === ThreadId.make("thread-1") && entry.path?.startsWith(root),
+          )
           .map(({ path, outcome, reason }) => ({ path, outcome, reason }))
           .toSorted((left, right) => left.path!.localeCompare(right.path!)),
       ).toEqual([
@@ -2422,9 +2431,13 @@ describe("orphan worktree reports", () => {
     },
     // A plain clone's home seeded with migrate-dev-db.
     { home: "a seeded dev", worktreeHome: false, seeded: true, customFolderOutcome: "kept" },
+    // A plain clone's dev server on its own `--home-dir`, seeded before the marker existed.
+    { home: "a dev server's", dev: "own", customFolderOutcome: "kept" },
+    // A plain clone's dev server keeps its state in `<home>/dev`, beside an install's.
+    { home: "an install's shared dev", dev: "shared", customFolderOutcome: "kept" },
   ] as const)(
     "on $home home, a custom worktrees folder ends $customFolderOutcome",
-    ({ worktreeHome, seeded, customFolderOutcome }) =>
+    ({ worktreeHome = false, seeded = false, dev, customFolderOutcome }) =>
       runCleanupTest(
         Effect.gen(function* () {
           const fs = yield* FileSystem.FileSystem;
@@ -2441,6 +2454,8 @@ describe("orphan worktree reports", () => {
               ...config,
               baseDir,
               worktreesDir: `${baseDir}/worktrees`,
+              dev: dev !== undefined,
+              ...(dev === "shared" ? { stateDir: `${baseDir}/dev` } : {}),
             }),
           );
           const customFolder = yield* fs.realPath(
@@ -2469,7 +2484,8 @@ describe("orphan worktree reports", () => {
             customFolderOutcome,
           );
           expect(yield* fs.exists(realWorktree)).toBe(customFolderOutcome === "kept");
-          expect(yield* fs.exists(fixture.worktree)).toBe(false);
+          // The worktrees folder of a home shared with an install is the install's.
+          expect(yield* fs.exists(fixture.worktree)).toBe(dev === "shared");
         }),
       ),
   );
@@ -4214,6 +4230,61 @@ describe("settled worktree rechecks", () => {
           outcome: "kept",
           reason: "Settings changed since check",
         });
+      }),
+    ),
+  );
+  it.effect("holds every checkout's lease while it removes a task folder", () =>
+    runCleanupTest(
+      Effect.gen(function* () {
+        yield* TestClock.setTime(NOW_MS);
+        const fixture = yield* cleanupFixture();
+        fixture.setSettings({
+          storageCleanup: {
+            ...DEFAULT_SERVER_SETTINGS.storageCleanup,
+            worktreeSettledAfterDays: 0,
+          },
+        });
+        fixture.setThreads([
+          shell({ branch: "feature", worktreePath: fixture.worktree, settledAt: at(0) }),
+        ]);
+        const projectPath = `${fixture.worktree}/app`;
+        const sibling = `${fixture.worktree}/api`;
+        const removing = yield* Deferred.make<void>();
+        const proceed = yield* Deferred.make<void>();
+        fixture.setTaskFolders({
+          find: () =>
+            Effect.succeed({
+              root: fixture.worktree,
+              projectId: ProjectId.make("project-1"),
+              projectRoot: fixture.repo,
+              anchor: fixture.repo,
+              projectPath,
+              projectIsWorktree: true,
+              repositories: [
+                { repositoryPath: `${fixture.repo}-api`, worktreePath: sibling, name: "api" },
+              ],
+            }),
+          remove: () =>
+            Deferred.succeed(removing, undefined).pipe(
+              Effect.andThen(Deferred.await(proceed)),
+              Effect.as({ removed: [], kept: [] }),
+            ),
+        });
+        const run = yield* fixture.service.runNow.pipe(Effect.forkChild);
+        yield* Deferred.await(removing);
+        // A repository being added holds the project folder's lease, a turn start its thread's.
+        const calls: string[] = [];
+        const waiting = yield* Effect.forEach([projectPath, sibling], (checkout) =>
+          withWorkspaceLease(
+            checkout,
+            Effect.sync(() => calls.push(checkout)),
+          ).pipe(Effect.forkChild({ startImmediately: true })),
+        );
+        expect(calls).toEqual([]);
+        yield* Deferred.succeed(proceed, undefined);
+        yield* Fiber.joinAll(waiting);
+        yield* Fiber.join(run);
+        expect(calls.toSorted()).toEqual([projectPath, sibling].toSorted());
       }),
     ),
   );

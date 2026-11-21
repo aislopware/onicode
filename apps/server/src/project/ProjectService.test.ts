@@ -436,6 +436,7 @@ it.layer(layerTest)("ProjectService", (it) => {
       assert.deepEqual((yield* update("clear", { trackedFolders: [] })).trackedFolders, []);
       // A retried accepted command replays its receipt, though a folder it added is gone now.
       assert.deepEqual((yield* update("track", { trackFolders: tracked })).trackedFolders, []);
+      assert.deepEqual((yield* create("valid", tracked)).trackedFolders, []);
 
       // A moved project lists the repositories of the folder it moved to, without being told.
       const moved = yield* fileSystem.realPath(
@@ -445,6 +446,9 @@ it.layer(layerTest)("ProjectService", (it) => {
       assert.deepEqual((yield* update("move", { workspaceRoot: moved })).trackedFolders, [
         { path: `${moved}/web`, name: "web", discovered: true },
       ]);
+      // So does one whose folder is gone now.
+      yield* fileSystem.remove(moved, { recursive: true });
+      assert.equal((yield* update("move", { workspaceRoot: moved })).workspaceRoot, moved);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 

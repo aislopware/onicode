@@ -24,6 +24,17 @@ export const withWorkspaceLease = <A, E, R>(
     );
   });
 
+/**
+ * Every lease in `cwds`, each once. They are taken in sorted order, so two callers that hold
+ * several at once cannot each wait on one the other has; a caller holding one lease must not
+ * ask for more.
+ */
+export const withWorkspaceLeases = <A, E, R>(
+  cwds: Iterable<string>,
+  effect: Effect.Effect<A, E, R>,
+): Effect.Effect<A, E, R> =>
+  [...new Set(cwds)].toSorted().reduceRight((inner, cwd) => withWorkspaceLease(cwd, inner), effect);
+
 // A restore rewrites files under its directory, so it must exclude provider
 // startup in any overlapping workspace: symlink aliases, parents, and children.
 // Kept apart from withWorkspaceLease because that lease is non-reentrant and

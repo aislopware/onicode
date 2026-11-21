@@ -2535,15 +2535,20 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       options?: { readonly allowRemoteOfCurrent?: boolean },
     ) {
       const cacheCwd = yield* repositoryPathsCacheKey(cwd);
-      const gitCommonDir = (yield* Cache.get(repositoryPathsCache, cacheCwd).pipe(
+      const repositoryPaths = yield* Cache.get(repositoryPathsCache, cacheCwd).pipe(
         Effect.orElseSucceed(() => null),
-      ))?.gitCommonDir;
+      );
+      const gitCommonDir = repositoryPaths?.gitCommonDir;
+      // Effective config and refs differ per worktree, never per directory inside one.
       const inputsStamp =
         gitCommonDir === undefined
           ? null
           : yield* Cache.get(
               baseBranchInputsStampCache,
-              new BaseBranchInputsStampKey({ cwd: cacheCwd, gitCommonDir }),
+              new BaseBranchInputsStampKey({
+                cwd: repositoryPaths?.worktreeRoot ?? cacheCwd,
+                gitCommonDir,
+              }),
             ).pipe(Effect.orElseSucceed(() => null));
       if (gitCommonDir === undefined || inputsStamp === null) {
         return yield* findBaseBranchForNoUpstream(cwd, refName, options);

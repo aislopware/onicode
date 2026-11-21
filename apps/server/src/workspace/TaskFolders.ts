@@ -921,15 +921,9 @@ const make = Effect.gen(function* () {
         ...taskPlan.trackedRepositories,
       ];
       let layoutStarted = false;
-      // Where this attempt makes the branch: a checkout that fails halfway leaves it behind.
-      const madeIn = new Set([
-        ...taskPlan.repositories
-          .filter((_, index) => !names[index]!.includes(branch))
-          .map((repository) => repository.path),
-        ...(taskPlan.projectIsRepository && !projectNames.includes(branch)
-          ? [taskPlan.projectRoot]
-          : []),
-      ]);
+      // Where this attempt made the branch. A checkout makes it only where none was there, and
+      // a failed one deletes what it made itself; a listing could predate another writer's.
+      const madeIn = new Set<string>();
       return yield* Effect.gen(function* () {
         branchMadeIn.set(root, madeIn);
         yield* fileSystem.makeDirectory(root, { recursive: true });
@@ -1010,6 +1004,7 @@ const make = Effect.gen(function* () {
             },
             input.projectProgress === undefined ? {} : { progress: input.projectProgress },
           );
+          madeIn.add(taskPlan.projectRoot);
         } else {
           yield* linkFolder(taskPlan.projectRoot, empty.projectPath, taskPlan.trackedRepositories);
         }
@@ -1038,6 +1033,7 @@ const make = Effect.gen(function* () {
                 Effect.tap((worktree) =>
                   Effect.suspend(() => {
                     created.push(worktree.repository);
+                    madeIn.add(repository.path);
                     repositoriesStartedFromOrigin ||= worktree.fromOrigin;
                     return (
                       input.onRepository?.({

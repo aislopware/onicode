@@ -4246,7 +4246,10 @@ export default function ChatView(props: ChatViewProps) {
       <RevertConfirmHost
         threadKey={routeThreadKey}
         environmentId={environmentId}
-        taskFolderPath={activeThreadWorktreePath}
+        // A server that sends no folder list predates task folders.
+        taskFolderPath={
+          activeProject?.trackedFolders === undefined ? null : activeThreadWorktreePath
+        }
         projection={serverProjection}
         worktreePath={activeThread?.worktreePath ?? null}
         onConfirm={onConfirmRevertStable}

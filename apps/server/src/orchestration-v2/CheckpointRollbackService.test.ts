@@ -403,12 +403,14 @@ it.effect.each([
 );
 
 it.effect.each([
-  { restoreFiles: true, taskFolder: false },
-  { restoreFiles: false, taskFolder: false },
-  { restoreFiles: true, taskFolder: true },
+  { restoreFiles: true, taskFolder: false, siblingBound: false },
+  { restoreFiles: false, taskFolder: false, siblingBound: false },
+  { restoreFiles: true, taskFolder: true, siblingBound: false },
+  // Bound to a repository worktree of its folder, as an existing-worktree launch can be.
+  { restoreFiles: true, taskFolder: true, siblingBound: true },
 ])(
-  "holds turn starts and Git actions in the thread's checkouts during rollback with restoreFiles $restoreFiles, taskFolder $taskFolder",
-  ({ restoreFiles, taskFolder }) =>
+  "holds turn starts and Git actions in the thread's checkouts during rollback with restoreFiles $restoreFiles, taskFolder $taskFolder, siblingBound $siblingBound",
+  ({ restoreFiles, taskFolder, siblingBound }) =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
@@ -417,11 +419,14 @@ it.effect.each([
       );
       const worktreesDir = path.join(workspaceRoot, "worktrees");
       const taskFolderRoot = path.join(worktreesDir, "repo", "feature");
-      const worktreePath = taskFolder ? path.join(taskFolderRoot, "app") : taskFolderRoot;
+      const projectPath = taskFolder ? path.join(taskFolderRoot, "app") : taskFolderRoot;
       // A sibling repository's worktree: outside the thread's worktree, inside its task folder.
       const repositoryWorktree = path.join(taskFolderRoot, "api");
+      // An initialized submodule: checkpointed and restored as a repository of its own.
+      const submodule = path.join(repositoryWorktree, "vendor", "lib");
+      const worktreePath = siblingBound ? repositoryWorktree : projectPath;
       yield* fileSystem.makeDirectory(path.join(worktreePath, ".git"), { recursive: true });
-      yield* fileSystem.makeDirectory(repositoryWorktree, { recursive: true });
+      yield* fileSystem.makeDirectory(submodule, { recursive: true });
       const threadId = ThreadId.make("rollback-reservation");
       const providerThreadId = ProviderThreadId.make("rollback-reservation-provider-thread");
       const providerInstanceId = ProviderInstanceId.make("rollback-reservation-provider");
@@ -474,7 +479,7 @@ it.effect.each([
                       projectId: ProjectId.make("rollback-reservation-project"),
                       projectRoot: path.join(workspaceRoot, "project", "app"),
                       anchor: path.join(workspaceRoot, "project"),
-                      projectPath: worktreePath,
+                      projectPath,
                       projectIsWorktree: true,
                       repositories: [
                         {
@@ -490,7 +495,15 @@ it.effect.each([
             Layer.mock(GitWorkflow.GitWorkflowService)({}),
             Layer.mock(CheckpointService.CheckpointServiceV2)({
               discardRepositorySnapshots: () => Effect.void,
-              repositoryScopesIfReadable: () => Effect.succeed([]),
+              repositoryScopesIfReadable: () =>
+                Effect.succeed(
+                  taskFolder
+                    ? ([
+                        { id: "scope:api", cwd: repositoryWorktree },
+                        { id: "scope:lib", cwd: submodule },
+                      ] as never)
+                    : [],
+                ),
               restore: () =>
                 Deferred.succeed(restoreEntered, undefined).pipe(
                   Effect.andThen(Deferred.await(releaseRestore)),
@@ -502,6 +515,7 @@ it.effect.each([
             Layer.mock(ProjectionStore.ProjectionStoreV2)({
               getThread: () => Effect.succeed(projection.thread),
               getCheckpointRollbackContext: () => Effect.succeed(projection),
+              getCheckpointContext: () => Effect.succeed({ checkpoints: [] } as never),
               getShellSnapshot: () =>
                 Effect.succeed({
                   schemaVersion: 1,
@@ -546,16 +560,18 @@ it.effect.each([
           yield* Deferred.await(restoreEntered);
           const duringRestore = yield* startTurn;
           // GitWorkflowService leases a checkout by its real path.
-          const gitAction = taskFolder
-            ? yield* withWorkspaceLease(
-                repositoryWorktree,
+          const gitActions = yield* Effect.forEach(
+            taskFolder ? [repositoryWorktree, submodule] : [],
+            (checkout) =>
+              withWorkspaceLease(
+                checkout,
                 Effect.sync(() => calls.push("git action")),
-              ).pipe(Effect.forkChild({ startImmediately: true }))
-            : undefined;
+              ).pipe(Effect.forkChild({ startImmediately: true })),
+          );
           assert.deepEqual(calls, []);
           yield* Deferred.succeed(releaseRestore, undefined);
           yield* Fiber.join(duringRestore);
-          if (gitAction !== undefined) yield* Fiber.join(gitAction);
+          yield* Fiber.joinAll(gitActions);
         } else {
           // Nothing is rewritten, so the turn start must not wait for the provider.
           yield* Fiber.join(turnStart);
@@ -567,7 +583,12 @@ it.effect.each([
         assert.sameMembers(
           calls,
           restoreFiles
-            ? ["files", "turn start", "turn start", ...(taskFolder ? ["git action"] : [])]
+            ? [
+                "files",
+                "turn start",
+                "turn start",
+                ...(taskFolder ? ["git action", "git action"] : []),
+              ]
             : ["turn start"],
         );
       }).pipe(Effect.provide(testLayer));
