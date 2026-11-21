@@ -636,6 +636,13 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
       }
       trailing={
         <>
+          {/* First, so revealing it on hover takes label space instead of moving the controls. */}
+          {isNotice ? null : (
+            <TimelineRowTimestamp
+              createdAt={workEntry.createdAt}
+              timestampFormat={timestampFormat}
+            />
+          )}
           {createdThread ? (
             <button
               type="button"
@@ -699,13 +706,15 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
               />
             </span>
           ) : null}
-          <TimelineRowTimestamp
-            createdAt={workEntry.createdAt}
-            timestampFormat={timestampFormat}
+          {isNotice ? (
             // Appearing on hover would take width from a wrapping notice and reflow it.
-            alwaysVisible={isNotice}
-            {...(isNotice ? { className: "mt-0.5" } : {})}
-          />
+            <TimelineRowTimestamp
+              createdAt={workEntry.createdAt}
+              timestampFormat={timestampFormat}
+              alwaysVisible
+              className="mt-0.5"
+            />
+          ) : null}
         </>
       }
     >
