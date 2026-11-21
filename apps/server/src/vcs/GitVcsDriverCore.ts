@@ -1433,15 +1433,19 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
   });
 
   // `--abbrev-ref` prints `remotes/origin/<name>` when a local `origin/<name>` branch exists.
-  const readCurrentUpstreamRef = Effect.fn("readCurrentUpstreamRef")(function* (cwd: string) {
+  const readCurrentUpstreamRef = Effect.fn("readCurrentUpstreamRef")(function* (
+    cwd: string,
+    branch?: string,
+  ) {
+    const spec = `${branch ?? ""}@{upstream}`;
     const upstreamRef = yield* runGitStdout(
       "GitVcsDriver.resolveCurrentUpstream",
       cwd,
-      ["rev-parse", "--symbolic-full-name", "@{upstream}"],
+      ["rev-parse", "--symbolic-full-name", spec],
       true,
     ).pipe(Effect.map((stdout) => stdout.trim().replace(/^refs\/(?:remotes|heads)\//, "")));
 
-    if (upstreamRef.length === 0 || upstreamRef === "@{upstream}") {
+    if (upstreamRef.length === 0 || upstreamRef === spec) {
       return null;
     }
     return upstreamRef;
@@ -2582,6 +2586,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
   const computeAheadCountAgainstBase = Effect.fn("computeAheadCountAgainstBase")(function* (
     cwd: string,
     refName: string,
+    headRef = "HEAD",
   ) {
     const base = yield* resolveBaseBranchForNoUpstream(cwd, refName);
     if (!base) {
@@ -2591,7 +2596,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     const result = yield* executeGit(
       "GitVcsDriver.computeAheadCountAgainstBase",
       cwd,
-      ["rev-list", "--count", "--end-of-options", `${base.comparisonRef}..HEAD`],
+      ["rev-list", "--count", "--end-of-options", `${base.comparisonRef}..${headRef}`],
       { allowNonZeroExit: true },
     );
     if (result.exitCode !== 0) {
@@ -2667,9 +2672,11 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         Effect.ignoreCause({ log: true }),
       );
     }
+    // A checkout during the fetch moves HEAD, so the rest reads the branch read above.
+    const branchHead = headRef.startsWith("refs/") ? headRef : "HEAD";
     // `%(upstream:remotename)` is empty exactly when `@{upstream}` does not resolve.
     const currentUpstreamRef =
-      upstreamRemoteName === "" ? null : yield* readCurrentUpstreamRef(cwd);
+      upstreamRemoteName === "" ? null : yield* readCurrentUpstreamRef(cwd, branch ?? undefined);
     let upstreamRef = currentUpstreamRef;
     // Trimming a remote that starts with Unicode whitespace can leave a leading slash.
     if (currentUpstreamRef?.startsWith("/")) {
@@ -2682,7 +2689,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       const divergence = yield* executeGit(
         "GitVcsDriver.statusDetailsRemote.divergence",
         cwd,
-        ["rev-list", "--left-right", "--count", "HEAD...@{upstream}"],
+        ["rev-list", "--left-right", "--count", `${branchHead}...${branch ?? ""}@{upstream}`],
         { allowNonZeroExit: true },
       );
       if (divergence.exitCode === 0) {
@@ -2693,7 +2700,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         behindCount = Number.isFinite(parsedBehind) ? Math.max(0, parsedBehind) : 0;
       }
     } else if (branch) {
-      aheadCount = yield* computeAheadCountAgainstBase(cwd, branch).pipe(
+      aheadCount = yield* computeAheadCountAgainstBase(cwd, branch, branchHead).pipe(
         Effect.orElseSucceed(() => 0),
       );
     }
@@ -2708,7 +2715,9 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       branch && !isDefaultBranch
         ? upstreamRef === null
           ? aheadCount
-          : yield* computeAheadCountAgainstBase(cwd, branch).pipe(Effect.orElseSucceed(() => 0))
+          : yield* computeAheadCountAgainstBase(cwd, branch, branchHead).pipe(
+              Effect.orElseSucceed(() => 0),
+            )
         : 0;
 
     return {
@@ -4589,13 +4598,8 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     };
   });
 
-  type ReviewTrackedDiff = {
-    readonly stdout: string;
-    readonly stdoutTruncated: boolean;
-    readonly files: ReadonlyArray<ReviewDiffFileStat>;
-  };
-  // A trackedOnly read, kept by its completionToken so the complete read that follows it adds
-  // only the untracked files. Taken once, so a later complete read always reads fresh.
+  // A trackedOnly read's repository and merge base, kept by its completionToken for the complete
+  // read that follows it. The diff is read again: a tracked file can change between the two.
   const trackedReviewPreviews = new Map<
     string,
     {
@@ -4603,8 +4607,6 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       readonly expiresAt: number;
       readonly repository: { readonly worktreeRoot: string; readonly currentBranch: string | null };
       readonly review: { readonly baseRef: string | null; readonly mergeBase: string | null };
-      readonly dirty: ReviewTrackedDiff;
-      readonly base: ReviewTrackedDiff;
     }
   >();
   const trackedReviewPreviewKey = (input: ReviewDiffPreviewInput) =>
@@ -4806,10 +4808,6 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         : yield* prepareUntrackedReviewIndex(cwd, pathArgs, input.file?.path);
       // Untracked files left out make the file list partial, so the bounded patch is sent instead.
       const complete = untracked !== null && !untracked.omitted;
-      // With no untracked files to add, the tracked read already is the complete diff.
-      if (tracked !== undefined && complete && untracked.env === undefined) {
-        return [tracked.dirty, tracked.base] as const;
-      }
       const metadataOnly = input.metadataOnly === true && !input.file && complete;
       const [dirty, base] =
         review.mergeBase === dirtyRef
@@ -4829,15 +4827,19 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       return [incomplete(dirtyRef, dirty), incomplete(review.mergeBase, base)] as const;
     }).pipe(Effect.scoped);
     let completionToken: string | undefined;
-    if (input.trackedOnly && reusesTracked && dirtyTrackedResult.files && baseResult.files) {
+    if (input.trackedOnly && reusesTracked) {
       completionToken = yield* random.uuidV4();
+      const now = yield* Clock.currentTimeMillis;
+      // Clients that drop the token never take their entry; insertion order is expiry order.
+      for (const [token, entry] of trackedReviewPreviews) {
+        if (entry.expiresAt >= now) break;
+        trackedReviewPreviews.delete(token);
+      }
       trackedReviewPreviews.set(completionToken, {
         key: trackedReviewPreviewKey(input),
-        expiresAt: (yield* Clock.currentTimeMillis) + REVIEW_TRACKED_PREVIEW_TTL_MS,
+        expiresAt: now + REVIEW_TRACKED_PREVIEW_TTL_MS,
         repository,
         review,
-        dirty: { ...dirtyTrackedResult, files: dirtyTrackedResult.files },
-        base: { ...baseResult, files: baseResult.files },
       });
       if (trackedReviewPreviews.size > REVIEW_TRACKED_PREVIEW_CAPACITY) {
         const oldestKey = trackedReviewPreviews.keys().next().value;

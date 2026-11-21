@@ -933,21 +933,25 @@ it.effect("resolves a branch's base once while its refs and branch config are un
       // One thread switch: two local status reads and the two diff preview passes.
       yield* driver.statusDetailsLocal(cwd);
       yield* driver.statusDetailsLocal(cwd);
+      yield* writeTextFile(cwd, "feature.txt", "edited\n");
       const tracked = yield* driver.getReviewDiffPreview({ cwd, trackedOnly: true });
       assert.isDefined(tracked.completionToken);
       assert.equal(lookups(), 1);
-      // The complete pass adds only the untracked listing to the tracked pass it follows.
+      // The complete pass reuses the tracked pass's base but reads the reverted edit again.
+      yield* writeTextFile(cwd, "feature.txt", "feature\n");
       const complete = yield* driver.getReviewDiffPreview({
         cwd,
         completionToken: tracked.completionToken!,
       });
-      assert.deepStrictEqual(
-        spawnedArgs.map((args) => args.find((arg) => !arg.startsWith("-") && !arg.includes("="))),
-        ["ls-files"],
-      );
+      assert.isFalse(spawnedArgs.some((args) => args.includes("merge-base")));
+      assert.equal(lookups(), 0);
       assert.isUndefined(complete.incomplete);
-      assert.deepStrictEqual(complete.sources, tracked.sources);
-      spawnedArgs.length = 0;
+      const workingTreePaths = (result: typeof complete) =>
+        result.sources
+          .find((source) => source.kind === "working-tree")!
+          .files!.map((file) => file.path);
+      assert.deepStrictEqual(workingTreePaths(tracked), ["feature.txt"]);
+      assert.deepStrictEqual(workingTreePaths(complete), []);
       // A token is used once, and untracked files are still diffed when there are some.
       yield* writeTextFile(cwd, "untracked.txt", "untracked\n");
       const second = yield* driver.getReviewDiffPreview({ cwd, trackedOnly: true });
@@ -1442,6 +1446,47 @@ describe("pullCurrentBranch", () => {
         yield* Deferred.succeed(release, undefined);
         yield* Fiber.join(startup);
         assert.equal(yield* git(cwd, ["rev-parse", "HEAD"]), remoteHead);
+      }),
+    ).pipe(Effect.provide(layerTest)),
+  );
+
+  it.effect("remote status reads one branch when a checkout lands during its fetch", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { cwd, initialBranch } = yield* cloneBehindRemote;
+        const targetPath = NodeFS.realpathSync.native(cwd);
+        const delegate = yield* ChildProcessSpawner.ChildProcessSpawner;
+        const fetchHeld = yield* Deferred.make<void>();
+        const release = yield* Deferred.make<void>();
+        let held = false;
+        const spawner = ChildProcessSpawner.make((command) =>
+          Effect.gen(function* () {
+            if (
+              !held &&
+              ChildProcess.isStandardCommand(command) &&
+              command.args.includes("fetch") &&
+              String(command.options.cwd) === targetPath
+            ) {
+              held = true;
+              yield* Deferred.succeed(fetchHeld, undefined);
+              yield* Deferred.await(release);
+            }
+            return yield* delegate.spawn(command);
+          }),
+        );
+        const driver = yield* makeGitVcsDriverCore().pipe(
+          Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+        );
+        const status = yield* driver.statusDetailsRemote(cwd).pipe(Effect.forkChild);
+        yield* Deferred.await(fetchHeld);
+        yield* git(cwd, ["checkout", "-b", "no-upstream"]);
+        yield* Deferred.succeed(release, undefined);
+        const details = yield* Fiber.join(status);
+        assert.deepInclude(details, {
+          branch: initialBranch,
+          upstreamRef: `origin/${initialBranch}`,
+          behindCount: 1,
+        });
       }),
     ).pipe(Effect.provide(layerTest)),
   );
