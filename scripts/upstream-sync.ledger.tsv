@@ -3097,3 +3097,4 @@ d5f8a7573a	take	fix(web): RTF previews hide tracked deletions (#40264)
 c1464d6774	take	perf(server): status of a repository without a remote skips remote lookups
 3d8a02371b	take	fix(forgejo): issue links on a self-hosted Forgejo hostname resolve
 47525fa3d6	take	fix(web): switching threads no longer restarts the Changes and git status reads
+0854259384	take	fix(web): clipped Files tree names show the full name on hover
