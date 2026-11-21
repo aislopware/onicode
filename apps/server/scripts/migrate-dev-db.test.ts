@@ -142,7 +142,12 @@ const createFixtureSource = Effect.fn("createMigrateDevDbFixtureSource")(functio
         yield* sql`INSERT INTO auth_sessions (session_id, subject, scopes, issued_at, expires_at)
           VALUES ('session-1', 'user', '[]', '2026-08-01', '2027-08-01')`;
       }
-      if (toMigrationInclusive === undefined) yield* insertPeerLink(sql);
+      if (toMigrationInclusive === undefined) {
+        yield* insertPeerLink(sql);
+        yield* sql`INSERT INTO task_folders
+          (root, real_root, project_id, project_root, anchor, project_path, project_is_worktree, created_at)
+          VALUES ('/real/task', '/real/task', 'project-kept', '/real/project', 'project', '/real/task/project', 0, '2026-08-01')`;
+      }
     }),
   );
   return databasePath;
@@ -185,12 +190,14 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
             tasks: number;
             transfers: number;
             links: number;
+            taskFolders: number;
           }>`
             SELECT
               (SELECT COUNT(*) FROM auth_sessions) AS auth,
               (SELECT COUNT(*) FROM scheduled_tasks) AS tasks,
               (SELECT COUNT(*) FROM orchestration_v2_projection_context_transfers) AS transfers,
-              (SELECT COUNT(*) FROM peer_environment_links) AS links`;
+              (SELECT COUNT(*) FROM peer_environment_links) AS links,
+              (SELECT COUNT(*) FROM task_folders) AS taskFolders`;
           return { threads, events, sessions, pullRequest, project, leftovers };
         }),
       );
@@ -236,6 +243,7 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
         tasks: 0,
         transfers: 0,
         links: 0,
+        taskFolders: 0,
       });
     }),
   );
