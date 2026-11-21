@@ -97,6 +97,8 @@ five minutes. Text is inserted at the cursor or replaces the selection you had
 when recording started, and the editor is read-only while dictation runs.
 Changes that reach the draft meanwhile, such as a cited message, are kept;
 the text then goes after your selection instead of replacing it.
+A file or thread you paste or drop in meanwhile can be removed by focusing its
+chip and pressing Backspace or Delete.
 
 On desktop, a recording in a thread's composer keeps going when you switch to
 another thread or open Settings. A pill at the top of the window shows it while
