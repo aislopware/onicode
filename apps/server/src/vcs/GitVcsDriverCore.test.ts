@@ -1002,6 +1002,17 @@ it.effect("resolves a branch's base once while its refs and branch config are un
       yield* driver.getReviewDiffPreview({ cwd });
       yield* driver.getReviewDiffPreview({ cwd });
       assert.equal(lookups(), 1);
+
+      // A base deleted within one mtime tick leaves the refs stamp as it was.
+      const fileSystem = yield* FileSystem.FileSystem;
+      const headsDir = `${cwd}/.git/refs/heads`;
+      yield* git(cwd, ["branch", "base-a", "HEAD~1"]);
+      yield* git(cwd, ["config", "branch.feature/x.oni-merge-base-ref", "refs/heads/base-a"]);
+      assert.equal((yield* driver.statusDetailsLocal(cwd)).aheadCount, 1);
+      const mtime = Option.getOrThrow((yield* fileSystem.stat(headsDir)).mtime);
+      yield* git(cwd, ["branch", "-m", "base-a", "base-b"]);
+      yield* fileSystem.utimes(headsDir, mtime, mtime);
+      assert.equal((yield* driver.statusDetailsLocal(cwd)).aheadCount, 1);
     }),
   ).pipe(Effect.provide(layerTest)),
 );
@@ -1014,9 +1025,14 @@ it.effect.each([
     Effect.gen(function* () {
       const delegate = yield* ChildProcessSpawner.ChildProcessSpawner;
       const bareRoot = yield* makeTmpDir("git-review-bare-");
+      // The driver runs Git in the physical path, which differs under macOS's /var tmpdir.
+      const bareCwds = new Set([
+        bareRoot,
+        yield* (yield* FileSystem.FileSystem).realPath(bareRoot),
+      ]);
       const spawner = ChildProcessSpawner.make((command) =>
         delegate.spawn(
-          ChildProcess.isStandardCommand(command) && command.options.cwd === bareRoot
+          ChildProcess.isStandardCommand(command) && bareCwds.has(command.options.cwd ?? "")
             ? ChildProcess.setEnv(command, { GIT_DIR: bareRoot })
             : command,
         ),

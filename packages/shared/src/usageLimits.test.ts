@@ -2007,7 +2007,7 @@ describe("external usage settings", () => {
       ...account,
       usageLimits: { checkedAt, windows: [{ ...window, usedPercent: 10 }] },
     };
-    const hub = (accounts: readonly UsageLimitSourceAccount[]) => ({
+    const hub = (accounts: readonly UsageLimitSourceAccount[], endpoint?: string) => ({
       providers: [],
       usageLimitSources: [
         {
@@ -2016,6 +2016,7 @@ describe("external usage settings", () => {
           label: "hub",
           checkedAt,
           accounts,
+          ...(endpoint ? { origin: new URL(endpoint).origin, endpoint } : {}),
         },
       ],
     });
@@ -2065,6 +2066,28 @@ describe("external usage settings", () => {
     ).toEqual([
       "Desktop · hub · claude-tg@example.com: The provider refused the hub request (HTTP 429).",
     ]);
+    // On one remote hub they are the same file, though only the read names its credential.
+    const fingerprinted = {
+      ...anonymousRead,
+      usageLimits: { ...anonymousRead.usageLimits, credentialFingerprint: "google-key" },
+    };
+    expect(
+      collectLimitNotices(
+        new Map([
+          [
+            EnvironmentId.make("a"),
+            { ...desktop, serverConfig: hub([anonymousFailed], "http://hub:8317") },
+          ],
+          [
+            EnvironmentId.make("b"),
+            {
+              entry: { target: { label: "WSL" } },
+              serverConfig: hub([fingerprinted], "http://hub:8317"),
+            },
+          ],
+        ]),
+      ),
+    ).toEqual([]);
   });
 });
 

@@ -59,7 +59,10 @@ export function ProjectRepositoriesSettings({
 }: {
   members: ReadonlyArray<SidebarProjectGroupMember>;
 }) {
-  const checkouts = members.filter((member) => !member.isScratch);
+  // A server that sends no folder list has no repositories to manage.
+  const checkouts = members.filter(
+    (member) => !member.isScratch && member.trackedFolders !== undefined,
+  );
   const gt = useGT();
   if (checkouts.length === 0) return null;
   return (

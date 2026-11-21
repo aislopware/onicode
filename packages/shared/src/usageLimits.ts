@@ -473,6 +473,12 @@ export function unshownFailedHubAccounts(
 ): ReadonlyMap<UsageLimitSourceAccount, string> {
   const resolveKey = limitAccountKeyResolver(presentations);
   const shownRows = new Set<string>();
+  // Only a successful read names its credential, so a failed one is matched by its hub file.
+  const hubFile = (
+    environmentId: EnvironmentId,
+    source: UsageLimitSourceSnapshot,
+    account: UsageLimitSourceAccount,
+  ) => `${hubIdentity(environmentId, source)}\0${account.driver}\0${account.id}`;
   for (const [environmentId, presentation] of presentations) {
     for (const provider of providersWithLimits(presentation.serverConfig?.providers ?? [])) {
       if (provider.usageLimits && limitsNotice(provider.usageLimits) === null) {
@@ -483,6 +489,7 @@ export function unshownFailedHubAccounts(
       for (const account of source.accounts) {
         if (limitsNotice(account.usageLimits) === null) {
           shownRows.add(hubRowKey(resolveKey, environmentId, source, account));
+          shownRows.add(hubFile(environmentId, source, account));
         }
       }
     }
@@ -492,7 +499,12 @@ export function unshownFailedHubAccounts(
     for (const source of presentation.serverConfig?.usageLimitSources ?? []) {
       for (const account of source.accounts) {
         if (account.usageLimits.unavailable?.reason !== "probeFailed") continue;
-        if (shownRows.has(hubRowKey(resolveKey, environmentId, source, account))) continue;
+        if (
+          shownRows.has(hubRowKey(resolveKey, environmentId, source, account)) ||
+          shownRows.has(hubFile(environmentId, source, account))
+        ) {
+          continue;
+        }
         failed.set(account, account.email ?? hubAccountName(account));
       }
     }

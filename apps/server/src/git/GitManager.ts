@@ -1433,27 +1433,53 @@ export const make = Effect.gen(function* () {
         localBranchExists: branchExists !== "0",
         ...(remoteName.length > 0 ? { remoteName } : {}),
       };
+      const lookupOnce = Effect.gen(function* () {
+        const { headContext, lookup } = yield* resolveLookupHeadContext(cwd, details);
+        if (!lookup) {
+          return { latest: null, headContext };
+        }
+        if (
+          details.localBranchExists &&
+          (details.upstreamRef === null || headContext.remoteName === null) &&
+          (yield* isUnpublishedBranch(cwd, headContext))
+        ) {
+          return { latest: null, headContext };
+        }
+        const shared = yield* prLookupGitReads;
+        if (isActivePrLookupGitReads(shared, cwd)) {
+          shared.queriedProvider = true;
+        }
+        const latest = yield* findLatestPrForHeadContext(cwd, headContext, details.defaultBranch);
+        if (latest !== null) yield* noteLookupState(latest);
+        return { latest, headContext };
+      });
       return withActivePrLookupGitReads(
         cwd,
         Effect.gen(function* () {
-          const { headContext, lookup } = yield* resolveLookupHeadContext(cwd, details);
-          if (!lookup) {
-            return { latest: null, headContext };
-          }
-          if (
-            details.localBranchExists &&
-            (details.upstreamRef === null || headContext.remoteName === null) &&
-            (yield* isUnpublishedBranch(cwd, headContext))
-          ) {
-            return { latest: null, headContext };
-          }
+          const result = yield* lookupOnce;
           const shared = yield* prLookupGitReads;
-          if (isActivePrLookupGitReads(shared, cwd)) {
-            shared.queriedProvider = true;
+          if (
+            result.latest !== null ||
+            !isActivePrLookupGitReads(shared, cwd) ||
+            shared.remotes === undefined
+          ) {
+            return result;
           }
-          const latest = yield* findLatestPrForHeadContext(cwd, headContext, details.defaultBranch);
-          if (latest !== null) yield* noteLookupState(latest);
-          return { latest, headContext };
+          // A negative is kept for minutes; a remote added since the shared read could hold its PR.
+          const remotesRead = shared.remotes;
+          shared.remotes = undefined;
+          const remotes = yield* readLookupRemotes(cwd, "GitManager.prLookup.remotes").pipe(
+            Effect.orElseSucceed(() => remotesRead),
+          );
+          if (
+            remotes.length === remotesRead.length &&
+            remotes.every((name, index) => name === remotesRead[index])
+          ) {
+            return result;
+          }
+          shared.configValues.clear();
+          shared.remoteUrls.clear();
+          return yield* lookupOnce;
         }),
       );
     },

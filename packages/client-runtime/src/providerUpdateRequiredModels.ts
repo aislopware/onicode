@@ -51,14 +51,15 @@ function channelLatestVersionBelow(
     : null;
 }
 
-/** True when the provider's own update cannot reach the version its update-required models need. */
+/** True when the provider's own update cannot unlock any of its update-required models. */
 export function providerUpdateChannelLags(
   provider: UpdateRequiredProvider,
   searchQuery = "",
 ): boolean {
   const models = matchingUpdateRequiredModels(provider, searchQuery);
   return (
-    models.length > 0 && channelLatestVersionBelow(provider, highestMinVersion(models)) !== null
+    models.length > 0 &&
+    models.every((model) => channelLatestVersionBelow(provider, model.minVersion) !== null)
   );
 }
 
@@ -70,6 +71,22 @@ export function formatProviderUpdateRequiredNotice(
 ): string | null {
   const models = matchingUpdateRequiredModels(provider, searchQuery);
   if (models.length === 0) return null;
+  const reachable = models.filter(
+    (model) => channelLatestVersionBelow(provider, model.minVersion) === null,
+  );
+  const lagging = models.filter((model) => !reachable.includes(model));
+  return [reachable, lagging]
+    .filter((group) => group.length > 0)
+    .map((group) => formatModelGroupNotice(provider, group, resolve, locale))
+    .join(" ");
+}
+
+function formatModelGroupNotice(
+  provider: UpdateRequiredProvider,
+  models: ReadonlyArray<{ readonly name: string; readonly minVersion: string }>,
+  resolve: MFunctionType,
+  locale: string,
+): string {
   const minVersion = highestMinVersion(models);
   const providerName =
     provider.driver === "claudeAgent"
