@@ -106,6 +106,12 @@ export class ScheduledTaskService extends Context.Service<
       options?: {
         /** Refuse the save unless the task is still bound to this thread when it commits. */
         readonly expectedThreadId?: ThreadId | null;
+        /** True: the input's workspace is one the caller read earlier, so keep the stored one. False: write it. */
+        readonly keepWorkspace?: boolean;
+        /** The input's model is one the caller read earlier: keep the stored one. */
+        readonly keepModelSelection?: boolean;
+        /** Refuse the save unless the task still has the project and modes the caller checked. */
+        readonly expected?: Pick<ScheduledTask, "projectId" | "runtimeMode" | "interactionMode">;
       },
     ) => Effect.Effect<ScheduledTaskMutationResult, ScheduledTaskError>;
     readonly setEnabled: (
@@ -401,7 +407,11 @@ export const layer = Layer.effect(
         /** The save leaves the project, thread and mode as it read them. */
         readonly keepsThread: boolean;
         readonly keepsWorkspace: boolean;
+        readonly keepsModelSelection: boolean;
         readonly expectedThreadId: ThreadId | null | undefined;
+        readonly expected:
+          | Pick<ScheduledTask, "projectId" | "runtimeMode" | "interactionMode">
+          | undefined;
       },
     ) =>
       sql<{ task_id: string }>`
@@ -481,7 +491,12 @@ export const layer = Layer.effect(
             THEN scheduled_tasks.workspace_strategy_json
             ELSE excluded.workspace_strategy_json
           END,
-          model_selection_json = excluded.model_selection_json,
+          model_selection_json = CASE
+            WHEN ${destination.keepsModelSelection ? 1 : 0} = 1
+              AND excluded.project_id = scheduled_tasks.project_id
+            THEN scheduled_tasks.model_selection_json
+            ELSE excluded.model_selection_json
+          END,
           runtime_mode = excluded.runtime_mode,
           interaction_mode = excluded.interaction_mode,
           creation_source = excluded.creation_source,
@@ -498,8 +513,18 @@ export const layer = Layer.effect(
             THEN scheduled_tasks.next_run_at
             ELSE excluded.next_run_at
           END
-        WHERE ${destination.expectedThreadId === undefined ? 1 : 0} = 1
-           OR scheduled_tasks.thread_id IS ${destination.expectedThreadId ?? null}
+        WHERE (
+            ${destination.expectedThreadId === undefined ? 1 : 0} = 1
+            OR scheduled_tasks.thread_id IS ${destination.expectedThreadId ?? null}
+          )
+          AND (
+            ${destination.expected === undefined ? 1 : 0} = 1
+            OR (
+              scheduled_tasks.project_id = ${destination.expected?.projectId ?? null}
+              AND scheduled_tasks.runtime_mode = ${destination.expected?.runtimeMode ?? null}
+              AND scheduled_tasks.interaction_mode = ${destination.expected?.interactionMode ?? null}
+            )
+          )
         RETURNING task_id
       `.pipe(
         Effect.mapError((cause) =>
@@ -508,14 +533,17 @@ export const layer = Layer.effect(
         Effect.flatMap((rows) =>
           rows.length > 0
             ? Effect.void
-            : destination.expectedThreadId === undefined
+            : destination.expectedThreadId === undefined && destination.expected === undefined
               ? taskError("Schedule task not found.", { taskId: task.id })
               : findTask(task.id).pipe(
                   Effect.flatMap((stored) =>
                     taskError(
                       stored === null
                         ? "Schedule task not found."
-                        : "The task's thread changed while saving. Read the task again.",
+                        : destination.expectedThreadId !== undefined &&
+                            stored.threadId !== destination.expectedThreadId
+                          ? "The task's thread changed while saving. Read the task again."
+                          : "The task changed while saving. Read the task again.",
                       { taskId: task.id },
                     ),
                   ),
@@ -1165,6 +1193,15 @@ export const layer = Layer.effect(
       // keep their run history, and so real load failures propagate instead
       // of silently resetting an existing row.
       const existingTask = yield* findTask(id);
+      const sameProject = existingTask?.projectId === input.projectId ? existingTask : null;
+      const keepsModelSelection = options?.keepModelSelection === true && sameProject !== null;
+      const modelSelection = keepsModelSelection
+        ? sameProject.modelSelection
+        : input.modelSelection;
+      const requestedWorkspace =
+        options?.keepWorkspace === true && sameProject !== null
+          ? sameProject.workspaceStrategy
+          : input.workspaceStrategy;
       const threadMode = resolveThreadMode(input, existingTask);
       const keptThreadId =
         input.threadId ?? (input.unbindThread === true ? null : (existingTask?.threadId ?? null));
@@ -1196,11 +1233,11 @@ export const layer = Layer.effect(
           : input.schedule;
       // A folder that is not a Git repository, Scratch included, cannot hold a worktree.
       const workspaceStrategy: ScheduledTask["workspaceStrategy"] =
-        input.workspaceStrategy.type === "worktree" &&
+        requestedWorkspace.type === "worktree" &&
         ((yield* managedFolders.isScratchProject(input.projectId)) ||
           (yield* threadLaunch.isNonGitProject(input.projectId)))
           ? { type: "root" }
-          : input.workspaceStrategy;
+          : requestedWorkspace;
       const scheduleUnchanged =
         existingTask !== null &&
         existingTask.enabled === input.enabled &&
@@ -1217,7 +1254,7 @@ export const layer = Layer.effect(
         threadId,
         threadMode,
         workspaceStrategy,
-        modelSelection: input.modelSelection,
+        modelSelection,
         runtimeMode: input.runtimeMode,
         interactionMode: input.interactionMode,
         createdBy: existingTask?.createdBy ?? input.createdBy ?? "user",
@@ -1250,15 +1287,20 @@ export const layer = Layer.effect(
       yield* saveTask(
         keepsStoredThread ? { ...task, threadId: null } : task,
         // A save checked against a binding cannot bring back a task deleted meanwhile.
-        input.requireExisting === true || expectedThreadId !== undefined,
+        input.requireExisting === true ||
+          expectedThreadId !== undefined ||
+          options?.expected !== undefined,
         scheduleUnchanged ? existingTask.schedule : null,
         threadId === null && input.unbindThread === true ? (existingTask?.threadId ?? null) : null,
         {
           keepsThread,
           keepsWorkspace:
+            options?.keepWorkspace !== false &&
             existingTask !== null &&
             NodeUtil.isDeepStrictEqual(workspaceStrategy, existingTask.workspaceStrategy),
+          keepsModelSelection,
           expectedThreadId,
+          expected: options?.expected,
         },
       );
       yield* notifyChanged;

@@ -2410,10 +2410,10 @@ const make = Effect.gen(function* () {
               ? parent.thread.id
               : null;
         // Reset the workspace only when the binding flips, so unbinding cannot leave runs in the shared checkout.
-        const workspaceStrategy =
-          (threadId === null) === (existing.threadId === null)
-            ? existing.workspaceStrategy
-            : yield* scheduledTaskWorkspaceStrategy(threadId !== null, existing.projectId);
+        const keepWorkspace = (threadId === null) === (existing.threadId === null);
+        const workspaceStrategy = keepWorkspace
+          ? existing.workspaceStrategy
+          : yield* scheduledTaskWorkspaceStrategy(threadId !== null, existing.projectId);
         const upsertInput: ScheduledTaskUpsertInput = {
           id: existing.id,
           title: input.title ?? existing.title,
@@ -2446,9 +2446,16 @@ const make = Effect.gen(function* () {
           createdBy: existing.createdBy,
           creationSource: existing.creationSource,
         };
-        // The modes were checked against this binding, so a save racing a rebind is refused.
+        // The modes were checked against this binding, so a save racing a rebind, a move or a mode
+        // change is refused. The workspace and model, which this tool does not edit, stay as stored.
         const { task } = yield* scheduledTasks
-          .upsert(upsertInput, { expectedThreadId: existing.threadId })
+          .upsert(upsertInput, {
+            expectedThreadId: existing.threadId,
+            keepWorkspace,
+            keepModelSelection: true,
+            // The caller's mode ceilings were checked against these.
+            expected: existing,
+          })
           .pipe(
             Effect.mapError((error) =>
               failure("orchestration_error", `Could not update scheduled task: ${error.message}`),
