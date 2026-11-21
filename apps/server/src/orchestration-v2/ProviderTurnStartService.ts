@@ -1,3 +1,4 @@
+import { classifyCodexManagedError } from "../provider/CodexManagedErrors.ts";
 import { modelSelectionsEqual } from "@onicode/shared/model";
 import { projectComposerContextForProvider } from "@onicode/shared/composerContextReferences";
 import { expandAssistantCitationsForProvider } from "@onicode/shared/assistantCitations";
@@ -1628,6 +1629,71 @@ export const layer: Layer.Layer<
             handoff.delivery?.nativeThreadId === providerThread.nativeThreadRef?.nativeId &&
             handoff.delivery?.status === "pending",
         );
+        const rejectedHistory = yield* Effect.gen(function* () {
+          if (session.driver !== "codex") return false;
+          const acceptedAttemptIds = new Set(
+            projection.providerTurns.map((turn) => turn.runAttemptId),
+          );
+          const previous = projection.runs.findLast(
+            (source) =>
+              source.providerThreadId === providerThread.id &&
+              source.ordinal < run.ordinal &&
+              source.activeAttemptId !== null &&
+              acceptedAttemptIds.has(source.activeAttemptId),
+          );
+          if (
+            previous === undefined ||
+            (previous.status !== "failed" &&
+              previous.status !== "interrupted" &&
+              previous.status !== "cancelled")
+          )
+            return false;
+          const previousAttempt = projection.attempts.find(
+            (source) => source.id === previous.activeAttemptId,
+          );
+          if (previousAttempt === undefined) return false;
+          if (previousAttempt.nativeThreadId !== undefined) {
+            if (previousAttempt.nativeThreadId !== providerThread.nativeThreadRef?.nativeId)
+              return false;
+          } else if (
+            projection.contextHandoffs.some(
+              (handoff) =>
+                handoff.toProviderThreadId === providerThread.id &&
+                handoff.strategy === "full_thread_summary" &&
+                handoff.delivery?.nativeThreadId === providerThread.nativeThreadRef?.nativeId &&
+                handoff.coveredRunOrdinals.to >= previous.ordinal,
+            )
+          )
+            return false;
+          // The native resume RPC can succeed while persisted input still rejects every turn.
+          return (yield* projectionStore.getTurnStartHistory(input.threadId, [previous.id])).some(
+            (item) =>
+              item.type === "error" &&
+              item.nodeId === previous.rootNodeId &&
+              (item.failure.code === "invalid_encrypted_content" ||
+                classifyCodexManagedError(item.failure.message)?.code ===
+                  "invalid_encrypted_content"),
+          );
+        });
+        // A fresh session would orphan background work still running on the native thread.
+        const hasPendingWork = (thread: OrchestrationV2ProviderThread) =>
+          session.hasPendingBackgroundWorkForThread?.(thread, { includeSubagents: true }) ??
+          session.hasPendingBackgroundWork ??
+          Effect.succeed(false);
+        const failForPendingWork = loadFromProvider(
+          Effect.fail(
+            new ProviderAdapter.ProviderAdapterTurnStartError({
+              driver: session.driver,
+              threadId: projection.thread.id,
+              providerThreadId: providerThread.id,
+              runId,
+              cause: new ContextHandoffBackgroundWorkError(),
+            }),
+          ),
+        );
+        if (rejectedHistory && (yield* hasPendingWork(providerThread))) {
+          return yield* failForPendingWork;
+        }
         // A provider that cannot truncate rolls back into a fresh native session holding none of the kept turns.
         const nativeSessionLacksKeptTurns =
           !session.providerSession.capabilities.checkpointing.providerCanRollbackConversation &&
@@ -1646,7 +1712,10 @@ export const layer: Layer.Layer<
               handoff.strategy === "manual_context",
           );
         const resumed = yield* Effect.result(
-          uncertainDelivery || nativeSessionLacksKeptTurns || nativeSessionLostImport
+          uncertainDelivery ||
+            nativeSessionLacksKeptTurns ||
+            nativeSessionLostImport ||
+            rejectedHistory
             ? Effect.fail(
                 new ProviderAdapter.ProviderAdapterTurnStartError({
                   driver: session.driver,
@@ -1657,7 +1726,9 @@ export const layer: Layer.Layer<
                     ? "Uncertain native history injection"
                     : nativeSessionLacksKeptTurns
                       ? "Native session holds none of the kept conversation"
-                      : "Native session lost the imported conversation",
+                      : nativeSessionLostImport
+                        ? "Native session lost the imported conversation"
+                        : "Rejected native history",
                 }),
               )
             : session.resumeThread({
@@ -1699,26 +1770,7 @@ export const layer: Layer.Layer<
             Effect.catchTags({ ContextHandoffBudgetError: () => Effect.succeed(false) }),
           );
           if (!fitsFresh) return resumed.success;
-          const hasPendingWork = yield* (
-            session.hasPendingBackgroundWorkForThread?.(resumed.success, {
-              includeSubagents: true,
-            }) ??
-            session.hasPendingBackgroundWork ??
-            Effect.succeed(false)
-          );
-          if (hasPendingWork) {
-            return yield* loadFromProvider(
-              Effect.fail(
-                new ProviderAdapter.ProviderAdapterTurnStartError({
-                  driver: session.driver,
-                  threadId: projection.thread.id,
-                  providerThreadId: providerThread.id,
-                  runId,
-                  cause: new ContextHandoffBackgroundWorkError(),
-                }),
-              ),
-            );
-          }
+          if (yield* hasPendingWork(resumed.success)) return yield* failForPendingWork;
         }
         resumedHandoffContext = undefined;
         resumedRetryHandoff = undefined;
@@ -1742,9 +1794,11 @@ export const layer: Layer.Layer<
               ? "native_session_lacks_kept_turns"
               : nativeSessionLostImport
                 ? "native_session_lost_import"
-                : resumed._tag === "Success"
-                  ? "handoff_budget_exhausted"
-                  : "resume_failed",
+                : rejectedHistory
+                  ? "rejected_native_history"
+                  : resumed._tag === "Success"
+                    ? "handoff_budget_exhausted"
+                    : "resume_failed",
           errorTag: resumed._tag === "Failure" ? resumed.failure._tag : "ContextHandoffBudgetError",
         });
         const replacement = yield* loadFromProvider(
