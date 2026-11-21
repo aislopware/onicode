@@ -65,6 +65,7 @@ import {
   latestNativeContextUsage,
 } from "@onicode/provider-core/server/handoffBudget";
 import { deliverContextHandoffs, withInlineContext } from "./ContextHandoffDelivery.ts";
+import { isProviderCommand, outputInstructions } from "./runOutput.ts";
 import * as ProviderAdapter from "@onicode/provider-core/server/ProviderAdapter";
 import * as IdAllocator from "@onicode/provider-core/server/IdAllocator";
 import * as ProjectionStore from "./ProjectionStore.ts";
@@ -1022,7 +1023,7 @@ export const layer: Layer.Layer<
       // Providers without native resume get the prompt Resume used to send.
       const promptedResume =
         manualResume && unsentResumeMessage === undefined && session.resumeTurn === undefined;
-      let userText = promptedResume
+      const messageText = promptedResume
         ? MANUAL_RESUME_PROMPT
         : withMessageSenderNote(
             providerMessage,
@@ -1037,6 +1038,11 @@ export const layer: Layer.Layer<
         session.driver === "claudeAgent" ||
         session.providerSession.capabilities.turns.supportsNativeGoals === true;
       const goalCommand = goalDriver && parseGoalCommand(providerMessage) !== null;
+      // Part of the user text, so every way a turn starts carries it, after the user's own words.
+      let userText =
+        run.outputSchema === undefined || goalCommand || isProviderCommand(providerMessage)
+          ? messageText
+          : `${messageText}\n\n${outputInstructions(run.outputSchema)}`;
       // The provider turn marks cancellation work delivered; restart continuations use their own text or resume natively.
       const noteContinuation = isRestartNoteContinuation(
         run,

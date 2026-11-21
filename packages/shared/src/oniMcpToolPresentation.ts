@@ -359,6 +359,7 @@ const ONICODE_MCP_TOOLS: Readonly<Record<string, OniMcpToolDefinition>> = {
     ["Handle", "Handling", "Handled", "pending questions"],
     "question-respond",
   ),
+  oni_submit_output: tool(["Submit", "Submitting", "Submitted", "the result"], "thread-send"),
   oni_queue_list: tool(["List", "Listing", "Listed", "queued messages"], "queue-list"),
   oni_queue_read: tool(["Read", "Reading", "Read", "a queued message"], "queue-read"),
   oni_queue_edit: tool(["Edit", "Editing", "Edited", "a queued message"], "queue-edit"),
