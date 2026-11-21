@@ -3121,3 +3121,4 @@ e337cee952	take	taken as is; refsDigest is an optional success field, so old mob
 7d3677fe70	take	taken as is (desktop picker; mobile has no status-branch refs refresh)
 8cf94f2542	take	kept Onicode's ThreadServersPanel open handler (5820b77d19): it already opens the forwarded URL without upstream's post-forward loopback rejection, and falls back to a direct URL when the forward fails; took upstream's regression test, sharing the portForwards mock with Onicode's held-forward test through a setup() state
 370b1fde77	take	test CONFLICT: kept Onicode's checkout-between-passes case and appended upstream's Windows no-op fetch case after it
+efea1aabe7	take	taken as is; row measurement runs only for wide tables with horizontal overflow, cached per row and bounded per frame (128K chars), with a rAF continuation only while rows remain unmeasured
