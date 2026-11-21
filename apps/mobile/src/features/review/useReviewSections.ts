@@ -19,6 +19,7 @@ import {
   getReadyReviewCheckpoints,
   getReviewSectionIdForCheckpoint,
   resolveReviewSelectedSectionId,
+  reviewGitPreviewInput,
   reviewTurnDiffsBySectionId,
   type ReviewGitSectionKind,
   type ReviewSectionItem,
@@ -63,7 +64,7 @@ export function useReviewSections(input: {
     canReadFiles && enabled && environmentId !== undefined && selectedThreadCwd !== null
       ? reviewEnvironment.diffPreview({
           environmentId,
-          input: { cwd: selectedThreadCwd, sourceKind },
+          input: reviewGitPreviewInput(selectedThreadCwd, sourceKind),
         })
       : null;
   const workingTreePreview = useEnvironmentQuery(diffPreviewQuery("working-tree"));
