@@ -923,6 +923,13 @@ describe("large text preview recovery", () => {
       expect(Math.abs(row(5).getBoundingClientRect().height - scrolledRow5Height)).toBeLessThan(1);
       expect(Math.abs(row(5).getBoundingClientRect().top - scrolledRow5Top)).toBeLessThan(1);
 
+      // Rows above the viewport are not mounted, so return to the top where row 1 shows.
+      await act(() => {
+        vertical().scrollTop = 0;
+        vertical().dispatchEvent(new Event("scroll", { bubbles: true }));
+      });
+      await vi.waitFor(() => expect(row(1)).not.toBeNull());
+
       // Widening the container widens each uniform column, reducing wrapped line count.
       await screen.rerender(view(1600));
       await vi.waitFor(() =>
@@ -938,6 +945,8 @@ describe("large text preview recovery", () => {
           fontSizeInterface: previousSettings.fontSizeInterface + 4,
         });
       });
+      // The test setter notifies no subscribers, so render again to read the new settings.
+      await screen.rerender(view(1600));
       await vi.waitFor(() =>
         expect(row(1).getBoundingClientRect().height).toBeGreaterThan(widenedRow1Height),
       );
@@ -1041,7 +1050,7 @@ describe("large text preview recovery", () => {
     },
   );
 
-  it("neither mounts nor measures rows below a huge offscreen cell that fills the viewport", async () => {
+  it("neither mounts nor measures rows above or below a huge offscreen cell that fills the viewport", async () => {
     const huge = "word ".repeat(26_000);
     const rows = Array.from({ length: 100 }, (_, index) => [`r${index}`, "", "", huge]);
     using layouts = vi.spyOn(Element.prototype, "getBoundingClientRect");
@@ -1058,16 +1067,33 @@ describe("large text preview recovery", () => {
     );
     const row = (index: number) =>
       screen.container.querySelector<HTMLElement>(`[data-preview-row="${index}"]`);
+    const mountedRows = () =>
+      Array.from(
+        screen.container.querySelectorAll<HTMLElement>("[data-preview-row]"),
+        (node) => node.dataset.previewRow,
+      );
+    // Only the probe lays out the offscreen column's full text.
+    const probeLayouts = () =>
+      layouts.mock.contexts.filter((node) => (node as Element).textContent === huge);
 
     await vi.waitFor(() => {
       expect(row(1)?.getBoundingClientRect().height).toBeGreaterThan(1_000);
-      expect(screen.container.querySelectorAll("[data-preview-row]")).toHaveLength(2);
+      expect(mountedRows()).toEqual(["0", "1"]);
     });
-    // Only the probe lays out the offscreen column's full text.
-    const probeLayouts = layouts.mock.contexts.filter(
-      (node) => (node as Element).textContent === huge,
-    );
-    expect(probeLayouts).toHaveLength(2);
+    expect(probeLayouts()).toHaveLength(2);
+
+    // A scrollbar drag to 1365px starts the viewport inside row 47, mid-way through rows 32-63.
+    layouts.mockClear();
+    const viewport = screen.container.querySelector<HTMLElement>('[tabindex="0"]')!;
+    await act(() => {
+      viewport.scrollTop = 1365;
+      viewport.dispatchEvent(new Event("scroll", { bubbles: true }));
+    });
+    await vi.waitFor(() => {
+      expect(row(48)?.getBoundingClientRect().height).toBeGreaterThan(1_000);
+      expect(mountedRows()).toEqual(["47", "48"]);
+    });
+    expect(probeLayouts()).toHaveLength(2);
   });
 
   it("reveals and highlights requested source lines again for a new request", async () => {

@@ -182,6 +182,7 @@ function RowPage(
     rowHeader: number;
     firstColumn: number;
     viewportHeight: number;
+    from: number;
     limit?: number;
   },
 ) {
@@ -197,10 +198,10 @@ function RowPage(
   const count = Math.min(PREVIEW_PAGE_ROWS, props.count - start, props.limit ?? PREVIEW_PAGE_ROWS);
   return (
     <div role="rowgroup">
-      {Array.from({ length: count }, (_, local) => {
+      {Array.from({ length: count - props.from }, (_, offset) => {
+        const local = props.from + offset;
         const row = rows?.[local];
         const index = start + local;
-        if (props.header && index === 0) return null;
         const rowMinHeight = !props.source && row ? props.rowHeights?.get(index) : undefined;
         return (
           <div
@@ -262,7 +263,7 @@ function RowPage(
 }
 
 function ScaledRows(
-  props: Omit<Parameters<typeof RowPage>[0], "page" | "rowHeights"> & {
+  props: Omit<Parameters<typeof RowPage>[0], "page" | "from" | "rowHeights"> & {
     hasHorizontalOverflow: boolean;
   },
 ) {
@@ -284,7 +285,7 @@ function ScaledRows(
   const typographyKey = useClientSettings(
     (settings) => `${settings.fontFamilySans}:${settings.fontSizeInterface}`,
   );
-  const [layout, setLayout] = useState({ offset: 0, height: 0, rowHeight: 29 });
+  const [layout, setLayout] = useState({ height: 0, rowHeight: 29 });
   const [top, setTop] = useState(0);
   const handledReveal = useRef<string | null>(null);
   const pendingReveal = useRef<{ row: number; attempts: number } | null>(null);
@@ -309,9 +310,10 @@ function ScaledRows(
   useLayoutEffect(() => {
     const previous = scrollModel.current;
     const heights = nativeTail
-      ? Array.from(contentRef.current?.querySelectorAll<HTMLElement>("[data-preview-row]") ?? [])
-          .filter((row) => Number(row.dataset.previewRow) >= first)
-          .map((row) => row.offsetHeight)
+      ? Array.from(
+          contentRef.current?.querySelectorAll<HTMLElement>("[data-preview-row]") ?? [],
+          (row) => row.offsetHeight,
+        )
       : [];
     scrollModel.current = { scale, maxFirst, heights };
     const node = ref.current;
@@ -377,6 +379,8 @@ function ScaledRows(
     };
   }, []);
   const page = Math.floor(first / PREVIEW_PAGE_ROWS);
+  // Rows mount from `first`: rows above it never show, and measuring their full text is costly.
+  const from = first % PREVIEW_PAGE_ROWS;
   const sizesKey = `${props.sizes.join(",")}|${typographyKey}`;
   const activeRowHeights =
     props.hasHorizontalOverflow && rowHeights.key.startsWith(`${sizesKey}|`)
@@ -393,7 +397,7 @@ function ScaledRows(
     }
     visibleRows = Math.min(visibleRows, rows + 1);
   }
-  const visibleEnd = (first % PREVIEW_PAGE_ROWS) + visibleRows;
+  const visibleEnd = from + visibleRows;
   const pageCount = Math.min(
     Math.ceil(visibleEnd / PREVIEW_PAGE_ROWS),
     Math.ceil(props.count / PREVIEW_PAGE_ROWS) - page,
@@ -422,9 +426,8 @@ function ScaledRows(
       const start = currentPage * PREVIEW_PAGE_ROWS;
       const limit = visibleEnd - pageOffset * PREVIEW_PAGE_ROWS;
       const count = Math.min(PREVIEW_PAGE_ROWS, props.count - start, limit);
-      for (let local = 0; local < count; local++) {
+      for (let local = pageOffset === 0 ? from : 0; local < count; local++) {
         const index = start + local;
-        if (props.header && index === 0) continue;
         const row = rows[local];
         if (!row) continue;
         mountedIndices.push(index);
@@ -499,13 +502,10 @@ function ScaledRows(
     if (!node) return;
     const update = () => {
       const row = node.querySelector<HTMLElement>(`[data-preview-row="${first}"]`);
-      const offset = row ? row.getBoundingClientRect().top - node.getBoundingClientRect().top : 0;
       const height = node.clientHeight;
       const rowHeight = row?.offsetHeight || 29;
       setLayout((old) =>
-        old.offset === offset && old.height === height && old.rowHeight === rowHeight
-          ? old
-          : { offset, height, rowHeight },
+        old.height === height && old.rowHeight === rowHeight ? old : { height, rowHeight },
       );
     };
     update();
@@ -530,10 +530,7 @@ function ScaledRows(
     if (
       !atStart &&
       (layout.height !== content.clientHeight ||
-        layout.offset !==
-          (firstRow
-            ? firstRow.getBoundingClientRect().top - content.getBoundingClientRect().top
-            : 0))
+        layout.rowHeight !== (firstRow?.offsetHeight || 29))
     )
       return;
     const bounds = row.getBoundingClientRect();
@@ -559,17 +556,7 @@ function ScaledRows(
     const last = props.count - 1;
     if (!props.getRows(Math.floor(last / PREVIEW_PAGE_ROWS))?.[last % PREVIEW_PAGE_ROWS]) return;
     const row = content.querySelector<HTMLElement>(`[data-preview-row="${last}"]`);
-    const firstRow = content.querySelector<HTMLElement>(`[data-preview-row="${first}"]`);
-    if (
-      !row ||
-      (!atStart &&
-        (layout.height !== content.clientHeight ||
-          layout.offset !==
-            (firstRow
-              ? firstRow.getBoundingClientRect().top - content.getBoundingClientRect().top
-              : 0)))
-    )
-      return;
+    if (!row || (!atStart && layout.height !== content.clientHeight)) return;
     node.scrollTop = node.scrollHeight;
     setTop(node.scrollTop);
     if (
@@ -621,12 +608,7 @@ function ScaledRows(
           ref={contentRef}
           className="absolute inset-x-0"
           style={{
-            top:
-              maxFirst === 0
-                ? 0
-                : nativeTail
-                  ? maxFirst * scale * 29 - layout.offset
-                  : position.top + (atStart ? 0 : -layout.offset - rowFraction * layout.rowHeight),
+            top: nativeTail ? maxFirst * scale * 29 : position.top - rowFraction * layout.rowHeight,
           }}
         >
           {Array.from({ length: pageCount }, (_, offset) => (
@@ -634,6 +616,7 @@ function ScaledRows(
               key={page + offset}
               {...props}
               page={page + offset}
+              from={offset === 0 ? from : 0}
               rowHeights={activeRowHeights}
               limit={visibleEnd - offset * PREVIEW_PAGE_ROWS}
             />
