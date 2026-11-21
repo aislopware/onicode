@@ -3008,7 +3008,9 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     const [baseAheadCount, branchChanges] = yield* Effect.all(
       [
         refName !== null && (needsFallbackAhead || needsAheadOfDefault)
-          ? computeAheadCountAgainstBase(cwd, refName).pipe(Effect.orElseSucceed(() => 0))
+          ? computeAheadCountAgainstBase(cwd, refName, headOid ?? "HEAD").pipe(
+              Effect.orElseSucceed(() => 0),
+            )
           : Effect.succeed(0),
         options?.includeBranchChanges
           ? readBranchChangeTotals(repositoryPaths?.worktreeRoot ?? cwd, refName, {
@@ -4662,14 +4664,19 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       previewMergeBase === undefined;
     const reusesTracked = input.file === undefined && input.commitSha === undefined;
     const tracked = reusesTracked ? yield* takeTrackedReviewPreview(input) : undefined;
-    const repository =
-      tracked?.repository ??
-      (yield* resolveReviewRepository(input.cwd, needsCurrentBranch).pipe(
-        Effect.catchTags({
-          GitCommandError: (error) =>
-            isMissingGitCwdError(error) ? Effect.succeed(null) : Effect.fail(error),
-        }),
-      ));
+    const repository = yield* resolveReviewRepository(input.cwd, needsCurrentBranch).pipe(
+      Effect.catchTags({
+        GitCommandError: (error) =>
+          isMissingGitCwdError(error) ? Effect.succeed(null) : Effect.fail(error),
+      }),
+    );
+    // A checkout between the two passes needs the new branch's base.
+    const trackedReview =
+      tracked !== undefined &&
+      tracked.repository.worktreeRoot === repository?.worktreeRoot &&
+      tracked.repository.currentBranch === repository.currentBranch
+        ? tracked.review
+        : undefined;
     if (!repository?.worktreeRoot) {
       return {
         cwd: input.cwd,
@@ -4743,7 +4750,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
 
     const dirtyRef = sourceKind === "branch-range" ? null : "HEAD";
     const review =
-      tracked?.review ??
+      trackedReview ??
       (sourceKind === "working-tree"
         ? { baseRef: input.baseRef ?? null, mergeBase: null }
         : previewMergeBase !== undefined

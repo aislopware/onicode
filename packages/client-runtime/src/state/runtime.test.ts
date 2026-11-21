@@ -280,6 +280,7 @@ it.effect("does not re-read a file patch read while its preview was revalidating
     let previewReads = 0;
     let patchReads = 0;
     let latePatchReads = 0;
+    let latePatchInterrupted = false;
     const rpcSession = {
       client: {
         [WS_METHODS.reviewGetDiffPreview]: (input: ReviewDiffPreviewInput) =>
@@ -287,7 +288,13 @@ it.effect("does not re-read a file patch read while its preview was revalidating
             if (input.file?.path === "b.ts") {
               if (++latePatchReads === 1) {
                 yield* Deferred.succeed(latePatchStarted, undefined);
-                yield* Deferred.await(releaseLatePatch);
+                yield* Deferred.await(releaseLatePatch).pipe(
+                  Effect.onInterrupt(() =>
+                    Effect.sync(() => {
+                      latePatchInterrupted = true;
+                    }),
+                  ),
+                );
               }
             } else if (input.file) patchReads += 1;
             else if (++previewReads === 2) {
@@ -363,7 +370,8 @@ it.effect("does not re-read a file patch read while its preview was revalidating
     yield* readEnvironmentQuery(registry, patch);
     expect(patchReads).toBe(2);
 
-    // So does one requested while a patch read is in flight: it may answer with older contents.
+    // So does one requested while a patch read is in flight, which may answer with older contents.
+    // That read lands first: restarting it on every revision would starve it during an agent turn.
     const latePatch = review.diffFilePatch({
       environmentId: QUERY_ENVIRONMENT.environmentId,
       input: {
@@ -386,6 +394,7 @@ it.effect("does not re-read a file patch read while its preview was revalidating
     yield* Deferred.succeed(releaseLatePatch, undefined);
     yield* readEnvironmentQuery(registry, latePatch);
     expect(latePatchReads).toBe(2);
+    expect(latePatchInterrupted).toBe(false);
   }),
 );
 

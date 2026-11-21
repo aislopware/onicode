@@ -14,6 +14,7 @@ import * as HttpClient from "effect/http/HttpClient";
 import { cursorRateModel } from "./accountUsage.ts";
 import { readCursorUsageLimits } from "./usageLimits.ts";
 
+import * as HostProcess from "@onicode/shared/HostProcess";
 import * as ProviderHost from "@onicode/provider-core/server/ProviderHost";
 import { makeCursorTextGeneration } from "./textGeneration.ts";
 import { makeCursorAdapterV2, type CursorAdapterV2DriverEnv } from "./adapter.ts";
@@ -100,7 +101,10 @@ export const CursorDriver: ProviderDriver<
     const path = yield* Path.Path;
     const httpClient = yield* HttpClient.HttpClient;
     const sdkRunner = yield* CursorAgentSdk.CursorAgentSdkRunner;
-    const processEnv = yield* mergeProviderInstanceEnvironment(environment);
+    const processEnv = yield* mergeProviderInstanceEnvironment(
+      environment,
+      yield* HostProcess.Environment,
+    );
     const continuationIdentity = defaultProviderContinuationIdentity({
       driverKind: DRIVER_KIND,
       instanceId,

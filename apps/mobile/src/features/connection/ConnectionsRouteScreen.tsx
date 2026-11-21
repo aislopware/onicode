@@ -28,6 +28,13 @@ export function ConnectionsRouteScreen() {
   const [expandedId, setExpandedId] = useState<EnvironmentId | null>(null);
   // Held here so the sheet outlives its environment disconnecting mid-batch and shows the failure.
   const [linkSeveralFor, setLinkSeveralFor] = useState<EnvironmentId | null>(null);
+  // A removed environment unmounts its sheet without closing it; re-adding it must not reopen it.
+  if (
+    linkSeveralFor !== null &&
+    !connectedEnvironments.some((environment) => environment.environmentId === linkSeveralFor)
+  ) {
+    setLinkSeveralFor(null);
+  }
   const handleToggle = (environmentId: EnvironmentId) => {
     setExpandedId((prev) => (prev === environmentId ? null : environmentId));
   };

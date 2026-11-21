@@ -916,7 +916,7 @@ it.effect("resolves a branch's base once while its refs and branch config are un
         Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
       );
       const cwd = yield* makeTmpDir();
-      yield* initRepoWithCommit(cwd);
+      const { initialBranch } = yield* initRepoWithCommit(cwd);
       yield* git(cwd, ["checkout", "-b", "feature/x"]);
       yield* writeTextFile(cwd, "feature.txt", "feature\n");
       yield* git(cwd, ["add", "."]);
@@ -969,6 +969,23 @@ it.effect("resolves a branch's base once while its refs and branch config are un
       });
       assert.deepStrictEqual(reused.sources, withUntracked.sources);
       yield* (yield* FileSystem.FileSystem).remove(`${cwd}/untracked.txt`);
+      // A checkout between the passes resolves the new branch's base instead of reusing it.
+      const beforeCheckout = yield* driver.getReviewDiffPreview({ cwd, trackedOnly: true });
+      yield* git(cwd, ["checkout", initialBranch]);
+      yield* writeTextFile(cwd, "advanced.txt", "advanced\n");
+      yield* git(cwd, ["add", "."]);
+      yield* git(cwd, ["commit", "-m", "advance"]);
+      yield* git(cwd, ["checkout", "-b", "other"]);
+      const afterCheckout = yield* driver.getReviewDiffPreview({
+        cwd,
+        completionToken: beforeCheckout.completionToken!,
+      });
+      assert.deepStrictEqual(
+        afterCheckout.sources,
+        (yield* driver.getReviewDiffPreview({ cwd })).sources,
+      );
+      yield* git(cwd, ["checkout", "feature/x"]);
+      yield* git(cwd, ["branch", "-f", initialBranch, `${initialBranch}~1`]);
       spawnedArgs.length = 0;
 
       yield* git(cwd, ["config", "branch.feature/x.oni-merge-base-ref", "refs/heads/main"]);
@@ -1480,13 +1497,59 @@ describe("pullCurrentBranch", () => {
         const status = yield* driver.statusDetailsRemote(cwd).pipe(Effect.forkChild);
         yield* Deferred.await(fetchHeld);
         yield* git(cwd, ["checkout", "-b", "no-upstream"]);
+        yield* writeTextFile(cwd, "moved.txt", "moved\n");
+        yield* git(cwd, ["add", "."]);
+        yield* git(cwd, ["commit", "-m", "moved"]);
         yield* Deferred.succeed(release, undefined);
         const details = yield* Fiber.join(status);
         assert.deepInclude(details, {
           branch: initialBranch,
           upstreamRef: `origin/${initialBranch}`,
+          aheadCount: 0,
           behindCount: 1,
         });
+      }),
+    ).pipe(Effect.provide(layerTest)),
+  );
+
+  it.effect("local status counts ahead on the branch it read when a checkout follows", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        yield* initRepoWithCommit(cwd);
+        yield* git(cwd, ["checkout", "-b", "feature"]);
+        yield* writeTextFile(cwd, "feature.txt", "feature\n");
+        yield* git(cwd, ["add", "."]);
+        yield* git(cwd, ["commit", "-m", "feature"]);
+        const delegate = yield* ChildProcessSpawner.ChildProcessSpawner;
+        const lookupHeld = yield* Deferred.make<void>();
+        const release = yield* Deferred.make<void>();
+        let held = false;
+        const spawner = ChildProcessSpawner.make((command) =>
+          Effect.gen(function* () {
+            if (
+              !held &&
+              ChildProcess.isStandardCommand(command) &&
+              command.args.includes("branch.feature.oni-merge-base-ref")
+            ) {
+              held = true;
+              yield* Deferred.succeed(lookupHeld, undefined);
+              yield* Deferred.await(release);
+            }
+            return yield* delegate.spawn(command);
+          }),
+        );
+        const driver = yield* makeGitVcsDriverCore().pipe(
+          Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+        );
+        const status = yield* driver.statusDetailsLocal(cwd).pipe(Effect.forkChild);
+        yield* Deferred.await(lookupHeld);
+        yield* git(cwd, ["checkout", "-b", "moved"]);
+        yield* writeTextFile(cwd, "moved.txt", "moved\n");
+        yield* git(cwd, ["add", "."]);
+        yield* git(cwd, ["commit", "-m", "moved"]);
+        yield* Deferred.succeed(release, undefined);
+        assert.deepInclude(yield* Fiber.join(status), { branch: "feature", aheadCount: 1 });
       }),
     ).pipe(Effect.provide(layerTest)),
   );
