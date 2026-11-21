@@ -86,6 +86,7 @@ function layerTestFor(state: {
   remoteStatusReusedDetails?: Array<boolean>;
   localStatusBranchChanges?: Array<boolean>;
   refSnapshot?: string | null;
+  worktreeStamp?: string | null;
   remoteStatusError?: GitManagerError;
   backgroundWorkEnabled?: boolean;
   automaticFetchInterval?: Effect.Effect<Duration.Duration>;
@@ -148,8 +149,16 @@ function layerTestFor(state: {
             : (state.beforeCurrentBranch ?? Effect.void).pipe(
                 Effect.andThen(Effect.sync(() => state.currentLocalStatus.refName)),
               ),
-        readRefSnapshot: () =>
+        readLocalStatusRefSnapshot: () =>
           Effect.sync(() => (state.refSnapshot === undefined ? "refs" : state.refSnapshot)),
+        readRefSnapshot: (_cwd, refs) =>
+          Effect.sync(() => {
+            const localRefs =
+              refs ?? (state.refSnapshot === undefined ? "refs" : state.refSnapshot);
+            return localRefs === null || state.worktreeStamp === null
+              ? null
+              : `${localRefs}\0${state.worktreeStamp ?? ""}`;
+          }),
         upstreamDivergence: () =>
           (state.beforeUpstreamDivergence ?? Effect.void).pipe(
             Effect.andThen(
@@ -1008,6 +1017,7 @@ describe("VcsStatusBroadcaster", () => {
           Layer.mock(GitWorkflowService.GitWorkflowService)({
             localStatus: () => Effect.succeed(localStatus),
             currentBranch: () => Effect.succeed(localStatus.refName),
+            readLocalStatusRefSnapshot: () => Effect.succeed("refs"),
             readRefSnapshot: () => Effect.succeed("refs"),
             remoteStatus: () => Effect.succeed(remoteStatus),
             invalidateLocalStatus: () => Effect.void,
@@ -1105,6 +1115,7 @@ describe("VcsStatusBroadcaster", () => {
         Layer.mock(GitWorkflowService.GitWorkflowService)({
           localStatus: () => Effect.succeed(baseLocalStatus),
           currentBranch: () => Effect.succeed(baseLocalStatus.refName),
+          readLocalStatusRefSnapshot: () => Effect.succeed("refs"),
           readRefSnapshot: () => Effect.succeed("refs"),
           remoteStatus: () =>
             Effect.gen(function* () {
@@ -1152,6 +1163,7 @@ describe("VcsStatusBroadcaster", () => {
         Layer.mock(GitWorkflowService.GitWorkflowService)({
           localStatus: () => Effect.succeed(baseLocalStatus),
           currentBranch: () => Effect.succeed(baseLocalStatus.refName),
+          readLocalStatusRefSnapshot: () => Effect.succeed("refs"),
           readRefSnapshot: () => Effect.succeed("refs"),
           remoteStatus: () =>
             Effect.gen(function* () {
@@ -1258,6 +1270,7 @@ describe("VcsStatusBroadcaster", () => {
               return state.currentLocalStatus;
             }),
           currentBranch: () => Effect.succeed(state.currentLocalStatus.refName),
+          readLocalStatusRefSnapshot: () => Effect.succeed("refs"),
           readRefSnapshot: () => Effect.succeed("refs"),
           remoteStatus: () =>
             Effect.suspend(() => {
@@ -1663,6 +1676,7 @@ describe("VcsStatusBroadcaster", () => {
               }),
             currentBranch: () => Effect.succeed(baseLocalStatus.refName),
             invalidateRemoteStatus: () => Effect.void,
+            readLocalStatusRefSnapshot: () => Effect.sync(() => refSnapshot),
             readRefSnapshot: () => Effect.sync(() => refSnapshot),
             remoteStatus: () =>
               Deferred.succeed(fetchStarted, undefined).pipe(
@@ -1721,6 +1735,24 @@ describe("VcsStatusBroadcaster", () => {
       const unmoved = yield* broadcaster.refreshStatus("/repo");
       assert.equal(state.localStatusCalls, 1);
       assert.isString(unmoved.refsDigest);
+
+      state.localStatusCalls = 0;
+      state.beforeRemoteStatus = Effect.sync(() => {
+        state.worktreeStamp = "feature in /linked";
+      });
+      const worktreeChanged = yield* broadcaster.refreshStatus("/repo");
+      assert.equal(state.localStatusCalls, 1);
+      assert.isString(worktreeChanged.refsDigest);
+      assert.notEqual(worktreeChanged.refsDigest, unmoved.refsDigest);
+
+      state.localStatusCalls = 0;
+      state.beforeRemoteStatus = Effect.sync(() => {
+        state.worktreeStamp = null;
+      });
+      const worktreesUnreadable = yield* broadcaster.refreshStatus("/repo");
+      assert.equal(state.localStatusCalls, 1);
+      assert.isUndefined(worktreesUnreadable.refsDigest);
+      state.worktreeStamp = "feature in /linked";
 
       state.localStatusCalls = 0;
       state.currentRemoteStatus = baseRemoteStatus;

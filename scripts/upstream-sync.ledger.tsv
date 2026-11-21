@@ -3155,3 +3155,4 @@ cea19e450b	take	fix(server): ODT attachments no longer repeat index titles or te
 464e8f7e60	take	taken; kept Onicode's subagent-free history pages (98f772ea76): prependThreadHistory merges rows only
 da57ea2bf9	take	taken as is
 ffb42a0b77	take	taken; scenario ported to the desktop harness
+fd4284d8b2	take	adapted: adopted upstream's local/branch-list ref snapshot split over Onicode's worktree-list snapshot; kept Onicode's for-each-ref filter (checkpoint refs out), HEAD via rev-parse; scenario ported
