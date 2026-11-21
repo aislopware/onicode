@@ -3138,3 +3138,4 @@ e2fdfd2c31	take	taken as is
 a3001b33fe	take	taken as is
 9fdcd08835	take	taken as is; matches the runAt picker's Android close
 fcf50973f3	take	fix(server): RTF attachments no longer garble text set in a font's own character set
+f0ceeefc08	take	fix(antigravity): match skill manifest filters literally
