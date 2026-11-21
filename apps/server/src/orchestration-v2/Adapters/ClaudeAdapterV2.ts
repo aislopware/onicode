@@ -10047,6 +10047,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               status: "completed",
               startedAt: context.startedAt,
               completedAt: yield* DateTime.now,
+              finalAnswer: true,
             });
           }
           assistant.streamedBefore = assistant.emittedNativeItemIds.size;
@@ -13099,7 +13100,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               context.heldResult = message;
               yield* endReplySegment(context);
               // Claude ended its native turn on this reply; the run continues only for the steer.
+              // Cleared once published, so a later segment never republishes or cuts it off.
               const answer = context.assistant.lastReply;
+              context.assistant.lastReply = null;
               if (answer !== null) {
                 yield* publishAssistantArtifacts({
                   context,
