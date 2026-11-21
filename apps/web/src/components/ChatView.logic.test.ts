@@ -1318,6 +1318,7 @@ describe("deriveTimelineWorking", () => {
 describe("planComposerTurn", () => {
   const base = {
     messageText: "hello",
+    attachmentCount: 0,
     sendQueuesBehindSetup: false,
     isServerThread: false,
     activeMessageCount: 0,
@@ -1390,6 +1391,19 @@ describe("planComposerTurn", () => {
       shouldQueueBehindActiveRun: false,
       baseBranchForWorktree: null,
     });
+    // The server queues a typed command sent as a steer; a path or an attachment still steers.
+    expect(
+      planComposerTurn({ ...running, dispatchMode: "steer", messageText: "/review" }),
+    ).toMatchObject({ turnDispatchMode: "steer", shouldQueueBehindActiveRun: true });
+    for (const command of [
+      { messageText: "/src/a.ts" },
+      { messageText: "/review", attachmentCount: 1 },
+    ]) {
+      expect(
+        planComposerTurn({ ...running, dispatchMode: "steer", ...command })
+          .shouldQueueBehindActiveRun,
+      ).toBe(false);
+    }
     expect(
       planComposerTurn({ ...running, sendQueuesBehindSetup: true, dispatchMode: "steer" }),
     ).toMatchObject({

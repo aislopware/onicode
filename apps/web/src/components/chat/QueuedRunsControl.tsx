@@ -297,7 +297,8 @@ export function QueuedRunsControl({
                 replaceComposerContextReferences(item.text, (reference) => reference.label),
               ).trim();
           const isEditing = item.runId !== null && item.runId === props.editingRunId;
-          const commandMovesFirst = movesCommandFirst({
+          // With or without a goal driver, Send now never steers a command into the turn.
+          const commandMovesFirst = isSlashCommand({
             text: item.message?.text ?? item.text,
             attachments: item.attachments,
           });

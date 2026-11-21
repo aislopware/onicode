@@ -8,6 +8,7 @@ import {
 } from "@onicode/client-runtime/state/thread-execution";
 import { turnChanges } from "@onicode/client-runtime/state/thread-repositories";
 import { COMPACT_COMMAND_PATTERN } from "@onicode/client-runtime/state/context-window";
+import { isSlashCommand } from "@onicode/shared/composerTrigger";
 import { derivePendingBackgroundWork } from "@onicode/shared/orchestrationV2PendingBackgroundWork";
 import {
   latestUnheldRun,
@@ -1411,6 +1412,7 @@ export function deriveTimelineWorking(input: {
 /** How a composer send dispatches: where it runs and whether it waits behind other work. */
 export function planComposerTurn(input: {
   readonly messageText: string;
+  readonly attachmentCount: number;
   readonly sendQueuesBehindSetup: boolean;
   readonly isServerThread: boolean;
   readonly activeMessageCount: number;
@@ -1465,10 +1467,17 @@ export function planComposerTurn(input: {
       compactBeforeSend || (input.sendQueuesBehindSetup && dispatchMode !== "steer")
         ? ("queue" as const)
         : dispatchMode,
+    // The server queues a slash command sent as a steer, so it is shown waiting, not steering.
     shouldQueueBehindActiveRun:
       compactBeforeSend ||
       input.sendQueuesBehindSetup ||
-      (input.phase === "running" && dispatchMode === "queue"),
+      (input.phase === "running" &&
+        (dispatchMode === "queue" ||
+          (dispatchMode === "steer" &&
+            isSlashCommand({
+              text: input.messageText,
+              attachments: Array.from({ length: input.attachmentCount }),
+            })))),
   };
 }
 

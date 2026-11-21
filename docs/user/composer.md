@@ -283,8 +283,9 @@ shortcut described above.
 On desktop, queued messages appear at the end of the thread as dashed messages that have
 not been sent yet. On mobile they appear above the composer. Each shows its text and any attached
 images. **Send now** sends a message right away, into the running turn if there is one. While a
-turn runs, a slash command moves to the front of the queue instead. You can also edit or
-remove it.
+turn runs, a slash command moves to the front of the queue instead. While a `/compact` sent on
+its own runs, **Send now** stops the compaction and starts the message, command or not, as its own
+turn. You can also edit or remove it.
 
 A message sent into a turn that is compacting its context waits for the compaction: its row
 shows **After compaction** on desktop and an hourglass on mobile in place of **Send now**, and it
