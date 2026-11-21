@@ -25,6 +25,14 @@ const GIT_PLACEHOLDER_TITLES = {
 } as const satisfies Record<ReviewGitSectionKind, unknown>;
 const UNCOMMITTED_SUBTITLE = msg("Staged, unstaged, and untracked files");
 
+/**
+ * The diff-preview query for one git section. The sheet shows only complete previews, so this
+ * skips the shared query's tracked-only first pass, which would send the same patch twice.
+ */
+export function reviewGitPreviewInput(cwd: string, sourceKind: ReviewGitSectionKind) {
+  return { cwd, sourceKind, trackedOnly: false } as const;
+}
+
 export interface ReviewSectionItem {
   readonly id: string;
   readonly kind: ReviewSectionKind;

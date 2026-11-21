@@ -8,6 +8,7 @@ import { getCachedReviewParsedDiff } from "./reviewState";
 import {
   applyReviewDiffMetadata,
   buildReviewParsedDiff,
+  reviewGitPreviewInput,
   type ReviewParsedDiff,
   type ReviewRenderableFile,
   type ReviewSectionItem,
@@ -194,7 +195,7 @@ export function useReviewDiffData(input: {
                   input: {
                     cacheKey: scope,
                     // Newer preview revisions refresh patches read under an older one.
-                    preview: { cwd, sourceKind: lazySource.kind },
+                    preview: reviewGitPreviewInput(cwd, lazySource.kind),
                     request: {
                       cwd,
                       ...(lazySource.baseRef ? { baseRef: lazySource.baseRef } : {}),
