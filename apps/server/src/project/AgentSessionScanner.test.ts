@@ -2422,8 +2422,8 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
         const transcripts = [
           ...errorSessions,
           ...emptySessions,
-          // Without session_meta there is no resumable session ID. Skipped, never recorded,
-          // so these would also spend the budget on every run.
+          // Without session_meta there is no resumable session ID, so no later run imports these
+          // either: they return their transcript slots and are not counted as skipped.
           ...Array.from({ length: 100 }, (_, index) => ({
             filePath: codexRollout(`unusable-${index}`),
             records: [
@@ -2479,7 +2479,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
           outcomes.map((outcome) =>
             outcome._tag === "Importable" ? outcome.thread.providerSessionId : outcome._tag,
           ),
-        ).toEqual([...Array.from({ length: 100 }, () => "Skipped"), "real-session"]);
+        ).toEqual(["real-session"]);
       }),
     );
 
@@ -2492,28 +2492,55 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
         const codexHomePath = yield* makeTempDir("onicode-codex-home-");
         const workspace = yield* makeTempDir("onicode-workspace-");
         const threadId = "019a0000-0000-7000-8000-000000000001";
-        const rolloutId = "019a0000-0000-7000-8000-000000000002";
-        // The ancestor rollout is missing, and this rollout added no messages of its own.
-        yield* writeTranscript({
-          filePath: path.join(
-            codexHomePath,
-            "sessions",
-            "2026",
-            "08",
-            "24",
-            `rollout-2026-08-24T11-00-00-${threadId}_${rolloutId}.jsonl`,
-          ),
-          contents: encodeTranscriptRecord({
-            type: "session_meta",
-            payload: {
-              id: threadId,
-              cwd: workspace,
-              history_mode: "paginated",
-              history_base: { thread_id: threadId, end_ordinal_exclusive: 3, end_byte_offset: 512 },
-            },
-          }),
-          mtimeMs: nowMs,
-        });
+        // The ancestor rollout is missing. One rollout added no messages of its own; the other
+        // added only a reply, so its prompt is in the missing history too.
+        for (const [index, own] of [
+          [2, []],
+          [
+            3,
+            [
+              {
+                type: "response_item",
+                payload: {
+                  type: "message",
+                  role: "assistant",
+                  content: [{ type: "output_text", text: "Done" }],
+                },
+              },
+            ],
+          ],
+        ] as const) {
+          const rolloutId = `019a0000-0000-7000-8000-00000000000${index}`;
+          yield* writeTranscript({
+            filePath: path.join(
+              codexHomePath,
+              "sessions",
+              "2026",
+              "08",
+              "24",
+              `rollout-2026-08-24T11-00-0${index}-${threadId}_${rolloutId}.jsonl`,
+            ),
+            contents: [
+              {
+                type: "session_meta",
+                payload: {
+                  id: threadId,
+                  cwd: workspace,
+                  history_mode: "paginated",
+                  history_base: {
+                    thread_id: threadId,
+                    end_ordinal_exclusive: 3,
+                    end_byte_offset: 512,
+                  },
+                },
+              },
+              ...own,
+            ]
+              .map((record) => encodeTranscriptRecord(record))
+              .join("\n"),
+            mtimeMs: nowMs - index,
+          });
+        }
 
         const outcomes = yield* runRecentThreadOutcomes({
           claudeHomePath,
@@ -2521,7 +2548,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
           workspaceRoot: workspace,
         });
 
-        expect(outcomes).toEqual([{ _tag: "Skipped" }]);
+        expect(outcomes).toEqual([{ _tag: "Skipped" }, { _tag: "Skipped" }]);
       }),
     );
 
