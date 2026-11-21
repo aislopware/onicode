@@ -3140,3 +3140,4 @@ a3001b33fe	take	taken as is
 fcf50973f3	take	fix(server): RTF attachments no longer garble text set in a font's own character set
 f0ceeefc08	take	fix(antigravity): match skill manifest filters literally
 e452042db8	take	fix(contracts): older clients drop unknown values in RPC responses
+10a5b5dca6	take	fix(server): Word table cells wrapped in a content control reach the agent
