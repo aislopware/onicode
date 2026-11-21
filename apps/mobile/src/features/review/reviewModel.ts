@@ -14,9 +14,15 @@ import { msg } from "gt-react-native";
 import { m, type MessageResolver } from "../../i18n/messages";
 
 export type ReviewSectionKind = "turn" | "working-tree" | "branch-range";
+export type ReviewGitSectionKind = Exclude<ReviewSectionKind, "turn">;
+type ReviewGitSource = ReviewDiffPreviewSource & { readonly kind: ReviewGitSectionKind };
 
 const CHANGES_SECTION_ID = "git:branch-range";
-const CHANGES_TITLE = msg("Changes", { $context: "diff section: branch changes" });
+const GIT_SECTION_KINDS = ["working-tree", "branch-range"] as const;
+const GIT_PLACEHOLDER_TITLES = {
+  "working-tree": msg("Uncommitted", { $context: "diff section: working tree" }),
+  "branch-range": msg("Changes", { $context: "diff section: branch changes" }),
+} as const satisfies Record<ReviewGitSectionKind, unknown>;
 const UNCOMMITTED_SUBTITLE = msg("Staged, unstaged, and untracked files");
 
 export interface ReviewSectionItem {
@@ -28,7 +34,7 @@ export interface ReviewSectionItem {
   readonly isLoading: boolean;
   readonly files?: ReviewDiffPreviewSource["files"];
   readonly truncated?: boolean;
-  readonly source?: ReviewDiffPreviewSource;
+  readonly source?: ReviewGitSource;
 }
 
 export interface ReviewRenderableHunkRow {
@@ -147,12 +153,14 @@ const readyCheckpointOrder = Order.make<ThreadCheckpointSummary>(
 // The server's own title for a diff is English.
 function gitTitle(section: ReviewDiffPreviewSource, resolve: MessageResolver): string {
   if (section.kind === "working-tree") {
-    return resolve(msg("Uncommitted", { $context: "diff section: working tree" }));
+    return resolve(GIT_PLACEHOLDER_TITLES["working-tree"]);
   }
   if (section.kind === "branch-range" && section.baseRef) {
     return resolve(msg("Changes vs {ref}", { ref: section.baseRef }));
   }
-  return section.kind === "branch-range" ? resolve(CHANGES_TITLE) : section.title;
+  return section.kind === "branch-range"
+    ? resolve(GIT_PLACEHOLDER_TITLES["branch-range"])
+    : section.title;
 }
 
 function gitSubtitle(section: ReviewDiffPreviewSource, resolve: MessageResolver): string | null {
@@ -544,7 +552,7 @@ export function buildReviewSectionItems(input: {
   readonly checkpoints: ReadonlyArray<ThreadCheckpointSummary>;
   readonly gitSections: ReadonlyArray<ReviewDiffPreviewSource>;
   readonly turnDiffById: Readonly<Record<string, string | undefined>>;
-  readonly loadingGitSections: boolean;
+  readonly gitSectionStates: Readonly<Record<ReviewGitSectionKind, "loading" | "failed" | null>>;
   readonly resolve?: MessageResolver;
 }): ReadonlyArray<ReviewSectionItem> {
   const resolve = input.resolve ?? m;
@@ -562,39 +570,41 @@ export function buildReviewSectionItems(input: {
     },
   );
 
-  const gitItems = input.gitSections
-    .filter(
-      (section): section is typeof section & { kind: ReviewSectionKind } =>
-        section.kind !== "commit",
-    )
-    .map<ReviewSectionItem>((section) => ({
-      id: `git:${section.kind}`,
-      kind: section.kind,
-      title: gitTitle(section, resolve),
-      subtitle: gitSubtitle(section, resolve),
-      diff: section.diff,
-      source: section,
-      ...(section.files ? { files: section.files } : {}),
-      truncated: section.truncated,
-      isLoading: false,
-    }));
-  const hasChangesItem = gitItems.some((item) => item.id === CHANGES_SECTION_ID);
-  const visibleGitItems =
-    input.loadingGitSections && !hasChangesItem
-      ? [
+  const gitItems = GIT_SECTION_KINDS.flatMap<ReviewSectionItem>((kind) => {
+    const section = input.gitSections.find(
+      (candidate): candidate is ReviewGitSource => candidate.kind === kind,
+    );
+    if (section) {
+      return [
+        {
+          id: `git:${kind}`,
+          kind,
+          title: gitTitle(section, resolve),
+          subtitle: gitSubtitle(section, resolve),
+          diff: section.diff,
+          source: section,
+          ...(section.files ? { files: section.files } : {}),
+          truncated: section.truncated,
+          isLoading: false,
+        },
+      ];
+    }
+    const state = input.gitSectionStates[kind];
+    return state === null
+      ? []
+      : [
           {
-            id: CHANGES_SECTION_ID,
-            kind: "branch-range",
-            title: resolve(CHANGES_TITLE),
+            id: `git:${kind}`,
+            kind,
+            title: resolve(GIT_PLACEHOLDER_TITLES[kind]),
             subtitle: null,
             diff: null,
-            isLoading: true,
-          } satisfies ReviewSectionItem,
-          ...gitItems,
-        ]
-      : gitItems;
+            isLoading: state === "loading",
+          },
+        ];
+  });
 
-  return [...turnItems, ...visibleGitItems];
+  return [...turnItems, ...gitItems];
 }
 
 export function getDefaultReviewSectionId(
