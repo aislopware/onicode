@@ -70,6 +70,20 @@ function deriveRepositoryRelativeProjectPath(
   return normalizedProjectPath.slice(rootPrefix.length).replaceAll("\\", "/");
 }
 
+/** The project's workspace root is its repository's git top-level, not a sub-folder. */
+export function isRepositoryRootProject(
+  project: Pick<EnvironmentProject, "workspaceRoot" | "repositoryIdentity">,
+): boolean {
+  return deriveRepositoryRelativeProjectPath(project) === "";
+}
+
+/** A group's default checkout for new threads: its repository root, else its first member. */
+export function selectGroupDefaultProject<
+  TProject extends Pick<EnvironmentProject, "workspaceRoot" | "repositoryIdentity">,
+>(projects: ReadonlyArray<TProject>): TProject | undefined {
+  return projects.find(isRepositoryRootProject) ?? projects[0];
+}
+
 export function derivePhysicalProjectKeyFromPath(environmentId: string, cwd: string): string {
   return `${environmentId}:${normalizeProjectPathForComparison(cwd)}`;
 }
@@ -163,6 +177,23 @@ export function deriveLogicalProjectKeyFromSettings(
     groupingMode: resolveProjectGroupingMode(project, settings),
     groupScratchProjects: options?.groupScratchProjects ?? false,
   });
+}
+
+/** The checkout a new thread in `project`'s group starts in on its environment: the group's root. */
+export function resolveGroupDefaultProject<TProject extends EnvironmentProject>(
+  project: TProject,
+  projects: ReadonlyArray<TProject>,
+  settings: ProjectGroupingSettings,
+): TProject {
+  const groupKey = deriveLogicalProjectKeyFromSettings(project, settings);
+  return (
+    projects.find(
+      (candidate) =>
+        candidate.environmentId === project.environmentId &&
+        isRepositoryRootProject(candidate) &&
+        deriveLogicalProjectKeyFromSettings(candidate, settings) === groupKey,
+    ) ?? project
+  );
 }
 
 export function resolveScratchProjectScopeKey(
@@ -383,12 +414,13 @@ export function buildProjectGroups<TProject extends EnvironmentProject>(
   return Array.from(groupedMembers, ([key, members]) => {
     // New threads and settings start in the representative, so an open copy beats the preferred machine.
     const open = members.filter((member) => isPickableProjectMember(member.project));
-    const candidates = open.length > 0 ? open : members;
+    const candidates = (open.length > 0 ? open : members).map((member) => member.project);
     const representative =
       (preferredEnvironmentId
-        ? candidates.find((member) => member.project.environmentId === preferredEnvironmentId)
-            ?.project
-        : null) ?? candidates[0]!.project;
+        ? selectGroupDefaultProject(
+            candidates.filter((project) => project.environmentId === preferredEnvironmentId),
+          )
+        : undefined) ?? selectGroupDefaultProject(candidates)!;
     return {
       key,
       label:
