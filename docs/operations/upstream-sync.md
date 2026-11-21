@@ -10,7 +10,7 @@ node scripts/upstream-sync.ts port <sha>     # 3-way merge of each file into the
 node scripts/upstream-sync.ts record <sha> take|skip "<Onicode commit, or why skipped>"
 ```
 
-`port` translates the commit's before and after versions through the same rules the rebrand used, then merges each file against ours with `git merge-file`, so context that matches is applied and real divergence becomes a conflict. It reports each file as `merged`, `CONFLICT`, `MISSING` (upstream changed a file Onicode removed) or `deleted`. Port one commit, commit it, then port the next, oldest first.
+`port` translates the commit's before and after versions through the same rules the rebrand used, then merges each file against ours with `git merge-file`, so context that matches is applied and real divergence becomes a conflict. Upstream issue and PR references (`pingdotgg/t3code#N`, `github.com/pingdotgg/t3code/pull/N`) keep pointing upstream, so the `pingdotgg` check in step 2 lists them too; test files translate them to `aislopware/onicode` with the rest of their fixture data. It reports each file as `merged`, `CONFLICT`, `MISSING` (upstream changed a file Onicode removed) or `deleted`. Port one commit, commit it, then port the next, oldest first.
 
 For every commit:
 
