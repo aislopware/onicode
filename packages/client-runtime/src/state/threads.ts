@@ -14,6 +14,7 @@ import {
 import { boundedSnapshotProjection } from "@onicode/shared/orchestrationV2BoundedSnapshot";
 import { pendingBackgroundTurnItems } from "@onicode/shared/orchestrationV2PendingBackgroundWork";
 import * as Cause from "effect/Cause";
+import * as Clock from "effect/Clock";
 import type * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -67,6 +68,7 @@ import {
 } from "./threadState.ts";
 
 const THREAD_SUBSCRIPTION_RETRY_DELAY = "250 millis";
+const DEFECT_BACKOFF_RESET_MS = 5 * 60_000;
 const isThreadProjectionError = Schema.is(OrchestrationV2GetThreadProjectionError);
 
 function statusWithoutLiveData(
@@ -1022,10 +1024,16 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
   let defectRetries = 0;
   // A forced reload keeps the backoff, or an undecodable live event reloads every retry.
   let recovering = false;
-  const backOffAfterDefect = Effect.suspend(() => {
+  let lastDefectAt = Number.NEGATIVE_INFINITY;
+  const backOffAfterDefect = Effect.gen(function* () {
+    const now = yield* Clock.currentTimeMillis;
+    // Defects far apart are unrelated, so the next one starts from the shortest delay.
+    if (now - lastDefectAt >= DEFECT_BACKOFF_RESET_MS) defectRetries = 0;
+    lastDefectAt = now;
     const retryDelay = subscriptionRetryDelay(THREAD_SUBSCRIPTION_RETRY_DELAY, defectRetries);
     defectRetries += 1;
-    return setStreamError(THREAD_SYNC_ERROR).pipe(Effect.andThen(Effect.sleep(retryDelay)));
+    yield* setStreamError(THREAD_SYNC_ERROR);
+    yield* Effect.sleep(retryDelay);
   });
   const followThread = (): Effect.Effect<
     void,

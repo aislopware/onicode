@@ -2,6 +2,8 @@ import { decodeMsg, decodeOptions, mFallback } from "gt-i18n";
 import type { MFunctionType } from "gt-i18n/types";
 import * as Schema from "effect/Schema";
 
+import { gitCommandErrorMessage } from "./git.ts";
+
 /**
  * One or more `msg()` sentences shown together, joined by a space. Errors carry it beside
  * their English `message` so logs and English comparisons keep working.
@@ -47,12 +49,14 @@ export function errorI18nMessage(error: unknown): MarkedText | undefined {
 
 /**
  * What to show for an error: its marked text in the active language when it has one,
- * otherwise its non-empty `message`, otherwise null.
+ * otherwise its non-empty `message`, otherwise null. Git failures read as `gitCommandErrorMessage`.
  */
 export function errorDisplayMessage(
   error: unknown,
   resolve: MFunctionType = mFallback,
 ): string | null {
+  const git = gitCommandErrorMessage(error, resolve);
+  if (git !== null) return git.trim().length > 0 ? git : null;
   const text = errorI18nMessage(error);
   if (text !== undefined) return resolveMarkedText(text, resolve);
   if (typeof error !== "object" || error === null || !("message" in error)) return null;
@@ -63,13 +67,16 @@ export function errorDisplayMessage(
 
 /**
  * A thrown `Error`'s text in the active language, its plain `message` (even empty) when it has no
- * marked text, and null for anything that is not an `Error`.
+ * marked text, and null for anything that is not an `Error`. Git failures read as
+ * `gitCommandErrorMessage`.
  */
 export function thrownErrorMessage(
   error: unknown,
   resolve: MFunctionType = mFallback,
 ): string | null {
   if (!(error instanceof Error)) return null;
+  const git = gitCommandErrorMessage(error, resolve);
+  if (git !== null) return git;
   const text = errorI18nMessage(error);
   return text === undefined ? error.message : resolveMarkedText(text, resolve);
 }

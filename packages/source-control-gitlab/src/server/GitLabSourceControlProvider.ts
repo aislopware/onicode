@@ -58,7 +58,8 @@ function toChangeRequest(summary: GitLabCli.GitLabMergeRequestSummary): ChangeRe
 
 function parseGitLabAuth(input: SourceControlAuthProbeInput) {
   const output = combinedAuthOutput(input);
-  const authenticatedHost = findAuthenticatedGitLabHost(parseGitLabAuthStatusHosts(output));
+  const hosts = parseGitLabAuthStatusHosts(output);
+  const authenticatedHost = findAuthenticatedGitLabHost(hosts);
   const account =
     authenticatedHost?.account ??
     matchFirst(output, [
@@ -69,7 +70,16 @@ function parseGitLabAuth(input: SourceControlAuthProbeInput) {
   const host = authenticatedHost?.host ?? parseCliHost(output);
 
   if (account) {
-    return providerAuth({ status: "authenticated", account, host });
+    // Every signed-in host, so a sign-in to another host reads as a change in discovery.
+    const accounts = hosts.flatMap((entry) =>
+      entry.account === null
+        ? []
+        : [{ host: entry.host, account: entry.account, active: true, authenticated: true }],
+    );
+    return {
+      ...providerAuth({ status: "authenticated", account, host }),
+      ...(accounts.length === 0 ? {} : { accounts }),
+    };
   }
 
   if (input.exitCode !== 0) {

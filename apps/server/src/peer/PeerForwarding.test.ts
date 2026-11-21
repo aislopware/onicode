@@ -287,6 +287,9 @@ const mcpClient = McpSchema.McpServerClient.of({
   getClient: Effect.die("unused"),
 });
 
+/** A client caller here with no thread, as the CLI is. */
+const CLI = "cli";
+
 /**
  * Environment A: its own orchestrator toolkit with forwarding, and a thread
  * caller whose modes the test picks. Its local threads never matter here.
@@ -365,12 +368,23 @@ const makeLaptop = Effect.gen(function* () {
   ): McpInvocationContext.McpInvocationScope => ({
     environmentId: laptop.environmentId,
     requestNamespace: `provider-session:${caller}`,
-    thread: {
-      threadId: ThreadId.make(caller),
-      providerSessionId: `provider-session:${caller}`,
-      providerInstanceId: ProviderInstanceId.make("codex"),
-    },
-    client: undefined,
+    ...(caller === CLI
+      ? {
+          thread: undefined,
+          client: {
+            sessionId: "session-cli",
+            label: "Onicode CLI",
+            access: "full-access" as const,
+          },
+        }
+      : {
+          thread: {
+            threadId: ThreadId.make(caller),
+            providerSessionId: `provider-session:${caller}`,
+            providerInstanceId: ProviderInstanceId.make("codex"),
+          },
+          client: undefined,
+        }),
     capabilities,
     issuedAt: 1,
   });
@@ -653,8 +667,15 @@ it.effect("runs any tool that takes a linked environment there", () =>
         threadId: boxThread,
       });
       expect(read.isError).toBe(false);
+      // A client's asks for the start, which some peers would otherwise serve newest first.
+      const clientRead = yield* a.call(CLI, "oni_thread_read", {
+        environmentId: box.environmentId,
+        threadId: boxThread,
+      });
+      expect(clientRead.isError).toBe(false);
       expect((yield* Ref.get(seen)).reads).toEqual([
         { beforePosition: Number.MAX_SAFE_INTEGER, limit: 10, view: "messages" },
+        { afterPosition: -1, limit: 10, view: "messages" },
       ]);
 
       // This environment's own id keeps the call here.

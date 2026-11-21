@@ -271,6 +271,12 @@ it("readThread preserves caller access errors and prefers activity-run status ov
     });
     expect(laterPage.thread.pullRequests).toBeUndefined();
     expect(laterPage.thread.pullRequestCount).toBe(8);
+    // A read from the start, as a linked environment's CLI read is forwarded, is the first page.
+    const fromStart = yield* service.readThread(makeScope(), {
+      threadId: parentThreadId,
+      afterPosition: -1,
+    });
+    expect(fromStart.thread.pullRequests?.map((link) => link.number)).toEqual([2, 8, 7, 6, 5]);
     // A read from past the tail is the newest page, which a linked environment asks for.
     const newestPage = yield* service.readThread(makeScope(), {
       threadId: parentThreadId,

@@ -1,5 +1,5 @@
 import * as Dialog from "../../components/ui/Dialog";
-import { errorDisplayMessage, gitCommandErrorMessage } from "@onicode/client-runtime/errors";
+import { errorDisplayMessage } from "@onicode/client-runtime/errors";
 import {
   CommonActions,
   useRoute,
@@ -71,9 +71,7 @@ const branchCheckouts = makeNewTaskBranchCheckouts({
       const error = squashAtomCommandFailure(result);
       Dialog.alert(
         m(msg("Could not switch branch")),
-        gitCommandErrorMessage(error, m) ??
-          errorDisplayMessage(error, m) ??
-          m(msg("The branch could not be checked out.")),
+        errorDisplayMessage(error, m) ?? m(msg("The branch could not be checked out.")),
       );
     }
     rootNavigationRef.dispatch({
