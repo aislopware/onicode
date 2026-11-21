@@ -694,6 +694,17 @@ it.live("removes what it created when one repository fails", () =>
       assert.deepEqual(yield* fileSystem.readDirectory(path.join(config.worktreesDir, "shop")), []);
       assert.deepEqual(yield* (yield* TaskFolderStore.TaskFolderStore).list, []);
       assert.isTrue(yield* fileSystem.exists(path.join(tmp, "shop", "AGENTS.md")));
+
+      // Another writer makes the branch after it was found free: that branch is theirs to keep.
+      const web = yield* repository("shop/web");
+      state.trackedFolders = tracked(api, web);
+      state.beforeCreateWorktree = run(web, "branch", "feature").pipe(Effect.ignore);
+      yield* create("feature").pipe(Effect.flip);
+      assert.equal(yield* run(api, "branch", "--format=%(refname:short)"), "main");
+      assert.deepEqual((yield* run(web, "branch", "--format=%(refname:short)")).split("\n"), [
+        "feature",
+        "main",
+      ]);
     }),
   ),
 );
@@ -854,9 +865,13 @@ it.live("removing a task folder waits for a repository being added to it", () =>
         .addRepository({ threadId, repositoryPath: web })
         .pipe(Effect.forkChild);
       yield* Deferred.await(adding);
+      // The removal reads the record while the repository is still being added to it.
+      const removalRead = yield* Deferred.make<void>();
+      state.afterFindContaining = Deferred.succeed(removalRead, undefined).pipe(Effect.asVoid);
       const remove = yield* taskFolders
         .removeIfTaskFolder({ path: root, force: true })
         .pipe(Effect.forkChild);
+      yield* Deferred.await(removalRead);
       yield* Deferred.succeed(proceed, undefined);
       yield* Fiber.join(add);
       assert.isTrue(yield* Fiber.join(remove));

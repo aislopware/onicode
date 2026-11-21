@@ -27,6 +27,7 @@ import * as TaskFolders from "../workspace/TaskFolders.ts";
 import {
   withCheckpointRestoreReservation,
   withWorkspaceLease,
+  withWorkspaceLeases,
 } from "../workspace/workspaceLease.ts";
 import {
   isCheckpointRestoreIsolated,
@@ -548,28 +549,39 @@ export const layer: Layer.Layer<
           if (input.restoreFiles === false) {
             return yield* withWorkspaceLease(worktreePath, execute(input));
           }
-          // A file restore rewrites every repository worktree of the task folder too. Git
-          // actions lease each checkout by its real path; the thread's lease comes first.
+          // A file restore also rewrites the repositories it restores: the task folder's other
+          // worktrees and their submodules. Git actions lease each checkout by its real path.
           const taskFolder = yield* taskFolders.find(worktreePath);
-          const checkouts = yield* Effect.forEach(taskFolder?.repositories ?? [], (repository) =>
-            fileSystem
-              .realPath(repository.worktreePath)
-              .pipe(Effect.orElseSucceed(() => path.resolve(repository.worktreePath))),
-          );
-          const rollback = withWorkspaceLease(
+          const { scope } =
+            taskFolder === null
+              ? { scope: undefined }
+              : yield* projections.getCheckpointRollbackContext(input.threadId, input);
+          const scopes =
+            scope === undefined
+              ? null
+              : yield* checkpoints.repositoryScopesIfReadable({
+                  rootScope: scope,
+                  projectId: thread.projectId,
+                  worktreePath: thread.worktreePath,
+                });
+          // Unreadable ones refuse the rewind inside; until then the folder's worktrees stand in.
+          const repositories =
+            scopes?.map((repository) => repository.cwd) ??
+            taskFolder?.repositories.map((repository) => repository.worktreePath) ??
+            [];
+          const realPath = (target: string) =>
+            fileSystem.realPath(target).pipe(Effect.orElseSucceed(() => path.resolve(target)));
+          // A thread bound to one of its folder's worktrees finds its own checkout among them;
+          // each lease is taken once, as a second would wait on the first.
+          const leases = [
             worktreePath,
-            [...new Set(checkouts)]
-              .toSorted()
-              .reduceRight(
-                (inner, checkout) => withWorkspaceLease(checkout, inner),
-                execute(input),
-              ),
-          );
+            ...(yield* Effect.forEach([worktreePath, ...repositories], realPath)),
+          ];
           yield* withCheckpointRestoreReservation(
             fileSystem,
             path,
             taskFolder?.root ?? worktreePath,
-            rollback,
+            withWorkspaceLeases(leases, execute(input)),
           );
         },
         (effect, input) =>

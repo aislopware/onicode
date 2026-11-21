@@ -1009,10 +1009,32 @@ it.effect("resolves a branch's base once while its refs and branch config are un
       yield* git(cwd, ["branch", "base-a", "HEAD~1"]);
       yield* git(cwd, ["config", "branch.feature/x.oni-merge-base-ref", "refs/heads/base-a"]);
       assert.equal((yield* driver.statusDetailsLocal(cwd)).aheadCount, 1);
-      const mtime = Option.getOrThrow((yield* fileSystem.stat(headsDir)).mtime);
+      const headsStat = fileSystem.stat(headsDir).pipe(
+        Effect.map((info) => ({
+          ino: Option.getOrNull(info.ino),
+          size: info.size,
+          mtime: Option.getOrThrow(info.mtime).getTime(),
+        })),
+      );
+      const before = yield* headsStat;
       yield* git(cwd, ["branch", "-m", "base-a", "base-b"]);
-      yield* fileSystem.utimes(headsDir, mtime, mtime);
+      // Seconds mid-millisecond, since a Date's ms can round down a millisecond on the way.
+      const restored = (before.mtime + 0.5) / 1000;
+      yield* fileSystem.utimes(headsDir, restored, restored);
+      // The stamp reads these, so only the deleted-base check can notice the rename.
+      assert.deepStrictEqual(yield* headsStat, before);
       assert.equal((yield* driver.statusDetailsLocal(cwd)).aheadCount, 1);
+
+      // A nested status read's ahead count and branch totals share one refs stamp.
+      const nested = `${cwd}/nested`;
+      yield* fileSystem.makeDirectory(nested);
+      yield* driver.statusDetailsLocal(cwd);
+      spawnedArgs.length = 0;
+      yield* driver.statusDetailsLocal(nested, { includeBranchChanges: true });
+      assert.equal(
+        spawnedArgs.filter((args) => args.includes("config") && args.includes("--list")).length,
+        1,
+      );
     }),
   ).pipe(Effect.provide(layerTest)),
 );

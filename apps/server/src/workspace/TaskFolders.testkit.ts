@@ -27,6 +27,8 @@ export interface TaskFoldersTestState {
   thread: { worktreePath: string | null; branch: string | null } | null;
   /** Runs before each worktree is created, so a test can hold one halfway. */
   beforeCreateWorktree?: Effect.Effect<void>;
+  /** Runs after each read of a task folder's record. */
+  afterFindContaining?: Effect.Effect<void>;
 }
 
 /**
@@ -78,8 +80,20 @@ export const layerTaskFoldersWithGit = (state: TaskFoldersTestState) => {
     workspaceRoot: state.workspaceRoot,
     trackedFolders: state.trackedFolders,
   });
+  const layerStore = Layer.effect(
+    TaskFolderStore.TaskFolderStore,
+    Effect.map(Effect.service(TaskFolderStore.TaskFolderStore), (store) =>
+      TaskFolderStore.TaskFolderStore.of({
+        ...store,
+        findContaining: (target) =>
+          store
+            .findContaining(target)
+            .pipe(Effect.tap(() => Effect.suspend(() => state.afterFindContaining ?? Effect.void))),
+      }),
+    ),
+  ).pipe(Layer.provide(TaskFolderStore.layer));
   return TaskFolders.layer.pipe(
-    Layer.provideMerge(TaskFolderStore.layer),
+    Layer.provideMerge(layerStore),
     Layer.provide(layerWorkflow),
     Layer.provide(
       Layer.mergeAll(

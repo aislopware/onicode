@@ -61,7 +61,7 @@ import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
 import { isNonRepositoryGitStderr } from "./vcs/GitVcsDriverCore.ts";
 import { isLinkedWorktree, removeLinkedWorktree } from "./vcs/worktreeRemoval.ts";
 import * as TaskFolders from "./workspace/TaskFolders.ts";
-import { withWorkspaceLease } from "./workspace/workspaceLease.ts";
+import { withWorkspaceLease, withWorkspaceLeases } from "./workspace/workspaceLease.ts";
 import * as HostProcess from "@onicode/shared/HostProcess";
 import * as NodeSqliteClient from "@onicode/shared/nodeSqliteClient";
 import { isNetworkPath } from "@onicode/shared/path";
@@ -1104,17 +1104,22 @@ const make = Effect.gen(function* () {
       });
   });
 
-  // A dev home seeded from real data has threads, and maybe copied settings, that point at the
-  // developer's real worktrees and repositories. A git worktree's dev home is seeded by default;
-  // any other is when migrate-dev-db left its marker beside the database.
-  const isSeededDevHome = Effect.fn("StorageCleanup.isSeededDevHome")(function* () {
+  // A dev server's database may be a copy of real data whose threads, and maybe copied settings,
+  // point at the developer's real worktrees and repositories. The dev runner always passes --dev;
+  // a git worktree's home and one migrate-dev-db marked are copies with or without it.
+  const isDevHome = Effect.fn("StorageCleanup.isDevHome")(function* () {
     return (
+      config.dev ||
       (yield* resolveWorktreeOniHome(config.baseDir)) === path.resolve(config.baseDir) ||
       (yield* fs
         .exists(path.join(config.stateDir, SEEDED_DEV_DATABASE_MARKER))
         .pipe(Effect.orElseSucceed(() => false)))
     );
   });
+  // Dev state under `<home>/dev` sits beside an install's own: that home's worktrees and scratch
+  // folders are the install's.
+  const sharesInstallHome =
+    path.resolve(config.stateDir) === path.join(path.resolve(config.baseDir), "dev");
   const cleanWorktrees = Effect.fn("StorageCleanup.cleanWorktrees")(function* (
     serverSettings: ServerSettings,
     now: number,
@@ -1126,8 +1131,11 @@ const make = Effect.gen(function* () {
     let waiting = false;
     const kept: string[] = [];
     const roots: Array<string> = [];
-    for (const directory of (yield* isSeededDevHome())
-      ? [config.worktreesDir]
+    const devHome = yield* isDevHome();
+    for (const directory of devHome
+      ? sharesInstallHome
+        ? []
+        : [config.worktreesDir]
       : managedWorktreesDirectories(
           serverSettings,
           config.worktreesDir,
@@ -1140,9 +1148,12 @@ const make = Effect.gen(function* () {
       );
       if (root !== null && !isFilesystemRoot(root, path)) roots.push(root);
     }
-    const scratchRoot = yield* fs
-      .realPath(scratchFolderRoot(config.baseDir, path))
-      .pipe(Effect.orElseSucceed(() => null));
+    const scratchRoot =
+      devHome && sharesInstallHome
+        ? null
+        : yield* fs
+            .realPath(scratchFolderRoot(config.baseDir, path))
+            .pipe(Effect.orElseSucceed(() => null));
     // Nothing can bring a scratch folder's files back, so these hold whatever the retention says.
     const scratchKeepReason = Effect.fn("StorageCleanup.scratchKeepReason")(function* (
       folder: string,
@@ -1296,6 +1307,29 @@ const make = Effect.gen(function* () {
       ),
       ...deletedThreads.filter((_thread, index) => !groups.has(deletedKeys[index]!)),
     ];
+    // Another thread in a task folder past its own retention does not hold the folder: removing
+    // its checkout is what cleanup would do anyway, and two such threads must not hold each other.
+    const dueForRemoval = (other: OrchestrationV2ThreadShell) => {
+      const rules = resolveWorktreeCleanup(serverSettings, other.projectId);
+      if (!worktreeCleanupEnabled(rules) || !storageCleanupThreadIdle(other, now, serverSettings))
+        return false;
+      const activityAt = storageCleanupActivityAt(other);
+      const settledAt = worktreeSettlementChain(other, threadsById, now, serverSettings).at(
+        -1,
+      )?.settledAt;
+      if (
+        other.settledAt !== null &&
+        now - Math.max(DateTime.toEpochMillis(other.updatedAt), activityAt) < SETTLE_SCRIPT_GRACE_MS
+      )
+        return false;
+      return (
+        (rules.worktreeAfterDays !== null && activityAt < now - rules.worktreeAfterDays * DAY_MS) ||
+        (settledAt != null &&
+          rules.worktreeSettledAfterDays !== null &&
+          now - Math.max(DateTime.toEpochMillis(settledAt), activityAt) >=
+            rules.worktreeSettledAfterDays * DAY_MS)
+      );
+    };
     for (const thread of candidates) {
       const settings = resolveWorktreeCleanup(serverSettings, thread.projectId);
       if (!worktreeCleanupEnabled(settings)) continue;
@@ -1431,13 +1465,15 @@ const make = Effect.gen(function* () {
           );
           const latest = bindings.filter((_binding, index) => bindingKeys[index] === worktreeKey);
           // The checks below cover the threads on this checkout; removal takes every checkout.
-          if (
-            taskFolder !== null &&
-            bindingKeys.some(
-              (key) => key !== worktreeKey && (key === guardedKey || inside(guardedKey, key)),
-            )
-          )
-            return "another thread works in this task folder";
+          if (taskFolder !== null) {
+            for (const [index, binding] of bindings.entries()) {
+              const key = bindingKeys[index]!;
+              if (key === worktreeKey || (key !== guardedKey && !inside(guardedKey, key))) continue;
+              const other = yield* projections.getThreadShell(binding.threadId);
+              if (other !== null && !dueForRemoval(other))
+                return "another thread works in this task folder";
+            }
+          }
           if (yield* hasTerminal(guardedPaths)) return waitForStop("open terminal");
           if (deleted) {
             if (
@@ -1572,8 +1608,19 @@ const make = Effect.gen(function* () {
           if (!eligible) return keep(notDueReason);
           const blockedTaskFolder = yield* blockedSinceCheck();
           if (blockedTaskFolder !== null) return keep(blockedTaskFolder);
-          return yield* withWorkspaceLease(
+          // Every checkout goes, so every lease on one is held: a repository being added holds the
+          // project folder's, a turn start its thread's checkout, and a Git action its real path.
+          const checkouts = [
             worktreePath,
+            taskFolder.root,
+            taskFolder.projectPath,
+            ...taskFolder.repositories.map((repository) => repository.worktreePath),
+          ].map((checkout) => path.resolve(checkout));
+          const realCheckouts = yield* Effect.forEach(checkouts, (checkout) =>
+            fs.realPath(checkout).pipe(Effect.orElseSucceed(() => checkout)),
+          );
+          return yield* withWorkspaceLeases(
+            [...checkouts, ...realCheckouts],
             Effect.gen(function* () {
               const blockedSinceLease = yield* blockedSinceCheck();
               if (blockedSinceLease !== null) return keep(blockedSinceLease);
@@ -1866,7 +1913,7 @@ const make = Effect.gen(function* () {
   const reportRef = yield* SubscriptionRef.make<StorageCleanupReport | null>(null);
   const cleanCheckpointRefs = Effect.fn("StorageCleanup.cleanCheckpointRefs")(function* () {
     // A thread deleted in a seeded copy is still alive in the real home that owns its refs.
-    if (yield* isSeededDevHome()) return;
+    if (yield* isDevHome()) return;
     // Forks display their source history even after its thread is deleted. Keep
     // that ancestry, including deleted intermediate forks and archived children.
     const rows = yield* sql<{

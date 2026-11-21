@@ -28,6 +28,7 @@ import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
 import { withCommandMetrics } from "../observability/Metrics.ts";
+import type * as CommandReceiptStore from "../orchestration-v2/CommandReceiptStore.ts";
 import * as EventSink from "../orchestration-v2/EventSink.ts";
 import * as IdAllocator from "@onicode/provider-core/server/IdAllocator";
 import * as LegacyV1ThreadImporter from "../orchestration-v2/legacy/LegacyV1ThreadImporter.ts";
@@ -489,7 +490,17 @@ export const make = Effect.gen(function* () {
       );
     if (outcome === null) return;
     if ("refused" in outcome) return yield* Effect.failCause(outcome.refused);
-    const { receipt } = outcome;
+    return yield* settle(initial, outcome.receipt);
+  }, withCommandMetrics);
+
+  // The outcome a command's receipt records, as its first sender saw it.
+  const settle = Effect.fnUntraced(function* (
+    initial: Pick<ProjectCommand, "commandId" | "projectId" | "type">,
+    receipt: CommandReceiptStore.ProjectCommandReceiptV2,
+  ) {
+    const { projectId } = initial;
+    const dispatchError = (cause: unknown) =>
+      new ProjectOperationError({ operation: "dispatch-project-command", projectId, cause });
     if (receipt.projectId !== projectId || receipt.commandType !== initial.type) {
       return yield* dispatchError(
         `Command ${initial.commandId} was already used by ${receipt.commandType} for ${receipt.projectId}.`,
@@ -514,7 +525,27 @@ export const make = Effect.gen(function* () {
           rejection ?? receipt.error ?? "The command was previously rejected.",
         );
     }
-  }, withCommandMetrics);
+  });
+
+  // A retry gets its first outcome before anything is checked again: the folders it named may be
+  // gone since, and the project deleted.
+  const replayed = Effect.fn("ProjectService.replayed")(function* (
+    initial: Pick<ProjectCommand, "commandId" | "projectId" | "type">,
+  ) {
+    const receipt = yield* eventSink.projectCommandReceipt(initial.commandId).pipe(
+      Effect.mapError(
+        (cause) =>
+          new ProjectOperationError({
+            operation: "dispatch-project-command",
+            projectId: initial.projectId,
+            cause,
+          }),
+      ),
+    );
+    if (Option.isNone(receipt)) return false;
+    yield* settle(initial, receipt.value);
+    return true;
+  });
 
   const readCommitted = Effect.fn("ProjectService.readCommitted")(function* (projectId: ProjectId) {
     const row = yield* readRow(projectId, { includeDeleted: true });
@@ -627,6 +658,14 @@ export const make = Effect.gen(function* () {
 
   const create: ProjectService["Service"]["create"] = Effect.fn("ProjectService.create")(
     function* (input) {
+      if (
+        yield* replayed({
+          commandId: input.commandId,
+          projectId: input.projectId,
+          type: "project.create",
+        })
+      )
+        return yield* readCommitted(input.projectId);
       yield* rejectUntrimmedWorkspaceRoot(input.projectId, input.workspaceRoot);
       // `foo /` and `foo /.` resolve to `foo `, which normalizing may create.
       yield* rejectUntrimmedWorkspaceRoot(input.projectId, path.resolve(input.workspaceRoot));
@@ -668,6 +707,14 @@ export const make = Effect.gen(function* () {
 
   const update: ProjectService["Service"]["update"] = Effect.fn("ProjectService.update")(
     function* (input) {
+      if (
+        yield* replayed({
+          commandId: input.commandId,
+          projectId: input.projectId,
+          type: "project.meta.update",
+        })
+      )
+        return yield* readCommitted(input.projectId);
       const existing = yield* readRow(input.projectId);
       if (Option.isNone(existing)) {
         return yield* new ProjectNotFoundError({ projectId: input.projectId });

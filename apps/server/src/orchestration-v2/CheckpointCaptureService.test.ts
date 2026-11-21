@@ -1559,13 +1559,18 @@ it.layer(layerProjectionStoreTest)("CheckpointCaptureServiceV2", (it) => {
         assert.strictEqual(yield* Ref.get(thread.commits), 1);
 
         // A steering restart that lands while a capture snapshots leaves nothing of it behind:
-        // a snapshot at this ordinal would pass for the next turn's baseline.
+        // a snapshot at this ordinal would pass for the next turn's baseline. Not even in a
+        // repository the project stopped tracking meanwhile.
         yield* thread.seedRun(2);
         yield* thread.write(`${root}/api/README.md`, "# superseded\n");
         const store = yield* ProjectionStore.ProjectionStoreV2;
+        const tracked = yield* Ref.get(thread.folders);
         yield* Ref.set(
           thread.beforeLock,
           Effect.gen(function* () {
+            yield* Ref.update(thread.folders, (current) =>
+              current.filter((folder) => folder.name !== "api"),
+            );
             const { run } = yield* store.getCheckpointCaptureContext(thread.threadId, {
               runId: RunId.make("run:capture-wrapper:2"),
               scopeId: CheckpointScopeId.make("scope:capture-wrapper:root"),
@@ -1583,6 +1588,7 @@ it.layer(layerProjectionStoreTest)("CheckpointCaptureServiceV2", (it) => {
         );
         yield* thread.capture(2);
         yield* Ref.set(thread.beforeLock, Effect.void);
+        yield* Ref.set(thread.folders, tracked);
         assert.strictEqual(yield* Ref.get(thread.commits), 1);
         const apiScopeId = yield* thread.ids.allocate.checkpointScope({
           threadId: thread.threadId,
