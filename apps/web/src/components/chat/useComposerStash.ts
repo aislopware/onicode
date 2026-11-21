@@ -51,7 +51,7 @@ import {
   releasePersistedAttachmentUpload,
   verifyStashedAttachmentUpload,
 } from "../../lib/attachmentUploadQueue";
-import { remainingComposerAttachmentSlots } from "./composerThreadImport";
+import { countReservedComposerSlots } from "./composerThreadImport";
 import { composerImageDedupKey } from "./composerAttachmentFiles";
 import { replaceComposerContextReferences } from "@onicode/shared/composerContextReferences";
 import { resizeSnapShotSource } from "../../lib/snapShotSource";
@@ -96,7 +96,6 @@ export function useComposerStash(input: {
   readonly isComposerDraftTargetOpen: (targetKey: string) => boolean;
   readonly composerEditorRef: RefObject<ComposerPromptEditorHandle | null>;
   readonly isRevertingCheckpoint: () => boolean;
-  readonly pendingThreadImportsRef: RefObject<Map<string, number>>;
   readonly setComposerCursor: Dispatch<SetStateAction<number>>;
   readonly setComposerTrigger: ReturnType<typeof useComposerTriggerState>["setTrigger"];
   readonly importContextRecords: (
@@ -126,7 +125,6 @@ export function useComposerStash(input: {
     isComposerDraftTargetOpen,
     composerEditorRef,
     isRevertingCheckpoint,
-    pendingThreadImportsRef,
     setComposerCursor,
     setComposerTrigger,
     importContextRecords,
@@ -277,9 +275,19 @@ export function useComposerStash(input: {
       setComposerTrigger(null);
     }
 
+    // The store, not the refs, since restored files must count before the images are restored.
+    const remainingRestoreSlots = () => {
+      const draft = getComposerDraft(composerDraftTarget);
+      return Math.max(
+        0,
+        PROVIDER_SEND_TURN_MAX_ATTACHMENTS -
+          (draft?.images.length ?? 0) -
+          (draft?.files.length ?? 0) -
+          countReservedComposerSlots(composerTargetKey(composerDraftTarget)),
+      );
+    };
     let unrestoredFileNames: string[] = [];
     const expiredFileNames: string[] = [];
-    let restoredFileCount = 0;
     const stashedFiles = entry.files ?? [];
     if (stashedFiles.length > 0) {
       const composerFilesNow = readAttachmentDraft().files;
@@ -347,10 +355,7 @@ export function useComposerStash(input: {
         }
         appendedFiles.push(restored);
       }
-      const capacity = remainingComposerAttachmentSlots(
-        readAttachmentDraft().images.length + composerFilesNow.length,
-        pendingThreadImportsRef.current.get(composerTargetKey(composerDraftTarget)) ?? 0,
-      );
+      const capacity = remainingRestoreSlots();
       const filesToAppend = appendedFiles.slice(0, capacity);
       const skippedFiles = appendedFiles.slice(capacity);
       unrestoredFileNames = skippedFiles.map((file) => file.name);
@@ -386,7 +391,6 @@ export function useComposerStash(input: {
           setComposerTrigger(null);
           promptChanged = true;
         }
-        restoredFileCount = filesToAppend.length;
       }
     }
 
@@ -398,10 +402,7 @@ export function useComposerStash(input: {
       // against capacity would burn a slot the store then refuses to fill,
       // pushing a genuinely unique image into the overflow list for nothing.
       const existingDedupKeys = new Set(attachmentDraft.images.map(composerImageDedupKey));
-      const capacity = remainingComposerAttachmentSlots(
-        attachmentDraft.images.length + attachmentDraft.files.length + restoredFileCount,
-        pendingThreadImportsRef.current.get(composerTargetKey(composerDraftTarget)) ?? 0,
-      );
+      const capacity = remainingRestoreSlots();
       const pending = hydrateImagesFromPersisted(entry.attachments).filter(
         (image) =>
           !existingIds.has(image.id) && !existingDedupKeys.has(composerImageDedupKey(image)),

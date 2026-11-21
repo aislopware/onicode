@@ -16,6 +16,7 @@ import {
   type ComposerImageAttachment,
   type DraftId,
   type PersistedComposerImageAttachment,
+  composerTargetKey,
   useComposerDraftStore,
 } from "../../composerDraftStore";
 import {
@@ -47,6 +48,7 @@ import {
 } from "../../questionAttachments";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { readComposerImageBytes } from "../chat/composerAttachmentFiles";
+import { countReservedComposerSlots } from "../chat/composerThreadImport";
 
 type CaptureTarget = DraftId | ScopedThreadRef;
 type CaptureFailure = "missing-project" | "delivery";
@@ -197,12 +199,18 @@ export async function deliverSnapShot(
   if (!existingImage) {
     const questionAttachmentCount =
       typeof target === "string" ? countQuestionRequestAttachments(target) : null;
+    const draft = store.getComposerDraft(target);
+    const attachmentCount =
+      questionAttachmentCount ??
+      (draft?.images.length ?? 0) +
+        (draft?.files.length ?? 0) +
+        countReservedComposerSlots(composerTargetKey(target));
     // Only question drafts may bypass addImage's thread-session gate.
     const added =
-      questionAttachmentCount === null
+      attachmentCount < PROVIDER_SEND_TURN_MAX_ATTACHMENTS &&
+      (questionAttachmentCount === null
         ? store.addImage(target, image)
-        : questionAttachmentCount < PROVIDER_SEND_TURN_MAX_ATTACHMENTS &&
-          store.addImages(target, [image]).includes(capture.id);
+        : store.addImages(target, [image]).includes(capture.id));
     if (!added) throw new Error(m(msg("Remove an attachment, then try this capture again.")));
   }
   const persisted: PersistedComposerImageAttachment = {

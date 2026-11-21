@@ -41,7 +41,6 @@ import {
 import { assetEnvironment } from "~/state/assets";
 import { copiedComposerAttachmentFile } from "~/lib/copiedComposerAttachments";
 import {
-  countMovedQuestionImports,
   countQuestionAttachments,
   questionAttachmentDraftId,
   startQuestionDraftWork,
@@ -64,7 +63,7 @@ import {
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useAtomQueryRunner } from "~/state/use-atom-query-runner";
 import { useStableCallback } from "../../hooks/useStableCallback";
-import { countPreparingComposerImages } from "./preparingComposerImages";
+import { countReservedComposerSlots } from "./composerThreadImport";
 
 const isUnreachable = Schema.is(
   Schema.Union([ConnectionTransientError, ConnectionBlockedError, EnvironmentRpcUnavailableError]),
@@ -98,7 +97,6 @@ export function useComposerContextImport(input: {
   readonly composerImages: ReadonlyArray<ComposerImageAttachment>;
   readonly composerFilesRef: ChatComposerProps["composerFilesRef"];
   readonly promptRef: RefObject<string>;
-  readonly pendingThreadImportsRef: RefObject<Map<string, number>>;
   readonly addComposerFilesToDraft: (files: ComposerFileAttachment[]) => string[];
 }) {
   const {
@@ -116,7 +114,6 @@ export function useComposerContextImport(input: {
     composerImages,
     composerFilesRef,
     promptRef,
-    pendingThreadImportsRef,
     addComposerFilesToDraft,
   } = input;
   const getComposerDraft = useComposerDraftStore((store) => store.getComposerDraft);
@@ -155,9 +152,7 @@ export function useComposerContextImport(input: {
     return (
       (draft?.images.length ?? 0) +
       (draft?.files.length ?? 0) +
-      countPreparingComposerImages(attachmentTargetKey) +
-      (pendingThreadImportsRef.current.get(attachmentTargetKey) ?? 0) +
-      countMovedQuestionImports(attachmentTargetKey) +
+      countReservedComposerSlots(attachmentTargetKey) +
       countQuestionAttachments(otherQuestionKeys)
     );
   };
@@ -243,11 +238,7 @@ export function useComposerContextImport(input: {
             sizeBytes: file.size,
           }),
       );
-    if (
-      !replacesFileMarker &&
-      (pendingThreadImportsRef.current.get(importTargetKey) ?? 0) > 0 &&
-      countReservedAttachments() >= PROVIDER_SEND_TURN_MAX_ATTACHMENTS
-    ) {
+    if (!replacesFileMarker && countReservedAttachments() >= PROVIDER_SEND_TURN_MAX_ATTACHMENTS) {
       fail(m(msg("The attachment limit has been reached.")));
       return;
     }

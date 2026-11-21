@@ -4,6 +4,7 @@ import {
   type ComposerContextRecord,
   ComposerContextId,
   EnvironmentId,
+  PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   RuntimeRequestId,
   ThreadId,
 } from "@onicode/contracts";
@@ -17,6 +18,10 @@ import { formatInlineContextReference } from "../../lib/composerContextReference
 import { rememberCopiedComposerAttachments } from "../../lib/copiedComposerAttachments";
 import { countMovedQuestionImports, questionAttachmentDraftId } from "../../questionAttachments";
 import { pendingDraftWork } from "./pendingDraftWork";
+import {
+  addPreparingComposerImages,
+  removePreparingComposerImages,
+} from "./preparingComposerImages";
 import { useComposerContextImport } from "./useComposerContextImport";
 
 vi.mock("~/state/use-atom-query-runner", async (importOriginal) => ({
@@ -112,7 +117,6 @@ it.each([
     composerContextRecords: new Map(),
     composerImages: [],
     composerFilesRef: { current: [] },
-    pendingThreadImportsRef: { current: new Map() },
     promptRef,
     addComposerFilesToDraft: (files: Parameters<typeof store.addFiles>[1]) =>
       store.addFiles(target, files, { appendReference: !question }),
@@ -284,7 +288,6 @@ it.each(["same", "other-environment"] as const)(
           composerContextRecords: new Map([[first.contextId, { kind: "thread", record: first }]]),
           composerImages: [],
           composerFilesRef: { current: [] },
-          pendingThreadImportsRef: { current: new Map() },
           promptRef: { current: "" },
           addComposerFilesToDraft: () => [],
         }}
@@ -313,3 +316,80 @@ it.each(["same", "other-environment"] as const)(
     expect(store.getComposerDraft(target)!.threadContexts).toEqual(records);
   },
 );
+
+it("refuses a cached attachment paste into a slot a pending attachment has reserved", async () => {
+  const target = DraftId.make("cached-paste-reserved-slot");
+  const store = useComposerDraftStore.getState();
+  using _draft = { [Symbol.dispose]: () => store.clearComposerContent(target) };
+  store.addFiles(
+    target,
+    Array.from({ length: PROVIDER_SEND_TURN_MAX_ATTACHMENTS - 1 }, (_, index) => ({
+      type: "file" as const,
+      id: `held-${index}`,
+      name: `held-${index}.txt`,
+      mimeType: "text/plain",
+      sizeBytes: 1,
+      file: new File(["x"], `held-${index}.txt`),
+    })),
+  );
+  addPreparingComposerImages(target, [
+    { id: "reserved", name: "shot.png", file: new File(["png"], "shot.png"), hidden: false },
+  ]);
+  using _preparing = {
+    [Symbol.dispose]: () => removePreparingComposerImages(target, new Set(["reserved"])),
+  };
+  const sourceEnvironmentId = EnvironmentId.make("cached-paste-source");
+  rememberCopiedComposerAttachments(
+    sourceEnvironmentId,
+    new Map([["source-attachment", new File(["notes"], "notes.txt")]]),
+  );
+  using _copy = {
+    [Symbol.dispose]: () => rememberCopiedComposerAttachments(sourceEnvironmentId, new Map()),
+  };
+  let importer!: Importer;
+  await using _screen = await render(
+    <Harness
+      input={{
+        environmentId: EnvironmentId.make("cached-paste-target"),
+        linkedEnvironments: new Map(),
+        activeThread: undefined,
+        activeThreadId: null,
+        composerDraftTarget: target,
+        attachmentDraftTarget: target,
+        attachmentTargetKey: target,
+        attachmentTargetKeyRef: { current: target },
+        questionAttachmentTarget: null,
+        pendingUserInputs: [],
+        composerContextRecords: new Map(),
+        composerImages: [],
+        composerFilesRef: { current: [] },
+        promptRef: { current: "" },
+        addComposerFilesToDraft: (files) => store.addFiles(target, files),
+      }}
+      ready={(value) => {
+        importer = value;
+      }}
+    />,
+  );
+
+  await act(() => {
+    importer.importContextRecords(
+      [
+        {
+          version: 1,
+          kind: "file",
+          contextId: ComposerContextId.make("file_source"),
+          label: "notes.txt",
+          attachmentId: "source-attachment",
+          name: "notes.txt",
+          mimeType: "text/plain",
+          sizeBytes: 5,
+        },
+      ],
+      sourceEnvironmentId,
+    );
+  });
+
+  await vi.waitFor(() => expect(pendingDraftWork.has(target)).toBe(false));
+  expect(store.getComposerDraft(target)?.files.map(({ name }) => name)).not.toContain("notes.txt");
+});

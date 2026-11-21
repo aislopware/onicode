@@ -572,6 +572,8 @@ describe("source file scroll", () => {
     const distantReveal = reveals.mock.calls[0]?.[0];
     expect(virtualizer).toBeInstanceOf(Virtualizer);
     expect(distantReveal).toBeDefined();
+    // A private @pierre/diffs field; a bump that renames it must fail here, not pass vacuously.
+    expect(virtualizer).toHaveProperty("spanScrollRequest");
     // The distant reveal ends cancelled, or settled after it scrolled away to its own match.
     await vi.waitFor(() =>
       expect(Reflect.get(virtualizer, "spanScrollRequest")).not.toBe(distantReveal),
