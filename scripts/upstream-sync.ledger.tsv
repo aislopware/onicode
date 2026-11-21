@@ -3148,3 +3148,4 @@ c3fb01dc05	take	fix(server): preview snapshots no longer report an empty interac
 23e6e913d5	take	fix(web): ODT previews no longer print an index's title twice or its entry separators; test CONFLICT kept Onicode's Map archive fixture
 c6ca01b373	take	fix(web): preserve newer navigation when reopening closed views; CONFLICTs kept Onicode's useLocation import and route-param test render; scenario ported for the desktop target
 cea19e450b	take	fix(server): ODT attachments no longer repeat index titles or template separators
+67f3a66265	take	fix(server): skip symlinks during storage cleanup; scenario ported for the desktop target
