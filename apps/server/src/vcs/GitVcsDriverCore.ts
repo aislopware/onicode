@@ -2548,13 +2548,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         { allowRemoteOfCurrent: key.allowRemoteOfCurrent },
         trace,
       );
-      // Deleting a packed ref rewrites packed-refs, but a loose ref deleted within one mtime tick
-      // can leave the stamp unchanged.
-      const looseRef = base === null ? null : path.join(key.gitCommonDir, base.comparisonRef);
-      const isLoose =
-        looseRef !== null &&
-        (yield* fileSystem.exists(looseRef).pipe(Effect.orElseSucceed(() => false)));
-      return { base, looseBaseRef: isLoose ? looseRef : null, ...trace };
+      return { base, ...trace };
     }),
     {
       capacity: 2_048,
@@ -2596,15 +2590,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         ...key,
         allowRemoteOfCurrent: !allowRemoteOfCurrent,
       });
-      let entry = yield* Cache.get(baseBranchCache, cacheKey);
-      if (
-        entry.looseBaseRef !== null &&
-        !(yield* fileSystem.exists(entry.looseBaseRef).pipe(Effect.orElseSucceed(() => true)))
-      ) {
-        yield* Cache.invalidate(baseBranchCache, cacheKey);
-        yield* Cache.invalidate(baseBranchCache, otherKey);
-        entry = yield* Cache.get(baseBranchCache, cacheKey);
-      }
+      const entry = yield* Cache.get(baseBranchCache, cacheKey);
       // A fallback forced by a failed remote lookup must not outlive the failure.
       if (entry.degraded) {
         yield* Cache.invalidate(baseBranchCache, cacheKey);

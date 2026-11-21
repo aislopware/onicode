@@ -16,7 +16,6 @@ const setup = (options: {
   mocks.forwards = options.forwards;
 };
 
-vi.mock("~/env", () => ({ isElectron: true }));
 vi.mock(import("../../state/portForwards"), async (importOriginal) => ({
   ...(await importOriginal()),
   canForwardPorts: () => mocks.canForward,
