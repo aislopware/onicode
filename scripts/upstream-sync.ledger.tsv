@@ -2988,3 +2988,4 @@ b00e97380b	skip	relay mobile telemetry monitoring only (removed relay and teleme
 0afc7a1439	take	taken as is
 e7b1b88bef	take	taken as is
 9294bc60ca	take	conflicts resolved to upstream; nothing in Onicode uses the dropped recordings or mcp_call frame
+f680c2026b	skip	launch-video skill (marketing launch videos) is not in Onicode, as with 77a553ab2c
