@@ -2957,3 +2957,4 @@ a8f5237a3c	take	CONFLICTs: Onicode already routed these links through useOpenLin
 18d1c4db96	take	taken as is
 d2329add05	skip	relay worker only; relay removed from Onicode
 d2bb611134	take	taken as is
+e19193db45	take	agentContextBudget re-measured on Onicode's text (mcpToolListJsonBytes 56325, -2 like upstream); eval cases taken with the change
