@@ -6,8 +6,10 @@ import {
   EnvironmentId,
   FILL_PREVIEW_VIEWPORT,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
+  ProjectId,
   ThreadId,
 } from "@onicode/contracts";
+import { scopeProjectRef } from "@onicode/client-runtime/environment";
 import { type ComponentProps } from "react";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
@@ -182,7 +184,7 @@ vi.mock(import("~/browser/ServerBrowserSurface"), async (original) => ({
   )) as never,
 }));
 
-import { composerTargetKey, useComposerDraftStore } from "~/composerDraftStore";
+import { DraftId, composerTargetKey, useComposerDraftStore } from "~/composerDraftStore";
 import {
   addPreparingComposerImages,
   removePreparingComposerImages,
@@ -194,7 +196,7 @@ import { previewRuntimeTabId } from "~/browser/previewRuntimeTabId";
 import { usePreviewMiniPlayerStore } from "~/previewMiniPlayerStore";
 import { dispatchPreviewAction } from "./previewActionBus";
 import { PreviewView } from "./PreviewView";
-import { ToastProvider } from "~/components/ui/toast";
+import { ToastProvider, toastManager } from "~/components/ui/toast";
 
 const PNG = "data:image/png;base64,iVBORw0KGgo=";
 const TEST_THREAD_REF = {
@@ -357,17 +359,30 @@ describe("PreviewView", () => {
   it.each([
     { reason: "its crop is malformed", dataUrl: "data:image/png;base64,%%%", full: false },
     { reason: "pending attachments hold the last slot", dataUrl: PNG, full: true },
+    { reason: "an unsent thread's reservations fill it", dataUrl: PNG, full: true, unsent: true },
   ])("still sends annotation text without the screenshot when $reason", async (row) => {
     setup();
-    const key = composerTargetKey(TEST_THREAD_REF);
+    const store = useComposerDraftStore.getState();
+    // An unsent thread keeps its draft and reservations under its draft id.
+    const draftId = DraftId.make("preview-unsent-thread");
+    if (row.unsent) {
+      store.setProjectDraftThreadId(
+        scopeProjectRef(TEST_THREAD_REF.environmentId, ProjectId.make("preview-project")),
+        draftId,
+        { threadId: TEST_THREAD_REF.threadId },
+      );
+    }
+    const key = row.unsent ? draftId : composerTargetKey(TEST_THREAD_REF);
     using _draft = {
       [Symbol.dispose]: () => {
-        useComposerDraftStore.getState().clearComposerContent(TEST_THREAD_REF);
+        store.clearComposerContent(TEST_THREAD_REF);
+        if (row.unsent) store.clearDraftThread(draftId);
         removePreparingComposerImages(key, new Set(["reserved"]));
       },
     };
+    using toasts = vi.spyOn(toastManager, "add");
     if (row.full) {
-      useComposerDraftStore.getState().addFiles(
+      store.addFiles(
         TEST_THREAD_REF,
         Array.from({ length: PROVIDER_SEND_TURN_MAX_ATTACHMENTS - 1 }, (_, index) => ({
           type: "file" as const,
@@ -397,6 +412,13 @@ describe("PreviewView", () => {
     await vi.waitFor(() => expect(onSendAnnotation).toHaveBeenCalledWith(sent, null));
     expect(mocks.addPreviewAnnotation).toHaveBeenCalledWith(TEST_THREAD_REF, sent);
     expect(mocks.addImage).not.toHaveBeenCalled();
+    expect(toasts).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: row.full
+          ? "The attachment limit has been reached."
+          : "Could not capture the picked element",
+      }),
+    );
   });
 
   it("lets the pointer reach a local server card above an idle server-rendered tab", async () => {

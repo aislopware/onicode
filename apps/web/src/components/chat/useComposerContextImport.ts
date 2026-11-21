@@ -14,7 +14,6 @@ import {
   type ComposerContextRecord,
   type EnvironmentId,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
-  type ScopedThreadRef,
 } from "@onicode/contracts";
 import {
   type ComposerFileAttachment,
@@ -22,7 +21,6 @@ import {
   type DraftId,
   composerFileMatchesReattachMarker,
   composerFileNeedsReattach,
-  composerTargetKey,
   useComposerDraftStore,
 } from "../../composerDraftStore";
 import { type PendingUserInput } from "../../session-logic";
@@ -65,7 +63,7 @@ import {
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useAtomQueryRunner } from "~/state/use-atom-query-runner";
 import { useStableCallback } from "../../hooks/useStableCallback";
-import { countReservedComposerSlots } from "./composerThreadImport";
+import { countHeldComposerSlots, countReservedComposerSlots } from "./composerThreadImport";
 
 const isUnreachable = Schema.is(
   Schema.Union([ConnectionTransientError, ConnectionBlockedError, EnvironmentRpcUnavailableError]),
@@ -159,16 +157,6 @@ export function useComposerContextImport(input: {
     );
   };
   const countReservedAttachmentsStable = useStableCallback(countReservedAttachments);
-  // A moved import lands in the thread draft and already holds one of its reserved slots.
-  const countMovedImportCompetition = (thread: ScopedThreadRef) => {
-    const draft = getComposerDraft(thread);
-    return (
-      (draft?.images.length ?? 0) +
-      (draft?.files.length ?? 0) +
-      countReservedComposerSlots(composerTargetKey(thread)) -
-      1
-    );
-  };
   const runAttachmentImport = async (
     record: Extract<ComposerContextRecord, { kind: "image" | "file" }>,
     localId: string,
@@ -255,7 +243,8 @@ export function useComposerContextImport(input: {
       );
     if (
       !replacesFileMarker &&
-      (thread ? countMovedImportCompetition(thread) : countReservedAttachments()) >=
+      // A moved import already holds one of the thread draft's reserved slots.
+      (thread ? countHeldComposerSlots(thread) - 1 : countReservedAttachments()) >=
         PROVIDER_SEND_TURN_MAX_ATTACHMENTS
     ) {
       fail(m(msg("The attachment limit has been reached.")));
@@ -300,8 +289,19 @@ export function useComposerContextImport(input: {
       const accepted = thread
         ? useComposerDraftStore.getState().addFiles(thread, [attachment])
         : addComposerFilesToDraft([attachment]);
-      if (!accepted.includes(localId))
+      // A file that replaced a reattach marker is not among the appended ids.
+      const landed =
+        accepted.includes(localId) ||
+        (getComposerDraft(thread ?? attachmentDraftTarget)?.files.some(
+          ({ id }) => id === localId,
+        ) ??
+          false);
+      if (!landed) {
         fail(m(msg("The draft rejected this attachment (duplicate or attachment limit reached).")));
+      } else if (thread) {
+        // In the draft now, so its reserved slot goes before another moved import checks.
+        questionWork?.finish();
+      }
     }
   };
   const importAttachmentRecord = async (

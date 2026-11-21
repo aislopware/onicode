@@ -1,5 +1,11 @@
 import { PROVIDER_SEND_TURN_MAX_ATTACHMENTS } from "@onicode/contracts";
 
+import {
+  type ComposerThreadTarget,
+  composerTargetKey,
+  resolveComposerDraftKey,
+  useComposerDraftStore,
+} from "../../composerDraftStore";
 import { countMovedQuestionImports } from "../../questionAttachments";
 import { pendingThreadImports } from "./pendingThreadImports";
 import { countPreparingComposerImages } from "./preparingComposerImages";
@@ -11,6 +17,14 @@ export function countReservedComposerSlots(targetKey: string): number {
     (pendingThreadImports.get(targetKey) ?? 0) +
     countMovedQuestionImports(targetKey)
   );
+}
+
+/** A draft's attachments plus its reserved slots; an unsent thread keeps both under its draft id. */
+export function countHeldComposerSlots(target: ComposerThreadTarget): number {
+  const state = useComposerDraftStore.getState();
+  const key = resolveComposerDraftKey(state, target) ?? composerTargetKey(target);
+  const draft = state.draftsByThreadKey[key];
+  return (draft?.images.length ?? 0) + (draft?.files.length ?? 0) + countReservedComposerSlots(key);
 }
 
 export async function importComposerThreadAttachment(input: {

@@ -344,10 +344,22 @@ it.each(["same", "other-environment"] as const)(
   },
 );
 
-it("refuses a cached attachment paste into a slot a pending attachment has reserved", async () => {
-  const target = DraftId.make("cached-paste-reserved-slot");
+it.each([
+  { held: "a pending attachment's reserved slot", marker: false },
+  { held: "a reattach marker for it", marker: true },
+])("settles a cached paste into a full draft holding $held", async ({ marker }) => {
+  const target = DraftId.make(`cached-paste-${marker ? "marker" : "reserved"}`);
   const store = useComposerDraftStore.getState();
   using _draft = { [Symbol.dispose]: () => store.clearComposerContent(target) };
+  const reattach = {
+    type: "file" as const,
+    id: "marker",
+    name: "notes.txt",
+    mimeType: "text/plain",
+    sizeBytes: 5,
+    file: null,
+  };
+  if (marker) store.addFiles(target, [reattach]);
   store.addFiles(
     target,
     Array.from({ length: PROVIDER_SEND_TURN_MAX_ATTACHMENTS - 1 }, (_, index) => ({
@@ -359,16 +371,18 @@ it("refuses a cached attachment paste into a slot a pending attachment has reser
       file: new File(["x"], `held-${index}.txt`),
     })),
   );
-  addPreparingComposerImages(target, [
-    { id: "reserved", name: "shot.png", file: new File(["png"], "shot.png"), hidden: false },
-  ]);
+  if (!marker) {
+    addPreparingComposerImages(target, [
+      { id: "reserved", name: "shot.png", file: new File(["png"], "shot.png"), hidden: false },
+    ]);
+  }
   using _preparing = {
     [Symbol.dispose]: () => removePreparingComposerImages(target, new Set(["reserved"])),
   };
   const sourceEnvironmentId = EnvironmentId.make("cached-paste-source");
   rememberCopiedComposerAttachments(
     sourceEnvironmentId,
-    new Map([["source-attachment", new File(["notes"], "notes.txt")]]),
+    new Map([["source-attachment", new File(["notes"], "notes.txt", { type: "text/plain" })]]),
   );
   using _copy = {
     [Symbol.dispose]: () => rememberCopiedComposerAttachments(sourceEnvironmentId, new Map()),
@@ -389,7 +403,7 @@ it("refuses a cached attachment paste into a slot a pending attachment has reser
         pendingUserInputs: [],
         composerContextRecords: new Map(),
         composerImages: [],
-        composerFilesRef: { current: [] },
+        composerFilesRef: { current: marker ? [reattach] : [] },
         promptRef: { current: "" },
         addComposerFilesToDraft: (files) => store.addFiles(target, files),
       }}
@@ -419,10 +433,119 @@ it("refuses a cached attachment paste into a slot a pending attachment has reser
   });
 
   await vi.waitFor(() => expect(pendingDraftWork.has(target)).toBe(false));
-  expect(store.getComposerDraft(target)?.files.map(({ name }) => name)).not.toContain("notes.txt");
-  expect(toasts).toHaveBeenCalledWith(
-    expect.objectContaining({
-      description: expect.stringContaining("The attachment limit has been reached."),
-    }),
+  const notes = store.getComposerDraft(target)?.files.find(({ name }) => name === "notes.txt");
+  if (marker) {
+    expect(notes?.file).toBeInstanceOf(File);
+    expect(toasts).not.toHaveBeenCalled();
+  } else {
+    expect(notes).toBeUndefined();
+    expect(toasts).toHaveBeenCalledWith(
+      expect.objectContaining({
+        description: expect.stringContaining("The attachment limit has been reached."),
+      }),
+    );
+  }
+});
+
+it("lands two moved question imports that settle together in the thread's last two slots", async () => {
+  const environmentId = EnvironmentId.make("moved-pair-target");
+  const thread = scopeThreadRef(environmentId, ThreadId.make("moved-pair"));
+  const threadKey = composerTargetKey(thread);
+  const requestId = RuntimeRequestId.make("moved-pair-question");
+  const target = questionAttachmentDraftId(environmentId, thread.threadId, requestId, "answer");
+  const store = useComposerDraftStore.getState();
+  using _draft = {
+    [Symbol.dispose]: () => {
+      store.clearComposerContent(target);
+      store.clearComposerContent(thread);
+    },
+  };
+  const sourceEnvironmentId = EnvironmentId.make("moved-pair-source");
+  const downloaded = deferred<void>();
+  const requested = Promise.withResolvers<void>();
+  let requests = 0;
+  // In-memory bodies resume both downloads in one microtask checkpoint, as a real race can.
+  using _fetch = stubGlobal("fetch", () => {
+    if (++requests === 2) requested.resolve();
+    return downloaded.promise.then(() => ({
+      ok: true,
+      blob: async () => new Blob(["notes"], { type: "text/plain" }),
+    }));
+  });
+  const settled = Promise.withResolvers<void>();
+  let ends = 0;
+  const end = pendingDraftWork.end.bind(pendingDraftWork);
+  using _settled = vi.spyOn(pendingDraftWork, "end").mockImplementation((key) => {
+    end(key);
+    if (key === threadKey && ++ends === 2) settled.resolve();
+  });
+  const input = {
+    environmentId,
+    linkedEnvironments: new Map(),
+    activeThread: undefined,
+    activeThreadId: null,
+    composerDraftTarget: target,
+    attachmentDraftTarget: target,
+    attachmentTargetKey: target,
+    attachmentTargetKeyRef: { current: target },
+    questionAttachmentTarget: target,
+    pendingUserInputs: [],
+    composerContextRecords: new Map(),
+    composerImages: [],
+    composerFilesRef: { current: [] },
+    promptRef: { current: "" },
+    addComposerFilesToDraft: (files: Parameters<typeof store.addFiles>[1]) =>
+      store.addFiles(target, files, { appendReference: false }),
+  } satisfies ImportInput;
+  let importer!: Importer;
+  await using _screen = await render(
+    <Harness
+      input={input}
+      ready={(value) => {
+        importer = value;
+      }}
+    />,
   );
+  const record = (name: string) => ({
+    version: 1 as const,
+    kind: "file" as const,
+    contextId: ComposerContextId.make(`file_${name.replace(".", "-")}`),
+    label: name,
+    attachmentId: name,
+    name,
+    mimeType: "text/plain",
+    sizeBytes: 5,
+  });
+
+  await act(async () => {
+    importer.importContextRecords([record("a.txt"), record("b.txt")], sourceEnvironmentId);
+    await requested.promise;
+  });
+  act(() => {
+    makeThreadRequestsResolvedAnnouncer(
+      environmentId,
+      thread.threadId,
+    )([{ id: requestId, status: "cancelled" }]);
+    input.attachmentTargetKeyRef.current = DraftId.make(threadKey);
+  });
+  expect(countMovedQuestionImports(threadKey)).toBe(2);
+  store.addFiles(
+    thread,
+    Array.from({ length: PROVIDER_SEND_TURN_MAX_ATTACHMENTS - 2 }, (_, index) => ({
+      type: "file" as const,
+      id: `held-${index}`,
+      name: `held-${index}.txt`,
+      mimeType: "text/plain",
+      sizeBytes: 1,
+      file: new File(["x"], `held-${index}.txt`),
+    })),
+    { appendReference: false },
+  );
+  await act(async () => {
+    downloaded.resolve();
+    await settled.promise;
+  });
+
+  const names = store.getComposerDraft(thread)?.files.map(({ name }) => name) ?? [];
+  expect(names.slice(-2).toSorted()).toEqual(["a.txt", "b.txt"]);
 });
