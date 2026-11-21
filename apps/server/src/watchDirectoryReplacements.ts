@@ -38,6 +38,11 @@ export const watchDirectoryReplacements = <R>(
 const watchDirectoryEntry = (path: string, ready: Deferred.Deferred<void>) => {
   const directory = NodePath.dirname(path);
   const name = NodePath.basename(path);
+  // On macOS a directory watch is an FSEvents stream over everything below it, so the root and
+  // its children are never watched.
+  if (NodePath.dirname(NodePath.dirname(directory)) === NodePath.dirname(directory)) {
+    return Stream.unwrap(Deferred.succeed(ready, undefined).pipe(Effect.as(Stream.never)));
+  }
   const watchError = (cause: unknown) =>
     PlatformError.systemError({
       _tag: "Unknown",
@@ -112,16 +117,27 @@ const linkTarget = Effect.fn("watchDirectoryReplacements.linkTarget")(function* 
     : `${path.dirname(entry)}${path.sep}${link.value}`;
 });
 
-/** The directory `entry` links into, when that directory is itself reached through a symlink. */
-const linkedTargetParent = Effect.fn("watchDirectoryReplacements.linkedTargetParent")(function* (
+/** The outermost symlink between `entry`'s target and `below`, such as `release` in `release/assets/themes`. */
+const linkAboveTarget = Effect.fn("watchDirectoryReplacements.linkAboveTarget")(function* (
   entry: string,
+  below: string | undefined,
 ) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const rawTarget = yield* linkTarget(entry);
   if (rawTarget === undefined) return undefined;
-  const parent = path.dirname(rawTarget);
-  return Option.isSome(yield* fs.readLink(parent).pipe(Effect.option)) ? parent : undefined;
+  let link: string | undefined;
+  for (let parent = path.dirname(rawTarget); parent !== below; parent = path.dirname(parent)) {
+    if (Option.isSome(yield* fs.readLink(parent).pipe(Effect.option))) link = parent;
+    if (path.dirname(parent) === parent) break;
+  }
+  if (link === undefined) return undefined;
+  // Watch through the physical parent, since resolving `a/../link` by text skips the `a` link.
+  const parent = yield* realPath(path.dirname(link)).pipe(Effect.option);
+  return {
+    link,
+    watch: Option.isSome(parent) ? path.join(parent.value, path.basename(link)) : link,
+  };
 });
 
 /** The next link in a chain `entry` starts, when its target is itself a symlink. */
@@ -142,8 +158,7 @@ const nextSymlinkHop = Effect.fn("watchDirectoryReplacements.nextSymlinkHop")(fu
 
 /**
  * Watch replacements of a configured directory, every symlink it reaches the directory through
- * (including a link's target directory that is itself a link), the final target, and the target's
- * parent.
+ * (including symlinks above a link's target), the final target, and the target's parent.
  */
 export const watchDirectoryPath = (
   directory: string,
@@ -151,16 +166,20 @@ export const watchDirectoryPath = (
   hops = 0,
 ): Stream.Stream<void, never, FileSystem.FileSystem | Path.Path> => {
   const entry = NodePath.resolve(directory);
+  // Each link above the target is watched outermost first; replacing one rediscovers those below.
   const followLink = (
-    throughParent: boolean,
+    below?: string,
+    depth = hops,
   ): Stream.Stream<void, never, FileSystem.FileSystem | Path.Path> =>
     Stream.unwrap(
       Effect.gen(function* () {
-        const following = hops < MAX_SYMLINK_HOPS;
-        const parent = following && throughParent ? yield* linkedTargetParent(entry) : undefined;
-        if (parent !== undefined) return watchDirectoryPath(parent, followLink(false), hops + 1);
+        const following = depth < MAX_SYMLINK_HOPS;
+        const above = following ? yield* linkAboveTarget(entry, below) : undefined;
+        if (above !== undefined) {
+          return watchDirectoryPath(above.watch, followLink(above.link, depth + 1), depth + 1);
+        }
         const hop = following ? yield* nextSymlinkHop(entry) : undefined;
-        if (hop !== undefined) return watchDirectoryPath(hop, watchChild, hops + 1);
+        if (hop !== undefined) return watchDirectoryPath(hop, watchChild, depth + 1);
         const target = yield* resolveWatchTarget(entry);
         if (target === entry) return watchChild;
         return watchDirectoryReplacements(
@@ -169,5 +188,5 @@ export const watchDirectoryPath = (
         );
       }),
     );
-  return watchDirectoryReplacements((ready) => watchDirectoryEntry(entry, ready), followLink(true));
+  return watchDirectoryReplacements((ready) => watchDirectoryEntry(entry, ready), followLink());
 };

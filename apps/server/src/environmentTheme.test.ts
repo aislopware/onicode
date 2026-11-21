@@ -345,6 +345,76 @@ describe("environment theme", () => {
             "Nightfall",
             "Shared Light",
           ]);
+
+          // themes -> deploy/assets/themes, where only the `deploy` link above a real directory moves.
+          const deploy = path.join(outside, "deploy");
+          for (const [version, theme] of [
+            ["d1", SHARED_THEME],
+            ["d2", NIGHTFALL_THEME],
+          ] as const) {
+            const themes = path.join(outside, version, "assets", "themes");
+            yield* fs.makeDirectory(themes, { recursive: true });
+            yield* fs.writeFileString(path.join(themes, "theme.json"), encodeThemeFile(theme));
+          }
+          yield* fs.symlink(path.join(outside, "d1"), deploy);
+          yield* fs.symlink(
+            path.join(deploy, "assets", "themes"),
+            path.join(outside, "themes-next"),
+          );
+          yield* fs.rename(path.join(outside, "themes-next"), environmentThemesDir);
+          assert.deepEqual(yield* nextSnapshot(["Shared Light"]), ["Shared Light"]);
+
+          yield* fs.symlink(path.join(outside, "d2"), path.join(outside, "deploy-next"));
+          yield* fs.rename(path.join(outside, "deploy-next"), deploy);
+          assert.deepEqual(yield* nextSnapshot(["Nightfall"]), ["Nightfall"]);
+
+          // themes -> stack/assets/themes, where `stack` and the `assets` inside it are both links.
+          const writeThemes = (directory: string, theme: typeof SHARED_THEME) =>
+            Effect.gen(function* () {
+              yield* fs.makeDirectory(path.join(directory, "themes"), { recursive: true });
+              yield* fs.writeFileString(
+                path.join(directory, "themes", "theme.json"),
+                encodeThemeFile(theme),
+              );
+            });
+          const repoint = (link: string, target: string) =>
+            Effect.gen(function* () {
+              yield* fs.symlink(target, `${link}-next`);
+              yield* fs.rename(`${link}-next`, link);
+            });
+          const stack = path.join(outside, "stack");
+          yield* writeThemes(path.join(outside, "a1"), SHARED_THEME);
+          yield* writeThemes(path.join(outside, "a2"), NIGHTFALL_THEME);
+          yield* writeThemes(path.join(outside, "a3"), SHARED_THEME);
+          for (const [version, assets] of [
+            ["s1", "a1"],
+            ["s2", "a2"],
+          ] as const) {
+            yield* fs.makeDirectory(path.join(outside, version));
+            yield* fs.symlink(path.join(outside, assets), path.join(outside, version, "assets"));
+          }
+          yield* fs.symlink(path.join(outside, "s1"), stack);
+          yield* repoint(environmentThemesDir, path.join(stack, "assets", "themes"));
+          assert.deepEqual(yield* nextSnapshot(["Shared Light"]), ["Shared Light"]);
+          yield* repoint(stack, path.join(outside, "s2"));
+          assert.deepEqual(yield* nextSnapshot(["Nightfall"]), ["Nightfall"]);
+          yield* repoint(path.join(outside, "s2", "assets"), path.join(outside, "a3"));
+          assert.deepEqual(yield* nextSnapshot(["Shared Light"]), ["Shared Light"]);
+
+          // themes -> alias/../current/themes: `current` sits beside the alias target, not beside `alias`.
+          const aliased = path.join(outside, "aliased");
+          yield* fs.makeDirectory(path.join(aliased, "inner"), { recursive: true });
+          yield* fs.symlink(path.join(aliased, "inner"), path.join(outside, "alias"));
+          yield* writeThemes(path.join(outside, "c1"), NIGHTFALL_THEME);
+          yield* writeThemes(path.join(outside, "c2"), SHARED_THEME);
+          yield* fs.symlink(path.join(outside, "c1"), path.join(aliased, "current"));
+          yield* repoint(
+            environmentThemesDir,
+            `${path.relative(path.dirname(environmentThemesDir), outside)}/alias/../current/themes`,
+          );
+          assert.deepEqual(yield* nextSnapshot(["Nightfall"]), ["Nightfall"]);
+          yield* repoint(path.join(aliased, "current"), path.join(outside, "c2"));
+          assert.deepEqual(yield* nextSnapshot(["Shared Light"]), ["Shared Light"]);
         }),
       ),
   );
