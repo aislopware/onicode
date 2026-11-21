@@ -3120,3 +3120,4 @@ d57b83d85e	take	adapted: listRefs current-branch single-flight keyed lexically i
 e337cee952	take	taken as is; refsDigest is an optional success field, so old mobile builds ignore it and old servers fall back to always reloading refs
 7d3677fe70	take	taken as is (desktop picker; mobile has no status-branch refs refresh)
 8cf94f2542	take	kept Onicode's ThreadServersPanel open handler (5820b77d19): it already opens the forwarded URL without upstream's post-forward loopback rejection, and falls back to a direct URL when the forward fails; took upstream's regression test, sharing the portForwards mock with Onicode's held-forward test through a setup() state
+370b1fde77	take	test CONFLICT: kept Onicode's checkout-between-passes case and appended upstream's Windows no-op fetch case after it
