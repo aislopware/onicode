@@ -1728,6 +1728,13 @@ it.effect.each([
         yield* worker.drain();
         yield* Fiber.join(dropped);
         assert.deepEqual(yield* queuedOrder, question ? [[noticeId, true]] : []);
+        // The question named no model, so released later it runs on the thread's pick.
+        if (question) {
+          const held = (yield* orchestrator.getThreadProjection(threadId)).messages.find(
+            (message) => message.id === noticeId,
+          );
+          assert.isTrue(held?.followsThreadSelection);
+        }
         if (!question) assert.equal(yield* task, "disposed");
         assert.notInclude(yield* reported, "Steer delivery not confirmed");
         assert.lengthOf(offers, 2);
