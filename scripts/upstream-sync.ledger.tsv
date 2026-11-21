@@ -3162,3 +3162,4 @@ dac6422b89	take	taken as is
 ffb42a0b77	skip	Onicode desktop runs one app window, so two same-origin app documents writing history (the race fixed) exist only in the removed hosted web app; kept the synchronous localStorage store. Scenario not ported: it tests two app tabs, a removed surface
 fd6c36725f	take	taken as is
 828fe374d3	take	CONFLICT resolved: upstream's CASE wrapper around Onicode's case-insensitive key match
+cbd1f04bca	take	CONFLICT resolved: adopted upstream's steer passthrough (matches web); kept Onicode's commandNeverSteers queueing
