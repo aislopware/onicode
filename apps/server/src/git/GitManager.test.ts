@@ -92,6 +92,8 @@ interface FakeProviderScenario {
   prListSequenceByHeadSelector?: Record<string, ReadonlyArray<ReadonlyArray<FakeChangeRequest>>>;
   /** The answer to every listing the other lists leave unanswered. */
   prListOtherwise?: ReadonlyArray<FakeChangeRequest>;
+  /** Answers to listings that name a repository; the lists above answer the others. */
+  prListByRepository?: Record<string, ReadonlyArray<FakeChangeRequest>>;
   defaultBranch?: string;
   pullRequest?: FakeChangeRequest;
   repositoryCloneUrls?: Record<string, { url: string; sshUrl: string }>;
@@ -490,12 +492,13 @@ function createFakeSourceControlProvider(scenario: FakeProviderScenario = {}): {
           limit: input.limit,
         }).pipe(
           Effect.map(() =>
-            (
-              prListQueueByHeadSelector.get(input.headSelector)?.shift() ??
-              scenario.prListByHeadSelector?.[input.headSelector] ??
-              prListQueue.shift() ??
-              scenario.prListOtherwise ??
-              []
+            (input.repository !== undefined
+              ? (scenario.prListByRepository?.[input.repository] ?? [])
+              : (prListQueueByHeadSelector.get(input.headSelector)?.shift() ??
+                scenario.prListByHeadSelector?.[input.headSelector] ??
+                prListQueue.shift() ??
+                scenario.prListOtherwise ??
+                [])
             ).map(toChangeRequest),
           ),
           Effect.tap(() =>
@@ -2763,7 +2766,15 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       yield* runGit(repoDir, ["branch", "--track", "onicode/new-thread", "origin/main"]);
       yield* runGit(repoDir, ["branch", "--track", "feature/published", "origin/main"]);
       yield* runGit(repoDir, ["branch", "--track", "onicode/pr-300/main", "origin/main"]);
-      yield* runGit(repoDir, ["push", "origin", "feature/published"]);
+      yield* runGit(repoDir, ["branch", "--track", "feature/fork-merged", "origin/main"]);
+      yield* runGit(repoDir, ["branch", "--track", "feature/fork-open", "origin/main"]);
+      yield* runGit(repoDir, [
+        "push",
+        "origin",
+        "feature/published",
+        "feature/fork-merged",
+        "feature/fork-open",
+      ]);
       yield* configureVisibleRemoteUrlWithLocalRewrite(
         repoDir,
         "origin",
@@ -2778,6 +2789,32 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         headRepositoryOwnerLogin: "contributor",
       } as const;
       const { service, calls } = createFakeSourceControlProvider({
+        prListByRepository: {
+          "contributor/sample-app": [
+            {
+              number: 12,
+              title: "Merged inside the fork",
+              url: "https://github.com/contributor/sample-app/pull/12",
+              baseRefName: "main",
+              headRefName: "feature/fork-merged",
+              state: "merged",
+              isCrossRepository: false,
+              headRepositoryNameWithOwner: "contributor/sample-app",
+              headRepositoryOwnerLogin: "contributor",
+            },
+            {
+              number: 13,
+              title: "Open inside the fork",
+              url: "https://github.com/contributor/sample-app/pull/13",
+              baseRefName: "main",
+              headRefName: "feature/fork-open",
+              state: "open",
+              isCrossRepository: false,
+              headRepositoryNameWithOwner: "contributor/sample-app",
+              headRepositoryOwnerLogin: "contributor",
+            },
+          ],
+        },
         prListByHeadSelector: {
           "contributor:main": [
             {
@@ -2827,6 +2864,27 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         branch: "onicode/pr-300/main",
       });
       expect(pullRequestWorktree?.number).toBe(300);
+
+      // Status keeps searching upstream only, so Create PR there stays available.
+      expect(
+        yield* manager.branchPullRequest({ cwd: repoDir, branch: "feature/fork-merged" }),
+      ).toBeNull();
+      // Cleanup also accepts a pull request merged inside the fork.
+      const mergedInFork = yield* manager.branchPullRequest(
+        { cwd: repoDir, branch: "feature/fork-merged" },
+        { refresh: true, includeHeadRepository: true },
+      );
+      expect(mergedInFork).toMatchObject({
+        number: 12,
+        state: "merged",
+        repositoryKey: "github.com/contributor/sample-app",
+      });
+      expect(
+        yield* manager.branchPullRequest(
+          { cwd: repoDir, branch: "feature/fork-open" },
+          { refresh: true, includeHeadRepository: true },
+        ),
+      ).toBeNull();
     }),
   );
 
