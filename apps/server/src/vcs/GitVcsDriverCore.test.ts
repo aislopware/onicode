@@ -2185,7 +2185,7 @@ describe("pullCurrentBranch", () => {
   );
 });
 
-it.effect.each(["a Onicode branch creation", "an external worktree addition"] as const)(
+it.effect.each(["an Onicode branch creation", "an external worktree addition"] as const)(
   "refreshes an in-flight ref snapshot after %s",
   (mutation) =>
     Effect.scoped(
@@ -2205,7 +2205,7 @@ it.effect.each(["a Onicode branch creation", "an external worktree addition"] as
               command.args.includes("for-each-ref") &&
               command.args.includes("refs/heads") &&
               command.args.includes("refs/remotes");
-            if (!isRefScan && (!isWorktreeScan || mutation === "a Onicode branch creation")) {
+            if (!isRefScan && (!isWorktreeScan || mutation === "an Onicode branch creation")) {
               return yield* delegate.spawn(command);
             }
             if (!(yield* Ref.getAndSet(firstScan, false))) {
@@ -2238,7 +2238,7 @@ it.effect.each(["a Onicode branch creation", "an external worktree addition"] as
         const inFlight = yield* list.pipe(Effect.forkChild({ startImmediately: true }));
         yield* Deferred.await(firstScanCompleted);
 
-        if (mutation === "a Onicode branch creation") {
+        if (mutation === "an Onicode branch creation") {
           yield* driver.createRef({ cwd, refName });
           yield* Deferred.succeed(releaseOtherScans, undefined);
           assert.equal((yield* Fiber.join(inFlight)).refs[0]?.name, refName);
