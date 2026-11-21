@@ -3130,3 +3130,4 @@ d4d54658f9	take	fix(server): delegated task reaches its parent when its first up
 8ee2a8a9a0	take	fix(web): RTF previews no longer join text across section and column breaks
 e2035934a6	take	fix(azure-devops): project-less pull request URLs can be pasted to check out
 28b413fe12	take	fix(server): queued messages no longer wait out every timed-out checkpoint in a shared folder
+ac0032742b	take	fix(shell): non-ASCII Windows PATH entries survive the PowerShell environment probe
