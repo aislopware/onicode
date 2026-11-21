@@ -19,6 +19,7 @@
     "@onicode/source-control-forgejo": "workspace:*",
     "@onicode/source-control-gitcafe": "workspace:*",
     "@onicode/source-control-github": "workspace:*",
-    "@onicode/source-control-gitlab": "workspace:*"
+    "@onicode/source-control-gitlab": "workspace:*",
+    "@onicode/source-control-tanstack-source": "workspace:*"
   }
 }

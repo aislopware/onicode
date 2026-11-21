@@ -121,6 +121,7 @@ const LOGIN_SHELL_ENV_NAMES = [
   "SSL_CERT_DIR",
   "NODE_EXTRA_CA_CERTS",
   "ONICODE_GITHUB_APP_CLIENT_ID",
+  "ONICODE_TANSTACK_SOURCE",
   "ONICODE_RELEASE_BASE_URL",
   "__MISE_DIFF",
   "JAVA_HOME",
@@ -549,6 +550,7 @@ const installPosixEnvironment = Effect.fn("desktop.shellEnvironment.installPosix
       "JAVA_HOME",
       "PNPM_HOME",
       "ONICODE_GITHUB_APP_CLIENT_ID",
+      "ONICODE_TANSTACK_SOURCE",
       "ONICODE_RELEASE_BASE_URL",
     ] as const) {
       if (!config.env[name] && shellEnvironment[name]) {

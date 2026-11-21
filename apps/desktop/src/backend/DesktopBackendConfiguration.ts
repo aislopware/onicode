@@ -91,6 +91,7 @@ const WSL_FORWARDED_ENV_NAMES = [
   "OPENAI_API_KEY",
   "ANTHROPIC_API_KEY",
   "ONICODE_GITHUB_APP_CLIENT_ID",
+  "ONICODE_TANSTACK_SOURCE",
   // Otherwise the WSL server keeps exporting to endpoints from the bootstrap.
   "ONICODE_OTEL_SDK_DISABLED",
   "OTEL_SDK_DISABLED",
