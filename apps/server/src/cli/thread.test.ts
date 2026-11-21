@@ -426,6 +426,7 @@ it.effect(
             status: "completed",
             timedOut: false,
             resultRun: { runId: sentRun, status: "failed" },
+            output: { head: "abc" },
           },
         ],
         oni_thread_read: laterRunReads(sentRun, [{ runId: sentRun, type: "user_message" }]),
@@ -435,6 +436,7 @@ it.effect(
         type: "ended",
         runId,
         status: "completed",
+        output: { head: "abc" },
       });
     }),
 );
