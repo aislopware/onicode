@@ -4,8 +4,10 @@ Onicode can read credentials from a secret provider, so the credential stays in 
 manager and Onicode saves only a reference to it. Agents can also ask you for a secret in a
 private card instead of in the chat.
 
-The Secrets settings page is in preview and is not in every build yet. Secret requests from agents
-work everywhere.
+Secret providers are in preview, so a server offers them only when its environment turns the flag
+on: `export ONICODE_FEATURE_FLAGS=secret_providers` in your shell profile, then restart Onicode.
+Separate several flags with commas. The Secrets settings page appears once a connected server has
+the flag on. Secret requests from agents work everywhere.
 
 ## Secret providers
 
