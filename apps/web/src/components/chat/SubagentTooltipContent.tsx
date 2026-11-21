@@ -11,12 +11,8 @@ import {
   resolveSubagentMetadata,
   subagentDetailPreview,
 } from "@onicode/client-runtime/state/subagent-display";
-import { REASONING_EFFORT_OPTION_IDS } from "@onicode/client-runtime/state/thread-execution";
-import {
-  DEFAULT_VARIANT_CHOICE_ID,
-  getModelSelectionStringOptionValue,
-  resolveSelectableModel,
-} from "@onicode/shared/model";
+import { readSelectedEffortValue } from "@onicode/client-runtime/state/thread-execution";
+import { resolveSelectableModel } from "@onicode/shared/model";
 import { getTraitsSpeedDisplay, TraitsSpeedIcon } from "./TraitsSpeed";
 import { useGT, useMessages } from "gt-react";
 import type { ReactNode } from "react";
@@ -83,9 +79,10 @@ export function SubagentTooltipContent(props: {
     childModel === modelSlug && childSelection?.instanceId === props.providerInstanceId
       ? childSelection
       : undefined;
-  const effort = REASONING_EFFORT_OPTION_IDS.map((id) =>
-    getModelSelectionStringOptionValue(matchingSelection, id),
-  ).find((value) => value && value !== DEFAULT_VARIANT_CHOICE_ID);
+  const effort = readSelectedEffortValue(
+    matchingSelection,
+    providerModel?.capabilities?.optionDescriptors,
+  );
   const speed = provider
     ? providerModel?.capabilities?.optionDescriptors
         ?.map((descriptor) => {
