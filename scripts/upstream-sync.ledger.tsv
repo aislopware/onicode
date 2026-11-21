@@ -3018,3 +3018,4 @@ c440fd19db	take	taken as is
 bac0508e08	take	thread chips show the sidebar's thread card on hover
 fd108784cb	take	local mobile:audit CLI
 b568fcbaa6	take	several Linear teams; upstream migration 103 renumbered to Onicode 108
+908e02ee6a	take	settings reset keeps the page in place
