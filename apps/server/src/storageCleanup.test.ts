@@ -26,6 +26,7 @@ import {
   type TerminalMetadataStreamEvent,
   type TerminalSummary,
 } from "@onicode/contracts";
+import { SEEDED_DEV_DATABASE_MARKER } from "@onicode/shared/devHome";
 import * as HostProcess from "@onicode/shared/HostProcess";
 import * as ServerConfig from "./config.ts";
 import * as StorageCleanup from "./storageCleanup.ts";
@@ -1071,6 +1072,32 @@ it.live("removes a task folder's clean worktrees and keeps the one with uncommit
       // A nested worktree's uncommitted work must survive its thread's cleanup.
       yield* fs.writeFileString(`${root}/dist/api/tracked.txt`, "uncommitted\n");
       setTaskFolders(taskFolders);
+      // A thread working in one of the folder's checkouts keeps every checkout.
+      setThreads([
+        shell({ branch: "task", worktreePath: root }),
+        shell({
+          id: ThreadId.make("thread-web"),
+          lineage: {
+            rootThreadId: ThreadId.make("thread-web"),
+            parentThreadId: null,
+            relationshipToParent: null,
+          },
+          branch: "task",
+          worktreePath: `${root}/dist/web`,
+        }),
+      ]);
+      const shared = yield* service.runNow;
+      expect(
+        shared.entries
+          .filter((entry) => entry.path?.startsWith(root))
+          .map(({ path, reason }) => ({ path, reason })),
+      ).toEqual(
+        [root, `${root}/dist/web`].map((path) => ({
+          path,
+          reason: "Another thread works in this task folder",
+        })),
+      );
+      expect(yield* fs.exists(`${root}/dist/web`)).toBe(true);
       setThreads([shell({ branch: "task", worktreePath: root })]);
 
       const report = yield* service.runNow;
@@ -2386,11 +2413,18 @@ describe("orphan worktree reports", () => {
   );
 
   it.live.each([
-    { home: "an installed", worktreeHome: false, customFolderOutcome: "removed" },
-    { home: "a git worktree's dev", worktreeHome: true, customFolderOutcome: "kept" },
+    { home: "an installed", worktreeHome: false, seeded: false, customFolderOutcome: "removed" },
+    {
+      home: "a git worktree's dev",
+      worktreeHome: true,
+      seeded: false,
+      customFolderOutcome: "kept",
+    },
+    // A plain clone's home seeded with migrate-dev-db.
+    { home: "a seeded dev", worktreeHome: false, seeded: true, customFolderOutcome: "kept" },
   ] as const)(
     "on $home home, a custom worktrees folder ends $customFolderOutcome",
-    ({ worktreeHome, customFolderOutcome }) =>
+    ({ worktreeHome, seeded, customFolderOutcome }) =>
       runCleanupTest(
         Effect.gen(function* () {
           const fs = yield* FileSystem.FileSystem;
@@ -2398,6 +2432,10 @@ describe("orphan worktree reports", () => {
           const checkout = yield* fs.makeTempDirectoryScoped({ prefix: "cleanup-dev-checkout-" });
           yield* fs.writeFileString(`${checkout}/.git`, "gitdir: /repo/.git/worktrees/dev\n");
           const baseDir = worktreeHome ? `${checkout}/.onicode` : config.baseDir;
+          if (seeded) {
+            yield* fs.makeDirectory(config.stateDir, { recursive: true });
+            yield* fs.writeFileString(`${config.stateDir}/${SEEDED_DEV_DATABASE_MARKER}`, "");
+          }
           const fixture = yield* cleanupFixture().pipe(
             Effect.provideService(ServerConfig.ServerConfig, {
               ...config,

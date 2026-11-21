@@ -140,10 +140,9 @@ export class TaskFolders extends Context.Service<
     /** The task folder that is, or contains, `target`. */
     readonly find: (target: string) => Effect.Effect<TaskFolder | null, TaskFolderError>;
     /**
-     * Removes repository worktrees, then the project folder, then the links and the folder.
-     * `inspect` may keep a checkout, with the reason to report, or allow forcing it; without it
-     * every checkout is removed with `force`. `forget` drops the record, shrinking it to what was
-     * kept; otherwise the record stays so the folder can be restored when its thread resumes.
+     * Removes repository worktrees, then the project folder, links and folder; `inspect` may keep
+     * a checkout. `forget` drops the record, else it stays for a resume. `deleteBranch` goes only
+     * where this server made it. Callers that can race `addRepository` hold `projectPath`'s lease.
      */
     readonly remove: (input: {
       readonly root: string;
@@ -672,6 +671,11 @@ const make = Effect.gen(function* () {
     }
   });
 
+  // The repositories, by task folder root, where this server made the thread's branch rather than
+  // finding it: removal deletes the branch only there. Not persisted: only in-process rollbacks
+  // delete branches, so after a restart no branch is deleted.
+  const branchMadeIn = new Map<string, Set<string>>();
+
   const removeCheckout = Effect.fnUntraced(function* (
     checkout: TaskFolderCheckout,
     force: boolean,
@@ -692,8 +696,6 @@ const make = Effect.gen(function* () {
   const removeLocked = Effect.fn("TaskFolders.remove")(function* (
     taskFolder: TaskFolder,
     input: Omit<Parameters<TaskFolders["Service"]["remove"]>[0], "root">,
-    /** Repositories whose `deleteBranch` is not this folder's to delete. */
-    keepBranchIn: ReadonlySet<string> = new Set(),
     /** False when the folder never got as far as its layout command: nothing to tear down. */
     laidOut = true,
   ) {
@@ -756,7 +758,9 @@ const make = Effect.gen(function* () {
       return yield* removeCheckout(
         checkout,
         force,
-        keepBranchIn.has(checkout.repositoryPath) ? undefined : input.deleteBranch,
+        branchMadeIn.get(taskFolder.root)?.has(checkout.repositoryPath) === true
+          ? input.deleteBranch
+          : undefined,
       ).pipe(
         Effect.as(true),
         Effect.tap(() => Effect.sync(() => removed.push(checkout.worktreePath))),
@@ -825,7 +829,10 @@ const make = Effect.gen(function* () {
       }
       if (!rootGone) {
         kept.push({ path: taskFolder.root, reason: "has files that exist only in this folder" });
-      } else if (input.forget) yield* store.remove(taskFolder.root);
+      } else if (input.forget) {
+        yield* store.remove(taskFolder.root);
+        branchMadeIn.delete(taskFolder.root);
+      }
     }
     return { removed, kept } satisfies TaskFolderRemoval;
   });
@@ -913,30 +920,30 @@ const make = Effect.gen(function* () {
         ...(taskPlan.projectIsRepository ? [taskPlan.projectRoot] : []),
         ...taskPlan.trackedRepositories,
       ];
-      // A layout command may check out a branch that was already there; a rollback leaves it.
-      const hadBranch = new Set<string>();
       let layoutStarted = false;
       // Where this attempt makes the branch: a checkout that fails halfway leaves it behind.
-      let branchMadeIn = [
+      const madeIn = new Set([
         ...taskPlan.repositories
           .filter((_, index) => !names[index]!.includes(branch))
           .map((repository) => repository.path),
         ...(taskPlan.projectIsRepository && !projectNames.includes(branch)
           ? [taskPlan.projectRoot]
           : []),
-      ];
+      ]);
       return yield* Effect.gen(function* () {
+        branchMadeIn.set(root, madeIn);
         yield* fileSystem.makeDirectory(root, { recursive: true });
         // Recorded before any checkout, so an interrupted creation is still found and removed.
         yield* store.put(empty);
         if (input.onClaimed !== undefined) yield* input.onClaimed(empty, branch);
         const layout = yield* worktreeLayout(taskPlan.projectRoot);
         if (layout !== null) {
+          // The command may check out a branch that was already there; that one stays.
           const before = yield* branchNames(checkedOutFrom).pipe(Effect.mapError(listFailed));
+          madeIn.clear();
           for (const [index, repositoryPath] of checkedOutFrom.entries()) {
-            if (before[index]!.includes(branch)) hadBranch.add(repositoryPath);
+            if (!before[index]!.includes(branch)) madeIn.add(repositoryPath);
           }
-          branchMadeIn = checkedOutFrom.filter((repositoryPath) => !hadBranch.has(repositoryPath));
           layoutStarted = true;
           const ran = yield* Effect.exit(
             runLayoutCommand(
@@ -1061,7 +1068,6 @@ const make = Effect.gen(function* () {
               removeLocked(
                 current(),
                 { force: true, forget: true, deleteBranch: branch },
-                hadBranch,
                 layoutStarted,
               ),
             ),
@@ -1082,7 +1088,7 @@ const make = Effect.gen(function* () {
             // Only now that no checkout is registered on it; most went with their checkout.
             Effect.andThen(
               Effect.forEach(
-                branchMadeIn,
+                madeIn,
                 (cwd) =>
                   git.deleteLocalBranch({ cwd, refName: branch, force: true }).pipe(Effect.ignore),
                 { concurrency: REPOSITORY_CONCURRENCY, discard: true },
@@ -1254,6 +1260,12 @@ const make = Effect.gen(function* () {
               ).pipe(Effect.ignoreCause({ log: true }), Effect.andThen(relink)),
             ),
           );
+        if (!existing) {
+          branchMadeIn.set(
+            taskFolder.root,
+            (branchMadeIn.get(taskFolder.root) ?? new Set<string>()).add(repositoryPath),
+          );
+        }
         return updated;
       }),
     );
@@ -1268,11 +1280,19 @@ const make = Effect.gen(function* () {
   const removeIfTaskFolder: TaskFolders["Service"]["removeIfTaskFolder"] = Effect.fn(
     "TaskFolders.removeIfTaskFolder",
   )(function* (input) {
-    const taskFolder = yield* store.findContaining(input.path);
+    const found = yield* store.findContaining(input.path);
     const target = path.resolve(input.path);
-    if (taskFolder === null || (target !== taskFolder.root && target !== taskFolder.projectPath))
-      return false;
-    const { kept } = yield* removeLocked(taskFolder, { force: input.force, forget: true });
+    if (found === null || (target !== found.root && target !== found.projectPath)) return false;
+    const { kept } = yield* locked(
+      found,
+      Effect.gen(function* () {
+        // Read again under the lease: a repository being added has landed or been refused.
+        const taskFolder = yield* store.findContaining(found.root);
+        if (taskFolder === null || taskFolder.root !== found.root)
+          return { removed: [], kept: [] } satisfies TaskFolderRemoval;
+        return yield* removeLocked(taskFolder, { force: input.force, forget: true });
+      }),
+    );
     if (kept.length > 0) {
       return yield* new TaskFolderError({
         operation: "remove",

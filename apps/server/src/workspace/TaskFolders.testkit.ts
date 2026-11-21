@@ -25,6 +25,8 @@ export interface TaskFoldersTestState {
   workspaceRoot: string;
   trackedFolders: ReadonlyArray<ProjectTrackedFolder>;
   thread: { worktreePath: string | null; branch: string | null } | null;
+  /** Runs before each worktree is created, so a test can hold one halfway. */
+  beforeCreateWorktree?: Effect.Effect<void>;
 }
 
 /**
@@ -40,7 +42,10 @@ export const layerTaskFoldersWithGit = (state: TaskFoldersTestState) => {
           .execute({ operation: "task-folders-test", cwd, args, allowNonZeroExit: true })
           .pipe(Effect.map((result) => (result.exitCode === 0 ? result.stdout.trim() : null)));
       return Layer.mock(GitWorkflowService.GitWorkflowService)({
-        createWorktree: git.createWorktree,
+        createWorktree: (input, options) =>
+          Effect.suspend(() => state.beforeCreateWorktree ?? Effect.void).pipe(
+            Effect.andThen(git.createWorktree(input, options)),
+          ),
         removeWorktree: git.removeWorktree,
         deleteLocalBranch: git.deleteLocalBranch,
         listLocalBranchNames: git.listLocalBranchNames,
