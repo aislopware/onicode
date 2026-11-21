@@ -9,6 +9,7 @@ import { linkBackOffer, type LinkBackOffer } from "@onicode/client-runtime/link-
 import {
   createPeerLinkEnvironmentAtoms,
   linkThroughRoutes,
+  offersLinkThrough,
 } from "@onicode/client-runtime/state/peerLinks";
 import { AuthAccessReadScope, AuthAccessWriteScope, type EnvironmentId } from "@onicode/contracts";
 import * as DateTime from "effect/DateTime";
@@ -88,11 +89,15 @@ export function usePeerLinkHosts() {
 }
 
 /**
- * The user's other saved machines, for picking one to link `environmentId` to.
- * Reads that environment's links only while `enabled`, since listing them asks
- * every linked machine whether it answers.
+ * The user's other saved machines, then the unsaved ones in `through`, for picking one to link
+ * `environmentId` to. Reads that environment's links only while `enabled`, since listing them
+ * asks every linked machine whether it answers.
  */
-export function useLinkableMachines(environmentId: EnvironmentId, enabled: boolean) {
+export function useLinkableMachines(
+  environmentId: EnvironmentId,
+  enabled: boolean,
+  through?: ReadonlyArray<{ readonly environmentId: EnvironmentId; readonly label: string }>,
+) {
   const { environments } = useEnvironments();
   const links = useEnvironmentQuery(
     enabled ? peerLinkEnvironment.list({ environmentId, input: {} }) : null,
@@ -101,6 +106,7 @@ export function useLinkableMachines(environmentId: EnvironmentId, enabled: boole
     environments,
     threadEnvironmentId: environmentId,
     links: links.data?.links ?? [],
+    ...(through === undefined ? {} : { through }),
   });
 }
 
@@ -112,23 +118,27 @@ export function useLinkableMachines(environmentId: EnvironmentId, enabled: boole
 export function useLinkThroughRoutes(sourceId: EnvironmentId, enabled: boolean) {
   const { environments } = useEnvironments();
   const writable = useEnvironmentsWithScope(environments, AuthAccessWriteScope);
-  const nowMinute = useNowMinute();
-  const hosts = environments
-    .filter(
-      (environment) =>
-        enabled &&
-        environment.environmentId !== sourceId &&
-        environment.connection.phase === "connected" &&
-        offersLinkedEnvironments(environment.serverConfig) &&
-        writable.has(environment.environmentId),
-    )
-    .map((environment) => environment.environmentId);
-  const lists = useAtomValue(peerLinkListsAtom(environmentIdsKey(hosts)));
+  const nowMinute = useNowMinute(enabled);
+  const hosts = environments.filter(
+    (environment) =>
+      enabled &&
+      environment.environmentId !== sourceId &&
+      environment.connection.phase === "connected" &&
+      offersLinkThrough(environment.serverConfig) &&
+      writable.has(environment.environmentId),
+  );
+  const lists = useAtomValue(
+    peerLinkListsAtom(environmentIdsKey(hosts.map((host) => host.environmentId))),
+  );
   return linkThroughRoutes({
     sourceEnvironmentId: sourceId,
-    hosts: hosts.map((environmentId, index) => {
+    hosts: hosts.map((host, index) => {
       const list = lists[index];
-      return { environmentId, links: list?._tag === "Success" ? list.value.links : [] };
+      return {
+        environmentId: host.environmentId,
+        config: host.serverConfig,
+        links: list?._tag === "Success" ? list.value.links : [],
+      };
     }),
     now: DateTime.makeUnsafe(nowMinute),
   });

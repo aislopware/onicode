@@ -267,7 +267,11 @@ it.effect("takes a hub's reset for an unreset usage_limit, then refreshes the sn
       snapshot: {
         refreshUsage: Deferred.succeed(refreshed, undefined).pipe(Effect.asVoid),
         getSnapshot: Effect.succeed({
-          auth: { status: "authenticated", endpoint: "http://hub.test:8317" },
+          auth: {
+            status: "authenticated",
+            endpoint: "http://hub.test:8317",
+            endpointUrl: "http://hub.test:8317/team-a",
+          },
         } as ServerProvider),
         refresh: Effect.die("unused"),
         resolveMaintenance: () => Effect.die("unused"),
@@ -336,7 +340,7 @@ it.effect("takes a hub's reset for an unreset usage_limit, then refreshes the sn
         }
       }
       assert.deepEqual(lookups, [instance.instanceId, instance.instanceId]);
-      assert.deepEqual(hubLookups, [["cursor", "http://hub.test:8317", "gpt-5.4"]]);
+      assert.deepEqual(hubLookups, [["cursor", "http://hub.test:8317/team-a", "gpt-5.4"]]);
       yield* Deferred.await(refreshed);
     }).pipe(
       Effect.provide(makeLayerTest(layerTestEventSink, instances)),

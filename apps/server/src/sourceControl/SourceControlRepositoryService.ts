@@ -338,24 +338,44 @@ export const make = Effect.gen(function* () {
     destinationPath: string,
     onChange: (partialBytes: number) => Effect.Effect<void>,
   ) => {
-    const incomplete = path.join(destinationPath, ".git", "lfs", "incomplete");
-    const partialBytes = fileSystem.readDirectory(incomplete).pipe(
-      Effect.flatMap(
-        Effect.forEach((name) =>
-          fileSystem
-            .stat(path.join(incomplete, name))
-            .pipe(Effect.map((info) => Number(info.size))),
+    const gitDir = path.join(destinationPath, ".git");
+    // git-lfs reads a relative lfs.storage from the git dir; null until clone has created it.
+    const resolveIncomplete = git
+      .execute({
+        operation: "SourceControlRepositoryService.lfsStorage",
+        cwd: path.dirname(destinationPath),
+        args: ["--git-dir", gitDir, "config", "--get", "lfs.storage"],
+        allowNonZeroExit: true,
+      })
+      .pipe(
+        Effect.map(({ exitCode, stdout }) => {
+          const code = Number(exitCode);
+          if (code !== 0 && code !== 1) return null;
+          const storage = code === 0 ? stdout.trim() : "";
+          return path.join(path.resolve(gitDir, storage || "lfs"), "incomplete");
+        }),
+        Effect.orElseSucceed(() => null),
+      );
+    const partialBytes = (incomplete: string) =>
+      fileSystem.readDirectory(incomplete).pipe(
+        Effect.flatMap(
+          Effect.forEach((name) =>
+            fileSystem
+              .stat(path.join(incomplete, name))
+              .pipe(Effect.map((info) => Number(info.size))),
+          ),
         ),
-      ),
-      Effect.map((sizes) => sizes.reduce((total, size) => total + size, 0)),
-      // No directory means no LFS download; a part that landed mid-read counts on the next poll.
-      Effect.orElseSucceed(() => 0),
-    );
+        Effect.map((sizes) => sizes.reduce((total, size) => total + size, 0)),
+        // No directory means no LFS download; a part that landed mid-read counts on the next poll.
+        Effect.orElseSucceed(() => 0),
+      );
     return Effect.gen(function* () {
+      let incomplete: string | null = null;
       let previous = 0;
       while (true) {
         yield* Effect.sleep(LFS_DOWNLOAD_POLL_INTERVAL);
-        const current = yield* partialBytes;
+        incomplete ??= yield* resolveIncomplete;
+        const current = incomplete === null ? 0 : yield* partialBytes(incomplete);
         if (current > 0 && current !== previous) yield* onChange(current);
         previous = current;
       }

@@ -2,6 +2,7 @@ import {
   type EnvironmentId,
   type PeerLinkSummary,
   type PeerLinkThreadInput,
+  type ServerConfig,
   WS_METHODS,
 } from "@onicode/contracts";
 import * as DateTime from "effect/DateTime";
@@ -10,6 +11,7 @@ import * as Effect from "effect/Effect";
 import { AsyncResult, Atom, type AtomRegistry } from "effect/reactivity";
 
 import type { EnvironmentRegistry } from "../connection/registry.ts";
+import { offersLinkedEnvironments } from "../linkRequest.ts";
 import {
   followLinkedThread,
   keepLinkedThreadView,
@@ -175,6 +177,15 @@ export interface LinkThroughRoute {
 }
 
 /**
+ * Whether an environment offers links and can get a pairing code from a machine it links to,
+ * for another environment's link there.
+ */
+export const offersLinkThrough = (
+  config: Pick<ServerConfig, "environment" | "settings"> | null | undefined,
+): boolean =>
+  offersLinkedEnvironments(config) && config?.environment.capabilities.linkPairingForLink === true;
+
+/**
  * The machines `sourceEnvironmentId` can link to without a pasted code: those another of the
  * client's environments reaches over a full-access link that answers. `hosts` are environments
  * the client is connected to and manages access on, the only ones it may ask.
@@ -183,13 +194,16 @@ export function linkThroughRoutes(input: {
   readonly sourceEnvironmentId: EnvironmentId;
   readonly hosts: ReadonlyArray<{
     readonly environmentId: EnvironmentId;
+    readonly config: Pick<ServerConfig, "environment" | "settings"> | null;
     readonly links: ReadonlyArray<PeerLinkSummary>;
   }>;
   readonly now: DateTime.Utc;
 }): ReadonlyMap<EnvironmentId, LinkThroughRoute> {
   const routes = new Map<EnvironmentId, LinkThroughRoute>();
   for (const host of input.hosts) {
-    if (host.environmentId === input.sourceEnvironmentId) continue;
+    if (host.environmentId === input.sourceEnvironmentId || !offersLinkThrough(host.config)) {
+      continue;
+    }
     for (const link of host.links) {
       if (
         link.environmentId === input.sourceEnvironmentId ||

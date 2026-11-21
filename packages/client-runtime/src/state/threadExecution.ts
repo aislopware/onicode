@@ -532,6 +532,20 @@ export function limitRecoveryOwnsSnooze(input: {
   );
 }
 
+/** When turning auto-resume on would resume: the server waits out a snooze past the reset. */
+export function limitRecoveryResumeTiming(input: {
+  readonly resetAt: string;
+  readonly snoozedUntil: string | null | undefined;
+  readonly resetPassed: boolean;
+  readonly snoozePassed: boolean;
+}): "atReset" | "now" | "afterSnooze" {
+  const { resetAt, snoozedUntil, resetPassed, snoozePassed } = input;
+  if (snoozedUntil != null && !snoozePassed && Date.parse(snoozedUntil) > Date.parse(resetAt)) {
+    return "afterSnooze";
+  }
+  return resetPassed ? "now" : "atReset";
+}
+
 export function threadRuntimeHasInterruptibleRun(
   runtime: ThreadStructureRuntime | null | undefined,
 ): boolean {

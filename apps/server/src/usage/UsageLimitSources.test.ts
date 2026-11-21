@@ -367,6 +367,15 @@ it.each([
     expected: at(3),
   },
   {
+    name: "an account whose model list is unknown may route a model another driver lists",
+    accounts: [
+      { driver: "codex", models: ["gpt-5.6-sol"], windows: [spent("five_hour", 8)] },
+      { driver: "antigravity", windows: [spent("3p-5h", 1)] },
+    ],
+    model: "gpt-5.6-sol",
+    expected: at(1),
+  },
+  {
     name: "an account that lists no models is left out of an alias",
     accounts: [{ windows: [spent("five_hour", 1)] }, { models: [], windows: [] }],
     model: "opus",
@@ -450,7 +459,10 @@ it.each([
 it.effect("the reset fallback refreshes its hub, and a stalled hub cannot hold the failure", () =>
   Effect.gen(function* () {
     yield* TestClock.setTime(NOW);
-    const roomLeft = { ...hub([{ windows: [spent("five_hour", 2)] }]), origin: "http://hub.test" };
+    const roomLeft = {
+      ...hub([{ windows: [spent("five_hour", 2)] }]),
+      endpoint: "http://hub.test",
+    };
     const cached = {
       ...roomLeft,
       accounts: roomLeft.accounts.map((account) => ({

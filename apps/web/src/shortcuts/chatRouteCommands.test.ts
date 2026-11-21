@@ -1,3 +1,4 @@
+import { derivePhysicalProjectKey } from "@onicode/client-runtime/state/project-grouping";
 import { DEFAULT_CLIENT_SETTINGS, EnvironmentId, ProjectId } from "@onicode/contracts";
 import type { AnyRouter } from "@tanstack/react-router";
 import { describe, expect, it, vi } from "vite-plus/test";
@@ -5,6 +6,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import * as commandPalette from "../commandPaletteBus";
 import { DraftId, useComposerDraftStore } from "../composerDraftStore";
 import * as previewActions from "../components/preview/previewActionBus";
+import * as newThread from "../hooks/useHandleNewThread";
 import * as settings from "../hooks/useSettings";
 import * as storage from "../hooks/useLocalStorage";
 import * as threadActions from "../lib/chatThreadActions";
@@ -15,6 +17,7 @@ import * as projectsState from "../state/projects";
 import * as session from "../state/session";
 import { Atom } from "effect/reactivity";
 import type { Project } from "../types";
+import { useUiStateStore } from "../uiStateStore";
 import { installChatRouteCommands } from "./chatRouteCommands";
 import * as dispatcher from "./dispatcher";
 
@@ -76,6 +79,35 @@ describe("new thread commands", () => {
         projectId: scenario.count === 1 ? "active" : "idle",
       });
     }
+  });
+
+  it("chat.new starts in the project the sidebar is filtered to, like its New button", () => {
+    using _settings = vi
+      .spyOn(settings, "getClientSettings")
+      .mockReturnValue(DEFAULT_CLIENT_SETTINGS);
+    using _projects = vi
+      .spyOn(entities, "readProjects")
+      .mockReturnValue([project("active"), project("idle")]);
+    using _ready = vi
+      .spyOn(projectsState, "defaultProjectFallbackReadyAtom")
+      .mockReturnValue(Atom.make(true));
+    using _storedProject = vi.spyOn(storage, "getLocalStorageItem").mockReturnValue("local:idle");
+    using openPicker = vi.spyOn(commandPalette, "openCommandPalette").mockImplementation(() => {});
+    const handleNewThread = vi.fn().mockResolvedValue(null);
+    using _handler = vi.spyOn(newThread, "createNewThreadHandler").mockReturnValue(handleNewThread);
+    using register = vi.spyOn(dispatcher, "registerCommands").mockReturnValue(() => {});
+    using stack = new DisposableStack();
+    useUiStateStore.setState({
+      sidebarProjectScopeKeys: [derivePhysicalProjectKey(project("active"))],
+    });
+    stack.defer(() => useUiStateStore.setState({ sidebarProjectScopeKeys: [] }));
+    stack.defer(installChatRouteCommands({ state: { matches: [] } } as unknown as AnyRouter));
+    const event = { preventDefault: vi.fn(), stopPropagation: vi.fn() } as unknown as KeyboardEvent;
+
+    register.mock.calls[0]![0]["chat.new"]!(event);
+
+    expect(openPicker).not.toHaveBeenCalled();
+    expect(handleNewThread).toHaveBeenCalledWith({ environmentId: "local", projectId: "active" });
   });
 });
 

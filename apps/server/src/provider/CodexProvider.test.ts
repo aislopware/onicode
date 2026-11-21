@@ -332,10 +332,13 @@ it("reports native quota only for an OpenAI login on a native route", () => {
     );
   }
   // The custom endpoint is what a usage-limit hub is matched against.
-  assert.strictEqual(codexCustomEndpoint(hub), "https://hub.example.com");
-  assert.strictEqual(
-    codexCustomEndpoint({ openai_base_url: "http://127.0.0.1:8317/v1" }),
-    "http://127.0.0.1:8317",
+  assert.deepStrictEqual(codexCustomEndpoint(hub), {
+    endpoint: "https://hub.example.com",
+    endpointUrl: "https://hub.example.com/v1",
+  });
+  assert.deepStrictEqual(
+    codexCustomEndpoint({ openai_base_url: "http://127.0.0.1:8317/team-a/v1/" }),
+    { endpoint: "http://127.0.0.1:8317", endpointUrl: "http://127.0.0.1:8317/team-a/v1" },
   );
   assert.strictEqual(codexCustomEndpoint({ openai_base_url: "https://chatgpt.com/x" }), undefined);
   assert.strictEqual(codexCustomEndpoint({}), undefined);

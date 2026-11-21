@@ -191,6 +191,7 @@ describe("connectLinkedEnvironment", () => {
         pairs.push(input);
         return paired;
       },
+      signIn: async () => false,
     }).then((outcome) => ({ outcome, pairs }));
   };
 
@@ -234,6 +235,31 @@ describe("connectLinkedEnvironment", () => {
       type: "manual",
       label: "VM",
       host: lan,
+    });
+  });
+
+  it("signs in over the tailnet where the link cannot pair this device", async () => {
+    const signIns: Array<string> = [];
+    const tailnetIpv4 = "http://100.101.1.2:3773";
+    const outcome = await connectLinkedEnvironment({
+      label: "vm (saved name)",
+      requestPairing: async () => ({
+        type: "unsupported",
+        reason: "link_access",
+        ...target,
+        urls: [lan, tailnetIpv4, tailnet],
+      }),
+      reaches: async () => true,
+      pair: async () => true,
+      signIn: async (host) => {
+        signIns.push(host);
+        return host === tailnet;
+      },
+    });
+    // The LAN address answers first, but only tailnet addresses can sign a device in.
+    expect({ outcome, signIns }).toEqual({
+      outcome: { type: "connected" },
+      signIns: [tailnetIpv4, tailnet],
     });
   });
 });

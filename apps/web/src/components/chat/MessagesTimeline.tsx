@@ -894,6 +894,13 @@ const ConversationTimeline = memo(function ConversationTimeline({
   const [minimapHitStripWidth, setMinimapHitStripWidth] = useState(0);
   const [minimapCurrentIndex, setMinimapCurrentIndex] = useState<number | null>(null);
   const [minimapAtEnd, setMinimapAtEnd] = useState(false);
+  // What the minimap setters last asked for; state read here lags refreshes made before a commit.
+  const minimapRequested = useRef({
+    hasPersistentGutter: false,
+    hitStripWidth: 0,
+    currentIndex: null as number | null,
+    atEnd: false,
+  });
   const handleAnchorReady = (info: { anchorIndex: number | undefined }) => {
     if (anchorMessageId !== null && info.anchorIndex !== undefined) {
       onAnchorReady(anchorMessageId, info.anchorIndex);
@@ -970,14 +977,20 @@ const ConversationTimeline = memo(function ConversationTimeline({
       visibleEnd: currentRange.end,
       rowIndices: minimapRowIndices,
     });
-    setMinimapCurrentIndex((current) =>
-      current === nextCurrentIndex ? current : nextCurrentIndex,
-    );
+    // An unchanged value still re-renders when other updates are pending, so set only changes.
+    const requested = minimapRequested.current;
+    if (nextCurrentIndex !== requested.currentIndex) {
+      requested.currentIndex = nextCurrentIndex;
+      setMinimapCurrentIndex(nextCurrentIndex);
+    }
     // The exact bottom, not the follow re-arm zone: Next can still scroll inside that zone.
-    setMinimapAtEnd(
+    const nextAtEnd =
       viewport !== undefined &&
-        viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight <= 1,
-    );
+      viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight <= 1;
+    if (nextAtEnd !== requested.atEnd) {
+      requested.atEnd = nextAtEnd;
+      setMinimapAtEnd(nextAtEnd);
+    }
   });
 
   const minimapRefreshFrameRef = useRef<number | null>(null);
@@ -1048,7 +1061,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     scheduleMinimapRefresh();
   };
 
-  const measureTimelineGutter = (viewportElement: HTMLElement) => {
+  const measureTimelineGutter = useStableCallback((viewportElement: HTMLElement) => {
     const viewportWidth = viewportElement.getBoundingClientRect().width;
     const contentWidth =
       viewportElement.querySelector<HTMLElement>("[data-timeline-root]")?.getBoundingClientRect()
@@ -1057,11 +1070,17 @@ const ConversationTimeline = memo(function ConversationTimeline({
       viewportWidth,
       contentWidth,
     );
-    setMinimapHasPersistentGutter((current) =>
-      current === nextHasPersistentGutter ? current : nextHasPersistentGutter,
-    );
-    setMinimapHitStripWidth(resolveTimelineMinimapHitStripWidth(viewportWidth, contentWidth));
-  };
+    const requested = minimapRequested.current;
+    if (nextHasPersistentGutter !== requested.hasPersistentGutter) {
+      requested.hasPersistentGutter = nextHasPersistentGutter;
+      setMinimapHasPersistentGutter(nextHasPersistentGutter);
+    }
+    const nextHitStripWidth = resolveTimelineMinimapHitStripWidth(viewportWidth, contentWidth);
+    if (nextHitStripWidth !== requested.hitStripWidth) {
+      requested.hitStripWidth = nextHitStripWidth;
+      setMinimapHitStripWidth(nextHitStripWidth);
+    }
+  });
   // Rows added, removed or rewrapped (chat width) change the content size,
   // which moves the scroll position, the overflow, and the content lane width.
   const handleContentSizeChanged = useStableCallback((laidOutData: unknown) => {

@@ -259,6 +259,22 @@ function accountKeyResolver(reports: Iterable<AccountReport>) {
   };
 }
 
+/** The signed-in logins that are one of these hub accounts, by the identity the report merges on. */
+export function hubAccountLogins(
+  providers: readonly ServerProvider[],
+  accounts: readonly UsageLimitSourceAccount[],
+): ServerProvider[] {
+  const resolveKey = accountKeyResolver([
+    ...providers.filter((provider) => provider.enabled).map(nativeReport),
+    ...accounts,
+  ]);
+  const keys = new Set(accounts.map(resolveKey));
+  return providers.filter((provider) => {
+    const key = resolveKey(nativeReport(provider));
+    return key !== null && keys.has(key);
+  });
+}
+
 const hubAccountName = (account: { readonly id: string }) => account.id.replace(/\.json$/i, "");
 
 // Source ids are environment-local, so only a remote endpoint names the same hub across environments.
@@ -839,13 +855,50 @@ export function withUsageLimitsCommands(
   });
 }
 
-/** The hubs an instance sends its requests through: those whose address is its endpoint. */
-export function instanceHubs(
-  provider: ServerProvider,
+// Other loopback addresses can be a different service on the same port.
+const LOCALHOST_NAMES = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+function endpointAddress(endpoint: string | undefined) {
+  const match = endpoint?.match(/^(https?):\/\/(\[[\da-f:.]+\]|[^:/?#@]+)(:\d+)?(\/[^?#]*)?/i);
+  if (!match) return null;
+  const [, scheme = "", host = "", port = "", path = ""] = match;
+  const name = LOCALHOST_NAMES.has(host.toLowerCase()) ? "localhost" : host.toLowerCase();
+  return { origin: `${scheme.toLowerCase()}://${name}${port}`, path: path.replace(/\/+$/, "") };
+}
+
+/** The hubs at an endpoint: those whose address is the deepest one it is sent to or under. */
+export function hubsAtEndpoint(
+  endpoint: string | undefined,
   sources: UsageLimitSourceSnapshots,
 ): UsageLimitSourceSnapshots {
-  const endpoint = provider.auth.endpoint;
-  return endpoint === undefined ? [] : sources.filter((source) => source.origin === endpoint);
+  const target = endpointAddress(endpoint);
+  if (!target) return [];
+  const depth = (source: UsageLimitSourceSnapshot) => {
+    // Servers before the path-bearing endpoint name a hub by its origin.
+    const hub = endpointAddress(source.endpoint ?? source.origin);
+    return hub?.origin === target.origin &&
+      (target.path === hub.path || target.path.startsWith(`${hub.path}/`))
+      ? hub.path.length
+      : -1;
+  };
+  const deepest = Math.max(-1, ...sources.map(depth));
+  return deepest < 0 ? [] : sources.filter((source) => depth(source) === deepest);
+}
+
+/** Where an instance sends its requests; servers before `endpointUrl` report only the origin. */
+export const instanceEndpoint = (provider: Pick<ServerProvider, "auth">) =>
+  provider.auth.endpointUrl ?? provider.auth.endpoint;
+
+/** The hubs an instance sends its requests through. */
+export function instanceHubs(provider: ServerProvider, sources: UsageLimitSourceSnapshots) {
+  if (provider.auth.endpointUrl) return hubsAtEndpoint(provider.auth.endpointUrl, sources);
+  // Without the instance's path, any hub at its origin may be the one it is sent to.
+  const origin = endpointAddress(provider.auth.endpoint)?.origin;
+  return origin === undefined
+    ? []
+    : sources.filter(
+        (source) => endpointAddress(source.endpoint ?? source.origin)?.origin === origin,
+      );
 }
 
 // Antigravity meters Gemini Argon, Gemini Carbon, other Gemini, and Claude/GPT models apart.
@@ -887,9 +940,17 @@ export function hubRoutes(
   // Model ids such as "opus" are aliases no hub lists, so no listing falls back to the driver.
   if (serving.size === 0)
     return (account) => account.driver === driver && account.models?.length !== 0;
-  // An account whose model list was unreadable may serve the model too.
+  const known = new Set(
+    sources.flatMap((source) =>
+      source.accounts.flatMap((account) => (account.models ? [account.driver] : [])),
+    ),
+  );
+  // An account whose model list is unknown may serve the model too, unless the known lists of its
+  // driver leave the model out.
   return (account) =>
-    account.models ? listed(account) : serving.has(account.driver) || account.driver === driver;
+    account.models
+      ? listed(account)
+      : serving.has(account.driver) || account.driver === driver || !known.has(account.driver);
 }
 
 export function collectProviderUsageLimits(

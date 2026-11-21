@@ -1,6 +1,7 @@
 import { assert, describe, it } from "@effect/vitest";
 import * as HostProcess from "@onicode/shared/HostProcess";
 import * as Deferred from "effect/Deferred";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
@@ -8,6 +9,7 @@ import * as Layer from "effect/Layer";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
+import * as TestClock from "effect/testing/TestClock";
 
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as AppleSpeech from "./AppleSpeech.ts";
@@ -124,7 +126,7 @@ describe("AppleSpeech", () => {
   it.effect.each([
     ["25.0.0", 0, ["en-US", "fr-FR"], 1],
     ["25.0.0", 3, [], 1],
-    ["25.0.0", 1, [], 2],
+    ["25.0.0", 1, null, 1],
     ["24.6.0", 0, [], 0],
   ] as const)(
     "on Darwin %s resolves locales on helper exit %i to %j with %i probe(s) across two calls",
@@ -138,6 +140,17 @@ describe("AppleSpeech", () => {
       }).pipe(Effect.provide(layer));
     },
   );
+
+  it.effect("asks again a minute after a failed locale probe", () => {
+    const { layer, commands } = setup({ exitCode: 1 });
+    return Effect.gen(function* () {
+      const speech = yield* AppleSpeech.AppleSpeech;
+      assert.isNull(yield* speech.supportedLocales);
+      yield* TestClock.adjust(Duration.minutes(1));
+      assert.isNull(yield* speech.supportedLocales);
+      assert.lengthOf(commands, 2);
+    }).pipe(Effect.provide(layer));
+  });
 
   it.effect("transcribes Float32 PCM through a 16-bit WAV file", () => {
     const { layer, commands, written } = setup({ stdout: '{"value":"hello"}', exitCode: 0 });

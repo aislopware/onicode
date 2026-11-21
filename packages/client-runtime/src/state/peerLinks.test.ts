@@ -1,4 +1,4 @@
-import { EnvironmentId, type PeerLinkSummary } from "@onicode/contracts";
+import { EnvironmentId, type PeerLinkSummary, type ServerConfig } from "@onicode/contracts";
 import * as DateTime from "effect/DateTime";
 import { describe, expect, it } from "vite-plus/test";
 
@@ -20,14 +20,23 @@ const link = (target: string, overrides: Partial<PeerLinkSummary> = {}): PeerLin
   ...overrides,
 });
 
+const config = (linkPairingForLink: boolean) =>
+  ({
+    environment: { capabilities: { peerLinks: true, linkPairingForLink } },
+    settings: { linkedEnvironmentsEnabled: true },
+  }) as unknown as ServerConfig;
+
 describe("linkThroughRoutes", () => {
   it("offers only machines another environment reaches over a full-access link that answers", () => {
     const routes = linkThroughRoutes({
       sourceEnvironmentId: id("source"),
       hosts: [
-        { environmentId: id("source"), links: [link("own")] },
+        { environmentId: id("source"), config: config(true), links: [link("own")] },
+        // A version that cannot get a code for a link leaves the route to one that can.
+        { environmentId: id("old"), config: config(false), links: [link("open"), link("legacy")] },
         {
           environmentId: id("via"),
+          config: config(true),
           links: [
             link("open"),
             link("source"),
@@ -36,7 +45,7 @@ describe("linkThroughRoutes", () => {
             link("lapsed", { expiresAt: now }),
           ],
         },
-        { environmentId: id("later"), links: [link("open")] },
+        { environmentId: id("later"), config: config(true), links: [link("open")] },
       ],
       now,
     });

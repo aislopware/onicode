@@ -408,7 +408,7 @@ export const makeCliproxyApi = Effect.gen(function* () {
   const platform = yield* HostProcess.Platform;
   const architecture = yield* HostProcess.Architecture;
 
-  const management = Effect.fn("CliproxyApi.management")(function* (
+  const managementResponse = Effect.fn("CliproxyApi.management")(function* (
     hub: CliproxyHub,
     path: string,
     body?: unknown,
@@ -425,18 +425,22 @@ export const makeCliproxyApi = Effect.gen(function* () {
     const request = (
       body === undefined ? HttpClientRequest.get(url) : HttpClientRequest.post(url)
     ).pipe(HttpClientRequest.setHeader("Authorization", `Bearer ${hub.managementKey}`));
-    const response = yield* client
+    return yield* client
       .execute(body === undefined ? request : request.pipe(HttpClientRequest.bodyJsonUnsafe(body)))
       .pipe(
         Effect.flatMap(HttpClientResponse.filterStatusOk),
         Effect.flatMap((response) => response.json),
         Effect.timeout("15 seconds"),
-        Effect.mapError(
-          (error) => new UsageLimitSourceError({ detail: describeManagementFailure(error) }),
-        ),
       );
-    return response;
   });
+  const management = (hub: CliproxyHub, path: string, body?: unknown) =>
+    managementResponse(hub, path, body).pipe(
+      Effect.mapError((error) =>
+        isUsageLimitSourceError(error)
+          ? error
+          : new UsageLimitSourceError({ detail: describeManagementFailure(error) }),
+      ),
+    );
 
   const authFiles = Effect.fn("CliproxyApi.authFiles")(function* (hub: CliproxyHub) {
     const response = yield* management(hub, "auth-files");
@@ -448,7 +452,7 @@ export const makeCliproxyApi = Effect.gen(function* () {
     hub: CliproxyHub,
     account: AuthFile,
   ) {
-    const response = yield* management(
+    const response = yield* managementResponse(
       hub,
       `auth-files/models?name=${encodeURIComponent(account.id)}`,
     );
@@ -456,6 +460,18 @@ export const makeCliproxyApi = Effect.gen(function* () {
       id.trim() ? [id.trim()] : [],
     );
   });
+  const unlisted = (error: unknown) =>
+    HttpClientError.isHttpClientError(error) &&
+    error.reason._tag === "StatusCodeError" &&
+    error.reason.response.status === 404;
+  // Per hub URL: the last list each account answered, or when an unlisted account is asked again.
+  type ModelList = { readonly models: ReadonlyArray<string> } | { readonly askAfter: number };
+  const modelLists = new Map<string, ReadonlyMap<string, ModelList>>();
+  // Per hub URL: the refresh that last started each account's lookup.
+  const lookupRounds = new Map<string, ReadonlyMap<string, number>>();
+  let round = 0;
+  const modelListKey = (account: AuthFile) =>
+    `${account.id}\0${account.provider}\0${account.email ?? ""}`;
 
   const apiCall = Effect.fn("CliproxyApi.apiCall")(function* (
     hub: CliproxyHub,
@@ -516,28 +532,74 @@ export const makeCliproxyApi = Effect.gen(function* () {
       const provider = HUB_PROVIDERS.get(account.provider);
       return provider && !account.disabled ? [{ account, provider }] : [];
     });
-    // Model lists are optional, so their lookups run apart from the quota reads and stop at one
-    // short deadline; a slow lookup must not push a refresh past its budget.
-    const [readings, models] = yield* Effect.all(
+    const now = DateTime.toEpochMillis(yield* DateTime.now);
+    const known = modelLists.get(hub.url);
+    const models = readable.map(({ account }): ModelList | undefined => {
+      const last = known?.get(modelListKey(account));
+      return last && ("models" in last || last.askAfter > now) ? last : undefined;
+    });
+    round += 1;
+    const turn = round;
+    const started = new Map(lookupRounds.get(hub.url));
+    // Accounts with no list go first, then the one asked longest ago, so the slow accounts cannot
+    // hold every slot until the deadline on each refresh.
+    const lookups = readable
+      .flatMap(({ account }, index) => {
+        const last = models[index];
+        if (last && "askAfter" in last) return [];
+        const key = modelListKey(account);
+        return [{ account, index, key, listed: last !== undefined, at: started.get(key) ?? 0 }];
+      })
+      .toSorted((a, b) => Number(a.listed) - Number(b.listed) || a.at - b.at);
+    // Model lists are optional, so their lookups run apart from the quota reads and all stop at one
+    // short deadline; a slow or failed lookup keeps the last list rather than widen the routes.
+    const [readings] = yield* Effect.all(
       [
         Effect.forEach(readable, ({ account, provider }) => readAccount(hub, account, provider), {
           concurrency: 4,
         }),
         Effect.forEach(
-          readable,
-          ({ account }) =>
-            routedModels(hub, account).pipe(
-              Effect.timeoutOption("2 seconds"),
-              Effect.orElseSucceed(() => Option.none()),
-            ),
-          { concurrency: "unbounded" },
-        ),
+          lookups,
+          ({ account, index, key }) => {
+            const last = models[index];
+            return Effect.sync(() => started.set(key, turn)).pipe(
+              Effect.andThen(routedModels(hub, account)),
+              Effect.map((listed): ModelList => ({ models: listed })),
+              Effect.catch((error) =>
+                Effect.succeed(unlisted(error) ? { askAfter: now + 3_600_000 } : last),
+              ),
+              Effect.map((next) => {
+                models[index] = next;
+              }),
+            );
+          },
+          { concurrency: 4, discard: true },
+        ).pipe(Effect.timeoutOption("2 seconds")),
       ],
       { concurrency: 2 },
     );
+    modelLists.set(
+      hub.url,
+      new Map(
+        readable.flatMap(({ account }, index) => {
+          const listed = models[index];
+          return listed ? [[modelListKey(account), listed] as const] : [];
+        }),
+      ),
+    );
+    lookupRounds.set(
+      hub.url,
+      new Map(
+        readable.flatMap(({ account }) => {
+          const key = modelListKey(account);
+          const at = started.get(key);
+          return at === undefined ? [] : [[key, at] as const];
+        }),
+      ),
+    );
     return readings.map((reading, index) => {
       const listed = models[index];
-      return listed && Option.isSome(listed) ? { ...reading, models: listed.value } : reading;
+      return listed && "models" in listed ? { ...reading, models: listed.models } : reading;
     });
   });
 
@@ -599,5 +661,15 @@ export const makeCliproxyApi = Effect.gen(function* () {
       ),
     );
   });
-  return { readAccounts, consume };
+  /** Forgets the model lists of hubs that are no longer configured. */
+  const retainHubs = (urls: ReadonlyArray<string>) =>
+    Effect.sync(() => {
+      for (const url of modelLists.keys()) {
+        if (!urls.includes(url)) modelLists.delete(url);
+      }
+      for (const url of lookupRounds.keys()) {
+        if (!urls.includes(url)) lookupRounds.delete(url);
+      }
+    });
+  return { readAccounts, consume, retainHubs };
 });

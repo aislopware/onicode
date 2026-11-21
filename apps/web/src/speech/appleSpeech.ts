@@ -2,6 +2,7 @@ import { useSyncExternalStore } from "react";
 
 const emptyLocales: readonly string[] = [];
 let locales = emptyLocales;
+let settled = false;
 let probe: Promise<void> | undefined;
 const listeners = new Set<() => void>();
 
@@ -23,11 +24,13 @@ export function resolveAppleSpeechLocale(
   return system.find((locale) => supportsAppleSpeechLocale(available, locale)) ?? system[0];
 }
 
-function probeLocales() {
-  if (locales.length === 0 && !probe && window.desktopBridge?.appleSpeech) {
+export function probeAppleSpeechLocales() {
+  if (!settled && !probe && window.desktopBridge?.appleSpeech) {
     probe = window.desktopBridge.appleSpeech
       .supportedLocales()
       .then((value) => {
+        if (value === null) return;
+        settled = true;
         if (value.length === 0) return;
         locales = value;
         listeners.forEach((notify) => notify());
@@ -37,15 +40,16 @@ function probeLocales() {
         probe = undefined;
       });
   }
+  return probe;
 }
 
 function subscribe(listener: () => void) {
-  if (listeners.size === 0) window.addEventListener("focus", probeLocales);
+  if (listeners.size === 0) window.addEventListener("focus", probeAppleSpeechLocales);
   listeners.add(listener);
-  probeLocales();
+  probeAppleSpeechLocales();
   return () => {
     listeners.delete(listener);
-    if (listeners.size === 0) window.removeEventListener("focus", probeLocales);
+    if (listeners.size === 0) window.removeEventListener("focus", probeAppleSpeechLocales);
   };
 }
 

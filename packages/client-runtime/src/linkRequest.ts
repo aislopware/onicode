@@ -113,8 +113,9 @@ const isLoopbackUrl = (url: string) => {
 };
 
 /**
- * The catalog's machines other than the thread's own, in catalog order. `links` are the thread
- * environment's; an expired one no longer counts as linked.
+ * The catalog's machines other than the thread's own, in catalog order, then those only another
+ * environment links to (`through`). `links` are the thread environment's; an expired one no
+ * longer counts as linked.
  */
 export function linkableMachines(input: {
   readonly environments: ReadonlyArray<
@@ -123,11 +124,15 @@ export function linkableMachines(input: {
   /** Null lists every machine, for a view that is not about one environment. */
   readonly threadEnvironmentId: EnvironmentId | null;
   readonly links: ReadonlyArray<Pick<PeerLinkSummary, "environmentId" | "status">>;
+  readonly through?: ReadonlyArray<{
+    readonly environmentId: EnvironmentId;
+    readonly label: string;
+  }>;
 }): ReadonlyArray<LinkableMachine> {
   const linkedIds = new Set(
     input.links.flatMap((link) => (link.status === "expired" ? [] : [link.environmentId])),
   );
-  return input.environments
+  const saved = input.environments
     .filter((environment) => environment.environmentId !== input.threadEnvironmentId)
     .map((environment) => {
       const reported = (environment.serverConfig?.directEndpoints ?? []).map(
@@ -145,6 +150,22 @@ export function linkableMachines(input: {
         urls: [...new Set([...reported, ...routes])].filter((url) => !isLoopbackUrl(url)),
       };
     });
+  const listed = new Set([
+    input.threadEnvironmentId,
+    ...saved.map((machine) => machine.environmentId),
+  ]);
+  const unsaved = (input.through ?? [])
+    .filter((route) => !listed.has(route.environmentId))
+    .map((route): LinkableMachine => ({
+      environmentId: route.environmentId,
+      label: route.label,
+      machine: "server",
+      connected: false,
+      linked: linkedIds.has(route.environmentId),
+      // Where the other environment reaches it says nothing of where this one can.
+      urls: [],
+    }));
+  return [...saved, ...unsaved];
 }
 
 const words = (text: string) =>

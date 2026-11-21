@@ -63,6 +63,7 @@ function claudeInstance(usageLimits: ServerProviderUsageLimits): ServerProvider 
 interface HubAccountInput {
   readonly id: string;
   readonly driver?: ProviderDriverKind;
+  readonly email?: string;
   readonly models?: readonly string[];
   readonly limits: ServerProviderUsageLimits;
 }
@@ -70,17 +71,18 @@ interface HubAccountInput {
 function hub(
   label: string,
   accounts: readonly HubAccountInput[],
-  origin = "http://127.0.0.1:8317",
+  endpoint = "http://127.0.0.1:8317",
 ): UsageLimitSourceSnapshot {
   return {
     id: UsageLimitSourceId.make(label),
     kind: "cliproxy",
     label,
-    origin,
+    endpoint,
     checkedAt,
     accounts: accounts.map((account) => ({
       id: account.id,
       driver: account.driver ?? claude,
+      ...(account.email ? { email: account.email } : {}),
       ...(account.models ? { models: account.models } : {}),
       usageLimits: account.limits,
     })),
@@ -91,11 +93,12 @@ function shown(
   own: ServerProviderUsageLimits,
   sources: readonly UsageLimitSourceSnapshot[],
   model: string | null,
+  logins: readonly ServerProvider[] = [],
 ) {
   const resolved = resolveThreadDetailsLimits(
     instanceId,
     model,
-    [claudeInstance(own)],
+    [claudeInstance(own), ...logins],
     sources,
     now,
   );
@@ -142,6 +145,29 @@ describe("resolveThreadDetailsLimits", () => {
     expect(shown(unsupported, sources, "gpt-5.6-sol[1m]")).toEqual({
       kind: "pool",
       rows: [{ label: "Session", left: 70, accounts: 1, from: { hubs: ["Hub"], signedIn: false } }],
+    });
+  });
+
+  it("takes a fresher local reading of a hub account its one workspace identifies", () => {
+    const sources = [hub("Hub", [{ id: "a.json", email: "a@example.com", limits: limitsAt(20) }])];
+    const login = (id: string, workspaceId: string, usedPercent: number): ServerProvider => ({
+      ...claudeInstance({ ...limitsAt(usedPercent), checkedAt: "2026-10-30T11:59:30.000Z" }),
+      instanceId: ProviderInstanceId.make(id),
+      auth: { status: "authenticated", email: "A@example.com", workspaceId },
+    });
+    expect(shown(unsupported, sources, null, [login("local", "org-1", 100)])).toEqual({
+      kind: "pool",
+      rows: [{ label: "Session", left: 0, accounts: 1, from: { hubs: [], signedIn: true } }],
+    });
+    // Two workspaces of one email leave the hub account's workspace unknown.
+    expect(
+      shown(unsupported, sources, null, [
+        login("local", "org-1", 100),
+        login("other", "org-2", 50),
+      ]),
+    ).toEqual({
+      kind: "pool",
+      rows: [{ label: "Session", left: 80, accounts: 1, from: { hubs: ["Hub"], signedIn: false } }],
     });
   });
 });

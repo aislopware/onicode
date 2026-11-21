@@ -2,7 +2,10 @@ import { squashAtomCommandFailure } from "@onicode/client-runtime/state/runtime"
 import { errorDisplayMessage } from "@onicode/client-runtime/errors";
 import { AsyncResult } from "effect/reactivity";
 import type { EnvironmentThreadShell } from "@onicode/client-runtime/state/shell";
-import { limitRecoveryOwnsSnooze } from "@onicode/client-runtime/state/thread-execution";
+import {
+  limitRecoveryOwnsSnooze,
+  limitRecoveryResumeTiming,
+} from "@onicode/client-runtime/state/thread-execution";
 import type { EnvironmentId } from "@onicode/contracts";
 import {
   CHATGPT_USAGE_LIMIT_CODE,
@@ -52,6 +55,9 @@ export function UsageLimitRecoveryCard({
       ? thread.snoozedUntil
       : resetAt;
   const displayPassed = useDeadlinePassed(displayAt === null ? null : Date.parse(displayAt));
+  const snoozePassed = useDeadlinePassed(
+    thread.snoozedUntil == null ? null : Date.parse(thread.snoozedUntil),
+  );
   const [copied, setCopied] = useState(false);
   const [actionPending, setActionPending] = useState(false);
   const code = thread.runtime?.lastErrorCode;
@@ -91,6 +97,15 @@ export function UsageLimitRecoveryCard({
       recovery,
       snoozedUntil: thread.snoozedUntil,
     }) && !resetPassed;
+  const resumeTiming =
+    resetAt === null
+      ? "atReset"
+      : limitRecoveryResumeTiming({
+          resetAt,
+          snoozedUntil: thread.snoozedUntil,
+          resetPassed,
+          snoozePassed,
+        });
   async function toggle(action: "resume" | "snooze") {
     if (!resetAt || !runId || !canSchedule) return;
     if (action === "snooze" && !snoozed && Date.parse(resetAt) <= Date.now()) {
@@ -202,9 +217,11 @@ export function UsageLimitRecoveryCard({
                   label={
                     scheduled
                       ? gt("Cancel auto-resume")
-                      : resetPassed
-                        ? gt("Resume now")
-                        : gt("Resume at reset")
+                      : resumeTiming === "afterSnooze"
+                        ? gt("Resume after snooze")
+                        : resumeTiming === "now"
+                          ? gt("Resume now")
+                          : gt("Resume at reset")
                   }
                   disabled={pending}
                   onPress={() => void toggle("resume")}

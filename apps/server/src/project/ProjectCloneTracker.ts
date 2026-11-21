@@ -160,6 +160,7 @@ export const make = Effect.gen(function* () {
       readonly stage: ProjectCloneStage;
       readonly percent: number | null;
       readonly detail: string | null;
+      readonly lfsDownloadBytes?: number;
     },
   ) =>
     modify(projectId, (tracked) => ({
@@ -170,6 +171,7 @@ export const make = Effect.gen(function* () {
         percent: update.percent,
         detail:
           update.detail === null ? null : clampText(update.detail, PROJECT_CLONE_DETAIL_MAX_LENGTH),
+        lfsDownloadBytes: update.lfsDownloadBytes ?? null,
         stalled: false,
       },
     })).pipe(Effect.asVoid);
@@ -405,6 +407,7 @@ export const make = Effect.gen(function* () {
           stage: "connecting",
           percent: null,
           detail: null,
+          lfsDownloadBytes: null,
           stalled: false,
           error: null,
           startedAt,

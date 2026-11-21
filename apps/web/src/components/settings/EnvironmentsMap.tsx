@@ -12,7 +12,7 @@ import {
   linkableMachines,
   offersLinkedEnvironments,
 } from "@onicode/client-runtime/link-request";
-import type { PeerLinkHealth } from "@onicode/client-runtime/state/peerLinks";
+import { offersLinkThrough, type PeerLinkHealth } from "@onicode/client-runtime/state/peerLinks";
 import { AuthAccessWriteScope, type EnvironmentId } from "@onicode/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Option from "effect/Option";
@@ -280,6 +280,7 @@ function useFleetGraph() {
       offersLinks,
       canWriteAccess: writable.has(environment.environmentId),
       hasLinkAddress: (machineById.get(environment.environmentId)?.urls.length ?? 0) > 0,
+      offersLinkThrough: offersLinkThrough(environment.serverConfig),
       outgoing:
         list === undefined
           ? { state: connected && !offersLinks ? "off" : "unknown" }
@@ -334,7 +335,7 @@ interface BatchRequest {
 }
 
 /** A drop the client cannot link in one go, explained where it happened. */
-type CodeOnlyDrop = Extract<FleetLinkAction, { kind: "code-only" }>;
+type OneByOneDrop = Extract<FleetLinkAction, { kind: "one-by-one" }>;
 
 /**
  * Every machine this app knows about, how it reaches each one, and which of them are linked.
@@ -356,7 +357,7 @@ export function EnvironmentsMap(
   const [found, setFound] = useState<string | null>(null);
   const [linkRequest, setLinkRequest] = useState<LinkRequest | null>(null);
   const [batchRequest, setBatchRequest] = useState<BatchRequest | null>(null);
-  const [dropped, setDropped] = useState<CodeOnlyDrop | null>(null);
+  const [dropped, setDropped] = useState<OneByOneDrop | null>(null);
   const pairs = fleetTwoWayLinks(graph);
   const present =
     picked === null
@@ -422,7 +423,7 @@ export function EnvironmentsMap(
   const requestLink = (sourceId: string, targetId: string | null) => {
     const action = fleetLinkAction(graph, stacks, selected, sourceId, targetId);
     if (action === null) return;
-    if (action.kind === "code-only") {
+    if (action.kind === "one-by-one") {
       setDropped(action);
       return;
     }
@@ -539,7 +540,7 @@ interface FleetCanvasProps extends Omit<FleetSceneProps, "layout"> {
   readonly shapeKey: string;
   readonly onClearTicked: () => void;
   readonly onLinkSeveral: (sourceId: string) => void;
-  readonly dropped: CodeOnlyDrop | null;
+  readonly dropped: OneByOneDrop | null;
   readonly onLinkOne: (sourceId: string, targetId: string) => void;
   readonly onDismissDropped: () => void;
   /** A search landed on a machine drawn only inside a stack. */
@@ -937,7 +938,7 @@ function FleetCanvas({
         </div>
       </div>
       {dropped === null ? null : (
-        <CodeOnlyNotice
+        <OneByOneNotice
           graph={graph}
           dropped={dropped}
           onLinkOne={onLinkOne}
@@ -1158,16 +1159,16 @@ function linkName(
 
 /**
  * Says in place why a drop cannot be linked in one go, and offers what works: one machine at
- * a time, with a pairing code from it.
+ * a time, with a pairing code from it where no environment can get one.
  */
-function CodeOnlyNotice({
+function OneByOneNotice({
   graph,
   dropped,
   onLinkOne,
   onDismiss,
 }: {
   readonly graph: FleetGraph;
-  readonly dropped: CodeOnlyDrop;
+  readonly dropped: OneByOneDrop;
   readonly onLinkOne: (sourceId: string, targetId: string) => void;
   readonly onDismiss: () => void;
 }) {
@@ -1181,15 +1182,14 @@ function CodeOnlyNotice({
       role="status"
       className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-border/60 bg-background/50 px-3 py-2 text-xs"
     >
-      <p className="min-w-0 flex-1 basis-64 text-muted-foreground">
-        {needsCodeText(machines.length, gt)}
-      </p>
-      {/* Linking through an environment that already reaches these machines would be offered here. */}
+      <p className="min-w-0 flex-1 basis-64 text-muted-foreground">{oneByOneText(dropped, gt)}</p>
       <Menu>
         <MenuTrigger
           render={
             <Button size="xs" variant="outline">
-              {gt("Link one with a code…")}
+              {dropped.needCode === dropped.machineIds.length
+                ? gt("Link one with a code…")
+                : gt("Link one…")}
             </Button>
           }
         />
@@ -1208,15 +1208,20 @@ function CodeOnlyNotice({
   );
 }
 
-const needsCodeText = (count: number, gt: GT) =>
-  gt(
-    "{count, plural, one {# machine needs a pairing code} other {# machines each need a pairing code}}",
-    { count },
-  );
+const oneByOneText = ({ machineIds, needCode }: OneByOneDrop, gt: GT) =>
+  needCode === machineIds.length
+    ? gt(
+        "{count, plural, one {# machine needs a pairing code} other {# machines each need a pairing code}}",
+        { count: needCode },
+      )
+    : gt(
+        "{count, plural, =0 {Link these one at a time. None needs a pairing code.} one {Link these one at a time. # needs a pairing code.} other {Link these one at a time. # need a pairing code.}}",
+        { count: needCode },
+      );
 
 function actionText(action: FleetLinkAction | null, target: string, gt: GT): string {
   if (action === null) return gt("Cannot link to this");
-  if (action.kind === "code-only") return needsCodeText(action.machineIds.length, gt);
+  if (action.kind === "one-by-one") return oneByOneText(action, gt);
   if (action.kind === "batch") {
     return gt("{count, plural, one {Link to # machine} other {Link to # machines}}", {
       count: action.environmentIds.length,

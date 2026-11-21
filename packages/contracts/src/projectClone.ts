@@ -33,6 +33,8 @@ export const ProjectCloneSnapshot = Schema.Struct({
   detail: Schema.NullOr(Schema.String.check(Schema.isMaxLength(PROJECT_CLONE_DETAIL_MAX_LENGTH))),
   /** Git has printed nothing for a while; `detail` is no longer current. Older servers omit it. */
   stalled: Schema.optionalKey(Schema.Boolean),
+  /** Bytes of unfinished Git LFS objects; `detail` repeats it in English for older clients. */
+  lfsDownloadBytes: Schema.optionalKey(Schema.NullOr(NonNegativeInt)),
   error: Schema.NullOr(Schema.String.check(Schema.isMaxLength(PROJECT_CLONE_ERROR_MAX_LENGTH))),
   startedAt: IsoDateTime,
   endedAt: Schema.NullOr(IsoDateTime),
@@ -97,6 +99,16 @@ export function projectCloneDisplayName(
   if (snapshot.repository) return snapshot.repository.nameWithOwner;
   const segments = snapshot.destinationPath.split(/[/\\]/).filter((segment) => segment.length > 0);
   return segments[segments.length - 1] ?? snapshot.destinationPath;
+}
+
+export function formatGitLfsDownloadSize(bytes: number): string {
+  return bytes >= 1024 ** 3
+    ? `${(bytes / 1024 ** 3).toFixed(2)} GiB`
+    : `${(bytes / 1024 ** 2).toFixed(1)} MiB`;
+}
+
+export function gitLfsDownloadDetail(bytes: number): string {
+  return `Downloading Git LFS objects: ${formatGitLfsDownloadSize(bytes)} in progress`;
 }
 
 export function projectCloneProgressSummary(

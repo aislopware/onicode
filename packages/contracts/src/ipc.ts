@@ -1248,7 +1248,8 @@ export interface DesktopBridge {
   preview: DesktopPreviewBridge;
   /** On-device dictation through macOS 26 SpeechAnalyzer; absent in older desktop builds. */
   appleSpeech?: {
-    supportedLocales: () => Promise<readonly string[]>;
+    /** Null while the answer is not known yet (the probe failed or timed out); ask again later. */
+    supportedLocales: () => Promise<readonly string[] | null>;
     prepare: (locale: string) => Promise<DesktopAppleSpeechResult>;
     transcribe: (input: { locale: string; pcm: Uint8Array }) => Promise<DesktopAppleSpeechResult>;
   };

@@ -4905,41 +4905,52 @@ it.layer(
     );
 
     it.effect.each([
-      { source: "inherited HTTPS endpoint", baseUrl: "https://proxy.example/api", overrides: [] },
+      {
+        source: "inherited HTTPS endpoint",
+        baseUrl: "https://proxy.example/api",
+        overrides: [],
+        endpointUrl: "https://proxy.example/api",
+      },
       {
         source: "instance HTTP endpoint overriding Anthropic",
         baseUrl: "https://api.anthropic.com",
         overrides: [
           { name: "ANTHROPIC_BASE_URL", value: "http://localhost:8080", sensitive: false },
         ],
+        endpointUrl: "http://localhost:8080",
       },
-    ])("keeps Claude ready with an empty first-party account: $source", ({ baseUrl, overrides }) =>
-      Effect.gen(function* () {
-        const environment = yield* mergeProviderInstanceEnvironment(overrides, {
-          ANTHROPIC_BASE_URL: baseUrl,
-        });
-        const status = yield* checkClaudeProviderStatus(
-          defaultClaudeSettings,
-          claudeCapabilities({
-            tokenSource: "none",
-            apiKeySource: "none",
-            apiProvider: "firstParty",
-          }),
-          environment,
-        );
-        assert.strictEqual(status.status, "ready");
-        assert.strictEqual(status.auth.status, "authenticated");
-        assert.strictEqual(status.auth.type, "customEndpoint");
-        assert.strictEqual(status.auth.label, "Custom API endpoint");
-      }).pipe(
-        Effect.provide(
-          layerMockSpawner((args) => {
-            const joined = args.join(" ");
-            if (joined === "--version") return { stdout: "1.0.0\n", stderr: "", code: 0 };
-            throw new Error(`Unexpected args: ${joined}`);
-          }),
+    ])(
+      "keeps Claude ready with an empty first-party account: $source",
+      ({ baseUrl, overrides, endpointUrl }) =>
+        Effect.gen(function* () {
+          const environment = yield* mergeProviderInstanceEnvironment(overrides, {
+            ANTHROPIC_BASE_URL: baseUrl,
+          });
+          const status = yield* checkClaudeProviderStatus(
+            defaultClaudeSettings,
+            claudeCapabilities({
+              tokenSource: "none",
+              apiKeySource: "none",
+              apiProvider: "firstParty",
+            }),
+            environment,
+          );
+          assert.strictEqual(status.status, "ready");
+          assert.strictEqual(status.auth.status, "authenticated");
+          assert.strictEqual(status.auth.type, "customEndpoint");
+          assert.strictEqual(status.auth.label, "Custom API endpoint");
+          // Older clients match hubs by `endpoint`, which stays the origin.
+          assert.strictEqual(status.auth.endpoint, new URL(endpointUrl).origin);
+          assert.strictEqual(status.auth.endpointUrl, endpointUrl);
+        }).pipe(
+          Effect.provide(
+            layerMockSpawner((args) => {
+              const joined = args.join(" ");
+              if (joined === "--version") return { stdout: "1.0.0\n", stderr: "", code: 0 };
+              throw new Error(`Unexpected args: ${joined}`);
+            }),
+          ),
         ),
-      ),
     );
 
     it.effect.each([

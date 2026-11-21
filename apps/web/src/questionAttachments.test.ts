@@ -2,7 +2,13 @@ import {
   makeThreadRequestsResolvedAnnouncer,
   userInputDraftKey,
 } from "@onicode/client-runtime/state/thread-requests";
-import { ApprovalRequestId, EnvironmentId, RuntimeRequestId, ThreadId } from "@onicode/contracts";
+import {
+  ApprovalRequestId,
+  EnvironmentId,
+  PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
+  RuntimeRequestId,
+  ThreadId,
+} from "@onicode/contracts";
 import { threadContextRecord } from "@onicode/shared/composerContextReferences";
 import { beforeEach, expect, it, vi } from "vite-plus/test";
 import { composerTargetKey, useComposerDraftStore } from "./composerDraftStore";
@@ -20,6 +26,7 @@ import {
   questionAttachmentDraftPrefix,
   changeQuestionAttachmentPreparation,
   clearQuestionAttachmentDraft,
+  onUnrestoredQuestionAttachments,
   usePendingUserInputAnswers,
   useQuestionAttachmentPreparation,
 } from "./questionAttachments";
@@ -228,6 +235,35 @@ it.each(["cancelled", "expired"] as const)(
     expect(usePendingUserInputAnswers.getState()).toEqual({});
   },
 );
+
+it("names a stopped question's attachments the full thread draft could not take", () => {
+  const store = useComposerDraftStore.getState();
+  const request = RuntimeRequestId.make("stopped");
+  const file = (name: string) => ({
+    type: "file" as const,
+    id: name,
+    name,
+    mimeType: "text/plain",
+    sizeBytes: 1,
+    file: new File(["x"], name, { type: "text/plain" }),
+  });
+  store.addFiles(
+    { environmentId, threadId },
+    Array.from({ length: PROVIDER_SEND_TURN_MAX_ATTACHMENTS }, (_, index) => file(`${index}.txt`)),
+  );
+  store.addFiles(questionAttachmentDraftId(environmentId, threadId, request, "first"), [
+    file("notes.txt"),
+  ]);
+  const unrestored = vi.fn();
+  using _listener = { [Symbol.dispose]: onUnrestoredQuestionAttachments(unrestored) };
+
+  makeThreadRequestsResolvedAnnouncer(
+    environmentId,
+    threadId,
+  )([{ id: request, status: "cancelled" }]);
+
+  expect(unrestored).toHaveBeenCalledWith(["notes.txt"]);
+});
 
 it.each(["cancelled", "expired"] as const)(
   "returns preparing images to the thread draft when a question is %s",

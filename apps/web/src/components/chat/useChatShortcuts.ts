@@ -10,6 +10,7 @@ import {
 import { isInSideChatPane } from "../../lib/sideChatPane";
 import { getTerminalFocusOwner, type TerminalFocusOwner } from "../../lib/terminalFocus";
 import type { ComposerHandleRef } from "../../composerHandleContext";
+import { registerShortcutContext } from "../../shortcuts/dispatcher";
 import type { BranchToolbarHandle } from "../BranchToolbar";
 import { shouldTypeToFocusComposer } from "./composerFocusRedirect";
 import { composerShortcutCommands } from "./composerShortcuts";
@@ -129,6 +130,15 @@ export function useChatShortcuts(input: ChatShortcutsInput) {
     event.preventDefault();
     event.stopPropagation();
   });
+  // A side chat pane's composer is not this chat's, so its keys get none of this chat's context.
+  const readShortcutContext = useEffectEvent((event: KeyboardEvent) =>
+    isInSideChatPane(event.target) ? {} : input.getShortcutContext(event.target),
+  );
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- lends this chat's when-clause context (composerEmpty, turnRunning) to the app's global shortcut scopes
+  useEffect(() => {
+    if (embedded || !input.enabled) return;
+    return registerShortcutContext((event) => readShortcutContext(event));
+  }, [embedded, input.enabled]);
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- attaches keydown listeners for chat shortcuts and find dismissal: on the window, or on an embedded chat's composer
   useEffect(() => {
     if (embedded) {

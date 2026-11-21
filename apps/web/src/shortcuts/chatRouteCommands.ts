@@ -10,7 +10,10 @@ import { useComposerDraftStore } from "../composerDraftStore";
 import { dispatchPreviewAction, type PreviewAction } from "../components/preview/previewActionBus";
 import { isAppModalPage } from "../components/sidebar/mainAppLocation";
 import { isBrowserSurfaceFocused } from "../lib/previewFocus";
-import { shouldCreateNewThreadInCurrentProject } from "../components/Sidebar.logic";
+import {
+  resolveScopedNewThreadProjectRef,
+  shouldCreateNewThreadInCurrentProject,
+} from "../components/Sidebar.logic";
 import {
   createNewThreadHandler,
   readLastUsedProjectKey,
@@ -19,11 +22,18 @@ import {
 import { createScratchProjectActions } from "../hooks/useScratchProject";
 import { getClientSettings } from "../hooks/useSettings";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
-import { selectProjectGroupingSettings } from "@onicode/client-runtime/state/project-grouping";
+import {
+  pickableProjectGroups,
+  selectProjectGroupingSettings,
+} from "@onicode/client-runtime/state/project-grouping";
 import { isMacPlatform, resolveEventKeys } from "@onicode/shared/keybindings";
 import { selectActiveRightPanel, useRightPanelStore } from "../rightPanelStore";
 import { appAtomRegistry } from "../rpc/atomRegistry";
-import { buildSidebarProjectSnapshots } from "../sidebarProjectGrouping";
+import {
+  buildSidebarProjectSnapshots,
+  resolveSidebarProjectScopeKeys,
+  type SidebarProjectSnapshot,
+} from "../sidebarProjectGrouping";
 import { readProjects, readThreadShell } from "../state/entities";
 import { defaultProjectFallbackReadyAtom } from "../state/projects";
 import { environmentPresentations } from "../state/presentation";
@@ -119,6 +129,17 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
       primaryEnvironmentId: appAtomRegistry.get(primaryEnvironmentIdAtom),
       resolveEnvironmentLabel: () => null,
     });
+  // The folder sidebar's New always opens the picker, so its scope is ignored there too.
+  const readScopedProjectGroups = (groups: readonly SidebarProjectSnapshot[]) => {
+    const settings = getClientSettings();
+    if (settings.boringSidebarEnabled) return [];
+    const scopeKeys = resolveSidebarProjectScopeKeys({
+      groups,
+      keys: useUiStateStore.getState().sidebarProjectScopeKeys,
+      settings: selectProjectGroupingSettings(settings),
+    });
+    return pickableProjectGroups(groups).filter((group) => scopeKeys.includes(group.projectKey));
+  };
   const canOperatePreview = (environmentId: EnvironmentId) =>
     readEnvironmentScope(environmentId, AuthPreviewOperateScope);
 
@@ -164,6 +185,17 @@ export function installChatRouteCommands(router: AnyRouter): () => void {
       },
       "chat.new": (event) => {
         const groups = readProjectGroups();
+        const { activeThread, activeDraftThread } = readThreadContext();
+        const scopedProjectRef = resolveScopedNewThreadProjectRef({
+          shiftKey: false,
+          scopedProjectGroups: readScopedProjectGroups(groups),
+          viewed: activeThread ?? activeDraftThread,
+        });
+        if (scopedProjectRef) {
+          claim(event);
+          void handleNewThread(scopedProjectRef);
+          return;
+        }
         if (
           !shouldCreateNewThreadInCurrentProject(
             false,

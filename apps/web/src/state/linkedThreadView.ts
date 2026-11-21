@@ -12,7 +12,7 @@ import { AsyncResult, Atom } from "effect/reactivity";
 
 import type { TurnItemSource } from "../components/chat/timelineRowContext";
 import { useRightPanelStore } from "../rightPanelStore";
-import { connectPairing, reachesEnvironment } from "../connection/onboarding";
+import { connectPairing, connectTailnet, reachesEnvironment } from "../connection/onboarding";
 import { openLinkedThreadRead } from "../lib/sideChatPane";
 import type { LinkedThreadSurface } from "../linkedThreadSurface";
 import { buildThreadRouteParams } from "../threadRoutes";
@@ -191,6 +191,7 @@ export function useConnectLinkedEnvironment(
   const requestPairing = useAtomCommand(peerLinkEnvironment.pairClient, quiet);
   const reaches = useAtomCommand(reachesEnvironment, quiet);
   const pair = useAtomCommand(connectPairing, quiet);
+  const tailnetSignIn = useAtomCommand(connectTailnet, quiet);
   const [state, setState] = useAtom(
     linkedEnvironmentConnectAtom(
       `${panelRef === null ? "main" : scopedThreadKey(panelRef)}:${surface.id}`,
@@ -224,6 +225,13 @@ export function useConnectLinkedEnvironment(
         const result = await pair({
           host,
           pairingCode,
+          expectedEnvironmentId: surface.environmentId,
+        });
+        return result._tag === "Success";
+      },
+      signIn: async (host) => {
+        const result = await tailnetSignIn({
+          httpBaseUrl: host,
           expectedEnvironmentId: surface.environmentId,
         });
         return result._tag === "Success";

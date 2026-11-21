@@ -428,6 +428,7 @@ it("lets composition replace selected text without surrounding it", async () => 
 // CDP drives Chrome's own IME path, which skips deleting a range bounded by an uneditable chip.
 describe("an IME composition over a selection with a chip", () => {
   const chip = "[Seed · 2](oni-context://v1/thread/thread_seed)";
+  const value = `LEFT${chip} ${chip} RIGHT`;
   it.each([
     { range: "text and the chip after it", anchor: 1, head: 6, composed: `あ ${chip} RIGHT` },
     { range: "a chip and the text after it", anchor: 5, head: 7, composed: `LEFTあ${chip} RIGHT` },
@@ -437,8 +438,14 @@ describe("an IME composition over a selection with a chip", () => {
       head: 7,
       composed: `LEFT${chip} あ`,
     },
-  ])("replaces $range as typing would", async ({ anchor, head, composed }) => {
-    const value = `LEFT${chip} ${chip} RIGHT`;
+    {
+      range: "nothing, keeping redo, when canceled",
+      anchor: 5,
+      head: 7,
+      composed: `LEFT${chip} ${chip} `,
+      canceled: true,
+    },
+  ])("replaces $range as typing would", async ({ anchor, head, composed, canceled }) => {
     await using screen = await mountEditor(`LEFT${chip} ${chip} `);
     const { editor } = screen;
     await act(async () => {
@@ -447,6 +454,13 @@ describe("an IME composition over a selection with a chip", () => {
     await vi.waitFor(() => expect(document.activeElement).toBe(editor.view.dom));
     await userEvent.keyboard("RIGHT");
     expect(serializeEditorDoc(editor.state.doc).value).toBe(value);
+    if (canceled) {
+      await act(async () => {
+        editor.commands.undo();
+      });
+    }
+    const before = serializeEditorDoc(editor.state.doc).value;
+    const depths = { undo: undoDepth(editor.state), redo: redoDepth(editor.state) };
     await act(async () => {
       editor.commands.setTextSelection({ from: anchor, to: head });
     });
@@ -459,13 +473,33 @@ describe("an IME composition over a selection with a chip", () => {
         selectionEnd: text.length,
       });
     }
-    await session.send("Input.insertText", { text: "あ" });
+    if (canceled) {
+      await session.send("Input.imeSetComposition", {
+        text: "",
+        selectionStart: 0,
+        selectionEnd: 0,
+      });
+    } else {
+      await session.send("Input.insertText", { text: "あ" });
+    }
     await vi.waitFor(() => expect(serializeEditorDoc(editor.state.doc).value).toBe(composed));
-    await act(async () => {
-      editor.commands.undo();
-    });
-    expect(serializeEditorDoc(editor.state.doc).value).toBe(value);
+    if (canceled) {
+      expect({ undo: undoDepth(editor.state), redo: redoDepth(editor.state) }).toEqual(depths);
+    } else {
+      // The committed text joins history once the composition settles, after compositionend.
+      await vi.waitFor(() => expect(undoDepth(editor.state)).toBe(depths.undo + 1));
+      await act(async () => {
+        editor.commands.undo();
+      });
+    }
+    expect(serializeEditorDoc(editor.state.doc).value).toBe(before);
     expect(editor.state.selection.toJSON()).toEqual({ type: "text", anchor, head });
+    if (canceled) {
+      await act(async () => {
+        editor.commands.redo();
+      });
+      expect(serializeEditorDoc(editor.state.doc).value).toBe(value);
+    }
   });
 });
 

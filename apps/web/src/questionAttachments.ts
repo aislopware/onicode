@@ -197,13 +197,13 @@ function pruneResolvedQuestionAttachmentDrafts(
  * Stop cancels an open question and a provider timeout expires it; neither sent
  * the typed answers, so they move to the thread's own draft (not a queued-message
  * edit the composer may be showing) with the thread chips they reference and
- * every file or image attached to them.
+ * every file or image attached to them. Returns the names the draft had no room for.
  */
 function returnUnsentAnswersToThreadDraft(
   environmentId: EnvironmentId,
   threadId: ThreadId,
   unansweredRequestIds: ReadonlyArray<RuntimeRequestId>,
-): void {
+): string[] {
   const answers = usePendingUserInputAnswers.getState();
   const store = useComposerDraftStore.getState();
   const target = scopeThreadRef(environmentId, threadId);
@@ -257,7 +257,7 @@ function returnUnsentAnswersToThreadDraft(
   );
   const images = questionDrafts.flatMap(([, draft]) => draft.images);
   const files = questionDrafts.flatMap(([, draft]) => draft.files);
-  if (images.length === 0 && files.length === 0) return;
+  if (images.length === 0 && files.length === 0) return [];
   store.addImages(target, images);
   store.addFiles(target, files);
   const moved = useComposerDraftStore.getState().getComposerDraft(target);
@@ -269,13 +269,28 @@ function returnUnsentAnswersToThreadDraft(
     questionDrafts.flatMap(([, draft]) => draft.persistedAttachments),
   );
   for (const [key] of questionDrafts) clearQuestionAttachmentDraft(DraftId.make(key), movedIds);
+  return [...images, ...files].filter(({ id }) => !movedIds.has(id)).map(({ name }) => name);
+}
+
+const unrestoredAttachmentListeners = new Set<(names: ReadonlyArray<string>) => void>();
+
+/** Hears the names of a stopped question's attachments its thread draft had no room for. */
+export function onUnrestoredQuestionAttachments(
+  listener: (names: ReadonlyArray<string>) => void,
+): () => void {
+  unrestoredAttachmentListeners.add(listener);
+  return () => unrestoredAttachmentListeners.delete(listener);
 }
 
 // Resolution can come from anywhere: another device, an interrupt, the turn
 // ending, or a reload over drafts for requests resolved meanwhile. One listener,
 // so unsent answers and their chips are read before their drafts are pruned.
 onThreadRequestsResolved(({ environmentId, threadId, pendingRequestIds, unansweredRequestIds }) => {
-  returnUnsentAnswersToThreadDraft(environmentId, threadId, unansweredRequestIds);
+  const unrestored = returnUnsentAnswersToThreadDraft(
+    environmentId,
+    threadId,
+    unansweredRequestIds,
+  );
   usePendingUserInputAnswers.setState(
     (existing) =>
       pruneResolvedUserInputDrafts(existing, environmentId, threadId, pendingRequestIds),
@@ -287,4 +302,6 @@ onThreadRequestsResolved(({ environmentId, threadId, pendingRequestIds, unanswer
     true,
   );
   pruneResolvedQuestionAttachmentDrafts(environmentId, threadId, pendingRequestIds);
+  if (unrestored.length === 0) return;
+  for (const listener of unrestoredAttachmentListeners) listener(unrestored);
 });
