@@ -41,6 +41,7 @@ import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { pollUnreportedChanges } from "../watchDirectoryReplacements.ts";
+import type * as GitVcsDriver from "./GitVcsDriver.ts";
 import { VcsAutomaticFetchInterval } from "./VcsAutomaticFetchInterval.ts";
 
 const VCS_STATUS_REFRESH_FAILURE_BASE_DELAY = Duration.seconds(30);
@@ -364,6 +365,9 @@ export const make = Effect.gen(function* () {
   // A refresh that started after a request saw every change that request could mean, so queued
   // callers share it instead of each running git status again.
   const localRefreshRequests = new Map<string, number>();
+  // Upstream details the turn-end refreshLocalStatus just read, handed once to the PR lookup that
+  // follows it so the same no-fetch read is not repeated. Any remote write in between drops them.
+  const upstreamReads = new Map<string, GitVcsDriver.GitRemoteStatusDetails>();
   const localRefreshResults = new Map<
     string,
     {
@@ -387,6 +391,7 @@ export const make = Effect.gen(function* () {
       // A queued caller can read git again. Keep the monotonic request counter so it cannot
       // mistake an older result for a later request.
       localRefreshResults.delete(candidate);
+      upstreamReads.delete(candidate);
     }
     return cache;
   };
@@ -483,6 +488,7 @@ export const make = Effect.gen(function* () {
 
   const updateCachedRemoteStatus = Effect.fn("VcsStatusBroadcaster.updateCachedRemoteStatus")(
     function* (cwd: string, remote: RemoteStatusRead | null, options?: { publish?: boolean }) {
+      upstreamReads.delete(cwd);
       const [changed, value] = yield* Ref.modify(cacheRef, (cache) => {
         const previous = cache.get(cwd) ?? { local: null, remote: null };
         // Resolved at write time, so counts published meanwhile are the ones kept.
@@ -594,6 +600,7 @@ export const make = Effect.gen(function* () {
     "VcsStatusBroadcaster.refreshLocalStatus",
   )(function* (rawCwd) {
     const cwd = yield* withFileSystem(normalizeCwd(rawCwd));
+    upstreamReads.delete(cwd);
     const local = yield* refreshLocalStatusCore(cwd);
     const cached = yield* getCachedStatus(cwd);
     // Divergence is local Git data; a slow forge lookup must not delay turn-end updates.
@@ -615,6 +622,7 @@ export const make = Effect.gen(function* () {
           },
           { publish: true },
         );
+        upstreamReads.set(cwd, divergence.details);
       }
     }
     return local;
@@ -630,7 +638,11 @@ export const make = Effect.gen(function* () {
     // GitManager's remote TTL cache is keyed by cwd, not the checked-out branch.
     yield* workflow.invalidateRemoteStatus(cwd);
     const previousRemote = (yield* getCachedStatus(cwd))?.remote;
-    const read: GitRemoteStatusRead | null = yield* workflow.remoteStatus({ cwd }, options);
+    const { statusDetails, ...remoteOptions } = options ?? {};
+    const read: GitRemoteStatusRead | null = yield* workflow.remoteStatus(
+      { cwd },
+      statusDetails?.branch === branch ? { ...remoteOptions, statusDetails } : remoteOptions,
+    );
     const latest = yield* getCachedStatus(cwd);
     // An overlapping turn refresh and fetch can both move divergence during the forge lookup.
     const refreshed =
@@ -830,9 +842,12 @@ export const make = Effect.gen(function* () {
           const cached = yield* getCachedStatus(cwd);
           if (!cached || cached.remote?.value === null) return null;
           // Turn completion must update divergence even when background polling is paused.
+          const statusDetails = upstreamReads.get(cwd);
+          upstreamReads.delete(cwd);
           const remoteRead = yield* readRemoteStatus(cwd, {
             refreshUpstream: false,
             refreshMissingPullRequest: true,
+            ...(statusDetails ? { statusDetails } : {}),
           });
           return yield* updateCachedRemoteStatus(cwd, remoteRead, { publish: true });
         }),
