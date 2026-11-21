@@ -19,7 +19,7 @@ declare global {
 test(
   "A browser tab finishing its reopen leaves the newer conversation on screen",
   WEB,
-  async ({ onicode, app, browser, screen }) => {
+  async ({ onicode, browser, screen }) => {
     const project = await onicode.project("demo");
     const owner = await onicode.thread({ project, title: "Browser owner", messages: ["first"] });
     await onicode.thread({
@@ -83,7 +83,7 @@ test(
       return null;
     });
 
-    await browser.keyboard.press("Control+Shift+t");
+    await browser.keyboard.press("ControlOrMeta+Shift+t");
     await browser.evaluate(async () => {
       await window.reopenGate.requested;
       return null;
@@ -97,7 +97,7 @@ test(
       return null;
     });
 
-    await app.screenshot("conversation-after-browser-reopens");
+    // No capture here: desktop screenshots hang once a Browser tab has closed.
     await expect(browser).toHaveURL(newerUrl);
   },
 );
