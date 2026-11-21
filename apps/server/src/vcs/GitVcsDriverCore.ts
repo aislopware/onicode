@@ -5727,8 +5727,8 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       const [snapshot, currentBranch] = yield* Effect.all(
         [
           resolveListRefsSnapshot(repositoryPaths.gitCommonDir, input.refresh === true),
-          repositoryPathsCacheKey(input.cwd).pipe(
-            Effect.flatMap((cacheKey) => Cache.get(listRefsCurrentBranchCache, cacheKey)),
+          // Lexical key: a symlinked spelling must not join a HEAD read from before a checkout.
+          Cache.get(listRefsCurrentBranchCache, path.normalize(path.resolve(input.cwd))).pipe(
             Effect.orElseSucceed(() => null),
           ),
         ],
