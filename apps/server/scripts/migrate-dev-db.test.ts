@@ -6,6 +6,7 @@ import * as Path from "effect/Path";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import { runMigrations } from "../src/persistence/Migrations.ts";
+import { SEEDED_DEV_DATABASE_MARKER } from "@onicode/shared/devHome";
 import * as NodeSqliteClient from "@onicode/shared/nodeSqliteClient";
 import { runMigrateDevDb } from "./migrate-dev-db.ts";
 
@@ -168,6 +169,8 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
       );
 
       assert.equal(result.databasePath, path.join(destDir, "userdata", "statev2.sqlite"));
+      // Copied threads keep their real worktree paths; the marker keeps cleanup off them.
+      assert.isTrue(yield* fs.exists(path.join(destDir, "userdata", SEEDED_DEV_DATABASE_MARKER)));
       const kept = yield* withDatabase(
         result.databasePath,
         Effect.gen(function* () {
