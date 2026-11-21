@@ -32,7 +32,13 @@ function logPathHydrationWarning(message: string, error?: unknown): void {
 // __MISE_DIFF is mise's record of the PATH entries it added. It must travel
 // with the shell's PATH, or `mise x` can rebuild PATH behind a same-named
 // wrapper (`exec mise x claude -- claude`) that then re-runs itself forever.
-const LOGIN_SHELL_ENV_NAMES = ["PATH", "__MISE_DIFF", "JAVA_HOME", "PNPM_HOME"] as const;
+const LOGIN_SHELL_ENV_NAMES = [
+  "PATH",
+  "__MISE_DIFF",
+  "JAVA_HOME",
+  "PNPM_HOME",
+  "ONICODE_FEATURE_FLAGS",
+] as const;
 const LOGIN_SHELL_TIMEOUT = Duration.seconds(5);
 const SLOW_LOGIN_SHELL_TIMEOUT_MS = 20_000;
 
@@ -65,6 +71,10 @@ function applyLoginShellEnvironment(
     if (!env[name] && shellEnvironment[name]) {
       env[name] = shellEnvironment[name];
     }
+  }
+  // A headless server (systemd, launchd) reads no profile, yet flags belong where users export them.
+  if (env.ONICODE_FEATURE_FLAGS === undefined && shellEnvironment.ONICODE_FEATURE_FLAGS) {
+    env.ONICODE_FEATURE_FLAGS = shellEnvironment.ONICODE_FEATURE_FLAGS;
   }
 }
 

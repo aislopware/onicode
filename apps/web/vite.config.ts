@@ -27,7 +27,6 @@ const configuredDesktopUpdateRepository =
   process.env.ONICODE_DESKTOP_UPDATE_REPOSITORY?.trim() ||
   process.env.GITHUB_REPOSITORY?.trim() ||
   "";
-const configuredFeatureSecrets = process.env.ONICODE_FEATURE_SECRETS?.trim() || "";
 const sourcemapEnv = process.env.ONICODE_WEB_SOURCEMAP?.trim().toLowerCase();
 
 const bundledDevEnv = process.env.ONICODE_BUNDLED_DEV?.trim().toLowerCase();
@@ -227,7 +226,6 @@ export default defineConfig(() => {
       "import.meta.env.ONICODE_DESKTOP_UPDATE_REPOSITORY": JSON.stringify(
         configuredDesktopUpdateRepository,
       ),
-      "import.meta.env.ONICODE_FEATURE_SECRETS": JSON.stringify(configuredFeatureSecrets),
       "import.meta.env.VITE_RELEASE_CHANNEL": JSON.stringify(configuredReleaseChannel),
       "import.meta.env.APP_VERSION": JSON.stringify(configuredAppVersion),
     },

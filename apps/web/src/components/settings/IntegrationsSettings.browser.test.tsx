@@ -74,8 +74,6 @@ const projects: Project[] = [
   },
 ];
 
-// Profiles, link target and the advanced rows only work in the desktop app.
-vi.mock(import("../../env"), async (original) => ({ ...(await original()), isElectron: true }));
 vi.mock(import("../../state/environments"), async (original) => ({
   ...(await original()),
   useEnvironments: () => ({

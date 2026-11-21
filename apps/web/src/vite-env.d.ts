@@ -7,7 +7,6 @@ interface ImportMetaEnv {
   readonly VITE_WS_URL: string;
   readonly VITE_RELEASE_CHANNEL: string;
   readonly ONICODE_DESKTOP_UPDATE_REPOSITORY: string;
-  readonly ONICODE_FEATURE_SECRETS: string;
   readonly APP_VERSION: string;
 }
 

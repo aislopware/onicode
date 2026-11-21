@@ -3171,3 +3171,4 @@ d3242f8ed1	take	taken as is
 a480167e0c	take	taken as is
 b5709bb865	take	MISSING migration 103 test applied to Onicode's 108_IssueTrackerAdditionalScopes.test.ts
 76bb5ec81b	take	kept Onicode's issues.summary read for link_issue: it already skips the conversation and keeps the Linear workspace target that upstream's linkMetadata drops; skipped the duplicate getIssueLink/IssueLinkMetadata
+10586f9e31	take	CONFLICTs resolved without ONICODE_TELEMETRY_ENABLED and the hosted-app/release-channel parts (removed surfaces); kept PNPM_HOME beside the new flag; adopted upstream's runtime secret_providers flag over Onicode's build-time ONICODE_FEATURE_SECRETS gate (web inline secret card adapted); env.ts deleted with its two dead isElectron test mocks
