@@ -542,13 +542,35 @@ export const layer: Layer.Layer<
           const thread = yield* projections.getThread(input.threadId);
           if (thread.worktreePath === null) return yield* execute(input);
           const worktreePath = path.resolve(thread.worktreePath);
-          const rollback = withWorkspaceLease(worktreePath, execute(input));
           // Shared-workspace restores are rejected and conversation-only rewinds
           // touch no files; reserving for them would stall turn starts on the
           // slow provider rollback for nothing.
-          yield* input.restoreFiles === false
-            ? rollback
-            : withCheckpointRestoreReservation(fileSystem, path, worktreePath, rollback);
+          if (input.restoreFiles === false) {
+            return yield* withWorkspaceLease(worktreePath, execute(input));
+          }
+          // A file restore rewrites every repository worktree of the task folder too. Git
+          // actions lease each checkout by its real path; the thread's lease comes first.
+          const taskFolder = yield* taskFolders.find(worktreePath);
+          const checkouts = yield* Effect.forEach(taskFolder?.repositories ?? [], (repository) =>
+            fileSystem
+              .realPath(repository.worktreePath)
+              .pipe(Effect.orElseSucceed(() => path.resolve(repository.worktreePath))),
+          );
+          const rollback = withWorkspaceLease(
+            worktreePath,
+            [...new Set(checkouts)]
+              .toSorted()
+              .reduceRight(
+                (inner, checkout) => withWorkspaceLease(checkout, inner),
+                execute(input),
+              ),
+          );
+          yield* withCheckpointRestoreReservation(
+            fileSystem,
+            path,
+            taskFolder?.root ?? worktreePath,
+            rollback,
+          );
         },
         (effect, input) =>
           effect.pipe(

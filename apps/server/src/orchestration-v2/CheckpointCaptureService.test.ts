@@ -1206,6 +1206,9 @@ it.layer(layerProjectionStoreTest)("CheckpointCaptureServiceV2", (it) => {
         }>
       >;
       readonly capture: (ordinal: number) => Effect.Effect<void>;
+      /** Runs as a capture takes the thread lock, after its snapshots. */
+      readonly beforeLock: Ref.Ref<Effect.Effect<void>>;
+      readonly seedRun: (ordinal: number) => Effect.Effect<void>;
       readonly commits: Ref.Ref<number>;
       readonly threadId: ThreadId;
       readonly ids: IdAllocator.IdAllocatorV2["Service"];
@@ -1220,6 +1223,7 @@ it.layer(layerProjectionStoreTest)("CheckpointCaptureServiceV2", (it) => {
       const repositoryProviderThreadId = ProviderThreadId.make(`provider-thread:${name}`);
       const folders = yield* Ref.make<ReadonlyArray<WorkspaceFolders.ThreadFolder>>([]);
       const commits = yield* Ref.make(0);
+      const beforeLock = yield* Ref.make<Effect.Effect<void>>(Effect.void);
       const labels = new Map<string, string>([[repositoryRootScopeId, "root"]]);
       const committed = yield* Ref.make<ReadonlyArray<OrchestrationV2DomainEvent>>([]);
       const layerNode = Layer.mergeAll(NodeServices.layer, NodeCrypto.layer);
@@ -1254,7 +1258,18 @@ it.layer(layerProjectionStoreTest)("CheckpointCaptureServiceV2", (it) => {
             Layer.mergeAll(
               IdAllocator.layer,
               layerCheckpointService,
-              ThreadCommandExecutor.layer,
+              Layer.effect(
+                ThreadCommandExecutor.ThreadCommandExecutor,
+                Effect.map(ThreadCommandExecutor.make, (executor) =>
+                  ThreadCommandExecutor.ThreadCommandExecutor.of({
+                    ...executor,
+                    withLock: (key, effect) =>
+                      Effect.flatten(Ref.get(beforeLock)).pipe(
+                        Effect.andThen(executor.withLock(key, effect)),
+                      ),
+                  }),
+                ),
+              ),
               Layer.mock(EventSink.EventSinkV2)({
                 commitCommand: (input) =>
                   Effect.forEach(input.events, (event) => projectionStore.apply(event)).pipe(
@@ -1487,6 +1502,8 @@ it.layer(layerProjectionStoreTest)("CheckpointCaptureServiceV2", (it) => {
           write,
           turn,
           capture: captureRun,
+          beforeLock,
+          seedRun: (ordinal) => Effect.asVoid(seedRun(ordinal)).pipe(Effect.orDie),
           commits,
           threadId: repositoryThreadId,
           ids: yield* IdAllocator.IdAllocatorV2,
@@ -1540,6 +1557,43 @@ it.layer(layerProjectionStoreTest)("CheckpointCaptureServiceV2", (it) => {
         // An at-least-once retry of a settled run commits nothing more.
         yield* thread.capture(1);
         assert.strictEqual(yield* Ref.get(thread.commits), 1);
+
+        // A steering restart that lands while a capture snapshots leaves nothing of it behind:
+        // a snapshot at this ordinal would pass for the next turn's baseline.
+        yield* thread.seedRun(2);
+        yield* thread.write(`${root}/api/README.md`, "# superseded\n");
+        const store = yield* ProjectionStore.ProjectionStoreV2;
+        yield* Ref.set(
+          thread.beforeLock,
+          Effect.gen(function* () {
+            const { run } = yield* store.getCheckpointCaptureContext(thread.threadId, {
+              runId: RunId.make("run:capture-wrapper:2"),
+              scopeId: CheckpointScopeId.make("scope:capture-wrapper:root"),
+            });
+            yield* store.apply({
+              id: EventId.make("event:capture-wrapper:run:2:steered"),
+              type: "run.updated",
+              threadId: thread.threadId,
+              runId: run!.id,
+              providerInstanceId,
+              occurredAt: run!.requestedAt,
+              payload: { ...run!, status: "running" },
+            });
+          }).pipe(Effect.orDie),
+        );
+        yield* thread.capture(2);
+        yield* Ref.set(thread.beforeLock, Effect.void);
+        assert.strictEqual(yield* Ref.get(thread.commits), 1);
+        const apiScopeId = yield* thread.ids.allocate.checkpointScope({
+          threadId: thread.threadId,
+          name: `repository:${root}/api`,
+        });
+        const leftover = yield* CheckpointService.checkpointRefForScopeOrdinal({
+          scopeId: apiScopeId,
+          ordinalWithinScope: 2,
+        });
+        assert.strictEqual(yield* thread.git(`${root}/api`, "for-each-ref", leftover), "");
+        yield* thread.write(`${root}/api/README.md`, "# first\n");
 
         // `docs` joins the project mid-thread and starts from this turn's baseline. `api` keeps
         // the scope it had, and the checkpoint its first turn recorded is this turn's baseline.
