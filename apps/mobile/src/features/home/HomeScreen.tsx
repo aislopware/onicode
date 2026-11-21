@@ -455,7 +455,7 @@ export function HomeScreen(props: HomeScreenProps) {
     }
     onSelectThread(thread);
   };
-  useThreadJumpShortcuts(threadListV2Items, selectThread);
+  useThreadJumpShortcuts(threadListV2Items, selectThread, props.onSelectPendingTask);
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- reads the list's visible range after commit and when a scroll settles to enable swipe gestures on those rows
   useEffect(() => {
     const activate = () => {
