@@ -618,14 +618,17 @@ export function openRtf(bytes: ArrayBuffer): OfficeWorkerResult {
         continue;
       }
       if (next === "*") {
-        state.skip = true;
         i++;
+        if (fallback > 0) fallback--;
+        else state.skip = true;
         continue;
       }
       const match = /^([a-z]+)(-?\d+)? ?/i.exec(source.slice(i));
       if (!match) {
         const character = RTF_CHARACTERS.get(next!);
         if (character) emit(character);
+        // Any control symbol is one character of a Unicode fallback.
+        else if (fallback > 0) fallback--;
         // A backslash before a line break is \par; TextEdit ends paragraphs this way.
         else if ((next === "\n" || next === "\r") && !hidden()) html += "<br>";
         i++;

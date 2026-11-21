@@ -99,6 +99,7 @@ import { WorktreeToolkit } from "../../mcp/toolkits/worktree/tools.ts";
 import { ThreadToolkit } from "../../mcp/toolkits/thread/tools.ts";
 import { OrchestratorToolkit } from "../../mcp/toolkits/orchestrator/tools.ts";
 import { ClaudeExecutableFileCheck } from "../../provider/Drivers/ClaudeExecutable.ts";
+import { makeZip } from "../../provider/Drivers/ClaudeSkills.testkit.ts";
 import {
   BUNDLED_CLAUDE_MODEL_CATALOG,
   type ClaudeModelCatalog,
@@ -6549,21 +6550,34 @@ describe("ClaudeAdapterV2 background wake turns", () => {
             `---\nname: ${name}\ndisable-model-invocation: ${userOnly}\n---\nFollow the ${name} instructions.\n`,
           );
         }
+        // Claude cannot read a skill inside a plugin zip, so its body rides in the prompt.
+        const plugin = path.join(homePath, "plugin.zip");
+        yield* fs.writeFile(
+          plugin,
+          makeZip({
+            ".claude-plugin/plugin.json": '{"name":"zipped"}',
+            "skills/plan/SKILL.md": "---\ndisable-model-invocation: true\n---\nWrite the plan.\n",
+          }),
+        );
         const harness = yield* makeWakeHarnessWithOptions({
-          settings: { ...DEFAULT_CLAUDE_SETTINGS, homePath },
+          settings: {
+            ...DEFAULT_CLAUDE_SETTINGS,
+            homePath,
+            launchArgs: `--plugin-dir "${plugin}"`,
+          },
         });
         const input = makeClaudeTestTurnInput({
           threadId: harness.threadId,
           providerThread: harness.providerThread,
           now: yield* DateTime.now,
           attemptId: RunAttemptId.make("skill-dispatch"),
-          text: "$interrogate then $review then $implement the fixes",
+          text: "$interrogate then $zipped:plan then $review then $implement the fixes",
           attachments: [],
           runtimePolicy: { ...CLAUDE_TEST_RUNTIME_POLICY, cwd: homePath },
         });
         yield* harness.runtime.startTurn(input);
 
-        const leadingText = `Ultrathink:\n/interrogate [The user invoked this skill. Follow the instructions at: ${path.join(homePath, "skills", "interrogate", "SKILL.md")}] then /review then /implement the fixes`;
+        const leadingText = `Ultrathink:\n/interrogate [The user invoked this skill. Follow the instructions at: ${path.join(homePath, "skills", "interrogate", "SKILL.md")}] then /zipped:plan [The user invoked this skill. Follow its instructions:\n<skill name="zipped:plan">\nWrite the plan.\n</skill>] then /review then /implement the fixes`;
         assert.deepEqual(harness.offeredMessages[0]?.message.content, [
           { type: "text", text: leadingText },
           { type: "text", text: "/implement the fixes" },

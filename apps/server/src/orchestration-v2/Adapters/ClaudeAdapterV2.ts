@@ -188,7 +188,7 @@ import {
   claudeLaunchArgParseOptions,
   claudeLaunchArgPluginDirectories,
   customClaudeApiEndpointHost,
-  discoverClaudeSkills,
+  discoverClaudeSkillTargets,
   readClaudeSettingsEnv,
 } from "../../provider/Drivers/ClaudeSkills.ts";
 import {
@@ -6388,7 +6388,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
   });
 
   const userInvocableSkills = (cwd: string | null) =>
-    discoverClaudeSkills(
+    discoverClaudeSkillTargets(
       adapterOptions.settings,
       cwd ?? undefined,
       adapterOptions.environment,

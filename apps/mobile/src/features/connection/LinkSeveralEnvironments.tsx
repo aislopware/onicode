@@ -67,14 +67,12 @@ export function LinkSeveralEnvironmentsAction(props: {
       environment.connection.phase === "connected" &&
       offersLinkThrough(environment.serverConfig),
   );
-  const sourceReady =
-    canLink &&
-    offersLinkedEnvironments(config) &&
-    environments.some(
-      (environment) =>
-        environment.environmentId === props.environmentId &&
-        environment.connection.phase === "connected",
-    );
+  const sourceConnected = environments.some(
+    (environment) =>
+      environment.environmentId === props.environmentId &&
+      environment.connection.phase === "connected",
+  );
+  const sourceReady = canLink && offersLinkedEnvironments(config) && sourceConnected;
   // An open sheet stays until closed, even if the relay drops; it only stops new links.
   if (!open && (!sourceReady || (otherMachines < 2 && !linksThrough))) {
     return null;
@@ -91,7 +89,9 @@ export function LinkSeveralEnvironmentsAction(props: {
       {open ? (
         <LinkSeveralSheet
           environmentId={props.environmentId}
+          environmentLabel={props.environmentLabel}
           canSubmit={sourceReady}
+          sourceConnected={sourceConnected}
           onClose={() => onOpenChange(false)}
         />
       ) : null}
@@ -105,8 +105,10 @@ export function LinkSeveralEnvironmentsAction(props: {
  */
 function LinkSeveralSheet(props: {
   readonly environmentId: EnvironmentId;
+  readonly environmentLabel: string;
   /** The linking environment still offers links and this session may create them there. */
   readonly canSubmit: boolean;
+  readonly sourceConnected: boolean;
   readonly onClose: () => void;
 }) {
   const gt = useGT();
@@ -389,6 +391,14 @@ function LinkSeveralSheet(props: {
                 )}
           </Text>
         ) : null}
+        {props.sourceConnected || busy ? null : (
+          <Text
+            accessibilityLiveRegion="polite"
+            className="font-sans text-sm leading-5 text-foreground-muted"
+          >
+            {gt("{environment} is not connected.", { environment: props.environmentLabel })}
+          </Text>
+        )}
         <Button
           label={
             busy

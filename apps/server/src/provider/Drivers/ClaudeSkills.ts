@@ -14,6 +14,7 @@ import { parse as parseYamlDocument } from "yaml";
 import { expandHomePath } from "@onicode/provider-core/server/pathExpansion";
 
 import { openZipArchive } from "../../zipArchive.ts";
+import { FRONTMATTER_PATTERN } from "./ClaudeSkillDispatch.ts";
 
 type ClaudeSkillScope = "user" | "project";
 
@@ -24,8 +25,6 @@ type ClaudeSkillRoot = {
   /** For a plugin zip: SKILL.md contents by path in the plugin, and this root's folder there. */
   readonly archive?: { readonly skillFiles: ReadonlyMap<string, string>; readonly folder: string };
 };
-
-const FRONTMATTER_PATTERN = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/;
 
 type SkillFrontmatter =
   | { readonly kind: "missing" }
@@ -868,12 +867,19 @@ export function claudeLaunchArgPluginDirectories(launchArgs?: string): ReadonlyA
   return directories;
 }
 
+/** A skill from a plugin zip also carries its SKILL.md, which Claude's Read tool cannot open. */
+export type ClaudeDiscoveredSkill = ServerProviderSkill & { readonly instructions?: string };
+
 /** First name wins: managed skills, then user skills, then project skills. */
-export const discoverClaudeSkills = Effect.fn("discoverClaudeSkills")(function* (
+export const discoverClaudeSkillTargets = Effect.fn("discoverClaudeSkillTargets")(function* (
   config: Pick<ClaudeSettings, "homePath"> & Partial<Pick<ClaudeSettings, "launchArgs">>,
   cwd?: string,
   environment?: NodeJS.ProcessEnv,
-): Effect.fn.Return<ReadonlyArray<ServerProviderSkill>, never, FileSystem.FileSystem | Path.Path> {
+): Effect.fn.Return<
+  ReadonlyArray<ClaudeDiscoveredSkill>,
+  never,
+  FileSystem.FileSystem | Path.Path
+> {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const env = environment ?? process.env;
@@ -918,7 +924,7 @@ export const discoverClaudeSkills = Effect.fn("discoverClaudeSkills")(function* 
     )),
   ];
 
-  const skillsByName = new Map<string, ServerProviderSkill>();
+  const skillsByName = new Map<string, ClaudeDiscoveredSkill>();
   for (const root of roots) {
     const archive = root.archive;
     const singleSkill =
@@ -988,9 +994,17 @@ export const discoverClaudeSkills = Effect.fn("discoverClaudeSkills")(function* 
         ...(frontmatter.kind === "parsed" && frontmatter.userInvocable === false
           ? { userInvocable: false }
           : {}),
+        ...(archive ? { instructions: contents } : {}),
       });
     }
   }
 
   return [...skillsByName.values()].sort((left, right) => left.name.localeCompare(right.name));
+});
+
+export const discoverClaudeSkills = Effect.fn("discoverClaudeSkills")(function* (
+  ...args: Parameters<typeof discoverClaudeSkillTargets>
+) {
+  const skills = yield* discoverClaudeSkillTargets(...args);
+  return skills.map(({ instructions: _instructions, ...skill }): ServerProviderSkill => skill);
 });

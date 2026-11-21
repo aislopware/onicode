@@ -4,16 +4,25 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as HostProcess from "@onicode/shared/HostProcess";
-import * as NodeZlib from "node:zlib";
 
-import { discoverClaudeSkills as discoverSkills } from "./ClaudeSkills.ts";
+import {
+  discoverClaudeSkills as discoverSkills,
+  discoverClaudeSkillTargets as discoverSkillTargets,
+} from "./ClaudeSkills.ts";
 import { planClaudeSkillDispatch } from "./ClaudeSkillDispatch.ts";
+import { makeZip } from "./ClaudeSkills.testkit.ts";
 
 // Windows makes the managed directory fixture-controlled without reading host policy or skills.
 const discoverClaudeSkills = (
   ...[config, cwd, environment = {}]: Parameters<typeof discoverSkills>
 ) =>
   discoverSkills(config, cwd, environment).pipe(
+    Effect.provideService(HostProcess.Platform, "win32"),
+  );
+const discoverClaudeSkillTargets = (
+  ...[config, cwd, environment = {}]: Parameters<typeof discoverSkillTargets>
+) =>
+  discoverSkillTargets(config, cwd, environment).pipe(
     Effect.provideService(HostProcess.Platform, "win32"),
   );
 
@@ -30,44 +39,6 @@ const writeSkill = Effect.fn(function* (
 });
 
 // A stored (uncompressed) zip of the given files.
-const makeZip = (files: Record<string, string>) => {
-  const records: Array<Buffer> = [];
-  const directory: Array<Buffer> = [];
-  const entries = Object.entries(files);
-  let offset = 0;
-  for (const [fileName, text] of entries) {
-    const name = Buffer.from(fileName);
-    const data = Buffer.from(text);
-    const local = Buffer.alloc(30);
-    local.writeUInt32LE(0x04034b50, 0);
-    local.writeUInt16LE(20, 4);
-    local.writeUInt32LE(NodeZlib.crc32(data), 14);
-    local.writeUInt32LE(data.length, 18);
-    local.writeUInt32LE(data.length, 22);
-    local.writeUInt16LE(name.length, 26);
-    const central = Buffer.alloc(46);
-    central.writeUInt32LE(0x02014b50, 0);
-    central.writeUInt16LE(20, 4);
-    central.writeUInt16LE(20, 6);
-    central.writeUInt32LE(NodeZlib.crc32(data), 16);
-    central.writeUInt32LE(data.length, 20);
-    central.writeUInt32LE(data.length, 24);
-    central.writeUInt16LE(name.length, 28);
-    central.writeUInt32LE(offset, 42);
-    records.push(local, name, data);
-    directory.push(central, name);
-    offset += local.length + name.length + data.length;
-  }
-  const centralDirectory = Buffer.concat(directory);
-  const end = Buffer.alloc(22);
-  end.writeUInt32LE(0x06054b50, 0);
-  end.writeUInt16LE(entries.length, 8);
-  end.writeUInt16LE(entries.length, 10);
-  end.writeUInt32LE(centralDirectory.length, 12);
-  end.writeUInt32LE(offset, 16);
-  return Buffer.concat([...records, centralDirectory, end]);
-};
-
 it.layer(NodeServices.layer)("discoverClaudeSkills", (it) => {
   it.effect("discovers enabled plugin skills with manifest names and ignores skill overrides", () =>
     Effect.gen(function* () {
@@ -570,6 +541,13 @@ it.layer(NodeServices.layer)("discoverClaudeSkills", (it) => {
       assert.strictEqual(
         skills.find((skill) => skill.name === "zipped:unzip")?.path,
         path.join(packed, "packed-1.0", "skills", "unzip", "SKILL.md"),
+      );
+      assert.isFalse(skills.some((skill) => "instructions" in skill));
+      assert.strictEqual(
+        (yield* discoverClaudeSkillTargets({ homePath: configDir, launchArgs }, workspace)).find(
+          (skill) => skill.name === "zipped:unzip",
+        )?.instructions,
+        "---\ndescription: From a zip\n---\n",
       );
       assert.strictEqual(
         skills.find((skill) => skill.name === "solo:solo-skill")?.path,

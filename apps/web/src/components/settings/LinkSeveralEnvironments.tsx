@@ -377,6 +377,13 @@ export function LinkSeveralEnvironmentsDialog({
                   : null}
               </p>
             ) : null}
+            {sourceConnected || busy ? null : (
+              <p role="status" className="text-xs text-muted-foreground">
+                {sourceLabel === undefined
+                  ? gt("The environment is not connected.")
+                  : gt("{environment} is not connected.", { environment: sourceLabel })}
+              </p>
+            )}
             <LinkAccessPicker value={access} onChange={setAccess} disabled={busy} />
             {backOffered && sourceLabel !== undefined ? (
               <label className="flex cursor-pointer items-start gap-2.5 text-sm has-data-disabled:cursor-default">
