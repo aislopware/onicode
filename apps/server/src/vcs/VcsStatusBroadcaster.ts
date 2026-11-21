@@ -776,7 +776,7 @@ export const make = Effect.gen(function* () {
         if (refsAtLocalRead === undefined) {
           yield* refreshLocalStatusCore(cwd);
         } else {
-          const refs = yield* workflow.readRefSnapshot(cwd);
+          const refs = yield* workflow.readLocalStatusRefSnapshot(cwd);
           if (refs === null || refs !== (yield* Ref.get(refsAtLocalRead))) {
             yield* Ref.set(refsAtLocalRead, null);
             yield* refreshLocalStatusCore(cwd);
@@ -806,7 +806,8 @@ export const make = Effect.gen(function* () {
           }
           yield* updateCachedRemoteStatus(cwd, remoteRead, { publish: true });
           // A fetch, ours or not, can move the base used for local Changes totals.
-          const refs = refsBeforeLocalRead === null ? null : yield* workflow.readRefSnapshot(cwd);
+          const refs =
+            refsBeforeLocalRead === null ? null : yield* workflow.readLocalStatusRefSnapshot(cwd);
           if (refs === null || refs !== refsBeforeLocalRead) {
             yield* refreshLocalStatusCore(cwd);
           }
@@ -822,7 +823,7 @@ export const make = Effect.gen(function* () {
   )(function* (rawCwd, options) {
     const cwd = yield* withFileSystem(normalizeCwd(rawCwd));
     yield* acquireBranchChangesDemand(cwd);
-    // Lets the client keep its cached branch list when no ref moved since its last refresh.
+    // Lets the client keep its cached branch list when refs and worktree paths match its last refresh.
     const withRefsDigest = (status: VcsStatusResult, refs: string | null) =>
       refs === null
         ? status
@@ -839,10 +840,13 @@ export const make = Effect.gen(function* () {
       const parts = yield* getStatusParts(cwd);
       return withRefsDigest(mergeGitStatusParts(parts.local, parts.remote), refs);
     }
-    const refsBeforeLocalRead = yield* workflow.readRefSnapshot(cwd);
+    const refsBeforeLocalRead = yield* workflow.readLocalStatusRefSnapshot(cwd);
     yield* refreshLocalStatusCore(cwd);
     const { status, refs } = yield* refreshRemoteAndLocalTotals(cwd, rawCwd, refsBeforeLocalRead);
-    return withRefsDigest(status, refs);
+    return withRefsDigest(
+      status,
+      refs === null ? null : yield* workflow.readRefSnapshot(cwd, refs),
+    );
   }, Effect.scoped);
 
   const refreshAfterCheckout: VcsStatusBroadcaster["Service"]["refreshAfterCheckout"] = Effect.fn(
