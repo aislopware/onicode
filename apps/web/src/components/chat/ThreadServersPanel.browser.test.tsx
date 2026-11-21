@@ -2,6 +2,49 @@ import { EnvironmentId, ThreadId, type DiscoveredLocalServer } from "@onicode/co
 import { expect, it, vi } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
 
+const mocks = vi.hoisted(() => ({
+  shell: { openExternal: vi.fn(async (_url: string) => undefined) },
+  canForward: false,
+  forwards: [] as Array<{ environmentId: string; remotePort: number; localPort: number }>,
+}));
+const setup = (options: {
+  canForward: boolean;
+  forwards: Array<{ environmentId: string; remotePort: number; localPort: number }>;
+}) => {
+  mocks.shell.openExternal.mockClear();
+  mocks.canForward = options.canForward;
+  mocks.forwards = options.forwards;
+};
+
+vi.mock("~/env", () => ({ isElectron: true }));
+vi.mock(import("../../state/portForwards"), async (importOriginal) => ({
+  ...(await importOriginal()),
+  canForwardPorts: () => mocks.canForward,
+  useForwardLocality: (environmentId) => (environmentId === null ? "unknown" : "remote"),
+  usePortForwards: (() => mocks.forwards) as never,
+  forwardPort: (async (environmentId: string, remotePort: number) => ({
+    environmentId,
+    remotePort,
+    localPort: 45000,
+  })) as never,
+}));
+vi.mock(import("../../state/session"), async (importOriginal) => ({
+  ...(await importOriginal()),
+  useEnvironmentScope: () => true,
+}));
+vi.mock(import("../../state/environments"), async (importOriginal) => ({
+  ...(await importOriginal()),
+  useEnvironment: (() => ({
+    connection: { phase: "connected" },
+    entry: { target: { _tag: "BearerConnectionTarget", connectionId: "saved:remote" } },
+    serverConfig: null,
+  })) as never,
+}));
+vi.mock(import("../../localApi"), async (importOriginal) => ({
+  ...(await importOriginal()),
+  readLocalApi: (() => ({ shell: mocks.shell })) as never,
+}));
+
 vi.mock(import("../../portDiscoveryState"), async (importOriginal) => ({
   ...(await importOriginal()),
   useThreadDiscoveredPorts: () =>
@@ -18,13 +61,6 @@ vi.mock(import("../../portDiscoveryState"), async (importOriginal) => ({
     ),
 }));
 
-vi.mock(import("../../state/portForwards"), async (importOriginal) => ({
-  ...(await importOriginal()),
-  usePortForwards: () => [
-    { environmentId: EnvironmentId.make("env"), remotePort: 3000, localPort: 3000 },
-  ],
-}));
-
 import { render } from "../../../test/render";
 import { ThreadServersPanel } from "./ThreadServersPanel";
 
@@ -36,6 +72,7 @@ const panel = (threadId: string) => (
 );
 
 it("pages servers four at a time, collapses back, and resets on thread switch", async () => {
+  setup({ canForward: false, forwards: [] });
   await using screen = await render(panel("a"));
   const count = (selector: string) => screen.container.querySelectorAll(selector).length;
   const expectRows = (rows: number) => vi.waitFor(() => expect(count("li")).toBe(rows));
@@ -58,6 +95,10 @@ it("pages servers four at a time, collapses back, and resets on thread switch", 
 });
 
 it("keeps a held forward stoppable where new ports cannot be forwarded", async () => {
+  setup({
+    canForward: false,
+    forwards: [{ environmentId: "env", remotePort: 3000, localPort: 3000 }],
+  });
   await using _screen = await render(panel("a"));
 
   await expect
@@ -66,4 +107,13 @@ it("keeps a held forward stoppable where new ports cannot be forwarded", async (
   await expect
     .element(page.getByRole("button", { name: "Forward localhost:3001 to this machine" }))
     .not.toBeInTheDocument();
+});
+
+it("opens a remote server in the system browser through the forward a modified click starts", async () => {
+  setup({ canForward: true, forwards: [] });
+  await using _screen = await render(panel("a"));
+  await page.getByText("localhost:3000", { exact: true }).click({ modifiers: ["ControlOrMeta"] });
+  await vi.waitFor(() =>
+    expect(mocks.shell.openExternal).toHaveBeenCalledWith("http://localhost:45000/"),
+  );
 });
