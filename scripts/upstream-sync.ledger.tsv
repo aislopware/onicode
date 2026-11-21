@@ -2991,3 +2991,4 @@ e7b1b88bef	take	taken as is
 f680c2026b	skip	launch-video skill (marketing launch videos) is not in Onicode, as with 77a553ab2c
 5093d11490	take	kept Onicode's Sidebar compiler-cache layout: useSidebarDrafts runs beside the other draft-store hook and draft jump labels are built before useThreadJumpHintsVisible (upstream's placement re-rendered every thread row; render-isolation test green); HomeScreen conflict kept Onicode's effect comment
 c3f348a409	take	expo-audio patch delta 3-way merged into Onicode's expo-audio@58.0.12 patch (same resulting patch hash as upstream); lockfile hash from vp i
+f8779522a3	take	taken as is (Onicode's remote-desktop keys use variant, not active)
