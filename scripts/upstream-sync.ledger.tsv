@@ -3032,3 +3032,4 @@ c5dc20f9f5	take	CONFLICT in projectGrouping.ts buildProjectGroups: kept Onicode'
 aa6fe390db	take	CONFLICT: adopted upstream over Onicode's threadErrorBannerSource (8dfd60c5d7): dismiss already clears local errors, so only runtime errors need a session key; drops synthetic local@<time> keys that grew the session set per dismissal
 721542cac7	take	taken as is; Onicode's chat composer has the same bottom inset
 ede0f48c60	take	CloudEnvironmentRows.tsx MISSING (T3 Connect, removed); rest taken as is
+5ddb3b4b71	take	taken as is
