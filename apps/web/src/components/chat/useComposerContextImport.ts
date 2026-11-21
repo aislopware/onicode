@@ -14,6 +14,7 @@ import {
   type ComposerContextRecord,
   type EnvironmentId,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
+  type ScopedThreadRef,
 } from "@onicode/contracts";
 import {
   type ComposerFileAttachment,
@@ -21,6 +22,7 @@ import {
   type DraftId,
   composerFileMatchesReattachMarker,
   composerFileNeedsReattach,
+  composerTargetKey,
   useComposerDraftStore,
 } from "../../composerDraftStore";
 import { type PendingUserInput } from "../../session-logic";
@@ -157,6 +159,16 @@ export function useComposerContextImport(input: {
     );
   };
   const countReservedAttachmentsStable = useStableCallback(countReservedAttachments);
+  // A moved import lands in the thread draft and already holds one of its reserved slots.
+  const countMovedImportCompetition = (thread: ScopedThreadRef) => {
+    const draft = getComposerDraft(thread);
+    return (
+      (draft?.images.length ?? 0) +
+      (draft?.files.length ?? 0) +
+      countReservedComposerSlots(composerTargetKey(thread)) -
+      1
+    );
+  };
   const runAttachmentImport = async (
     record: Extract<ComposerContextRecord, { kind: "image" | "file" }>,
     localId: string,
@@ -227,9 +239,12 @@ export function useComposerContextImport(input: {
     if (questionWork?.discarded()) return;
     const thread = questionWork?.movedThread();
     if (!thread && attachmentTargetKeyRef.current !== importTargetKey) return;
+    const destinationFiles = thread
+      ? (getComposerDraft(thread)?.files ?? [])
+      : composerFilesRef.current;
     const replacesFileMarker =
       record.kind === "file" &&
-      composerFilesRef.current.some(
+      destinationFiles.some(
         (candidate) =>
           composerFileNeedsReattach(candidate) &&
           composerFileMatchesReattachMarker(candidate, {
@@ -238,7 +253,11 @@ export function useComposerContextImport(input: {
             sizeBytes: file.size,
           }),
       );
-    if (!replacesFileMarker && countReservedAttachments() >= PROVIDER_SEND_TURN_MAX_ATTACHMENTS) {
+    if (
+      !replacesFileMarker &&
+      (thread ? countMovedImportCompetition(thread) : countReservedAttachments()) >=
+        PROVIDER_SEND_TURN_MAX_ATTACHMENTS
+    ) {
       fail(m(msg("The attachment limit has been reached.")));
       return;
     }
