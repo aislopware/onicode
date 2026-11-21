@@ -457,9 +457,12 @@ with no `output`.
 ### `oni_submit_output`
 
 Stores the calling thread's result on its running turn, once it fits the schema
-that turn was sent with. A turn that was asked for nothing answers for the
-newest turn that was asked and has not answered yet, which is how an agent that
-ended its turn to wait gives its result after it is woken. A rejection names what did not fit, so the agent can
+that turn was sent with. A turn that was asked for nothing answers for the run
+whose delegated work woke it, through any wakes and restarts in between, even
+when that run has already answered and a newer turn still owes a result; a turn
+the provider woke on its own answers for the newest turn that was asked and has
+not answered yet. This is how an agent that ended its turn to wait gives its
+result after it is woken. A rejection names what did not fit, so the agent can
 correct it and call again; a later accepted submission replaces an earlier one.
 
 ### `oni_thread_wait`
@@ -469,7 +472,11 @@ Waits for a selected run to become `completed`, `failed`, `cancelled`,
 time; an idle thread returns immediately. A timeout reports the latest durable
 status and does not cancel work. `output` carries what the run submitted
 against its `outputSchema`; with `untilOutput`, a completed run that has not
-submitted yet is waited on until it has.
+submitted yet is waited on until it has. With `untilOutput` and no `runId`, it
+pins the latest run that was asked for a result and is still running or owes
+it. When none does, it pins the latest run that was asked, unless the latest
+run is neither that run nor a wake for delegated work; then it pins the latest
+run.
 
 ### `oni_thread_interrupt`
 

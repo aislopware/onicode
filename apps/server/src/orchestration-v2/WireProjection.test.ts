@@ -11,8 +11,11 @@ import {
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
+  RunId,
   ThreadId,
   TurnItemId,
+  OrchestrationV2DomainEvent as OrchestrationV2DomainEventSchema,
+  type OrchestrationV2Run,
   type OrchestrationV2DomainEvent,
   type OrchestrationV2StoredEvent,
   type OrchestrationV2ThreadProjection,
@@ -31,6 +34,7 @@ import {
   projectTurnItemForDetail,
   projectDomainEventForWire,
   projectStoredEventForWire,
+  projectThreadProjectionForWire,
 } from "./WireProjection.ts";
 import { threadShellFromProjection } from "./ProjectionStore.ts";
 import { MAX_TOOL_OUTPUT_IMAGES, toolOutputImages } from "@onicode/shared/toolOutput";
@@ -38,6 +42,7 @@ import { MAX_TOOL_OUTPUT_IMAGES, toolOutputImages } from "@onicode/shared/toolOu
 const decodeTurnItem = Schema.decodeUnknownSync(OrchestrationV2TurnItem);
 const encodeTurnItemJson = Schema.encodeSync(OrchestrationV2TurnItemJson);
 const decodeTurnItemJson = Schema.decodeUnknownSync(OrchestrationV2TurnItemJson);
+const decodeDomainEvent = Schema.decodeUnknownSync(OrchestrationV2DomainEventSchema);
 
 const base = {
   id: TurnItemId.make("tool-1"),
@@ -388,6 +393,57 @@ describe("orchestration V2 wire projection", () => {
     expect(JSON.stringify(projected)).not.toContain("PRIVATE_BODY");
     expect(event.payload.output).toBe(output);
     expect(projectDomainEventForWire(projected)).toEqual(projected);
+  });
+
+  it("sends that a run asks for a result and has one, without the schema or the value", () => {
+    const run: OrchestrationV2Run = {
+      id: RunId.make("run-result"),
+      threadId: base.threadId,
+      ordinal: 1,
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
+      providerThreadId: null,
+      userMessageId: MessageId.make("message-result"),
+      rootNodeId: null,
+      activeAttemptId: null,
+      status: "completed",
+      requestedAt: base.startedAt,
+      startedAt: null,
+      completedAt: null,
+      checkpointId: null,
+      contextHandoffId: null,
+      outputSchema: { type: "object", description: "PRIVATE_SCHEMA" },
+      output: { value: { verdict: "PRIVATE_VALUE" }, submittedAt: "2026-08-13T00:00:01.000Z" },
+    };
+    const output = { value: null, submittedAt: "2026-08-13T00:00:01.000Z" };
+    const blank = { ...run, outputSchema: {}, output };
+    const at = { threadId: base.threadId, runId: run.id, occurredAt: base.updatedAt };
+    const events: ReadonlyArray<OrchestrationV2DomainEvent> = [
+      { ...at, id: EventId.make("run-created"), type: "run.created", payload: run },
+      { ...at, id: EventId.make("run-updated"), type: "run.updated", payload: run },
+      {
+        ...at,
+        id: EventId.make("run-output"),
+        type: "run.output-submitted",
+        payload: { runId: run.id, output: run.output! },
+      },
+    ];
+    for (const event of events) {
+      const projected = projectDomainEventForWire(event);
+      expect(JSON.stringify(projected)).not.toContain("PRIVATE_");
+      expect(decodeDomainEvent(projected).payload).toEqual(
+        event.type === "run.output-submitted" ? { runId: run.id, output } : blank,
+      );
+    }
+    const projection = {
+      runs: [run],
+      checkpoints: [],
+      contextHandoffs: [],
+      turnItems: [],
+      visibleTurnItems: [],
+    } as unknown as OrchestrationV2ThreadProjection;
+    expect(projectThreadProjectionForWire(projection).runs).toEqual([blank]);
+    expect(run.output?.value).toEqual({ verdict: "PRIVATE_VALUE" });
   });
 
   it("shares one wire projection per stored event", () => {

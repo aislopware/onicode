@@ -49,6 +49,7 @@ import { VERSION as BROWSER_DRIVER_VERSION } from "../../apps/server/src/browser
 import { PANEL_NOTE } from "../../apps/server/src/browserUse/BrowserUseService.ts";
 import { PANEL_URL_REQUIRED } from "../../apps/server/src/preview/previewCdpPolicy.ts";
 import { taskPrompt } from "../../apps/server/src/mcp/delegatedTaskModes.ts";
+import { outputInstructions } from "../../apps/server/src/orchestration-v2/runOutput.ts";
 
 it("grades Codex shell and subagent calls with the shared rules", () => {
   const calls = [
@@ -749,7 +750,7 @@ it("rebuilds the template from this checkout and sends a child Onicode's task pr
   assert.notEqual(prompt?.text, childCase.prompt);
 });
 
-it("lists link tools only while a case turns the beta on, and sends chips as Onicode projects them", () => {
+it("lists link tools only while a case turns the beta on, and sends chips and output instructions as Onicode does", () => {
   const off = buildBase(template, { model: "claude-sonnet-5-5", keepUserInstructions: false });
   const on = buildBase(template, {
     model: "claude-sonnet-5-5",
@@ -789,6 +790,11 @@ it("lists link tools only while a case turns the beta on, and sends chips as Oni
     projectComposerContextForProvider({ text: testCase.prompt, ...testCase.promptContext! }),
   );
   assert.include(prompt?.text, "environmentId: environment-vps");
+  const outputSchema = { type: "object", properties: { passed: { type: "boolean" } } };
+  const owed = buildMessages(makeSample({ ...testCase, outputSchema }, on))
+    .at(-1)
+    ?.content.at(-1);
+  assert.equal(owed?.text, `${prompt?.text}\n\n${outputInstructions(outputSchema)}`);
 });
 
 it("replays earlier capability results with the model under test as the caller", () => {
@@ -1541,7 +1547,6 @@ it.effect(
       const world = {
         ...childCase.setup.world,
         branch: "feature",
-        unpushed: true,
         prs: [{ number: 7, headRefName: "other", headRefOid: head }],
       };
       const mocks = { ci_rerun: { $error: "GitHub API rate limit exceeded." } };
@@ -1565,27 +1570,8 @@ it.effect(
           input,
         });
       const create = { title: "Feature", body: "Body" };
-      const refused = yield* call("a", "pull_request_create", create);
-      assert.isTrue(refused.is_error);
-      assert.include(String(refused.content), "has not been pushed");
-      // None of these publishes feature: another branch, a dry run, help, or HEAD while on other.
-      for (const command of [
-        "git push origin other",
-        "git push --dry-run -u origin feature",
-        "git push --help",
-        "git checkout other && git push -u origin HEAD",
-        "git push",
-        "git switch feature",
-      ]) {
-        sample.shell.push({ tool: "Bash", input: { command }, output: "" });
-      }
-      assert.isTrue((yield* call("a2", "pull_request_create", create)).is_error);
-      sample.shell.push({
-        tool: "Bash",
-        input: { command: "git push -u origin feature" },
-        output: "",
-      });
-      assert.isNotTrue((yield* call("b", "pull_request_create", create)).is_error);
+      // The server pushes an unpushed branch itself, so the first create opens the PR.
+      assert.isNotTrue((yield* call("a", "pull_request_create", create)).is_error);
 
       const short = yield* call("c", "pull_request_merge", {
         number: 7,

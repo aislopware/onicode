@@ -238,44 +238,122 @@ it.effect("--wait follows the sent run to its continuation's terminal status", (
 const laterRunReads = (
   laterRun: RunId,
   items: ReadonlyArray<{ readonly runId: RunId; readonly type: string }>,
+  status = "completed",
 ) => [
   {
     recentRuns: [
-      { runId, ordinal: 1 },
-      { runId: laterRun, ordinal: 2 },
+      { runId, ordinal: 1, status: "completed" },
+      { runId: laterRun, ordinal: 2, status },
     ],
   },
   { thread: {}, items, nextPosition: null, hasMore: false },
 ];
 
-it.effect("--wait lasts until background work the agent waits on wakes it and that run ends", () =>
+it.effect.each([
+  { thread: "idle", followWakes: true, reportedRunId: RunId.make("run-2"), given: undefined },
+  // The run gave a result before it ended, and the turn its work woke corrected it.
+  {
+    thread: "idle",
+    followWakes: true,
+    reportedRunId: RunId.make("run-2"),
+    given: { head: "draft" },
+  },
+  // Work already running is not the sent run's, but the result a turn it woke gives still is.
+  { thread: "busy", followWakes: false, reportedRunId: runId, given: undefined },
+])(
+  "--wait on the $thread thread lasts until background work the agent waits on wakes it and that run ends",
+  ({ followWakes, reportedRunId, given }) =>
+    Effect.gen(function* () {
+      const wakeRun = RunId.make("run-2");
+      const { tools, calls } = scriptedTools({
+        oni_thread_wait: [
+          {
+            threadId,
+            runId,
+            status: "completed",
+            timedOut: false,
+            ...(given === undefined ? {} : { output: given }),
+          },
+          {
+            threadId,
+            runId,
+            status: "completed",
+            timedOut: false,
+            resultRun: { runId: wakeRun, status: "completed" },
+          },
+          // The wake run gave the result the sent run was asked for.
+          { threadId, runId, status: "completed", timedOut: false, output: { head: "abc" } },
+        ],
+        // The wake run starts from a notification, which the messages view leaves out.
+        oni_thread_read: laterRunReads(wakeRun, []),
+      });
+
+      const outcome = yield* waitForRun(tools, threadId, runId, followWakes, true);
+
+      assert.deepStrictEqual(
+        calls.filter((entry) => entry.tool === "oni_thread_wait").map((entry) => entry.args),
+        [
+          { threadId, runId, timeoutMs: 15_000 },
+          { threadId, runId, timeoutMs: 15_000, untilDelegatedWorkSettled: true },
+          { threadId, runId, timeoutMs: 1 },
+        ],
+      );
+      assert.deepStrictEqual(outcome, {
+        type: "ended",
+        runId: reportedRunId,
+        status: "completed",
+        output: { head: "abc" },
+      });
+    }),
+);
+
+/** A slice of a wait on the sent run after it completed. */
+const completedSlice = (slice: { readonly timedOut: boolean; readonly output?: unknown }) => ({
+  threadId,
+  runId,
+  status: "completed",
+  ...slice,
+});
+
+it.effect.each([
+  {
+    name: "takes the result from a slice the thread's other work outlasts",
+    slices: [{ timedOut: true, output: { head: "abc" } }],
+    reads: [],
+    output: { head: "abc" },
+  },
+  {
+    name: "waits for the result while a turn after the run is running",
+    slices: [{ timedOut: true }, { timedOut: true }, { timedOut: false, output: { head: "abc" } }],
+    reads: [
+      ...laterRunReads(RunId.make("run-2"), [], "running"),
+      ...laterRunReads(RunId.make("run-2"), []),
+    ],
+    output: { head: "abc" },
+  },
+  {
+    // Work already running outlasts the slice; it and the request it waits on are not the run's.
+    name: "returns without the result once no turn after the run is running",
+    slices: [{ timedOut: true }, { timedOut: false }],
+    reads: [
+      { recentRuns: [{ runId, ordinal: 1, status: "completed" }] },
+      { thread: { pendingRequestCount: 1 } },
+    ],
+    output: undefined,
+  },
+])("--wait on a busy thread $name", ({ slices, reads, output }) =>
   Effect.gen(function* () {
-    const wakeRun = RunId.make("run-2");
-    const { tools, calls } = scriptedTools({
-      oni_thread_wait: [
-        { threadId, runId, status: "completed", timedOut: false },
-        {
-          threadId,
-          runId,
-          status: "completed",
-          timedOut: false,
-          resultRun: { runId: wakeRun, status: "completed" },
-        },
-      ],
-      // The wake run starts from a notification, which the messages view leaves out.
-      oni_thread_read: laterRunReads(wakeRun, []),
+    const { tools } = scriptedTools({
+      oni_thread_wait: [completedSlice({ timedOut: false }), ...slices.map(completedSlice)],
+      oni_thread_read: reads,
     });
 
-    const outcome = yield* waitForRun(tools, threadId, runId, true);
-
-    assert.deepStrictEqual(
-      calls.filter((entry) => entry.tool === "oni_thread_wait").map((entry) => entry.args),
-      [
-        { threadId, runId, timeoutMs: 15_000 },
-        { threadId, runId, timeoutMs: 15_000, untilDelegatedWorkSettled: true },
-      ],
-    );
-    assert.deepStrictEqual(outcome, { type: "ended", runId: wakeRun, status: "completed" });
+    assert.deepStrictEqual(yield* waitForRun(tools, threadId, runId, false, true), {
+      type: "ended",
+      runId,
+      status: "completed",
+      ...(output === undefined ? {} : { output }),
+    });
   }),
 );
 

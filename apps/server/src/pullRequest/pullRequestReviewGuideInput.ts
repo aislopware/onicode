@@ -1,4 +1,8 @@
-import type { PullRequestActivity, PullRequestDetail } from "@onicode/contracts";
+import {
+  pullRequestConversationThreads,
+  type PullRequestActivity,
+  type PullRequestDetail,
+} from "@onicode/contracts";
 import type { ReviewGuideGenerationInput } from "@onicode/provider-core/server/textGeneration";
 
 const SETTLED_REMARK_CHARS = 200;
@@ -12,14 +16,14 @@ function oneLine(text: string): string {
 }
 
 function settledReviewSummary(activity: PullRequestActivity): string {
-  return activity.reviewThreads
+  return pullRequestConversationThreads(activity)
     .filter((thread) => thread.isResolved || thread.isOutdated)
     .flatMap((thread) => {
       const opener = thread.comments[0];
       if (opener === undefined) return [];
       const who = opener.author?.login ?? "ghost";
       const state = thread.isResolved ? "resolved" : "outdated";
-      return [`- ${thread.path} (${state}, ${who}): ${oneLine(opener.body)}`];
+      return [`- ${thread.path ?? "PR overview"} (${state}, ${who}): ${oneLine(opener.body)}`];
     })
     .join("\n");
 }

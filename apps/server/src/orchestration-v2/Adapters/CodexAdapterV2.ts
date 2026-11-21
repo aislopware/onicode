@@ -938,11 +938,14 @@ interface CodexMcpStartupFailure {
 
 /** Codex names an expired sign-in, but a missing one only in text that says to run `codex mcp login`. */
 const codexMcpStartupNeedsSignIn = (payload: {
+  readonly name: string;
   readonly failureReason?: string | null;
   readonly error?: string | null;
 }) =>
-  payload.failureReason === "reauthenticationRequired" ||
-  (payload.error ?? "").includes("mcp login");
+  // Onicode's own servers answer 401 when their credential expires; Onicode renews it.
+  !isCodexOniMcpServer(payload.name) &&
+  (payload.failureReason === "reauthenticationRequired" ||
+    (payload.error ?? "").includes("mcp login"));
 
 /** A sign-in Codex started, waiting for its callback page on this machine to be opened. */
 interface CodexMcpSignIn {
@@ -1547,6 +1550,11 @@ const CODEX_ONI_MCP_TOOL_TIMEOUT_SEC = 65 * 60;
 // `onicode-direct.<tool>`; oniMcpToolPresentation.ts must keep resolving that form.
 const CODEX_ONI_DIRECT_MCP_SERVER = "onicode-direct";
 const CODEX_DIRECT_ONLY_ONI_TOOLS = ["oni_thread_wait", "delegate_task"];
+const CODEX_ONI_MCP_SERVER = "onicode";
+
+function isCodexOniMcpServer(name: string) {
+  return name === CODEX_ONI_MCP_SERVER || name === CODEX_ONI_DIRECT_MCP_SERVER;
+}
 
 /** Names of the stdio MCP servers in a `config/read` config, the ones Codex starts per thread. */
 function codexStdioMcpServerNames(mcpServers: unknown): ReadonlyArray<string> {
@@ -1605,7 +1613,10 @@ function codexThreadRuntimeParams(input: {
         ? {}
         : {
             // Override only Onicode's servers so launch-argument MCP servers survive.
-            "mcp_servers.onicode": { ...oniServer, disabled_tools: CODEX_DIRECT_ONLY_ONI_TOOLS },
+            [`mcp_servers.${CODEX_ONI_MCP_SERVER}`]: {
+              ...oniServer,
+              disabled_tools: CODEX_DIRECT_ONLY_ONI_TOOLS,
+            },
             // Code Mode runs a blocking wait or delegate wait as a nested call, and the model
             // keeps polling it. A second, direct-only registration makes it a plain tool call.
             [`mcp_servers.${CODEX_ONI_DIRECT_MCP_SERVER}`]: {
@@ -9038,6 +9049,12 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
           mcpSignIn: {
             start: Effect.fn("CodexAdapterV2.mcpSignIn.start")(
               function* ({ providerThread, server }) {
+                if (isCodexOniMcpServer(server)) {
+                  return yield* new ProviderMcpSignInError({
+                    server,
+                    detail: "Onicode's own MCP server is managed by Onicode.",
+                  });
+                }
                 const threadId = yield* getNativeThreadId(providerThread);
                 // A notice can outlive its problem, as when another client signed the server in.
                 const status = yield* ensureInitialized.pipe(

@@ -6,6 +6,7 @@ import {
   contextUsageMcpTokensByServer,
   mcpServerCanAuthenticate,
 } from "@onicode/client-runtime/provider-session-views";
+import { useAtomValue } from "@effect/atom-react";
 import { squashAtomCommandFailure } from "@onicode/client-runtime/state/runtime";
 import type {
   EditorId,
@@ -635,6 +636,11 @@ function McpServerRow(props: {
   const submitCallback = useAtomCommand(providerSessionEnvironment.mcpOAuthCallback, {
     reportFailure: false,
   });
+  const canChangeSignIn = useAtomValue(
+    providerSessionEnvironment.mcpServerAction.permissionAtom(target.environmentId, {
+      action: "authenticate",
+    }),
+  );
   const [busy, setBusy] = useState<ProviderMcpServerAction | "callback" | null>(null);
   const [showTools, setShowTools] = useState(false);
   const [awaitingCallback, setAwaitingCallback] = useState(false);
@@ -731,7 +737,7 @@ function McpServerRow(props: {
             Reconnect
           </Button>
         ) : null}
-        {!disabled && mcpServerCanAuthenticate(server) ? (
+        {!disabled && canChangeSignIn && mcpServerCanAuthenticate(server) ? (
           server.status === "connected" ? (
             <Button
               size="xs"

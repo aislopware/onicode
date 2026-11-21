@@ -203,6 +203,7 @@ export const layer: Layer.Layer<
     const hostEnvironment = ManagedProviders.providerHostEnvironment(
       serverSettings.managedPolicy,
       yield* HostProcess.Environment,
+      yield* HostProcess.Platform,
     );
     // Instances of drivers the policy leaves out stay listed, as unavailable, so their threads
     // explain why instead of losing their provider.

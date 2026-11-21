@@ -4,7 +4,10 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 
-import { mergeProviderInstanceEnvironment } from "@onicode/provider-core/server/instanceEnvironment";
+import {
+  environmentView,
+  mergeProviderInstanceEnvironment,
+} from "@onicode/provider-core/server/instanceEnvironment";
 import { expandHomePath } from "@onicode/provider-core/server/pathExpansion";
 import * as HostProcess from "@onicode/shared/HostProcess";
 
@@ -37,12 +40,10 @@ export const makeClaudeEnvironment = Effect.fn("makeClaudeEnvironment")(function
   const resolvedBaseEnv = baseEnv ?? process.env;
   const homePath = config.homePath.trim();
   if (homePath.length === 0) return resolvedBaseEnv;
-  const resolvedHomePath = yield* resolveClaudeHomePath(config);
-  return {
-    ...resolvedBaseEnv,
-    // Changing HOME hides macOS Keychain credentials; use CLAUDE_CONFIG_DIR to keep login access.
-    CLAUDE_CONFIG_DIR: resolvedHomePath,
-  };
+  const environment = environmentView(resolvedBaseEnv, yield* HostProcess.Platform);
+  // Changing HOME hides macOS Keychain credentials; use CLAUDE_CONFIG_DIR to keep login access.
+  environment.CLAUDE_CONFIG_DIR = yield* resolveClaudeHomePath(config);
+  return environment;
 });
 
 // A Claude Code session that launched Onicode exports these. A claude spawned with them acts as part of
@@ -79,10 +80,8 @@ export const mergeClaudeProcessEnvironment = Effect.fn("mergeClaudeProcessEnviro
   instanceEnvironment: ProviderInstanceEnvironment | undefined,
   hostEnvironment: NodeJS.ProcessEnv,
 ) {
-  const baseEnvironment: NodeJS.ProcessEnv = {
-    ...hostEnvironment,
-    CLAUDE_CODE_ENTRYPOINT: "onicode",
-  };
+  const baseEnvironment = environmentView(hostEnvironment, yield* HostProcess.Platform);
+  baseEnvironment.CLAUDE_CODE_ENTRYPOINT = "onicode";
   for (const name of CLAUDE_HOST_SESSION_VARIABLES) delete baseEnvironment[name];
   // The desktop runs the server as Node through Electron. Commands Claude runs inherit its env, so
   // an Electron app they start (Onicode itself, VS Code) would run as Node and exit.
@@ -90,9 +89,8 @@ export const mergeClaudeProcessEnvironment = Effect.fn("mergeClaudeProcessEnviro
   const environment = yield* mergeProviderInstanceEnvironment(instanceEnvironment, baseEnvironment);
   const settingsEntrypoint = (yield* readClaudeSettingsEnv(config, undefined, environment))
     .CLAUDE_CODE_ENTRYPOINT;
-  return settingsEntrypoint
-    ? { ...environment, CLAUDE_CODE_ENTRYPOINT: settingsEntrypoint }
-    : environment;
+  if (settingsEntrypoint) environment.CLAUDE_CODE_ENTRYPOINT = settingsEntrypoint;
+  return environment;
 });
 
 /** managed-mcp.json excludes other MCP config and forbids --strict-mcp-config; omit the flag when present. */

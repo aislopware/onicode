@@ -361,9 +361,7 @@ export function applyOrchestrationV2ProjectionEvent(
       // is written by its own event, and an update without it must not take it away.
       const known = base.runs.find((run) => run.id === event.payload.id);
       const run =
-        event.payload.output === undefined && known?.output !== undefined
-          ? { ...event.payload, output: known.output }
-          : event.payload;
+        known?.output !== undefined ? { ...event.payload, output: known.output } : event.payload;
       const next = { ...base, runs: upsertEntity(base.runs, run) };
       const visible = { ...next, visibleTurnItems: activeVisibleTurnItems(next) };
       const wasQueued = known?.status === "queued";

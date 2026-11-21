@@ -221,6 +221,25 @@ describe("applyOrchestrationV2ProjectionEvent", () => {
     expect(next?.visibleTurnItems[0]).toBe(visibleTurnItems[0]);
   });
 
+  it("keeps a run's result over the copy a lifecycle update read before it", () => {
+    const corrected = { value: null, submittedAt: "2026-06-20T00:00:02.000Z" };
+    const stale = { ...run, output: { value: null, submittedAt: "2026-06-20T00:00:01.000Z" } };
+    for (const payload of [stale, run]) {
+      const next = applyOrchestrationV2ProjectionEvent(
+        { ...emptyProjection, runs: [{ ...run, output: corrected }] },
+        {
+          id: "event-run-stale",
+          type: "run.updated",
+          threadId,
+          runId,
+          occurredAt: now,
+          payload,
+        } as OrchestrationV2DomainEvent,
+      );
+      expect(next?.runs[0]?.output).toEqual(corrected);
+    }
+  });
+
   it("replaces only the updated visible item and retains its deferred work cursor", () => {
     const deferredWork = { cursor: "remaining-work", itemCount: 100, lastOrdinal: 101 };
     const first = { ...commandItem("item-first", "first"), deferredWork };

@@ -4,6 +4,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as HostProcess from "@onicode/shared/HostProcess";
+import * as NodeZlib from "node:zlib";
 
 import { discoverClaudeSkills as discoverSkills } from "./ClaudeSkills.ts";
 import { planClaudeSkillDispatch } from "./ClaudeSkillDispatch.ts";
@@ -27,6 +28,45 @@ const writeSkill = Effect.fn(function* (
   yield* fs.makeDirectory(skillDir, { recursive: true });
   yield* fs.writeFileString(path.join(skillDir, "SKILL.md"), contents);
 });
+
+// A stored (uncompressed) zip of the given files.
+const makeZip = (files: Record<string, string>) => {
+  const records: Array<Buffer> = [];
+  const directory: Array<Buffer> = [];
+  const entries = Object.entries(files);
+  let offset = 0;
+  for (const [fileName, text] of entries) {
+    const name = Buffer.from(fileName);
+    const data = Buffer.from(text);
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(20, 4);
+    local.writeUInt32LE(NodeZlib.crc32(data), 14);
+    local.writeUInt32LE(data.length, 18);
+    local.writeUInt32LE(data.length, 22);
+    local.writeUInt16LE(name.length, 26);
+    const central = Buffer.alloc(46);
+    central.writeUInt32LE(0x02014b50, 0);
+    central.writeUInt16LE(20, 4);
+    central.writeUInt16LE(20, 6);
+    central.writeUInt32LE(NodeZlib.crc32(data), 16);
+    central.writeUInt32LE(data.length, 20);
+    central.writeUInt32LE(data.length, 24);
+    central.writeUInt16LE(name.length, 28);
+    central.writeUInt32LE(offset, 42);
+    records.push(local, name, data);
+    directory.push(central, name);
+    offset += local.length + name.length + data.length;
+  }
+  const centralDirectory = Buffer.concat(directory);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(entries.length, 8);
+  end.writeUInt16LE(entries.length, 10);
+  end.writeUInt32LE(centralDirectory.length, 12);
+  end.writeUInt32LE(offset, 16);
+  return Buffer.concat([...records, centralDirectory, end]);
+};
 
 it.layer(NodeServices.layer)("discoverClaudeSkills", (it) => {
   it.effect("discovers enabled plugin skills with manifest names and ignores skill overrides", () =>
@@ -478,28 +518,107 @@ it.layer(NodeServices.layer)("discoverClaudeSkills", (it) => {
       );
       yield* writeSkill(path.join(bundle, "tools", "skills"), "fmt", "# Fmt");
       yield* writeSkill(path.join(workspace, "muted", "skills"), "hidden", "# Hidden");
+      const packed = path.join(workspace, "packed.zip");
+      yield* fs.writeFile(
+        packed,
+        makeZip({
+          "packed-1.0/.claude-plugin/plugin.json": '{"name":"zipped"}',
+          "packed-1.0/skills/unzip/SKILL.md": "---\ndescription: From a zip\n---\n",
+          "packed-1.0/skills/./SKILL.md": "# Dot",
+          "__MACOSX/packed-1.0/._skills": "",
+        }),
+      );
+      yield* fs.writeFile(
+        path.join(workspace, "loose.zip"),
+        makeZip({ "skills/flat/SKILL.md": "# Flat" }),
+      );
+      yield* fs.writeFile(
+        path.join(workspace, "solo.zip"),
+        makeZip({ "SKILL.md": "---\nname: solo-skill\n---\n" }),
+      );
+      // Manifest skill paths replace the root SKILL.md, as in an unpacked plugin.
+      yield* fs.writeFile(
+        path.join(workspace, "declared.zip"),
+        makeZip({
+          ".claude-plugin/plugin.json": '{"name":"declared","skills":["./extra","one"]}',
+          "extra/a/SKILL.md": "# A",
+          "one/SKILL.md": "# One",
+          "SKILL.md": "# Root",
+        }),
+      );
       yield* fs.makeDirectory(configDir, { recursive: true });
       yield* fs.writeFileString(
         path.join(configDir, "settings.json"),
         JSON.stringify({ enabledPlugins: { "muted@inline": false } }),
       );
 
-      const launchArgs = `--plugin-dir ${named} --plugin-dir=local --model sonnet --plugin-dir ${bundle} --plugin-dir muted`;
+      const launchArgs = `--plugin-dir ${named} --plugin-dir=local --model sonnet --plugin-dir ${bundle} --plugin-dir muted --plugin-dir ${packed} --plugin-dir=loose.zip --plugin-dir=solo.zip --plugin-dir=declared.zip`;
       const skills = yield* discoverClaudeSkills({ homePath: configDir, launchArgs }, workspace);
       assert.deepEqual(
         skills.map(({ name, scope, description }) => ({ name, scope, description })),
         [
           { name: "acme:qa", scope: "user", description: "QA a ticket" },
+          { name: "declared:a", scope: "user", description: undefined },
+          { name: "declared:one", scope: "user", description: undefined },
           { name: "local:lint", scope: "user", description: undefined },
+          { name: "loose:flat", scope: "user", description: undefined },
+          { name: "solo:solo-skill", scope: "user", description: undefined },
           { name: "tools:fmt", scope: "user", description: undefined },
+          { name: "zipped:unzip", scope: "user", description: "From a zip" },
         ],
+      );
+      assert.strictEqual(
+        skills.find((skill) => skill.name === "zipped:unzip")?.path,
+        path.join(packed, "packed-1.0", "skills", "unzip", "SKILL.md"),
+      );
+      assert.strictEqual(
+        skills.find((skill) => skill.name === "solo:solo-skill")?.path,
+        path.join(workspace, "solo.zip", "SKILL.md"),
       );
       // Without a cwd, a relative --plugin-dir has nothing to resolve against.
       assert.deepEqual(
         (yield* discoverClaudeSkills({ homePath: configDir, launchArgs })).map(
           (skill) => skill.name,
         ),
-        ["acme:qa", "tools:fmt"],
+        ["acme:qa", "tools:fmt", "zipped:unzip"],
+      );
+    }),
+  );
+
+  it.effect("reads at most 8 MiB of a plugin zip's members in total", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const workspace = yield* fs.makeTempDirectoryScoped({ prefix: "oni-claude-skills-" });
+      const big = path.join(workspace, "big.zip");
+      const skillFiles: Record<string, string> = {};
+      for (let index = 1; index <= 9; index++) {
+        skillFiles[`skills/s${index}/SKILL.md`] = `# S\n${"x".repeat(1024 * 1024 - 64)}`;
+      }
+      yield* fs.writeFile(
+        big,
+        makeZip({ ".claude-plugin/plugin.json": '{"name":"big"}', ...skillFiles }),
+      );
+      // A manifest after skills that fill the budget is still read.
+      const tail = path.join(workspace, "tail.zip");
+      yield* fs.writeFile(
+        tail,
+        makeZip({
+          ...skillFiles,
+          ".claude-plugin/plugin.json": `{"name":"late"}${" ".repeat(1024)}`,
+        }),
+      );
+      const skills = yield* discoverClaudeSkills(
+        {
+          homePath: path.join(workspace, "config"),
+          launchArgs: `--plugin-dir ${big} --plugin-dir ${tail}`,
+        },
+        workspace,
+      );
+      const firstEight = Array.from({ length: 8 }, (_, index) => `s${index + 1}`);
+      assert.deepEqual(
+        skills.map((skill) => skill.name),
+        [...firstEight.map((name) => `big:${name}`), ...firstEight.map((name) => `late:${name}`)],
       );
     }),
   );

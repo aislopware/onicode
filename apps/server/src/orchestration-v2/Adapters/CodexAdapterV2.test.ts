@@ -3805,6 +3805,21 @@ describe("CodexAdapterV2 post-settle continuation", () => {
               },
             },
           },
+          // Onicode renews its own server's credential; the user has nothing to sign in to.
+          {
+            type: "emit_inbound",
+            label: "onicode-unauthorized",
+            frame: {
+              method: "mcpServer/startupStatus/updated",
+              params: {
+                threadId: nativeThreadId,
+                name: "onicode",
+                status: "failed",
+                error: "MCP client for `onicode` failed to start: 401 Unauthorized",
+                failureReason: "reauthenticationRequired",
+              },
+            },
+          },
         ];
         const preamble = codexReplayPreamble({
           nativeThreadId,
@@ -3852,6 +3867,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
         assert.deepEqual(notices, [
           ["MCP server example_mcp failed to start", null],
           ["MCP server login_mcp failed to start", "login_mcp"],
+          ["MCP server onicode failed to start", null],
         ]);
       }).pipe(
         Effect.provide(

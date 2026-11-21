@@ -241,6 +241,8 @@
   "42b96626eb49fc73": "{count, plural, one {Försökte lista trådar {count} gång} other {Försökte lista trådar {count} gånger}}",
   "28d3809da9e7feb9": "{count, plural, one {Kontrollerade uppgiftsstatus {count} gång} other {Kontrollerade uppgiftsstatus {count} gånger}}",
   "ba261addab1f7b9b": "{count, plural, one {Försökte kontrollera uppgiftsstatus {count} gång} other {Försökte kontrollera uppgiftsstatus {count} gånger}}",
+  "cb4f1b30497b3e8c": "{count, plural, one {Skickade {count} resultat} other {Skickade {count} resultat}}",
+  "8a8376b42d058123": "{count, plural, one {Försökte skicka {count} resultat} other {Försökte skicka {count} resultat}}",
   "9e410f60344c6772": "{count, plural, one {Uppdaterade bakgrundsväntan {count} gång} other {Uppdaterade bakgrundsväntan {count} gånger}}",
   "5ca35b5a769eadcd": "{count, plural, one {Försökte uppdatera bakgrundsväntan {count} gång} other {Försökte uppdatera bakgrundsväntan {count} gånger}}",
   "7f78d45ac7d49ffa": "{count, plural, one {Listade schemalagda uppgifter {count} gång} other {Listade schemalagda uppgifter {count} gånger}}",

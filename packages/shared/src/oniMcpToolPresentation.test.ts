@@ -69,5 +69,6 @@ describe("resolveOniMcpSummaryAction", () => {
       "schedule-update",
     );
     expect(resolveOniMcpSummaryAction("delegate_task", { task: "x" })).toBe("delegate");
+    expect(resolveOniMcpSummaryAction("mcp__onicode__oni_submit_output", {})).toBe("output-submit");
   });
 });

@@ -4656,6 +4656,11 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           subtype: "init",
           session_id: "cleared-native-session",
           uuid: "00000000-0000-4000-8000-000000000501",
+          capabilities: [
+            "mcp_tool_ui_meta_v1",
+            "mcp_read_resource_v1",
+            "mcp_call_result_not_for_model_v1",
+          ],
         }),
       );
       yield* harness.offerAndWait(turnOneResult);
@@ -4669,6 +4674,13 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           : harness.providerThread;
       };
       assert.equal(latest().nativeThreadRef?.nativeId, "cleared-native-session");
+      // The live process still serves the thread under the session /clear started.
+      assert.deepEqual(
+        yield* harness.runtime.mcpApps!.listTools({ providerThread: latest(), server: "probe" }),
+        [],
+      );
+      yield* harness.runtime.applyThreadTitle!({ providerThread: latest(), title: "Cleared" });
+      assert.deepEqual(harness.renameCalls, ["Cleared"]);
       yield* harness.runtime.interruptTurn({
         providerThread: latest(),
         providerTurnId: lastProviderTurn(harness.events).id,
@@ -8025,54 +8037,91 @@ describe("ClaudeAdapterV2 background wake turns", () => {
 
   it.effect("asks to sign in to a configured MCP server, but not to a claude.ai connector", () =>
     Effect.gen(function* () {
-      const harness = yield* makeWakeHarnessWithOptions({
-        mcp: {
-          mcpServerStatus: Effect.succeed([
-            { name: "linear", status: "needs-auth" },
-            { name: "claude.ai Gmail", status: "needs-auth", scope: "claudeai" },
-            { name: "docs", status: "connected" },
-          ]),
-          readMcpResource: () => Effect.die("unexpected MCP resource read"),
-          callMcpTool: () => Effect.die("unexpected MCP tool call"),
-        },
+      const runTurns = Effect.fnUntraced(function* (
+        attempt: string,
+        turns: ReadonlyArray<ReadonlyArray<{ readonly name: string; readonly status: string }>>,
+      ) {
+        let statusCalls = 0;
+        const harness = yield* makeWakeHarnessWithOptions({
+          mcp: {
+            mcpServerStatus: Effect.sync((): ReadonlyArray<ClaudeSdk.McpServerStatus> => {
+              statusCalls += 1;
+              return [
+                { name: "linear", status: "needs-auth" },
+                { name: "claude.ai Gmail", status: "needs-auth", scope: "claudeai" },
+                { name: "docs", status: "connected" },
+                // Onicode's own server answers 401 when its credential expires.
+                { name: "onicode", status: "needs-auth" },
+              ];
+            }),
+            readMcpResource: () => Effect.die("unexpected MCP resource read"),
+            callMcpTool: () => Effect.die("unexpected MCP tool call"),
+          },
+        });
+        for (const [ordinal, initServers] of turns.entries()) {
+          yield* harness.runtime.startTurn(
+            makeClaudeTestTurnInput({
+              threadId: harness.threadId,
+              providerThread: harness.providerThread,
+              now: yield* DateTime.now,
+              attemptId: RunAttemptId.make(`${attempt}-${ordinal}`),
+              providerTurnOrdinal: ordinal + 1,
+              text: "Plan the sprint",
+              attachments: [],
+            }),
+          );
+          yield* harness.offerAndWait(
+            claudeSdkFrame({
+              type: "system",
+              subtype: "init",
+              uuid: `${attempt}-${ordinal}-init`,
+              session_id: WAKE_NATIVE_SESSION,
+              mcp_servers: initServers,
+            }),
+          );
+          yield* Queue.offer(
+            harness.sdkMessages,
+            makeResultFrame({ uuid: `${attempt}-${ordinal}-result`, result: "Planned" }),
+          );
+          yield* Queue.take(harness.terminalReceipts);
+        }
+        const signIns = harness.events.flatMap((event) =>
+          event.type === "turn_item.updated" &&
+          event.turnItem.type === "system_notice" &&
+          event.turnItem.mcpSignIn !== undefined
+            ? [event.turnItem.mcpSignIn.server]
+            : [],
+        );
+        return { signIns, statusCalls };
       });
-      yield* harness.runtime.startTurn(
-        makeClaudeTestTurnInput({
-          threadId: harness.threadId,
-          providerThread: harness.providerThread,
-          now: yield* DateTime.now,
-          attemptId: RunAttemptId.make("mcp-sign-in"),
-          text: "Plan the sprint",
-          attachments: [],
-        }),
-      );
       // Remote servers are still connecting at init; whether they need a sign-in settles later.
-      yield* harness.offerAndWait(
-        claudeSdkFrame({
-          type: "system",
-          subtype: "init",
-          uuid: "mcp-sign-in-init",
-          session_id: WAKE_NATIVE_SESSION,
-          mcp_servers: [
+      // A server still waiting for its sign-in on the next turn was already announced, so that
+      // turn settles without asking again.
+      assert.deepEqual(
+        yield* runTurns("mcp-sign-in", [
+          [
             { name: "linear", status: "pending" },
             { name: "claude.ai Gmail", status: "needs-auth" },
             { name: "docs", status: "connected" },
+            { name: "onicode", status: "pending" },
           ],
-        }),
+          [
+            { name: "linear", status: "needs-auth" },
+            { name: "docs", status: "connected" },
+          ],
+        ]),
+        { signIns: ["linear"], statusCalls: 1 },
       );
-      yield* Queue.offer(
-        harness.sdkMessages,
-        makeResultFrame({ uuid: "mcp-sign-in-result", result: "Planned" }),
+      // Only Onicode's own server pending: nothing to ask, so the turn skips the status request.
+      assert.deepEqual(
+        yield* runTurns("mcp-sign-in-onicode", [
+          [
+            { name: "docs", status: "connected" },
+            { name: "onicode", status: "pending" },
+          ],
+        ]),
+        { signIns: [], statusCalls: 0 },
       );
-      yield* Queue.take(harness.terminalReceipts);
-      const signIns = harness.events.flatMap((event) =>
-        event.type === "turn_item.updated" &&
-        event.turnItem.type === "system_notice" &&
-        event.turnItem.mcpSignIn !== undefined
-          ? [event.turnItem.mcpSignIn.server]
-          : [],
-      );
-      assert.deepEqual(signIns, ["linear"]);
     }).pipe(
       Effect.scoped,
       Effect.provide(

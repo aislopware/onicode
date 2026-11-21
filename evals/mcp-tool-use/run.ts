@@ -55,6 +55,7 @@ import { buildCodexAdditionalContext } from "../../apps/server/src/provider/Code
 import { PULL_REQUEST_LINKING_INSTRUCTIONS } from "@onicode/provider-core/server/runtimeInstructions";
 import { makeSideChatContext } from "../../apps/server/src/orchestration-v2/ContextHandoffService.ts";
 import { withInlineContext } from "../../apps/server/src/orchestration-v2/ContextHandoffDelivery.ts";
+import { outputInstructions } from "../../apps/server/src/orchestration-v2/runOutput.ts";
 import { AttachmentToolkit } from "../../apps/server/src/mcp/toolkits/attachment/tools.ts";
 import { DeviceToolkit } from "../../apps/server/src/mcp/toolkits/device/tools.ts";
 import { EnvironmentToolkit } from "../../apps/server/src/mcp/toolkits/environment/tools.ts";
@@ -285,8 +286,6 @@ const McpToolUseWorld = Schema.StructWithRest(
     repo: Schema.optional(Schema.String),
     /** `origin`'s host and path, such as `git.cafe/acme/app`. Defaults to `github.com/<repo>`. */
     remote: Schema.optional(Schema.String),
-    /** The branch has commits but no upstream: Onicode's pull_request_create refuses until a push. */
-    unpushed: Schema.optional(Schema.Boolean),
     branch: Schema.optional(Schema.String),
     /** `git status --short` lines. */
     status: Schema.optional(Schema.String),
@@ -393,6 +392,8 @@ export const McpToolUseCase = Schema.Struct({
   prompt: Schema.String,
   /** Records for the context chips `prompt` links, projected as Onicode sends them. */
   promptContext: Schema.optional(Schema.Struct({ records: Schema.Array(ComposerContextRecord) })),
+  /** The JSON Schema of the result the turn owes: Onicode appends its output instructions. */
+  outputSchema: Schema.optional(Schema.Record(Schema.String, Schema.Json)),
   expect: McpToolUseExpect,
   /**
    * The checks for `--arm raw`, when its right outcome differs, as when only Onicode can watch a PR.
@@ -1297,8 +1298,11 @@ export const buildMessages = (sample: Sample) => {
   const prompt =
     sideChatContext === undefined ? userText : withInlineContext(sideChatContext, userText);
   const childPrompt = () => taskPrompt({ task: prompt, role: delegateRole });
+  // Turn start appends them after everything else in the user text.
+  const owed =
+    testCase.outputSchema === undefined ? "" : `\n\n${outputInstructions(testCase.outputSchema)}`;
   if (testCase.prompt !== "")
-    push("user", text(role === "delegated-child" ? childPrompt() : prompt));
+    push("user", text(`${role === "delegated-child" ? childPrompt() : prompt}${owed}`));
   // Claude Code gives a subagent its SubagentStart hooks' context as a reminder after the task.
   if (native && base.subagentContext) {
     push("user", reminder(`SubagentStart hook additional context: ${base.subagentContext}`));
@@ -2198,45 +2202,11 @@ const recordForgeChange = (
 };
 
 /**
- * A successful `git push` in this sample published `branch`: a bare push or a push to a remote
- * alone pushes the current branch; otherwise a refspec has to name it or HEAD. Dry runs don't count.
- */
-const pushed = (sample: Sample, branch: string) => {
-  // HEAD and a bare push publish whatever is checked out when that push runs.
-  let current = sample.testCase.setup.world?.branch ?? "";
-  for (const entry of sample.shell) {
-    const succeeded = entry.tool === "Bash" && !/^Exit code [1-9]/.test(entry.output);
-    for (const part of shellParts(entry)) {
-      current = switchedTo(part) ?? current;
-      const words = /\bgit\s+push\b(.*)/.exec(part)?.[1]?.trim().split(/\s+/).filter(Boolean);
-      if (!succeeded || words === undefined) continue;
-      if (["--dry-run", "-n", "--help", "-h"].some((flag) => words.includes(flag))) continue;
-      const refs = words.filter((word) => !word.startsWith("-")).slice(1);
-      const sources = refs.map((ref) => ref.split(":")[0]!.replace(/^\+/, ""));
-      if (
-        refs.length === 0
-          ? current === branch
-          : sources.some((source) => source === branch || (source === "HEAD" && current === branch))
-      )
-        return true;
-    }
-  }
-  return false;
-};
-
-/**
  * Refusals the real tools give for this world, so the tools arm meets the same walls as the CLI.
  * Messages are PullRequestService's and GitManager's.
  */
 const productRefusal = (sample: Sample, name: string, input: Readonly<Record<string, unknown>>) => {
   const world = sample.testCase.setup.world;
-  if (
-    name === "pull_request_create" &&
-    world?.unpushed === true &&
-    !pushed(sample, checkedOutBranch(sample))
-  ) {
-    return "Current branch has not been pushed. Push before creating a PR.";
-  }
   if (name === "pull_request_merge" && typeof input.expectedHeadSha === "string") {
     const own = branchPullRequest(sample);
     const number = input.number ?? own.number;

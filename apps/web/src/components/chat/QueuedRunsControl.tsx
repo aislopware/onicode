@@ -3,7 +3,10 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@onicode/client-runtime/state/runtime";
-import { deriveThreadQueueWorkflowState } from "@onicode/client-runtime/state/thread-workflows";
+import {
+  canPromoteQueuedRun,
+  deriveThreadQueueWorkflowState,
+} from "@onicode/client-runtime/state/thread-workflows";
 import { assistantCitationsToPlainText } from "@onicode/shared/assistantCitations";
 import {
   isAttachmentOnlyBootstrapPrompt,
@@ -13,6 +16,7 @@ import type {
   ChatAttachment as ContractChatAttachment,
   EnvironmentId,
   MessageId,
+  OrchestrationV2Run,
   RunId,
   ThreadId,
 } from "@onicode/contracts";
@@ -122,11 +126,8 @@ export function QueuedRunsControl({
   const activeRun = workflow?.activeRun ?? null;
   // A row waiting on compaction is already headed into the turn; the steer key takes the next one.
   const steerTarget = queued.find((queuedRun) => !queuedRun.awaitsCompaction);
-  // A fresh message starts its own turn: it may skip compaction, but not steer into a turn.
-  const canSendRun = (freshContext: boolean) =>
-    workflow?.canSendNow === true ||
-    (workflow?.canPromoteToSteer === true &&
-      (!freshContext || workflow.promoteSkipsCompaction === true));
+  const canSendRun = (run: Pick<OrchestrationV2Run, "freshContext" | "outputSchema">) =>
+    workflow !== null && (workflow.canSendNow || canPromoteQueuedRun(workflow, run));
   const queuedImageUrlById = new Map(
     queuedImageAttachmentUrls.flatMap((url, index) => {
       const resource = queuedImageAttachmentResources[index];
@@ -143,7 +144,7 @@ export function QueuedRunsControl({
       message,
       runId: run.id,
       messageId: run.userMessageId,
-      freshContext: run.freshContext === true,
+      canSend: canSendRun(run),
       serverIndex,
       text,
       attachments,
@@ -163,7 +164,7 @@ export function QueuedRunsControl({
       message: undefined,
       runId: null,
       messageId: null,
-      freshContext: false,
+      canSend: canSendRun({}),
       serverIndex: null,
       text: message.text,
       attachments: [] as ReadonlyArray<ContractChatAttachment>,
@@ -173,10 +174,8 @@ export function QueuedRunsControl({
   ];
 
   const sendQueuedMessage = async (queuedRunId: RunId) => {
-    const freshContext = queued.some(
-      ({ run }) => run.id === queuedRunId && run.freshContext === true,
-    );
-    if (!canSendRun(freshContext) || steerInFlightRef.current) return;
+    const queuedRun = queued.find(({ run }) => run.id === queuedRunId)?.run;
+    if (!canSendRun(queuedRun ?? {}) || steerInFlightRef.current) return;
     steerInFlightRef.current = true;
     setBusyRunId(queuedRunId);
     const result = workflow?.canSendNow
@@ -210,7 +209,7 @@ export function QueuedRunsControl({
       const next = steerTarget;
       // A row being edited has no Send now either: its saved text is about to change.
       if (!next || next.run.id === props.editingRunId) return false;
-      if (!canSendRun(next.run.freshContext === true)) return false;
+      if (!canSendRun(next.run)) return false;
       if (!repeat && busyRunId === null) void sendQueuedMessage(next.run.id);
       return true;
     },
@@ -308,7 +307,7 @@ export function QueuedRunsControl({
                       <T>Sends into the current turn when compaction finishes</T>
                     </TooltipPopup>
                   </Tooltip>
-                ) : canSendRun(item.freshContext) && !isEditing ? (
+                ) : item.canSend && !isEditing ? (
                   <>
                     <Tooltip>
                       <TooltipTrigger render={<span className="flex shrink-0" />}>

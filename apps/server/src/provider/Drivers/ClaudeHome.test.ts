@@ -103,4 +103,24 @@ it.layer(NodeServices.layer)("ClaudeHome", (it) => {
         ).toBe("custom");
       }),
   );
+
+  it.effect("keeps reading host variables set after it was built", () =>
+    Effect.gen(function* () {
+      const host: NodeJS.ProcessEnv = { PATH: "/bin", CLAUDECODE: "1" };
+      const config = { homePath: "/tmp/oni-claude-late-host" };
+      const environment = yield* makeClaudeEnvironment(
+        config,
+        yield* mergeClaudeProcessEnvironment(config, undefined, host),
+      );
+      // The desktop's shell snapshot reaches the host after the adapter is built.
+      host.PATH = "/opt/bin:/bin";
+      host.SSL_CERT_FILE = "/etc/ca.pem";
+      expect({ ...environment }).toEqual({
+        PATH: "/opt/bin:/bin",
+        SSL_CERT_FILE: "/etc/ca.pem",
+        CLAUDE_CODE_ENTRYPOINT: "onicode",
+        CLAUDE_CONFIG_DIR: yield* resolveClaudeHomePath(config),
+      });
+    }),
+  );
 });

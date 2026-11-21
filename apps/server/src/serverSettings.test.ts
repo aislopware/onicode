@@ -3328,6 +3328,7 @@ it.effect("publishes edits made before the restored settings watch is registered
       `{ "responseStreamingMode": "turn" }`,
     );
 
+    const firstStats = new Map<string, FileSystem.File.Info>();
     const replaced = yield* Deferred.make<void>();
     const registering = yield* Deferred.make<void>();
     const allowRegistration = yield* Deferred.make<void>();
@@ -3337,6 +3338,19 @@ it.effect("publishes edits made before the restored settings watch is registered
           FileSystem.FileSystem,
           FileSystem.FileSystem.of({
             ...fs,
+            // The unreported-change poll stats the file on real I/O, which can land after the
+            // last clock step and restart the reload debounce there; its own tests cover it.
+            stat: (statPath) =>
+              Effect.suspend(() => {
+                const seen = firstStats.get(statPath);
+                return seen !== undefined
+                  ? Effect.succeed(seen)
+                  : fs
+                      .stat(statPath)
+                      .pipe(
+                        Effect.tap((info) => Effect.sync(() => firstStats.set(statPath, info))),
+                      );
+              }),
             watch: (directory, options) =>
               Stream.unwrap(
                 Effect.gen(function* () {

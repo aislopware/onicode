@@ -83,7 +83,8 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
   // Force stop kills agent processes, as Stop on a terminal does.
   [ORCHESTRATION_V2_WS_METHODS.forceStopThread]: AuthOrchestrationOperateScope,
   [WS_METHODS.providerSessionMcpServerAction]: AuthOrchestrationOperateScope,
-  [WS_METHODS.providerSessionMcpOAuthCallback]: AuthOrchestrationOperateScope,
+  // Finishing /mcp's sign-in stores the credential, as provider.mcpSignIn.complete does.
+  [WS_METHODS.providerSessionMcpOAuthCallback]: AuthProvidersManageScope,
   // Typing can make the provider upload the conversation ahead of the prompt, which spends usage.
   [WS_METHODS.providerSessionDraftActivity]: AuthOrchestrationOperateScope,
   // Seeing and driving the host's screen is at least what a terminal on it allows.
@@ -99,6 +100,9 @@ export type ClientGuardedRpcTag = keyof typeof CLIENT_GUARDED_RPC_SCOPES;
 
 const decodePrepareThread = Schema.decodeUnknownSync(GitPreparePullRequestThreadInput);
 const decodeStackedAction = Schema.decodeUnknownSync(GitRunStackedActionInput);
+const isMcpSignInAction = Schema.is(
+  Schema.Struct({ action: Schema.Literals(["authenticate", "clear-auth"]) }),
+);
 
 export function clientRpcRequiredScopes(
   method: string,
@@ -117,6 +121,9 @@ export function clientRpcRequiredScopes(
     )
       return [AuthSourceControlWriteScope, AuthOrchestrationReadScope];
   }
+  // Signing in or out of an MCP server changes a stored credential, as provider.mcpSignIn does.
+  if (method === WS_METHODS.providerSessionMcpServerAction && isMcpSignInAction(input))
+    return [AuthOrchestrationOperateScope, AuthProvidersManageScope];
   return Object.hasOwn(CLIENT_GUARDED_RPC_SCOPES, method)
     ? [CLIENT_GUARDED_RPC_SCOPES[method as ClientGuardedRpcTag]]
     : [];

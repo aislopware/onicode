@@ -1,5 +1,8 @@
 import { describe, expect, it } from "@effect/vitest";
+import { vi } from "vite-plus/test";
 import {
+  AuthOrchestrationOperateScope,
+  AuthProvidersManageScope,
   CommandId,
   RuntimeRequestId,
   EnvironmentId,
@@ -10,6 +13,8 @@ import {
   ProviderInstanceId,
   ThreadId,
   type OrchestrationV2Command,
+  WS_METHODS,
+  type AuthSessionState,
   type OrchestrationV2ShellSnapshot,
 } from "@onicode/contracts";
 import * as DateTime from "effect/DateTime";
@@ -24,7 +29,7 @@ import * as Queue from "effect/Queue";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
-import { Atom, AtomRegistry } from "effect/reactivity";
+import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
 
 import * as EnvironmentRegistry from "../connection/registry.ts";
 import {
@@ -34,8 +39,22 @@ import {
 } from "../connection/model.ts";
 import * as EnvironmentSupervisor from "../connection/supervisor.ts";
 import type { RpcSession } from "../rpc/session.ts";
+import { createProviderSessionEnvironmentAtoms } from "./providerSession.ts";
+import { runAtomCommand } from "./runtime.ts";
 import { createThreadEnvironmentAtoms } from "./threadCommands.ts";
 import * as ThreadHistoryController from "./threadHistoryController.ts";
+
+vi.mock("./session.ts", () => ({
+  createEnvironmentSessionAtoms: () => ({ sessionStateAtom: () => grantedSession }),
+}));
+const grantedSession = Atom.make(
+  AsyncResult.success<AuthSessionState>({
+    authenticated: true,
+    auth: { policy: "remote-reachable", bootstrapMethods: [] },
+    scopes: [AuthOrchestrationOperateScope, AuthProvidersManageScope],
+    permissions: [AuthOrchestrationOperateScope, AuthProvidersManageScope],
+  }),
+);
 
 const ENVIRONMENT_ID = EnvironmentId.make("remote");
 const THREAD_ID = ThreadId.make("thread");
@@ -95,6 +114,7 @@ const SNAPSHOT: OrchestrationV2ShellSnapshot = {
 const makeHarness = Effect.fn("TestThreadCommands.makeHarness")(function* (options?: {
   readonly loadEarlier?: () => Effect.Effect<ThreadHistoryController.ThreadHistoryLoadEarlierResult>;
   readonly reconcilePendingWork?: (threadId: ThreadId) => Effect.Effect<void>;
+  readonly client?: Record<string, unknown>;
 }) {
   const requests = yield* Queue.unbounded<{
     command: OrchestrationV2Command;
@@ -123,6 +143,7 @@ const makeHarness = Effect.fn("TestThreadCommands.makeHarness")(function* (optio
               yield* Queue.offer(requests, { command, reply });
               return yield* Deferred.await(reply);
             }),
+          ...options?.client,
         },
       } as unknown as RpcSession),
     ),
@@ -165,6 +186,7 @@ const makeHarness = Effect.fn("TestThreadCommands.makeHarness")(function* (optio
   registry.mount(visibleAtom);
   return {
     registry,
+    runtime,
     commands,
     snapshotAtom,
     visibleAtom,
@@ -173,6 +195,72 @@ const makeHarness = Effect.fn("TestThreadCommands.makeHarness")(function* (optio
     connection,
     connectionFollowed,
   };
+});
+
+describe("MCP sign-in notices", () => {
+  it.effect("follow a sign-in and sign-out made from /mcp", () =>
+    Effect.gen(function* () {
+      const { registry, runtime, commands } = yield* makeHarness({
+        client: {
+          [WS_METHODS.providerSessionMcpServerAction]: (input: { server: string }) =>
+            Effect.succeed(
+              input.server.startsWith("browser") ? { authUrl: "https://auth.test" } : {},
+            ),
+          [WS_METHODS.providerSessionMcpOAuthCallback]: () => Effect.void,
+          [WS_METHODS.providerSessionMcpServers]: () =>
+            Effect.succeed({
+              servers: [
+                { name: "browser-local", status: "connected", tools: [] },
+                { name: "jira", status: "needs-auth", tools: [] },
+              ],
+            }),
+        },
+      });
+      const session = createProviderSessionEnvironmentAtoms(runtime);
+      const signedIn = (server: string) =>
+        registry.get(
+          commands.mcpSignedInAtom(ENVIRONMENT_ID, { threadId: THREAD_ID, server, noticeAt: 0 }),
+        );
+      const succeeds = (run: () => Promise<{ readonly _tag: string }>) =>
+        Effect.promise(run).pipe(Effect.map((result) => expect(result._tag).toBe("Success")));
+      const act = (server: string, action: "authenticate" | "clear-auth") =>
+        succeeds(() =>
+          runAtomCommand(registry, session.mcpServerAction, {
+            environmentId: ENVIRONMENT_ID,
+            input: { threadId: THREAD_ID, server, action },
+          }),
+        );
+
+      yield* act("linear", "authenticate");
+      expect(signedIn("linear")).toBe(true);
+      yield* act("linear", "clear-auth");
+      expect(signedIn("linear")).toBe(false);
+
+      // Waiting on the browser is not signed in yet; the pasted callback finishes it.
+      yield* act("browser", "authenticate");
+      expect(signedIn("browser")).toBe(false);
+      yield* succeeds(() =>
+        runAtomCommand(registry, session.mcpOAuthCallback, {
+          environmentId: ENVIRONMENT_ID,
+          input: { threadId: THREAD_ID, server: "browser", callbackUrl: "http://localhost/cb" },
+        }),
+      );
+      expect(signedIn("browser")).toBe(true);
+
+      // A browser that reaches the provider's own callback finishes it; the list shows it connected.
+      yield* act("browser-local", "authenticate");
+      expect(signedIn("browser-local")).toBe(false);
+      // Another client cleared jira's sign-in; the list shows it needs auth again.
+      yield* act("jira", "authenticate");
+      expect(signedIn("jira")).toBe(true);
+      yield* AtomRegistry.getResult(
+        registry,
+        session.mcpServers({ environmentId: ENVIRONMENT_ID, input: { threadId: THREAD_ID } }),
+        { suspendOnWaiting: true },
+      );
+      expect([signedIn("browser-local"), signedIn("jira")]).toEqual([true, false]);
+    }),
+  );
 });
 
 describe("history loading", () => {

@@ -106,11 +106,25 @@ const detail = (workspaceRoot: string, headSha: string): PullRequestDetail =>
     workspaceRoot,
   }) as PullRequestDetail;
 
+const settledThread = (path: string | null, body: string) =>
+  ({
+    id: `thread-${body}`,
+    path,
+    line: null,
+    side: "RIGHT",
+    isResolved: true,
+    isOutdated: false,
+    comments: [
+      { id: `note-${body}`, author: { login: "ana" }, body, createdAt: "2026-11-01T00:00:00Z" },
+    ],
+  }) as never;
+
 const activity: PullRequestActivity = {
   comments: [],
   commentCount: 0,
   commentsTruncated: false,
-  reviewThreads: [],
+  reviewThreads: [settledThread("feature.txt", "Rename it.")],
+  overviewThreads: [settledThread(null, "Split the PR.")],
   commits: [],
 };
 
@@ -437,6 +451,7 @@ it.layer(layerBase, { excludeTestServices: true })("PullRequestReviewGuideServic
       ]);
       yield* git(repositories.workspace, ["remote", "set-url", "upstream", "review-upstream:"]);
       const changed = yield* Deferred.make<string>();
+      const settledReview = yield* Deferred.make<string>();
       const driver = yield* GitVcsDriver.GitVcsDriver;
       const stored = yield* Deferred.make<void>();
       const context = yield* Layer.build(
@@ -444,7 +459,8 @@ it.layer(layerBase, { excludeTestServices: true })("PullRequestReviewGuideServic
           ...repositories,
           stored,
           generate: (input) =>
-            git(input.cwd, ["diff", "--name-only", `${input.baseCommit}...HEAD`]).pipe(
+            Deferred.succeed(settledReview, input.settledReview).pipe(
+              Effect.andThen(git(input.cwd, ["diff", "--name-only", `${input.baseCommit}...HEAD`])),
               Effect.provideService(GitVcsDriver.GitVcsDriver, driver),
               Effect.orDie,
               Effect.flatMap((names) => Deferred.succeed(changed, names)),
@@ -458,6 +474,11 @@ it.layer(layerBase, { excludeTestServices: true })("PullRequestReviewGuideServic
       );
       yield* service.generate(reference);
       assert.strictEqual(yield* Deferred.await(changed), "feature.txt");
+      // Settled threads on the whole PR count, as GitLab overview threads.
+      assert.strictEqual(
+        yield* Deferred.await(settledReview),
+        "- feature.txt (resolved, ana): Rename it.\n- PR overview (resolved, ana): Split the PR.",
+      );
       yield* Deferred.await(stored);
       const result = yield* service.get(reference);
       assert.strictEqual(result.guide?.headSha, repositories.headSha);

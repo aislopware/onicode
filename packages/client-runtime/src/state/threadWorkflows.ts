@@ -211,6 +211,18 @@ export function deriveThreadQueueWorkflowState(
   };
 }
 
+/** A fresh message, or one asking for a result, needs its own turn: it may skip compaction only. */
+export function canPromoteQueuedRun(
+  workflow: Pick<ThreadQueueWorkflowState, "canPromoteToSteer" | "promoteSkipsCompaction">,
+  run: Pick<Run, "freshContext" | "outputSchema">,
+): boolean {
+  return (
+    workflow.canPromoteToSteer &&
+    (workflow.promoteSkipsCompaction ||
+      (run.freshContext !== true && run.outputSchema === undefined))
+  );
+}
+
 export function canForkProjectedAssistantItem(input: {
   readonly projectedItem: OrchestrationV2ProjectedTurnItem;
   readonly capabilities?: OrchestrationV2ProviderCapabilities | undefined;

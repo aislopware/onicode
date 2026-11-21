@@ -11756,11 +11756,12 @@ it.layer(layerSharedApplicationDataPlaneTest)("run output after a stop", (it) =>
         branch: null,
         worktreePath: null,
       });
-      const send = (key: string, outputSchema?: { readonly type: "object" }) =>
+      const send = (key: string, outputSchema?: { readonly type: "object" }, byProvider = false) =>
         orchestrator.dispatch({
           type: "message.dispatch",
-          createdBy: "user",
-          creationSource: "web",
+          // A turn the provider starts on its own records its message as the agent's.
+          createdBy: byProvider ? "agent" : "user",
+          creationSource: byProvider ? "provider" : "web",
           commandId: CommandId.make(`runtime-layer-owed-output-${key}`),
           threadId,
           messageId: MessageId.make(`runtime-layer-owed-output-${key}`),
@@ -11770,33 +11771,155 @@ it.layer(layerSharedApplicationDataPlaneTest)("run output after a stop", (it) =>
           ...(outputSchema === undefined ? {} : { outputSchema }),
           dispatchMode: { type: "start_immediately" },
         });
+      const complete = (run: OrchestrationV2Run) =>
+        eventSink.write({
+          events: [
+            {
+              id: EventId.make(`${threadId}-${run.id}-completed`),
+              type: "run.updated",
+              threadId,
+              runId: run.id,
+              occurredAt: run.requestedAt,
+              payload: { ...run, status: "completed", completedAt: run.requestedAt },
+            },
+          ],
+        });
+      const runFor = (key: string) =>
+        Effect.map(orchestrator.getThreadProjection(threadId), ({ runs }) =>
+          runs.find(
+            (run) => run.userMessageId === MessageId.make(`runtime-layer-owed-output-${key}`),
+          )!,
+        );
+      // Both agents ended their turns to wait for something, without the result.
       yield* send("asked", { type: "object" });
-      const asked = (yield* orchestrator.getThreadProjection(threadId)).runs[0]!;
-      // The agent ended its turn to wait for something, without the result.
+      const asked = yield* runFor("asked");
+      yield* complete(asked);
+      yield* send("later", { type: "object" });
+      const later = yield* runFor("later");
+      yield* complete(later);
+      // A turn woken for delegated work the run it names started.
+      const wakeFor = (key: string, parentRunId: RunId) =>
+        Effect.gen(function* () {
+          yield* send(key);
+          const run = yield* runFor(key);
+          const message = (yield* orchestrator.getThreadProjection(threadId)).messages.find(
+            (candidate) => candidate.id === run.userMessageId,
+          )!;
+          yield* eventSink.write({
+            events: [
+              {
+                id: EventId.make(`${threadId}-${key}-delegated`),
+                type: "message.updated",
+                threadId,
+                runId: run.id,
+                occurredAt: run.requestedAt,
+                payload: {
+                  ...message,
+                  delegatedCompletion: { parentRunId, generation: 1, taskIds: [] },
+                },
+              },
+            ],
+          });
+          return run;
+        });
+      const submit = (key: string, json: string) =>
+        threadManagement.submitRunOutput({
+          threadId,
+          commandId: CommandId.make(`runtime-layer-owed-output-submit-${key}`),
+          json,
+        });
+      const outputOf = (run: OrchestrationV2Run) =>
+        Effect.map(
+          orchestrator.getThreadProjection(threadId),
+          ({ runs }) => runs.find((candidate) => candidate.id === run.id)?.output?.value,
+        );
+
+      // A wake for the first run was cut by a restart; its continuation is a new message.
+      const cutWake = yield* wakeFor("cut-wake", asked.id);
       yield* eventSink.write({
         events: [
           {
-            id: EventId.make(`${threadId}-asked-completed`),
+            id: EventId.make(`${threadId}-cut-wake-cancelled`),
             type: "run.updated",
             threadId,
-            runId: asked.id,
-            occurredAt: asked.requestedAt,
-            payload: { ...asked, status: "completed", completedAt: asked.requestedAt },
+            runId: cutWake.id,
+            occurredAt: cutWake.requestedAt,
+            payload: { ...cutWake, status: "cancelled", completedAt: cutWake.requestedAt },
           },
         ],
       });
-      yield* send("woken");
+      yield* send("restarted-wake");
+      const restartedWake = yield* runFor("restarted-wake");
+      yield* eventSink.write({
+        events: [
+          {
+            id: EventId.make(`${threadId}-restarted-wake-continues`),
+            type: "run.updated",
+            threadId,
+            runId: restartedWake.id,
+            occurredAt: restartedWake.requestedAt,
+            payload: { ...restartedWake, restartContinuationOfRunId: cutWake.id },
+          },
+        ],
+      });
+      assert.equal(
+        (yield* submit("restarted-wake", '{"head":"xyz"}')).runId,
+        asked.id,
+        "a restarted wake answers for the run its cut wake was for",
+      );
+      yield* complete(restartedWake);
 
-      const accepted = yield* threadManagement.submitRunOutput({
-        threadId,
-        commandId: CommandId.make("runtime-layer-owed-output-submit"),
-        json: '{"head":"abc"}',
+      const woken = yield* wakeFor("woken", asked.id);
+      const accepted = yield* submit("woken", '{"head":"abc"}');
+      assert.equal(accepted.runId, asked.id, "the run the turn woke for takes its result");
+      const corrected = yield* submit("woken-again", '{"head":"def"}');
+      assert.equal(corrected.runId, asked.id, "a correction goes to the same run");
+      assert.deepEqual(yield* outputOf(asked), { head: "def" });
+      yield* complete(woken);
+      // The woken turn started delegated work of its own, and that woke another turn.
+      const rewoken = yield* wakeFor("rewoken", woken.id);
+      assert.equal((yield* submit("rewoken", '{"head":"ghi"}')).runId, asked.id);
+      assert.deepEqual(yield* outputOf(asked), { head: "ghi" });
+      yield* complete(rewoken);
+      // A turn the provider woke names no run, so it answers for the newest one still owed.
+      yield* send("native", undefined, true);
+      const native = yield* runFor("native");
+      assert.equal((yield* submit("native", '{"head":"jkl"}')).runId, later.id);
+      assert.deepEqual(yield* outputOf(later), { head: "jkl" });
+      yield* complete(native);
+
+      // Every run asked for a result has given it. After a wake, a wait for one reads the
+      // latest run that was asked; after a run sent for something else, it is on that run.
+      const waitForOutput = Effect.gen(function* () {
+        const waited = yield* threadManagement
+          .waitForThread({ projectId, threadId, timeoutMs: 1_000, untilOutput: true })
+          .pipe(Effect.forkChild({ startImmediately: true }));
+        yield* TestClock.adjust("1 second");
+        return yield* Fiber.join(waited);
       });
-      assert.equal(accepted.runId, asked.id);
-      const after = yield* orchestrator.getThreadProjection(threadId);
-      assert.deepEqual(after.runs.find((run) => run.id === asked.id)?.output?.value, {
-        head: "abc",
-      });
+      assert.equal((yield* waitForOutput).run?.id, later.id, "a provider wake is a wake too");
+      yield* complete(yield* wakeFor("last-wake", later.id));
+      const afterWake = yield* waitForOutput;
+      assert.isFalse(afterWake.timedOut);
+      assert.equal(afterWake.run?.id, later.id);
+      assert.deepEqual(afterWake.run?.output?.value, { head: "jkl" });
+      yield* send("unrelated");
+      const unrelated = yield* runFor("unrelated");
+      const afterSend = yield* waitForOutput;
+      assert.isTrue(afterSend.timedOut);
+      assert.equal(afterSend.run?.id, unrelated.id);
+      // The woken run was never asked for a result, so a wait for one ends with it.
+      const wokenWait = yield* threadManagement
+        .waitForThread({
+          projectId,
+          threadId,
+          runId: woken.id,
+          timeoutMs: 1_000,
+          untilOutput: true,
+        })
+        .pipe(Effect.forkChild({ startImmediately: true }));
+      yield* TestClock.adjust("1 second");
+      assert.isFalse((yield* Fiber.join(wokenWait)).timedOut);
     }),
   );
 

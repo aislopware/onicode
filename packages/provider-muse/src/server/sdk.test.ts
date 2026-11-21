@@ -75,11 +75,15 @@ describe("Muse SDK host", () => {
         throw new Error("The API override must not be read.");
       });
       Object.defineProperty(source, key, { enumerable: true, get: read });
-      expect(makeMuseEnvironment(source)).toEqual({
+      const environment = makeMuseEnvironment(source);
+      expect(environment).toEqual({
         PATH: "/bin",
         MUSE_TEST: "yes",
         MUSE_NO_AUTO_UPDATE: "1",
       });
+      // The desktop's shell snapshot reaches the host after the driver is built.
+      source.PATH = "/opt/bin:/bin";
+      expect(environment.PATH).toBe("/opt/bin:/bin");
       expect(read).not.toHaveBeenCalled();
       expect(Object.keys(source)).toContain(key);
     },

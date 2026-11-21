@@ -1,3 +1,4 @@
+import * as EffectNodeStream from "@effect/platform-node/NodeStream";
 import type { ClaudeSettings, ServerProviderSkill } from "@onicode/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -12,12 +13,16 @@ import { parse as parseYamlDocument } from "yaml";
 
 import { expandHomePath } from "@onicode/provider-core/server/pathExpansion";
 
+import { openZipArchive } from "../../zipArchive.ts";
+
 type ClaudeSkillScope = "user" | "project";
 
 type ClaudeSkillRoot = {
   readonly directory: string;
   readonly scope: ClaudeSkillScope;
   readonly prefix?: string;
+  /** For a plugin zip: SKILL.md contents by path in the plugin, and this root's folder there. */
+  readonly archive?: { readonly skillFiles: ReadonlyMap<string, string>; readonly folder: string };
 };
 
 const FRONTMATTER_PATTERN = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/;
@@ -342,13 +347,15 @@ function pluginNameKey(name: string): string {
   return name.normalize("NFC").toLowerCase();
 }
 
+const decodePluginManifest = Schema.decodeEffect(PluginManifest);
+
 const readPluginManifest = Effect.fn("readPluginManifest")(function* (pluginPath: string) {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   return yield* fileSystem
     .readFileString(path.join(pluginPath, ".claude-plugin", "plugin.json"))
     .pipe(
-      Effect.flatMap(Schema.decodeUnknownEffect(PluginManifest)),
+      Effect.flatMap(decodePluginManifest),
       Effect.orElseSucceed(() => undefined),
     );
 });
@@ -417,8 +424,178 @@ const expandInlinePluginDirectory = Effect.fn("expandInlinePluginDirectory")(fun
   );
 });
 
+const PLUGIN_ROOT_NAMES = [
+  ".claude-plugin",
+  "commands",
+  "skills",
+  "agents",
+  "hooks",
+  "themes",
+  "output-styles",
+  "monitors",
+  "workflows",
+  "SKILL.md",
+  ".mcp.json",
+  ".lsp.json",
+];
+const PLUGIN_ARCHIVE_MEMBER = /^(?:(?:[^/]+\/)?\.claude-plugin\/plugin\.json|(?:.*\/)?SKILL\.md)$/;
+const PLUGIN_ARCHIVE_MANIFEST = /^(?:([^/]+)\/)?\.claude-plugin\/plugin\.json$/;
+const MAX_PLUGIN_ARCHIVE_ENTRIES = 10_000;
+const MAX_PLUGIN_ARCHIVE_MEMBER_BYTES = 1024 * 1024;
+const MAX_PLUGIN_ARCHIVE_TOTAL_BYTES = 8 * 1024 * 1024;
+
+const isArchiveJunk = (name: string) => name === "__MACOSX" || name === ".DS_Store";
+
+/** The manifest, entry names and SKILL.md files of a plugin zip, read as Claude extracts it. */
+const readInlinePluginArchive = Effect.fn("readInlinePluginArchive")(
+  function* (archivePath: string) {
+    const fileSystem = yield* FileSystem.FileSystem;
+    if (!archivePath.toLowerCase().endsWith(".zip")) return undefined;
+    if ((yield* fileSystem.stat(archivePath)).type !== "File") return undefined;
+    const archive = yield* openZipArchive(archivePath, (detail) => detail);
+    if (archive.entryCount > MAX_PLUGIN_ARCHIVE_ENTRIES) return undefined;
+    const names: Array<string> = [];
+    const members = new Map<string, string>();
+    const topNames = new Set<string>();
+    let budget = MAX_PLUGIN_ARCHIVE_TOTAL_BYTES;
+    for (;;) {
+      const entry = yield* archive.next;
+      if (!entry) break;
+      names.push(entry.fileName);
+      const top = entry.fileName.split("/")[0] ?? "";
+      if (!isArchiveJunk(top)) topNames.add(top);
+      // The manifest skips the budget wherever it sits: once at the root, and once in the
+      // wrapper while that is still the only top-level folder.
+      const manifest = PLUGIN_ARCHIVE_MANIFEST.exec(entry.fileName);
+      const exempt =
+        manifest !== null &&
+        !members.has(entry.fileName) &&
+        (manifest[1] === undefined || (topNames.size === 1 && topNames.has(manifest[1])));
+      const limit = exempt
+        ? MAX_PLUGIN_ARCHIVE_MEMBER_BYTES
+        : Math.min(MAX_PLUGIN_ARCHIVE_MEMBER_BYTES, budget);
+      // The wrapper folder and manifest skill paths are known only after every name,
+      // so every candidate is read. Yauzl fails a member whose size differs from its header.
+      if (
+        !PLUGIN_ARCHIVE_MEMBER.test(entry.fileName) ||
+        entry.fileName.split("/").some((segment) => segment === "" || segment === ".") ||
+        (entry.generalPurposeBitFlag & 1) !== 0 ||
+        entry.uncompressedSize > limit
+      ) {
+        continue;
+      }
+      if (!exempt) budget -= entry.uncompressedSize;
+      const contents = yield* archive.streamEntry(entry).pipe(
+        Effect.flatMap((readable) =>
+          EffectNodeStream.toString(() => readable, {
+            maxBytes: MAX_PLUGIN_ARCHIVE_MEMBER_BYTES,
+            onError: () => "The archive member could not be read.",
+          }),
+        ),
+        Effect.scoped,
+      );
+      members.set(entry.fileName, contents);
+    }
+
+    // Claude unwraps one top-level folder that holds the plugin, unless the root holds it.
+    const top = new Set(
+      names.map((name) => name.split("/")[0] ?? "").filter((name) => !isArchiveJunk(name)),
+    );
+    const [wrapper] = top;
+    let root = "";
+    if (wrapper !== undefined && top.size === 1 && !top.has(".claude-plugin")) {
+      const children = new Set(
+        names
+          .filter((name) => name.startsWith(`${wrapper}/`))
+          .map((name) => name.split("/")[1] ?? "")
+          .filter((name) => name && !isArchiveJunk(name)),
+      );
+      if (
+        children.has(".claude-plugin") ||
+        (!PLUGIN_ROOT_NAMES.includes(wrapper) &&
+          PLUGIN_ROOT_NAMES.some((name) => children.has(name)))
+      ) {
+        root = `${wrapper}/`;
+      }
+    }
+
+    const manifestContents = members.get(`${root}.claude-plugin/plugin.json`);
+    const manifest =
+      manifestContents === undefined
+        ? undefined
+        : yield* decodePluginManifest(manifestContents).pipe(Effect.orElseSucceed(() => undefined));
+    const skillFiles = new Map<string, string>();
+    for (const [name, contents] of members) {
+      if (name.startsWith(root) && name.endsWith("SKILL.md")) {
+        skillFiles.set(name.slice(root.length), contents);
+      }
+    }
+    const entries = names
+      .filter((name) => name.startsWith(root))
+      .map((name) => name.slice(root.length));
+    return { root, manifest, entries, skillFiles };
+  },
+  Effect.scoped,
+  Effect.orElseSucceed(() => undefined),
+);
+
+/** A manifest skills path as a folder inside the plugin, or undefined when it leaves the plugin. */
+function archiveSkillFolder(relative: string): string | undefined {
+  if (relative.startsWith("/")) return undefined;
+  const segments: Array<string> = [];
+  for (const segment of relative.split("/")) {
+    if (segment === "" || segment === ".") continue;
+    if (segment !== "..") segments.push(segment);
+    else if (segments.pop() === undefined) return undefined;
+  }
+  return segments.join("/");
+}
+
+/** The skill roots of a plugin zip, by the same rules as an unpacked plugin's. */
+function archivePluginSkillRoots(
+  path: Path.Path,
+  archivePath: string,
+  archive: NonNullable<Effect.Success<ReturnType<typeof readInlinePluginArchive>>>,
+  prefix: string,
+): Array<ClaudeSkillRoot> {
+  const toRoot = (folder: string): ClaudeSkillRoot => ({
+    directory: path.join(archivePath, archive.root, ...folder.split("/")),
+    scope: "user",
+    prefix,
+    archive: { skillFiles: archive.skillFiles, folder },
+  });
+  const roots: Array<ClaudeSkillRoot> = [];
+  const hasDefaultDirectory = archive.entries.some((name) => name.startsWith("skills/"));
+  if (hasDefaultDirectory) roots.push(toRoot("skills"));
+  const declared = archive.manifest?.skills;
+  if (declared === undefined && !hasDefaultDirectory && archive.skillFiles.has("SKILL.md")) {
+    roots.push(toRoot(""));
+  }
+  for (const relative of typeof declared === "string" ? [declared] : (declared ?? [])) {
+    const folder = archiveSkillFolder(relative);
+    if (folder !== undefined) roots.push(toRoot(folder));
+  }
+  return roots;
+}
+
+/** Files of an archived skill root, by the path below its folder. */
+const archivedSkillFile = (
+  archive: NonNullable<ClaudeSkillRoot["archive"]>,
+  ...segments: ReadonlyArray<string>
+) => archive.skillFiles.get([archive.folder, ...segments].filter(Boolean).join("/"));
+
+/** Folders directly inside an archived skill root that hold a SKILL.md. */
+const archivedSkillFolders = (archive: NonNullable<ClaudeSkillRoot["archive"]>) => {
+  const prefix = archive.folder ? `${archive.folder}/` : "";
+  return [...archive.skillFiles.keys()].flatMap((name) => {
+    if (!name.startsWith(prefix)) return [];
+    const [folder, file, ...rest] = name.slice(prefix.length).split("/");
+    return folder && file === "SKILL.md" && rest.length === 0 ? [folder] : [];
+  });
+};
+
 /**
- * Plugin folders Claude Code loads inline, from --plugin-dir launch arguments and then
+ * Plugin folders and zips Claude Code loads inline, from --plugin-dir launch arguments and then
  * CLAUDE_CODE_PLUGIN_DIRS, and their plugin names.
  */
 const discoverInlinePluginSkillRoots = Effect.fn("discoverInlinePluginSkillRoots")(function* (
@@ -447,11 +624,13 @@ const discoverInlinePluginSkillRoots = Effect.fn("discoverInlinePluginSkillRoots
       .map((directory) => path.resolve(directory)),
   ];
   for (const directory of directories) {
-    for (const installPath of yield* expandInlinePluginDirectory(directory)) {
+    const archive = yield* readInlinePluginArchive(directory);
+    const installPaths = archive ? [directory] : yield* expandInlinePluginDirectory(directory);
+    for (const installPath of installPaths) {
       if (seen.has(installPath)) continue;
       seen.add(installPath);
-      const manifest = yield* readPluginManifest(installPath);
-      const prefix = manifest?.name ?? path.basename(installPath);
+      const manifest = archive ? archive.manifest : yield* readPluginManifest(installPath);
+      const prefix = manifest?.name ?? path.basename(installPath).replace(/\.zip$/i, "");
       // A `<name>@inline` setting wins; otherwise the manifest's `defaultEnabled` decides.
       const setting = enabledPlugins.get(`${prefix}@inline`);
       if (setting === false || (setting === undefined && manifest?.defaultEnabled === false)) {
@@ -460,7 +639,11 @@ const discoverInlinePluginSkillRoots = Effect.fn("discoverInlinePluginSkillRoots
       // Managed enabledPlugins entries, true or false, lock the name against inline copies.
       if (managedPluginNames.has(pluginNameKey(prefix))) continue;
       names.add(pluginNameKey(prefix));
-      roots.push(...(yield* pluginSkillRoots(installPath, "user", prefix, manifest)));
+      roots.push(
+        ...(archive
+          ? archivePluginSkillRoots(path, installPath, archive, prefix)
+          : yield* pluginSkillRoots(installPath, "user", prefix, manifest)),
+      );
     }
   }
   return { roots, names };
@@ -737,24 +920,30 @@ export const discoverClaudeSkills = Effect.fn("discoverClaudeSkills")(function* 
 
   const skillsByName = new Map<string, ServerProviderSkill>();
   for (const root of roots) {
+    const archive = root.archive;
     const singleSkill =
       root.prefix !== undefined &&
-      (yield* fileSystem
-        .exists(path.join(root.directory, "SKILL.md"))
-        .pipe(Effect.orElseSucceed(() => false)));
+      (archive
+        ? archivedSkillFile(archive, "SKILL.md") !== undefined
+        : yield* fileSystem
+            .exists(path.join(root.directory, "SKILL.md"))
+            .pipe(Effect.orElseSucceed(() => false)));
+    const rootName = path.basename(root.directory);
     const entries = singleSkill
-      ? [path.basename(root.directory)]
-      : yield* fileSystem
-          .readDirectory(root.directory)
-          .pipe(Effect.orElseSucceed((): ReadonlyArray<string> => []));
+      ? [archive ? rootName.replace(/\.zip$/i, "") : rootName]
+      : archive
+        ? archivedSkillFolders(archive)
+        : yield* fileSystem
+            .readDirectory(root.directory)
+            .pipe(Effect.orElseSucceed((): ReadonlyArray<string> => []));
 
     for (const entry of [...entries].sort()) {
       const skillPath = singleSkill
         ? path.join(root.directory, "SKILL.md")
         : path.join(root.directory, entry, "SKILL.md");
-      const contents = yield* fileSystem
-        .readFileString(skillPath)
-        .pipe(Effect.orElseSucceed(() => undefined));
+      const contents = archive
+        ? archivedSkillFile(archive, ...(singleSkill ? [] : [entry]), "SKILL.md")
+        : yield* fileSystem.readFileString(skillPath).pipe(Effect.orElseSucceed(() => undefined));
       if (contents === undefined) {
         continue;
       }

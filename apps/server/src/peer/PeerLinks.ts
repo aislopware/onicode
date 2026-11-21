@@ -56,6 +56,8 @@ export const probeTimeout = (origin: string) =>
   isLocalLoopbackHost(new URL(origin).hostname) ? Duration.seconds(3) : Duration.seconds(10);
 /** How long a listing waits on a link's addresses; a real call still gives a waking peer `probeTimeout`. */
 const LIST_PROBE_TIMEOUT = Duration.seconds(3);
+/** How often a run of successful calls moves a link's reach time. */
+const REACHED_WRITE_INTERVAL_MS = 30_000;
 
 /** Node's TLS verification code in a failed request's cause chain, if any. */
 export const certificateErrorCode = (error: unknown) => {
@@ -253,6 +255,16 @@ const make = Effect.gen(function* () {
     Effect.map((settings) => settings.linkedEnvironmentsEnabled),
     Effect.orElseSucceed(() => false),
   );
+  // What this process last wrote, so a repeated outcome or expiry skips its write.
+  const recordedOutcomes = new Map<
+    EnvironmentId,
+    { readonly at: number; readonly error: string | null }
+  >();
+  const recordedExpiries = new Map<EnvironmentId, number>();
+  const forgetRecorded = (environmentId: EnvironmentId) => {
+    recordedOutcomes.delete(environmentId);
+    recordedExpiries.delete(environmentId);
+  };
 
   /** A fresh name for one link's token; the row records it. */
   const newSecretName = random.randomBytes(16).pipe(
@@ -598,6 +610,7 @@ const make = Effect.gen(function* () {
       `.pipe(Effect.catch(failStorage));
       return previous;
     }).pipe(Effect.onError(() => secrets.remove(secretName).pipe(Effect.ignore)));
+    forgetRecorded(peer.environmentId);
     // Linking again replaces the old token. A racing link may leave its own
     // behind; it is unused either way.
     if (Option.isSome(previous) && previous.value.secret_name !== secretName) {
@@ -670,6 +683,7 @@ const make = Effect.gen(function* () {
         DELETE FROM peer_environment_links WHERE environment_id = ${environmentId}
         RETURNING secret_name
       `.pipe(Effect.catch(failStorage));
+      forgetRecorded(environmentId);
       for (const row of deleted) {
         yield* secrets.remove(row.secret_name).pipe(Effect.catch(failStorage));
       }
@@ -741,27 +755,50 @@ const make = Effect.gen(function* () {
 
   const recordOutcome: PeerLinks["Service"]["recordOutcome"] = (environmentId, outcome) =>
     DateTime.now.pipe(
-      Effect.flatMap((now) =>
-        outcome.error === null
-          ? sql`
-              UPDATE peer_environment_links
-              SET last_reached_at = ${DateTime.formatIso(now)}, last_error = NULL
-              WHERE environment_id = ${environmentId}
-            `
-          : sql`
-              UPDATE peer_environment_links SET last_error = ${outcome.error}
-              WHERE environment_id = ${environmentId}
-            `,
-      ),
+      Effect.flatMap((now) => {
+        const at = DateTime.toEpochMillis(now);
+        const last = recordedOutcomes.get(environmentId);
+        // A repeated success still moves its reach time, but at most every 30 seconds.
+        if (
+          last !== undefined &&
+          last.error === outcome.error &&
+          (outcome.error !== null || at - last.at < REACHED_WRITE_INTERVAL_MS)
+        ) {
+          return Effect.void;
+        }
+        return (
+          outcome.error === null
+            ? sql`
+                UPDATE peer_environment_links
+                SET last_reached_at = ${DateTime.formatIso(now)}, last_error = NULL
+                WHERE environment_id = ${environmentId}
+              `
+            : sql`
+                UPDATE peer_environment_links SET last_error = ${outcome.error}
+                WHERE environment_id = ${environmentId}
+              `
+        ).pipe(
+          Effect.tap(() =>
+            Effect.sync(() => recordedOutcomes.set(environmentId, { at, error: outcome.error })),
+          ),
+        );
+      }),
       Effect.asVoid,
       Effect.ignoreCause({ log: true }),
     );
 
-  const recordExpiry: PeerLinks["Service"]["recordExpiry"] = (environmentId, expiresAt) =>
-    sql`
+  const recordExpiry: PeerLinks["Service"]["recordExpiry"] = (environmentId, expiresAt) => {
+    const at = DateTime.toEpochMillis(expiresAt);
+    if ((recordedExpiries.get(environmentId) ?? Number.NEGATIVE_INFINITY) >= at) return Effect.void;
+    return sql`
       UPDATE peer_environment_links SET expires_at = ${DateTime.formatIso(expiresAt)}
       WHERE environment_id = ${environmentId} AND expires_at < ${DateTime.formatIso(expiresAt)}
-    `.pipe(Effect.asVoid, Effect.ignoreCause({ log: true }));
+    `.pipe(
+      Effect.tap(() => Effect.sync(() => recordedExpiries.set(environmentId, at))),
+      Effect.asVoid,
+      Effect.ignoreCause({ log: true }),
+    );
+  };
 
   return PeerLinks.of({
     enabled,

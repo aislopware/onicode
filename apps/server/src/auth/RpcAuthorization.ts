@@ -187,9 +187,10 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.providerUploadFeedback]: AuthOrchestrationOperateScope,
   [WS_METHODS.providerSessionContextUsage]: AuthOrchestrationReadScope,
   [WS_METHODS.providerSessionMcpServers]: AuthOrchestrationReadScope,
-  // Turning an MCP server on or signing it in changes what the agent can reach.
+  // Turning an MCP server on changes what the agent can reach; signing in also needs
+  // providers:manage (clientRpcRequiredScopes).
   [WS_METHODS.providerSessionMcpServerAction]: AuthOrchestrationOperateScope,
-  [WS_METHODS.providerSessionMcpOAuthCallback]: AuthOrchestrationOperateScope,
+  [WS_METHODS.providerSessionMcpOAuthCallback]: AuthProvidersManageScope,
   [WS_METHODS.providerSessionInfo]: AuthOrchestrationReadScope,
   [WS_METHODS.providerSessionMemoryFile]: AuthOrchestrationReadScope,
   [WS_METHODS.providerSessionDraftActivity]: AuthOrchestrationOperateScope,

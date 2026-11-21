@@ -8,7 +8,10 @@ import {
 } from "@onicode/client-runtime/queued-run-edit";
 import type { ComposerDispatchMode } from "@onicode/client-runtime/state/composer-dispatch";
 import type { ThreadStructure } from "@onicode/client-runtime/state/shell";
-import { deriveThreadQueueWorkflowState } from "@onicode/client-runtime/state/thread-workflows";
+import {
+  canPromoteQueuedRun,
+  deriveThreadQueueWorkflowState,
+} from "@onicode/client-runtime/state/thread-workflows";
 import {
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   type ChatAttachment,
@@ -364,8 +367,7 @@ export function useQueuedRunEdit(input: {
     if (
       queued === undefined ||
       workflow.activeRun === null ||
-      !workflow.canPromoteToSteer ||
-      (queued.run.freshContext === true && !workflow.promoteSkipsCompaction)
+      !canPromoteQueuedRun(workflow, queued.run)
     ) {
       return;
     }

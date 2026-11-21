@@ -2454,6 +2454,7 @@ export const make = Effect.gen(function* () {
     cwd: string,
     status: { branch: string; upstreamRef: string | null; hasUpstream: boolean },
     changeRequestLabel: string,
+    requestedBase?: string,
   ) {
     const target = yield* gitCore.resolvePushTarget(cwd, status);
     if (!target) return;
@@ -2463,12 +2464,9 @@ export const make = Effect.gen(function* () {
       remoteName: target.remoteName,
     });
     if (headContext.isCrossRepository) return;
-    const { baseBranch } = yield* resolvePrBase(
-      cwd,
-      status.branch,
-      status.upstreamRef,
-      headContext,
-    );
+    const baseBranch =
+      requestedBase ??
+      (yield* resolvePrBase(cwd, status.branch, status.upstreamRef, headContext)).baseBranch;
     if (baseBranch !== target.branchName) return;
     if (yield* findOpenPr(cwd, headContext)) return;
     return yield* new GitManagerError({
@@ -2710,6 +2708,7 @@ export const make = Effect.gen(function* () {
         input.cwd,
         { ...status, branch: status.branch },
         (yield* changeRequestTermsFor(input.cwd)).shortLabelWithArticle,
+        input.baseBranch,
       );
     }
     const push = needsPush
