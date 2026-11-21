@@ -30,7 +30,7 @@ export class IssueTrackerBindingsRepository extends Context.Service<
       ReadonlyMap<ProjectId, IssueTrackerProjectBinding>,
       IssueTrackerBindingsRepositoryError
     >;
-    /** Null unbinds. */
+    /** Null unbinds. A binding without `additionalScopes` keeps the stored ones on its tracker. */
     readonly set: (input: {
       readonly projectId: ProjectId;
       readonly binding: IssueTrackerProjectBinding | null;
@@ -92,6 +92,7 @@ const make = Effect.gen(function* () {
         const additionalScopes = yield* encodeAdditionalScopes(
           input.binding.additionalScopes ?? [],
         );
+        const keepStoredScopes = input.binding.additionalScopes === undefined ? 1 : 0;
         yield* sql`
               INSERT INTO issue_tracker_bindings (project_id, tracker, scope, additional_scopes, updated_at)
               VALUES (
@@ -100,7 +101,16 @@ const make = Effect.gen(function* () {
               )
               ON CONFLICT (project_id)
               DO UPDATE SET tracker = excluded.tracker, scope = excluded.scope,
-                additional_scopes = excluded.additional_scopes, updated_at = excluded.updated_at
+                additional_scopes = CASE
+                  WHEN ${keepStoredScopes} = 1 AND issue_tracker_bindings.tracker = excluded.tracker
+                  THEN (
+                    SELECT json_group_array(value)
+                    FROM json_each(issue_tracker_bindings.additional_scopes)
+                    WHERE value <> ${input.binding.scope}
+                  )
+                  ELSE excluded.additional_scopes
+                END,
+                updated_at = excluded.updated_at
             `;
       },
       Effect.mapError(toSqlOrDecodeError("setIssueTrackerBinding", "IssueTrackerBinding")),

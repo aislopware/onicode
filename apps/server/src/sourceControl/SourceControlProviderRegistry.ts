@@ -373,13 +373,13 @@ export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWit
           }),
         { concurrency: "unbounded" },
       ).pipe(
-        // A CLI installed or signed in since the last check may claim a remote no forge claimed.
+        // A CLI installed or signed in since the last check, or since a remote was looked up
+        // before any check, may claim a remote no forge claimed.
         Effect.tap((items) => {
           const fingerprint = discoveryFingerprint(items);
           if (fingerprint === lastDiscovery) return Effect.void;
-          const changed = lastDiscovery !== undefined;
           lastDiscovery = fingerprint;
-          return changed ? Cache.invalidateAll(unknownRemoteCache) : Effect.void;
+          return Cache.invalidateAll(unknownRemoteCache);
         }),
       ),
     });

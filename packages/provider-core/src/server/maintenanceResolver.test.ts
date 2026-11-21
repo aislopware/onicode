@@ -1511,7 +1511,7 @@ it.layer(
   );
 
   it.effect(
-    "asks npm about every provider package installed into the same global prefix",
+    "asks npm about every provider package in one global prefix at once, then alone if that fails",
     () =>
       Effect.gen(function* () {
         const tempDir = yield* makeTempDir("oni-npm-latest-shared");
@@ -1550,10 +1550,14 @@ it.layer(
             stdoutSpawner(
               (_command, args) => {
                 spawned.push(args);
+                if (args[0] !== "outdated") {
+                  return JSON.stringify({
+                    dependencies: { "@example/package-tool": { version: "1.0.0" } },
+                  });
+                }
+                // The other package's scoped registry refuses its token, failing any run naming it.
                 return JSON.stringify(
-                  args[0] === "outdated"
-                    ? { "@example/other-tool": { current: "1.0.0", latest: "1.1.0" } }
-                    : { dependencies: { "@example/package-tool": { version: "1.0.0" } } },
+                  args.includes("@example/other-tool") ? { error: { code: "E401" } } : {},
                 );
               },
               (args) => (args[0] === "outdated" ? 1 : 0),
@@ -1580,6 +1584,8 @@ it.layer(
             "@example/package-tool",
             "@example/other-tool",
           ],
+          ["outdated", "-g", "--prefix", tempDir, "--json", "@example/package-tool"],
+          ["outdated", "-g", "--prefix", tempDir, "--json", "@example/other-tool"],
           ["ls", "-g", "--prefix", tempDir, "--depth", "0", "--json", "@example/package-tool"],
         ]);
       }),
