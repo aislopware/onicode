@@ -66,6 +66,7 @@ import { randomUuidV4 } from "@onicode/provider-core/server/randomUuid";
 import { DispatchModeLimit } from "./DispatchModeLimit.ts";
 import * as ThreadManagement from "./ThreadManagementService.ts";
 import * as TaskFolders from "../workspace/TaskFolders.ts";
+import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
 
 // The agent waits for its branch name; a rate-limited provider would hold it for minutes.
 const BRANCH_NAME_TIMEOUT = "20 seconds";
@@ -1144,25 +1145,27 @@ const make = Effect.gen(function* () {
                               .pipe(Effect.ignoreCause({ log: true })),
                       ),
                     )
-                : taskFolders
-                    .remove({
+                : // The lease a repository being added holds: removal waits for it to land.
+                  withWorkspaceLease(
+                    removedPath,
+                    taskFolders.remove({
                       root: removedTaskFolder,
                       force: true,
                       forget: true,
                       deleteBranch: removedBranch ?? undefined,
-                    })
-                    .pipe(
-                      Effect.flatMap(({ kept }) =>
-                        kept.length === 0
-                          ? Effect.void
-                          : Effect.fail(
-                              new TaskFolderError({
-                                operation: "remove",
-                                detail: `Kept ${kept.map((entry) => entry.path).join(", ")}.`,
-                              }),
-                            ),
-                      ),
+                    }),
+                  ).pipe(
+                    Effect.flatMap(({ kept }) =>
+                      kept.length === 0
+                        ? Effect.void
+                        : Effect.fail(
+                            new TaskFolderError({
+                              operation: "remove",
+                              detail: `Kept ${kept.map((entry) => entry.path).join(", ")}.`,
+                            }),
+                          ),
                     ),
+                  ),
             ).pipe(
               Effect.andThen(
                 threads

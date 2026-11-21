@@ -21,7 +21,7 @@ import type {
   ThreadId,
 } from "@onicode/contracts";
 import { resolveWorktreeCleanup } from "@onicode/shared/projectSettings";
-import { resolveWorktreeOniHome } from "@onicode/shared/devHome";
+import { resolveWorktreeOniHome, SEEDED_DEV_DATABASE_MARKER } from "@onicode/shared/devHome";
 import { makeDrainableWorker } from "@onicode/shared/DrainableWorker";
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
@@ -1104,10 +1104,16 @@ const make = Effect.gen(function* () {
       });
   });
 
-  // A git worktree's dev home is seeded from real data, so its threads and any
-  // copied settings can point at the developer's real worktrees and repositories.
-  const isWorktreeDevHome = Effect.fn("StorageCleanup.isWorktreeDevHome")(function* () {
-    return (yield* resolveWorktreeOniHome(config.baseDir)) === path.resolve(config.baseDir);
+  // A dev home seeded from real data has threads, and maybe copied settings, that point at the
+  // developer's real worktrees and repositories. A git worktree's dev home is seeded by default;
+  // any other is when migrate-dev-db left its marker beside the database.
+  const isSeededDevHome = Effect.fn("StorageCleanup.isSeededDevHome")(function* () {
+    return (
+      (yield* resolveWorktreeOniHome(config.baseDir)) === path.resolve(config.baseDir) ||
+      (yield* fs
+        .exists(path.join(config.stateDir, SEEDED_DEV_DATABASE_MARKER))
+        .pipe(Effect.orElseSucceed(() => false)))
+    );
   });
   const cleanWorktrees = Effect.fn("StorageCleanup.cleanWorktrees")(function* (
     serverSettings: ServerSettings,
@@ -1120,7 +1126,7 @@ const make = Effect.gen(function* () {
     let waiting = false;
     const kept: string[] = [];
     const roots: Array<string> = [];
-    for (const directory of (yield* isWorktreeDevHome())
+    for (const directory of (yield* isSeededDevHome())
       ? [config.worktreesDir]
       : managedWorktreesDirectories(
           serverSettings,
@@ -1336,8 +1342,8 @@ const make = Effect.gen(function* () {
         const taskFolder = yield* taskFolders.find(worktreePath);
         // Terminals, sessions and project folders anywhere in a task folder protect all of it.
         const guardedPath = taskFolder?.root ?? worktreePath;
-        const guardedPaths =
-          taskFolder === null ? worktreePaths : [guardedPath, yield* canonical(guardedPath)];
+        const guardedKey = yield* canonical(guardedPath);
+        const guardedPaths = taskFolder === null ? worktreePaths : [guardedPath, guardedKey];
         const exists = yield* fs.exists(guardedPath).pipe(
           // A stored path under a regular file cannot exist, but access() fails with ENOTDIR.
           Effect.catchIf(
@@ -1424,6 +1430,14 @@ const make = Effect.gen(function* () {
             canonical(binding.worktreePath),
           );
           const latest = bindings.filter((_binding, index) => bindingKeys[index] === worktreeKey);
+          // The checks below cover the threads on this checkout; removal takes every checkout.
+          if (
+            taskFolder !== null &&
+            bindingKeys.some(
+              (key) => key !== worktreeKey && (key === guardedKey || inside(guardedKey, key)),
+            )
+          )
+            return "another thread works in this task folder";
           if (yield* hasTerminal(guardedPaths)) return waitForStop("open terminal");
           if (deleted) {
             if (
@@ -1852,7 +1866,7 @@ const make = Effect.gen(function* () {
   const reportRef = yield* SubscriptionRef.make<StorageCleanupReport | null>(null);
   const cleanCheckpointRefs = Effect.fn("StorageCleanup.cleanCheckpointRefs")(function* () {
     // A thread deleted in a seeded copy is still alive in the real home that owns its refs.
-    if (yield* isWorktreeDevHome()) return;
+    if (yield* isSeededDevHome()) return;
     // Forks display their source history even after its thread is deleted. Keep
     // that ancestry, including deleted intermediate forks and archived children.
     const rows = yield* sql<{

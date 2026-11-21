@@ -3,8 +3,10 @@ import * as NodePath from "@effect/platform-node/NodePath";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import { type ProjectTrackedFolder, ThreadId } from "@onicode/contracts";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -486,6 +488,38 @@ it.live(
           "feature",
           "main",
         ]);
+
+        // So does a cancelled launch's removal, which deletes only the branches it made.
+        yield* fileSystem.writeFileString(
+          path.join(shop, "onicode.json"),
+          JSON.stringify({
+            worktreeLayout: {
+              create:
+                'mkdir -p "$ONICODE_WORKTREE_PROJECT_PATH" && git -C "$ONICODE_PROJECT_ROOT/api" worktree add -q -b "$ONICODE_WORKTREE_BRANCH" "$ONICODE_WORKTREE_PROJECT_PATH/api" && git -C "$ONICODE_PROJECT_ROOT/web" worktree add -q "$ONICODE_WORKTREE_PROJECT_PATH/web" "$ONICODE_WORKTREE_BRANCH"',
+            },
+          }),
+        );
+        const { taskFolder } = yield* taskFolders.create({
+          plan: (yield* taskFolders.plan({ projectId, repositories: [{ path: api }] }))!,
+          branch: "feature",
+          projectStart: { refName: "main", baseRefName: "main" },
+          startFromOrigin: false,
+        });
+        assert.lengthOf(taskFolder.repositories, 2);
+        yield* taskFolders.remove({
+          root: taskFolder.root,
+          force: true,
+          forget: true,
+          deleteBranch: "feature",
+        });
+        assert.notInclude(
+          (yield* run(api, "branch", "--format=%(refname:short)")).split("\n"),
+          "feature",
+        );
+        assert.deepEqual((yield* run(web, "branch", "--format=%(refname:short)")).split("\n"), [
+          "feature",
+          "main",
+        ]);
       }),
     ),
 );
@@ -795,6 +829,43 @@ it.live("adds a repository to an existing task folder on the thread's branch", (
         })
         .pipe(Effect.flip);
       assert.include(refused.detail, "is not a worktree of");
+    }),
+  ),
+);
+
+it.live("removing a task folder waits for a repository being added to it", () =>
+  withState((state) =>
+    Effect.gen(function* () {
+      const { fileSystem, path, tmp, repository, worktreeCount } = yield* fixture;
+      const taskFolders = yield* TaskFolders.TaskFolders;
+      const api = yield* repository("shop/api");
+      const web = yield* repository("shop/web");
+      state.workspaceRoot = path.join(tmp, "shop");
+      const { taskFolder } = yield* create("feature", [{ path: api }]);
+      const root = taskFolder.root;
+      state.thread = { worktreePath: root, branch: "feature" };
+      const adding = yield* Deferred.make<void>();
+      const proceed = yield* Deferred.make<void>();
+      state.beforeCreateWorktree = Deferred.succeed(adding, undefined).pipe(
+        Effect.andThen(Deferred.await(proceed)),
+      );
+
+      const add = yield* taskFolders
+        .addRepository({ threadId, repositoryPath: web })
+        .pipe(Effect.forkChild);
+      yield* Deferred.await(adding);
+      const remove = yield* taskFolders
+        .removeIfTaskFolder({ path: root, force: true })
+        .pipe(Effect.forkChild);
+      yield* Deferred.succeed(proceed, undefined);
+      yield* Fiber.join(add);
+      assert.isTrue(yield* Fiber.join(remove));
+
+      // The added worktree went with the folder, and no record of either outlived them.
+      assert.isNull(yield* taskFolders.find(root));
+      assert.isFalse(yield* fileSystem.exists(root));
+      assert.equal(yield* worktreeCount(web), 1);
+      assert.equal(yield* worktreeCount(api), 1);
     }),
   ),
 );

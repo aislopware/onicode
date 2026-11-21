@@ -50,6 +50,9 @@ export const resolveGitWorktreePath = Effect.fn("devHome.resolveGitWorktreePath"
   }
 });
 
+/** Left beside a dev database copied from real data, whose threads name real checkouts. */
+export const SEEDED_DEV_DATABASE_MARKER = "seeded-from-real-data";
+
 /**
  * Deliberately does not require the directory to exist yet: falling back
  * because it is missing would send callers at the shared home.

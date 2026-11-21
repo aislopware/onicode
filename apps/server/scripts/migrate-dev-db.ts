@@ -4,7 +4,7 @@ import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeOS from "node:os";
 import * as NodeURL from "node:url";
-import { resolveWorktreeOniHome } from "@onicode/shared/devHome";
+import { resolveWorktreeOniHome, SEEDED_DEV_DATABASE_MARKER } from "@onicode/shared/devHome";
 import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -549,6 +549,11 @@ export const runMigrateDevDb = Effect.fn("runMigrateDevDb")(function* (
   }
 
   yield* fs.makeDirectory(stateDir, { recursive: true });
+  // Before the copy, so even a failed one leaves storage cleanup off the real checkouts.
+  yield* fs.writeFileString(
+    path.join(stateDir, SEEDED_DEV_DATABASE_MARKER),
+    `Copied from ${sourcePath}. Storage cleanup here only touches this home's own worktrees.\n`,
+  );
 
   const wrapPhase =
     (phase: MigrateDevDbPhaseError["phase"], phaseDatabasePath: string) =>
