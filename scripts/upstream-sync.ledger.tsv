@@ -3035,3 +3035,4 @@ ede0f48c60	take	CloudEnvironmentRows.tsx MISSING (T3 Connect, removed); rest tak
 5ddb3b4b71	take	taken as is
 e97290a064	skip	already on main: Onicode's ebf6f662c4 moved the catalog, patches and .repos/effect to Effect 4.1.5 (vendored tree identical) and RpcInstrumentation.test.ts already passes remoteParentSpan
 4d4ec7be5c	take	taken as is
+ed3b241eaa	skip	kept Onicode's signed-URL prefix guard (untraced and unlogged): upstream's route-level redactedParams only applies after the router matches, and the global CORS middleware answers OPTIONS preflights (desktop uploads to a remote environment) before matching, so the raw token reaches spans and request logs; unmatched methods leak the same way. Webhook parts are a removed surface.
