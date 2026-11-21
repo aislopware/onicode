@@ -3156,3 +3156,4 @@ cea19e450b	take	fix(server): ODT attachments no longer repeat index titles or te
 da57ea2bf9	take	taken as is
 ffb42a0b77	take	taken; scenario ported to the desktop harness
 fd4284d8b2	take	adapted: adopted upstream's local/branch-list ref snapshot split over Onicode's worktree-list snapshot; kept Onicode's for-each-ref filter (checkpoint refs out), HEAD via rev-parse; scenario ported
+b70b9e3653	skip	Onicode already resolves the launcher test's temp path (same fix)
