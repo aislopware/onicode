@@ -8086,6 +8086,66 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     ),
   );
 
+  it.effect("finishes a /mcp dialog sign-in from a pasted address and reconnects the server", () =>
+    Effect.gen(function* () {
+      const submitted: Array<string> = [];
+      const reconnected: Array<string> = [];
+      const harness = yield* makeWakeHarnessWithOptions({
+        mcp: {
+          mcpServerStatus: Effect.succeed([{ name: "linear", status: "needs-auth" }]),
+          readMcpResource: () => Effect.die("unexpected MCP resource read"),
+          callMcpTool: () => Effect.die("unexpected MCP tool call"),
+          mcpSubmitOAuthCallbackUrl: ({ callbackUrl }) =>
+            Effect.sync(() => void submitted.push(callbackUrl)),
+          reconnectMcpServer: (server) => Effect.sync(() => void reconnected.push(server)),
+        },
+      });
+      yield* harness.runtime.startTurn(
+        makeClaudeTestTurnInput({
+          threadId: harness.threadId,
+          providerThread: harness.providerThread,
+          now: yield* DateTime.now,
+          attemptId: RunAttemptId.make("mcp-dialog-sign-in"),
+          text: "Plan the sprint",
+          attachments: [],
+        }),
+      );
+      yield* harness.offerAndWait(
+        claudeSdkFrame({
+          type: "system",
+          subtype: "init",
+          uuid: "mcp-dialog-sign-in-init",
+          session_id: WAKE_NATIVE_SESSION,
+        }),
+      );
+      // Address bars can hide the scheme of the localhost page the browser landed on.
+      yield* harness.runtime.mcpServers!.submitOAuthCallback({
+        providerThread: harness.providerThread,
+        server: "linear",
+        callbackUrl: "localhost:5555/callback?code=abc&state=xyz",
+      });
+      assert.deepEqual(submitted, ["http://localhost:5555/callback?code=abc&state=xyz"]);
+      assert.deepEqual(reconnected, ["linear"]);
+      // A provider thread with no native session yet is not the live query's thread.
+      const exit = yield* Effect.exit(
+        harness.runtime.mcpServers!.list({
+          providerThread: { ...harness.providerThread, nativeThreadRef: null },
+        }),
+      );
+      assert.isTrue(Exit.isFailure(exit));
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(
+        Layer.mergeAll(
+          IdAllocator.layer,
+          McpProviderSessions.layer,
+          NodeServices.layer,
+          NodeCrypto.layer,
+        ),
+      ),
+    ),
+  );
+
   // regression: #38284 an MCP app's update-model-context note must reach Claude's next turn
   it.effect("sends MCP app model context with the next Claude turn", () =>
     Effect.gen(function* () {

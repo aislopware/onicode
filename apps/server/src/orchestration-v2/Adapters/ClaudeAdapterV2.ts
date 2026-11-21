@@ -9342,6 +9342,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           if (
             liveQuery === null ||
             liveQuery.stopping ||
+            nativeId === undefined ||
             (liveQuery.nativeThreadId !== nativeId &&
               clearedNativeSessions.get(liveQuery.nativeThreadId) !== nativeId)
           ) {
@@ -15469,11 +15470,26 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               const failed = sessionRequestFailed(
                 `Claude could not finish signing in to ${server}.`,
               );
+              const statuses = yield* query.mcpServerStatus.pipe(Effect.mapError(failed));
+              // A browser on this machine may already have finished it on Claude's own page.
+              if (statuses.find((status) => status.name === server)?.status === "connected") return;
+              const pasted = yield* Effect.try({
+                try: () => pastedUrl(callbackUrl).toString(),
+                catch: sessionProtocolError("That isn't an address. Paste the whole address."),
+              });
               yield* query
-                .mcpSubmitOAuthCallbackUrl({ server, callbackUrl })
+                .mcpSubmitOAuthCallbackUrl({ server, callbackUrl: pasted })
                 .pipe(Effect.mapError(failed));
               // The CLI reconnects after its own callback page, but not after a pasted address.
-              yield* query.reconnectMcpServer(server).pipe(Effect.mapError(failed));
+              yield* query
+                .reconnectMcpServer(server)
+                .pipe(
+                  Effect.mapError(
+                    sessionRequestFailed(
+                      `Signed in, but ${server} didn't reconnect. Restart the agent session to use it.`,
+                    ),
+                  ),
+                );
             }),
           },
           sessionSettings: {
