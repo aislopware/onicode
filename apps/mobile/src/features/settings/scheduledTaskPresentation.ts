@@ -40,6 +40,29 @@ export function formatScheduledTaskInterval(everyMs: number, resolve: MessageRes
   return resolve(msg("Every {duration}", { duration: parts.join(" ") }));
 }
 
+/** `is24Hour` is the system clock setting when known; undefined keeps the locale's hour cycle. */
+function clockOptions(is24Hour: boolean | undefined): Intl.DateTimeFormatOptions {
+  return {
+    hour: "numeric",
+    minute: "2-digit",
+    ...(is24Hour === undefined ? {} : { hourCycle: is24Hour ? "h23" : "h12" }),
+  };
+}
+
+/** A schedule's `H:MM` wall time, which names no date or zone. */
+export function formatScheduledTimeOfDay(timeOfDay: string, is24Hour?: boolean): string {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(timeOfDay);
+  if (!match) return timeOfDay;
+  // In UTC, so neither the device zone nor a DST gap can shift the wall time.
+  return new Intl.DateTimeFormat(undefined, { ...clockOptions(is24Hour), timeZone: "UTC" }).format(
+    Date.UTC(2000, 0, 1, Number(match[1]), Number(match[2])),
+  );
+}
+
+export function formatScheduledRunTime(date: Date, is24Hour?: boolean): string {
+  return date.toLocaleTimeString([], clockOptions(is24Hour));
+}
+
 function localCalendarDay(date: Date): number {
   // Compare calendar days, not 24-hour spans: DST days can have 23 or 25 hours.
   return Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / DAY;
@@ -59,6 +82,7 @@ export function formatNextScheduledTaskRun(
   nextRunAt: string,
   now: number,
   resolve: MessageResolver = m,
+  is24Hour?: boolean,
 ): string {
   const next = new Date(nextRunAt);
   const current = new Date(now);
@@ -85,7 +109,7 @@ export function formatNextScheduledTaskRun(
     );
   }
 
-  const time = next.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  const time = formatScheduledRunTime(next, is24Hour);
   if (days === 1) return resolve(msg("Next run tomorrow at {time}", { time }));
   if (days <= 7) {
     return resolve(

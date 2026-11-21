@@ -192,10 +192,11 @@ export function formatDateTimeTimestamp(isoDate: string, timestampFormat: Timest
       dateStyle: "medium",
       timeStyle: "short",
       ...(timestampFormat === "locale" ? {} : { hour12: timestampFormat === "12-hour" }),
+      timeZone: "UTC",
     });
     dateTimeFormatterCache.set(timestampFormat, formatter);
   }
-  return formatter.format(date);
+  return formatter.format(wallClockAsUtc(date));
 }
 
 /** A wall-clock `H:MM` or `HH:MM` that names no date or zone, such as a daily schedule's time. */

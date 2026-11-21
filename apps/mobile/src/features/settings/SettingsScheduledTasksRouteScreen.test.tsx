@@ -59,6 +59,7 @@ vi.mock("@react-navigation/native", () => ({
 }));
 vi.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ bottom: 0 }) }));
 vi.mock("@expo/ui/community/datetime-picker", () => ({ DateTimePicker: () => null }));
+vi.mock("../threads/useMessageTimeFormatter", () => ({ useSystem24HourClock: () => undefined }));
 vi.mock("../../components/ui/Dialog", () => ({ alert: mocks.alert }));
 vi.mock("../../components/ui/AppText", () => ({ AppText: Children }));
 vi.mock("../../components/ui/AppSymbol", () => ({ SymbolView: () => null }));

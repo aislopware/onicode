@@ -16,6 +16,11 @@ describe("browser target resolver", () => {
       tag: "BearerConnectionTarget",
     },
     { case: "an SSH forward", httpBaseUrl: "http://127.0.0.1:41234", tag: "SshConnectionTarget" },
+    {
+      case: "a saved route through the user's own SSH forward",
+      httpBaseUrl: "http://localhost:41234",
+      tag: "BearerConnectionTarget",
+    },
   ])("gives the system browser no route to $case's loopback", async ({ httpBaseUrl, tag }) => {
     // Opening localhost there would show a different server on this computer.
     readPreparedConnection.mockReturnValue({
@@ -60,29 +65,18 @@ describe("browser target resolver", () => {
     }
   });
 
-  it("normalizes schemeless localhost server-picker values", async () => {
-    readPreparedConnection.mockReturnValue({
-      httpBaseUrl: "http://localhost:3773",
-      target: { _tag: "BearerConnectionTarget", connectionId: "saved:this-machine" },
-    });
-    const { resolveExternalServerUrl } = await import("./browserTargetResolver");
-    expect(resolveExternalServerUrl(EnvironmentId.make("environment-1"), "localhost:5173")).toBe(
-      "http://localhost:5173/",
-    );
-    expect(resolveExternalServerUrl(EnvironmentId.make("environment-1"), "0.0.0.0:3000/app")).toBe(
-      "http://localhost:3000/app",
-    );
-  });
-
   it("maps discovered loopback servers onto a remote environment host", async () => {
     readPreparedConnection.mockReturnValue({
       httpBaseUrl: "http://192.168.1.25:3773",
       target: { _tag: "BearerConnectionTarget", connectionId: "saved:remote" },
     });
     const { resolveExternalServerUrl } = await import("./browserTargetResolver");
-    expect(
-      resolveExternalServerUrl(EnvironmentId.make("environment-1"), "localhost:3000/app"),
-    ).toBe("http://192.168.1.25:3000/app");
+    // Schemeless server-picker values name the environment's loopback too.
+    for (const url of ["localhost:3000/app", "0.0.0.0:3000/app"]) {
+      expect(resolveExternalServerUrl(EnvironmentId.make("environment-1"), url)).toBe(
+        "http://192.168.1.25:3000/app",
+      );
+    }
   });
 
   it("keeps localhost for servers on the desktop's own WSL or primary backend", async () => {

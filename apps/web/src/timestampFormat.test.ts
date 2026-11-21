@@ -2,6 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   formatChatTimestampTooltip,
+  formatDateTimeTimestamp,
   formatDayAwareTimestamp,
   formatUpcomingTimestamp,
 } from "./timestampFormat";
@@ -84,5 +85,21 @@ describe("timestamps after the system time zone changes", () => {
     expect(formatChatTimestampTooltip(monthEnd, "12-hour")).toBe(
       `${timeIn(monthEnd, "Asia/Bangkok")}, 1st November 2026`,
     );
+  });
+
+  it("renders a date and time in the new zone", () => {
+    const monthEnd = "2026-10-31T20:00:00.000Z";
+    const dateTimeIn = (timeZone: string) =>
+      new Intl.DateTimeFormat(undefined, {
+        dateStyle: "medium",
+        timeStyle: "short",
+        hour12: true,
+        timeZone,
+      }).format(new Date(monthEnd));
+    using _zone = useTimeZone("America/New_York");
+    expect(formatDateTimeTimestamp(monthEnd, "12-hour")).toBe(dateTimeIn("America/New_York"));
+
+    process.env.TZ = "Asia/Bangkok";
+    expect(formatDateTimeTimestamp(monthEnd, "12-hour")).toBe(dateTimeIn("Asia/Bangkok"));
   });
 });

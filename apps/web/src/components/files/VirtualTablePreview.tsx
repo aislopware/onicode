@@ -278,6 +278,9 @@ function ScaledRows(
     heights: ReadonlyMap<number, number>;
   }>({ key: "", heights: new Map() });
   const [, setRowMeasureTick] = useState(0);
+  const syncMeasurePassesRef = useRef(0);
+  // Whether this commit laid out the final row heights; End waits for them before it settles.
+  const rowHeightsSettledRef = useRef(true);
   const typographyKey = useClientSettings(
     (settings) => `${settings.fontFamilySans}:${settings.fontSizeInterface}`,
   );
@@ -378,11 +381,16 @@ function ScaledRows(
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- Measure mounted rows across all columns before paint so horizontal column virtualization keeps row heights and vertical scroll position stable.
   useLayoutEffect(() => {
     const probe = rowProbeRef.current;
-    if (!props.hasHorizontalOverflow || !probe) return;
+    if (!props.hasHorizontalOverflow || !probe) {
+      syncMeasurePassesRef.current = 0;
+      rowHeightsSettledRef.current = true;
+      return;
+    }
     const probeStyle = getComputedStyle(probe);
     const cacheKey = `${sizesKey}|${probeStyle.font}`;
     if (rowHeightCacheRef.current.key !== cacheKey) {
       rowHeightCacheRef.current = { key: cacheKey, entries: new Map() };
+      syncMeasurePassesRef.current = 0;
     }
     const cache = rowHeightCacheRef.current.entries;
     const mountedIndices: number[] = [];
@@ -436,16 +444,33 @@ function ScaledRows(
       const height = cache.get(index)?.height;
       if (height && height > BASE_ROW_HEIGHT) next.set(index, height);
     }
-    setRowHeights((old) =>
-      old.key === cacheKey && sameRowHeightMap(old.heights, next)
-        ? old
-        : { key: cacheKey, heights: next },
-    );
-    if (hasRemainingUncached) {
-      const frameId = requestAnimationFrame(() => setRowMeasureTick((tick) => tick + 1));
-      return () => cancelAnimationFrame(frameId);
+    const publish = () =>
+      setRowHeights((old) =>
+        old.key === cacheKey && sameRowHeightMap(old.heights, next)
+          ? old
+          : { key: cacheKey, heights: next },
+      );
+    rowHeightsSettledRef.current =
+      !hasRemainingUncached &&
+      rowHeights.key === cacheKey &&
+      sameRowHeightMap(rowHeights.heights, next);
+    if (!hasRemainingUncached) {
+      syncMeasurePassesRef.current = 0;
+      publish();
+      return undefined;
     }
-    return undefined;
+    // Each pass published here re-runs this effect synchronously, one nested update under React's
+    // limit of 50, so only the first few land before paint and the rest publish a frame apart.
+    const synchronous = syncMeasurePassesRef.current < MAX_SYNC_MEASURE_PASSES;
+    if (synchronous) {
+      syncMeasurePassesRef.current += 1;
+      publish();
+    }
+    const frameId = requestAnimationFrame(() => {
+      if (!synchronous) publish();
+      setRowMeasureTick((tick) => tick + 1);
+    });
+    return () => cancelAnimationFrame(frameId);
   });
   const activeRowHeights =
     props.hasHorizontalOverflow && rowHeights.key.startsWith(`${sizesKey}|`)
@@ -531,7 +556,10 @@ function ScaledRows(
       return;
     node.scrollTop = node.scrollHeight;
     setTop(node.scrollTop);
-    if (Math.abs(row.getBoundingClientRect().bottom - node.getBoundingClientRect().bottom) < 1)
+    if (
+      rowHeightsSettledRef.current &&
+      Math.abs(row.getBoundingClientRect().bottom - node.getBoundingClientRect().bottom) < 1
+    )
       pendingEnd.current = false;
   });
   return (
@@ -611,6 +639,7 @@ const MAX_MEASURED_CELLS_PER_ROW = 16;
 const MAX_GLYPH_WIDTH_EM = 1.35;
 const MAX_CACHED_ROW_HEIGHTS = 512;
 const MAX_SYNC_SCAN_CHARS = 128_000;
+const MAX_SYNC_MEASURE_PASSES = 4;
 const PROBE_CELL_CLASS_NAME =
   "box-border border-r border-b border-transparent px-3 py-1.5 whitespace-pre-wrap break-words tabular-nums";
 

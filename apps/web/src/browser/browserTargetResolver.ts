@@ -108,8 +108,15 @@ export const resolveExternalServerUrl = (
   ) {
     return parsed.toString();
   }
-  // An SSH forward's loopback address is this computer, not the environment.
-  if (connection.target._tag === "SshConnectionTarget") return null;
+  // A loopback route (our SSH forward or the user's own) is this computer, not the environment.
+  const environmentHost = URL.parse(connection.httpBaseUrl)?.hostname;
+  if (
+    connection.target._tag === "SshConnectionTarget" ||
+    !environmentHost ||
+    namesLoopback(environmentHost)
+  ) {
+    return null;
+  }
   try {
     return resolveEnvironmentPortTarget(
       environmentId,
