@@ -28,6 +28,7 @@ import {
   type SecretProviderId,
 } from "@onicode/contracts";
 import { useAtomValue } from "@effect/atom-react";
+import { hasFeatureFlag } from "@onicode/client-runtime/state/server";
 import {
   CheckIcon,
   ExternalLinkIcon,
@@ -41,7 +42,6 @@ import {
 import { useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { T, useGT, useMessages, Var } from "gt-react";
 
-import { isSecretsFeatureEnabled } from "../../env";
 import { useProject, useQuietThreadShell } from "../../state/entities";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -118,7 +118,7 @@ function PendingSecretRequestForm(props: {
   const multiple = item.fields !== undefined;
   // A reference answers one value, so a card with fields is always typed.
   const sources =
-    isSecretsFeatureEnabled && !multiple
+    hasFeatureFlag(config, "secretProviders") && !multiple
       ? secretRequestSources(config, config?.settings.secretProviders ?? {}, messages)
       : NO_SOURCES;
   const thread = useQuietThreadShell(scopeThreadRef(props.environmentId, item.threadId));

@@ -150,7 +150,7 @@ effectIt.effect("keeps mise's PATH record with the login shell PATH", () =>
 );
 
 effectIt.effect(
-  "hydrates a missing JAVA_HOME and PNPM_HOME from the login shell and keeps explicit ones",
+  "hydrates missing JAVA_HOME, PNPM_HOME and feature flags from the login shell and keeps explicit ones",
   () =>
     Effect.acquireUseRelease(
       Effect.sync(() =>
@@ -167,6 +167,9 @@ effectIt.effect(
               "__ONICODE_ENV_PNPM_HOME_START__",
               "/home/user/.local/share/pnpm",
               "__ONICODE_ENV_PNPM_HOME_END__",
+              "__ONICODE_ENV_ONICODE_FEATURE_FLAGS_START__",
+              "tanstack_source",
+              "__ONICODE_ENV_ONICODE_FEATURE_FLAGS_END__",
             ].join("\n"),
           ),
       ),
@@ -178,6 +181,7 @@ effectIt.effect(
             PATH: "/usr/bin",
             JAVA_HOME: "/custom/jdk",
             PNPM_HOME: "/custom/pnpm",
+            ONICODE_FEATURE_FLAGS: "",
           };
 
           for (const env of [missing, explicit]) {
@@ -192,6 +196,8 @@ effectIt.effect(
           assert.equal(explicit.JAVA_HOME, "/custom/jdk");
           assert.equal(missing.PNPM_HOME, "/home/user/.local/share/pnpm");
           assert.equal(explicit.PNPM_HOME, "/custom/pnpm");
+          assert.equal(missing.ONICODE_FEATURE_FLAGS, "tanstack_source");
+          assert.equal(explicit.ONICODE_FEATURE_FLAGS, "");
         }),
       (probe) => Effect.sync(() => probe.mockRestore()),
     ),

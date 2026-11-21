@@ -19,10 +19,6 @@ import { primaryEnvironmentIdAtom } from "~/state/primaryEnvironment";
 
 import { closePreviewSession } from "./closePreviewSession";
 
-vi.mock("~/env", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("~/env")>()),
-  isElectron: true,
-}));
 vi.mock("~/state/primaryEnvironment", async (importOriginal) => ({
   ...(await importOriginal<typeof import("~/state/primaryEnvironment")>()),
   primaryEnvironmentIdAtom: Atom.make<EnvironmentId | null>(null),
