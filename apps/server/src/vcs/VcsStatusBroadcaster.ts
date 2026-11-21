@@ -36,6 +36,7 @@ import * as KeyedLock from "@onicode/shared/KeyedLock";
 import { resolveProjectSettings } from "@onicode/shared/projectSettings";
 
 import * as BackgroundPolicy from "../background/BackgroundPolicy.ts";
+import type { GitRemoteStatusRead } from "../git/GitManager.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as ServerSettings from "../serverSettings.ts";
@@ -152,6 +153,33 @@ interface CachedValue<T> {
 
 interface CachedRemoteStatus extends CachedValue<VcsStatusRemoteResult | null> {
   readonly branch: string | null;
+}
+
+interface RemoteStatusRead extends CachedRemoteStatus {
+  /** The ahead/behind read failed, so its zero counts mean nothing. */
+  readonly divergenceUnknown?: true;
+}
+
+/** A failed ahead/behind read keeps the counts cached for the branch instead of 0/0. */
+function keepKnownDivergence(
+  read: RemoteStatusRead,
+  cached: CachedRemoteStatus | null,
+): CachedRemoteStatus {
+  const { divergenceUnknown, ...remote } = read;
+  if (
+    divergenceUnknown !== true ||
+    remote.value === null ||
+    cached?.value == null ||
+    cached.branch !== remote.branch
+  ) {
+    return remote;
+  }
+  const value = {
+    ...remote.value,
+    aheadCount: cached.value.aheadCount,
+    behindCount: cached.value.behindCount,
+  };
+  return { ...remote, value, fingerprint: fingerprintStatusPart(value) };
 }
 
 interface CachedLocalStatus extends CachedValue<VcsStatusLocalResult> {
@@ -454,10 +482,14 @@ export const make = Effect.gen(function* () {
   );
 
   const updateCachedRemoteStatus = Effect.fn("VcsStatusBroadcaster.updateCachedRemoteStatus")(
-    function* (cwd: string, remote: CachedRemoteStatus | null, options?: { publish?: boolean }) {
+    function* (cwd: string, remote: RemoteStatusRead | null, options?: { publish?: boolean }) {
       const [changed, value] = yield* Ref.modify(cacheRef, (cache) => {
         const previous = cache.get(cwd) ?? { local: null, remote: null };
-        const next = remote?.branch === previous.local?.value.refName ? remote : null;
+        // Resolved at write time, so counts published meanwhile are the ones kept.
+        const next =
+          remote !== null && remote.branch === previous.local?.value.refName
+            ? keepKnownDivergence(remote, previous.remote)
+            : null;
         return [
           [previous.remote?.fingerprint !== next?.fingerprint, next?.value ?? null],
           retainCachedStatus(cache, cwd, { ...previous, remote: next }),
@@ -591,35 +623,48 @@ export const make = Effect.gen(function* () {
   const readRemoteStatus = Effect.fn("VcsStatusBroadcaster.readRemoteStatus")(function* (
     cwd: string,
     options?: Parameters<GitWorkflowService.GitWorkflowService["Service"]["remoteStatus"]>[1],
+    // After a pull HEAD has moved, so the counts cached before it no longer describe it.
+    keepCountsOnUnknown = true,
   ) {
     const branch = yield* workflow.currentBranch(cwd);
     // GitManager's remote TTL cache is keyed by cwd, not the checked-out branch.
     yield* workflow.invalidateRemoteStatus(cwd);
     const previousRemote = (yield* getCachedStatus(cwd))?.remote;
-    const remote = yield* workflow.remoteStatus({ cwd }, options);
+    const read: GitRemoteStatusRead | null = yield* workflow.remoteStatus({ cwd }, options);
     const latest = yield* getCachedStatus(cwd);
     // An overlapping turn refresh and fetch can both move divergence during the forge lookup.
     const refreshed =
-      remote?.hasUpstream && latest?.remote !== previousRemote && latest?.remote?.branch === branch
+      read?.hasUpstream && latest?.remote !== previousRemote && latest?.remote?.branch === branch
         ? yield* workflow.upstreamDivergence(cwd)
         : null;
-    const value =
-      remote && refreshed?.refName === branch
-        ? { ...remote, aheadCount: refreshed.aheadCount, behindCount: refreshed.behindCount }
-        : remote;
+    let value: VcsStatusRemoteResult | null = null;
+    let divergenceUnknown = false;
+    if (read !== null) {
+      const { divergenceUnknown: unknown, ...remote } = read;
+      value =
+        refreshed?.refName === branch
+          ? { ...remote, aheadCount: refreshed.aheadCount, behindCount: refreshed.behindCount }
+          : remote;
+      divergenceUnknown = unknown === true && refreshed?.refName !== branch;
+    }
     const currentBranch = yield* workflow.currentBranch(cwd);
     const cached = yield* getCachedStatus(cwd);
     if (branch !== currentBranch || cached?.local?.value.refName !== currentBranch) {
       yield* refreshLocalStatusCore(cwd);
     }
     return branch === currentBranch
-      ? { branch, value, fingerprint: fingerprintStatusPart(value) }
+      ? ({
+          branch,
+          value,
+          fingerprint: fingerprintStatusPart(value),
+          ...(divergenceUnknown && keepCountsOnUnknown ? { divergenceUnknown: true as const } : {}),
+        } satisfies RemoteStatusRead)
       : null;
   });
 
   const maybeAutoPull = Effect.fn("VcsStatusBroadcaster.maybeAutoPull")(function* (
     cwd: string,
-    remoteRead: CachedRemoteStatus | null,
+    remoteRead: RemoteStatusRead | null,
     policyCwds: ReadonlyArray<string>,
   ) {
     const remote = remoteRead?.value ?? null;
@@ -630,6 +675,8 @@ export const make = Effect.gen(function* () {
       })).some(Boolean);
       if (
         remote === null ||
+        // Kept counts may describe other commits.
+        remoteRead?.divergenceUnknown === true ||
         !remote.hasUpstream ||
         remote.aheadCount > 0 ||
         remote.behindCount <= 0 ||
@@ -652,7 +699,7 @@ export const make = Effect.gen(function* () {
       yield* workflow.pullCurrentBranch(cwd);
       yield* workflow.invalidateStatus(cwd);
       yield* refreshLocalStatusCore(cwd);
-      const refreshedRemote = yield* readRemoteStatus(cwd, { refreshUpstream: false });
+      const refreshedRemote = yield* readRemoteStatus(cwd, { refreshUpstream: false }, false);
       yield* updateCachedRemoteStatus(cwd, refreshedRemote, { publish: true });
       return yield* getStatusParts(cwd);
     }).pipe(

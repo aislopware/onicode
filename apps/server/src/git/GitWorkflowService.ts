@@ -26,7 +26,6 @@ import {
   type GitRunStackedActionResult,
   type VcsStatusInput,
   type VcsStatusLocalResult,
-  type VcsStatusRemoteResult,
   type VcsStatusResult,
 } from "@onicode/contracts";
 
@@ -66,7 +65,7 @@ export class GitWorkflowService extends Context.Service<
     readonly remoteStatus: (
       input: VcsStatusInput,
       options?: GitManager.GitRemoteStatusOptions,
-    ) => Effect.Effect<VcsStatusRemoteResult | null, GitManagerServiceError>;
+    ) => Effect.Effect<GitManager.GitRemoteStatusRead | null, GitManagerServiceError>;
     readonly invalidateLocalStatus: (cwd: string) => Effect.Effect<void, never>;
     readonly invalidateRemoteStatus: (cwd: string) => Effect.Effect<void, never>;
     readonly readRefSnapshot: (cwd: string) => Effect.Effect<string | null>;
@@ -378,7 +377,7 @@ export const make = Effect.gen(function* () {
     }),
     upstreamDivergence: Effect.fn("GitWorkflowService.upstreamDivergence")(function* (cwd) {
       const details = yield* git.statusDetailsRemote(cwd, { refreshUpstream: false });
-      return details.hasUpstream && details.branch !== null
+      return details.hasUpstream && details.branch !== null && details.divergenceUnknown !== true
         ? {
             refName: details.branch,
             aheadCount: details.aheadCount,
