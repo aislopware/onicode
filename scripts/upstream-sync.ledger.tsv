@@ -2997,3 +2997,4 @@ c43e073123	take	CONFLICTs: kept Onicode's … ellipsis strings (existing transla
 af99412e9d	take	taken as is
 0634dea682	take	kept Onicode's pointer to the root README for installing vp; added the Windows long-path clone note
 9ab7da2a3e	take	CONFLICTs: took upstream's header-line toggle; kept Onicode's focus look (outline-ring-inset from #486) and row hover colour, and Onicode's wrapLabel for notices
+9bd76c1e99	take	taken as is
