@@ -2976,3 +2976,4 @@ c436409da0	take	taken as is; contracts field optional (wire-safe); mobile passes
 302b28c4ec	take	taken as is
 77a553ab2c	skip	launch-video skill (marketing launch videos) is not in Onicode, as with 22dcb0af5a
 c5514042ad	take	webhookAddress test left out (Onicode has no webhooks); imageAttachmentSize test taken
+8cfd2b5211	take	adapted: hosted-https-app compatibility cases dropped (Onicode removed the hosted web app and that field); kept normalization and ws/wss derivation
