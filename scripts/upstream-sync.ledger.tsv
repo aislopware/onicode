@@ -2995,3 +2995,4 @@ f8779522a3	take	taken as is (Onicode's remote-desktop keys use variant, not acti
 c43e073123	take	CONFLICTs: kept Onicode's … ellipsis strings (existing translations) in the new loading placeholders and the timeline rail's bg-border; both new tests kept
 6f644f6e91	take	CONFLICTs: kept Onicode's removal of serverGetSettings and mcpApprovalCodes, added only peerLinksPairLink and linkPairingForLink (optional, wire-compatible); translations keep Onicode's rebranded keys plus the new strings
 af99412e9d	take	taken as is
+0634dea682	take	kept Onicode's pointer to the root README for installing vp; added the Windows long-path clone note
