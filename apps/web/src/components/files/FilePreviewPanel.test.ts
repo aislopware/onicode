@@ -168,6 +168,16 @@ describe("document preview contents", () => {
       String.raw`{\rtf1 A{\deleted\uc1\u945\deleted0 old}B}`,
       "AB",
     ],
+    [
+      "a Unicode span whose fallback is an escaped line break",
+      "{\\rtf1 A{\\deleted\\uc1\\u945\\\n\\deleted0 B}C}",
+      "ABC",
+    ],
+    [
+      "a Unicode fallback that is a destination marker",
+      String.raw`{\rtf1 A{\uc1\u945\*B}C}`,
+      "A\u03b1BC",
+    ],
   ])("keeps the text of %s", (_name, source, expected) => {
     const result = openRtf(bytes(source));
     if (result.type !== "document") throw new Error("Expected document");

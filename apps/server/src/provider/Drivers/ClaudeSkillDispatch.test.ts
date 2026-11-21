@@ -68,18 +68,53 @@ describe("planClaudeSkillDispatch", () => {
     }
   });
 
+  it("caps inlined skill instructions and adds no note for an empty one", () => {
+    const inline = (instructions: string) => ({
+      path: "/plugins/skills.zip/SKILL.md",
+      userInvocationOnly: true,
+      instructions,
+    });
+    const skills = new Map<string, ClaudeSkillTarget>([
+      // The cut would split the emoji's surrogate pair, so the half goes too.
+      ["zipped:big", inline(`${"x".repeat(64 * 1024 - 1)}😀`)],
+      ["zipped:more", inline("More")],
+      ["zipped:empty", inline("---\nname: empty\n---\n")],
+      ["implement", { path: skillPath("implement"), userInvocationOnly: true }],
+    ]);
+    const plan = planClaudeSkillDispatch(
+      "$zipped:big $zipped:more $zipped:empty $implement",
+      skills,
+    );
+    expect(plan?.leadingText).toBe(
+      [
+        `/zipped:big [The user invoked this skill. Follow its instructions:\n<skill name="zipped:big">\n${"x".repeat(64 * 1024 - 1)}\n[Truncated]\n</skill>]`,
+        "/zipped:more [The user invoked this skill; its instructions did not fit.]",
+        "/zipped:empty",
+        "/implement",
+      ].join(" "),
+    );
+  });
+
   it("bounds notes for repeated user-only skills and leaves the native dispatch unannotated", () => {
-    const skills = new Map([
+    const skills = new Map<string, ClaudeSkillTarget>([
       ["interrogate", { path: skillPath("interrogate"), userInvocationOnly: true }],
+      [
+        "zipped:plan",
+        {
+          path: "/home/me/plugin.zip/skills/plan/SKILL.md",
+          userInvocationOnly: true,
+          instructions: "---\nuser-invocable-only: true\n---\n# Plan\nWrite the plan.\n",
+        },
+      ],
       ["implement", { path: skillPath("implement"), userInvocationOnly: true }],
     ]);
     expect(
       planClaudeSkillDispatch(
-        "$interrogate then $interrogate then $implement and $implement the fixes",
+        "$interrogate then $interrogate then $zipped:plan then $implement and $implement the fixes",
         skills,
       ),
     ).toEqual({
-      leadingText: `/interrogate [The user invoked this skill. Follow the instructions at: ${skillPath("interrogate")}] then /interrogate then /implement and /implement the fixes`,
+      leadingText: `/interrogate [The user invoked this skill. Follow the instructions at: ${skillPath("interrogate")}] then /interrogate then /zipped:plan [The user invoked this skill. Follow its instructions:\n<skill name="zipped:plan">\n# Plan\nWrite the plan.\n</skill>] then /implement and /implement the fixes`,
       commandText: "/implement the fixes",
     });
   });
