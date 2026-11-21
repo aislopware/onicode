@@ -890,7 +890,7 @@ describe("large text preview recovery", () => {
       const initialRow1Height = row(1).getBoundingClientRect().height;
       const initialRow2Height = row(2).getBoundingClientRect().height;
       const initialRow3Height = row(3).getBoundingClientRect().height;
-      const initialRow4Top = row(4).getBoundingClientRect().top;
+      const initialRow3Bottom = row(3).getBoundingClientRect().bottom;
 
       // Scroll to the far right where the word-wrapped column 34 mounts after 18 newline cells.
       await act(() => {
@@ -903,7 +903,7 @@ describe("large text preview recovery", () => {
       expect(Math.abs(row(2).getBoundingClientRect().height - initialRow2Height)).toBeLessThan(1);
       expect(row(3).getBoundingClientRect().height).toBeGreaterThan(40);
       expect(Math.abs(row(3).getBoundingClientRect().height - initialRow3Height)).toBeLessThan(1);
-      expect(Math.abs(row(4).getBoundingClientRect().top - initialRow4Top)).toBeLessThan(1);
+      expect(Math.abs(row(3).getBoundingClientRect().bottom - initialRow3Bottom)).toBeLessThan(1);
 
       // Scroll vertically into the table, then sweep horizontally back to the left edge.
       await act(() => {
@@ -960,7 +960,8 @@ describe("large text preview recovery", () => {
           ? new DOMRect(0, 0, 128, 4_000)
           : layout.call(this);
       });
-    // 128px columns in a 300px viewport keep column 3 offscreen; 1800px tall mounts all 60 rows.
+    // 128px columns in a 300px viewport keep column 3 offscreen; 1800px tall fits all 60 rows, so
+    // they mount together as the native tail.
     await using screen = await render(
       <div style={{ display: "flex", height: 1800, width: 300 }}>
         <VirtualTablePreview
@@ -979,6 +980,35 @@ describe("large text preview recovery", () => {
       timeout: 10_000,
     });
     expect(screen.container.querySelector('[role="table"]')).not.toBeNull();
+  });
+
+  it("neither mounts nor measures rows below a huge offscreen cell that fills the viewport", async () => {
+    const huge = "word ".repeat(26_000);
+    const rows = Array.from({ length: 100 }, (_, index) => [`r${index}`, "", "", huge]);
+    using layouts = vi.spyOn(Element.prototype, "getBoundingClientRect");
+    // 100 rows overflow the 400px viewport, so the top of the file is not the native tail.
+    await using screen = await render(
+      <div style={{ display: "flex", height: 400, width: 300 }}>
+        <VirtualTablePreview
+          name="huge-cells.csv"
+          count={rows.length}
+          columns={4}
+          getRows={(page) => rows.slice(page * 32, page * 32 + 32)}
+        />
+      </div>,
+    );
+    const row = (index: number) =>
+      screen.container.querySelector<HTMLElement>(`[data-preview-row="${index}"]`);
+
+    await vi.waitFor(() => {
+      expect(row(1)?.getBoundingClientRect().height).toBeGreaterThan(1_000);
+      expect(screen.container.querySelectorAll("[data-preview-row]")).toHaveLength(2);
+    });
+    // Only the probe lays out the offscreen column's full text.
+    const probeLayouts = layouts.mock.contexts.filter(
+      (node) => (node as Element).textContent === huge,
+    );
+    expect(probeLayouts).toHaveLength(2);
   });
 
   it("reveals and highlights requested source lines again for a new request", async () => {

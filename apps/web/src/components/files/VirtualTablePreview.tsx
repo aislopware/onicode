@@ -372,8 +372,24 @@ function ScaledRows(
     };
   }, []);
   const page = Math.floor(first / PREVIEW_PAGE_ROWS);
-  const visibleEnd = (first % PREVIEW_PAGE_ROWS) + Math.ceil(position.height / 29) + 1;
   const sizesKey = `${props.sizes.join(",")}|${typographyKey}`;
+  const activeRowHeights =
+    props.hasHorizontalOverflow && rowHeights.key.startsWith(`${sizesKey}|`)
+      ? rowHeights.heights
+      : undefined;
+  let visibleRows = Math.ceil(position.height / 29) + 1;
+  // Rows past the measured heights that fill the viewport cannot show, so they are neither mounted
+  // nor measured. The native tail mounts every row so its scroll extent reaches the last one.
+  if (!nativeTail && activeRowHeights) {
+    const target =
+      position.height + ((position.top / scale / 29) % 1) * (activeRowHeights.get(first) ?? 29);
+    let rows = 0;
+    for (let covered = 0; rows < visibleRows && covered < target; rows++) {
+      covered += activeRowHeights.get(first + rows) ?? 29;
+    }
+    visibleRows = Math.min(visibleRows, rows + 1);
+  }
+  const visibleEnd = (first % PREVIEW_PAGE_ROWS) + visibleRows;
   const pageCount = Math.min(
     Math.ceil(visibleEnd / PREVIEW_PAGE_ROWS),
     Math.ceil(props.count / PREVIEW_PAGE_ROWS) - page,
@@ -472,10 +488,6 @@ function ScaledRows(
     });
     return () => cancelAnimationFrame(frameId);
   });
-  const activeRowHeights =
-    props.hasHorizontalOverflow && rowHeights.key.startsWith(`${sizesKey}|`)
-      ? rowHeights.heights
-      : undefined;
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- Measure mounted row offsets and observe content resizes to position the virtual rows against the scroll track.
   useLayoutEffect(() => {
     if (atStart) return;
