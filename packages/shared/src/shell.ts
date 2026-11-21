@@ -292,11 +292,10 @@ export function windowsEnvironmentValueCommand(name: string): string {
   return `$value = [Environment]::GetEnvironmentVariable('${name}')`;
 }
 
-function buildWindowsEnvironmentCaptureCommand(names: ReadonlyArray<string>): string {
+/** Pairs with `extractWindowsEnvironmentValues`; unset or empty names are omitted. */
+export function buildWindowsEnvironmentCaptureCommand(names: ReadonlyArray<string>): string {
   return [
     "$ErrorActionPreference = 'Stop'",
-    // Redirected PowerShell output uses the console code page, which mangles non-ASCII paths.
-    "try { [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false) } catch {}",
     ...names.flatMap((name) => {
       if (!SHELL_ENV_NAME_PATTERN.test(name)) {
         throw new Error(`Unsupported environment variable name: ${name}`);
@@ -305,7 +304,8 @@ function buildWindowsEnvironmentCaptureCommand(names: ReadonlyArray<string>): st
       return [
         `Write-Output '${envCaptureStart(name)}'`,
         windowsEnvironmentValueCommand(name),
-        "if ($null -ne $value -and $value.Length -gt 0) { Write-Output $value }",
+        // Base64: redirected output uses the console code page, which PowerShell 5.1 can fail to switch.
+        "if ($null -ne $value -and $value.Length -gt 0) { Write-Output ([Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes([string]$value))) }",
         `Write-Output '${envCaptureEnd(name)}'`,
       ];
     }),
@@ -330,19 +330,38 @@ function extractEnvironmentValue(output: string, name: string): string | undefin
   return value.length > 0 ? value : undefined;
 }
 
+function collectEnvironmentValues(
+  output: string,
+  names: ReadonlyArray<string>,
+  decode: (raw: string) => string,
+): Partial<Record<string, string>> {
+  const environment: Partial<Record<string, string>> = {};
+  for (const name of names) {
+    const raw = extractEnvironmentValue(output, name);
+    const value = raw === undefined ? undefined : decode(raw);
+    if (value !== undefined && value.length > 0) {
+      environment[name] = value;
+    }
+  }
+  return environment;
+}
+
 /** Reads the values `buildEnvironmentCaptureCommand` printed; unset or empty names are omitted. */
 export function extractEnvironmentValues(
   output: string,
   names: ReadonlyArray<string>,
 ): Partial<Record<string, string>> {
-  const environment: Partial<Record<string, string>> = {};
-  for (const name of names) {
-    const value = extractEnvironmentValue(output, name);
-    if (value !== undefined) {
-      environment[name] = value;
-    }
-  }
-  return environment;
+  return collectEnvironmentValues(output, names, (raw) => raw);
+}
+
+/** Reads the base64 values `buildWindowsEnvironmentCaptureCommand` printed. */
+export function extractWindowsEnvironmentValues(
+  output: string,
+  names: ReadonlyArray<string>,
+): Partial<Record<string, string>> {
+  return collectEnvironmentValues(output, names, (raw) =>
+    Buffer.from(raw.trim(), "base64").toString("utf8"),
+  );
 }
 
 export type ShellEnvironmentReader = (
@@ -443,12 +462,7 @@ export const readEnvironmentFromWindowsShell = Effect.fn("shell.readEnvironmentF
       }).pipe(Effect.timeoutOption(WINDOWS_SHELL_PROBE_DEADLINE), Effect.map(Option.flatten));
       if (Option.isNone(output)) continue;
 
-      const environment: Partial<Record<string, string>> = {};
-      for (const name of names) {
-        const value = extractEnvironmentValue(output.value, name);
-        if (value !== undefined) environment[name] = value;
-      }
-      return environment;
+      return extractWindowsEnvironmentValues(output.value, names);
     }
 
     return {};

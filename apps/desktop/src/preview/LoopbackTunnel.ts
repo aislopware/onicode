@@ -734,12 +734,14 @@ const make = Effect.gen(function* () {
     remotePort: number,
     stopsBefore: number,
   ) {
-    // A dual-stack server on :: does not collide with the specific loopback binds on macOS and
-    // Windows, and would lose `localhost` to the forward, so the forward moves off its port.
-    // Linux refuses those binds already, and its :: probe also collides with non-loopback hosts.
-    // Probed before the Stop check, so a Stop during the probe is still seen.
+    // A wildcard server (:: or 0.0.0.0) does not collide with the specific loopback binds on
+    // macOS and Windows, and would lose `localhost` to the forward, so the forward moves off its
+    // port. Linux refuses those binds already, and its probes also collide with non-loopback
+    // hosts. Probed before the Stop check, so a Stop during the probe is still seen.
     const servedOnWildcard =
-      platform !== "linux" && !(yield* net.canListenOnHost(remotePort, "::"));
+      platform !== "linux" &&
+      (!(yield* net.canListenOnHost(remotePort, "::")) ||
+        !(yield* net.canListenOnHost(remotePort, "0.0.0.0")));
     const key = forwardKey(environmentId, remotePort);
     if ((forwardStops.get(key) ?? 0) !== stopsBefore) {
       return yield* new LoopbackTunnelForwardError({
@@ -756,14 +758,28 @@ const make = Effect.gen(function* () {
       Scope.fork(scope).pipe(
         Effect.flatMap((attempt) =>
           bindLoopback(port).pipe(
+            // With SO_REUSEADDR, macOS can hand out the port the wildcard server holds.
+            Effect.filterOrFail(
+              (bound) => port !== 0 || bound.port !== remotePort,
+              () =>
+                new LoopbackTunnelForwardError({
+                  environmentId,
+                  port: remotePort,
+                  cause: "The free port was the local server's.",
+                }),
+            ),
             Scope.provide(attempt),
             Effect.onError(() => Scope.close(attempt, Exit.void)),
           ),
         ),
       );
-    const bound = yield* bind(servedOnWildcard ? 0 : remotePort).pipe(
-      // Taken here, or privileged: any free port still reaches the environment's.
-      Effect.catch(() => bind(0)),
+    const bindElsewhere = bind(0).pipe(Effect.retry({ times: 2 }));
+    const bound = yield* (
+      servedOnWildcard
+        ? bindElsewhere
+        : // Taken here, or privileged: any free port still reaches the environment's.
+          bind(remotePort).pipe(Effect.catch(() => bindElsewhere))
+    ).pipe(
       Effect.onError(() => Scope.close(scope, Exit.void)),
       Effect.mapError(
         (cause) => new LoopbackTunnelForwardError({ environmentId, port: remotePort, cause }),
