@@ -45,6 +45,7 @@ import {
 } from "~/components/issue/issueListPreferences";
 import { IssueGlyph, issueTrackerPresentation } from "~/components/issue/issuePresentation";
 import { PullRequestDetailPanel } from "~/components/pullRequest/PullRequestDetailPanel";
+import { PullRequestMarkdownPanelContext } from "~/components/pullRequest/PullRequestMarkdown";
 import { PullRequestListGhost } from "~/components/pullRequest/PullRequestGhosts";
 import {
   PullRequestFilterOptionIcon,
@@ -845,39 +846,41 @@ export function IssuesPage() {
             pullRequestsAvailable={false}
             deviceAvailable={false}
           >
-            {renderedSurface.kind === "issue" ? (
-              <IssueDetailPanel
-                // Another workspace's issue under the same key is another issue.
-                key={`${panelEnvironmentId}:${renderedSurface.id}:${issueSurfaceRef(renderedSurface).workspace ?? ""}`}
-                environmentId={panelEnvironmentId}
-                listEntry={panelListEntry}
-                reference={issueSurfaceRef(renderedSurface)}
-                onSelectPullRequest={(reference) => {
-                  useRightPanelStore.getState().openPullRequest(rightPanelRef, {
-                    projectId: reference.projectId,
-                    repository: reference.repository,
-                    number: reference.number,
-                    ...(reference.host === undefined ? {} : { host: reference.host }),
-                    environmentId: panelEnvironmentId,
-                  });
-                }}
-              />
-            ) : (
-              <PullRequestDetailPanel
-                key={renderedSurface.id}
-                getShortcutContext={getShortcutContext}
-                shortcutsEnabled={panelSurface?.id === renderedSurface.id}
-                environmentId={panelEnvironmentId}
-                reference={{
-                  projectId: (renderedSurface as PullRequestSurface).projectId as ProjectId,
-                  repository: (renderedSurface as PullRequestSurface).repository,
-                  number: (renderedSurface as PullRequestSurface).number,
-                  ...((renderedSurface as PullRequestSurface).host
-                    ? { host: (renderedSurface as PullRequestSurface).host }
-                    : {}),
-                }}
-              />
-            )}
+            <PullRequestMarkdownPanelContext value={rightPanelRef}>
+              {renderedSurface.kind === "issue" ? (
+                <IssueDetailPanel
+                  // Another workspace's issue under the same key is another issue.
+                  key={`${panelEnvironmentId}:${renderedSurface.id}:${issueSurfaceRef(renderedSurface).workspace ?? ""}`}
+                  environmentId={panelEnvironmentId}
+                  listEntry={panelListEntry}
+                  reference={issueSurfaceRef(renderedSurface)}
+                  onSelectPullRequest={(reference) => {
+                    useRightPanelStore.getState().openPullRequest(rightPanelRef, {
+                      projectId: reference.projectId,
+                      repository: reference.repository,
+                      number: reference.number,
+                      ...(reference.host === undefined ? {} : { host: reference.host }),
+                      environmentId: panelEnvironmentId,
+                    });
+                  }}
+                />
+              ) : (
+                <PullRequestDetailPanel
+                  key={renderedSurface.id}
+                  getShortcutContext={getShortcutContext}
+                  shortcutsEnabled={panelSurface?.id === renderedSurface.id}
+                  environmentId={panelEnvironmentId}
+                  reference={{
+                    projectId: (renderedSurface as PullRequestSurface).projectId as ProjectId,
+                    repository: (renderedSurface as PullRequestSurface).repository,
+                    number: (renderedSurface as PullRequestSurface).number,
+                    ...((renderedSurface as PullRequestSurface).host
+                      ? { host: (renderedSurface as PullRequestSurface).host }
+                      : {}),
+                  }}
+                />
+              )}
+            </PullRequestMarkdownPanelContext>
           </RightPanelTabs>
         ) : null}
       </div>
