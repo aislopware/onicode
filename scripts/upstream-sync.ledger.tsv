@@ -3067,3 +3067,4 @@ cf94598281	take	fix(client-runtime): don't ask for a provider update the install
 138da84b79	take	fix(mobile): reloading changes restarts the diff from page one after a failed page
 a0ca0bfaf2	take	perf(server): resolve a branch's base once while its refs and config are unchanged
 dcd8df806d	take	fix(web): hub accounts whose usage read fails no longer vanish silently
+d9fdd02523	take	fix(client-runtime): @ menu offers machines the thread's server links to
