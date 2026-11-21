@@ -2972,3 +2972,4 @@ a04bca5bcf	take	taken as is (other forge)
 90c0766a16	skip	Onicode has no agent-context-budget workflow (skipped with d63c0ec8eb)
 342b58a79f	take	taken as is; keybindings doc keeps Onicode's key list (no isWeb/isDesktop)
 6357d17a49	take	taken as is
+c436409da0	take	taken as is; contracts field optional (wire-safe); mobile passes the model but has no hub-pool thread card yet (follow-up)
