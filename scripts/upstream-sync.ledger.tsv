@@ -3131,3 +3131,4 @@ d4d54658f9	take	fix(server): delegated task reaches its parent when its first up
 e2035934a6	take	fix(azure-devops): project-less pull request URLs can be pasted to check out
 28b413fe12	take	fix(server): queued messages no longer wait out every timed-out checkpoint in a shared folder
 ac0032742b	take	fix(shell): non-ASCII Windows PATH entries survive the PowerShell environment probe
+1cedd4b4ed	take	conflicts resolved: kept Onicode's tooltip description and no webhook/blockedByPolicy branches; timestampFormat threaded through
