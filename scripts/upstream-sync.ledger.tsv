@@ -3041,6 +3041,6 @@ ed3b241eaa	skip	kept Onicode's signed-URL prefix guard (untraced and unlogged): 
 13226b1c21	take	taken as is
 16a79dea3d	take	taken as is
 1f8f3698b0	take	taken as is
-d46cbd0881	take	taken as is
+d46cbd0881	take	took upstream's queued-follow-up test; kept Onicode's live-fold check (liveFoldPlaced) over upstream's presentationRestart guard: the test passes without the guard, which would rebuild the whole feed on every streamed event while a follow-up is queued
 73e6472545	take	CONFLICT in threadSync.ts and web catalogs: kept Onicode's "…" loading/syncing strings, added upstream's failed phase and its translations
 80871270f9	take	taken as is
