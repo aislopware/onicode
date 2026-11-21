@@ -1,7 +1,7 @@
 import { IssueTrackerKind, MAX_ISSUE_TRACKER_ADDITIONAL_SCOPES } from "@onicode/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { issueTrackerScopeOptions } from "./issueTrackers.ts";
+import { issueTrackerBindingFor, issueTrackerScopeOptions } from "./issueTrackers.ts";
 
 describe("issueTrackerScopeOptions", () => {
   it("offers no new team once the binding is full, and keeps bound ones removable", () => {
@@ -32,5 +32,16 @@ describe("issueTrackerScopeOptions", () => {
       addable: true,
     });
     expect(issueTrackerScopeOptions(tracker, ["ENG"]).every((scope) => scope.addable)).toBe(true);
+  });
+});
+
+describe("issueTrackerBindingFor", () => {
+  it("sends an empty team list, since the server keeps stored teams when the list is absent", () => {
+    const linear = IssueTrackerKind.make("linear");
+    expect(issueTrackerBindingFor(linear, ["ENG", "OPS"], ["ENG"])).toEqual({
+      tracker: linear,
+      scope: "ENG",
+      additionalScopes: [],
+    });
   });
 });

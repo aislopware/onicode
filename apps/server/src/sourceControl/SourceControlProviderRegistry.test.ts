@@ -494,16 +494,18 @@ it.effect("asks again once discovery finds a new sign-in, not on every discovery
         );
       },
     });
-    yield* registry.discover;
     assert.strictEqual((yield* resolveUnknown(registry, "a")).provider.kind, "unknown");
-    yield* registry.discover;
-    assert.strictEqual((yield* resolveUnknown(registry, "b")).provider.kind, "unknown");
-    assert.strictEqual(refinements, 1);
-
     signedIn = true;
+    yield* registry.discover;
+    assert.strictEqual((yield* resolveUnknown(registry, "b")).provider.kind, "gitlab");
     yield* registry.discover;
     assert.strictEqual((yield* resolveUnknown(registry, "c")).provider.kind, "gitlab");
     assert.strictEqual(refinements, 2);
+
+    signedIn = false;
+    yield* registry.discover;
+    assert.strictEqual((yield* resolveUnknown(registry, "d")).provider.kind, "unknown");
+    assert.strictEqual(refinements, 3);
   }),
 );
 

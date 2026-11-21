@@ -623,7 +623,9 @@ export const MAX_ISSUE_TRACKER_ADDITIONAL_SCOPES = 250;
 
 /**
  * Which standalone tracker scopes a project's issues come from, beside its git host's own.
- * `scope` is where agents file new issues; `additionalScopes` are listed and written too.
+ * `scope` is where agents file new issues; `additionalScopes` are listed and written too. A
+ * binding saved without `additionalScopes`, as clients that predate them send, keeps the stored
+ * ones while the tracker is unchanged; an empty list clears them.
  */
 export const IssueTrackerProjectBinding = Schema.Struct({
   tracker: IssueTrackerKind,

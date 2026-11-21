@@ -531,21 +531,36 @@ const runNpmGlobalLatestVersions = Effect.fn("runNpmGlobalLatestVersions")(funct
   );
   const packageNames = [packageName, ...others];
   const versions = new Map<string, string | null>(packageNames.map((name) => [name, null]));
-  const outdated = yield* runProbe(
-    npmPath,
-    ["outdated", "-g", "--prefix", npmPrefix, "--json", ...packageNames],
-    env,
-    // npm outdated exits 1 when updates are available.
-    [0, 1],
-  );
-  const outdatedEntries = outdated ? Option.getOrUndefined(decodeOutdated(outdated)) : undefined;
-  // npm prints failures such as an unreachable registry as `{"error": ...}`, also exiting 1.
-  if (!outdatedEntries || "error" in outdatedEntries) return versions;
-  for (const name of packageNames) {
-    versions.set(name, nonEmptyString(outdatedEntries[name]?.latest));
-  }
+  const readOutdated = (names: ReadonlyArray<string>) =>
+    runProbe(
+      npmPath,
+      ["outdated", "-g", "--prefix", npmPrefix, "--json", ...names],
+      env,
+      // npm outdated exits 1 when updates are available.
+      [0, 1],
+    ).pipe(
+      Effect.map((outdated) => {
+        const entries = outdated ? Option.getOrUndefined(decodeOutdated(outdated)) : undefined;
+        // npm prints failures such as an unreachable registry as `{"error": ...}`, also exiting 1.
+        return entries && !("error" in entries) ? entries : null;
+      }),
+    );
+  const combined = yield* readOutdated(packageNames);
+  // One package failing, such as a scoped registry refusing its token, fails the whole run.
+  const answers =
+    combined !== null || packageNames.length === 1
+      ? packageNames.map((name) => [name, combined] as const)
+      : yield* Effect.forEach(packageNames, (name) =>
+          readOutdated([name]).pipe(Effect.map((entries) => [name, entries] as const)),
+        );
   // An empty result means the installed version is still the eligible release.
-  const current = packageNames.filter((name) => versions.get(name) === null);
+  const current: Array<string> = [];
+  for (const [name, entries] of answers) {
+    if (entries === null) continue;
+    const latest = nonEmptyString(entries[name]?.latest);
+    versions.set(name, latest);
+    if (latest === null) current.push(name);
+  }
   if (current.length === 0) return versions;
   const listed = yield* runProbe(
     npmPath,

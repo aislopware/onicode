@@ -135,7 +135,8 @@ export function issueTrackerBindingFor(
   const kept = current.filter((key) => scopes.includes(key));
   const [scope, ...additionalScopes] = [...kept, ...scopes.filter((key) => !kept.includes(key))];
   if (scope === undefined) return null;
-  return additionalScopes.length === 0 ? { tracker, scope } : { tracker, scope, additionalScopes };
+  // Sent even when empty: the server reads an absent list as an older client keeping its extras.
+  return { tracker, scope, additionalScopes };
 }
 
 export function issueTrackerScopeOptions(

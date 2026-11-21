@@ -10,7 +10,7 @@ import { runMigrations } from "../Migrations.ts";
 it.layer(NodeSqliteClient.layer({ filename: ":memory:" }))(
   "108_IssueTrackerAdditionalScopes",
   (it) => {
-    it.effect("keeps a one-team binding and saves and replaces extra teams", () =>
+    it.effect("keeps a one-team binding and saves, replaces, keeps and clears extra teams", () =>
       Effect.gen(function* () {
         const sql = yield* SqlClient.SqlClient;
         yield* runMigrations({ toMigrationInclusive: 107 });
@@ -26,7 +26,17 @@ it.layer(NodeSqliteClient.layer({ filename: ":memory:" }))(
         const multi = { ...binding, additionalScopes: ["OPS", "DOCS"] };
         yield* bindings.set({ projectId, binding: multi, updatedAt: "2026-11-21" });
         assert.deepStrictEqual(yield* read(), multi);
+        // Clients that predate extra teams omit them, as when re-selecting or switching the team.
         yield* bindings.set({ projectId, binding, updatedAt: "2026-11-21" });
+        assert.deepStrictEqual(yield* read(), multi);
+        const switched = { ...binding, scope: "OPS" };
+        yield* bindings.set({ projectId, binding: switched, updatedAt: "2026-11-21" });
+        assert.deepStrictEqual(yield* read(), { ...switched, additionalScopes: ["DOCS"] });
+        yield* bindings.set({
+          projectId,
+          binding: { ...binding, additionalScopes: [] },
+          updatedAt: "2026-11-21",
+        });
         assert.deepStrictEqual(yield* read(), binding);
       }),
     );
