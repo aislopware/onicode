@@ -3151,3 +3151,4 @@ cea19e450b	take	fix(server): ODT attachments no longer repeat index titles or te
 67f3a66265	take	fix(server): skip symlinks during storage cleanup; scenario ported for the desktop target
 5935157711	take	fix(web): keep secret check replies tied to their own attempt; scenario ported for the desktop target (checks aria-disabled, which Onicode's check button uses, and creates the stub bin dir)
 227ac64b74	take	fix(web): downscaled image attachments keep Display P3 colors
+1a9a858d45	take	fix(keybindings): preserve sibling shortcuts when editing an inherited rule; scenario ported for the desktop target (macOS ⌘ labels accepted)
