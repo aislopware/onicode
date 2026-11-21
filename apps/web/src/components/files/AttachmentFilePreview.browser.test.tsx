@@ -1027,9 +1027,10 @@ describe("large text preview recovery", () => {
         screen.container.querySelector<HTMLElement>(`[data-preview-row="${index}"]`);
       await vi.waitFor(() => expect(row(1)?.offsetHeight).toBeGreaterThan(200));
       if (boundary) {
-        // 204px lands a float hair short of row 8's start, which must still line up with the top.
+        // Row 8 starts 7 rows into a track scaled by 1193 / 1189, at 203.68px; 203px lands just
+        // short of it, which must still line up row 8 with the top.
         await act(() => {
-          viewport().scrollTop = 204;
+          viewport().scrollTop = 203;
           viewport().dispatchEvent(new Event("scroll", { bubbles: true }));
         });
         await vi.waitFor(() =>
