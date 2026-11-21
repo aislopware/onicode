@@ -3124,3 +3124,4 @@ e337cee952	take	taken as is; refsDigest is an optional success field, so old mob
 efea1aabe7	take	taken as is; row measurement runs only for wide tables with horizontal overflow, cached per row and bounded per frame (128K chars), with a rAF continuation only while rows remain unmeasured
 1458a42419	take	fix(server): transcript cleanup failures tell the user why; optional detail field, wire-compatible; mobile has no cleanup-failure toast (follow-up)
 3bf21c037d	take	fix(acp): Devin's terminal commands run under Git Bash on Windows
+d4d54658f9	take	fix(server): delegated task reaches its parent when its first update fails; import CONFLICT only (Onicode had dropped the unused Result import)
