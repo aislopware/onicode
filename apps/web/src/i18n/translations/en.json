@@ -1327,6 +1327,7 @@
   "5590426dc4cfa3f6": "Notifications with sound",
   "8a1cb930736c03cf": "Loading messages…",
   "5e7b8c39e3c0a6a0": "Syncing messages…",
+  "c1968621dc365115": "Could not sync messages",
   "de032945adf75356": "{time}, {date}",
   "fe01feb02ef95d6c": "yesterday at {time}",
   "d54b94665b443500": "tomorrow at {time}",
