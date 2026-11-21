@@ -45,6 +45,7 @@ import {
 } from "./shell.ts";
 
 const decodeDesktopHostMessage = Schema.decodeUnknownSync(DesktopHostTelemetryMessage);
+const base64 = (value: string) => Buffer.from(value, "utf8").toString("base64");
 
 const nativeProbe = vi.hoisted(() => ({
   execFile: vi.fn<typeof import("node:child_process").execFile>(),
@@ -405,7 +406,7 @@ describe("readEnvironmentFromWindowsShell", () => {
         ) => string
       >(
         () =>
-          "__ONICODE_ENV_PATH_START__\nC:\\Users\\testuser\\AppData\\Roaming\\npm\n__ONICODE_ENV_PATH_END__\n",
+          `__ONICODE_ENV_PATH_START__\n${base64("C:\\Users\\Jürgen\\Grüße;C:\\Tools")}\n__ONICODE_ENV_PATH_END__\n`,
       );
 
       expect(
@@ -413,7 +414,7 @@ describe("readEnvironmentFromWindowsShell", () => {
           Effect.sync(() => Option.liftThrowable(execFile)(...args)),
         ),
       ).toEqual({
-        PATH: "C:\\Users\\testuser\\AppData\\Roaming\\npm",
+        PATH: "C:\\Users\\Jürgen\\Grüße;C:\\Tools",
       });
       expect(execFile).toHaveBeenCalledWith(
         "pwsh.exe",
@@ -421,7 +422,7 @@ describe("readEnvironmentFromWindowsShell", () => {
         { encoding: "utf8", timeout: 5000 },
       );
       expect(execFile.mock.calls[0]?.[1].at(-1)).toContain(
-        "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)",
+        "[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes([string]$value))",
       );
     }),
   );
@@ -436,7 +437,7 @@ describe("readEnvironmentFromWindowsShell", () => {
         ) => string
       >(
         () =>
-          "__ONICODE_ENV_FNM_DIR_START__\r\nC:\\Users\\testuser\\AppData\\Roaming\\fnm\r\n__ONICODE_ENV_FNM_DIR_END__\r\n",
+          `__ONICODE_ENV_FNM_DIR_START__\r\n${base64("C:\\Users\\testuser\\AppData\\Roaming\\fnm")}\r\n__ONICODE_ENV_FNM_DIR_END__\r\n`,
       );
 
       expect(
@@ -449,20 +450,41 @@ describe("readEnvironmentFromWindowsShell", () => {
     }),
   );
 
-  effectIt.effect.runIf(HostProcess.Platform.defaultValue() === "win32")(
-    "reads a non-ASCII value from the real shell",
-    () =>
+  for (const shell of ["pwsh.exe", "powershell.exe"]) {
+    effectIt.live.runIf(
+      HostProcess.Platform.defaultValue() === "win32" &&
+        NodeChildProcess.spawnSync("where.exe", [shell], { stdio: "ignore" }).status === 0,
+    )(`reads a non-ASCII value from the real ${shell}`, () =>
       Effect.gen(function* () {
         const name = "ONICODE_TEST_NON_ASCII_PATH";
         const value = "C:\\Users\\Jürgen\\Grüße";
         vi.stubEnv(name, value);
+        // A missing executable fails the other candidate, so only `shell` can answer.
+        nativeProbe.execFile.mockImplementation(((
+          file: string,
+          args: ReadonlyArray<string>,
+          options: NodeChildProcess.ExecFileOptionsWithStringEncoding,
+          callback: (
+            error: NodeChildProcess.ExecException | null,
+            stdout: string,
+            stderr: string,
+          ) => void,
+        ) =>
+          nativeProbe.original(
+            file === shell ? file : "onicode-missing-shell.exe",
+            args,
+            options,
+            callback,
+          )) as typeof NodeChildProcess.execFile);
         try {
           expect(yield* readEnvironmentFromWindowsShell([name])).toEqual({ [name]: value });
         } finally {
+          nativeProbe.execFile.mockImplementation(nativeProbe.original);
           vi.unstubAllEnvs();
         }
       }),
-  );
+    );
+  }
 
   effectIt.effect("omits -NoProfile when loadProfile is enabled", () =>
     Effect.gen(function* () {
@@ -472,7 +494,7 @@ describe("readEnvironmentFromWindowsShell", () => {
           args: ReadonlyArray<string>,
           options: { encoding: "utf8"; timeout: number },
         ) => string
-      >(() => "__ONICODE_ENV_PATH_START__\nC:\\Tools\n__ONICODE_ENV_PATH_END__\n");
+      >(() => `__ONICODE_ENV_PATH_START__\n${base64("C:\\Tools")}\n__ONICODE_ENV_PATH_END__\n`);
 
       expect(
         yield* readEnvironmentFromWindowsShell(["PATH"], { loadProfile: true }, (...args) =>
@@ -502,7 +524,7 @@ describe("readEnvironmentFromWindowsShell", () => {
         if (file === "pwsh.exe") {
           throw new Error("spawn pwsh.exe ENOENT");
         }
-        return "__ONICODE_ENV_PATH_START__\nC:\\Tools\n__ONICODE_ENV_PATH_END__\n";
+        return `__ONICODE_ENV_PATH_START__\n${base64("C:\\Tools")}\n__ONICODE_ENV_PATH_END__\n`;
       });
 
       expect(

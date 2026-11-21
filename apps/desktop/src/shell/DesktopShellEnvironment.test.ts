@@ -46,6 +46,17 @@ function envOutput(values: Readonly<Record<string, string>>): string {
     .join("\n");
 }
 
+function windowsEnvOutput(values: Readonly<Record<string, string>>): string {
+  return envOutput(
+    Object.fromEntries(
+      Object.entries(values).map(([name, value]) => [
+        name,
+        Buffer.from(value, "utf8").toString("base64"),
+      ]),
+    ),
+  );
+}
+
 function makeProcess(output: string, exitCode = 0): ChildProcessSpawner.ChildProcessHandle {
   const stdout = output.length === 0 ? Stream.empty : Stream.make(textEncoder.encode(output));
   return ChildProcessSpawner.makeHandle({
@@ -131,18 +142,15 @@ function runShellEnvironment(input: {
   readonly failure?: PlatformError.PlatformError;
   readonly processSpawner?: ChildProcessSpawner.ChildProcessSpawner["Service"];
 }) {
-  const layerEnvironment = Layer.effect(
-    DesktopEnvironment.DesktopEnvironment,
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const stateDir = input.stateDir ?? (yield* fs.makeTempDirectoryScoped());
-      return DesktopEnvironment.DesktopEnvironment.of({
+  const layerEnvironment = (stateDir: string) =>
+    Layer.succeed(
+      DesktopEnvironment.DesktopEnvironment,
+      DesktopEnvironment.DesktopEnvironment.of({
         platform: input.platform,
         stateDir,
         homeDirectory: "/test-home",
-      } as DesktopEnvironment.DesktopEnvironment["Service"]);
-    }),
-  ).pipe(Layer.provide(NodeServices.layer));
+      } as DesktopEnvironment.DesktopEnvironment["Service"]),
+    );
   const layerSpawner = Layer.succeed(
     ChildProcessSpawner.ChildProcessSpawner,
     ChildProcessSpawner.make((command) => {
@@ -157,19 +165,22 @@ function runShellEnvironment(input: {
     }),
   );
 
-  const program = Effect.gen(function* () {
-    const shellEnvironment = yield* DesktopShellEnvironment.DesktopShellEnvironment;
-    if (input.use) return yield* input.use(shellEnvironment);
-    const prepared = yield* shellEnvironment.awaitDiscovery;
-    assert.equal(yield* shellEnvironment.awaitDiscovery, prepared);
-    return prepared;
-  }).pipe(
-    Effect.provide(
-      DesktopShellEnvironment.layer.pipe(
-        Layer.provide(Layer.mergeAll(layerEnvironment, NodeServices.layer, layerSpawner)),
+  const program = (stateDir: string) =>
+    Effect.gen(function* () {
+      const shellEnvironment = yield* DesktopShellEnvironment.DesktopShellEnvironment;
+      if (input.use) return yield* input.use(shellEnvironment);
+      const prepared = yield* shellEnvironment.awaitDiscovery;
+      assert.equal(yield* shellEnvironment.awaitDiscovery, prepared);
+      return prepared;
+    }).pipe(
+      Effect.provide(
+        DesktopShellEnvironment.layer.pipe(
+          Layer.provide(
+            Layer.mergeAll(layerEnvironment(stateDir), NodeServices.layer, layerSpawner),
+          ),
+        ),
       ),
-    ),
-  );
+    );
 
   return Effect.acquireUseRelease(
     Effect.sync(() =>
@@ -178,7 +189,17 @@ function runShellEnvironment(input: {
         shell: input.userShell ?? null,
       }),
     ),
-    () => withProcessEnv(input.env, program),
+    () =>
+      Effect.gen(function* () {
+        // Made before process.env is replaced: Windows finds its temp folder through TEMP.
+        const stateDir =
+          input.stateDir ??
+          (yield* FileSystem.FileSystem.pipe(
+            Effect.flatMap((fs) => fs.makeTempDirectoryScoped()),
+            Effect.provide(NodeServices.layer),
+          ));
+        return yield* withProcessEnv(input.env, program(stateDir));
+      }).pipe(Effect.scoped),
     (spy) => Effect.sync(() => spy.mockRestore()),
   );
 }
@@ -980,21 +1001,19 @@ describe("DesktopShellEnvironment", () => {
         USERPROFILE: "C:\\Users\\testuser",
       };
 
-      const scripts: Array<string> = [];
       const prepared = yield* runShellEnvironment({
         env,
         platform: "win32",
         handler: (command) => {
           if (command._tag !== "StandardCommand") return "";
-          scripts.push(String(command.args.at(-1)));
           const loadProfile = !command.args.includes("-NoProfile");
           return loadProfile
-            ? envOutput({
+            ? windowsEnvOutput({
                 PATH: "C:\\Profile\\Node;C:\\Windows\\System32",
                 FNM_DIR: "C:\\Users\\testuser\\AppData\\Roaming\\fnm",
                 FNM_MULTISHELL_PATH: "C:\\Users\\testuser\\AppData\\Local\\fnm_multishells\\123",
               })
-            : envOutput({ PATH: 'C:\\Custom\\Bin;C:";C:\\Windows\\System32' });
+            : windowsEnvOutput({ PATH: 'C:\\Custom\\Bin;C:";C:\\Windows\\System32' });
         },
       });
 
@@ -1020,13 +1039,6 @@ describe("DesktopShellEnvironment", () => {
         env.FNM_MULTISHELL_PATH,
         "C:\\Users\\testuser\\AppData\\Local\\fnm_multishells\\123",
       );
-      assert.isNotEmpty(scripts);
-      for (const script of scripts) {
-        assert.include(
-          script,
-          "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)",
-        );
-      }
     }),
   );
 
@@ -1044,7 +1056,7 @@ describe("DesktopShellEnvironment", () => {
             if (command._tag !== "StandardCommand") return "";
             return !command.args.includes("-NoProfile") === loadProfile
               ? { output: "", exitCode: 1 }
-              : envOutput({ PATH: "C:\\Working" });
+              : windowsEnvOutput({ PATH: "C:\\Working" });
           },
         }).pipe(Effect.provide(Logger.layer([])));
         assert.isFalse(prepared);
@@ -1093,7 +1105,7 @@ describe("DesktopShellEnvironment", () => {
         platform: "win32",
         handler: (command) =>
           command._tag === "StandardCommand" && command.args.includes("-NoProfile")
-            ? envOutput({ PATH: "C:\\Shell\\Bin" })
+            ? windowsEnvOutput({ PATH: "C:\\Shell\\Bin" })
             : "",
       });
 

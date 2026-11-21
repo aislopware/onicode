@@ -3137,9 +3137,3 @@ e2fdfd2c31	take	taken as is
 1ffa099e7f	take	taken as is
 a3001b33fe	take	taken as is
 9fdcd08835	take	taken as is; matches the runAt picker's Android close
-fcf50973f3	take	fix(server): RTF attachments no longer garble text set in a font's own character set
-f0ceeefc08	take	fix(antigravity): match skill manifest filters literally
-e452042db8	take	fix(contracts): older clients drop unknown values in RPC responses
-10a5b5dca6	take	fix(server): Word table cells wrapped in a content control reach the agent
-db9efc5cf0	take	fix(server): a stop-on-settle action no longer holds back automatic settlement
-bac86471fe	take	fix(web): links inside a PDF are clickable in the in-app PDF viewer (kept Onicode's PDF.js-only path in BrowserDocumentFrame)

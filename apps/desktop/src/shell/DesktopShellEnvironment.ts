@@ -2,11 +2,12 @@ import { DesktopShellEnvironmentSnapshot, ShellEnvironmentPatch } from "@onicode
 import {
   applyShellEnvironment,
   buildEnvironmentCaptureCommand,
+  buildWindowsEnvironmentCaptureCommand,
+  extractWindowsEnvironmentValues,
   listLoginShellCandidates,
   mergePathValues,
   readUserLoginShell,
   setWindowsPath,
-  windowsEnvironmentValueCommand,
 } from "@onicode/shared/shell";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
@@ -229,21 +230,6 @@ const logShellEnvironmentCommandError = (
     }),
   );
 
-const captureWindowsEnvironmentCommand = (names: ReadonlyArray<string>) =>
-  [
-    "$ErrorActionPreference = 'Stop'",
-    // Redirected PowerShell output uses the console code page, which mangles non-ASCII paths.
-    "try { [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false) } catch {}",
-    ...names.flatMap((name) => {
-      return [
-        `Write-Output '${startMarker(name)}'`,
-        windowsEnvironmentValueCommand(name),
-        "if ($null -ne $value -and $value.Length -gt 0) { Write-Output $value }",
-        `Write-Output '${endMarker(name)}'`,
-      ];
-    }),
-  ].join("; ");
-
 const extractEnvironment = (output: string, names: ReadonlyArray<string>): EnvironmentPatch => {
   const environment: EnvironmentPatch = {};
 
@@ -390,7 +376,11 @@ const readWindowsEnvironment = Effect.fn("desktop.shellEnvironment.readWindowsEn
     options: WindowsProbeOptions,
     env: NodeJS.ProcessEnv,
     budget: ProbeBudget,
-  ): Effect.fn.Return<EnvironmentPatch, never, ChildProcessSpawner.ChildProcessSpawner> {
+  ): Effect.fn.Return<
+    Partial<Record<string, string>>,
+    never,
+    ChildProcessSpawner.ChildProcessSpawner
+  > {
     if (names.length === 0) return {};
 
     const args = [
@@ -398,7 +388,7 @@ const readWindowsEnvironment = Effect.fn("desktop.shellEnvironment.readWindowsEn
       ...(options.loadProfile ? ([] as const) : (["-NoProfile"] as const)),
       "-NonInteractive",
       "-Command",
-      captureWindowsEnvironmentCommand(names),
+      buildWindowsEnvironmentCaptureCommand(names),
     ];
 
     for (const command of WINDOWS_SHELL_CANDIDATES) {
@@ -410,7 +400,7 @@ const readWindowsEnvironment = Effect.fn("desktop.shellEnvironment.readWindowsEn
         timeout: budget.timeout,
         terminateGrace: budget.terminateGrace,
       }).pipe(orEmptyOnTimeout);
-      const environment = extractEnvironment(output, names);
+      const environment = extractWindowsEnvironmentValues(output, names);
       if (Object.keys(environment).length > 0) {
         return environment;
       }
