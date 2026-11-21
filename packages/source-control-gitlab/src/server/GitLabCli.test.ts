@@ -503,6 +503,11 @@ layer("GitLabCli.layer", (it) => {
       });
       for (const [stderr, tag] of [
         ["glab: 502 Bad Gateway", "GitLabCliUnreachableError"],
+        ["glab: 507 Insufficient Storage", "GitLabCliUnreachableError"],
+        [
+          "POST https://gitlab.example.com/api/v4/projects/1/jobs/507/retry: 403 Forbidden",
+          "GitLabCliCommandError",
+        ],
         [
           'Post "https://gitlab.example.com/api/graphql": dial tcp: lookup gitlab.example.com: no such host',
           "GitLabCliUnreachableError",
