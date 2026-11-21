@@ -76,6 +76,8 @@ export interface SelectableMarkdownTextProps {
   readonly skills?: ReadonlyArray<SelectableMarkdownSkill>;
   readonly models?: ReadonlyArray<SelectableMarkdownModel>;
   readonly preserveSoftBreaks?: boolean;
+  /** True while this text is still arriving: syntax that is not closed yet is held back or repaired. */
+  readonly streaming?: boolean;
   readonly onLinkPress?: (href: string) => void;
   readonly onCiteText?: (text: string) => void;
   readonly fileContextMenu?: (href: string) => MarkdownFileContextMenu | undefined;

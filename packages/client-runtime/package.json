@@ -700,7 +700,7 @@
     "@pierre/diffs": "catalog:",
     "effect": "catalog:",
     "fflate": "0.8.3",
-    "gt-i18n": "1.0.44",
+    "gt-i18n": "1.0.45",
     "remark-gfm": "catalog:",
     "remark-parse": "catalog:",
     "three": "0.187.0",

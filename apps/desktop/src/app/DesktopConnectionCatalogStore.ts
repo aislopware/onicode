@@ -465,9 +465,6 @@ export const make = Effect.gen(function* () {
   });
 
   const migrateLegacyCatalog = Effect.gen(function* () {
-    if (!(yield* encryptionAvailable)) {
-      return Option.none<string>();
-    }
     const records = yield* savedEnvironments.getRegistry.pipe(
       Effect.mapError(
         (cause) =>
@@ -478,7 +475,8 @@ export const make = Effect.gen(function* () {
           }),
       ),
     );
-    if (records.length === 0) {
+    // Asking the Keychain can wait on a prompt, so a start with nothing saved never asks.
+    if (records.length === 0 || !(yield* encryptionAvailable)) {
       return Option.none<string>();
     }
     const catalog = yield* migrateSavedEnvironmentRecords(records, savedEnvironments, catalogPath);

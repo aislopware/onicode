@@ -888,10 +888,9 @@ export const make: Effect.Effect<
         // `az` names a work item by id alone, so the read also proves the item is the scope's own.
         Effect.flatMap((scope) =>
           workItem({ ...scope, cwd: input.cwd, operation: "setState", closed: new Set() }).pipe(
-            Effect.flatMap((item) =>
-              workItemTypes({ ...scope, cwd: input.cwd, operation: "setState" }).pipe(
-                Effect.map((types) => workItemStates(types, item)),
-              ),
+            Effect.zipWith(
+              workItemTypes({ ...scope, cwd: input.cwd, operation: "setState" }),
+              (item, types) => workItemStates(types, item),
             ),
             Effect.filterOrFail(
               (states) => states.some((state) => state.name === input.state),

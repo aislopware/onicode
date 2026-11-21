@@ -323,9 +323,7 @@ export const makeManagedCodexProvider = Effect.fn("makeManagedCodexProvider")(fu
                   cwd,
                   environment: effective.environment,
                 }).pipe(
-                  Effect.flatMap((skills) =>
-                    snapshot.getSnapshot.pipe(Effect.map((draft) => ({ ...draft, skills }))),
-                  ),
+                  Effect.zipWith(snapshot.getSnapshot, (skills, draft) => ({ ...draft, skills })),
                 ),
             }),
             Effect.scoped,

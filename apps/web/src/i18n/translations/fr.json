@@ -8475,7 +8475,7 @@
   "0247d5883487d39a": "Chemin du binaire Claude utilisé par cette instance.",
   "3d23609d27f213d7": "Répertoire personnalisé de home et de configuration Claude. Garde .claude.json et .claude séparés.",
   "33fbce50a4ea67e6": "Arguments CLI supplémentaires passés au démarrage de la session.",
-  "abdee70d90cb26a3": "Compacter après 100 000 à 1 000 000 de jetons. Laissez vide pour utiliser la valeur par défaut de Claude.",
+  "9908232b0cd3f288": "Compacter après au moins 100 000 jetons. Laissez vide pour utiliser la valeur par défaut de Claude.",
   "f907b2466603538e": "Quand compacter un fil inactif de plus de 200 000 jetons : à votre retour, juste avant l’expiration de son cache de prompt, ou jamais. Remplace la valeur par défaut de Fournisseurs > Avancé.",
   "484df18e29b21047": "Les comptes Google utilisent votre abonnement ; les clés d’API et Agent Platform facturent l’utilisation.",
   "931df01584748bf9": "Clé express Gemini ou Vertex AI. Stockée séparément sur l’hôte.",

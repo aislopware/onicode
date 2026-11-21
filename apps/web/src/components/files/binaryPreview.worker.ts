@@ -203,7 +203,10 @@ async function handle(input: BinaryWorkerRequest) {
       import("sql.js"),
       import("sql.js/dist/sql-wasm.wasm?url"),
     ]);
-    const SQL = await initSqlJs({ locateFile: () => wasmUrl });
+    const SQL = await initSqlJs({
+      locateFile: () => wasmUrl,
+      useOldExtensionFunctions: false,
+    });
     database = new SQL.Database(new Uint8Array(input.bytes));
     database.run("PRAGMA query_only=ON; PRAGMA trusted_schema=OFF;");
     tables =

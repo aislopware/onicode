@@ -3228,6 +3228,52 @@ it.live("reloads a symlinked settings file after its target directory is replace
   ),
 );
 
+it.effect("reloads a settings change that no watch reported and registers its watches again", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    let settingsPath: string | undefined;
+    let inode = 1n;
+    let watches = 0;
+    const info = yield* fs.stat(process.cwd());
+    // macOS starts a watch's event stream after watch() returns, so an edit made right then
+    // is never reported. The stat is answered here so the poll stays on the test clock.
+    const silentFileSystem = FileSystem.FileSystem.of({
+      ...fs,
+      watch: (_directory, options) => {
+        watches += 1;
+        options?.onReady?.();
+        return Stream.never;
+      },
+      stat: (path) =>
+        Effect.suspend(() =>
+          path === settingsPath
+            ? Effect.succeed({ ...info, ino: Option.some(inode) })
+            : fs.stat(path),
+        ),
+    });
+    const settingsLayer = layerServerSettings().pipe(
+      Layer.provide(Layer.succeed(FileSystem.FileSystem, silentFileSystem)),
+    );
+
+    yield* Effect.gen(function* () {
+      const config = yield* ServerConfig.ServerConfig;
+      const service = yield* ServerSettingsModule.ServerSettingsService;
+      settingsPath = config.settingsPath;
+      yield* service.start;
+      const changes = yield* service.subscribeChanges;
+
+      yield* fs.writeFileString(config.settingsPath, `{ "responseStreamingMode": "paragraph" }`);
+      inode = 2n;
+      const registered = watches;
+      yield* TestClock.adjust("6 seconds");
+
+      const published = yield* changes.pipe(Stream.runHead);
+      assert.equal(Option.getOrThrow(published).responseStreamingMode, "paragraph");
+      assert.equal(watches, registered * 2);
+    }).pipe(Effect.provide(settingsLayer));
+  }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+);
+
 it.effect("starts with symlinked settings when the settings directory watch fails", () =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
@@ -3301,8 +3347,9 @@ it.effect("publishes edits made before the restored settings watch is registered
                       Stream.concat(Stream.never),
                     );
                   }
-                  if (directory !== active) return fs.watch(directory, options);
-                  if (yield* Deferred.isDone(replaced)) {
+                  // Other watches stay silent: a real one can report the link made before
+                  // start, and that reload would publish the old value first.
+                  if (directory === active && (yield* Deferred.isDone(replaced))) {
                     yield* Deferred.succeed(registering, undefined);
                     yield* Deferred.await(allowRegistration);
                   }

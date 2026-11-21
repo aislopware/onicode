@@ -98,7 +98,7 @@ jobs:
   linux:
     name: Build Linux
     if: github.ref == 'refs/heads/main' && inputs.desktop
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 90
     env:
       # build-linux.sh installs inside its container; the staged copy's host install goes unused.
@@ -129,7 +129,7 @@ jobs:
   windows:
     name: Upload Windows
     needs: windows_build
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     outputs:
       builds: ${{ steps.upload.outputs.builds }}
@@ -150,7 +150,7 @@ jobs:
   mobile:
     name: Ship ${{ matrix.platform }}
     if: github.ref == 'refs/heads/main' && inputs.mobile != 'none'
-    runs-on: ${{ matrix.platform == 'android' && 'ubuntu-24.04' || inputs.mac_runner == 'github' && 'macos-26' || fromJSON('["self-hosted", "macOS", "ARM64", "onicode-ios"]') }}
+    runs-on: ${{ matrix.platform == 'android' && 'ubuntu-26.04' || inputs.mac_runner == 'github' && 'macos-26' || fromJSON('["self-hosted", "macOS", "ARM64", "onicode-ios"]') }}
     timeout-minutes: 120
     strategy:
       fail-fast: false
@@ -193,6 +193,10 @@ jobs:
             echo "CCACHE_DIR=$HOME/Library/Caches/onicode-ccache" >> "$GITHUB_ENV"
             echo "CCACHE_MAXSIZE=30G" >> "$GITHUB_ENV"
           fi
+      # React Native's Gradle plugin targets JDK 17; the Ubuntu image defaults to a newer one.
+      - name: Use JDK 17 for Gradle
+        if: matrix.platform == 'android'
+        run: echo "JAVA_HOME=$JAVA_HOME_17_X64" >> "$GITHUB_ENV"
       - uses: ./.github/actions/setup-release
       # better-update fingerprints the native project with bunx @expo/fingerprint.
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
@@ -374,7 +378,7 @@ jobs:
   tag:
     name: Tag
     if: github.ref == 'refs/heads/main' && inputs.notes != '' && inputs.desktop
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     permissions:
       contents: write
@@ -397,7 +401,7 @@ jobs:
     name: Release to latest
     needs: [tag, macos, linux, windows]
     if: github.ref == 'refs/heads/main' && inputs.notes != ''
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     permissions:
       contents: write

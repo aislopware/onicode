@@ -324,9 +324,10 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, NetService.layer))
             ? (effect) => effect
             : Effect.provideService(Terminal.Terminal, answering(input.answer)),
           Effect.exit,
-          Effect.flatMap((exit) =>
-            Effect.map(TestConsole.logLines, (lines) => ({ exit, lines: lines.map(String) })),
-          ),
+          Effect.zipWith(TestConsole.logLines, (exit, lines) => ({
+            exit,
+            lines: lines.map(String),
+          })),
           Effect.provide(
             Layer.mergeAll(
               ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })),

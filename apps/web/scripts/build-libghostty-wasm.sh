@@ -78,10 +78,11 @@ ensure_ghostty_source() {
   fi
 
   # A cached checkout may still be on a previously pinned revision; converge on
-  # the pinned one instead of failing the rebuild.
+  # the pinned one instead of failing the rebuild. A fresh clone has no files yet,
+  # even when the pin is the remote's HEAD.
   local actual_revision
   actual_revision="$(git -C "${GHOSTTY_SOURCE_DIR}" rev-parse HEAD 2>/dev/null || echo none)"
-  if [[ "${actual_revision}" != "${GHOSTTY_REVISION}" ]]; then
+  if [[ "${actual_revision}" != "${GHOSTTY_REVISION}" || ! -f "${GHOSTTY_SOURCE_DIR}/build.zig" ]]; then
     log "checking out Ghostty ${GHOSTTY_REVISION}"
     git -C "${GHOSTTY_SOURCE_DIR}" fetch --depth=1 origin "${GHOSTTY_REVISION}"
     git -C "${GHOSTTY_SOURCE_DIR}" checkout --detach "${GHOSTTY_REVISION}"

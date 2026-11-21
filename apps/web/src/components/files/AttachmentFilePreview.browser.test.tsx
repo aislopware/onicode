@@ -343,7 +343,10 @@ describe("bounded binary previews", () => {
         import("sql.js"),
         import("sql.js/dist/sql-wasm.wasm?url"),
       ]);
-      const SQL = await initSqlJs({ locateFile: () => wasmUrl });
+      const SQL = await initSqlJs({
+        locateFile: () => wasmUrl,
+        useOldExtensionFunctions: false,
+      });
       const database = new SQL.Database();
       database.run(
         "CREATE TABLE sqliteData (price INTEGER, quantity INTEGER, total INTEGER GENERATED ALWAYS AS (price * quantity) STORED, doubled INTEGER GENERATED ALWAYS AS (price * 2) VIRTUAL); INSERT INTO sqliteData(price, quantity) VALUES (7, 3); CREATE TABLE zzInventory (stock INTEGER); INSERT INTO zzInventory VALUES(42)",
@@ -1407,7 +1410,10 @@ it.each(["archive", "sqlite"] as const)(
         import("sql.js"),
         import("sql.js/dist/sql-wasm.wasm?url"),
       ]);
-      const SQL = await initSqlJs({ locateFile: () => wasmUrl });
+      const SQL = await initSqlJs({
+        locateFile: () => wasmUrl,
+        useOldExtensionFunctions: false,
+      });
       const database = new SQL.Database();
       database.run(
         "CREATE TABLE recovered (value TEXT); INSERT INTO recovered VALUES('retry succeeded')",

@@ -1901,9 +1901,7 @@ export const layerWithOptions = (
 
       const loadNatively = <A, E>(load: Effect.Effect<A, E>) =>
         readLinkedEnvironments.pipe(
-          Effect.flatMap((linkedEnvironments) =>
-            load.pipe(Effect.map((loaded) => ({ loaded, linkedEnvironments }))),
-          ),
+          Effect.zipWith(load, (linkedEnvironments, loaded) => ({ loaded, linkedEnvironments })),
         );
 
       const ensureThreadAttached = (input: {

@@ -193,6 +193,7 @@ export async function createMuseSdkHost(
     ...(options.cwd ? { cwd: options.cwd } : {}),
     env: options.environment ?? makeMuseEnvironment(),
     shutdownTimeoutMs: 10_000,
+    refuseDeclaredBreakingSchema: true,
     ...(options.onProcessExit ? { spawnFn: spawnObservingExit(options.onProcessExit) } : {}),
   });
   let closePromise: Promise<void> | undefined;
@@ -223,7 +224,8 @@ export async function createMuseSdkHost(
     if (host.initializeResult.schema?.version !== 1) {
       throw new Error("Muse SDK returned an unsupported protocol envelope version.");
     }
-    // Fingerprint warnings permit additive schema changes; successful initialization proves readiness.
+    // A host that declares a breaking schema epoch is refused above; other fingerprint
+    // differences are additive, so a successful initialization proves readiness.
     return {
       connection: host.connection,
       initializeResult: host.initializeResult,

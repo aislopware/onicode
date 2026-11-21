@@ -47,6 +47,7 @@ import {
   useWorkspacePaneState,
 } from "../layout/AdaptiveWorkspaceLayout";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
+import { returnToThreadAction } from "../threads/return-to-thread";
 import { ThreadRouteScreen } from "../threads/ThreadRouteScreen";
 import { FilePreviewLoading, FilePreviewNotice } from "./FilePreviewFeedback";
 import { FileMarkdownPreview } from "./FileMarkdownPreview";
@@ -967,7 +968,7 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
   const handleReturnToThread = () => {
     if (environmentId !== null && threadId !== null) {
       navigation.dispatch(
-        StackActions.replace("Thread", {
+        returnToThreadAction(navigation.getState()?.routes, {
           environmentId: String(environmentId),
           threadId: String(threadId),
         }),

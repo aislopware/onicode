@@ -1,5 +1,5 @@
 diff --git a/dist/NodeChildProcessSpawner.d.ts b/dist/NodeChildProcessSpawner.d.ts
-index 213be4fa2647d800b320fa483c9ede801366fd73..bb7a2bb97e976f85af4760a7299db39506318155 100644
+index 213be4f..bb7a2bb 100644
 --- a/dist/NodeChildProcessSpawner.d.ts
 +++ b/dist/NodeChildProcessSpawner.d.ts
 @@ -31,6 +31,8 @@
@@ -32,10 +32,10 @@ index 213be4fa2647d800b320fa483c9ede801366fd73..bb7a2bb97e976f85af4760a7299db395
   * Result of flattening a pipeline of commands.
   *
 diff --git a/dist/NodeChildProcessSpawner.js b/dist/NodeChildProcessSpawner.js
-index 08d50b16dfe564551f1bffc7cae2d3b53805e172..fbecacc8b39a9eab7725a799aa5019c36bcc32ab 100644
+index 1e1123a..5689625 100644
 --- a/dist/NodeChildProcessSpawner.js
 +++ b/dist/NodeChildProcessSpawner.js
-@@ -81,16 +81,26 @@ const isProcessAlive = (command, childProcess) => {
+@@ -82,16 +82,26 @@ const isProcessAlive = (command, childProcess) => {
      return isUnsignallableProcessGroup(error);
    }
  };
@@ -72,7 +72,7 @@ index 08d50b16dfe564551f1bffc7cae2d3b53805e172..fbecacc8b39a9eab7725a799aa5019c3
    const fs = yield* FileSystem.FileSystem;
    const path = yield* Path.Path;
    const resolveWorkingDirectory = Effect.fnUntraced(function* (options) {
-@@ -335,7 +345,7 @@ const make = /*#__PURE__*/Effect.gen(function* () {
+@@ -336,7 +346,7 @@ const make = /*#__PURE__*/Effect.gen(function* () {
    };
    const spawn = (command, spawnOptions) => Effect.callback(resume => {
      const deferred = Deferred.makeUnsafe();
@@ -81,7 +81,7 @@ index 08d50b16dfe564551f1bffc7cae2d3b53805e172..fbecacc8b39a9eab7725a799aa5019c3
      handle.on("error", error => {
        // Node copies the arguments into `spawnargs`.
        if (command.args.some(Redacted.isRedacted)) {
-@@ -665,7 +675,8 @@ const make = /*#__PURE__*/Effect.gen(function* () {
+@@ -676,7 +686,8 @@ const make = /*#__PURE__*/Effect.gen(function* () {
   * @category layers
   * @since 4.0.0
   */

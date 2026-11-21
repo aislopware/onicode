@@ -486,27 +486,26 @@ export const layerMcpClientAuthenticator = Layer.effect(
       authenticate: Effect.fn("McpHttpServer.McpClientAuthenticator.authenticate")(
         function (request) {
           return environmentAuth.authenticateMcpClient(request).pipe(
-            Effect.flatMap((client) =>
-              Clock.currentTimeMillis.pipe(
-                Effect.map((issuedAt): McpInvocationContext.McpInvocationScope => ({
-                  environmentId,
-                  requestNamespace: `client:${client.sessionId}`,
-                  thread: undefined,
-                  client: {
-                    sessionId: client.sessionId,
-                    label: client.label,
-                    access: client.access,
-                    linked: client.peerLink,
-                    linkExpiresAt: client.linkExpiresAt,
-                  },
-                  capabilities: new Set<McpInvocationContext.McpCapability>([
-                    "orchestration",
-                    "worktree",
-                    "pull-requests",
-                  ]),
-                  issuedAt,
-                })),
-              ),
+            Effect.zipWith(
+              Clock.currentTimeMillis,
+              (client, issuedAt): McpInvocationContext.McpInvocationScope => ({
+                environmentId,
+                requestNamespace: `client:${client.sessionId}`,
+                thread: undefined,
+                client: {
+                  sessionId: client.sessionId,
+                  label: client.label,
+                  access: client.access,
+                  linked: client.peerLink,
+                  linkExpiresAt: client.linkExpiresAt,
+                },
+                capabilities: new Set<McpInvocationContext.McpCapability>([
+                  "orchestration",
+                  "worktree",
+                  "pull-requests",
+                ]),
+                issuedAt,
+              }),
             ),
             Effect.catch((error) =>
               (EnvironmentAuth.isServerAuthCredentialError(error)

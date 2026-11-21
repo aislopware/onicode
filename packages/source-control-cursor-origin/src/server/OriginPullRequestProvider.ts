@@ -357,7 +357,7 @@ export const make = Effect.gen(function* () {
       // `/files` always answers for the newest version, so a push during the read must not be
       // kept under the version the key names.
       return readPatch(cwd, pullPath(repository, Number(number), "/files")).pipe(
-        Effect.flatMap((patch) =>
+        Effect.zipWith(
           recover(
             cli
               .api(
@@ -366,7 +366,8 @@ export const make = Effect.gen(function* () {
               )
               .pipe(Effect.map(versionKey)),
             null,
-          ).pipe(Effect.map((version) => ({ ...patch, pinned: version === commits }))),
+          ),
+          (patch, version) => ({ ...patch, pinned: version === commits }),
         ),
       );
     },

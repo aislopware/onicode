@@ -7,7 +7,7 @@ iOS, shared libraries on Android); its C headers live in the repository-root `na
 The web terminal vendors a WebAssembly build from the same revision and uses the same C ABI.
 
 - Upstream project: https://github.com/ghostty-org/ghostty
-- Vendored revision: `6d9577708a211b0e6c5e6c6886f3cfb7efc47555`
+- Vendored revision: `d69f9ed83ca7275fa5afbba0fa968d0d9ada9f5a`
 - License: MIT
 
 Ghostty's MIT license applies to the vendored iOS, Android, and web libraries. Keep this notice and

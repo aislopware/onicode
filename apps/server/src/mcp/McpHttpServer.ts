@@ -827,8 +827,8 @@ const imageToolFailure =
   };
 
 /**
- * `McpServer.toolkit` serializes every result as JSON text, which is the wrong
- * shape for a screenshot: the model needs image content.
+ * A screenshot result is image content plus its metadata. `McpServer.toolkit`'s `content` mapper
+ * can return the image, but drops `structuredContent` and sends failures past the text below.
  */
 const registerImageTool = Effect.fn("McpHttpServer.registerImageTool")(function* <
   T extends Tool.Any,

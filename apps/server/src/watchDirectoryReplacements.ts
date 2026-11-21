@@ -11,7 +11,33 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
 import * as Queue from "effect/Queue";
+import * as Schedule from "effect/Schedule";
 import * as Stream from "effect/Stream";
+import * as SubscriptionRef from "effect/SubscriptionRef";
+
+/**
+ * fs.watch misses changes: macOS starts its event stream after watch() returns, and some mounts
+ * report nothing. Emits when `identity` differs from `seen`, the one the caller last read. Every
+ * read follows a new watch or an event, so the checks come soon after it, then slow down.
+ * `scheduling` runs just before a check soon after a read is scheduled.
+ */
+export const pollUnreportedChanges = (
+  identity: Effect.Effect<string>,
+  seen: SubscriptionRef.SubscriptionRef<string>,
+  scheduling: Effect.Effect<unknown> = Effect.void,
+) =>
+  SubscriptionRef.changes(seen).pipe(
+    Stream.switchMap(() =>
+      Stream.fromIterable(["250 millis", "750 millis"] as const).pipe(
+        Stream.mapEffect((delay) => Effect.andThen(scheduling, Effect.sleep(delay))),
+        Stream.concat(Stream.fromSchedule(Schedule.spaced("5 seconds"))),
+      ),
+    ),
+    Stream.filterEffect(() =>
+      Effect.zipWith(identity, SubscriptionRef.get(seen), (current, last) => current !== last),
+    ),
+    Stream.as(undefined),
+  );
 
 /** Buffer parent events before opening the child watch so a replacement cannot strand it. */
 export const watchDirectoryReplacements = <R>(

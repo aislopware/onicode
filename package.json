@@ -58,10 +58,10 @@
   },
   "devDependencies": {
     "@coderabbitai/config": "3.1.0",
-    "@effect/tsgo": "0.69.0",
+    "@effect/tsgo": "0.73.2",
     "@shadcn/lint": "0.2.5",
     "@types/node": "catalog:",
-    "knip": "6.45.1",
+    "knip": "6.46.1",
     "vite-plus": "catalog:"
   },
   "engines": {

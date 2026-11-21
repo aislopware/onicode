@@ -2632,7 +2632,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
         `${path.join(repoRoot, `apps/desktop/resources/linux/${DESKTOP_APP_ID}.metainfo.xml`)}=/usr/share/metainfo/${DESKTOP_APP_ID}.metainfo.xml`,
         `${path.join(repoRoot, "LICENSE")}=/usr/share/doc/onicode/copyright`,
       ],
-      // Debian 13 and Ubuntu 24.04 use 64-bit-time names; retain old-name fallbacks.
+      // Debian 13 and Ubuntu 24.04 and later use 64-bit-time names; retain old-name fallbacks.
       depends: [
         "libasound2t64 | libasound2",
         "libatspi2.0-0t64 | libatspi2.0-0",

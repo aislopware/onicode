@@ -2309,6 +2309,173 @@ describe("AcpRegistryAdapterV2", () => {
     }).pipe(Effect.provide(layerTest)),
   );
 
+  // regression: OpenCode 2.3.1 streams the turn a finished background shell wakes (opencode#64262)
+  it.effect("continues OpenCode's reply after a background shell finishes", () =>
+    Effect.gen(function* () {
+      const gate = makeProviderReplayGate(["shell-exit", "command-exit"]);
+      const sessionId = "ses_opencode_root";
+      const update = (sessionUpdate: Record<string, unknown>) =>
+        claudeFrames.update(sessionId, sessionUpdate);
+      const marker = (title: string) => update({ sessionUpdate: "session_info_update", title });
+      const command = (toolCallId: string, input: Record<string, unknown>) => ({
+        toolCallId,
+        kind: "execute",
+        title: input.command,
+        rawInput: { ...input, cwd: "/repo" },
+      });
+      const background = command("call-background", {
+        command: "sleep 10; echo done",
+        background: true,
+      });
+      const foreground = command("call-foreground", { command: "echo second; sleep 4" });
+      const session = yield* openClaudeReplaySession(
+        [
+          {
+            type: "expect_outbound",
+            frame: { kind: "request", method: "initialize", params: "<any>" },
+          },
+          {
+            type: "emit_inbound",
+            frame: {
+              kind: "response",
+              method: "initialize",
+              result: {
+                protocolVersion: 1,
+                agentInfo: { name: "OpenCode", version: "2.3.2" },
+                agentCapabilities: { loadSession: true },
+                authMethods: [],
+              },
+            },
+          },
+          {
+            type: "expect_outbound",
+            frame: { kind: "request", method: "session/new", params: "<any>" },
+          },
+          {
+            type: "emit_inbound",
+            frame: { kind: "response", method: "session/new", result: { sessionId } },
+          },
+          {
+            type: "expect_outbound",
+            frame: { kind: "request", method: "session/prompt", params: "<any>" },
+          },
+          update({ sessionUpdate: "tool_call", ...background, status: "pending" }),
+          update({ sessionUpdate: "tool_call_update", ...background, status: "in_progress" }),
+          update({
+            sessionUpdate: "tool_call_update",
+            toolCallId: background.toolCallId,
+            status: "completed",
+            content: [
+              {
+                type: "content",
+                content: {
+                  type: "text",
+                  text: "Command moved to the background (shell ID: sh_1).",
+                },
+              },
+            ],
+            rawOutput: { metadata: { status: "running", shellID: "sh_1", truncated: false } },
+          }),
+          update({
+            sessionUpdate: "agent_message_chunk",
+            content: { type: "text", text: "started" },
+          }),
+          update({ sessionUpdate: "usage_update", used: 6290, size: 200000 }),
+          {
+            type: "emit_inbound",
+            frame: {
+              kind: "response",
+              method: "session/prompt",
+              result: { stopReason: "end_turn" },
+            },
+          },
+          // OpenCode wakes the session: no prompt is open and none of this ends with usage_update.
+          {
+            ...update({ sessionUpdate: "tool_call", ...foreground, status: "pending" }),
+            label: "shell-exit",
+          },
+          update({ sessionUpdate: "tool_call_update", ...foreground, status: "in_progress" }),
+          {
+            type: "emit_inbound",
+            frame: {
+              kind: "request",
+              method: "session/request_permission",
+              params: {
+                sessionId,
+                toolCall: { ...foreground, status: "pending" },
+                options: [
+                  { optionId: "once", kind: "allow_once", name: "Allow once" },
+                  { optionId: "always", kind: "allow_always", name: "Always allow" },
+                  { optionId: "reject", kind: "reject_once", name: "Reject" },
+                ],
+              },
+            },
+          },
+          marker("woken permission received"),
+          {
+            type: "expect_outbound",
+            frame: {
+              kind: "response",
+              method: "session/request_permission",
+              result: { outcome: { outcome: "selected", optionId: "once" } },
+            },
+          },
+          update({ sessionUpdate: "tool_call_update", ...foreground, status: "in_progress" }),
+          marker("command running"),
+          {
+            ...update({
+              sessionUpdate: "tool_call_update",
+              toolCallId: foreground.toolCallId,
+              status: "completed",
+              content: [{ type: "content", content: { type: "text", text: "second\n" } }],
+              rawOutput: { metadata: { status: "completed", exit: 0, truncated: false } },
+            }),
+            label: "command-exit",
+          },
+          update({
+            sessionUpdate: "agent_message_chunk",
+            content: { type: "text", text: "finished" },
+          }),
+          marker("woken reply ended"),
+        ],
+        gate,
+        true,
+        "opencode-v2",
+      );
+      yield* session.runtime.startTurn(session.turnInput(1));
+      // The shell's tool call says completed, so the prompt settles at end_turn as before.
+      assert.equal((yield* session.terminal).status, "completed");
+      gate.release("shell-exit");
+      yield* session.throughMarker("woken permission received");
+      assert.lengthOf(session.offers, 1, "the woken turn must offer a continuation");
+      yield* session.offers[0]!.dispatchIfCurrent!(Effect.void);
+      yield* session.runtime.startTurn(session.turnInput(2, { continuation: true }));
+      const pending = yield* session.until(
+        (event) =>
+          event.type === "runtime_request.updated" && event.runtimeRequest.status === "pending",
+      );
+      const request = pending.at(-1)!;
+      if (request.type !== "runtime_request.updated") throw new Error("Missing approval");
+      yield* session.runtime.respondToRuntimeRequest({
+        requestId: request.runtimeRequest.id,
+        decision: "accept",
+      });
+      yield* session.throughMarker("command running");
+      // The command runs longer than the finalize debounce; the reply stays open until it ends.
+      yield* TestClock.adjust("10 seconds");
+      gate.release("command-exit");
+      const reply = yield* session.throughMarker("woken reply ended");
+      assert.isFalse(reply.some((event) => event.type === "turn.terminal"));
+      assert.isTrue(
+        reply.some(
+          (event) => event.type === "message.updated" && event.message.text === "finished",
+        ),
+      );
+      yield* TestClock.adjust("3 seconds");
+      assert.equal((yield* session.terminal).status, "completed");
+    }).pipe(Effect.provide(layerTest)),
+  );
+
   it.effect("protects Hermes background work when a wrapper launches it on replacement", () =>
     Effect.gen(function* () {
       const gate = makeProviderReplayGate(["process-exit"]);

@@ -8481,7 +8481,7 @@
   "0247d5883487d39a": "Sökväg till Claude-binären som den här instansen använder.",
   "3d23609d27f213d7": "Anpassad hem- och konfigurationskatalog för Claude. Håller .claude.json och .claude separata.",
   "33fbce50a4ea67e6": "Extra CLI-argument som skickas när sessionen startar.",
-  "abdee70d90cb26a3": "Komprimera efter 100 000 till 1 000 000 token. Lämna tomt för att använda Claudes standard.",
+  "9908232b0cd3f288": "Komprimera efter minst 100 000 token. Lämna tomt för att använda Claudes standard.",
   "f907b2466603538e": "När en inaktiv tråd över 200 000 token ska komprimeras: när du kommer tillbaka, precis innan dess promptcache går ut, eller aldrig. Åsidosätter standardvärdet i Leverantörer > Avancerat.",
   "484df18e29b21047": "Google-konton använder din prenumeration; API-nycklar och Agent Platform debiteras efter användning.",
   "931df01584748bf9": "Express-nyckel för Gemini eller Vertex AI. Lagras separat på värden.",

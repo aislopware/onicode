@@ -9,19 +9,19 @@ import * as PinnedTool from "../tools/PinnedTool.ts";
 
 // Update the version, sizes and hashes together from the assets of
 // https://github.com/aislopware/oni-browser-use/releases (tag v<version>).
-export const VERSION = "4.9.1";
+export const VERSION = "4.10.0";
 const BINARIES = {
   "darwin-arm64": {
-    bytes: 7_220_112,
-    sha256: "b96e0339bbe1548ef6f799ac3754b54e6a12f8c2a8fbc80189506ae726cd71ab",
+    bytes: 7_302_480,
+    sha256: "6b9b233df8f7e8ca9f9a086ee721f5977bbede6bebdf2b3e1d956a3edbbb17aa",
   },
   "linux-x64": {
-    bytes: 8_504_504,
-    sha256: "40088813219497467b0ceaa4430105919829938b28dc0adec50fdb96c58439d1",
+    bytes: 8_617_392,
+    sha256: "d9e0ac81fb63bc62e3bda978b4479a07320a50c229178616e2776a0baebfd4fb",
   },
   "windows-x64": {
-    bytes: 7_935_488,
-    sha256: "093af399cd3dc2db379129e4be820187a7513322baf1ad32a9cac79aa1a69ade",
+    bytes: 8_039_424,
+    sha256: "a14fed29b8f1a81d11d75699835aea50b8831f75ce16e5b17d3e34bb3579af4e",
   },
 } as const;
 

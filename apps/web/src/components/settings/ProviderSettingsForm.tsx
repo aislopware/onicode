@@ -152,8 +152,8 @@ const PACKAGE_FIELD_TEXT: ReadonlyMap<string, string> = new Map([
     msg("Additional CLI arguments passed on session start."),
   ],
   [
-    "Compact after 100,000 to 1,000,000 tokens. Leave empty to use Claude's default.",
-    msg("Compact after 100,000 to 1,000,000 tokens. Leave empty to use Claude's default."),
+    "Compact after at least 100,000 tokens. Leave empty to use Claude's default.",
+    msg("Compact after at least 100,000 tokens. Leave empty to use Claude's default."),
   ],
   [
     "When to compact an idle thread over 200,000 tokens: after you return, just before its prompt cache expires, or never. Overrides the default in Providers > Advanced.",

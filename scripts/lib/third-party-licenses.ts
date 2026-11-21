@@ -8,8 +8,8 @@ import * as NodeModule from "node:module";
 import type { Plugin } from "vite-plus";
 
 const THIRD_PARTY_LICENSES_FILE_NAME = "third-party-licenses.json";
-const SPDX_LICENSE_LIST_VERSION = "v3.28.0";
-const SPDX_LICENSE_LIST_REVISION = "c4a7237ec8f4654e867546f9f409749300f1bf4c";
+const SPDX_LICENSE_LIST_VERSION = "v3.29.0";
+const SPDX_LICENSE_LIST_REVISION = "31ba1a50e5397e00a304dbadc76531740e89ee48";
 const SPDX_TEMPLATE_DIRECTORY = "third-party-licenses/spdx";
 
 export interface ThirdPartyLicenseEntry {
@@ -368,11 +368,6 @@ function renderGeneratedNotice(config: GeneratedNoticeConfigEntry, licenseText: 
     const placeholderPattern = /^Copyright[^\n]*(?:<year>|<copyright holders>|<owner>)[^\n]*$/m;
     if (placeholderPattern.test(renderedLicense)) {
       renderedLicense = renderedLicense.replace(placeholderPattern, copyrights.join("\n"));
-    } else if (config.licenseId === "ISC") {
-      renderedLicense = renderedLicense.replace(
-        /^(?:Copyright[^\n]*\n)+/m,
-        `${copyrights.join("\n")}\n`,
-      );
     } else {
       renderedLicense = `${copyrights.join("\n")}\n\n${renderedLicense}`;
     }

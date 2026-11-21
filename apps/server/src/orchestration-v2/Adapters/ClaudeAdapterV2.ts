@@ -6306,9 +6306,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
       return adapterOptions.settings.autoCompactWindow;
     const validWindow = (value: unknown) => {
       const selected = Option.getOrUndefined(decodeClaudeCompactWindow(value));
-      return typeof selected === "number" && selected >= 100_000 && selected <= 1_000_000
-        ? String(selected)
-        : undefined;
+      return typeof selected === "number" && selected >= 100_000 ? String(selected) : undefined;
     };
     // Claude gives CLAUDE_CODE_AUTO_COMPACT_WINDOW precedence over the autoCompactWindow keys.
     const envValue = yield* resolveClaudeEnv(

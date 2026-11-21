@@ -434,6 +434,7 @@ export function ArchivedThreadsScreen(props: {
             }}
             contentInsetAdjustmentBehavior="automatic"
             data={listItems}
+            recycleItems={false}
             estimatedItemSize={62}
             getItemType={(item) => item.kind}
             keyboardDismissMode="on-drag"

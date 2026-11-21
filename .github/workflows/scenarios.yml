@@ -49,7 +49,7 @@ jobs:
   # instead: each shard starts its own app.
   desktop:
     name: Desktop scenarios ${{ matrix.shard }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     env:
       # The dev runner stops itself above half of RAM to protect a developer's machine from a
@@ -105,7 +105,7 @@ jobs:
         working-directory: scripts
         run: node "$(realpath node_modules/@e2e-dev/web)/../../playwright-core/cli.js" install ffmpeg
 
-      # Ubuntu 24.04 denies unprivileged user namespaces, which Chromium's sandbox needs.
+      # Ubuntu denies unprivileged user namespaces, which Chromium's sandbox needs.
       - name: Allow Electron's sandbox
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
 

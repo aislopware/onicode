@@ -65,14 +65,11 @@ export function WorkspaceInspectorPane(props: {
     resizing,
   ]);
 
-  const inspectorStyle = useAnimatedStyle(
-    () => ({
-      opacity: inspectorProgress.value,
-      transform: [{ translateX: (1 - inspectorProgress.value) * 24 }],
-      width: renderedInspectorWidth.value,
-    }),
-    [],
-  );
+  const inspectorStyle = useAnimatedStyle(() => ({
+    opacity: inspectorProgress.value,
+    transform: [{ translateX: (1 - inspectorProgress.value) * 24 }],
+    width: renderedInspectorWidth.value,
+  }));
   // A hidden or resizing pane takes its width at once; a visible one eases with the column.
   const inspectorContentStyle = {
     width: inspectorWidth ?? 0,

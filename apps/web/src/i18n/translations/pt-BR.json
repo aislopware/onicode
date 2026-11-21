@@ -8474,7 +8474,7 @@
   "0247d5883487d39a": "Caminho do binário do Claude usado por esta instância.",
   "3d23609d27f213d7": "Diretório home e de configuração personalizado do Claude. Mantém .claude.json e .claude separados.",
   "33fbce50a4ea67e6": "Argumentos de CLI adicionais passados no início da sessão.",
-  "abdee70d90cb26a3": "Compactar após 100.000 a 1.000.000 tokens. Deixe vazio para usar o padrão do Claude.",
+  "9908232b0cd3f288": "Compactar após pelo menos 100.000 tokens. Deixe vazio para usar o padrão do Claude.",
   "f907b2466603538e": "Quando compactar uma thread ociosa com mais de 200.000 tokens: depois que você voltar, pouco antes de o cache do prompt expirar ou nunca. Substitui o padrão em Provedores > Avançado.",
   "484df18e29b21047": "Contas Google usam sua assinatura; chaves de API e o Agent Platform cobram pelo uso.",
   "931df01584748bf9": "Chave express do Gemini ou do Vertex AI. Armazenada separadamente no host.",

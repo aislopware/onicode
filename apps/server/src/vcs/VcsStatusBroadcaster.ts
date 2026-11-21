@@ -7,12 +7,14 @@ import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as PubSub from "effect/PubSub";
 import * as Ref from "effect/Ref";
 import * as Schedule from "effect/Schedule";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
+import * as SubscriptionRef from "effect/SubscriptionRef";
 import * as SynchronizedRef from "effect/SynchronizedRef";
 import type {
   GitManagerServiceError,
@@ -33,6 +35,7 @@ import * as BackgroundPolicy from "../background/BackgroundPolicy.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import { pollUnreportedChanges } from "../watchDirectoryReplacements.ts";
 import { VcsAutomaticFetchInterval } from "./VcsAutomaticFetchInterval.ts";
 
 const VCS_STATUS_REFRESH_FAILURE_BASE_DELAY = Duration.seconds(30);
@@ -46,6 +49,7 @@ const CHECKOUT_REFRESH_RETRY = Schedule.exponential(Duration.seconds(1)).pipe(
   ),
 );
 const MAX_FAILURE_DIAGNOSTIC_VALUE_LENGTH = 128;
+const UNREADABLE_HEAD = "unreadable";
 
 function boundedDiagnosticValue(value: string): string {
   return value.slice(0, MAX_FAILURE_DIAGNOSTIC_VALUE_LENGTH);
@@ -1058,10 +1062,23 @@ export const make = Effect.gen(function* () {
     const headPath = yield* workflow.headPath(cwd);
     if (headPath === null) return;
     const headDirectory = path.dirname(headPath);
+    const headIdentity = fs.stat(headPath).pipe(
+      Effect.map(
+        (info) =>
+          `${info.dev}:${Option.getOrUndefined(info.ino)}:${Option.getOrUndefined(info.mtime)?.getTime()}:${info.size}`,
+      ),
+      Effect.orElseSucceed(() => UNREADABLE_HEAD),
+    );
+    const seenHead = yield* SubscriptionRef.make(yield* headIdentity);
+    const watching = yield* Deferred.make<void>();
+    // Subscribers wait for the watch and for the check that covers its start.
+    const covered = Deferred.await(watching).pipe(
+      Effect.andThen(Deferred.succeed(ready, undefined)),
+    );
     // Git replaces HEAD by renaming HEAD.lock, which a watch on the file itself would lose.
     yield* fs
       .watch(headDirectory, {
-        onReady: () => Deferred.doneUnsafe(ready, Exit.void),
+        onReady: () => Deferred.doneUnsafe(watching, Exit.void),
       })
       .pipe(
         // On Windows a watch outlives its deleted directory and reports it ~150k times a second.
@@ -1071,6 +1088,20 @@ export const make = Effect.gen(function* () {
             : Effect.succeed(false),
         ),
         Stream.filter((event) => path.basename(event.path) === "HEAD"),
+        // A checkout made as the watch starts raises no event on macOS.
+        Stream.merge(pollUnreportedChanges(headIdentity, seenHead, covered), {
+          haltStrategy: "left",
+        }),
+        // An event for a change the check above already published is dropped here.
+        Stream.filterEffect(() =>
+          Effect.gen(function* () {
+            const head = yield* headIdentity;
+            const reported =
+              head !== UNREADABLE_HEAD && head === (yield* SubscriptionRef.get(seenHead));
+            if (!reported) yield* SubscriptionRef.set(seenHead, head);
+            return !reported;
+          }),
+        ),
         // A rebase moves HEAD many times; refresh once for whatever arrived during a refresh.
         Stream.buffer({ capacity: 1, strategy: "sliding" }),
         Stream.mapEffect(() => retryCheckedOutRef(cwd, publishCheckedOutRef(cwd))),

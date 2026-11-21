@@ -221,7 +221,7 @@ export function WorkspaceNativeTabs(props: {
           }
           onTabSelected={({ nativeEvent }: NativeSyntheticEvent<TabSelectedEvent>) => {
             setProvenance(nativeEvent.provenance);
-            if (nativeEvent.actionOrigin === "programmatic-js") return;
+            if (nativeEvent.actionOrigin === "programmaticJs") return;
             const tab = workspaceTabForNativeSlot(primaryTabs, nativeEvent.selectedScreenKey);
             if (tab) selectTab(tab);
           }}
