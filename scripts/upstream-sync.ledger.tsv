@@ -3118,3 +3118,4 @@ b427708979	take	scenario ported to the desktop target (comment order fixed in st
 08804b2170	take	CONFLICT resolved: upstream's nextQueuedRun move already in Onicode; kept Onicode's held-notice requeue (steerMissedRunId) and applied followsThreadSelection to its model pick
 d57b83d85e	take	adapted: listRefs current-branch single-flight keyed lexically inline (upstream's normalizeRepositoryPathsCacheKey does not exist here); adopted upstream's lexical key over Onicode's realpath repositoryPathsCacheKey: no extra realpath per list, and a symlinked spelling cannot join a pre-checkout HEAD read
 e337cee952	take	taken as is; refsDigest is an optional success field, so old mobile builds ignore it and old servers fall back to always reloading refs
+7d3677fe70	take	taken as is (desktop picker; mobile has no status-branch refs refresh)
