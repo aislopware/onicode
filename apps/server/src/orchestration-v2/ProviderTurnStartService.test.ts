@@ -3,6 +3,7 @@ import {
   expandAssistantCitationsForProvider,
 } from "@onicode/shared/assistantCitations";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
+import * as NodePath from "@effect/platform-node/NodePath";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it, vi } from "vite-plus/test";
 import { it as effectIt } from "@effect/vitest";
@@ -51,6 +52,7 @@ import * as PreviewAgentActivity from "../preview/PreviewAgentActivity.ts";
 import * as CheckpointService from "./CheckpointService.ts";
 import * as ProviderEventIngestor from "./ProviderEventIngestor.ts";
 import {
+  canonicalize,
   withCheckpointRestoreReservation,
   withWorkspaceLease,
 } from "../workspace/workspaceLease.ts";
@@ -331,6 +333,8 @@ effectIt.effect("restores a missing worktree before a send only under the worksp
     const worktreePath = `${managedWorktreesDir}/project/feature-restore`;
     const { restore } = yield* ThreadWorktreeRestore;
     yield* withWorkspaceLease(
+      FileSystem.makeNoop({ realPath: (target) => Effect.succeed(target) }),
+      yield* Effect.service(Path.Path).pipe(Effect.provide(NodePath.layer)),
       worktreePath,
       Effect.gen(function* () {
         const restoring = yield* restore({
@@ -2900,10 +2904,15 @@ effectIt.effect.each(["cleanup-first", "startup-first"])(
         }),
       );
       let cleanupEntered = false;
+      const cleanupHeld = yield* Deferred.make<void>();
+      // Resolved up front, so a synchronous realPath leaves a later cleanup waiting on the lease.
       const cleanupEffect = withWorkspaceLease(
-        worktreePath,
+        FileSystem.makeNoop({ realPath: (target) => Effect.succeed(target) }),
+        path,
+        yield* canonicalize(fileSystem, path, worktreePath),
         Effect.gen(function* () {
           cleanupEntered = true;
+          yield* Deferred.succeed(cleanupHeld, undefined);
           if (order === "cleanup-first") yield* Deferred.await(release);
           else {
             expect(harness.projection().providerSessions).toHaveLength(1);
@@ -2916,6 +2925,7 @@ effectIt.effect.each(["cleanup-first", "startup-first"])(
         order === "cleanup-first"
           ? yield* cleanupEffect.pipe(Effect.forkChild({ startImmediately: true }))
           : undefined;
+      if (cleanup !== undefined) yield* Deferred.await(cleanupHeld);
       const startup = yield* harness.start.pipe(Effect.forkChild({ startImmediately: true }));
       if (order === "cleanup-first") expect(harness.open).not.toHaveBeenCalled();
       if (order === "startup-first") yield* Deferred.await(openEntered);
@@ -3053,9 +3063,14 @@ effectIt.effect("reads current startup state after waiting for the workspace lea
     harness.getThreadRecords.mockImplementationOnce(() =>
       Deferred.succeed(readEntered, undefined).pipe(Effect.as(harness.projection())),
     );
-    const holder = yield* withWorkspaceLease(worktreePath, Deferred.await(release)).pipe(
-      Effect.forkChild({ startImmediately: true }),
-    );
+    const held = yield* Deferred.make<void>();
+    const holder = yield* withWorkspaceLease(
+      FileSystem.makeNoop({ realPath: (target) => Effect.succeed(target) }),
+      yield* Effect.service(Path.Path).pipe(Effect.provide(NodePath.layer)),
+      worktreePath,
+      Deferred.succeed(held, undefined).pipe(Effect.andThen(Deferred.await(release))),
+    ).pipe(Effect.forkChild({ startImmediately: true }));
+    yield* Deferred.await(held);
     const startup = yield* harness.start.pipe(Effect.forkChild({ startImmediately: true }));
     yield* Deferred.await(readEntered);
     expect(harness.getTurnStartContext).not.toHaveBeenCalled();

@@ -1664,8 +1664,9 @@ export const make = Effect.gen(function* () {
           defaultBranch === null
             ? pr.baseRef === "main" || pr.baseRef === "master"
             : pr.baseRef === defaultBranch;
-        if (!mergedIntoDefault) return false;
-        return yield* gitCore.resolveCommit({ cwd, revision: "HEAD" }).pipe(
+        if (!mergedIntoDefault || details.branch === null) return false;
+        // The branch status was read for, since a checkout during the lookup moves HEAD.
+        return yield* gitCore.resolveCommit({ cwd, revision: `refs/heads/${details.branch}` }).pipe(
           Effect.map(({ commitSha }) => commitSha === headSha),
           Effect.orElseSucceed(() => false),
         );

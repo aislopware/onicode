@@ -647,6 +647,7 @@ export default function DiffPanel({
           sourceKind: selectedGitSource.kind,
           baseRef: selectedGitSource.baseRef,
           headRef: selectedGitSource.headRef,
+          mergeBase: selectedGitSource.mergeBase,
           cacheKey: selectedGitSource.diffHash,
         })
       : undefined;

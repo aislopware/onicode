@@ -1,3 +1,4 @@
+import * as NodePath from "@effect/platform-node/NodePath";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it, vi } from "@effect/vitest";
 import {
@@ -32,7 +33,11 @@ import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ServerConfig from "../config.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as GitWorkflow from "../git/GitWorkflowService.ts";
-import { withTurnStartReservation, withWorkspaceLease } from "../workspace/workspaceLease.ts";
+import {
+  canonicalize,
+  withTurnStartReservation,
+  withWorkspaceLease,
+} from "../workspace/workspaceLease.ts";
 import { ProviderWorkspaceMissingError } from "../provider/Errors.ts";
 import * as TaskFolders from "../workspace/TaskFolders.ts";
 import { resolveCodexRollbackTurnCount } from "./Adapters/CodexAdapterV2.ts";
@@ -126,12 +131,17 @@ it.effect.each(["initial", "waiting"])(
 
     return Effect.gen(function* () {
       const service = yield* CheckpointRollbackService.CheckpointRollbackServiceV2;
+      const held = yield* Deferred.make<void>();
       const holder =
         state === "waiting"
-          ? yield* withWorkspaceLease(process.cwd(), Deferred.await(release)).pipe(
-              Effect.forkChild({ startImmediately: true }),
-            )
+          ? yield* withWorkspaceLease(
+              FileSystem.makeNoop({ realPath: (target) => Effect.succeed(target) }),
+              yield* Effect.service(Path.Path).pipe(Effect.provide(NodePath.layer)),
+              process.cwd(),
+              Deferred.succeed(held, undefined).pipe(Effect.andThen(Deferred.await(release))),
+            ).pipe(Effect.forkChild({ startImmediately: true }))
           : undefined;
+      if (holder !== undefined) yield* Deferred.await(held);
       const rollback = yield* service
         .execute({
           threadId,
@@ -333,10 +343,15 @@ it.effect.each([
     );
     yield* Effect.gen(function* () {
       const service = yield* CheckpointRollbackService.CheckpointRollbackServiceV2;
+      const cleanupHeld = yield* Deferred.make<void>();
+      // Resolved up front, so a synchronous realPath leaves a later cleanup waiting on the lease.
       const cleanupEffect = withWorkspaceLease(
-        worktreePath,
+        FileSystem.makeNoop({ realPath: (target) => Effect.succeed(target) }),
+        path,
+        yield* canonicalize(fileSystem, path, worktreePath),
         Effect.gen(function* () {
           cleanupEntered = true;
+          yield* Deferred.succeed(cleanupHeld, undefined);
           if (order === "cleanup-first") yield* Deferred.await(release);
           yield* fileSystem.remove(worktreePath, { recursive: true, force: true });
           // A failed `git worktree remove` can leave the folder without its checkout.
@@ -351,6 +366,7 @@ it.effect.each([
         order === "cleanup-first"
           ? yield* cleanupEffect.pipe(Effect.forkChild({ startImmediately: true }))
           : undefined;
+      if (cleanup !== undefined) yield* Deferred.await(cleanupHeld);
       const rollback = yield* service
         .execute({ threadId, providerThreadId, checkpointId, scopeId, restoreFiles })
         .pipe(Effect.forkChild({ startImmediately: true }));
@@ -561,13 +577,18 @@ it.effect.each([
           const duringRestore = yield* startTurn;
           // GitWorkflowService leases a checkout by its real path; removing the task folder
           // through its project checkout leases that one, even when the thread is elsewhere.
-          const gitActions = yield* Effect.forEach(
+          // Resolved first, so the synchronous realPath leaves each action waiting on its lease.
+          const realCheckouts = yield* Effect.forEach(
             taskFolder ? [repositoryWorktree, submodule, projectPath] : [],
-            (checkout) =>
-              withWorkspaceLease(
-                checkout,
-                Effect.sync(() => calls.push("git action")),
-              ).pipe(Effect.forkChild({ startImmediately: true })),
+            (checkout) => canonicalize(fileSystem, path, checkout),
+          );
+          const gitActions = yield* Effect.forEach(realCheckouts, (checkout) =>
+            withWorkspaceLease(
+              FileSystem.makeNoop({ realPath: (target) => Effect.succeed(target) }),
+              path,
+              checkout,
+              Effect.sync(() => calls.push("git action")),
+            ).pipe(Effect.forkChild({ startImmediately: true })),
           );
           assert.deepEqual(calls, []);
           yield* Deferred.succeed(releaseRestore, undefined);

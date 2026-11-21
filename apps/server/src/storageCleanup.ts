@@ -61,11 +61,7 @@ import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
 import { isNonRepositoryGitStderr } from "./vcs/GitVcsDriverCore.ts";
 import { isLinkedWorktree, removeLinkedWorktree } from "./vcs/worktreeRemoval.ts";
 import * as TaskFolders from "./workspace/TaskFolders.ts";
-import {
-  canonicalize,
-  withWorkspaceLease,
-  withWorkspaceLeases,
-} from "./workspace/workspaceLease.ts";
+import { withWorkspaceLease, withWorkspaceLeases } from "./workspace/workspaceLease.ts";
 import * as HostProcess from "@onicode/shared/HostProcess";
 import * as NodeSqliteClient from "@onicode/shared/nodeSqliteClient";
 import { isNetworkPath } from "@onicode/shared/path";
@@ -1558,6 +1554,8 @@ const make = Effect.gen(function* () {
           const inspection = yield* measureWorktree(worktreePath, "plain-folder");
           if (inspection.reason !== null) return keep(inspection.reason);
           return yield* withWorkspaceLease(
+            fs,
+            path,
             worktreePath,
             Effect.gen(function* () {
               // Walked again under the lease: a repository deleted with the folder is gone for good.
@@ -1590,16 +1588,13 @@ const make = Effect.gen(function* () {
           const blockedTaskFolder = yield* blockedSinceCheck();
           if (blockedTaskFolder !== null) return keep(blockedTaskFolder);
           // Every checkout goes, so every lease on one is held: a repository being added holds the
-          // project folder's, a turn start its thread's checkout, and a Git action its real path.
+          // project folder's, a turn start its thread's checkout, and a Git action its repository's.
           const checkouts = [
             worktreePath,
             taskFolder.root,
             taskFolder.projectPath,
             ...taskFolder.repositories.map((repository) => repository.worktreePath),
-          ].map((checkout) => path.resolve(checkout));
-          const realCheckouts = yield* Effect.forEach(checkouts, (checkout) =>
-            canonicalize(fs, path, checkout),
-          );
+          ];
           const checkoutsOf = (folder: NonNullable<typeof taskFolder>) =>
             [
               folder.projectPath,
@@ -1607,7 +1602,9 @@ const make = Effect.gen(function* () {
             ].join("\0");
           const leasedCheckouts = checkoutsOf(taskFolder);
           return yield* withWorkspaceLeases(
-            [...checkouts, ...realCheckouts],
+            fs,
+            path,
+            checkouts,
             Effect.gen(function* () {
               // Removal reads the record again, so a checkout added before the leases were taken
               // would go without its lease.
@@ -1796,6 +1793,8 @@ const make = Effect.gen(function* () {
         if (inspection.reason !== null) return keep(inspection.reason);
         const bytes = inspection.bytes;
         yield* withWorkspaceLease(
+          fs,
+          path,
           worktreePath,
           Effect.gen(function* () {
             const pathReason = yield* worktreePathReason(worktreePath);

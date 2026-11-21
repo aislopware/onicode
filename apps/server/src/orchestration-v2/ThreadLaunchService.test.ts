@@ -285,6 +285,7 @@ function makeHarness(options: HarnessOptions = {}) {
   const layerLaunch = ThreadLaunch.layer.pipe(
     Layer.provide(
       Layer.mergeAll(
+        NodeServices.layer,
         layerExternalServices,
         layerLaunchThreads,
         layerReceipts,

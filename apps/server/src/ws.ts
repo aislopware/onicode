@@ -211,7 +211,7 @@ import * as DirectorySearch from "./workspace/DirectorySearch.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as WorkspaceFolders from "./workspace/WorkspaceFolders.ts";
 import * as TaskFolders from "./workspace/TaskFolders.ts";
-import { withWorkspaceLease } from "./workspace/workspaceLease.ts";
+import { canonicalize, withWorkspaceLease } from "./workspace/workspaceLease.ts";
 import * as KnownWorkspaces from "./workspace/KnownWorkspaces.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
 import { readWorkflowScript } from "./orchestration-v2/workflowScriptQuery.ts";
@@ -3128,39 +3128,46 @@ export const layerWsRpc = (
             ),
             Effect.tap(() => refreshGitStatus(input.cwd)),
           ),
-        [WS_METHODS.vcsRemoveWorktree]: (input) =>
+        [WS_METHODS.vcsRemoveWorktree]: Effect.fn("ws.vcsRemoveWorktree")(function* (input) {
+          const fileSystem = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          // Git resolves a relative path against the command's cwd. Status subscribers are keyed
+          // by the real path, which can no longer be read once the checkout is gone.
+          const checkout = yield* canonicalize(
+            fileSystem,
+            path,
+            path.resolve(input.cwd, input.path),
+          );
           // A thread's worktree may be a task folder: its repositories' worktrees go with it.
-          taskFolders.removeIfTaskFolder({ path: input.path, force: input.force === true }).pipe(
-            Effect.mapError(
-              (cause) =>
-                new GitCommandError({
-                  operation: "TaskFolders.remove",
-                  command: "git worktree remove",
-                  cwd: input.cwd,
-                  detail: cause.detail,
-                }),
-            ),
-            Effect.flatMap((removed) =>
-              removed
-                ? Effect.void
-                : // Under the lease a turn start in it takes, as for a whole task folder. Git
-                  // resolves a relative path against the command's cwd.
-                  Effect.flatMap(Effect.service(Path.Path), (path) =>
-                    withWorkspaceLease(
-                      path.resolve(input.cwd, input.path),
-                      gitWorkflow.removeWorktree(input),
-                    ),
-                  ),
-            ),
-            // No project-root refresh here: the client awaits vcs.refreshStatus right after, and a
-            // second refresh would queue behind this one and reread an unchanged repository.
-            // Subscribers of the removed checkout learn it is no longer a repository.
-            Effect.tap(() =>
-              vcsStatusBroadcaster
-                .refreshLocalStatus(input.path)
-                .pipe(Effect.ignoreCause({ log: true }), Effect.forkDetach, Effect.asVoid),
-            ),
-          ),
+          const removed = yield* taskFolders
+            .removeIfTaskFolder({ cwd: input.cwd, path: input.path, force: input.force === true })
+            .pipe(
+              Effect.mapError(
+                (cause) =>
+                  new GitCommandError({
+                    operation: "TaskFolders.remove",
+                    command: "git worktree remove",
+                    cwd: input.cwd,
+                    detail: cause.detail,
+                  }),
+              ),
+            );
+          if (!removed) {
+            // Under the lease a turn start in it takes, as for a whole task folder.
+            yield* withWorkspaceLease(
+              fileSystem,
+              path,
+              checkout,
+              gitWorkflow.removeWorktree(input),
+            );
+          }
+          // No project-root refresh here: the client awaits vcs.refreshStatus right after, and a
+          // second refresh would queue behind this one and reread an unchanged repository.
+          // Subscribers of the removed checkout learn it is no longer a repository.
+          yield* vcsStatusBroadcaster
+            .refreshLocalStatus(checkout)
+            .pipe(Effect.ignoreCause({ log: true }), Effect.forkDetach);
+        }),
         [WS_METHODS.vcsCreateRef]: (input) =>
           gitWorkflow
             .createRef(input)

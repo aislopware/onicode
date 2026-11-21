@@ -815,6 +815,8 @@ it.effect.each(["on a branch", "detached", "unborn"] as const)(
         const cwd = yield* makeTmpDir();
         if (state === "unborn") {
           yield* git(cwd, ["init", "-b", "main"]);
+          yield* git(cwd, ["config", "user.email", "test@test.com"]);
+          yield* git(cwd, ["config", "user.name", "Test"]);
         } else {
           yield* initRepoWithCommit(cwd);
           yield* writeTextFile(cwd, "committed.txt", "committed\n");
@@ -867,10 +869,15 @@ it.effect.each(["on a branch", "detached", "unborn"] as const)(
         if (state !== "detached") assert.equal(headRef(afterCheckout), "outside-checkout");
 
         // A file read under that preview reuses its merge base instead of resolving it again.
+        const { mergeBase } = afterCheckout.sources.find((entry) => entry.kind === "branch-range")!;
+        assert.match(mergeBase!, /^[0-9a-f]{40}$/);
+        // A commit before the file read, even a first one, must not move the base under the
+        // preview's file list.
+        yield* git(cwd, ["add", "new.txt"]);
+        yield* git(cwd, ["commit", "-m", "commit new file"]);
         const branchFile = yield* driver.getReviewDiffPreview({
           cwd,
-          mergeBase: afterCheckout.sources.find((entry) => entry.kind === "branch-range")!
-            .mergeBase!,
+          mergeBase: mergeBase!,
           file: { path: "new.txt", previousPath: null, sourceKind: "branch-range" },
         });
         assert.isFalse(spawnedArgs.some((args) => args.includes("merge-base")));
@@ -889,6 +896,83 @@ it.effect.each(["on a branch", "detached", "unborn"] as const)(
         yield* (yield* FileSystem.FileSystem).remove(cwd, { recursive: true });
         assert.isEmpty((yield* driver.getReviewDiffPreview(workingTreeFile)).sources);
         assert.isEmpty((yield* driver.getReviewDiffPreview({ cwd })).sources);
+      }),
+    ).pipe(Effect.provide(layerTest)),
+);
+
+it.effect.each([
+  { change: "checks out another branch", at: "divergence", published: false },
+  { change: "prunes the upstream", at: "divergence", published: false },
+  { change: "corrupts the upstream ref", at: "divergence", published: false },
+  { change: "prunes the upstream", at: "destination", published: true },
+] as const)(
+  "pushes the branch status read when a fetch or checkout $change during the $at read",
+  ({ change, at, published }) =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const delegate = yield* ChildProcessSpawner.ChildProcessSpawner;
+        const cwd = yield* makeTmpDir();
+        const remote = yield* makeTmpDir("git-remote-");
+        let compared = false;
+        let changed = false;
+        const spawner = ChildProcessSpawner.make((command) => {
+          const args = ChildProcess.isStandardCommand(command) ? command.args.map(String) : [];
+          const divergence = args.includes("--left-right");
+          // The destination reads the branch's upstream again after the divergence read.
+          const reached =
+            at === "divergence" ? divergence : compared && args.includes("topic@{upstream}");
+          compared ||= divergence;
+          if (!changed && reached) {
+            changed = true;
+            const gitDir = NodeChildProcess.execFileSync("git", ["rev-parse", "--git-dir"], {
+              cwd,
+              encoding: "utf8",
+            }).trim();
+            if (change === "corrupts the upstream ref") {
+              NodeFS.writeFileSync(
+                NodePath.join(cwd, gitDir, "refs/remotes/origin/topic"),
+                `${"1".repeat(40)}\n`,
+              );
+            } else {
+              NodeChildProcess.spawnSync(
+                "git",
+                change === "prunes the upstream"
+                  ? ["update-ref", "-d", "refs/remotes/origin/topic"]
+                  : ["checkout", "--quiet", "other"],
+                { cwd },
+              );
+            }
+          }
+          return delegate.spawn(command);
+        });
+        const driver = yield* makeGitVcsDriverCore().pipe(
+          Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+        );
+        yield* initRepoWithCommit(cwd);
+        yield* git(remote, ["init", "--bare"]);
+        yield* git(cwd, ["remote", "add", "origin", remote]);
+        yield* git(cwd, ["checkout", "--quiet", "-b", "topic"]);
+        yield* git(cwd, ["push", "--quiet", "-u", "origin", "topic"]);
+        yield* writeTextFile(cwd, "topic.txt", "topic\n");
+        yield* git(cwd, ["add", "topic.txt"]);
+        yield* git(cwd, ["commit", "--quiet", "-m", "topic work"]);
+        const topicHead = yield* git(cwd, ["rev-parse", "HEAD"]);
+        // With nothing to push, a pruned upstream still means the remote branch may be gone.
+        if (published) yield* git(cwd, ["push", "--quiet", "origin", "topic"]);
+        // Another branch on top of topic, tracking the same upstream, that a push must not publish.
+        yield* git(cwd, ["checkout", "--quiet", "-b", "other", "--track", "origin/topic"]);
+        yield* git(cwd, ["reset", "--quiet", "--hard", "topic"]);
+        yield* git(cwd, ["commit", "--quiet", "--allow-empty", "-m", "other work"]);
+        yield* git(cwd, ["checkout", "--quiet", "topic"]);
+
+        const pushed = yield* driver.pushCurrentBranch(cwd, null);
+
+        assert.isTrue(changed);
+        assert.deepInclude(pushed, { status: "pushed", branch: "topic" });
+        assert.equal(
+          yield* git(remote, ["--git-dir=.", "rev-parse", "refs/heads/topic"]),
+          topicHead,
+        );
       }),
     ).pipe(Effect.provide(layerTest)),
 );
@@ -4704,12 +4788,17 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
         yield* git(cwd, ["add", "README.md"]);
         yield* git(cwd, ["commit", "-m", "change readme"]);
         yield* writeTextFile(cwd, "README.md", "# dirty change\nunchanged context\n");
+        const preview = yield* driver.getReviewDiffPreview({ cwd, baseRef: initialBranch });
+        const { mergeBase } = preview.sources.find((source) => source.kind === "branch-range")!;
+        // A base moved after the patch read must not change the expanded context.
+        yield* git(cwd, ["branch", "-f", initialBranch, "HEAD"]);
 
         const contents = yield* driver.getReviewDiffFileContents(
           makeReviewDiffFileContentsInput(cwd, {
             sourceKind: "branch-range",
             baseRef: initialBranch,
             headRef: "feature/context",
+            ...(mergeBase === undefined ? {} : { mergeBase }),
           }),
         );
 
@@ -5238,7 +5327,8 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
         assert.deepStrictEqual(changes.files, [
           { path: "new.txt", previousPath: null, changeType: "new", additions: 2, deletions: 0 },
         ]);
-        assert.deepStrictEqual(headDiffLocales.splice(0), ["C"]);
+        // The preview pins the empty tree, so only the status read diffs the unborn HEAD.
+        assert.deepStrictEqual(headDiffLocales, []);
         const status = yield* driver
           .statusDetailsLocal(cwd, { includeBranchChanges: true })
           .pipe(german);
@@ -5249,6 +5339,18 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
         });
         assert.isNotEmpty(headDiffLocales);
         assert.deepStrictEqual(new Set(headDiffLocales), new Set(["C"]));
+
+        // HEAD born between the two passes resolves the base again, not the empty tree.
+        const tracked = yield* driver.getReviewDiffPreview({ cwd, trackedOnly: true });
+        yield* git(cwd, ["reset", "origin/main"]);
+        const completed = yield* driver.getReviewDiffPreview({
+          cwd,
+          completionToken: tracked.completionToken!,
+        });
+        assert.deepStrictEqual(
+          completed.sources,
+          (yield* driver.getReviewDiffPreview({ cwd })).sources,
+        );
       }),
     );
 
@@ -9535,6 +9637,11 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
           yield* git(cwd, ["show", "--pretty=", "--name-status", "HEAD"]),
           "D\tgone.txt",
         );
+        // An untracked directory is listed, and selected, as the directory itself.
+        yield* writeTextFile(cwd, "src/a.ts", "a\n");
+        yield* driver.commit(cwd, "Add src", "", { stage: { filePaths: ["src/"] } });
+        assert.equal(yield* git(cwd, ["show", "--pretty=", "--name-only", "HEAD"]), "src/a.ts");
+        assert.equal(yield* git(cwd, ["ls-files", "--unmerged"]), unmerged);
 
         yield* writeTextFile(cwd, "other.txt", "other\n");
         const head = yield* git(cwd, ["rev-parse", "HEAD"]);
@@ -10589,9 +10696,13 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
       }),
     );
 
-    it.effect.each(["branch.topic.pushRemote", "remote.pushDefault"] as const)(
-      "pushes a branch tracking its upstream head to the %s remote",
-      (configKey) =>
+    it.effect.each([
+      { configKey: "branch.topic.pushRemote", upstreamGone: false },
+      { configKey: "remote.pushDefault", upstreamGone: false },
+      { configKey: "branch.topic.pushRemote", upstreamGone: true },
+    ] as const)(
+      "pushes a branch tracking its upstream head to the $configKey remote (upstream gone: $upstreamGone)",
+      ({ configKey, upstreamGone }) =>
         Effect.gen(function* () {
           const cwd = yield* makeTmpDir();
           const upstreamRemote = yield* makeTmpDir("git-upstream-remote-");
@@ -10611,6 +10722,10 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
           yield* writeTextFile(cwd, "fork.txt", "fork\n");
           yield* git(cwd, ["add", "-A"]);
           yield* driver.commit(cwd, "Add fork update", "");
+          if (upstreamGone) {
+            yield* git(upstreamRemote, ["--git-dir=.", "update-ref", "-d", "refs/heads/topic"]);
+            yield* git(cwd, ["fetch", "--prune", "upstream"]);
+          }
 
           const pushed = yield* driver.pushCurrentBranch(cwd, null);
 
@@ -10625,13 +10740,18 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
             yield* git(forkRemote, ["--git-dir=.", "log", "-1", "--pretty=%s", "topic"]),
             "Add fork update",
           );
-          assert.equal(
-            yield* git(upstreamRemote, ["--git-dir=.", "rev-parse", "topic"]),
-            upstreamTopicSha,
-          );
-          assert.equal(
-            yield* git(cwd, ["rev-parse", "--abbrev-ref", "@{upstream}"]),
-            "upstream/topic",
+          if (!upstreamGone) {
+            assert.equal(
+              yield* git(upstreamRemote, ["--git-dir=.", "rev-parse", "topic"]),
+              upstreamTopicSha,
+            );
+          }
+          assert.deepEqual(
+            [
+              yield* git(cwd, ["config", "branch.topic.remote"]),
+              yield* git(cwd, ["config", "branch.topic.merge"]),
+            ],
+            ["upstream", "refs/heads/topic"],
           );
         }),
     );

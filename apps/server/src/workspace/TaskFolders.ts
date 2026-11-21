@@ -43,7 +43,7 @@ import { resolveWorktreesDirectory } from "../worktreesDirectory.ts";
 import { isWithinRoot } from "./KnownWorkspaces.ts";
 import * as TaskFolderStore from "./TaskFolderStore.ts";
 import { projectFolders, parseGitmodulesPaths } from "./WorkspaceFolders.ts";
-import { withWorkspaceLease } from "./workspaceLease.ts";
+import { canonicalize, withWorkspaceLease, withWorkspaceLeases } from "./workspaceLease.ts";
 
 const isGitCommandError = Schema.is(GitCommandError);
 // Each worktree is a checkout: enough at once to finish four repositories together, few enough
@@ -160,6 +160,8 @@ export class TaskFolders extends Context.Service<
      * it is neither, and a failure naming what could not be removed.
      */
     readonly removeIfTaskFolder: (input: {
+      /** Resolves a relative `path`, as Git does. */
+      readonly cwd: string;
       readonly path: string;
       readonly force: boolean;
     }) => Effect.Effect<boolean, TaskFolderError>;
@@ -854,7 +856,7 @@ const make = Effect.gen(function* () {
   });
   // The same lease storage cleanup and file rewind take: the thread's worktree path.
   const locked = <A, E>(taskFolder: Pick<TaskFolder, "projectPath">, effect: Effect.Effect<A, E>) =>
-    withWorkspaceLease(path.resolve(taskFolder.projectPath), effect);
+    withWorkspaceLease(fileSystem, path, taskFolder.projectPath, effect);
 
   // A checkout that makes the branch can stop after making it, so the branch is counted as made
   // before it starts, unless it was there before: when listed, or when Git finds it.
@@ -1309,19 +1311,44 @@ const make = Effect.gen(function* () {
   const removeIfTaskFolder: TaskFolders["Service"]["removeIfTaskFolder"] = Effect.fn(
     "TaskFolders.removeIfTaskFolder",
   )(function* (input) {
-    const found = yield* store.findContaining(input.path);
-    const target = path.resolve(input.path);
-    if (found === null || (target !== found.root && target !== found.projectPath)) return false;
-    const { kept } = yield* locked(
-      found,
-      Effect.gen(function* () {
-        // Read again under the lease: a repository being added has landed or been refused.
-        const taskFolder = yield* store.findContaining(found.root);
-        if (taskFolder === null || taskFolder.root !== found.root)
-          return { removed: [], kept: [] } satisfies TaskFolderRemoval;
-        return yield* removeLocked(taskFolder, { force: input.force, forget: true });
-      }),
+    const target = path.resolve(input.cwd, input.path);
+    const found = yield* store.findContaining(target);
+    if (found === null) return false;
+    // A symlink alias of the folder or its project checkout names the same folder.
+    const [canonicalTarget, root, projectPath] = yield* Effect.forEach(
+      [target, found.root, found.projectPath],
+      (candidate) => canonicalize(fileSystem, path, candidate),
     );
+    if (canonicalTarget !== root && canonicalTarget !== projectPath) return false;
+    // Every checkout goes, so every lease on one is held, as storage cleanup does: a repository
+    // being added holds the project's, a turn start or Git action its own checkout's.
+    const checkoutsOf = (folder: TaskFolder) => [
+      folder.root,
+      folder.projectPath,
+      ...folder.repositories.map((repository) => repository.worktreePath).toSorted(),
+    ];
+    let leased = found;
+    let removal: TaskFolderRemoval | undefined;
+    while (removal === undefined) {
+      const expected = checkoutsOf(leased).join("\0");
+      const attempt: TaskFolderRemoval | TaskFolder = yield* withWorkspaceLeases(
+        fileSystem,
+        path,
+        checkoutsOf(leased),
+        Effect.gen(function* () {
+          // Read again under the leases: a repository being added has landed or been refused.
+          const taskFolder = yield* store.findContaining(found.root);
+          if (taskFolder === null || taskFolder.root !== found.root)
+            return { removed: [], kept: [] } satisfies TaskFolderRemoval;
+          // A checkout added before the leases were taken needs its own lease first.
+          if (checkoutsOf(taskFolder).join("\0") !== expected) return taskFolder;
+          return yield* removeLocked(taskFolder, { force: input.force, forget: true });
+        }),
+      );
+      if ("removed" in attempt) removal = attempt;
+      else leased = attempt;
+    }
+    const { kept } = removal;
     if (kept.length > 0) {
       return yield* new TaskFolderError({
         operation: "remove",

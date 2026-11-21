@@ -3416,7 +3416,9 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
 
   const openLocked = (input: TerminalOpenInput) =>
     withWorkspaceLease(
-      path.resolve(input.worktreePath ?? input.cwd),
+      fileSystem,
+      path,
+      input.worktreePath ?? input.cwd,
       openWithWorkspaceLease(input),
     );
 

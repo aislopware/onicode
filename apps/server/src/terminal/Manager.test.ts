@@ -543,6 +543,8 @@ it.layer(
                     creations++;
                     yield* fs.makeDirectory(cwd, { recursive: true }).pipe(Effect.orDie);
                     const cleanup = yield* withWorkspaceLease(
+                      fs,
+                      path,
                       worktreePath,
                       Effect.sync(() => {
                         assert.equal(ptyAdapter.spawnInputs.length, 1);

@@ -123,6 +123,8 @@ export interface GitRemoteStatusDetails {
   aheadCount: number;
   behindCount: number;
   aheadOfDefaultCount: number;
+  /** The counts are zero because the comparison with the upstream failed, not because it matched. */
+  divergenceUnknown?: boolean;
 }
 
 export interface GitPreparedCommitContext {
