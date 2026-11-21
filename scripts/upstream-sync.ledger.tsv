@@ -3099,3 +3099,4 @@ c1464d6774	take	perf(server): status of a repository without a remote skips remo
 47525fa3d6	take	fix(web): switching threads no longer restarts the Changes and git status reads
 0854259384	take	fix(web): clipped Files tree names show the full name on hover
 66441268e8	take	fix(cli): update Windows launchers outside PATH
+69228fe179	take	fix(server): typed-message commits stage the worktree once
