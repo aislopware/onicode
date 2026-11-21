@@ -105,7 +105,9 @@ Skills for every project go in `~/.gemini/config/skills` or
 `~/.gemini/antigravity-cli/skills`. Antigravity does not read `~/.agents/skills`
 on its own; to share a folder like that one, list it in `~/.gemini/config/skills.json`
 (or a project's `.agents/skills.json`), and Onicode shows the skills it declares,
-honoring `inherits`, `include_only`, and `exclude`.
+honoring `inherits`, `include_only`, and `exclude`. Use absolute paths there:
+Antigravity does not expand `~`, so `~/.agents/skills` points inside the config
+file's own folder.
 
 Antigravity receives images and audio directly, and reads PDFs and text files as
 documents. Other attachments, including videos, are passed as a saved file path for
