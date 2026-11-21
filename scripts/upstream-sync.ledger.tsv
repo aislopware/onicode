@@ -3056,3 +3056,4 @@ ef9b826f53	take	taken as is
 c688453acd	take	fix(claude): keep truncated request, error, and snippet text valid Unicode
 cfb720fa8a	skip	guest share links are a removed surface; every changed file is guest-only
 e97e360cfc	take	fix(web): Option + a letter records the letter, not the macOS glyph
+386c8b68ca	take	fix(mobile): the iOS status pill stays below the header above a tall question; kept Onicode's dependency-less useDerivedValue from the deps pass
