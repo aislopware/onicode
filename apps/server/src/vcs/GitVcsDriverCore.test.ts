@@ -985,6 +985,18 @@ it.effect("resolves a branch's base once while its refs and branch config are un
         (yield* driver.getReviewDiffPreview({ cwd })).sources,
       );
       yield* git(cwd, ["checkout", "feature/x"]);
+      // So does a merge that moves HEAD on the same branch.
+      const beforeMerge = yield* driver.getReviewDiffPreview({ cwd, trackedOnly: true });
+      yield* git(cwd, ["merge", "--no-edit", initialBranch]);
+      const afterMerge = yield* driver.getReviewDiffPreview({
+        cwd,
+        completionToken: beforeMerge.completionToken!,
+      });
+      assert.deepStrictEqual(
+        afterMerge.sources,
+        (yield* driver.getReviewDiffPreview({ cwd })).sources,
+      );
+      yield* git(cwd, ["reset", "--hard", "HEAD~1"]);
       yield* git(cwd, ["branch", "-f", initialBranch, `${initialBranch}~1`]);
       spawnedArgs.length = 0;
 

@@ -1931,7 +1931,7 @@ function ConnectionsSettingsContent({
           onOpenChange={(open) =>
             setLinkSeveral((current) => (current === null ? null : { ...current, open }))
           }
-          onClosed={() => setLinkSeveral(null)}
+          onClosed={() => setLinkSeveral((current) => (current?.open ? current : null))}
         />
       ) : null}
       <LoadBalancingSettings environments={loadBalancingEnvironments} />
