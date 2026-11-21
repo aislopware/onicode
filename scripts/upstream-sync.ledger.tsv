@@ -3091,3 +3091,4 @@ b19ca97827	take	taken as is
 bb0d718b31	take	taken as is
 0fd4822887	take	fix(server): per-file diff reads reuse the preview's merge base (#40216)
 714997c420	take	fix(acp-registry): reinstall the current version when a cached build was removed upstream (#40261)
+0b02be3d5f	take	fix(server): Claude's answer before a late-read steer stays visible (#40265); CONFLICT resolved: kept Onicode's endReplySegment alongside upstream's final_answer publish
