@@ -2035,7 +2035,7 @@ layer("GitLabPullRequestCli.layer", (it) => {
     }),
   );
 
-  it.effect("keeps the one pipeline check when the trigger jobs cannot be read whole", () =>
+  it.effect("marks the checks incomplete when the trigger jobs cannot be read whole", () =>
     Effect.gen(function* () {
       const detailOutput = output(
         mergeRequestJson({ head_pipeline: { id: 31, project_id: 12, status: "success" } }),
@@ -2043,7 +2043,7 @@ layer("GitLabPullRequestCli.layer", (it) => {
       const failedChild = { name: "deploy", downstream_pipeline: { status: "failed" } };
       const cli = yield* GitLabPullRequestCli.GitLabPullRequestCli;
 
-      for (const [scenario, bridges] of [
+      for (const [scenario, bridges, children] of [
         [
           "read fails",
           Effect.fail(
@@ -2054,13 +2054,16 @@ layer("GitLabPullRequestCli.layer", (it) => {
               cause: new Error("403 Forbidden"),
             }),
           ),
+          0,
         ],
-        // A full page may have left out the trigger job whose pipeline failed.
+        // A full page may have left out a trigger job, but the ones it lists still count.
         [
           "page is full",
           Effect.succeed(output(JSON.stringify(Array.from({ length: 100 }, () => failedChild)))),
+          100,
         ],
       ] as const) {
+        mockedExecute.mockClear();
         mockedExecute.mockImplementation((request) =>
           request.args[1] === "graphql"
             ? Effect.succeed(output("{}"))
@@ -2070,13 +2073,23 @@ layer("GitLabPullRequestCli.layer", (it) => {
         );
         const detail = yield* cli.getMergeRequestDetail({
           cwd: "/w",
+          host: "gitlab.example.com",
           repository: "acme/web",
           number: 7,
         });
         expect(
-          detail.checks.map((check) => [check.name, check.status]),
+          detail.checks.map((check) => [check.name, check.status, check.placeholder === true]),
           scenario,
-        ).toEqual([["Pipeline", "success"]]);
+        ).toEqual([
+          ["Pipeline", "success", false],
+          ...Array.from({ length: children }, () => ["deploy", "failure", false]),
+          ["Jobs and downstream pipelines", "neutral", true],
+        ]);
+        expect(
+          mockedExecute.mock.calls.find(([request]) => request.args[1]?.includes("/bridges"))?.[0]
+            .host,
+          scenario,
+        ).toBe("gitlab.example.com");
       }
     }),
   );

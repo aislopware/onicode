@@ -1054,6 +1054,14 @@ function actionArgs(
   }
 }
 
+const UNLISTED_JOBS: PullRequestCheck = {
+  name: "Jobs and downstream pipelines",
+  status: "neutral",
+  description: "GitLab could not list all of this pipeline's jobs and downstream pipelines.",
+  url: null,
+  placeholder: true,
+};
+
 /** @public */
 export const make = Effect.gen(function* () {
   const gitlab = yield* GitLabCli.GitLabCli;
@@ -1620,14 +1628,18 @@ export const make = Effect.gen(function* () {
       }),
     );
 
-  // Best-effort: a trigger job read that fails, or a full page that may have left out the one
-  // whose pipeline failed, adds no rows and leaves the detail as it was.
+  // A failed read lists nothing, and a full page may have left out the one whose pipeline failed.
   const triggerJobChecks = (input: {
     readonly cwd: string;
+    readonly host?: string | undefined;
     readonly pipeline: { readonly id: number; readonly projectId: number };
-  }): Effect.Effect<ReadonlyArray<PullRequestCheck>> =>
+  }): Effect.Effect<{
+    readonly checks: ReadonlyArray<PullRequestCheck>;
+    readonly whole: boolean;
+  }> =>
     api({
       cwd: input.cwd,
+      host: input.host,
       // `bridges` rather than `trigger_jobs`: GitLab 19.2 deprecates it but still serves it, and
       // older self-managed installs know no other name.
       path: `projects/${input.pipeline.projectId}/pipelines/${input.pipeline.id}/bridges?${query([
@@ -1636,11 +1648,11 @@ export const make = Effect.gen(function* () {
     }).pipe(
       Effect.map((result) => {
         const decoded = decodeTriggerJobChecksJson(result.stdout.trim());
-        return Result.isSuccess(decoded) && decoded.success.rawCount < MAX_PAGE_SIZE
-          ? decoded.success.checks
-          : [];
+        return Result.isSuccess(decoded)
+          ? { checks: decoded.success.checks, whole: decoded.success.rawCount < MAX_PAGE_SIZE }
+          : { checks: [], whole: false };
       }),
-      Effect.orElseSucceed((): ReadonlyArray<PullRequestCheck> => []),
+      Effect.orElseSucceed(() => ({ checks: [], whole: false })),
     );
 
   // Best-effort: stages that can't be read keep the merge request's single pipeline check.
@@ -2384,11 +2396,16 @@ export const make = Effect.gen(function* () {
         if (stages !== null) return { ...detail, checks: stages };
         const downstream = yield* triggerJobChecks({
           cwd: input.cwd,
+          host: input.host,
           pipeline: detail.headPipeline,
         });
-        return downstream.length === 0
-          ? detail
-          : { ...detail, checks: [...detail.checks, ...downstream] };
+        // The one pipeline check can pass while a job or downstream pipeline it covers failed.
+        const checks = [
+          ...detail.checks,
+          ...downstream.checks,
+          ...(downstream.whole ? [] : [UNLISTED_JOBS]),
+        ];
+        return checks.length === detail.checks.length ? detail : { ...detail, checks };
       },
     ),
 
