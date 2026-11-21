@@ -313,9 +313,10 @@ it("follows a link to another page and exposes a web link", async () => {
     ]),
   );
   try {
+    const onOpenLink = vi.fn();
     await using screen = await render(
       <div className="flex h-[300px] w-[320px]">
-        <PdfViewer src={url} title="Linked PDF" />
+        <PdfViewer src={url} title="Linked PDF" onOpenLink={onOpenLink} />
       </div>,
     );
     await expect.element(screen.getByText("1 / 2 pages")).toBeVisible();
@@ -326,6 +327,8 @@ it("follows a link to another page and exposes a web link", async () => {
       return link!;
     });
     expect(getComputedStyle(web).cursor).toBe("pointer");
+    web.dispatchEvent(new MouseEvent("auxclick", { button: 1, bubbles: true, cancelable: true }));
+    expect(onOpenLink).toHaveBeenCalledWith("https://example.com/", expect.anything());
     const internal = await vi.waitFor(() => {
       const link = Array.from(region.querySelectorAll<HTMLAnchorElement>("a")).find(
         (anchor) => anchor !== web,
