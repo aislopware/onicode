@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 import { ProviderDriverKind, ProviderInstanceId, type ServerProvider } from "@onicode/contracts";
+import { detectComposerTrigger } from "@onicode/shared/composerTrigger";
 
 vi.mock("react-native", () => ({ Alert: { alert: vi.fn() } }));
 
@@ -26,6 +27,7 @@ import {
   buildComposerSlashCommandItems,
   resolveComposerCommandSelection,
   resolveComposerMenuSelection,
+  resolveComposerMenuTrigger,
 } from "./use-composer-command-menu";
 
 describe("resolveComposerMenuSelection", () => {
@@ -60,6 +62,42 @@ describe("resolveComposerMenuSelection", () => {
         local: { ownerKey: "draft-a", start: 1, end: 1 },
       }),
     ).toEqual({ start: 11, end: 11 });
+  });
+});
+
+describe("resolveComposerMenuTrigger", () => {
+  const draft = "/mod ab";
+  const onCommand = detectComposerTrigger(draft, 4);
+  const resolve = (previousTrigger: ReturnType<typeof detectComposerTrigger>, caret: number) =>
+    resolveComposerMenuTrigger({
+      previous: { ownerKey: "draft-a", draftMessage: draft, trigger: previousTrigger },
+      ownerKey: "draft-a",
+      draftMessage: draft,
+      candidate: detectComposerTrigger(draft, caret),
+    });
+
+  it("does not open suggestions when only the caret moves onto a trigger", () => {
+    expect(onCommand).not.toBeNull();
+    expect(resolve(null, 4)).toBeNull();
+  });
+
+  it("keeps an open trigger while the caret moves within it and closes it when the caret leaves", () => {
+    expect(resolve(onCommand, 2)).toMatchObject({ kind: "slash-command", rangeStart: 0 });
+    expect(resolve(onCommand, draft.length)).toBeNull();
+  });
+
+  it.each([
+    ["an edit", "draft-a", "/mo"],
+    ["a new draft owner", "draft-b", draft],
+  ])("opens the trigger at the caret after %s", (_, ownerKey, draftMessage) => {
+    expect(
+      resolveComposerMenuTrigger({
+        previous: { ownerKey, draftMessage, trigger: null },
+        ownerKey: "draft-a",
+        draftMessage: draft,
+        candidate: onCommand,
+      }),
+    ).toBe(onCommand);
   });
 });
 

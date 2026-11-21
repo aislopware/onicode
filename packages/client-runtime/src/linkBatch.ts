@@ -1,8 +1,10 @@
 import {
   type AuthMcpClientAccess,
   type EnvironmentId,
+  type PeerLinkClientPairingResult,
   type PeerLinkCreateInput,
   type PeerLinkFailureKind,
+  type PeerLinkLinkPairingInput,
   type PeerLinkSummary,
   peerLinkFailureKind,
 } from "@onicode/contracts";
@@ -37,21 +39,25 @@ export const linkListState = (query: {
 export interface LinkBatchCandidate {
   readonly machine: LinkableMachine;
   readonly blocked: LinkBatchBlock | null;
+  /** The environment that gets the pairing code, when the client cannot mint one there itself. */
+  readonly via: EnvironmentId | null;
 }
 
 /**
  * `writable` holds the machines where this client's session may create pairing codes.
  * Until `links` has loaded, no machine's `linked` is known, and linking one that is
- * already linked would replace its working token, so none is offered.
+ * already linked would replace its working token, so none is offered. A machine the client
+ * cannot mint on, or got no code from (`mintFailed`), is offered when one of `routes` gets one.
  */
 export const linkBatchCandidates = (
   machines: ReadonlyArray<LinkableMachine>,
   writable: ReadonlySet<EnvironmentId>,
   links: LinkListState,
+  routes: ReadonlyMap<EnvironmentId, { readonly viaEnvironmentId: EnvironmentId }> = new Map(),
+  mintFailed: ReadonlySet<EnvironmentId> = new Set(),
 ): ReadonlyArray<LinkBatchCandidate> =>
-  machines.map((machine) => ({
-    machine,
-    blocked:
+  machines.map((machine) => {
+    const blocked: LinkBatchBlock | null =
       links !== "loaded"
         ? "links_unknown"
         : machine.linked
@@ -62,8 +68,17 @@ export const linkBatchCandidates = (
               ? "no_access"
               : machine.urls.length === 0
                 ? "no_address"
-                : null,
-  }));
+                : null;
+    const route =
+      blocked === "links_unknown" ||
+      blocked === "linked" ||
+      (blocked === null && !mintFailed.has(machine.environmentId))
+        ? undefined
+        : routes.get(machine.environmentId);
+    return route === undefined
+      ? { machine, blocked, via: null }
+      : { machine, blocked: null, via: route.viaEnvironmentId };
+  });
 
 export const linkBatchBlockLabel = (
   blocked: LinkBatchBlock,
@@ -225,7 +240,10 @@ const linkFailure = (failure: unknown): LinkAttemptOutcome & { readonly kind: "f
   return { kind: "failed", failure: "other", detail: null };
 };
 
-type BatchMachine = Pick<LinkableMachine, "environmentId" | "label" | "urls">;
+type BatchMachine = Pick<LinkableMachine, "environmentId" | "label" | "urls"> & {
+  /** Set for a machine whose pairing code this environment gets over its own link. */
+  readonly via?: EnvironmentId | null;
+};
 
 type MintPairingCode = (
   environmentId: EnvironmentId,
@@ -262,16 +280,55 @@ export async function linkWithMintedCode(input: {
   }
 }
 
+type PairThrough = (
+  viaEnvironmentId: EnvironmentId,
+  input: PeerLinkLinkPairingInput,
+) => Promise<Result.Result<PeerLinkClientPairingResult, unknown>>;
+
+/** One link to `machine` with a one-use code `via` gets from it over its own link. */
+async function linkThroughPeer(input: {
+  readonly machine: BatchMachine;
+  readonly via: EnvironmentId;
+  readonly access: AuthMcpClientAccess;
+  readonly pair: PairThrough | undefined;
+  readonly link: (input: PeerLinkCreateInput) => Promise<Result.Result<unknown, unknown>>;
+}): Promise<LinkAttemptOutcome> {
+  const { machine, access } = input;
+  try {
+    const paired = await input.pair?.(input.via, { environmentId: machine.environmentId, access });
+    const answer =
+      paired !== undefined && Result.isSuccess(paired) && paired.success.type === "credential"
+        ? paired.success
+        : null;
+    const [url, ...alternateUrls] = answer?.urls ?? [];
+    if (answer === null || url === undefined) {
+      return { kind: "failed", failure: "no_code", detail: null };
+    }
+    const linked = await input.link({
+      url,
+      ...(alternateUrls.length > 0 ? { alternateUrls } : {}),
+      expectedEnvironmentId: machine.environmentId,
+      expectedLabel: machine.label,
+      pairingCode: answer.credential,
+      access,
+    });
+    return Result.isSuccess(linked) ? { kind: "linked" } : linkFailure(linked.failure);
+  } catch {
+    return { kind: "failed", failure: "other", detail: null };
+  }
+}
+
 /**
- * Links each machine as a single link is made: a one-use code minted on that
- * machine with the client's session there, then handed to the linking
- * environment with the addresses the client has for it. A failure stops only
- * its own machine. Codes stay in this call and are never reported.
+ * Links each machine as a single link is made: a one-use code minted with the client's session
+ * there, or for a machine with `via`, one that environment gets from it. A failure stops only its
+ * own machine. Codes stay in this call and are never reported.
  */
 export async function runLinkBatch(input: {
   readonly machines: ReadonlyArray<BatchMachine>;
   readonly access: AuthMcpClientAccess;
   readonly mint: MintPairingCode;
+  /** Gets the code for a machine with `via` from that environment, which links to it. */
+  readonly pairThrough?: PairThrough;
   readonly link: (input: PeerLinkCreateInput) => Promise<Result.Result<unknown, unknown>>;
   /**
    * Also links each of `targets` back to `source` once its own link is made. `link` creates
@@ -292,7 +349,16 @@ export async function runLinkBatch(input: {
   const outcomes = new Map<EnvironmentId, LinkBatchOutcome>();
   const { access, mint, back } = input;
   const linkOne = async (machine: BatchMachine): Promise<LinkBatchOutcome> => {
-    const outcome = await linkWithMintedCode({ machine, access, mint, link: input.link });
+    const outcome =
+      machine.via == null
+        ? await linkWithMintedCode({ machine, access, mint, link: input.link })
+        : await linkThroughPeer({
+            machine,
+            via: machine.via,
+            access,
+            pair: input.pairThrough,
+            link: input.link,
+          });
     if (outcome.kind !== "linked" || !back?.targets.has(machine.environmentId)) return outcome;
     return {
       kind: "linked",

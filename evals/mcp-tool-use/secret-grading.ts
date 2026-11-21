@@ -1606,7 +1606,7 @@ export const classifyFileUse = (
       ...[...dirVars].map((v) => `\\$\\{?${v}\\b\\}?/(?:${ids})\\b`),
       ...joins,
     ].join("|") || "(?!)";
-  const read = () => `(?:cat\\s+|<\\s*)["']?(?:${fileRef()})["']?`;
+  const read = () => `(?:cat\\s+(?:--\\s+)?|<\\s*)["']?(?:${fileRef()})["']?`;
   const usesSecretVar = (text: string) =>
     [...secretVars].some((v) => new RegExp(`\\$\\{?${v}\\b`).test(text));
   const touches = (text: string) => new RegExp(fileRef()).test(text) || usesSecretVar(text);

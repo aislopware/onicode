@@ -372,6 +372,7 @@ const cleanupFixture = (
     let scheduledThreadIds: string[] = [];
     let fullStatusCalls = 0;
     let statusCommands = 0;
+    let pullRequestLookups = 0;
     let gitInspections = 0;
     let snapshotReads = 0;
     let terminalListener: ((event: TerminalMetadataStreamEvent) => Effect.Effect<void>) | undefined;
@@ -525,6 +526,11 @@ const cleanupFixture = (
       ),
       Effect.provideService(GitManager.GitManager, {
         invalidateStatus: () => Effect.void,
+        branchPullRequest: () =>
+          Effect.sync(() => {
+            pullRequestLookups++;
+            return null;
+          }),
       } as unknown as GitManager.GitManager["Service"]),
       Effect.provideService(TerminalManager.TerminalManager, {
         subscribeMetadata: (
@@ -633,6 +639,7 @@ const cleanupFixture = (
       gitInspections: () => gitInspections,
       fullStatusCalls: () => fullStatusCalls,
       statusCommands: () => statusCommands,
+      pullRequestLookups: () => pullRequestLookups,
       snapshotReads: () => snapshotReads,
       sessionLiveChecks: () => sessionLiveChecks,
       activate: (domainEvents: Stream.Stream<OrchestrationV2DomainEvent>) => {
@@ -3650,6 +3657,35 @@ describe("storage cleanup reports and local file policies", () => {
           expect(yield* fs.readFileString(`${worktree}/tracked.txt`)).toBe("unmerged work\n");
         }),
       ),
+  );
+  it.live("asks the forge about an unmerged branch only when its worktree is clean", () =>
+    runCleanupTest(
+      Effect.gen(function* () {
+        const { service, fs, repo, worktree, command, setThreads, pullRequestLookups } =
+          yield* cleanupFixture({
+            ...DEFAULT_SERVER_SETTINGS.storageCleanup,
+            worktreeOnMerge: true,
+          });
+        setThreads([shell({ branch: "feature", worktreePath: worktree, archivedAt: at(-DAY_MS) })]);
+        const remote = yield* fs.makeTempDirectoryScoped({ prefix: "cleanup-remote-" });
+        yield* command(remote, ["init", "--bare", "-b", "main"]);
+        yield* command(repo, ["remote", "add", "origin", remote]);
+        yield* command(repo, ["push", "origin", "main"]);
+        yield* fs.writeFileString(`${worktree}/tracked.txt`, "unmerged work\n");
+        yield* command(worktree, ["commit", "-am", "unmerged work"]);
+        yield* fs.writeFileString(`${worktree}/tracked.txt`, "uncommitted work\n");
+
+        expect((yield* service.runNow).entries[0]).toMatchObject({
+          outcome: "kept",
+          reason: "Has uncommitted changes (1 file)",
+        });
+        expect(pullRequestLookups()).toBe(0);
+
+        yield* command(worktree, ["checkout", "--", "tracked.txt"]);
+        expect((yield* service.runNow).entries[0]).toMatchObject({ outcome: "kept" });
+        expect(pullRequestLookups()).toBe(1);
+      }),
+    ),
   );
   it.live("keeps the worktree when the remote default is unavailable even if main exists", () =>
     runCleanupTest(

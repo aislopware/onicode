@@ -9,6 +9,7 @@ import {
   runLinkBatch,
 } from "@onicode/client-runtime/link-batch";
 import { offersLinkedEnvironments } from "@onicode/client-runtime/link-request";
+import { offersLinkThrough } from "@onicode/client-runtime/state/peerLinks";
 import { squashAtomCommandFailure } from "@onicode/client-runtime/state/runtime";
 import {
   AuthAccessWriteScope,
@@ -29,7 +30,11 @@ import { ListChoiceRow } from "../../components/ui/ListChoiceRow";
 import { Sheet } from "../../components/ui/Sheet";
 import { useEnvironmentServerConfig } from "../../state/entities";
 import { useEnvironments } from "../../state/environments";
-import { peerLinkEnvironment, useLinkableMachines } from "../../state/peerLinks";
+import {
+  peerLinkEnvironment,
+  useLinkableMachines,
+  useLinkThroughRoutes,
+} from "../../state/peerLinks";
 import { mintPairingCodeOn } from "../../state/peerPairingCode";
 import { useEnvironmentQuery } from "../../state/query";
 import { useEnvironmentsWithScope } from "../../state/session";
@@ -40,7 +45,10 @@ import { LINK_ACCESS_CHOICES } from "../threads/LinkRequestCard";
 const NO_MACHINES: ReadonlySet<EnvironmentId> = new Set();
 const NO_OUTCOMES: ReadonlyMap<EnvironmentId, LinkBatchOutcome> = new Map();
 
-/** Offers a batch link from `environmentId` once this app has two other machines saved. */
+/**
+ * Offers a batch link from `environmentId` once this app has two other machines saved, or one
+ * that may get pairing codes from the machines it links to.
+ */
 export function LinkSeveralEnvironmentsAction(props: {
   readonly environmentId: EnvironmentId;
   readonly environmentLabel: string;
@@ -49,8 +57,19 @@ export function LinkSeveralEnvironmentsAction(props: {
   const [open, setOpen] = useState(false);
   const config = useEnvironmentServerConfig(props.environmentId);
   const canLink = useAtomValue(peerLinkEnvironment.link.permissionAtom(props.environmentId));
-  const otherMachines = useEnvironments().environments.length - 1;
-  if (!canLink || !offersLinkedEnvironments(config) || otherMachines < 2) return null;
+  const { environments } = useEnvironments();
+  const otherMachines = environments.length - 1;
+  const linksThrough = environments.some(
+    (environment) =>
+      environment.environmentId !== props.environmentId &&
+      environment.connection.phase === "connected" &&
+      offersLinkThrough(environment.serverConfig),
+  );
+  const sourceReady = canLink && offersLinkedEnvironments(config);
+  // An open sheet stays until closed, even if the relay drops; it only stops new links.
+  if (!open && (!sourceReady || (otherMachines < 2 && !linksThrough))) {
+    return null;
+  }
   return (
     <View className="mt-3">
       <Button
@@ -61,7 +80,11 @@ export function LinkSeveralEnvironmentsAction(props: {
         fullWidth
       />
       {open ? (
-        <LinkSeveralSheet environmentId={props.environmentId} onClose={() => setOpen(false)} />
+        <LinkSeveralSheet
+          environmentId={props.environmentId}
+          canSubmit={sourceReady}
+          onClose={() => setOpen(false)}
+        />
       ) : null}
     </View>
   );
@@ -73,12 +96,18 @@ export function LinkSeveralEnvironmentsAction(props: {
  */
 function LinkSeveralSheet(props: {
   readonly environmentId: EnvironmentId;
+  /** The linking environment still offers links and this session may create them there. */
+  readonly canSubmit: boolean;
   readonly onClose: () => void;
 }) {
   const gt = useGT();
   const m = useMessages();
   const insets = useSafeAreaInsets();
-  const machines = useLinkableMachines(props.environmentId, true);
+  const routes = useLinkThroughRoutes(props.environmentId, true);
+  // Machines this app has no entry for are still pickable when one of its environments links
+  // to them at full access.
+  const machines = useLinkableMachines(props.environmentId, true, [...routes.values()]);
+  const { environments } = useEnvironments();
   // The same shared list `useLinkableMachines` reads `linked` from.
   const links = useEnvironmentQuery(
     peerLinkEnvironment.list({ environmentId: props.environmentId, input: {} }),
@@ -97,6 +126,8 @@ function LinkSeveralSheet(props: {
   const [selected, setSelected] = useState(NO_MACHINES);
   const [access, setAccess] = useState<AuthMcpClientAccess>("approval-required");
   const [outcomes, setOutcomes] = useState(NO_OUTCOMES);
+  // Machines whose own session gave no code: a retry goes through a route when there is one.
+  const [mintFailed, setMintFailed] = useState(NO_MACHINES);
   const [linking, setLinking] = useState(NO_MACHINES);
   // Two taps can both run before a re-render; this guard is synchronous.
   const inFlight = useRef(false);
@@ -106,9 +137,17 @@ function LinkSeveralSheet(props: {
     reportFailure: false,
     reportDefect: false,
   });
-  const candidates = linkBatchCandidates(machines, writable, linksState);
-  const selectable = candidates.flatMap(({ machine, blocked }) =>
-    blocked === null && outcomes.get(machine.environmentId)?.kind !== "linked" ? [machine] : [],
+  const pairThrough = useAtomCommand(peerLinkEnvironment.pairLink, {
+    label: "pair link through a linked environment",
+    // The answer is a credential; keep it out of the console.
+    reportFailure: false,
+    reportDefect: false,
+  });
+  const candidates = linkBatchCandidates(machines, writable, linksState, routes, mintFailed);
+  const selectable = candidates.flatMap(({ machine, blocked, via }) =>
+    blocked === null && outcomes.get(machine.environmentId)?.kind !== "linked"
+      ? [{ ...machine, via }]
+      : [],
   );
   const chosen = selectable.filter((machine) => selected.has(machine.environmentId));
   const busy = linking.size > 0;
@@ -122,13 +161,19 @@ function LinkSeveralSheet(props: {
       return next;
     });
   const submit = async () => {
-    if (inFlight.current || chosen.length === 0) return;
+    if (inFlight.current || chosen.length === 0 || !props.canSubmit) return;
     inFlight.current = true;
     setLinking(new Set(chosen.map((machine) => machine.environmentId)));
     const results = await runLinkBatch({
       machines: chosen,
       access,
       mint: mintPairingCodeOn,
+      pairThrough: async (environmentId, input) => {
+        const result = await pairThrough({ environmentId, input });
+        return result._tag === "Success"
+          ? Result.succeed(result.value)
+          : Result.fail(squashAtomCommandFailure(result));
+      },
       link: async (input) => {
         const result = await link({ environmentId: props.environmentId, input });
         return result._tag === "Success"
@@ -147,6 +192,17 @@ function LinkSeveralSheet(props: {
     });
     inFlight.current = false;
     setLinking(NO_MACHINES);
+    // A failed direct mint retries through a route; a failed route retries direct.
+    setMintFailed((current) => {
+      const next = new Set(current);
+      for (const machine of chosen) {
+        const outcome = results.get(machine.environmentId);
+        if (outcome?.kind !== "failed") continue;
+        if (machine.via !== null) next.delete(machine.environmentId);
+        else if (outcome.failure === "no_code") next.add(machine.environmentId);
+      }
+      return next;
+    });
     // What failed stays picked, so linking again retries only those.
     setSelected(new Set(linkBatchSummary(results).failed));
   };
@@ -205,7 +261,7 @@ function LinkSeveralSheet(props: {
               </View>
             ) : null}
             <SettingsSection title={gt("Machines")}>
-              {candidates.map(({ machine, blocked }, index) => {
+              {candidates.map(({ machine, blocked, via }, index) => {
                 const id = machine.environmentId;
                 const outcome = outcomes.get(id);
                 const available = blocked === null && outcome?.kind !== "linked";
@@ -216,9 +272,15 @@ function LinkSeveralSheet(props: {
                     ? gt("Linked", { $context: "status of a machine that was just linked" })
                     : outcome?.kind === "failed"
                       ? `${linkBatchFailureLabel(outcome.failure, m)}${outcome.detail === null ? "" : `: ${outcome.detail}`}`
-                      : blocked === null
-                        ? null
-                        : linkBatchBlockLabel(blocked, m);
+                      : blocked !== null
+                        ? linkBatchBlockLabel(blocked, m)
+                        : via === null
+                          ? null
+                          : gt("{via} gets the pairing code", {
+                              via:
+                                environments.find((known) => known.environmentId === via)?.entry
+                                  .target.label ?? "",
+                            });
                 return (
                   <Pressable
                     key={id}
@@ -326,7 +388,7 @@ function LinkSeveralSheet(props: {
                   count: chosen.length,
                 })
           }
-          disabled={busy || chosen.length === 0}
+          disabled={busy || chosen.length === 0 || !props.canSubmit}
           onPress={() => void submit()}
           tone="primary"
           fullWidth
