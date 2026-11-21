@@ -296,7 +296,8 @@ function ScaledRows(
   const headerRows = props.header ? 1 : 0;
   const maxFirst = Math.max(0, props.count - headerRows - Math.floor(position.height / 29));
   const scale = Math.max(1, scrollHeight - position.height) / Math.max(1, maxFirst * 29);
-  const first = Math.min(maxFirst, Math.floor(position.top / scale / 29)) + headerRows;
+  // Snap float error so the track's bottom (41.999… rows) reaches the native tail.
+  const first = Math.min(maxFirst, Math.floor(position.top / scale / 29 + 1e-6)) + headerRows;
   // The final mounted rows keep their measured height and scroll natively.
   const nativeTail = first - headerRows === maxFirst;
   const scrollModel = useRef({ scale, maxFirst, heights: [] as number[] });
@@ -382,7 +383,9 @@ function ScaledRows(
   // nor measured. The native tail mounts every row so its scroll extent reaches the last one.
   if (!nativeTail && activeRowHeights) {
     const target =
-      position.height + ((position.top / scale / 29) % 1) * (activeRowHeights.get(first) ?? 29);
+      position.height +
+      Math.max(0, position.top / scale / 29 - (first - headerRows)) *
+        (activeRowHeights.get(first) ?? 29);
     let rows = 0;
     for (let covered = 0; rows < visibleRows && covered < target; rows++) {
       covered += activeRowHeights.get(first + rows) ?? 29;

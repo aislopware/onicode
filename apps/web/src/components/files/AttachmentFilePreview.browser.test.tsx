@@ -982,6 +982,41 @@ describe("large text preview recovery", () => {
     expect(screen.container.querySelector('[role="table"]')).not.toBeNull();
   });
 
+  it("reaches the bottom of a tall final row with one End press when rows below the viewport are unmeasured", async () => {
+    const lines = (count: number) => Array.from({ length: count }, (_, i) => `L${i}`).join("\n");
+    const tall: Record<number, string> = { 1: lines(20), 10: lines(100), 54: lines(100) };
+    const header = ["a", "b", "c", "d"];
+    const rows = [
+      header,
+      ...Array.from({ length: 54 }, (_, i) => [`r${i + 1}`, "", "", tall[i + 1] ?? ""]),
+    ];
+    await using screen = await render(
+      <div style={{ display: "flex", height: 400, width: 300 }}>
+        <VirtualTablePreview
+          name="tall-tail.csv"
+          count={rows.length}
+          columns={4}
+          header={header}
+          getRows={(page) => rows.slice(page * 32, page * 32 + 32)}
+        />
+      </div>,
+    );
+    const viewport = () => screen.container.querySelector<HTMLElement>('[tabindex="0"]')!;
+    const row = (index: number) =>
+      screen.container.querySelector<HTMLElement>(`[data-preview-row="${index}"]`);
+    await vi.waitFor(() => expect(row(1)?.offsetHeight).toBeGreaterThan(200));
+    await act(() =>
+      viewport().dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true })),
+    );
+    await vi.waitFor(() =>
+      expect(
+        Math.abs(
+          row(54)!.getBoundingClientRect().bottom - viewport().getBoundingClientRect().bottom,
+        ),
+      ).toBeLessThan(2),
+    );
+  });
+
   it("neither mounts nor measures rows below a huge offscreen cell that fills the viewport", async () => {
     const huge = "word ".repeat(26_000);
     const rows = Array.from({ length: 100 }, (_, index) => [`r${index}`, "", "", huge]);
