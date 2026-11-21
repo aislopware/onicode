@@ -299,11 +299,13 @@ export function createVcsEnvironmentAtoms<R, E>(
     target: { readonly environmentId: EnvironmentId; readonly input: { readonly cwd: string } },
     registry: AtomRegistry.AtomRegistry,
     exit: Exit.Exit<VcsRefreshStatusResult, unknown>,
+    force = false,
   ) =>
     invalidateCachedVcsRefsIfChanged(
       registry,
       { environmentId: target.environmentId, cwd: target.input.cwd },
       Exit.isSuccess(exit) ? exit.value.refsDigest : undefined,
+      force,
     );
 
   return {
@@ -361,6 +363,12 @@ export function createVcsEnvironmentAtoms<R, E>(
       label: "environment-data:vcs:refresh-local-status-for-picker",
       tag: WS_METHODS.vcsRefreshStatus,
       onSettled: invalidateRefsIfChanged,
+    }),
+    // For a picker whose list is known to be stale: reloads it even when no ref moved.
+    refreshLocalStatusAndRefsForPicker: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:vcs:refresh-local-status-and-refs-for-picker",
+      tag: WS_METHODS.vcsRefreshStatus,
+      onSettled: (target, registry, exit) => invalidateRefsIfChanged(target, registry, exit, true),
     }),
     createWorktree: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:vcs:create-worktree",

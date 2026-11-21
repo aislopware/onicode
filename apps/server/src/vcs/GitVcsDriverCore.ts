@@ -2480,10 +2480,10 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     return null;
   });
 
-  // The effective config listing covers included, global, system and worktree config. Git writes
-  // packed-refs and each loose ref by rename, so their stats change whenever a ref could. Directory
-  // stats are left out: Git for Windows' no-op fetch touches refs/remotes/<remote>.
-  // Cost: one git process, a listing per refs directory and a stat per loose ref.
+  // A base is chosen by which refs exist and where a remote's HEAD points, never by where a ref
+  // points, so this hashes effective config, packed-refs and reftable stats, loose ref names and
+  // loose HEAD symrefs. Directory stats are left out: Git for Windows' no-op fetch touches
+  // refs/remotes/<remote>. Cost: one git process, a listing per refs directory, a few stats.
   const readBaseBranchInputsStamp = Effect.fn("GitVcsDriverCore.readBaseBranchInputsStamp")(
     function* (cwd: string, gitCommonDir: string) {
       const effectiveConfig = yield* executeGit(
@@ -2496,8 +2496,8 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       const configHash = Hex.encode(
         yield* digest.digest(Digest.sha256, new TextEncoder().encode(effectiveConfig.stdout)),
       );
-      const statToken = (target: string) =>
-        fileSystem.stat(target).pipe(
+      const statToken = (target: string, read = (file: string) => fileSystem.stat(file)) =>
+        read(target).pipe(
           Effect.map(
             (info) =>
               `${Option.getOrElse(info.ino, () => "")}:${info.size}:${Option.match(info.mtime, {
@@ -2519,26 +2519,27 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       const looseRefs: Array<string> = [];
       for (let index = 0; index < directories.length; index++) {
         const directory = directories[index]!;
-        const entries = yield* fileSystem
-          .readDirectoryEntries(directory)
-          .pipe(Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed([])));
+        // Reftable repositories keep refs/heads as a placeholder file.
+        const entries = yield* fileSystem.readDirectoryEntries(directory).pipe(
+          Effect.catchReasons("PlatformError", {
+            NotFound: () => Effect.succeed([]),
+            BadResource: () => Effect.succeed([]),
+          }),
+        );
         for (const entry of entries.toSorted((a, b) => a.name.localeCompare(b.name))) {
           const entryPath = path.join(directory, entry.name);
           if (entry.type === "Directory") directories.push(entryPath);
           else looseRefs.push(entryPath);
         }
       }
-      tokens.push(
-        ...(yield* Effect.forEach(
-          looseRefs,
-          (ref) => Effect.map(statToken(ref), (token) => `${ref}=${token}`),
-          { concurrency: 16 },
-        )),
+      // lstat: a legacy symlinked symref names its target relative to the git dir, not its folder.
+      const symrefTokens = yield* Effect.forEach(
+        looseRefs.filter((ref) => path.basename(ref) === "HEAD"),
+        (ref) => statToken(ref, (file) => fileSystem.lstat(file)),
+        { concurrency: "unbounded" },
       );
-      tokens.push(configHash);
-      return Hex.encode(
-        yield* digest.digest(Digest.sha256, new TextEncoder().encode(tokens.join("\0"))),
-      );
+      const stampInput = [...tokens, ...looseRefs, ...symrefTokens, configHash].join("\0");
+      return Hex.encode(yield* digest.digest(Digest.sha256, new TextEncoder().encode(stampInput)));
     },
   );
   // Nothing outlives a read; concurrent reads, such as one status read's ahead count and branch

@@ -146,6 +146,10 @@ export function BranchToolbarBranchSelector({
   const refreshLocalStatusForPicker = useAtomCommand(vcsEnvironment.refreshLocalStatusForPicker, {
     reportFailure: false,
   });
+  const refreshLocalStatusAndRefsForPicker = useAtomCommand(
+    vcsEnvironment.refreshLocalStatusAndRefsForPicker,
+    { reportFailure: false },
+  );
   const createRefMutation = useAtomCommand(vcsEnvironment.createRef, {
     reportFailure: false,
   });
@@ -629,7 +633,7 @@ export function BranchToolbarBranchSelector({
   const projectCloneDone = useProjectClone(activeProjectRef)?.phase === "done";
   const refreshStaleRefs = useEffectEvent(() => {
     if (branchCwd === null) return;
-    void refreshLocalStatusForPicker({
+    void refreshLocalStatusAndRefsForPicker({
       environmentId,
       input: { cwd: branchCwd, localOnly: true },
     });

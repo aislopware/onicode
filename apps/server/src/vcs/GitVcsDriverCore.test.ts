@@ -1151,6 +1151,42 @@ it.effect("resolves a branch's base once while its refs and branch config are un
       assert.deepStrictEqual(yield* headsStat, before);
       assert.equal((yield* driver.statusDetailsLocal(cwd)).aheadCount, 1);
 
+      // A base is chosen by which refs exist, so one that only moves keeps the cached choice.
+      yield* git(cwd, ["config", "branch.feature/x.oni-merge-base-ref", "refs/heads/base-b"]);
+      yield* driver.statusDetailsLocal(cwd);
+      lookups();
+      yield* git(cwd, ["branch", "-f", "base-b", "HEAD"]);
+      assert.equal((yield* driver.statusDetailsLocal(cwd)).aheadCount, 0);
+      assert.equal(lookups(), 0);
+
+      // A legacy symlinked origin/HEAD names its target relative to the git dir, not its folder.
+      if (symlinksSupported) {
+        yield* git(cwd, ["config", "--unset", "branch.feature/x.oni-merge-base-ref"]);
+        yield* git(cwd, ["remote", "add", "origin", "https://example.invalid/repo.git"]);
+        yield* git(cwd, ["update-ref", "refs/remotes/origin/main", "HEAD"]);
+        yield* git(cwd, ["update-ref", "refs/remotes/origin/develop", "HEAD~1"]);
+        const remoteHead = `${cwd}/.git/refs/remotes/origin/HEAD`;
+        NodeFS.symlinkSync("refs/remotes/origin/main", remoteHead);
+        assert.equal((yield* driver.statusDetailsLocal(cwd)).aheadCount, 0);
+        NodeFS.unlinkSync(remoteHead);
+        NodeFS.symlinkSync("refs/remotes/origin/develop", remoteHead);
+        assert.equal((yield* driver.statusDetailsLocal(cwd)).aheadCount, 1);
+      }
+
+      // Reftable keeps refs/heads as a placeholder file, which must not turn the cache off.
+      if (gitHasReftable) {
+        const reftableCwd = yield* makeTmpDir();
+        yield* commitInitialRepo(reftableCwd, ["--ref-format=reftable"]);
+        yield* git(reftableCwd, ["checkout", "-b", "feature/x"]);
+        yield* writeTextFile(reftableCwd, "feature.txt", "feature\n");
+        yield* git(reftableCwd, ["add", "."]);
+        yield* git(reftableCwd, ["commit", "-m", "feature"]);
+        yield* driver.statusDetailsLocal(reftableCwd);
+        lookups();
+        yield* driver.statusDetailsLocal(reftableCwd);
+        assert.equal(lookups(), 0);
+      }
+
       // A nested status read's ahead count and branch totals share one refs stamp.
       const nested = `${cwd}/nested`;
       yield* fileSystem.makeDirectory(nested);
