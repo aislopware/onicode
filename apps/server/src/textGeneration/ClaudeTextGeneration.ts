@@ -61,6 +61,9 @@ const CLAUDE_INVESTIGATION_DENIED = ["Bash(git * --output*)", "Bash(git * -o *)"
 const NO_SESSION_PERSISTENCE = "--no-session-persistence";
 // Claude Code before 2.0.63 exits with this on stderr; those runs retry without the flag.
 const NO_SESSION_PERSISTENCE_REJECTED = `error: unknown option '${NO_SESSION_PERSISTENCE}'`;
+// Only a rejection of images as such marks a model text-only, not a size or count limit.
+const IMAGES_UNSUPPORTED =
+  /image[^\n]*(?:not support|unsupported)|(?:not support|unsupported)[^\n]*image/i;
 
 const ClaudeOutputEnvelope = Schema.Struct({
   structured_output: Schema.Unknown,
@@ -140,6 +143,8 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
   const scopedModelCatalog = modelCatalog.pipe(
     Effect.map((catalog) => scopeClaudeModelCatalog(catalog, claudeSettings.customModels)),
   );
+  // Models that failed with images and then succeeded without them; later runs skip the image attempt.
+  const textOnlyModels = new Set<string>();
 
   const readStreamAsString = <E>(
     operation: string,
@@ -299,7 +304,10 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
     );
 
     // `claude -p` accepts images only as content blocks of a stream-json user message.
-    const imageBlocks = yield* readImageBlocks(attachments, prompt);
+    const apiModelId = resolveClaudeCatalogApiModelId(catalog, resolvedModelSelection);
+    const imageBlocks = textOnlyModels.has(apiModelId)
+      ? []
+      : yield* readImageBlocks(attachments, prompt);
     const imageStdin =
       imageBlocks.length > 0
         ? `${yield* encodeJsonForOperation(
@@ -329,7 +337,7 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
           "--json-schema",
           jsonSchemaStr,
           "--model",
-          resolveClaudeCatalogApiModelId(catalog, resolvedModelSelection),
+          apiModelId,
           ...(cliEffort ? ["--effort", cliEffort] : []),
           "--settings",
           settingsJson,
@@ -415,7 +423,19 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
           result.exitCode === 0 ||
           imageStdin === undefined ||
           !IMAGE_REJECTION.test(claudeFailureDetail(result)),
-        () => runClaudeAttempt(false),
+        (imageResult) =>
+          runClaudeAttempt(false).pipe(
+            Effect.tap((result) =>
+              Effect.sync(() => {
+                if (
+                  result.exitCode === 0 &&
+                  IMAGES_UNSUPPORTED.test(claudeFailureDetail(imageResult))
+                ) {
+                  textOnlyModels.add(apiModelId);
+                }
+              }),
+            ),
+          ),
       ),
       Effect.flatMap((result) => {
         if (result.exitCode === 0) return Effect.succeed(result.stdout);
