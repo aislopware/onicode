@@ -75,17 +75,18 @@ if (stdinMustNotContain.some((text) => stdinContent.includes(text))) {
   fail("stdin contained forbidden content", 13);
 }
 
-if (
-  process.env.ONICODE_FAKE_CLAUDE_REJECTS_IMAGES === "1" &&
-  stdinContent.includes('"type":"image"')
-) {
+const imageRejection = process.env.ONICODE_FAKE_CLAUDE_IMAGE_REJECTION;
+if (imageRejection && stdinContent.includes('"type":"image"')) {
+  if (process.env.ONICODE_FAKE_CLAUDE_IMAGE_ATTEMPT_LOG) {
+    NodeFS.appendFileSync(process.env.ONICODE_FAKE_CLAUDE_IMAGE_ATTEMPT_LOG, "image\n");
+  }
   process.stdout.write(
     JSON.stringify({
       type: "result",
       subtype: "success",
       is_error: true,
       api_error_status: 400,
-      result: "API Error: 400 Image inputs are not supported by this model",
+      result: `API Error: 400 ${imageRejection}`,
     }) + "\n",
   );
   process.exit(1);

@@ -70,7 +70,8 @@ function withFakeClaudeEnv<A, E, R>(
     argsMustNotContain?: string;
     stdinMustContain?: string;
     stdinMustNotContain?: ReadonlyArray<string>;
-    rejectsImages?: boolean;
+    imageRejection?: string;
+    imageAttemptLog?: string;
     configDirMustBe?: string;
     cwdMustNotBe?: string;
     claudeConfig?: Partial<ClaudeSettings>;
@@ -99,7 +100,8 @@ function withFakeClaudeEnv<A, E, R>(
         input.stdinMustNotContain === undefined
           ? undefined
           : JSON.stringify(input.stdinMustNotContain),
-      ONICODE_FAKE_CLAUDE_REJECTS_IMAGES: input.rejectsImages ? "1" : undefined,
+      ONICODE_FAKE_CLAUDE_IMAGE_REJECTION: input.imageRejection,
+      ONICODE_FAKE_CLAUDE_IMAGE_ATTEMPT_LOG: input.imageAttemptLog,
       ONICODE_FAKE_CLAUDE_CWD_MUST_NOT_BE: input.cwdMustNotBe,
       ONICODE_FAKE_CLAUDE_CONFIG_DIR_MUST_BE: input.configDirMustBe,
     };
@@ -437,18 +439,38 @@ it.layer(layerClaudeTextGenerationTest)("ClaudeTextGeneration", (it) => {
     ),
   );
 
-  it.effect("still generates text when a text-only model rejects image attachments", () =>
-    withFakeClaudeEnv(
-      {
-        output: JSON.stringify({ structured_output: { branch: "fix/login-button" } }),
-        rejectsImages: true,
-      },
-      (textGeneration) =>
-        Effect.gen(function* () {
-          const result = yield* generateBranchNameWithImage(textGeneration);
-          expect(result.branch).toBe("fix/login-button");
-        }),
-    ),
+  it.effect.each([
+    // A model that cannot take images is remembered, so later calls go straight to text only.
+    { rejection: "Image inputs are not supported by this model", imageAttempts: 1 },
+    // A rejection of this request's images says nothing about the model.
+    {
+      rejection:
+        "At least one of the image dimensions exceed max allowed size for many-image requests: 2000 pixels",
+      imageAttempts: 2,
+    },
+  ])("still generates text when images are rejected: $rejection", ({ rejection, imageAttempts }) =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const logDir = yield* fs.makeTempDirectoryScoped({ prefix: "onicode-claude-image-log-" });
+      const imageAttemptLog = path.join(logDir, "image-attempts.log");
+      return yield* withFakeClaudeEnv(
+        {
+          output: JSON.stringify({ structured_output: { branch: "fix/login-button" } }),
+          imageRejection: rejection,
+          imageAttemptLog,
+        },
+        (textGeneration) =>
+          Effect.gen(function* () {
+            const first = yield* generateBranchNameWithImage(textGeneration);
+            const second = yield* generateBranchNameWithImage(textGeneration);
+            expect(first.branch).toBe("fix/login-button");
+            expect(second.branch).toBe("fix/login-button");
+            const attempts = yield* fs.readFileString(imageAttemptLog);
+            expect(attempts.trim().split("\n")).toHaveLength(imageAttempts);
+          }),
+      );
+    }).pipe(Effect.scoped),
   );
 
   it.effect("reports the retry's failure when the run without images fails too", () =>
@@ -456,7 +478,7 @@ it.layer(layerClaudeTextGenerationTest)("ClaudeTextGeneration", (it) => {
       {
         output: JSON.stringify({ type: "result", is_error: true, result: "quota exceeded" }),
         exitCode: 1,
-        rejectsImages: true,
+        imageRejection: "Image inputs are not supported by this model",
       },
       (textGeneration) =>
         Effect.gen(function* () {
