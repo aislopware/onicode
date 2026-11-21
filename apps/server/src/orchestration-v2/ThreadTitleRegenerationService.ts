@@ -36,6 +36,7 @@ import * as ProjectStore from "./ProjectStore.ts";
 import { forkInheritedRunOrdinals, ProjectionStoreThreadNotFoundError } from "./ProjectionStore.ts";
 import * as ThreadManagementService from "./ThreadManagementService.ts";
 
+import { boundedRedactedText } from "@onicode/provider-core/server/failure";
 import { formatThreadTitleContext } from "@onicode/provider-core/server/threadTitleContext";
 import { NEW_THREAD_TITLE } from "@onicode/shared/threadTitles";
 export { formatThreadTitleContext } from "@onicode/provider-core/server/threadTitleContext";
@@ -101,9 +102,7 @@ function failureMessage(cause: Cause.Cause<unknown>): string {
     : [];
   const detail = lines.at(-1);
   if (detail === undefined) return "Title generation failed.";
-  return detail.length > MAX_FAILURE_MESSAGE_LENGTH
-    ? `${detail.slice(0, MAX_FAILURE_MESSAGE_LENGTH - 1)}…`
-    : detail;
+  return boundedRedactedText(detail, MAX_FAILURE_MESSAGE_LENGTH);
 }
 
 const make = Effect.gen(function* () {

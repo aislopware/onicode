@@ -24,6 +24,10 @@ import {
   resolveCodexLaunchArgs,
 } from "../provider/codexLaunchArgs.ts";
 import { codexAppServerEnvironment } from "../provider/CodexProvider.ts";
+import {
+  boundedRedactedTail,
+  MAX_PROVIDER_FAILURE_MESSAGE_LENGTH,
+} from "@onicode/provider-core/server/failure";
 import * as TextGenerationOperations from "@onicode/provider-core/server/textGenerationOperations";
 import {
   normalizeCliError,
@@ -384,7 +388,8 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
           operation,
           detail:
             detail.length > 0
-              ? `Codex CLI command failed: ${detail}`
+              ? // codex exec writes its banner and the prompt to stderr before the error, so keep the end.
+                `Codex CLI command failed: ${boundedRedactedTail(detail, MAX_PROVIDER_FAILURE_MESSAGE_LENGTH)}`
               : `Codex CLI command failed with code ${exitCode}.`,
         });
       }

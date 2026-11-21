@@ -78,12 +78,14 @@ it.effect.each([
     expect(yield* generators.runner(ProviderInstanceId.make("codex"))).toBeUndefined();
 
     upstream.mockResolvedValueOnce(
-      Response.json({ error: { message: "Incorrect API key provided" } }, { status: 401 }),
+      Response.json({ error: { message: "Incorrect API key provided: secret" } }, { status: 401 }),
     );
     const failure = yield* Effect.flip(
       run!(request).pipe(Effect.provideService(FetchHttpClient.Fetch, upstream)),
     );
-    expect(failure.detail).toMatch(/rejected the API key: Incorrect API key provided$/);
+    expect(failure.detail).toMatch(
+      /rejected the API key: Incorrect API key provided: \[REDACTED\]$/,
+    );
   }),
 );
 

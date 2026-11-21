@@ -1,4 +1,5 @@
 import type { TextGeneratorKind, TextGeneratorModel } from "@onicode/contracts";
+import { boundedRedactedText } from "@onicode/provider-core/server/failure";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import {
@@ -47,7 +48,11 @@ const ApiErrorBody = Schema.Struct({
 });
 const decodeApiErrorBody = Schema.decodeUnknownOption(ApiErrorBody);
 
-const describeStatus = (label: string, status: number, message: string | undefined) => {
+const describeStatus = (
+  { label, apiKey }: TextGeneratorConnection,
+  status: number,
+  message: string | undefined,
+) => {
   const reason =
     status === 401 || status === 403
       ? "rejected the API key"
@@ -56,7 +61,11 @@ const describeStatus = (label: string, status: number, message: string | undefin
         : status === 429
           ? "is rate-limiting requests"
           : `returned HTTP ${status}`;
-  const detail = message?.trim().slice(0, 300);
+  // An API may echo the key back in a form no credential pattern recognizes.
+  const detail =
+    message === undefined
+      ? undefined
+      : boundedRedactedText(apiKey ? message.replaceAll(apiKey, "[REDACTED]") : message, 300);
   return `${label} ${reason}${detail ? `: ${detail}` : "."}`;
 };
 
@@ -65,10 +74,11 @@ const endpoint = (connection: TextGeneratorConnection, path: string) =>
 
 /** Sends a request and decodes a 2xx JSON body; anything else becomes a readable error. */
 const sendJson = Effect.fn("TextGenerator.sendJson")(function* <S extends Schema.Top>(
-  label: string,
+  connection: TextGeneratorConnection,
   request: HttpClientRequest.HttpClientRequest,
   schema: S,
 ) {
+  const { label } = connection;
   const http = yield* HttpClient.HttpClient;
   const response: HttpClientResponse.HttpClientResponse = yield* http.execute(request).pipe(
     // A redirect could carry the key to another origin.
@@ -88,7 +98,7 @@ const sendJson = Effect.fn("TextGenerator.sendJson")(function* <S extends Schema
       option._tag === "Some" ? option.value.error.message : undefined,
     );
     return yield* new TextGeneratorRequestError({
-      detail: describeStatus(label, response.status, message),
+      detail: describeStatus(connection, response.status, message),
     });
   }
   return yield* Schema.decodeUnknownEffect(schema)(body).pipe(
@@ -143,7 +153,7 @@ const openAICompatible: TextGeneratorDriver = {
       HttpClientRequest.bodyJsonUnsafe({ model, messages: [{ role: "user", content: prompt }] }),
     );
     if (connection.apiKey) request = HttpClientRequest.bearerToken(request, connection.apiKey);
-    return sendJson(label, request, ChatCompletion).pipe(
+    return sendJson(connection, request, ChatCompletion).pipe(
       Effect.flatMap((completion) => {
         const choice = completion.choices[0];
         const text = choice?.message.content?.trim();
@@ -163,7 +173,7 @@ const openAICompatible: TextGeneratorDriver = {
     const { label } = connection;
     let request = HttpClientRequest.get(endpoint(connection, "/models"));
     if (connection.apiKey) request = HttpClientRequest.bearerToken(request, connection.apiKey);
-    return sendJson(label, request, OpenAIModelList).pipe(
+    return sendJson(connection, request, OpenAIModelList).pipe(
       Effect.map((list) => sortModels(list.data.flatMap((entry) => readModel(entry) ?? []))),
       withTimeout(label, LIST_MODELS_TIMEOUT),
     );
@@ -205,7 +215,7 @@ const anthropic: TextGeneratorDriver = {
       ),
       connection.apiKey,
     );
-    return sendJson(label, request, AnthropicMessage).pipe(
+    return sendJson(connection, request, AnthropicMessage).pipe(
       Effect.flatMap((message) => {
         if (message.stop_reason === "max_tokens") {
           return Effect.fail(
@@ -225,7 +235,6 @@ const anthropic: TextGeneratorDriver = {
   },
   listModels: Effect.fn("TextGenerator.anthropic.listModels")(
     function* (connection) {
-      const { label } = connection;
       const models = new Map<string, TextGeneratorModel>();
       let after: string | undefined;
       for (let page = 0; page < MAX_MODEL_PAGES; page++) {
@@ -234,7 +243,7 @@ const anthropic: TextGeneratorDriver = {
         );
         if (after) request = HttpClientRequest.setUrlParam(request, "after_id", after);
         const result = yield* sendJson(
-          label,
+          connection,
           anthropicRequest(request, connection.apiKey),
           AnthropicModelPage,
         );

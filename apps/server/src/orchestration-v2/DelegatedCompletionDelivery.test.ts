@@ -2777,6 +2777,117 @@ it.layer(Layer.merge(layerTest, ProviderContinuationRequests.layer))(
       }),
     );
 
+    // A failed run queues no checkpoint capture, so only its run update settles its wake.
+    it.effect("a wake that never started releases a pending sibling after a failed settle", () =>
+      Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const sink = yield* EventSink.EventSinkV2;
+        const outbox = yield* EffectOutbox.EffectOutboxV2;
+        const requests = yield* ProviderContinuationRequests.ProviderContinuationRequests;
+        const now = yield* DateTime.now;
+        const threadId = ThreadId.make("thread:failed-wake-settle");
+        const originRunId = RunId.make("run:failed-wake-settle:origin");
+        const firstId = NodeId.make("node:failed-wake-settle:first");
+        const siblingId = NodeId.make("node:failed-wake-settle:sibling");
+        yield* seedParentWithTerminalTask({
+          threadId,
+          projectId: ProjectId.make("project:failed-wake-settle"),
+          runId: originRunId,
+          rootNodeId: NodeId.make("node:failed-wake-settle:root"),
+          taskId: firstId,
+          deliveryState: "claimed",
+          deliveryTaskIds: [firstId],
+          parentRunStatus: "completed",
+          now,
+        });
+        const original = yield* orchestrator.getThreadProjection(threadId);
+        const first = original.subagents.find((task) => task.id === firstId)!;
+        const delivery = original.runs.find((run) => run.id === originRunId)!.delegatedCompletion!
+          .delivery!;
+        yield* orchestrator.dispatch({
+          type: "message.dispatch",
+          createdBy: "agent",
+          creationSource: "server",
+          commandId: reconcileCommandId("failed-wake-settle-wake"),
+          threadId,
+          messageId: delivery.messageId,
+          text: "First result",
+          attachments: [],
+          dispatchMode: { type: "queue_after_active" },
+          delegatedCompletion: {
+            parentRunId: originRunId,
+            generation: delivery.generation,
+            taskIds: delivery.taskIds,
+          },
+        });
+        const run = (yield* orchestrator.getThreadProjection(threadId)).runs.find(
+          (candidate) => candidate.userMessageId === delivery.messageId,
+        )!;
+        yield* outbox.cancelUnsettled({
+          threadId,
+          effectTypes: ["provider-turn.start"],
+          reason: "The delivery turn fails before it starts.",
+        });
+        const write = sink.writeWithEffects;
+        let settleFailed = false;
+        using _write = vi.spyOn(sink, "writeWithEffects").mockImplementation((input) =>
+          !settleFailed &&
+          input.events.some(
+            (event) => event.type === "run.updated" && event.payload.id === originRunId,
+          )
+            ? Effect.sync(() => {
+                settleFailed = true;
+              }).pipe(Effect.andThen(Effect.die("settlement write failed")))
+            : write(input),
+        );
+        yield* sink.writeWithEffects({
+          commandId: CommandId.make("command:failed-wake-settle:failed"),
+          events: [
+            {
+              id: EventId.make("event:failed-wake-settle:sibling"),
+              type: "subagent.updated",
+              threadId,
+              runId: originRunId,
+              nodeId: siblingId,
+              occurredAt: now,
+              payload: {
+                ...first,
+                id: siblingId,
+                completionDelivery: { state: "pending", observedByRunId: null },
+              },
+            },
+            {
+              id: EventId.make("event:failed-wake-settle:failed"),
+              type: "run.updated",
+              threadId,
+              runId: run.id,
+              occurredAt: now,
+              payload: { ...run, status: "failed", completedAt: now },
+            },
+          ],
+          effects: [],
+        });
+        let wake = yield* requests.take;
+        while (
+          wake.threadId !== threadId ||
+          wake.delegatedCompletion?.generation !== delivery.generation + 1
+        ) {
+          wake = yield* requests.take;
+        }
+        assert.isTrue(settleFailed);
+        const settled = yield* orchestrator.getThreadProjection(threadId);
+        assert.equal(
+          settled.subagents.find((task) => task.id === siblingId)?.completionDelivery?.state,
+          "claimed",
+        );
+        assert.deepEqual(
+          settled.runs.find((candidate) => candidate.id === originRunId)?.delegatedCompletion
+            ?.delivery?.taskIds,
+          [siblingId],
+        );
+      }),
+    );
+
     it.effect.each(["live", "checkpoint-retry", "checkpoint-offer-retry"] as const)(
       "delivers the run a background command's wake starts after the original result (%s)",
       (delivery) =>

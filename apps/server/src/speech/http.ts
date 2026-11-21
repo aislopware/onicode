@@ -18,6 +18,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as HttpServerRequest from "effect/http/HttpServerRequest";
 import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
+import { boundedRedactedTail } from "@onicode/provider-core/server/failure";
 
 import {
   annotateEnvironmentRequest,
@@ -32,6 +33,7 @@ import * as SpeechService from "./SpeechService.ts";
 const MAX_TRANSCRIBE_BODY_BYTES = SpeechService.MAX_SPEECH_BYTES + SPEECH_MAX_OPTIONS_BYTES + 4;
 const parseAudio = Option.liftThrowable(decodeSpeechPcmRequest);
 const isTextGenerationError = Schema.is(TextGenerationError);
+const MAX_CLEANUP_FAILURE_DETAIL_LENGTH = 500;
 
 const bodyLimit = Layer.succeed(EnvironmentVoiceBodyLimit, (effect) =>
   Effect.gen(function* () {
@@ -241,7 +243,9 @@ export const speechHttpApiLayer = HttpApiBuilder.group(
                 failEnvironmentInternal(
                   "internal_error",
                   error,
-                  isTextGenerationError(error.cause) ? error.cause.detail : undefined,
+                  isTextGenerationError(error.cause)
+                    ? boundedRedactedTail(error.cause.detail, MAX_CLEANUP_FAILURE_DETAIL_LENGTH)
+                    : undefined,
                 ),
               ),
             );

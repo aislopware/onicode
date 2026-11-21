@@ -105,12 +105,13 @@ import {
   hasPendingBackgroundSubagent,
   pendingBackgroundTurnItems,
 } from "@onicode/shared/orchestrationV2PendingBackgroundWork";
+import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
-import * as FiberSet from "effect/FiberSet";
+import * as FiberMap from "effect/FiberMap";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Layer from "effect/Layer";
@@ -999,7 +1000,7 @@ function delegatedCompletionWakeDetail(
 }
 
 // Startup recovery settles whatever is still missed after this window.
-const parentTaskSyncRetry = Schedule.exponential("1 second").pipe(
+const afterCommitRetrySchedule = Schedule.exponential("1 second").pipe(
   Schedule.modifyDelay(({ duration }) =>
     Effect.succeed(Duration.min(duration, Duration.seconds(30))),
   ),
@@ -2174,16 +2175,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         if (message.delegatedCompletion === undefined || message.runId === null) return;
         // A result the agent read in the run it was steered into is accepted, and that commit
         // offers the next one. Every path here, startup included, would offer it a second time,
-        // so nothing is offered while the accept fails either.
-        const accepted = yield* acceptReadResults(threadId, [message.runId]).pipe(
-          Effect.catchCause((cause) =>
-            Effect.logWarning("Failed to accept a delegated result the agent read", {
-              threadId,
-              cause,
-            }).pipe(Effect.as(true)),
-          ),
-        );
-        if (accepted) return;
+        // so a failed accept offers nothing and fails, for its caller to retry.
+        if (yield* acceptReadResults(threadId, [message.runId])) return;
         const runs = yield* projectionStore.getThreadRecords(threadId, ["runs"], {
           runIds: [message.runId],
         });
@@ -2220,18 +2213,30 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       });
     });
 
+  // One run's failed offer must not hold back its siblings; the first failure still reaches the caller.
+  const offerEachDelegatedCompletionDelivery =
+    /* This helper runs for individual orchestration events; the enclosing operation owns the span. */
+    Effect.fnUntraced(function* (threadId: ThreadId, runIds: Iterable<RunId>) {
+      const exits = yield* Effect.forEach(runIds, (runId) =>
+        Effect.exit(offerDelegatedCompletionDelivery(threadId, runId)),
+      );
+      const failure = exits.find(Exit.isFailure);
+      if (failure !== undefined) return yield* failure;
+    });
+
   const offerDelegatedCompletionDeliveries =
     /* This helper runs for individual orchestration events; the enclosing operation owns the span. */
     Effect.fnUntraced(function* (threadId: ThreadId) {
       const projection = yield* projectionStore.getThreadRecords(threadId, ["runs"]);
-      for (const run of projection.runs) {
-        if (
+      yield* offerEachDelegatedCompletionDelivery(
+        threadId,
+        projection.runs.flatMap((run) =>
           run.delegatedCompletion?.delivery !== undefined &&
           run.delegatedCompletion.delivery !== null
-        ) {
-          yield* offerDelegatedCompletionDelivery(threadId, run.id);
-        }
-      }
+            ? [run.id]
+            : [],
+        ),
+      );
     });
 
   const offerChildTaskDeliveries =
@@ -2246,10 +2251,51 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           task.childThreadId === childThreadId && task.runId !== null ? [task.runId] : [],
         ),
       );
-      for (const parentRunId of parentRunIds) {
-        yield* offerDelegatedCompletionDelivery(parentThreadId, parentRunId);
-      }
+      yield* offerEachDelegatedCompletionDelivery(parentThreadId, parentRunIds);
     });
+
+  // One retry per key: a later failure for the same step replaces it, since each attempt reads
+  // current state. Attempts are idempotent, so the first runs at once. Defects retry too;
+  // only interruption, as at shutdown, ends one early.
+  const afterCommitRetries = yield* FiberMap.make<string>();
+  const retryAfterCommit = <E>(
+    key: string,
+    attempt: Effect.Effect<void, E>,
+    context: Record<string, unknown>,
+  ) =>
+    attempt.pipe(
+      // A retry outlives the call that started it, so that caller's mode limit does not apply.
+      Effect.provideService(DispatchModeLimit, undefined),
+      Effect.sandbox,
+      Effect.retry({
+        schedule: afterCommitRetrySchedule,
+        while: (cause) => !Cause.hasInterruptsOnly(cause),
+      }),
+      Effect.catch((cause) =>
+        Cause.hasInterruptsOnly(cause)
+          ? Effect.void
+          : Effect.logWarning("Gave up retrying work after its commit", { ...context, cause }),
+      ),
+      FiberMap.run(afterCommitRetries, key),
+      Effect.asVoid,
+    );
+
+  // A command that committed a result has its receipt, so a failed wake offer is retried here
+  // instead of failing it: a caller's retry would replay the receipt without offering.
+  const offerDelegatedCompletionDeliveriesAfterCommit = (threadId: ThreadId) =>
+    offerDelegatedCompletionDeliveries(threadId).pipe(
+      Effect.catchCause((cause) =>
+        Effect.logWarning("Retrying a delegated completion wake", { threadId, cause }).pipe(
+          Effect.andThen(
+            retryAfterCommit(
+              `offer:${threadId}`,
+              threadDispatch.withLock(threadId, offerDelegatedCompletionDeliveries(threadId)),
+              { threadId },
+            ),
+          ),
+        ),
+      ),
+    );
 
   /** Marks a wake the provider received delivered and reserves the next one for pending siblings. */
   const acceptDelegatedCompletionDelivery = Effect.fn(
@@ -3501,6 +3547,26 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     startNextQueuedRunOnce(...args).pipe(
       Effect.flatMap((wakeLeftUnheld) =>
         wakeLeftUnheld === true ? startNextQueuedRunOnce(args[0]) : Effect.void,
+      ),
+    );
+
+  // A replayed receipt does not start again, so a failed start is retried here.
+  const startNextQueuedRunAfterCommit = (
+    reason: string,
+    threadId: ThreadId,
+    options: Parameters<typeof startNextQueuedRunOnce>[1],
+  ) =>
+    startNextQueuedRun(threadId, options).pipe(
+      Effect.catchCause((cause) =>
+        Effect.logWarning("Retrying a queued run start", { threadId, reason, cause }).pipe(
+          Effect.andThen(
+            retryAfterCommit(
+              `start:${reason}:${threadId}`,
+              threadDispatch.withLock(threadId, startNextQueuedRun(threadId, options)),
+              { threadId, reason },
+            ),
+          ),
+        ),
       ),
     );
 
@@ -16178,6 +16244,16 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     }
   });
 
+  const retryDelegatedCompletionDeliverySettlement =
+    /* Retries only; recoverDelegatedTask or finalizeDelegatedCompletionDelivery owns the span. */
+    Effect.fnUntraced(function* (threadId: ThreadId, runId: RunId) {
+      const message = yield* projectionStore.getRunMessage(threadId, runId);
+      if (message?.delegatedCompletion === undefined) return;
+      // A prior attempt may have committed the next generation before offering its wake.
+      yield* offerDelegatedCompletionDelivery(threadId, message.delegatedCompletion.parentRunId);
+      yield* finalizeDelegatedCompletionDelivery(threadId, runId);
+    });
+
   const dispatchNotificationAccepted = Effect.fn("orchestrationV2.notificationAccepted")(function* (
     command: Extract<OrchestrationV2Command, { type: "notification.delivery.accept" }>,
     events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
@@ -17011,17 +17087,19 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         commandThreadId: commandThreadId(command),
       });
     }
-    if (
-      command.type === "queue.resume" ||
-      command.type === "queued-run.start" ||
-      (command.type === "thread.runtime-mode.set" && runtimeModeCeiling !== undefined)
-    ) {
+    // A replayed receipt starts these again, so their caller can retry.
+    if (command.type === "queue.resume" || command.type === "queued-run.start") {
       yield* mapDispatchError(command)(
         startNextQueuedRun(command.threadId, {
-          userStarted: command.type !== "thread.runtime-mode.set",
+          userStarted: true,
           ...(command.type === "queued-run.start" ? { queuedRunId: command.runId } : {}),
         }),
       );
+    }
+    if (command.type === "thread.runtime-mode.set" && runtimeModeCeiling !== undefined) {
+      yield* startNextQueuedRunAfterCommit("runtime-mode", command.threadId, {
+        userStarted: false,
+      });
     }
     if (
       command.type === "notification.delivery.accept" ||
@@ -17034,20 +17112,20 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             event.payload.completionDelivery?.state === "claimed",
         ))
     ) {
-      yield* mapDispatchError(command)(offerDelegatedCompletionDeliveries(command.threadId));
+      yield* offerDelegatedCompletionDeliveriesAfterCommit(command.threadId);
     }
     if (
       command.type === "delegated_task.wake-policy" ||
       command.type === "delegated_task.remote.complete" ||
       isUnobservedAcknowledgement(command)
     ) {
-      yield* mapDispatchError(command)(offerDelegatedCompletionDeliveries(command.parentThreadId));
+      yield* offerDelegatedCompletionDeliveriesAfterCommit(command.parentThreadId);
     }
 
     if (command.type === "message.dispatch" && command.steerFollowUpOfRunId !== undefined) {
-      yield* mapDispatchError(command)(
-        startNextQueuedRun(command.threadId, { latestRunEnded: true }),
-      );
+      yield* startNextQueuedRunAfterCommit("steer-follow-up", command.threadId, {
+        latestRunEnded: true,
+      });
     }
 
     return {
@@ -17127,8 +17205,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       : dispatch;
   });
 
-  const parentTaskSyncRetries = yield* FiberSet.make();
-  const syncDelegatedParentTask = Effect.fn("Orchestrator.syncDelegatedParentTask")(function* (
+  // These run for every run update; the lineage read and the parent finalize own the spans.
+  const syncDelegatedParentTask = Effect.fnUntraced(function* (
     childThreadId: ThreadId,
     options: { readonly syncRunId: RunId | undefined; readonly retry: boolean },
   ) {
@@ -17147,7 +17225,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     );
   });
   // Only these reactions tell a parent about its child before a restart; a dropped one leaves its task running.
-  const updateDelegatedParentTask = Effect.fn("Orchestrator.updateDelegatedParentTask")(function* (
+  const updateDelegatedParentTask = Effect.fnUntraced(function* (
     childThreadId: ThreadId,
     syncRunId?: RunId,
   ) {
@@ -17162,16 +17240,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           cause,
         }).pipe(
           Effect.andThen(
-            syncDelegatedParentTask(childThreadId, { syncRunId, retry: true }).pipe(
-              Effect.retry({ schedule: parentTaskSyncRetry }),
-              Effect.delay("1 second"),
-              Effect.catchCause((cause) =>
-                Effect.logWarning("Failed to update a delegated task for its parent", {
-                  ...context,
-                  cause,
-                }),
-              ),
-              FiberSet.run(parentTaskSyncRetries),
+            retryAfterCommit(
+              // A run's own key: an update without one cannot sync that run's status.
+              `task:${childThreadId}:${syncRunId ?? ""}`,
+              syncDelegatedParentTask(childThreadId, { syncRunId, retry: true }),
+              context,
             ),
           ),
         ),
@@ -17199,15 +17272,27 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             ),
           );
         }
+        // A failed run queues no checkpoint capture, whose effect would retry this.
         yield* threadDispatch
           .withLock(threadId, finalizeDelegatedCompletionDelivery(threadId, run.id))
           .pipe(
             Effect.catchCause((cause) =>
-              Effect.logWarning("Failed to settle a delegated completion delivery", {
+              Effect.logWarning("Retrying a delegated completion delivery's settlement", {
                 threadId,
                 runId: run.id,
                 cause,
-              }),
+              }).pipe(
+                Effect.andThen(
+                  retryAfterCommit(
+                    `settle:${threadId}:${run.id}`,
+                    threadDispatch.withLock(
+                      threadId,
+                      retryDelegatedCompletionDeliverySettlement(threadId, run.id),
+                    ),
+                    { threadId, runId: run.id },
+                  ),
+                ),
+              ),
             ),
           );
         yield* threadDispatch
@@ -17610,14 +17695,15 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                     terminalDeliveryRunIds.length === 0
                       ? projection
                       : yield* projectionStore.getThreadRecords(threadId, ["runs"]);
-                  for (const run of refreshed.runs) {
-                    if (
+                  yield* offerEachDelegatedCompletionDelivery(
+                    threadId,
+                    refreshed.runs.flatMap((run) =>
                       run.delegatedCompletion?.delivery !== null &&
                       run.delegatedCompletion !== undefined
-                    ) {
-                      yield* offerDelegatedCompletionDelivery(threadId, run.id);
-                    }
-                  }
+                        ? [run.id]
+                        : [],
+                    ),
+                  );
                 }),
               )
               .pipe(
@@ -17625,7 +17711,18 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                   Effect.logWarning("Failed to recover delegated completion delivery", {
                     threadId,
                     cause,
-                  }),
+                  }).pipe(
+                    Effect.andThen(
+                      retryAfterCommit(
+                        `offer:${threadId}`,
+                        threadDispatch.withLock(
+                          threadId,
+                          offerDelegatedCompletionDeliveries(threadId),
+                        ),
+                        { threadId },
+                      ),
+                    ),
+                  ),
                 ),
               ),
           { concurrency: 8, discard: true },
@@ -17679,16 +17776,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       if (completedRunId !== undefined) {
         yield* threadDispatch.withLock(
           threadId,
-          Effect.gen(function* () {
-            const message = yield* projectionStore.getRunMessage(threadId, completedRunId);
-            if (message?.delegatedCompletion === undefined) return;
-            // A prior attempt may have committed the next generation before offering its wake.
-            yield* offerDelegatedCompletionDelivery(
-              threadId,
-              message.delegatedCompletion.parentRunId,
-            );
-            yield* finalizeDelegatedCompletionDelivery(threadId, completedRunId);
-          }),
+          retryDelegatedCompletionDeliverySettlement(threadId, completedRunId),
         );
       }
       const sourceRunId = options?.sourceRunId;
