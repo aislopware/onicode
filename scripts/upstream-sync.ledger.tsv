@@ -3011,3 +3011,4 @@ d52798ef49	take	taken as is
 4366f400ba	take	agentContextBudget re-measured for Onicode's tool list (56320); docs/user/outside-agents.md hunk dropped (Onicode does not have that page); oni_thread_launch description is upstream's wording, evals not re-run on Onicode (upstream's measurement)
 b9879ede83	take	taken as is
 864b8fa68a	take	taken as is
+a6e81f3002	take	taken as is
