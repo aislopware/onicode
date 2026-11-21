@@ -8,17 +8,19 @@ import {
   deriveThreadQueueWorkflowState,
 } from "@onicode/client-runtime/state/thread-workflows";
 import { assistantCitationsToPlainText } from "@onicode/shared/assistantCitations";
+import { isSlashCommand } from "@onicode/shared/composerTrigger";
 import {
   isAttachmentOnlyBootstrapPrompt,
   replaceComposerContextReferences,
 } from "@onicode/shared/composerContextReferences";
-import type {
-  ChatAttachment as ContractChatAttachment,
-  EnvironmentId,
-  MessageId,
-  OrchestrationV2Run,
-  RunId,
-  ThreadId,
+import {
+  parseGoalCommand,
+  type ChatAttachment as ContractChatAttachment,
+  type EnvironmentId,
+  type MessageId,
+  type OrchestrationV2Run,
+  type RunId,
+  type ThreadId,
 } from "@onicode/contracts";
 import { resolveUserMessagePresentation } from "@onicode/client-runtime/user-message";
 import { Link } from "@tanstack/react-router";
@@ -274,6 +276,9 @@ export function QueuedRunsControl({
                 replaceComposerContextReferences(item.text, (reference) => reference.label),
               ).trim();
           const isEditing = item.runId !== null && item.runId === props.editingRunId;
+          // The server decides on the agent's text, and a goal command can stop the turn.
+          const sentText = { text: item.message?.text ?? item.text, attachments: item.attachments };
+          const movesCommandFirst = isSlashCommand(sentText) && parseGoalCommand(sentText) === null;
           return (
             <li
               key={item.key}
@@ -334,7 +339,9 @@ export function QueuedRunsControl({
                           ? gt("Start a turn with this message")
                           : workflow?.promoteSkipsCompaction
                             ? gt("Skip compaction and send this message")
-                            : gt("Send into the current turn")}
+                            : movesCommandFirst
+                              ? gt("Move this command to the front of the queue")
+                              : gt("Send into the current turn")}
                       </TooltipPopup>
                     </Tooltip>
                   </>

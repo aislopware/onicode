@@ -3102,3 +3102,4 @@ c1464d6774	take	perf(server): status of a repository without a remote skips remo
 69228fe179	take	fix(server): typed-message commits stage the worktree once
 7ef7ba0e3b	take	perf(server): a tracked file's Diff panel patch skips the untracked-file listing
 0775dc450f	take	fix(mobile): mark the linked line in the native source viewer (#40295)
+c385377544	take	fix(server): slash commands sent during a turn wait instead of steering (#40316); adapted: tooltip keeps Onicode's shortcut prop (shortcut-suffixed string dropped), notice test rows keep Onicode's compacting column, scenario waits for Supervised in Settings
