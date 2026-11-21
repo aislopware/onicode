@@ -93,8 +93,9 @@ export const translateText = (text: string, path = "") =>
         .join("");
 export const translatePath = (path: string) => path.split("/").map(rebrand).join("/");
 
+// Paths are literal: a name like `src/[id].tsx` must not match `src/i.tsx`.
 const git = (args: ReadonlyArray<string>, input?: Buffer) =>
-  NodeChildProcess.execFileSync("git", args, {
+  NodeChildProcess.execFileSync("git", ["--literal-pathspecs", ...args], {
     cwd: repoRoot,
     input,
     maxBuffer: 256 * 1024 * 1024,
@@ -107,9 +108,34 @@ const blobAt = (rev: string, path: string): Buffer | undefined => {
   });
   return result.status === 0 ? result.stdout : undefined;
 };
+const modeAt = (rev: string, path: string) =>
+  git(["ls-tree", "-z", rev, "--", path]).toString("utf8").split(" ")[0] || undefined;
+
+/** Writes a blob as git checks it out: a symlink (120000), or a file with its executable bit. */
+export const writeBlob = (absolute: string, data: Buffer, mode: string | undefined) => {
+  NodeFS.mkdirSync(NodePath.dirname(absolute), { recursive: true });
+  // Writing to an existing link would change its target instead.
+  if (
+    mode === "120000" ||
+    NodeFS.lstatSync(absolute, { throwIfNoEntry: false })?.isSymbolicLink()
+  ) {
+    NodeFS.rmSync(absolute, { force: true });
+  }
+  if (mode === "120000") {
+    NodeFS.symlinkSync(data.toString("utf8"), absolute);
+    return;
+  }
+  NodeFS.writeFileSync(absolute, data);
+  if (mode !== undefined) NodeFS.chmodSync(absolute, mode === "100755" ? 0o755 : 0o644);
+};
 const isBinary = (data: Buffer) => data.subarray(0, 8192).includes(0);
 const translateBlob = (data: Buffer, path: string) =>
   isBinary(data) ? data : Buffer.from(translateText(data.toString("utf8"), path), "utf8");
+// A symlink's blob is a path, so it is renamed the way paths are, not rewritten as text.
+const translateBlobAt = (data: Buffer, path: string, mode: string | undefined) =>
+  mode === "120000"
+    ? Buffer.from(translatePath(data.toString("utf8")), "utf8")
+    : translateBlob(data, path);
 
 const readLedger = () =>
   NodeFS.existsSync(ledgerPath)
@@ -218,18 +244,38 @@ const port = (sha: string) => {
     throw new Error("Commit or stash your changes first: a port must land on a clean tree.");
   }
   const full = gitText(["rev-parse", sha]);
+  // Git for Windows sets this where links are unsupported.
+  const symlinks = NodeChildProcess.spawnSync("git", ["config", "--bool", "core.symlinks"], {
+    cwd: repoRoot,
+    encoding: "utf8",
+  });
+  if (
+    symlinks.stdout.trim() === "false" &&
+    gitText(["diff-tree", "-r", "--no-commit-id", full])
+      .split("\n")
+      .some((line) => line.split(" ")[1] === "120000")
+  ) {
+    throw new Error("Port on a checkout with core.symlinks: upstream's links must land as links.");
+  }
   const fields = git(["diff-tree", "-r", "-M", "-z", "--no-commit-id", "--name-status", full])
     .toString("utf8")
     .split("\0")
     .filter(Boolean);
   const report: Array<string> = [];
   let problems = 0;
-  const write = (path: string, data: Buffer) => {
-    const absolute = NodePath.join(repoRoot, path);
-    NodeFS.mkdirSync(NodePath.dirname(absolute), { recursive: true });
-    NodeFS.writeFileSync(absolute, data);
+  const write = (path: string, data: Buffer, mode: string | undefined) => {
+    writeBlob(NodePath.join(repoRoot, path), data, mode);
     // Intent-to-add, so new files show in `git diff` and `commit -a` without staging conflicts.
     git(["add", "-N", "--", path]);
+    // Stages only the bit, which core.fileMode=false hides from git; `--chmod` would stage content.
+    const [indexMode, oid] = gitText(["ls-files", "-s", "--", path]).split(" ");
+    if (
+      (mode === "100755" || mode === "100644") &&
+      (indexMode === "100755" || indexMode === "100644") &&
+      indexMode !== mode
+    ) {
+      git(["update-index", "--cacheinfo", `${mode},${oid},${path}`]);
+    }
   };
   for (let index = 0; index < fields.length;) {
     const status = fields[index++]!;
@@ -240,12 +286,16 @@ const port = (sha: string) => {
     const before = blobAt(`${full}^`, from);
     const after = status.startsWith("D") ? undefined : blobAt(full, to);
     const ours = blobAt("HEAD", ourFrom);
-    const base = before === undefined ? Buffer.alloc(0) : translateBlob(before, from);
-    const theirs = after === undefined ? undefined : translateBlob(after, to);
+    const baseMode = before === undefined ? undefined : modeAt(`${full}^`, from);
+    const theirMode = after === undefined ? undefined : modeAt(full, to);
+    const ourMode = ours === undefined ? undefined : modeAt("HEAD", ourFrom);
+    const base = before === undefined ? Buffer.alloc(0) : translateBlobAt(before, from, baseMode);
+    const theirs = after === undefined ? undefined : translateBlobAt(after, to, theirMode);
+    const oursUnchanged = ours !== undefined && ours.equals(base) && ourMode === baseMode;
 
     if (theirs === undefined) {
       if (ours === undefined) report.push(`gone      ${ourFrom} (already absent here)`);
-      else if (ours.equals(base)) {
+      else if (oursUnchanged) {
         git(["rm", "-q", "--", ourFrom]);
         report.push(`deleted   ${ourFrom}`);
       } else {
@@ -263,24 +313,69 @@ const port = (sha: string) => {
       );
       continue;
     }
-    if (isBinary(theirs) || (ours !== undefined && isBinary(ours))) {
-      if (ours === undefined || ours.equals(base)) {
-        write(ourTo, theirs);
-        report.push(`binary    ${ourTo}`);
-      } else {
+    if (
+      ourMode !== undefined &&
+      before !== undefined &&
+      ourMode !== baseMode &&
+      theirMode !== baseMode &&
+      ourMode !== theirMode
+    ) {
+      problems++;
+      report.push(
+        `CONFLICT  ${ourTo}: mode ${baseMode} became ${ourMode} here, ${theirMode} upstream.`,
+      );
+      continue;
+    }
+    // Upstream's mode where it changed it or added the file, else the one Onicode has.
+    const mode =
+      before === undefined || theirMode !== baseMode ? theirMode : (ourMode ?? theirMode);
+    // A link target or a binary merges as a whole: a text merge would write conflict markers.
+    const whole =
+      [baseMode, theirMode, ourMode].includes("120000") ||
+      isBinary(base) ||
+      isBinary(theirs) ||
+      (ours !== undefined && isBinary(ours));
+    let wrote = true;
+    if (whole) {
+      const content =
+        ours === undefined || ours.equals(base)
+          ? theirs
+          : theirs.equals(base) || theirs.equals(ours)
+            ? ours
+            : undefined;
+      if (content === undefined) {
         problems++;
-        report.push(`CONFLICT  ${ourTo}: binary changed on both sides.`);
+        wrote = false;
+        report.push(
+          `CONFLICT  ${ourTo}: ${mode === "120000" ? "symlink" : "binary"} changed on both sides.`,
+        );
+      } else if (
+        // A type change on one side only: the other side's content cannot take that type.
+        ours !== undefined &&
+        (mode === "120000") !== ((content === ours ? ourMode : theirMode) === "120000")
+      ) {
+        problems++;
+        wrote = false;
+        report.push(`CONFLICT  ${ourTo}: one side made it a symlink, the other changed it.`);
+      } else {
+        write(ourTo, content, mode);
+        report.push(`${mode === "120000" ? "symlink   " : "binary    "}${ourTo}`);
       }
     } else {
       const { merged, conflicts } = mergeFile(ours ?? Buffer.alloc(0), base, theirs);
-      write(ourTo, merged);
+      write(ourTo, merged, mode);
       if (conflicts > 0) problems++;
       report.push(
         `${conflicts > 0 ? `CONFLICT  ${ourTo} (${conflicts} hunks)` : `merged    ${ourTo}`}`,
       );
     }
-    if (ourTo !== ourFrom && ours !== undefined) git(["rm", "-q", "--cached", "--", ourFrom]);
-    if (ourTo !== ourFrom && NodeFS.existsSync(NodePath.join(repoRoot, ourFrom))) {
+    if (wrote && ourMode !== undefined && mode !== ourMode) {
+      report.push(`mode      ${ourTo} ${ourMode} -> ${mode}`);
+    }
+    if (!wrote || ourTo === ourFrom) continue;
+    if (ours !== undefined) git(["rm", "-q", "--cached", "--", ourFrom]);
+    // lstat, not exists: a dangling link is still there to remove.
+    if (NodeFS.lstatSync(NodePath.join(repoRoot, ourFrom), { throwIfNoEntry: false })) {
       NodeFS.rmSync(NodePath.join(repoRoot, ourFrom));
     }
   }
@@ -292,7 +387,7 @@ const port = (sha: string) => {
     full,
   ]).split("\n");
   console.log(
-    `\n${problems === 0 ? "Applied cleanly." : `${problems} file(s) need a decision.`} Review \`git diff\` line by line, run the tests beside it, then:\n` +
+    `\n${problems === 0 ? "Applied cleanly." : `${problems} file(s) need a decision.`} Review \`git diff HEAD\` line by line, run the tests beside it, then:\n` +
       `  node scripts/upstream-sync.ts record ${full.slice(0, 10)} take "<onicode commit or note>"\n` +
       `  ${portCommitCommand({ sha: full, subject, author, coAuthors })}`,
   );
