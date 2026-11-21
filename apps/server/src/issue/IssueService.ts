@@ -161,8 +161,8 @@ export class IssueService extends Context.Service<
     readonly setState: (input: IssueSetStateInput) => Effect.Effect<void, IssueError>;
     readonly react: (input: IssueReactionInput) => Effect.Effect<void, IssueError>;
     /**
-     * The tracker and container a project's own issues live in: the bound `scope` when named, else
-     * the one `key`'s prefix names, else the project's default.
+     * The tracker and container a project's own issues live in: the one `key`'s prefix names, else
+     * the bound `scope` named, else the project's default.
      */
     readonly projectScope: (
       projectId: ProjectId,
@@ -703,13 +703,29 @@ const make = Effect.gen(function* () {
     if (supported.length === 0) {
       return yield* new IssueUnavailableError({ reason: "tracker-unsupported" });
     }
-    const named = select?.scope?.trim().toLowerCase();
-    const prefix = select?.key?.toLowerCase();
+    const requested = select?.scope?.trim().toLowerCase();
+    const key = select?.key?.toLowerCase();
+    // Agents also write a scope as `<tracker>:<scope>`, such as linear:OPS.
+    const separator = requested?.indexOf(":") ?? -1;
+    const tracker = separator > 0 ? requested?.slice(0, separator) : undefined;
+    const prefixed = requested?.slice(separator + 1).trim();
+    const named =
+      requested === undefined
+        ? undefined
+        : (supported.find((candidate) => candidate.scope.toLowerCase() === requested) ??
+          supported.find(
+            (candidate) =>
+              candidate.tracker === tracker && candidate.scope.toLowerCase() === prefixed,
+          ));
+    // A key that names its own scope, such as OPS-12, wins over another scope of the same tracker.
     const own =
-      named === undefined
-        ? (supported.find((candidate) => prefix?.startsWith(`${candidate.scope.toLowerCase()}-`)) ??
-          supported[0])
-        : supported.find((candidate) => candidate.scope.toLowerCase() === named);
+      supported.find(
+        (candidate) =>
+          (named === undefined || candidate.tracker === named.tracker) &&
+          key?.startsWith(`${candidate.scope.toLowerCase()}-`),
+      ) ??
+      named ??
+      (requested === undefined ? supported[0] : undefined);
     if (own === undefined) {
       return yield* new IssueOperationError({
         operation: "scope",

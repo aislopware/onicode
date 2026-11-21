@@ -796,6 +796,19 @@ describe("IssueService with a standalone tracker", () => {
       });
       expect((yield* bound.projectScope("web" as ProjectId)).scope).toBe("ENG");
       expect((yield* bound.projectScope("web" as ProjectId, { key: "ops-12" })).scope).toBe("OPS");
+      expect(
+        (yield* bound.projectScope("web" as ProjectId, { key: "OPS-12", scope: "ENG" })).scope,
+      ).toBe("OPS");
+      expect(
+        (yield* bound.projectScope("web" as ProjectId, { key: "OPS-12", scope: "acme/web" })).scope,
+      ).toBe("acme/web");
+      expect((yield* bound.projectScope("web" as ProjectId, { scope: "linear:ops" })).scope).toBe(
+        "OPS",
+      );
+      // The tracker prefix narrows the match, so another tracker's scope is not found.
+      expect(
+        yield* bound.projectScope("web" as ProjectId, { scope: "github:OPS" }).pipe(Effect.flip),
+      ).toMatchObject({ reason: "not-found" });
       expect(yield* bound.projectScope("web" as ProjectId, { scope: "ACME/Web" })).toMatchObject({
         tracker: GITHUB,
         host: "github.com",

@@ -1,10 +1,13 @@
 // @effect-diagnostics-next-line nodeBuiltinImport:off - a fake Linear API for the server to call
 import * as NodeHttp from "node:http";
 
+import { IssueTrackerKind } from "@onicode/contracts";
 import { expect } from "e2e";
+import * as Effect from "effect/Effect";
 
+import { ONICODE_HOME } from "../e2e.config.ts";
 import { SCENARIO_LINEAR_PORT } from "./start-app.ts";
-import { test, WEB } from "./onicode.ts";
+import { rpcClient, runPromise, test, WEB } from "./onicode.ts";
 
 // Connecting reads only the viewer, the workspace and its teams.
 const VIEWER = {
@@ -34,7 +37,14 @@ test(
       response.writeHead(200, { "content-type": "application/json" });
       response.end(JSON.stringify(VIEWER));
     });
-    await new Promise<void>((resolve) => linear.listen(SCENARIO_LINEAR_PORT, "127.0.0.1", resolve));
+    // A taken port fails this test instead of escaping as an unhandled error.
+    await new Promise<void>((resolve, reject) => {
+      linear.once("error", reject);
+      linear.listen(SCENARIO_LINEAR_PORT, "127.0.0.1", () => {
+        linear.off("error", reject);
+        resolve();
+      });
+    });
     try {
       await onicode.project("demo");
       await onicode.open("/settings/source-control");
@@ -53,6 +63,16 @@ test(
         }),
       ).toBeVisible();
     } finally {
+      // The credential lives on the shared scenario server; later scenarios start without it.
+      await runPromise(
+        Effect.gen(function* () {
+          const client = yield* rpcClient(ONICODE_HOME, app.baseUrl ?? "");
+          yield* client["issueTrackers.connect"]({
+            tracker: IssueTrackerKind.make("linear"),
+            token: null,
+          });
+        }).pipe(Effect.scoped),
+      );
       await new Promise((resolve) => linear.close(resolve));
     }
   },
