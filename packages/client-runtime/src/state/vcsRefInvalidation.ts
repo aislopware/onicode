@@ -88,15 +88,23 @@ const refsDigestsByEnvironment = Atom.family((environmentId: EnvironmentId) =>
   ),
 );
 
-/** Skips the branch list reload when a status refresh saw the same refs as the last one. */
+/**
+ * Skips the branch list reload when a status refresh saw the same refs as the last one. `force`
+ * reloads anyway: a list fetched since that refresh can disagree with a digest that still matches.
+ */
 export const invalidateCachedVcsRefsIfChanged = Effect.fn("VcsRefsState.invalidateCachedIfChanged")(
   function* (
     registry: AtomRegistry.AtomRegistry,
     target: CachedVcsRefsInvalidationTarget,
     refsDigest: string | undefined,
+    force = false,
   ) {
     const digestsAtom = refsDigestsByEnvironment(target.environmentId);
-    if (refsDigest !== undefined && registry.get(digestsAtom).get(target.cwd) === refsDigest) {
+    if (
+      !force &&
+      refsDigest !== undefined &&
+      registry.get(digestsAtom).get(target.cwd) === refsDigest
+    ) {
       return;
     }
     registry.update(digestsAtom, (digests) => {

@@ -464,12 +464,23 @@ describe("cached VCS refs", () => {
       expect(yield* Ref.get(clears)).toBe(3);
       expect(registry.get(vcsRefsCacheStateAtom(TARGET)).revision).toBe(3);
 
-      yield* atoms.refreshLocalStatusForPicker.run(registry, {
+      const refreshForPicker = atoms.refreshLocalStatusForPicker.run(registry, {
         environmentId: TARGET.environmentId,
         input: { cwd: "/repo", localOnly: true },
       });
+      yield* refreshForPicker;
       expect(yield* Ref.get(clears)).toBe(3);
       expect(registry.get(vcsRefsCacheStateAtom(TARGET)).revision).toBe(3);
+
+      // A list known to be stale reloads even though the digest matches, which it then records.
+      yield* atoms.refreshLocalStatusAndRefsForPicker.run(registry, {
+        environmentId: TARGET.environmentId,
+        input: { cwd: "/repo", localOnly: true },
+      });
+      expect(yield* Ref.get(clears)).toBe(4);
+      expect(registry.get(vcsRefsCacheStateAtom(TARGET)).revision).toBe(4);
+      yield* refreshForPicker;
+      expect(yield* Ref.get(clears)).toBe(4);
 
       const prepareResult = yield* Effect.exit(
         createGitEnvironmentAtoms(runtime).preparePullRequestThread.run(registry, {
@@ -479,8 +490,8 @@ describe("cached VCS refs", () => {
       );
 
       expect(Exit.isSuccess(prepareResult)).toBe(true);
-      expect(yield* Ref.get(clears)).toBe(4);
-      expect(registry.get(vcsRefsCacheStateAtom(TARGET)).revision).toBe(4);
+      expect(yield* Ref.get(clears)).toBe(5);
+      expect(registry.get(vcsRefsCacheStateAtom(TARGET)).revision).toBe(5);
     }),
   );
 

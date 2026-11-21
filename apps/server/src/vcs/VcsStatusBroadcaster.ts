@@ -349,10 +349,27 @@ export const make = Effect.gen(function* () {
   // turn-end refresh and overwrite the fresh PR with its stale `pr: null`.
   const remoteWriteLocks = yield* KeyedLock.make<string>();
   const activeRemoteReads = new Map<string, number>();
+  // Upstream details the turn-end refreshLocalStatus just read, handed once to the PR lookup that
+  // follows it so the same no-fetch read is not repeated. Any remote write in between, even a
+  // failed one, drops them.
+  const upstreamReads = new Map<string, GitVcsDriver.GitRemoteStatusDetails>();
+  // Counts locked remote writes that ended, in any checkout, so a divergence read outside the
+  // lock can tell that a write which may have moved refs finished while it ran.
+  let remoteWritesEnded = 0;
   const withRemoteWriteLock = <A, E, R>(cwd: string, effect: Effect.Effect<A, E, R>) =>
     Effect.acquireUseRelease(
       Effect.sync(() => activeRemoteReads.set(cwd, (activeRemoteReads.get(cwd) ?? 0) + 1)),
-      () => remoteWriteLocks.withLock(cwd, effect),
+      () =>
+        remoteWriteLocks.withLock(
+          cwd,
+          Effect.ensuring(
+            effect,
+            Effect.sync(() => {
+              upstreamReads.delete(cwd);
+              remoteWritesEnded += 1;
+            }),
+          ),
+        ),
       () =>
         Effect.sync(() => {
           const remaining = (activeRemoteReads.get(cwd) ?? 1) - 1;
@@ -365,9 +382,6 @@ export const make = Effect.gen(function* () {
   // A refresh that started after a request saw every change that request could mean, so queued
   // callers share it instead of each running git status again.
   const localRefreshRequests = new Map<string, number>();
-  // Upstream details the turn-end refreshLocalStatus just read, handed once to the PR lookup that
-  // follows it so the same no-fetch read is not repeated. Any remote write in between drops them.
-  const upstreamReads = new Map<string, GitVcsDriver.GitRemoteStatusDetails>();
   const localRefreshResults = new Map<
     string,
     {
@@ -605,7 +619,12 @@ export const make = Effect.gen(function* () {
     const cached = yield* getCachedStatus(cwd);
     // Divergence is local Git data; a slow forge lookup must not delay turn-end updates.
     if (cached?.remote?.value?.hasUpstream) {
-      const divergence = yield* workflow.upstreamDivergence(cwd);
+      const writesEnded = remoteWritesEnded;
+      let divergence = yield* workflow.upstreamDivergence(cwd);
+      // A read that crossed a remote write may predate what that write published, so the counts
+      // are read again; neither read is handed to the PR lookup.
+      const crossedWrite = remoteWritesEnded !== writesEnded;
+      if (crossedWrite) divergence = yield* workflow.upstreamDivergence(cwd);
       const latest = yield* getCachedStatus(cwd);
       if (divergence && latest?.remote?.value && latest.remote.branch === divergence.refName) {
         const value = {
@@ -622,7 +641,9 @@ export const make = Effect.gen(function* () {
           },
           { publish: true },
         );
-        upstreamReads.set(cwd, divergence.details);
+        if (!crossedWrite && remoteWritesEnded === writesEnded) {
+          upstreamReads.set(cwd, divergence.details);
+        }
       }
     }
     return local;

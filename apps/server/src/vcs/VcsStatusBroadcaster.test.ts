@@ -90,6 +90,7 @@ function layerTestFor(state: {
   backgroundWorkEnabled?: boolean;
   automaticFetchInterval?: Effect.Effect<Duration.Duration>;
   beforeRemoteStatus?: Effect.Effect<void, GitManagerError>;
+  beforeUpstreamDivergence?: Effect.Effect<void>;
   beforeLocalStatus?: Effect.Effect<void>;
   beforeCurrentBranch?: Effect.Effect<void>;
   beforeInvalidate?: Effect.Effect<void>;
@@ -150,29 +151,33 @@ function layerTestFor(state: {
         readRefSnapshot: () =>
           Effect.sync(() => (state.refSnapshot === undefined ? "refs" : state.refSnapshot)),
         upstreamDivergence: () =>
-          Effect.sync(() => {
-            const refName = state.currentLocalStatus.refName;
-            if (!state.currentRemoteStatus?.hasUpstream || refName === null) return null;
-            const { aheadCount, behindCount } =
-              state.currentDivergence ?? state.currentRemoteStatus;
-            return {
-              refName,
-              aheadCount,
-              behindCount,
-              details: {
-                isRepo: true,
-                hasPrimaryRemote: true,
-                defaultBranch: "main",
-                isDefaultBranch: false,
-                branch: refName,
-                upstreamRef: `origin/${refName}`,
-                hasUpstream: true,
-                aheadCount,
-                behindCount,
-                aheadOfDefaultCount: aheadCount,
-              },
-            };
-          }),
+          (state.beforeUpstreamDivergence ?? Effect.void).pipe(
+            Effect.andThen(
+              Effect.sync(() => {
+                const refName = state.currentLocalStatus.refName;
+                if (!state.currentRemoteStatus?.hasUpstream || refName === null) return null;
+                const { aheadCount, behindCount } =
+                  state.currentDivergence ?? state.currentRemoteStatus;
+                return {
+                  refName,
+                  aheadCount,
+                  behindCount,
+                  details: {
+                    isRepo: true,
+                    hasPrimaryRemote: true,
+                    defaultBranch: "main",
+                    isDefaultBranch: false,
+                    branch: refName,
+                    upstreamRef: `origin/${refName}`,
+                    hasUpstream: true,
+                    aheadCount,
+                    behindCount,
+                    aheadOfDefaultCount: aheadCount,
+                  },
+                };
+              }),
+            ),
+          ),
         remoteStatus: (_input, options) =>
           Effect.suspend(() => {
             return (state.beforeRemoteStatus ?? Effect.void).pipe(
@@ -833,7 +838,40 @@ describe("VcsStatusBroadcaster", () => {
       yield* broadcaster.refreshPullRequestStatus("/repo");
       yield* broadcaster.refreshPullRequestStatus("/repo");
       assert.deepStrictEqual(state.remoteStatusReusedDetails, [false, true, false]);
-    }).pipe(Effect.provide(layerTestFor(state)));
+
+      // A remote write that fails in between can still have moved refs.
+      yield* broadcaster.refreshLocalStatus("/repo");
+      state.remoteStatusError = new GitManagerError({
+        operation: "VcsStatusBroadcaster.remoteStatus",
+        cwd: "/repo",
+        detail: "The controlled remote lookup failed.",
+      });
+      assert.isTrue(Exit.isFailure(yield* Effect.exit(broadcaster.refreshStatus("/repo"))));
+      delete state.remoteStatusError;
+      yield* broadcaster.refreshPullRequestStatus("/repo");
+      assert.deepStrictEqual(state.remoteStatusReusedDetails, [false, true, false, false, false]);
+
+      // So can one that ends while the turn-end divergence read is still running.
+      const divergenceStarted = yield* Deferred.make<void>();
+      const releaseDivergence = yield* Deferred.make<void>();
+      state.beforeUpstreamDivergence = Deferred.succeed(divergenceStarted, undefined).pipe(
+        Effect.andThen(Deferred.await(releaseDivergence)),
+      );
+      const localRefresh = yield* broadcaster.refreshLocalStatus("/repo").pipe(Effect.forkScoped);
+      yield* Deferred.await(divergenceStarted);
+      delete state.beforeUpstreamDivergence;
+      state.remoteStatusError = new GitManagerError({
+        operation: "VcsStatusBroadcaster.remoteStatus",
+        cwd: "/repo",
+        detail: "The controlled remote lookup failed.",
+      });
+      assert.isTrue(Exit.isFailure(yield* Effect.exit(broadcaster.refreshStatus("/repo"))));
+      delete state.remoteStatusError;
+      yield* Deferred.succeed(releaseDivergence, undefined);
+      yield* Fiber.join(localRefresh);
+      yield* broadcaster.refreshPullRequestStatus("/repo");
+      assert.deepStrictEqual(state.remoteStatusReusedDetails?.slice(5), [false, false]);
+    }).pipe(Effect.provide(layerTestFor(state)), Effect.scoped);
   });
 
   it.effect.each([0, 2])(
