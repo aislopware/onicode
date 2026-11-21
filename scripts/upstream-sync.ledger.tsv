@@ -3083,3 +3083,4 @@ baf7e5b15a	take	taken as is
 2c01259fb4	take	taken as is
 d51d8c4766	take	taken as is
 28bcb73736	take	taken as is
+5aae5578de	skip	kept Onicode's compact round update button (icon + popover, no container-query label); this only tunes upstream's expanding capsule label, which Onicode does not render
