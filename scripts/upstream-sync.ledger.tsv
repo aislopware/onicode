@@ -3143,3 +3143,4 @@ e452042db8	take	fix(contracts): older clients drop unknown values in RPC respons
 10a5b5dca6	take	fix(server): Word table cells wrapped in a content control reach the agent
 db9efc5cf0	take	fix(server): a stop-on-settle action no longer holds back automatic settlement
 bac86471fe	take	fix(web): links inside a PDF are clickable in the in-app PDF viewer (kept Onicode's PDF.js-only path in BrowserDocumentFrame)
+ba4f99ae43	take	fix(web,mobile): Limits shows why a provider's limits are unavailable
