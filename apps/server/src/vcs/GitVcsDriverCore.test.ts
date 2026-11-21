@@ -1129,7 +1129,7 @@ it.effect("resolves a branch's base once while its refs and branch config are un
       yield* driver.getReviewDiffPreview({ cwd });
       assert.equal(lookups(), 1);
 
-      // A base deleted within one mtime tick leaves the refs stamp as it was.
+      // A base deleted within one mtime tick still changes the stamp: it lists each loose ref.
       const fileSystem = yield* FileSystem.FileSystem;
       const headsDir = `${cwd}/.git/refs/heads`;
       yield* git(cwd, ["branch", "base-a", "HEAD~1"]);
@@ -1147,7 +1147,7 @@ it.effect("resolves a branch's base once while its refs and branch config are un
       // Seconds mid-millisecond, since a Date's ms can round down a millisecond on the way.
       const restored = (before.mtime + 0.5) / 1000;
       yield* fileSystem.utimes(headsDir, restored, restored);
-      // The stamp reads these, so only the deleted-base check can notice the rename.
+      // The refs directory looks untouched, so only the loose-ref listing notices the rename.
       assert.deepStrictEqual(yield* headsStat, before);
       assert.equal((yield* driver.statusDetailsLocal(cwd)).aheadCount, 1);
 
