@@ -3062,3 +3062,4 @@ e97e360cfc	take	fix(web): Option + a letter records the letter, not the macOS gl
 c6c796e37f	take	fix(mobile): iOS settings switches center on rows with a description
 3f5492fcf4	take	fix(server): storage cleanup removes worktrees with dangling gitlinks
 60863edc41	take	feat(projects): a project covers several repositories; migrations renumbered 104/105 -> 109/110; ProjectService.commit takes {refine, beforeCommit} so Onicode's settings write stays under the lock; CheckpointCaptureService keeps Onicode's dispatch-lock commit and settled/steering guards around upstream's per-repository captures; relay/cloud/webhook/analytics/AuthConnect and cloud-draft hunks stripped; Onicode's DiffPanel styling and ellipses kept; docs say desktop, not web
+87707319cf	take	fix(server): tell threads when a provider runtime exit kills their background work; 'a Onicode' -> 'an Onicode' in a comment
