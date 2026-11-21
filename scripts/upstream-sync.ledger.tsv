@@ -3066,3 +3066,4 @@ c6c796e37f	take	fix(mobile): iOS settings switches center on rows with a descrip
 cf94598281	take	fix(client-runtime): don't ask for a provider update the install channel lacks; kept Onicode's model picker (sectioned list), adding canUpdateInSettings to its UpdateRequiredNotice instead of upstream's ModelPickerProviderNotices
 138da84b79	take	fix(mobile): reloading changes restarts the diff from page one after a failed page
 a0ca0bfaf2	take	perf(server): resolve a branch's base once while its refs and config are unchanged
+dcd8df806d	take	fix(web): hub accounts whose usage read fails no longer vanish silently
