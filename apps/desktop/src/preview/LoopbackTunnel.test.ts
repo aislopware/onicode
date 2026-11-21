@@ -2,6 +2,7 @@ import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
 import * as NodeWS from "@effect/platform-node/NodeWS";
 import { EnvironmentId } from "@onicode/contracts";
 import * as HostProcess from "@onicode/shared/HostProcess";
+import * as NetService from "@onicode/shared/Net";
 import { expect, it } from "@effect/vitest";
 import * as NodeNet from "node:net";
 import * as NodeOS from "node:os";
@@ -36,12 +37,13 @@ const listenDecoy = (host = "127.0.0.1") =>
   Effect.acquireRelease(
     Effect.promise(
       () =>
-        new Promise<{ server: NodeNet.Server; connections: () => number }>((resolve) => {
+        new Promise<{ server: NodeNet.Server; connections: () => number }>((resolve, reject) => {
           let connections = 0;
           const server = NodeNet.createServer((socket) => {
             connections++;
             socket.destroy();
           });
+          server.once("error", reject);
           server.listen(0, host, () => resolve({ server, connections: () => connections }));
         }),
     ),
@@ -161,6 +163,7 @@ const makeTunnel = (
             }),
             SecureRandom.layerWebCrypto,
             NodeFileSystem.layer,
+            NetService.layer,
             host,
             Layer.mock(ElectronWindow.ElectronWindow, {
               currentMainOrFirst: Effect.succeedSome(window as unknown as Electron.BrowserWindow),
@@ -651,7 +654,9 @@ it.effect.each(
     { case: "an IPv4 server", host: "127.0.0.1" },
     // `localhost` may resolve to it first, and a forward on 127.0.0.1 alone would leave it there.
     { case: "an IPv6 server", host: "::1" },
-  ].filter(({ host }) => host !== "::1" || hasIpv6Loopback),
+    // Node's default listen; Vite's on macOS is ::1.
+    { case: "a dual-stack server", host: "::" },
+  ].filter(({ host }) => host === "127.0.0.1" || hasIpv6Loopback),
 )("moves a forward to a free port when $case takes its own here", ({ host }) =>
   Effect.gen(function* () {
     const decoy = yield* listenDecoy(host);
@@ -666,7 +671,9 @@ it.effect.each(
     });
     expect(forward.localPort).not.toBe(remotePort);
 
-    expect(yield* exchangeWithPort(forward.localPort, Uint8Array.of(6), host)).toEqual([0xee, 6]);
+    expect(
+      yield* exchangeWithPort(forward.localPort, Uint8Array.of(6), host === "::" ? "::1" : host),
+    ).toEqual([0xee, 6]);
     expect(endpoint.requests.at(-1)).toBe(`/api/preview/tunnel?port=${remotePort}`);
     expect(decoy.connections()).toBe(0);
   }),
