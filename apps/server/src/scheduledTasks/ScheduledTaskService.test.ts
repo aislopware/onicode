@@ -915,6 +915,50 @@ it.effect("a fresh-session task launches one thread, then starts each later run 
       );
       assert.equal(renamed.task.title, "Renamed");
       assert.deepEqual(renamed.task.workspaceStrategy, { type: "root" });
+      // A save whose workspace and model came from an earlier read keeps the ones another client
+      // stores during it.
+      const develop = { type: "worktree", baseRef: "develop" } as const;
+      const model = (name: string) => ({
+        instanceId: ProviderInstanceId.make("codex"),
+        model: name,
+      });
+      yield* service.upsert({ ...input, workspaceStrategy: worktree, modelSelection: model("a") });
+      const checked = {
+        expectedThreadId: launched,
+        expected: {
+          projectId: input.projectId,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+        },
+      } as const;
+      const kept = yield* raced(
+        service.upsert(
+          { ...input, title: "Kept", workspaceStrategy: worktree },
+          { ...checked, keepWorkspace: true, keepModelSelection: true },
+        ),
+        service.upsert({ ...input, workspaceStrategy: develop, modelSelection: model("b") }),
+      );
+      assert.equal(kept.task.title, "Kept");
+      assert.deepEqual(kept.task.workspaceStrategy, develop);
+      assert.deepEqual(kept.task.modelSelection, model("b"));
+      // A workspace the caller resets on purpose is written even when it matches what it read.
+      const reset = yield* raced(
+        service.upsert({ ...input, workspaceStrategy: develop }, { keepWorkspace: false }),
+        service.upsert({ ...input, workspaceStrategy: { type: "root" } }),
+      );
+      assert.deepEqual(reset.task.workspaceStrategy, develop);
+      // A save checked against the project and modes is refused when one changes during it.
+      const changed = yield* raced(
+        service
+          .upsert({ ...input, title: "Stale", workspaceStrategy: develop }, checked)
+          .pipe(Effect.flip),
+        service.upsert({ ...input, workspaceStrategy: develop, interactionMode: "plan" }),
+      );
+      assert.equal(changed.message, "The task changed while saving. Read the task again.");
+      const stored = (yield* service.list()).tasks[0];
+      assert.equal(stored?.title, input.title);
+      assert.equal(stored?.interactionMode, "plan");
+      yield* service.upsert({ ...input, threadId: launched, workspaceStrategy: { type: "root" } });
       // A save made for one binding is refused once the task is bound elsewhere.
       const refused = yield* raced(
         service
