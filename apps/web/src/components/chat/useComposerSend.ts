@@ -465,11 +465,11 @@ export function useComposerSend(input: ComposerSendInput) {
       ? null
       : providerSessionViewForPrompt(promptAtSend, providerSessionViews);
     if (sessionView !== null && !draftHasNonPromptContent(composerDraftTarget)) {
+      // The view opens on the thread on screen, so a command dictated elsewhere stays in its draft.
+      if (detachedOverride) return;
+      promptRef.current = "";
       setComposerDraftPrompt(composerDraftTarget, "");
-      if (currentRouteThreadKeyRef.current === routeThreadKey) {
-        promptRef.current = "";
-        composerRef.current?.resetCursorState();
-      }
+      composerRef.current?.resetCursorState();
       openProviderSessionView(sessionView);
       return;
     }

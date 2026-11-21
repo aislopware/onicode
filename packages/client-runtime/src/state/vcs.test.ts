@@ -385,14 +385,18 @@ describe("cached VCS refs", () => {
   it.effect("invalidates persisted refs when ref-affecting commands settle", () =>
     Effect.gen(function* () {
       const refsDigest = yield* Ref.make("refs-a");
+      const lastLocalOnly = yield* Ref.make<boolean | undefined>(undefined);
       const expectedError = new EnvironmentRpcUnavailableError({
         environmentId: TARGET.environmentId,
         message: "pull failed after fetching refs",
       });
       const client = {
         [WS_METHODS.vcsPull]: () => Effect.fail(expectedError),
-        [WS_METHODS.vcsRefreshStatus]: () =>
-          Ref.get(refsDigest).pipe(Effect.map((digest) => ({ refsDigest: digest }))),
+        [WS_METHODS.vcsRefreshStatus]: (input: { localOnly?: boolean }) =>
+          Ref.set(lastLocalOnly, input.localOnly).pipe(
+            Effect.andThen(Ref.get(refsDigest)),
+            Effect.map((digest) => ({ refsDigest: digest })),
+          ),
         [WS_METHODS.gitPreparePullRequestThread]: () =>
           Effect.succeed({ branch: "feature/pr", worktreePath: null }),
       } as unknown as WsRpcProtocolClient;
@@ -475,8 +479,10 @@ describe("cached VCS refs", () => {
       // A list known to be stale reloads even though the digest matches, which it then records.
       yield* atoms.refreshLocalStatusAndRefsForPicker.run(registry, {
         environmentId: TARGET.environmentId,
-        input: { cwd: "/repo", localOnly: true },
+        input: { cwd: "/repo" },
       });
+      // A picker reads local status only: no fetch, no automatic pull.
+      expect(yield* Ref.get(lastLocalOnly)).toBe(true);
       expect(yield* Ref.get(clears)).toBe(4);
       expect(registry.get(vcsRefsCacheStateAtom(TARGET)).revision).toBe(4);
       yield* refreshForPicker;

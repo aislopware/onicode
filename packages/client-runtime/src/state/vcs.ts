@@ -371,6 +371,8 @@ export function createVcsEnvironmentAtoms<R, E>(
     refreshLocalStatusAndRefsForPicker: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:vcs:refresh-local-status-and-refs-for-picker",
       tag: WS_METHODS.vcsRefreshStatus,
+      execute: (input: { readonly cwd: string }) =>
+        requestGuarded(WS_METHODS.vcsRefreshStatus, { cwd: input.cwd, localOnly: true }),
       onSettled: (target, registry, exit) => invalidateRefsIfChanged(target, registry, exit, true),
     }),
     createWorktree: createEnvironmentRpcCommand(runtime, {
