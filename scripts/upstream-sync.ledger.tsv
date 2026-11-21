@@ -3055,3 +3055,4 @@ ef9b826f53	take	taken as is
 670092dcf6	take	fix(web): screen readers can tell removed lines from added ones in diffs
 c688453acd	take	fix(claude): keep truncated request, error, and snippet text valid Unicode
 cfb720fa8a	skip	guest share links are a removed surface; every changed file is guest-only
+e97e360cfc	take	fix(web): Option + a letter records the letter, not the macOS glyph
