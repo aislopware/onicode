@@ -52,6 +52,8 @@ import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import type * as ProviderAdapter from "@onicode/provider-core/server/ProviderAdapter";
 import * as ProviderAdapterRegistry from "../orchestration-v2/ProviderAdapterRegistry.ts";
 import * as ProviderContinuationRequests from "@onicode/provider-core/server/ProviderContinuationRequests";
+import * as IdAllocator from "@onicode/provider-core/server/IdAllocator";
+import { PROVIDER_STOP_REASON_SIGNAL } from "@onicode/provider-core/server/subagentProjection";
 import * as ThreadLaunch from "../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
 import * as ProviderReplayHarness from "../orchestration-v2/testkit/ProviderReplayHarness.ts";
@@ -95,7 +97,7 @@ interface TimelineEntry {
   readonly id: TurnItemId;
   readonly runId: RunId;
   readonly text: string;
-  readonly type: "assistant_message" | "error";
+  readonly type: "assistant_message" | "error" | "system_notice";
 }
 
 interface BoxThread {
@@ -485,12 +487,14 @@ const boxToolkitLayer = (thread: BoxThread) => {
               updatedAt: DateTime.makeUnsafe(0),
               ...(type === "error"
                 ? { type, failure: { message: text } }
-                : {
-                    type: "assistant_message" as const,
-                    messageId: MessageId.make(`message:${id}`),
-                    text,
-                    streaming: false,
-                  }),
+                : type === "system_notice"
+                  ? { type, message: text }
+                  : {
+                      type: "assistant_message" as const,
+                      messageId: MessageId.make(`message:${id}`),
+                      text,
+                      streaming: false,
+                    }),
             } as never,
           })),
           totalItems: replies.length,
@@ -986,12 +990,14 @@ const taskResult = (laptopEnv: Effect.Success<ReturnType<typeof makeLaptop>>, ta
       ),
     );
 
-const captureThreadReads = (nativeFetch: typeof globalThis.fetch) => {
+/** `refuseFromStart`: the box predates `afterPosition: -1` and refuses it as such a peer does. */
+const captureThreadReads = (nativeFetch: typeof globalThis.fetch, refuseFromStart = false) => {
   const reads: Array<OrchestratorMcpThreadReadInput> = [];
   const fetch: typeof globalThis.fetch = (input, init) => {
     const body = init?.body instanceof Uint8Array ? new TextDecoder().decode(init.body) : null;
     if (body?.startsWith("{")) {
       const rpc: {
+        id?: number;
         method?: string;
         params?: { name?: string; arguments?: OrchestratorMcpThreadReadInput };
       } = JSON.parse(body);
@@ -1001,6 +1007,18 @@ const captureThreadReads = (nativeFetch: typeof globalThis.fetch) => {
         rpc.params.arguments !== undefined
       ) {
         reads.push(rpc.params.arguments);
+        if (refuseFromStart && rpc.params.arguments.afterPosition === -1) {
+          return Promise.resolve(
+            Response.json({
+              jsonrpc: "2.0",
+              id: rpc.id,
+              error: {
+                code: -32602,
+                message: `Invalid parameters for tool 'oni_thread_read': Expected a value greater than or equal to 0\n  at ["afterPosition"]`,
+              },
+            }),
+          );
+        }
       }
     }
     return nativeFetch(input, init);
@@ -1609,6 +1627,90 @@ it.effect("a task's result is its own run's whole last reply, not a later run's"
   ).pipe(Effect.provide(NodeHttpServer.layerTest)),
 );
 
+it.effect.each([
+  { reply: "Stopped halfway through the migration.", signal: PROVIDER_STOP_REASON_SIGNAL },
+  { reply: null, signal: "interrupt-result" },
+] as const)(
+  "a task a hook stopped there ends with why, as a task here does ($signal)",
+  ({ reply, signal }) =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const thread = yield* makeBoxThread;
+        const b = yield* serveBox(thread);
+        const offers = yield* SubscriptionRef.make<
+          ReadonlyArray<ProviderContinuationRequests.ProviderContinuationRequest>
+        >([]);
+        const database = yield* SqlitePersistence.layerMemory.pipe(Layer.build);
+        const a = yield* makeLaptop(database, offers);
+        yield* linkTo(a.links, b, "full-access");
+        yield* seedParent(a);
+        const delegated = yield* delegateToBox(a);
+        const notice = "Stop hook: the migration needs a reviewer.";
+        yield* Ref.set(thread.timeline, [
+          ...(reply === null
+            ? []
+            : [
+                {
+                  id: TurnItemId.make("item:reply"),
+                  runId: boxRunId,
+                  text: reply,
+                  type: "assistant_message" as const,
+                },
+              ]),
+          {
+            id: IdAllocator.derive.runSignalTurnItem({ runId: boxRunId, signal }),
+            runId: boxRunId,
+            text: notice,
+            type: "system_notice",
+          },
+        ]);
+        const status = signal === "interrupt-result" ? "interrupted" : "completed";
+        yield* Ref.set(thread.status, status);
+        yield* Deferred.succeed(thread.finished, undefined);
+        expect(yield* taskResult(a, delegated.taskId)).toMatchObject({
+          status,
+          result: `${reply ?? "(The thread in the linked environment ended without a reply.)"}\n\n${notice}`,
+        });
+      }),
+    ).pipe(Effect.provide(NodeHttpServer.layerTest)),
+);
+
+it.effect("a task on a box that refuses afterPosition -1 reads its reply from the start", () =>
+  Effect.gen(function* () {
+    const { reads, fetch } = captureThreadReads(yield* FetchHttpClient.Fetch, true);
+    return yield* Effect.scoped(
+      Effect.gen(function* () {
+        const thread = yield* makeBoxThread;
+        const b = yield* serveBox(thread);
+        const offers = yield* SubscriptionRef.make<
+          ReadonlyArray<ProviderContinuationRequests.ProviderContinuationRequest>
+        >([]);
+        const database = yield* SqlitePersistence.layerMemory.pipe(Layer.build);
+        // A refused read fails the same way each time, so one attempt shows it.
+        const a = yield* makeLaptop(database, offers).pipe(
+          Effect.provideService(RemoteDelegation.FollowRetrySchedule, Schedule.recurs(0)),
+        );
+        yield* linkTo(a.links, b, "full-access");
+        yield* seedParent(a);
+        const delegated = yield* delegateToBox(a);
+        yield* Ref.set(thread.reply, "All tests pass on the older box.");
+        yield* Ref.set(thread.status, "completed");
+        yield* Deferred.succeed(thread.finished, undefined);
+        expect(yield* taskResult(a, delegated.taskId)).toMatchObject({
+          status: "completed",
+          result: "All tests pass on the older box.",
+        });
+        // Refused from -1, it reads cursorless, which that peer pages from the start.
+        const pages = reads.filter((read) => read.view === "messages");
+        expect(pages.map((read) => read.afterPosition)).toEqual([-1, undefined]);
+      }),
+    ).pipe(
+      Effect.provide(NodeHttpServer.layerTest),
+      Effect.provideService(FetchHttpClient.Fetch, fetch),
+    );
+  }),
+);
+
 it.effect("a task whose thread there waits on its own task ends with the answer after it", () =>
   Effect.scoped(
     Effect.gen(function* () {
@@ -1980,7 +2082,7 @@ it.effect.each([
             expect(rest).toHaveLength(0);
           }
         }
-        const refills = reads.filter((read) => read.itemId !== undefined);
+        const refills = reads.filter((read) => read.textOffset !== undefined);
         expect(refills).toHaveLength(scenario === "long" ? 4 : 0);
         if (scenario === "long")
           expect(refills.map((read) => read.textOffset)).toEqual([20_000, 40_000, 60_000, 80_000]);

@@ -807,6 +807,29 @@ it("recognizes only a validation refusal of beforePosition", () => {
   }
 });
 
+it.effect("launches with the given title when the peer refuses generateTitle", () =>
+  Effect.gen(function* () {
+    const sent: Array<unknown> = [];
+    const olderPeer = (args: unknown): Effect.Effect<string, OrchestratorMcpFailure> => {
+      sent.push(args);
+      return "generateTitle" in (args as object)
+        ? Effect.fail(
+            new OrchestratorMcpFailure({
+              code: "invalid_request",
+              message: `Invalid parameters for tool 'oni_thread_launch': Unknown argument "generateTitle". Accepted arguments: message, title.`,
+            }),
+          )
+        : Effect.succeed("launched");
+    };
+    const params = { message: "Fix the build", title: "Fix build", generateTitle: true };
+
+    const launched = yield* PeerForwarding.launchOrRetryWithoutGeneratedTitle(olderPeer, params);
+
+    expect(launched).toBe("launched");
+    expect(sent).toEqual([params, { message: "Fix the build", title: "Fix build" }]);
+  }),
+);
+
 it.effect("retries a newest-page read without its cursor when the peer refuses the cursor", () =>
   Effect.gen(function* () {
     const sent: Array<unknown> = [];

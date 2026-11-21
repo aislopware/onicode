@@ -94,13 +94,30 @@ const linkStorageFailure = (error: PeerLinkError) =>
 export const remoteTarget = (scope: Scope, environmentId: EnvironmentId | undefined) =>
   environmentId === scope.environmentId ? undefined : environmentId;
 
-// Older peers reject beforePosition during parameter validation.
-const BEFORE_POSITION_REFUSAL =
-  /^Invalid parameters for tool 'oni_thread_read': Unknown arguments? (?:"[^"]+", )*"beforePosition"(?:, "[^"]+")*\. Accepted arguments: /;
-export const refusesBeforePosition = (failure: {
-  readonly code: string;
-  readonly message: string;
-}) => failure.code === "invalid_request" && BEFORE_POSITION_REFUSAL.test(failure.message);
+// Older peers reject arguments newer than they are during parameter validation.
+const refusesArgument = (toolName: string, argument: string) => {
+  const refusal = new RegExp(
+    `^Invalid parameters for tool '${toolName}': Unknown arguments? (?:"[^"]+", )*"${argument}"(?:, "[^"]+")*\\. Accepted arguments: `,
+  );
+  return (failure: { readonly code: string; readonly message: string }) =>
+    failure.code === "invalid_request" && refusal.test(failure.message);
+};
+export const refusesBeforePosition = refusesArgument("oni_thread_read", "beforePosition");
+const refusesGenerateTitle = refusesArgument("oni_thread_launch", "generateTitle");
+
+/** A launch asking for a generated title, retried with its given title on a peer without the option. */
+export const launchOrRetryWithoutGeneratedTitle = Effect.fn(
+  "PeerForwarding.launchOrRetryWithoutGeneratedTitle",
+)(function* <A>(
+  read: (args: unknown) => Effect.Effect<A, OrchestratorMcpFailure>,
+  params: unknown,
+) {
+  if (typeof params !== "object" || params === null || !("generateTitle" in params)) {
+    return yield* read(params);
+  }
+  const { generateTitle: _generateTitle, ...withGivenTitle } = params;
+  return yield* read(params).pipe(Effect.catchIf(refusesGenerateTitle, () => read(withGivenTitle)));
+});
 
 /** A newest-page read, retried as the peer always served it when the peer refuses the cursor. */
 export const readNewestOrRetry = Effect.fn("PeerForwarding.readNewestOrRetry")(function* <A>(
@@ -109,6 +126,22 @@ export const readNewestOrRetry = Effect.fn("PeerForwarding.readNewestOrRetry")(f
   params: unknown,
 ) {
   return yield* read(newest).pipe(Effect.catchIf(refusesBeforePosition, () => read(params)));
+});
+
+// Older peers accept only afterPosition >= 0, and read from the start without one.
+const START_POSITION_REFUSAL =
+  /^Invalid parameters for tool 'oni_thread_read': [\s\S]*\["afterPosition"\]/;
+const refusesStartPosition = (failure: { readonly code: string; readonly message: string }) =>
+  failure.code === "invalid_request" && START_POSITION_REFUSAL.test(failure.message);
+
+/** A read from the start, retried as the peer always served it when the peer refuses -1. */
+const readFromStartOrRetry = Effect.fn("PeerForwarding.readFromStartOrRetry")(function* <A>(
+  read: (args: OrchestratorMcpThreadReadInput) => Effect.Effect<A, OrchestratorMcpFailure>,
+  params: OrchestratorMcpThreadReadInput,
+) {
+  if (params.afterPosition !== -1) return yield* read(params);
+  const { afterPosition: _fromStart, ...fromStart } = params;
+  return yield* read(params).pipe(Effect.catchIf(refusesStartPosition, () => read(fromStart)));
 });
 
 const make = Effect.gen(function* () {
@@ -208,12 +241,16 @@ const make = Effect.gen(function* () {
   });
 
   const readThread: PeerForwarding["Service"]["readThread"] = (scope, environmentId, input) =>
-    forward<OrchestratorMcpThreadReadResult>(
-      scope,
-      "oni_thread_read",
-      OrchestratorMcpThreadReadInput,
-      OrchestratorMcpThreadReadResult,
-      environmentId,
+    readFromStartOrRetry(
+      (args) =>
+        forward<OrchestratorMcpThreadReadResult>(
+          scope,
+          "oni_thread_read",
+          OrchestratorMcpThreadReadInput,
+          OrchestratorMcpThreadReadResult,
+          environmentId,
+          args,
+        ),
       input,
     );
 
@@ -277,9 +314,13 @@ const make = Effect.gen(function* () {
           environmentId,
           params as OrchestratorMcpThreadWaitInput,
         ) as Effect.Effect<Tool.Success<typeof tool>, OrchestratorMcpFailure>)
-      : newest === undefined
-        ? forwardTool(params)
-        : readNewestOrRetry(forwardTool, newest, params);
+      : newest !== undefined
+        ? readNewestOrRetry(forwardTool, newest, params)
+        : tool.name === "oni_thread_read"
+          ? readFromStartOrRetry(forwardTool, params as OrchestratorMcpThreadReadInput)
+          : tool.name === "oni_thread_launch"
+            ? launchOrRetryWithoutGeneratedTitle(forwardTool, params)
+            : forwardTool(params);
     return Effect.andThen(requireEnabled, forwarded);
   };
 

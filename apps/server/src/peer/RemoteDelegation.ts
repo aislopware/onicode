@@ -31,7 +31,10 @@ import * as Schedule from "effect/Schedule";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as Tool from "effect/ai/Tool";
-import { withExecutedModelNote } from "@onicode/provider-core/server/subagentProjection";
+import {
+  subagentStopNoticeIds,
+  withExecutedModelNote,
+} from "@onicode/provider-core/server/subagentProjection";
 
 import type * as McpInvocationContext from "../mcp/McpInvocationContext.ts";
 import { ProjectToolkit } from "../mcp/toolkits/project/tools.ts";
@@ -642,7 +645,7 @@ const make = Effect.gen(function* () {
   ) {
     let reply: OrchestratorMcpThreadTimelineItem | undefined;
     let error: OrchestratorMcpThreadTimelineItem | undefined;
-    // Linked peers read newest first without a cursor; this scan runs forward.
+    // Explicit, as this scan runs forward however a peer pages a cursorless read.
     let afterPosition = -1;
     let run: OrchestratorMcpThreadRun | undefined;
     let remainingItems = 0;
@@ -698,10 +701,12 @@ const make = Effect.gen(function* () {
     }
     reply = error ?? reply;
     const executedModel = run?.executedModel ?? undefined;
-    if (reply === undefined) return { text: undefined, executedModel };
-    let text = reply.text ?? "";
-    let textOffset = reply.textTruncated ? (reply.nextTextOffset ?? null) : null;
-    while (textOffset !== null) {
+    // As a task here, one stopped by a hook ends its result with why, even with no reply.
+    const notice = failed || runId === null ? undefined : yield* stopNotice(scope, remote, runId);
+    if (reply === undefined && notice === undefined) return { text: undefined, executedModel };
+    let text = reply === undefined ? noReply : (reply.text ?? "");
+    let textOffset = reply?.textTruncated === true ? (reply.nextTextOffset ?? null) : null;
+    while (reply !== undefined && textOffset !== null) {
       const rest = yield* forwarding.readThread(scope, remote.environmentId, {
         threadId: remote.threadId,
         itemId: reply.itemId,
@@ -713,10 +718,29 @@ const make = Effect.gen(function* () {
       text += part.text ?? "";
       textOffset = part.textTruncated ? (part.nextTextOffset ?? null) : null;
     }
+    if (notice !== undefined) text = `${text}\n\n${notice}`;
     return {
       text: run === undefined ? text : withExecutedModelNote(text, run.model, run.executedModel),
       executedModel,
     };
+  });
+
+  /** The stop reason `runId` left there, which the messages view never shows. */
+  const stopNotice = Effect.fn("RemoteDelegation.stopNotice")(function* (
+    scope: ThreadScope,
+    remote: OrchestrationV2RemoteTaskChild,
+    runId: RunId,
+  ) {
+    for (const itemId of subagentStopNoticeIds(runId)) {
+      const read = yield* forwarding.readThread(scope, remote.environmentId, {
+        threadId: remote.threadId,
+        itemId,
+        maxCharsPerItem: 20_000,
+      });
+      const notice = read.items[0]?.text;
+      if (notice) return notice;
+    }
+    return undefined;
   });
 
   /**
