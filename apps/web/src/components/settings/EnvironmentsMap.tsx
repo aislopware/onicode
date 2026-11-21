@@ -515,6 +515,7 @@ export function EnvironmentsMap(
           onOpenChange={(open) =>
             setBatchRequest((current) => (current === null ? null : { ...current, open }))
           }
+          onClosed={() => setBatchRequest((current) => (current?.open ? current : null))}
         />
       ) : null}
     </>

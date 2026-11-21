@@ -3007,10 +3007,8 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     const needsAheadOfDefault = includeDivergence && refName !== null && !isDefaultBranch;
     const [baseAheadCount, branchChanges] = yield* Effect.all(
       [
-        refName !== null && (needsFallbackAhead || needsAheadOfDefault)
-          ? computeAheadCountAgainstBase(cwd, refName, headOid ?? "HEAD").pipe(
-              Effect.orElseSucceed(() => 0),
-            )
+        refName !== null && headOid !== null && (needsFallbackAhead || needsAheadOfDefault)
+          ? computeAheadCountAgainstBase(cwd, refName, headOid).pipe(Effect.orElseSucceed(() => 0))
           : Effect.succeed(0),
         options?.includeBranchChanges
           ? readBranchChangeTotals(repositoryPaths?.worktreeRoot ?? cwd, refName, {
@@ -4680,6 +4678,8 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       readonly expiresAt: number;
       readonly repository: { readonly worktreeRoot: string; readonly currentBranch: string | null };
       readonly review: { readonly baseRef: string | null; readonly mergeBase: string | null };
+      /** HEAD when a merge base was resolved: the base holds only while HEAD does. */
+      readonly head: string | null;
     }
   >();
   const trackedReviewPreviewKey = (input: ReviewDiffPreviewInput) =>
@@ -4741,13 +4741,6 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
           isMissingGitCwdError(error) ? Effect.succeed(null) : Effect.fail(error),
       }),
     );
-    // A checkout between the two passes needs the new branch's base.
-    const trackedReview =
-      tracked !== undefined &&
-      tracked.repository.worktreeRoot === repository?.worktreeRoot &&
-      tracked.repository.currentBranch === repository.currentBranch
-        ? tracked.review
-        : undefined;
     if (!repository?.worktreeRoot) {
       return {
         cwd: input.cwd,
@@ -4820,6 +4813,25 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     }
 
     const dirtyRef = sourceKind === "branch-range" ? null : "HEAD";
+    // Read before the merge base, so HEAD moving in between only makes the complete pass resolve it.
+    const resolvesMergeBase = sourceKind !== "working-tree" && previewMergeBase === undefined;
+    const head =
+      resolvesMergeBase && (input.trackedOnly ? reusesTracked : (tracked?.head ?? null) !== null)
+        ? yield* executeGit(
+            "GitVcsDriver.getReviewDiffPreview.head",
+            cwd,
+            ["rev-parse", "--verify", "--quiet", "HEAD"],
+            { allowNonZeroExit: true },
+          ).pipe(Effect.map((result) => (result.exitCode === 0 ? result.stdout.trim() : null)))
+        : null;
+    // A checkout or a merge between the two passes needs the base resolved again.
+    const trackedReview =
+      tracked !== undefined &&
+      tracked.repository.worktreeRoot === cwd &&
+      tracked.repository.currentBranch === repository.currentBranch &&
+      tracked.head === head
+        ? tracked.review
+        : undefined;
     const review =
       trackedReview ??
       (sourceKind === "working-tree"
@@ -4936,6 +4948,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         expiresAt: now + REVIEW_TRACKED_PREVIEW_TTL_MS,
         repository,
         review,
+        head: review.mergeBase === null || review.mergeBase === "HEAD" ? null : head,
       });
       if (trackedReviewPreviews.size > REVIEW_TRACKED_PREVIEW_CAPACITY) {
         const oldestKey = trackedReviewPreviews.keys().next().value;
