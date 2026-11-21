@@ -951,6 +951,15 @@ describe("large text preview recovery", () => {
     // Each cell fills one 128K-character measuring batch, so every row needs its own pass.
     const huge = "word ".repeat(26_000);
     const rows = Array.from({ length: 60 }, (_, index) => [`r${index}`, "", "", huge]);
+    // Laying out 60 such cells takes seconds; this test is about how the passes are scheduled.
+    const layout = HTMLElement.prototype.getBoundingClientRect;
+    using _layout = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function (this: HTMLElement) {
+        return this.firstChild?.nodeValue === huge
+          ? new DOMRect(0, 0, 128, 4_000)
+          : layout.call(this);
+      });
     // 128px columns in a 300px viewport keep column 3 offscreen; 1800px tall mounts all 60 rows.
     await using screen = await render(
       <div style={{ display: "flex", height: 1800, width: 300 }}>
