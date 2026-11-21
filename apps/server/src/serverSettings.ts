@@ -43,6 +43,7 @@ import * as SchemaTransformation from "effect/SchemaTransformation";
 import * as Semaphore from "effect/Semaphore";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
+import * as SubscriptionRef from "effect/SubscriptionRef";
 import * as SqlClient from "effect/sql/SqlClient";
 import { writeFileStringAtomically } from "@onicode/shared/atomicWrite";
 import { resolveSymlinkTarget } from "@onicode/shared/symlink";
@@ -58,7 +59,7 @@ import {
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
 import * as ManagedPolicy from "./policy/ManagedPolicy.ts";
 import { secretProviderDefinitions } from "./secrets/secretProviderDefinitions.ts";
-import { watchDirectoryReplacements } from "./watchDirectoryReplacements.ts";
+import { pollUnreportedChanges, watchDirectoryReplacements } from "./watchDirectoryReplacements.ts";
 import {
   readSecretFieldValues,
   sourceControlHostSecretName,
@@ -1354,8 +1355,19 @@ const make = Effect.gen(function* () {
   const withSettingsSnapshot: ServerSettingsService["Service"]["withSettingsSnapshot"] = (use) =>
     writeSemaphore.withPermits(1)(getMaterializedSettings.pipe(Effect.flatMap(use)));
 
+  // What the settings path resolves to, as of the last reload a change triggered.
+  const settingsFileIdentity = fs.stat(settingsPath).pipe(
+    Effect.map(
+      (info) =>
+        `${info.dev}:${Option.getOrUndefined(info.ino)}:${Option.getOrUndefined(info.mtime)?.getTime()}:${info.size}`,
+    ),
+    Effect.orElseSucceed(() => "missing"),
+  );
+  const revalidatedIdentity = yield* SubscriptionRef.make("");
+
   const revalidateAndEmit = writeSemaphore.withPermits(1)(
     Effect.gen(function* () {
+      yield* SubscriptionRef.set(revalidatedIdentity, yield* settingsFileIdentity);
       const { settings } = yield* reloadSettings;
       yield* emitChange(settings);
     }),
@@ -1432,38 +1444,47 @@ const make = Effect.gen(function* () {
       return Option.some(linkTargetPath);
     }).pipe(Effect.orElseSucceed(() => Option.none<string>()));
 
-    const settingsReady = yield* Deferred.make<void>();
+    yield* SubscriptionRef.set(revalidatedIdentity, yield* settingsFileIdentity);
     const linkTargetReady = yield* Deferred.make<void>();
-    yield* Effect.gen(function* () {
-      const [settingsEvents, resolveEvents] = yield* watchFileChanges(
-        settingsPath,
-        settingsReady,
-      ).pipe(
-        Stream.ignoreCause({ log: true }),
-        Stream.broadcastN({ n: 2, capacity: 1, strategy: "sliding" }),
-      );
-      // Buffer settings path changes while resolving the first target.
-      const linkTargetEvents = Stream.fromEffect(
-        Deferred.await(settingsReady).pipe(Effect.andThen(watchLinkTarget)),
-      ).pipe(
-        Stream.concat(resolveEvents.pipe(Stream.mapEffect(() => watchLinkTarget))),
-        Stream.changes,
-        Stream.switchMap(
-          Option.match({
-            onNone: () =>
-              Stream.fromEffect(Deferred.succeed(linkTargetReady, undefined)).pipe(Stream.drain),
-            onSome: (linkTargetPath) => watchLinkTargetChanges(linkTargetPath, linkTargetReady),
-          }),
-        ),
-      );
-
+    const watches = Stream.unwrap(
+      Effect.gen(function* () {
+        const settingsReady = yield* Deferred.make<void>();
+        const [settingsEvents, resolveEvents] = yield* watchFileChanges(
+          settingsPath,
+          settingsReady,
+        ).pipe(
+          Stream.ignoreCause({ log: true }),
+          Stream.broadcastN({ n: 2, capacity: 1, strategy: "sliding" }),
+        );
+        // Buffer settings path changes while resolving the first target.
+        const linkTargetEvents = Stream.fromEffect(
+          Deferred.await(settingsReady).pipe(Effect.andThen(watchLinkTarget)),
+        ).pipe(
+          Stream.concat(resolveEvents.pipe(Stream.mapEffect(() => watchLinkTarget))),
+          Stream.changes,
+          Stream.switchMap(
+            Option.match({
+              onNone: () =>
+                Stream.fromEffect(Deferred.succeed(linkTargetReady, undefined)).pipe(Stream.drain),
+              onSome: (linkTargetPath) => watchLinkTargetChanges(linkTargetPath, linkTargetReady),
+            }),
+          ),
+        );
+        return Stream.merge(settingsEvents, linkTargetEvents);
+      }),
+    );
+    yield* Stream.make(false).pipe(
+      Stream.concat(
+        pollUnreportedChanges(settingsFileIdentity, revalidatedIdentity).pipe(Stream.as(true)),
+      ),
+      // A change no watch reported means one missed its start or sits on a replaced
+      // directory: reload, and register them all again.
+      Stream.switchMap((unreported) =>
+        unreported ? Stream.make(undefined).pipe(Stream.concat(watches)) : watches,
+      ),
       // Saves emit multiple events; fs.watch may fire before content is flushed.
-      yield* Stream.merge(settingsEvents, linkTargetEvents).pipe(
-        Stream.debounce(Duration.millis(100)),
-        Stream.runForEach(() => revalidateAndEmitSafely),
-      );
-    }).pipe(
-      Effect.scoped,
+      Stream.debounce(Duration.millis(100)),
+      Stream.runForEach(() => revalidateAndEmitSafely),
       Effect.ignoreCause({ log: true }),
       Effect.ensuring(Deferred.succeed(linkTargetReady, undefined)),
       Effect.forkIn(watcherScope),

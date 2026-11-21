@@ -24,6 +24,10 @@ rm -f "$installer"
 test -x "$VP_BIN_DIR/vp"
 sudo ln -sf "$VP_BIN_DIR/vp" /usr/local/bin/vp
 
+# The desktop build compiles native/browser-secret against libsecret, as CI's Linux jobs do.
+sudo apt-get update
+sudo apt-get install -y --no-install-recommends libsecret-1-dev pkg-config
+
 # First-run terminal notice, rendered by the devcontainers base image.
 sudo mkdir -p /usr/local/etc/vscode-dev-containers
 sudo tee /usr/local/etc/vscode-dev-containers/first-run-notice.txt >/dev/null <<'EOF'

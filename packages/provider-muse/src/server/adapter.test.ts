@@ -3,7 +3,7 @@ import * as NodeFSP from "node:fs/promises";
 import { vi } from "vite-plus/test";
 import { assert, describe, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { MspError } from "@muse-code/sdk";
+import { MspError, type CommandOptions } from "@muse-code/sdk";
 import {
   MUSE_DEFAULT_MODEL,
   EnvironmentId,
@@ -133,13 +133,14 @@ const makeFakeMuse = Effect.fnUntraced(function* (idPrefix = "native") {
   const host: MuseSdkHost = {
     connection: {
       mintCommandId: () => `${idPrefix}-${++sequence}`,
-      command: (method, params, options) =>
+      command: (method: string, params: Record<string, unknown>, options?: CommandOptions) =>
         respond({
           method,
           params,
           ...(options?.commandId ? { commandId: options.commandId } : {}),
         }),
-      request: (method, params = {}) => respond({ method, params }),
+      request: (method: string, params: Record<string, unknown> = {}) =>
+        respond({ method, params }),
       onNotification: (handler) => {
         notify = handler;
       },

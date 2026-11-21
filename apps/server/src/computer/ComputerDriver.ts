@@ -11,32 +11,32 @@ import * as PinnedTool from "../tools/PinnedTool.ts";
 // Update the version, sizes and hashes together from the `-binary` assets of
 // https://github.com/trycua/cua/releases (tag cua-driver-rs-v<version>). The daemon and
 // every MCP proxy run this one binary; the proxy refuses a daemon of another version.
-const VERSION = "0.49.11";
+const VERSION = "0.55.0";
 const ARCHIVES = {
   "darwin-universal": {
     extension: "tar.gz",
-    bytes: 43_201_581,
-    sha256: "fcd35de80b31b7144839a227b0dbfb1d691adf2ddcd0a2588be9a0128ec2e582",
+    bytes: 43_825_788,
+    sha256: "e6246d3da20abe019e2660e8b5f77e0c12cf9b386597a76393116994a36db6ce",
   },
   "linux-x86_64": {
     extension: "tar.gz",
-    bytes: 29_987_915,
-    sha256: "d6566ba4b799fb7a161cfa9a94b3cd95fb1b0f766d98fa4888a9c2dec1ffb076",
+    bytes: 30_235_418,
+    sha256: "1cb8aa6d30e5cdf5bf4d222cb3693a50af2c178073a49dc59e88737c5f7807e6",
   },
   "linux-arm64": {
     extension: "tar.gz",
-    bytes: 27_911_664,
-    sha256: "ec189e9708436976ea3e6df43aaf35f1c665590fb0141d4da3776e07d0ea1adb",
+    bytes: 28_132_426,
+    sha256: "401f7f4a9ad276dbcdb324f1b00e152987a46985b68c9e625ac01101f5e6af77",
   },
   "windows-x86_64": {
     extension: "zip",
-    bytes: 32_317_826,
-    sha256: "e5fe14e2a7da5ba7a2aa116f706bfb7c078ecd922819ee9587d18cc07ae2a24c",
+    bytes: 32_550_400,
+    sha256: "357b93254183c0e24a501eb9ad3a6e0f3738a67bfed55c0c292959b540d9b4a7",
   },
   "windows-arm64": {
     extension: "zip",
-    bytes: 30_079_478,
-    sha256: "2df64cb4ca0477d176787fc0c5c35ceb9fcb829962a0f20fa07f170529098c85",
+    bytes: 30_339_984,
+    sha256: "ab1515f8893fb8b1acda5a4ffe1d2e97d19a938460d0f5ac7b6e9ed88f37f020",
   },
 } as const;
 

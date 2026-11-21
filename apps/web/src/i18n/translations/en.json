@@ -8483,7 +8483,7 @@
   "0247d5883487d39a": "Path to the Claude binary used by this instance.",
   "3d23609d27f213d7": "Custom Claude home and config directory. Keeps .claude.json and .claude separate.",
   "33fbce50a4ea67e6": "Additional CLI arguments passed on session start.",
-  "abdee70d90cb26a3": "Compact after 100,000 to 1,000,000 tokens. Leave empty to use Claude's default.",
+  "9908232b0cd3f288": "Compact after at least 100,000 tokens. Leave empty to use Claude's default.",
   "f907b2466603538e": "When to compact an idle thread over 200,000 tokens: after you return, just before its prompt cache expires, or never. Overrides the default in Providers > Advanced.",
   "484df18e29b21047": "Google accounts use your subscription; API keys and Agent Platform bill usage.",
   "931df01584748bf9": "Gemini or Vertex AI express key. Stored separately on the host.",

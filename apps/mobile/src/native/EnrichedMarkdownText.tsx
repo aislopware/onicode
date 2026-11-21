@@ -42,6 +42,8 @@ import {
   enrichedLinkVariantPattern,
 } from "../lib/enrichedLinkPresentation";
 
+const STREAMING_CONFIG = { animation: "none" } as const;
+
 function enrichedStyle(
   style: SelectableMarkdownTextProps["textStyle"],
   dark: boolean,
@@ -447,6 +449,9 @@ export function MobileEnrichedMarkdownText(props: SelectableMarkdownTextProps) {
           linkRecognition={linkRecognition}
           containerStyle={{ flexShrink: 1, minWidth: 0 }}
           flavor="github"
+          streaming={props.streaming ?? false}
+          // The library's default fades each word in, repainting every frame while text arrives.
+          streamingConfig={STREAMING_CONFIG}
           selectable
           contextMenuItems={
             props.onCiteText

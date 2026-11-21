@@ -58,7 +58,7 @@ export function HighlightedCodeBlock(props: {
   readonly code: string;
   readonly fence: string;
   readonly language: string;
-  /** False only while the library withholds an unclosed fence (`streamingAnimation`, which Onicode never enables, so always true today); highlighting waits for it. */
+  /** False while a streaming reply has not closed this fence yet; highlighting waits for it. */
   readonly complete: boolean;
   readonly scheme: HighlightScheme;
   readonly textStyle: NativeMarkdownTextStyle;

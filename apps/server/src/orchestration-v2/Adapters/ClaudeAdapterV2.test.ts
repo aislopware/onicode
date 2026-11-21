@@ -11836,6 +11836,12 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     { autoCompactWindow: "650000", model: "uncatalogued-model", threshold: 617_000 },
     {
       autoCompactWindow: "",
+      model: "uncatalogued-model",
+      userSettings: '{"autoCompactWindow":1500000}',
+      threshold: 1_467_000,
+    },
+    {
+      autoCompactWindow: "",
       model: "claude-opus-5-5",
       userSettings: '{"autoCompactWindow":500000}',
       threshold: 467_000,

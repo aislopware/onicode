@@ -1336,6 +1336,8 @@ function ArtifactTemplateCard(props: {
 
 const AssistantMarkdownContent = memo(function AssistantMarkdownContent(props: {
   readonly markdown: string;
+  /** True while the reply is still arriving. */
+  readonly streaming?: boolean;
   readonly environmentId: EnvironmentId;
   readonly threadId?: ThreadId;
   readonly messageId?: MessageId;
@@ -1405,6 +1407,7 @@ const AssistantMarkdownContent = memo(function AssistantMarkdownContent(props: {
     <>
       <AssistantMarkdownBlocks
         markdown={liveMarkdown}
+        streaming={props.streaming ?? false}
         onCiteText={
           props.onCiteAssistantText && props.threadId && props.messageId
             ? (text, path) => {
@@ -1466,6 +1469,8 @@ const AssistantMarkdownContent = memo(function AssistantMarkdownContent(props: {
 // Folds split first, so an artifact card inside a fold stays inside it.
 function AssistantMarkdownBlocks(props: {
   readonly markdown: string;
+  /** Only the last piece of a streaming reply is still arriving; earlier pieces are whole. */
+  readonly streaming: boolean;
   readonly citationPath?: string;
   readonly onCiteText?: (text: string, path: string) => void;
   /** The reply's reference definitions, passed down by the enclosing fold. */
@@ -1493,6 +1498,7 @@ function AssistantMarkdownBlocks(props: {
     };
   }, [m, props.markdown, props.definitions]);
   return blocks.map((block, blockIndex) => {
+    const lastBlock = props.streaming && blockIndex === blocks.length - 1;
     if (block.kind === "details") {
       return (
         <MarkdownDetailsFold
@@ -1503,6 +1509,7 @@ function AssistantMarkdownBlocks(props: {
           <AssistantMarkdownBlocks
             {...props}
             markdown={block.body}
+            streaming={lastBlock}
             definitions={definitions}
             citationPath={`${props.citationPath ?? ""}${blockIndex}/`}
           />
@@ -1529,6 +1536,7 @@ function AssistantMarkdownBlocks(props: {
           )}
           skills={props.skills}
           models={props.models}
+          streaming={lastBlock && segmentIndex === block.segments.length - 1}
           textStyle={props.markdownStyles.nativeTextStyle}
           onCiteText={
             props.onCiteText
@@ -2761,6 +2769,7 @@ function renderFeedEntry(
           <MarkdownImageAvailableWidthContext value={props.markdownContentWidth}>
             <AssistantMarkdownContent
               markdown={renderedText}
+              streaming={message.streaming}
               environmentId={props.environmentId}
               threadId={props.threadId}
               messageId={message.id}
@@ -4480,6 +4489,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
             maintainScrollAtEnd={jumpReady ? false : THREAD_FEED_MAINTAIN_SCROLL_AT_END}
             maintainVisibleContentPosition
             data={groupedFeed}
+            recycleItems={false}
             extraData={{ ...listAppearanceData, setupFoldRowId }}
             renderItem={renderItem}
             viewabilityConfig={THREAD_MEDIA_VIEWABILITY_CONFIG}

@@ -56,7 +56,7 @@ function nativeHost() {
   const host: sdk.MuseSdkHost = {
     connection: {
       mintCommandId: () => "command",
-      request: async (method) =>
+      request: async (method: string) =>
         method.startsWith("session/")
           ? {
               session: { sessionId: "command", modelId: "muse-wonder-1.0", activeTurnId: null },
@@ -75,7 +75,7 @@ function nativeHost() {
                 ],
               }
             : {},
-      command: async (_method, params) => ({
+      command: async (_method: string, params: Record<string, unknown>) => ({
         session: { sessionId: params.sessionId, modelId: "muse-wonder-1.0", activeTurnId: null },
         history: { items: [] },
       }),

@@ -1,7 +1,7 @@
 import type { AcpAdapterV2Flavor } from "@onicode/provider-acp/server/adapter";
 import { describe, expect, it } from "vite-plus/test";
 
-import { extractOpenCodeElicitationForm } from "./opencodeAcp.ts";
+import { extractOpenCodeElicitationForm, openCodeCommandOutlivesPrompt } from "./opencodeAcp.ts";
 
 type ElicitationRequest = Parameters<NonNullable<AcpAdapterV2Flavor["extractElicitationForm"]>>[0];
 
@@ -139,5 +139,23 @@ describe("OpenCode ACP question form", () => {
     ],
   ])("leaves %s to the generic mapping", (_, properties) => {
     expect(extractOpenCodeElicitationForm(request(properties))).toBeUndefined();
+  });
+});
+
+describe("openCodeCommandOutlivesPrompt", () => {
+  // A subagent's command streams on the root session and is never reported done after end_turn.
+  it.each([
+    ["a root command", { kind: "execute", data: {} }, true],
+    [
+      "a subagent's command",
+      {
+        kind: "execute",
+        data: { meta: { "opencode/child-session": { id: "ses_child", parentID: "ses_root" } } },
+      },
+      false,
+    ],
+    ["a subagent call", { kind: "think", data: {} }, false],
+  ])("holds a woken reply open for %s", (_, toolCall, expected) => {
+    expect(openCodeCommandOutlivesPrompt({ toolCallId: "call-1", ...toolCall })).toBe(expected);
   });
 });

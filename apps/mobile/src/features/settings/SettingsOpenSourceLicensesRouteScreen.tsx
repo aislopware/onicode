@@ -98,6 +98,7 @@ export function SettingsOpenSourceLicensesRouteScreen() {
         }}
         contentInsetAdjustmentBehavior="automatic"
         data={filteredEntries}
+        recycleItems={false}
         estimatedItemSize={78}
         keyboardDismissMode="on-drag"
         keyboardShouldPersistTaps="handled"

@@ -68,6 +68,9 @@ describe("ProviderSettingsForm helpers", () => {
     expect(
       nextProviderConfigWithFieldValue({ launchArgs: "--x" }, autoCompactWindow!, "300000"),
     ).toEqual({ launchArgs: "--x", autoCompactWindow: "300000" });
+    expect(
+      nextProviderConfigWithFieldValue({ launchArgs: "--x" }, autoCompactWindow!, "1500000"),
+    ).toEqual({ launchArgs: "--x", autoCompactWindow: "1500000" });
   });
 
   it("stores false boolean fields when true is the default", () => {

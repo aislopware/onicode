@@ -69,6 +69,10 @@ const remoteStatusWithPr: VcsStatusRemoteResult = {
   },
 };
 
+// macOS reports nothing for a change made as a watch starts; the watcher's own check for that,
+// 250 ms later, finds a HEAD the watch missed.
+const reachHeadCheck = TestClock.adjust("250 millis");
+
 function layerTestFor(state: {
   currentLocalStatus: VcsStatusLocalResult;
   currentRemoteStatus: VcsStatusRemoteResult | null;
@@ -1833,12 +1837,13 @@ describe("VcsStatusBroadcaster", () => {
         ).pipe(Effect.forkScoped);
         yield* Deferred.await(subscribed);
 
-        // What `git switch -c repro` does to HEAD, with the test clock never advanced.
+        // What `git switch -c repro` does to HEAD, with the test clock far short of a status poll.
         state.currentLocalStatus = { ...baseLocalStatus, isDefaultRef: false, refName: "repro" };
         state.currentRemoteStatus = { ...baseRemoteStatus, hasUpstream: false };
         const lockPath = path.join(gitDir, "HEAD.lock");
         yield* fs.writeFileString(lockPath, "ref: refs/heads/repro\n");
         yield* fs.rename(lockPath, headPath);
+        yield* reachHeadCheck;
         yield* Deferred.await(checkedOut);
 
         assert.deepStrictEqual(
@@ -1877,6 +1882,7 @@ describe("VcsStatusBroadcaster", () => {
         const lockPath = path.join(gitDir, "HEAD.lock");
         yield* fs.writeFileString(lockPath, "ref: refs/heads/repro\n");
         yield* fs.rename(lockPath, headPath);
+        yield* reachHeadCheck;
 
         assert.deepEqual(yield* branches, [{ refName: "repro", isRepo: true }]);
         assert.equal(state.localStatusCalls, 0);
@@ -1916,11 +1922,13 @@ describe("VcsStatusBroadcaster", () => {
         const lockPath = path.join(gitDir, "HEAD.lock");
         yield* fs.writeFileString(lockPath, "ref: refs/heads/repro\n");
         yield* fs.rename(lockPath, headPath);
+        yield* reachHeadCheck;
 
         assert.deepEqual(yield* branches, [{ refName: "repro", isRepo: true }]);
         state.currentLocalStatus = { ...baseLocalStatus, refName: "second" };
         yield* fs.writeFileString(lockPath, "ref: refs/heads/second\n");
         yield* fs.rename(lockPath, headPath);
+        yield* reachHeadCheck;
         assert.deepEqual(yield* branches, [{ refName: "second", isRepo: true }]);
         yield* Deferred.succeed(resume, undefined);
       }).pipe(Effect.provide(layerTestFor(state)), Effect.scoped);
@@ -1980,6 +1988,59 @@ describe("VcsStatusBroadcaster", () => {
         assert.strictEqual(state.localStatusCalls, failedCalls + 1);
       }).pipe(Effect.provide(layerTestFor(state)), Effect.scoped);
     }),
+  );
+
+  it.effect("a checkout the HEAD watch never reported publishes on the watcher's own check", () =>
+    Effect.gen(function* () {
+      const info = yield* (yield* FileSystem.FileSystem).stat(process.cwd());
+      const headPath = "/repo/.git/HEAD";
+      let inode = 1n;
+      const watched: Array<string> = [];
+      const state: Parameters<typeof layerTestFor>[0] = {
+        currentLocalStatus: { ...baseLocalStatus, isDefaultRef: true, refName: "main" },
+        currentRemoteStatus: null,
+        localStatusCalls: 0,
+        remoteStatusCalls: 0,
+        localInvalidationCalls: 0,
+        remoteInvalidationCalls: 0,
+        headPath,
+        // macOS starts a watch's event stream after watch() returns, so a checkout made right
+        // then is never reported. The stat is answered here so the check stays on the test clock.
+        fileSystem: FileSystem.makeNoop({
+          realPath: (target) => Effect.succeed(target),
+          exists: () => Effect.succeed(true),
+          stat: () => Effect.sync(() => ({ ...info, ino: Option.some(inode) })),
+          watch: (target, options) => {
+            watched.push(target);
+            return Stream.never.pipe(Stream.onStart(Effect.sync(() => options?.onReady?.())));
+          },
+        }),
+      };
+
+      yield* Effect.gen(function* () {
+        const broadcaster = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
+        const subscribed = yield* Deferred.make<void>();
+        const checkedOut = yield* Deferred.make<void>();
+        let clientState: VcsStatusResult | null = null;
+        yield* Stream.runForEach(
+          broadcaster.streamStatus({ cwd: "/repo", includeRemote: false }),
+          (event) =>
+            Effect.gen(function* () {
+              clientState = applyGitStatusStreamEvent(clientState, event);
+              yield* Deferred.succeed(subscribed, undefined);
+              if (clientState.refName === "repro") yield* Deferred.succeed(checkedOut, undefined);
+            }),
+        ).pipe(Effect.forkScoped);
+        yield* Deferred.await(subscribed);
+
+        state.currentLocalStatus = { ...baseLocalStatus, isDefaultRef: false, refName: "repro" };
+        inode = 2n;
+        yield* TestClock.adjust("250 millis");
+        yield* Deferred.await(checkedOut);
+        // Git renames HEAD.lock onto HEAD, which only a watch on the directory reports.
+        assert.deepStrictEqual(watched, ["/repo/.git"]);
+      }).pipe(Effect.provide(layerTestFor(state)), Effect.scoped);
+    }).pipe(Effect.provide(NodeServices.layer)),
   );
 
   it.effect("subscribers share one HEAD watch that ends with the last of them", () =>
@@ -2072,6 +2133,7 @@ describe("VcsStatusBroadcaster", () => {
             const lockPath = path.join(gitDir, "HEAD.lock");
             yield* fs.writeFileString(lockPath, `ref: refs/heads/${refName}\n`);
             yield* fs.rename(lockPath, headPath);
+            yield* reachHeadCheck;
           });
 
         // The repository has no HEAD yet, so the first watch ends at once.

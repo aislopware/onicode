@@ -554,10 +554,7 @@ export function ThreadSwipeable(props: ThreadSwipeableProps) {
   };
   const rowSwipeEnabled = !props.dormant && !isDismissing && props.enabled !== false;
   const gateEnabled = gate.shared;
-  const swipeEnabled = useDerivedValue(
-    () => rowSwipeEnabled && gateEnabled.get(),
-    [rowSwipeEnabled, gateEnabled],
-  );
+  const swipeEnabled = useDerivedValue(() => rowSwipeEnabled && gateEnabled.get());
   const childrenContainerStyle = useMemo(() => ({ backgroundColor }), [backgroundColor]);
   const swipeableContainerStyle = useMemo(
     () => [{ backgroundColor }, containerStyle],
@@ -850,7 +847,6 @@ function ThreadSwipeActions(props: {
         runOnJS(onFullSwipeArmedChange)(armed);
       }
     },
-    [fullSwipeThreshold, onFullSwipeArmedChange, translation],
   );
 
   return (

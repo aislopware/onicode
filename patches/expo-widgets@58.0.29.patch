@@ -1,0 +1,415 @@
+diff --git a/android/src/main/java/expo/modules/widgets/ExpoWidgetsPeekWidget.kt b/android/src/main/java/expo/modules/widgets/ExpoWidgetsPeekWidget.kt
+index edabde8..1a17f3b 100644
+--- a/android/src/main/java/expo/modules/widgets/ExpoWidgetsPeekWidget.kt
++++ b/android/src/main/java/expo/modules/widgets/ExpoWidgetsPeekWidget.kt
+@@ -25,7 +25,8 @@ internal class ExpoWidgetsPeekWidget(
+     val layout = WidgetsLayoutRegistry.layout(appContext, widgetName)
+       ?: return createErrorRoot("No layout found for $widgetName")
+     val props = WidgetsLayoutRegistry.props(appContext, widgetName)
+-    val environment = getWidgetEnvironment(appContext)
++    val environment = getWidgetEnvironment(appContext) +
++      mapOf("width" to size.width.value.toDouble(), "height" to size.height.value.toDouble())
+     val node = evaluateLayout(appContext, layout, props, environment)
+ 
+     return node.toPeekRoot(appContext, InteractionSource.Widget(widgetName), size)
+diff --git a/build/ExpoWidgets.js b/build/ExpoWidgets.js
+index 85f3fbd..1919b47 100644
+--- a/build/ExpoWidgets.js
++++ b/build/ExpoWidgets.js
+@@ -21,6 +21,9 @@ class LiveActivityStub {
+     async getPushToken() {
+         return null;
+     }
++    async getProps() {
++        return null;
++    }
+     addListener(_eventName, _listener) {
+         return noopSubscription;
+     }
+@@ -34,6 +37,7 @@ class LiveActivityFactoryStub {
+     getInstances() {
+         return [];
+     }
++    dismissEnded() {}
+ }
+ class CustomNotificationStub {
+     getId() {
+diff --git a/build/Widgets.d.ts b/build/Widgets.d.ts
+index fb37d5d..4a7abdc 100644
+--- a/build/Widgets.d.ts
++++ b/build/Widgets.d.ts
+@@ -63,6 +63,11 @@ export declare class LiveActivity<T extends object = object> {
+      * @platform ios
+      */
+     end(dismissalPolicy?: LiveActivityDismissalPolicy, props?: T, contentDate?: Date): Promise<void>;
++    /**
++     * Returns the props this Live Activity currently shows, as the JSON string a start, update or push set.
++     * @platform ios
++     */
++    getProps(): Promise<string | null>;
+     /**
+      * Returns the push token for this Live Activity, used to send push notification updates via APNs.
+      * Returns `null` if push notifications are not enabled or the token is not yet available.
+@@ -100,6 +105,8 @@ export declare class LiveActivityFactory<T extends object = object> {
+      * @platform ios
+      */
+     getInstances(): LiveActivity<T>[];
++    /** Dismisses ended instances that iOS still shows on the Lock Screen. */
++    dismissEnded(): void;
+ }
+ /**
+  * Creates a dismissal policy that removes the Live Activity at the specified time within a four-hour window.
+diff --git a/build/Widgets.js b/build/Widgets.js
+index cc1efce..d526eee 100644
+--- a/build/Widgets.js
++++ b/build/Widgets.js
+@@ -94,6 +94,12 @@ import ExpoWidgetsModule from './ExpoWidgets';
+         return this.nativeLiveActivity.end(dismissalPolicy, undefined, serializedProps, contentDate?.getTime());
+     }
+     /**
++   * Returns the props this Live Activity currently shows, as the JSON string a start, update or push set.
++   * @platform ios
++   */ getProps() {
++        return this.nativeLiveActivity.getProps();
++    }
++    /**
+    * Returns the push token for this Live Activity, used to send push notification updates via APNs.
+    * Returns `null` if push notifications are not enabled or the token is not yet available.
+    * @platform ios
+@@ -134,6 +140,9 @@ import ExpoWidgetsModule from './ExpoWidgets';
+    */ getInstances() {
+         return this.nativeLiveActivityFactory.getInstances().map((instance)=>new LiveActivity(instance));
+     }
++    dismissEnded() {
++        this.nativeLiveActivityFactory.dismissEnded();
++    }
+ }
+ /**
+  * Creates a dismissal policy that removes the Live Activity at the specified time within a four-hour window.
+diff --git a/build/Widgets.types.d.ts b/build/Widgets.types.d.ts
+index 4c474bb..aab4a4b 100644
+--- a/build/Widgets.types.d.ts
++++ b/build/Widgets.types.d.ts
+@@ -50,6 +50,12 @@ export type WidgetEnvironment<T extends object | undefined = undefined> = {
+      * The color scheme of the widget's environment.
+      */
+     colorScheme?: 'light' | 'dark';
++    /**
++     * The widget's current size in dp.
++     * @platform android
++     */
++    width?: number;
++    height?: number;
+     /**
+      * A Boolean value that indicates whether the display or environment currently requires reduced luminance.
+      *
+@@ -98,6 +104,10 @@ export type LiveActivityEnvironment = {
+      * @platform ios
+      */
+     colorScheme: 'light' | 'dark';
++    /** The rendering mode supplied by WidgetKit for this presentation. */
++    widgetRenderingMode?: WidgetRenderingMode;
++    /** Whether the presentation OS supports Liquid Glass. @platform iOS 26+ */
++    isLiquidGlassAvailable?: boolean;
+     /**
+      * Whether the activity is displayed in a context with reduced luminance.
+      * @platform iOS 16+
+@@ -307,10 +317,12 @@ export declare class NativeLiveActivityFactory extends SharedObject {
+     constructor(name: string, layout: string);
+     start(props?: string, url?: string, staleDate?: number): NativeLiveActivity;
+     getInstances(): NativeLiveActivity[];
++    dismissEnded(): void;
+ }
+ export declare class NativeLiveActivity extends SharedObject<LiveActivityEvents> {
+     getId(): string;
+     update(props?: string, staleDate?: number): Promise<void>;
+     end(dismissalPolicy?: string, afterDate?: number, state?: string, contentDate?: number): Promise<void>;
+     getPushToken(): Promise<string | null>;
++    getProps(): Promise<string | null>;
+ }
+diff --git a/ios/LiveActivity.swift b/ios/LiveActivity.swift
+index b80655d..e74d80a 100644
+--- a/ios/LiveActivity.swift
++++ b/ios/LiveActivity.swift
+@@ -50,6 +50,14 @@ final class LiveActivity: SharedObject {
+     return tokenData.reduce("") { $0 + String(format: "%02x", $1) }
+   }
+ 
++  func getProps() throws -> String? {
++    guard let activity = Activity<LiveActivityAttributes>.activities.first(where: { $0.id == id }) else {
++      throw LiveActivityNotFoundException(id)
++    }
++
++    return activity.content.state.props
++  }
++
+   func observePushTokenUpdates(for activity: Activity<LiveActivityAttributes>, pushNotificationsEnabled: Bool) {
+     guard pushNotificationsEnabled else {
+       return
+diff --git a/ios/LiveActivityFactory.swift b/ios/LiveActivityFactory.swift
+index 29e4f15..629e547 100644
+--- a/ios/LiveActivityFactory.swift
++++ b/ios/LiveActivityFactory.swift
+@@ -14,11 +14,23 @@ final class LiveActivityFactory: SharedObject {
+     WidgetsStorage.set(layout, forKey: "__expo_widgets_live_activity_\(name)_layout")
+   }
+ 
++  // iOS ends an activity after 8 hours but leaves it frozen on the Lock Screen for up to
++  // 4 more. getInstances() can't see it, so dismiss the ended ones directly.
++  func dismissEnded() {
++    for activity in Activity<LiveActivityAttributes>.activities
++    where activity.content.state.name == name && activity.activityState == .ended {
++      Task { await activity.end(nil, dismissalPolicy: .immediate) }
++    }
++  }
++
+   func start(props: String?, url: URL?, staleDate: Date?) throws -> LiveActivity {
+     guard ActivityAuthorizationInfo().areActivitiesEnabled else {
+       throw LiveActivitiesNotSupportedException()
+     }
+ 
++    // A replacement started beside an ended card would leave both visible.
++    dismissEnded()
++
+     do {
+       let initialState = LiveActivityAttributes.ContentState(name: name, props: props)
+       let activity = try Activity.request(
+diff --git a/ios/Widgets/Utils.swift b/ios/Widgets/Utils.swift
+index 76b2199..6cb52c3 100644
+--- a/ios/Widgets/Utils.swift
++++ b/ios/Widgets/Utils.swift
+@@ -125,6 +125,10 @@ func getLiveActivityEnvironment(for environment: EnvironmentValues, in context:
+     "isStale": context.isStale
+   ]
+ 
++  if #available(iOS 26.0, *) {
++    env["isLiquidGlassAvailable"] = true
++  }
++  env["widgetRenderingMode"] = environment.widgetRenderingMode.description
+   if #available(iOS 18.0, *) {
+     env["isActivityUpdateReduced"] = environment.isActivityUpdateReduced
+     env["activityFamily"] = "\(environment.activityFamily)"
+diff --git a/ios/Widgets/WidgetLiveActivity.swift b/ios/Widgets/WidgetLiveActivity.swift
+index 4d135c4..dae4744 100644
+--- a/ios/Widgets/WidgetLiveActivity.swift
++++ b/ios/Widgets/WidgetLiveActivity.swift
+@@ -19,53 +19,41 @@ struct LiveActivityAttributes: ActivityAttributes {
+ }
+ 
+ public struct WidgetLiveActivity: Widget {
+-  @Environment(\.self) var env
+-  
+   let widgetContext: AppContext = AppContext()
+ 
+   public init() {}
+ 
+   public var body: some WidgetConfiguration {
+     ActivityConfiguration(for: LiveActivityAttributes.self) { context in
+-      let nodes = getLiveActivityNodes(
+-        forName: context.state.name,
+-        props: context.state.props,
+-        environment: getLiveActivityEnvironment(for: env, in: context)
+-      )
+       // Only apply widgetURL when the activity has one: a hierarchy with more than one
+       // widgetURL modifier is undefined behavior, and layouts can set their own through
+       // the widgetURL modifier from @expo/ui.
+-      let banner = LiveActivityBannerView(context: context, nodes: nodes)
++      let banner = LiveActivityBannerView(context: context)
+       if let url = context.attributes.url.flatMap(URL.init(string:)) {
+         banner.widgetURL(url)
+       } else {
+         banner
+       }
+     } dynamicIsland: { context in
+-      let nodes = getLiveActivityNodes(
+-        forName: context.state.name,
+-        props: context.state.props,
+-        environment: getLiveActivityEnvironment(for: env, in: context)
+-      )
+       let island = DynamicIsland {
+         DynamicIslandExpandedRegion(.center) {
+-          LiveActivitySectionView(context: context, nodes: nodes, sectionName: "expandedCenter")
++          LiveActivitySectionView(context: context, sectionName: "expandedCenter")
+         }
+         DynamicIslandExpandedRegion(.leading) {
+-          LiveActivitySectionView(context: context, nodes: nodes, sectionName: "expandedLeading")
++          LiveActivitySectionView(context: context, sectionName: "expandedLeading")
+         }
+         DynamicIslandExpandedRegion(.trailing) {
+-          LiveActivitySectionView(context: context, nodes: nodes, sectionName: "expandedTrailing")
++          LiveActivitySectionView(context: context, sectionName: "expandedTrailing")
+         }
+         DynamicIslandExpandedRegion(.bottom) {
+-          LiveActivitySectionView(context: context, nodes: nodes, sectionName: "expandedBottom")
++          LiveActivitySectionView(context: context, sectionName: "expandedBottom")
+         }
+       } compactLeading: {
+-        LiveActivitySectionView(context: context, nodes: nodes, sectionName: "compactLeading")
++        LiveActivitySectionView(context: context, sectionName: "compactLeading")
+       } compactTrailing: {
+-        LiveActivitySectionView(context: context, nodes: nodes, sectionName: "compactTrailing")
++        LiveActivitySectionView(context: context, sectionName: "compactTrailing")
+       } minimal: {
+-        LiveActivitySectionView(context: context, nodes: nodes, sectionName: "minimal")
++        LiveActivitySectionView(context: context, sectionName: "minimal")
+       }
+       if let url = context.attributes.url.flatMap(URL.init(string:)) {
+         return island.widgetURL(url)
+@@ -77,11 +65,16 @@ public struct WidgetLiveActivity: Widget {
+ }
+ 
+ private struct LiveActivitySectionView: View {
++  @Environment(\.self) var env
+   let context: ActivityViewContext<LiveActivityAttributes>
+-  let nodes: [String: Any]
+   let sectionName: String
+ 
+   var body: some View {
++    let nodes = getLiveActivityNodes(
++      forName: context.state.name,
++      props: context.state.props,
++      environment: getLiveActivityEnvironment(for: env, in: context)
++    )
+     if let node = nodes[sectionName] as? [String: Any] {
+       WidgetsDynamicView(name: context.activityID, kind: .liveActivity, node: node)
+     } else {
+@@ -91,10 +84,17 @@ private struct LiveActivitySectionView: View {
+ }
+ 
+ private struct LiveActivityBannerView: View {
++  // Read inside the rendered view: Widget-level values do not include the
++  // presentation's color scheme, rendering mode, or reduced-luminance state.
++  @Environment(\.self) var env
+   var context: ActivityViewContext<LiveActivityAttributes>
+-  let nodes: [String: Any]
+ 
+   var body: some View {
++    let nodes = getLiveActivityNodes(
++      forName: context.state.name,
++      props: context.state.props,
++      environment: getLiveActivityEnvironment(for: env, in: context)
++    )
+     if #available(iOS 18.0, *) {
+       LiveActivityBanner(context: context, nodes: nodes)
+     } else if let node = nodes["banner"] as? [String: Any] {
+diff --git a/ios/WidgetsModule.swift b/ios/WidgetsModule.swift
+index 285136b..5a8c3fe 100644
+--- a/ios/WidgetsModule.swift
++++ b/ios/WidgetsModule.swift
+@@ -97,6 +97,10 @@ public final class WidgetsModule: Module {
+       Function("getInstances") { (liveActivity: LiveActivityFactory) in
+         try liveActivity.getInstances()
+       }
++
++      Function("dismissEnded") { (liveActivity: LiveActivityFactory) in
++        liveActivity.dismissEnded()
++      }
+     }
+ 
+     Class("LiveActivity", LiveActivity.self) {
+@@ -115,6 +119,10 @@ public final class WidgetsModule: Module {
+       AsyncFunction("getPushToken") { (instance: LiveActivity) in
+         try instance.getPushToken()
+       }
++
++      AsyncFunction("getProps") { (instance: LiveActivity) in
++        try instance.getProps()
++      }
+     }
+   }
+ 
+diff --git a/src/ExpoWidgets.ts b/src/ExpoWidgets.ts
+index db15000..34a40bf 100644
+--- a/src/ExpoWidgets.ts
++++ b/src/ExpoWidgets.ts
+@@ -45,6 +45,9 @@ class LiveActivityStub {
+   async getPushToken(): Promise<string | null> {
+     return null;
+   }
++  async getProps(): Promise<string | null> {
++    return null;
++  }
+   addListener(_eventName: string, _listener: (...args: unknown[]) => void): EventSubscription {
+     return noopSubscription;
+   }
+@@ -59,6 +62,7 @@ class LiveActivityFactoryStub {
+   getInstances(): NativeLiveActivity[] {
+     return [];
+   }
++  dismissEnded(): void {}
+ }
+ 
+ class CustomNotificationStub {
+diff --git a/src/Widgets.ts b/src/Widgets.ts
+index 814b312..6ca9dfd 100644
+--- a/src/Widgets.ts
++++ b/src/Widgets.ts
+@@ -155,6 +155,14 @@ export class LiveActivity<T extends object = object> {
+     );
+   }
+ 
++  /**
++   * Returns the props this Live Activity currently shows, as the JSON string a start, update or push set.
++   * @platform ios
++   */
++  getProps(): Promise<string | null> {
++    return this.nativeLiveActivity.getProps();
++  }
++
+   /**
+    * Returns the push token for this Live Activity, used to send push notification updates via APNs.
+    * Returns `null` if push notifications are not enabled or the token is not yet available.
+@@ -213,6 +221,11 @@ export class LiveActivityFactory<T extends object = object> {
+       .getInstances()
+       .map((instance) => new LiveActivity<T>(instance));
+   }
++
++  /** Dismisses ended instances that iOS still shows on the Lock Screen. */
++  dismissEnded(): void {
++    this.nativeLiveActivityFactory.dismissEnded();
++  }
+ }
+ 
+ /**
+diff --git a/src/Widgets.types.ts b/src/Widgets.types.ts
+index 690d069..9551e5f 100644
+--- a/src/Widgets.types.ts
++++ b/src/Widgets.types.ts
+@@ -63,6 +63,12 @@ export type WidgetEnvironment<T extends object | undefined = undefined> = {
+    * The color scheme of the widget's environment.
+    */
+   colorScheme?: 'light' | 'dark';
++  /**
++   * The widget's current size in dp.
++   * @platform android
++   */
++  width?: number;
++  height?: number;
+   /**
+    * A Boolean value that indicates whether the display or environment currently requires reduced luminance.
+    *
+@@ -112,6 +118,10 @@ export type LiveActivityEnvironment = {
+    * @platform ios
+    */
+   colorScheme: 'light' | 'dark';
++  /** The rendering mode supplied by WidgetKit for this presentation. */
++  widgetRenderingMode?: WidgetRenderingMode;
++  /** Whether the presentation OS supports Liquid Glass. @platform iOS 26+ */
++  isLiquidGlassAvailable?: boolean;
+   /**
+    * Whether the activity is displayed in a context with reduced luminance.
+    * @platform iOS 16+
+@@ -337,6 +347,7 @@ export declare class NativeLiveActivityFactory extends SharedObject {
+   constructor(name: string, layout: string);
+   start(props?: string, url?: string, staleDate?: number): NativeLiveActivity;
+   getInstances(): NativeLiveActivity[];
++  dismissEnded(): void;
+ }
+ 
+ export declare class NativeLiveActivity extends SharedObject<LiveActivityEvents> {
+@@ -349,4 +360,5 @@ export declare class NativeLiveActivity extends SharedObject<LiveActivityEvents>
+     contentDate?: number
+   ): Promise<void>;
+   getPushToken(): Promise<string | null>;
++  getProps(): Promise<string | null>;
+ }

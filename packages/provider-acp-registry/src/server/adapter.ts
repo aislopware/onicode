@@ -12,7 +12,7 @@ import {
 import { extractDroidElicitationForm } from "./droidAcp.ts";
 import { makeKimiPromptOutcomeWatch } from "./kimiAcp.ts";
 import { extractOmpElicitationForm } from "./ompAcp.ts";
-import { extractOpenCodeElicitationForm } from "./opencodeAcp.ts";
+import { extractOpenCodeElicitationForm, openCodeCommandOutlivesPrompt } from "./opencodeAcp.ts";
 import {
   copilotClientCapabilitiesMeta,
   extractCopilotSubagentUpdate,
@@ -308,14 +308,16 @@ export const makeAcpRegistryAdapterV2 = Effect.fn("makeAcpRegistryAdapterV2")(fu
           extractSubagentSessionEvent: extractClaudeSubagentSessionEvent,
         }
       : {}),
-    // Hermes replies on the root session when a background process it started exits; no
-    // prompt response follows, so the continuation ends on the deferred-finalize debounce.
-    // Hermes is not in the public registry and may run through a wrapper, so only its
-    // initialize reply identifies it. agy does the same and is known by its command.
+    // Hermes, agy and OpenCode (2.3.1+) reply on their own when background work they started
+    // ends; no prompt response follows, so the continuation ends on the deferred-finalize
+    // debounce. Hermes may run through a wrapper, so only its initialize reply identifies it.
     enablePostSettleContinuation: (initializeResult) =>
-      isAntigravityCli || isHermes(initializeResult),
+      isAntigravityCli || isOpenCode || isHermes(initializeResult),
     deferFinalizeForBackgroundWork: (initializeResult) =>
-      isAntigravityCli || isHermes(initializeResult),
+      isAntigravityCli || isOpenCode || isHermes(initializeResult),
+    ...(isOpenCode
+      ? { wakeOnDetachedRequest: true, toolOutlivesPrompt: openCodeCommandOutlivesPrompt }
+      : {}),
     ...(isDevin
       ? {
           clientCapabilitiesMeta: {

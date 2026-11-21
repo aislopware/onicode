@@ -139,6 +139,39 @@ describe("Muse SDK host", () => {
     },
   );
 
+  it.effect("refuses a host that declares a breaking schema epoch and stops it", () =>
+    Effect.gen(function* () {
+      if ((yield* HostProcess.Platform) === "win32") return;
+      yield* Effect.promise(async () => {
+        const sdk = await vi.importActual<typeof import("@muse-code/sdk")>("@muse-code/sdk");
+        const servedEpoch = sdk.EXPECTED_SCHEMA_COMPATIBILITY_EPOCH + 1;
+        const fixture = `
+        require("node:readline").createInterface({ input: process.stdin }).on("line", line => {
+          const frame = JSON.parse(line);
+          if (!("id" in frame)) return;
+          const schema = { version: 1, fingerprint: "oni-breaking-fixture", compatibilityEpoch: ${servedEpoch} };
+          process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: frame.id, result: { schema, grantedCapabilities: [] } }) + "\\n");
+        });
+      `;
+        const processExited = pending<{ code: number | null; signal: NodeJS.Signals | null }>();
+        const started = createMuseSdkHost(
+          {
+            binaryPath: process.execPath,
+            launch: { command: process.execPath, args: ["-e", fixture] },
+            onProcessExit: processExited.resolve,
+          },
+          sdk.spawnMspConnection,
+        );
+        await expect(started).rejects.toMatchObject({
+          kind: "schemaCompatibilityRefused",
+          servedEpoch,
+          pinnedEpoch: sdk.EXPECTED_SCHEMA_COMPATIBILITY_EPOCH,
+        });
+        await processExited.promise;
+      });
+    }),
+  );
+
   it.effect(
     "observes native host exit while the SDK still waits for a detached stdout holder",
     () =>

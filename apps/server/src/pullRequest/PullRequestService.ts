@@ -3650,9 +3650,7 @@ export const make = Effect.gen(function* () {
         return staleDiff.dropExpired;
       }),
     ),
-    Effect.flatMap((stale) =>
-      Effect.map(Cache.keys(diffCache), (keys) => stale + Array.from(keys).length),
-    ),
+    Effect.zipWith(Cache.keys(diffCache), (stale, keys) => stale + Array.from(keys).length),
     Effect.map((held) => {
       if (held > 0) armDiffSweep();
     }),
@@ -3711,9 +3709,7 @@ export const make = Effect.gen(function* () {
       return listStatsUncached({
         refs: refs.map(([projectId, repository, number]) => ({ projectId, repository, number })),
       } as unknown as PullRequestListStatsInput).pipe(
-        Effect.flatMap((result) =>
-          Clock.currentTimeMillis.pipe(Effect.map((at) => ({ result, at }))),
-        ),
+        Effect.zipWith(Clock.currentTimeMillis, (result, at) => ({ result, at })),
       );
     },
     {

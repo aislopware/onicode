@@ -189,17 +189,13 @@ export const makeCodexChatGptAuth = Effect.fn("makeCodexChatGptAuth")(function* 
     function* (token: string, audience: string) {
       const endpoints = yield* discover;
       const verifyWith = (keys: Jwks.KeySet) =>
-        Jwks.makeLocal(keys).pipe(
-          Effect.flatMap((jwks) =>
-            Jwt.verifyWithKeySet(IdTokenClaims, token, {
-              issuer: endpoints.issuer,
-              audience,
-              algorithms: ["RS256", "ES256"],
-              clockTolerance: "5 seconds",
-              requiredClaims: ["exp"],
-            }).pipe(Effect.provideService(Jwks.Jwks, jwks)),
-          ),
-        );
+        Jwt.verifyWithKeySet(IdTokenClaims, token, {
+          issuer: endpoints.issuer,
+          audience,
+          algorithms: ["RS256", "ES256"],
+          clockTolerance: "5 seconds",
+          requiredClaims: ["exp"],
+        }).pipe(Effect.provideServiceEffect(Jwks.Jwks, Jwks.makeLocal(keys)));
       const fresh = fetchKeySet(endpoints.jwks_uri).pipe(Effect.flatMap(verifyWith));
       const cached = keySet;
       return yield* cached === undefined || cached.expiresAt <= (yield* Clock.currentTimeMillis)

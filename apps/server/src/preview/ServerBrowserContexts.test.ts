@@ -100,7 +100,7 @@ const options = () => ({
   browserProfilesDir: "/test/browser-profiles",
   executable: vi.fn(async (): Promise<{ path: string; version: string; app?: string }> => ({
     path: "/test/chromium",
-    version: "157.0.8103.78",
+    version: "158.0.8127.36",
   })),
   env: {},
   platform: "linux" as NodeJS.Platform,
@@ -350,7 +350,7 @@ describe("ServerBrowserContexts", () => {
     const launchedAfterDelete: Array<boolean> = [];
     configuration.executable.mockImplementation(async () => {
       launchedAfterDelete.push(deleted);
-      return { path: "/test/chromium", version: "157.0.8103.78" };
+      return { path: "/test/chromium", version: "158.0.8127.36" };
     });
     const clearing = pool.clearProfile("work/team");
     const reopening = pool.contextFor("work/team");

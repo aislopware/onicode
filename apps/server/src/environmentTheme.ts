@@ -32,10 +32,11 @@ import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
+import * as SubscriptionRef from "effect/SubscriptionRef";
 
 import * as ServerConfig from "./config.ts";
 import * as ServerSettings from "./serverSettings.ts";
-import { watchDirectoryPath } from "./watchDirectoryReplacements.ts";
+import { pollUnreportedChanges, watchDirectoryPath } from "./watchDirectoryReplacements.ts";
 
 const decodeEnvironmentThemeFileJsonExit = Schema.decodeUnknownExit(
   Schema.fromJsonString(EnvironmentThemeFile),
@@ -307,8 +308,30 @@ const make = Effect.gen(function* () {
   const watcherScope = yield* Scope.make("sequential");
   yield* Effect.addFinalizer(() => Scope.close(watcherScope, Exit.void));
 
+  // The directory's entries as of the last read. Files past the cap are never themes' own.
+  const directoryIdentity = fs.readDirectory(environmentThemesDir).pipe(
+    Effect.flatMap((entries) =>
+      Effect.forEach(
+        entries.toSorted().slice(0, MAX_THEME_FILES * 4),
+        (entry) =>
+          fs.stat(`${environmentThemesDir}/${entry}`).pipe(
+            Effect.map(
+              (info) =>
+                `${entry}:${Option.getOrUndefined(info.ino)}:${Option.getOrUndefined(info.mtime)?.getTime()}:${info.size}`,
+            ),
+            Effect.orElseSucceed(() => entry),
+          ),
+        { concurrency: 8 },
+      ),
+    ),
+    Effect.map((entries) => entries.join("\n")),
+    Effect.orElseSucceed(() => "missing"),
+  );
+  const readIdentity = yield* SubscriptionRef.make("");
+
   const refresh = refreshSemaphore.withPermits(1)(
     Effect.gen(function* () {
+      yield* SubscriptionRef.set(readIdentity, yield* directoryIdentity);
       const themes = yield* readPublishedThemes(environmentThemesDir).pipe(
         Effect.provideService(FileSystem.FileSystem, fs),
       );
@@ -348,10 +371,13 @@ const make = Effect.gen(function* () {
       }),
     );
 
-  const watchEvents = watchDirectoryPath(
-    environmentThemesDir,
-    watchDirectory(environmentThemesDir),
-  ).pipe(
+  // A change no watch reported means one missed its start or sits on a replaced directory,
+  // so each registers them all again. A new watch refreshes once it is ready.
+  const watchEvents = Stream.make(undefined).pipe(
+    Stream.concat(pollUnreportedChanges(directoryIdentity, readIdentity)),
+    Stream.switchMap(() =>
+      watchDirectoryPath(environmentThemesDir, watchDirectory(environmentThemesDir)),
+    ),
     // A save emits several events, and fs.watch can fire before content is flushed.
     Stream.debounce(Duration.millis(100)),
   );

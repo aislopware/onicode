@@ -114,7 +114,7 @@ const devWindow: BrowserProvider = {
   release: () => Promise.resolve(),
 };
 
-export default {
+const config: E2EConfig = {
   tests: "scenarios/**/*.e2e.ts",
   targets: [
     {
@@ -176,4 +176,6 @@ export default {
   video: "on",
   trace: "on",
   reporters: ["list", "markdown"],
-} satisfies E2EConfig;
+};
+
+export default config;

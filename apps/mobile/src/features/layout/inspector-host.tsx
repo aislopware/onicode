@@ -63,9 +63,39 @@ function PaneScreenContent(props: {
   );
 }
 
+/** The panes as screens of a native stack. Only the active one is attached. */
+function PaneStack(props: {
+  readonly panes: ReadonlyArray<InspectorPane>;
+  readonly content: InspectorContent | undefined;
+  readonly onClose: () => void;
+  readonly overlay?: ReactNode;
+}) {
+  return (
+    <Stack.Host>
+      {props.panes.map((pane) => {
+        const active = pane.key === props.content?.active;
+        return (
+          <Stack.Screen
+            key={pane.key}
+            screenKey={`inspector:${pane.key}`}
+            activityMode={active ? "attached" : "detached"}
+          >
+            <PaneScreenContent
+              pane={pane}
+              resetKeys={props.content?.resetKeys}
+              onClose={props.onClose}
+            />
+            {active ? props.overlay : null}
+          </Stack.Screen>
+        );
+      })}
+    </Stack.Host>
+  );
+}
+
 /**
- * The inspector column's panes, each a screen of the column like the detail column's routes.
- * Only the active one is attached, so UIKit sees one bar, one toolbar and one scroll view.
+ * The inspector column, navigated by the stack of its panes like the detail column by its routes.
+ * Only the active pane is attached, so UIKit sees one bar, one toolbar and one scroll view.
  */
 export function InspectorColumnScreens(props: {
   readonly content: InspectorContent | undefined;
@@ -74,23 +104,16 @@ export function InspectorColumnScreens(props: {
   readonly overlay?: ReactNode;
 }) {
   const panes = useMountedInspectorPanes(props.content);
-  return panes.map((pane) => {
-    const active = pane.key === props.content?.active;
-    return (
-      <Split.Inspector
-        key={pane.key}
-        screenKey={`inspector:${pane.key}`}
-        activityMode={active ? "attached" : "detached"}
-      >
-        <PaneScreenContent
-          pane={pane}
-          resetKeys={props.content?.resetKeys}
-          onClose={props.onClose}
-        />
-        {active ? props.overlay : null}
-      </Split.Inspector>
-    );
-  });
+  return (
+    <Split.Inspector>
+      <PaneStack
+        panes={panes}
+        content={props.content}
+        onClose={props.onClose}
+        overlay={props.overlay}
+      />
+    </Split.Inspector>
+  );
 }
 
 /** The inspector's panes where it has no column: a native stack with the active one attached. */
@@ -100,21 +123,5 @@ export function InspectorPanes(props: {
 }) {
   const panes = useMountedInspectorPanes(props.content);
   if (panes.length === 0) return null;
-  return (
-    <Stack.Host>
-      {panes.map((pane) => (
-        <Stack.Screen
-          key={pane.key}
-          screenKey={`inspector:${pane.key}`}
-          activityMode={pane.key === props.content?.active ? "attached" : "detached"}
-        >
-          <PaneScreenContent
-            pane={pane}
-            resetKeys={props.content?.resetKeys}
-            onClose={props.onClose}
-          />
-        </Stack.Screen>
-      ))}
-    </Stack.Host>
-  );
+  return <PaneStack panes={panes} content={props.content} onClose={props.onClose} />;
 }

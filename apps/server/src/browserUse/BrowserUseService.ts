@@ -50,7 +50,7 @@ export class BrowserUseService extends Context.Service<
 const SESSION_WAIT = "45 seconds";
 const STOP_TIMEOUT = "20 seconds";
 const SHARED_ENVIRONMENT = { OBU_NO_UPDATE_CHECK: "1" };
-// obu 4.9's own macOS lookup, beside the PATH it searches first.
+// obu's own macOS lookup, beside the PATH it searches first.
 const OBU_DISCOVERS = new Set([
   "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
   "/Applications/Chromium.app/Contents/MacOS/Chromium",

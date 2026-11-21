@@ -248,7 +248,7 @@ Install Rust 1.95 or newer through [rustup](https://rust-lang.org/install), usin
 toolchain.
 The packaged ELF compatibility check uses binutils’ `readelf`, included by the C/C++ toolchain.
 
-Ubuntu 24.04 and Debian 13:
+Ubuntu 24.04 or later and Debian 13:
 
 ```sh
 sudo apt-get update

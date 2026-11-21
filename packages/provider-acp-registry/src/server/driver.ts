@@ -740,14 +740,10 @@ export const AcpRegistryDriver: ProviderDriver<AcpRegistrySettings, AcpRegistryD
     const reportedLocalVersion = yield* Ref.make<string | null>(null);
     const checkProvider = checkAcpRegistryProviderReadiness(readinessInput).pipe(
       Effect.provideService(AcpRegistrySupport.AcpRegistryCatalog, catalog),
-      Effect.flatMap((provider) =>
-        Ref.get(reportedLocalVersion).pipe(
-          Effect.map((version) =>
-            provider.installed && provider.version === null && version !== null
-              ? { ...provider, version }
-              : provider,
-          ),
-        ),
+      Effect.zipWith(Ref.get(reportedLocalVersion), (provider, version) =>
+        provider.installed && provider.version === null && version !== null
+          ? { ...provider, version }
+          : provider,
       ),
       Effect.flatMap(withLiveRuntimeState),
     );

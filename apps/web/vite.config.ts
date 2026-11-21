@@ -65,31 +65,32 @@ const unitTestProject = {
 // Stay below ephemeral ranges: Windows reserves Hyper-V/WSL blocks there and EACCES is not skipped.
 const browserTestApiPort = 20_000 + ((Hash.string(import.meta.dirname) >>> 0) % 4_000);
 
+// The file previews import these lazily, mostly inside workers the dependency scan does not
+// follow. Found late, each one re-optimizes and reloads the page, in dev and mid test run.
+const lazyPreviewDependencies = [
+  "saxes",
+  "@betteroffice/docx/editor",
+  "@betteroffice/docx/layout",
+  "@betteroffice/docx/layout/render",
+  "@betteroffice/docx/yrs",
+  "@betteroffice/fonts",
+  "@betteroffice/pptx",
+  "@betteroffice/xlsx",
+  "@betteroffice/xlsx/headless",
+  "fast-xml-parser",
+  "entities",
+  "dompurify",
+  "heic-to/csp",
+  "fflate",
+  "pdfjs-dist",
+  "sql.js",
+  "tiff",
+];
+
 const browserTestProject = {
   extends: true,
-  // Pre-bundle lazy browser and worker dependencies to avoid mid-run reloads.
   optimizeDeps: {
-    include: [
-      "vite-plus/test/browser",
-      "@base-ui/react/autocomplete",
-      "saxes",
-      "@betteroffice/docx/editor",
-      "@betteroffice/docx/layout",
-      "@betteroffice/docx/layout/render",
-      "@betteroffice/docx/yrs",
-      "@betteroffice/fonts",
-      "@betteroffice/pptx",
-      "@betteroffice/xlsx",
-      "@betteroffice/xlsx/headless",
-      "fast-xml-parser",
-      "entities",
-      "dompurify",
-      "heic-to/csp",
-      "fflate",
-      "pdfjs-dist",
-      "sql.js",
-      "tiff",
-    ],
+    include: ["vite-plus/test/browser", "@base-ui/react/autocomplete", ...lazyPreviewDependencies],
   },
   test: {
     name: "browser",
@@ -219,6 +220,7 @@ export default defineConfig(() => {
         "effect/Array",
         "effect/Order",
         "react-dom/client",
+        ...lazyPreviewDependencies,
       ],
     },
     define: {

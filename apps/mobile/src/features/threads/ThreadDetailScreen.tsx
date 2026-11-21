@@ -1162,12 +1162,10 @@ function ThreadDetailBody(
     : userInputCollapsed
       ? "collapsed"
       : "expanded";
-  const userInputCardProgress = useDerivedValue<number>(
-    () =>
-      userInputMotion === "fresh"
-        ? 1
-        : withTiming(userInputMotion === "collapsed" ? 0 : 1, USER_INPUT_TOGGLE_TIMING),
-    [userInputMotion],
+  const userInputCardProgress = useDerivedValue<number>(() =>
+    userInputMotion === "fresh"
+      ? 1
+      : withTiming(userInputMotion === "collapsed" ? 0 : 1, USER_INPUT_TOGGLE_TIMING),
   );
   // Collapsing the inset is instant: the sinking card still covers the strip
   // being revealed, and animating the inset downward drifted the short-content
@@ -1175,15 +1173,14 @@ function ThreadDetailBody(
   const userInputInsetProgress = useDerivedValue<number>(() => {
     if (userInputMotion === "collapsed") return 0;
     return userInputMotion === "fresh" ? 1 : withTiming(1, USER_INPUT_TOGGLE_TIMING);
-  }, [userInputMotion]);
+  });
   const userInputCardCoverage = useSharedValue(0);
   const composerPopoverHeight = useSharedValue(0);
   const { freeze, scrollMessageToEnd } = useKeyboardScrollToEnd({ listRef });
   const reduceMotion = useReducedMotion();
   const floatingCoverageTarget = showFloatingStatus ? FLOATING_WORKING_CONTROL_COVERAGE : 0;
-  const floatingControlCoverage = useDerivedValue(
-    () => withTiming(floatingCoverageTarget, { duration: 180, reduceMotion: ReduceMotion.System }),
-    [floatingCoverageTarget],
+  const floatingControlCoverage = useDerivedValue(() =>
+    withTiming(floatingCoverageTarget, { duration: 180, reduceMotion: ReduceMotion.System }),
   );
   const userInputCoverageApplies = Platform.OS === "ios" && activeUserInputRequestId !== null;
   const questionStatusSpace = useAnimatedStyle(() => ({ height: floatingControlCoverage.value }));
@@ -1201,7 +1198,6 @@ function ThreadDetailBody(
     (value) => {
       combinedContentInsetEndAdjustment.set(value);
     },
-    [questionInFlow, userInputCoverageApplies],
   );
   const composerPopoverLift = useDerivedValue(() =>
     withTiming(
@@ -1209,13 +1205,11 @@ function ThreadDetailBody(
       { duration: 180, easing: Easing.out(Easing.cubic), reduceMotion: ReduceMotion.System },
     ),
   );
-  const floatingControlLift = useDerivedValue(
-    () =>
-      Math.max(
-        userInputCoverageApplies ? userInputCardProgress.value * userInputCardCoverage.value : 0,
-        composerPopoverLift.value,
-      ),
-    [userInputCoverageApplies],
+  const floatingControlLift = useDerivedValue(() =>
+    Math.max(
+      userInputCoverageApplies ? userInputCardProgress.value * userInputCardCoverage.value : 0,
+      composerPopoverLift.value,
+    ),
   );
   // A jump this thread never reached lets go when it closes.
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- aborts the thread scope, clears its timers and ends a pending message jump when the thread changes

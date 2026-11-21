@@ -1,12 +1,13 @@
-// Dev container for Onicode. Mirrors CI (ubuntu-24.04, Node 26, Rust stable)
+// Dev container for Onicode. Mirrors CI (ubuntu-26.04, Node 26, Rust stable)
 // and the canonical setup in docs/operations/development.md: global `vp`, `vp i`.
 // Contributor doc: docs/internals/devcontainer.md
 {
   "name": "Onicode",
-  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu26.04",
   "features": {
-    // nodeGypDependencies (default true) brings python3/make/g++, which Linux
-    // needs for node-pty's node-gyp fallback (its prebuilds are mac/win only).
+    // nodeGypDependencies (default true) brings python3/make/g++: the desktop build
+    // compiles native/browser-secret with cc, and node-pty falls back to node-gyp
+    // on an architecture it ships no prebuild for.
     "ghcr.io/devcontainers/features/node:2": {
       "version": "26"
     },

@@ -1,5 +1,6 @@
 import { type OrchestrationV2UserInputQuestion, TrimmedNonEmptyString } from "@onicode/contracts";
 import type { AcpAdapterV2Flavor } from "@onicode/provider-acp/server/adapter";
+import type { AcpToolCallState } from "@onicode/provider-acp/server/runtimeModel";
 import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
 
@@ -133,3 +134,15 @@ export const extractOpenCodeElicitationForm: NonNullable<
     },
   };
 };
+
+// Subagent tool calls stream on the root session with this tag, and OpenCode stops reporting
+// them once the prompt ends.
+const isChildSessionTool = (toolCall: AcpToolCallState) =>
+  Predicate.isObject(toolCall.data.meta) &&
+  Object.hasOwn(toolCall.data.meta, "opencode/child-session");
+
+// A background shell reports `completed` (still running only in its metadata), so a prompt
+// never waits on it. A command in a reply OpenCode starts by itself keeps that reply open.
+export const openCodeCommandOutlivesPrompt: NonNullable<
+  AcpAdapterV2Flavor["toolOutlivesPrompt"]
+> = (toolCall) => toolCall.kind === "execute" && !isChildSessionTool(toolCall);
