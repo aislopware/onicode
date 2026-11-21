@@ -2970,3 +2970,4 @@ a04bca5bcf	take	taken as is (other forge)
 1ed4f6a96f	take	taken as is
 285558eb10	take	adopted upstream's local Apple Speech module over @react-native-ai/apple 0.13.0 and its patch; helper named oni-apple-speech
 90c0766a16	skip	Onicode has no agent-context-budget workflow (skipped with d63c0ec8eb)
+342b58a79f	take	taken as is; keybindings doc keeps Onicode's key list (no isWeb/isDesktop)
