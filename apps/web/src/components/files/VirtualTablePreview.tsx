@@ -296,23 +296,23 @@ function ScaledRows(
   // multi-million-line logs while retaining real row heights in the viewport.
   const headerRows = props.header ? 1 : 0;
   const maxFirst = Math.max(0, props.count - headerRows - Math.floor(position.height / 29));
-  const scale = Math.max(1, scrollHeight - position.height) / Math.max(1, maxFirst * 29);
+  // The scaled track ends 2px early so a bottom that zoom or float error leaves short still
+  // reaches it and pins the native tail.
+  const scale = Math.max(1, scrollHeight - position.height - 2) / Math.max(1, maxFirst * 29);
   const logicalTop = position.top / scale / 29;
   const first = Math.min(maxFirst, Math.floor(logicalTop)) + headerRows;
   const rowFraction = logicalTop - (first - headerRows);
-  // Past the track's end the content is pinned and the final rows scroll natively.
-  const tailPinned = first - headerRows === maxFirst;
-  // Zoom and float error can leave the real bottom a pixel short of that end, so every row to the
-  // end mounts from there and its scroll extent can reach the pinned tail.
-  const nativeTail = tailPinned || position.top >= maxFirst * 29 * scale - 2;
+  // The final mounted rows keep their measured height and scroll natively.
+  const nativeTail = first - headerRows === maxFirst;
   const scrollModel = useRef({ scale, maxFirst, heights: [] as number[] });
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- Measure native tail rows and preserve the DOM scroll position when the virtual track scale changes.
   useLayoutEffect(() => {
     const previous = scrollModel.current;
     const heights = nativeTail
-      ? Array.from(contentRef.current?.querySelectorAll<HTMLElement>("[data-preview-row]") ?? [])
-          .filter((row) => Number(row.dataset.previewRow) >= maxFirst + headerRows)
-          .map((row) => row.offsetHeight)
+      ? Array.from(
+          contentRef.current?.querySelectorAll<HTMLElement>("[data-preview-row]") ?? [],
+          (row) => row.offsetHeight,
+        )
       : [];
     scrollModel.current = { scale, maxFirst, heights };
     const node = ref.current;
@@ -544,7 +544,9 @@ function ScaledRows(
       pendingReveal.current = null;
       return;
     }
-    node.scrollTop += delta * (nativeTail ? 1 : (scale * 29) / Math.max(29, bounds.height));
+    const step = delta * (nativeTail ? 1 : (scale * 29) / Math.max(29, bounds.height));
+    // A compressed track moves many content pixels per scroll pixel, so never round a step to 0.
+    node.scrollTop += delta < 0 ? Math.floor(step) : Math.ceil(step);
     setTop(node.scrollTop);
   });
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- Complete End-key scrolling after the final worker row has loaded and its DOM layout has settled.
@@ -607,7 +609,7 @@ function ScaledRows(
           ref={contentRef}
           className="absolute inset-x-0"
           style={{
-            top: tailPinned ? maxFirst * scale * 29 : position.top - rowFraction * layout.rowHeight,
+            top: nativeTail ? maxFirst * scale * 29 : position.top - rowFraction * layout.rowHeight,
           }}
         >
           {Array.from({ length: pageCount }, (_, offset) => (

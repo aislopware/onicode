@@ -735,7 +735,8 @@ describe("large text preview recovery", () => {
     );
     await vi.waitFor(() => expect(row(0)).not.toBeNull());
     await act(() => {
-      viewport().scrollTop = 100 * 29 - viewport().clientHeight;
+      // The scaled track ends 2px before the scroll bottom, where the native tail starts.
+      viewport().scrollTop = 100 * 29 - viewport().clientHeight - 2;
       viewport().dispatchEvent(new Event("scroll", { bubbles: true }));
     });
     const checkTop = (index: number) =>
@@ -1123,6 +1124,33 @@ describe("large text preview recovery", () => {
     });
   });
 
+  it("shows the last line of a compressed track after End under zoom", async () => {
+    await using screen = await render(
+      <div style={{ display: "flex", height: 783.5, width: 600, zoom: 1.1 }}>
+        <VirtualTablePreview
+          name="huge.log"
+          count={5_000_000}
+          columns={1}
+          source
+          getRows={(page) => Array.from({ length: 32 }, (_, i) => ["line-" + (page * 32 + i + 1)])}
+        />
+      </div>,
+    );
+    const viewport = () => screen.container.querySelector<HTMLElement>('[tabindex="0"]')!;
+    await act(() =>
+      viewport().dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true })),
+    );
+    await vi.waitFor(() => {
+      const last = screen.container.querySelector<HTMLElement>('[data-preview-row="4999999"]');
+      expect(last?.getBoundingClientRect().bottom).toBeLessThanOrEqual(
+        viewport().getBoundingClientRect().bottom + 1,
+      );
+      expect(last!.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+        viewport().getBoundingClientRect().top,
+      );
+    });
+  });
+
   it("covers the viewport top a pixel before the native tail", async () => {
     await using screen = await render(
       <div style={{ display: "flex", height: 400, width: 600 }}>
@@ -1136,8 +1164,9 @@ describe("large text preview recovery", () => {
       </div>,
     );
     const viewport = () => screen.container.querySelector<HTMLElement>('[tabindex="0"]')!;
-    // The scaled track ends where the native tail is pinned; stop one pixel short of it.
-    const trackEnd = 100 * 29 - viewport().clientHeight;
+    // The scaled track ends 2px before the scroll bottom, where the native tail is pinned; stop
+    // one pixel short of it.
+    const trackEnd = 100 * 29 - viewport().clientHeight - 2;
     await act(() => {
       viewport().scrollTop = trackEnd - 1;
       viewport().dispatchEvent(new Event("scroll", { bubbles: true }));
