@@ -2299,6 +2299,11 @@ export const make = Effect.gen(function* () {
             transcriptsRemaining += 1;
             return Option.some<AgentSessionRecentThread>({ _tag: "Skipped" });
           };
+          // No later run imports it either, so it is not a skipped session to review.
+          const neverImportable = () => {
+            transcriptsRemaining += 1;
+            return Option.none<AgentSessionRecentThread>();
+          };
           const snapshot = yield* readTranscript(
             transcript.filePath,
             identity,
@@ -2308,17 +2313,14 @@ export const make = Effect.gen(function* () {
           );
           if (snapshot === null) return unused();
 
-          if (Option.isNone(snapshot.cwd)) return unused();
+          if (Option.isNone(snapshot.cwd)) return neverImportable();
           const expandedCwd = expandHomePath(
             projectCwd(isExcludedProjectPath, snapshot.cwd.value, transcript.projectRoots).trim(),
             homeDir,
           );
-          if (!path.isAbsolute(expandedCwd)) return unused();
+          if (!path.isAbsolute(expandedCwd)) return neverImportable();
           // Another project's session is not a failed import here, or this project never finishes.
-          if (!(yield* belongsToRoot(path.resolve(expandedCwd)))) {
-            transcriptsRemaining += 1;
-            return Option.none<AgentSessionRecentThread>();
-          }
+          if (!(yield* belongsToRoot(path.resolve(expandedCwd)))) return neverImportable();
           const worktree = yield* rootWorktree(path.resolve(expandedCwd));
 
           const inheritedRecords =
@@ -2345,20 +2347,20 @@ export const make = Effect.gen(function* () {
             snapshot.claudeFields,
             snapshot.droppedMessageCount,
           );
-          if (parsedThread === "empty") {
-            // null means an unreadable history base, which may hold the conversation.
-            if (candidate.source === "codex" && inheritedRecords === null) return unused();
-            transcriptsRemaining += 1;
-            return Option.none<AgentSessionRecentThread>();
+          // No messages, no resumable session id (a Codex rollout without session_meta) or no
+          // prompt. An unreadable Codex history base (`inheritedRecords === null`) may hold these
+          // messages, so a later run may import it.
+          if (parsedThread === "empty" || parsedThread === null) {
+            return candidate.source === "codex" && inheritedRecords === null
+              ? unused()
+              : neverImportable();
           }
-          if (parsedThread === null) return unused();
-          // Claude Code cannot resume this id, so no retry makes the session importable.
+          // Claude Code cannot resume this id.
           if (
             parsedThread.source === "claudeAgent" &&
             !CLAUDE_SESSION_ID_PATTERN.test(parsedThread.providerSessionId)
           ) {
-            transcriptsRemaining += 1;
-            return Option.none<AgentSessionRecentThread>();
+            return neverImportable();
           }
           let savedTitle: string | undefined;
           if (candidate.source === "codex") {
