@@ -2244,6 +2244,8 @@ const declinedSteerTimings = [
   "stop-after-decline",
   "queued-model",
   "two-steers",
+  // A steer that named no model runs on the pick made after its decline.
+  "pick-after-decline",
 ] as const;
 
 it.effect.each(declinedSteerTimings)(
@@ -2413,6 +2415,14 @@ it.effect.each(declinedSteerTimings)(
           assert.equal(started.length, 1);
           return;
         }
+        if (timing === "pick-after-decline") {
+          yield* orchestrator.dispatch({
+            type: "thread.model-selection.set",
+            commandId: CommandId.make("select-composer"),
+            threadId,
+            modelSelection: composerSelection,
+          });
+        }
         const settled = yield* orchestrator.streamDomainEvents.pipe(
           Stream.filter(
             (event) =>
@@ -2447,6 +2457,10 @@ it.effect.each(declinedSteerTimings)(
         assert.equal(started.length, 2);
         assert.equal(started[1]?.message.messageId, messageId);
         assert.equal(started[1]?.runId, queued?.id);
+        assert.deepEqual(
+          started[1]?.modelSelection,
+          timing === "pick-after-decline" ? composerSelection : runSelection,
+        );
       }).pipe(Effect.provide(layer));
     }),
 );
@@ -3426,9 +3440,13 @@ it.effect("steers a deferred agent message on a pick made while it waited", () =
 
         assert.lengthOf(steered, 1);
         assert.deepEqual(steeredSelections, [composerSelection]);
-        assert.deepEqual(
-          (yield* orchestrator.getThreadProjection(threadId)).thread.modelSelection,
-          composerSelection,
+        const projection = yield* orchestrator.getThreadProjection(threadId);
+        assert.deepEqual(projection.thread.modelSelection, composerSelection);
+        // Should the turn leave it unread, it is queued again on the pick of that moment.
+        assert.isTrue(
+          projection.messages.find(
+            (message) => message.id === MessageId.make("message:agent-steer"),
+          )?.followsThreadSelection,
         );
       }).pipe(Effect.provide(layer));
     }),
@@ -3480,6 +3498,19 @@ const scheduledDeliveryAfterClaudeSwitch = (name: string, text: string) =>
         (run) => run.status === "queued",
       )!;
       assert.equal(queuedRun.providerInstanceId, instanceId);
+      // A prompt pinned to the Codex instance waits behind it.
+      yield* orchestrator.dispatch({
+        type: "message.dispatch",
+        commandId: CommandId.make("pinned"),
+        threadId,
+        messageId: MessageId.make("message:pinned"),
+        text: "pinned",
+        attachments: [],
+        modelSelection: runSelection,
+        dispatchMode: { type: "queue_after_active" },
+        createdBy: "user",
+        creationSource: "web",
+      });
       const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
       const first = harness.started[0]!;
       yield* orchestrator.dispatch({
@@ -3541,7 +3572,7 @@ it.effect("checks an edited scheduled /goal against the thread's current provide
 it.effect("checks a queued scheduled /goal against the thread's current provider at start", () =>
   Effect.scoped(
     Effect.gen(function* () {
-      const { started, layer, queueAndSwitch } = yield* scheduledDeliveryAfterClaudeSwitch(
+      const { layer, queueAndSwitch } = yield* scheduledDeliveryAfterClaudeSwitch(
         "start-scheduled-goal",
         "/goal pause",
       );
@@ -3561,11 +3592,22 @@ it.effect("checks a queued scheduled /goal against the thread's current provider
         const failure = projection.turnItems.find(
           (item) => item.type === "error" && item.runId === queuedRun.id,
         );
-        assert.equal(started.length, 1);
         assert.equal(projection.runs.find((run) => run.id === queuedRun.id)?.status, "failed");
-        assert.equal(
-          failure?.type === "error" ? failure.failure.code : null,
-          "queued_start_failed",
+        // The refusal is the message's own fault, so the prompt behind it still starts.
+        const pinned = projection.runs.find(
+          (run) => run.userMessageId === MessageId.make("message:pinned"),
+        );
+        assert.equal(pinned?.status, "starting");
+        assert.isNotTrue(pinned?.queueHeld);
+        assert.deepEqual(
+          failure?.type === "error"
+            ? { code: failure.failure.code, message: failure.failure.message }
+            : null,
+          {
+            code: "queued_start_failed",
+            message:
+              "Claude goals cannot be paused or resumed. Send /goal clear to remove the goal.",
+          },
         );
       }).pipe(Effect.provide(layer));
     }),

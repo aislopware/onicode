@@ -432,7 +432,8 @@ export const layerExecutor: Layer.Layer<
                         ...(message.context ? { context: message.context } : {}),
                         attachments: message.attachments,
                         ...((error.steerDeclined || error.turnAbandoned) &&
-                        effect.request.modelSelection !== undefined
+                        effect.request.modelSelection !== undefined &&
+                        message.followsThreadSelection !== true
                           ? { modelSelection: effect.request.modelSelection }
                           : message.delegatedCompletion === undefined
                             ? {}
