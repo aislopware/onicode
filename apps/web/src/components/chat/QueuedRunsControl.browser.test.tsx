@@ -19,7 +19,7 @@ import * as Option from "effect/Option";
 import { AsyncResult, type Atom, AtomRegistry } from "effect/reactivity";
 import { createRef, Profiler, useState, type ComponentProps } from "react";
 import { expect, it, vi } from "vite-plus/test";
-import { page } from "vite-plus/test/browser";
+import { page, userEvent } from "vite-plus/test/browser";
 
 const state = vi.hoisted(() => ({
   threadState: null as unknown as Atom.Writable<AsyncResult.AsyncResult<EnvironmentThreadState>>,
@@ -460,6 +460,24 @@ it("names the wait on a message held for compaction and steers past it and a com
     <QueuedRunsControl {...baseProps} ref={ref} editingRunId={RunId.make("run:next")} />,
   );
   expect(ref.current?.steerNext(false)).toBe(false);
+
+  // Without a goal driver the server treats /goal as a plain command, and with one it may stop
+  // the turn; either way Send now never steers it into the turn.
+  state.workflow = {
+    activeRun: { id: "run:active" },
+    canPromoteToSteer: true,
+    queuedRuns: [
+      {
+        run: { id: "run:goal", userMessageId: "message:goal" },
+        text: "/goal ship it",
+        attachments: [],
+        awaitsCompaction: false,
+      },
+    ],
+  };
+  await screen.rerender(<QueuedRunsControl {...baseProps} ref={ref} />);
+  await userEvent.hover(page.getByRole("button", { name: "Send now" }));
+  await expect.element(page.getByText("Move this command to the front of the queue")).toBeVisible();
 });
 
 it("tells the user why Send now was rejected", async () => {

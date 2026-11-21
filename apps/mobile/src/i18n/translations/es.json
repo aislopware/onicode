@@ -4482,6 +4482,7 @@
   "5ce90d5f821d0850": "Editando",
   "3e05f81778e6ed67": "Se envía tras compactar, mensaje en cola {number}",
   "15eb3e57bbf1948c": "Enviar ahora, mensaje en cola {number}",
+  "425ab15036aec8a4": "Mover este comando al principio de la cola",
   "d6ecb9285a8241e9": "En cola",
   "2ef0a0cae25e2ffd": "Cola en pausa",
   "62180f6d3648fd2f": "No hay mensajes esperando en esta cola.",

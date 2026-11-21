@@ -4489,6 +4489,7 @@
   "5ce90d5f821d0850": "Wird bearbeitet",
   "3e05f81778e6ed67": "Wird nach der Komprimierung gesendet, eingereihte Nachricht {number}",
   "15eb3e57bbf1948c": "Jetzt senden, eingereihte Nachricht {number}",
+  "425ab15036aec8a4": "Diesen Befehl an den Anfang der Warteschlange verschieben",
   "d6ecb9285a8241e9": "Eingereiht",
   "2ef0a0cae25e2ffd": "Warteschlange pausiert",
   "62180f6d3648fd2f": "Keine wartenden Nachrichten in dieser Warteschlange.",

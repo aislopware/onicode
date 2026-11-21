@@ -11,6 +11,7 @@ import {
   squashAtomCommandFailure,
 } from "@onicode/client-runtime/state/runtime";
 import { canPromoteQueuedRun } from "@onicode/client-runtime/state/thread-workflows";
+import { isSlashCommand } from "@onicode/shared/composerTrigger";
 import { resolveUserMessagePresentation } from "@onicode/client-runtime/user-message";
 import type { ChatAttachment, EnvironmentId, RunId, ThreadId } from "@onicode/contracts";
 import { Atom } from "effect/reactivity";
@@ -275,6 +276,11 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
         </Text>
       ) : null}
       {queuedRuns.map(({ run, text, attachments, message, awaitsCompaction }, index) => {
+        // A command waits for the turn to end; Send now only moves it to the front of the queue.
+        const movesFirst =
+          !workflow?.canSendNow &&
+          !workflow?.promoteSkipsCompaction &&
+          isSlashCommand({ text: message?.text ?? text, attachments });
         const controls = resolveThreadQueueRowControls({
           awaitsCompaction,
           busy: busyRunId !== null || resuming,
@@ -404,6 +410,9 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
                     accessibilityLabel={gt("Send now, queued message {number}", {
                       number: index + 1,
                     })}
+                    {...(movesFirst
+                      ? { accessibilityHint: gt("Move this command to the front of the queue") }
+                      : {})}
                     disabled={!controls.canSend}
                     onPress={() => void act(run.id, "steer")}
                     className="shrink-0 justify-center self-stretch pl-4 active:opacity-70 disabled:opacity-40"

@@ -4483,6 +4483,7 @@
   "5ce90d5f821d0850": "En cours de modification",
   "3e05f81778e6ed67": "Envoyé après le compactage, message en file d’attente {number}",
   "15eb3e57bbf1948c": "Envoyer maintenant le message en file d’attente {number}",
+  "425ab15036aec8a4": "Placer cette commande en tête de la file d’attente",
   "d6ecb9285a8241e9": "En file d’attente",
   "2ef0a0cae25e2ffd": "File d’attente en pause",
   "62180f6d3648fd2f": "Aucun message en attente dans cette file.",
