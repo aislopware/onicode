@@ -51,7 +51,7 @@ import {
   releasePersistedAttachmentUpload,
   verifyStashedAttachmentUpload,
 } from "../../lib/attachmentUploadQueue";
-import { countReservedComposerSlots } from "./composerThreadImport";
+import { countHeldComposerSlots } from "./composerThreadImport";
 import { composerImageDedupKey } from "./composerAttachmentFiles";
 import { replaceComposerContextReferences } from "@onicode/shared/composerContextReferences";
 import { resizeSnapShotSource } from "../../lib/snapShotSource";
@@ -277,13 +277,9 @@ export function useComposerStash(input: {
 
     // The store, not the refs: those follow an open question's draft, and lag restored files.
     const remainingRestoreSlots = () => {
-      const draft = getComposerDraft(composerDraftTarget);
       return Math.max(
         0,
-        PROVIDER_SEND_TURN_MAX_ATTACHMENTS -
-          (draft?.images.length ?? 0) -
-          (draft?.files.length ?? 0) -
-          countReservedComposerSlots(composerTargetKey(composerDraftTarget)),
+        PROVIDER_SEND_TURN_MAX_ATTACHMENTS - countHeldComposerSlots(composerDraftTarget),
       );
     };
     let unrestoredFileNames: string[] = [];
