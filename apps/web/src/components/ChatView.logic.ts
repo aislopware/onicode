@@ -1212,23 +1212,53 @@ export function chatActionErrorMessage(error: unknown, resolve: MessageResolver 
   return thrownErrorMessage(error, resolve) ?? resolve(msg("An error occurred."));
 }
 
-/**
- * A local copy of the runtime's error shares the runtime's key, so one dismissal covers both.
- * Other local errors are keyed by when they were raised, so a repeat shows after a dismissal.
- */
-export function threadErrorBannerSource(input: {
+/** A local copy of the runtime's error shares the runtime's key, so one dismissal covers both. */
+function threadErrorIsServerRuntime(input: {
   readonly isServerThread: boolean;
-  readonly localError: LocalThreadErrorEntry | undefined;
+  readonly localServerError: string | null;
   readonly runtimeError: string | null;
-  readonly runtimeSource: string | null;
-}): string | null {
-  const localMessage = input.localError?.message ?? null;
-  if (input.isServerThread && (localMessage === null || localMessage === input.runtimeError)) {
-    return input.runtimeSource;
+}): boolean {
+  return (
+    input.isServerThread &&
+    (input.localServerError === null || input.localServerError === input.runtimeError)
+  );
+}
+
+// Only server runtime errors get a session dismissal: they persist in projections across
+// remounts. Local and draft errors are cleared on dismiss, so a repeat shows again.
+export function resolveThreadErrorBanner(input: {
+  readonly isServerThread: boolean;
+  readonly localServerError: string | null;
+  readonly localDraftError: string | null;
+  readonly runtimeError: string | null;
+  readonly runtimeErrorSource: string | null;
+}): {
+  readonly threadError: string | null;
+  readonly sessionDismissal: {
+    readonly error: string;
+    readonly source: string | null;
+  } | null;
+} {
+  const threadError = input.isServerThread
+    ? (input.localServerError ?? input.runtimeError ?? null)
+    : input.localDraftError;
+  if (
+    threadError === null ||
+    !threadErrorIsServerRuntime({
+      isServerThread: input.isServerThread,
+      localServerError: input.localServerError,
+      runtimeError: input.runtimeError,
+    })
+  ) {
+    return { threadError, sessionDismissal: null };
   }
-  return input.localError === undefined || localMessage === null
-    ? null
-    : `local@${input.localError.at}`;
+  return {
+    threadError,
+    sessionDismissal: {
+      error: threadError,
+      source: input.runtimeErrorSource,
+    },
+  };
 }
 
 export function releaseChatTimelineAnchor<T extends { readonly messageId: MessageId | null }>(
