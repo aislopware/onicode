@@ -156,6 +156,11 @@ const ThreadLaunchTool = Tool.make("oni_thread_launch", {
       }),
     ),
     attachments: Schema.optional(Schema.Array(McpAttachmentInput).check(Schema.isMaxLength(8))),
+    outputSchema: Schema.optional(
+      Schema.Record(Schema.String, Schema.Json).annotate({
+        description: "As in `oni_thread_send`. Needs `message`.",
+      }),
+    ),
     clientRequestId: Schema.optional(OrchestratorMcpClientRequestId),
     /** Set by a linked environment launching its agent's delegated task here; ignored otherwise. */
     delegatedFrom: Schema.optional(OrchestrationV2DelegatedFrom),
