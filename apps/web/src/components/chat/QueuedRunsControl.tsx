@@ -83,6 +83,14 @@ function queuedImageResources(projection: ThreadQueueProjection | undefined) {
   );
 }
 
+// The server decides on the agent's text, and a goal command can stop the turn.
+function movesCommandFirst(message: {
+  readonly text: string;
+  readonly attachments: ReadonlyArray<unknown>;
+}): boolean {
+  return isSlashCommand(message) && parseGoalCommand(message) === null;
+}
+
 export function QueuedRunsControl({
   ref,
   ...props
@@ -126,8 +134,21 @@ export function QueuedRunsControl({
   const workflow = projection ? deriveThreadQueueWorkflowState(projection, messages) : null;
   const queued = workflow?.queuedRuns ?? [];
   const activeRun = workflow?.activeRun ?? null;
-  // A row waiting on compaction is already headed into the turn; the steer key takes the next one.
-  const steerTarget = queued.find((queuedRun) => !queuedRun.awaitsCompaction);
+  const steersIntoTurn =
+    workflow !== null && !workflow.canSendNow && !workflow.promoteSkipsCompaction;
+  // A row waiting on compaction is already headed into the turn, and a command only moves first
+  // instead of steering, so the steer key takes the next row or the waiting steer.
+  const steerTarget = queued.find(
+    (queuedRun) =>
+      !queuedRun.awaitsCompaction &&
+      !(
+        steersIntoTurn &&
+        movesCommandFirst({
+          text: queuedRun.message?.text ?? queuedRun.text,
+          attachments: queuedRun.attachments,
+        })
+      ),
+  );
   const canSendRun = (run: Pick<OrchestrationV2Run, "freshContext" | "outputSchema">) =>
     workflow !== null && (workflow.canSendNow || canPromoteQueuedRun(workflow, run));
   const queuedImageUrlById = new Map(
@@ -276,9 +297,10 @@ export function QueuedRunsControl({
                 replaceComposerContextReferences(item.text, (reference) => reference.label),
               ).trim();
           const isEditing = item.runId !== null && item.runId === props.editingRunId;
-          // The server decides on the agent's text, and a goal command can stop the turn.
-          const sentText = { text: item.message?.text ?? item.text, attachments: item.attachments };
-          const movesCommandFirst = isSlashCommand(sentText) && parseGoalCommand(sentText) === null;
+          const commandMovesFirst = movesCommandFirst({
+            text: item.message?.text ?? item.text,
+            attachments: item.attachments,
+          });
           return (
             <li
               key={item.key}
@@ -339,7 +361,7 @@ export function QueuedRunsControl({
                           ? gt("Start a turn with this message")
                           : workflow?.promoteSkipsCompaction
                             ? gt("Skip compaction and send this message")
-                            : movesCommandFirst
+                            : commandMovesFirst
                               ? gt("Move this command to the front of the queue")
                               : gt("Send into the current turn")}
                       </TooltipPopup>

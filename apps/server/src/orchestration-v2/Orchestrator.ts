@@ -12460,7 +12460,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
   const releaseHeldSteer = Effect.fnUntraced(function* (
     command: Extract<
       OrchestrationV2ServerCommand,
-      { readonly type: "queued-run.steer-target-ended" | "queued-run.start" }
+      {
+        readonly type: "queued-run.steer-target-ended" | "queued-run.start" | "queued-run.edit";
+      }
     >,
     events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
     run: OrchestrationV2Run,
@@ -12832,14 +12834,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       })
     ) {
       const { steerWhenReadyRunId: _, ...queued } = queuedRun;
-      yield* emitEvent({
-        type: "run.updated",
-        threadId: command.threadId,
-        runId: queuedRun.id,
-        ...(queuedRun.rootNodeId === null ? {} : { nodeId: queuedRun.rootNodeId }),
-        providerInstanceId: queuedRun.providerInstanceId,
-        occurredAt: now,
-        payload: queued,
+      yield* releaseHeldSteer(command, events, queued, {
+        ...queuedMessage,
+        text: command.text,
+        ...editedAttachments,
+        ...(command.context ? { context: command.context } : {}),
       });
     }
     // Thread deletion only cleans files the thread still references.
@@ -17060,10 +17059,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           : dispatch,
       );
     // Answering a message-mode question can also start a follow-up, as can a held steer whose
-    // turn ended or that is sent now.
+    // turn ended, that is sent now, or that is edited into a command.
     return yield* command.type === "runtime-request.respond" ||
     command.type === "queued-run.steer-target-ended" ||
-    command.type === "queued-run.start"
+    command.type === "queued-run.start" ||
+    command.type === "queued-run.edit"
       ? withSubagentParentLock(command.threadId, dispatch)
       : dispatch;
   });

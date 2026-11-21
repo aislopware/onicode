@@ -416,7 +416,7 @@ it("does not re-render while assistant text streams into the thread", async () =
   expect(renders).toBeGreaterThan(settled);
 });
 
-it("names the wait on a message held for compaction and steers the next one", async () => {
+it("names the wait on a message held for compaction and steers past it and a command", async () => {
   setup();
   state.workflow = {
     activeRun: { id: "run:active" },
@@ -427,6 +427,13 @@ it("names the wait on a message held for compaction and steers the next one", as
         text: "Held",
         attachments: [],
         awaitsCompaction: true,
+      },
+      // Promoting a command only moves it first, so the key would do nothing on it.
+      {
+        run: { id: "run:command", userMessageId: "message:command" },
+        text: "/context",
+        attachments: [],
+        awaitsCompaction: false,
       },
       {
         run: { id: "run:next", userMessageId: "message:next" },
@@ -440,7 +447,7 @@ it("names the wait on a message held for compaction and steers the next one", as
   await using screen = await renderQueue({ ref });
 
   await expect.element(page.getByText("After compaction", { exact: true })).toBeVisible();
-  expect(page.getByRole("button", { name: "Send now" }).elements()).toHaveLength(1);
+  expect(page.getByRole("button", { name: "Send now" }).elements()).toHaveLength(2);
   expect(ref.current?.steerNext(false)).toBe(true);
   await vi.waitFor(() =>
     expect(state.sent).toEqual([

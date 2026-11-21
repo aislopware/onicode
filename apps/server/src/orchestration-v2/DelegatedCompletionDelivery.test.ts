@@ -2380,6 +2380,8 @@ it.layer(Layer.merge(layerTest, ProviderContinuationRequests.layer))(
       // The process exited before the provider accepted the turn; startup releases the steer.
       { ends: "requeued by recovery", name: "held-steer-requeued" },
       { ends: "requeued, then sent now", name: "held-steer-sent-now" },
+      // A command cannot steer, so the edit releases it while its turn still runs.
+      { ends: "edited into a command", name: "held-steer-edited" },
     ] as const)(
       "gives a held steer a follow-up only once its turn is over: $ends",
       ({ ends, name }) =>
@@ -2442,22 +2444,31 @@ it.layer(Layer.merge(layerTest, ProviderContinuationRequests.layer))(
           assert.isUndefined(held.delegatedTaskId);
 
           const afterSequence = yield* eventSink.latestSequence();
-          yield* eventSink.write({
-            ...(ends === "interrupted" ? {} : { commandId: reconcileCommandId(name) }),
-            events: [
-              {
-                id: EventId.make(`event:${name}-active-ended`),
-                type: "run.updated",
-                threadId: child.childThreadId,
-                runId: active.id,
-                occurredAt: now,
-                payload:
-                  ends === "interrupted"
-                    ? { ...active, status: "interrupted", startedAt: now, completedAt: now }
-                    : { ...active, status: "queued", queueHeld: true },
-              },
-            ],
-          });
+          if (ends === "edited into a command") {
+            yield* orchestrator.dispatch({
+              type: "queued-run.edit",
+              commandId: CommandId.make(`command:${name}:edit`),
+              threadId: child.childThreadId,
+              runId: held.id,
+              text: "/context",
+            });
+          } else
+            yield* eventSink.write({
+              ...(ends === "interrupted" ? {} : { commandId: reconcileCommandId(name) }),
+              events: [
+                {
+                  id: EventId.make(`event:${name}-active-ended`),
+                  type: "run.updated",
+                  threadId: child.childThreadId,
+                  runId: active.id,
+                  occurredAt: now,
+                  payload:
+                    ends === "interrupted"
+                      ? { ...active, status: "interrupted", startedAt: now, completedAt: now }
+                      : { ...active, status: "queued", queueHeld: true },
+                },
+              ],
+            });
           if (ends === "requeued by recovery") yield* orchestrator.recoverDelegatedTasks;
           if (ends === "requeued, then sent now") {
             yield* orchestrator.dispatch({
@@ -2487,7 +2498,7 @@ it.layer(Layer.merge(layerTest, ProviderContinuationRequests.layer))(
           const parent = yield* orchestrator.getThreadProjection(parentThreadId);
           assert.equal(
             parent.subagents.find((row) => row.id === released.delegatedTaskId)?.prompt,
-            "held",
+            ends === "edited into a command" ? "/context" : "held",
           );
         }),
     );
