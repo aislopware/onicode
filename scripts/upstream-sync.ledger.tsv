@@ -3051,3 +3051,4 @@ b84cd4b9a5	skip	kept Onicode's tests: httpObservability.test.ts drives a real HT
 ef9b826f53	take	taken as is
 3d6336137b	take	taken as is
 8d3a311d5d	take	fix(github): ci_logs explains why a check has no log
+39480b5c88	take	fix(opencode): custom models can go back to the default reasoning level
