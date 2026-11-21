@@ -3,6 +3,7 @@ import type { MFunctionType } from "gt-i18n/types";
 import {
   isOrchestrationV2WorkActive,
   ORCHESTRATION_V2_WS_METHODS,
+  OrchestrationV2GetThreadProjectionError,
   type EnvironmentId as EnvironmentIdType,
   type OrchestrationV2ThreadDetailSnapshot,
   type OrchestrationV2ThreadProjection,
@@ -21,6 +22,7 @@ import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
@@ -65,6 +67,7 @@ import {
 } from "./threadState.ts";
 
 const THREAD_SUBSCRIPTION_RETRY_DELAY = "250 millis";
+const isThreadProjectionError = Schema.is(OrchestrationV2GetThreadProjectionError);
 
 function statusWithoutLiveData(
   data: Option.Option<OrchestrationV2ThreadProjection>,
@@ -1017,6 +1020,8 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
   // A 404 can arrive before the thread exists, so a miss asks HTTP again while mounted.
   let httpMisses = 0;
   let defectRetries = 0;
+  // A forced reload keeps the backoff, or an undecodable live event reloads every retry.
+  let recovering = false;
   const backOffAfterDefect = Effect.suspend(() => {
     const retryDelay = subscriptionRetryDelay(THREAD_SUBSCRIPTION_RETRY_DELAY, defectRetries);
     defectRetries += 1;
@@ -1114,7 +1119,8 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
         }
 
         const sequence = yield* SubscriptionRef.get(lastSequence);
-        const canResume = Option.isSome(current.data) && !(yield* Ref.get(forceSnapshot));
+        recovering = yield* Ref.get(forceSnapshot);
+        const canResume = Option.isSome(current.data) && !recovering;
         yield* Ref.set(resuming, canResume);
         const acceptBoundedSnapshot = yield* Ref.get(acceptsBoundedSocketSnapshots);
 
@@ -1152,6 +1158,16 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
           yield* Queue.offer(resubscribes, undefined);
         }),
         onExpectedFailure: Effect.fn("EnvironmentThreadState.onExpectedFailure")(function* (cause) {
+          // A stored event the server cannot replay fails the same cursor every time.
+          if (
+            cause.reasons.some(
+              (reason) => reason._tag === "Fail" && isThreadProjectionError(reason.error),
+            ) &&
+            (yield* Ref.getAndSet(resuming, false))
+          ) {
+            yield* Ref.set(forceSnapshot, true);
+            return yield* Queue.offer(resubscribes, undefined);
+          }
           const retryOverHttp = !isAuthorizationFailure(cause) && (yield* failedSocketOnlyOpen);
           if (!retryOverHttp) yield* setStreamError(formatThreadError(cause));
         }),
@@ -1163,7 +1179,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
         applyItems(items).pipe(
           Effect.andThen(
             Effect.sync(() => {
-              defectRetries = 0;
+              if (!recovering) defectRetries = 0;
             }),
           ),
         ),

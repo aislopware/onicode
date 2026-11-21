@@ -5,6 +5,7 @@ import {
   MessageId,
   NodeId,
   ORCHESTRATION_V2_WS_METHODS,
+  OrchestrationV2GetThreadProjectionError,
   RuntimeRequestId,
   RunId,
   ThreadId,
@@ -2524,9 +2525,44 @@ describe("EnvironmentThreads", () => {
       expect(Option.isNone(live.error)).toBe(true);
       expect(Option.getOrThrow(live.data).thread.title).toBe("Reloaded thread");
 
-      yield* harness.replaceSession;
+      // A live event that still cannot decode after the reload waits longer than the last retry.
+      yield* Queue.offer(harness.inputs, TEST_DEFECT);
+      yield* awaitThreadState(harness.observed, (value) => Option.isSome(value.error));
+      yield* TestClock.adjust("250 millis");
+      expect(yield* SubscriptionRef.get(harness.subscriptionCount)).toBe(3);
+      yield* TestClock.adjust("250 millis");
       yield* awaitSubscriptions(4);
+      expect(yield* Ref.get(harness.lastSubscribeAfterSequence)).toBeUndefined();
+      yield* Queue.offerAll(harness.inputs, [
+        snapshot(BASE_PROJECTION, CACHED_SNAPSHOT_SEQUENCE + 5),
+        synchronized(),
+      ]);
+      yield* awaitThreadState(harness.observed, (value) => value.status === "live");
+
+      yield* harness.replaceSession;
+      yield* awaitSubscriptions(5);
       expect(yield* Ref.get(harness.lastSubscribeAfterSequence)).toBe(CACHED_SNAPSHOT_SEQUENCE + 5);
+
+      // A cursor the server cannot replay fails every time, so the retry drops it at once.
+      yield* Queue.offer(
+        harness.inputs,
+        new OrchestrationV2GetThreadProjectionError({
+          threadId: THREAD_ID,
+          message: "Failed while replaying orchestration V2 thread",
+        }),
+      );
+      yield* awaitSubscriptions(6);
+      expect(yield* Ref.get(harness.lastSubscribeAfterSequence)).toBeUndefined();
+      expect(Option.isNone((yield* Ref.get(harness.latest)).error)).toBe(true);
+      yield* Queue.offerAll(harness.inputs, [
+        snapshot(BASE_PROJECTION, CACHED_SNAPSHOT_SEQUENCE + 6),
+        synchronized(),
+      ]);
+      const replayed = yield* awaitThreadState(
+        harness.observed,
+        (value) => value.status === "live",
+      );
+      expect(Option.isNone(replayed.error)).toBe(true);
     }),
   );
 
