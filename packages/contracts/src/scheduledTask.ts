@@ -19,7 +19,7 @@ import { ProviderInteractionMode, RuntimeMode } from "./providerPolicy.ts";
 
 const TimeOfDay = TrimmedNonEmptyString.check(
   Schema.isPattern(/^([01]?\d|2[0-3]):([0-5]\d)$/),
-).annotate({ description: "Local time as HH:MM, such as 09:30." });
+).pipe(Schema.annotateEncoded({ description: "Local time as HH:MM, such as 09:30." }));
 
 export const MIN_SCHEDULED_TASK_INTERVAL_MS = 60_000;
 

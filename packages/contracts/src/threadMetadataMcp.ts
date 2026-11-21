@@ -26,9 +26,11 @@ export function hasOnlyPairedSurrogates(value: string): boolean {
   return true;
 }
 
-const ThreadMetadataTitle = TrimmedNonEmptyString.check(Schema.isMaxLength(512)).annotate({
-  description: "New concise display title. Required only when action is rename.",
-});
+const ThreadMetadataTitle = TrimmedNonEmptyString.check(Schema.isMaxLength(512)).pipe(
+  Schema.annotateEncoded({
+    description: "New concise display title. Required only when action is rename.",
+  }),
+);
 
 const ThreadMetadataClientRequestId = TrimmedNonEmptyString.check(Schema.isMaxLength(256))
   .check(
@@ -38,7 +40,11 @@ const ThreadMetadataClientRequestId = TrimmedNonEmptyString.check(Schema.isMaxLe
         : "clientRequestId must contain valid paired Unicode surrogates.",
     ),
   )
-  .annotate({ description: "Stable idempotency key to reuse when retrying this mutation." });
+  .pipe(
+    Schema.annotateEncoded({
+      description: "Stable idempotency key to reuse when retrying this mutation.",
+    }),
+  );
 
 export const ThreadMetadataMcpAction = Schema.Literals(["rename", "regenerate_title"]);
 export type ThreadMetadataMcpAction = typeof ThreadMetadataMcpAction.Type;

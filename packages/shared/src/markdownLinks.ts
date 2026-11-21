@@ -455,17 +455,32 @@ function markdownRunEndFinder(markdown: string, delimiter: RegExp) {
     if (start >= runStart && start <= runEnd) return runEnd;
     delimiter.lastIndex = start;
     runStart = start;
-    runEnd = delimiter.exec(markdown)?.index ?? markdown.length;
+    let match = delimiter.exec(markdown);
+    // A two-character match starting with a backslash is an escape, not the delimiter.
+    while (match && match[0].length === 2 && match[0][0] === "\\") match = delimiter.exec(markdown);
+    runEnd = match?.index ?? markdown.length;
     return runEnd;
   };
 }
 
+// A blank line, or one holding only blockquote markers, ends the paragraph and any link tail in it.
+const PARAGRAPH_END = String.raw`\n(?:[ \t\r]*| {0,3}>[ \t\r>]*)\n`;
+const ESCAPE = String.raw`\\[!-/:-@[-\`{-~]`;
+
 function markdownLinkTailScanner(markdown: string) {
-  // A blank line ends the paragraph, so no part of a link's tail runs past one.
-  const whitespaceEnd = markdownRunEndFinder(markdown, /\S|\n[ \t\r]*\n/g);
-  const doubleQuoteEnd = markdownRunEndFinder(markdown, /"|\n[ \t\r]*\n/g);
-  const singleQuoteEnd = markdownRunEndFinder(markdown, /'|\n[ \t\r]*\n/g);
-  const titleWhitespaceEnd = markdownRunEndFinder(markdown, /\S|\n[ \t\r]*\n/g);
+  const whitespaceEnd = markdownRunEndFinder(markdown, new RegExp(`\\S|${PARAGRAPH_END}`, "g"));
+  const doubleQuoteEnd = markdownRunEndFinder(
+    markdown,
+    new RegExp(`${ESCAPE}|"|${PARAGRAPH_END}`, "g"),
+  );
+  const singleQuoteEnd = markdownRunEndFinder(
+    markdown,
+    new RegExp(`${ESCAPE}|'|${PARAGRAPH_END}`, "g"),
+  );
+  const titleWhitespaceEnd = markdownRunEndFinder(
+    markdown,
+    new RegExp(`\\S|${PARAGRAPH_END}`, "g"),
+  );
   return (start: number) => {
     const end = whitespaceEnd(start);
     const quote = markdown[end];
@@ -503,7 +518,7 @@ function bareMarkdownLinkDestinationEnd(markdown: string, start: number): number
 }
 
 function markdownLinkDestinationScanner(markdown: string) {
-  const whitespaceEnd = markdownRunEndFinder(markdown, /\S/g);
+  const whitespaceEnd = markdownRunEndFinder(markdown, new RegExp(`\\S|${PARAGRAPH_END}`, "g"));
   const angleEnd = markdownRunEndFinder(markdown, /[>\n]/g);
   // Separate caches keep scans moving forward when angle destinations fall back to bare ones.
   const angleTail = markdownLinkTailScanner(markdown);

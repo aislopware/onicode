@@ -39,27 +39,33 @@ const dependencies = [
  */
 export const IssueTargetInput = Schema.Struct({
   url: Schema.optional(
-    TrimmedNonEmptyString.annotate({
-      description: "The issue's web URL. Preferred when you have it.",
-    }),
+    TrimmedNonEmptyString.pipe(
+      Schema.annotateEncoded({ description: "The issue's web URL. Preferred when you have it." }),
+    ),
   ),
   key: Schema.optional(
-    TrimmedNonEmptyString.annotate({
-      description: "The issue's key in the project's tracker, such as its number.",
-    }),
+    TrimmedNonEmptyString.pipe(
+      Schema.annotateEncoded({
+        description: "The issue's key in the project's tracker, such as its number.",
+      }),
+    ),
   ),
   scope: Schema.optional(TrimmedNonEmptyString),
   projectId: Schema.optional(
-    ProjectId.annotate({
-      description: "Project whose tracker holds key. Defaults to this thread's project.",
-    }),
+    ProjectId.pipe(
+      Schema.annotateEncoded({
+        description: "Project whose tracker holds key. Defaults to this thread's project.",
+      }),
+    ),
   ),
 });
 export type IssueTargetInput = typeof IssueTargetInput.Type;
 
 const ThreadTargetInput = Schema.Struct({
   threadId: Schema.optional(
-    ThreadId.annotate({ description: "Thread to act on. Omit for this thread." }),
+    ThreadId.pipe(
+      Schema.annotateEncoded({ description: "Thread to act on. Omit for this thread." }),
+    ),
   ),
 });
 
@@ -244,13 +250,13 @@ const ListIssuesTool = Tool.make("list_issues", {
     "List issues in a project's tracker, newest updated first. Pass the returned nextCursors as cursors for the next page.",
   parameters: Schema.Struct({
     projectId: Schema.optional(
-      ProjectId.annotate({ description: "Defaults to this thread's project." }),
+      ProjectId.pipe(Schema.annotateEncoded({ description: "Defaults to this thread's project." })),
     ),
     state: Schema.optional(IssueListState.annotate({ description: "Defaults to open." })),
     query: Schema.optional(
-      TrimmedNonEmptyString.check(Schema.isMaxLength(200)).annotate({
-        description: "Free text the tracker matches itself.",
-      }),
+      TrimmedNonEmptyString.check(Schema.isMaxLength(200)).pipe(
+        Schema.annotateEncoded({ description: "Free text the tracker matches itself." }),
+      ),
     ),
     limit: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 100 }))),
     cursors: Schema.optional(Schema.Record(Schema.String, Schema.String)),
@@ -283,12 +289,14 @@ const CreateIssueTool = Tool.make("create_issue", {
   description: "File an issue in a project's tracker.",
   parameters: Schema.Struct({
     projectId: Schema.optional(
-      ProjectId.annotate({ description: "Defaults to this thread's project." }),
+      ProjectId.pipe(Schema.annotateEncoded({ description: "Defaults to this thread's project." })),
     ),
     scope: Schema.optional(
-      TrimmedNonEmptyString.annotate({
-        description: "A bound team or repository, such as OPS. Defaults to the project's first.",
-      }),
+      TrimmedNonEmptyString.pipe(
+        Schema.annotateEncoded({
+          description: "A bound team or repository, such as OPS. Defaults to the project's first.",
+        }),
+      ),
     ),
     title: TrimmedNonEmptyString.check(Schema.isMaxLength(1024)),
     body: Schema.optional(Schema.String.check(Schema.isMaxLength(65_536))),
@@ -325,9 +333,9 @@ const SetIssueStateTool = Tool.make("set_issue_state", {
   description: "Move an issue to one of its states. read_issue lists them under states.",
   parameters: Schema.Struct({
     ...IssueTargetInput.fields,
-    state: TrimmedNonEmptyString.annotate({
-      description: "A state name from read_issue's states.",
-    }),
+    state: TrimmedNonEmptyString.pipe(
+      Schema.annotateEncoded({ description: "A state name from read_issue's states." }),
+    ),
   }),
   success: IssueWriteResult,
   failure: IssueToolError,

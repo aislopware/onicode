@@ -54,7 +54,11 @@ export const OrchestratorMcpClientRequestId = TrimmedNonEmptyString.check(Schema
         : "clientRequestId must contain valid paired Unicode surrogates.",
     ),
   )
-  .annotate({ description: "Reuse it to retry the same call. A new call gets a new key." });
+  .pipe(
+    Schema.annotateEncoded({
+      description: "Reuse it to retry the same call. A new call gets a new key.",
+    }),
+  );
 
 // OpenCode 1.15 serializes nested MCP union objects as JSON strings; decode that form at the boundary.
 const OrchestratorMcpScheduleFromJsonString = Schema.fromJsonString(
@@ -96,14 +100,16 @@ export type OrchestratorMcpTargetOptions = typeof OrchestratorMcpTargetOptions.T
 
 export const OrchestratorMcpTarget = Schema.Struct({
   providerInstanceId: Schema.optional(
-    ProviderInstanceId.annotate({
-      description: "Provider instance id from `orchestrator_capabilities`.",
-    }),
+    ProviderInstanceId.pipe(
+      Schema.annotateEncoded({
+        description: "Provider instance id from `orchestrator_capabilities`.",
+      }),
+    ),
   ),
   driverKind: Schema.optional(
-    ProviderDriverKind.annotate({
-      description: "Prefer `providerInstanceId`.",
-    }),
+    ProviderDriverKind.pipe(
+      Schema.annotateEncoded({ description: "Prefer `providerInstanceId`." }),
+    ),
   ),
   model: Schema.optional(TrimmedNonEmptyString),
   options: Schema.optional(
@@ -113,16 +119,20 @@ export const OrchestratorMcpTarget = Schema.Struct({
     }),
   ),
   environmentId: Schema.optional(
-    EnvironmentId.annotate({
-      description:
-        "Linked environment to run in. Provider and model default to yours; others come from `orchestrator_capabilities` with this `environmentId`.",
-    }),
+    EnvironmentId.pipe(
+      Schema.annotateEncoded({
+        description:
+          "Linked environment to run in. Provider and model default to yours; others come from `orchestrator_capabilities` with this `environmentId`.",
+      }),
+    ),
   ),
   projectId: Schema.optional(
-    ProjectId.annotate({
-      description:
-        "With `environmentId`: its project to run in. Default: the one with this project's repository.",
-    }),
+    ProjectId.pipe(
+      Schema.annotateEncoded({
+        description:
+          "With `environmentId`: its project to run in. Default: the one with this project's repository.",
+      }),
+    ),
   ),
 });
 export type OrchestratorMcpTarget = typeof OrchestratorMcpTarget.Type;
@@ -325,22 +335,20 @@ export const OrchestratorMcpThreadStatus = Schema.Union([
 export type OrchestratorMcpThreadStatus = typeof OrchestratorMcpThreadStatus.Type;
 
 const OrchestratorMcpProjectTarget = Schema.optional(
-  ProjectId.annotate({
-    description: "Project to use. Default: your thread's project. Required outside a thread.",
-  }),
+  ProjectId.pipe(
+    Schema.annotateEncoded({
+      description: "Project to use. Default: your thread's project. Required outside a thread.",
+    }),
+  ),
 );
 
 /**
  * A linked environment to act in instead of this one. The tools that take it
  * forward the call there, where the link's access and the caller's own modes
- * both apply.
+ * both apply. No description: nearly every tool takes it, and the orchestration
+ * instructions already say how to use it.
  */
-export const OrchestratorMcpEnvironmentTarget = Schema.optional(
-  EnvironmentId.annotate({
-    description:
-      "Linked environment to act in. Omit for this one. Ids are then that environment's.",
-  }),
-);
+export const OrchestratorMcpEnvironmentTarget = Schema.optional(EnvironmentId);
 
 // Codex hides `minimum` and `maximum` from the model, so a value above the maximum clamps on
 // decode instead of failing the call; pagination returns the rest. Values below 1 still fail:
@@ -643,9 +651,11 @@ export type OrchestratorMcpThreadInterruptResult = typeof OrchestratorMcpThreadI
 export const OrchestratorMcpCapabilitiesInput = Schema.Struct({
   environmentId: OrchestratorMcpEnvironmentTarget,
   search: Schema.optional(
-    TrimmedNonEmptyString.check(Schema.isMaxLength(200)).annotate({
-      description: "Match model ids and labels. Replaces the short list.",
-    }),
+    TrimmedNonEmptyString.check(Schema.isMaxLength(200)).pipe(
+      Schema.annotateEncoded({
+        description: "Match model ids and labels. Replaces the short list.",
+      }),
+    ),
   ),
 });
 export type OrchestratorMcpCapabilitiesInput = typeof OrchestratorMcpCapabilitiesInput.Type;
@@ -773,9 +783,11 @@ export type OrchestratorMcpScheduleTaskResult = typeof OrchestratorMcpScheduleTa
 export const OrchestratorMcpListScheduledTasksInput = Schema.Struct({
   environmentId: OrchestratorMcpEnvironmentTarget,
   projectId: Schema.optional(
-    ProjectId.annotate({
-      description: "Default: your thread's project, or all outside a thread.",
-    }),
+    ProjectId.pipe(
+      Schema.annotateEncoded({
+        description: "Default: your thread's project, or all outside a thread.",
+      }),
+    ),
   ),
 });
 export type OrchestratorMcpListScheduledTasksInput =
@@ -825,12 +837,14 @@ const RequestSecretFields = Schema.Array(
   );
 
 export const OrchestratorMcpRequestSecretInput = Schema.Struct({
-  label: TrimmedNonEmptyString.annotate({
-    description: "Card title, such as 'OpenAI API key'.",
-  }),
-  reason: TrimmedNonEmptyString.annotate({
-    description: "What it is for and where to get it. A link goes in `url`.",
-  }),
+  label: TrimmedNonEmptyString.pipe(
+    Schema.annotateEncoded({ description: "Card title, such as 'OpenAI API key'." }),
+  ),
+  reason: TrimmedNonEmptyString.pipe(
+    Schema.annotateEncoded({
+      description: "What it is for and where to get it. A link goes in `url`.",
+    }),
+  ),
   url: Schema.optional(
     TrimmedNonEmptyString.check(
       Schema.makeFilter((value) => secretRequestPageUrl(value) !== null, {
@@ -936,9 +950,11 @@ export const OrchestratorMcpEnvironmentLinkResult = Schema.Union([
 export type OrchestratorMcpEnvironmentLinkResult = typeof OrchestratorMcpEnvironmentLinkResult.Type;
 
 export const OrchestratorMcpEnvironmentUnlinkInput = Schema.Struct({
-  environmentId: EnvironmentId.annotate({
-    description: "The linked environment to forget, from oni_environment_links.",
-  }),
+  environmentId: EnvironmentId.pipe(
+    Schema.annotateEncoded({
+      description: "The linked environment to forget, from oni_environment_links.",
+    }),
+  ),
 });
 export type OrchestratorMcpEnvironmentUnlinkInput =
   typeof OrchestratorMcpEnvironmentUnlinkInput.Type;

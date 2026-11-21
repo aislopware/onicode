@@ -188,6 +188,13 @@ describe("extractMarkdownLinkHrefs", () => {
     [`[a](a.ts "it's a title") [b](b.ts 'a "quoted" title') [c](ok)`, ["a.ts", "b.ts", "ok"]],
     [`[a](a.ts "mixed') [b](b.ts)`, ["b.ts"]],
     [`[a](a.ts "it's\n\n[b](lib/a.ts)")`, ["lib/a.ts"]],
+    [
+      `> [outer](outer.ts "it's unfinished\n>\n> [left](a/foo.ts) [right](b/foo.ts) ")`,
+      ["a/foo.ts", "b/foo.ts"],
+    ],
+    ['[left](a/foo.ts "say \\"hello\\"") [right](b/foo.ts)', ["a/foo.ts", "b/foo.ts"]],
+    ["[a](\n\nlib/a.ts)", []],
+    ['[a](a/foo.ts "first\n    >\nlast") [b](b/foo.ts)', ["a/foo.ts", "b/foo.ts"]],
     ["[a](a(b(c))d) [b](ok)", ["a(b(c))d", "ok"]],
     ["[a](x\\)y) [b](x\\(y)", ["x\\)y", "x\\(y"]],
     ["[a](unclosed(paren) [b](ok)", ["ok"]],

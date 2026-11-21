@@ -139,8 +139,8 @@ it.effect("only request_secret and send_to_user ask Claude Code to load them up 
   }).pipe(Effect.provide(layerAdvertisedTools)),
 );
 
-// CI rejects a PR that raises any value above main's agentContextBudget.json, so growth
-// needs the agent-context-increase label. Lower the values when the text shrinks.
+// Growth costs every thread's context. Raise these values only with a reason in the PR, and
+// lower them when the text shrinks.
 it.effect("agent context matches the committed budget", () =>
   Effect.gen(function* () {
     const mcp = yield* McpServer.McpServer;
