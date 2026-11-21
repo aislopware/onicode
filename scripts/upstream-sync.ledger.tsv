@@ -3033,3 +3033,4 @@ aa6fe390db	take	CONFLICT: adopted upstream over Onicode's threadErrorBannerSourc
 721542cac7	take	taken as is; Onicode's chat composer has the same bottom inset
 ede0f48c60	take	CloudEnvironmentRows.tsx MISSING (T3 Connect, removed); rest taken as is
 5ddb3b4b71	take	taken as is
+e97290a064	skip	already on main: Onicode's ebf6f662c4 moved the catalog, patches and .repos/effect to Effect 4.1.5 (vendored tree identical) and RpcInstrumentation.test.ts already passes remoteParentSpan
