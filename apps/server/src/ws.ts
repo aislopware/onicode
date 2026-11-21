@@ -3152,7 +3152,8 @@ export const layerWsRpc = (
                     ),
                   ),
             ),
-            Effect.tap(() => refreshGitStatus(input.cwd)),
+            // No project-root refresh here: the client awaits vcs.refreshStatus right after, and a
+            // second refresh would queue behind this one and reread an unchanged repository.
             // Subscribers of the removed checkout learn it is no longer a repository.
             Effect.tap(() =>
               vcsStatusBroadcaster

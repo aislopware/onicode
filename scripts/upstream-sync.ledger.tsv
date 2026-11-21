@@ -3107,3 +3107,4 @@ c385377544	take	fix(server): slash commands sent during a turn wait instead of s
 0c921e1fdf	take	fix(server): ACP session/load replay no longer pins background work (#40328)
 232f52c8db	take	fix(mobile): confirming a push to the default branch no longer opens the thread a second time (#40311); kept Onicode's returnToThreadAction (same fix, pure and shared with Files), adopted upstream's shared route check in useOpenThreadInspector
 9c25b71395	take	fix(opencode): Usage → Limits shows why OpenCode could not read usage (#40340)
+d3bb8f8108	take	perf(server): deleting a thread's worktree refreshes git status once, not twice (#40337)
