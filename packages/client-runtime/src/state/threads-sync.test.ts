@@ -2539,8 +2539,20 @@ describe("EnvironmentThreads", () => {
       ]);
       yield* awaitThreadState(harness.observed, (value) => value.status === "live");
 
-      yield* harness.replaceSession;
+      // A defect long after the last one starts the backoff over.
+      yield* TestClock.adjust("5 minutes");
+      yield* Queue.offer(harness.inputs, TEST_DEFECT);
+      yield* awaitThreadState(harness.observed, (value) => Option.isSome(value.error));
+      yield* TestClock.adjust("250 millis");
       yield* awaitSubscriptions(5);
+      yield* Queue.offerAll(harness.inputs, [
+        snapshot(BASE_PROJECTION, CACHED_SNAPSHOT_SEQUENCE + 5),
+        synchronized(),
+      ]);
+      yield* awaitThreadState(harness.observed, (value) => value.status === "live");
+
+      yield* harness.replaceSession;
+      yield* awaitSubscriptions(6);
       expect(yield* Ref.get(harness.lastSubscribeAfterSequence)).toBe(CACHED_SNAPSHOT_SEQUENCE + 5);
 
       // A cursor the server cannot replay fails every time, so the retry drops it at once.
@@ -2551,7 +2563,7 @@ describe("EnvironmentThreads", () => {
           message: "Failed while replaying orchestration V2 thread",
         }),
       );
-      yield* awaitSubscriptions(6);
+      yield* awaitSubscriptions(7);
       expect(yield* Ref.get(harness.lastSubscribeAfterSequence)).toBeUndefined();
       expect(Option.isNone((yield* Ref.get(harness.latest)).error)).toBe(true);
       yield* Queue.offerAll(harness.inputs, [

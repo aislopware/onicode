@@ -5,7 +5,7 @@ import type {
   ProjectId,
   WorktreeSubmodules,
 } from "@onicode/contracts";
-import { gitCommandErrorMessage, thrownErrorMessage } from "@onicode/client-runtime/errors";
+import { thrownErrorMessage } from "@onicode/client-runtime/errors";
 import type { ThreadStructureRuntime } from "@onicode/client-runtime/state/shell";
 import * as Schema from "effect/Schema";
 import { msg } from "gt-react";
@@ -16,11 +16,8 @@ import { m, type MessageResolver } from "../i18n/messages";
 import { deriveCanInterruptRunningThread } from "../session-logic";
 export { deriveLocalBranchNameFromRemoteRef, sanitizeNewRefName } from "@onicode/shared/git";
 
-// A toast clamps to a few lines, so Git failures leave out the message's operation and cwd prefix.
 export function toBranchActionErrorMessage(error: unknown): string {
-  return (
-    gitCommandErrorMessage(error, m) ?? thrownErrorMessage(error, m) ?? m(msg("An error occurred."))
-  );
+  return thrownErrorMessage(error, m) ?? m(msg("An error occurred."));
 }
 
 export interface EnvironmentOption {

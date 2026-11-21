@@ -1633,46 +1633,62 @@ it.effect.each([
 ] as const)(
   "a task a hook stopped there ends with why, as a task here does ($signal)",
   ({ reply, signal }) =>
-    Effect.scoped(
-      Effect.gen(function* () {
-        const thread = yield* makeBoxThread;
-        const b = yield* serveBox(thread);
-        const offers = yield* SubscriptionRef.make<
-          ReadonlyArray<ProviderContinuationRequests.ProviderContinuationRequest>
-        >([]);
-        const database = yield* SqlitePersistence.layerMemory.pipe(Layer.build);
-        const a = yield* makeLaptop(database, offers);
-        yield* linkTo(a.links, b, "full-access");
-        yield* seedParent(a);
-        const delegated = yield* delegateToBox(a);
-        const notice = "Stop hook: the migration needs a reviewer.";
-        yield* Ref.set(thread.timeline, [
-          ...(reply === null
-            ? []
-            : [
-                {
-                  id: TurnItemId.make("item:reply"),
-                  runId: boxRunId,
-                  text: reply,
-                  type: "assistant_message" as const,
-                },
-              ]),
-          {
-            id: IdAllocator.derive.runSignalTurnItem({ runId: boxRunId, signal }),
-            runId: boxRunId,
-            text: notice,
-            type: "system_notice",
-          },
-        ]);
-        const status = signal === "interrupt-result" ? "interrupted" : "completed";
-        yield* Ref.set(thread.status, status);
-        yield* Deferred.succeed(thread.finished, undefined);
-        expect(yield* taskResult(a, delegated.taskId)).toMatchObject({
-          status,
-          result: `${reply ?? "(The thread in the linked environment ended without a reply.)"}\n\n${notice}`,
-        });
-      }),
-    ).pipe(Effect.provide(NodeHttpServer.layerTest)),
+    Effect.gen(function* () {
+      const { reads, fetch } = captureThreadReads(yield* FetchHttpClient.Fetch);
+      return yield* Effect.scoped(
+        Effect.gen(function* () {
+          const thread = yield* makeBoxThread;
+          const b = yield* serveBox(thread);
+          const offers = yield* SubscriptionRef.make<
+            ReadonlyArray<ProviderContinuationRequests.ProviderContinuationRequest>
+          >([]);
+          const database = yield* SqlitePersistence.layerMemory.pipe(Layer.build);
+          const a = yield* makeLaptop(database, offers);
+          yield* linkTo(a.links, b, "full-access");
+          yield* seedParent(a);
+          const delegated = yield* delegateToBox(a);
+          const notice = "Stop hook: the migration needs a reviewer.";
+          yield* Ref.set(thread.timeline, [
+            ...(reply === null
+              ? []
+              : [
+                  {
+                    id: TurnItemId.make("item:reply"),
+                    runId: boxRunId,
+                    text: reply,
+                    type: "assistant_message" as const,
+                  },
+                ]),
+            {
+              id: IdAllocator.derive.runSignalTurnItem({ runId: boxRunId, signal }),
+              runId: boxRunId,
+              text: notice,
+              type: "system_notice",
+            },
+          ]);
+          const status = signal === "interrupt-result" ? "interrupted" : "completed";
+          yield* Ref.set(thread.status, status);
+          yield* Deferred.succeed(thread.finished, undefined);
+          expect(yield* taskResult(a, delegated.taskId)).toMatchObject({
+            status,
+            result: `${reply ?? "(The thread in the linked environment ended without a reply.)"}\n\n${notice}`,
+          });
+          // Both stop items are asked at once, each without the runs an item read never uses.
+          const noticeReads = reads.filter((read) => read.itemId !== undefined);
+          expect(noticeReads.map((read) => read.itemId).toSorted()).toEqual(
+            [PROVIDER_STOP_REASON_SIGNAL, "interrupt-result"]
+              .map((each) =>
+                IdAllocator.derive.runSignalTurnItem({ runId: boxRunId, signal: each }),
+              )
+              .toSorted(),
+          );
+          expect(noticeReads.every((read) => read.runLimit === 1)).toBe(true);
+        }),
+      ).pipe(
+        Effect.provide(NodeHttpServer.layerTest),
+        Effect.provideService(FetchHttpClient.Fetch, fetch),
+      );
+    }),
 );
 
 it.effect("a task on a box that refuses afterPosition -1 reads its reply from the start", () =>

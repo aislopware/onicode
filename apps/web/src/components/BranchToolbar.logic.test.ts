@@ -1,10 +1,4 @@
-import {
-  EnvironmentId,
-  GitCommandError,
-  ProviderInstanceId,
-  RunId,
-  type VcsRef,
-} from "@onicode/contracts";
+import { EnvironmentId, ProviderInstanceId, RunId, type VcsRef } from "@onicode/contracts";
 import { describe, expect, it } from "vite-plus/test";
 import { dedupeRemoteBranchesWithLocalMatches } from "@onicode/shared/git";
 import {
@@ -21,33 +15,7 @@ import {
   sanitizeNewRefName,
   shouldIncludeBranchPickerItem,
   isBranchHoldCurrent,
-  toBranchActionErrorMessage,
 } from "./BranchToolbar.logic";
-
-describe("toBranchActionErrorMessage", () => {
-  it("shows a Git failure's detail without the operation and cwd", () => {
-    const error = new GitCommandError({
-      operation: "GitVcsDriver.switchRef.checkout",
-      command: "git",
-      cwd: "/tmp/repo",
-      detail: "Commit, stash, or discard them, then switch again.",
-    });
-
-    expect(toBranchActionErrorMessage(error)).toBe(
-      "Commit, stash, or discard them, then switch again.",
-    );
-    // A known reason reads as the app's own sentence, not the server's detail and raw reason.
-    const exists = new GitCommandError({
-      operation: "GitVcsDriver.createRef",
-      command: "git",
-      cwd: "/tmp/repo",
-      detail: "Git command exited with a non-zero status.",
-      reason: "branch_already_exists",
-    });
-    expect(toBranchActionErrorMessage(exists)).toBe("A branch with this name already exists.");
-    expect(toBranchActionErrorMessage(new Error("boom"))).toBe("boom");
-  });
-});
 
 describe("resolveDraftEnvModeAfterBranchChange", () => {
   it("switches to local mode when returning from an existing worktree to the main worktree", () => {

@@ -3,7 +3,7 @@ import type { ChangeTypes, FileDiffMetadata } from "@pierre/diffs/types";
 import type { ThreadCheckpointSummary } from "@onicode/client-runtime/state/thread-checkpoints";
 import { turnChanges, turnHasChanges } from "@onicode/client-runtime/state/thread-repositories";
 import type { ReviewDiffPreviewSource } from "@onicode/contracts";
-import { quoteGitPatchPath } from "@onicode/shared/gitPatchPath";
+import { quoteGitPatchPath, unquoteGitPatchPath } from "@onicode/shared/gitPatchPath";
 import * as Arr from "effect/Array";
 import { pipe } from "effect/Function";
 import * as Order from "effect/Order";
@@ -808,21 +808,40 @@ export function applyReviewDiffMetadata(
   return { ...previewDiff, ...totals, files, fileCount: selectedSection.files.length, notice };
 }
 
+const QUOTED_GIT_PATH = /"(?:[^"\\]|\\.)*"/g;
+
+/** A block's `diff --git` line with quoted paths decoded, as the parser reports names. */
+function decodedGitDiffHeader(block: string): string {
+  return (block.split("\n", 1)[0] ?? "").replace(QUOTED_GIT_PATH, (token) =>
+    unquoteGitPatchPath(token),
+  );
+}
+
+function splitGitPatchBlocks(diff: string): string[] {
+  return diff.split(/(?=^diff --git )/m);
+}
+
 /** The blocks of a raw patch for `files`, so the raw fallback follows the review's filters. */
 export function reviewRawPatchForFiles(
   diff: string,
   files: ReadonlyArray<Pick<ReviewRenderableFile, "path" | "previousPath">>,
 ): string {
   const headers = new Set(
-    files.map(
-      (file) =>
-        `diff --git ${quoteGitPatchPath(`a/${file.previousPath ?? file.path}`)} ${quoteGitPatchPath(`b/${file.path}`)}`,
-    ),
+    files.map((file) => `diff --git a/${file.previousPath ?? file.path} b/${file.path}`),
   );
-  return diff
-    .split(/(?=^diff --git )/m)
-    .filter((block) => headers.has(block.split("\n", 1)[0] ?? ""))
+  return splitGitPatchBlocks(diff)
+    .filter((block) => headers.has(decodedGitDiffHeader(block)))
     .join("");
+}
+
+function folderOwning(path: string, folders: ReadonlyArray<string>): string {
+  let owner = "";
+  for (const candidate of folders) {
+    if (candidate.length > owner.length && path.startsWith(`${candidate}/`)) {
+      owner = candidate;
+    }
+  }
+  return owner;
 }
 
 /**
@@ -834,16 +853,19 @@ export function filterReviewParsedDiffToFolder(
   folder: string,
   folders: ReadonlyArray<string>,
 ): ReviewParsedDiff {
+  // Unparsed Git blocks still start with `diff --git a/<path> `, which is enough to place them.
+  if (parsedDiff.kind === "raw" && /^diff --git /m.test(parsedDiff.text)) {
+    const text = splitGitPatchBlocks(parsedDiff.text)
+      .filter((block) => {
+        const header = decodedGitDiffHeader(block);
+        const path = header.startsWith("diff --git a/") ? header.slice("diff --git a/".length) : "";
+        return folderOwning(path, folders) === folder;
+      })
+      .join("");
+    return text.length === 0 ? { kind: "empty" } : { ...parsedDiff, text };
+  }
   if (parsedDiff.kind !== "files") return parsedDiff;
-  const files = parsedDiff.files.filter((file) => {
-    let owner = "";
-    for (const candidate of folders) {
-      if (candidate.length > owner.length && file.path.startsWith(`${candidate}/`)) {
-        owner = candidate;
-      }
-    }
-    return owner === folder;
-  });
+  const files = parsedDiff.files.filter((file) => folderOwning(file.path, folders) === folder);
   return {
     ...parsedDiff,
     files,

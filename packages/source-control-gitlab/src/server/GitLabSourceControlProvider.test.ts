@@ -32,6 +32,8 @@ it("accepts authenticated GitLab hosts when another configured host fails", () =
 self-hosted.example.test
   ✓ Logged in to self-hosted.example.test as gitlab-user
   ✓ Token found: ******
+second.example.test
+  ✓ Logged in to second.example.test as second-user
 `,
     stderr: "",
   });
@@ -41,11 +43,22 @@ self-hosted.example.test
       status: auth.status,
       account: auth.account,
       host: auth.host,
+      accounts: auth.accounts,
     },
     {
       status: "authenticated",
       account: Option.some("gitlab-user"),
       host: Option.some("self-hosted.example.test"),
+      // Every signed-in host, so discovery sees a sign-in to another host.
+      accounts: [
+        {
+          host: "self-hosted.example.test",
+          account: "gitlab-user",
+          active: true,
+          authenticated: true,
+        },
+        { host: "second.example.test", account: "second-user", active: true, authenticated: true },
+      ],
     },
   );
 });

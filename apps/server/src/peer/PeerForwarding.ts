@@ -299,6 +299,14 @@ const make = Effect.gen(function* () {
       : undefined;
   };
 
+  // Some peers serve a linked client's cursorless read newest first; a client here reads forward.
+  const fromStartForClient = (input: OrchestratorMcpThreadReadInput) =>
+    input.afterPosition === undefined &&
+    input.beforePosition === undefined &&
+    input.itemId === undefined
+      ? { ...input, afterPosition: -1 }
+      : input;
+
   const call: PeerForwarding["Service"]["call"] = (scope, tool, environmentId, params) => {
     const forwardTool = (
       args: unknown,
@@ -317,7 +325,10 @@ const make = Effect.gen(function* () {
       : newest !== undefined
         ? readNewestOrRetry(forwardTool, newest, params)
         : tool.name === "oni_thread_read"
-          ? readFromStartOrRetry(forwardTool, params as OrchestratorMcpThreadReadInput)
+          ? readFromStartOrRetry(
+              forwardTool,
+              fromStartForClient(params as OrchestratorMcpThreadReadInput),
+            )
           : tool.name === "oni_thread_launch"
             ? launchOrRetryWithoutGeneratedTitle(forwardTool, params)
             : forwardTool(params);

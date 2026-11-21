@@ -3489,7 +3489,7 @@ const make = Effect.gen(function* () {
         timeline.totalItems,
         shell,
         yield* Clock.currentTimeMillis,
-        input.afterPosition === undefined &&
+        (input.afterPosition ?? -1) === -1 &&
           input.itemId === undefined &&
           (input.beforePosition === undefined || input.beforePosition >= timeline.totalItems),
       );

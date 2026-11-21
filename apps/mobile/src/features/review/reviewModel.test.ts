@@ -184,25 +184,51 @@ describe("filterReviewParsedDiffToFolder", () => {
       deletions: 1,
     });
   });
+
+  it("keeps one folder's blocks of a patch the parser could not read", () => {
+    const block = (path: string) => `diff --git a/${path} b/${path}\nunreadable\n`;
+    const raw = {
+      kind: "raw" as const,
+      text: block("README.md") + block("api/a.ts") + block("web/a.ts"),
+      reason: "Failed to parse patch. Showing raw patch.",
+      notice: null,
+    };
+    const folders = ["", "api", "web"];
+    expect(filterReviewParsedDiffToFolder(raw, "api", folders)).toEqual({
+      ...raw,
+      text: block("api/a.ts"),
+    });
+    expect(filterReviewParsedDiffToFolder(raw, "", folders)).toEqual({
+      ...raw,
+      text: block("README.md"),
+    });
+    expect(filterReviewParsedDiffToFolder(raw, "docs", [...folders, "docs"])).toEqual({
+      kind: "empty",
+    });
+  });
 });
 
 describe("reviewRawPatchForFiles", () => {
   it("keeps only the shown files' blocks of the raw patch", () => {
     const block = (from: string, to = from) =>
       `diff --git a/${from} b/${to}\n--- a/${from}\n+++ b/${to}\n@@ -1 +1 @@\n-a\n+b\n`;
+    // Git's default core.quotePath writes non-ASCII names as quoted octal bytes.
+    const unicode = String.raw`diff --git "a/src/caf\303\251.ts" "b/src/caf\303\251.ts"` + "\n";
     const diff = [
       block("src/a.ts"),
       block("src/a.test.ts"),
       block("old.ts", "new.ts"),
       block("my file.ts"),
+      unicode,
     ].join("");
     const shown = [
       { path: "src/a.ts", previousPath: null },
       { path: "new.ts", previousPath: "old.ts" },
       { path: "my file.ts", previousPath: null },
+      { path: "src/café.ts", previousPath: null },
     ];
     expect(reviewRawPatchForFiles(diff, shown)).toBe(
-      block("src/a.ts") + block("old.ts", "new.ts") + block("my file.ts"),
+      block("src/a.ts") + block("old.ts", "new.ts") + block("my file.ts") + unicode,
     );
   });
 });
