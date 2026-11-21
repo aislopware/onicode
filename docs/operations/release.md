@@ -34,7 +34,8 @@ To release from a Mac instead, on that Mac:
 - `better-update login` and `gh` logged in with write access to `aislopware/onicode`. The vault
   holds team `UK58J62H8L`'s Developer ID Application certificate and App Store Connect key; builds
   ask for the vault passphrase.
-- Xcode Command Line Tools, Rust stable, and the repo's Node and pnpm.
+- Xcode 26 or later (the desktop build compiles the Apple Speech helper against the macOS 26
+  SDK), Rust stable, and the repo's Node and pnpm.
 - Docker Desktop or OrbStack running, for the Linux build.
 
 ## Version

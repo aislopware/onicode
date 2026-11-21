@@ -25,8 +25,9 @@ rechecks it after native decoding and before upload.
 The macOS desktop app adds a `device` destination, Apple Speech. It exists only in
 the web grant schema, not in `VoiceTranscriptionDestination`, because no environment
 or other client can act on it. The desktop main process runs a
-[Swift helper](../../native/apple-speech/AppleSpeech.swift) that the macOS release
-runners compile; the Speech framework exists only in the macOS SDK.
+[Swift helper](../../native/apple-speech/AppleSpeech.swift) that
+`scripts/build-desktop-artifact.ts` compiles in the macOS build; the Speech framework
+exists only in the macOS SDK.
 
 The [web grant](../../apps/web/src/speech/voiceConsent.ts) lives outside the preferences snapshot so another
 window saving unrelated settings cannot resurrect a revoked grant. Each new choice
