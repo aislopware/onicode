@@ -3087,3 +3087,4 @@ d51d8c4766	take	taken as is
 dea657a0b1	skip	kept Onicode's compact round update button (icon + popover, no container-query label); this only tunes upstream's expanding capsule label, which Onicode does not render
 4be39cf01a	skip	kept Onicode's compact round update button (icon + popover, no container-query label); this only tunes upstream's expanding capsule label, which Onicode does not render
 1425613b9d	skip	kept Onicode's compact round update button (icon + popover, no container-query label); this only tunes upstream's expanding capsule label, which Onicode does not render
+b19ca97827	take	taken as is
