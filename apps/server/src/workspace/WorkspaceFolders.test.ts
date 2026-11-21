@@ -5,7 +5,6 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
-import * as PlatformError from "effect/PlatformError";
 
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
@@ -192,24 +191,17 @@ it.layer(NodeServices.layer)("WorkspaceFolders", (it) => {
         ]);
         // A folder that cannot be read says nothing about the repositories inside it.
         assert.isNull(yield* WorkspaceFolders.discoverFolders(path.join(tmp, "unmounted")));
-        const unreadable = path.join(workspaceRoot, "src");
-        assert.isNull(
-          yield* WorkspaceFolders.discoverFolders(workspaceRoot).pipe(
-            Effect.provideService(FileSystem.FileSystem, {
-              ...fileSystem,
-              readDirectory: (target, options) =>
-                target === unreadable
-                  ? Effect.fail(
-                      PlatformError.systemError({
-                        _tag: "PermissionDenied",
-                        module: "FileSystem",
-                        method: "readDirectory",
-                        pathOrDescriptor: target,
-                      }),
-                    )
-                  : fileSystem.readDirectory(target, options),
-            }),
-          ),
+        // Server work keeps the repositories found before, not none of them.
+        const stored = [
+          { path: repository("web"), name: "web", discovered: true },
+          { path: outside, name: "Outside" },
+        ];
+        assert.deepEqual(
+          yield* WorkspaceFolders.projectFolders({
+            workspaceRoot: path.join(tmp, "unmounted"),
+            trackedFolders: stored,
+          }),
+          stored,
         );
       }).pipe(Effect.provide(layerFor({ workspaceRoot, trackedFolders })));
     }),

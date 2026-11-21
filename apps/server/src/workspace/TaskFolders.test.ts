@@ -705,6 +705,17 @@ it.live("removes what it created when one repository fails", () =>
         "feature",
         "main",
       ]);
+
+      // Stopped after Git made the branch, as during its submodules, the checkout still made it.
+      const ctx = yield* repository("x/ctx");
+      state.workspaceRoot = ctx;
+      state.trackedFolders = tracked(yield* repository("x/app"));
+      delete state.beforeCreateWorktree;
+      state.afterCreateWorktree = Effect.interrupt;
+      const stopped = yield* create("feature").pipe(Effect.exit);
+      assert.isTrue(Exit.hasInterrupts(stopped));
+      assert.equal(yield* run(ctx, "branch", "--format=%(refname:short)"), "main");
+      assert.equal(yield* worktreeCount(ctx), 1);
     }),
   ),
 );

@@ -18,6 +18,7 @@ import {
 import * as HostProcess from "@onicode/shared/HostProcess";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -1037,6 +1038,77 @@ it.effect("invalidates workspace-derived metadata when a project moves", () =>
         "/work/original/favicon-v3.svg",
       );
     }).pipe(Effect.provide(layerTestFor(layerVersionedMetadata)));
+  }),
+);
+
+it.effect("a retried create refreshes metadata its first attempt stopped before", () =>
+  Effect.gen(function* () {
+    const metadataVersion = yield* Ref.make(1);
+    const layerVersionedMetadata = Layer.merge(
+      Layer.succeed(RepositoryIdentityResolver.RepositoryIdentityResolver, {
+        resolve: (workspaceRoot) =>
+          Ref.get(metadataVersion).pipe(
+            Effect.map((version) => ({
+              canonicalKey: `example.test/v${version}${workspaceRoot}`,
+              locator: {
+                source: "git-remote" as const,
+                remoteName: "origin",
+                remoteUrl: `https://example.test/v${version}${workspaceRoot}.git`,
+              },
+              rootPath: workspaceRoot,
+            })),
+          ),
+      }),
+      Layer.succeed(ProjectFaviconResolver.ProjectFaviconResolver, {
+        invalidate: () => Effect.void,
+        resolvePath: () => Effect.succeed(null),
+      }),
+    );
+    // The first refresh stops, as a crash between the commit and it would.
+    let invalidations = 0;
+    const layerStoppingEnrichment = Layer.effect(
+      ProjectEnrichmentService.ProjectEnrichmentService,
+      Effect.map(Effect.service(ProjectEnrichmentService.ProjectEnrichmentService), (real) =>
+        ProjectEnrichmentService.ProjectEnrichmentService.of({
+          ...real,
+          invalidate: (workspaceRoots) =>
+            invalidations++ === 0 ? Effect.die("stopped") : real.invalidate(workspaceRoots),
+        }),
+      ),
+    ).pipe(Layer.provide(ProjectEnrichmentService.layer));
+    const layer = RuntimeLayer.layerProjectService.pipe(
+      Layer.provideMerge(layerStoppingEnrichment),
+      Layer.provideMerge(layerWorkspacePaths),
+      Layer.provideMerge(layerVersionedMetadata),
+      Layer.provideMerge(SqlitePersistence.layerMemory),
+      Layer.provideMerge(ServerSettings.layerTest()),
+      Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "project-service-test-" })),
+      Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+      Layer.provideMerge(layerEnrichmentCompletions),
+    );
+
+    yield* Effect.gen(function* () {
+      const service = yield* ProjectService.ProjectService;
+      const enrichment = yield* ProjectEnrichmentService.ProjectEnrichmentService;
+      const workspaceRoot = "/work/replayed";
+      const input = {
+        commandId: CommandId.make("command:replayed-enrichment:create"),
+        projectId: ProjectId.make("project:replayed-enrichment"),
+        title: "Replayed",
+        workspaceRoot,
+      };
+      // Read before the project was added, then changed on disk.
+      yield* enrichment.readRepositoryIdentity(workspaceRoot);
+      yield* Ref.set(metadataVersion, 2);
+      assert.isTrue(Exit.isFailure(yield* service.create(input).pipe(Effect.exit)));
+
+      yield* service.create(input);
+
+      assert.equal(
+        (yield* enrichment.readRepositoryIdentity(workspaceRoot))?.canonicalKey,
+        `example.test/v2${workspaceRoot}`,
+      );
+    }).pipe(Effect.provide(layer));
   }),
 );
 

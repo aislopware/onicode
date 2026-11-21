@@ -1,4 +1,5 @@
 import {
+  GitCommandError,
   type ProjectId,
   type ProjectTrackedFolder,
   TASK_FOLDER_DEFAULT_REPOSITORIES_MAX,
@@ -44,6 +45,7 @@ import * as TaskFolderStore from "./TaskFolderStore.ts";
 import { projectFolders, parseGitmodulesPaths } from "./WorkspaceFolders.ts";
 import { withWorkspaceLease } from "./workspaceLease.ts";
 
+const isGitCommandError = Schema.is(GitCommandError);
 // Each worktree is a checkout: enough at once to finish four repositories together, few enough
 // to leave Git's server-wide process slots to running threads.
 const REPOSITORY_CONCURRENCY = 4;
@@ -854,23 +856,50 @@ const make = Effect.gen(function* () {
   const locked = <A, E>(taskFolder: Pick<TaskFolder, "projectPath">, effect: Effect.Effect<A, E>) =>
     withWorkspaceLease(path.resolve(taskFolder.projectPath), effect);
 
+  // A checkout that makes the branch can stop after making it, so the branch is counted as made
+  // before it starts, unless it was there before: when listed, or when Git finds it.
+  const makingBranch = <A, E>(
+    madeIn: Set<string>,
+    listed: boolean,
+    repositoryPath: string,
+    checkout: Effect.Effect<A, E>,
+  ) =>
+    Effect.sync(() => {
+      if (!listed) madeIn.add(repositoryPath);
+    }).pipe(
+      Effect.andThen(checkout),
+      Effect.tapError((error) =>
+        Effect.sync(() => {
+          if (isGitCommandError(error) && error.reason === "branch_already_exists")
+            madeIn.delete(repositoryPath);
+        }),
+      ),
+    );
+
   const createRepositoryWorktree = Effect.fnUntraced(function* (
     taskFolder: TaskFolder,
     repository: ProjectTrackedFolder,
     branch: string,
     startFromOrigin: boolean,
     baseBranch: string | undefined,
+    madeIn: Set<string>,
+    listed: boolean,
   ) {
     const worktreePath = mapped(taskFolder, repository.path);
     yield* fileSystem.makeDirectory(path.dirname(worktreePath), { recursive: true });
     const start = yield* repositoryStart(repository.path, startFromOrigin, baseBranch);
-    yield* git.createWorktree({
-      cwd: repository.path,
-      refName: start.refName,
-      newRefName: branch,
-      baseRefName: start.baseRefName,
-      path: worktreePath,
-    });
+    yield* makingBranch(
+      madeIn,
+      listed,
+      repository.path,
+      git.createWorktree({
+        cwd: repository.path,
+        refName: start.refName,
+        newRefName: branch,
+        baseRefName: start.baseRefName,
+        path: worktreePath,
+      }),
+    );
     return {
       repository: {
         repositoryPath: repository.path,
@@ -921,8 +950,7 @@ const make = Effect.gen(function* () {
         ...taskPlan.trackedRepositories,
       ];
       let layoutStarted = false;
-      // Where this attempt made the branch. A checkout makes it only where none was there, and
-      // a failed one deletes what it made itself; a listing could predate another writer's.
+      // Where this attempt made the branch; a listing could predate another writer's.
       const madeIn = new Set<string>();
       return yield* Effect.gen(function* () {
         branchMadeIn.set(root, madeIn);
@@ -994,17 +1022,21 @@ const make = Effect.gen(function* () {
         }
         if (taskPlan.projectIsRepository) {
           yield* fileSystem.makeDirectory(path.dirname(empty.projectPath), { recursive: true });
-          yield* git.createWorktree(
-            {
-              cwd: taskPlan.projectRoot,
-              refName: input.projectStart.refName,
-              newRefName: branch,
-              baseRefName: input.projectStart.baseRefName,
-              path: empty.projectPath,
-            },
-            input.projectProgress === undefined ? {} : { progress: input.projectProgress },
+          yield* makingBranch(
+            madeIn,
+            projectNames.includes(branch),
+            taskPlan.projectRoot,
+            git.createWorktree(
+              {
+                cwd: taskPlan.projectRoot,
+                refName: input.projectStart.refName,
+                newRefName: branch,
+                baseRefName: input.projectStart.baseRefName,
+                path: empty.projectPath,
+              },
+              input.projectProgress === undefined ? {} : { progress: input.projectProgress },
+            ),
           );
-          madeIn.add(taskPlan.projectRoot);
         } else {
           yield* linkFolder(taskPlan.projectRoot, empty.projectPath, taskPlan.trackedRepositories);
         }
@@ -1029,11 +1061,12 @@ const make = Effect.gen(function* () {
                 branch,
                 input.startFromOrigin,
                 input.baseBranch,
+                madeIn,
+                names[taskPlan.repositories.indexOf(repository)]!.includes(branch),
               ).pipe(
                 Effect.tap((worktree) =>
                   Effect.suspend(() => {
                     created.push(worktree.repository);
-                    madeIn.add(repository.path);
                     repositoriesStartedFromOrigin ||= worktree.fromOrigin;
                     return (
                       input.onRepository?.({

@@ -559,9 +559,10 @@ it.effect.each([
           // not only while the provider rollback is in flight.
           yield* Deferred.await(restoreEntered);
           const duringRestore = yield* startTurn;
-          // GitWorkflowService leases a checkout by its real path.
+          // GitWorkflowService leases a checkout by its real path; removing the task folder
+          // through its project checkout leases that one, even when the thread is elsewhere.
           const gitActions = yield* Effect.forEach(
-            taskFolder ? [repositoryWorktree, submodule] : [],
+            taskFolder ? [repositoryWorktree, submodule, projectPath] : [],
             (checkout) =>
               withWorkspaceLease(
                 checkout,
@@ -587,7 +588,7 @@ it.effect.each([
                 "files",
                 "turn start",
                 "turn start",
-                ...(taskFolder ? ["git action", "git action"] : []),
+                ...(taskFolder ? ["git action", "git action", "git action"] : []),
               ]
             : ["turn start"],
         );

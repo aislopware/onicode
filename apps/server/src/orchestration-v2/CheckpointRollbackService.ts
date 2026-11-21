@@ -25,6 +25,7 @@ import type * as ServerSettings from "../serverSettings.ts";
 import { makeIsManagedWorktreePath } from "../worktreesDirectory.ts";
 import * as TaskFolders from "../workspace/TaskFolders.ts";
 import {
+  canonicalize,
   withCheckpointRestoreReservation,
   withWorkspaceLease,
   withWorkspaceLeases,
@@ -569,13 +570,19 @@ export const layer: Layer.Layer<
             scopes?.map((repository) => repository.cwd) ??
             taskFolder?.repositories.map((repository) => repository.worktreePath) ??
             [];
-          const realPath = (target: string) =>
-            fileSystem.realPath(target).pipe(Effect.orElseSucceed(() => path.resolve(target)));
-          // A thread bound to one of its folder's worktrees finds its own checkout among them;
-          // each lease is taken once, as a second would wait on the first.
-          const leases = [
+          // Removing the folder through its project checkout holds that one's lease. A thread
+          // bound to one of its folder's worktrees finds its own checkout among them; each lease
+          // is taken once, as a second would wait on the first.
+          const checkouts = [
             worktreePath,
-            ...(yield* Effect.forEach([worktreePath, ...repositories], realPath)),
+            ...(taskFolder === null ? [] : [taskFolder.projectPath]),
+            ...repositories,
+          ].map((checkout) => path.resolve(checkout));
+          const leases = [
+            ...checkouts,
+            ...(yield* Effect.forEach(checkouts, (checkout) =>
+              canonicalize(fileSystem, path, checkout),
+            )),
           ];
           yield* withCheckpointRestoreReservation(
             fileSystem,
