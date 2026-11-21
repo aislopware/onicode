@@ -283,6 +283,7 @@ describe("issue toolkit handlers", () => {
       const tracker = IssueTrackerKind.make("linear");
       const host = "linear.app";
       const filedIn = yield* Ref.make<ReadonlyArray<string>>([]);
+      const readIn = yield* Ref.make<ReadonlyArray<string>>([]);
       const linear: StandaloneIssueTrackerApi = {
         kind: tracker,
         capabilities: detail.capabilities,
@@ -298,7 +299,17 @@ describe("issue toolkit handlers", () => {
         getViewer: () => Effect.succeed("user"),
         listIssues: () => Effect.succeed({ items: [], nextCursor: null }),
         getComments: () => Effect.succeed({ comments: [], nextCursor: null }),
-        getIssue: () => Effect.die("unused"),
+        getIssue: ({ scope, key }) =>
+          Ref.update(readIn, (teams) => [...teams, scope]).pipe(
+            Effect.as({
+              ...detail,
+              reactions: [],
+              key,
+              url: `https://linear.app/acme/issue/${key}`,
+              displayKey: key,
+              body: "",
+            }),
+          ),
         create: ({ scope }) =>
           Ref.update(filedIn, (teams) => [...teams, scope]).pipe(
             Effect.as({
@@ -340,6 +351,9 @@ describe("issue toolkit handlers", () => {
       expect(unbound).toMatchObject({ _tag: "IssueOperationError", reason: "not-found" });
       expect(unbound.message).toContain("Use one of: ENG, OPS.");
       expect(yield* Ref.get(filedIn)).toEqual(["OPS", "ENG"]);
+      // A key without its scope in it, as a GitHub fork's number, is read in the scope named.
+      yield* harness.call("read_issue", { key: "1", scope: "OPS" });
+      expect(yield* Ref.get(readIn)).toEqual(["OPS"]);
     }),
   );
 

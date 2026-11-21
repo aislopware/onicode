@@ -48,6 +48,7 @@ export const IssueTargetInput = Schema.Struct({
       description: "The issue's key in the project's tracker, such as its number.",
     }),
   ),
+  scope: Schema.optional(TrimmedNonEmptyString),
   projectId: Schema.optional(
     ProjectId.annotate({
       description: "Project whose tracker holds key. Defaults to this thread's project.",
