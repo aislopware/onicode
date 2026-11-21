@@ -1,6 +1,6 @@
 {
   "name": "@onicode/contracts",
-  "version": "0.22.0",
+  "version": "0.23.0",
   "private": true,
   "files": [
     "dist"
