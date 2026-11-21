@@ -511,6 +511,27 @@ describe("MessagesTimeline work rows", () => {
     expect(output!.closest('[role="button"]')).toBeNull();
     expect(document.getElementById(toggle.getAttribute("aria-controls") ?? "")).toContain(output);
   });
+
+  it("leaves a short notice selectable text, not a toggle, when clicked", async () => {
+    setup();
+    await using screen = await renderTimeline([
+      work("notice-short", {
+        label: "Context compacted",
+        tone: "info",
+        itemType: "system_notice",
+        projectedItem: v2Item("system_notice", {
+          id: "notice-short",
+          message: "Context compacted",
+          title: "Context compacted",
+        }),
+      }),
+    ]);
+    const row = document.querySelector<HTMLElement>('[data-work-entry-id="notice-short"]')!;
+    await click(row);
+    expect(row.querySelector('[role="button"]')).toBeNull();
+    expect(row.querySelector("[aria-expanded]")).toBeNull();
+    expect(screen.text()).toContain("Context compacted");
+  });
 });
 
 describe("MessagesTimeline messages", () => {
