@@ -22,6 +22,8 @@ test(
       await dialog.getByRole("textbox", "Host").fill(remote.host);
       await dialog.getByRole("textbox", "Pairing code").fill(remote.token);
       await dialog.getByRole("button", "Add environment").tap();
+      // The map is the default view; its rows carry no actions menu.
+      await screen.getByRole("button", "List", { exact: true }).tap();
       // Pairing, the first sync and a turn on the second server each outlast a default wait
       // on a busy machine.
       const moreActions = screen.getByRole("button", `More actions for ${ENVIRONMENT_LABEL}`);
@@ -43,6 +45,8 @@ test(
       await app.screenshot("remote-turn");
 
       await app.open("/settings/connections");
+
+      await screen.getByRole("button", "List", { exact: true }).tap();
       await moreActions.tap();
       await screen.getByRole("menuitem", "Remove from this device…").tap();
       await screen.getByRole("button", "Confirm").tap();
