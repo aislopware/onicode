@@ -302,6 +302,10 @@ describe("buildProjectGroups", () => {
       "remote-app",
     );
     expect(representativeOf([archivedTool, app])).toBe("old-tool");
+    // An open sub-folder beats an archived root.
+    expect(representativeOf([app, { ...root, archivedAt: "2026-07-02T00:00:00.000Z" }])).toBe(
+      "app-a",
+    );
 
     // A new thread with no current or last-used project starts from the first project's group.
     const all = [archivedTool, app, remoteApp, remoteRoot, root];
