@@ -59,11 +59,13 @@ afterEach(() => {
 });
 
 describe("openPreviewSession", () => {
-  it("duplicates a browser beside its source using its URL, profile, viewport and runtime", async () => {
+  it("duplicates a browser beside its source using its URL, profile, viewport, zoom, appearance and runtime", async () => {
     const source: PreviewSessionSnapshot = {
       ...snapshot,
       profileId: "work",
       viewport: { _tag: "freeform", width: 800, height: 600 },
+      zoomFactor: 1.5,
+      colorScheme: "dark",
       runtime: "server",
     };
     const panels = useRightPanelStore.getState();
@@ -83,8 +85,8 @@ describe("openPreviewSession", () => {
         profileId: "work",
         viewport: source.viewport,
         runtime: "server",
-        zoomFactor: 1,
-        colorScheme: "system",
+        zoomFactor: 1.5,
+        colorScheme: "dark",
       },
     });
     const state = useRightPanelStore.getState();

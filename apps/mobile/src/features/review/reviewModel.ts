@@ -658,10 +658,25 @@ export function buildReviewSectionItems(input: {
   return [...turnItems, ...gitItems];
 }
 
+/** A git section's placeholder after its preview failed: no diff and nothing loading. */
+function isFailedGitSection(section: ReviewSectionItem): boolean {
+  return section.kind !== "turn" && section.source === undefined && !section.isLoading;
+}
+
 export function getDefaultReviewSectionId(
   sections: ReadonlyArray<ReviewSectionItem>,
 ): string | null {
-  return (sections.find((section) => section.id === CHANGES_SECTION_ID) ?? sections[0])?.id ?? null;
+  const changes = sections.find((section) => section.id === CHANGES_SECTION_ID);
+  if (changes && !isFailedGitSection(changes)) return changes.id;
+  const usable = sections.filter((section) => !isFailedGitSection(section));
+  // A failed comparison opens on Uncommitted, the git section still showing this branch's work.
+  return (
+    (
+      (changes ? usable.find((section) => section.kind === "working-tree") : undefined) ??
+      usable[0] ??
+      sections[0]
+    )?.id ?? null
+  );
 }
 
 /**
@@ -791,6 +806,23 @@ export function applyReviewDiffMetadata(
     return stat ? { ...file, additions: stat.additions, deletions: stat.deletions } : file;
   });
   return { ...previewDiff, ...totals, files, fileCount: selectedSection.files.length, notice };
+}
+
+/** The blocks of a raw patch for `files`, so the raw fallback follows the review's filters. */
+export function reviewRawPatchForFiles(
+  diff: string,
+  files: ReadonlyArray<Pick<ReviewRenderableFile, "path" | "previousPath">>,
+): string {
+  const headers = new Set(
+    files.map(
+      (file) =>
+        `diff --git ${quoteGitPatchPath(`a/${file.previousPath ?? file.path}`)} ${quoteGitPatchPath(`b/${file.path}`)}`,
+    ),
+  );
+  return diff
+    .split(/(?=^diff --git )/m)
+    .filter((block) => headers.has(block.split("\n", 1)[0] ?? ""))
+    .join("");
 }
 
 /**

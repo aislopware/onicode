@@ -146,24 +146,22 @@ const runCapture = Effect.fn("mobileAudit.capture")(function* (input: {
   yield* fs.makeDirectory(platformDir, { recursive: true });
 
   const pngPath = path.join(platformDir, `${input.screen}.png`);
+  // Without it agent-device uses whichever session is selected, whatever its platform.
+  const deviceArgs = ["--platform", input.platform, ...input.agentDeviceArgs];
   const screenshotArgs =
     input.platform === "ios"
-      ? ["screenshot", "--pixel-density", "3", pngPath, ...input.agentDeviceArgs]
-      : ["screenshot", pngPath, ...input.agentDeviceArgs];
+      ? ["screenshot", "--pixel-density", "3", pngPath, ...deviceArgs]
+      : ["screenshot", pngPath, ...deviceArgs];
   yield* execAgentDevice(input.agentDevice, screenshotArgs);
 
-  const auditRaw = yield* execAgentDevice(input.agentDevice, [
-    "audit",
-    "--json",
-    ...input.agentDeviceArgs,
-  ]);
+  const auditRaw = yield* execAgentDevice(input.agentDevice, ["audit", "--json", ...deviceArgs]);
   const auditData = yield* decodeAuditJson(auditRaw, "agent-device audit");
 
   const snapRaw = yield* execAgentDevice(input.agentDevice, [
     "snapshot",
     "--raw",
     "--json",
-    ...input.agentDeviceArgs,
+    ...deviceArgs,
   ]);
   const snapData = yield* decodeRawSnapshotJson(snapRaw, "agent-device snapshot");
 

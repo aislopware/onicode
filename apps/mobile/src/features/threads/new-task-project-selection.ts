@@ -3,6 +3,7 @@ import { availableScratchWorkspaceRoot } from "@onicode/client-runtime/operation
 import {
   isPickableProjectMember,
   isRepositoryRootProject,
+  selectRepositoryCounterpart,
 } from "@onicode/client-runtime/state/project-grouping";
 import type { EnvironmentProject } from "@onicode/client-runtime/state/shell";
 import { repositoryGroupingKeyOf, type EnvironmentId, type ServerConfig } from "@onicode/contracts";
@@ -123,12 +124,15 @@ export function resolveEnvironmentProjectMatch(
     return repositoryKey !== null && projectKey !== null && projectKey !== repositoryKey;
   };
   return (
-    (repositoryKey !== null
-      ? projectsOnTarget.find(
-          (project) =>
-            (project.repositoryIdentity
-              ? repositoryGroupingKeyOf(project.repositoryIdentity)
-              : null) === repositoryKey,
+    (repositoryKey !== null && selectedProject !== null
+      ? selectRepositoryCounterpart(
+          selectedProject,
+          projectsOnTarget.filter(
+            (project) =>
+              (project.repositoryIdentity
+                ? repositoryGroupingKeyOf(project.repositoryIdentity)
+                : null) === repositoryKey,
+          ),
         )
       : undefined) ??
     (workspaceBasename !== null
