@@ -734,6 +734,12 @@ const make = Effect.gen(function* () {
     remotePort: number,
     stopsBefore: number,
   ) {
+    // A dual-stack server on :: does not collide with the specific loopback binds on macOS and
+    // Windows, and would lose `localhost` to the forward, so the forward moves off its port.
+    // Linux refuses those binds already, and its :: probe also collides with non-loopback hosts.
+    // Probed before the Stop check, so a Stop during the probe is still seen.
+    const servedOnWildcard =
+      platform !== "linux" && !(yield* net.canListenOnHost(remotePort, "::"));
     const key = forwardKey(environmentId, remotePort);
     if ((forwardStops.get(key) ?? 0) !== stopsBefore) {
       return yield* new LoopbackTunnelForwardError({
@@ -755,9 +761,6 @@ const make = Effect.gen(function* () {
           ),
         ),
       );
-    // A dual-stack server on :: does not collide with the specific loopback binds on macOS, and
-    // would lose `localhost` to the forward, so the forward moves off its port instead.
-    const servedOnWildcard = !(yield* net.canListenOnHost(remotePort, "::"));
     const bound = yield* bind(servedOnWildcard ? 0 : remotePort).pipe(
       // Taken here, or privileged: any free port still reaches the environment's.
       Effect.catch(() => bind(0)),
