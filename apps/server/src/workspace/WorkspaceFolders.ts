@@ -64,6 +64,8 @@ export class WorkspaceFolders extends Context.Service<
     readonly submodules: (input: {
       readonly projectId: ProjectId;
       readonly worktreePath: string | null;
+      /** The thread's folders, when the caller has `forThread`'s answer: saves a second scan. */
+      readonly folders?: ReadonlyArray<ThreadFolder>;
     }) => Effect.Effect<ReadonlyArray<ThreadFolder>, WorkspaceFoldersError>;
     readonly list: (
       input: WorkspaceListFoldersInput,
@@ -268,17 +270,22 @@ const scanFolders = Effect.fn("WorkspaceFolders.scan")(function* (
 /**
  * The repositories inside a project folder, read from disk: the ones a scan finds there, less
  * those the project's `onicode.json` leaves out. A folder outside it is never found this way, since
- * tracking one grants agents a place they could not reach before.
+ * tracking one grants agents a place they could not reach before. Null when the folder cannot be
+ * read: that says nothing about what is inside it.
  */
 export const discoverFolders = Effect.fn("WorkspaceFolders.discover")(function* (
   workspaceRoot: string,
-): Effect.fn.Return<ReadonlyArray<ProjectTrackedFolder>, never, FileSystem.FileSystem | Path.Path> {
+): Effect.fn.Return<
+  ReadonlyArray<ProjectTrackedFolder> | null,
+  never,
+  FileSystem.FileSystem | Path.Path
+> {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const { realPath, ownsHistory } = yield* folderProbes;
   // Uncapped: the folders outside the project are dropped below, and must not use up the room.
   const scan = yield* scanFolders({ workspaceRoot }, Number.POSITIVE_INFINITY).pipe(Effect.option);
-  if (Option.isNone(scan)) return [];
+  if (Option.isNone(scan)) return null;
   const root = scan.value.workspaceRoot;
   const realRoot = yield* realPath(root);
   const ignored = (
@@ -334,7 +341,10 @@ export const projectFolders = Effect.fn("WorkspaceFolders.projectFolders")(funct
   never,
   FileSystem.FileSystem | Path.Path
 > {
-  return mergeProjectFolders(yield* discoverFolders(project.workspaceRoot), project.trackedFolders);
+  return mergeProjectFolders(
+    (yield* discoverFolders(project.workspaceRoot)) ?? [],
+    project.trackedFolders,
+  );
 });
 
 /** Whether two tracked lists name the same folders in the same order. */
@@ -506,7 +516,7 @@ const make = Effect.gen(function* () {
   const submodules: WorkspaceFolders["Service"]["submodules"] = Effect.fn(
     "WorkspaceFolders.submodules",
   )(function* (input) {
-    const { folders } = yield* forThread(input);
+    const folders = input.folders ?? (yield* forThread(input)).folders;
     // A worktree can outlive its project record; its submodules are then named by where they are.
     const projectRoot = yield* readProject(input.projectId).pipe(
       Effect.map((project) => path.resolve(project.workspaceRoot)),

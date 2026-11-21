@@ -434,6 +434,8 @@ it.layer(layerTest)("ProjectService", (it) => {
         tracked,
       );
       assert.deepEqual((yield* update("clear", { trackedFolders: [] })).trackedFolders, []);
+      // A retried accepted command replays its receipt, though a folder it added is gone now.
+      assert.deepEqual((yield* update("track", { trackFolders: tracked })).trackedFolders, []);
 
       // A moved project lists the repositories of the folder it moved to, without being told.
       const moved = yield* fileSystem.realPath(
