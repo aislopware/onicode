@@ -18,6 +18,7 @@ import {
   composerSubmissionIntentForKey,
 } from "../../composer-logic";
 import { type PendingUserInput } from "../../session-logic";
+import { promptSuggestionToAccept } from "./usePromptSuggestion";
 import {
   type EnvironmentContextRecord,
   type PreviewAnnotationPayload,
@@ -262,10 +263,10 @@ export function composerCommandKeyHandler(input: {
         return true;
       }
     }
+    const acceptedSuggestion = promptSuggestionToAccept(promptSuggestion, promptRef.current);
     if (
       key === "Tab" &&
-      promptSuggestion !== null &&
-      promptRef.current.length === 0 &&
+      acceptedSuggestion !== null &&
       !menuIsActive &&
       !event.shiftKey &&
       !event.altKey &&
@@ -275,7 +276,7 @@ export function composerCommandKeyHandler(input: {
       event.keyCode !== 229
     ) {
       // The typing guard must see this draft, so an approval that lands next is not answered with it.
-      return applyPromptReplacement(0, 0, promptSuggestion);
+      return applyPromptReplacement(0, 0, acceptedSuggestion);
     }
     if ((key === "ArrowUp" || key === "ArrowDown") && submissionIntent === null) {
       return navigatePromptHistory(key === "ArrowUp" ? "backward" : "forward", event);
