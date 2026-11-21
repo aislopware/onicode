@@ -3072,3 +3072,4 @@ d9fdd02523	take	fix(client-runtime): @ menu offers machines the thread's server 
 367f9d3759	take	fix(antigravity): skills.json ~/ entries no longer list skills agy never loads
 2af435185e	take	perf(server): branch PR lookups start 9 git processes instead of 14
 982bbcdfe1	take	fix(server): terminal history drops OSC 4 palette queries
+f4b8be84a0	take	fix(web): show custom theme backgrounds on the empty New thread screen
