@@ -56,7 +56,6 @@
     "@onicode/shared": "workspace:*",
     "@pierre/diffs": "catalog:",
     "@pierre/highlights": "catalog:",
-    "@react-native-ai/apple": "0.13.0",
     "@react-native-menu/menu": "^2.2.1",
     "@react-navigation/elements": "2.9.46",
     "@react-navigation/native": "7.5.2",

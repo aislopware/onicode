@@ -20,5 +20,13 @@ module.exports = {
     "GitIgnore",
   ],
   // Expo ignores the app version; the major keeps updates off older store binaries.
-  extraSources: [{ type: "contents", id: "appMajorVersion", contents: majorVersion }],
+  extraSources: [
+    { type: "contents", id: "appMajorVersion", contents: majorVersion },
+    // Expo skips symlinks when hashing local modules.
+    {
+      type: "file",
+      filePath: "../../native/apple-speech/AppleSpeechEngine.swift",
+      reasons: ["appleSpeech"],
+    },
+  ],
 };
