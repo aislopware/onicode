@@ -50,12 +50,15 @@ export function LinkSeveralEnvironmentsDialog({
   environmentId,
   open,
   onOpenChange,
+  onClosed,
   preset,
   presetOnly = false,
 }: {
   readonly environmentId: EnvironmentId;
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
+  /** After the close animation, so a caller can unmount the dialog. */
+  readonly onClosed?: () => void;
   /** Machines picked before the dialog opened. Those a batch cannot link stay unticked. */
   readonly preset?: ReadonlyArray<EnvironmentId>;
   /** Lists only the `preset` machines: they were picked for this link, not as a suggestion. */
@@ -64,9 +67,12 @@ export function LinkSeveralEnvironmentsDialog({
   const gt = useGT();
   const m = useMessages();
   const formId = useId();
-  const sourceLabel = useEnvironments().environments.find(
+  const source = useEnvironments().environments.find(
     (environment) => environment.environmentId === environmentId,
-  )?.label;
+  );
+  const sourceLabel = source?.label;
+  // The dialog outlives a dropped source to show its failures, but starts no link through it.
+  const sourceConnected = source?.connection.phase === "connected";
   const known = useLinkableMachines(environmentId, open);
   const machines =
     presetOnly && preset !== undefined
@@ -137,7 +143,7 @@ export function LinkSeveralEnvironmentsDialog({
       return next;
     });
   const submit = async () => {
-    if (inFlight.current || chosen.length === 0) return;
+    if (inFlight.current || chosen.length === 0 || !sourceConnected) return;
     inFlight.current = true;
     setLinking(new Set(chosen.map((machine) => machine.environmentId)));
     const results = await runLinkBatch({
@@ -186,6 +192,9 @@ export function LinkSeveralEnvironmentsDialog({
       onOpenChange={(next) => {
         if (!next && busy) return;
         handleOpenChange(next);
+      }}
+      onOpenChangeComplete={(next) => {
+        if (!next) onClosed?.();
       }}
     >
       <DialogPopup className="max-w-md">
@@ -399,7 +408,11 @@ export function LinkSeveralEnvironmentsDialog({
             {outcomes.size > 0 ? gt("Done") : gt("Cancel")}
           </DialogClose>
           {outcomes.size > 0 && !busy && chosen.length === 0 ? null : (
-            <Button form={formId} type="submit" disabled={busy || chosen.length === 0}>
+            <Button
+              form={formId}
+              type="submit"
+              disabled={busy || chosen.length === 0 || !sourceConnected}
+            >
               {busy
                 ? gt("Linking…")
                 : gt("{count, plural, one {Link # machine} other {Link # machines}}", {

@@ -67,7 +67,14 @@ export function LinkSeveralEnvironmentsAction(props: {
       environment.connection.phase === "connected" &&
       offersLinkThrough(environment.serverConfig),
   );
-  const sourceReady = canLink && offersLinkedEnvironments(config);
+  const sourceReady =
+    canLink &&
+    offersLinkedEnvironments(config) &&
+    environments.some(
+      (environment) =>
+        environment.environmentId === props.environmentId &&
+        environment.connection.phase === "connected",
+    );
   // An open sheet stays until closed, even if the relay drops; it only stops new links.
   if (!open && (!sourceReady || (otherMachines < 2 && !linksThrough))) {
     return null;

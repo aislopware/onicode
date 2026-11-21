@@ -26,6 +26,8 @@ interface PreviewRevisionState {
   readonly requestedAt: number | undefined;
   /** Whether the patch was already being read at `requestedAt`, so it may hold older contents. */
   readonly patchPendingAtRequest: boolean;
+  /** The revision moved while the patch was being read; it refreshes once that read lands. */
+  readonly refreshOnLanding: boolean;
   /** The revision patches are read under. */
   readonly revision: string | null;
 }
@@ -98,25 +100,44 @@ export function createReviewEnvironmentAtoms<R, E>(
         ? // @effect-diagnostics-next-line globalDate:off - Compared with `AsyncResult` timestamps, which come from `Date.now`.
           (previous?.requestedAt ?? Date.now())
         : undefined;
+      // Read as a dependency so a read that lands after its revision moved can refresh then.
+      const read = get(patch);
       const patchPendingAtRequest =
         result.waiting &&
         (previous?.requestedAt !== undefined
           ? previous.patchPendingAtRequest
-          : previous !== undefined && get.once(patch).waiting);
+          : previous !== undefined && read.waiting);
       let revision = key;
-      if (previous !== undefined && key === previous.key) revision = previous.revision;
-      else if (previous !== undefined) {
+      let refreshOnLanding = false;
+      if (previous !== undefined && key === previous.key) {
+        revision = previous.revision;
+        if (previous.refreshOnLanding) {
+          if (read.waiting) refreshOnLanding = true;
+          else revision = key;
+        }
+      } else if (previous !== undefined) {
         const since = requestedAt ?? previous.requestedAt;
         const pendingAtSince =
           requestedAt === undefined ? previous.patchPendingAtRequest : patchPendingAtRequest;
-        const read = get.once(patch);
-        const fresh =
+        // Restarting an in-flight read on every revision would starve it while files keep changing.
+        if (since !== undefined && pendingAtSince && read.waiting) {
+          revision = previous.revision;
+          refreshOnLanding = true;
+        } else if (
           since !== undefined &&
           !pendingAtSince &&
-          (read.waiting || (read._tag === "Success" && read.timestamp >= since));
-        if (fresh) revision = previous.revision;
+          (read.waiting || (read._tag === "Success" && read.timestamp >= since))
+        ) {
+          revision = previous.revision;
+        }
       }
-      states.set(get.registry, { key, requestedAt, patchPendingAtRequest, revision });
+      states.set(get.registry, {
+        key,
+        requestedAt,
+        patchPendingAtRequest,
+        refreshOnLanding,
+        revision,
+      });
       return revision;
     });
   };
