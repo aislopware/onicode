@@ -1,10 +1,18 @@
 import { PROVIDER_SEND_TURN_MAX_ATTACHMENTS } from "@onicode/contracts";
 
-export function remainingComposerAttachmentSlots(
-  attachmentCount: number,
-  pendingThreadImports: number,
-) {
-  return Math.max(0, PROVIDER_SEND_TURN_MAX_ATTACHMENTS - attachmentCount - pendingThreadImports);
+import { countMovedQuestionImports } from "../../questionAttachments";
+import { countPreparingComposerImages } from "./preparingComposerImages";
+
+/** Dropped threads still loading, by the draft target key they will land in. */
+export const pendingThreadImports = new Map<string, number>();
+
+/** Slots in a draft held for attachments still on their way into it. */
+export function countReservedComposerSlots(targetKey: string): number {
+  return (
+    countPreparingComposerImages(targetKey) +
+    (pendingThreadImports.get(targetKey) ?? 0) +
+    countMovedQuestionImports(targetKey)
+  );
 }
 
 export async function importComposerThreadAttachment(input: {

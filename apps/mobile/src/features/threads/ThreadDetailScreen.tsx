@@ -1,5 +1,6 @@
 import { threadTitleText } from "@onicode/client-runtime/operations";
 import { ChildThreadApprovals } from "./ChildThreadApprovals";
+import { declineApprovalsBeforeRedirect } from "./approvalRedirect";
 import { errorDisplayMessage } from "@onicode/client-runtime/errors";
 import { useOpenThreadInspector } from "./thread-inspector-navigation";
 import { useSidebarWorkspaceTabs } from "../layout/workspace/useSystemWorkspaceTabBar";
@@ -57,8 +58,6 @@ import {
   type CodexArtifactTemplate,
 } from "@onicode/shared/codexArtifactTemplates";
 import {
-  declinePendingApprovals,
-  sendApprovalFeedback,
   type ApprovalResponder,
   type ThreadUserInputQuestion,
 } from "@onicode/client-runtime/state/thread-requests";
@@ -1331,36 +1330,19 @@ function ThreadDetailBody(
     );
     const declineBeforeDispatch =
       approvalsToDecline.length > 0 && props.activePendingUserInput === null
-        ? async (text: string, hasAttachmentsOrContext: boolean) => {
-            if (scope.aborted || stillSendable?.() === false || props.respondingApprovalId !== null)
-              return false;
-            const feedbackTarget = approvalsToDecline[0];
-            if (feedbackTarget?.supportsFeedback) {
-              if (hasAttachmentsOrContext) {
-                Dialog.alert(
-                  gt("Approval feedback"),
-                  gt("Send approval feedback without attachments or added context."),
-                );
-                return false;
-              }
-              return (await sendApprovalFeedback(feedbackTarget, text, props.onRespondToApproval))
-                ? ("responded" as const)
-                : false;
-            }
-            return (
-              props.respondingApprovalId === null &&
-              (await declinePendingApprovals(approvalsToDecline, props.onRespondToApproval)) &&
-              !scope.aborted &&
-              // A draft edited or pasted into during the decline isn't what the user sent.
-              stillSendable?.() !== false &&
-              // An approval that arrived during the decline would block the redirect; the draft
-              // stays so the next send declines it too.
-              !currentPendingApprovals().some(
-                (approval) =>
-                  !approvalsToDecline.some((declined) => declined.requestId === approval.requestId),
-              )
-            );
-          }
+        ? declineApprovalsBeforeRedirect({
+            approvals: approvalsToDecline,
+            respond: props.onRespondToApproval,
+            responding: props.respondingApprovalId !== null,
+            aborted: () => scope.aborted,
+            ...(stillSendable ? { stillSendable } : {}),
+            pendingApprovals: currentPendingApprovals,
+            refuseFeedbackWithAttachments: () =>
+              Dialog.alert(
+                gt("Approval feedback"),
+                gt("Send approval feedback without attachments or added context."),
+              ),
+          })
         : undefined;
     let dismissingKeyboard = false;
     const messageId = await onSendMessage(

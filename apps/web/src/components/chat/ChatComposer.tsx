@@ -247,7 +247,7 @@ import {
 import type { ComposerModelSettings, SendAtPress } from "./composerSend.logic";
 import { ComposerPromptLengthValidation } from "./ComposerPromptLengthValidation";
 import { pendingDraftWork } from "./pendingDraftWork";
-import { importComposerThreadAttachment } from "./composerThreadImport";
+import { importComposerThreadAttachment, pendingThreadImports } from "./composerThreadImport";
 import { observeResize } from "~/lib/observeResize";
 
 const isEnvironmentRequestInvalidError = Schema.is(EnvironmentRequestInvalidError);
@@ -1105,7 +1105,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const mobileComposerExpandFrameRef = useRef<number | null>(null);
   const mobileComposerExpandReleaseFrameRef = useRef<number | null>(null);
   const mobileComposerExpandInFlightRef = useRef(false);
-  const pendingThreadImportsRef = useRef<Map<string, number>>(new Map());
   const isRevertingCheckpointRef = useRef(isRevertingCheckpoint);
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- publishes the committed checkpoint revert flag to a ref read by async handlers
   useLayoutEffect(() => {
@@ -1453,7 +1452,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     composerImages,
     composerFilesRef,
     promptRef,
-    pendingThreadImportsRef,
     addComposerFilesToDraft,
   });
 
@@ -2519,7 +2517,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     isComposerDraftTargetOpen: (key) => composerDraftTargetKeyRef.current === key,
     composerEditorRef,
     isRevertingCheckpoint: () => isRevertingCheckpointRef.current,
-    pendingThreadImportsRef,
     setComposerCursor,
     setComposerTrigger,
     importContextRecords,
@@ -2973,7 +2970,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       const importResult = await settlePromise(() =>
         importComposerThreadAttachment({
           targetKey,
-          pendingImports: pendingThreadImportsRef.current,
+          pendingImports: pendingThreadImports,
           countReservedAttachments: countReservedAttachmentsStable,
           load: async () => {
             const result = await loadThreadTranscript({

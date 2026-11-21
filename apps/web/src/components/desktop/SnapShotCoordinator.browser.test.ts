@@ -1,13 +1,24 @@
 import { scopeProjectRef, scopeThreadRef } from "@onicode/client-runtime/environment";
-import { type DesktopBridge, EnvironmentId, ProjectId, ThreadId } from "@onicode/contracts";
+import {
+  type DesktopBridge,
+  EnvironmentId,
+  PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
+  ProjectId,
+  ThreadId,
+} from "@onicode/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
   DraftId,
+  composerTargetKey,
   hydrateImagesFromPersisted,
   useComposerDraftStore,
 } from "../../composerDraftStore";
 import * as imageCompression from "../../lib/imageCompression";
+import {
+  addPreparingComposerImages,
+  removePreparingComposerImages,
+} from "../chat/preparingComposerImages";
 import {
   questionAttachmentDraftId,
   trackOpenQuestionAttachmentDraft,
@@ -206,6 +217,34 @@ describe("open question delivery", () => {
     } finally {
       untrack();
     }
+  });
+  it("refuses a thread capture when pending attachments hold the remaining slots", async () => {
+    using _env = setup();
+    const store = useComposerDraftStore.getState();
+    store.addFiles(
+      threadRef,
+      Array.from({ length: PROVIDER_SEND_TURN_MAX_ATTACHMENTS - 1 }, (_, index) => ({
+        type: "file" as const,
+        id: `held-${index}`,
+        name: `held-${index}.txt`,
+        mimeType: "text/plain",
+        sizeBytes: 1,
+        file: new File(["x"], `held-${index}.txt`),
+      })),
+    );
+    const key = composerTargetKey(threadRef);
+    addPreparingComposerImages(key, [
+      { id: "reserved", name: "shot.png", file: new File(["png"], "shot.png"), hidden: false },
+    ]);
+    using _preparing = {
+      [Symbol.dispose]: () => removePreparingComposerImages(key, new Set(["reserved"])),
+    };
+    const { bridge } = makeBridge();
+
+    await expect(deliverSnapShot(bridge, capture, () => threadRef)).rejects.toThrow(
+      "Remove an attachment, then try this capture again.",
+    );
+    expect(store.getComposerDraft(threadRef)?.images ?? []).toHaveLength(0);
   });
 });
 
