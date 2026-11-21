@@ -73,9 +73,7 @@ Dev servers add it back on start, so turn it off in Settings instead of removing
 To add a scenario, point a `SCENARIOS` entry at a generic ACP replay fixture
 (`registry_transcript.ndjson`) or a file in [dev-replay](../../apps/server/scripts/dev-replay).
 The agent replays session updates, permission requests, and questions. It drops session setup
-and vendor frames, so Grok and fx recordings lose their vendor-only behavior. An `onicode/mcp_call`
-request frame (`{ name, arguments }`) makes the agent call that Onicode tool itself over its MCP
-session, and `<var:name>` in any frame is filled from the JSON file at `ONICODE_DEV_REPLAY_VARS`.
+and vendor frames, so Grok and fx recordings lose their vendor-only behavior.
 
 ### Profiling dev startup
 
