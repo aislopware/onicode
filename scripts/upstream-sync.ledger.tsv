@@ -3170,3 +3170,4 @@ d3242f8ed1	take	taken as is
 904e2671ca	take	taken as is (desktop screen-reader announcer; mobile has no equivalent)
 a480167e0c	take	taken as is
 b5709bb865	take	MISSING migration 103 test applied to Onicode's 108_IssueTrackerAdditionalScopes.test.ts
+76bb5ec81b	take	kept Onicode's issues.summary read for link_issue: it already skips the conversation and keeps the Linear workspace target that upstream's linkMetadata drops; skipped the duplicate getIssueLink/IssueLinkMetadata
