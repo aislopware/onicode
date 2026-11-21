@@ -1,4 +1,5 @@
 import { EnvironmentId, PeerLinkError } from "@onicode/contracts";
+import * as DateTime from "effect/DateTime";
 import * as Result from "effect/Result";
 import { describe, expect, it } from "vite-plus/test";
 
@@ -44,6 +45,30 @@ describe("linkBatchCandidates", () => {
       ["viewer", "no_access"],
       ["loopback", "no_address"],
     ]);
+    // Another environment's link gets the code only where this client cannot mint one itself.
+    const routes = new Map(
+      ["ready", "linked", "offline", "viewer"].map((name) => [
+        id(name),
+        { viaEnvironmentId: id("hub") },
+      ]),
+    );
+    expect(
+      linkBatchCandidates(machines, writable, "loaded", routes).map(({ machine, blocked, via }) => [
+        machine.label,
+        blocked,
+        via,
+      ]),
+    ).toEqual([
+      ["ready", null, null],
+      ["linked", "linked", null],
+      ["offline", null, id("hub")],
+      ["viewer", null, id("hub")],
+      ["loopback", "no_address", null],
+    ]);
+    // A machine that gave this client no code is retried through the route.
+    expect(
+      linkBatchCandidates(machines, writable, "loaded", routes, new Set([id("ready")]))[0]?.via,
+    ).toBe(id("hub"));
   });
 
   it("offers no machine until the linking environment's links have loaded", () => {
@@ -125,6 +150,57 @@ describe("runLinkBatch", () => {
     expect(linkBatchSummary(outcomes)).toEqual({
       linked: 1,
       failed: [id("b"), id("c"), id("d"), id("e")],
+    });
+  });
+
+  it("links a machine with `via` using the code and addresses that environment gets", async () => {
+    const paired: Array<unknown> = [];
+    const linked: Array<unknown> = [];
+    const outcomes = await runLinkBatch({
+      machines: ["c", "d"].map((name) => ({
+        ...machine(name, { connected: false, urls: [] }),
+        via: id("b"),
+      })),
+      access: "full-access",
+      mint: async () => Result.fail(new Error("not connected")),
+      pairThrough: async (via, input) => {
+        paired.push([via, input]);
+        const target = { environmentId: input.environmentId, label: "c" };
+        return Result.succeed(
+          input.environmentId === id("c")
+            ? {
+                ...target,
+                type: "credential",
+                urls: ["https://c.example.ts.net", "http://100.64.0.3:3773"],
+                credential: "code-from-b",
+                expiresAt: DateTime.makeUnsafe("2036-04-07T00:05:00.000Z"),
+              }
+            : { ...target, type: "unsupported", urls: [], reason: "refused" },
+        );
+      },
+      link: async (input) => {
+        linked.push(input);
+        return Result.succeed(null);
+      },
+      refreshLinks: () => {},
+    });
+    expect(paired).toEqual([
+      [id("b"), { environmentId: id("c"), access: "full-access" }],
+      [id("b"), { environmentId: id("d"), access: "full-access" }],
+    ]);
+    expect(linked).toEqual([
+      {
+        url: "https://c.example.ts.net",
+        alternateUrls: ["http://100.64.0.3:3773"],
+        expectedEnvironmentId: id("c"),
+        expectedLabel: "c",
+        pairingCode: "code-from-b",
+        access: "full-access",
+      },
+    ]);
+    expect(Object.fromEntries(outcomes)).toEqual({
+      [id("c")]: { kind: "linked" },
+      [id("d")]: { kind: "failed", failure: "no_code", detail: null },
     });
   });
 

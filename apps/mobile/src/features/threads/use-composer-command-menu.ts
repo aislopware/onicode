@@ -109,6 +109,28 @@ export function resolveComposerMenuSelection(input: {
   return { start: Math.min(input.local.start, length), end: Math.min(input.local.end, length) };
 }
 
+interface ComposerMenuTriggerState {
+  readonly ownerKey: string | null;
+  readonly draftMessage: string;
+  readonly trigger: ComposerTrigger | null;
+}
+
+const isSameTrigger = (a: ComposerTrigger | null, b: ComposerTrigger | null) =>
+  a !== null && b !== null && a.kind === b.kind && a.rangeStart === b.rangeStart;
+
+/** An edit or a new draft owner opens the trigger at the caret; a caret move alone only keeps it or closes it. */
+export function resolveComposerMenuTrigger(input: {
+  readonly previous: ComposerMenuTriggerState;
+  readonly ownerKey: string | null;
+  readonly draftMessage: string;
+  readonly candidate: ComposerTrigger | null;
+}): ComposerTrigger | null {
+  const edited =
+    input.previous.ownerKey !== input.ownerKey ||
+    input.previous.draftMessage !== input.draftMessage;
+  return edited || isSameTrigger(input.previous.trigger, input.candidate) ? input.candidate : null;
+}
+
 const PULL_REQUEST_STATE_LABELS = {
   open: msg("open", { $context: "pull request state" }),
   closed: msg("closed", { $context: "pull request state" }),
@@ -365,12 +387,29 @@ export function useComposerCommandMenu({
     setSelection(nextSelection);
   };
 
-  const trigger = (() => {
-    if (!enabled || selection.start !== selection.end) {
-      return null;
-    }
-    return detectComposerTrigger(draftMessage, selection.end);
-  })();
+  const caretTrigger =
+    enabled && selection.start === selection.end
+      ? detectComposerTrigger(draftMessage, selection.end)
+      : null;
+  // The native editors report an edit's text and caret in one batch, so an unchanged draft means only the caret moved.
+  const [shownTrigger, setShownTrigger] = useState<ComposerMenuTriggerState>(() => ({
+    ownerKey,
+    draftMessage,
+    trigger: caretTrigger,
+  }));
+  const trigger = resolveComposerMenuTrigger({
+    previous: shownTrigger,
+    ownerKey,
+    draftMessage,
+    candidate: caretTrigger,
+  });
+  if (
+    shownTrigger.ownerKey !== ownerKey ||
+    shownTrigger.draftMessage !== draftMessage ||
+    (shownTrigger.trigger === null) !== (trigger === null)
+  ) {
+    setShownTrigger({ ownerKey, draftMessage, trigger });
+  }
   const pathSearch = useComposerPathSearch({
     environmentId,
     cwd: trigger?.kind === "path" ? projectCwd : null,

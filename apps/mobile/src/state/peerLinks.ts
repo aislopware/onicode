@@ -1,17 +1,35 @@
+import { useAtomValue } from "@effect/atom-react";
 import {
   linkableMachines,
   linkedEnvironmentNames,
   linkNamesQuery,
 } from "@onicode/client-runtime/link-request";
-import { createPeerLinkEnvironmentAtoms } from "@onicode/client-runtime/state/peerLinks";
-import type { EnvironmentId } from "@onicode/contracts";
+import {
+  createPeerLinkEnvironmentAtoms,
+  linkThroughRoutes,
+  offersLinkThrough,
+} from "@onicode/client-runtime/state/peerLinks";
+import { AuthAccessWriteScope, type EnvironmentId } from "@onicode/contracts";
+import * as DateTime from "effect/DateTime";
+import { Atom } from "effect/reactivity";
 import { useMemo } from "react";
 
 import { connectionAtomRuntime } from "../connection/runtime";
+import { useNowMinuteMs } from "../lib/clock";
 import { useEnvironments } from "./environments";
 import { useEnvironmentQuery } from "./query";
+import { useEnvironmentsWithScope } from "./session";
 
 export const peerLinkEnvironment = createPeerLinkEnvironmentAtoms(connectionAtomRuntime);
+
+const idsOf = (key: string) => (key === "" ? [] : (key.split("\n") as EnvironmentId[]));
+
+/** Each environment's link list, in the order of the newline-joined ids. */
+const peerLinkListsAtom = Atom.family((key: string) =>
+  Atom.make((get) =>
+    idsOf(key).map((environmentId) => get(peerLinkEnvironment.list({ environmentId, input: {} }))),
+  ).pipe(Atom.withLabel(`peer-links:lists:${key}`)),
+);
 
 /**
  * The machines `environmentId` links to, by name, while it offers links, and none otherwise.
@@ -50,11 +68,15 @@ export function useLinkedEnvironments(
 }
 
 /**
- * The user's other machines, for picking one to link `environmentId` to. Reads that
- * environment's links only while `enabled`, since listing them asks every linked machine
- * whether it answers.
+ * The user's other saved machines, then the unsaved ones in `through`, for picking one to link
+ * `environmentId` to. Reads that environment's links only while `enabled`, since listing them
+ * asks every linked machine whether it answers.
  */
-export function useLinkableMachines(environmentId: EnvironmentId, enabled: boolean) {
+export function useLinkableMachines(
+  environmentId: EnvironmentId,
+  enabled: boolean,
+  through?: ReadonlyArray<{ readonly environmentId: EnvironmentId; readonly label: string }>,
+) {
   const { environments } = useEnvironments();
   const links = useEnvironmentQuery(
     enabled ? peerLinkEnvironment.list({ environmentId, input: {} }) : null,
@@ -63,5 +85,40 @@ export function useLinkableMachines(environmentId: EnvironmentId, enabled: boole
     environments,
     threadEnvironmentId: environmentId,
     links: links.data?.links ?? [],
+    ...(through === undefined ? {} : { through }),
+  });
+}
+
+/**
+ * The machines `sourceId` can link to through another environment's full-access link, by
+ * environment id. Reads those environments' links only while `enabled`: listing them asks every
+ * linked machine whether it answers.
+ */
+export function useLinkThroughRoutes(sourceId: EnvironmentId, enabled: boolean) {
+  const { environments } = useEnvironments();
+  const offering = environments.filter(
+    (environment) =>
+      enabled &&
+      environment.environmentId !== sourceId &&
+      environment.connection.phase === "connected" &&
+      offersLinkThrough(environment.serverConfig),
+  );
+  const offeringKey = offering.map((environment) => environment.environmentId).join("\n");
+  const scoped = idsOf(offeringKey).map((environmentId) => ({ environmentId }));
+  const writable = useEnvironmentsWithScope(scoped, AuthAccessWriteScope);
+  const hosts = offering.filter((environment) => writable.has(environment.environmentId));
+  const lists = useAtomValue(peerLinkListsAtom(hosts.map((host) => host.environmentId).join("\n")));
+  const nowMinuteMs = useNowMinuteMs();
+  return linkThroughRoutes({
+    sourceEnvironmentId: sourceId,
+    hosts: hosts.map((host, index) => {
+      const list = lists[index];
+      return {
+        environmentId: host.environmentId,
+        config: host.serverConfig,
+        links: list?._tag === "Success" ? list.value.links : [],
+      };
+    }),
+    now: DateTime.makeUnsafe(nowMinuteMs),
   });
 }

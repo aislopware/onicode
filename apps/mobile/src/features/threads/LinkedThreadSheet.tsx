@@ -17,7 +17,7 @@ import {
 } from "@onicode/client-runtime/work-log/item-detail";
 import { EnvironmentId, ThreadId } from "@onicode/contracts";
 import { T, useGT, useLocale, useMessages } from "gt-react-native";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { memo, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type * as React from "react";
 import { AppState, Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -145,8 +145,9 @@ function ActivityRow(props: {
 /**
  * One entry of the thread's feed, as the thread screen's own feed model has it. Only reading
  * rows are drawn: what needs the thread's environment (files, visuals, apps) is left out.
+ * The feed cache keeps unchanged entries identical, so a streamed item re-renders only its row.
  */
-function LinkedThreadEntry(props: {
+const LinkedThreadEntry = memo(function LinkedThreadEntry(props: {
   readonly entry: ThreadFeedEntry;
   readonly target: LinkedThreadTarget;
 }) {
@@ -175,7 +176,7 @@ function LinkedThreadEntry(props: {
   ) : (
     <SelectableMarkdownText markdown={entry.message.text} textStyle={styles.nativeTextStyle} />
   );
-}
+});
 
 function FailureCard(props: {
   readonly failure: LinkedThreadFailure;

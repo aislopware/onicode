@@ -322,6 +322,7 @@ it.each([
   [`adb pair 192.168.1.42:37099 < ${F}`, ["consume"]],
   [`adb pair 192.0.2.10:37123 "$(cat '${F}')"`, ["consume"]],
   [`adb pair 192.0.2.10:37123 $(cat ${F})`, ["consume"]],
+  [`/x/agent-device fill @e3 "$(cat -- '${F}')" --settle >/dev/null`, ["consume"]],
   [`TOKEN="$(cat ${F})" ./node_modules/.bin/alchemy deploy --stage observe-test`, ["consume"]],
   [`CLOUDFLARE_API_TOKEN=$(cat ${F}) npx wrangler whoami && echo ok`, ["consume"]],
   [`export CLOUDFLARE_API_TOKEN="$(cat ${F})"`, ["meta"]],
