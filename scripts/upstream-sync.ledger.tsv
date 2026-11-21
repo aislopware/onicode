@@ -3113,3 +3113,4 @@ e0f3ab9e78	take	fix(mobile): text selection menu items follow the UI language (#
 997575be5f	take	perf(server): pull no longer scans the working tree twice (#40338)
 755de001f2	take	fix(server): Antigravity Orchestrator usage prices at the base Gemini 4 rate (#40352)
 dd941b9c3b	take	fix(server): treat a branch rename as done when Git moved the ref but kept the config locked (#40361)
+27125d7d16	take	adopted upstream's per-slice output read in the follow loop; kept Onicode's rereadOutput (22cd451359) as the fallback for a slice that settles on an older output and for the busy-thread path
