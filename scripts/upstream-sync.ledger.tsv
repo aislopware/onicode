@@ -3123,3 +3123,4 @@ e337cee952	take	taken as is; refsDigest is an optional success field, so old mob
 370b1fde77	take	test CONFLICT: kept Onicode's checkout-between-passes case and appended upstream's Windows no-op fetch case after it; adopted upstream's per-loose-ref stamp over Onicode's deleted-loose-base existence guard (4046b75b6c), retired: the stamp now lists every loose ref under refs/heads and refs/remotes, where every resolved base lives
 efea1aabe7	take	taken as is; row measurement runs only for wide tables with horizontal overflow, cached per row and bounded per frame (128K chars), with a rAF continuation only while rows remain unmeasured
 1458a42419	take	fix(server): transcript cleanup failures tell the user why; optional detail field, wire-compatible; mobile has no cleanup-failure toast (follow-up)
+3bf21c037d	take	fix(acp): Devin's terminal commands run under Git Bash on Windows
