@@ -353,6 +353,8 @@
   "24d802debbab31e0": "{rerun, plural, one {{rerun} Check erneut ausgeführt, {refused} abgelehnt} other {{rerun} Checks erneut ausgeführt, {refused} abgelehnt}}",
   "8146ee71f7426683": "{count, plural, one {{count} Pull Request reviewt} other {{count} Pull Requests reviewt}}",
   "638678077ba2e050": "{count, plural, one {Versucht, {count} Pull Request zu reviewen} other {Versucht, {count} Pull Requests zu reviewen}}",
+  "aba3bb73ce212f0c": "{names} erfordert {providerName} {version} oder neuer, aber der Homebrew-Cask claude-code hat nur {latestVersion}. Wechsle zum Cask claude-code@latest: {command}",
+  "a0854b0f9604fc7b": "{runtime, select, codex {{names} erfordert die Codex CLI {version} oder neuer, aber diese Installation kann höchstens auf {latestVersion} aktualisieren. Installiere die Codex CLI auf anderem Weg oder warte auf ein neueres Release.} other {{names} erfordert {providerName} {version} oder neuer, aber diese Installation kann höchstens auf {latestVersion} aktualisieren. Installiere {providerName} auf anderem Weg oder warte auf ein neueres Release.}}",
   "2159a4897d4a4d73": "{runtime, select, codex {Aktualisiere die Codex CLI auf {version} oder neuer, um {names} zu verwenden.} other {Aktualisiere {providerName} auf {version} oder neuer, um {names} zu verwenden.}}",
   "d887bea446534de5": "Kein Projekt in dieser Umgebung kann {host}/{repository} lesen.",
   "4e466d60e2f7736b": "Füge die vollständige Pull-Request-URL ein. Dieser Thread hat kein Repository, in dem die Nummer aufgelöst werden kann.",

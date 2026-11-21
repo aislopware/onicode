@@ -11,7 +11,10 @@ import {
 } from "@onicode/contracts";
 import { resolveSelectableModel } from "@onicode/shared/model";
 import { useAtomValue } from "@effect/atom-react";
-import { formatProviderUpdateRequiredNotice } from "@onicode/client-runtime/providerUpdateRequiredModels";
+import {
+  formatProviderUpdateRequiredNotice,
+  providerUpdateChannelLags,
+} from "@onicode/client-runtime/providerUpdateRequiredModels";
 import { groupModelsBySubProvider } from "@onicode/client-runtime/providerSubProviders";
 import { useNavigate } from "@tanstack/react-router";
 import { LegendList, type LegendListRef } from "@legendapp/list/react";
@@ -158,7 +161,7 @@ type ListRow =
     }
   /** Why a provider lists no models, with the way to set it up when there is one. */
   | { kind: "status"; key: string; entry: ProviderInstanceEntry; action: string | null }
-  | { kind: "notice"; key: string; notice: string };
+  | { kind: "notice"; key: string; notice: string; canUpdateInSettings: boolean };
 
 function isHighlightableRow(row: ListRow): boolean {
   return (
@@ -266,21 +269,28 @@ function ProviderWorkspaceModels(props: {
 
 function UpdateRequiredNotice(props: {
   notice: string;
+  // False when the provider's own update cannot reach the version the notice asks for.
+  canUpdateInSettings: boolean;
   onRequestClose: (() => void) | undefined;
   className?: string;
 }) {
   const navigate = useNavigate();
   return (
     <p className={cn("px-2 py-1.5 text-xs leading-snug text-muted-foreground", props.className)}>
-      {props.notice}{" "}
-      <InlineButton
-        onClick={() => {
-          props.onRequestClose?.();
-          void navigate({ to: "/settings/providers" });
-        }}
-      >
-        <T>Provider settings</T>
-      </InlineButton>
+      {props.notice}
+      {props.canUpdateInSettings ? (
+        <>
+          {" "}
+          <InlineButton
+            onClick={() => {
+              props.onRequestClose?.();
+              void navigate({ to: "/settings/providers" });
+            }}
+          >
+            <T>Provider settings</T>
+          </InlineButton>
+        </>
+      ) : null}
     </p>
   );
 }
@@ -741,7 +751,14 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
         });
       }
       const notice = formatProviderUpdateRequiredNotice(entry.snapshot, "", messages, locale);
-      if (notice) section.push({ kind: "notice", key: `notice:${entry.instanceId}`, notice });
+      if (notice) {
+        section.push({
+          kind: "notice",
+          key: `notice:${entry.instanceId}`,
+          notice,
+          canUpdateInSettings: !providerUpdateChannelLags(entry.snapshot),
+        });
+      }
       const setup = offersSetup(entry);
       // An enabled provider with nothing to list says why, instead of going missing.
       if (setup || section.length === 0) {
@@ -810,7 +827,15 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
         const notice = matchesLockedProvider(entry)
           ? formatProviderUpdateRequiredNotice(entry.snapshot, searchQuery, messages, locale)
           : null;
-        return notice ? [{ instanceId: entry.instanceId, notice }] : [];
+        return notice
+          ? [
+              {
+                instanceId: entry.instanceId,
+                notice,
+                canUpdateInSettings: !providerUpdateChannelLags(entry.snapshot, searchQuery),
+              },
+            ]
+          : [];
       })
     : [];
 
@@ -1139,7 +1164,11 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                     );
                   case "notice":
                     return (
-                      <UpdateRequiredNotice notice={row.notice} onRequestClose={onRequestClose} />
+                      <UpdateRequiredNotice
+                        notice={row.notice}
+                        canUpdateInSettings={row.canUpdateInSettings}
+                        onRequestClose={onRequestClose}
+                      />
                     );
                   case "legacy":
                     return (
@@ -1222,10 +1251,11 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                   ? gt("Searching project models…")
                   : gt("No models found")}
             </ComboboxEmpty>
-            {updateRequiredNotices.map(({ instanceId, notice }) => (
+            {updateRequiredNotices.map(({ instanceId, notice, canUpdateInSettings }) => (
               <UpdateRequiredNotice
                 key={instanceId}
                 notice={notice}
+                canUpdateInSettings={canUpdateInSettings}
                 onRequestClose={onRequestClose}
                 className="shrink-0 border-t border-border px-3"
               />

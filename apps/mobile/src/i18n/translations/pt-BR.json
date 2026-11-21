@@ -353,6 +353,8 @@
   "24d802debbab31e0": "{rerun, plural, one {Executou novamente {rerun} verificação, {refused} recusadas} other {Executou novamente {rerun} verificações, {refused} recusadas}}",
   "8146ee71f7426683": "{count, plural, one {Revisou {count} pull request} other {Revisou {count} pull requests}}",
   "638678077ba2e050": "{count, plural, one {Tentou revisar {count} pull request} other {Tentou revisar {count} pull requests}}",
+  "aba3bb73ce212f0c": "Usar {names} requer {providerName} {version} ou mais recente, mas o cask claude-code do Homebrew só tem {latestVersion}. Mude para o cask claude-code@latest: {command}",
+  "a0854b0f9604fc7b": "{runtime, select, codex {Usar {names} requer a CLI do Codex {version} ou mais recente, mas esta instalação só pode ser atualizada até {latestVersion}. Instale a CLI do Codex de outra forma ou aguarde uma versão mais recente.} other {Usar {names} requer {providerName} {version} ou mais recente, mas esta instalação só pode ser atualizada até {latestVersion}. Instale {providerName} de outra forma ou aguarde uma versão mais recente.}}",
   "2159a4897d4a4d73": "{runtime, select, codex {Atualize a CLI do Codex para {version} ou mais recente para usar {names}.} other {Atualize o {providerName} para {version} ou mais recente para usar {names}.}}",
   "d887bea446534de5": "Nenhum projeto neste ambiente consegue ler {host}/{repository}.",
   "4e466d60e2f7736b": "Cole a URL completa do pull request; esta thread não tem repositório para resolver o número.",

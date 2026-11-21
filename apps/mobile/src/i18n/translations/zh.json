@@ -353,6 +353,8 @@
   "24d802debbab31e0": "{rerun, plural, other {已重新运行 {rerun} 项检查，{refused} 项被拒绝}}",
   "8146ee71f7426683": "{count, plural, other {已审查 {count} 个 PR}}",
   "638678077ba2e050": "{count, plural, other {尝试审查 {count} 个 PR}}",
+  "aba3bb73ce212f0c": "使用 {names} 需要 {providerName} {version} 或更高版本，但 Homebrew 的 claude-code cask 只有 {latestVersion}。请切换到 claude-code@latest cask：{command}",
+  "a0854b0f9604fc7b": "{runtime, select, codex {使用 {names} 需要 Codex CLI {version} 或更高版本，但此安装最多只能更新到 {latestVersion}。请通过其他方式安装 Codex CLI，或等待更新的版本发布。} other {使用 {names} 需要 {providerName} {version} 或更高版本，但此安装最多只能更新到 {latestVersion}。请通过其他方式安装 {providerName}，或等待更新的版本发布。}}",
   "2159a4897d4a4d73": "{runtime, select, codex {请将 Codex CLI 更新到 {version} 或更高版本以使用 {names}。} other {请将 {providerName} 更新到 {version} 或更高版本以使用 {names}。}}",
   "d887bea446534de5": "此环境中没有项目能读取 {host}/{repository}。",
   "4e466d60e2f7736b": "请粘贴完整的 pull request URL；此会话没有可用于解析编号的仓库。",
