@@ -40,6 +40,7 @@ import {
   isClaudeFastModeBlocked,
   resolveClaudeModelCatalog,
   withoutClaudeCatalogFastMode,
+  scopeClaudeUpgradeMessageToChannel,
 } from "../ClaudeModelCatalog.ts";
 import {
   makeClaudeCodeModelRoutes,
@@ -309,6 +310,13 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
             enrichProviderSnapshotWithVersionAdvisory(snapshot, maintenanceCapabilities, {
               enableProviderUpdateChecks: settings.enableProviderUpdateChecks,
             }),
+          ),
+          Effect.flatMap((enrichedSnapshot) =>
+            modelCatalog.pipe(
+              Effect.map((catalog) =>
+                scopeClaudeUpgradeMessageToChannel(catalog, enrichedSnapshot),
+              ),
+            ),
           ),
           Effect.provideService(HttpClient.HttpClient, httpClient),
           Effect.provideService(ProviderLatestVersions.ProviderLatestVersions, latestVersions),

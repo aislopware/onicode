@@ -353,6 +353,8 @@
   "24d802debbab31e0": "{rerun, plural, one {Перезапущено {rerun} проверку, отклонено: {refused}} few {Перезапущено {rerun} проверки, отклонено: {refused}} many {Перезапущено {rerun} проверок, отклонено: {refused}} other {Перезапущено {rerun} проверки, отклонено: {refused}}}",
   "8146ee71f7426683": "{count, plural, one {Проверено {count} пул-реквест} few {Проверено {count} пул-реквеста} many {Проверено {count} пул-реквестов} other {Проверено {count} пул-реквеста}}",
   "638678077ba2e050": "{count, plural, one {Не удалось проверить {count} пул-реквест} few {Не удалось проверить {count} пул-реквеста} many {Не удалось проверить {count} пул-реквестов} other {Не удалось проверить {count} пул-реквеста}}",
+  "aba3bb73ce212f0c": "Для {names} нужен {providerName} {version} или новее, но в Homebrew cask claude-code есть только {latestVersion}. Перейдите на cask claude-code@latest: {command}",
+  "a0854b0f9604fc7b": "{runtime, select, codex {Для {names} нужна Codex CLI {version} или новее, но эта установка может обновиться максимум до {latestVersion}. Установите Codex CLI другим способом или дождитесь нового релиза.} other {Для {names} нужен {providerName} {version} или новее, но эта установка может обновиться максимум до {latestVersion}. Установите {providerName} другим способом или дождитесь нового релиза.}}",
   "2159a4897d4a4d73": "{runtime, select, codex {Обновите Codex CLI до {version} или новее, чтобы использовать {names}.} other {Обновите {providerName} до {version} или новее, чтобы использовать {names}.}}",
   "d887bea446534de5": "Ни один проект в этом окружении не может прочитать {host}/{repository}.",
   "4e466d60e2f7736b": "Вставьте полный URL пул-реквеста: у этого треда нет репозитория, по которому можно найти номер.",
