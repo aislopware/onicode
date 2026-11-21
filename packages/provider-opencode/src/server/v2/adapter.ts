@@ -407,7 +407,7 @@ type TurnTerminal =
 type Rule = Permission.Rule;
 type RulesPolicy = Pick<
   ProviderAdapter.ProviderAdapterV2RuntimePolicy,
-  "runtimeMode" | "interactionMode"
+  "runtimeMode" | "interactionMode" | "workspace"
 >;
 type NativeForm = EventOf<"form.created">["data"]["form"];
 
@@ -473,6 +473,15 @@ const sessionRules = (
         rule("shell", "ask"),
         rule("edit", policy.runtimeMode === "auto-accept-edits" ? "allow" : "ask"),
         rule("external_directory", "ask"),
+        // The thread's other folders count as workspace; `edit` still decides whether writes ask.
+        // A glob character in the path would allow sibling folders, so such a root keeps asking.
+        ...(policy.workspace?.extraRoots ?? [])
+          .filter((root) => !/[*?]/.test(root))
+          .map((root): Rule => ({
+            action: "external_directory",
+            resource: `${root.replace(/\/$/, "")}/*`,
+            effect: "allow",
+          })),
       ]),
   ...grants,
   // Plan edits are re-allowed only for plan paths; free-tier sessions refuse denied shell/read.
@@ -4486,7 +4495,11 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
         yield* Effect.sleep(MCP_TOOL_RELOAD_SETTLE);
       }
       const instructions = [
-        buildRuntimeInstructions({ harness: "OpenCode", model: turnInput.modelSelection.model }),
+        buildRuntimeInstructions({
+          harness: "OpenCode",
+          model: turnInput.modelSelection.model,
+          runtimePolicy: turnInput.runtimePolicy,
+        }),
         oniOrchestrationSystemPrompt(
           mcpAvailable,
           mcpSession?.capabilities?.has("device") === true,

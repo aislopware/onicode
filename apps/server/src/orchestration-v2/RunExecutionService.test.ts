@@ -1472,6 +1472,7 @@ it.effect.each(["failure", "interruption", "stale-attempt", "start-guard"] as co
                 }),
             Layer.succeed(RunFinalizationService.RunFinalizationObserver, {
               refresh: () => Effect.void,
+              refreshRepositories: () => Effect.void,
               refreshAfterTurn: () => Ref.update(refreshes, (count) => count + 1),
             }),
           ),
@@ -4122,6 +4123,7 @@ function captureRootRunTermination(input: {
           ServerSettings.layerTest(),
           Layer.succeed(RunFinalizationService.RunFinalizationObserver, {
             refresh: () => Effect.void,
+            refreshRepositories: () => Effect.void,
             refreshAfterTurn: () =>
               Ref.update(observed, (current) => [...current, "pull-requests-refreshed"]).pipe(
                 Effect.andThen(input.refreshAfterTurn ?? Effect.void),
