@@ -27,115 +27,135 @@ test(
     const origin = app.baseUrl ?? "";
     const environment = await runPromise(environmentId(origin));
     await onicode.project("demo");
-    await runPromise(
-      Effect.gen(function* () {
-        const fs = yield* FileSystem.FileSystem;
-        yield* fs.makeDirectory(`${ONICODE_HOME}/bin`, { recursive: true });
-        yield* fs.writeFileString(`${ONICODE_HOME}/bin/op`, "#!/bin/sh\nexit 1\n");
-        yield* fs.chmod(`${ONICODE_HOME}/bin/op`, 0o755);
-        const client = yield* rpcClient(ONICODE_HOME, origin);
-        yield* client["server.updateSettings"]({
-          patch: {
-            secretProviders: {
-              [PROVIDER]: {
-                kind: SecretProviderKind.make("one_password"),
-                label: "Scenario",
-                config: { account: "scenario" },
+    // The server outlives the test, so put back the settings and the `op` shim afterwards.
+    const settingsPath = `${ONICODE_HOME}/userdata/settings.json`;
+    const originalSettings = await runPromise(
+      Effect.flatMap(FileSystem.FileSystem, (fs) => fs.readFileString(settingsPath)),
+    );
+    try {
+      await runPromise(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          yield* fs.writeFileString(`${ONICODE_HOME}/bin/op`, "#!/bin/sh\nexit 1\n");
+          yield* fs.chmod(`${ONICODE_HOME}/bin/op`, 0o755);
+          const client = yield* rpcClient(ONICODE_HOME, origin);
+          yield* client["server.updateSettings"]({
+            patch: {
+              secretProviders: {
+                [PROVIDER]: {
+                  kind: SecretProviderKind.make("one_password"),
+                  label: "Scenario",
+                  config: { account: "scenario" },
+                },
               },
-            },
-            sourceControlHosts: {
-              github: {
-                tokens: {
-                  "github.com": {
-                    provider: PROVIDER,
-                    reference: REFERENCE_A,
+              sourceControlHosts: {
+                github: {
+                  tokens: {
+                    "github.com": {
+                      provider: PROVIDER,
+                      reference: REFERENCE_A,
+                    },
                   },
                 },
               },
             },
-          },
-        });
-      }).pipe(Effect.scoped),
-    );
-
-    // Delay the real checks independently so only the older A can produce a reply.
-    await browser.addInitScript(() => {
-      type Frame = { readonly _tag?: string; readonly tag?: string; readonly id?: string | number };
-      const checks: Array<() => Promise<void>> = [];
-      const waiting: Array<{ readonly count: number; readonly resolve: () => void }> = [];
-      const send = WebSocket.prototype.send;
-      WebSocket.prototype.send = function (this: WebSocket, data) {
-        if (typeof data !== "string") return send.call(this, data);
-        const parsed: Frame | Frame[] = JSON.parse(data);
-        const frames = [parsed].flat();
-        const check = frames.find(
-          (frame) => frame._tag === "Request" && frame.tag === "server.checkSecretSource",
-        );
-        if (!check) return send.call(this, data);
-        const other = frames.filter((frame) => frame !== check);
-        if (other.length > 0) send.call(this, JSON.stringify(other));
-        checks.push(
-          () =>
-            new Promise<void>((resolve) => {
-              const receive = (event: MessageEvent) => {
-                if (typeof event.data !== "string") return;
-                const replies: Array<{ _tag?: string; requestId?: string | number }> = [
-                  JSON.parse(event.data),
-                ].flat();
-                if (!replies.some((reply) => reply._tag === "Exit" && reply.requestId === check.id))
-                  return;
-                this.removeEventListener("message", receive);
-                resolve();
-              };
-              this.addEventListener("message", receive);
-              send.call(this, JSON.stringify(Array.isArray(parsed) ? [check] : check));
-            }),
-        );
-        for (const waiter of waiting) if (waiter.count === checks.length) waiter.resolve();
-      };
-      window.secretCheckGate = {
-        reached: (count) =>
-          checks.length >= count
-            ? Promise.resolve()
-            : new Promise((resolve) => waiting.push({ count, resolve })),
-        finishFirst: () => checks[0]!(),
-      };
-    });
-
-    await onicode.open(`/settings/source-control?machine=${encodeURIComponent(environment)}`);
-    await screen.getByRole("button", "Toggle GitHub details", { exact: true }).tap();
-    const input = screen.getByRole("textbox", "GitHub token reference", { exact: true });
-    const check = screen.getByRole("button", "Check GitHub token", { exact: true });
-    const startCheck = async (count: number) => {
-      await check.tap();
-      await browser.evaluate(async (count) => {
-        await window.secretCheckGate!.reached(count);
-        return null;
-      }, count);
-    };
-    const commit = async (reference: string) => {
-      await input.fill(reference);
-      await input.press("Enter");
-    };
-
-    await startCheck(1);
-    await commit(REFERENCE_B);
-    await startCheck(2);
-    await commit(REFERENCE_A);
-    await startCheck(3);
-    const pending = await browser.evaluate(async () => {
-      await window.secretCheckGate!.finishFirst();
-      // Nothing follows a stale reply on the fix, so give its RPC and React update time to land.
-      for (let frame = 0; frame < 10; frame++) {
-        await new Promise<number>((resolve) => requestAnimationFrame(resolve));
-      }
-      return (
-        document
-          .querySelector<HTMLButtonElement>('button[aria-label="Check GitHub token"]')
-          ?.getAttribute("aria-disabled") === "true"
+          });
+        }).pipe(Effect.scoped),
       );
-    });
-    await app.screenshot("new-secret-check-after-old-reply");
-    expect(pending, "The newer secret check is still pending after the earlier reply").toBe(true);
+
+      // Delay the real checks independently so only the older A can produce a reply.
+      await browser.addInitScript(() => {
+        type Frame = {
+          readonly _tag?: string;
+          readonly tag?: string;
+          readonly id?: string | number;
+        };
+        const checks: Array<() => Promise<void>> = [];
+        const waiting: Array<{ readonly count: number; readonly resolve: () => void }> = [];
+        const send = WebSocket.prototype.send;
+        WebSocket.prototype.send = function (this: WebSocket, data) {
+          if (typeof data !== "string") return send.call(this, data);
+          const parsed: Frame | Frame[] = JSON.parse(data);
+          const frames = [parsed].flat();
+          const check = frames.find(
+            (frame) => frame._tag === "Request" && frame.tag === "server.checkSecretSource",
+          );
+          if (!check) return send.call(this, data);
+          const other = frames.filter((frame) => frame !== check);
+          if (other.length > 0) send.call(this, JSON.stringify(other));
+          checks.push(
+            () =>
+              new Promise<void>((resolve) => {
+                const receive = (event: MessageEvent) => {
+                  if (typeof event.data !== "string") return;
+                  const replies: Array<{ _tag?: string; requestId?: string | number }> = [
+                    JSON.parse(event.data),
+                  ].flat();
+                  if (
+                    !replies.some((reply) => reply._tag === "Exit" && reply.requestId === check.id)
+                  )
+                    return;
+                  this.removeEventListener("message", receive);
+                  resolve();
+                };
+                this.addEventListener("message", receive);
+                send.call(this, JSON.stringify(Array.isArray(parsed) ? [check] : check));
+              }),
+          );
+          for (const waiter of waiting) if (waiter.count === checks.length) waiter.resolve();
+        };
+        window.secretCheckGate = {
+          reached: (count) =>
+            checks.length >= count
+              ? Promise.resolve()
+              : new Promise((resolve) => waiting.push({ count, resolve })),
+          finishFirst: () => checks[0]!(),
+        };
+      });
+
+      await onicode.open(`/settings/source-control?machine=${encodeURIComponent(environment)}`);
+      await screen.getByRole("button", "Toggle GitHub details", { exact: true }).tap();
+      const input = screen.getByRole("textbox", "GitHub token reference", { exact: true });
+      const check = screen.getByRole("button", "Check GitHub token", { exact: true });
+      const startCheck = async (count: number) => {
+        await check.tap();
+        await browser.evaluate(async (count) => {
+          await window.secretCheckGate!.reached(count);
+          return null;
+        }, count);
+      };
+      const commit = async (reference: string) => {
+        await input.fill(reference);
+        await input.press("Enter");
+      };
+
+      await startCheck(1);
+      await commit(REFERENCE_B);
+      await startCheck(2);
+      await commit(REFERENCE_A);
+      await startCheck(3);
+      const pending = await browser.evaluate(async () => {
+        await window.secretCheckGate!.finishFirst();
+        // Nothing follows a stale reply on the fix, so give its RPC and React update time to land.
+        for (let frame = 0; frame < 10; frame++) {
+          await new Promise<number>((resolve) => requestAnimationFrame(resolve));
+        }
+        return (
+          document
+            .querySelector<HTMLButtonElement>('button[aria-label="Check GitHub token"]')
+            ?.getAttribute("aria-disabled") === "true"
+        );
+      });
+      await app.screenshot("new-secret-check-after-old-reply");
+      expect(pending, "The newer secret check is still pending after the earlier reply").toBe(true);
+    } finally {
+      await runPromise(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          yield* fs.writeFileString(settingsPath, originalSettings);
+          yield* fs.remove(`${ONICODE_HOME}/bin/op`, { force: true });
+        }),
+      );
+    }
   },
 );
