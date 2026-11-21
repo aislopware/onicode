@@ -3074,3 +3074,4 @@ d9fdd02523	take	fix(client-runtime): @ menu offers machines the thread's server 
 982bbcdfe1	take	fix(server): terminal history drops OSC 4 palette queries
 f4b8be84a0	take	fix(web): show custom theme backgrounds on the empty New thread screen
 9168ca73d0	take	fix(server): reuse an unchanged local Codex's version check across restarts
+9f9ebf61fb	take	taken as is
