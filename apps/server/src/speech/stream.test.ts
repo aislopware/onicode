@@ -1,9 +1,12 @@
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import { it } from "@effect/vitest";
 import { expect } from "vite-plus/test";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
+import * as Socket from "effect/socket/Socket";
+import * as TestClock from "effect/testing/TestClock";
 import { HttpClient, HttpRouter, HttpServer } from "effect/http";
 import {
   AuthOrchestrationOperateScope,
@@ -15,7 +18,7 @@ import {
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
 import * as SessionStore from "../auth/SessionStore.ts";
 import { SpeechService, type SpeechStream } from "./SpeechService.ts";
-import { speechStreamRouteLayer } from "./stream.ts";
+import { runSpeechSocket, speechStreamRouteLayer } from "./stream.ts";
 import type * as NetAddress from "effect/net/NetAddress";
 
 const decodeEvent = Schema.decodeUnknownSync(Schema.fromJsonString(SpeechStreamEvent));
@@ -223,4 +226,32 @@ it.live("answers a failed session lookup as a server error, not a rejected crede
     const response = yield* HttpClient.get(SPEECH_STREAM_PATH);
     expect(response.status).toBe(500);
   }).pipe(Effect.scoped, Effect.provide(NodeHttpServer.layerTest)),
+);
+
+it.effect("releases the stream when a started client goes silent", () =>
+  Effect.gen(function* () {
+    const released = yield* Deferred.make<void>();
+    let pulls = 0;
+    const socket = Socket.make({
+      reader: Effect.succeed({
+        pull: Effect.suspend(() =>
+          pulls++ === 0
+            ? Effect.succeed([
+                JSON.stringify({ type: "start", options: DEFAULT_SPEECH_TRANSCRIPTION_OPTIONS }),
+              ] as const)
+            : Effect.never,
+        ),
+        upgrade: () => Effect.void,
+      }),
+      writer: Effect.succeed({ write: () => Effect.void, writeAll: () => Effect.void }),
+    });
+    const stream: SpeechStream = { feed: () => Effect.never, finish: Effect.never };
+    yield* runSpeechSocket(socket, {
+      startStream: () =>
+        Effect.acquireRelease(Effect.succeed(stream), () => Deferred.succeed(released, undefined)),
+    }).pipe(Effect.scoped, Effect.forkChild);
+
+    yield* TestClock.adjust("1 minute");
+    expect(yield* Deferred.isDone(released)).toBe(true);
+  }),
 );
