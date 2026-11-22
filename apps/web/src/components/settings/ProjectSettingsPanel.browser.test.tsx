@@ -110,7 +110,7 @@ vi.mock(import("~/localApi"), async (original) => ({
 }));
 vi.mock(import("~/lib/composerDraftUploads"), async (original) => ({
   ...(await original()),
-  releaseProjectDraftUploads: state.releaseUploads,
+  releaseProjectDrafts: state.releaseUploads,
 }));
 // No toaster is mounted in these tests; the guard's error toast is read at this seam.
 vi.mock(import("../ui/toast"), async (original) => {

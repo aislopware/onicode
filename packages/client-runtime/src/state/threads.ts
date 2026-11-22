@@ -1010,13 +1010,19 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     yield* Effect.addFinalizer(() => historyController.value.unregister(registration));
   }
 
+  // The supervisor leaves a connected phase only once the session is gone, so items its
+  // stream still delivers are stale: drop them and let the next attempt replay from the cursor.
+  let previousPhase: ReturnType<typeof connectionProjectionPhase> | undefined;
   yield* SubscriptionRef.changes(supervisor.state).pipe(
     Stream.runForEach((connectionState) => {
-      switch (connectionProjectionPhase(connectionState)) {
+      const phase = connectionProjectionPhase(connectionState);
+      const lostSession = previousPhase !== undefined && previousPhase !== "disconnected";
+      previousPhase = phase;
+      switch (phase) {
         case "synchronizing":
           return setConnecting;
         case "disconnected":
-          return setDisconnected;
+          return lostSession ? startAttempt.pipe(Effect.andThen(setDisconnected)) : setDisconnected;
         case "ready":
           return setReady;
       }

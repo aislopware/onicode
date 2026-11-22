@@ -113,6 +113,22 @@ describe("discardComposerDraft", () => {
     );
   });
 
+  it("leaves terminals another draft of the same thread still reaches", () => {
+    const store = useComposerDraftStore.getState();
+    store.setProjectDraftThreadId(projectRef, draftId);
+    const session = store.getDraftSession(draftId)!;
+    const otherDraftId = DraftId.make("draft-2");
+    store.setProjectDraftThreadId(
+      scopeProjectRef(environmentId, ProjectId.make("project-2")),
+      otherDraftId,
+      { threadId: session.threadId },
+    );
+
+    discardComposerDraft(draftId);
+    undoNotice().commit?.();
+    expect(closeDraftThreadTerminals).not.toHaveBeenCalled();
+  });
+
   it("releases a discarded existing-thread preview when Undo is committed", async () => {
     using preview = imagePreview();
     useComposerDraftStore.getState().addImage(threadRef, preview.image);

@@ -37,6 +37,7 @@ vi.mock("./session", async () => {
   const granted = Atom.make(AsyncResult.success({}));
   return {
     environmentSession: { sessionStateAtom: () => granted },
+    readEnvironmentScope: () => true,
     sessionHasScope: () => true,
     useEnvironmentScope: () => true,
   };

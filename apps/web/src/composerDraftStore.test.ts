@@ -116,8 +116,8 @@ import { createDeferredStorage } from "./lib/storage";
 import { applyPreviewServerSnapshot, resetPreviewStateForTests } from "./previewStateStore";
 
 const threadsWithTerminals = vi.hoisted(() => new Set<string>());
-vi.mock("./state/terminalSessions", () => ({
-  threadHasKnownTerminal: (_environmentId: string, threadId: string) =>
+vi.mock("./draftTerminalPresence", () => ({
+  draftThreadHasKnownTerminal: (_environmentId: string, threadId: string) =>
     threadsWithTerminals.has(threadId),
 }));
 
