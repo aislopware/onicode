@@ -3220,3 +3220,4 @@ c198f73b37	take	taken as is
 418e1ace0f	take	fix(server): Word text boxes keep their paragraph breaks for agents (#40782)
 356dff3352	take	fix(web): RTF previews respect hidden character formatting (#40783)
 5fc2eb2f47	take	fix(mobile): the iOS composer keeps its keyboard and caret after dictation (#33916)
+997103be46	take	fix(shared): find file links whose labels contain brackets (#40781)
