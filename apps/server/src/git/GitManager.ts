@@ -99,10 +99,19 @@ export interface GitActionProgressReporter {
   readonly publish: (event: GitActionProgressEvent) => Effect.Effect<void, never>;
 }
 
+/** Runs a step that moves the checkout at `checkout`; it may refuse instead. */
+export type CheckoutMoveGuard = <A, E>(
+  checkout: string,
+  effect: Effect.Effect<A, E>,
+) => Effect.Effect<A, E | GitCommandError>;
+
 export interface GitRunStackedActionOptions {
   readonly actionId?: string;
   readonly progressReporter?: GitActionProgressReporter;
+  readonly guardCheckoutMove?: CheckoutMoveGuard;
 }
+
+const unguardedCheckoutMove: CheckoutMoveGuard = (_checkout, effect) => effect;
 
 export interface GitLocalStatusOptions {
   /** Defaults to true. The branch-wide totals cost about half of a local status read. */
@@ -189,6 +198,7 @@ export class GitManager extends Context.Service<
     ) => Effect.Effect<GitResolvePullRequestResult, GitManagerServiceError>;
     readonly preparePullRequestThread: (
       input: GitPreparePullRequestThreadInput,
+      options?: { readonly guardCheckoutMove?: CheckoutMoveGuard },
     ) => Effect.Effect<GitPreparePullRequestThreadResult, GitManagerServiceError>;
     readonly runStackedAction: (
       input: GitRunStackedActionInput,
@@ -3533,7 +3543,8 @@ export const make = Effect.gen(function* () {
 
   const preparePullRequestThread: GitManager["Service"]["preparePullRequestThread"] = Effect.fn(
     "preparePullRequestThread",
-  )(function* (input) {
+  )(function* (input, options) {
+    const guardCheckoutMove = options?.guardCheckoutMove ?? unguardedCheckoutMove;
     const maybeRunSetupScript = (worktreePath: string) => {
       if (!input.threadId) {
         return Effect.void;
@@ -3556,7 +3567,23 @@ export const make = Effect.gen(function* () {
     };
     return yield* Effect.gen(function* () {
       const normalizedReference = normalizePullRequestReference(input.reference);
-      const rootWorktreePath = yield* canonicalizeExistingPath(input.cwd);
+      // From a project in a subdirectory, the main checkout is still the repository's top level.
+      const rootWorktreePath = yield* gitCore
+        .execute({
+          operation: "GitManager.preparePullRequestThread.topLevel",
+          cwd: input.cwd,
+          args: ["rev-parse", "--show-toplevel"],
+          allowNonZeroExit: true,
+          timeoutMs: 5_000,
+        })
+        .pipe(
+          Effect.map((result) =>
+            result.exitCode === 0 && result.stdout.length > 1
+              ? result.stdout.replace(/\n$/, "")
+              : input.cwd,
+          ),
+          Effect.flatMap(canonicalizeExistingPath),
+        );
       const pullRequestSummary = yield* (yield* sourceControlProvider(input.cwd)).getChangeRequest({
         cwd: input.cwd,
         reference: normalizedReference,
@@ -3676,11 +3703,36 @@ export const make = Effect.gen(function* () {
             }),
           ),
           Effect.flatMap((target) =>
-            gitCore.refreshCheckedOutBranch({
-              cwd: worktreePath,
-              targetCommit: target.commitSha,
-              resetWhenHeadCommit: upstreamCommitBeforeFetch,
-            }),
+            gitCore.resolveCommit({ cwd: worktreePath, revision: "HEAD" }).pipe(
+              Effect.flatMap(({ commitSha }) =>
+                commitSha === target.commitSha
+                  ? Effect.succeed({ moved: false, onTarget: true })
+                  : // Another thread may be working there, or have switched it off the branch.
+                    guardCheckoutMove(
+                      worktreePath,
+                      gitCore
+                        .execute({
+                          operation: "GitManager.preparePullRequestThread.reusedBranch",
+                          cwd: worktreePath,
+                          args: ["symbolic-ref", "--quiet", "HEAD"],
+                          allowNonZeroExit: true,
+                          timeoutMs: 5_000,
+                        })
+                        .pipe(
+                          Effect.flatMap((head) =>
+                            head.exitCode === 0 &&
+                            head.stdout.replace(/\n$/, "") === `refs/heads/${checkedOutBranch}`
+                              ? gitCore.refreshCheckedOutBranch({
+                                  cwd: worktreePath,
+                                  targetCommit: target.commitSha,
+                                  resetWhenHeadCommit: upstreamCommitBeforeFetch,
+                                })
+                              : Effect.succeed({ moved: false, onTarget: false }),
+                          ),
+                        ),
+                    ),
+              ),
+            ),
           ),
           Effect.catch((error) =>
             Effect.logWarning(
@@ -3947,6 +3999,7 @@ export const make = Effect.gen(function* () {
     settings: SourceControlTextGenerationSettings,
     cwd: string,
     branch: string | null,
+    guardCheckoutMove: CheckoutMoveGuard,
     commitMessage?: string,
     filePaths?: readonly string[],
   ) {
@@ -3970,8 +4023,12 @@ export const make = Effect.gen(function* () {
     const existingBranchNames = yield* gitCore.listLocalBranchNames(cwd);
     const resolvedBranch = resolveAutoFeatureBranchName(existingBranchNames, preferredBranch);
 
-    yield* gitCore.createRef({ cwd, refName: resolvedBranch });
-    yield* Effect.scoped(gitCore.switchRef({ cwd, refName: resolvedBranch }));
+    yield* guardCheckoutMove(
+      cwd,
+      gitCore
+        .createRef({ cwd, refName: resolvedBranch })
+        .pipe(Effect.andThen(Effect.scoped(gitCore.switchRef({ cwd, refName: resolvedBranch })))),
+    );
 
     return {
       branchStep: { status: "created" as const, name: resolvedBranch },
@@ -4079,6 +4136,7 @@ export const make = Effect.gen(function* () {
             textGenerationSettings,
             input.cwd,
             initialStatus.branch,
+            options?.guardCheckoutMove ?? unguardedCheckoutMove,
             input.commitMessage,
             input.filePaths,
           );
