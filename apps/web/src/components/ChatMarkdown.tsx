@@ -3,6 +3,7 @@ import { thrownErrorMessage } from "@onicode/client-runtime/errors";
 import { msg, T, useGT, useMessages } from "gt-react";
 import { resolvePathLinkTarget } from "@onicode/shared/fileLinks";
 import { clientHostEnvironmentAtom } from "../state/clientHostEnvironment";
+import { observeResize } from "../lib/observeResize";
 import { buildFileLinkParentSuffixByPath, fileLinkLabel } from "@onicode/shared/fileLinks";
 import {
   isMarkdownFileLinkLabel,
@@ -570,6 +571,9 @@ function resolveFileLinkSources(
   return { markdownFileLinkMetaByHref, inlineCodeFileLinkMetaByText, fileLinkParentSuffixByPath };
 }
 
+// Text Words can read a formula in; most messages have none and skip the DOM query.
+const MATH_SOURCE = /[$\\]|(?:`{3,}|~{3,})[ \t]*math\b/;
+
 function useChatMarkdownState(
   {
     text,
@@ -795,6 +799,56 @@ function useChatMarkdownState(
   // Subscribe so hydrated settings apply before the anchor synchronously decides whether to intercept _blank.
   const linkTargetPreference = useClientSettings((settings) => settings.browserLinkTarget);
   const mathEnabled = useClientSettings((settings) => settings.mathRenderingEnabled);
+  const scrollDisplayLabel = gt("Scroll display equation");
+  const scrollInlineLabel = gt("Scroll inline equation");
+  const watchMath = mathEnabled && !inline && MATH_SOURCE.test(text);
+  // Formulas are static HTML that a finished stream, an island, or an opened Details section can
+  // mount without this component rendering. Inline Markdown sits in rows that are controls themselves.
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- only layout knows which formulas overflow and need a keyboard scroll stop
+  useLayoutEffect(() => {
+    const root = markdownRef.current;
+    if (!watchMath || !root) return;
+    const markScrollStops = (entries: readonly ResizeObserverEntry[]) => {
+      for (const { target } of entries) {
+        if (!(target instanceof HTMLElement)) continue;
+        const label =
+          target.scrollWidth <= target.clientWidth
+            ? null
+            : target.dataset.markdownMath === "display"
+              ? scrollDisplayLabel
+              : scrollInlineLabel;
+        if (target.ariaLabel === label) continue;
+        if (label === null) {
+          target.removeAttribute("tabindex");
+          target.removeAttribute("role");
+          target.removeAttribute("aria-label");
+        } else {
+          target.tabIndex = 0;
+          target.role = "group";
+          target.ariaLabel = label;
+        }
+      }
+    };
+    const watched = new Map<Element, () => void>();
+    const sync = () => {
+      const formulas = new Set(root.querySelectorAll("[data-markdown-math]"));
+      for (const [formula, stop] of watched) {
+        if (formulas.has(formula)) continue;
+        stop();
+        watched.delete(formula);
+      }
+      for (const formula of formulas) {
+        if (!watched.has(formula)) watched.set(formula, observeResize(formula, markScrollStops));
+      }
+    };
+    sync();
+    const mutations = new MutationObserver(sync);
+    mutations.observe(root, { childList: true, subtree: true });
+    return () => {
+      mutations.disconnect();
+      for (const stop of watched.values()) stop();
+    };
+  }, [watchMath, scrollDisplayLabel, scrollInlineLabel]);
   // Keyed by the file links found, not the text, so streamed text that adds none keeps the
   // renderer context, and every block reading it, unchanged.
   // A template literal marks the key as a string, so the compiler memoizes the maps on its value.

@@ -82,6 +82,35 @@ const PARAGRAPH_SCOPE = new Set([
   "button",
 ]);
 
+// A start tag an HTML parser takes as the end of open siblings, as `<li>` ends an open `<li>`:
+// the open elements it ends, and those that stop the search (a nested list keeps its parent's).
+// An item's search stops at the parser's special elements other than address, div and p.
+const SPECIAL_SCOPE = new Set(
+  "applet area article aside base basefont bgsound blockquote body br button caption center col colgroup dd details dir dl dt embed fieldset figcaption figure footer form frame frameset h1 h2 h3 h4 h5 h6 head header hgroup hr html iframe img input keygen li link listing main marquee menu meta nav noembed noframes noscript object ol param plaintext pre script search section select source style summary table tbody td template textarea tfoot th thead title tr track ul wbr xmp".split(
+    " ",
+  ),
+);
+const TABLE_SCOPE = new Set(["table"]);
+const PARAGRAPH = new Set(["p"]);
+const cell = { ends: new Set(["td", "th", "caption"]), scope: TABLE_SCOPE };
+const definition = { ends: new Set(["dd", "dt"]), scope: SPECIAL_SCOPE };
+// A row group or row closes the open cell, row and caption under its table.
+const section = {
+  ends: new Set(["tbody", "thead", "tfoot", "tr", "td", "th", "caption"]),
+  scope: TABLE_SCOPE,
+};
+const IMPLIED_END = new Map<string, { ends: ReadonlySet<string>; scope: ReadonlySet<string> }>([
+  ["li", { ends: new Set(["li"]), scope: SPECIAL_SCOPE }],
+  ["dd", definition],
+  ["dt", definition],
+  ["td", cell],
+  ["th", cell],
+  ["tr", { ends: new Set(["tr", "td", "th", "caption"]), scope: TABLE_SCOPE }],
+  ["tbody", section],
+  ["thead", section],
+  ["tfoot", section],
+]);
+
 type RenderOptions = Omit<WordsRenderOptions, "frontmatter">;
 
 const decoder = new TextDecoder();
@@ -155,7 +184,7 @@ function tokenize(html: string, offsetOf: (byte: number) => number): Tokenized {
     if (!tagName) continue;
     if (match[1]) {
       if (tagName === "a") anchors.pop();
-      if (tagName === "p" && openParagraph(stack) < 0) {
+      if (tagName === "p" && openSibling(stack, PARAGRAPH, PARAGRAPH_SCOPE) < 0) {
         // A stray `</p>` is an empty paragraph to an HTML parser.
         (stack.at(-1)!.children as ElementContent[]).push({
           type: "element",
@@ -176,8 +205,13 @@ function tokenize(html: string, offsetOf: (byte: number) => number): Tokenized {
     }
     const inSvg = svgDepth > 0 || tagName === "svg";
     if (!inSvg && CLOSES_PARAGRAPH.has(tagName)) {
-      const paragraph = openParagraph(stack);
+      const paragraph = openSibling(stack, PARAGRAPH, PARAGRAPH_SCOPE);
       if (paragraph > 0) stack.length = paragraph;
+    }
+    const implied = inSvg ? undefined : IMPLIED_END.get(tagName);
+    if (implied) {
+      const open = openSibling(stack, implied.ends, implied.scope);
+      if (open > 0) stack.length = open;
     }
     const element: Element = {
       type: "element",
@@ -265,13 +299,18 @@ function parse(markdown: string, options: RenderOptions): Root {
 }
 
 /** The stack index of the `<p>` an HTML parser would close, or -1 when none is in scope. */
-function openParagraph(stack: ReadonlyArray<Root | Element>): number {
+function openSibling(
+  stack: ReadonlyArray<Root | Element>,
+  ends: ReadonlySet<string>,
+  scope: ReadonlySet<string>,
+): number {
+  let open = -1;
   for (let index = stack.length - 1; index > 0; index--) {
     const tagName = (stack[index] as Element).tagName;
-    if (tagName === "p") return index;
-    if (PARAGRAPH_SCOPE.has(tagName)) return -1;
+    if (ends.has(tagName)) open = index;
+    else if (scope.has(tagName)) break;
   }
-  return -1;
+  return open;
 }
 
 /** parse5 puts a raw HTML table's rows in a `<tbody>`; Words' own tables start with `<thead>`. */
@@ -280,12 +319,23 @@ function normalizeRawTables(node: Root | Element) {
     if (child.type === "element") normalizeRawTables(child);
   }
   if (node.type !== "element" || node.tagName !== "table") return;
-  const first = node.children.findIndex((child) => isElement(child, "tr"));
-  if (first < 0) return;
-  node.children = [
-    ...node.children.slice(0, first),
-    { type: "element", tagName: "tbody", properties: {}, children: node.children.slice(first) },
-  ];
+  if (!node.children.some((child) => isElement(child, "tr"))) return;
+  const children: ElementContent[] = [];
+  let body: Element | null = null;
+  for (const child of node.children) {
+    if (isElement(child, "tr")) {
+      if (!body) {
+        body = { type: "element", tagName: "tbody", properties: {}, children: [] };
+        children.push(body);
+      }
+      body.children.push(child);
+    } else {
+      // Whitespace between loose rows stays in their row group.
+      if (body && !(child.type === "text" && child.value.trim() === "")) body = null;
+      (body?.children ?? children).push(child);
+    }
+  }
+  node.children = children;
 }
 
 // Words leaves these raw in Markdown destinations, where micromark percent-encodes them.
@@ -338,6 +388,78 @@ const MATH_PROPERTIES = new Set([
   "textAnchor",
 ]);
 const MATH_STYLE = /^(?:display|vertical-align|overflow|margin|white-space)$/;
+
+/**
+ * Escapes each `%` written right after other text, as in `\text{3.18% yield}`.
+ * A `%` at a line start or after whitespace stays a comment. Skips escapes and
+ * `\verb` like KaTeX's lexer, in one linear pass.
+ */
+function escapeLiteralPercents(tex: string): string {
+  let repaired = "";
+  let copied = 0;
+  let index = 0;
+  while (index < tex.length) {
+    const char = tex[index];
+    if (char === "\\") {
+      if (tex.startsWith("\\verb", index)) {
+        const starred = tex[index + 5] === "*";
+        const delimiter = tex[index + (starred ? 6 : 5)];
+        if (delimiter !== undefined && (starred || !/[*a-zA-Z]/.test(delimiter))) {
+          const bodyStart = index + (starred ? 7 : 6);
+          let close = bodyStart;
+          while (close < tex.length && ![delimiter, "\n", "\r"].includes(tex[close]!)) close++;
+          // KaTeX rejects a \verb that does not close on its own line.
+          if (tex[close] !== delimiter) return tex;
+          index = close + 1;
+          continue;
+        }
+      }
+      // A control symbol such as `\%` or `\\` is two characters.
+      index += 2;
+    } else if (char === "%" && index > 0 && !/\s/.test(tex[index - 1]!)) {
+      repaired += `${tex.slice(copied, index)}\\%`;
+      copied = ++index;
+    } else if (char === "%") {
+      const newline = tex.indexOf("\n", index);
+      index = newline === -1 ? tex.length : newline + 1;
+    } else {
+      index++;
+    }
+  }
+  return copied === 0 ? tex : repaired + tex.slice(copied);
+}
+
+const firstSvg = (node: Root | Element): Element | undefined => {
+  for (const child of node.children) {
+    if (child.type !== "element") continue;
+    const svg = child.tagName === "svg" ? child : firstSvg(child);
+    if (svg) return svg;
+  }
+  return undefined;
+};
+
+/** Words reads every `%` as a comment; one written right after text is drawn as a percent sign. */
+function withLiteralPercents(svg: Element): Element {
+  const tex = String(svg.properties.ariaLabel ?? "");
+  const repaired = escapeLiteralPercents(tex);
+  if (repaired === tex) return svg;
+  const display = /display:\s*block/.test(String(svg.properties.style ?? ""));
+  // A `$$` fence keeps a display formula's lines literal, and a `\]` in one of its comments.
+  const redrawn = firstSvg(
+    parse(display ? `$$\n${repaired}\n$$` : `\\(${repaired}\\)`, {
+      math: true,
+      texDelimiters: true,
+    }),
+  );
+  // Kept only when Words read the whole formula again, not one its delimiters cut short.
+  return redrawn && String(redrawn.properties.ariaLabel ?? "").trim() === repaired.trim()
+    ? {
+        ...redrawn,
+        properties: { ...redrawn.properties, ariaLabel: tex },
+        position: svg.position,
+      }
+    : svg;
+}
 
 function sanitizeMath(node: Element): Element | null {
   if (!MATH_ELEMENTS.has(node.tagName)) return null;
@@ -623,7 +745,8 @@ function transform(node: Root | Element, walk: Walk, inLink: boolean, inCode: bo
     const { tagName, properties: props } = child;
     if (tagName === "svg") {
       // Sanitizing drops SVG, so math waits under a placeholder until after it.
-      const clean = walk.options.math && child.position ? sanitizeMath(child) : null;
+      const clean =
+        walk.options.math && child.position ? sanitizeMath(withLiteralPercents(child)) : null;
       if (clean) {
         const key = `${walk.mathKey}-${walk.math.size}`;
         walk.math.set(key, clean);
@@ -820,6 +943,10 @@ const MATH_SCROLL = [
   "overflow-y-hidden",
   "px-0.5",
   "py-0.75",
+  "focus-visible:outline-1",
+  "focus-visible:outline-solid",
+  "focus-visible:-outline-offset-1",
+  "focus-visible:outline-border",
   "in-[.chat-markdown-table-container]:max-w-none",
   "in-[.chat-markdown-table-container]:overflow-visible",
 ];
