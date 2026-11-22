@@ -182,7 +182,9 @@ const resolveHeadlessConnectionHost = (
   const ipv6 =
     host === "0.0.0.0"
       ? []
-      : entries.filter(({ entry }) => isIpv6Family(entry.family) && !/^fe80:/i.test(entry.address));
+      : entries.filter(
+          ({ entry }) => isIpv6Family(entry.family) && !/^fe[89ab]/i.test(entry.address),
+        );
   // A container, VM or host-only adapter is advertised only when nothing else has an address.
   const preferred =
     [...ipv4, ...ipv6].find(({ machineLocal }) => !machineLocal) ?? ipv4[0] ?? ipv6[0];

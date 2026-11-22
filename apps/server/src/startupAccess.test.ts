@@ -74,9 +74,12 @@ it("advertises IPv6 only on an IPv6 wildcard bind, after real IPv4 and before co
     resolveHeadlessConnectionString(host, 3773, { interfaces, platform: "linux" });
   const interfaces = {
     docker0: [ipv4("172.17.0.1")],
-    eth0: [ipv6("fe80::1"), ipv6("2001:db8::5")],
+    eth0: [ipv6("fe80::1"), ipv6("febf::2"), ipv6("2001:db8::5")],
   };
   expect(pair("::", interfaces)).toBe("http://[2001:db8::5]:3773");
+  expect(pair("::", { ...interfaces, wlan0: [ipv4("192.168.1.20")] })).toBe(
+    "http://192.168.1.20:3773",
+  );
   expect(pair("0.0.0.0", interfaces)).toBe("http://172.17.0.1:3773");
   expect(pair("0.0.0.0", { eth0: [ipv6("2001:db8::5")] })).toBe("http://localhost:3773");
   expect(pair("::", { eth0: [ipv6("fe80::1")] })).toBe("http://localhost:3773");

@@ -906,6 +906,12 @@ const selectUnusedRuntimes = Effect.fn("service.pinned_runtime.select_unused")(f
       continue;
     }
     const target = path.join(versionsDir, `${PINNED_RUNTIME_PRUNED_PREFIX}${version}`);
+    // A link or file already under the prune name is not one this module wrote: leave both.
+    const blocked = yield* fs.lstat(target).pipe(
+      Effect.map((info) => info.type !== "Directory"),
+      Effect.orElseSucceed(() => false),
+    );
+    if (blocked) continue;
     // Renaming first means an interrupted removal never leaves a partial tree that still carries
     // its sentinel and would pass for a complete install.
     yield* fs.remove(target, { recursive: true, force: true }).pipe(

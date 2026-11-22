@@ -63,15 +63,15 @@ it.effect.each([
       { includeSubagents: false, includeDelegated: true, cursor: 2 },
     ],
   },
-  {
+  ...(["older", "older (tool error)"] as const).map((server) => ({
     // It refuses `includeDelegated` and lists subagents, which the CLI leaves out.
-    server: "older",
+    server,
     calls: [
       { includeSubagents: false, includeDelegated: true, cursor: 0 },
       { includeSubagents: true, includeDelegated: undefined, cursor: 0 },
       { includeSubagents: true, includeDelegated: undefined, cursor: 2 },
-    ],
-  },
+    ] as const,
+  })),
 ] as const)(
   "list includes delegated threads; the $server server leaves out subagents",
   ({ server, calls }) =>
@@ -141,6 +141,16 @@ it.effect.each([
               });
             if (tool === "oni_thread_list") {
               listCalls.push(args);
+              if (server === "older (tool error)" && "includeDelegated" in args)
+                return Effect.succeed({
+                  isError: true,
+                  content: [
+                    {
+                      type: "text",
+                      text: 'Unknown argument "includeDelegated". Accepted arguments: projectId, cursor.',
+                    },
+                  ],
+                });
               if (server === "older" && "includeDelegated" in args)
                 return Effect.fail(
                   new McpBridge.AcpMcpBridgeError({

@@ -772,7 +772,7 @@ it.layer(NodeServices.layer)("prunePinnedRuntimes", (it) => {
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const { baseDir, versionsDir, install } = yield* setup(["1.0.0"]);
+      const { baseDir, versionsDir, install } = yield* setup(["1.0.0", "1.1.0"]);
       yield* install(".staging-abc", "never");
       yield* fs.utimes(path.join(versionsDir, ".staging-abc"), 0, 0);
       // Only a real directory is an abandoned staging tree or an interrupted prune.
@@ -782,6 +782,7 @@ it.layer(NodeServices.layer)("prunePinnedRuntimes", (it) => {
       yield* fs.symlink(outside, path.join(versionsDir, ".staging-link"));
       yield* fs.writeFileString(path.join(versionsDir, ".staging-file"), "");
       yield* fs.utimes(path.join(versionsDir, ".staging-file"), 0, 0);
+      // Unused 1.1.0 stays: its prune name is taken by a link.
       yield* fs.symlink(outside, path.join(versionsDir, ".pruned-1.1.0"));
       yield* fs.writeFileString(path.join(versionsDir, ".pruned-1.2.0"), "");
 
@@ -796,6 +797,7 @@ it.layer(NodeServices.layer)("prunePinnedRuntimes", (it) => {
         ".staging-file",
         ".staging-link",
         "1.0.0",
+        "1.1.0",
       ]);
       assert.isTrue(yield* fs.exists(outside));
     }),
