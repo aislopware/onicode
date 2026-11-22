@@ -3213,3 +3213,4 @@ bcace0787e	take	as is
 4c3d83ff24	take	as is
 7f125d83d1	take	test only; kept Onicode's prompted manual resume: providers without native resume always get 'Continue where you left off.' through the start path (with pending context inlined), so upstream's resume-unsupported early failure, its pending-context exemption and the always-present delivery resumeTurn are not needed; upstream's two pending-context cases pass on Onicode's source unchanged (asserting resume=false instead of upstream's settledRuns, which Onicode's harness lacks)
 90a8ac0864	take	as is
+70b5e489b9	take	as is
