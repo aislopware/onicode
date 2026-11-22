@@ -258,7 +258,7 @@ it.effect("releases claimed copies when dispatch replays an earlier accepted res
       attachmentsByQuestionId: { q: [earlierAttachment] },
     });
     // Without a receipt yet, a concurrent first attempt can still commit before this dispatch.
-    const respond = (receipt: boolean) =>
+    const respond = (...receipts: Array<boolean>) =>
       dispatchCommand({
         type: "runtime-request.respond",
         commandId: CommandId.make("answer-replay"),
@@ -279,7 +279,7 @@ it.effect("releases claimed copies when dispatch replays an earlier accepted res
       }).pipe(
         Effect.provide(
           Layer.mock(ThreadManagementService.ThreadManagementService)({
-            hasReceipt: () => Effect.succeed(receipt),
+            hasReceipt: () => Effect.sync(() => receipts.shift() === true),
             dispatch: () => Effect.succeed({ sequence: 1, storedEvents }),
           }),
         ),
@@ -298,6 +298,9 @@ it.effect("releases claimed copies when dispatch replays an earlier accepted res
     // The pending sweep removes the upload; a retry of the accepted answer replays without it.
     NodeFS.rmSync(NodePath.join(config.attachmentsDir, `${pendingId}.png`));
     expect((yield* respond(true))._tag).toBe("Success");
+    expect(threadFiles()).toEqual([`${earlierAttachment.id}.png`]);
+    // Here the first attempt commits, and the sweep runs, after this one read no receipt.
+    expect((yield* respond(false, true))._tag).toBe("Success");
     expect(threadFiles()).toEqual([`${earlierAttachment.id}.png`]);
   }).pipe(Effect.provide(layerIntakeTest)),
 );

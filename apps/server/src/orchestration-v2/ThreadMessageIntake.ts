@@ -65,6 +65,20 @@ const releaseUnusedClaims = Effect.fn("ThreadMessageIntake.releaseUnusedClaims")
   );
 });
 
+// Another attempt can commit after this one read no receipt, and the pending sweep then
+// removes the uploads this one goes on to claim; the receipt decides, not the missing file.
+const claimUnlessAccepted = <A, E, R, E2, R2>(
+  claim: Effect.Effect<A, E, R>,
+  accepted: Effect.Effect<boolean, E2, R2>,
+) =>
+  claim.pipe(
+    Effect.catch((error) =>
+      Effect.flatMap(accepted, (isAccepted) =>
+        isAccepted ? Effect.undefined : Effect.fail(error),
+      ),
+    ),
+  );
+
 /**
  * For a caller without `providers:manage`. An edit that omits `attachments` keeps the queued
  * ones, so `/logout` signs out only when the queued message has none. The edit goes on with
@@ -142,7 +156,11 @@ export const dispatchCommand = Effect.fn("ThreadMessageIntake.dispatchCommand")(
         ),
       );
       return { answers, attachmentsByQuestionId };
-    }).pipe(Effect.onError(() => AttachmentClaims.releaseClaimedAttachments(claimedPaths)));
+    }).pipe(
+      Effect.onError(() => AttachmentClaims.releaseClaimedAttachments(claimedPaths)),
+      (prepare) => claimUnlessAccepted(prepare, threads.hasReceipt(command.commandId)),
+    );
+    if (prepared === undefined) return yield* threads.dispatch(command);
     return yield* threads
       .dispatch({
         ...command,
@@ -207,10 +225,14 @@ export const dispatchCommand = Effect.fn("ThreadMessageIntake.dispatchCommand")(
       }
     }
   }
-  const claimed = yield* AttachmentClaims.claimPendingAttachments({
-    threadId: command.threadId,
-    attachments: command.attachments ?? [],
-  });
+  const claimed = yield* claimUnlessAccepted(
+    AttachmentClaims.claimPendingAttachments({
+      threadId: command.threadId,
+      attachments: command.attachments ?? [],
+    }),
+    threads.hasReceipt(command.commandId),
+  );
+  if (claimed === undefined) return yield* threads.dispatch(command);
   return yield* threads
     .dispatch({
       ...command,
@@ -251,7 +273,11 @@ export const sendToThread = Effect.fn("ThreadMessageIntake.sendToThread")(functi
     (yield* threads.hasReceipt(input.commandId))
   )
     return yield* threads.sendToThread(input);
-  const claimed = yield* AttachmentClaims.claimPendingAttachments(input);
+  const claimed = yield* claimUnlessAccepted(
+    AttachmentClaims.claimPendingAttachments(input),
+    threads.hasReceipt(input.commandId),
+  );
+  if (claimed === undefined) return yield* threads.sendToThread(input);
   return yield* threads.sendToThread({ ...input, attachments: claimed.attachments }).pipe(
     Effect.tap((result) => releaseUnusedClaims(claimed.claimedPaths, result.message.attachments)),
     Effect.tapError((error) =>
@@ -275,17 +301,40 @@ export const launchThread = Effect.fn("ThreadMessageIntake.launchThread")(functi
       message: "Uploaded attachments need a thread id at launch.",
     });
   }
-  // A new thread's create carries its first message; a reused thread's takes its own command.
   const threads = yield* ThreadManagement.ThreadManagementService;
-  if (
-    (input.reuseExistingThread !== true && (yield* threads.hasReceipt(input.commandId))) ||
-    (yield* threads.hasReceipt(CommandId.make(`${input.commandId}:initial-message`)))
-  )
-    return yield* launches.launch(input);
-  const claimed = yield* AttachmentClaims.claimPendingAttachments({
-    threadId: input.threadId,
-    attachments: input.initialMessage.attachments,
+  const threadId = input.threadId;
+  const messageId = input.initialMessage.messageId;
+  // A new thread's create can carry its first message; a reused thread's takes its own command.
+  // A create that carried none, as from an earlier launch with this id, still needs the uploads.
+  const messageAccepted = Effect.gen(function* () {
+    if (yield* threads.hasReceipt(CommandId.make(`${input.commandId}:initial-message`))) {
+      return true;
+    }
+    if (!(yield* threads.hasReceipt(input.commandId))) return false;
+    if (messageId === undefined) return input.reuseExistingThread !== true;
+    const messages = yield* threads.getMessagesById(threadId, [messageId]).pipe(
+      Effect.mapError(
+        (cause) =>
+          new ThreadLaunch.ThreadLaunchError({
+            operation: "read-accepted-message",
+            commandId: input.commandId,
+            projectId: input.projectId,
+            threadId,
+            cause,
+          }),
+      ),
+    );
+    return messages.has(messageId);
   });
+  if (yield* messageAccepted) return yield* launches.launch(input);
+  const claimed = yield* claimUnlessAccepted(
+    AttachmentClaims.claimPendingAttachments({
+      threadId,
+      attachments: input.initialMessage.attachments,
+    }),
+    messageAccepted,
+  );
+  if (claimed === undefined) return yield* launches.launch(input);
   return yield* launches
     .launch({
       ...input,
@@ -314,10 +363,13 @@ export const launchThread = Effect.fn("ThreadMessageIntake.launchThread")(functi
         if (error._tag === "ThreadManagementProviderInstanceDisabledError") {
           return AttachmentClaims.releaseClaimedAttachments(claimed.claimedPaths);
         }
-        // Project/receipt reads precede dispatch; create-thread errors can wrap post-message reads and prove nothing alone.
+        // Project/receipt reads precede dispatch, and the accepted message a replay reads holds an
+        // earlier attempt's copies. Create-thread errors can wrap post-message reads and prove
+        // nothing alone.
         const notAccepted =
           error.operation === "resolve-project" ||
           error.operation === "read-receipt" ||
+          error.operation === "read-accepted-message" ||
           ((error.operation === "create-thread" || error.operation === "dispatch-message") &&
             (isOrchestratorError(error.cause) || isThreadManagementError(error.cause)) &&
             // Projection errors under create-thread can occur after the message commit.

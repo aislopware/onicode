@@ -1,5 +1,5 @@
 import { makeProviderFailure } from "@onicode/provider-core/server/failure";
-import { assert, it } from "@effect/vitest";
+import { assert, it, vi } from "@effect/vitest";
 import * as TestClock from "effect/testing/TestClock";
 import {
   ChatAttachmentId,
@@ -1029,7 +1029,27 @@ it.effect("sends a selected held message once and preserves the remaining queue 
         threadId,
         runId: selected.id,
       };
-      yield* orchestrator.dispatch(command);
+      // The client's socket drops right after the commit; the resend only replays its receipt.
+      const committed = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      const commitCommand = sink.commitCommand;
+      using _commit = vi.spyOn(sink, "commitCommand").mockImplementation((input) =>
+        input.commandId === command.commandId
+          ? commitCommand(input).pipe(
+              Effect.tap(() => Deferred.succeed(committed, undefined)),
+              Effect.tap(() => Deferred.await(release)),
+            )
+          : commitCommand(input),
+      );
+      const dropped = yield* orchestrator
+        .dispatch(command)
+        .pipe(Effect.forkChild({ startImmediately: true }));
+      yield* Deferred.await(committed);
+      const interrupting = yield* Fiber.interrupt(dropped).pipe(
+        Effect.forkChild({ startImmediately: true }),
+      );
+      yield* Deferred.succeed(release, undefined);
+      yield* Fiber.join(interrupting);
       yield* worker.drain();
       yield* orchestrator.dispatch(command);
       yield* worker.drain();
