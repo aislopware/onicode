@@ -3175,3 +3175,4 @@ b5709bb865	take	MISSING migration 103 test applied to Onicode's 108_IssueTracker
 63fa4c892e	take	taken as is
 2ea1c51f18	take	fix(acp): a late session update no longer marks a stopped thread active (#40629)
 76b421864b	take	fix(web): Ctrl+click in the composer no longer outlines the whole line (#40628); @tiptap/extension-paragraph pinned to Onicode's tiptap ^3.34.0
+b5a0352bfd	take	fix(server): log when a settle script is skipped because its worktree is gone (#40627)
