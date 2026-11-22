@@ -3292,3 +3292,4 @@ c7df7004af	take	fix(web): a photo picked on a phone attaches even when the compo
 02a4c18d64	take	fix(mobile): cancel pending media actions when swiping gallery pages
 c00f1172ee	take	fix(mobile): TalkBack can reach the status pill above the composer
 67f17528f2	take	fix(web): snooze labels follow the app language
+dbb5bdb582	take	feat(web): sidebar folder button picks or adds a project; Onicode's sidebar hook order untouched, scenario adapted on the desktop target

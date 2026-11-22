@@ -9,7 +9,8 @@ test(
     await onicode.project("demo");
     await onicode.open();
 
-    await screen.getByRole("button", "Add project").tap();
+    await screen.getByRole("combobox", "Projects").tap();
+    await screen.getByRole("option", "Add project").tap();
     await screen.getByText("Git URL").tap();
     await screen.getByRole("combobox").fill("https://github.com/aislopware/onicode.git");
     const submit = screen.getByRole("button", "Continue (Enter)");
