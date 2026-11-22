@@ -2667,11 +2667,13 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       if (yield* cancelStaleQuestionWakes(projection)) {
         projection = yield* readCommandProjection(threadId);
       }
+      // A retry of the user's start must not override a hold placed since.
       let storedQueuedRun =
         options?.queuedRunId === undefined
           ? nextQueuedRun(projection)
           : projection.runs.find(
-              (run) => run.id === options.queuedRunId && run.status === "queued",
+              (run) =>
+                run.id === options.queuedRunId && run.status === "queued" && run.queueHeld !== true,
             );
       while (
         storedQueuedRun !== undefined &&
@@ -12351,7 +12353,27 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       (candidate) => candidate.id === providerTurn?.providerThreadId,
     );
     const providerSessionId = providerThread?.providerSessionId;
-    // Once the agent read the steer, or its turn ended, nothing is left to hurry.
+    if (item === undefined) {
+      const read = yield* projectionStore
+        .getTurnItem({
+          threadId: command.threadId,
+          itemId: idAllocator.derive.userTurnItem({ messageId: command.messageId }),
+        })
+        .pipe(
+          Effect.mapError(
+            (cause) => new OrchestratorProjectionError({ threadId: command.threadId, cause }),
+          ),
+        );
+      // The agent can read the steer before the tap, or its resend, lands.
+      if (
+        read?.type === "user_message" &&
+        read.status === "completed" &&
+        (read.inputIntent === "steer" || read.inputIntent === "promoted_queued_to_steer")
+      ) {
+        return;
+      }
+    }
+    // Once its turn ended unread, or a stop reached it, nothing is left to hurry.
     if (
       item?.type !== "user_message" ||
       run === undefined ||
@@ -17004,6 +17026,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           // The title was renamed by hand, or another generation is already running.
           command.type === "thread.title.refresh" ||
           command.type === "thread.interrupt.unresponsive" ||
+          // The agent already read the steer.
+          command.type === "steer.send-now" ||
           command.type === "thread.stop" ||
           command.type === "subagent.stop" ||
           (command.type === "thread.delete" && command.onlyIfUnused === true),
@@ -17122,105 +17146,110 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         storedEvents: [],
       } satisfies OrchestratorV2DispatchResult;
     }
-    const acceptedAt = plan.events.at(-1)?.occurredAt ?? (yield* DateTime.now);
-    const committed = yield* eventSink
-      .commitCommand({
-        commandId: command.commandId,
-        threadId: commandThreadId(command),
-        commandType: command.type,
-        acceptedAt,
-        events:
-          cancelledTask === undefined
-            ? plan.events
-            : [
-                ...plan.events,
-                yield* makeSystemEvent({
-                  type: "subagent.updated",
-                  threadId: cancelledTask.threadId,
-                  nodeId: cancelledTask.id,
-                  occurredAt: cancelledTask.updatedAt,
-                  payload: cancelledTask,
-                }).pipe(mapDispatchError(command)),
-              ],
-        effects: plan.effects,
-        ...(plan.cancelUnsettledEffects === undefined
-          ? {}
-          : { cancelUnsettledEffects: plan.cancelUnsettledEffects }),
-        ...(plan.updateDelegatedCompletionOnlyRunId === undefined
-          ? {}
-          : { updateDelegatedCompletionOnlyRunId: plan.updateDelegatedCompletionOnlyRunId }),
-      })
-      .pipe(
-        Effect.mapError(
-          (cause) =>
-            new OrchestratorDispatchError({
-              commandId: command.commandId,
-              commandType: command.type,
-              cause,
-            }),
-        ),
-      );
+    // A replay plans nothing, so an interrupt between the commit and its starts would strand them.
+    return yield* Effect.uninterruptible(
+      Effect.gen(function* () {
+        const acceptedAt = plan.events.at(-1)?.occurredAt ?? (yield* DateTime.now);
+        const committed = yield* eventSink
+          .commitCommand({
+            commandId: command.commandId,
+            threadId: commandThreadId(command),
+            commandType: command.type,
+            acceptedAt,
+            events:
+              cancelledTask === undefined
+                ? plan.events
+                : [
+                    ...plan.events,
+                    yield* makeSystemEvent({
+                      type: "subagent.updated",
+                      threadId: cancelledTask.threadId,
+                      nodeId: cancelledTask.id,
+                      occurredAt: cancelledTask.updatedAt,
+                      payload: cancelledTask,
+                    }).pipe(mapDispatchError(command)),
+                  ],
+            effects: plan.effects,
+            ...(plan.cancelUnsettledEffects === undefined
+              ? {}
+              : { cancelUnsettledEffects: plan.cancelUnsettledEffects }),
+            ...(plan.updateDelegatedCompletionOnlyRunId === undefined
+              ? {}
+              : { updateDelegatedCompletionOnlyRunId: plan.updateDelegatedCompletionOnlyRunId }),
+          })
+          .pipe(
+            Effect.mapError(
+              (cause) =>
+                new OrchestratorDispatchError({
+                  commandId: command.commandId,
+                  commandType: command.type,
+                  cause,
+                }),
+            ),
+          );
 
-    if (committed.receipt.status === "rejected") {
-      return yield* new OrchestratorCommandPreviouslyRejectedError({
-        commandId: command.commandId,
-        commandType: command.type,
-        detail: committed.receipt.error ?? "Previously rejected.",
-      });
-    }
-    // A concurrent command with this id for another thread can commit first,
-    // under that thread's lock; its receipt is not this command's result.
-    if (committed.receipt.threadId !== commandThreadId(command)) {
-      return yield* new OrchestratorCommandIdConflictError({
-        commandId: command.commandId,
-        commandType: command.type,
-        receiptThreadId: committed.receipt.threadId,
-        commandThreadId: commandThreadId(command),
-      });
-    }
-    if (command.type === "queue.resume" || command.type === "queued-run.start") {
-      yield* startNextQueuedRunAfterCommit(command.type, command.threadId, {
-        userStarted: true,
-        ...(command.type === "queued-run.start" ? { queuedRunId: command.runId } : {}),
-      });
-    }
-    if (command.type === "thread.runtime-mode.set" && runtimeModeCeiling !== undefined) {
-      yield* startNextQueuedRunAfterCommit("runtime-mode", command.threadId, {
-        userStarted: false,
-      });
-    }
-    if (
-      command.type === "notification.delivery.accept" ||
-      // A steer restart that settled a wake can reserve the next one for its siblings.
-      ((command.type === "message.dispatch" ||
-        command.type === "queued-message.promote-to-steer") &&
-        committed.storedEvents.some(
-          ({ event }) =>
-            event.type === "subagent.updated" &&
-            event.payload.completionDelivery?.state === "claimed",
-        ))
-    ) {
-      yield* offerDelegatedCompletionDeliveriesAfterCommit(command.threadId);
-    }
-    if (
-      command.type === "delegated_task.wake-policy" ||
-      command.type === "delegated_task.remote.complete" ||
-      isUnobservedAcknowledgement(command)
-    ) {
-      yield* offerDelegatedCompletionDeliveriesAfterCommit(command.parentThreadId);
-    }
+        if (committed.receipt.status === "rejected") {
+          return yield* new OrchestratorCommandPreviouslyRejectedError({
+            commandId: command.commandId,
+            commandType: command.type,
+            detail: committed.receipt.error ?? "Previously rejected.",
+          });
+        }
+        // A concurrent command with this id for another thread can commit first,
+        // under that thread's lock; its receipt is not this command's result.
+        if (committed.receipt.threadId !== commandThreadId(command)) {
+          return yield* new OrchestratorCommandIdConflictError({
+            commandId: command.commandId,
+            commandType: command.type,
+            receiptThreadId: committed.receipt.threadId,
+            commandThreadId: commandThreadId(command),
+          });
+        }
+        if (command.type === "queue.resume" || command.type === "queued-run.start") {
+          yield* startNextQueuedRunAfterCommit(command.type, command.threadId, {
+            userStarted: true,
+            ...(command.type === "queued-run.start" ? { queuedRunId: command.runId } : {}),
+          });
+        }
+        if (command.type === "thread.runtime-mode.set" && runtimeModeCeiling !== undefined) {
+          yield* startNextQueuedRunAfterCommit("runtime-mode", command.threadId, {
+            userStarted: false,
+          });
+        }
+        if (
+          command.type === "notification.delivery.accept" ||
+          // A steer restart that settled a wake can reserve the next one for its siblings.
+          ((command.type === "message.dispatch" ||
+            command.type === "queued-message.promote-to-steer") &&
+            committed.storedEvents.some(
+              ({ event }) =>
+                event.type === "subagent.updated" &&
+                event.payload.completionDelivery?.state === "claimed",
+            ))
+        ) {
+          yield* offerDelegatedCompletionDeliveriesAfterCommit(command.threadId);
+        }
+        if (
+          command.type === "delegated_task.wake-policy" ||
+          command.type === "delegated_task.remote.complete" ||
+          isUnobservedAcknowledgement(command)
+        ) {
+          yield* offerDelegatedCompletionDeliveriesAfterCommit(command.parentThreadId);
+        }
 
-    if (command.type === "message.dispatch" && command.steerFollowUpOfRunId !== undefined) {
-      yield* startNextQueuedRunAfterCommit("steer-follow-up", command.threadId, {
-        latestRunEnded: true,
-      });
-    }
+        if (command.type === "message.dispatch" && command.steerFollowUpOfRunId !== undefined) {
+          yield* startNextQueuedRunAfterCommit("steer-follow-up", command.threadId, {
+            latestRunEnded: true,
+          });
+        }
 
-    return {
-      sequence: committed.receipt.resultSequence,
-      storedEvents: committed.storedEvents,
-      ...(committed.committed ? {} : { replayed: true as const }),
-    } satisfies OrchestratorV2DispatchResult;
+        return {
+          sequence: committed.receipt.resultSequence,
+          storedEvents: committed.storedEvents,
+          ...(committed.committed ? {} : { replayed: true as const }),
+        } satisfies OrchestratorV2DispatchResult;
+      }),
+    );
   }, withCommandMetrics);
 
   // Follow-up intake and Stop serialize on the parent before taking the child lock.

@@ -588,22 +588,37 @@ const session: EnvironmentConnectionLease["session"] = {
   closed: Effect.never,
 };
 
+// Set by `dropConnection`: how the live connection ends, and what its next attempt meets.
+let connectionLost: Deferred.Deferred<never, ConnectionAttemptError> | null = null;
+let reconnectRefusal: ConnectionAttemptError | null = null;
+let markReconnected = () => {};
+
 /** Stands in for client-runtime's ConnectionDriver: every connection opens the session above. */
 export const fakeDriver = {
   connect: (
     entry: ConnectionCatalogEntry,
   ): Effect.Effect<EnvironmentConnectionLease, ConnectionAttemptError, Scope.Scope> =>
-    Effect.succeed({
-      prepared: {
-        environmentId: ENVIRONMENT_ID,
-        label: descriptor.label,
-        httpBaseUrl: window.location.origin,
-        socketUrl: window.location.origin.replace(/^http/, "ws"),
-        httpAuthorization: { _tag: "Bearer", token: "test-token" },
-        target: entry.target,
-      },
-      session,
-      refusedRouteIds: [],
+    Effect.gen(function* () {
+      const refusal = reconnectRefusal;
+      if (refusal !== null) {
+        reconnectRefusal = null;
+        return yield* refusal;
+      }
+      const lost = yield* Deferred.make<never, ConnectionAttemptError>();
+      connectionLost = lost;
+      markReconnected();
+      return {
+        prepared: {
+          environmentId: ENVIRONMENT_ID,
+          label: descriptor.label,
+          httpBaseUrl: window.location.origin,
+          socketUrl: window.location.origin.replace(/^http/, "ws"),
+          httpAuthorization: { _tag: "Bearer" as const, token: "test-token" },
+          target: entry.target,
+        },
+        session: { ...session, closed: Deferred.await(lost) },
+        refusedRouteIds: [],
+      };
     }),
   preflight: () => Effect.succeed(true),
   checkHost: () => Effect.succeed<RouteCheck>("unchecked"),
@@ -686,8 +701,27 @@ export function installFakeEnvironment(
       holdCommand = () => false;
       pendingDispatches = [];
       pendingAssetUrls = [];
+      reconnectRefusal = null;
     },
   };
+}
+
+/**
+ * Ends the live connection with `lost` and refuses the reconnect with `refusal`, which stops the
+ * client retrying. `reconnected` settles once a later retry connects again.
+ */
+export async function dropConnection(input: {
+  readonly lost: ConnectionAttemptError;
+  readonly refusal: ConnectionAttemptError;
+}): Promise<{ readonly reconnected: Promise<void> }> {
+  const live = connectionLost;
+  if (live === null) throw new Error("No live connection");
+  reconnectRefusal = input.refusal;
+  const reconnected = new Promise<void>((resolve) => {
+    markReconnected = resolve;
+  });
+  await Effect.runPromise(Deferred.fail(live, input.lost));
+  return { reconnected };
 }
 
 /** Answers the oldest unanswered command with the server's rejection. */

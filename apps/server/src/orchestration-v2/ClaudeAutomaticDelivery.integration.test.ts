@@ -1925,6 +1925,34 @@ it.effect.each([
         );
         assert.equal(item?.status, "pending");
         assert.isTrue(item?.type === "user_message" && item.sentNow);
+        // Claude reads it before a second tap, or the first tap's resend, lands.
+        const read = yield* watch(
+          (event) =>
+            event.type === "turn-item.updated" &&
+            event.payload.type === "user_message" &&
+            event.payload.messageId === steerId &&
+            event.payload.status === "completed",
+        );
+        yield* Queue.offer(
+          sdkMessages,
+          frame({
+            type: "command_lifecycle",
+            command_uuid: offers[2]?.uuid,
+            state: "started",
+            uuid: "started-steer",
+            session_id: sessionId,
+          }),
+        );
+        yield* Fiber.join(read);
+        const late = yield* orchestrator.dispatch({
+          type: "steer.send-now",
+          commandId: CommandId.make("send-now-after-read"),
+          threadId,
+          messageId: steerId,
+        });
+        yield* worker.drain();
+        assert.deepEqual(late.storedEvents, []);
+        assert.equal(offers.length, 3);
         return;
       }
 

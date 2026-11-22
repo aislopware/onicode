@@ -1203,24 +1203,6 @@ export const sendSteerNow = Effect.fn("EnvironmentCommands.sendSteerNow")(functi
       threadId: input.threadId,
       messageId: input.messageId,
     }),
-  ).pipe(
-    // The agent can read the steer before the tap or its resend lands; nothing is left to send.
-    Effect.catchTags({
-      OrchestrationV2DispatchCommandError: (error) =>
-        getProjection(input.threadId).pipe(
-          Effect.mapError(() => error),
-          Effect.flatMap((projection) =>
-            projection.turnItems.some(
-              (item) =>
-                item.type === "user_message" &&
-                item.messageId === input.messageId &&
-                item.status === "completed",
-            )
-              ? Effect.succeed({ sequence: 0 })
-              : Effect.fail(error),
-          ),
-        ),
-    }),
   );
 });
 

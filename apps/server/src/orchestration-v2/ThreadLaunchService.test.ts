@@ -2906,6 +2906,17 @@ it.effect("shared intake preserves durable attachment bytes after a lost launch 
       files.filter((name) => !name.startsWith("pending-")),
     );
     assert.equal((yield* claimedFiles).length, 1);
+    // Event pruning drops the accepted launch's events; its message still marks it accepted.
+    const sql = yield* SqlClient.SqlClient;
+    yield* sql`DELETE FROM orchestration_events WHERE command_id = ${input.commandId}`;
+    const pruned = yield* ThreadMessageIntake.launchThread(input);
+    assert.isTrue(pruned.resumed);
+    assert.lengthOf(pruned.projection.runs, 1);
+    assert.deepEqual(
+      pruned.projection.messages.map((message) => message.attachments),
+      [stored.attachments],
+    );
+    assert.equal((yield* claimedFiles).length, 1);
 
     const duplicate = yield* ThreadMessageIntake.launchThread({
       ...input,
@@ -3038,6 +3049,75 @@ it.effect("shared intake preserves durable attachment bytes after a lost launch 
       assert.isNotNull(path);
       assert.deepEqual(yield* fs.readFile(path), new Uint8Array([1, 2, 3, 4]));
     }
+
+    // An earlier launch with this id created the thread without a message; the uploads still move.
+    const createOnly = launchInput({ command: "intake-create-only", thread: "intake-create-only" });
+    yield* launches.launch(createOnly);
+    const late = yield* ThreadMessageIntake.launchThread({
+      ...createOnly,
+      initialMessage: {
+        messageId: MessageId.make("intake-create-only-message"),
+        text: "Late",
+        attachments: [attachment],
+      },
+    });
+    const lateAttachment = late.projection.messages[0]?.attachments[0];
+    assert.isDefined(lateAttachment);
+    assert.notEqual(lateAttachment.id, attachment.id);
+    const latePath = resolveAttachmentPath({
+      attachmentsDir: config.attachmentsDir,
+      attachment: lateAttachment,
+    });
+    assert.isNotNull(latePath);
+    assert.deepEqual(yield* fs.readFile(latePath), new Uint8Array([1, 2, 3, 4]));
+
+    // A concurrent attempt read no receipt and claimed copies; when its replay cannot read the
+    // message the first attempt accepted, nothing holds those copies.
+    const raced = launchInput({ command: "intake-raced", thread: "intake-raced" });
+    yield* threads.dispatch({
+      type: "thread.create",
+      commandId: raced.commandId,
+      threadId: raced.threadId,
+      projectId: raced.projectId,
+      title: raced.title,
+      modelSelection: raced.modelSelection,
+      runtimeMode: raced.runtimeMode,
+      interactionMode: raced.interactionMode,
+      branch: null,
+      worktreePath: null,
+      createdBy: raced.createdBy,
+      creationSource: raced.creationSource,
+    });
+    yield* threads.dispatch({
+      type: "message.dispatch",
+      commandId: CommandId.make(`${raced.commandId}:initial-message`),
+      threadId: raced.threadId,
+      messageId: MessageId.make("intake-raced-message"),
+      text: "Raced",
+      attachments: [],
+      modelSelection: raced.modelSelection,
+      dispatchMode: { type: "defer_start", workspaceStrategy: { type: "root" } },
+      createdBy: raced.createdBy,
+      creationSource: raced.creationSource,
+    });
+    const beforeRace = yield* claimedFiles;
+    using _receipts = vi.spyOn(threads, "hasReceipt").mockReturnValue(Effect.succeed(false));
+    const getThreadRecords = threads.getThreadRecords;
+    using _records = vi
+      .spyOn(threads, "getThreadRecords")
+      .mockImplementation((threadId, fields, filter) =>
+        threadId === raced.threadId && fields.includes("messages")
+          ? Effect.fail(
+              new Orchestrator.OrchestratorProjectionError({ threadId, cause: "store busy" }),
+            )
+          : getThreadRecords(threadId, fields, filter),
+      );
+    const racedFailure = yield* ThreadMessageIntake.launchThread({
+      ...raced,
+      initialMessage: { text: "Raced", attachments: [attachment] },
+    }).pipe(Effect.flip);
+    assert.equal(racedFailure._tag, "ThreadLaunchError");
+    assert.deepEqual(yield* claimedFiles, beforeRace);
   }).pipe(Effect.provide(Layer.mergeAll(harness.layer, layerFiles)));
 });
 

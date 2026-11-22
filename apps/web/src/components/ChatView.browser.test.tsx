@@ -1,4 +1,8 @@
 import { createMemoryHistory } from "@tanstack/react-router";
+import {
+  ConnectionBlockedError,
+  ConnectionTransientError,
+} from "@onicode/client-runtime/connection";
 import { scopeProjectRef, scopeThreadRef } from "@onicode/client-runtime/environment";
 import {
   EnvironmentId,
@@ -20,6 +24,7 @@ import {
 import type * as Context from "effect/Context";
 import * as Schema from "effect/Schema";
 import * as Effect from "effect/Effect";
+import { runAtomCommand } from "@onicode/client-runtime/state/runtime";
 import { expect, it, vi } from "vite-plus/test";
 import { cdp, page, userEvent } from "vite-plus/test/browser";
 
@@ -28,6 +33,7 @@ import { AppRoot } from "~/AppRoot";
 // takes 6-11s; importing it here keeps that out of the test's timeout.
 import "~/components/ChatView";
 import { composerTargetKey, DraftId, useComposerDraftStore } from "~/composerDraftStore";
+import { environmentCatalog } from "~/connection/catalog";
 import {
   addPreparingComposerImages,
   cancelPreparingComposerImages,
@@ -50,6 +56,7 @@ import {
   answerRpc,
   assistantItem,
   dispatchedCommands,
+  dropConnection,
   emitShellThread,
   emitThreadEvent,
   hasPendingAssetUrl,
@@ -597,54 +604,75 @@ it("a new draft does not load its reserved thread before the server lists it", a
   expect(threadRequests).toEqual([]);
 });
 
-it("a failed image-only first send of a new thread keeps the new draft", async () => {
-  using _environment = installFakeEnvironment([]);
-  __setClientSettingsForTests({
-    ...DEFAULT_CLIENT_SETTINGS,
-    onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
-  });
-  const draftId = DraftId.make("draft-image-only-interrupted");
-  useComposerDraftStore
-    .getState()
-    .setProjectDraftThreadId(scopeProjectRef(ENVIRONMENT_ID, PROJECT_ID), draftId, {
-      threadId: ThreadId.make("thread-image-only-interrupted"),
+it.each([
+  // A refusal fails at once.
+  ["refused", Effect.fail(new LaunchRefused()), "Message not sent"],
+  // An interrupted launch waits to be resent, until the host refuses the reconnect.
+  ["interrupted", Effect.interrupt, "Message may not have been sent"],
+] as const)(
+  "an image-only first send of a new thread that is %s keeps the new draft",
+  async (outcome, end, title) => {
+    using _environment = installFakeEnvironment([]);
+    __setClientSettingsForTests({
+      ...DEFAULT_CLIENT_SETTINGS,
+      onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
     });
-  // A refusal fails at once; an interrupted launch would wait for a reconnect and be resent.
-  using launch = holdRpc(
-    ORCHESTRATION_V2_WS_METHODS.launchThread,
-    Effect.fail(new LaunchRefused()),
-  );
-  const router = getRouter(createMemoryHistory({ initialEntries: [`/draft/${draftId}`] }));
-  await router.load();
-  await using _app = await render(<AppRoot router={router} />, {
-    // AppRoot brings its own router.
-    router: false,
-  });
-  using _uploads = acceptAttachmentUploads();
-  const editor = page.getByTestId("composer-editor");
-  await expect.element(editor).toBeVisible();
-  // The send needs the project, which arrives with the shell snapshot.
-  await expect.element(page.getByText("render", { exact: true }).first()).toBeVisible();
+    const draftId = DraftId.make(`draft-image-only-${outcome}`);
+    useComposerDraftStore
+      .getState()
+      .setProjectDraftThreadId(scopeProjectRef(ENVIRONMENT_ID, PROJECT_ID), draftId, {
+        threadId: ThreadId.make(`thread-image-only-${outcome}`),
+      });
+    using launch = holdRpc(ORCHESTRATION_V2_WS_METHODS.launchThread, end);
+    const router = getRouter(createMemoryHistory({ initialEntries: [`/draft/${draftId}`] }));
+    await router.load();
+    await using _app = await render(<AppRoot router={router} />, {
+      // AppRoot brings its own router.
+      router: false,
+    });
+    using _uploads = acceptAttachmentUploads();
+    const editor = page.getByTestId("composer-editor");
+    await expect.element(editor).toBeVisible();
+    // The send needs the project, which arrives with the shell snapshot.
+    await expect.element(page.getByText("render", { exact: true }).first()).toBeVisible();
 
-  await userEvent.click(editor);
-  const clipboardData = new DataTransfer();
-  clipboardData.items.add(new File([PNG], "shot.png", { type: "image/png" }));
-  editor
-    .element()
-    .dispatchEvent(new ClipboardEvent("paste", { clipboardData, bubbles: true, cancelable: true }));
-  // The tile shows the image while it still compresses, and a send meanwhile is refused.
-  await expect.element(page.getByRole("button", { name: "Preview shot.png" })).toBeEnabled();
-  await userEvent.keyboard("{Enter}");
-  await launch.called;
-  await userEvent.keyboard("next draft");
-  await expect.element(editor).toHaveTextContent("next draft");
-  launch.release();
+    await userEvent.click(editor);
+    const clipboardData = new DataTransfer();
+    clipboardData.items.add(new File([PNG], "shot.png", { type: "image/png" }));
+    editor
+      .element()
+      .dispatchEvent(
+        new ClipboardEvent("paste", { clipboardData, bubbles: true, cancelable: true }),
+      );
+    // The tile shows the image while it still compresses, and a send meanwhile is refused.
+    await expect.element(page.getByRole("button", { name: "Preview shot.png" })).toBeEnabled();
+    await userEvent.keyboard("{Enter}");
+    await launch.called;
+    await userEvent.keyboard("next draft");
+    await expect.element(editor).toHaveTextContent("next draft");
+    launch.release();
+    const dropped =
+      outcome === "interrupted"
+        ? await dropConnection({
+            lost: new ConnectionTransientError({ reason: "transport", detail: "Socket closed." }),
+            refusal: new ConnectionBlockedError({ reason: "configuration", detail: "Refused." }),
+          })
+        : null;
+    // Later tests in this file share the connection.
+    await using _reconnect = {
+      [Symbol.asyncDispose]: async () => {
+        if (dropped === null) return;
+        await runAtomCommand(appAtomRegistry, environmentCatalog.retryNow, ENVIRONMENT_ID);
+        await dropped.reconnected;
+      },
+    };
 
-  await expect.element(page.getByText("Message not sent")).toBeVisible();
-  await expect.element(editor).toHaveTextContent("next draft");
-  // With no text there is nothing to copy.
-  expect(page.getByText("Copy message", { exact: true }).query()).toBeNull();
-});
+    await expect.element(page.getByText(title)).toBeVisible();
+    await expect.element(editor).toHaveTextContent("next draft");
+    // With no text there is nothing to copy.
+    expect(page.getByText("Copy message", { exact: true }).query()).toBeNull();
+  },
+);
 
 it.each([
   "new",
