@@ -635,12 +635,13 @@ export function openRtf(bytes: ArrayBuffer): OfficeWorkerResult {
         emitByte(Number.parseInt(hex, 16));
         continue;
       }
-      flush();
+      // An escaped character can be the trail byte of a double-byte character.
       if (next === "\\" || next === "{" || next === "}") {
         i++;
-        emit(next);
+        emitByte(next.charCodeAt(0));
         continue;
       }
+      flush();
       if (next === "*") {
         i++;
         if (fallback > 0) fallback--;
@@ -674,8 +675,13 @@ export function openRtf(bytes: ArrayBuffer): OfficeWorkerResult {
         state.fontTable = true;
         state.skip = true;
       } else if (word === "deff") state.font = defaultFont = arg;
-      else if (word === "f") state.font = arg;
-      else if (word === "fcharset" && state.fontTable) {
+      else if (word === "f") {
+        state.font = arg;
+        if (state.fontTable) {
+          fontCodePages.delete(arg);
+          fonts.delete(arg);
+        }
+      } else if (word === "fcharset" && state.fontTable) {
         const label = (
           {
             0: state.decoder.encoding,

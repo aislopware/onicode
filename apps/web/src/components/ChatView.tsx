@@ -1509,6 +1509,7 @@ export default function ChatView(props: ChatViewProps) {
     isSendBusy,
     backgroundSubmissionPending,
   } = useLocalDispatchState({
+    threadKey: routeThreadKey,
     environmentId,
     activeThread,
     activeLatestRun,
@@ -2319,13 +2320,6 @@ export default function ChatView(props: ChatViewProps) {
     isMobileViewport,
     terminalUiState.terminalOpen,
   ]);
-
-  // Promotion drops draftId while a send may still be dispatching, so key by thread.
-  const [localDispatchThreadId, setLocalDispatchThreadId] = useState(threadId);
-  if (localDispatchThreadId !== threadId) {
-    setLocalDispatchThreadId(threadId);
-    resetLocalDispatch();
-  }
 
   const activeWorktreePath = activeThread?.worktreePath ?? null;
   const derivedEnvMode: DraftThreadEnvMode = resolveEffectiveEnvMode({

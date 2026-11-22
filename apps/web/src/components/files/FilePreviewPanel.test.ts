@@ -178,6 +178,16 @@ describe("document preview contents", () => {
       String.raw`{\rtf1 A{\uc1\u945\*B}C}`,
       "A\u03b1BC",
     ],
+    [
+      "double-byte characters with written trail bytes",
+      String.raw`{\rtf1\ansi\ansicpg932 \'83e\'83X\'83g\'81B\'83\\}`,
+      "テスト。ソ",
+    ],
+    [
+      "a redefined font",
+      String.raw`{\rtf1\ansi{\fonttbl{\f0\fcharset204\cpg1252 A;}{\f0\fcharset204 B;}}\f0 \'c0}`,
+      "\u0410",
+    ],
   ])("keeps the text of %s", (_name, source, expected) => {
     const result = openRtf(bytes(source));
     if (result.type !== "document") throw new Error("Expected document");

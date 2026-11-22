@@ -501,6 +501,33 @@ describe("useQueuedRunEdit", () => {
     expect(requireHook(hook).isEditing).toBe(false);
   });
 
+  it("skips the focus frame when the thread changes before it runs", async () => {
+    const { hook } = setup();
+    mocks.editQueuedRun.mockResolvedValue({ _tag: "Success" });
+    const composer = { resetCursorState: vi.fn(), focusAtEnd: vi.fn() };
+    const refs = {
+      promptRef: { current: "" },
+      composerRef: { current: composer as unknown as ChatComposerHandle },
+      currentRouteThreadKeyRef: { current: scopedThreadKey(THREAD_A) },
+    };
+    await using screen = await render(view(THREAD_A, "queued", hook, [], refs));
+    const frames: FrameRequestCallback[] = [];
+    using _frame = vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      frames.push(callback);
+      return frames.length;
+    });
+    await beginChangedEdit(hook);
+    const saveFrame = frames.length;
+    await act(() => requireHook(hook).saveEdit(savedContent("changed"), () => {}));
+    // The save landed on screen, so it asked for focus on the next frame.
+    expect(composer.resetCursorState).toHaveBeenCalledOnce();
+
+    refs.currentRouteThreadKeyRef.current = scopedThreadKey(THREAD_B);
+    await screen.rerender(view(THREAD_B, "queued", hook, [], refs));
+    for (const frame of frames.slice(saveFrame)) frame(0);
+    expect(composer.focusAtEnd).not.toHaveBeenCalled();
+  });
+
   it("does not copy a saved edit into the thread draft when the run starts mid-save", async () => {
     const { hook } = setup();
     let finishSave: (result: { readonly _tag: "Success" }) => void = () => {};

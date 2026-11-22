@@ -385,6 +385,16 @@ describe("question answer paths", () => {
 \'96\'7b}`,
       "日本",
     ],
+    [
+      "Shift_JIS literal trail bytes",
+      String.raw`{\rtf1\ansi\ansicpg932 \'83e\'83X\'83g\'81B \'83\\}`,
+      "テスト。 ソ",
+    ],
+    [
+      "Shift_JIS font literal trail bytes",
+      String.raw`{\rtf1\ansi{\fonttbl{\f0\fcharset128 MS Mincho;}}\f0 \'83e\'83X\'83g}`,
+      "テスト",
+    ],
     ["destination symbol", String.raw`{\rtf1\ansi\u945\*Z}`, "αZ"],
     ["multiple units", String.raw`{\rtf1\ansi\uc4\u945?\tab\'3f\~Z}`, "αZ"],
     ["binary unit", String.raw`{\rtf1\ansi\u945\bin3 abcZ}`, "αZ"],
