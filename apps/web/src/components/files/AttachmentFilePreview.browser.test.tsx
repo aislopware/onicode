@@ -1074,9 +1074,9 @@ describe("large text preview recovery", () => {
         screen.container.querySelectorAll<HTMLElement>("[data-preview-row]"),
         (node) => node.dataset.previewRow,
       );
-    // Only the probe lays out the offscreen column's full text.
+    // Only the probe lays out the offscreen column's text.
     const probeLayouts = () =>
-      layouts.mock.contexts.filter((node) => (node as Element).textContent === huge);
+      layouts.mock.contexts.filter((node) => (node as Element).textContent?.startsWith("word "));
 
     await vi.waitFor(() => {
       expect(row(1)?.getBoundingClientRect().height).toBeGreaterThan(1_000);
@@ -1096,6 +1096,76 @@ describe("large text preview recovery", () => {
       expect(mountedRows()).toEqual(["47", "48"]);
     });
     expect(probeLayouts()).toHaveLength(2);
+  });
+
+  it("lays out at most 2,000 characters of a huge cell, in the probe and on screen", async () => {
+    const huge = "a".repeat(130_000);
+    using layouts = vi.spyOn(Element.prototype, "getBoundingClientRect");
+    await using screen = await render(
+      <div style={{ display: "flex", height: 400, width: 600 }}>
+        <VirtualTablePreview
+          name="huge-word.csv"
+          count={3}
+          columns={4}
+          getRows={() => [
+            ["r0", huge, "", ""],
+            ["r1", "", "", huge],
+            ["r2", "", "", ""],
+          ]}
+        />
+      </div>,
+    );
+    const cell = () =>
+      screen.container.querySelector<HTMLElement>('[data-preview-row="0"] [aria-colindex="2"]');
+    await vi.waitFor(() =>
+      expect(cell()?.textContent).toBe(`${"a".repeat(2_000)}… 128,000 more characters`),
+    );
+    const longest = Math.max(
+      ...layouts.mock.contexts.map((node) => (node as Element).textContent?.length ?? 0),
+    );
+    expect(longest).toBeLessThan(2_100);
+  });
+
+  it.each([
+    // Both columns fit the 600px width, so rows lay out every cell on screen.
+    { name: "long-cells.csv", long: "word ".repeat(400), columns: 2, source: false },
+    { name: "long-lines.txt", long: "word ".repeat(1_000), columns: 1, source: true },
+  ])("neither mounts nor lays out rows below a long $name row on screen", async (input) => {
+    const rows = Array.from({ length: 100 }, (_, index) =>
+      input.source ? [input.long] : [`r${index}`, input.long],
+    );
+    await using screen = await render(
+      <div style={{ display: "flex", height: 400, width: 600 }}>
+        <VirtualTablePreview
+          name={input.name}
+          count={rows.length}
+          columns={input.columns}
+          source={input.source}
+          wrap={input.source}
+          getRows={(page) => rows.slice(page * 32, page * 32 + 32)}
+        />
+      </div>,
+    );
+    const long = input.long;
+    const row = (index: number) =>
+      screen.container.querySelector<HTMLElement>(`[data-preview-row="${index}"]`);
+    const mountedRows = () =>
+      Array.from(
+        screen.container.querySelectorAll<HTMLElement>("[data-preview-row]"),
+        (node) => node.dataset.previewRow,
+      );
+    await vi.waitFor(() => {
+      expect(row(0)?.getBoundingClientRect().height).toBeGreaterThan(400);
+      expect(mountedRows()).toEqual(["0", "1"]);
+    });
+
+    const viewport = screen.container.querySelector<HTMLElement>('[tabindex="0"]')!;
+    await act(() => {
+      viewport.scrollTop = 1365;
+      viewport.dispatchEvent(new Event("scroll", { bubbles: true }));
+    });
+    await vi.waitFor(() => expect(mountedRows()).toEqual(["47", "48"]));
+    expect(row(47)!.textContent).toContain(long);
   });
 
   it("reveals a line just before the native tail of a compressed multi-million-line track", async () => {
@@ -1149,6 +1219,47 @@ describe("large text preview recovery", () => {
       expect(last!.getBoundingClientRect().top).toBeGreaterThanOrEqual(
         viewport().getBoundingClientRect().top,
       );
+    });
+  });
+
+  it("lets go of End at the bottom and wheels up from the native tail by the wheel's pixels", async () => {
+    await using screen = await render(
+      <div style={{ display: "flex", height: 400, width: 600 }}>
+        <VirtualTablePreview
+          name="huge.log"
+          count={5_000_000}
+          columns={1}
+          source
+          getRows={(page) => Array.from({ length: 32 }, (_, i) => ["line-" + (page * 32 + i + 1)])}
+        />
+      </div>,
+    );
+    const viewport = () => screen.container.querySelector<HTMLElement>('[tabindex="0"]')!;
+    const firstRow = () =>
+      Number(screen.container.querySelector<HTMLElement>("[data-preview-row]")!.dataset.previewRow);
+    await act(() =>
+      viewport().dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true })),
+    );
+    await vi.waitFor(() =>
+      expect(screen.container.querySelector('[data-preview-row="4999999"]')).not.toBeNull(),
+    );
+    // 13 rows of 29px leave the last one 25px above the bottom of the 400px viewport.
+    const bottom = viewport().scrollHeight - viewport().clientHeight;
+    await act(() => {
+      viewport().scrollTop = bottom - 1;
+      viewport().dispatchEvent(new Event("scroll", { bubbles: true }));
+    });
+    expect(viewport().scrollTop).toBe(bottom - 1);
+
+    // 2,000px of 29px rows above the tail's first row, 4,999,987.
+    await act(() =>
+      viewport().dispatchEvent(
+        new WheelEvent("wheel", { deltaY: -2_000, bubbles: true, cancelable: true }),
+      ),
+    );
+    await vi.waitFor(() => {
+      expect(firstRow()).toBeGreaterThanOrEqual(4_999_987 - 72);
+      expect(firstRow()).toBeLessThanOrEqual(4_999_987 - 66);
     });
   });
 
