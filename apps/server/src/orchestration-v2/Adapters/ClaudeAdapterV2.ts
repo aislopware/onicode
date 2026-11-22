@@ -324,9 +324,17 @@ function claudeReportedContextLimits(
 }
 
 function optionalClaudeUsageTokenCount(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0
-    ? Math.round(value)
-    : undefined;
+  if (typeof value !== "number" || value < 0) return undefined;
+  const count = Math.round(value);
+  return Number.isSafeInteger(count) ? count : undefined;
+}
+
+// Token schemas take safe integers only; a malformed proxy frame must not fail ingestion.
+function safeClaudeTokenSum(...counts: ReadonlyArray<number>): number {
+  return Math.min(
+    counts.reduce((total, count) => total + count, 0),
+    Number.MAX_SAFE_INTEGER,
+  );
 }
 
 function claudeMessageInputTokens(usage: {
@@ -334,12 +342,27 @@ function claudeMessageInputTokens(usage: {
   readonly cache_creation_input_tokens?: number | null | undefined;
   readonly cache_read_input_tokens?: number | null | undefined;
 }): number {
-  return (
-    (optionalClaudeUsageTokenCount(usage.input_tokens) ?? 0) +
-    (optionalClaudeUsageTokenCount(usage.cache_creation_input_tokens) ?? 0) +
-    (optionalClaudeUsageTokenCount(usage.cache_read_input_tokens) ?? 0)
+  return safeClaudeTokenSum(
+    optionalClaudeUsageTokenCount(usage.input_tokens) ?? 0,
+    optionalClaudeUsageTokenCount(usage.cache_creation_input_tokens) ?? 0,
+    optionalClaudeUsageTokenCount(usage.cache_read_input_tokens) ?? 0,
   );
 }
+
+function sameClaudeUsageCounts(left: ClaudeMessageUsage, right: ClaudeMessageUsage): boolean {
+  return claudeUsageCountFields.every(
+    (field) =>
+      (optionalClaudeUsageTokenCount(left[field]) ?? 0) ===
+      (optionalClaudeUsageTokenCount(right[field]) ?? 0),
+  );
+}
+
+const claudeUsageCountFields = [
+  "input_tokens",
+  "cache_creation_input_tokens",
+  "cache_read_input_tokens",
+  "output_tokens",
+] as const;
 
 export function claudeProviderTurnTokenUsage(
   usage: {
@@ -363,7 +386,7 @@ export function claudeProviderTurnTokenUsage(
       ? undefined
       : DateTime.formatIso(DateTime.add(requestedAt, { milliseconds: promptCacheTtlMs }));
   return {
-    usedTokens: inputTokens + outputTokens,
+    usedTokens: safeClaudeTokenSum(inputTokens, outputTokens),
     maxTokens: limits.maxTokens,
     inputTokens,
     cachedInputTokens,
@@ -5571,11 +5594,13 @@ interface ActiveClaudeTurnContext {
       { readonly startedAt: DateTime.Utc; readonly ordinal: number; text: string }
     >;
   };
-  // Snapshots repeat message_start input, sometimes as zeros, so only fill gaps in streamed usage.
+  // Snapshots repeat message_start input, sometimes as zeros, so they only fill gaps in streamed usage.
+  // Without start input (some proxies), deltas may carry part of it and a fuller snapshot wins.
   // Compaction clears usage without forgetting the root request.
   // `requestedAt` starts the request's prompt cache lifetime.
   streamUsage: {
     readonly messageId: string;
+    readonly startReportedInput: boolean;
     requestedAt?: DateTime.Utc;
     usage: ClaudeMessageUsage | null;
   } | null;
@@ -11821,14 +11846,20 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               reasoning.streamBlocks.clear();
               context.assistant.streamBlocks.clear();
               const usage: ClaudeMessageUsage = event.message.usage ?? {};
-              context.streamUsage = { messageId: event.message.id, usage };
+              context.streamUsage = {
+                messageId: event.message.id,
+                startReportedInput: claudeMessageInputTokens(usage) > 0,
+                usage,
+              };
               yield* emitContextUsage(context, usage, true);
             } else if (event.type === "message_delta") {
               const usage: typeof event.usage | null | undefined = event.usage;
               const stream = context.streamUsage;
               if (stream?.usage && usage != null) {
-                stream.usage = mergeClaudeStreamUsage(stream.usage, usage);
-                yield* emitContextUsage(context, stream.usage);
+                const merged = mergeClaudeStreamUsage(stream.usage, usage);
+                const changed = !sameClaudeUsageCounts(stream.usage, merged);
+                stream.usage = merged;
+                if (changed) yield* emitContextUsage(context, merged);
               }
             } else if (
               event.type === "content_block_start" &&
@@ -12317,12 +12348,16 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               const snapshotUsage = message.message.usage;
               const stream = context.streamUsage;
               if (stream === null || stream.messageId !== message.message.id) {
-                context.streamUsage = { messageId: message.message.id, usage: snapshotUsage };
+                context.streamUsage = {
+                  messageId: message.message.id,
+                  startReportedInput: claudeMessageInputTokens(snapshotUsage) > 0,
+                  usage: snapshotUsage,
+                };
                 yield* emitContextUsage(context, snapshotUsage);
               } else if (
                 stream.usage !== null &&
-                claudeMessageInputTokens(stream.usage) <= 0 &&
-                claudeMessageInputTokens(snapshotUsage) > 0
+                claudeMessageInputTokens(snapshotUsage) > claudeMessageInputTokens(stream.usage) &&
+                (!stream.startReportedInput || claudeMessageInputTokens(stream.usage) <= 0)
               ) {
                 stream.usage = {
                   ...snapshotUsage,
@@ -12991,7 +13026,11 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             if (context === (yield* Ref.get(activeTurn))) {
               yield* announceMcpSignIns(liveQuery, context);
             }
-            const contextUsage = context.streamUsage?.usage ?? context.compactionTokens;
+            const streamedUsage = context.streamUsage?.usage;
+            const contextUsage =
+              streamedUsage != null && claudeMessageInputTokens(streamedUsage) > 0
+                ? streamedUsage
+                : context.compactionTokens;
             const learnedContextLimits = yield* measureContextLimits(liveQuery);
             if (
               (resultsReportingNewContextWindow.has(message) || learnedContextLimits) &&
