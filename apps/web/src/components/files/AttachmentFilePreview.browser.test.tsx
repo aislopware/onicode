@@ -1105,10 +1105,15 @@ describe("large text preview recovery", () => {
   });
 
   it.each([
-    { name: "huge-word.csv", source: false, shown: 2_000 },
-    { name: "huge-line.txt", source: true, shown: 10_000 },
+    { name: "huge-word.csv", source: false, shown: 2_000, kept: 2_000 },
+    { name: "huge-line.txt", source: true, shown: 10_000, kept: 10_000 },
+    // An emoji across the cut stays whole.
+    { name: "emoji-at-cut.csv", source: false, shown: 2_000, kept: 1_999 },
   ])("never lays out more than $shown characters of $name's huge word", async (input) => {
-    const huge = "a".repeat(130_000);
+    const huge =
+      input.kept < input.shown
+        ? "a".repeat(input.kept) + "😀" + "a".repeat(130_000 - input.kept - 2)
+        : "a".repeat(130_000);
     // Every text node the preview adds, the column-sizing table and the probe included.
     let longest = 0;
     const read = (records: MutationRecord[]) => {
@@ -1149,13 +1154,13 @@ describe("large text preview recovery", () => {
           ? '[data-preview-row="0"] > div:last-child'
           : '[data-preview-row="1"] [aria-colindex="2"]',
       );
-    const left = (130_000 - input.shown).toLocaleString("en-US");
+    const left = (130_000 - input.kept).toLocaleString("en-US");
     await vi.waitFor(() =>
-      expect(cell()?.textContent).toBe(`${"a".repeat(input.shown)}… ${left} more characters`),
+      expect(cell()?.textContent).toBe(`${"a".repeat(input.kept)}… ${left} more characters`),
     );
     read(observer.takeRecords());
     // The probe measures the shown text and its "… N more characters" in one node.
-    expect(longest).toBe(input.shown + `… ${left} more characters`.length);
+    expect(longest).toBe(input.kept + `… ${left} more characters`.length);
   });
 
   it.each([
