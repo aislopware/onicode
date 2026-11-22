@@ -862,6 +862,9 @@ const decodeThreadId = (value: string) =>
     Effect.mapError(() => new ThreadUsageError({ detail: `'${value}' is not a thread id.` })),
   );
 
+// The server's unknown-argument diagnostic, plain or JSON-escaped inside a JSON-RPC error.
+const REFUSES_INCLUDE_DELEGATED = /Unknown arguments? [^.]*\\?"includeDelegated\\?"/;
+
 const threadListCommand = Command.make("list", {
   ...projectLocationFlags,
   project: Flag.String("project").pipe(
@@ -898,7 +901,8 @@ const threadListCommand = Command.make("list", {
           const from: number = cursor;
           const page: OrchestratorMcpThreadListResult = yield* listPage(from, olderServer).pipe(
             Effect.catchIf(
-              (error) => from === 0 && !olderServer && error.message.includes("includeDelegated"),
+              (error) =>
+                from === 0 && !olderServer && REFUSES_INCLUDE_DELEGATED.test(error.message),
               () => {
                 olderServer = true;
                 return listPage(0, true);

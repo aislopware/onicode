@@ -187,15 +187,26 @@ function* text(node: XmlNode, line?: Line): Generator<TextPart, void> {
   if (HIDDEN.has(node.name)) return;
   // Word and OpenDocument text boxes hold their own paragraphs inside the anchoring paragraph.
   if (TEXT_BOXES.has(node.name)) {
-    if (!node.hasText) return;
-    if (line?.open) yield "\n";
+    // Held until the box shows something, so an empty box adds no line.
+    const held: Array<TextPart> = [];
+    let shown = false;
     if (line) line.boxes++;
     try {
-      yield* paragraphs(node);
+      for (const part of paragraphs(node)) {
+        if (shown) yield part;
+        else if (typeof part === "symbol" || (typeof part === "string" && part.trim() === ""))
+          held.push(part);
+        else {
+          shown = true;
+          if (line?.open) yield "\n";
+          yield* held;
+          yield part;
+        }
+      }
     } finally {
       if (line) {
         line.boxes--;
-        line.afterBox = true;
+        line.afterBox ||= shown;
       }
     }
   } else if (["tab", "ptab", "cell"].includes(node.name)) yield "\t";
@@ -243,20 +254,27 @@ function* paragraphs(node: XmlNode): Generator<TextPart, void> {
           : /^h[1-6]$/.test(child.name)
             ? Number(child.name[1])
             : Number(style.match(/^Heading([1-6])$/i)?.[1]) || 0;
-      // Word puts an anchored text box first, so the marker waits for the paragraph's own text.
+      // Word puts an anchored text box first, so the marker waits for the paragraph's own text;
+      // whitespace before that text keeps only its line breaks, ahead of the marker.
       let marker = level ? `${"#".repeat(Math.min(6, level))} ` : "";
+      let breaks = "";
       const line: Line = { open: false, boxes: 0, afterBox: false };
-      for (const part of text(child, line)) {
-        const own = line.boxes === 0;
-        if (typeof part === "string") {
-          if (own && part.trim() !== "") {
-            if (marker) yield marker;
+      for (let part of text(child, line)) {
+        if (typeof part === "string" && line.boxes === 0) {
+          if (marker) {
+            const rest = part.trimStart();
+            breaks += part.slice(0, part.length - rest.length).replaceAll(/[^\n]/g, "");
+            if (rest === "") continue;
+            yield `${breaks}${marker}`;
             marker = "";
-            line.afterBox = false;
-          } else if (own && marker) continue;
+            part = rest;
+          }
+          line.afterBox = false;
+        }
+        if (typeof part === "string") {
           const tail = part.slice(part.lastIndexOf("\n") + 1).trim() !== "";
           line.open = part.includes("\n") ? tail : line.open || tail;
-        } else if (own) line.afterBox = false;
+        }
         yield part;
       }
       // A text box that ends the paragraph has already ended its line.
