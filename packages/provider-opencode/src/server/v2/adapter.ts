@@ -105,6 +105,11 @@ import {
   openCodeCommandFailed,
   openCodeToolTurnItem,
 } from "../toolItems.ts";
+import {
+  addOpenCodeTokens,
+  openCodeContextWindow,
+  sanitizeOpenCodeTokens,
+} from "../tokenCounts.ts";
 
 const NativeGoal = Schema.NullOr(
   Schema.Struct({
@@ -223,24 +228,6 @@ const OpenCode2ProviderCapabilities = {
 type EventOf<T extends OpenCodeEvent["type"]> = Extract<OpenCodeEvent, { readonly type: T }>;
 type Tokens = EventOf<"session.step.ended">["data"]["tokens"];
 
-// Event counts are only checked finite; token schemas take safe non-negative integers.
-const tokenCount = (value: number): number => {
-  const count = Math.round(value);
-  return Number.isSafeInteger(count) && count > 0 ? count : 0;
-};
-const addTokens = (...counts: ReadonlyArray<number>): number =>
-  Math.min(
-    counts.reduce((total, count) => total + count, 0),
-    Number.MAX_SAFE_INTEGER,
-  );
-const sanitizedTokens = (tokens: NonNullable<Tokens>): NonNullable<Tokens> => ({
-  ...tokens,
-  input: tokenCount(tokens.input),
-  output: tokenCount(tokens.output),
-  reasoning: tokenCount(tokens.reasoning),
-  cache: { read: tokenCount(tokens.cache.read), write: tokenCount(tokens.cache.write) },
-});
-
 interface TurnOwner {
   readonly appThread: OrchestrationV2AppThread;
   readonly threadId: OrchestrationV2AppThread["id"];
@@ -274,6 +261,8 @@ interface ActiveTurn {
   startedSteps: number;
   // A reconnect dropped events, so steps may have ended unseen.
   missedEvents: boolean;
+  // A step reported a count the token schemas cannot take, so totals are not exact.
+  inexactUsage: boolean;
   steps: number;
   readonly models: Set<string>;
   lastStep: Tokens | undefined;
@@ -845,7 +834,10 @@ const turnTokenUsage = (turn: ActiveTurn, status: OrchestrationV2ProviderTurn["s
         ...models,
         usageScope: "main_agent" as const,
         usageStatus:
-          status === "completed" && !turn.missedEvents && turn.steps >= turn.startedSteps
+          status === "completed" &&
+          !turn.missedEvents &&
+          !turn.inexactUsage &&
+          turn.steps >= turn.startedSteps
             ? ("complete" as const)
             : ("partial" as const),
         inputTokens: turn.usage.input,
@@ -1701,6 +1693,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
       usage: { input: 0, cached: 0, cacheWrite: 0, output: 0, reasoning: 0 },
       startedSteps: 0,
       missedEvents: false,
+      inexactUsage: false,
       steps: 0,
       models: new Set(),
       lastStep: undefined,
@@ -2444,14 +2437,18 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
           ? {}
           : {
               tokenUsage: {
-                usedTokens: addTokens(
+                usedTokens: addOpenCodeTokens(
                   lastStep.input,
                   lastStep.cache.read,
                   lastStep.cache.write,
                   lastStep.output,
                 ),
                 maxTokens: window ?? null,
-                inputTokens: addTokens(lastStep.input, lastStep.cache.read, lastStep.cache.write),
+                inputTokens: addOpenCodeTokens(
+                  lastStep.input,
+                  lastStep.cache.read,
+                  lastStep.cache.write,
+                ),
                 cachedInputTokens: lastStep.cache.read,
                 outputTokens: lastStep.output,
                 reasoningOutputTokens: lastStep.reasoning,
@@ -3026,19 +3023,20 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
         case "session.step.ended":
         case "session.step.failed": {
           if (event.data.tokens === undefined) return;
-          const tokens = sanitizedTokens(event.data.tokens);
+          const { tokens, exact } = sanitizeOpenCodeTokens(event.data.tokens);
+          if (!exact) turn.inexactUsage = true;
           turn.steps += 1;
           turn.lastStep = tokens;
-          turn.usage.input = addTokens(
+          turn.usage.input = addOpenCodeTokens(
             turn.usage.input,
             tokens.input,
             tokens.cache.read,
             tokens.cache.write,
           );
-          turn.usage.cached = addTokens(turn.usage.cached, tokens.cache.read);
-          turn.usage.cacheWrite = addTokens(turn.usage.cacheWrite, tokens.cache.write);
-          turn.usage.output = addTokens(turn.usage.output, tokens.output, tokens.reasoning);
-          turn.usage.reasoning = addTokens(turn.usage.reasoning, tokens.reasoning);
+          turn.usage.cached = addOpenCodeTokens(turn.usage.cached, tokens.cache.read);
+          turn.usage.cacheWrite = addOpenCodeTokens(turn.usage.cacheWrite, tokens.cache.write);
+          turn.usage.output = addOpenCodeTokens(turn.usage.output, tokens.output, tokens.reasoning);
+          turn.usage.reasoning = addOpenCodeTokens(turn.usage.reasoning, tokens.reasoning);
           return;
         }
         case "session.retry.scheduled":
@@ -4090,7 +4088,9 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
             Effect.sync(() => {
               for (const model of models.data) {
                 const slug = `${model.providerID}/${model.id}`;
-                windows.set(slug, model.limit.input ?? model.limit.context);
+                const window = openCodeContextWindow(model.limit.input ?? model.limit.context);
+                if (window === undefined) windows.delete(slug);
+                else windows.set(slug, window);
                 variants.set(slug, new Set(model.variants.map((variant) => variant.id)));
               }
             }),

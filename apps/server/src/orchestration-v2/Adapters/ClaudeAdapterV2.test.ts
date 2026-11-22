@@ -11878,6 +11878,38 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           cache_read_input_tokens: 50_000,
           output_tokens: 20,
         }),
+        // A zero placeholder snapshot measures nothing, so a fuller one still fills, with its
+        // cache lifetime; corrections after it stay through a stale repeat.
+        usageStreamFrame({
+          type: "message_start",
+          message: { id: "msg_placeholder", usage: {} },
+        }),
+        usageSnapshotFrame("msg_placeholder", "00000000-0000-4000-8000-0000000006a0", {
+          input_tokens: 0,
+          cache_read_input_tokens: 0,
+          output_tokens: 0,
+        }),
+        usageStreamFrame({
+          type: "message_delta",
+          delta: { stop_reason: "tool_use", stop_sequence: null },
+          usage: { input_tokens: 1_000 },
+        }),
+        usageSnapshotFrame("msg_placeholder", "00000000-0000-4000-8000-0000000006a1", {
+          input_tokens: 3,
+          cache_read_input_tokens: 50_000,
+          output_tokens: 20,
+          cache_creation: { ephemeral_1h_input_tokens: 0, ephemeral_5m_input_tokens: 10 },
+        }),
+        usageStreamFrame({
+          type: "message_delta",
+          delta: { stop_reason: "tool_use", stop_sequence: null },
+          usage: { input_tokens: 0, output_tokens: 5 },
+        }),
+        usageSnapshotFrame("msg_placeholder", "00000000-0000-4000-8000-0000000006a2", {
+          input_tokens: 1_000,
+          cache_read_input_tokens: 50_000,
+          output_tokens: 20,
+        }),
         usageStreamFrame({
           type: "message_start",
           message: { id: "msg_null_usage", usage: null },
@@ -11930,6 +11962,21 @@ describe("ClaudeAdapterV2 background wake turns", () => {
             outputTokens: 20,
             cachedInputTokens: 0,
             ttl: 3_600_000,
+          },
+          { usedTokens: 1_000, inputTokens: 1_000, outputTokens: 0, cachedInputTokens: 0 },
+          {
+            usedTokens: 51_020,
+            inputTokens: 51_000,
+            outputTokens: 20,
+            cachedInputTokens: 50_000,
+            ttl: 300_000,
+          },
+          {
+            usedTokens: 50_005,
+            inputTokens: 50_000,
+            outputTokens: 5,
+            cachedInputTokens: 50_000,
+            ttl: 300_000,
           },
           { usedTokens: 12_640, inputTokens: 12_600, outputTokens: 40, cachedInputTokens: 0 },
         ],
@@ -11984,7 +12031,8 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                 claudeSdkFrame({
                   type: "system",
                   subtype: "compact_boundary",
-                  compact_metadata: { trigger: "auto", pre_tokens: 9_669, post_tokens: 400 },
+                  // An unsafe count from a proxy is unknown, not an ingestion failure.
+                  compact_metadata: { trigger: "auto", pre_tokens: 2 ** 60, post_tokens: 400 },
                   uuid: "00000000-0000-4000-8000-000000000681",
                   session_id: WAKE_NATIVE_SESSION,
                 }),
@@ -12021,6 +12069,13 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         );
         assert.deepEqual(windows, expectedWindows);
         assert.deepEqual(reportedContextTokens(harness.events), tokens);
+        const compactions = harness.events.flatMap((event) =>
+          event.type === "turn_item.updated" && event.turnItem.type === "compaction"
+            ? [event.turnItem]
+            : [],
+        );
+        assert.equal(compactions.length > 0, compacted);
+        for (const item of compactions) assert.notProperty(item, "beforeTokenCount");
         assert.strictEqual(harness.runtime.getModelContextWindow?.(modelSelection), 1_048_576);
       }).pipe(
         Effect.provide(
@@ -12433,14 +12488,23 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       for (const frame of frames) yield* Queue.offer(harness.sdkMessages, frame);
       const terminal = yield* Queue.take(harness.terminalReceipts);
       assert.equal(terminal.status, "completed");
-      assert.deepEqual(reportedContextTokens(harness.events), [1_211, 1_230, 1_075, 400]);
+      // The snapshot repeats the start's counts but is the first frame to name the model.
+      assert.deepEqual(reportedContextTokens(harness.events), [1_211, 1_211, 1_230, 1_075, 400]);
+      assert.deepEqual(
+        harness.events.flatMap((event) =>
+          event.type === "provider_turn.updated" && event.providerTurn.tokenUsage
+            ? [event.providerTurn.model ?? null]
+            : [],
+        ),
+        [null, "claude-sonnet-4-6", "claude-sonnet-4-6", "claude-sonnet-4-6", "claude-sonnet-4-6"],
+      );
       assert.deepEqual(
         harness.events.flatMap((event) =>
           event.type === "provider_turn.updated" && event.providerTurn.tokenUsage
             ? [event.providerTurn.tokenUsage.autoCompactThreshold]
             : [],
         ),
-        [117_000, 117_000, 117_000, 117_000],
+        [117_000, 117_000, 117_000, 117_000, 117_000],
       );
     }).pipe(
       Effect.provide(
@@ -12460,6 +12524,18 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     { autoCompactWindow: "200000", model: "claude-sonnet-4-6", threshold: undefined },
     { autoCompactWindow: "650000", model: "claude-sonnet-4-6", threshold: undefined },
     { autoCompactWindow: "650000", model: "uncatalogued-model", threshold: 617_000 },
+    // Thresholds are positive safe integers, or none.
+    {
+      autoCompactWindow: "99999999999999999999",
+      model: "uncatalogued-model",
+      threshold: undefined,
+    },
+    {
+      autoCompactWindow: "",
+      model: "uncatalogued-model",
+      userSettings: '{"autoCompactWindow":20000}',
+      threshold: undefined,
+    },
     {
       autoCompactWindow: "",
       model: "uncatalogued-model",

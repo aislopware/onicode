@@ -45,6 +45,15 @@ describe("billable native turn usage", () => {
       outputTokens: 8,
       reasoningTokens: 0,
     });
+    // Signed wire counts never bill below zero.
+    const negative = makeCodexTurnTokenUsageState();
+    negative.activeTurnId = "turn";
+    accumulateCodexTurnTokenUsage(negative, "turn", update(breakdown(-5, -1, 3)));
+    expect(completeCodexTurnTokenUsage(negative, "turn", true)).toMatchObject({
+      inputTokens: 0,
+      cachedInputTokens: 0,
+      outputTokens: 3,
+    });
   });
 
   it("keeps previous responses when compaction resets Codex cumulative counters", () => {
@@ -126,6 +135,15 @@ describe("billable native turn usage", () => {
       cacheCreationTokens: 10,
       outputTokens: 5,
     });
+    // An unsafe count in a steered segment drops out of the sum, so the total is partial.
+    expect(
+      normalizeClaudeTurnTokenUsage(
+        { subtype: "success", usage: { input_tokens: 4, output_tokens: 2 } },
+        false,
+        "completed",
+        [{ input_tokens: 5, output_tokens: 2 ** 60 }],
+      ),
+    ).toMatchObject({ usageStatus: "partial", inputTokens: 9, outputTokens: 2 });
     expect(
       claudeModelLedger({
         model: { inputTokens: Number.MAX_SAFE_INTEGER, outputTokens: 1, cacheReadInputTokens: 9 },

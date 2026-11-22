@@ -300,8 +300,12 @@ function isClaudeEnvTruthy(value: string | undefined): boolean {
 
 function claudeAutoCompactThreshold(autoCompactWindow: string, maxTokens: number | null) {
   const windowTokens = Number(autoCompactWindow);
-  return windowTokens > 0 && (maxTokens === null || windowTokens < maxTokens)
-    ? { autoCompactThreshold: windowTokens - CLAUDE_AUTO_COMPACT_RESERVE_TOKENS }
+  const threshold = windowTokens - CLAUDE_AUTO_COMPACT_RESERVE_TOKENS;
+  // The threshold schema takes positive safe integers; a window below the reserve has none.
+  return Number.isSafeInteger(windowTokens) &&
+    threshold > 0 &&
+    (maxTokens === null || windowTokens < maxTokens)
+    ? { autoCompactThreshold: threshold }
     : {};
 }
 
@@ -347,10 +351,18 @@ const CLAUDE_USAGE_COUNT_FIELDS = [
 ] as const;
 type ClaudeUsageCountField = (typeof CLAUDE_USAGE_COUNT_FIELDS)[number];
 
-function reportedClaudeUsageFields(usage: {
+type ClaudeUsageCounts = {
   readonly [field in ClaudeUsageCountField]?: number | null | undefined;
-}): ReadonlyArray<ClaudeUsageCountField> {
+};
+
+// Deltas are cumulative, so any count they carry is a report, zeros included.
+function reportedClaudeUsageFields(usage: ClaudeUsageCounts): ReadonlyArray<ClaudeUsageCountField> {
   return CLAUDE_USAGE_COUNT_FIELDS.filter((field) => claudeTokenCount(usage[field]) !== undefined);
+}
+
+// Start frames and snapshots send zeros as placeholders, so only positive counts are reports.
+function measuredClaudeUsageFields(usage: ClaudeUsageCounts): ReadonlyArray<ClaudeUsageCountField> {
+  return CLAUDE_USAGE_COUNT_FIELDS.filter((field) => (claudeTokenCount(usage[field]) ?? 0) > 0);
 }
 
 export function claudeProviderTurnTokenUsage(
@@ -5579,8 +5591,8 @@ interface ActiveClaudeTurnContext {
       { readonly startedAt: DateTime.Utc; readonly ordinal: number; text: string }
     >;
   };
-  // Snapshots repeat message_start input, sometimes as zeros, so they only fill gaps in streamed usage:
-  // all of it while streamed input is 0, else only counts no frame of the message reported (proxies).
+  // Snapshots repeat message_start input, sometimes as zeros, so they only fill counts no frame of
+  // the message measured: a placeholder start, or proxies that stream part of the usage.
   // Compaction clears usage without forgetting the root request.
   // `requestedAt` starts the request's prompt cache lifetime.
   streamUsage: {
@@ -11843,7 +11855,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               const usage: ClaudeMessageUsage = event.message.usage ?? {};
               context.streamUsage = {
                 messageId: event.message.id,
-                reported: new Set(reportedClaudeUsageFields(usage)),
+                reported: new Set(measuredClaudeUsageFields(usage)),
                 usage,
               };
               yield* emitContextUsage(context, usage, true);
@@ -12342,43 +12354,26 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               if (stream === null || stream.messageId !== message.message.id) {
                 context.streamUsage = {
                   messageId: message.message.id,
-                  reported: new Set(reportedClaudeUsageFields(snapshotUsage)),
+                  reported: new Set(measuredClaudeUsageFields(snapshotUsage)),
                   usage: snapshotUsage,
                 };
                 yield* emitContextUsage(context, snapshotUsage);
               } else if (stream.usage !== null) {
                 const current = stream.usage;
+                const gaps = measuredClaudeUsageFields(snapshotUsage).filter(
+                  (field) => !stream.reported.has(field),
+                );
                 const cacheCreation = current.cache_creation ?? snapshotUsage.cache_creation;
-                if (
-                  claudeMessageInputTokens(current) <= 0 &&
-                  claudeMessageInputTokens(snapshotUsage) > 0
-                ) {
-                  stream.usage = {
-                    ...snapshotUsage,
-                    ...(cacheCreation == null ? {} : { cache_creation: cacheCreation }),
-                    output_tokens: Math.max(
-                      claudeTokenCount(snapshotUsage.output_tokens) ?? 0,
-                      claudeTokenCount(current.output_tokens) ?? 0,
-                    ),
-                  };
-                } else {
-                  const gaps = reportedClaudeUsageFields(snapshotUsage).filter(
-                    (field) => !stream.reported.has(field),
-                  );
-                  if (gaps.length > 0) {
-                    stream.usage = {
-                      ...current,
-                      ...(cacheCreation == null ? {} : { cache_creation: cacheCreation }),
-                      ...Object.fromEntries(
-                        gaps.map((field) => [field, claudeTokenCount(snapshotUsage[field])]),
-                      ),
-                    };
-                  }
-                }
-                for (const field of reportedClaudeUsageFields(snapshotUsage)) {
-                  stream.reported.add(field);
-                }
-                if (stream.usage !== current) yield* emitContextUsage(context, stream.usage);
+                stream.usage = {
+                  ...current,
+                  ...(cacheCreation == null ? {} : { cache_creation: cacheCreation }),
+                  ...Object.fromEntries(
+                    gaps.map((field) => [field, claudeTokenCount(snapshotUsage[field])]),
+                  ),
+                };
+                for (const field of gaps) stream.reported.add(field);
+                // Also carries a model or cache lifetime first seen here; repeats are dropped.
+                yield* emitContextUsage(context, stream.usage);
               }
             }
             const parentToolUseId = message.parent_tool_use_id;

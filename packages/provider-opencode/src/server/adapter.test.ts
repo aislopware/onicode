@@ -922,7 +922,7 @@ describe("OpenCodeAdapterV2", () => {
     }).pipe(Effect.provide(Layer.merge(IdAllocator.layer, McpProviderSessions.layer))),
   );
 
-  it.effect.each(["completed", "failed", "unavailable"] as const)(
+  it.effect.each(["completed", "failed", "unavailable", "malformed"] as const)(
     "normalizes OpenCode step usage for %s turns",
     (ending) =>
       Effect.gen(function* () {
@@ -977,7 +977,11 @@ describe("OpenCodeAdapterV2", () => {
               messageID,
               reason: "stop",
               cost: 0.01,
-              tokens: { input: 10, output: 5, reasoning: 2, cache: { read: 3, write: 4 } },
+              // Counts the token schemas cannot take become zero and leave the usage partial.
+              tokens:
+                ending === "malformed" && id === "two"
+                  ? { input: 10, output: -5, reasoning: 2, cache: { read: 2 ** 60, write: 4 } }
+                  : { input: 10, output: 5, reasoning: 2, cache: { read: 3, write: 4 } },
             },
           },
         });
@@ -1051,17 +1055,31 @@ describe("OpenCodeAdapterV2", () => {
           completed?.providerTurn.turnTokenUsage,
           ending === "unavailable"
             ? { usageStatus: "unavailable", usageScope: "main_agent", hasSubagents: false }
-            : {
-                usageStatus: ending === "completed" ? "complete" : "partial",
-                usageScope: "main_agent",
-                inputTokens: 34,
-                cachedInputTokens: 6,
-                cacheCreationTokens: 8,
-                outputTokens: 14,
-                reasoningTokens: 4,
-                hasSubagents: false,
-              },
+            : ending === "malformed"
+              ? {
+                  usageStatus: "partial",
+                  usageScope: "main_agent",
+                  inputTokens: 31,
+                  cachedInputTokens: 3,
+                  cacheCreationTokens: 8,
+                  outputTokens: 9,
+                  reasoningTokens: 4,
+                  hasSubagents: false,
+                }
+              : {
+                  usageStatus: ending === "completed" ? "complete" : "partial",
+                  usageScope: "main_agent",
+                  inputTokens: 34,
+                  cachedInputTokens: 6,
+                  cacheCreationTokens: 8,
+                  outputTokens: 14,
+                  reasoningTokens: 4,
+                  hasSubagents: false,
+                },
         );
+        if (ending === "malformed") {
+          assert.equal(completed?.providerTurn.tokenUsage?.usedTokens, 14);
+        }
         // The thread's context window reads tokenUsage: the last step's context fill.
         if (ending === "completed") {
           assert.equal(completed?.providerTurn.tokenUsage?.usedTokens, 22);
