@@ -312,9 +312,9 @@ describe("createEnvironmentThreadStateAtoms", () => {
         if (title !== undefined && title !== titles.at(-1)) titles.push(title);
       });
       const first = yield* Queue.take(h.subscriptions);
-      // Opening and synchronizing do not wait.
-      yield* observeState(h.registry, h.stateAtom, (state) => Option.isSome(state.data));
+      // Opening and synchronizing do not wait; a catch-up applies at its completion marker.
       yield* Queue.offer(first.events, { kind: "synchronized" });
+      yield* observeState(h.registry, h.stateAtom, (state) => state.status === "live");
       const rename = (sequence: number, title: string) =>
         Queue.offer(first.events, {
           kind: "event",
@@ -352,6 +352,8 @@ describe("createEnvironmentThreadStateAtoms", () => {
       });
       const unmount = h.registry.mount(h.stateAtom);
       const first = yield* Queue.take(h.subscriptions);
+      yield* Queue.offer(first.events, { kind: "synchronized" });
+      yield* observeState(h.registry, h.stateAtom, (state) => state.status === "live");
       const loading = yield* h.loadEarlier().pipe(Effect.forkScoped);
       const older = yield* Queue.take(h.olderLoads);
       expect(h.registry.get(h.stateAtom).history.loading).toBe(true);

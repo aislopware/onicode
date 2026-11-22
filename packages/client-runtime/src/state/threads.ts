@@ -39,7 +39,7 @@ import { runCachePersistence } from "./cachePersistence.ts";
 import {
   isAuthorizationFailure,
   request,
-  subscribeDynamic,
+  subscribeDynamicWithInput,
   subscriptionRetryDelay,
 } from "../rpc/client.ts";
 import { parseThreadKey, threadKey } from "./entities.ts";
@@ -674,10 +674,13 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
   ) {
     if (item.kind === "synchronized") {
       yield* Ref.set(awaitingCompletion, false);
-      yield* SubscriptionRef.update(state, (current) =>
-        Option.isSome(current.data) && current.status !== "deleted" && Option.isNone(current.error)
-          ? { ...current, status: "live" as const, error: Option.none() }
-          : current,
+      yield* SubscriptionRef.updateSome(state, (current) =>
+        Option.isSome(current.data) &&
+        current.status !== "deleted" &&
+        current.status !== "live" &&
+        Option.isNone(current.error)
+          ? Option.some({ ...current, status: "live" as const })
+          : Option.none(),
       );
       return;
     }
@@ -710,12 +713,41 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     yield* applyEventsLocked([item]);
   });
 
+  // Items held until the completion marker apply together, so a replay-only resume renders once.
+  // A new attempt drops the previous attempt's held and late items (unapplied, so its cursor
+  // replays them). Both run under applyLock: each batch lands wholly before or after an attempt.
+  let attempt: unknown;
+  let catchUp: OrchestrationV2ThreadStreamItem[] = [];
+  const startAttempt = applyLock.withPermits(1)(
+    Effect.sync(() => {
+      attempt = undefined;
+      catchUp = [];
+    }),
+  );
   // Keep this per-batch streaming path untraced for the same reason as applyEventsLocked.
-  const applyItems = Effect.fnUntraced(function* (
-    items: ReadonlyArray<OrchestrationV2ThreadStreamItem>,
+  const receiveItems = Effect.fnUntraced(function* (
+    received: ReadonlyArray<readonly [input: unknown, item: OrchestrationV2ThreadStreamItem]>,
   ) {
     yield* applyLock.withPermits(1)(
       Effect.gen(function* () {
+        let completes = false;
+        for (const [input, item] of received) {
+          if (input !== attempt) continue;
+          catchUp.push(item);
+          if (item.kind === "synchronized") completes = true;
+        }
+        if (catchUp.length === 0) return;
+        if (!completes && (yield* Ref.get(awaitingCompletion))) {
+          // A warm resume keeps its "live" status until it learns it is behind.
+          yield* SubscriptionRef.updateSome(state, (current) =>
+            current.status === "live"
+              ? Option.some({ ...current, status: "synchronizing" as const })
+              : Option.none(),
+          );
+          return;
+        }
+        const items = catchUp;
+        catchUp = [];
         let events: SequencedItem[] = [];
         for (const item of items) {
           if (
@@ -725,6 +757,9 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
             events.push(item);
             continue;
           }
+          // Clearing the flag first lets the events before the marker publish
+          // "live", so a catch-up ending in the marker is one state change.
+          if (item.kind === "synchronized") yield* Ref.set(awaitingCompletion, false);
           yield* applyEventsLocked(events);
           events = [];
           yield* applyItemLocked(item);
@@ -1040,9 +1075,10 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     never,
     EnvironmentSupervisor.EnvironmentSupervisor
   > =>
-    subscribeDynamic(
+    subscribeDynamicWithInput(
       ORCHESTRATION_V2_WS_METHODS.subscribeThread,
       Effect.fn("EnvironmentThreadState.makeSubscribeInput")(function* (session) {
+        yield* startAttempt;
         let current = yield* SubscriptionRef.get(state);
         // A delete event already cleared this thread. Park without opening the socket.
         if (current.status === "deleted" && httpMisses === 0) {
@@ -1132,7 +1168,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
         yield* Ref.set(resuming, canResume);
         const acceptBoundedSnapshot = yield* Ref.get(acceptsBoundedSocketSnapshots);
 
-        return {
+        const input = {
           threadId,
           ...(canResume ? { afterSequence: sequence } : {}),
           requestCompletionMarker: true as const,
@@ -1146,6 +1182,8 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
             : {}),
           acceptDedupedBodies: true as const,
         };
+        attempt = input;
+        return input;
       }),
       {
         // A socket-only open that fails retries over HTTP, which tells a
@@ -1184,7 +1222,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
       },
     ).pipe(
       Stream.runForEachArray((items) =>
-        applyItems(items).pipe(
+        receiveItems(items).pipe(
           Effect.andThen(
             Effect.sync(() => {
               if (!recovering) defectRetries = 0;
@@ -1226,25 +1264,32 @@ function threadStateChanges(
 }
 
 /**
- * A value `paced` accepts waits `interval` and passes as the newest value by then, so a burst
- * reaches its readers once. Every other value passes at once.
+ * A value `paced` accepts, given the last value passed, waits `interval` and passes as the
+ * newest value by then, so a burst reaches its readers once. Every other value passes at once.
  */
 function latestEvery<A, E, R>(
   source: Stream.Stream<A, E, R>,
   interval: Duration.Input,
-  paced: (value: A) => boolean,
+  paced: (value: A, previous: A | undefined) => boolean,
 ) {
   return Stream.unwrap(
     Effect.gen(function* () {
       const latest = yield* Stream.toQueue(source, { capacity: 1, strategy: "sliding" });
+      let previous: A | undefined;
       return Stream.fromQueue(latest).pipe(
         Stream.mapEffect((value) =>
-          paced(value)
+          (paced(value, previous)
             ? Effect.sleep(interval).pipe(
                 Effect.andThen(Queue.poll(latest)),
                 Effect.map(Option.getOrElse(() => value)),
               )
-            : Effect.succeed(value),
+            : Effect.succeed(value)
+          ).pipe(
+            Effect.map((passed) => {
+              previous = passed;
+              return passed;
+            }),
+          ),
         ),
       );
     }),
@@ -1291,7 +1336,12 @@ export function createEnvironmentThreadStateAtoms<R, E>(
           const live =
             options?.notifyInterval === undefined
               ? changes
-              : latestEvery(changes, options.notifyInterval, (state) => state.status === "live");
+              : latestEvery(
+                  changes,
+                  options.notifyInterval,
+                  // A catch-up lands as one change into "live"; only changes of a live thread wait.
+                  (state, previous) => state.status === "live" && previous?.status === "live",
+                );
           return resume.snapshot === undefined
             ? live
             : Stream.concat(Stream.succeed(cachedThreadState(resume.snapshot.state)), live);
