@@ -1,12 +1,18 @@
 import { describe, expect, it } from "@effect/vitest";
-import type * as SentryCore from "@sentry/core";
+import * as SentryCore from "@sentry/core";
+import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as Logger from "effect/Logger";
 import * as Option from "effect/Option";
 import * as Tracer from "effect/Tracer";
 
-import { makeSentrySpanBridge, SEGMENT_MAX_PARENT_AGE_MS } from "./sentry.ts";
+import {
+  makeSentryEffectInstrumentation,
+  makeSentrySpanBridge,
+  SEGMENT_MAX_PARENT_AGE_MS,
+} from "./sentry.ts";
 import { scrubSentryPayload } from "./sentryScrub.ts";
 
 interface FakeSpan {
@@ -136,6 +142,39 @@ describe("makeSentrySpanBridge", () => {
         Effect.withTracer(bridge.tracer),
       );
       expect(fake.started.map((span) => span.name)).toEqual(["root"]);
+    }),
+  );
+});
+
+describe("makeSentryEffectInstrumentation logger", () => {
+  it.effect("sends only Error instances, reporting other defects by their kind", () =>
+    Effect.gen(function* () {
+      const captured: Array<{ readonly exception: unknown; readonly handled: unknown }> = [];
+      const scope = SentryCore.getCurrentScope();
+      const previous = scope.getClient();
+      scope.setClient({
+        captureException: (exception: unknown, hint: SentryCore.EventHint) =>
+          captured.push({ exception, handled: hint.mechanism?.handled }),
+        captureMessage: () => {},
+        getOptions: () => ({}),
+      } as unknown as SentryCore.Client);
+      const thrown = new Error("boom");
+      yield* Effect.gen(function* () {
+        yield* Effect.logError("Unhandled defect", { cause: Cause.die({ path: "/Users/ada" }) });
+        yield* Effect.logError("Request failed", thrown);
+      }).pipe(
+        Effect.provide(Logger.layer([makeSentryEffectInstrumentation().logger])),
+        Effect.ensuring(Effect.sync(() => scope.setClient(previous))),
+      );
+      expect(
+        captured.map(({ exception, handled }) => {
+          const error = exception as Error;
+          return [error === thrown ? "thrown" : `${error.name}: ${error.message}`, handled];
+        }),
+      ).toEqual([
+        ["NonErrorDefect: Defect that is not an Error: object", false],
+        ["thrown", true],
+      ]);
     }),
   );
 });

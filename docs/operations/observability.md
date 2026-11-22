@@ -169,16 +169,22 @@ Consent is per process owner and on by default, and changes apply on restart. A 
 Sentry's Electron SDK must start then; the renderer asks main over IPC and reports through it.
 Mobile keeps a device-local switch and loads the SDK only after it reads it, so errors in the first
 moments of a launch are not reported. A settings file that exists but cannot be read or decoded
-counts as off, so damage never undoes an opt-out.
+counts as off, and the next write of that file or store saves the opt-out, so damage never undoes
+one.
 
 What leaves the machine is narrowed at capture, not only scrubbed after: logs contribute their
 text parts and never their structured fields, span attributes only numbers and booleans, and
-console breadcrumbs are off. Every payload then loses URL queries and fragments and the home
-folder path (`packages/shared/src/sentryScrub.ts`). The renderer's replay masks every attribute
-outside a layout and state allowlist, blocks external links and frames, and pauses on routes whose
-address carries a query, since prompt links put the prompt there. Its attribute allowlist sets a
-private field of the replay integration; if a Sentry upgrade removes it, replays turn off rather
-than record unmasked attributes. Electron minidumps carry raw stack memory and are sent as is.
+defects only when they are `Error`s (others by their kind). Console and DOM click breadcrumbs are
+off. Every payload then loses URL queries and fragments and the home folder path
+(`packages/shared/src/sentryScrub.ts`).
+
+The renderer's replay masks every attribute outside a layout and state allowlist. rrweb records
+`href` and `src` before any masking, so it blocks every link, frame and media element. It stops
+without flushing on routes whose address carries a query, since prompt links put the prompt
+there. On an error it sends the buffered recording and starts a new buffer; Sentry's default would
+keep uploading the rest of the session. The attribute allowlist sets a private field of the replay
+integration; if a Sentry upgrade removes it, replays turn off rather than record unmasked
+attributes. Electron minidumps carry raw stack memory and are sent as is.
 
 Mobile adds `@sentry/react-native/expo` only when `ONICODE_SENTRY_MOBILE_DSN` is set. Without
 `SENTRY_AUTH_TOKEN` it turns off the native source map, dSYM and ProGuard uploads; that switch is a

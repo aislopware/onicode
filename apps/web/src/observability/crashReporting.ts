@@ -26,7 +26,11 @@ export function startCrashReporting(): CaughtErrorHandler {
       replaysOnErrorSampleRate: 1,
       integrations: (defaults) => [
         // Console output can quote prompts and file contents.
-        ...defaults.filter((integration) => integration.name !== "Console"),
+        ...defaults.filter(
+          (integration) => integration.name !== "Console" && integration.name !== "Breadcrumbs",
+        ),
+        // Click breadcrumbs quote attributes such as aria-label, which can name paths.
+        Sentry.breadcrumbsIntegration({ dom: false }),
         Sentry.browserTracingIntegration(),
         ...(replay ? [replay] : []),
       ],
@@ -47,27 +51,81 @@ type ReplayIntegration = ReturnType<typeof Sentry.replayIntegration>;
 
 /** Undefined when this SDK version no longer lets Onicode mask every content attribute. */
 function makeReplayIntegration(): ReplayIntegration | undefined {
+  let sendErrorReplay = (_replayId: unknown) => {};
   const replay = Sentry.replayIntegration({
     maskAllText: true,
     maskAllInputs: true,
     blockAllMedia: true,
-    // Their addresses are recorded unmasked and can carry tokens and file paths.
-    block: ['a[href*="://"]', 'a[href^="mailto:"]', "iframe", "webview"],
+    // A new window must not resume a replay recorded on an address this one has not checked.
+    stickySession: false,
+    // rrweb records addresses before any attribute masking, and file links put paths in them.
+    block: ["a[href]", "iframe", "webview"],
     beforeAddRecordingEvent: scrub,
+    beforeErrorSampling: (event) => {
+      sendErrorReplay(event.tags?.["replayId"]);
+      return false;
+    },
   });
   // The public options mask only named attributes; this masks all but layout and state.
   const options = (replay as unknown as { _recordingOptions?: { maskAttributeFn?: unknown } })
     ._recordingOptions;
   if (options?.maskAttributeFn === undefined) return undefined;
   options.maskAttributeFn = maskReplayAttribute;
+  sendErrorReplay = makeErrorReplaySender(replay);
   return replay;
+}
+
+const addressIsPrivate = () => addressHasQuery(window.location.hash, window.location.search);
+
+// Sentry drops a replay shorter than its 4.999s `minReplayDuration`.
+const MIN_REPLAY_MS = 5_500;
+// Sentry starts buffering inside init.
+let bufferStartedAt = Date.now();
+
+function startBuffering(replay: ReplayIntegration): void {
+  replay.startBuffering();
+  bufferStartedAt = Date.now();
+}
+
+/** Buffers a new replay unless the current address may carry a prompt. */
+function restartBuffering(replay: ReplayIntegration): void {
+  // Without a flush, stop drops the buffer synchronously, so nothing recorded here is sent.
+  void replay.stop({ flush: false });
+  if (!addressIsPrivate()) startBuffering(replay);
+}
+
+/**
+ * Sends the recording buffered before an error, then buffers afresh. Sentry would otherwise keep
+ * uploading everything after the first error until the session ends.
+ */
+function makeErrorReplaySender(replay: ReplayIntegration): (replayId: unknown) => void {
+  let sending = false;
+  return (replayId) => {
+    if (sending) return;
+    sending = true;
+    const send = () => {
+      // A stopped replay would restart in full recording here, possibly on a private address.
+      if (replayId === undefined || replay.getReplayId() !== replayId) {
+        sending = false;
+        return;
+      }
+      void replay
+        .flush({ continueRecording: false })
+        .catch(() => {})
+        .then(() => {
+          sending = false;
+          restartBuffering(replay);
+        });
+    };
+    setTimeout(send, Math.max(0, bufferStartedAt + MIN_REPLAY_MS - Date.now()));
+  };
 }
 
 function pauseReplayOnAddressesWithQuery(replay: ReplayIntegration): void {
   const sync = () => {
-    const paused = addressHasQuery(window.location.hash, window.location.search);
-    if (paused && replay.getReplayId() !== undefined) void replay.stop();
-    else if (!paused && replay.getReplayId() === undefined) replay.startBuffering();
+    const paused = addressIsPrivate();
+    if (paused && replay.getReplayId() !== undefined) void replay.stop({ flush: false });
+    else if (!paused && replay.getReplayId() === undefined) startBuffering(replay);
   };
   // The router's hash history uses pushState, which fires no hashchange.
   window.navigation?.addEventListener("currententrychange", sync);

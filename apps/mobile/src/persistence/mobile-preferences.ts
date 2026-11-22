@@ -394,8 +394,9 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   if (typeof parsed.useLastProjectForNewThreads === "boolean") {
     preferences.useLastProjectForNewThreads = parsed.useLastProjectForNewThreads;
   }
-  if (typeof parsed.errorReportingEnabled === "boolean") {
-    preferences.errorReportingEnabled = parsed.errorReportingEnabled;
+  if (parsed.errorReportingEnabled !== undefined) {
+    // An unreadable consent counts as an opt-out, so the next save keeps reporting off.
+    preferences.errorReportingEnabled = parsed.errorReportingEnabled === true;
   }
   if (isThreadProject(parsed.lastThreadProject)) {
     preferences.lastThreadProject = parsed.lastThreadProject;
@@ -586,8 +587,9 @@ const make = Effect.fn("MobilePreferencesStore.make")(function* () {
       }
     }
 
+    let legacyJson: string | null = null;
     if (parsed === null) {
-      const legacyJson = yield* secureStorage.getItem(PREFERENCES_KEY);
+      legacyJson = yield* secureStorage.getItem(PREFERENCES_KEY);
       const legacyPreferences = parsePayload(legacyJson);
       parsed = legacyPreferences;
       if (legacyJson !== null && legacyPreferences !== null && databaseAvailable) {
@@ -604,7 +606,14 @@ const make = Effect.fn("MobilePreferencesStore.make")(function* () {
       }
     }
 
-    return parsed === null ? {} : sanitizePreferences(parsed);
+    if (parsed !== null) return sanitizePreferences(parsed);
+    // Stored preferences that could not be read may hold an opt-out this must not undo.
+    const unreadable =
+      !databaseAvailable ||
+      Option.isSome(storedJson) ||
+      fallbackJson !== null ||
+      legacyJson !== null;
+    return unreadable ? { errorReportingEnabled: false } : {};
   });
 
   const load = lock

@@ -275,19 +275,42 @@ function makeSentryLogger(bridge: Pick<SentrySpanBridge, "sentrySpanFor">) {
   });
 }
 
-function causeErrors(cause: Cause.Cause<unknown>): ReadonlyArray<unknown> {
-  const errors: Array<unknown> = [];
+function causeErrors(cause: Cause.Cause<unknown>): ReadonlyArray<Error> {
+  const errors: Array<Error> = [];
   for (const reason of cause.reasons) {
-    if (reason._tag === "Die") errors.push(reason.defect);
+    if (reason._tag === "Die") errors.push(defectError(reason.defect));
     else if (reason._tag === "Fail" && reason.error instanceof Error) errors.push(reason.error);
   }
   return errors;
 }
 
-// Most logs pass their failure as `{ cause }` or `{ error }` beside the message.
-function nestedErrors(message: unknown): ReadonlyArray<unknown> {
-  const errors: Array<unknown> = [];
+/**
+ * Sentry serializes the fields of a thrown non-Error into the report, and those can hold paths
+ * or user content; such a defect is reported by its kind alone.
+ */
+function defectError(defect: unknown): Error {
+  if (defect instanceof Error) return defect;
+  const error = new Error(`Defect that is not an Error: ${valueKind(defect)}`);
+  error.name = "NonErrorDefect";
+  // The logger's own frames would group every such defect into one issue.
+  error.stack = `${error.name}: ${error.message}`;
+  return error;
+}
+
+function valueKind(value: unknown): string {
+  if (typeof value !== "object" || value === null) return value === null ? "null" : typeof value;
+  if ("_tag" in value && typeof value._tag === "string") return value._tag;
+  return Array.isArray(value) ? "array" : "object";
+}
+
+// Logs pass their failure beside the message, on its own or as `{ cause }` or `{ error }`.
+function nestedErrors(message: unknown): ReadonlyArray<Error> {
+  const errors: Array<Error> = [];
   for (const part of Array.isArray(message) ? message : [message]) {
+    if (part instanceof Error) {
+      errors.push(part);
+      continue;
+    }
     if (typeof part !== "object" || part === null) continue;
     for (const key of ["cause", "error"] as const) {
       const value: unknown = (part as Record<string, unknown>)[key];

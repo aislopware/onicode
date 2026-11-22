@@ -92,7 +92,10 @@ const optionalReadableKey = <S extends Schema.Top>(schema: S) =>
   Schema.optionalKey(schema.pipe(Schema.catchDecoding(() => Effect.succeedNone)));
 
 const DesktopSettingsDocument = Schema.Struct({
-  errorReporting: optionalReadableKey(Schema.Boolean),
+  // An unreadable consent counts as an opt-out, so the next write keeps reporting off.
+  errorReporting: Schema.optionalKey(
+    Schema.Boolean.pipe(Schema.catchDecoding(() => Effect.succeedSome(false))),
+  ),
   localEnvironmentEnabled: optionalReadableKey(Schema.Boolean),
   linuxPasswordStore: optionalReadableKey(Schema.Unknown),
   mainWindowBounds: optionalReadableKey(Schema.NullOr(DesktopWindowBoundsDocument)),
@@ -112,19 +115,23 @@ type Mutable<T> = { -readonly [K in keyof T]: T[K] };
 const DesktopSettingsJson = fromLenientJson(DesktopSettingsDocument);
 const decodeDesktopSettingsJson = Schema.decodeEffect(DesktopSettingsJson);
 const encodeDesktopSettingsJson = Schema.encodeEffect(DesktopSettingsJson);
+const decodeDesktopSettingsJsonOption = Schema.decodeUnknownOption(DesktopSettingsJson);
 const decodeDesktopWindowBounds = Schema.decodeUnknownOption(DesktopWindowBoundsSchema);
-const decodeErrorReportingJson = Schema.decodeUnknownOption(
-  fromLenientJson(Schema.Struct({ errorReporting: Schema.optionalKey(Schema.Boolean) })),
-);
+
+// A damaged file must not undo an opt-out, here or in the file written over it.
+const UNREADABLE_DESKTOP_SETTINGS: DesktopSettings = {
+  ...DEFAULT_DESKTOP_SETTINGS,
+  errorReportingEnabled: false,
+};
 
 /**
  * The error reporting consent in a settings file's text. On when the file says nothing about it;
  * off when the file cannot be read, so a damaged file never undoes an opt-out.
  */
 export function parseErrorReportingConsent(raw: string): boolean {
-  return Option.match(decodeErrorReportingJson(raw), {
-    onNone: () => false,
-    onSome: (document) => document.errorReporting ?? true,
+  return Option.match(decodeDesktopSettingsJsonOption(raw), {
+    onNone: () => UNREADABLE_DESKTOP_SETTINGS.errorReportingEnabled,
+    onSome: (document) => normalizeDesktopSettingsDocument(document).errorReportingEnabled,
   });
 }
 const desktopWindowBoundsEquivalence = Schema.toEquivalence(DesktopWindowBoundsSchema);
@@ -383,7 +390,7 @@ function readSettings(
         onSome: (raw) =>
           decodeDesktopSettingsJson(raw).pipe(
             Effect.map(normalizeDesktopSettingsDocument),
-            Effect.orElseSucceed(() => DEFAULT_DESKTOP_SETTINGS),
+            Effect.orElseSucceed(() => UNREADABLE_DESKTOP_SETTINGS),
           ),
       }),
     ),
@@ -514,7 +521,7 @@ export const make = Effect.gen(function* () {
           ).pipe(
             Effect.annotateLogs({ settingsPath: environment.desktopSettingsPath }),
             Effect.andThen(Ref.set(persistenceEnabled, false)),
-            Effect.as(DEFAULT_DESKTOP_SETTINGS),
+            Effect.as(UNREADABLE_DESKTOP_SETTINGS),
           ),
         ),
       );
