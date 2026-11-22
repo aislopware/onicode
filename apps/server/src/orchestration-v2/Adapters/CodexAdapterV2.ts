@@ -8208,6 +8208,9 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
           providerSession: session,
           events: Stream.fromEffectRepeat(Queue.take(events)),
           canReuseContextUsage: canReuseCodexContextUsage,
+          // The app-server takes other `/name` text as a prompt; only `/goal` is routed natively.
+          runsAsNativeCommand: (message) =>
+            message.attachments.length === 0 && parseGoalCommand(message) !== null,
           normalizeThreadLoadModelSelection: normalizeCodexThreadLoadModelSelection,
           // Exec sessions, background terminals and subagents all live in the app-server process.
           backgroundTasksEndWithProcess: true,

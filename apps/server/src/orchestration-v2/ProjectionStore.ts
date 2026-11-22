@@ -5677,7 +5677,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             const messageIds = [run, unsentSource].flatMap((source) =>
               source === undefined ? [] : [source.userMessageId],
             );
-            // Earlier slash command turns defer context too; isSlashCommandMessage narrows the match.
+            // Earlier native command turns defer context too; isNativeCommandMessage narrows the match.
             const messages = yield* sql<PayloadRow>`
               SELECT payload_json FROM (
                 SELECT payload_json, created_at, message_id FROM orchestration_v2_projection_messages

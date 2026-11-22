@@ -802,6 +802,12 @@ export type ProviderAdapterV2SubagentOutcome = {
   readonly result: OrchestrationV2Subagent["result"];
 };
 
+// A first word with a second slash is a path, not a command.
+const LEADING_SLASH_COMMAND = /^\s*\/[^\s/]+(?:\s|$)/u;
+
+/** Text a provider that expands a leading `/name` runs as its own command. */
+export const opensWithSlashCommand = (text: string): boolean => LEADING_SLASH_COMMAND.test(text);
+
 export interface ProviderAdapterV2SessionRuntime {
   readonly instanceId: ProviderInstanceId;
   readonly driver: ProviderDriverKind;
@@ -848,6 +854,14 @@ export interface ProviderAdapterV2SessionRuntime {
       readonly providerThread: OrchestrationV2ProviderThread;
     },
   ) => Effect.Effect<boolean, ProviderAdapterV2Error>;
+  /**
+   * Whether this message runs as the provider's own command, which only runs when it opens the
+   * prompt, so the turn sends it verbatim and defers inline context. Absent: `opensWithSlashCommand`.
+   */
+  readonly runsAsNativeCommand?: (message: {
+    readonly text: string;
+    readonly attachments: ReadonlyArray<unknown>;
+  }) => boolean;
   readonly startTurn: (
     input: ProviderAdapterV2TurnInput,
   ) => Effect.Effect<void, ProviderAdapterV2Error>;

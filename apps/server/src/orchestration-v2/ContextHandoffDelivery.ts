@@ -2,7 +2,7 @@ import type {
   OrchestrationV2ContextHandoff,
   OrchestrationV2ProviderThread,
 } from "@onicode/contracts";
-import type * as ProviderAdapter from "@onicode/provider-core/server/ProviderAdapter";
+import * as ProviderAdapter from "@onicode/provider-core/server/ProviderAdapter";
 import { ContextHandoffBudgetError } from "@onicode/provider-core/server/failure";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -12,14 +12,24 @@ import {
   selectHistory,
 } from "@onicode/provider-core/server/handoffBudget";
 
-// A first word with a second slash is a path, not a command.
-const SLASH_COMMAND = /^\s*\/[^\s/]+(?:\s|$)/u;
-
-/** Providers only run a native command that opens the prompt, so its turn defers inline context to the next one. */
-export const isSlashCommandMessage = (message: {
+type CommandMessage = {
   readonly role: string;
   readonly text: string;
-}): boolean => message.role === "user" && SLASH_COMMAND.test(message.text);
+  readonly attachments?: ReadonlyArray<unknown> | undefined;
+};
+
+/** Providers only run a native command that opens the prompt, so its turn defers inline context to the next one. */
+export const isNativeCommandMessage = (
+  session: Pick<ProviderAdapter.ProviderAdapterV2SessionRuntime, "runsAsNativeCommand">,
+  message: CommandMessage,
+): boolean =>
+  message.role === "user" &&
+  (session.runsAsNativeCommand?.({ text: message.text, attachments: message.attachments ?? [] }) ??
+    ProviderAdapter.opensWithSlashCommand(message.text));
+
+/** Every message a provider could run as a command opens with `/`, as the projection index reads them. */
+export const mayBeNativeCommandMessage = (message: CommandMessage): boolean =>
+  message.role === "user" && message.text.trim().startsWith("/");
 
 /** The provider prompt for a turn that carries inline context ahead of the user's text. */
 export const withInlineContext = (context: string, userText: string): string =>

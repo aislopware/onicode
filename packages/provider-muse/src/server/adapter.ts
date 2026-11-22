@@ -2341,6 +2341,8 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
             ),
           ),
         compactThread: (args) => start(args, true).pipe(commands.withPermits(1)),
+        // Muse takes `/name` text as a prompt; compaction has its own route.
+        runsAsNativeCommand: () => false,
         steerTurn: Effect.fn("MuseAdapter.steerTurn")(
           function* (args) {
             const turn = active;

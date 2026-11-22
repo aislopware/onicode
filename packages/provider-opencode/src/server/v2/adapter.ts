@@ -4910,6 +4910,9 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
           const state = nativeId == null ? undefined : threads.get(nativeId);
           return state !== undefined && hasBackground(state);
         }),
+      // A listed command runs through session.command, which takes no attachments.
+      runsAsNativeCommand: (message) =>
+        message.attachments.length === 0 && commandOf(message.text) !== undefined,
       getModelContextWindow: (selection, cwd) =>
         selection.instanceId === instanceId
           ? windowOf(cwd === undefined ? session.cwd : cwd, selection.model)

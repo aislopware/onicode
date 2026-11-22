@@ -117,6 +117,7 @@ function makeTestAdapter(input: {
   readonly initialContextUsage?: OrchestrationV2ProviderThread["contextUsage"];
   readonly getModelContextWindow?: (selection: ModelSelection) => number | undefined;
   readonly canReuseContextUsage?: ProviderAdapter.ProviderAdapterV2SessionRuntime["canReuseContextUsage"];
+  readonly runsAsNativeCommand?: ProviderAdapter.ProviderAdapterV2SessionRuntime["runsAsNativeCommand"];
   readonly tokenUsageByRunOrdinal?: Readonly<
     Record<number, Omit<OrchestrationV2ProviderTurnTokenUsage, "updatedAt">>
   >;
@@ -206,6 +207,9 @@ function makeTestAdapter(input: {
           ...(input.getModelContextWindow === undefined
             ? {}
             : { getModelContextWindow: input.getModelContextWindow }),
+          ...(input.runsAsNativeCommand === undefined
+            ? {}
+            : { runsAsNativeCommand: input.runsAsNativeCommand }),
           ...(input.canReuseContextUsage === undefined
             ? {}
             : { canReuseContextUsage: input.canReuseContextUsage }),
@@ -3384,15 +3388,35 @@ describe("orchestration v2 provider switching", () => {
     }),
   );
 
-  it.live.each([
+  it.live.each<{
+    readonly name: string;
+    readonly text: string;
+    readonly verbatim: boolean;
+    readonly runsAsNativeCommand?: ProviderAdapter.ProviderAdapterV2SessionRuntime["runsAsNativeCommand"];
+  }>([
     { name: "a slash command", text: "/implement do X", verbatim: true },
     { name: "a message opening with a path", text: "/usr/lib/foo is broken", verbatim: false },
-  ] as const)(
+    // The target session decides: text it takes as a prompt gets the handoff now.
+    {
+      name: "a command it takes as a prompt",
+      text: "/review the diff",
+      verbatim: false,
+      runsAsNativeCommand: () => false,
+    },
+    {
+      name: "a namespaced command it runs",
+      text: "/team/review now",
+      verbatim: true,
+      runsAsNativeCommand: (message) => message.text.startsWith("/team/"),
+    },
+  ])(
     "a switched ACP provider gets $name with the handoff where the command allows it",
-    ({ text: firstMessage, verbatim }) =>
+    ({ text: firstMessage, verbatim, runsAsNativeCommand }) =>
       Effect.scoped(
         Effect.gen(function* () {
-          const cwd = yield* checkpointWorkspace(`slash-command-handoff-${verbatim}`);
+          const cwd = yield* checkpointWorkspace(
+            `slash-command-handoff-${firstMessage.replace(/\W+/g, "-")}`,
+          );
           const capturedTurns = yield* Ref.make<ReadonlyArray<CapturedTurn>>([]);
           const originalPrompt = "Keep the release marker violet and preserve the existing API.";
           const codexResponse = "I checked the API and found the release configuration.";
@@ -3412,6 +3436,7 @@ describe("orchestration v2 provider switching", () => {
               modelSelection: GROK_MODEL_SELECTION,
               responseByRunOrdinal: { 2: "Implemented.", 3: "Continued." },
               capturedTurns,
+              ...(runsAsNativeCommand === undefined ? {} : { runsAsNativeCommand }),
             }),
           ]);
           yield* Effect.gen(function* () {
