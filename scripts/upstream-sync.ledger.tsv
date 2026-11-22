@@ -3266,3 +3266,4 @@ a445025645	take	taken as is
 f10e1eb382	take	taken as is
 2251de4d2e	take	taken as is
 2c4310eb06	take	taken as is (desktop; mobile paste is native, no HTML clipboard path)
+344de5fe8e	take	fix(antigravity): bound silent post-settle background command holds
