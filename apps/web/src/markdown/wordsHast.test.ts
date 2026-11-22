@@ -153,6 +153,18 @@ const CASES: ReadonlyArray<readonly [markdown: string, html: string]> = [
     '<blockquote dir="ltr">\n<details>\n<summary>quoted</summary>\n<p>body</p>\n</details>\n</blockquote>',
   ],
   [
+    '<ul><li><a href="https://example.com">First</a><li>Second</ul>\n\n<ol><li>a<ul><li>b<li>c</ul><li>d</ol>',
+    '<ul dir="ltr"><li><a href="https://example.com">First</a></li><li>Second</li></ul>\n<ol dir="ltr"><li>a<ul><li>b</li><li>c</li></ul></li><li>d</li></ol>',
+  ],
+  [
+    "<dl><dt>a<dd>b<div>c<dt>d</dl>\n\n<table><tr><td>a<th>b<tr><td>c</table>",
+    '<dl dir="ltr"><dt>a</dt><dd>b<div>c</div></dd><dt>d</dt></dl>\n<table dir="ltr"><tbody><tr><td>a</td><th>b</th></tr><tr><td>c</td></tr></tbody></table>',
+  ],
+  [
+    "<div><constructor>x</constructor></div>\n\n<table><tr><td>one<tbody><tr><td>two</table>\n\n<ul><li><dialog>one<li>two</ul>",
+    '<div dir="ltr">x</div>\n<table dir="ltr"><tbody><tr><td>one</td></tr></tbody><tbody><tr><td>two</td></tr></tbody></table>\n<ul dir="ltr"><li>one</li><li>two</li></ul>',
+  ],
+  [
     '<h3 id="x">Raw heading</h3>\n\n## Markdown heading',
     '<h3 id="user-content-x" dir="ltr">Raw heading</h3>\n<h2 id="user-content-markdown-heading" dir="ltr">Markdown heading</h2>',
   ],
@@ -289,6 +301,22 @@ describe("wordsHast", () => {
     expect(html.match(/<svg /g)).toHaveLength(2);
     expect(html).toContain('aria-label="x^2 \\text{ for } n"');
     expect(html).toContain('style="white-space:pre"> for </text>');
+  });
+
+  // A `%` right after text is the percent sign agents mean; after a space or at a line start it
+  // stays a TeX comment. Copying keeps the formula as written.
+  it.each([
+    ["$5%$", "5%", "\\(5%\\)"],
+    ["$x = 5% + 2$", "x=5%+2", "\\(x = 5% + 2\\)"],
+    ["$\\mathrm{3.18% yield}$", "3.18%yield", "\\(\\mathrm{3.18% yield}\\)"],
+    ["$\\text{3.18% yield}$", "3.18% yield", "\\(\\text{3.18% yield}\\)"],
+    ["$$\na % note\n+ b\n$$", "a+b", "\\[\na % note\n+ b\n\\]\n\n"],
+    ["$$\n5% % note \\]\n+ 3\n$$", "5%+3", "\\[\n5% % note \\]\n+ 3\n\\]\n\n"],
+  ])("draws %j's percent signs as written", (markdown, drawn, copied) => {
+    const html = toHtml(wordsHast(markdown, { ...ASSISTANT, math: true }));
+    const glyphs = [...html.matchAll(/<text[^>]*>([^<]*)<\/text>/g)].map((match) => match[1]);
+    expect(glyphs.join("").normalize("NFKC")).toBe(drawn);
+    expect(html).toContain(`data-markdown-copy="${copied}"`);
   });
 
   it("keeps control bytes, blank lines, unclosed blocks, shell vars, and table dollars intact in math", () => {

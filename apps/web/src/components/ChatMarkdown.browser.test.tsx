@@ -185,6 +185,78 @@ function buttonsLabelled(container: HTMLElement, label: string) {
 
 const USER_MESSAGE = { userMessage: true };
 
+it("makes a display equation a named keyboard scroll stop only while it overflows", async () => {
+  setup();
+  settingsOverrides.mathRenderingEnabled = true;
+  const equation = (tex: string, width = 180, isStreaming = false) => (
+    <div style={{ width }}>
+      <button>Before equation</button>
+      <ChatMarkdown cwd={undefined} text={`Sum:\n\n$$\n${tex}\n$$`} isStreaming={isStreaming} />
+      <button>After equation</button>
+    </div>
+  );
+  const before = () => page.getByRole("button", { name: "Before equation" });
+  await using screen = await render(equation("x"));
+  await before().click();
+  await userEvent.keyboard("{Tab}");
+  await expect.element(page.getByRole("button", { name: "After equation" })).toHaveFocus();
+
+  const wide = "x_1 + x_2 + x_3 + x_4 + x_5 + x_6 + x_7 + x_8 + x_9 + x_{10}";
+  await screen.rerender(equation(wide, 180, true));
+  const scroller = page.getByRole("group", { name: "Scroll display equation" });
+  await expect.element(scroller).toBeVisible();
+  // Finishing the stream draws the formula again as part of one block; it keeps its stop.
+  await screen.rerender(equation(wide));
+  await expect.element(scroller).toBeVisible();
+  await before().click();
+  await userEvent.keyboard("{Tab}");
+  await expect.element(scroller).toHaveFocus();
+  await userEvent.keyboard("{ArrowRight}");
+  await expect.element(scroller).not.toHaveProperty("scrollLeft", 0);
+
+  await screen.rerender(equation(wide, 1000));
+  await expect.element(scroller).not.toBeInTheDocument();
+  await before().click();
+  await userEvent.keyboard("{Tab}");
+  await expect.element(page.getByRole("button", { name: "After equation" })).toHaveFocus();
+
+  // A formula in a streamed paragraph keeps its stop once the stream finishes.
+  const paragraph = (isStreaming: boolean) => (
+    <div style={{ width: 180 }}>
+      <div data-testid="message">
+        <ChatMarkdown cwd={undefined} text={`Intro\n\nSee $${wide}$`} isStreaming={isStreaming} />
+      </div>
+      <span data-testid="inline-row">
+        <ChatMarkdown cwd={undefined} inline text={`See $${wide}$`} />
+      </span>
+    </div>
+  );
+  await screen.rerender(paragraph(true));
+  const inlineScroller = page
+    .getByTestId("message")
+    .getByRole("group", { name: "Scroll inline equation" });
+  await expect.element(inlineScroller).toBeVisible();
+  await screen.rerender(paragraph(false));
+  await expect.element(inlineScroller).toBeVisible();
+  // Inline Markdown, such as a reasoning row that is itself a button, adds no stops of its own.
+  expect(
+    page.getByTestId("inline-row").element().querySelector("[data-markdown-math][tabindex]"),
+  ).toBeNull();
+
+  // Opening a collapsed section mounts its formulas without rendering the message again.
+  await screen.rerender(
+    <div style={{ width: 180 }}>
+      <ChatMarkdown
+        cwd={undefined}
+        text={`<details>\n<summary>Proof</summary>\n\n$$\n${wide}\n$$\n\n</details>`}
+      />
+    </div>,
+  );
+  page.getByRole("button", { name: "Proof" }).element().focus();
+  await userEvent.keyboard("{Enter}");
+  await expect.element(page.getByRole("group", { name: "Scroll display equation" })).toBeVisible();
+});
+
 it("keeps decimal markers in nested user lists while documents keep their counter styles", async () => {
   setup();
   const text = "1. Outer\n   1. Nested\n   7. Skipped\n      1. Deeper\n      4. Fourth";
