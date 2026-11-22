@@ -8,7 +8,7 @@ import {
 } from "@onicode/client-runtime/pull-request-editing";
 import { squashAtomCommandFailure } from "@onicode/client-runtime/state/runtime";
 import type { PullRequestDetail } from "@onicode/contracts";
-import { setMarkdownTaskChecked } from "@onicode/shared/markdownTaskList";
+import { setMarkdownTaskChecked } from "@onicode/shared/markdownTaskEdits";
 import { AsyncResult } from "effect/reactivity";
 import { useGT } from "gt-react-native";
 import { useRef, useState } from "react";

@@ -317,7 +317,7 @@ overrides:
 
 packageExtensionsChecksum: sha256-+v8ntounVLrYFu5whiqOiF5wsCM8sIM8cT3HaXVONag=
 
-pnpmfileChecksum: sha256-HpBnPcFwiEfe0KUWeYKGfQUjAC0nKKHm3aBulYModeU=
+pnpmfileChecksum: sha256-V4l4scZuq2tJGzv9CIPYF0cGBGNRBI8wBVBZg42BsCM=
 
 patchedDependencies:
   '@cursor/sdk@1.4.2': d9747bbf2d8fa7529b74b690087b70b3b2662fcba0d4d3148afc3b956171b54a
@@ -1019,6 +1019,9 @@ importers:
       '@pierre/trees':
         specifier: 1.0.0
         version: 1.0.0(@pierre/theme@2.0.0)(@shikijs/themes@4.2.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(shiki@4.2.0)
+      '@pierre/words':
+        specifier: file:deps/pierre-words-0.2.2-t3.4-7c04b7f1.tgz
+        version: file:apps/web/deps/pierre-words-0.2.2-t3.4-7c04b7f1.tgz(@pierre/highlights@0.5.2)(react@19.3.0)
       '@tanstack/react-pacer':
         specifier: ^0.24.1
         version: 0.24.1(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
@@ -1121,39 +1124,21 @@ importers:
       lucide-react:
         specifier: ^1.77.0
         version: 1.77.0(@types/react@19.3.0)(react@19.3.0)
-      mdast-util-from-markdown:
-        specifier: ^2.1.0
-        version: 2.1.0(supports-color@8.1.1)
-      micromark-util-combine-extensions:
-        specifier: ^2.0.1
-        version: 2.0.1
       pdfjs-dist:
         specifier: 6.5.438
         version: 6.5.438
       pele:
         specifier: 'catalog:'
         version: 1.13.0
+      property-information:
+        specifier: ^7.2.0
+        version: 7.2.0
       react:
         specifier: 'catalog:'
         version: 19.3.0
       react-dom:
         specifier: 'catalog:'
         version: 19.3.0(react@19.3.0)
-      react-markdown:
-        specifier: ^10.1.0
-        version: 10.1.0(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1)
-      remark-gfm:
-        specifier: 'catalog:'
-        version: 4.0.1(supports-color@8.1.1)
-      remark-math:
-        specifier: 6.0.0
-        version: 6.0.0(supports-color@8.1.1)
-      remark-parse:
-        specifier: 'catalog:'
-        version: 11.0.0(supports-color@8.1.1)
-      remark-rehype:
-        specifier: 'catalog:'
-        version: 11.1.2
       saxes:
         specifier: 6.0.0
         version: 6.0.0
@@ -1166,15 +1151,9 @@ importers:
       tiff:
         specifier: 7.1.3
         version: 7.1.3
-      unified:
-        specifier: 'catalog:'
-        version: 11.0.5
       use-sync-external-store:
         specifier: ^1.7.0
         version: 1.7.0(react@19.3.0)
-      vfile:
-        specifier: ^6.0.3
-        version: 6.0.3
       zustand:
         specifier: ^5.1.0
         version: 5.1.0(@types/react@19.3.0)(react@19.3.0)(use-sync-external-store@1.7.0(react@19.3.0))
@@ -1200,9 +1179,6 @@ importers:
       '@types/hast':
         specifier: ^3.0.4
         version: 3.0.5
-      '@types/mdast':
-        specifier: ^4.0.4
-        version: 4.0.4
       '@types/react':
         specifier: 'catalog:'
         version: 19.3.0
@@ -1224,9 +1200,6 @@ importers:
       gt:
         specifier: 2.28.4
         version: 2.28.4(@babel/core@7.29.13(supports-color@8.1.1))(supports-color@8.1.1)
-      micromark-util-types:
-        specifier: 'catalog:'
-        version: 2.0.3
       oxc-transform-react:
         specifier: ~0.156.0
         version: 0.156.0
@@ -1401,21 +1374,12 @@ importers:
       gt-i18n:
         specifier: 1.0.45
         version: 1.0.45
-      remark-gfm:
-        specifier: 'catalog:'
-        version: 4.0.1(supports-color@8.1.1)
-      remark-parse:
-        specifier: 'catalog:'
-        version: 11.0.0(supports-color@8.1.1)
       three:
         specifier: 0.187.0
         version: 0.187.0
       unbash:
         specifier: ^6.0.4
         version: 6.0.4
-      unified:
-        specifier: 'catalog:'
-        version: 11.0.5
     devDependencies:
       '@effect/vitest':
         specifier: 4.1.5
@@ -1429,6 +1393,15 @@ importers:
       '@types/three':
         specifier: 0.187.0
         version: 0.187.0
+      remark-gfm:
+        specifier: 'catalog:'
+        version: 4.0.1(supports-color@8.1.1)
+      remark-parse:
+        specifier: 'catalog:'
+        version: 11.0.0(supports-color@8.1.1)
+      unified:
+        specifier: 'catalog:'
+        version: 11.0.5
       vite-plus:
         specifier: 1.7.0
         version: 1.7.0(@astrojs/compiler-rs@0.5.1)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.0)(@vitest/ui@5.1.0)(@volar/typescript@2.4.28(typescript@7.0.2))(bufferutil@4.1.0)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.0.13)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.48.0)(typescript@7.0.2)(unrun@0.2.39)(utf-8-validate@6.0.6)(yaml@2.9.1)
@@ -2014,6 +1987,9 @@ importers:
       gt-i18n:
         specifier: 1.0.45
         version: 1.0.45
+      hast-util-sanitize:
+        specifier: ^5.0.2
+        version: 5.0.2
       mdast-util-directive:
         specifier: 'catalog:'
         version: 3.2.1(supports-color@8.1.1)
@@ -2066,12 +2042,18 @@ importers:
       '@effect/vitest':
         specifier: 4.1.5
         version: 4.1.5(patch_hash=78875d7920cfc710feed7e07e016ac9ff899acffcf40cb6342f11c08f28aa2b7)(@astrojs/compiler-rs@0.5.1)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.0)(@vitest/ui@5.1.0)(@volar/typescript@2.4.28(typescript@7.0.2))(bufferutil@4.1.0)(effect@4.1.5)(esbuild@0.28.2)(jiti@2.7.0)(jsdom@31.0.1(@napi-rs/canvas@1.0.13)(@noble/hashes@2.4.0))(playwright@1.65.1)(terser@5.48.0)(typescript@7.0.2)(unrun@0.2.39)(utf-8-validate@6.0.6)(yaml@2.9.1)
+      '@types/hast':
+        specifier: ^3.0.5
+        version: 3.0.5
       '@types/mdast':
         specifier: ^4.0.4
         version: 4.0.4
       '@types/node':
         specifier: 26.6.6
         version: 26.6.6
+      hast-util-to-html:
+        specifier: ^9.0.5
+        version: 9.0.7
       micromark-util-types:
         specifier: 'catalog:'
         version: 2.0.3
@@ -6024,6 +6006,18 @@ packages:
       react:
         optional: true
       react-dom:
+        optional: true
+
+  '@pierre/words@file:apps/web/deps/pierre-words-0.2.2-t3.4-7c04b7f1.tgz':
+    resolution: {integrity: sha512-EuIvU8imMY3c/deOHm9/gEh9VJga8R7jjWiIKfjKHbDXjgMo/O3NDN15H0dLc/vo+YTf/QpY0xinfnv7xpf7Rw==, tarball: file:apps/web/deps/pierre-words-0.2.2-t3.4-7c04b7f1.tgz}
+    version: 0.2.2-t3.4
+    peerDependencies:
+      '@pierre/highlights': '>=0.5.1'
+      react: ^18.3.1 || ^19.0.0
+    peerDependenciesMeta:
+      '@pierre/highlights':
+        optional: true
+      react:
         optional: true
 
   '@pinojs/redact@0.4.0':
@@ -10535,12 +10529,6 @@ packages:
   react-is@19.3.1:
     resolution: {integrity: sha512-RRieF6IyxQBkcK6pP8xOHprLTPW6QjRkbGdImtqNme+/hYVwCZkLQLdlZGOhUqXwkS9IEynaGvPJtv6XB/cz0Q==}
 
-  react-markdown@10.1.0:
-    resolution: {integrity: sha512-qKxVopLT/TyA6BX3Ue5NwabOsAzm0Q7kAPwq6L+wWDwisYs7R8vZ0nRXqq6rkueboxpkjvLGU9fWifiX/ZZFxQ==}
-    peerDependencies:
-      '@types/react': '>=18'
-      react: '>=18'
-
   react-native-enriched-markdown@file:apps/mobile/deps/react-native-enriched-markdown-1.2.0-oni.24-1ed02329.tgz:
     resolution: {integrity: sha512-URqUYFqiGR3DUS1/n7f8mF3PI35er2I2vbur4DtnvKrtDeEN/NU5DZFLJQYW/tA5hr0VvOTB5wnnebOYN4xMBg==, tarball: file:apps/mobile/deps/react-native-enriched-markdown-1.2.0-oni.24-1ed02329.tgz}
     version: 1.2.0-oni.24
@@ -14995,6 +14983,11 @@ snapshots:
       - '@pierre/theme'
       - '@shikijs/themes'
       - shiki
+
+  '@pierre/words@file:apps/web/deps/pierre-words-0.2.2-t3.4-7c04b7f1.tgz(@pierre/highlights@0.5.2)(react@19.3.0)':
+    optionalDependencies:
+      '@pierre/highlights': 0.5.2
+      react: 19.3.0
 
   '@pinojs/redact@0.4.0': {}
 
@@ -20283,24 +20276,6 @@ snapshots:
   react-is@18.3.1: {}
 
   react-is@19.3.1: {}
-
-  react-markdown@10.1.0(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1):
-    dependencies:
-      '@types/hast': 3.0.5
-      '@types/mdast': 4.0.4
-      '@types/react': 19.3.0
-      devlop: 1.1.0
-      hast-util-to-jsx-runtime: 2.3.7(supports-color@8.1.1)
-      html-url-attributes: 3.0.1
-      mdast-util-to-hast: 13.2.2(patch_hash=4f2624b703a13e41f89aa25183761df9f40f1b22b3667aae3c6875a9e0d3e055)
-      react: 19.3.0
-      remark-parse: 11.0.0(supports-color@8.1.1)
-      remark-rehype: 11.1.2
-      unified: 11.0.5
-      unist-util-visit: 5.1.0
-      vfile: 6.0.3
-    transitivePeerDependencies:
-      - supports-color
 
   react-native-enriched-markdown@file:apps/mobile/deps/react-native-enriched-markdown-1.2.0-oni.24-1ed02329.tgz(katex@0.19.1)(react-native@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(react@19.3.0):
     dependencies:

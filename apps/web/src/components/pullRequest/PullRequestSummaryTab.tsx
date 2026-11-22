@@ -87,7 +87,7 @@ import {
   startDescriptionSave,
   type DescriptionDraft,
 } from "@onicode/client-runtime/pull-request-editing";
-import { setMarkdownTaskChecked } from "@onicode/shared/markdownTaskList";
+import { setMarkdownTaskChecked } from "@onicode/shared/markdownTaskEdits";
 import { PullRequestMarkdown } from "./PullRequestMarkdown";
 import { PullRequestCommentBody } from "./PullRequestCommentBody";
 import { PullRequestMoreReplies } from "./PullRequestMoreReplies";

@@ -1,45 +1,44 @@
-import { changeRequestReferenceAutolinker } from "@onicode/client-runtime/pull-request-markdown";
-import remarkParse from "remark-parse";
-import { unified } from "unified";
+import type { Element, Root } from "hast";
 import { describe, expect, it } from "vite-plus/test";
 
+import { wordsHast } from "~/markdown/wordsHast";
 import {
   pullRequestCommentPreview,
-  pullRequestMarkdownPlugins,
-  remarkPullRequestAutolinks,
+  pullRequestMarkdownExtensions,
 } from "./pullRequestMarkdown.logic";
 
-type Node = {
-  type: string;
-  value?: string;
-  url?: string;
-  data?: { hProperties?: Record<string, unknown> };
-  children?: Node[];
-};
-
 function links(markdown: string) {
-  const autolinks = changeRequestReferenceAutolinker({
+  const extensions = pullRequestMarkdownExtensions({
     provider: "github",
     url: "https://github.com/team/repo/pull/8",
-  })!;
-  const tree = unified().use(remarkParse).parse(markdown) as Node;
-  remarkPullRequestAutolinks({ autolinks })(tree as never);
-  const found: Array<[string | undefined, string | undefined, unknown]> = [];
-  const visit = (node: Node) => {
-    if (node.type === "link") {
-      found.push([
-        node.children?.[0]?.value,
-        node.url,
-        node.data?.hProperties?.["dataPullRequestAutolink"],
-      ]);
+  });
+  const tree = wordsHast(markdown, {
+    math: false,
+    breaks: false,
+    escapeHtml: false,
+    insights: false,
+    extensions,
+  });
+  const found: Array<[string, unknown, unknown]> = [];
+  const visit = (node: Root | Element) => {
+    for (const child of node.children) {
+      if (child.type !== "element") continue;
+      if (child.tagName === "a") {
+        const label = child.children[0];
+        found.push([
+          label?.type === "text" ? label.value : "",
+          child.properties.href,
+          child.properties.dataPullRequestAutolink,
+        ]);
+      }
+      visit(child);
     }
-    node.children?.forEach(visit);
   };
   visit(tree);
   return found;
 }
 
-describe("remarkPullRequestAutolinks", () => {
+describe("pullRequestMarkdownExtensions", () => {
   it("links the host's references in prose and leaves links and code alone", () => {
     expect(
       links(
@@ -49,6 +48,8 @@ describe("remarkPullRequestAutolinks", () => {
       ["#12", "https://github.com/team/repo/issues/12", "reference"],
       ["abcdef1", "https://github.com/team/repo/commit/abcdef1", "commit"],
       ["#13", "https://example.com", undefined],
+      // Raw HTML anchors render as links of their own, never autolinked again.
+      ["#16", "https://example.com", undefined],
       ["#17", "https://github.com/team/repo/issues/17", "reference"],
     ]);
     expect(links('<code title="<!--">#19</code> <!--> <code>#20</code>')).toEqual([]);
@@ -56,20 +57,26 @@ describe("remarkPullRequestAutolinks", () => {
       ["#18", "https://github.com/team/repo/issues/18", "reference"],
     ]);
   });
-});
-
-describe("pullRequestMarkdownPlugins", () => {
   it.each([
     ["github", "https://github.com/team/repo/pull/8"],
     ["gitlab", "https://gitlab.com/team/repo/-/merge_requests/8"],
   ])("renders %s emoji shortcodes in prose and leaves code literal", (provider, url) => {
-    const processor = unified().use(remarkParse).use(pullRequestMarkdownPlugins({ provider, url }));
-    const markdown = "Ship it :tada: :+1: `:tada:` Use <code>:smile:</code> here :smile:";
-    const tree = processor.runSync(processor.parse(markdown)) as Node;
-    const text = (node: Node): string =>
-      (node.type === "inlineCode" ? `\`${node.value}\`` : (node.value ?? "")) +
-      (node.children ?? []).map(text).join("");
-    expect(text(tree)).toBe("Ship it 🎉 👍 `:tada:` Use <code>:smile:</code> here 😄");
+    const extensions = pullRequestMarkdownExtensions({ provider, url });
+    const tree = wordsHast("Ship it :tada: :+1: `:tada:` Use <code>:smile:</code> here :smile:", {
+      math: false,
+      breaks: false,
+      escapeHtml: false,
+      insights: false,
+      extensions,
+    });
+    const text = (node: Root | Element | Root["children"][number]): string => {
+      if (node.type === "text") return node.value;
+      if (node.type === "element" && node.tagName === "code") {
+        return `\`${node.children.map(text).join("")}\``;
+      }
+      return "children" in node ? node.children.map(text).join("") : "";
+    };
+    expect(text(tree)).toBe("Ship it 🎉 👍 `:tada:` Use `:smile:` here 😄");
   });
 });
 

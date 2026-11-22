@@ -1,6 +1,6 @@
 import { findThreadSearchOccurrences } from "@onicode/shared/threadSearch";
 import { useEffect, useEffectEvent, useRef } from "react";
-import { THREAD_FIND_BLOCK_TAGS } from "@onicode/shared/threadFindText";
+import { THREAD_FIND_BLOCK_TAGS } from "@onicode/shared/threadFindBlockTags";
 
 import { observeResize } from "~/lib/observeResize";
 

@@ -566,7 +566,7 @@ export default defineConfig({
                 {
                   // These triggers render no styles of their own; Base UI merges className onto
                   // the element they render, so classes here style that element.
-                  pattern: "^(Collapsible|Tooltip|Popover|Menu)Trigger$",
+                  pattern: "^(Collapsible|Tooltip|SharedTooltip|Popover|Menu)Trigger$",
                   allow: ["layout", "color", "typography", "spacing", "shape", "effects", "motion"],
                 },
               ],
