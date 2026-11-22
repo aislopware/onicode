@@ -72,29 +72,41 @@ it("prefers a LAN address over a tailnet one for a private-network pairing URL",
   ).toBe("http://192.168.1.42:3773");
 });
 
-it("skips Windows VirtualBox and VMware host-only adapters for a private-network listener", () => {
-  expect(
-    resolveHeadlessConnectionString("0.0.0.0", 3773, {
-      interfaces: {
-        "VirtualBox Host-Only Network": [{ ...ipv4("192.168.56.1"), mac: "0a:00:27:00:00:0a" }],
-        "VMware Network Adapter VMnet8": [{ ...ipv4("192.168.159.1"), mac: "00:50:56:c0:00:08" }],
-        "Wi-Fi": [{ ...ipv4("192.168.1.20"), mac: "3c:22:fb:12:34:56" }],
-      },
-      privateNetworkOnly: true,
-      platform: "win32",
-    }),
-  ).toBe("http://192.168.1.20:3773");
-});
+it.each([true, false])(
+  "skips Windows VirtualBox and VMware host-only adapters (private-network listener: %s)",
+  (privateNetworkOnly) => {
+    const hostOnly = {
+      "VirtualBox Host-Only Network": [{ ...ipv4("192.168.56.1"), mac: "0a:00:27:00:00:0a" }],
+      "VMware Network Adapter VMnet8": [{ ...ipv4("192.168.159.1"), mac: "00:50:56:c0:00:08" }],
+    };
+    const pair = (interfaces: Record<string, NodeOS.NetworkInterfaceInfo[]>) =>
+      resolveHeadlessConnectionString("0.0.0.0", 3773, {
+        interfaces,
+        privateNetworkOnly,
+        platform: "win32",
+      });
+    expect(
+      pair({ ...hostOnly, "Wi-Fi": [{ ...ipv4("192.168.1.20"), mac: "3c:22:fb:12:34:56" }] }),
+    ).toBe("http://192.168.1.20:3773");
+    // Only a wildcard listener open to every network falls back to a host-only adapter.
+    expect(pair(hostOnly)).toBe(
+      privateNetworkOnly ? "http://localhost:3773" : "http://192.168.56.1:3773",
+    );
+  },
+);
 
-it("skips NixOS container and systemd-nspawn veths for a private-network pairing URL", () => {
-  expect(
-    resolveHeadlessConnectionString("0.0.0.0", 3773, {
-      interfaces: { "ve-jellyfin": [ipv4("192.168.53.193")], eth0: [ipv4("192.168.0.18")] },
-      privateNetworkOnly: true,
-      platform: "linux",
-    }),
-  ).toBe("http://192.168.0.18:3773");
-});
+it.each([true, false])(
+  "skips NixOS container and systemd-nspawn veths for a pairing URL (private-network listener: %s)",
+  (privateNetworkOnly) => {
+    expect(
+      resolveHeadlessConnectionString("0.0.0.0", 3773, {
+        interfaces: { "ve-jellyfin": [ipv4("192.168.53.193")], eth0: [ipv4("192.168.0.18")] },
+        privateNetworkOnly,
+        platform: "linux",
+      }),
+    ).toBe("http://192.168.0.18:3773");
+  },
+);
 
 it("targets the bound interface when the listener binds a specific address", () => {
   const hostFor = (ip: string) =>

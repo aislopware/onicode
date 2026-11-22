@@ -478,10 +478,14 @@ export interface ThreadManagementServiceShape {
   readonly listAppOwnedChildThreadIds: Orchestrator.OrchestratorV2["Service"]["listAppOwnedChildThreadIds"];
   readonly getThreadLinkMetadata: Orchestrator.OrchestratorV2["Service"]["getThreadLinkMetadata"];
   readonly getThreadTitles: Orchestrator.OrchestratorV2["Service"]["getThreadTitles"];
-  /** Omit `projectId` to list every project's threads. Side chats are never listed. */
+  /**
+   * Omit `projectId` to list every project's threads. Side chats are never listed.
+   * Without subagents, `includeDelegated` still lists tasks delegated from a linked environment.
+   */
   readonly listProjectThreads: (input: {
     readonly projectId?: ProjectId | undefined;
     readonly includeSubagents: boolean;
+    readonly includeDelegated?: boolean | undefined;
   }) => Effect.Effect<ReadonlyArray<ActiveThreadListEntry>, ThreadManagementError>;
   readonly sendToThread: (
     input: ThreadManagementSendInput,
@@ -898,7 +902,8 @@ const make = Effect.gen(function* () {
           .filter((thread) =>
             input.includeSubagents
               ? thread.lineage.sideChat !== true
-              : isListedThreadLineage(thread.lineage) && !isDelegatedAppThread(thread),
+              : isListedThreadLineage(thread.lineage) &&
+                (input.includeDelegated === true || !isDelegatedAppThread(thread)),
           )
           .toSorted(
             (left, right) =>

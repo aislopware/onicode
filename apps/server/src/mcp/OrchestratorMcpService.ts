@@ -3392,6 +3392,7 @@ const make = Effect.gen(function* () {
         .listProjectThreads({
           projectId: projectId ?? undefined,
           includeSubagents: input.includeSubagents !== false,
+          includeDelegated: input.includeDelegated === true,
         })
         .pipe(Effect.mapError(listFailure));
       const nowMs = yield* Clock.currentTimeMillis;

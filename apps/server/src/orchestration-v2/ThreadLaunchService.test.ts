@@ -532,6 +532,15 @@ it.effect("leaves a task delegated from a linked environment out of the top-leve
       listed.map((thread) => thread.id),
       [ThreadId.make("thread:top-level")],
     );
+    const withDelegated = yield* threads.listProjectThreads({
+      projectId,
+      includeSubagents: false,
+      includeDelegated: true,
+    });
+    assert.sameMembers(
+      withDelegated.map((thread) => thread.id),
+      [ThreadId.make("thread:top-level"), delegated.threadId],
+    );
     const all = yield* threads.listProjectThreads({ projectId, includeSubagents: true });
     assert.include(
       all.map((thread) => thread.id),

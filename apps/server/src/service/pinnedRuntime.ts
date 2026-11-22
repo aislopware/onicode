@@ -825,8 +825,10 @@ const selectUnusedRuntimes = Effect.fn("service.pinned_runtime.select_unused")(f
     if (version.startsWith(PINNED_RUNTIME_STAGING_PREFIX)) {
       // A crashed or interrupted install leaves its staging directory behind.
       const stagingDir = path.join(versionsDir, version);
-      const modifiedAt = yield* fs.stat(stagingDir).pipe(
-        Effect.map((info) => Option.getOrUndefined(info.mtime)?.getTime()),
+      const modifiedAt = yield* fs.lstat(stagingDir).pipe(
+        Effect.map((info) =>
+          info.type === "Directory" ? Option.getOrUndefined(info.mtime)?.getTime() : undefined,
+        ),
         Effect.orElseSucceed(() => undefined),
       );
       if (modifiedAt !== undefined && modifiedAt < settledBefore) pruned.add(stagingDir);

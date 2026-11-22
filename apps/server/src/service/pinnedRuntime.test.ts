@@ -775,13 +775,25 @@ it.layer(NodeServices.layer)("prunePinnedRuntimes", (it) => {
       const { baseDir, versionsDir, install } = yield* setup(["1.0.0"]);
       yield* install(".staging-abc", "never");
       yield* fs.utimes(path.join(versionsDir, ".staging-abc"), 0, 0);
+      // Only a real directory is an abandoned staging tree.
+      const outside = path.join(baseDir, "outside");
+      yield* fs.makeDirectory(outside);
+      yield* fs.utimes(outside, 0, 0);
+      yield* fs.symlink(outside, path.join(versionsDir, ".staging-link"));
+      yield* fs.writeFileString(path.join(versionsDir, ".staging-file"), "");
+      yield* fs.utimes(path.join(versionsDir, ".staging-file"), 0, 0);
 
       yield* prunePinnedRuntimes({ baseDir, keep: ["1.0.0"] }).pipe(
         Effect.provideService(ProcessRunner.ProcessRunner, lsofRunner("p1\nftxt\nn/bin/sh\n")),
         Effect.provideService(HostProcess.Platform, "darwin"),
         Effect.provideService(HostProcess.Environment, {}),
       );
-      assert.deepEqual(yield* fs.readDirectory(versionsDir), ["1.0.0"]);
+      assert.deepEqual((yield* fs.readDirectory(versionsDir)).toSorted(), [
+        ".staging-file",
+        ".staging-link",
+        "1.0.0",
+      ]);
+      assert.isTrue(yield* fs.exists(outside));
     }),
   );
 
