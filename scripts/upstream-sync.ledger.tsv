@@ -3177,3 +3177,4 @@ b5709bb865	take	MISSING migration 103 test applied to Onicode's 108_IssueTracker
 76b421864b	take	fix(web): Ctrl+click in the composer no longer outlines the whole line (#40628); @tiptap/extension-paragraph pinned to Onicode's tiptap ^3.34.0
 b5a0352bfd	take	fix(server): log when a settle script is skipped because its worktree is gone (#40627)
 a9447cedbd	take	fix(web): Cite button appears as fast after a double-click as after a drag (#33221)
+67bf1e693a	take	fix(desktop): AppImage onicode serve stops cleanly under systemd (#40624)
