@@ -180,10 +180,11 @@ const stopAllPoolInstances = Effect.fn("desktop.app.stopAllPoolInstances")(
  */
 const restartOnFeatureFlagChange = Effect.fn("desktop.restartOnFeatureFlagChange")(function* (
   backend: DesktopBackendManager.DesktopBackendInstance,
+  launchedWith: string | undefined,
 ) {
   const state = yield* DesktopState.DesktopState;
   const shellEnvironment = yield* DesktopShellEnvironment.DesktopShellEnvironment;
-  let startedWith = (yield* HostProcess.Environment).ONICODE_FEATURE_FLAGS;
+  let startedWith = launchedWith;
   yield* shellEnvironment.updates.pipe(
     Stream.filter((snapshot) => snapshot.discovered),
     Stream.runForEach(
@@ -293,9 +294,11 @@ const startLocalBackend = Effect.gen(function* () {
   if (settings.wslOnly === true && settings.wslBackendEnabled === true) {
     yield* desktopWindow.showConnectingSplash;
   }
+  // Read before starting: discovery can change the flags while the backend launches.
+  const launchFeatureFlags = (yield* HostProcess.Environment).ONICODE_FEATURE_FLAGS;
   yield* primaryBackend.start;
   yield* logBootstrapInfo("bootstrap backend start requested");
-  yield* Effect.forkScoped(restartOnFeatureFlagChange(primaryBackend));
+  yield* Effect.forkScoped(restartOnFeatureFlagChange(primaryBackend, launchFeatureFlags));
   // The renderer asks for this token first; minting it at readiness saves a round trip.
   yield* Effect.forkScoped(
     (yield* DesktopLocalEnvironmentAuth.DesktopLocalEnvironmentAuth).getBearerToken.pipe(

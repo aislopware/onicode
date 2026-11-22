@@ -2888,6 +2888,86 @@ it.layer(Layer.merge(layerTest, ProviderContinuationRequests.layer))(
       }),
     );
 
+    it.effect("starts the queue after a run ends even when the first start fails", () =>
+      Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const sink = yield* EventSink.EventSinkV2;
+        const now = yield* DateTime.now;
+        const threadId = ThreadId.make("thread:failed-queued-start");
+        const runId = RunId.make("run:failed-queued-start:origin");
+        yield* seedParentWithTerminalTask({
+          threadId,
+          projectId: ProjectId.make("project:failed-queued-start"),
+          runId,
+          rootNodeId: NodeId.make("node:failed-queued-start:root"),
+          taskId: NodeId.make("node:failed-queued-start:task"),
+          deliveryState: "acknowledged",
+          parentRunStatus: "running",
+          now,
+        });
+        const messageId = MessageId.make("message:failed-queued-start:next");
+        const queuedAt = yield* orchestrator.dispatch({
+          type: "message.dispatch",
+          createdBy: "user",
+          creationSource: "web",
+          commandId: CommandId.make("command:failed-queued-start:next"),
+          threadId,
+          messageId,
+          text: "Next",
+          attachments: [],
+          dispatchMode: { type: "queue_after_active" },
+        });
+        const projection = yield* orchestrator.getThreadProjection(threadId);
+        const queued = projection.runs.find((run) => run.userMessageId === messageId)!;
+        const origin = projection.runs.find((run) => run.id === runId)!;
+        assert.equal(queued.status, "queued");
+        const write = sink.writeWithEffects;
+        let failedStarts = 0;
+        using _write = vi.spyOn(sink, "writeWithEffects").mockImplementation((input) =>
+          failedStarts === 0 &&
+          input.events.some(
+            (event) =>
+              event.type === "run.updated" &&
+              event.payload.id === queued.id &&
+              event.payload.status !== "queued",
+          )
+            ? Effect.sync(() => {
+                failedStarts += 1;
+              }).pipe(Effect.andThen(Effect.die("queued start write failed")))
+            : write(input),
+        );
+        const started = yield* sink
+          .stream({ threadId, afterSequence: queuedAt.sequence, eventType: "run.updated" })
+          .pipe(
+            Stream.filter(
+              (stored) =>
+                stored.event.type === "run.updated" &&
+                stored.event.payload.id === queued.id &&
+                stored.event.payload.status !== "queued",
+            ),
+            Stream.take(1),
+            Stream.runDrain,
+            Effect.forkChild({ startImmediately: true }),
+          );
+        yield* sink.writeWithEffects({
+          commandId: CommandId.make("command:failed-queued-start:ended"),
+          events: [
+            {
+              id: EventId.make("event:failed-queued-start:ended"),
+              type: "run.updated",
+              threadId,
+              runId,
+              occurredAt: now,
+              payload: { ...origin, status: "completed", completedAt: now },
+            },
+          ],
+          effects: [],
+        });
+        yield* Fiber.join(started);
+        assert.equal(failedStarts, 1);
+      }),
+    );
+
     it.effect.each(["live", "checkpoint-retry", "checkpoint-offer-retry"] as const)(
       "delivers the run a background command's wake starts after the original result (%s)",
       (delivery) =>

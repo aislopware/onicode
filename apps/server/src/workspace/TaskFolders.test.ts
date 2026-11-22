@@ -672,15 +672,28 @@ it.live(
 );
 
 // A project that is itself a linked worktree registers its worktrees in the repository it follows.
-it.live.each([{ linked: false }, { linked: true }])(
-  "runs the layout command of a project that tracks no other repository, linked worktree=$linked",
-  ({ linked }) =>
+// Opened through a link, its relative `gitdir` still leads there, as it does for Git.
+it.live.each([
+  { linked: false, throughLink: false },
+  { linked: true, throughLink: false },
+  { linked: true, throughLink: true },
+])(
+  "runs the layout command of a project that tracks no other repository, linked worktree=$linked, through a link=$throughLink",
+  ({ linked, throughLink }) =>
     withState((state) =>
       Effect.gen(function* () {
         const { fileSystem, path, tmp, run, repository, worktreeCount } = yield* fixture;
         const origin = yield* repository(linked ? "origin" : "mono");
-        const mono = path.join(tmp, "mono");
-        if (linked) yield* run(origin, "worktree", "add", "-q", "-b", "dev", mono);
+        let mono = path.join(tmp, "mono");
+        if (linked) {
+          const relative = throughLink ? ["-c", "worktree.useRelativePaths=true"] : [];
+          yield* run(origin, ...relative, "worktree", "add", "-q", "-b", "dev", mono);
+        }
+        if (throughLink) {
+          yield* fileSystem.makeDirectory(path.join(tmp, "home"));
+          yield* fileSystem.symlink(mono, path.join(tmp, "home", "mono"));
+          mono = path.join(tmp, "home", "mono");
+        }
         yield* fileSystem.writeFileString(
           path.join(mono, "onicode.json"),
           JSON.stringify({
@@ -1188,6 +1201,37 @@ it.live("restores a recorded repository the project stopped tracking as its work
         })
         .pipe(Effect.flip);
       assert.include(refused.detail, "lies behind a link");
+    }),
+  ),
+);
+
+it.live("never rebuilds a missing plain project folder through a link on its way", () =>
+  withState((state) =>
+    Effect.gen(function* () {
+      const { fileSystem, path, tmp, repository } = yield* fixture;
+      const notes = path.join(tmp, "x", "docs", "notes");
+      yield* fileSystem.makeDirectory(notes, { recursive: true });
+      yield* fileSystem.writeFileString(path.join(notes, "AGENTS.md"), "rules\n");
+      const app = yield* repository("x/app");
+      state.workspaceRoot = notes;
+      state.trackedFolders = tracked(app);
+      const { taskFolder } = yield* create("feature");
+      const docs = path.join(taskFolder.root, "docs");
+      assert.equal(taskFolder.projectPath, path.join(docs, "notes"));
+
+      const elsewhere = path.join(tmp, "elsewhere");
+      yield* fileSystem.makeDirectory(elsewhere);
+      yield* fileSystem.remove(docs, { recursive: true });
+      yield* fileSystem.symlink(elsewhere, docs);
+      const refused = yield* (yield* TaskFolders.TaskFolders)
+        .restore({
+          taskFolder,
+          branch: "feature",
+          recreate: () => Effect.die("the repository's worktree is still there"),
+        })
+        .pipe(Effect.flip);
+      assert.include(refused.detail, "lies behind a link");
+      assert.deepStrictEqual(yield* fileSystem.readDirectory(elsewhere), []);
     }),
   ),
 );

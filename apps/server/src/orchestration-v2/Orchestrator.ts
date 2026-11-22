@@ -17322,7 +17322,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                 ),
               ),
               Effect.andThen(
-                startNextQueuedRun(threadId, {
+                startNextQueuedRunAfterCommit("run-ended", threadId, {
                   endedRunId: run.id,
                   ...(run.status === "failed" ? { failedRunId: run.id } : {}),
                 }),

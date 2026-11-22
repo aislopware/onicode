@@ -17,7 +17,7 @@ const encodeJsonLine = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
 const makeFakePi = (
   reply: string,
-  setModelError?: string,
+  setModelError?: unknown,
   turnEvents: ReadonlyArray<Record<string, unknown>> = [],
   models?: ReadonlyArray<Record<string, unknown>>,
   version = "0.84.3",
@@ -109,9 +109,13 @@ it.effect("runs Pi offline, since the process is stopped as soon as it answers",
   }),
 );
 
-it.effect("names the model and the disabled extensions when Pi cannot load it", () =>
+it.effect.each([
+  "Model not found: demo/demo-model (Authorization: Bearer sk-demo-secret-0123456789)",
+  // Serialized, the quote is escaped, and redaction must not stop at it.
+  { message: "Model not found: demo/demo-model", password: 'pass"sk-demo-secret' },
+])("names the model and the disabled extensions when Pi cannot load it", (setModelError) =>
   Effect.gen(function* () {
-    const pi = yield* makeFakePi("", "Model not found: demo/demo-model");
+    const pi = yield* makeFakePi("", setModelError);
     const textGeneration = yield* makePiTextGeneration(
       { enabled: true, binaryPath: "pi", launchArgs: "", customModels: [] },
       {},
@@ -130,6 +134,8 @@ it.effect("names the model and the disabled extensions when Pi cannot load it", 
     assert.equal(error._tag, "TextGenerationError");
     assert.include(error.detail, "Pi rejected model 'demo/demo-model'");
     assert.include(error.detail, "Model not found: demo/demo-model");
+    assert.notInclude(JSON.stringify(error), "sk-demo-secret");
+    assert.notInclude(Cause.pretty(Cause.fail(error)), "sk-demo-secret");
     assert.include(error.detail, "--no-extensions");
     assert.isUndefined(pi.received.find((record) => record["type"] === "prompt"));
   }),

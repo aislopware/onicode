@@ -49,13 +49,13 @@ it("redacts credentials whose key names end in a credential word", () => {
   const failure = makeProviderFailure({
     code: '{"refresh_token":"code value"}',
     message:
-      'oauth refresh failed: client_secret=client-value refresh_token=refresh-value {"client_secret":"json-value"} clientSecret: camel-value X-Auth-Token: header-value max_tokens=4096',
+      'oauth refresh failed: client_secret=client-value refresh_token=refresh-value {"client_secret":"json-value"} {"password":"pass\\"json-tail"} password="pass\\"assigned-tail" clientSecret: camel-value X-Auth-Token: header-value max_tokens=4096',
   });
 
   assert.equal(failure.code, '{"refresh_token":"[REDACTED]"}');
   assert.equal(
     failure.message,
-    'oauth refresh failed: client_secret=[REDACTED] refresh_token=[REDACTED] {"client_secret":"[REDACTED]"} clientSecret: [REDACTED] X-Auth-Token: [REDACTED] max_tokens=4096',
+    'oauth refresh failed: client_secret=[REDACTED] refresh_token=[REDACTED] {"client_secret":"[REDACTED]"} {"password":"[REDACTED]"} password=[REDACTED] clientSecret: [REDACTED] X-Auth-Token: [REDACTED] max_tokens=4096',
   );
 });
 

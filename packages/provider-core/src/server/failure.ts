@@ -271,18 +271,33 @@ function replaceUnsafeControlCharacters(value: string): string {
   return sanitized.join("");
 }
 
+const CREDENTIAL_WORD =
+  "access[_-]?token|api[_-]?key|authorization|credential|password|secret|token";
+const CREDENTIAL_KEY = new RegExp(`^[\\w-]*(?:${CREDENTIAL_WORD})$`, "iu");
+// Escaped quotes stay inside, and an unterminated string runs to the end of a truncated text.
+const QUOTED_VALUE = String.raw`"(?:[^"\\]|\\.)*"?|'(?:[^'\\]|\\.)*'?`;
+const QUOTED_CREDENTIAL_FIELD = new RegExp(
+  String.raw`(["'][\w-]*(?:${CREDENTIAL_WORD})["']\s*:\s*)(${QUOTED_VALUE})`,
+  "giu",
+);
+const CREDENTIAL_ASSIGNMENT = new RegExp(
+  String.raw`((?<![\w-])[\w-]*(?:${CREDENTIAL_WORD})\b\s*[:=]\s*)(?:${QUOTED_VALUE}|[^\s,;]+)`,
+  "giu",
+);
+
+/** Whether a field of this name holds a credential, by the rule failure text redaction uses. */
+export const isCredentialKey = (key: string): boolean => CREDENTIAL_KEY.test(key);
+
 function redactProviderFailureText(value: string): string {
   return replaceUnsafeControlCharacters(value)
     .replace(/\bhttps?:\/\/[^\s<>"']+/giu, redactUrl)
     .replace(/\b(Bearer|Basic)\s+[^\s,;]+/giu, "$1 [REDACTED]")
     .replace(
-      /(["'][\w-]*(?:access[_-]?token|api[_-]?key|authorization|credential|password|secret|token)["']\s*:\s*["'])[^"']*(["'])/giu,
-      "$1[REDACTED]$2",
+      QUOTED_CREDENTIAL_FIELD,
+      (_match, field: string, quoted: string) =>
+        `${field}${quoted.charAt(0)}[REDACTED]${quoted.charAt(0)}`,
     )
-    .replace(
-      /((?<![\w-])[\w-]*(?:access[_-]?token|api[_-]?key|authorization|credential|password|secret|token)\b\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;]+)/giu,
-      "$1[REDACTED]",
-    )
+    .replace(CREDENTIAL_ASSIGNMENT, "$1[REDACTED]")
     .replace(/\bsk-[A-Za-z0-9_-]{16,}\b/gu, "[REDACTED]")
     .trim();
 }

@@ -925,6 +925,126 @@ describe("VcsStatusBroadcaster", () => {
     },
   );
 
+  it.effect("an older divergence read that finishes last does not replace a newer one", () => {
+    const state: Parameters<typeof layerTestFor>[0] = {
+      currentLocalStatus: baseLocalStatus,
+      currentRemoteStatus: baseRemoteStatus,
+      localStatusCalls: 0,
+      remoteStatusCalls: 0,
+      localInvalidationCalls: 0,
+      remoteInvalidationCalls: 0,
+      backgroundWorkEnabled: false,
+    };
+    return Effect.gen(function* () {
+      const broadcaster = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
+      yield* broadcaster.getStatus({ cwd: "/repo" });
+      const olderStarted = yield* Deferred.make<void>();
+      const releaseOlder = yield* Deferred.make<void>();
+      let reads = 0;
+      // Each read sees the counts of its own moment: the older one, before a commit landed.
+      state.beforeUpstreamDivergence = Effect.suspend(() =>
+        ++reads === 1
+          ? Deferred.succeed(olderStarted, undefined).pipe(
+              Effect.andThen(Deferred.await(releaseOlder)),
+              Effect.andThen(
+                Effect.sync(() => {
+                  state.currentDivergence = { aheadCount: 1, behindCount: 0 };
+                }),
+              ),
+            )
+          : Effect.sync(() => {
+              state.currentDivergence = { aheadCount: 2, behindCount: 0 };
+            }),
+      );
+      const older = yield* broadcaster.refreshLocalStatus("/repo").pipe(Effect.forkScoped);
+      yield* Deferred.await(olderStarted);
+      yield* broadcaster.refreshLocalStatus("/repo");
+      assert.equal((yield* broadcaster.getStatus({ cwd: "/repo" })).aheadCount, 2);
+
+      yield* Deferred.succeed(releaseOlder, undefined);
+      yield* Fiber.join(older);
+      assert.equal(reads, 2);
+      assert.equal((yield* broadcaster.getStatus({ cwd: "/repo" })).aheadCount, 2);
+    }).pipe(Effect.provide(layerTestFor(state)));
+  });
+
+  it.effect("a locked lookup publishes its PR but keeps counts published after it read", () => {
+    const state: Parameters<typeof layerTestFor>[0] = {
+      currentLocalStatus: baseLocalStatus,
+      currentRemoteStatus: baseRemoteStatus,
+      localStatusCalls: 0,
+      remoteStatusCalls: 0,
+      localInvalidationCalls: 0,
+      remoteInvalidationCalls: 0,
+      backgroundWorkEnabled: false,
+    };
+    return Effect.gen(function* () {
+      const broadcaster = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
+      yield* broadcaster.getStatus({ cwd: "/repo" });
+      const countsRead = yield* Deferred.make<void>();
+      const releaseLookup = yield* Deferred.make<void>();
+      let branchReads = 0;
+      state.currentRemoteStatus = { ...remoteStatusWithPr, aheadCount: 1 };
+      // The lookup's second branch read comes after its counts and before its cache write.
+      state.beforeCurrentBranch = Effect.suspend(() =>
+        ++branchReads === 2
+          ? Deferred.succeed(countsRead, undefined).pipe(
+              Effect.andThen(Deferred.await(releaseLookup)),
+            )
+          : Effect.void,
+      );
+      const lookup = yield* broadcaster.refreshPullRequestStatus("/repo").pipe(Effect.forkScoped);
+      yield* Deferred.await(countsRead);
+      state.currentDivergence = { aheadCount: 2, behindCount: 0 };
+      yield* broadcaster.refreshLocalStatus("/repo");
+      assert.equal((yield* broadcaster.getStatus({ cwd: "/repo" })).aheadCount, 2);
+
+      yield* Deferred.succeed(releaseLookup, undefined);
+      yield* Fiber.join(lookup);
+      const status = yield* broadcaster.getStatus({ cwd: "/repo" });
+      assert.deepStrictEqual(status.pr, remoteStatusWithPr.pr);
+      assert.equal(status.aheadCount, 2);
+    }).pipe(Effect.provide(layerTestFor(state)));
+  });
+
+  it.effect("a fetch's counts outrank a turn-end read that published pre-fetch counts", () => {
+    const state: Parameters<typeof layerTestFor>[0] = {
+      currentLocalStatus: baseLocalStatus,
+      currentRemoteStatus: baseRemoteStatus,
+      localStatusCalls: 0,
+      remoteStatusCalls: 0,
+      localInvalidationCalls: 0,
+      remoteInvalidationCalls: 0,
+      backgroundWorkEnabled: false,
+    };
+    return Effect.gen(function* () {
+      const broadcaster = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
+      yield* broadcaster.getStatus({ cwd: "/repo" });
+      const fetched = yield* Deferred.make<void>();
+      const releaseRefresh = yield* Deferred.make<void>();
+      let branchReads = 0;
+      // The refresh's fetch found 3 new upstream commits; the turn-end read saw refs before it.
+      state.currentRemoteStatus = { ...baseRemoteStatus, behindCount: 3 };
+      state.currentDivergence = { aheadCount: 0, behindCount: 0 };
+      // The refresh's second branch read comes after its fetch and before its cache write.
+      state.beforeCurrentBranch = Effect.suspend(() =>
+        ++branchReads === 2
+          ? Deferred.succeed(fetched, undefined).pipe(
+              Effect.andThen(Deferred.await(releaseRefresh)),
+            )
+          : Effect.void,
+      );
+      const refresh = yield* broadcaster.refreshStatus("/repo").pipe(Effect.forkScoped);
+      yield* Deferred.await(fetched);
+      yield* broadcaster.refreshLocalStatus("/repo");
+      state.currentDivergence = { aheadCount: 0, behindCount: 3 };
+
+      yield* Deferred.succeed(releaseRefresh, undefined);
+      assert.equal((yield* Fiber.join(refresh)).behindCount, 3);
+      assert.equal((yield* broadcaster.getStatus({ cwd: "/repo" })).behindCount, 3);
+    }).pipe(Effect.provide(layerTestFor(state)));
+  });
+
   it.effect("a local-only refresh after a branch switch leaves the PR refresh able to read", () => {
     const state: Parameters<typeof layerTestFor>[0] = {
       currentLocalStatus: baseLocalStatus,

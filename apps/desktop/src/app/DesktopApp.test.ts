@@ -9,6 +9,8 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as HttpClient from "effect/http/HttpClient";
 import { ChildProcessSpawner } from "effect/process";
+import type { DesktopShellEnvironmentSnapshot } from "@onicode/contracts";
+import * as HostProcess from "@onicode/shared/HostProcess";
 import * as NetService from "@onicode/shared/Net";
 import * as Fiber from "effect/Fiber";
 import * as Option from "effect/Option";
@@ -85,6 +87,11 @@ interface StubbedDesktop {
   readonly flushRendererHistory?: Effect.Effect<void>;
   readonly tokenRequested?: Deferred.Deferred<void>;
   readonly activationStarted?: Deferred.Deferred<void>;
+  readonly primaryBackend?: {
+    readonly start: Effect.Effect<void>;
+    readonly stop: () => Effect.Effect<void>;
+  };
+  readonly shellUpdates?: Stream.Stream<DesktopShellEnvironmentSnapshot>;
 }
 
 const runStubbedDesktop = (stub: StubbedDesktop) =>
@@ -120,7 +127,7 @@ const runStubbedDesktop = (stub: StubbedDesktop) =>
           installIntoProcess: Effect.succeed(true),
           awaitDiscovery: Effect.succeed(true),
           awaitUserShellDiscovery: Effect.succeed(true),
-          updates: Stream.empty,
+          updates: stub.shellUpdates ?? Stream.empty,
         }),
         Effect.provideService(DesktopAppSettings.DesktopAppSettings, {
           load: Effect.void,
@@ -176,6 +183,7 @@ const runStubbedDesktop = (stub: StubbedDesktop) =>
         Effect.provideService(DesktopBackendPool.DesktopBackendPool, {
           primary: Effect.succeed({
             start: stub.record("backend"),
+            ...stub.primaryBackend,
             currentConfig: Effect.succeedSome({ preflightFailure: Option.none() }),
           }),
           list: Effect.succeed(stub.backends ?? []),
@@ -382,4 +390,50 @@ it.effect(
         "startup left the onicode app <dir> control socket closed",
       );
     }).pipe(Effect.provide(Layer.mergeAll(DesktopShutdown.layer, NodeServices.layer))),
+);
+
+it.effect("restarts the backend once when discovery changes flags right after it launched", () =>
+  Effect.gen(function* () {
+    const hostEnvironment: NodeJS.ProcessEnv = { ONICODE_FEATURE_FLAGS: "cached" };
+    const published: DesktopShellEnvironmentSnapshot[] = [];
+    const launches: Array<string | undefined> = [];
+    let stops = 0;
+    const drained = yield* Deferred.make<void>();
+    const windowStarted = yield* Deferred.make<void>();
+    const app = yield* runStubbedDesktop({
+      localEnvironmentEnabled: true,
+      environment: {},
+      fileSystem: FileSystem.layerNoop({}),
+      record: () => Effect.void,
+      windowStarted,
+      registerLinuxUrlHandler: Effect.void,
+      primaryBackend: {
+        start: Effect.sync(() => {
+          launches.push(hostEnvironment.ONICODE_FEATURE_FLAGS);
+          if (launches.length > 1) return;
+          hostEnvironment.ONICODE_FEATURE_FLAGS = "discovered";
+          published.push({
+            version: 1,
+            type: "shellEnvironment",
+            discovered: true,
+            platform: "linux",
+            environment: { ONICODE_FEATURE_FLAGS: "discovered" },
+          });
+        }),
+        stop: () =>
+          Effect.sync(() => {
+            stops += 1;
+          }),
+      },
+      shellUpdates: Stream.suspend(() => Stream.fromIterable(published)).pipe(
+        Stream.onEnd(Deferred.succeed(drained, undefined)),
+      ),
+    }).pipe(Effect.provideService(HostProcess.Environment, hostEnvironment));
+    yield* Deferred.await(drained);
+    assert.deepEqual(launches, ["cached", "discovered"]);
+    assert.equal(stops, 1);
+    yield* Deferred.await(windowStarted);
+    yield* (yield* DesktopShutdown.DesktopShutdown).request;
+    yield* Fiber.join(app);
+  }).pipe(Effect.provide(DesktopShutdown.layer)),
 );

@@ -344,7 +344,11 @@ const make = Effect.gen(function* () {
       .readFileString(path.join(folder, ".git"))
       .pipe(Effect.orElseSucceed(() => ""));
     const gitDir = /^gitdir:\s*(.+?)\s*$/m.exec(pointer)?.[1];
-    return gitDir === undefined ? null : path.resolve(folder, gitDir);
+    if (gitDir === undefined) return null;
+    if (path.isAbsolute(gitDir)) return path.resolve(gitDir);
+    // Git follows links before `..`: lexically, a folder reached through a link resolves elsewhere.
+    const real = yield* fileSystem.realPath(folder).pipe(Effect.orElseSucceed(() => folder));
+    return path.resolve(real, gitDir);
   });
   // A repository that is itself a linked worktree registers worktrees under the Git dir it shares.
   const commonGitDir = Effect.fnUntraced(function* (repositoryPath: string) {
@@ -1502,6 +1506,14 @@ const make = Effect.gen(function* () {
         repositoryPath: taskFolder.projectRoot,
       });
     } else if (!(yield* exists(taskFolder.projectPath))) {
+      const blocked =
+        layout === null ? yield* blockedOnTheWay(taskFolder.root, taskFolder.projectPath) : null;
+      if (blocked !== null) {
+        return yield* new TaskFolderError({
+          operation: "create",
+          detail: `${taskFolder.projectPath} lies behind ${blocked}, so the project folder cannot be rebuilt there.`,
+        });
+      }
       const project = yield* readProject("create", taskFolder.projectId);
       const tracked = yield* Effect.filter(
         (yield* trackedFolders(project)).map((folder) => path.resolve(folder.path)),
