@@ -1135,9 +1135,9 @@ describe("ClaudeAdapterV2 context usage", () => {
     });
     const unsafeUsage = ClaudeAdapterV2.claudeProviderTurnTokenUsage(
       {
-        input_tokens: Number.MAX_SAFE_INTEGER,
-        cache_creation_input_tokens: 2 ** 60,
-        cache_read_input_tokens: 10,
+        input_tokens: 7,
+        cache_creation_input_tokens: Number.MAX_SAFE_INTEGER,
+        cache_read_input_tokens: 2 ** 60,
         output_tokens: 5,
       },
       { maxTokens: 200_000 },
@@ -1147,7 +1147,7 @@ describe("ClaudeAdapterV2 context usage", () => {
       usedTokens: Number.MAX_SAFE_INTEGER,
       maxTokens: 200_000,
       inputTokens: Number.MAX_SAFE_INTEGER,
-      cachedInputTokens: 10,
+      cachedInputTokens: 0,
       outputTokens: 5,
       reasoningOutputTokens: 0,
       updatedAt: "2026-08-29T00:03:00.000Z",
@@ -11847,10 +11847,16 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           delta: { stop_reason: "end_turn", stop_sequence: null },
           usage: {},
         }),
-        // A snapshot with more input than a partial delta reported replaces it.
+        // A snapshot fills only counts no frame reported, keeping the start's cache lifetime;
+        // a later zero correction stays when the snapshot repeats.
         usageStreamFrame({
           type: "message_start",
-          message: { id: "msg_partial_delta", usage: {} },
+          message: {
+            id: "msg_partial_delta",
+            usage: {
+              cache_creation: { ephemeral_1h_input_tokens: 10, ephemeral_5m_input_tokens: 0 },
+            },
+          },
         }),
         usageStreamFrame({
           type: "message_delta",
@@ -11858,6 +11864,16 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           usage: { input_tokens: 1_000 },
         }),
         usageSnapshotFrame("msg_partial_delta", "00000000-0000-4000-8000-000000000678", {
+          input_tokens: 3,
+          cache_read_input_tokens: 50_000,
+          output_tokens: 20,
+        }),
+        usageStreamFrame({
+          type: "message_delta",
+          delta: { stop_reason: "tool_use", stop_sequence: null },
+          usage: { cache_read_input_tokens: 0 },
+        }),
+        usageSnapshotFrame("msg_partial_delta", "00000000-0000-4000-8000-000000000679", {
           input_tokens: 3,
           cache_read_input_tokens: 50_000,
           output_tokens: 20,
@@ -11888,13 +11904,33 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           inputTokens: usage.inputTokens,
           outputTokens: usage.outputTokens,
           cachedInputTokens: usage.cachedInputTokens,
+          ...(usage.promptCacheTtlMs === undefined ? {} : { ttl: usage.promptCacheTtlMs }),
         })),
         [
           { usedTokens: 12_345, inputTokens: 12_345, outputTokens: 0, cachedInputTokens: 0 },
           { usedTokens: 12_500, inputTokens: 12_500, outputTokens: 0, cachedInputTokens: 0 },
           { usedTokens: 12_580, inputTokens: 12_500, outputTokens: 80, cachedInputTokens: 0 },
-          { usedTokens: 1_000, inputTokens: 1_000, outputTokens: 0, cachedInputTokens: 0 },
-          { usedTokens: 50_023, inputTokens: 50_003, outputTokens: 20, cachedInputTokens: 50_000 },
+          {
+            usedTokens: 1_000,
+            inputTokens: 1_000,
+            outputTokens: 0,
+            cachedInputTokens: 0,
+            ttl: 3_600_000,
+          },
+          {
+            usedTokens: 51_020,
+            inputTokens: 51_000,
+            outputTokens: 20,
+            cachedInputTokens: 50_000,
+            ttl: 3_600_000,
+          },
+          {
+            usedTokens: 1_020,
+            inputTokens: 1_000,
+            outputTokens: 20,
+            cachedInputTokens: 0,
+            ttl: 3_600_000,
+          },
           { usedTokens: 12_640, inputTokens: 12_600, outputTokens: 40, cachedInputTokens: 0 },
         ],
       );

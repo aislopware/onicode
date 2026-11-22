@@ -6117,7 +6117,24 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
     }),
   );
 
-  it.effect("reports cache writes as cache creation, not only as input", () =>
+  it.effect.each([
+    {
+      name: "reports cache writes as cache creation, not only as input",
+      tokens: { input: 1200, output: 40, reasoning: 0, cache: { read: 300, write: 2500 } },
+      expected: { input: 4000, cached: 300, write: 2500, output: 40 },
+    },
+    {
+      // Event counts are only checked finite; token schemas take safe non-negative integers.
+      name: "counts negative and unsafe step tokens as zero",
+      tokens: {
+        input: 1200,
+        output: -5,
+        reasoning: 0.4,
+        cache: { read: 2 ** 60, write: 2500.4 },
+      },
+      expected: { input: 3700, cached: 0, write: 2500, output: 0 },
+    },
+  ])("$name", ({ tokens, expected }) =>
     Effect.gen(function* () {
       const { runtime, thread } = yield* resumed([
         out("session.prompt", { sessionID: SESSION, text: "<any>" }),
@@ -6127,7 +6144,7 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
           assistantMessageID: "msg_0eb735d5b001oAFVeY5jz3WD4Z",
           finish: "stop",
           cost: 0,
-          tokens: { input: 1200, output: 40, reasoning: 0, cache: { read: 300, write: 2500 } },
+          tokens,
         }),
         event("session.execution.succeeded", { sessionID: SESSION }),
       ]);
@@ -6141,15 +6158,18 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       );
       yield* runtime.startTurn(turnInput(thread));
       const settled = Option.getOrUndefined(yield* Fiber.join(turn));
-      assert.deepInclude(
-        settled?.type === "provider_turn.updated" ? settled.providerTurn.turnTokenUsage : undefined,
-        {
-          inputTokens: 1200 + 300 + 2500,
-          cachedInputTokens: 300,
-          cacheCreationTokens: 2500,
-          outputTokens: 40,
-        },
-      );
+      const providerTurn =
+        settled?.type === "provider_turn.updated" ? settled.providerTurn : undefined;
+      assert.deepInclude(providerTurn?.turnTokenUsage, {
+        inputTokens: expected.input,
+        cachedInputTokens: expected.cached,
+        cacheCreationTokens: expected.write,
+        outputTokens: expected.output,
+      });
+      assert.deepInclude(providerTurn?.tokenUsage, {
+        usedTokens: expected.input + expected.output,
+        inputTokens: expected.input,
+      });
     }),
   );
 

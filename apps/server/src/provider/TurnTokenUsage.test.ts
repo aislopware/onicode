@@ -78,7 +78,7 @@ describe("billable native turn usage", () => {
     expect(completeCodexTurnTokenUsage(state, "missing", false).usageStatus).toBe("unavailable");
   });
 
-  it("counts Claude cached input inside total input and bounds thinking output", () => {
+  it("counts Claude cached input inside total input, bounds thinking output and drops unsafe counts", () => {
     expect(
       normalizeClaudeTurnTokenUsage(
         {
@@ -104,6 +104,33 @@ describe("billable native turn usage", () => {
       outputTokens: 20,
       reasoningTokens: 20,
     });
+    // Token schemas take safe integers only: an unsafe proxy count is unknown, sums saturate.
+    expect(
+      normalizeClaudeTurnTokenUsage(
+        {
+          subtype: "success",
+          usage: {
+            input_tokens: Number.MAX_SAFE_INTEGER,
+            cache_read_input_tokens: 2 ** 60,
+            cache_creation_input_tokens: 10,
+            output_tokens: 5,
+          },
+        },
+        false,
+        "completed",
+      ),
+    ).toEqual({
+      usageStatus: "partial",
+      usageScope: "main_agent",
+      hasSubagents: false,
+      cacheCreationTokens: 10,
+      outputTokens: 5,
+    });
+    expect(
+      claudeModelLedger({
+        model: { inputTokens: Number.MAX_SAFE_INTEGER, outputTokens: 1, cacheReadInputTokens: 9 },
+      }),
+    ).toEqual(new Map([["model", { input: Number.MAX_SAFE_INTEGER, output: 1 }]]));
   });
 
   it("does not turn a zeroed Claude crash result into a measured zero-cost turn", () => {

@@ -122,6 +122,19 @@ describe("CodexAdapterV2 context usage", () => {
       reasoningOutputTokens: 1_000,
       updatedAt: "2026-08-29T00:00:00.000Z",
     });
+    const breakdown = {
+      totalTokens: 10,
+      inputTokens: 10,
+      cachedInputTokens: 0,
+      outputTokens: 0,
+      reasoningOutputTokens: 0,
+    };
+    assert.isNull(
+      CodexAdapterV2.codexProviderTurnTokenUsage(
+        { total: breakdown, last: breakdown, modelContextWindow: -1 },
+        "2026-08-29T00:00:00.000Z",
+      ).maxTokens,
+    );
   });
 });
 

@@ -252,7 +252,11 @@ export function codexProviderTurnTokenUsage(
 ) {
   return {
     usedTokens: Math.max(0, tokenUsage.last.totalTokens),
-    maxTokens: tokenUsage.modelContextWindow ?? null,
+    // The wire type is a signed int64; a non-positive window is unknown.
+    maxTokens:
+      tokenUsage.modelContextWindow != null && tokenUsage.modelContextWindow > 0
+        ? tokenUsage.modelContextWindow
+        : null,
     inputTokens: Math.max(0, tokenUsage.last.inputTokens),
     cachedInputTokens: Math.max(0, tokenUsage.last.cachedInputTokens),
     outputTokens: Math.max(0, tokenUsage.last.outputTokens),
