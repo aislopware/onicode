@@ -24,6 +24,16 @@ function setup() {
   let draftKey = "draft";
   let approvalIds: ReadonlyArray<RuntimeRequestId> = [];
   const onSubmit = vi.fn();
+  let draftEdited = () => {};
+  const unwatchDraft = vi.fn();
+  const watchDraft = vi.fn((onEdit: () => void) => {
+    draftEdited = onEdit;
+    return () => {
+      unwatchDraft();
+      if (draftEdited === onEdit) draftEdited = () => {};
+    };
+  });
+  let flushing = Promise.resolve();
   const preparations: Array<(success: boolean) => void> = [];
   // Like the real paste, a draft operation that discarding the draft aborts.
   const onPasteImages = () => {
@@ -37,6 +47,8 @@ function setup() {
       blocked,
       approvalIds,
       onPasteImages,
+      watchDraft,
+      flushInput: () => flushing,
       onSubmit: (action, shownApprovalIds, settings) => {
         if (!blocked) onSubmit(action, shownApprovalIds, settings);
       },
@@ -57,6 +69,20 @@ function setup() {
       };
     },
     onSubmit,
+    watchDraft,
+    unwatchDraft,
+    editDraft() {
+      act(() => draftEdited());
+    },
+    /** Holds the editor's flush, as iOS accepting an autocorrection after the press does. */
+    holdFlush() {
+      const flushed = Promise.withResolvers<void>();
+      flushing = flushed.promise;
+      return async () => {
+        flushing = Promise.resolve();
+        await act(async () => flushed.resolve());
+      };
+    },
     setBlocked(value: boolean) {
       blocked = value;
       render();
@@ -156,20 +182,79 @@ it("waits for other attachment preparation and sends once after all images join 
   expect(state.onSubmit).toHaveBeenCalledOnce();
 });
 
-it("holds a released send again for an image pasted while it waited on another blocker", async () => {
+it("shows a held send until it goes, and drops it on Cancel, an edit, or another paste", async () => {
   using state = setup();
-  const first = state.queue.pasteImages(["first"]);
-  state.queue.deferSend();
-  state.setBlocked(true);
+  const first = state.queue.pasteImages(["first", "second"]);
+  expect(state.queue.held).toBeNull();
+  act(() => void state.queue.deferSend());
+  expect(state.queue.held).toEqual({ images: 2 });
+  act(() => state.queue.cancel());
+  expect(state.queue.held).toBeNull();
   await state.finish(true);
   await first;
-  const second = state.queue.pasteImages(["second"]);
-  state.setApprovalIds(["arrived"]);
+  expect(state.onSubmit).not.toHaveBeenCalled();
+
+  const edited = state.queue.pasteImages(["edited"]);
+  await act(async () => void state.queue.deferSend());
+  state.editDraft();
+  expect(state.queue.held).toBeNull();
+  await state.finish(true);
+  await edited;
+  expect(state.onSubmit).not.toHaveBeenCalled();
+
+  // An image pasted while the released send waits on another blocker is an edit too.
+  const held = state.queue.pasteImages(["held"]);
+  act(() => void state.queue.deferSend());
+  state.setBlocked(true);
+  await state.finish(true);
+  await held;
+  expect(state.queue.held).toEqual({ images: 0 });
+  let later = Promise.resolve();
+  act(() => {
+    later = state.queue.pasteImages(["later"]);
+  });
+  expect(state.queue.held).toBeNull();
+  state.setBlocked(false);
+  await state.finish(true);
+  await later;
+  expect(state.onSubmit).not.toHaveBeenCalled();
+
+  // An autocorrection iOS accepts for the press lands after it, and is not an edit.
+  const autocorrected = state.holdFlush();
+  const sent = state.queue.pasteImages(["sent"]);
+  act(() => void state.queue.deferSend());
+  expect(state.queue.held).toEqual({ images: 1 });
+  state.editDraft();
+  await autocorrected();
+  await state.finish(true);
+  await sent;
+  expect(state.onSubmit).toHaveBeenCalledOnce();
+  expect(state.queue.held).toBeNull();
+  expect(state.watchDraft).toHaveBeenCalledTimes(3);
+});
+
+it("joins a closed question's image to a released send, and drops a send the composer left", async () => {
+  using state = setup();
+  const held = state.queue.pasteImages(["held"]);
+  act(() => void state.queue.deferSend());
+  state.setBlocked(true);
+  await state.finish(true);
+  await held;
+  const question = startNativeImagePaste("draft");
   state.setBlocked(false);
   expect(state.onSubmit).not.toHaveBeenCalled();
+  await act(async () => question(true));
+  expect(state.onSubmit).toHaveBeenCalledOnce();
+
+  const left = state.queue.pasteImages(["left"]);
+  await act(async () => void state.queue.deferSend());
+  state.unwatchDraft.mockClear();
+  state.setDraftKey("queued edit");
+  expect(state.unwatchDraft).toHaveBeenCalledOnce();
+  expect(state.queue.held).toBeNull();
   await state.finish(true);
-  await second;
-  expect(state.onSubmit).toHaveBeenCalledExactlyOnceWith(undefined, [], SHOWN);
+  await left;
+  expect(state.onSubmit).toHaveBeenCalledOnce();
 });
 
 it("sends with the approvals, mode and model of the press, not those shown since", async () => {
@@ -221,9 +306,11 @@ it("waits for an image this composer did not paste, such as a closed question's"
 it("drops a send whose paste was aborted, even if a later paste lands", async () => {
   using state = setup();
   const aborted = state.queue.pasteImages(["aborted"]);
-  state.queue.deferSend();
+  act(() => void state.queue.deferSend());
+  expect(state.queue.held).toEqual({ images: 1 });
   // A queued edit that opened and closed at once aborts the paste without a draft switch.
-  state.abortPastes();
+  act(() => state.abortPastes());
+  expect(state.queue.held).toBeNull();
   await state.finish(false);
   await aborted;
   const later = state.queue.pasteImages(["later"]);

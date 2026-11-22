@@ -1839,6 +1839,9 @@
   "c08eec50972ec67c": "Usa versiones compatibles de la app y el servidor para conectarte.",
   "206281759a765d0a": "Reintentar ahora",
   "1e2fc5b4723ab831": "Vincular varias máquinas a {environment}…",
+  "87433cf138dc3e2c": "{linked, plural, one {Se vinculó # máquina.} other {Se vincularon # máquinas.}}",
+  "d044bb95248da10c": "Se vincularon {linked} de {total}. Las que fallaron siguen seleccionadas para que puedas reintentarlas.",
+  "59e45b02b09e183d": "{environment} no está conectado.",
   "4e7b0a3ced2d0f97": "Vincular varios entornos",
   "3a57c9bbcd12529f": "No se pudo comprobar qué máquinas ya están vinculadas, así que no se puede elegir ninguna: {error}",
   "7f99aaba0befc867": "Máquinas",
@@ -1848,8 +1851,6 @@
   "e5ac7abeaeb78750": "No seleccionar nada",
   "ab520df47bca22d2": "Seleccionar todo",
   "5bcbf210d2a21be3": "Qué pueden hacer allí los agentes de aquí",
-  "87433cf138dc3e2c": "{linked, plural, one {Se vinculó # máquina.} other {Se vincularon # máquinas.}}",
-  "d044bb95248da10c": "Se vincularon {linked} de {total}. Las que fallaron siguen seleccionadas para que puedas reintentarlas.",
   "d2fbaffe08b6cf60": "{count, plural, one {Vincular # máquina} other {Vincular # máquinas}}",
   "b550d04490078bda": "Así los agentes de aquí podrán iniciar hilos en cada máquina que elijas, enviarles mensajes y esperarlos. Cada vínculo aparece en Clientes autorizados, en Compartir y acceso de esa máquina, donde se puede revocar.",
   "c2553b323479499a": "Esta app no conoce otras máquinas. Añádelas primero en Entornos.",
@@ -3903,6 +3904,8 @@
   "f361df7c168544f1": "Descartar error",
   "73af9dd121cb467b": "Descartar aviso de comentarios",
   "7c1fee250333bb01": "Copiar ID",
+  "1a1f128d70c62304": "{count, plural, one {Se enviará cuando la imagen esté lista} other {Se enviará cuando {count} imágenes estén listas}}",
+  "5af3ab719a9725fb": "Enviando mensaje",
   "2b7fd345e4f4fd6e": "Cancelar la edición del mensaje en cola",
   "b2ec7dff2dde1179": "Editando mensaje en cola",
   "faeebf9714efe741": "Descartar límites de uso",
@@ -4327,6 +4330,7 @@
   "a70abf17e99c2d6d": "Quita algo de texto o un adjunto y vuelve a pegar.",
   "94f312446d9f210d": "Detener agente",
   "fbafbe78b5e37966": "Reanudar hilo",
+  "48d6389202ad6754": "Se enviará cuando esté listo",
   "c19358bac32e58e8": "Esta conexión no puede controlar esta tarea. Aún puedes editar tu borrador.",
   "1b30548ce8e56b75": "Editar tarea",
   "2269639b96d04225": "No se pudo iniciar la tarea",
@@ -5258,6 +5262,5 @@
   "ad208e3e32c85029": "Ocultar todo",
   "3328503592789bed": "Zen",
   "856812e7e1fc445e": "Llamadas a herramientas en el chat",
-  "8d545d54c0a9e950": "Oculta los comandos, ediciones y búsquedas que ejecutan los agentes. Ocultar las correctas mantiene los fallos. Zen solo muestra las respuestas finales. Las aprobaciones, preguntas y errores siempre se muestran.",
-  "59e45b02b09e183d": "{environment} no está conectado."
+  "8d545d54c0a9e950": "Oculta los comandos, ediciones y búsquedas que ejecutan los agentes. Ocultar las correctas mantiene los fallos. Zen solo muestra las respuestas finales. Las aprobaciones, preguntas y errores siempre se muestran."
 }

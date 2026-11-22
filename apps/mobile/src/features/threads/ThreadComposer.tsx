@@ -36,7 +36,7 @@ import { StackActions, useFocusEffect, useNavigation } from "@react-navigation/n
 import { msg, T, useGT, useMessages } from "gt-react-native";
 import type { ReactNode } from "react";
 import { useEffect, useEffectEvent, useRef, useState, type RefObject } from "react";
-import { Keyboard, Platform, View } from "react-native";
+import { AccessibilityInfo, Keyboard, Platform, View } from "react-native";
 import { composerImageGallery } from "../../lib/composerImageGallery";
 import { filePreviewGallery } from "../../lib/filePreviewGallery";
 import { FilePreviewModal, type FilePreviewSource } from "../../components/ui/FilePreviewModal";
@@ -58,6 +58,7 @@ import {
   countComposerDraftAttachmentsAfterSelection,
   useComposerDraft,
   useComposerDraftResetGeneration,
+  watchComposerDraftEdits,
 } from "../../state/use-composer-drafts";
 import type { ComposerDocumentAttachment } from "../../lib/composerContext";
 import { appAtomRegistry } from "../../state/atom-registry";
@@ -122,6 +123,7 @@ import {
   type ComposerSendPresentation,
 } from "./composerSendPresentation";
 import { useSubmitAfterNativeImages } from "./useSubmitAfterNativeImages";
+import { ComposerHeldSendBanner } from "./ComposerHeldSend";
 import { ComposerCommandPopover } from "./ComposerCommandPopover";
 import { ComposerPopoverAnchor } from "./ComposerPopoverAnchor";
 import { ComposerQueuedEditAttachments } from "./ComposerQueuedEdit";
@@ -241,6 +243,7 @@ function SendActionButton(props: {
   readonly accessibilityLabel: string;
   readonly presentation: ComposerSendPresentation;
   readonly disabled: boolean;
+  readonly busy?: boolean;
   readonly onSend: (followUp?: ActiveTurnComposerAction) => void;
 }) {
   const { presentation } = props;
@@ -253,6 +256,7 @@ function SendActionButton(props: {
       icon={presentation.icon}
       variant="primary"
       disabled={props.disabled}
+      busy={props.busy}
       onPress={() => props.onSend()}
     />
   );
@@ -287,6 +291,8 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
   const {
     onSendMessage,
     onChangeDraftMessage,
+    onPickDraftMedia,
+    onPickDraftFiles,
     onShowUsageLimits,
     onProviderSessionView,
     onHeightChange,
@@ -665,18 +671,28 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
     blocked: isSubmissionLocked || sendBlockedReason !== null,
     approvalIds: props.pendingApprovalIds,
     onPasteImages: onNativePasteImages,
+    // A queued edit's mode and model live on the thread's own draft.
+    watchDraft: (onEdit) => watchComposerDraftEdits(composerDraftKey, composerOwnerKey, onEdit),
+    flushInput: async () => inputRef.current?.flushPendingInput(),
     onSubmit: (followUp, approvalIdsAtPress, settingsAtPress) =>
       void handleSend(followUp, approvalIdsAtPress, settingsAtPress),
   });
   // Kept out of handleSend: a reference to the hook declared after it stops the compiler caching it.
+  const heldSend = nativeImageSubmit.held;
   const sendOrDefer = (followUp?: ActiveTurnComposerAction) => {
-    if (isSubmissionLocked || sendBlockedReason !== null) return;
+    if (isSubmissionLocked || sendBlockedReason !== null || heldSend !== null) return;
     // Sending now would leave a still-converting pasted image out of the turn, so wait for it.
     const settings: ComposerDraftSendSettings = {
       runtimeMode: props.selectedThread.runtimeMode,
       modelSelection: currentModelSelection,
     };
-    if (nativeImageSubmit.deferSend(followUp, settings)) return;
+    if (nativeImageSubmit.deferSend(followUp, settings)) {
+      // Android reads the banner's live region; VoiceOver needs the hold announced.
+      if (Platform.OS === "ios") {
+        AccessibilityInfo.announceForAccessibility(gt("Sending when ready"));
+      }
+      return;
+    }
     void handleSend(followUp, props.pendingApprovalIds, settings);
   };
 
@@ -741,7 +757,10 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
             environmentId={props.environmentId}
             attachments={queuedEdit.existingAttachments}
             disabled={isSubmissionLocked}
-            onRemove={queuedEdit.onRemoveExistingAttachment}
+            onRemove={(attachmentId) => {
+              nativeImageSubmit.cancel();
+              queuedEdit.onRemoveExistingAttachment(attachmentId);
+            }}
           />
         </Animated.View>
       ) : null}
@@ -813,7 +832,10 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
         accessibilityHint={
           compactBeforeSend.keepFullHistory ? gt("Compacts first") : gt("Keeps the full history")
         }
-        onPress={compactBeforeSend.toggleKeepFullHistory}
+        onPress={() => {
+          nativeImageSubmit.cancel();
+          compactBeforeSend.toggleKeepFullHistory();
+        }}
       />
     ) : null;
 
@@ -899,6 +921,9 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
             onDismiss={voiceInput.cancel}
           />
           {isExpanded ? editingAttachments : null}
+          {heldSend !== null ? (
+            <ComposerHeldSendBanner images={heldSend.images} onCancel={nativeImageSubmit.cancel} />
+          ) : null}
           {attachmentBlockReason !== null ? (
             <View className="flex-row items-center gap-1.5 px-4 py-1.5">
               <SymbolView
@@ -930,8 +955,15 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
                 size={usesLargeControls ? "large" : "regular"}
                 disabled={isSubmissionLocked}
                 supportsFiles={props.serverConfig !== null}
-                onPickMedia={props.onPickDraftMedia}
-                onPickFiles={props.onPickDraftFiles}
+                // Another attachment changes what a held send would carry.
+                onPickMedia={() => {
+                  nativeImageSubmit.cancel();
+                  return onPickDraftMedia();
+                }}
+                onPickFiles={() => {
+                  nativeImageSubmit.cancel();
+                  return onPickDraftFiles();
+                }}
               />
               <Animated.View
                 className="min-w-0 flex-1"
@@ -1158,9 +1190,14 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
                 ) : (
                   <SendActionButton
                     size={usesLargeControls ? "large" : "regular"}
-                    accessibilityLabel={sendBlockedReason ?? sendLabel}
+                    accessibilityLabel={
+                      heldSend !== null
+                        ? gt("Sending when ready")
+                        : (sendBlockedReason ?? sendLabel)
+                    }
                     presentation={sendPresentation}
-                    disabled={!canSend}
+                    disabled={!canSend || heldSend !== null}
+                    busy={heldSend !== null}
                     onSend={sendOrDefer}
                   />
                 )}
@@ -1226,9 +1263,14 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
                   ) : voicePresentation.showsSend ? (
                     <SendActionButton
                       size={usesLargeControls ? "large" : "regular"}
-                      accessibilityLabel={sendBlockedReason ?? sendLabel}
+                      accessibilityLabel={
+                        heldSend !== null
+                          ? gt("Sending when ready")
+                          : (sendBlockedReason ?? sendLabel)
+                      }
                       presentation={sendPresentation}
-                      disabled={!canSend}
+                      disabled={!canSend || heldSend !== null}
+                      busy={heldSend !== null}
                       onSend={sendOrDefer}
                     />
                   ) : null}

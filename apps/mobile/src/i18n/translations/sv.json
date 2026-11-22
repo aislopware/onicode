@@ -1839,6 +1839,9 @@
   "c08eec50972ec67c": "Använd kompatibla versioner av appen och servern för att ansluta.",
   "206281759a765d0a": "Försök igen nu",
   "1e2fc5b4723ab831": "Länka flera datorer till {environment}…",
+  "87433cf138dc3e2c": "{linked, plural, one {Länkade # dator.} other {Länkade # datorer.}}",
+  "d044bb95248da10c": "Länkade {linked} av {total}. De som misslyckades är fortfarande markerade så att du kan försöka igen.",
+  "59e45b02b09e183d": "{environment} är inte ansluten.",
   "4e7b0a3ced2d0f97": "Länka flera miljöer",
   "3a57c9bbcd12529f": "Det gick inte att kontrollera vilka datorer som redan är länkade, så ingen kan väljas: {error}",
   "7f99aaba0befc867": "Datorer",
@@ -1848,8 +1851,6 @@
   "e5ac7abeaeb78750": "Avmarkera allt",
   "ab520df47bca22d2": "Markera allt",
   "5bcbf210d2a21be3": "Vad agenter här får göra där",
-  "87433cf138dc3e2c": "{linked, plural, one {Länkade # dator.} other {Länkade # datorer.}}",
-  "d044bb95248da10c": "Länkade {linked} av {total}. De som misslyckades är fortfarande markerade så att du kan försöka igen.",
   "d2fbaffe08b6cf60": "{count, plural, one {Länka # dator} other {Länka # datorer}}",
   "b550d04490078bda": "Agenter här kan sedan starta, skicka meddelanden till och vänta på trådar på varje dator du väljer. Varje länk visas under Auktoriserade klienter i den datorns Delning och åtkomst, där den kan återkallas.",
   "c2553b323479499a": "Den här appen känner inte till några andra datorer. Lägg först till dem under Miljöer.",
@@ -3909,6 +3910,8 @@
   "f361df7c168544f1": "Stäng fel",
   "73af9dd121cb467b": "Stäng feedbackmeddelandet",
   "7c1fee250333bb01": "Kopiera ID",
+  "1a1f128d70c62304": "{count, plural, one {Skickas när bilden är klar} other {Skickas när {count} bilder är klara}}",
+  "5af3ab719a9725fb": "Skickar meddelande",
   "2b7fd345e4f4fd6e": "Avbryt redigering av köat meddelande",
   "b2ec7dff2dde1179": "Redigerar köat meddelande",
   "faeebf9714efe741": "Stäng användningsgränser",
@@ -4334,6 +4337,7 @@
   "a70abf17e99c2d6d": "Ta bort lite text eller en bilaga och klistra sedan in igen.",
   "94f312446d9f210d": "Stoppa agenten",
   "fbafbe78b5e37966": "Återuppta tråd",
+  "48d6389202ad6754": "Skickar när det är klart",
   "c19358bac32e58e8": "Den här anslutningen kan inte styra uppgiften. Du kan fortfarande redigera ditt utkast.",
   "1b30548ce8e56b75": "Redigera uppgift",
   "2269639b96d04225": "Kunde inte starta uppgiften",
@@ -5264,6 +5268,5 @@
   "ad208e3e32c85029": "Dölj alla",
   "3328503592789bed": "Zen",
   "856812e7e1fc445e": "Verktygsanrop i chatten",
-  "8d545d54c0a9e950": "Dölj kommandon, redigeringar och sökningar som agenter kör. Dölj lyckade behåller misslyckanden. Zen visar bara slutliga svar. Godkännanden, frågor och fel visas alltid.",
-  "59e45b02b09e183d": "{environment} är inte ansluten."
+  "8d545d54c0a9e950": "Dölj kommandon, redigeringar och sökningar som agenter kör. Dölj lyckade behåller misslyckanden. Zen visar bara slutliga svar. Godkännanden, frågor och fel visas alltid."
 }

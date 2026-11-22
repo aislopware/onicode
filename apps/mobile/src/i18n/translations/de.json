@@ -1839,6 +1839,9 @@
   "c08eec50972ec67c": "Verwende kompatible Versionen von App und Server, um dich zu verbinden.",
   "206281759a765d0a": "Jetzt erneut versuchen",
   "1e2fc5b4723ab831": "Mehrere Rechner mit {environment} verknüpfen…",
+  "87433cf138dc3e2c": "{linked, plural, one {# Rechner verknüpft.} other {# Rechner verknüpft.}}",
+  "d044bb95248da10c": "{linked} von {total} verknüpft. Die fehlgeschlagenen bleiben ausgewählt, damit du es erneut versuchen kannst.",
+  "59e45b02b09e183d": "{environment} ist nicht verbunden.",
   "4e7b0a3ced2d0f97": "Mehrere Umgebungen verknüpfen",
   "3a57c9bbcd12529f": "Es konnte nicht geprüft werden, welche Rechner bereits verknüpft sind, daher kann keiner ausgewählt werden: {error}",
   "7f99aaba0befc867": "Rechner",
@@ -1848,8 +1851,6 @@
   "e5ac7abeaeb78750": "Nichts auswählen",
   "ab520df47bca22d2": "Alles auswählen",
   "5bcbf210d2a21be3": "Was Agenten von hier dort tun dürfen",
-  "87433cf138dc3e2c": "{linked, plural, one {# Rechner verknüpft.} other {# Rechner verknüpft.}}",
-  "d044bb95248da10c": "{linked} von {total} verknüpft. Die fehlgeschlagenen bleiben ausgewählt, damit du es erneut versuchen kannst.",
   "d2fbaffe08b6cf60": "{count, plural, one {# Rechner verknüpfen} other {# Rechner verknüpfen}}",
   "b550d04490078bda": "Agenten hier können dann auf jedem ausgewählten Rechner Threads starten, ihnen Nachrichten senden und auf sie warten. Jede Verknüpfung erscheint unter „Autorisierte Clients“ in „Freigabe & Zugriff“ des jeweiligen Rechners und kann dort widerrufen werden.",
   "c2553b323479499a": "Diese App kennt keine anderen Rechner. Füge sie zuerst unter „Umgebungen“ hinzu.",
@@ -3908,6 +3909,8 @@
   "f361df7c168544f1": "Fehler schließen",
   "73af9dd121cb467b": "Feedback-Hinweis schließen",
   "7c1fee250333bb01": "ID kopieren",
+  "1a1f128d70c62304": "{count, plural, one {Wird gesendet, sobald das Bild bereit ist} other {Wird gesendet, sobald {count} Bilder bereit sind}}",
+  "5af3ab719a9725fb": "Nachricht wird gesendet",
   "2b7fd345e4f4fd6e": "Bearbeiten der eingereihten Nachricht abbrechen",
   "b2ec7dff2dde1179": "Eingereihte Nachricht wird bearbeitet",
   "faeebf9714efe741": "Nutzungslimits ausblenden",
@@ -4334,6 +4337,7 @@
   "a70abf17e99c2d6d": "Entferne etwas Text oder einen Anhang und füge dann erneut ein.",
   "94f312446d9f210d": "Agent stoppen",
   "fbafbe78b5e37966": "Thread fortsetzen",
+  "48d6389202ad6754": "Wird gesendet, sobald bereit",
   "c19358bac32e58e8": "Diese Verbindung kann diese Aufgabe nicht steuern. Du kannst deinen Entwurf weiterhin bearbeiten.",
   "1b30548ce8e56b75": "Aufgabe bearbeiten",
   "2269639b96d04225": "Aufgabe konnte nicht gestartet werden",
@@ -5264,6 +5268,5 @@
   "ad208e3e32c85029": "Alle ausblenden",
   "3328503592789bed": "Zen",
   "856812e7e1fc445e": "Tool-Aufrufe im Chat",
-  "8d545d54c0a9e950": "Die Befehle, Bearbeitungen und Suchen ausblenden, die Agenten ausführen. „Erfolgreiche ausblenden“ behält Fehler. „Zen“ zeigt nur endgültige Antworten. Genehmigungen, Fragen und Fehler werden immer angezeigt.",
-  "59e45b02b09e183d": "{environment} ist nicht verbunden."
+  "8d545d54c0a9e950": "Die Befehle, Bearbeitungen und Suchen ausblenden, die Agenten ausführen. „Erfolgreiche ausblenden“ behält Fehler. „Zen“ zeigt nur endgültige Antworten. Genehmigungen, Fragen und Fehler werden immer angezeigt."
 }
