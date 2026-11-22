@@ -218,8 +218,13 @@ export const layer: Layer.Layer<
           const current = yield* projections.getCheckpointCaptureContext(input.threadId, input);
           const currentRun = current.run;
           const currentRootNode = current.rootNode;
-          // A steering restart's new attempt captures its own work, even once it is waiting again.
-          if (currentRun !== undefined && currentRun.activeAttemptId !== run.activeAttemptId) {
+          // A steering restart's new attempt captures its own work once it waits; until then this
+          // capture's snapshots are dropped below.
+          if (
+            currentRun !== undefined &&
+            currentRun.activeAttemptId !== run.activeAttemptId &&
+            (currentRun.status === "waiting" || isStopped(currentRun))
+          ) {
             return;
           }
           if (

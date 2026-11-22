@@ -1627,7 +1627,11 @@ it.layer(layerProjectionStoreTest)("CheckpointCaptureServiceV2", (it) => {
               runId: run!.id,
               providerInstanceId,
               occurredAt: run!.requestedAt,
-              payload: { ...run!, status: "running" },
+              payload: {
+                ...run!,
+                status: "running",
+                activeAttemptId: RunAttemptId.make("attempt:capture-wrapper:2:steered"),
+              },
             });
           }).pipe(Effect.orDie),
         );
