@@ -17,6 +17,7 @@ import "~/index.css";
 import { act, render } from "../../../test/render";
 import { ScheduledTasksSettings } from "./ScheduledTasksSettings";
 import { ConfirmDialogHost } from "../ConfirmDialogHost";
+import { isConfirmDialogActive } from "../../confirmDialog";
 
 const environmentId = EnvironmentId.make("laptop");
 const projectId = ProjectId.make("project");
@@ -304,8 +305,12 @@ describe("ScheduledTasksSettings", () => {
     await userEvent.keyboard("{Escape}");
     await expect.element(confirmation).toBeVisible();
     expect(confirmation.element().textContent).toContain("Discard changes?");
-    await userEvent.click(confirmation.getByRole("button", { name: "Cancel", exact: true }));
+    // The Escape that dismisses the confirmation must not ask again.
+    await userEvent.keyboard("{Escape}");
     await expect.element(confirmation).not.toBeInTheDocument();
+    // A second confirmation would queue behind the closing one, keeping the host busy.
+    await vi.waitFor(() => expect(isConfirmDialogActive()).toBe(false));
+    expect(confirmation.query()).toBeNull();
     await expect.element(name).toHaveValue("My draft");
 
     history.push("/settings/general");
@@ -314,6 +319,13 @@ describe("ScheduledTasksSettings", () => {
     await expect.element(confirmation).not.toBeInTheDocument();
     expect(history.location.pathname).toBe("/settings/scheduled-tasks");
     await expect.element(name).toHaveValue("My draft");
+
+    // Another machine's scope remounts the page under the editor.
+    history.push("/settings/scheduled-tasks?machine=secondary");
+    await expect.element(confirmation).toBeVisible();
+    await userEvent.click(confirmation.getByRole("button", { name: "Cancel", exact: true }));
+    await expect.element(confirmation).not.toBeInTheDocument();
+    expect(history.location.search).toBe("");
 
     await userEvent.click(dialog.getByRole("button", { name: "Cancel", exact: true }));
     await userEvent.click(confirmation.getByRole("button", { name: "Confirm", exact: true }));

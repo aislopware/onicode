@@ -104,7 +104,10 @@ export interface ReviewGuideGenerationInput {
 export type ReviewGuideGenerationResult = Omit<
   PullRequestReviewGuide,
   "headSha" | "generatedAt" | "modelSelection"
->;
+> & {
+  /** The selection that wrote the guide; a fallback can replace the requested one. */
+  readonly modelSelection?: ModelSelection;
+};
 
 export interface TranscriptionPostProcessingInput {
   cwd: string;

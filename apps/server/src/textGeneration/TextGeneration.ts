@@ -79,14 +79,15 @@ const CANNOT_GENERATE: Record<TextGenerationOp, string> = {
   generateTranscriptionPostProcessing: "clean up transcripts",
 };
 
-const WRITER_HINT = "Pick another source control writer or text generation model in Settings.";
+const TEXT_MODEL_HINT = "another text generation model in Settings → Threads";
+const WRITER_HINT = `Pick another source control writer model in Settings → Source control & issues, or ${TEXT_MODEL_HINT}.`;
 const PICK_ANOTHER_MODEL: Record<TextGenerationOp, string> = {
   generateCommitMessage: WRITER_HINT,
   generatePrContent: WRITER_HINT,
   generateBranchName: WRITER_HINT,
-  generateThreadTitle: "Pick another text generation model in Settings.",
-  generateReviewGuide: "Pick another review guide model in Settings.",
-  generateTranscriptionPostProcessing: "Pick another cleanup or text generation model in Settings.",
+  generateThreadTitle: `Pick ${TEXT_MODEL_HINT}.`,
+  generateReviewGuide: "Pick another review guide model in Settings → Source control & issues.",
+  generateTranscriptionPostProcessing: `Pick another cleanup model in Settings → Voice, or ${TEXT_MODEL_HINT}.`,
 };
 
 /** @public */
@@ -240,7 +241,10 @@ export const make = Effect.gen(function* () {
         "generateReviewGuide",
         input.modelSelection,
         input.projectId,
-        (service, modelSelection) => service.generateReviewGuide({ ...input, modelSelection }),
+        (service, modelSelection) =>
+          service
+            .generateReviewGuide({ ...input, modelSelection })
+            .pipe(Effect.map((guide) => ({ ...guide, modelSelection }))),
       );
     }),
     generateTranscriptionPostProcessing: Effect.fn(

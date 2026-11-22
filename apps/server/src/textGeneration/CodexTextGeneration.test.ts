@@ -852,7 +852,7 @@ it.effect.each(PREFLIGHT_PRIMARY_STATES)("text generation preflight: %s", (prima
     }
     if (primaryState.endsWith("cannot generate text, fallback disabled for project")) {
       expect((yield* Effect.flip(generate)).detail).toBe(
-        "codex cannot title threads with chat-model and no other provider can take over. Pick another text generation model in Settings.",
+        "codex cannot title threads with chat-model and no other provider can take over. Pick another text generation model in Settings → Threads.",
       );
       expect(calls).toEqual([]);
       return;
@@ -961,8 +961,9 @@ it.effect(
         settledReview: "",
         modelSelection: { instanceId: ProviderInstanceId.make("openrouter"), model: "some/model" },
       };
-      yield* (yield* serviceWith([instance])).generateReviewGuide(input);
+      const guide = yield* (yield* serviceWith([instance])).generateReviewGuide(input);
       expect(calls.map((selection) => selection.instanceId)).toEqual([claude]);
+      expect(guide.modelSelection).toEqual(calls[0]);
 
       // An agent that cannot investigate hands over too, instead of refusing at run time.
       const opencode = ProviderInstanceId.make("opencode");

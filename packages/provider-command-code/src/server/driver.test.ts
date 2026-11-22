@@ -1,4 +1,5 @@
 import { assert, describe, it } from "@effect/vitest";
+import * as Effect from "effect/Effect";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import type * as EffectAcpSchema from "effect-acp/compat";
@@ -11,7 +12,11 @@ import {
   EMPTY_COMMAND_CODE_CATALOG,
   learnCommandCodeCatalog,
 } from "./acpSupport.ts";
-import { commandCodeAuthFromProbe, commandCodeModels } from "./status.ts";
+import {
+  buildInitialCommandCodeProviderSnapshot,
+  commandCodeAuthFromProbe,
+  commandCodeModels,
+} from "./status.ts";
 
 const decodeSettings = Schema.decodeUnknownSync(CommandCodeSettings);
 
@@ -40,6 +45,16 @@ const effortOption = (
 });
 
 describe("CommandCodeDriver", () => {
+  it.effect("reports no text generation, so preflight hands that work to another provider", () =>
+    Effect.gen(function* () {
+      const snapshot = yield* buildInitialCommandCodeProviderSnapshot(
+        decodeSettings({}),
+        EMPTY_COMMAND_CODE_CATALOG,
+      );
+      assert.isFalse(snapshot.supportsTextGeneration);
+    }),
+  );
+
   it("launches `command-code acp` from the configured binary", () => {
     assert.deepEqual(buildCommandCodeAcpSpawnInput(decodeSettings({}), "/work"), {
       command: "command-code",

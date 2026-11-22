@@ -90,8 +90,8 @@ const snapshot = (
   catalog: CommandCodeCatalog,
   checkedAt: string,
   probe: ProviderProbeResult,
-) =>
-  buildServerProvider({
+) => ({
+  ...buildServerProvider({
     driver: COMMAND_CODE_DRIVER_KIND,
     presentation: COMMAND_CODE_PRESENTATION,
     enabled: settings.enabled,
@@ -100,7 +100,10 @@ const snapshot = (
     // Sent as a prompt; see `compactViaAdvertisedCommand`.
     slashCommands: [COMPACT_SLASH_COMMAND],
     probe,
-  });
+  }),
+  // The driver refuses every application text generation operation.
+  supportsTextGeneration: false,
+});
 
 export const buildInitialCommandCodeProviderSnapshot = Effect.fn(
   "CommandCodeProvider.buildInitialCommandCodeProviderSnapshot",

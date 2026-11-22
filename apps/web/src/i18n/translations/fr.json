@@ -8928,6 +8928,8 @@
   "34fb848f079bdf69": "Actions pour {title}",
   "51a11a609473c784": "Abandonner les modifications ?",
   "6c414592eb76e7fc": "Vos modifications non enregistrées seront perdues.",
+  "8159d63eabe4a529": "Enregistrement de la tâche",
+  "ca5c0dfbcc8de70f": "Attendez la fin de l’enregistrement de la tâche avant de quitter.",
   "c0b576266d462f4b": "Fil {id}",
   "03cab990d7237818": "Démarré par la première exécution",
   "60392cc09f60047a": "Chaque exécution démarre un nouveau fil avec l’espace de travail et le modèle ci-dessous.",

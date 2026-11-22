@@ -68,12 +68,14 @@ import { AuthOrchestrationOperateScope, clampManagedRuntimeMode } from "@onicode
 import { normalizeProjectPathForDispatch, resolvePastedPath } from "@onicode/shared/path";
 import { readEnvironmentScope } from "~/state/session";
 import { useSettingsScope } from "./SettingsScopeContext";
+import { settingsScopeChanged } from "./settingsScopeNavigation";
 import { EnvironmentRow, useEnvironmentTransportLabel } from "./EnvironmentRow";
 import { SettingsGroup } from "./SettingsGroup";
 import { settingsScopeEnvironmentLabel, settingsScopeEnvironmentLabels } from "./settingsScopeAxis";
 import {
   changeDraftProject,
   hasDraftChanges,
+  editorLeaveDecision,
   moveDraftToThread,
   scheduleDraftErrors,
   scheduledTaskDestinationThreads,
@@ -815,11 +817,24 @@ function ScheduledTaskEditorDialog({
     // A navigation can unmount the editor while the confirmation is open.
     if ((await confirmDiscard()) && form.current !== null) close();
   };
-  // Leaving the page unmounts the editor; Back and shortcuts would drop the draft unasked.
+  // Leaving the page or its scope unmounts the editor; Back and shortcuts would drop the draft unasked.
   useBlocker({
     shouldBlockFn: async ({ current, next }) => {
-      if (leaving.current || next.pathname === current.pathname) return false;
-      if (asking.current) return true;
+      const decision = editorLeaveDecision({
+        closing: leaving.current,
+        unmountsEditor:
+          next.pathname !== current.pathname || settingsScopeChanged(current.search, next.search),
+        asking: asking.current,
+        saving,
+      });
+      if (decision === "wait-for-save") {
+        toastManager.add({
+          type: "info",
+          title: gt("Saving task"),
+          description: gt("Wait for the task to finish saving before leaving."),
+        });
+      }
+      if (decision !== "ask") return decision !== "allow";
       return !(await confirmDiscard());
     },
     enableBeforeUnload: false,

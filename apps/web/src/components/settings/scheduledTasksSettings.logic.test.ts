@@ -21,6 +21,7 @@ import {
   scheduledTaskDefaultModel,
   defaultScheduledTaskProjectId,
   hasDraftChanges,
+  editorLeaveDecision,
   matchesScheduledTaskScope,
   scheduleFromDraft,
   scheduleLabel,
@@ -231,6 +232,19 @@ describe("unsaved scheduled task edits", () => {
       false,
     );
     expect(hasDraftChanges(blank, { ...draft, modelKey: "codex:gpt-6" }, "codex:gpt-5")).toBe(true);
+  });
+});
+
+describe("leaving an open scheduled task editor", () => {
+  const leaving = { closing: false, unmountsEditor: true, asking: false, saving: false };
+  it.each([
+    ["the editor closing itself", { ...leaving, closing: true }, "allow"],
+    ["a navigation that keeps the editor mounted", { ...leaving, unmountsEditor: false }, "allow"],
+    ["a navigation while the confirmation is open", { ...leaving, asking: true }, "block"],
+    ["a navigation while the save is in flight", { ...leaving, saving: true }, "wait-for-save"],
+    ["a navigation away from an idle editor", leaving, "ask"],
+  ] as const)("%s: %s", (_label, input, expected) => {
+    expect(editorLeaveDecision(input)).toBe(expected);
   });
 });
 
