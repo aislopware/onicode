@@ -3193,3 +3193,4 @@ c5fa33b27e	take	promptDropped is an optional contract field (wire-compatible); o
 c1fbdf6cdb	take	taken as is
 3b3f8808f4	take	adopted upstream over Onicode's silent image hold: message sends wait inside useComposerSend with a visible cancellable banner and cancel on edit or mode/model change (Onicode's mode-at-Send test rewritten to that); kept Onicode's press-time settings and seen-approval capture, which the hold now sits after; mobile banner left as follow-up
 122d3bf853	take	adopted upstream's login-shell PATH re-read on refresh (headless servers and profiles edited after launch); kept Onicode's rebuildOnHostPathChange, which compares with the PATH instances were built on, over upstream's last-seen PATH ref
+b9d0f70b3e	take	kept Onicode's hour-cycle timestamp label in the work-log conflict; token swap applied
