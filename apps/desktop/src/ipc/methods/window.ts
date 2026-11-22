@@ -18,7 +18,6 @@ import {
 } from "@onicode/contracts";
 import { PROJECT_FAVICON_EXTENSIONS } from "@onicode/shared/projectFavicon";
 import { resolveEditorCommand } from "@onicode/shared/editor";
-import { withPathDirectoryListings } from "@onicode/shared/shell";
 import * as HostProcess from "@onicode/shared/HostProcess";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -423,7 +422,6 @@ export const probeRemoteEditors = DesktopIpc.makeIpcMethod({
   result: Schema.Array(EditorId),
   handler: Effect.fn("desktop.ipc.window.probeRemoteEditors")(function* () {
     const env = yield* HostProcess.Environment;
-    // Shared listings stop each editor re-stating every PATH entry x PATHEXT candidate on Windows.
     const resolved = yield* Effect.forEach(
       REMOTE_CAPABLE_EDITOR_IDS,
       (editorId) => {
@@ -433,7 +431,7 @@ export const probeRemoteEditors = DesktopIpc.makeIpcMethod({
           : Effect.succeed(false);
       },
       { concurrency: REMOTE_EDITOR_PROBE_CONCURRENCY },
-    ).pipe(withPathDirectoryListings);
+    );
     return REMOTE_CAPABLE_EDITOR_IDS.filter((_, index) => resolved[index]);
   }),
 });

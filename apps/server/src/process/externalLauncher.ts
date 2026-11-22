@@ -14,11 +14,7 @@ import {
 } from "@onicode/contracts";
 import { resolveEditorCommand } from "@onicode/shared/editor";
 import * as HostProcess from "@onicode/shared/HostProcess";
-import {
-  isCommandAvailable,
-  resolveSpawnCommand,
-  withPathDirectoryListings,
-} from "@onicode/shared/shell";
+import { isCommandAvailable, resolveSpawnCommand } from "@onicode/shared/shell";
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -429,7 +425,7 @@ const readEditorEnv = Effect.fn("externalLauncher.readEditorEnv")(function* () {
 const resolveAvailableEditors = Effect.fn("externalLauncher.resolveAvailableEditors")(function* () {
   const platform = yield* HostProcess.Platform;
   const env = yield* readEditorEnv();
-  return yield* buildAvailableEditors(platform, env).pipe(withPathDirectoryListings);
+  return yield* buildAvailableEditors(platform, env);
 });
 
 const resolveFileManagerRevealKind = Effect.fn("externalLauncher.resolveFileManagerRevealKind")(
