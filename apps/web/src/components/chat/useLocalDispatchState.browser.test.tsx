@@ -1,3 +1,4 @@
+import { scopedThreadKey, scopeThreadRef } from "@onicode/client-runtime/environment";
 import { EnvironmentId, ThreadId } from "@onicode/contracts";
 import { useImperativeHandle, type RefObject } from "react";
 import { expect, it } from "vite-plus/test";
@@ -12,13 +13,19 @@ type HookResult = ReturnType<typeof useLocalDispatchState>;
 const ENV = EnvironmentId.make("env-1");
 const THREAD_A = makeThreadFixture({ id: ThreadId.make("thread-a"), environmentId: ENV });
 const THREAD_B = makeThreadFixture({ id: ThreadId.make("thread-b"), environmentId: ENV });
+// Another environment can hold a thread with the same id.
+const REMOTE_THREAD_A = makeThreadFixture({
+  id: THREAD_A.id,
+  environmentId: EnvironmentId.make("env-2"),
+});
 
 function Harness(props: {
   readonly thread: Thread;
   readonly hookRef: RefObject<HookResult | null>;
 }) {
   const result = useLocalDispatchState({
-    environmentId: ENV,
+    threadKey: scopedThreadKey(scopeThreadRef(props.thread.environmentId, props.thread.id)),
+    environmentId: props.thread.environmentId,
     activeThread: props.thread,
     activeLatestRun: props.thread.latestRun,
     latestUserMessageId: null,
@@ -48,6 +55,17 @@ it("keeps a detached send's dispatch state on its own thread", async () => {
   expect(requireHook(hook).isSendBusy).toBe(false);
 
   await act(() => requireHook(hook).beginLocalDispatch());
+  await act(() => detached.beginLocalDispatch());
+  expect(requireHook(hook).isSendBusy).toBe(true);
+
+  await screen.rerender(<Harness thread={THREAD_A} hookRef={hook} />);
+  expect(requireHook(hook).isSendBusy).toBe(true);
+  await screen.rerender(<Harness thread={REMOTE_THREAD_A} hookRef={hook} />);
+  expect(requireHook(hook).isSendBusy).toBe(false);
+
   await act(() => detached.resetLocalDispatch());
+  await screen.rerender(<Harness thread={THREAD_A} hookRef={hook} />);
+  expect(requireHook(hook).isSendBusy).toBe(false);
+  await screen.rerender(<Harness thread={THREAD_B} hookRef={hook} />);
   expect(requireHook(hook).isSendBusy).toBe(true);
 });

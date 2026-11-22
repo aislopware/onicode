@@ -508,10 +508,19 @@ export const make = Effect.gen(function* () {
     };
     const groups = Map.groupBy(lookupCandidates, lookupKey);
     // A thread with no link of its own does not settle from a pull request another thread links,
-    // archived threads included. Most sweeps never ask, so the links are read on first need.
+    // archived threads included. The first group that asks reads the links for the sweep: one whose
+    // only reference is a branch pull request, or whose branch lookup found a closed one. A failed
+    // read warns once and skips those groups.
     const explicitlyLinked = yield* Effect.cached(
       projections.getPullRequestLinkKeys.pipe(
         Effect.map((links) => new Set(links.map(threadPullRequestKeyOf))),
+        Effect.catchCauseIf(
+          (cause) => !Cause.hasInterruptsOnly(cause),
+          (cause) =>
+            Effect.logWarning("automatic thread settlement skipped pull request links", {
+              cause: Cause.pretty(cause),
+            }).pipe(Effect.as(null)),
+        ),
       ),
     );
     const ownedByAnotherThread = (pullRequest: GitManager.GitBranchPullRequest | null) => {
@@ -519,7 +528,7 @@ export const make = Effect.gen(function* () {
       const key = branchPullRequestKey(pullRequest);
       return key === null
         ? Effect.succeed(false)
-        : Effect.map(explicitlyLinked, (linked) => linked.has(key));
+        : Effect.map(explicitlyLinked, (linked) => linked === null || linked.has(key));
     };
 
     // wouldSettle and pullRequestFor run per lookup group; the git and pull request reads they make carry the spans.
@@ -549,12 +558,10 @@ export const make = Effect.gen(function* () {
     ) {
       const thread = group[0]!;
       const reference = thread.linkedPullRequest ?? thread.branchPullRequest;
-      if (
-        thread.linkedPullRequest == null &&
-        reference != null &&
-        (yield* explicitlyLinked).has(threadPullRequestKeyOf(legacyThreadPullRequestKey(reference)))
-      ) {
-        return undefined;
+      if (thread.linkedPullRequest == null && reference != null) {
+        const linked = yield* explicitlyLinked;
+        const key = threadPullRequestKeyOf(legacyThreadPullRequestKey(reference));
+        if (linked === null || linked.has(key)) return undefined;
       }
       if (reference != null) {
         // Only matching PR links settle from this merge event; unrelated links require fresh lookup.

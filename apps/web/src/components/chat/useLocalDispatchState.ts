@@ -9,6 +9,7 @@ import {
 } from "../ChatView.logic";
 
 export function useLocalDispatchState(input: {
+  threadKey: string;
   environmentId: EnvironmentId;
   activeThread: Thread | undefined;
   activeLatestRun: Thread["latestRun"] | null;
@@ -18,13 +19,21 @@ export function useLocalDispatchState(input: {
   activePendingUserInput: RuntimeRequestId | null;
   threadError: string | null | undefined;
 }) {
-  const threadId = input.activeThread?.id ?? null;
-  const [storedDispatch, setLocalDispatch] = useState<LocalDispatchSnapshot | null>(null);
-  // ChatView stays mounted across threads, and a detached send still holds its own thread's setters.
-  const localDispatch = storedDispatch?.threadId === threadId ? storedDispatch : null;
+  const { threadKey } = input;
+  // ChatView stays mounted across threads, and a detached send still holds its own thread's
+  // setters, so each thread keeps its own snapshot.
+  const [dispatches, setDispatches] = useState<ReadonlyMap<string, LocalDispatchSnapshot>>(
+    () => new Map(),
+  );
+  const localDispatch = dispatches.get(threadKey) ?? null;
 
   const resetLocalDispatch = () => {
-    setLocalDispatch((current) => (current?.threadId === threadId ? null : current));
+    setDispatches((current) => {
+      if (!current.has(threadKey)) return current;
+      const next = new Map(current);
+      next.delete(threadKey);
+      return next;
+    });
   };
 
   const serverAcknowledgedLocalDispatch = hasServerAcknowledgedLocalDispatch({
@@ -43,21 +52,23 @@ export function useLocalDispatchState(input: {
     submissionIntent?: ComposerSubmissionIntent;
   }) => {
     const preparingWorktree = Boolean(options?.preparingWorktree);
-    setLocalDispatch((current) => {
-      const active =
-        serverAcknowledgedLocalDispatch || current?.threadId !== threadId ? null : current;
+    setDispatches((current) => {
+      const active = serverAcknowledgedLocalDispatch ? undefined : current.get(threadKey);
       if (active) {
         const submissionIntent = options?.submissionIntent ?? active.submissionIntent;
         return active.preparingWorktree === preparingWorktree &&
           active.submissionIntent === submissionIntent
-          ? active
-          : { ...active, preparingWorktree, submissionIntent };
+          ? current
+          : new Map(current).set(threadKey, { ...active, preparingWorktree, submissionIntent });
       }
-      return createLocalDispatchSnapshot(input.activeThread, {
-        ...options,
-        environmentId: input.environmentId,
-        latestUserMessageId: input.latestUserMessageId,
-      });
+      return new Map(current).set(
+        threadKey,
+        createLocalDispatchSnapshot(input.activeThread, {
+          ...options,
+          environmentId: input.environmentId,
+          latestUserMessageId: input.latestUserMessageId,
+        }),
+      );
     });
   };
 

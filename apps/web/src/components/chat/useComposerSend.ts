@@ -446,7 +446,20 @@ export function useComposerSend(input: ComposerSendInput) {
     // What the user pressed send on; uploads below can take a while, and a redirect must not
     // decline approvals for a draft that changed meanwhile.
     const promptAtSend = detachedOverride ? detachedOverride.prompt : promptRef.current;
-    const panelOnlyPrompt = !directAnnotation && !draftHasNonPromptContent(composerDraftTarget);
+    // A detached send carries its draft's live content, which a promoted draft's old target lacks.
+    const detachedContext = detachedOverride?.sendContext;
+    const panelOnlyPrompt =
+      !directAnnotation &&
+      !draftHasNonPromptContent(composerDraftTarget) &&
+      ![
+        detachedContext?.images,
+        detachedContext?.files,
+        detachedContext?.terminalContexts,
+        detachedContext?.previewAnnotations,
+        detachedContext?.reviewComments,
+        detachedContext?.threadContexts,
+        detachedContext?.environmentContexts,
+      ].some((items) => (items?.length ?? 0) > 0);
     const panelCommand = composerPanelCommand({
       usageLimits:
         panelOnlyPrompt &&

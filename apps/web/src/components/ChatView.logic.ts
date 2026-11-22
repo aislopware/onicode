@@ -1019,7 +1019,6 @@ export async function waitForRevertedMessage(
 }
 
 export interface LocalDispatchSnapshot {
-  threadId: ThreadId | null;
   startedAt: string;
   preparingWorktree: boolean;
   submissionIntent: ComposerSubmissionIntent;
@@ -1045,7 +1044,6 @@ export function createLocalDispatchSnapshot(
   const latestRun = activeThread?.latestRun ?? null;
   const runtime = activeThread?.runtime ?? null;
   return {
-    threadId: activeThread?.id ?? null,
     startedAt: new Date(
       environmentId === undefined ? Date.now() : toServerClock(environmentId, Date.now()),
     ).toISOString(),

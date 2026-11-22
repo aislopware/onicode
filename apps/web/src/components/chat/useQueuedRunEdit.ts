@@ -253,7 +253,9 @@ export function useQueuedRunEdit(input: {
         }));
 
   const focusComposerSoon = () => {
-    window.requestAnimationFrame(() => composerRef.current?.focusAtEnd());
+    window.requestAnimationFrame(() => {
+      if (currentRouteThreadKeyRef.current === editKey) composerRef.current?.focusAtEnd();
+    });
   };
   const clearEditDraft = (runId: RunId) => {
     const target = queuedRunEditDraftId(routeThreadRef, runId);

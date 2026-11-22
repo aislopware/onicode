@@ -467,6 +467,10 @@ const CODE_PAGES = new Map([
 ]);
 const codePage = (value: number) =>
   value === 874 || (value >= 1250 && value <= 1258) ? `windows-${value}` : CODE_PAGES.get(value);
+const isLeadByte = (encoding: string, value: number) =>
+  encoding === "shift_jis"
+    ? (value >= 0x81 && value <= 0x9f) || (value >= 0xe0 && value <= 0xfc)
+    : ["gbk", "euc-kr", "big5"].includes(encoding) && value >= 0x81 && value <= 0xfe;
 
 function* rtf(source: string): Generator<string, void> {
   if (!source.startsWith("{\\rtf")) throw new Error("Invalid RTF document");
@@ -487,8 +491,10 @@ function* rtf(source: string): Generator<string, void> {
     fontCodePages.get(state.font) ?? fontCharsets.get(state.font) ?? state.decoder;
   // A multibyte character spans consecutive bytes, so the decoder streams until the run ends.
   let run: typeof state.decoder | undefined;
+  let lead = false;
   const byte = (value: number) => {
     const current = decoder();
+    lead = !(lead && run === current) && isLeadByte(current.encoding, value);
     const rest = run && run !== current ? run.decode() : "";
     run = current;
     return rest + current.decode(Uint8Array.of(value), { stream: true });
@@ -496,6 +502,7 @@ function* rtf(source: string): Generator<string, void> {
   const endRun = () => {
     const rest = run?.decode() ?? "";
     run = undefined;
+    lead = false;
     return rest;
   };
   const hidden = () => state.skip || state.deleted;
@@ -521,6 +528,13 @@ function* rtf(source: string): Generator<string, void> {
   let fallback = 0;
   for (let i = 0; i < source.length; i++) {
     const char = source[i]!;
+    // Windows writers emit a double-byte character's printable ASCII trail byte literally.
+    const escaped = char === "\\" && ["\\", "{", "}"].includes(source[i + 1]!);
+    if (lead && (escaped || (char >= "@" && char <= "~" && !"\\{}".includes(char)))) {
+      if (escaped) i++;
+      yield byte(source.charCodeAt(i));
+      continue;
+    }
     if (
       run &&
       char.charCodeAt(0) < 128 &&
