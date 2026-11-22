@@ -1,0 +1,141 @@
+/// <reference lib="dom" />
+import { expect } from "e2e";
+import { strToU8, zipSync } from "fflate";
+
+import { test, WEB } from "./onicode.ts";
+
+const SHEETS = ["Overview", "Actuals", "Forecast"];
+const RELATIONSHIPS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+
+function workbook(hidden?: string) {
+  const sheets = SHEETS.map(
+    (name, index) =>
+      `<sheet${name === hidden ? ' state="hidden"' : ""} name="${name}" sheetId="${index + 1}" r:id="sheet${index + 1}"/>`,
+  ).join("");
+  const relationships = SHEETS.map(
+    (_, index) =>
+      `<Relationship Id="sheet${index + 1}" Type="${RELATIONSHIPS}/worksheet" Target="worksheets/sheet${index + 1}.xml"/>`,
+  ).join("");
+  return zipSync({
+    "xl/workbook.xml": strToU8(
+      `<workbook xmlns:r="${RELATIONSHIPS}"><sheets>${sheets}</sheets></workbook>`,
+    ),
+    "xl/_rels/workbook.xml.rels": strToU8(`<Relationships>${relationships}</Relationships>`),
+    ...Object.fromEntries(
+      SHEETS.map((_, index) => [
+        `xl/worksheets/sheet${index + 1}.xml`,
+        strToU8(
+          `<worksheet><sheetData><row r="1"><c r="A1"><v>${index + 1}</v></c></row></sheetData></worksheet>`,
+        ),
+      ]),
+    ),
+  });
+}
+
+test(
+  "Two rapid right arrows advance two tabs in an Excel preview",
+  WEB,
+  async ({ onicode, app, screen, browser }) => {
+    const project = await onicode.project("demo", {
+      "budget.xlsx": workbook(),
+      // Hiding the last sheet makes the right arrow on the second tab wrap to the first.
+      "wraparound.xlsx": workbook("Forecast"),
+    });
+
+    const thread = await onicode.thread({ project, title: "Review budget", messages: ["Start"] });
+    await onicode.open(thread);
+    await screen.getByText("fixture turn complete", { exact: false }).waitFor();
+
+    await browser.keyboard.press("ControlOrMeta+p");
+    await screen.getByPlaceholder("Search files…").fill("budget.xlsx");
+    await screen.getByRole("option", "budget.xlsx", { exact: false }).tap();
+    await browser
+      .locator('[data-active-tab="true"]')
+      .getByText("budget.xlsx", { exact: true })
+      .waitFor();
+    // Cold dev servers can reload while optimizing the Office workers.
+    await screen.getByRole("tab", "Overview").waitFor({ timeout: 120_000 });
+
+    // Deliver both keystrokes before the worker can report the first sheet switch.
+    await browser.evaluate(() => {
+      const first = document.querySelector<HTMLButtonElement>(
+        '[role="tablist"] [role="tab"][aria-selected="true"]',
+      )!;
+      first.focus();
+      for (let press = 0; press < 2; press++)
+        document.activeElement?.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }),
+        );
+      return null;
+    });
+    await screen.getByRole("grid", /Actuals|Forecast/).waitFor();
+    await app.screenshot("after-two-right-arrows");
+    await expect
+      .poll(() =>
+        browser.evaluate(
+          () =>
+            document
+              .querySelector('[role="tablist"]')
+              ?.parentElement?.querySelector('[role="grid"]')
+              ?.getAttribute("aria-label") ?? null,
+        ),
+      )
+      .toBe("Forecast");
+
+    await browser.keyboard.press("ControlOrMeta+p");
+    await screen.getByPlaceholder("Search files…").fill("wraparound.xlsx");
+    await screen.getByRole("option", "wraparound.xlsx", { exact: false }).tap();
+    await browser
+      .locator('[data-active-tab="true"]')
+      .getByText("wraparound.xlsx", { exact: true })
+      .waitFor();
+    const overview = screen.getByRole("tab", "Overview");
+    await overview.waitFor();
+
+    const { ok: showSucceeded, selectedAtSecondPress } = await browser.evaluate(async () => {
+      const first = document.querySelector<HTMLButtonElement>(
+        '[role="tablist"] [role="tab"][aria-selected="true"]',
+      )!;
+      const pressRight = () =>
+        document.activeElement?.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }),
+        );
+      const postMessage = Worker.prototype.postMessage;
+      return await new Promise<{ ok: boolean; selectedAtSecondPress: string | null }>((resolve) => {
+        Worker.prototype.postMessage = function (
+          this: Worker,
+          message: { method?: string; id?: number },
+          options?: Transferable[] | StructuredSerializeOptions,
+        ) {
+          if (message.method === "show") {
+            Worker.prototype.postMessage = postMessage;
+            const onReply = (event: MessageEvent<{ id: number; ok: boolean }>) => {
+              if (event.data.id !== message.id) return;
+              this.removeEventListener("message", onReply);
+              if (event.data.ok !== true) {
+                resolve({ ok: false, selectedAtSecondPress: null });
+                return;
+              }
+              // The worker client has queued the first layout, and React has yet to commit it.
+              queueMicrotask(() => {
+                const selected = first.getAttribute("aria-selected");
+                pressRight();
+                resolve({ ok: true, selectedAtSecondPress: selected });
+              });
+            };
+            this.addEventListener("message", onReply);
+          }
+          Reflect.apply(postMessage, this, [message, options]);
+        };
+        first.focus();
+        pressRight();
+      });
+    });
+    expect(showSucceeded).toBe(true);
+    expect(selectedAtSecondPress).toBe("true");
+    await expect(overview).toBeFocused();
+    await app.screenshot("after-wrapping-to-overview");
+    await expect(overview).toHaveAttribute("aria-selected", "true");
+    await expect(screen.getByRole("grid", "Overview")).toBeVisible();
+  },
+);
