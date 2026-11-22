@@ -28,7 +28,7 @@ import {
 import { deriveComposerSendState } from "../ChatView.logic";
 import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
 import { AppAtomRegistryProvider, appAtomRegistry } from "../../rpc/atomRegistry";
-import { useQueuedRunEdit } from "./useQueuedRunEdit";
+import { resolveDictationDraftTarget, useQueuedRunEdit } from "./useQueuedRunEdit";
 import type { ChatComposerHandle } from "./ChatComposer";
 import { readAttachmentUpload, useAttachmentUploadStore } from "../../lib/attachmentUploadQueue";
 
@@ -448,6 +448,22 @@ describe("useQueuedRunEdit", () => {
     expect(
       useComposerDraftStore.getState().getComposerDraft(requireHook(hook).draftTarget)?.prompt,
     ).toBe("changed");
+  });
+
+  it("keeps an emptied edit as the place for dictated words while it stays open", async () => {
+    const { hook } = setup();
+    await using screen = await render(view(THREAD_A, "queued", hook));
+    await beginChangedEdit(hook);
+    const target = requireHook(hook).draftTarget;
+    await act(() => useComposerDraftStore.getState().setPrompt(target, ""));
+    expect(useComposerDraftStore.getState().getComposerDraft(target)).toBeNull();
+
+    await screen.rerender(view(THREAD_B, "queued", hook));
+    expect(resolveDictationDraftTarget(target)).toBe(target);
+    await screen.rerender(view(THREAD_A, "queued", hook));
+    await act(() => requireHook(hook).cancelEdit());
+
+    expect(resolveDictationDraftTarget(target)).toBeNull();
   });
 
   it("moves a changed edit into the thread draft when its run starts while the user is away", async () => {

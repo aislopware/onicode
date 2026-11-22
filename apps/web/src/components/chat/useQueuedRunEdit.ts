@@ -27,7 +27,7 @@ import {
   type ThreadContextRecord,
   type ThreadId,
 } from "@onicode/contracts";
-import { scopedThreadKey } from "@onicode/client-runtime/environment";
+import { parseScopedThreadKey, scopedThreadKey } from "@onicode/client-runtime/environment";
 import {
   restoreAttachmentOnlyBootstrapPrompt,
   stripAttachmentOnlyBootstrapPrompt,
@@ -37,6 +37,7 @@ import type { RefObject } from "react";
 import { useAssetUrls } from "../../assets/assetUrls";
 import {
   queuedRunEditDraftId,
+  resolveLiveComposerDraftTarget,
   useComposerDraftStore,
   type ComposerFileAttachment,
   type ComposerImageAttachment,
@@ -94,6 +95,24 @@ const queuedRunEdits = makeQueuedRunEditStore<EditingQueuedRun>({
   registry: appAtomRegistry,
   label: "web-queued-run-edits",
 });
+
+/**
+ * Where words dictated into `target` land once its editor shows another draft. Clearing an edit's
+ * text drops its stored draft, yet the edit stays open, so its draft is still the destination.
+ */
+export function resolveDictationDraftTarget(
+  target: ComposerThreadTarget,
+): ComposerThreadTarget | null {
+  const live = resolveLiveComposerDraftTarget(target);
+  if (live !== null || typeof target !== "string") return live;
+  const editOpen = Object.entries(appAtomRegistry.get(queuedRunEdits.atom)).some(
+    ([threadKey, edit]) => {
+      const threadRef = parseScopedThreadKey(threadKey);
+      return threadRef !== null && queuedRunEditDraftId(threadRef, edit.runId) === target;
+    },
+  );
+  return editOpen ? target : null;
+}
 
 interface QueuedRunEditContent {
   readonly prompt: string;
