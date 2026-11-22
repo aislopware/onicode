@@ -5,6 +5,7 @@ import {
   nativeImagePasteCount,
   nativeImagePasteKey,
   nativeImagePastePending,
+  onNativeImagePastesChanged,
   startComposerDraftOperation,
   startNativeImagePaste,
 } from "./composerDraftOperations";
@@ -46,6 +47,11 @@ describe("composer draft operations", () => {
 
   it("holds a send for a pick that counts no images until the pick itself finishes", () => {
     const key = nativeImagePasteKey("thread-e");
+    // Placeholders show the count, so each change of it is told, not only start and settle.
+    const counts: Array<number> = [];
+    using _listener = {
+      [Symbol.dispose]: onNativeImagePastesChanged(() => counts.push(nativeImagePasteCount(key))),
+    };
     const pick = startNativeImagePaste("thread-e", 0);
     const paste = startNativeImagePaste("thread-e", 2);
     expect(nativeImagePasteCount(key)).toBe(2);
@@ -55,5 +61,6 @@ describe("composer draft operations", () => {
     expect(nativeImagePasteCount(key)).toBe(0);
     pick(true);
     expect(nativeImagePastePending(key)).toBe(false);
+    expect(counts).toEqual([0, 2, 0, 0]);
   });
 });

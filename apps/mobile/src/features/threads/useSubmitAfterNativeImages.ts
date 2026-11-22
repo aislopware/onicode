@@ -20,6 +20,13 @@ export function useNativeImagesConverting(draftKey: string): boolean {
   );
 }
 
+/** How many images are still converting into the draft, for placeholders where they will land. */
+export function useNativeImagesConvertingCount(draftKey: string): number {
+  return useSyncExternalStore(onNativeImagePastesChanged, () =>
+    nativeImagePasteCount(nativeImagePasteKey(draftKey)),
+  );
+}
+
 type HeldSend = {
   readonly draftKey: string;
   readonly generation: number;

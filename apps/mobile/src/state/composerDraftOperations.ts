@@ -78,12 +78,16 @@ export function startNativeImagePaste(draftKey: string, images = 1): (success: b
   nativeImagePastes.set(key, paste);
   paste.holds += 1;
   paste.images += images;
-  if (existing === undefined) notifyNativeImagePastesChanged();
+  if (existing === undefined || images > 0) notifyNativeImagePastesChanged();
   return (success) => {
     if (!success) paste.failed = true;
     paste.holds -= 1;
     paste.images -= images;
-    if (paste.holds > 0 || nativeImagePastes.get(key) !== paste) return;
+    if (nativeImagePastes.get(key) !== paste) return;
+    if (paste.holds > 0) {
+      if (images > 0) notifyNativeImagePastesChanged();
+      return;
+    }
     nativeImagePastes.delete(key);
     settleNativeImagePaste(key, paste.failed);
   };
@@ -106,7 +110,7 @@ export function onNativeImagePastesSettled(
   };
 }
 
-/** Calls back when a draft starts or stops having images converting into it. */
+/** Calls back when a draft starts or stops having images converting into it, or their count changes. */
 export function onNativeImagePastesChanged(listener: () => void): () => void {
   nativeImagePasteChangeListeners.add(listener);
   return () => {
