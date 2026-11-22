@@ -2358,6 +2358,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         alternateModifier: false,
         activeTurnDefault: followUpBehavior,
         canSteer,
+        editingQueuedRun: isEditingQueuedMessage,
       });
     const atPress = heldAtPress ?? {
       approvals: {
@@ -2513,6 +2514,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           running: phase === "running" || phase === "connecting",
           alternateModifier: intent === "alternate",
           canSteer,
+          editingQueuedRun: isEditingQueuedMessage,
           activeTurnDefault: followUpBehavior,
         }),
         intent,
@@ -2530,6 +2532,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         alternateModifier,
         activeTurnDefault: followUpBehavior,
         canSteer,
+        editingQueuedRun: isEditingQueuedMessage,
       }),
       running && alternateModifier ? "alternate" : undefined,
     );
@@ -2543,6 +2546,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         alternateModifier: false,
         activeTurnDefault: followUpBehavior,
         canSteer,
+        editingQueuedRun: isEditingQueuedMessage,
       }),
     );
   };
@@ -2629,6 +2633,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       routeKind,
       phase,
       canSteer,
+      editingQueuedRun: isEditingQueuedMessage,
       followUpBehavior,
       isLiteralPendingAnswer,
       pendingUserInputs,

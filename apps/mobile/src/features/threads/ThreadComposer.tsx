@@ -624,12 +624,14 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
   ) => {
     if (isSubmissionLocked || sendBlockedReason !== null) return;
     if (pendingPastedTextAttachmentCountRef.current > 0) return;
-    if (usageLimitsOffered && isUsageLimitsCommand(draftMessage) && draftAttachments.length === 0) {
+    // A send left while away runs on the last render, from before its images joined the draft.
+    const { text: draftText, attachments } = getComposerDraftSnapshot(composerDraftKey);
+    if (usageLimitsOffered && isUsageLimitsCommand(draftText) && attachments.length === 0) {
       if (openUsageLimits()) onChangeDraftMessage("");
       return;
     }
-    const sessionView = providerSessionViewForPrompt(draftMessage, sessionViews);
-    if (sessionView !== null && draftAttachments.length === 0 && onProviderSessionView) {
+    const sessionView = providerSessionViewForPrompt(draftText, sessionViews);
+    if (sessionView !== null && attachments.length === 0 && onProviderSessionView) {
       onChangeDraftMessage("");
       onProviderSessionView(sessionView);
       return;

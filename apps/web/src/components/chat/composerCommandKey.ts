@@ -46,6 +46,7 @@ export function composerCommandKeyHandler(input: {
   readonly routeKind: ChatComposerProps["routeKind"];
   readonly phase: ChatComposerProps["phase"];
   readonly canSteer: boolean;
+  readonly editingQueuedRun: boolean;
   readonly followUpBehavior: ChatComposerProps["settings"]["followUpBehavior"];
   readonly isLiteralPendingAnswer: boolean;
   readonly pendingUserInputs: ReadonlyArray<PendingUserInput>;
@@ -106,6 +107,7 @@ export function composerCommandKeyHandler(input: {
     routeKind,
     phase,
     canSteer,
+    editingQueuedRun,
     followUpBehavior,
     isLiteralPendingAnswer,
     pendingUserInputs,
@@ -289,6 +291,7 @@ export function composerCommandKeyHandler(input: {
           alternateModifier: submissionIntent === "alternate",
           activeTurnDefault: followUpBehavior,
           canSteer,
+          editingQueuedRun,
         }),
         submissionIntent,
       );

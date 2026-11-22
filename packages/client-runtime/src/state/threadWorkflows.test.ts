@@ -58,10 +58,18 @@ describe("thread workflows", () => {
       { running: true, held: true },
       false,
     ],
+    // The provider turn ended; the server would start the steer as a turn of its own.
+    ["run waiting for its checkpoint", { steer: true }, { waiting: true }, false],
   ] as const)("gates composer steering for %s", (_, turns, compaction, expected) => {
     const projection = {
       thread: { id: "thread", activeProviderThreadId: "provider-thread" },
-      runs: [{ id: "active", status: "running", providerThreadId: "provider-thread" }],
+      runs: [
+        {
+          id: "active",
+          status: "waiting" in compaction ? "waiting" : "running",
+          providerThreadId: "provider-thread",
+        },
+      ],
       providerThreads: [{ id: "provider-thread", providerSessionId: "session" }],
       providerSessions: [
         ...(turns === undefined

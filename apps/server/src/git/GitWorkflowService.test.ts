@@ -154,29 +154,37 @@ const layerCheckoutWorkflow = (harness: CheckoutHarness) =>
         SharedCheckoutGuard.SharedCheckoutGuard,
         Effect.gen(function* () {
           const path = yield* Path.Path;
+          const busyThreads = ({ operation, cwd }: { operation: string; cwd: string }) =>
+            Effect.gen(function* () {
+              harness.guards.push(`guard-${yield* probeSwitchReservation(path)}`);
+              yield* harness.onGuard;
+              if (harness.unverified) {
+                return yield* new GitCommandError({
+                  operation,
+                  command: "git checkout",
+                  cwd,
+                  detail: "unverified",
+                });
+              }
+              return harness.working ? ["busy"] : [];
+            });
           return SharedCheckoutGuard.SharedCheckoutGuard.of({
-            assertIdle: ({ operation, cwd }) =>
-              Effect.gen(function* () {
-                harness.guards.push(`guard-${yield* probeSwitchReservation(path)}`);
-                yield* harness.onGuard;
-                if (harness.unverified) {
-                  return yield* new GitCommandError({
-                    operation,
-                    command: "git checkout",
-                    cwd,
-                    detail: "unverified",
-                    cause: new Error("projection read failed"),
-                  });
-                }
-                if (harness.working) {
-                  return yield* new GitCommandError({
-                    operation,
-                    command: "git checkout",
-                    cwd,
-                    detail: "busy",
-                  });
-                }
-              }),
+            busyThreads,
+            assertIdle: (input) =>
+              busyThreads(input).pipe(
+                Effect.flatMap((busy) =>
+                  busy.length === 0
+                    ? Effect.void
+                    : Effect.fail(
+                        new GitCommandError({
+                          operation: input.operation,
+                          command: "git checkout",
+                          cwd: input.cwd,
+                          detail: busy.join(", "),
+                        }),
+                      ),
+                ),
+              ),
           });
         }),
       ),

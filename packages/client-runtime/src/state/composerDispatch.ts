@@ -34,9 +34,14 @@ export function resolveComposerDispatchMode(input: {
   readonly activeTurnDefault?: ActiveTurnComposerAction;
   /** False while the active turn cannot take steering input, such as an explicit /compact. */
   readonly canSteer?: boolean;
+  /**
+   * Saving a queued message: its steer is the queued row's Send now, which checks for itself
+   * whether the turn takes it or the message only moves to the front.
+   */
+  readonly editingQueuedRun?: boolean;
 }): ComposerDispatchMode {
   if (!input.running) return "auto";
-  if (input.canSteer === false) return "queue";
+  if (input.canSteer === false && input.editingQueuedRun !== true) return "queue";
   const defaultAction = input.activeTurnDefault ?? "steer";
   if (input.alternateModifier) return defaultAction === "queue" ? "steer" : "queue";
   return defaultAction;

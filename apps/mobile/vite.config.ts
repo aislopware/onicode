@@ -19,6 +19,7 @@ const reactTests = [
   "src/features/files/source-file-document.test.ts",
   "src/features/projects/AddProjectScreen.test.ts",
   "src/lib/useMediaVideoPlayback.test.tsx",
+  "src/lib/useNativePaste.test.tsx",
   "src/features/pull-requests/usePullRequestEnvironmentFallback.test.tsx",
   "src/lib/filePreview.test.ts",
   "src/features/threads/thread-inspector-navigation.test.tsx",

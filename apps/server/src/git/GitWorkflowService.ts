@@ -550,25 +550,21 @@ export const make = Effect.gen(function* () {
                 fileSystem,
                 path,
                 rootPath,
+                // Busy skips this pull; a check that could not run fails, so the caller logs it
+                // instead of skipping quietly forever.
                 checkoutGuard
-                  .assertIdle({
+                  .busyThreads({
                     operation: "GitWorkflowService.pullCurrentBranchWhenIdle",
                     cwd,
                     root: rootPath,
                   })
                   .pipe(
-                    Effect.matchEffect({
-                      // Busy skips this pull; a check that could not run carries its cause and
-                      // fails, so the caller logs it instead of skipping quietly forever.
-                      onFailure: (error) =>
-                        error.cause === undefined ? Effect.succeed(null) : Effect.fail(error),
-                      onSuccess: () =>
-                        stillEligible.pipe(
-                          Effect.flatMap((eligible) =>
-                            eligible ? git.pullCurrentBranch(cwd) : Effect.succeed(null),
-                          ),
-                        ),
-                    }),
+                    Effect.flatMap((busy) =>
+                      busy.length > 0 ? Effect.succeed(null) : stillEligible,
+                    ),
+                    Effect.flatMap((eligible) =>
+                      eligible === true ? git.pullCurrentBranch(cwd) : Effect.succeed(null),
+                    ),
                   ),
                 () => Effect.succeed(null),
               ),

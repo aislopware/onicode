@@ -1,6 +1,10 @@
 import { expect, it } from "vite-plus/test";
 
-import { compactionBlocksSteering, composerRunsDraftLocally } from "./composerDispatch.ts";
+import {
+  compactionBlocksSteering,
+  composerRunsDraftLocally,
+  resolveComposerDispatchMode,
+} from "./composerDispatch.ts";
 
 it("blocks steering for explicit compaction, and for automatic compaction unless the provider takes steers then", () => {
   const during = (
@@ -73,3 +77,19 @@ it("treats only the commands the composer runs itself as local", () => {
   expect(composerRunsDraftLocally({ ...all, holdsOnlyText: false, text: "/clear" })).toBe(false);
   expect(composerRunsDraftLocally({ ...all, holdsOnlyText: false, text: "/side why?" })).toBe(true);
 });
+
+it.each([
+  { canSteer: true, editingQueuedRun: false, alternateModifier: true, mode: "steer" },
+  // A turn that takes no steer queues either way.
+  { canSteer: false, editingQueuedRun: false, alternateModifier: true, mode: "queue" },
+  // A saved queued edit still asks for Send now, which moves a /compact to the front.
+  { canSteer: false, editingQueuedRun: true, alternateModifier: true, mode: "steer" },
+  { canSteer: false, editingQueuedRun: true, alternateModifier: false, mode: "queue" },
+] as const)(
+  "dispatches $mode with canSteer $canSteer while editing a queued run: $editingQueuedRun",
+  ({ mode, ...input }) => {
+    expect(
+      resolveComposerDispatchMode({ ...input, running: true, activeTurnDefault: "queue" }),
+    ).toBe(mode);
+  },
+);

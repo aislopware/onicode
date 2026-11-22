@@ -97,7 +97,7 @@ export function QuestionAttachments(props: {
       maxAttachments: Math.max(0, PROVIDER_SEND_TURN_MAX_ATTACHMENTS - otherCount),
     });
   };
-  const paste = useNativePaste((uris) => {
+  const paste = useNativePaste(() => {
     const scope = pickerScope.current;
     if (!selectedThread || props.disabled || !configs.get(selectedThread.environmentId)) return;
     const key = questionAttachmentDraftKey(
@@ -107,27 +107,33 @@ export function QuestionAttachments(props: {
       props.question.id,
     );
     const preparation = startQuestionImagePreparation(key);
-    void convertPastedImagesToAttachments({ uris })
-      .then((result) =>
-        preparation.complete(result, {
-          isActive: () => scope.active,
-          append: (attachments) => append(key, attachments),
-        }),
-      )
-      .then(({ error, rejected }) => {
-        const problems = [
-          ...(error ? [error] : []),
-          ...(rejected > 0 ? [gt("Too many attachments.")] : []),
-        ];
-        if (problems.length) Dialog.alert(gt("Could not paste image"), problems.join("\n\n"));
-      })
-      .catch((error) =>
-        Dialog.alert(
-          gt("Could not paste image"),
-          errorDisplayMessage(error, m) ?? gt("Try again."),
-        ),
-      )
-      .finally(preparation.finish);
+    return (uris) => {
+      if (uris.length === 0) {
+        preparation.finish();
+        return;
+      }
+      void convertPastedImagesToAttachments({ uris })
+        .then((result) =>
+          preparation.complete(result, {
+            isActive: () => scope.active,
+            append: (attachments) => append(key, attachments),
+          }),
+        )
+        .then(({ error, rejected }) => {
+          const problems = [
+            ...(error ? [error] : []),
+            ...(rejected > 0 ? [gt("Too many attachments.")] : []),
+          ];
+          if (problems.length) Dialog.alert(gt("Could not paste image"), problems.join("\n\n"));
+        })
+        .catch((error) =>
+          Dialog.alert(
+            gt("Could not paste image"),
+            errorDisplayMessage(error, m) ?? gt("Try again."),
+          ),
+        )
+        .finally(preparation.finish);
+    };
   });
   if (!selectedThread || props.question.allowCustomAnswer === false) return null;
   const { environmentId, id: threadId } = selectedThread;
@@ -192,7 +198,7 @@ export function QuestionAttachments(props: {
       />
       <FilePreviewModal source={previewFile} onRequestClose={() => setPreviewFile(null)} />
       <VideoPreviewModal source={previewVideo} onRequestClose={() => setPreviewVideo(null)} />
-      <TextInputWrapper onPaste={paste}>
+      <TextInputWrapper {...paste}>
         <TextInput
           ref={inputRef}
           defaultValue={initialText}
