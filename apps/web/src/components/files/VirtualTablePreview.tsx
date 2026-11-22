@@ -415,7 +415,8 @@ function ScaledRows(
     // Read the live position: events can arrive before the last scroll has rendered.
     const tailStart = maxFirst * 29 * scale;
     if (node.scrollTop < tailStart) {
-      const rate = (scale * 29) / rowHeight();
+      // A stale tail render's first row is not the scaled track's; the tail branch assumes 29px too.
+      const rate = nativeTail ? scale : (scale * 29) / rowHeight();
       const toTail = (tailStart - node.scrollTop) / rate;
       // Past the tail start the rest moves natively, as in the tail itself.
       node.scrollTop +=
@@ -513,8 +514,8 @@ function ScaledRows(
       const rows = props.getRows(currentPage);
       if (!rows) continue;
       const start = currentPage * PREVIEW_PAGE_ROWS;
-      const limit = visibleEnd - pageOffset * PREVIEW_PAGE_ROWS;
-      const count = Math.min(PREVIEW_PAGE_ROWS, props.count - start, limit);
+      const pageEnd = visibleEnd - pageOffset * PREVIEW_PAGE_ROWS;
+      const count = Math.min(PREVIEW_PAGE_ROWS, props.count - start, pageEnd);
       for (let local = pageOffset === 0 ? from : 0; local < count; local++) {
         const row = rows[local];
         if (row) mounted.push({ index: start + local, row });
