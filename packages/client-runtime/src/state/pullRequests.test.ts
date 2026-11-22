@@ -551,6 +551,7 @@ const makeTestRuntime = Effect.fn("makeTestRuntime")(function* (
     connect: Effect.void,
     disconnect: Effect.void,
     retryNow: Effect.void,
+    closed: Effect.never,
   } satisfies EnvironmentSupervisor.EnvironmentSupervisor["Service"]);
   const localTarget = new PrimaryConnectionTarget({
     environmentId: EnvironmentId.make("local-environment"),

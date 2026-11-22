@@ -1577,7 +1577,20 @@ const make = Effect.gen(function* () {
             const boundWorktreePath = current?.thread.worktreePath ?? null;
             // A retry prepares the worktree the accepted launch asked for, not the
             // retry's own strategy, whose defaults may resolve differently.
-            const accepted = current?.runs.find((run) => run.id === runId)?.workspacePreparation;
+            const acceptedRun = current?.runs.find((run) => run.id === runId);
+            const accepted = acceptedRun?.workspacePreparation;
+            // A retry's uploads are pending ids; the accepted message holds its durable copies.
+            const storedMessage =
+              messageWasAlreadyAccepted &&
+              acceptedRun !== undefined &&
+              input.initialMessage !== undefined &&
+              input.initialMessage.attachments.length > 0
+                ? (yield* threads
+                    .getThreadRecords(threadId, ["messages"], {
+                      messageIds: [acceptedRun.userMessageId],
+                    })
+                    .pipe(Effect.mapError(mapError(input, "update-thread", threadId)))).messages[0]
+                : undefined;
             const preparationStrategy: ThreadLaunchWorkspaceStrategy =
               Option.isSome(launchReceipt) &&
               (accepted?.type === "worktree" || accepted?.type === "existing_worktree")
@@ -1592,7 +1605,20 @@ const make = Effect.gen(function* () {
                     }
                   : workspaceStrategy;
             yield* schedulePreparation(
-              { ...input, workspaceStrategy: preparationStrategy },
+              {
+                ...input,
+                workspaceStrategy: preparationStrategy,
+                ...(storedMessage === undefined || input.initialMessage === undefined
+                  ? {}
+                  : {
+                      initialMessage: {
+                        ...input.initialMessage,
+                        text: storedMessage.text,
+                        attachments: storedMessage.attachments,
+                        context: storedMessage.context,
+                      },
+                    }),
+              },
               threadId,
               runId,
             );

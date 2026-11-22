@@ -8,7 +8,11 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as ServerConfig from "../config.ts";
-import { createPendingAttachmentId, resolveAttachmentPath } from "../attachmentStore.ts";
+import {
+  createAttachmentId,
+  createPendingAttachmentId,
+  resolveAttachmentPath,
+} from "../attachmentStore.ts";
 import * as ThreadMessageIntake from "./ThreadMessageIntake.ts";
 import { assert, it, vi } from "@effect/vitest";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
@@ -2559,8 +2563,13 @@ it.effect(
     Effect.gen(function* () {
       const setupEntered = yield* Deferred.make<void>();
       const allowSetup = yield* Deferred.make<void>();
+      const namedFrom = yield* Deferred.make<ReadonlyArray<ChatAttachment> | undefined>();
       const fetched: Array<string> = [];
       const harness = makeHarness({
+        generateBranchName: (request) =>
+          Deferred.succeed(namedFrom, request.attachments).pipe(
+            Effect.as({ branch: "resume-preparation" }),
+          ),
         fetchWorktreeBaseCommit: ({ refName }) =>
           Effect.sync(() => {
             fetched.push(refName);
@@ -2576,12 +2585,25 @@ it.effect(
       yield* Effect.gen(function* () {
         const launches = yield* ThreadLaunch.ThreadLaunchService;
         const threads = yield* ThreadManagement.ThreadManagementService;
-        const input = launchInput({
-          command: "command:launch:accepted-before-fork",
-          thread: "thread:launch:accepted-before-fork",
-          message: "Resume preparation",
-          workspace: { type: "worktree", baseRef: "main" },
-        });
+        const durable: ChatAttachment = {
+          type: "image",
+          id: ChatAttachmentId.make(createAttachmentId("thread-launch-accepted-before-fork")!),
+          name: "screen.png",
+          mimeType: "image/png",
+          sizeBytes: 4,
+        };
+        // The retry carries the client's pending upload, not the copy the accepted message holds.
+        const input = {
+          ...launchInput({
+            command: "command:launch:accepted-before-fork",
+            thread: "thread:launch:accepted-before-fork",
+            workspace: { type: "worktree", baseRef: "main" },
+          }),
+          initialMessage: {
+            text: "Resume preparation",
+            attachments: [{ ...durable, id: ChatAttachmentId.make(createPendingAttachmentId()!) }],
+          },
+        };
         const messageId = MessageId.make("message:launch:accepted-before-fork");
 
         yield* threads.dispatch({
@@ -2604,7 +2626,7 @@ it.effect(
           threadId: input.threadId,
           messageId,
           text: "Resume preparation",
-          attachments: [],
+          attachments: [durable],
           modelSelection: input.modelSelection,
           dispatchMode: {
             type: "defer_start",
@@ -2627,6 +2649,7 @@ it.effect(
         assert.isTrue(second.resumed);
         assert.equal(harness.runSetup.mock.calls.length, 1);
         assert.deepEqual(fetched, ["main"]);
+        assert.deepEqual(yield* Deferred.await(namedFrom), [durable]);
         yield* Deferred.succeed(allowSetup, undefined);
       }).pipe(Effect.provide(harness.layer));
     }),
@@ -2867,7 +2890,16 @@ it.effect("shared intake preserves durable attachment bytes after a lost launch 
     assert.deepEqual(yield* fs.readFile(storedPath), new Uint8Array([1, 2, 3, 4]));
     assert.deepEqual(yield* fs.readFile(pendingPath), new Uint8Array([1, 2, 3, 4]));
 
-    const replayed = yield* ThreadMessageIntake.launchThread(input);
+    // The pending sweep removes uploads a long outage left behind; an accepted retry needs none.
+    const afterPendingSweep = <A, E, R>(path: string, retry: Effect.Effect<A, E, R>) =>
+      Effect.gen(function* () {
+        const bytes = yield* fs.readFile(path);
+        yield* fs.remove(path);
+        const result = yield* retry;
+        yield* fs.writeFile(path, bytes);
+        return result;
+      });
+    const replayed = yield* afterPendingSweep(pendingPath, ThreadMessageIntake.launchThread(input));
     assert.equal(replayed.projection.messages[0]?.id, stored.id);
     assert.deepEqual(replayed.projection.messages[0]?.attachments, stored.attachments);
     const claimedFiles = Effect.map(fs.readDirectory(config.attachmentsDir), (files) =>
@@ -2921,7 +2953,7 @@ it.effect("shared intake preserves durable attachment bytes after a lost launch 
       creationSource: "web",
     });
     yield* dispatch;
-    yield* dispatch;
+    yield* afterPendingSweep(pendingPath, dispatch);
     const queuedProjection = yield* threads.getThreadProjection(input.threadId);
     const queuedRun = queuedProjection.runs.find(
       (run) => run.userMessageId === MessageId.make("intake-second"),
@@ -2954,7 +2986,7 @@ it.effect("shared intake preserves durable attachment bytes after a lost launch 
       attachments: [...queuedMessage.attachments, file],
     });
     yield* edit;
-    yield* edit;
+    yield* afterPendingSweep(filePath, edit);
     const editedProjection = yield* threads.getThreadProjection(input.threadId);
     const editedMessage = editedProjection.messages.find(
       (message) => message.id === queuedRun.userMessageId,
@@ -2994,7 +3026,7 @@ it.effect("shared intake preserves durable attachment bytes after a lost launch 
       creationSource: "mcp",
     });
     yield* send;
-    yield* send;
+    yield* afterPendingSweep(pendingPath, send);
     assert.equal((yield* claimedFiles).length, 4);
     const final = yield* threads.getThreadProjection(input.threadId);
     assert.equal(final.messages.length, 3);

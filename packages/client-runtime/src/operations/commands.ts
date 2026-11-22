@@ -341,7 +341,7 @@ const resendAfterSocketLoss = Effect.fn("EnvironmentCommands.resendAfterSocketLo
       Cause.hasInterruptsOnly(exit.cause) ||
       exit.cause.reasons.some((reason) => reason._tag === "Fail" && isRpcClientError(reason.error));
     if (!lostTransport || resends >= MAX_LOST_TRANSPORT_RESENDS) return yield* exit;
-    const replacement = yield* Effect.raceFirst(
+    const replacement = yield* Effect.raceAllFirst([
       SubscriptionRef.changes(supervisor.session).pipe(
         Stream.filter(
           (session) =>
@@ -355,7 +355,9 @@ const resendAfterSocketLoss = Effect.fn("EnvironmentCommands.resendAfterSocketLo
         Stream.runHead,
         Effect.as(Option.none()),
       ),
-    );
+      // A route edit or re-pair replaces the supervisor; this one never reconnects.
+      supervisor.closed.pipe(Effect.as(Option.none())),
+    ]);
     if (Option.isNone(replacement)) return yield* exit;
   }
 });
@@ -1194,12 +1196,32 @@ export const moveQueuedRunFirst = Effect.fn("EnvironmentCommands.moveQueuedRunFi
 export const sendSteerNow = Effect.fn("EnvironmentCommands.sendSteerNow")(function* (
   input: SendSteerNowInput,
 ) {
-  return yield* dispatch({
-    type: "steer.send-now",
-    commandId: yield* allocateCommandId(input),
-    threadId: input.threadId,
-    messageId: input.messageId,
-  });
+  return yield* resendAfterSocketLoss(
+    dispatch({
+      type: "steer.send-now",
+      commandId: yield* allocateCommandId(input),
+      threadId: input.threadId,
+      messageId: input.messageId,
+    }),
+  ).pipe(
+    // The agent can read the steer before the tap or its resend lands; nothing is left to send.
+    Effect.catchTags({
+      OrchestrationV2DispatchCommandError: (error) =>
+        getProjection(input.threadId).pipe(
+          Effect.mapError(() => error),
+          Effect.flatMap((projection) =>
+            projection.turnItems.some(
+              (item) =>
+                item.type === "user_message" &&
+                item.messageId === input.messageId &&
+                item.status === "completed",
+            )
+              ? Effect.succeed({ sequence: 0 })
+              : Effect.fail(error),
+          ),
+        ),
+    }),
+  );
 });
 
 export const cancelQueuedRun = Effect.fn("EnvironmentCommands.cancelQueuedRun")(function* (

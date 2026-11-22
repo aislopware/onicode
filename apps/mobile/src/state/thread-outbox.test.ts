@@ -1417,5 +1417,13 @@ describe("thread outbox", () => {
         interrupted: false,
       }),
     ).toBe("restore");
+    // A send that gave up mid-flight may have landed; redelivery replays its receipt.
+    expect(
+      resolveThreadOutboxFailureAction({
+        stage: "start-turn",
+        error: deterministicFailure,
+        interrupted: true,
+      }),
+    ).toBe("retry");
   });
 });

@@ -185,6 +185,7 @@ const makeSupervisor = Effect.fn("CommandPerformance.makeSupervisor")(function* 
     connect: Effect.void,
     disconnect: Effect.void,
     retryNow: Effect.void,
+    closed: Effect.never,
   } satisfies EnvironmentSupervisor.EnvironmentSupervisor["Service"]);
 });
 

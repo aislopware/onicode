@@ -1167,35 +1167,38 @@ export function createThreadOutboxDelivery(): {
     launchedCreations.set(persistedMessage.messageId, { revision: deliveryRevision, workspace });
     const deliveryResult = yield* deliveryCommand(threadEnvironment.startTurn, {
       environmentId: queuedMessage.environmentId,
-      input: buildProjectThreadStartTurnInput({
-        projectId: creation.projectId,
-        projectCwd,
-        threadId: queuedMessage.threadId,
-        commandId: queuedMessage.commandId,
-        messageId: queuedMessage.messageId,
-        createdAt: queuedMessage.createdAt,
-        titleText: queuedMessage.text,
-        ...serializeComposerMessageForServer(
-          queuedMessage.text.trim(),
-          uploadedComposerContext(
-            queuedMessage.context,
-            queuedMessage.attachments,
-            prepared.attachments,
+      input: {
+        ...buildProjectThreadStartTurnInput({
+          projectId: creation.projectId,
+          projectCwd,
+          threadId: queuedMessage.threadId,
+          commandId: queuedMessage.commandId,
+          messageId: queuedMessage.messageId,
+          createdAt: queuedMessage.createdAt,
+          titleText: queuedMessage.text,
+          ...serializeComposerMessageForServer(
+            queuedMessage.text.trim(),
+            uploadedComposerContext(
+              queuedMessage.context,
+              queuedMessage.attachments,
+              prepared.attachments,
+            ),
           ),
-        ),
-        uploadedAttachments: prepared.attachments,
-        modelSelection: sendSettings.modelSelection,
-        runtimeMode: sendSettings.runtimeMode,
-        interactionMode: sendSettings.interactionMode,
-        workspaceMode: workspace.workspaceMode,
-        branch: workspace.branch,
-        worktreePath: workspace.worktreePath,
-        startFromOrigin: workspace.startFromOrigin ?? false,
-        ...(workspace.repositories === undefined
-          ? {}
-          : { worktreeRepositories: workspace.repositories }),
-        worktreeBranchName: buildTemporaryWorktreeBranchName(randomHex),
-      }),
+          uploadedAttachments: prepared.attachments,
+          modelSelection: sendSettings.modelSelection,
+          runtimeMode: sendSettings.runtimeMode,
+          interactionMode: sendSettings.interactionMode,
+          workspaceMode: workspace.workspaceMode,
+          branch: workspace.branch,
+          worktreePath: workspace.worktreePath,
+          startFromOrigin: workspace.startFromOrigin ?? false,
+          ...(workspace.repositories === undefined
+            ? {}
+            : { worktreeRepositories: workspace.repositories }),
+          worktreeBranchName: buildTemporaryWorktreeBranchName(randomHex),
+        }),
+        resendAfterSocketLoss: false,
+      },
     });
     if (AsyncResult.isFailure(deliveryResult) && !hasAccess()) return;
     const failure = reportCommandFailure(queuedMessage, deliveryResult, "start-turn");

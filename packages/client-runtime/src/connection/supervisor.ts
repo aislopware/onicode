@@ -3,6 +3,7 @@ import { translatableDetail } from "../errors/translatable.ts";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
+import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -243,6 +244,8 @@ export class EnvironmentSupervisor extends Context.Service<
     readonly connect: Effect.Effect<void>;
     readonly disconnect: Effect.Effect<void>;
     readonly retryNow: Effect.Effect<void>;
+    /** Completes once the registry retires this supervisor; it never connects again. */
+    readonly closed: Effect.Effect<void>;
   }
 >()("@onicode/client-runtime/connection/supervisor/EnvironmentSupervisor") {}
 
@@ -289,6 +292,7 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
   );
   const session = yield* SubscriptionRef.make<Option.Option<RpcSession.RpcSession>>(Option.none());
   const prepared = yield* SubscriptionRef.make<Option.Option<PreparedConnection>>(Option.none());
+  const closed = yield* Deferred.make<void>();
   // Learned routes arrive while a session is live, so the route list is read
   // fresh by each attempt and check instead of being fixed at creation.
   const currentEntry = yield* Ref.make(entry);
@@ -1136,7 +1140,12 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
 
   // Registered before the fibers below so closing the scope interrupts them first.
   // A loop still running when the queue shuts down would report that as a failure.
-  yield* Effect.addFinalizer(() => Queue.shutdown(signals).pipe(Effect.andThen(clearLease)));
+  yield* Effect.addFinalizer(() =>
+    Queue.shutdown(signals).pipe(
+      Effect.andThen(clearLease),
+      Effect.andThen(Deferred.succeed(closed, undefined)),
+    ),
+  );
   // A defect in a background listener would otherwise end it for good, silently.
   // Untraced: a span here would stay open for the supervisor's whole lifetime.
   // A task that keeps failing restarts ever more slowly; one that ran a while starts over.
@@ -1271,5 +1280,6 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
     connect,
     disconnect,
     retryNow,
+    closed: Deferred.await(closed),
   });
 });
