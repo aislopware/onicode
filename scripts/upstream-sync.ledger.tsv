@@ -3201,3 +3201,4 @@ df67c4f7f9	take	as is
 c9e9e7d36a	take	as is
 7966f202ef	take	as is; Onicode's agy MCP server is named onicode, matching the guard
 ad1b1f9ca4	take	as is; modes file named oni-runtime-modes.json in the agy profile, server-local
+11224f63d2	take	kept Onicode's untyped holdRpc in the ChatView test (upstream's generic is unused here) and put LaunchRefused above its doc comment; moveQueuedRunFirst (Onicode-only reorder) is not a send, so it stays without resend; server replays a launch with the same commandId
