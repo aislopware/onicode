@@ -1,8 +1,8 @@
 diff --git a/dist/observe.js b/dist/observe.js
-index 430182c..1b4f526 100644
+index 430182c..56cf343 100644
 --- a/dist/observe.js
 +++ b/dist/observe.js
-@@ -24,12 +24,38 @@ const MASK_COLOR = '#000000';
+@@ -24,12 +24,44 @@ const MASK_COLOR = '#000000';
   * it would wait for its navigation to commit.
   */
  export async function secureFieldMasks(page) {
@@ -18,14 +18,20 @@ index 430182c..1b4f526 100644
 +/**
 + * True for the frame an Electron `<webview>` leaves in its embedder. The guest
 + * is a target of its own, so Playwright never gets a script context for this
-+ * frame and a mask locator in it would wait until the step times out.
++ * frame and a mask locator in it would wait until the step times out. Once the
++ * `<webview>` is removed, Playwright can keep listing that frame as attached
++ * while Chromium reports it detached; it shows nothing and would hang the same way.
 + */
 +async function isWebviewPlaceholder(frame) {
 +    if (frame.parentFrame() === null)
 +        return false;
-+    const owner = await frame.frameElement().catch(() => null);
++    let detached = false;
++    const owner = await frame.frameElement().catch((error) => {
++        detached = String(error?.message ?? error).includes('Frame has been detached');
++        return null;
++    });
 +    if (owner === null)
-+        return false;
++        return detached;
 +    try {
 +        return await owner.evaluate((element) => {
 +            const root = element.getRootNode();

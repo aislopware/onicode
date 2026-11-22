@@ -321,7 +321,7 @@ pnpmfileChecksum: sha256-HpBnPcFwiEfe0KUWeYKGfQUjAC0nKKHm3aBulYModeU=
 
 patchedDependencies:
   '@cursor/sdk@1.4.2': d9747bbf2d8fa7529b74b690087b70b3b2662fcba0d4d3148afc3b956171b54a
-  '@e2e-dev/web@0.16.1': 913d9a9c02d8527281364e5d1bd7eb14832943e565463528977414738829ea1e
+  '@e2e-dev/web@0.16.1': d4a718e516e19ad4db63cddd1e97439910bb260100dcde5de6213ecf75bc5b6b
   '@effect/platform-node-shared@4.1.5': 5c85315aa18de2923bf58387cc351322ad3761bc580e467f7a197ba7865268b8
   '@effect/vitest@4.1.5': 78875d7920cfc710feed7e07e016ac9ff899acffcf40cb6342f11c08f28aa2b7
   '@expo/metro-config@58.0.23': 90fa980e8b6480631fb2fbb04559834e3c612db40c550cd828f11be297d8d760
@@ -2470,7 +2470,7 @@ importers:
         version: 0.12.8(@e2e-dev/core@0.24.0)(e2e@0.24.0)
       '@e2e-dev/web':
         specifier: 0.16.1
-        version: 0.16.1(patch_hash=913d9a9c02d8527281364e5d1bd7eb14832943e565463528977414738829ea1e)(@e2e-dev/core@0.24.0)(e2e@0.24.0)
+        version: 0.16.1(patch_hash=d4a718e516e19ad4db63cddd1e97439910bb260100dcde5de6213ecf75bc5b6b)(@e2e-dev/core@0.24.0)(e2e@0.24.0)
       '@effect/platform-node':
         specifier: 4.1.5
         version: 4.1.5(bufferutil@4.1.0)(effect@4.1.5)(redis@6.2.1)(utf-8-validate@6.0.6)
@@ -12767,7 +12767,7 @@ snapshots:
     optionalDependencies:
       e2e: 0.24.0
 
-  '@e2e-dev/web@0.16.1(patch_hash=913d9a9c02d8527281364e5d1bd7eb14832943e565463528977414738829ea1e)(@e2e-dev/core@0.24.0)(e2e@0.24.0)':
+  '@e2e-dev/web@0.16.1(patch_hash=d4a718e516e19ad4db63cddd1e97439910bb260100dcde5de6213ecf75bc5b6b)(@e2e-dev/core@0.24.0)(e2e@0.24.0)':
     dependencies:
       '@e2e-dev/core': 0.24.0
       playwright-core: 1.65.1
