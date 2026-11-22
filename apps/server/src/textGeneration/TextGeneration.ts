@@ -118,16 +118,19 @@ export const make = Effect.gen(function* () {
       selected !== undefined &&
       (!selected.enabled ||
         !resolveProjectProviderInstanceEnabled(settings, projectId ?? null, selected.instanceId));
+    const cannotGenerateText =
+      selected !== undefined &&
+      (!isProviderTextGenerationCapable(selected) ||
+        selected.models.find((model) => model.slug === selection.model)?.supportsTextGeneration ===
+          false);
     // Only a failed probe counts: a pending one is also not installed yet.
     const unusable =
       textGeneratorCannotRun ||
       off ||
+      cannotGenerateText ||
       (selected !== undefined &&
-        (!isProviderTextGenerationCapable(selected) ||
-          selected.models.find((model) => model.slug === selection.model)
-            ?.supportsTextGeneration === false ||
-          (selected.status === "error" &&
-            (!selected.installed || selected.auth.status === "unauthenticated"))));
+        selected.status === "error" &&
+        (!selected.installed || selected.auth.status === "unauthenticated"));
     if (unusable || exhaustedUsageWindow(selected, now, selection.model)) {
       const rejected = selection;
       const fallbackWhere = (sameInstance: boolean) =>
@@ -160,6 +163,13 @@ export const make = Effect.gen(function* () {
           operation,
           detail:
             "The selected provider is off and no other provider can take over. Turn one on in Settings.",
+        });
+      }
+      // A failed probe or a full usage window can clear by run time; this refusal cannot.
+      if (fallback === null && cannotGenerateText) {
+        return yield* new TextGenerationError({
+          operation,
+          detail: `${selected?.displayName ?? selection.instanceId} cannot generate text with ${selection.model} and no other provider can take over. Pick another text generation model in Settings.`,
         });
       }
       selection = fallback ?? selection;

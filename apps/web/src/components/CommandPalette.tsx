@@ -159,7 +159,6 @@ import {
   listedBrowseDirectoryPath,
   findProjectByPath,
   getBrowseDirectoryPath,
-  hasTrailingPathSeparator,
   inferProjectTitleFromPath,
   isExplicitRelativeProjectPath,
   isFilesystemBrowseQuery,
@@ -2475,7 +2474,7 @@ function OpenCommandPaletteDialog(props: {
   };
 
   // A folder the server listed is a real path; only typed text is trimmed.
-  const browsedAddProjectPath = hasTrailingPathSeparator(query)
+  const browsedAddProjectPath = browsePath.namesDirectory
     ? browseResult?.parentPath
     : exactBrowseEntry?.fullPath;
   const resolvedAddProjectPath = browsedAddProjectPath ?? query.trim();
@@ -2722,7 +2721,7 @@ function OpenCommandPaletteDialog(props: {
     browseAccessError === null &&
     query.trim().length > 0 &&
     !hasHighlightedBrowseItem &&
-    (hasTrailingPathSeparator(query) ? !browseResult : exactBrowseEntry === null);
+    (browsePath.namesDirectory ? !browseResult : exactBrowseEntry === null);
   const useMetaForMod = isMacPlatform(navigator.platform);
   const submitModifierLabel = useMetaForMod ? "\u2318" : "Ctrl";
   const submitActionLabel = isCloneDestinationStep
@@ -2766,7 +2765,7 @@ function OpenCommandPaletteDialog(props: {
       return undefined;
     }
 
-    const initialPath = hasTrailingPathSeparator(query)
+    const initialPath = browsePath.namesDirectory
       ? (browseResult?.parentPath ?? trimmedQuery)
       : browseDirectoryPath || trimmedQuery;
 

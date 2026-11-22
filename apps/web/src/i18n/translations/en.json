@@ -8936,6 +8936,8 @@
   "0a1ab3194d17d5de": "Paused",
   "4be6feb63e301484": "Enable {title}",
   "34fb848f079bdf69": "Actions for {title}",
+  "51a11a609473c784": "Discard changes?",
+  "6c414592eb76e7fc": "Your unsaved changes will be lost.",
   "c0b576266d462f4b": "Thread {id}",
   "03cab990d7237818": "Started by the first run",
   "60392cc09f60047a": "Each run starts a new thread with the workspace and model below.",
