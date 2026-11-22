@@ -688,6 +688,13 @@ describe("pull request detail decoding", () => {
         name: "web browser tests (runner ${{ matrix.slice }} of 6)",
         conclusion: "CANCELLED",
       }),
+      // github.com says branch protection does not name it, so any newer run replaces it.
+      inWorkflow({
+        ...superseded,
+        name: "docs (old layout)",
+        conclusion: "CANCELLED",
+        isRequired: false,
+      }),
       inWorkflow({ ...replacement, name: "check" }),
       inWorkflow({ ...replacement, name: "web browser tests (runner 1 of 6)" }),
       inWorkflow({ ...replacement, name: "web browser tests (runner 2 of 6)" }),
@@ -701,6 +708,23 @@ describe("pull request detail decoding", () => {
         ["web browser tests (runner 2 of 6)", "success"],
       ],
       "passing",
+    ]);
+  });
+
+  it("drops a matrix job cancelled before it expanded once a newer run reports its values", () => {
+    // GitHub Enterprise reads omit isRequired, and a default-named matrix job reports as its job.
+    const detail = detailOf([
+      inWorkflow({ name: "test", workflowName: "CI", runNumber: 41, conclusion: "CANCELLED" }),
+      inWorkflow({
+        name: "test (ubuntu)",
+        workflowName: "CI",
+        runNumber: 42,
+        conclusion: "SUCCESS",
+      }),
+    ]);
+
+    expect(detail.checks.map((check) => [check.name, check.status])).toEqual([
+      ["test (ubuntu)", "success"],
     ]);
   });
 

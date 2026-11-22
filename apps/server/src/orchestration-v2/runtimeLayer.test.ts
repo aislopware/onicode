@@ -6819,13 +6819,20 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
       }),
   );
 
-  it.effect.each([true, false])(
-    "rereads pending checks only on a fingerprint change when it covers them (covers: %s)",
-    (coversDetail) =>
+  it.effect.each([
+    [true, "pending"],
+    [false, "pending"],
+    // A read the host could not finish settles nothing, so it is read again like running checks.
+    [false, "unlisted"],
+  ] as const)(
+    "rereads unfinished checks only on a fingerprint change when it covers them (covers: %s, %s)",
+    ([coversDetail, unfinished]) =>
       Effect.gen(function* () {
         const orchestrator = yield* Orchestrator.OrchestratorV2;
-        const threadId = ThreadId.make(`runtime-pull-request-watch-covers-${coversDetail}`);
-        const projectId = ProjectId.make(`pr-watch-covers-project-${coversDetail}`);
+        const threadId = ThreadId.make(
+          `runtime-pull-request-watch-covers-${coversDetail}-${unfinished}`,
+        );
+        const projectId = ProjectId.make(`pr-watch-covers-project-${coversDetail}-${unfinished}`);
         yield* seedProject({
           projectId,
           title: "Watch pending checks",
@@ -6837,7 +6844,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
           type: "thread.create",
           createdBy: "user",
           creationSource: "web",
-          commandId: CommandId.make(`pr-watch-covers-create-${coversDetail}`),
+          commandId: CommandId.make(`pr-watch-covers-create-${coversDetail}-${unfinished}`),
           threadId,
           projectId,
           title: "Watch pending checks",
@@ -6850,7 +6857,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         const key = { host: "gitlab.com", repository: "acme/web", number: 15 };
         yield* orchestrator.dispatch({
           type: "thread.pull-request.watch",
-          commandId: CommandId.make(`pr-watch-covers-start-${coversDetail}`),
+          commandId: CommandId.make(`pr-watch-covers-start-${coversDetail}-${unfinished}`),
           threadId,
           ...key,
           watching: true,
@@ -6879,11 +6886,23 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
                   checks: [
                     {
                       name: "lint",
-                      status: "pending",
+                      status:
+                        unfinished === "pending" ? ("pending" as const) : ("success" as const),
                       description: null,
                       url: null,
                       required: true,
                     },
+                    ...(unfinished === "unlisted"
+                      ? [
+                          {
+                            name: "Jobs and downstream pipelines",
+                            status: "neutral" as const,
+                            description: null,
+                            url: null,
+                            placeholder: true,
+                          },
+                        ]
+                      : []),
                   ],
                 };
               }),
@@ -6913,7 +6932,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
 
         yield* orchestrator.dispatch({
           type: "thread.pull-request.watch",
-          commandId: CommandId.make(`pr-watch-covers-end-${coversDetail}`),
+          commandId: CommandId.make(`pr-watch-covers-end-${coversDetail}-${unfinished}`),
           threadId,
           ...key,
           watching: false,

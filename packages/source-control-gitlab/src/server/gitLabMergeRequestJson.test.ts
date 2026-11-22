@@ -342,7 +342,7 @@ describe("decodePipelineStageChecksJson", () => {
   }
 
   it("shows every job under its stage", () => {
-    const checks = expectSuccess(
+    const stages = expectSuccess(
       decodePipelineStageChecksJson(
         stagesJson([
           {
@@ -397,7 +397,9 @@ describe("decodePipelineStageChecksJson", () => {
         "https://gitlab.example.com",
       ),
     );
+    const checks = stages?.checks;
 
+    expect(stages?.unlistedStages).toEqual([]);
     expect(checks?.map((check) => [check.name, check.status, check.url])).toEqual([
       ["build / compile", "success", "https://gitlab.example.com/acme/web/-/jobs/2"],
       ["test / unit", "failure", "https://gitlab.example.com/acme/web/-/jobs/3"],
@@ -442,14 +444,17 @@ describe("decodePipelineStageChecksJson", () => {
           "https://gitlab.com",
         ),
       ),
-    ).toEqual([
-      {
-        name: "test",
-        status: "failure",
-        description: "failed",
-        url: "https://gitlab.com/fork/web/-/pipelines/9#test",
-      },
-    ]);
+    ).toEqual({
+      checks: [
+        {
+          name: "test",
+          status: "failure",
+          description: "failed",
+          url: "https://gitlab.com/fork/web/-/pipelines/9#test",
+        },
+      ],
+      unlistedStages: ["test"],
+    });
   });
 
   it("answers nothing where there are no stages to show", () => {
@@ -759,6 +764,26 @@ describe("decodeTriggerJobChecksJson", () => {
       ["smoke", "neutral"],
     ]);
     expect(result.rawCount).toBe(4);
+    expect(result.unreadable).toBe(1);
+  });
+
+  it("reads only the stages asked for, named as the stage checks name them", () => {
+    const result = expectSuccess(
+      decodeTriggerJobChecksJson(
+        JSON.stringify([
+          { name: "docs", stage: "build", downstream_pipeline: { status: "failed" } },
+          { name: "child", stage: "deploy", downstream_pipeline: { status: "failed" } },
+          // Its stage is unknown, so it could be in one asked for.
+          { name: "other", downstream_pipeline: { status: "success" } },
+        ]),
+        ["build"],
+      ),
+    );
+
+    expect(result.checks.map((check) => [check.name, check.status])).toEqual([
+      ["build / docs", "failure"],
+    ]);
+    expect(result.unreadable).toBe(1);
   });
 });
 

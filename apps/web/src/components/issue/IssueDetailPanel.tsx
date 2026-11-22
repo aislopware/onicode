@@ -1,8 +1,9 @@
 import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import {
-  issueChangeRequestHost,
   issueEventSentence,
+  issueLinkHost,
   issueWriteAccess,
+  linksChangeRequestsOnItsHost,
 } from "@onicode/client-runtime/issue-presentation";
 import { createIssueCommentPager } from "@onicode/client-runtime/state/issues";
 import {
@@ -492,25 +493,32 @@ export function IssueDetailPanel({
   const tracker = issueTrackerPresentation(detail.tracker);
   const currentState = issueStatePresentation(detail.state);
 
-  // A reference opened from Activity may lack the host the detail resolved.
-  const changeRequestHost = issueChangeRequestHost(detail);
-  const pullRequestHost = changeRequestHost === undefined ? {} : { host: changeRequestHost };
+  const linkHost = (repository: string) => {
+    const host = issueLinkHost(detail, reference.host, repository);
+    return host === undefined ? {} : { host };
+  };
+  // Another tracker's pull request links open on their host's site, which no host here serves.
+  const selectPullRequest =
+    !linksChangeRequestsOnItsHost(detail) || !onSelectPullRequest
+      ? null
+      : (pullRequest: { readonly repository: string; readonly number: number }) =>
+          onSelectPullRequest({
+            projectId: reference.projectId,
+            ...linkHost(pullRequest.repository),
+            repository: pullRequest.repository,
+            number: pullRequest.number,
+          });
   const openEventSource = (source: IssueEventReference) => {
     if (source.kind === "pull-request") {
-      if (!onSelectPullRequest) return false;
-      onSelectPullRequest({
-        projectId: reference.projectId,
-        ...pullRequestHost,
-        repository: source.repository,
-        number: source.number,
-      });
+      if (!selectPullRequest) return false;
+      selectPullRequest(source);
       return true;
     }
     if (!onSelectIssue) return false;
     onSelectIssue({
       projectId: reference.projectId,
       tracker: reference.tracker,
-      host: reference.host ?? detail.host,
+      ...linkHost(source.repository),
       scope: source.repository,
       key: String(source.number),
       url: source.url,
@@ -870,17 +878,7 @@ export function IssueDetailPanel({
                   link={link}
                   scope={detail.scope}
                   openLink={openLink}
-                  onSelect={
-                    onSelectPullRequest
-                      ? () =>
-                          onSelectPullRequest({
-                            projectId: reference.projectId,
-                            ...pullRequestHost,
-                            repository: link.repository,
-                            number: link.number,
-                          })
-                      : null
-                  }
+                  onSelect={selectPullRequest ? () => selectPullRequest(link) : null}
                 />
               ))}
             </div>

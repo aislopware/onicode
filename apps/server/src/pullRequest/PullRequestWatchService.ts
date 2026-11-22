@@ -6,6 +6,7 @@ import {
   type PullRequestUnavailableError,
   type PullRequestWatchUntil,
 } from "@onicode/contracts";
+import { rollupCheckStatuses } from "@onicode/source-control-core/server/pullRequestChecks";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
@@ -156,11 +157,33 @@ const make = Effect.gen(function* () {
           }),
         );
       if (read?.state === "merged" || read?.state === "closed") return alreadyEnded(read.state);
+      // A summary can take the host's own rollup, which counts a cancelled check a newer run
+      // replaced; a complete check read settles it.
+      const checksState =
+        read?.checksState === "failing"
+          ? yield* pullRequests
+              .detail({
+                projectId: thread.projectId,
+                host: target.host,
+                repository: target.repository,
+                number: target.number,
+                allowStale: false,
+              })
+              .pipe(
+                Effect.map((detail) =>
+                  detail.checks.some((check) => check.placeholder === true)
+                    ? read.checksState
+                    : (rollupCheckStatuses(detail.checks.map((check) => check.status)) ??
+                      read.checksState),
+                ),
+                Effect.catchTags({
+                  PullRequestOperationError: () => Effect.succeed(read.checksState),
+                }),
+              )
+          : read?.checksState;
       checksPendingAtStart =
-        read?.checksState === undefined || read.checksState === null
-          ? undefined
-          : read.checksState === "pending";
-      checksStateAtStart = read?.checksState ?? undefined;
+        checksState === undefined || checksState === null ? undefined : checksState === "pending";
+      checksStateAtStart = checksState ?? undefined;
     }
     const uuid = yield* random.uuidV4().pipe(Effect.orDie);
     yield* engine

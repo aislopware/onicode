@@ -4,6 +4,8 @@ import {
   ThreadId,
   PullRequestOperationError,
   PullRequestUnavailableError,
+  type PullRequestCheck,
+  type PullRequestDetail,
   type PullRequestSummary,
   type OrchestrationV2ServerCommand as OrchestrationCommand,
   type OrchestrationProjectShell,
@@ -29,6 +31,12 @@ import type { PullRequestTarget } from "./pullRequestTarget.ts";
 
 const PROJECT_ID = ProjectId.make("project-1");
 const THREAD_ID = ThreadId.make("thread-1");
+const check = (name: string, status: PullRequestCheck["status"]): PullRequestCheck => ({
+  name,
+  status,
+  description: null,
+  url: null,
+});
 const testCrypto = SecureRandom.make((size) => new Uint8Array(size).fill(7));
 
 function makeProject(
@@ -115,6 +123,7 @@ interface HarnessOptions {
   readonly readFailure?: PullRequestService.PullRequestError;
   readonly readState?: PullRequestSummary["state"];
   readonly readChecksState?: PullRequestSummary["checksState"];
+  readonly detailChecks?: ReadonlyArray<PullRequestCheck>;
 }
 
 const makeHarness = Effect.fn("makePullRequestWatchHarness")(function* (
@@ -152,6 +161,10 @@ const makeHarness = Effect.fn("makePullRequestWatchHarness")(function* (
               baseBranch: "main",
               updatedAt: "2026-08-20T00:00:00.000Z",
             }),
+      detail: () =>
+        Effect.succeed({
+          checks: options.detailChecks ?? [check("build", "failure")],
+        } as unknown as PullRequestDetail),
     }),
     Layer.succeed(SecureRandom.SecureRandom, testCrypto),
   );
@@ -171,6 +184,18 @@ describe("PullRequestWatchService", () => {
       const cases: ReadonlyArray<readonly [HarnessOptions, boolean | undefined]> = [
         [{ readChecksState: "pending" }, true],
         [{ readChecksState: "failing" }, false],
+        // GitHub's summary rollup counts a cancelled check a newer run replaced.
+        [{ readChecksState: "failing", detailChecks: [check("test", "pending")] }, true],
+        [
+          {
+            readChecksState: "failing",
+            detailChecks: [
+              check("test", "success"),
+              { ...check("Unlisted", "neutral"), placeholder: true },
+            ],
+          },
+          false,
+        ],
         [{}, undefined],
         [{ readChecksState: null }, undefined],
         [
@@ -213,6 +238,14 @@ describe("PullRequestWatchService", () => {
         url: "https://github.com/onicode/onicode/pull/9",
       });
       expect(result).toMatchObject({ wasWatching: false, checksState: "passing" });
+
+      const replaced = yield* makeHarness({
+        readChecksState: "failing",
+        detailChecks: [check("test", "success")],
+      });
+      expect(
+        yield* replaced.setWatching(true, { url: "https://github.com/onicode/onicode/pull/9" }),
+      ).toMatchObject({ wasWatching: false, checksState: "passing" });
     }),
   );
 

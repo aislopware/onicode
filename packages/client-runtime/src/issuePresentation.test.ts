@@ -1,7 +1,11 @@
 import { IssueTrackerKind, type IssueDetail, type IssueState } from "@onicode/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { issueChangeRequestHost, issueWriteAccess } from "./issuePresentation.ts";
+import {
+  issueLinkHost,
+  issueWriteAccess,
+  linksChangeRequestsOnItsHost,
+} from "./issuePresentation.ts";
 
 const workflow: ReadonlyArray<IssueState> = [
   { category: "open", name: "Backlog" },
@@ -41,16 +45,28 @@ describe("issueWriteAccess", () => {
   });
 });
 
-describe("issueChangeRequestHost", () => {
-  // A reference opened from Activity may carry no host; the issue's resolved host still serves
-  // a change request in another repository, which the server refuses without one.
+describe("linksChangeRequestsOnItsHost", () => {
   it.each([
-    ["gitlab", "gitlab.acme.dev", "gitlab.acme.dev"],
-    ["github", "github.com", "github.com"],
-    ["linear", "linear.app", undefined],
-  ])("reads a %s issue's change requests on %s", (tracker, host, expected) => {
-    expect(issueChangeRequestHost({ tracker: IssueTrackerKind.make(tracker), host })).toBe(
+    ["gitlab", true],
+    ["github", true],
+    ["linear", false],
+  ])("is %s for a %s issue", (tracker, expected) => {
+    expect(linksChangeRequestsOnItsHost({ tracker: IssueTrackerKind.make(tracker) })).toBe(
       expected,
     );
+  });
+});
+
+describe("issueLinkHost", () => {
+  const issue = { host: "gitlab.acme.dev", scope: "team/web" };
+  // An issue opened without a host is in the project's own repository, which needs none, and
+  // naming one there would open a second view of the same item.
+  it.each([
+    [undefined, "team/web", undefined],
+    [undefined, "Team/Web", undefined],
+    [undefined, "team/api", "gitlab.acme.dev"],
+    ["gitlab.acme.dev", "team/web", "gitlab.acme.dev"],
+  ])("names %s for a link to %s", (openedOn, repository, expected) => {
+    expect(issueLinkHost(issue, openedOn, repository)).toBe(expected);
   });
 });

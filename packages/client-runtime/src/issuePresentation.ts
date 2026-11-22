@@ -4,14 +4,23 @@ import type { MFunctionType } from "gt-i18n/types";
 
 import { sourceControlClients } from "./sourceControlClients.ts";
 
+/** A git host's tracker links change requests on its own host; another tracker's name none. */
+export function linksChangeRequestsOnItsHost(issue: Pick<IssueDetail, "tracker">): boolean {
+  return sourceControlClients.find(issue.tracker) !== undefined;
+}
+
 /**
- * The host a change request an issue names is read on. A git-host tracker shares the issue's
- * resolved host; another tracker's links resolve against the project's own repository.
+ * The host to name when opening a repository an issue links. An issue opened without one is in
+ * the project's own repository, which needs none, and naming it there would key a second view.
  */
-export function issueChangeRequestHost(
-  issue: Pick<IssueDetail, "tracker" | "host">,
+export function issueLinkHost(
+  issue: Pick<IssueDetail, "host" | "scope">,
+  openedOn: string | undefined,
+  repository: string,
 ): string | undefined {
-  return sourceControlClients.find(issue.tracker) === undefined ? undefined : issue.host;
+  return (
+    openedOn ?? (repository.toLowerCase() === issue.scope.toLowerCase() ? undefined : issue.host)
+  );
 }
 
 /** "completed" → "Completed"; a reason the tracker spells with a dash reads as words. */

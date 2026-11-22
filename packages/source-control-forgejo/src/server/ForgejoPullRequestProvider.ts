@@ -6,6 +6,7 @@ import type { PullRequestCapabilities, PullRequestViewerPermissions } from "@oni
 import { decodeJsonResult } from "@onicode/shared/schemaJson";
 import * as ForgejoCli from "./ForgejoCli.ts";
 import { parseDiffFileRevisions } from "@onicode/source-control-core/server/diffFileRevisions";
+import { unlistedChecks } from "@onicode/source-control-core/server/pullRequestChecks";
 import {
   PullRequestProviderError,
   type ProviderChangeRequestDetail,
@@ -280,7 +281,8 @@ export const make = Effect.gen(function* () {
       ],
       { concurrency: 2 },
     );
-    return markRequiredForgejoChecks(forgejoChecks(statuses.items, pr.html_url), policy);
+    const checks = markRequiredForgejoChecks(forgejoChecks(statuses.items, pr.html_url), policy);
+    return statuses.truncated ? [...checks, unlistedChecks("Forgejo")] : checks;
   });
   const unsupported = (operation: string) =>
     Effect.fail(failure(operation, `Forgejo does not expose ${operation} through its API.`));

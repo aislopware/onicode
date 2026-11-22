@@ -2056,6 +2056,12 @@ layer("GitLabPullRequestCli.layer", (it) => {
           ),
           0,
         ],
+        // An entry it cannot read could be the failed one.
+        [
+          "an entry is unreadable",
+          Effect.succeed(output(JSON.stringify([failedChild, { name: 7 }]))),
+          1,
+        ],
         // A full page may have left out a trigger job, but the ones it lists still count.
         [
           "page is full",
@@ -3049,7 +3055,17 @@ layer("GitLabPullRequestCli.layer", (it) => {
                 output(
                   JSON.stringify([
                     {
+                      name: "publish",
+                      stage: "build",
+                      status: "success",
+                      downstream_pipeline: {
+                        status: "failed",
+                        web_url: "https://gitlab.com/acme/docs/-/pipelines/11",
+                      },
+                    },
+                    {
                       name: "child-pipeline",
+                      stage: "deploy",
                       status: "success",
                       downstream_pipeline: {
                         status: "failed",
@@ -3106,6 +3122,13 @@ layer("GitLabPullRequestCli.layer", (it) => {
             description: "Downstream pipeline",
             url: "https://gitlab.com/acme/child/-/pipelines/10",
           },
+          // The stage's own status passed over the trigger job it could not list.
+          {
+            name: "build / publish",
+            status: "failure",
+            description: "Downstream pipeline",
+            url: "https://gitlab.com/acme/docs/-/pipelines/11",
+          },
         ]);
       }),
     );
@@ -3131,6 +3154,12 @@ layer("GitLabPullRequestCli.layer", (it) => {
             status: "failure",
             description: "merge_request_event",
             url: "https://gitlab.com/acme/web/-/pipelines/9",
+          },
+          {
+            name: "publish",
+            status: "failure",
+            description: "Downstream pipeline",
+            url: "https://gitlab.com/acme/docs/-/pipelines/11",
           },
           {
             name: "child-pipeline",

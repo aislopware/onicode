@@ -760,9 +760,10 @@ export const make = Effect.gen(function* () {
           ? (threadTails.get(group.key)?.fetchedAt ?? now)
           : last.at,
       fingerprint: group.fingerprint,
+      // A read the host could not finish settles nothing, so it counts as running checks.
       inFlight:
         detail.mergeability === "unknown" ||
-        detail.checks.some((check) => check.status === "pending"),
+        detail.checks.some((check) => check.status === "pending" || check.placeholder === true),
       remarksComplete: plan.activity ? remarks !== null : (last?.remarksComplete ?? false),
       watches: new Set(group.targets.map(watchKey)),
       status: fingerprint?.status ?? null,

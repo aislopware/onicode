@@ -1130,6 +1130,17 @@ describe("evaluatePullRequestWatch", () => {
     const told = evaluatePullRequestWatch(watch(), both, noRemarks);
     const partial = detail({ checks: [check("Pipeline", "failure")] });
     assert.deepEqual(evaluatePullRequestWatch(told.next, partial, noRemarks).changes, []);
+    // Nor forget a failure because a read the host could not finish left it out.
+    const unlisted = { ...check("Unlisted jobs", "neutral"), placeholder: true };
+    for (const pipeline of ["failure", "success"] as const) {
+      const full = detail({ checks: [check("Pipeline", pipeline), check("deploy", "failure")] });
+      const unfinished = evaluatePullRequestWatch(
+        evaluatePullRequestWatch(watch(), full, noRemarks).next,
+        detail({ checks: [check("Pipeline", pipeline), unlisted] }),
+        noRemarks,
+      );
+      assert.deepEqual(evaluatePullRequestWatch(unfinished.next, full, noRemarks).changes, []);
+    }
 
     // Nor a passing check that shares a failed one's name, as GitLab's synthetic Pipeline can.
     const namesake = detail({
@@ -1204,6 +1215,8 @@ describe("evaluatePullRequestWatch", () => {
       "Use this replacement: <div> <span>Ready</span> </div> Keep the wrapper .",
     ],
     ["an indented continuation of an HTML block", "<div>\n    <span>Ready</span>\n</div>", "Ready"],
+    // A quoted blank line ends the paragraph, so no code span spans it.
+    ["a quoted blank line", "> Use `x\n>\n> <b>y</b>` here", "> Use `x > > y ` here"],
   ])("quotes a remark's text without its HTML tags: %s", (_name, body, quoted) => {
     const report = evaluatePullRequestWatch(watch(), detail(), [
       remark("reviewer", "2026-10-02T12:06:00Z", body),
