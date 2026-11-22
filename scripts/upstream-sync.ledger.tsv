@@ -3285,3 +3285,4 @@ bc13afaa3c	take	taken as is; scenario ported to the desktop harness
 7ed41b7c23	take	fix(mobile): scope Git result banners to their originating thread
 000ba180be	take	fix(web): keep the conversation when a pairing tab closes; kept Onicode's Tailscale sign-in in the conflict; scenario ported to the desktop target
 5bd0616f05	take	fix: restart linked thread reads when trying again; scenario ported to the desktop target
+55880c41b4	take	fix(client-runtime): count ambiguous projects in chat file links; adopted upstream's matcher over Onicode's equivalent rootHits fix; scenarios ported to the desktop target
