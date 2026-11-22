@@ -408,16 +408,8 @@ export const make = Effect.fn("RpcSessionFactory.make")(function* (
             Deferred.fail(configSubscriptionClosed, configSubscriptionEndedError),
           ]).pipe(Effect.asVoid);
         }
-        // A server-side interrupt ends the stream too. On local teardown no one awaits `closed`.
-        // Before the first snapshot it ends readiness as a finished stream would.
         if (Cause.hasInterruptsOnly(exit.cause)) {
-          return Deferred.isDone(initialConfigDeferred).pipe(
-            Effect.flatMap((ready) =>
-              ready ? Effect.void : Deferred.succeed(serverConfigExit, undefined),
-            ),
-            Effect.andThen(Deferred.fail(configSubscriptionClosed, configSubscriptionEndedError)),
-            Effect.asVoid,
-          );
+          return Effect.void;
         }
         return Effect.all([
           Deferred.failCause(serverConfigExit, exit.cause),
