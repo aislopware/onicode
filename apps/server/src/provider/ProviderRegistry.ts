@@ -26,12 +26,13 @@ import * as Ref from "effect/Ref";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as Semaphore from "effect/Semaphore";
+import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
 import * as ProviderLatestVersions from "@onicode/provider-core/server/ProviderLatestVersions";
 import * as ModelManifest from "./ModelManifest.ts";
 import { applyProviderCompatibility } from "./providerCompatibility.ts";
 import * as ServerConfig from "../config.ts";
-import { refreshWindowsPath } from "../os-jank.ts";
+import { refreshPathFromLoginShell, refreshWindowsPath } from "../os-jank.ts";
 import * as ProviderInstanceRegistry from "./ProviderInstanceRegistry.ts";
 import * as ProviderInstanceRegistryMutator from "./ProviderInstanceRegistryMutator.ts";
 import {
@@ -785,13 +786,16 @@ export const layer = Layer.effect(
 
     type RefreshAllCompletion = Deferred.Deferred<ReadonlyArray<ServerProvider>>;
     // A refresh is how a user asks Onicode to see a CLI installed since launch; a burst shares one
-    // registry read. The desktop app also sends the login shell's PATH after the server starts.
-    // Instances still missing their CLI are rebuilt on a new PATH. They cannot have live sessions,
-    // and installed ones keep theirs.
-    const readWindowsPath = yield* refreshWindowsPath().pipe(
+    // PATH read. It re-reads the login shell, since the desktop's capture is from launch and a
+    // headless server has none. Instances still missing their CLI are rebuilt on a new PATH. They
+    // cannot have live sessions, and installed ones keep theirs.
+    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+    const readHostPath = yield* refreshWindowsPath().pipe(
+      Effect.andThen(refreshPathFromLoginShell()),
+      Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
       Effect.cachedWithTTL(Duration.seconds(10)),
     );
-    const refreshHostPath = readWindowsPath.pipe(
+    const refreshHostPath = readHostPath.pipe(
       Effect.andThen(
         instanceRegistryMutator.rebuildOnHostPathChange(
           Ref.get(providersRef).pipe(
