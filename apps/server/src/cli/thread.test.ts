@@ -55,7 +55,7 @@ vi.mock("../auth/EnvironmentAuth.ts", async (importOriginal) => {
 const threadId = ThreadId.make("thread-1");
 const runId = RunId.make("run-1");
 
-it.effect("list includes delegated threads across pages and still leaves out subagents", () =>
+it.effect("list includes delegated threads; the server leaves out subagents", () =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
@@ -103,7 +103,12 @@ it.effect("list includes delegated threads across pages and still leaves out sub
       ...item("delegated"),
       delegatedFrom: { environmentId: "env-1", threadId: "remote", title: "Remote" },
     };
-    const subagent = { ...item("child"), parentThreadId: "root", relationshipToParent: "subagent" };
+    const subagent = {
+      ...item("child"),
+      parentThreadId: "root",
+      relationshipToParent: "subagent",
+    };
+    const listCalls: Array<Record<string, unknown>> = [];
     using _session = vi.spyOn(McpBridge, "mcpToolSession").mockReturnValue(
       Effect.succeed({
         call: (tool, args) => {
@@ -115,7 +120,12 @@ it.effect("list includes delegated threads across pages and still leaves out sub
               },
             });
           if (tool === "oni_thread_list") {
-            const all = args.includeSubagents ? [root, subagent, delegated] : [root];
+            listCalls.push(args);
+            const all = args.includeSubagents
+              ? [root, subagent, delegated]
+              : args.includeDelegated
+                ? [root, delegated]
+                : [root];
             const cursor = Number(args.cursor);
             return Effect.succeed({
               structuredContent: {
@@ -145,6 +155,15 @@ it.effect("list includes delegated threads across pages and still leaves out sub
     assert.deepStrictEqual(
       listed.map((entry) => entry.threadId),
       ["root", "delegated"],
+    );
+    // Pages hold only rows the CLI shows: subagents never cost a page.
+    assert.deepStrictEqual(
+      listCalls.map(({ includeSubagents, includeDelegated, cursor }) => ({
+        includeSubagents,
+        includeDelegated,
+        cursor,
+      })),
+      [{ includeSubagents: false, includeDelegated: true, cursor: 0 }],
     );
   }).pipe(
     Effect.scoped,

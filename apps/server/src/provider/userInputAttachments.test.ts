@@ -329,6 +329,11 @@ describe("question answer paths", () => {
       "ACE",
     ],
     [
+      "hidden text",
+      String.raw`{\rtf1\ansi Visible{\v secret} A\v B\v0 C\v D\par\plain E}`,
+      "Visible ACE",
+    ],
+    [
       "tracked deletion fallback",
       String.raw`{\rtf1\ansi A{\deleted\uc1\u945\deleted0 B}\deleted\u946?\deleted0 C}`,
       "AC",
@@ -901,6 +906,16 @@ describe("question answer paths", () => {
           },
           expected: ["Body\nCallout box\nSecond line"],
           occurrences: { text: "Callout box", count: 1 },
+        },
+        {
+          ext: "docx",
+          bounded: true,
+          parts: {
+            "word/document.xml":
+              '<w:document xmlns:w="urn:w"><w:body><w:p><w:r><w:t>Before</w:t></w:r><w:r><w:drawing><wps:wsp><wps:txbx><w:txbxContent><w:p><w:pPr><w:pStyle w:val="Heading2"/></w:pPr><w:r><w:t>Callout</w:t></w:r></w:p></w:txbxContent></wps:txbx></wps:wsp></w:drawing></w:r><w:r><w:t>after</w:t></w:r></w:p></w:body></w:document>',
+          },
+          expected: ["Before\n## Callout\nafter"],
+          absent: ["## Before"],
         },
         {
           ext: "docx",

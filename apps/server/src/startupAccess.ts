@@ -176,16 +176,25 @@ const resolveHeadlessConnectionHost = (
     return normalizeHost(host);
   }
 
-  const interfaceEntries = Object.entries(interfaces).flatMap(([name, entries]) =>
-    privateNetworkOnly && isVirtualInterface(name, platform) ? [] : (entries ?? []),
-  );
+  // Virtual and host-only adapters reach no other device: never advertised on a private-network
+  // listener, and otherwise only when no other interface has an address.
+  const interfaceEntries = Object.entries(interfaces)
+    .flatMap(([name, entries]) =>
+      (entries ?? []).map((entry) => ({
+        entry,
+        virtual:
+          isVirtualInterface(name, platform) ||
+          (platform === "win32" && WINDOWS_HOST_ADAPTER_MAC.test(entry.mac)),
+      })),
+    )
+    .filter(({ virtual }) => !(privateNetworkOnly && virtual))
+    .toSorted((a, b) => Number(a.virtual) - Number(b.virtual))
+    .map(({ entry }) => entry);
   const externalIpv4Entries = interfaceEntries.filter(
     (entry) =>
       !entry.internal &&
       isIpv4Family(entry.family) &&
-      (!privateNetworkOnly ||
-        (isPrivateNetworkAddress(entry.address) &&
-          !(platform === "win32" && WINDOWS_HOST_ADAPTER_MAC.test(entry.mac)))) &&
+      (!privateNetworkOnly || isPrivateNetworkAddress(entry.address)) &&
       (!tailnetOnly || isSharedAddressSpaceHost(entry.address)),
   );
   // A tailnet or other CGNAT address reaches fewer devices than the LAN one.

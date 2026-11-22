@@ -176,11 +176,14 @@ function* all(
     else yield* all(child, name, skip);
   }
 }
-function* text(node: XmlNode): Generator<TextPart, void> {
+// `lineOpen` reports whether the enclosing paragraph's current line already has text.
+function* text(node: XmlNode, lineOpen?: () => boolean): Generator<TextPart, void> {
   if (HIDDEN.has(node.name)) return;
   // Word text boxes hold their own paragraphs inside the anchoring paragraph.
-  if (node.name === "txbxContent") yield* paragraphs(node);
-  else if (["tab", "ptab", "cell"].includes(node.name)) yield "\t";
+  if (node.name === "txbxContent") {
+    if (lineOpen?.()) yield "\n";
+    yield* paragraphs(node);
+  } else if (["tab", "ptab", "cell"].includes(node.name)) yield "\t";
   else if (["br", "line-break", "cr"].includes(node.name)) yield "\n";
   else if (node.name === "noBreakHyphen") yield "\u2011";
   else if (node.spaceCount !== undefined) {
@@ -189,7 +192,7 @@ function* text(node: XmlNode): Generator<TextPart, void> {
   } else
     for (const child of node.children) {
       if (typeof child === "string") yield child;
-      else yield* text(child);
+      else yield* text(child, lineOpen);
     }
 }
 // SpreadsheetML `t` and `v` values are ST_Xstring: `_xHHHH_` is one UTF-16 code unit, and an
@@ -209,6 +212,7 @@ function* xstringText(node: XmlNode): Generator<string, void> {
         literal ? `_${literal}` : String.fromCharCode(Number.parseInt(hex!, 16)),
     );
 }
+const TEXT_BOX = new Set(["txbxContent"]);
 function* paragraphs(node: XmlNode): Generator<TextPart, void> {
   if (HIDDEN.has(node.name)) return;
   for (const child of node.children) {
@@ -216,7 +220,7 @@ function* paragraphs(node: XmlNode): Generator<TextPart, void> {
     else if (["br", "line-break", "cr"].includes(child.name)) yield "\n";
     else if (["tbl", "table"].includes(child.name)) yield* table(child);
     else if (["p", "h"].includes(child.name) || /^h[1-6]$/.test(child.name)) {
-      const style = all(child, "pStyle").next().value?.attrs.val ?? "";
+      const style = all(child, "pStyle", TEXT_BOX).next().value?.attrs.val ?? "";
       const level =
         child.name === "h"
           ? Number(child.attrs["outline-level"]) || 1
@@ -224,7 +228,14 @@ function* paragraphs(node: XmlNode): Generator<TextPart, void> {
             ? Number(child.name[1])
             : Number(style.match(/^Heading([1-6])$/i)?.[1]) || 0;
       if (level) yield `${"#".repeat(Math.min(6, level))} `;
-      yield* text(child);
+      let open = false;
+      for (const part of text(child, () => open)) {
+        if (typeof part === "string") {
+          const tail = part.slice(part.lastIndexOf("\n") + 1).trim() !== "";
+          open = part.includes("\n") ? tail : open || tail;
+        }
+        yield part;
+      }
       yield "\n";
     } else {
       yield* paragraphs(child);
@@ -485,6 +496,7 @@ function* rtf(source: string): Generator<string, void> {
   let state = {
     skip: false,
     deleted: false,
+    hiddenText: false,
     uc: 1,
     font: 0,
     fontTable: false,
@@ -513,7 +525,7 @@ function* rtf(source: string): Generator<string, void> {
     lead = false;
     return rest;
   };
-  const hidden = () => state.skip || state.deleted;
+  const hidden = () => state.skip || state.deleted || state.hiddenText;
   const symbols = new Map([
     ["endash", "–"],
     ["emdash", characterEntities.mdash],
@@ -614,8 +626,10 @@ function* rtf(source: string): Generator<string, void> {
           if (label) fontCodePages.set(state.font, new TextDecoder(label));
         }
         if (control === "deleted") state.deleted = value !== 0;
+        else if (control === "v") state.hiddenText = value !== 0;
         else if (control === "plain") {
           state.deleted = false;
+          state.hiddenText = false;
           state.font = defaultFont;
         }
         if (control === "mac") state.decoder = new TextDecoder("macintosh");

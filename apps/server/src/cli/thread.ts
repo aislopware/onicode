@@ -881,12 +881,16 @@ const threadListCommand = Command.make("list", {
         while (cursor !== null) {
           const page: OrchestratorMcpThreadListResult = yield* tools.call(
             "oni_thread_list",
-            { projectId: project.id, includeSubagents: true, limit: 100, cursor },
+            {
+              projectId: project.id,
+              includeSubagents: false,
+              includeDelegated: true,
+              limit: 100,
+              cursor,
+            },
             OrchestratorMcpThreadListResult,
           );
-          threads.push(
-            ...page.threads.filter((thread) => thread.relationshipToParent !== "subagent"),
-          );
+          threads.push(...page.threads);
           cursor = page.nextCursor;
         }
         if (flags.json) {
