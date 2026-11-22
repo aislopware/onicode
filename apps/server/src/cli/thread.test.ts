@@ -55,6 +55,110 @@ vi.mock("../auth/EnvironmentAuth.ts", async (importOriginal) => {
 const threadId = ThreadId.make("thread-1");
 const runId = RunId.make("run-1");
 
+it.effect("list includes delegated threads across pages and still leaves out subagents", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "oni-thread-list-" });
+    const statePath = path.join(baseDir, "userdata", "server-runtime.json");
+    yield* ServerOwnership.acquireServerOwnership(statePath).pipe(
+      Effect.provide(ProcessRunner.layer),
+    );
+    yield* persistServerRuntimeState({
+      path: statePath,
+      state: {
+        ...(yield* makePersistedServerRuntimeState({
+          config: { host: "127.0.0.1", dev: false },
+          port: 3_773,
+        })),
+        ownerId: "test-owner",
+      },
+    });
+    const projectId = ProjectId.make("project-1");
+    const item = (id: string) => ({
+      threadId: id,
+      projectId,
+      title: id,
+      createdBy: "user",
+      creationSource: "web",
+      status: "idle",
+      latestRunId: null,
+      providerInstanceId: "codex",
+      model: "test",
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      linkedPullRequest: null,
+      settled: false,
+      settledAt: null,
+      snoozed: false,
+      snoozedUntil: null,
+      parentThreadId: null,
+      relationshipToParent: null,
+      itemCount: 0,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+    const root = item("root");
+    const delegated = {
+      ...item("delegated"),
+      delegatedFrom: { environmentId: "env-1", threadId: "remote", title: "Remote" },
+    };
+    const subagent = { ...item("child"), parentThreadId: "root", relationshipToParent: "subagent" };
+    using _session = vi.spyOn(McpBridge, "mcpToolSession").mockReturnValue(
+      Effect.succeed({
+        call: (tool, args) => {
+          if (tool === "oni_project_list")
+            return Effect.succeed({
+              structuredContent: {
+                projects: [{ id: projectId, title: "Project", workspaceRoot: baseDir }],
+                nextCursor: null,
+              },
+            });
+          if (tool === "oni_thread_list") {
+            const all = args.includeSubagents ? [root, subagent, delegated] : [root];
+            const cursor = Number(args.cursor);
+            return Effect.succeed({
+              structuredContent: {
+                projectId,
+                currentThreadId: null,
+                threads: all.slice(cursor, cursor + 2),
+                nextCursor: cursor + 2 < all.length ? cursor + 2 : null,
+                total: all.length,
+              },
+            });
+          }
+          return Effect.die(`unexpected ${tool} call`);
+        },
+      }),
+    );
+    yield* Command.runWith(threadCommand, { version: "0.0.0" })([
+      "list",
+      "--project",
+      projectId,
+      "--json",
+      "--base-dir",
+      baseDir,
+    ]);
+    const listed = JSON.parse(String((yield* TestConsole.logLines).at(-1))) as Array<{
+      threadId: string;
+    }>;
+    assert.deepStrictEqual(
+      listed.map((entry) => entry.threadId),
+      ["root", "delegated"],
+    );
+  }).pipe(
+    Effect.scoped,
+    Effect.provide(
+      Layer.mergeAll(
+        NodeServices.layer,
+        NodeCrypto.layer,
+        NetService.layer,
+        ConfigProvider.layer(ConfigProvider.fromEnv({ env: { ONICODE_PORT: "3773" } })),
+      ),
+    ),
+  ),
+);
+
 it.effect(
   "start resolves home-relative project paths while preserving ids and relative paths",
   () =>
