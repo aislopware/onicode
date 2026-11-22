@@ -541,11 +541,11 @@ function markdownLinkDestinationScanner(markdown: string) {
 }
 
 // Labels may nest balanced brackets (`[the [docs] guide](...)`), and the composer escapes them
-// (`[\[id\].tsx](...)`), so `\[` and `\]` never count. A blank line ends the paragraph and its labels.
+// (`[\[id\].tsx](...)`), so `\[` and `\]` never count. A paragraph end closes its labels.
 export function extractMarkdownLinkHrefs(markdown: string): string[] {
   const hrefs: string[] = [];
   const scanDestination = markdownLinkDestinationScanner(markdown);
-  const bracket = /[[\]\\]|\n[ \t\r]*\n/g;
+  const bracket = new RegExp(String.raw`[[\]\\]|${PARAGRAPH_END}`, "g");
   let openBrackets = 0;
   for (let match = bracket.exec(markdown); match; match = bracket.exec(markdown)) {
     if (match[0] === "\\") {
