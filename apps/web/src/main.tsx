@@ -8,6 +8,7 @@ import { startAppServices } from "./appInit";
 import { AppRoot } from "./AppRoot";
 import { whenLocaleReady } from "./i18n/runtime";
 import { reloadOnceForChunkLoadError } from "./lib/chunkReloadGuard";
+import { onCaughtReactError } from "./observability/crashReportingStartup";
 
 const router = startAppServices();
 
@@ -28,9 +29,9 @@ export const startup = router
   .then(() => {
     // Route chunk failures resolve router.load() and surface later through the error boundary.
     if (reloadScheduled) return;
-    ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-      <React.StrictMode>{app}</React.StrictMode>,
-    );
+    ReactDOM.createRoot(document.getElementById("root") as HTMLElement, {
+      onCaughtError: onCaughtReactError,
+    }).render(<React.StrictMode>{app}</React.StrictMode>);
   })
   .catch((error: unknown) => {
     if (reloadScheduled) return;

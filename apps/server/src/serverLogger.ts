@@ -1,5 +1,6 @@
 import * as HostProcess from "@onicode/shared/HostProcess";
 import * as SharedObservability from "@onicode/shared/observability";
+import type { SentryEffectInstrumentation } from "@onicode/shared/sentry";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -49,7 +50,9 @@ function prettyCauseFields(value: unknown): unknown {
   return changed ? Object.create(prototype, descriptors) : value;
 }
 
-export const layer = Effect.gen(function* () {
+const makeLayer = Effect.fn("ServerLogger.makeLayer")(function* (
+  sentry: SentryEffectInstrumentation | undefined,
+) {
   const config = yield* ServerConfig.ServerConfig;
   const hostName = yield* HostProcess.Hostname;
   const layerMinimumLogLevel = Layer.succeed(References.MinimumLogLevel, config.logLevel);
@@ -67,10 +70,11 @@ export const layer = Effect.gen(function* () {
 
   // Logger.layer replaces the whole set; name every logger here.
   // OTLP includes traced messages as log records, so also using tracerLogger would duplicate in-span exports.
+  const sentryLoggers = sentry === undefined ? [] : [redactingCredentials(sentry.logger)];
   const layerLogger = Logger.layer(
     otlpLogger === undefined
-      ? [consolePretty(), Logger.tracerLogger]
-      : [consolePretty(), otlpLogger],
+      ? [consolePretty(), Logger.tracerLogger, ...sentryLoggers]
+      : [consolePretty(), otlpLogger, ...sentryLoggers],
     { mergeWithExisting: false },
   ).pipe(
     Layer.provide(OtlpExporter.layerFlusher),
@@ -79,4 +83,9 @@ export const layer = Effect.gen(function* () {
   );
 
   return Layer.mergeAll(layerLogger, layerMinimumLogLevel);
-}).pipe(Layer.unwrap);
+});
+
+export const layerWithSentry = (sentry: SentryEffectInstrumentation | undefined) =>
+  Layer.unwrap(makeLayer(sentry));
+
+export const layer = layerWithSentry(undefined);

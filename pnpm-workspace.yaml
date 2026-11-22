@@ -10,6 +10,8 @@ packages:
 # true = allowed to run build scripts; false mirrors the pnpm 10 behavior
 # where anything outside onlyBuiltDependencies was silently not built.
 allowBuilds:
+  # Platform binaries come from optional dependencies; the script only re-downloads them.
+  "@sentry/cli": false
   browser-tabs-lock: false
   bufferutil: false
   core-js: false
@@ -43,6 +45,12 @@ catalog:
   "@noble/hashes": 2.4.0
   "@pierre/diffs": 1.7.0-beta.4
   "@pierre/highlights": 0.5.2
+  # @sentry/electron pins its core; desktop and server Sentry packages must resolve to that one copy.
+  # Mobile's @sentry/react-native pins its own.
+  "@sentry/core": 11.10.0
+  "@sentry/electron": 8.4.0
+  "@sentry/node": 11.10.0
+  "@sentry/react": 11.10.0
   "@tailwindcss/node": 4.3.5
   "@tailwindcss/oxide": 4.3.5
   "@tailwindcss/vite": 4.3.5

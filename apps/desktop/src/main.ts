@@ -35,6 +35,7 @@ import * as DesktopApp from "./app/DesktopApp.ts";
 import * as DesktopAppActivation from "./app/DesktopAppActivation.ts";
 import * as DesktopWebLinks from "./app/DesktopWebLinks.ts";
 import * as DesktopAppIdentity from "./app/DesktopAppIdentity.ts";
+import * as DesktopCrashReporting from "./app/DesktopCrashReporting.ts";
 import * as DesktopConnectionCatalogStore from "./app/DesktopConnectionCatalogStore.ts";
 import * as DesktopDeepLinks from "./app/DesktopDeepLinks.ts";
 import * as DesktopCliCommand from "./app/DesktopCliCommand.ts";
@@ -221,9 +222,12 @@ const layerDesktopApplication = Layer.mergeAll(
   Layer.provideMerge(layerDesktopLocalEnvironmentAuth),
 );
 
-// Deep links resolve userData and listen for launch links before Electron is ready, so they get
-// the synchronous FileSystem.
-const layerDesktopDeepLinks = DesktopDeepLinks.layer.pipe(
+// Deep links resolve userData and listen for launch links before Electron is ready, so they and
+// crash reporting get the synchronous FileSystem.
+const layerDesktopDeepLinks = DesktopCrashReporting.layer.pipe(
+  // Sentry registers its renderer protocol, which Electron accepts only before ready, and keeps
+  // its queue under the userData path that deep links resolve first.
+  Layer.provideMerge(DesktopDeepLinks.layer),
   Layer.provide(DesktopPreReadyFileSystem.layer),
   Layer.provideMerge(ElectronShell.layer),
   Layer.provideMerge(layerDesktopEnvironment),

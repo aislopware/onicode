@@ -5,7 +5,10 @@ import {
   type SignalExport,
 } from "@onicode/shared/observability";
 import * as OtelEnvironment from "@onicode/shared/otelEnvironment";
-import { parsePersistedServerObservabilitySettings } from "@onicode/shared/serverSettings";
+import {
+  noPersistedServerObservabilitySettings,
+  parsePersistedServerObservabilitySettings,
+} from "@onicode/shared/serverSettings";
 import { DesktopBackendBootstrap, PortSchema } from "@onicode/contracts";
 import * as Config from "effect/Config";
 import * as Duration from "effect/Duration";
@@ -226,11 +229,12 @@ const resolveOptionPrecedence = <Value>(
 
 const loadPersistedObservabilitySettings = Effect.fn(function* (settingsPath: string) {
   const fs = yield* FileSystem.FileSystem;
-  const exists = yield* fs.exists(settingsPath).pipe(Effect.orElseSucceed(() => false));
+  const exists = yield* fs.exists(settingsPath).pipe(Effect.orElseSucceed(() => true));
   if (!exists) {
-    return { otlpTracesUrl: undefined, otlpMetricsUrl: undefined, otlpLogsUrl: undefined };
+    return noPersistedServerObservabilitySettings;
   }
 
+  // An unreadable file parses as invalid, which keeps error reporting off.
   const raw = yield* fs.readFileString(settingsPath).pipe(Effect.orElseSucceed(() => ""));
   return parsePersistedServerObservabilitySettings(raw);
 });
@@ -458,6 +462,7 @@ export const resolveServerConfig = Effect.fn("config.resolveServerConfig")(funct
     otlpTracesExport: traces?.export ?? signalExport,
     otlpMetricsExport: metrics?.export ?? signalExport,
     otlpLogsExport: logs?.export ?? signalExport,
+    errorReportingEnabled: persistedObservabilitySettings.errorReporting,
     ...(traces !== undefined ? { otlpTracesSource: traces.source } : {}),
     ...(traces?.variable !== undefined ? { otlpTracesVariable: traces.variable } : {}),
     ...(metrics !== undefined ? { otlpMetricsSource: metrics.source } : {}),

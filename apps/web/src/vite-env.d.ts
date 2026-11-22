@@ -8,6 +8,7 @@ interface ImportMetaEnv {
   readonly VITE_RELEASE_CHANNEL: string;
   readonly ONICODE_DESKTOP_UPDATE_REPOSITORY: string;
   readonly APP_VERSION: string;
+  readonly ONICODE_SENTRY_BUILD: boolean;
 }
 
 interface ImportMeta {

@@ -190,6 +190,8 @@ export interface Preferences {
   readonly agentNotifications?: AgentNotificationPreferences;
   readonly pullRequestSavedViews?: ReadonlyArray<PullRequestSavedView>;
   readonly issueSavedViews?: ReadonlyArray<IssueSavedView>;
+  /** Whether this device sends error reports in builds that have Sentry. Unset means on. */
+  readonly errorReportingEnabled?: boolean;
 }
 
 export class MobilePreferencesLoadError extends Schema.TaggedError<MobilePreferencesLoadError>()(
@@ -275,6 +277,7 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     agentNotifications?: AgentNotificationPreferences;
     pullRequestSavedViews?: ReadonlyArray<PullRequestSavedView>;
     issueSavedViews?: ReadonlyArray<IssueSavedView>;
+    errorReportingEnabled?: boolean;
   } = {};
 
   if (Array.isArray(parsed.hiddenNavigationTabs)) {
@@ -390,6 +393,9 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   }
   if (typeof parsed.useLastProjectForNewThreads === "boolean") {
     preferences.useLastProjectForNewThreads = parsed.useLastProjectForNewThreads;
+  }
+  if (typeof parsed.errorReportingEnabled === "boolean") {
+    preferences.errorReportingEnabled = parsed.errorReportingEnabled;
   }
   if (isThreadProject(parsed.lastThreadProject)) {
     preferences.lastThreadProject = parsed.lastThreadProject;

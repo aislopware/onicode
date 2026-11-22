@@ -228,6 +228,10 @@ export default defineConfig(() => {
       ),
       "import.meta.env.VITE_RELEASE_CHANNEL": JSON.stringify(configuredReleaseChannel),
       "import.meta.env.APP_VERSION": JSON.stringify(configuredAppVersion),
+      // Builds without a Sentry project drop the renderer's reporting chunk entirely.
+      "import.meta.env.ONICODE_SENTRY_BUILD": JSON.stringify(
+        (repoEnv.ONICODE_SENTRY_DESKTOP_DSN?.trim() ?? "") !== "",
+      ),
     },
     resolve: {
       tsconfigPaths: true,

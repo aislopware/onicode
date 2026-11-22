@@ -37,6 +37,8 @@
     "@pierre/diffs": "catalog:",
     "@pierre/trees": "1.0.0",
     "@pierre/words": "file:deps/pierre-words-0.2.2-t3.4-7c04b7f1.tgz",
+    "@sentry/electron": "catalog:",
+    "@sentry/react": "catalog:",
     "@tanstack/react-pacer": "^0.24.1",
     "@tanstack/react-router": "^1.170.46",
     "@tiptap/core": "^3.34.0",

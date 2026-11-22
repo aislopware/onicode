@@ -108,6 +108,27 @@ const updatesUrl =
 const updateFeedsUrl =
   repoEnv.ONICODE_MOBILE_FEEDS_URL?.trim() ||
   (identity.own ? undefined : `https://updates.jmango360.dev/feeds/${BETTER_UPDATE_PROJECT_ID}`);
+// Builds without a DSN never load Sentry and keep their native projects free of its build steps.
+// Development builds report only when ONICODE_SENTRY_DEV=1, so local work stays out of Sentry.
+const sentryInDevelopment = repoEnv.ONICODE_SENTRY_DEV === "1";
+const sentryDsn =
+  APP_VARIANT === "production" || sentryInDevelopment
+    ? repoEnv.ONICODE_SENTRY_MOBILE_DSN?.trim() || undefined
+    : undefined;
+// Without a token, server and org the native builds skip source map, dSYM and ProGuard uploads
+// instead of failing. Their presence is part of the plugin props, so of the native fingerprint.
+const sentryUrl = repoEnv.SENTRY_URL?.trim() || undefined;
+const sentryOrg = repoEnv.SENTRY_ORG?.trim() || undefined;
+const sentryPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
+  "@sentry/react-native/expo",
+  {
+    ...(sentryUrl === undefined ? {} : { url: sentryUrl }),
+    ...(sentryOrg === undefined ? {} : { organization: sentryOrg }),
+    project: "onicode-mobile",
+    disableAutoUpload:
+      !repoEnv.SENTRY_AUTH_TOKEN?.trim() || sentryUrl === undefined || sentryOrg === undefined,
+  },
+];
 // iOS ships through TestFlight; the Android listing follows from the package.
 const iosStoreUrl =
   repoEnv.ONICODE_MOBILE_IOS_STORE_URL?.trim() ||
@@ -443,11 +464,14 @@ const config: ExpoConfig = {
     "./plugins/withAndroidWindowDisplayMetrics.cjs",
     "./plugins/withAndroidTabletOrientation.cjs",
     ...(isIosPersonalTeamBuild ? ["./plugins/withoutIosPersonalTeamCapabilities.cjs"] : []),
+    ...(sentryDsn === undefined ? [] : [sentryPlugin]),
   ],
   extra: {
     appVariant: APP_VARIANT,
     iosPersonalTeamBuild: isIosPersonalTeamBuild,
     pushGatewayUrl: identity.pushGatewayUrl ?? null,
+    sentryDsn: sentryDsn ?? null,
+    sentryInDevelopment,
     betterUpdate: {
       projectId: BETTER_UPDATE_PROJECT_ID,
     },

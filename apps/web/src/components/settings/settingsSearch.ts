@@ -969,6 +969,19 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: [msg("onboarding setup first run getting started agents import projects")],
   },
   {
+    id: "error-reporting",
+    title: msg("Send error reports from this app"),
+    to: "/settings/diagnostics",
+    searchTerms: [msg("Sentry crash reports errors performance screen replay privacy telemetry")],
+  },
+  {
+    id: "server-error-reporting",
+    title: msg("Send error reports from this server"),
+    to: "/settings/diagnostics",
+    scope: "environment",
+    searchTerms: [msg("Sentry crash reports errors performance privacy telemetry")],
+  },
+  {
     id: "telemetry-export",
     title: msg("OpenTelemetry export"),
     to: "/settings/diagnostics",

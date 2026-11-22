@@ -278,7 +278,19 @@ describe("serverSettings helpers", () => {
       otlpTracesUrl: "http://localhost:4318/v1/traces",
       otlpMetricsUrl: "http://localhost:4318/v1/metrics",
       otlpLogsUrl: "http://localhost:4318/v1/logs",
+      errorReporting: true,
     });
+    expect(
+      parsePersistedServerObservabilitySettings(
+        JSON.stringify({ observability: { errorReporting: false } }),
+      ).errorReporting,
+    ).toBe(false);
+    // An invalid OTLP field does not undo an opt-out.
+    expect(
+      parsePersistedServerObservabilitySettings(
+        JSON.stringify({ observability: { otlpTracesUrl: 42, errorReporting: false } }),
+      ).errorReporting,
+    ).toBe(false);
     // The server still loads a file holding the retired token streaming mode.
     expect(
       parsePersistedServerObservabilitySettings(
@@ -290,11 +302,12 @@ describe("serverSettings helpers", () => {
     ).toBe("http://localhost:4318/v1/traces");
   });
 
-  it("falls back cleanly when persisted settings are invalid", () => {
+  it("falls back cleanly when persisted settings are invalid, with error reporting off", () => {
     expect(parsePersistedServerObservabilitySettings("{")).toEqual({
       otlpTracesUrl: undefined,
       otlpMetricsUrl: undefined,
       otlpLogsUrl: undefined,
+      errorReporting: false,
     });
   });
 

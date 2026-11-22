@@ -162,6 +162,7 @@ const SETTINGS_SEARCH_TERMS = {
   SettingsAbout: [
     msg("version", { $context: "settings search keyword" }),
     msg("diagnostics", { $context: "settings search keyword" }),
+    msg("error reports", { $context: "settings search keyword" }),
     msg("client storage", { $context: "settings search keyword" }),
     msg("cache", { $context: "settings search keyword" }),
     msg("open source licenses", { $context: "settings search keyword" }),

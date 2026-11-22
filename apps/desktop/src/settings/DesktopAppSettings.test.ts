@@ -221,6 +221,7 @@ describe("DesktopSettings", () => {
         );
 
         assert.deepEqual(yield* settings.load, {
+          errorReportingEnabled: true,
           linuxPasswordStore: "auto",
           localEnvironmentEnabled: true,
           mainWindowBounds: { x: 120, y: 80, width: 1280, height: 900 },
@@ -257,6 +258,13 @@ describe("DesktopSettings", () => {
       }),
     ),
   );
+
+  it("reads error reporting consent, keeping it off when the file is damaged", () => {
+    assert.isTrue(DesktopAppSettings.parseErrorReportingConsent(`{ "wslOnly": true }`));
+    assert.isFalse(DesktopAppSettings.parseErrorReportingConsent(`{ "errorReporting": false }`));
+    assert.isFalse(DesktopAppSettings.parseErrorReportingConsent(`{ "errorReporting": "no" }`));
+    assert.isFalse(DesktopAppSettings.parseErrorReportingConsent(`{ "errorReporting": fal`));
+  });
 
   it.effect("rejects window bounds that do not satisfy the domain schema", () =>
     withSettings(

@@ -128,6 +128,10 @@ export default mergeConfig(
         __ONICODE_PUSH_GATEWAY_URLS__: JSON.stringify(
           loadRepoEnv().ONICODE_PUSH_GATEWAY_URLS?.trim() ?? "",
         ),
+        // A build with a Sentry project names it here; without one the server never starts Sentry.
+        __ONICODE_SENTRY_SERVER_DSN__: JSON.stringify(
+          loadRepoEnv().ONICODE_SENTRY_SERVER_DSN?.trim() ?? "",
+        ),
       },
     },
     test: {

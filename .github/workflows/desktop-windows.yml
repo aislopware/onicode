@@ -13,6 +13,12 @@ on:
     secrets:
       ONICODE_PUSH_GATEWAY_URL:
         required: false
+      ONICODE_SENTRY_DESKTOP_DSN:
+        required: false
+      ONICODE_SENTRY_SERVER_DSN:
+        required: false
+      SENTRY_AUTH_TOKEN:
+        required: false
 
 permissions:
   contents: read
@@ -21,6 +27,12 @@ env:
   ONICODE_RELEASE_CHANNEL: stable
   # better-update's production environment hands the macOS and Linux builds the same gateway.
   ONICODE_PUSH_GATEWAY_URLS: ${{ secrets.ONICODE_PUSH_GATEWAY_URL }}
+  # Sentry projects for error reports, and the token that uploads source maps. Unset sends nothing.
+  ONICODE_SENTRY_DESKTOP_DSN: ${{ secrets.ONICODE_SENTRY_DESKTOP_DSN }}
+  ONICODE_SENTRY_SERVER_DSN: ${{ secrets.ONICODE_SENTRY_SERVER_DSN }}
+  SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+  SENTRY_URL: ${{ vars.SENTRY_URL }}
+  SENTRY_ORG: ${{ vars.SENTRY_ORG }}
 
 jobs:
   wsl_runtime:

@@ -1680,6 +1680,53 @@ export const buildDesktopBundles = Effect.fn("buildDesktopBundles")(
     withDesktopBuildLock(repoRoot, buildDesktopBundlesUnlocked(repoRoot, appVersion, verbose)),
 );
 
+// Bundles get debug IDs so Sentry matches their stack traces to these maps without a release name.
+const SENTRY_SOURCE_MAP_UPLOADS = [
+  { project: "onicode-desktop", directory: "apps/desktop/dist-electron", ignore: [] },
+  { project: "onicode-desktop", directory: "apps/server/dist/client", ignore: [] },
+  { project: "onicode-server", directory: "apps/server/dist", ignore: ["client"] },
+] as const;
+
+/**
+ * Uploads source maps when the build has a Sentry token. `sentry-cli` reads `SENTRY_URL` and
+ * `SENTRY_ORG` itself. A failed upload only warns: a release must not wait on Sentry.
+ */
+const uploadSentrySourceMaps = Effect.fn("uploadSentrySourceMaps")(function* (
+  repoRoot: string,
+  verbose: boolean,
+) {
+  const env = loadRepoEnv();
+  if (!env.SENTRY_AUTH_TOKEN?.trim()) return;
+  yield* Effect.log("[desktop-artifact] Uploading source maps to Sentry...");
+  for (const { project, directory, ignore } of SENTRY_SOURCE_MAP_UPLOADS) {
+    const ignoreArgs = ignore.flatMap((pattern) => ["--ignore", pattern]);
+    for (const args of [
+      ["sourcemaps", "inject", ...ignoreArgs, directory],
+      ["sourcemaps", "upload", "--project", project, ...ignoreArgs, directory],
+    ]) {
+      const spawnCommand = yield* resolveSpawnCommand("vp", ["exec", "sentry-cli", ...args]);
+      yield* runCommand(
+        ChildProcess.make(spawnCommand.command, spawnCommand.args, {
+          cwd: repoRoot,
+          shell: spawnCommand.shell,
+          env: {
+            SENTRY_AUTH_TOKEN: env.SENTRY_AUTH_TOKEN,
+            ...(env.SENTRY_URL ? { SENTRY_URL: env.SENTRY_URL } : {}),
+            ...(env.SENTRY_ORG ? { SENTRY_ORG: env.SENTRY_ORG } : {}),
+          },
+          extendEnv: true,
+        }),
+        { label: `sentry-cli ${args.join(" ")}`, verbose },
+      ).pipe(
+        Effect.scoped,
+        Effect.catch((error) =>
+          Effect.logWarning("[desktop-artifact] Sentry upload failed", error),
+        ),
+      );
+    }
+  }
+});
+
 const desktopBuildProbeSucceeds = Effect.fn("desktopBuildProbeSucceeds")(function* (
   command: ChildProcess.Command,
   label: string,
@@ -3525,6 +3572,7 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
 
   yield* applyWebBrandAssets("production", "apps/server/dist/client");
   yield* validateBundledClientAssets(path.dirname(bundledClientEntry));
+  yield* uploadSentrySourceMaps(repoRoot, options.verbose);
 
   yield* fs.makeDirectory(path.join(stageAppDir, "apps/desktop"), { recursive: true });
   if (options.platform !== "win") {

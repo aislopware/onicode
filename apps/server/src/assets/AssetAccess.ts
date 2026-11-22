@@ -288,7 +288,10 @@ const readToolOutputImage = Effect.fn("AssetAccess.readToolOutputImage")(functio
 // The response streams the descriptor the path checks approved, not what the path names later.
 const openCheckedFileAsset = (filePath: string) =>
   openMediaFile(filePath).pipe(
-    Effect.tapError((cause) => Effect.logError("Failed to open asset file.", { filePath, cause })),
+    // A file gone from disk is expected here, not an error to report.
+    Effect.tapError((cause) =>
+      Effect.logWarning("Failed to open asset file.", { filePath, cause }),
+    ),
     Effect.orElseSucceed(() => null),
     Effect.map((file) =>
       file ? ({ kind: "file", path: filePath, file } satisfies ResolvedAsset) : null,
@@ -305,7 +308,7 @@ const projectFaviconAsset = Effect.fn("AssetAccess.projectFaviconAsset")(functio
   const fileSystem = yield* FileSystem.FileSystem;
   const bytes = yield* fileSystem.readFile(filePath).pipe(
     Effect.tapError((cause) =>
-      Effect.logError("Failed to read project icon image.", { filePath, cause }),
+      Effect.logWarning("Failed to read project icon image.", { filePath, cause }),
     ),
     Effect.orElseSucceed(() => null),
   );
