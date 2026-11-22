@@ -3221,7 +3221,7 @@ c198f73b37	take	taken as is
 356dff3352	take	fix(web): RTF previews respect hidden character formatting (#40783)
 5fc2eb2f47	take	fix(mobile): the iOS composer keeps its keyboard and caret after dictation (#33916)
 997103be46	take	fix(shared): find file links whose labels contain brackets (#40781)
-1acfd37c17	skip	kept Onicode's effort picker: reasoning levels are one slider (single focus stop, arrows change the value) and options are segment rows, so upstream's first-letter focus over radio rows has nothing to land on; typeahead on the slider would have to change the level, which upstream deliberately avoids
+1acfd37c17	skip	kept Onicode's effort picker: reasoning levels with 3+ choices are one slider (single focus stop, arrows change the value; typeahead there would have to change the level, which upstream avoids), and the segment rows left for 1-2 levels and options are already walked by Left/Right, so first-letter focus adds nothing
 0ae3154695	take	fix(server): migration 75 no longer fails on an unreadable subagent payload (#30783)
 671e05bc8c	take	GitHub test conflict: kept Onicode's hover-card summary assertions, added upstream's reference assertion; new contract field optional
 8435a8cd41	take	fix(server): tell a stopped parent which delegated tasks its Stop interrupted (#34499)
