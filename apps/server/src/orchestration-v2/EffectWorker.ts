@@ -421,8 +421,7 @@ export const layerExecutor: Layer.Layer<
                         ...(followsRun
                           ? { steerFollowUpOfRunId: run.id }
                           : { steerMissedRunId: run.id }),
-                        ...(error.steerDeclined &&
-                        effect.request.steerFollowUpAfterRunOrdinal !== undefined
+                        ...(effect.request.steerFollowUpAfterRunOrdinal !== undefined
                           ? {
                               steerFollowUpAfterRunOrdinal:
                                 effect.request.steerFollowUpAfterRunOrdinal,
