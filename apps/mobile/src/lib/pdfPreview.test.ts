@@ -16,7 +16,7 @@ vi.mock("expo-file-system", () => ({
   FileMode: { ReadOnly: "r" },
 }));
 
-import { isPdfPreviewUri, pdfLinkUrl, preparePdfPreview } from "./pdfPreview";
+import { isPdfPreviewUri, pdfLinkUrl, pdfWebViewNavigation, preparePdfPreview } from "./pdfPreview";
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -32,6 +32,38 @@ describe("PDF navigation", () => {
     expect(pdfLinkUrl("https://example.com/?q=one#section", "file:///cache/preview.pdf")).toBe(
       "https://example.com/?q=one#section",
     );
+    expect(pdfLinkUrl("mailto:team@example.com", "https://environment.test/a.pdf")).toBe(
+      "mailto:team@example.com",
+    );
+  });
+
+  it("keeps the PDF's own load in the WebView and sends only tapped links outside", () => {
+    const pdf = "https://environment.test/api/assets/token/a.pdf";
+    const tap = (url: string) => ({ url, navigationType: "click", isTopFrame: true });
+    const script = (url: string) => ({ url, navigationType: "other", isTopFrame: true });
+    expect(pdfWebViewNavigation(script(`${pdf}?redirected`), null)).toEqual({ kind: "load" });
+    expect(pdfWebViewNavigation(tap(`${pdf}#page=3`), pdf)).toEqual({ kind: "load" });
+    expect(pdfWebViewNavigation(tap("https://example.com/docs"), pdf)).toEqual({
+      kind: "open",
+      url: "https://example.com/docs",
+    });
+    expect(pdfWebViewNavigation(tap("mailto:team@example.com"), pdf)).toEqual({
+      kind: "open",
+      url: "mailto:team@example.com",
+    });
+    expect(pdfWebViewNavigation(tap("javascript:alert(1)"), pdf)).toEqual({ kind: "block" });
+    expect(pdfWebViewNavigation(script("https://example.com/docs"), pdf)).toEqual({
+      kind: "block",
+    });
+    expect(pdfWebViewNavigation(script("mailto:team@example.com"), pdf)).toEqual({
+      kind: "block",
+    });
+    expect(
+      pdfWebViewNavigation(
+        { url: "https://example.com/docs", navigationType: "click", isTopFrame: false },
+        pdf,
+      ),
+    ).toEqual({ kind: "block" });
   });
 
   it.each([

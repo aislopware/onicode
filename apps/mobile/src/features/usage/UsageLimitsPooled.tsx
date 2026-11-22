@@ -32,6 +32,8 @@ import type { MessageResolver } from "../../i18n/messages";
 import { SettingsScreen } from "../settings/components/SettingsScreen";
 import { environmentPresentations } from "../../state/presentation";
 import { refillLabel, ResetCredits, resetLabels } from "./UsageLimitsSection";
+import { hourCycleOption } from "../threads/messageTimestamp";
+import { useSystem24HourClock } from "../threads/useMessageTimeFormatter";
 import { usageProviderKind, useProviderColors } from "./usageProviders";
 
 const PACE_LABEL = {
@@ -613,6 +615,7 @@ export function UsageLimitAccountScreen({ route }: AccountScreenProps) {
   const reset = pool?.resets.find((candidate) => candidate.member.account.key === accountKey);
   const [revealed, setRevealed] = useState(false);
   const gt = useGT();
+  const is24Hour = useSystem24HourClock();
   return (
     <SettingsScreen title={gt("Account", { $context: "screen title" })}>
       <ScrollView
@@ -670,6 +673,7 @@ export function UsageLimitAccountScreen({ route }: AccountScreenProps) {
                       {new Date(window.resetsAt).toLocaleString(undefined, {
                         dateStyle: "medium",
                         timeStyle: "short",
+                        ...hourCycleOption(is24Hour),
                       })}
                     </Var>
                   </T>

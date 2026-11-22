@@ -74,6 +74,7 @@ vi.mock("./shareFileFromSource", () => ({ shareFileFromSource: mocks.shareFromSo
 import {
   downloadAndShareAttachment,
   downloadAttachmentForPreview,
+  openAttachmentInViewer,
   shareLocalAttachment,
 } from "./attachmentDownload";
 import { isForegroundHandoffActive } from "./foreground-handoff";
@@ -227,6 +228,23 @@ describe("downloadAndShareAttachment", () => {
     expect(mocks.deleted).not.toHaveBeenCalled();
     share.resolve();
     await first;
+  });
+});
+
+describe("openAttachmentInViewer", () => {
+  it.each([
+    ["notes.rtf", "application/octet-stream", "application/rtf"],
+    ["notes.RTF", "", "application/rtf"],
+    ["notes.rtf", "text/rtf", "text/rtf"],
+    ["report.pdf", "application/pdf; name=report.pdf", "application/pdf"],
+    ["blob", "application/octet-stream", "application/octet-stream"],
+  ])("hands %s (%j) to the OS viewer as %s", async (name, mimeType, expected) => {
+    await openAttachmentInViewer({
+      uri: "file:///documents/draft/original",
+      attachment: { name, mimeType },
+      signal: new AbortController().signal,
+    });
+    expect(mocks.open).toHaveBeenCalledWith(expect.any(String), expected);
   });
 });
 

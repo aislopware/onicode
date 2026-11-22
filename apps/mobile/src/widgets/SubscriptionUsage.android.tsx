@@ -368,6 +368,9 @@ export function SubscriptionUsage(props: SubscriptionUsageProps, environment: Wi
                   minute: "2-digit",
                   month: "short",
                   day: "numeric",
+                  ...(props.is24Hour === undefined
+                    ? {}
+                    : { hourCycle: props.is24Hour ? "h23" : "h12" }),
                 }),
               )
             : text.tapToConnect}

@@ -1,5 +1,5 @@
 import { fileBasename } from "@onicode/shared/path";
-import { fileLinkLabel } from "@onicode/shared/fileLinks";
+import { buildFileLinkParentSuffixByPath, fileLinkLabel } from "@onicode/shared/fileLinks";
 import {
   inlineCodeFilePathCandidate,
   normalizeMarkdownLinkDestination,
@@ -252,7 +252,12 @@ export function resolveMarkdownFileIcon(value: string): MarkdownFileIcon {
   return "default";
 }
 
-export function resolveMarkdownLinkPresentation(href: string): MarkdownLinkPresentation {
+const NO_PARENT_SUFFIXES: ReadonlyMap<string, string> = new Map();
+
+export function resolveMarkdownLinkPresentation(
+  href: string,
+  parentSuffixByPath: ReadonlyMap<string, string> = NO_PARENT_SUFFIXES,
+): MarkdownLinkPresentation {
   const normalized = normalizeMarkdownLinkDestination(href);
   try {
     const parsed = new URL(normalizeNativeMarkdownUrl(normalized));
@@ -271,7 +276,7 @@ export function resolveMarkdownLinkPresentation(href: string): MarkdownLinkPrese
       kind: "file",
       href: normalized,
       icon: resolveMarkdownFileIcon(target.path),
-      label: fileLinkLabel(target, new Map()),
+      label: fileLinkLabel(target, parentSuffixByPath),
       path: target.path,
       ...(target.line ? { line: target.line } : {}),
       ...(target.column ? { column: target.column } : {}),
@@ -285,6 +290,18 @@ export function resolveMarkdownLinkPresentation(href: string): MarkdownLinkPrese
         ? normalized
         : null,
   };
+}
+
+/** Folder suffixes that tell apart same-named file links in one message, as desktop labels them. */
+export function markdownFileLinkParentSuffixes(
+  hrefs: Iterable<string>,
+): ReadonlyMap<string, string> {
+  const paths: string[] = [];
+  for (const href of hrefs) {
+    const link = resolveMarkdownLinkPresentation(href);
+    if (link.kind === "file") paths.push(link.path);
+  }
+  return buildFileLinkParentSuffixByPath(paths);
 }
 
 export function resolveMarkdownInlineCodePresentation(

@@ -99,6 +99,8 @@ import type { MarkdownImageRenderer } from "../../native/SelectableMarkdownText"
 import type { FilePreviewSource } from "../../components/ui/FilePreviewModal";
 import { FilePreviewGallery } from "../../components/ui/FilePreviewGallery";
 import { ThreadMarkdownImage } from "./ThreadMarkdownImage";
+import { hourCycleOption } from "./messageTimestamp";
+import { useSystem24HourClock } from "./useMessageTimeFormatter";
 import Animated, {
   FadeIn,
   FadeOut,
@@ -863,6 +865,7 @@ const ThreadWorkLogRow = function ThreadWorkLogRow(
 ) {
   const { row, expanded } = props;
   const gt = useGT();
+  const is24Hour = useSystem24HourClock();
   const messages = useMessages();
   const openLinkedThread = useOpenLinkedThread();
   const canSignInToMcp = useAtomValue(
@@ -899,6 +902,7 @@ const ThreadWorkLogRow = function ThreadWorkLogRow(
           day: "numeric",
           hour: "numeric",
           minute: "2-digit",
+          ...hourCycleOption(is24Hour),
         })} (${new Intl.DateTimeFormat().resolvedOptions().timeZone})`
       : null;
     const label = warning
@@ -943,7 +947,7 @@ const ThreadWorkLogRow = function ThreadWorkLogRow(
               </Text>
             ) : null}
             <Text
-              accessibilityLabel={timestamp.toLocaleString()}
+              accessibilityLabel={timestamp.toLocaleString(undefined, hourCycleOption(is24Hour))}
               className="shrink-0 text-xs text-foreground-subtle"
             >
               {timestamp.toLocaleString(undefined, {
@@ -951,6 +955,7 @@ const ThreadWorkLogRow = function ThreadWorkLogRow(
                 day: "numeric",
                 hour: "numeric",
                 minute: "2-digit",
+                ...hourCycleOption(is24Hour),
               })}
             </Text>
           </View>

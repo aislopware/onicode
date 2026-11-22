@@ -37,6 +37,8 @@ import { useEnvironmentScope } from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { vcsEnvironment } from "../../state/vcs";
 import { useRefreshBranchesOnFocus } from "./use-refresh-branches-on-focus";
+import { hourCycleOption } from "./messageTimestamp";
+import { useSystem24HourClock } from "./useMessageTimeFormatter";
 import { useSearchToolbarInset } from "../../components/ui/useBarInset";
 import type { AppBarSearch } from "../../components/ui/AppBar";
 import { branchBadgeLabel, useNewTaskFlow } from "./new-task-flow-provider";
@@ -66,6 +68,7 @@ function EnvironmentPickerRow(props: {
 }) {
   const gt = useGT();
   const messages = useMessages();
+  const is24Hour = useSystem24HourClock();
   const [expanded, setExpanded] = useState(false);
   const { presentation } = useEnvironmentPresentation(props.environmentId);
   const { diagnosis, state } = useConnectionDiagnosis(props.environmentId, presentation);
@@ -74,6 +77,9 @@ function EnvironmentPickerRow(props: {
   const status =
     diagnosis?.headline ??
     (connection ? environmentStatusText({ ...connection, error: null }, messages) : gt("Offline"));
+  const retryTime = state.retryAt
+    ? new Date(state.retryAt).toLocaleTimeString(undefined, hourCycleOption(is24Hour))
+    : null;
   return (
     <View className={cn("bg-grouped-card", !props.isLast && "border-b border-border-subtle")}>
       <View className="flex-row items-center">
@@ -130,10 +136,10 @@ function EnvironmentPickerRow(props: {
           ) : (
             <Text className="text-sm text-foreground-muted">{status}</Text>
           )}
-          {state.retryAt ? (
+          {retryTime ? (
             <Text className="text-sm text-foreground-muted">
               <T>
-                Next reconnect at <Var>{new Date(state.retryAt).toLocaleTimeString()}</Var>
+                Next reconnect at <Var>{retryTime}</Var>
               </T>
             </Text>
           ) : null}

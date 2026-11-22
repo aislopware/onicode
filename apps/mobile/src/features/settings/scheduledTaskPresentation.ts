@@ -1,6 +1,7 @@
 import { msg } from "gt-react-native";
 
 import { m, type MessageResolver } from "../../i18n/messages";
+import { hourCycleOption } from "../threads/messageTimestamp";
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
@@ -40,13 +41,8 @@ export function formatScheduledTaskInterval(everyMs: number, resolve: MessageRes
   return resolve(msg("Every {duration}", { duration: parts.join(" ") }));
 }
 
-/** `is24Hour` is the system clock setting when known; undefined keeps the locale's hour cycle. */
 function clockOptions(is24Hour: boolean | undefined): Intl.DateTimeFormatOptions {
-  return {
-    hour: "numeric",
-    minute: "2-digit",
-    ...(is24Hour === undefined ? {} : { hourCycle: is24Hour ? "h23" : "h12" }),
-  };
+  return { hour: "numeric", minute: "2-digit", ...hourCycleOption(is24Hour) };
 }
 
 /** A schedule's `H:MM` wall time, which names no date or zone. */

@@ -117,7 +117,7 @@ import { imageMimeType } from "@onicode/shared/image";
 import { videoMimeType } from "@onicode/shared/video";
 import { SymbolView, type AppSymbolName } from "../../components/ui/AppSymbol";
 import { textDirection } from "@onicode/shared/textDirection";
-import { useFocusEffect, useNavigation } from "@react-navigation/native";
+import { useFocusEffect, useNavigation, useRoute } from "@react-navigation/native";
 import { useNativeWorkspaceColumnsSupported } from "../../native/NativeWorkspaceColumns";
 import { useDeviceType } from "../../native/native-layout-metrics";
 import { isDuoDevice } from "../../lib/device-type";
@@ -329,6 +329,7 @@ import { openSettings } from "../settings/settings-navigation";
 import { loopbackUrlForDevice } from "../browser/browserTabs";
 import { useLocalPreviewUrl, useOpenLocalPreview } from "../browser/useOpenLocalPreview";
 import { useSelectWorkspaceDetail } from "../layout/workspace/useSelectWorkspaceDetail";
+import { workspacePageStillShows } from "../layout/workspace/workspace-detail-selection";
 import { useMessageTimeFormatter } from "./useMessageTimeFormatter";
 
 const WIDE_MARKDOWN_BLOCK_OPTIONS = {
@@ -457,6 +458,8 @@ function AssistantForkButton(props: {
   const gt = useGT();
   const forkFromRun = useAtomCommand(threadEnvironment.forkFromRun, "fork from response");
   const selectDetail = useSelectWorkspaceDetail();
+  const navigation = useNavigation();
+  const route = useRoute();
   const [busy, setBusy] = useState(false);
   const canFork = canForkProjectedAssistantItem({
     projectedItem: props.projectedItem,
@@ -506,6 +509,8 @@ function AssistantForkButton(props: {
               );
               return;
             }
+            // `route` is the page as pressed; if the user has moved on since, leave them there.
+            if (!workspacePageStillShows(navigation.getState(), route)) return;
             selectDetail({
               name: "Thread",
               params: { environmentId: props.environmentId, threadId: targetThreadId },

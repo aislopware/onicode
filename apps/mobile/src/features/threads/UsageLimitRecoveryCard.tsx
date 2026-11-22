@@ -24,6 +24,8 @@ import { AppText as Text } from "../../components/ui/AppText";
 import { useDeadlinePassed } from "../../lib/clock";
 import { threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { hourCycleOption } from "./messageTimestamp";
+import { useSystem24HourClock } from "./useMessageTimeFormatter";
 
 export function UsageLimitRecoveryCard({
   thread,
@@ -33,6 +35,7 @@ export function UsageLimitRecoveryCard({
   environmentId: EnvironmentId;
 }) {
   const gt = useGT();
+  const is24Hour = useSystem24HourClock();
   const updateMetadata = useAtomCommand(threadEnvironment.updateMetadata);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -80,6 +83,7 @@ export function UsageLimitRecoveryCard({
         day: "numeric",
         hour: "numeric",
         minute: "2-digit",
+        ...hourCycleOption(is24Hour),
       })
     : null;
   const resetText =
