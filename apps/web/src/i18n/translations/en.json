@@ -1533,7 +1533,7 @@
   "60b9d6d0065bc386": "Report a bug",
   "61e9fa6e4bc7eff7": "Open Diagnostics",
   "480646ceb98c7163": "Close",
-  "87d6a065b1bd5703": "Your report goes to the publisher of this Onicode build with the last minute of screen replay, recent errors and app details. Replays mask all text, media and links.",
+  "eb5795dcb54e642e": "Your report goes to the publisher of this Onicode build with a short screen replay from before you opened this report, recent errors and app details. Replays mask all text, media and links.",
   "db65f6e3b707ee9e": "What happened?",
   "e4fb6f05a843a642": "Email (optional)",
   "02707a85ddb8a7a8": "Attach a screenshot of this window",

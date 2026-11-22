@@ -48,7 +48,7 @@ import {
 } from "@onicode/client-runtime/state/project-grouping";
 import { useUiStateStore } from "../uiStateStore";
 import { openBugReport, useBugReportStore } from "../bugReportStore";
-import { bugReportAvailability, lastReportedErrorId } from "../observability/crashReportingStartup";
+import { bugReportsSupported, reportedErrorId } from "../observability/crashReportingStartup";
 import { configureClientTracing } from "../observability/clientTracing";
 import { resolveInitialServerAuthGateState } from "../environments/primary";
 import { isLocalEnvironmentDisabled } from "../localEnvironment";
@@ -231,7 +231,7 @@ function RootRouteErrorView({ error }: ErrorComponentProps) {
           <T>Reload app</T>
         </Button>
         <CopyErrorButton report={report} />
-        <ReportErrorButton />
+        <ReportErrorButton error={error} />
       </div>
 
       <div className="mt-5 overflow-hidden rounded-lg border border-border bg-background/55">
@@ -246,10 +246,10 @@ function RootRouteErrorView({ error }: ErrorComponentProps) {
   );
 }
 
-function ReportErrorButton() {
+function ReportErrorButton({ error }: { readonly error: unknown }) {
   const [session, setSession] = useState<number>();
   const sent = useBugReportStore((state) => session !== undefined && state.sentSession === session);
-  if (bugReportAvailability() === "unavailable") return null;
+  if (!bugReportsSupported()) return null;
   return (
     <>
       <Button
@@ -257,7 +257,7 @@ function ReportErrorButton() {
         variant="outline"
         disabled={sent}
         onClick={async () => {
-          const opened = await openBugReport({ associatedEventId: lastReportedErrorId() });
+          const opened = await openBugReport({ associatedEventId: reportedErrorId(error) });
           if (opened !== undefined) setSession(opened);
         }}
       >

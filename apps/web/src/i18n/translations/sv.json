@@ -1533,7 +1533,7 @@
   "60b9d6d0065bc386": "Rapportera en bugg",
   "61e9fa6e4bc7eff7": "Öppna Diagnostik",
   "480646ceb98c7163": "Stäng",
-  "87d6a065b1bd5703": "Rapporten skickas till utgivaren av den här Onicode-versionen med den senaste minutens skärmuppspelning, de senaste felen och appinformation. Uppspelningar maskerar all text, media och alla länkar.",
+  "eb5795dcb54e642e": "Rapporten skickas till utgivaren av den här Onicode-versionen med en kort skärmuppspelning från innan du öppnade rapporten, de senaste felen och appinformation. Uppspelningar maskerar all text, media och alla länkar.",
   "db65f6e3b707ee9e": "Vad hände?",
   "e4fb6f05a843a642": "E-post (valfritt)",
   "02707a85ddb8a7a8": "Bifoga en skärmbild av det här fönstret",

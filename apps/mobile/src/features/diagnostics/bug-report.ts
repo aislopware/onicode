@@ -1,4 +1,5 @@
 import {
+  beginBugReportReplay,
   type BugReportScreenshot,
   bugReportsReady,
   captureBugReportScreenshot,
@@ -15,6 +16,8 @@ export type BugReportAvailability = "unavailable" | "off" | "restart" | "ready";
 
 export function bugReportAvailability(savedEnabled: boolean | null): BugReportAvailability {
   if (!crashReportingAvailable) return "unavailable";
+  // Turned off since launch: Sentry still runs, but the user said no.
+  if (savedEnabled === false) return "off";
   if (bugReportsReady()) return "ready";
   if (crashReportingLaunchPreference() === true) return "restart";
   return savedEnabled === true ? "restart" : "off";
@@ -23,16 +26,28 @@ export function bugReportAvailability(savedEnabled: boolean | null): BugReportAv
 export interface BugReportDraft {
   readonly associatedEventId: string | undefined;
   readonly screenshot: BugReportScreenshot | undefined;
+  /** Sends the replay buffered before the sheet opened, once; the sheet calls it when it can send. */
+  readonly sendReplay: () => Promise<string | undefined>;
 }
 
-// Route params must stay serializable, so the screenshot waits here for the sheet.
-let pendingDraft: BugReportDraft = { associatedEventId: undefined, screenshot: undefined };
+const emptyDraft: BugReportDraft = {
+  associatedEventId: undefined,
+  screenshot: undefined,
+  sendReplay: () => Promise.resolve(undefined),
+};
 
-/** The draft `openBugReport` prepared, taken once by the sheet it opened. */
-export function takeBugReportDraft(): BugReportDraft {
-  const draft = pendingDraft;
-  pendingDraft = { associatedEventId: undefined, screenshot: undefined };
-  return draft;
+// Route params must stay serializable, so the screenshot waits here for the sheet.
+let pendingDraft = emptyDraft;
+let opening = false;
+
+/** The draft `openBugReport` prepared for the sheet it opened. Reading it twice is safe. */
+export function currentBugReportDraft(): BugReportDraft {
+  return pendingDraft;
+}
+
+/** Lets go of the screenshot once the sheet that showed `draft` is gone. */
+export function releaseBugReportDraft(draft: BugReportDraft): void {
+  if (pendingDraft === draft) pendingDraft = emptyDraft;
 }
 
 /**
@@ -43,12 +58,27 @@ export async function openBugReport(options: {
   readonly screenshot: boolean;
   readonly associatedEventId?: string | undefined;
 }): Promise<void> {
+  if (opening) return;
   if (rootNavigationRef.isReady() && rootNavigationRef.getCurrentRoute()?.name === "BugReport") {
     return;
   }
-  const screenshot = options.screenshot ? await captureBugReportScreenshot() : undefined;
-  pendingDraft = { associatedEventId: options.associatedEventId, screenshot };
-  whenRootNavigationReady(() => rootNavigationRef.navigate("BugReport"));
+  opening = true;
+  try {
+    const screenshot = options.screenshot ? await captureBugReportScreenshot() : undefined;
+    let replay: Promise<string | undefined> | undefined;
+    pendingDraft = {
+      associatedEventId: options.associatedEventId,
+      screenshot,
+      sendReplay: () => (replay ??= beginBugReportReplay()),
+    };
+  } finally {
+    opening = false;
+  }
+  whenRootNavigationReady(() => {
+    if (rootNavigationRef.getCurrentRoute()?.name !== "BugReport") {
+      rootNavigationRef.navigate("BugReport");
+    }
+  });
 }
 
 /** A data URI for the screenshot preview. */

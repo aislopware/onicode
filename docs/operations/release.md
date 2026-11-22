@@ -39,7 +39,8 @@ ships with error reporting off ([Error reports](./observability.md#error-reports
   `SENTRY_URL` and `SENTRY_ORG`.
 
 A release from a Mac reads the same names from `.env.local` or better-update's `production`
-environment.
+environment. Its last step, recording the release in Sentry, reads them from the shell or
+`.env.local` only.
 
 To release from a Mac instead, on that Mac:
 

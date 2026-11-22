@@ -4,7 +4,7 @@ import { AsyncResult } from "effect/reactivity";
 import { Image } from "expo-image";
 import * as Haptics from "expo-haptics";
 import { T, useGT } from "gt-react-native";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { View } from "react-native";
 
 import { AppText as Text, AppTextInput as TextInput } from "../../components/ui/AppText";
@@ -13,8 +13,14 @@ import { FitSheet } from "../../components/ui/FitSheet";
 import { ListToggleRow } from "../../components/ui/ListToggleRow";
 import { SheetHeader } from "../../components/ui/SheetHeader";
 import { sendBugReport } from "../../lib/crash-reporting";
+import { openSettings } from "../settings/settings-navigation";
 import { mobilePreferencesAtom } from "../../state/preferences";
-import { bugReportAvailability, screenshotUri, takeBugReportDraft } from "./bug-report";
+import {
+  bugReportAvailability,
+  currentBugReportDraft,
+  releaseBugReportDraft,
+  screenshotUri,
+} from "./bug-report";
 
 /** The bug report form; opened by a shake, Diagnostics, and error screens. */
 export function BugReportSheet() {
@@ -25,7 +31,11 @@ export function BugReportSheet() {
     ? preferences.value.errorReportingEnabled !== false
     : null;
   const availability = bugReportAvailability(savedEnabled);
-  const [draft] = useState(takeBugReportDraft);
+  const [draft] = useState(currentBugReportDraft);
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- frees the module-held screenshot when the sheet goes
+  useEffect(() => () => releaseBugReportDraft(draft), [draft]);
+  // Sent as the sheet opens, so it shows what led up to the report rather than this sheet.
+  const [replayId] = useState(() => (availability === "ready" ? draft.sendReplay() : undefined));
   const [screenshotPreview] = useState(() =>
     draft.screenshot ? screenshotUri(draft.screenshot) : undefined,
   );
@@ -53,10 +63,7 @@ export function BugReportSheet() {
           <Button
             label={gt("Open Diagnostics")}
             fullWidth
-            onPress={() => {
-              navigation.goBack();
-              navigation.navigate("SettingsDiagnostics");
-            }}
+            onPress={() => openSettings(navigation, "SettingsDiagnostics")}
           />
         ) : null}
       </FitSheet>
@@ -82,6 +89,7 @@ export function BugReportSheet() {
       email: email.trim() || undefined,
       associatedEventId: draft.associatedEventId,
       screenshot: attachScreenshot ? draft.screenshot : undefined,
+      replayId: replayId ?? draft.sendReplay(),
     });
     if (!sent) {
       setStatus("failed");
@@ -111,8 +119,9 @@ export function BugReportSheet() {
     >
       <Text className="text-sm text-foreground-muted">
         <T>
-          Your report goes to the publisher of this Onicode build with the last minute of screen
-          replay, recent errors and app details. Replays mask all text and media.
+          Your report goes to the publisher of this Onicode build with a short screen replay from
+          before you opened this report, recent errors and app details. Replays mask all text and
+          media.
         </T>
       </Text>
       <View className="gap-2">

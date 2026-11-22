@@ -49,9 +49,15 @@ export function crashReportingLaunchPreference(): boolean | undefined {
   return launchPreference;
 }
 
-/** Errors an error boundary rendered a fallback for, which never reach the global handler. */
-export function reportRenderError(error: unknown, componentStack: string | undefined): void {
-  reporter?.captureRenderError(error, componentStack);
+/**
+ * Errors an error boundary rendered a fallback for, which never reach the global handler. Returns
+ * the Sentry event, so a bug report from that fallback links to it.
+ */
+export function reportRenderError(
+  error: unknown,
+  componentStack: string | undefined,
+): string | undefined {
+  return reporter?.captureRenderError(error, componentStack);
 }
 
 /** Ends the app start span once the splash screen hides. */
@@ -70,6 +76,11 @@ export function bugReportsReady(): boolean {
   return reporter !== undefined;
 }
 
+/** Sends the replay buffered so far, before the report sheet opened, resolving to its id. */
+export function beginBugReportReplay(): Promise<string | undefined> {
+  return reporter?.beginBugReport() ?? Promise.resolve(undefined);
+}
+
 /** Whether the report was handed to Sentry, which stores it until it is sent. */
 export function sendBugReport(report: BugReport): boolean {
   if (!reporter) return false;
@@ -82,14 +93,9 @@ export function sendBugReport(report: BugReport): boolean {
   }
 }
 
-/** An unmasked capture of the screen, offered to the user before it goes with a report. */
+/** A capture of the screen with text and images masked, offered to the user before it is sent. */
 export async function captureBugReportScreenshot(): Promise<BugReportScreenshot | undefined> {
   return reporter?.captureScreenshot().catch(() => undefined);
-}
-
-/** The last error this launch reported, so a report from an error screen links to it. */
-export function lastReportedErrorId(): string | undefined {
-  return reporter?.lastEventId();
 }
 
 /** Opens a bug report on a shake while `handler` is set, once Sentry has started. */

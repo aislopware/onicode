@@ -464,6 +464,8 @@ jobs:
       && (needs.release.result == 'success' || needs.mobile.result == 'success')
     runs-on: ubuntu-26.04
     timeout-minutes: 10
+    # Recording is bookkeeping: a failed checkout or a timeout must not turn a shipped release red.
+    continue-on-error: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -473,9 +475,8 @@ jobs:
       - name: Desktop and server
         if: needs.release.result == 'success'
         run: |
-          version="$(node -p 'require("./apps/server/package.json").version')"
-          scripts/release/sentry-release.sh onicode-desktop "$version"
-          scripts/release/sentry-release.sh onicode-server "$version"
+          scripts/release/sentry-release.sh onicode-desktop "$(node -p 'require("./apps/desktop/package.json").version')"
+          scripts/release/sentry-release.sh onicode-server "$(node -p 'require("./apps/server/package.json").version')"
       - name: Mobile
         if: needs.mobile.result == 'success'
         run: scripts/release/sentry-release.sh onicode-mobile "$(node -p 'require("./apps/server/package.json").version')"

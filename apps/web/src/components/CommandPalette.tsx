@@ -83,7 +83,7 @@ import {
   TextSearchIcon,
 } from "lucide-react";
 import { openBugReport } from "../bugReportStore";
-import { bugReportAvailability } from "../observability/crashReportingStartup";
+import { bugReportsSupported } from "../observability/crashReportingStartup";
 import { openThreadFind } from "./chat/threadFindStore";
 import { dispatchPreviewAction } from "./preview/previewActionBus";
 import { previewBridge } from "./preview/previewBridge";
@@ -1841,7 +1841,7 @@ function OpenCommandPaletteDialog(props: {
     },
   });
 
-  if (bugReportAvailability() !== "unavailable") {
+  if (bugReportsSupported()) {
     actionItems.push({
       kind: "action",
       value: "action:report-bug",

@@ -4,6 +4,7 @@ import * as Sentry from "@sentry/electron/renderer";
 import { init as reactInit, reactErrorHandler } from "@sentry/react";
 
 import type { CaughtErrorHandler } from "./crashReportingStartup";
+import { createReplayHold } from "./replayHold";
 import { addressHasQuery, maskReplayAttribute } from "./replayPrivacy";
 
 // The main process adds the home folder scrub to events; spans and replays skip its hooks.
@@ -41,27 +42,28 @@ export function startCrashReporting(): CaughtErrorHandler {
     reactInit,
   );
   // Replay events, with the page URLs they list, reach Sentry through event processors only.
-  Sentry.addEventProcessor((event) => {
-    if (event.type === "feedback" && feedbackReplayId !== undefined && event.contexts?.feedback) {
-      event.contexts.feedback.replay_id = feedbackReplayId;
-    }
-    return scrub(event);
-  });
+  Sentry.addEventProcessor(scrub);
   if (replay) {
-    activeReplay = replay;
-    pauseReplayOnAddressesWithQuery(replay);
+    const hold = createReplayHold(replay, addressIsPrivate);
+    replayHold = hold;
+    // The router's hash history uses pushState, which fires no hashchange. Sentry can restart an
+    // expired replay a few microtasks after the address changed, so check once more after that.
+    window.navigation?.addEventListener("currententrychange", () => {
+      hold.syncAddress();
+      setTimeout(hold.syncAddress);
+    });
+    hold.syncAddress();
   }
-  const report = reactErrorHandler();
+  const report = reactErrorHandler((error: unknown, _errorInfo, eventId) => {
+    if (typeof error === "object" && error !== null) reportedEventIds.set(error, eventId);
+  });
   return (error, errorInfo) => report(error, { componentStack: errorInfo.componentStack ?? null });
 }
 
 type ReplayIntegration = ReturnType<typeof Sentry.replayIntegration>;
 
-let activeReplay: ReplayIntegration | undefined;
-// Set while a send owns the replay, so navigation does not restart it underneath.
-let replayHeld = false;
-let replayTasks: Promise<unknown> = Promise.resolve();
-let feedbackReplayId: string | undefined;
+let replayHold: ReturnType<typeof createReplayHold> | undefined;
+const reportedEventIds = new WeakMap<object, string>();
 
 /** Undefined when this SDK version no longer lets Onicode mask every content attribute. */
 function makeReplayIntegration(): ReplayIntegration | undefined {
@@ -78,7 +80,8 @@ function makeReplayIntegration(): ReplayIntegration | undefined {
     beforeAddRecordingEvent: scrub,
     beforeErrorSampling: (event) => {
       const replayId = event.tags?.["replayId"];
-      if (typeof replayId === "string") sendErrorReplay(replayId);
+      // After the error is sent, so its replay link and the replay land together.
+      if (typeof replayId === "string") setTimeout(() => void replayHold?.sendBuffered(replayId));
       return false;
     },
   });
@@ -92,59 +95,52 @@ function makeReplayIntegration(): ReplayIntegration | undefined {
 
 const addressIsPrivate = () => addressHasQuery(window.location.hash, window.location.search);
 
-/** Runs sends one at a time, holding the replay; it buffers afresh after each. */
-function withHeldReplay<T>(
-  task: (replay: ReplayIntegration) => Promise<T>,
-): Promise<T | undefined> {
-  const replay = activeReplay;
-  if (replay === undefined) return Promise.resolve(undefined);
-  const run = replayTasks.then(async () => {
-    replayHeld = true;
-    try {
-      return await task(replay);
-    } finally {
-      // Without a flush, stop drops the buffer synchronously, so nothing recorded here is sent.
-      void replay.stop({ flush: false });
-      replayHeld = false;
-      if (!addressIsPrivate()) replay.startBuffering();
-    }
-  });
-  replayTasks = run.catch(() => {});
-  return run;
-}
-
-/**
- * Sends the recording buffered so far and stops it, returning its id. Sentry would otherwise turn
- * the buffer into a session that keeps uploading until the session ends.
- */
-async function sendBufferedReplay(
-  replay: ReplayIntegration,
-  expectedId?: string,
-): Promise<string | undefined> {
-  const replayId = replay.getReplayId();
-  // A stopped replay would restart in full recording on flush, possibly on a private address.
-  if (replayId === undefined || (expectedId !== undefined && replayId !== expectedId)) return;
-  await replay.flush({ continueRecording: false }).catch(() => {});
-  void replay.stop({ flush: false });
-  return replayId;
-}
-
-function sendErrorReplay(replayId: string): void {
-  setTimeout(() => void withHeldReplay((replay) => sendBufferedReplay(replay, replayId)));
-}
-
 export interface BugReport {
   readonly message: string;
   readonly email: string | undefined;
   readonly associatedEventId: string | undefined;
   readonly screenshot: Uint8Array | undefined;
+  readonly replayId: string | undefined;
 }
 
-/** Sends a user's bug report with the replay buffered before it, linked to it. */
-export async function sendBugReport(report: BugReport): Promise<void> {
-  const send = async () => {
-    // Resolves once the main process has the server's answer, and rejects when it refused.
-    await Sentry.sendFeedback(
+/** Sends the replay buffered so far, from before the report form opened, and resolves to its id. */
+export const beginBugReport = (): Promise<string | undefined> =>
+  replayHold?.sendBuffered() ?? Promise.resolve(undefined);
+
+/**
+ * Sends a user's bug report, linked to the replay `beginBugReport` sent. Resolves once the main
+ * process has it: sent, or queued while offline. Rejects when Sentry refused it.
+ */
+export function sendBugReport(report: BugReport): Promise<void> {
+  const client = Sentry.getClient();
+  if (client === undefined) return Promise.reject(new Error("Sentry is not running."));
+  let eventId: string | undefined;
+  const answered = new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      stopListening();
+      reject(new Error("The main process did not answer."));
+    }, 30_000);
+    const stopListening = client.on("afterSendEvent", (event, response) => {
+      if (event.event_id !== eventId) return;
+      clearTimeout(timeout);
+      stopListening();
+      // No status: the main process stored it offline and sends it when it can.
+      const status = response?.statusCode;
+      if (status === undefined || (status >= 200 && status < 300)) resolve();
+      else reject(new Error(`Sentry answered ${status}.`));
+    });
+  });
+  eventId = Sentry.withScope((scope) => {
+    const { replayId } = report;
+    if (replayId !== undefined) {
+      scope.addEventProcessor((event) => {
+        if (event.type === "feedback" && event.contexts?.feedback) {
+          event.contexts.feedback.replay_id = replayId;
+        }
+        return event;
+      });
+    }
+    return Sentry.captureFeedback(
       {
         message: report.message,
         ...(report.email ? { email: report.email } : {}),
@@ -153,6 +149,7 @@ export async function sendBugReport(report: BugReport): Promise<void> {
         source: "onicode",
       },
       {
+        // Sentry's own link turns the buffer into a session that keeps uploading.
         includeReplay: false,
         ...(report.screenshot
           ? {
@@ -162,35 +159,12 @@ export async function sendBugReport(report: BugReport): Promise<void> {
             }
           : {}),
       },
+      scope,
     );
-  };
-  if (activeReplay === undefined) return send();
-  await withHeldReplay(async (replay) => {
-    // The replay stays stopped until the report is sent, so Sentry does not flush it again.
-    feedbackReplayId = await sendBufferedReplay(replay);
-    try {
-      await send();
-    } finally {
-      feedbackReplayId = undefined;
-    }
   });
+  return answered;
 }
 
-/** The id of the last error this window reported, for a report about it. */
-export const lastReportedEventId = (): string | undefined => Sentry.lastEventId();
-
-function pauseReplayOnAddressesWithQuery(replay: ReplayIntegration): void {
-  const sync = () => {
-    if (replayHeld) return;
-    const paused = addressIsPrivate();
-    if (paused && replay.getReplayId() !== undefined) void replay.stop({ flush: false });
-    else if (!paused && replay.getReplayId() === undefined) replay.startBuffering();
-  };
-  // The router's hash history uses pushState, which fires no hashchange. Sentry can restart an
-  // expired replay a few microtasks after the address changed, so check once more after that.
-  window.navigation?.addEventListener("currententrychange", () => {
-    sync();
-    setTimeout(sync);
-  });
-  sync();
-}
+/** The Sentry event an error boundary's error was reported as. */
+export const reportedEventId = (error: unknown): string | undefined =>
+  typeof error === "object" && error !== null ? reportedEventIds.get(error) : undefined;

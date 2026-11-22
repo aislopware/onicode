@@ -1,24 +1,34 @@
 import { create } from "zustand";
 
-import { bugReportAvailability } from "./observability/crashReportingStartup";
+import {
+  beginBugReport,
+  bugReportAvailability,
+  type BugReportAvailability,
+} from "./observability/crashReportingStartup";
 
 interface BugReportState {
   readonly open: boolean;
+  /** Read when the form opened, so it does not change while the form closes. */
+  readonly availability: BugReportAvailability;
   /** An error the report is about, when it was opened from an error screen. */
   readonly associatedEventId: string | undefined;
-  /** Taken before the dialog opened, so it shows what the user was looking at. */
+  /** Taken before the form opened, so it shows what the user was looking at. */
   readonly screenshot: Uint8Array | undefined;
   readonly screenshotUrl: string | undefined;
-  /** Bumps on each open, so the dialog starts each report empty. */
+  /** The replay sent when the form opened: what led up to the report, not the form itself. */
+  readonly replayId: Promise<string | undefined> | undefined;
+  /** Bumps on each open, so each report starts empty and a late send closes only its own form. */
   readonly session: number;
   readonly sentSession: number | undefined;
 }
 
 export const useBugReportStore = create<BugReportState>(() => ({
   open: false,
+  availability: "unavailable",
   associatedEventId: undefined,
   screenshot: undefined,
   screenshotUrl: undefined,
+  replayId: undefined,
   session: 0,
   sentSession: undefined,
 }));
@@ -32,17 +42,25 @@ export async function openBugReport(
   if (opening || useBugReportStore.getState().open) return undefined;
   opening = true;
   try {
-    const screenshot =
-      bugReportAvailability() === "ready"
-        ? await window.desktopBridge?.captureWindowScreenshot?.().catch(() => null)
-        : null;
+    const availability = bugReportAvailability();
+    const ready = availability === "ready";
+    if (ready) await animationsSettled();
+    const screenshot = ready
+      ? await window.desktopBridge?.captureWindowScreenshot?.().catch(() => null)
+      : null;
+    const replayId = ready ? beginBugReport() : undefined;
+    const previousUrl = useBugReportStore.getState().screenshotUrl;
+    // Revoked only now, so the last form's preview stayed while it closed.
+    if (previousUrl) URL.revokeObjectURL(previousUrl);
     useBugReportStore.setState((state) => ({
       open: true,
+      availability,
       associatedEventId: options.associatedEventId,
       screenshot: screenshot ?? undefined,
       screenshotUrl: screenshot
         ? URL.createObjectURL(new Blob([new Uint8Array(screenshot)], { type: "image/jpeg" }))
         : undefined,
+      replayId,
       session: state.session + 1,
     }));
     return useBugReportStore.getState().session;
@@ -51,13 +69,22 @@ export async function openBugReport(
   }
 }
 
-export function closeBugReport(sent: boolean): void {
-  const { screenshotUrl } = useBugReportStore.getState();
-  if (screenshotUrl) URL.revokeObjectURL(screenshotUrl);
+/** Closes the form of `session`, if it is still the open one, and records whether it was sent. */
+export function closeBugReport(session: number, sent: boolean): void {
   useBugReportStore.setState((state) => ({
-    open: false,
-    screenshot: undefined,
-    screenshotUrl: undefined,
-    sentSession: sent ? state.session : state.sentSession,
+    ...(state.session === session ? { open: false } : {}),
+    sentSession: sent ? session : state.sentSession,
   }));
+}
+
+/** Waits for closing menus and dialogs to finish animating, so the screenshot does not show them. */
+async function animationsSettled(): Promise<void> {
+  const finite = document
+    .getAnimations()
+    .filter((animation) => animation.effect?.getComputedTiming().endTime !== Infinity);
+  if (finite.length === 0) return;
+  await Promise.race([
+    Promise.allSettled(finite.map((animation) => animation.finished)),
+    new Promise((resolve) => setTimeout(resolve, 500)),
+  ]);
 }

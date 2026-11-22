@@ -4,7 +4,7 @@ import { useGT } from "gt-react";
 import { useState } from "react";
 
 import { openBugReport } from "../../bugReportStore";
-import { bugReportAvailability } from "../../observability/crashReportingStartup";
+import { bugReportsSupported } from "../../observability/crashReportingStartup";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { Button } from "../ui/button";
@@ -79,15 +79,26 @@ function AppErrorReportingRow() {
 function ReportBugRow() {
   const gt = useGT();
   const setting = useSearchableSetting();
-  if (bugReportAvailability() === "unavailable") return null;
+  // Shown in every desktop build, like the switch above, so Settings search always finds it.
+  if (!window.desktopBridge) return null;
+  const supported = bugReportsSupported();
   return (
     <SettingsRow
       {...setting("report-bug")}
-      description={gt(
-        "Describe a problem and send it to the publisher of this Onicode build with a short screen replay.",
-      )}
+      description={
+        supported
+          ? gt(
+              "Describe a problem and send it to the publisher of this Onicode build with a short screen replay.",
+            )
+          : gt("This build of Onicode does not send bug reports.")
+      }
       control={
-        <Button size="sm" variant="outline" onClick={() => void openBugReport()}>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={!supported}
+          onClick={() => void openBugReport()}
+        >
           {gt("Report a bug…")}
         </Button>
       }

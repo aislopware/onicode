@@ -3,11 +3,7 @@ import { T, useGT } from "gt-react";
 import { useEffect, useState } from "react";
 
 import { closeBugReport, openBugReport, useBugReportStore } from "../bugReportStore";
-import {
-  bugReportAvailability,
-  sendBugReport,
-  type BugReportAvailability,
-} from "../observability/crashReportingStartup";
+import { sendBugReport } from "../observability/crashReportingStartup";
 import { Button } from "./ui/button";
 import { Checkbox } from "./ui/checkbox";
 import {
@@ -35,19 +31,21 @@ export function BugReportDialogHost() {
     <Dialog
       open={open}
       onOpenChange={(next) => {
-        if (!next) closeBugReport(false);
+        if (!next) closeBugReport(session, false);
       }}
     >
       <DialogPopup>
         {/* Keyed by session so each report starts empty. */}
-        <BugReportForm key={session} availability={open ? bugReportAvailability() : "ready"} />
+        <BugReportForm key={session} session={session} />
       </DialogPopup>
     </Dialog>
   );
 }
 
-function BugReportForm({ availability }: { readonly availability: BugReportAvailability }) {
+function BugReportForm({ session }: { readonly session: number }) {
   const gt = useGT();
+  const availability = useBugReportStore((state) => state.availability);
+  const replayId = useBugReportStore((state) => state.replayId);
   const associatedEventId = useBugReportStore((state) => state.associatedEventId);
   const screenshot = useBugReportStore((state) => state.screenshot);
   const screenshotUrl = useBugReportStore((state) => state.screenshotUrl);
@@ -79,12 +77,12 @@ function BugReportForm({ availability }: { readonly availability: BugReportAvail
               size="sm"
               variant="outline"
               render={<Link to="/settings/diagnostics" />}
-              onClick={() => closeBugReport(false)}
+              onClick={() => closeBugReport(session, false)}
             >
               <T>Open Diagnostics</T>
             </Button>
           ) : null}
-          <Button size="sm" onClick={() => closeBugReport(false)}>
+          <Button size="sm" onClick={() => closeBugReport(session, false)}>
             <T>Close</T>
           </Button>
         </DialogFooter>
@@ -102,12 +100,13 @@ function BugReportForm({ availability }: { readonly availability: BugReportAvail
         email: email.trim() || undefined,
         associatedEventId,
         screenshot: attachScreenshot ? screenshot : undefined,
+        replayId: await replayId,
       });
     } catch {
       setStatus("failed");
       return;
     }
-    closeBugReport(true);
+    closeBugReport(session, true);
     toastManager.add({ type: "success", title: gt("Bug report sent. Thank you.") });
   };
 
@@ -125,8 +124,9 @@ function BugReportForm({ availability }: { readonly availability: BugReportAvail
         </DialogTitle>
         <DialogDescription>
           <T>
-            Your report goes to the publisher of this Onicode build with the last minute of screen
-            replay, recent errors and app details. Replays mask all text, media and links.
+            Your report goes to the publisher of this Onicode build with a short screen replay from
+            before you opened this report, recent errors and app details. Replays mask all text,
+            media and links.
           </T>
         </DialogDescription>
       </DialogHeader>
@@ -199,7 +199,12 @@ function BugReportForm({ availability }: { readonly availability: BugReportAvail
         </div>
       </DialogPanel>
       <DialogFooter variant="bare">
-        <Button size="sm" variant="outline" type="button" onClick={() => closeBugReport(false)}>
+        <Button
+          size="sm"
+          variant="outline"
+          type="button"
+          onClick={() => closeBugReport(session, false)}
+        >
           <T>Cancel</T>
         </Button>
         <Button size="sm" type="submit" disabled={trimmed.length === 0 || status === "sending"}>

@@ -11,6 +11,8 @@ export interface BugReport {
   readonly email: string | undefined;
   readonly associatedEventId: string | undefined;
   readonly screenshot: BugReportScreenshot | undefined;
+  /** The replay sent when the sheet opened. */
+  readonly replayId: Promise<string | undefined>;
 }
 
 export interface BugReportScreenshot {
@@ -20,14 +22,15 @@ export interface BugReportScreenshot {
 }
 
 export interface SentryReporter {
-  readonly captureRenderError: (error: unknown, componentStack: string | undefined) => void;
+  readonly captureRenderError: (error: unknown, componentStack: string | undefined) => string;
   readonly appLoaded: () => void;
   readonly registerNavigationContainer: (container: unknown) => void;
+  /** Sends the replay buffered before the sheet opened, resolving to its id. */
+  readonly beginBugReport: () => Promise<string | undefined>;
   readonly sendBugReport: (report: BugReport) => void;
   readonly captureScreenshot: () => Promise<BugReportScreenshot | undefined>;
   /** Native shake detection, which needs no permission. `undefined` stops it. */
   readonly onShake: (handler: (() => void) | undefined) => void;
-  readonly lastEventId: () => string | undefined;
 }
 
 /** Share of traces sent to Sentry. Errors are always sent. Matches desktop and server. */
@@ -41,6 +44,7 @@ export function startSentry(options: {
   readonly environment: string;
 }): SentryReporter {
   const navigation = Sentry.reactNavigationIntegration();
+  let replayTasks: Promise<unknown> = Promise.resolve();
   const replay = Sentry.mobileReplayIntegration({
     maskAllText: true,
     maskAllImages: true,
@@ -70,67 +74,80 @@ export function startSentry(options: {
     beforeBreadcrumb: scrub,
   });
   return {
-    captureRenderError: (error, componentStack) => {
+    captureRenderError: (error, componentStack) =>
       Sentry.captureException(error, {
         captureContext: { contexts: { react: { componentStack: componentStack ?? null } } },
         mechanism: { type: "auto.function.react.error_boundary", handled: true },
-      });
-    },
+      }),
     appLoaded: () => Sentry.appLoaded(),
     registerNavigationContainer: (container) => navigation.registerNavigationContainer(container),
+    // One at a time: each sends the buffer, which the next one must not read before it restarts.
+    beginBugReport: () => {
+      const run = replayTasks.then(async () => {
+        try {
+          // The native capture answers with the replay it uploaded; the integration's cached id
+          // can name an earlier one.
+          return (await NATIVE.captureReplay(false)) ?? undefined;
+        } catch (error) {
+          console.warn("Sending the replay for a bug report failed", error);
+          return undefined;
+        } finally {
+          // The capture turns the buffer into a session that keeps uploading until stopped.
+          await replay.stop().catch(() => {});
+          replay.startBuffering();
+        }
+      });
+      replayTasks = run.catch(() => {});
+      return run;
+    },
     // The native transport stores the envelope before sending, so a report survives going offline.
     sendBugReport: (report) => {
-      // The SDK's own replay link turns the buffer into a session that keeps uploading, so the
-      // report links the buffer itself, sends it, and goes back to buffering.
-      const replayId = replay.getReplayId();
-      Sentry.withScope((scope) => {
-        if (replayId) {
-          scope.addEventProcessor((event) => {
-            if (event.type === "feedback" && event.contexts?.feedback) {
-              event.contexts.feedback.replay_id = replayId;
-            }
-            return event;
-          });
-        }
-        Sentry.captureFeedback(
-          {
-            message: report.message,
-            ...(report.email ? { email: report.email } : {}),
-            ...(report.associatedEventId ? { associatedEventId: report.associatedEventId } : {}),
-            source: "onicode",
-          },
-          {
-            includeReplay: false,
-            ...(report.screenshot
-              ? {
-                  attachments: [
-                    {
-                      filename: report.screenshot.filename,
-                      data: report.screenshot.data,
-                      contentType: report.screenshot.contentType,
-                    },
-                  ],
+      void report.replayId
+        .catch(() => undefined)
+        .then((replayId) =>
+          Sentry.withScope((scope) => {
+            if (replayId) {
+              scope.addEventProcessor((event) => {
+                if (event.type === "feedback" && event.contexts?.feedback) {
+                  event.contexts.feedback.replay_id = replayId;
                 }
-              : {}),
-          },
-          scope,
-        );
-      });
-      if (replayId) {
-        void replay
-          .flush({ continueRecording: false })
-          .then(() => replay.startBuffering())
-          .catch((error: unknown) =>
-            console.warn("Sending the replay for a bug report failed", error),
-          );
-      }
+                return event;
+              });
+            }
+            Sentry.captureFeedback(
+              {
+                message: report.message,
+                ...(report.email ? { email: report.email } : {}),
+                ...(report.associatedEventId
+                  ? { associatedEventId: report.associatedEventId }
+                  : {}),
+                source: "onicode",
+              },
+              {
+                includeReplay: false,
+                ...(report.screenshot
+                  ? {
+                      attachments: [
+                        {
+                          filename: report.screenshot.filename,
+                          data: report.screenshot.data,
+                          contentType: report.screenshot.contentType,
+                        },
+                      ],
+                    }
+                  : {}),
+              },
+              scope,
+            );
+          }),
+        )
+        .catch((error: unknown) => console.warn("Sending a bug report failed", error));
     },
     captureScreenshot: async () => (await NATIVE.captureScreenshot())?.[0],
     onShake: (handler) => {
       stopShakeListener();
       if (handler) startShakeListener(handler);
     },
-    lastEventId: () => Sentry.lastEventId(),
   };
 }
 
