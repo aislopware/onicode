@@ -113,10 +113,9 @@ import {
 } from "@onicode/client-runtime/state/subagentRuntime";
 import {
   getUserQueuedThreadRuns,
-  threadSteersDuringCompaction,
+  threadCanSteer,
   threadSupportsProviderHandoff,
 } from "@onicode/client-runtime/state/thread-workflows";
-import { compactionBlocksSteering } from "@onicode/client-runtime/state/composer-dispatch";
 import { resolvePendingHandoff } from "@onicode/client-runtime/handoff";
 import { HandoffRow } from "./chat/V2LifecycleRow";
 import {
@@ -1557,14 +1556,11 @@ export default function ChatView(props: ChatViewProps) {
   const isCompacting =
     (isSendBusy || phase === "connecting" || phase === "running") &&
     (compactionRunning || compactCommandIsActive);
-  const compactionBlocksSteer = compactionBlocksSteering({
+  const canSteer = threadCanSteer(serverProjection, {
     compactCommandIsActive,
     compactionRunning,
-    steersDuringCompaction:
-      threadSteersDuringCompaction(serverProjection) ||
-      serverConfig?.environment.capabilities.steersAfterCompaction === true,
-    run: serverProjection?.runs.find((run) => run.id === activeRuntime?.activeRunId),
-    messages: serverProjection?.messages,
+    activeRunId: activeRuntime?.activeRunId,
+    steersAfterCompaction: serverConfig?.environment.capabilities.steersAfterCompaction === true,
   });
   const isWorking = deriveTimelineWorking({
     phase,
@@ -3844,7 +3840,7 @@ export default function ChatView(props: ChatViewProps) {
                                   isLocalDraftThread && activeProject === null
                                 }
                                 phase={phase}
-                                canSteer={!compactionBlocksSteer}
+                                canSteer={canSteer}
                                 canInterrupt={canInterruptRunningThread}
                                 isSendBusy={
                                   (isSendBusy && !sendQueuesBehindSetup) ||
