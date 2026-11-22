@@ -958,15 +958,21 @@ describe("large text preview recovery", () => {
   });
 
   it("measures more huge offscreen cells than React's nested-update limit across frames", async () => {
-    // Each cell fills one 128K-character measuring batch, so every row needs its own pass.
+    // 65 cells shown at 2,000 characters fill one 128K-character measuring batch, so every row
+    // needs its own pass.
     const huge = "word ".repeat(26_000);
-    const rows = Array.from({ length: 60 }, (_, index) => [`r${index}`, "", "", huge]);
-    // Laying out 60 such cells takes seconds; this test is about how the passes are scheduled.
+    const rows = Array.from({ length: 60 }, (_, index) => [
+      `r${index}`,
+      "",
+      "",
+      ...Array.from({ length: 65 }, () => huge),
+    ]);
+    // Laying out these cells takes seconds; this test is about how the passes are scheduled.
     const layout = HTMLElement.prototype.getBoundingClientRect;
     using _layout = vi
       .spyOn(HTMLElement.prototype, "getBoundingClientRect")
       .mockImplementation(function (this: HTMLElement) {
-        return this.firstChild?.nodeValue === huge
+        return this.firstChild?.nodeValue?.startsWith("word word")
           ? new DOMRect(0, 0, 128, 4_000)
           : layout.call(this);
       });
@@ -977,7 +983,7 @@ describe("large text preview recovery", () => {
         <VirtualTablePreview
           name="huge-cells.csv"
           count={rows.length}
-          columns={4}
+          columns={68}
           // Two 32-row pages.
           getRows={(page) => rows.slice(page * 32, page * 32 + 32)}
         />
@@ -1098,32 +1104,58 @@ describe("large text preview recovery", () => {
     expect(probeLayouts()).toHaveLength(2);
   });
 
-  it("lays out at most 2,000 characters of a huge cell, in the probe and on screen", async () => {
+  it.each([
+    { name: "huge-word.csv", source: false, shown: 2_000 },
+    { name: "huge-line.txt", source: true, shown: 10_000 },
+  ])("never lays out more than $shown characters of $name's huge word", async (input) => {
     const huge = "a".repeat(130_000);
-    using layouts = vi.spyOn(Element.prototype, "getBoundingClientRect");
+    // Every text node the preview adds, the column-sizing table and the probe included.
+    let longest = 0;
+    const read = (records: MutationRecord[]) => {
+      for (const record of records) {
+        for (const added of record.addedNodes) {
+          const walker = document.createTreeWalker(added, NodeFilter.SHOW_TEXT);
+          for (let node: Node | null = walker.currentNode; node; node = walker.nextNode()) {
+            if (node.nodeType === Node.TEXT_NODE) {
+              longest = Math.max(longest, node.nodeValue?.length ?? 0);
+            }
+          }
+        }
+      }
+    };
+    const observer = new MutationObserver(read);
+    observer.observe(document.body, { childList: true, subtree: true });
+    using _observer = { [Symbol.dispose]: () => observer.disconnect() };
+    const header = ["id", huge, "c", "d"];
+    const rows = input.source
+      ? [[huge], ["short"]]
+      : [header, ["r1", huge, "", ""], ["r2", "", "", huge], ["r3", "", "", ""]];
     await using screen = await render(
       <div style={{ display: "flex", height: 400, width: 600 }}>
         <VirtualTablePreview
-          name="huge-word.csv"
-          count={3}
-          columns={4}
-          getRows={() => [
-            ["r0", huge, "", ""],
-            ["r1", "", "", huge],
-            ["r2", "", "", ""],
-          ]}
+          name={input.name}
+          count={rows.length}
+          columns={input.source ? 1 : 4}
+          header={input.source ? undefined : header}
+          source={input.source}
+          wrap={input.source}
+          getRows={() => rows}
         />
       </div>,
     );
     const cell = () =>
-      screen.container.querySelector<HTMLElement>('[data-preview-row="0"] [aria-colindex="2"]');
+      screen.container.querySelector<HTMLElement>(
+        input.source
+          ? '[data-preview-row="0"] > div:last-child'
+          : '[data-preview-row="1"] [aria-colindex="2"]',
+      );
+    const left = (130_000 - input.shown).toLocaleString("en-US");
     await vi.waitFor(() =>
-      expect(cell()?.textContent).toBe(`${"a".repeat(2_000)}… 128,000 more characters`),
+      expect(cell()?.textContent).toBe(`${"a".repeat(input.shown)}… ${left} more characters`),
     );
-    const longest = Math.max(
-      ...layouts.mock.contexts.map((node) => (node as Element).textContent?.length ?? 0),
-    );
-    expect(longest).toBeLessThan(2_100);
+    read(observer.takeRecords());
+    // The probe measures the shown text and its "… N more characters" in one node.
+    expect(longest).toBe(input.shown + `… ${left} more characters`.length);
   });
 
   it.each([
@@ -1251,16 +1283,21 @@ describe("large text preview recovery", () => {
     });
     expect(viewport().scrollTop).toBe(bottom - 1);
 
-    // 2,000px of 29px rows above the tail's first row, 4,999,987.
-    await act(() =>
+    const wheel = (deltaY: number) =>
       viewport().dispatchEvent(
-        new WheelEvent("wheel", { deltaY: -2_000, bubbles: true, cancelable: true }),
-      ),
-    );
+        new WheelEvent("wheel", { deltaY, bubbles: true, cancelable: true }),
+      );
+    // 2,000px of 29px rows above the tail's first row, 4,999,987, in two events before a render.
+    await act(() => {
+      wheel(-1_000);
+      wheel(-1_000);
+    });
     await vi.waitFor(() => {
       expect(firstRow()).toBeGreaterThanOrEqual(4_999_987 - 72);
       expect(firstRow()).toBeLessThanOrEqual(4_999_987 - 66);
     });
+    await act(() => wheel(2_100));
+    await vi.waitFor(() => expect(firstRow()).toBe(4_999_987));
   });
 
   it("covers the viewport top a pixel before the native tail", async () => {

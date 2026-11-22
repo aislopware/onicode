@@ -5041,7 +5041,7 @@
   "13b14784f8707ddd": "0 byte",
   "f6e9581cba3467fa": "Indexerar…",
   "2d1f293ac12463fc": "Läser in resten av filen…",
-  "b75105bef8f564a4": "Visar de första 1 024 kolumnerna. Källa och Spara behåller alla kolumner.",
+  "59c6ca413e5da836": "Visar de första 1 024 kolumnerna. Kopiera och Spara behåller alla kolumner.",
   "2a6e1b1f209c3888": "Den här filen är tom.",
   "192fc79eb3b5b2cb": "Det här diagrammet innehåller resurs-URL:er, markup, nodmetadata eller anpassad konfiguration. Visa Mermaid-källan för att granska det säkert.",
   "3bd23d5083b5d405": "{count, plural, one {{formatted} cell} other {{formatted} celler}}",

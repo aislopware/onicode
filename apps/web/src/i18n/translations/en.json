@@ -5042,7 +5042,7 @@
   "13b14784f8707ddd": "0 bytes",
   "f6e9581cba3467fa": "Indexing…",
   "2d1f293ac12463fc": "Loading the rest of the file…",
-  "b75105bef8f564a4": "Showing the first 1,024 columns. Source and Save retain every column.",
+  "59c6ca413e5da836": "Showing the first 1,024 columns. Copy and Save keep every column.",
   "2a6e1b1f209c3888": "This file is empty.",
   "192fc79eb3b5b2cb": "This diagram contains resource URLs, markup, node metadata, or custom configuration. Show Mermaid source to inspect it safely.",
   "3bd23d5083b5d405": "{count, plural, one {{formatted} cell} other {{formatted} cells}}",
