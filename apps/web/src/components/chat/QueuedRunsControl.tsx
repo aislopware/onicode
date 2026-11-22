@@ -14,6 +14,7 @@ import {
   isAttachmentOnlyBootstrapPrompt,
   replaceComposerContextReferences,
 } from "@onicode/shared/composerContextReferences";
+import { composerFileLinksToPlainText } from "@onicode/shared/composerInlineTokens";
 import {
   type ChatAttachment as ContractChatAttachment,
   type EnvironmentId,
@@ -287,7 +288,9 @@ export function QueuedRunsControl({
           const previewText = isAttachmentOnlyBootstrapPrompt(item.text)
             ? ""
             : assistantCitationsToPlainText(
-                replaceComposerContextReferences(item.text, (reference) => reference.label),
+                composerFileLinksToPlainText(
+                  replaceComposerContextReferences(item.text, (reference) => reference.label),
+                ),
               ).trim();
           const isEditing = item.runId !== null && item.runId === props.editingRunId;
           // With or without a goal driver, Send now never steers a command into the turn.

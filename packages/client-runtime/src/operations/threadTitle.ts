@@ -3,6 +3,7 @@ import type { MFunctionType } from "gt-i18n/types";
 import type { ChatAttachment } from "@onicode/contracts";
 import { assistantCitationsToPlainText } from "@onicode/shared/assistantCitations";
 import { replaceComposerContextReferences } from "@onicode/shared/composerContextReferences";
+import { composerFileLinksToPlainText } from "@onicode/shared/composerInlineTokens";
 import { truncate } from "@onicode/shared/String";
 import { NEW_THREAD_TITLE, UNTITLED_THREAD_TITLE } from "@onicode/shared/threadTitles";
 
@@ -54,7 +55,7 @@ export function threadTitleTextFromPrompt(
     return reference.label;
   });
   return (
-    normalizeTitleSeed(modelMentionsAsSlugs(prose)) ||
+    normalizeTitleSeed(modelMentionsAsSlugs(composerFileLinksToPlainText(prose))) ||
     (imageIds.size > 0 ? attachedImagesTitle(imageIds.size, resolve) : "")
   );
 }

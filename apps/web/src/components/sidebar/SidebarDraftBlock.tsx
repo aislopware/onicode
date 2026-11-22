@@ -3,6 +3,7 @@ import type { ContextMenuSource } from "@onicode/contracts";
 import { contextMenuSourceOf } from "../../contextMenuSource";
 import { assistantCitationsToPlainText } from "@onicode/shared/assistantCitations";
 import { replaceComposerContextReferences } from "@onicode/shared/composerContextReferences";
+import { composerFileLinksToPlainText } from "@onicode/shared/composerInlineTokens";
 import { T, useGT } from "gt-react";
 import { SquarePenIcon, XIcon } from "lucide-react";
 import {
@@ -85,7 +86,9 @@ const SidebarDraftRow = memo(function SidebarDraftRow(props: {
   const gt = useGT();
   const promptPreview =
     assistantCitationsToPlainText(
-      replaceComposerContextReferences(composer.prompt, (occurrence) => occurrence.label),
+      composerFileLinksToPlainText(
+        replaceComposerContextReferences(composer.prompt, (occurrence) => occurrence.label),
+      ),
     )
       .trim()
       .split("\n", 1)[0] ?? "";
