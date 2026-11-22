@@ -11,11 +11,12 @@ import {
   useRouter,
 } from "@tanstack/react-router";
 import { msg, T, useGT, Var } from "gt-react";
-import { CheckIcon, CopyIcon } from "lucide-react";
+import { BugIcon, CheckIcon, CopyIcon } from "lucide-react";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { APP_DISPLAY_NAME, APP_VERSION } from "../branding";
 import { AppSidebarLayout } from "../components/AppSidebarLayout";
+import { BugReportDialogHost } from "../components/BugReportDialog";
 import { CommandPalette } from "../components/CommandPalette";
 import { CustomSnoozeDialogHost } from "../components/CustomSnoozeDialog";
 import { AddProjectToMachineDialogHost } from "../components/AddProjectToMachineDialog";
@@ -46,6 +47,8 @@ import {
   selectProjectGroupingSettings,
 } from "@onicode/client-runtime/state/project-grouping";
 import { useUiStateStore } from "../uiStateStore";
+import { openBugReport, useBugReportStore } from "../bugReportStore";
+import { bugReportsSupported, reportedErrorId } from "../observability/crashReportingStartup";
 import { configureClientTracing } from "../observability/clientTracing";
 import { resolveInitialServerAuthGateState } from "../environments/primary";
 import { isLocalEnvironmentDisabled } from "../localEnvironment";
@@ -161,6 +164,7 @@ function RootRouteBranch() {
       <SnapShotCoordinator />
       <ReopenClosedViewShortcut />
       <ConfirmDialogHost />
+      <BugReportDialogHost />
       <CustomSnoozeDialogHost />
       <ProjectCloneToastCoordinator />
       <AddProjectToMachineDialogHost />
@@ -227,6 +231,7 @@ function RootRouteErrorView({ error }: ErrorComponentProps) {
           <T>Reload app</T>
         </Button>
         <CopyErrorButton report={report} />
+        <ReportErrorButton error={error} />
       </div>
 
       <div className="mt-5 overflow-hidden rounded-lg border border-border bg-background/55">
@@ -238,6 +243,32 @@ function RootRouteErrorView({ error }: ErrorComponentProps) {
         </pre>
       </div>
     </StandalonePage>
+  );
+}
+
+function ReportErrorButton({ error }: { readonly error: unknown }) {
+  const [session, setSession] = useState<number>();
+  const sent = useBugReportStore(
+    (state) => session !== undefined && state.sentSessions.includes(session),
+  );
+  if (!bugReportsSupported()) return null;
+  return (
+    <>
+      <Button
+        size="sm"
+        variant="outline"
+        disabled={sent}
+        onClick={async () => {
+          const opened = await openBugReport({ associatedEventId: reportedErrorId(error) });
+          if (opened !== undefined) setSession(opened);
+        }}
+      >
+        {sent ? <CheckIcon className="text-success" /> : <BugIcon />}
+        {sent ? <T>Report sent</T> : <T>Report this bug</T>}
+      </Button>
+      {/* The error screen replaces the app shell and its dialog host. */}
+      <BugReportDialogHost />
+    </>
   );
 }
 

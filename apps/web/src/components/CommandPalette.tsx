@@ -82,6 +82,8 @@ import {
   SquarePenIcon,
   TextSearchIcon,
 } from "lucide-react";
+import { openBugReport } from "../bugReportStore";
+import { bugReportsSupported } from "../observability/crashReportingStartup";
 import { openThreadFind } from "./chat/threadFindStore";
 import { dispatchPreviewAction } from "./preview/previewActionBus";
 import { previewBridge } from "./preview/previewBridge";
@@ -1838,6 +1840,19 @@ function OpenCommandPaletteDialog(props: {
       await navigate({ to: "/settings" });
     },
   });
+
+  if (bugReportsSupported()) {
+    actionItems.push({
+      kind: "action",
+      value: "action:report-bug",
+      searchTerms: ["report", "bug", "feedback", "issue", "problem", "crash"],
+      title: gt("Report a bug"),
+      icon: <BugIcon className={ITEM_ICON_CLASS} />,
+      run: async () => {
+        await openBugReport();
+      },
+    });
+  }
 
   // Every group, so an archived project's thread still opens its own settings.
   const currentProjectGroup =

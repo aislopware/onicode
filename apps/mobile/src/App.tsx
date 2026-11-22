@@ -1,5 +1,6 @@
 import { installAgentAwareness } from "./features/agent-awareness/agentAwareness";
 import { installCrashReporting } from "./features/diagnostics/crash-reporting-startup";
+import { ShakeToReport } from "./features/diagnostics/ShakeToReport";
 import {
   installAgentNotificationNavigation,
   setAgentNotificationPathname,
@@ -319,6 +320,7 @@ function AppContent() {
                 />
                 <Dialog.Host />
                 <ThreadArrangementHost />
+                <ShakeToReport />
                 <ProjectChipIconRasterizer />
               </NativeLayoutMetricsProvider>
             </GlobalVoiceInputControl>

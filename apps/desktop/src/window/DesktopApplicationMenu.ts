@@ -11,6 +11,7 @@ import { makeComponentLogger } from "../app/DesktopObservability.ts";
 import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as ElectronDialog from "../electron/ElectronDialog.ts";
 import * as ElectronMenu from "../electron/ElectronMenu.ts";
+import * as DesktopCrashReporting from "../app/DesktopCrashReporting.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import { applyLanguage, m, onLocaleChange } from "../i18n/messages.ts";
 import * as DesktopClientSettings from "../settings/DesktopClientSettings.ts";
@@ -152,6 +153,8 @@ export const make = Effect.gen(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
   const electronApp = yield* ElectronApp.ElectronApp;
   const clientSettings = yield* Effect.serviceOption(DesktopClientSettings.DesktopClientSettings);
+  // Builds without a Sentry project have nowhere to send a report.
+  const bugReportsAvailable = (yield* DesktopCrashReporting.DesktopCrashReporting).available;
   const context = yield* Effect.context<DesktopApplicationMenuRuntimeServices>();
   const runPromise = Effect.runPromiseWith(context);
   const runFork = Effect.runForkWith(context);
@@ -178,6 +181,9 @@ export const make = Effect.gen(function* () {
     };
     const settingsClick = () => {
       runMenuEffect("open-settings", dispatchMenuAction("open-settings"));
+    };
+    const reportBugClick = () => {
+      runMenuEffect("report-bug", dispatchMenuAction("report-bug"));
     };
     // Chromium and the renderer already handle this chord; injecting another paste duplicates text.
     const pasteAsTextClick = (
@@ -378,6 +384,12 @@ export const make = Effect.gen(function* () {
         role: "help",
         label: m(msg("Help", { $context: "menu bar title" })),
         submenu: [
+          ...(bugReportsAvailable
+            ? [
+                { label: m(msg("Report a Bug…")), click: reportBugClick },
+                { type: "separator" as const },
+              ]
+            : []),
           {
             label: m(msg("Check for Updates…")),
             click: checkForUpdatesClick,

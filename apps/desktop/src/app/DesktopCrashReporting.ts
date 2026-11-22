@@ -79,6 +79,8 @@ const make = Effect.gen(function* () {
     beforeSendSpan: scrub,
     beforeBreadcrumb: scrub,
   });
+  // Bug reports from the renderer skip `beforeSend`, which Sentry runs for errors only.
+  Sentry.addEventProcessor((event) => (event.type === "feedback" ? scrub(event) : event));
   // Electron keeps only the last scheme registration, and Sentry's replaced ours. Sentry now
   // proxies the call and appends its own scheme, so registering again keeps both.
   ElectronProtocol.registerDesktopSchemePrivilegesSync();
