@@ -16,6 +16,7 @@ import { SymbolView } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
 import { tryCopyTextWithHaptic } from "../../lib/copyTextWithHaptic";
 import { crashReportingAvailable, crashReportingLaunchPreference } from "../../lib/crash-reporting";
+import { openBugReport } from "./bug-report";
 import { ListActionRow as SettingsActionRow } from "../../components/ui/ListActionRow";
 import { mobilePreferencesAtom, saveMobilePreferences } from "../../state/preferences";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -162,6 +163,9 @@ function ErrorReportingSection() {
   const saved = AsyncResult.isSuccess(preferences)
     ? preferences.value.errorReportingEnabled !== false
     : null;
+  const shakeEnabled = AsyncResult.isSuccess(preferences)
+    ? preferences.value.shakeToReportEnabled !== false
+    : false;
   const launched = crashReportingLaunchPreference();
   const restartNeeded =
     crashReportingAvailable && saved !== null && launched !== undefined && saved !== launched;
@@ -185,6 +189,27 @@ function ErrorReportingSection() {
             void savePreferences({ errorReportingEnabled: value });
           }}
         />
+        {crashReportingAvailable ? (
+          <>
+            <SettingsSwitchRow
+              icon="iphone.radiowaves.left.and.right"
+              label={gt("Shake to report a bug")}
+              subtitle={gt(
+                "Shake the device to describe a problem and send it with error reports.",
+              )}
+              value={shakeEnabled}
+              disabled={!AsyncResult.isSuccess(preferences)}
+              onValueChange={(value) => {
+                void savePreferences({ shakeToReportEnabled: value });
+              }}
+            />
+            <SettingsActionRow
+              icon="ladybug"
+              label={gt("Report a bug")}
+              onPress={() => void openBugReport({ screenshot: false })}
+            />
+          </>
+        ) : null}
       </SettingsSection>
       {restartNeeded ? (
         <Text className="px-2 text-sm text-foreground-muted">

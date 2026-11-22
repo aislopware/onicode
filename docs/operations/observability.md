@@ -193,6 +193,21 @@ of a release must see the same environment. The release workflow sets `SENTRY_AL
 failed upload only warns. For OTA updates, the workflow downloads the source map better-update
 stored with each update and uploads it; the map carries the bundle's debug ID.
 
+Bug reports are Sentry user feedback, sent only while error reports run, so they need no consent
+of their own. Desktop sends through `sendFeedback`, which resolves only once main has the server's
+answer. The replay integration flushes on any feedback event while it records, which would upload
+the rest of the session, so a report holds the replay stopped while it sends the buffer and the
+feedback, and links them itself. Both clients capture the screenshot before the form opens and
+show it. Desktop's `capturePage` is not masked, so it goes only when the user ticks it; the mobile
+SDK's native capture masks text and images, so it goes unless the user unticks it. Mobile's shake
+listener is the React Native SDK's own native one (`dist/js/feedback/ShakeToReportBug`), which is
+not public API; check it on Sentry upgrades.
+
+After a release ships, the workflow's `sentry` job runs `scripts/release/sentry-release.sh`, which
+creates each release with its commits from local history, finalizes it, and records a production
+deploy. sentry-cli names the commits' repository after the git remote, so the script reads them
+from a remote named after the GitHub repository.
+
 Effect spans reach Sentry through a tracer bridge (`packages/shared/src/sentry.ts`), not OTLP: it
 keeps Effect's own trace ids and sampling for the local trace file, ties captured errors to the
 span they happened in, and leaves user-configured OTLP export alone. Long-lived spans such as

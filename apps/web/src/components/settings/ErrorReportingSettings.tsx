@@ -3,8 +3,11 @@ import type { EnvironmentId } from "@onicode/contracts";
 import { useGT } from "gt-react";
 import { useState } from "react";
 
+import { openBugReport } from "../../bugReportStore";
+import { bugReportAvailability } from "../../observability/crashReportingStartup";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { Button } from "../ui/button";
 import { Switch } from "../ui/switch";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
 import { useSearchableSetting } from "./settingsSearch";
@@ -24,6 +27,7 @@ export function ErrorReportingSettings() {
     <>
       <SettingsSection title={gt("Error reports")}>
         <AppErrorReportingRow />
+        <ReportBugRow />
         {environmentId === null ? null : <ServerErrorReportingRow environmentId={environmentId} />}
       </SettingsSection>
       {environmentId === null ? (
@@ -67,6 +71,25 @@ function AppErrorReportingRow() {
             setSaving(false);
           }}
         />
+      }
+    />
+  );
+}
+
+function ReportBugRow() {
+  const gt = useGT();
+  const setting = useSearchableSetting();
+  if (bugReportAvailability() === "unavailable") return null;
+  return (
+    <SettingsRow
+      {...setting("report-bug")}
+      description={gt(
+        "Describe a problem and send it to the publisher of this Onicode build with a short screen replay.",
+      )}
+      control={
+        <Button size="sm" variant="outline" onClick={() => void openBugReport()}>
+          {gt("Report a bug…")}
+        </Button>
       }
     />
   );

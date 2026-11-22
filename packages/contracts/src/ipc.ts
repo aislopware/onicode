@@ -1124,6 +1124,8 @@ export interface DesktopBridge {
    */
   getErrorReporting?: () => { readonly running: boolean; readonly saved: boolean } | null;
   setErrorReportingEnabled?: (enabled: boolean) => Promise<void>;
+  /** A JPEG of the app window, or null when it cannot be captured or error reporting is off. */
+  captureWindowScreenshot?: () => Promise<Uint8Array | null>;
   getLocalEnvironmentBootstraps: () => readonly DesktopEnvironmentBootstrap[];
   getLocalEnvironmentEnabled: () => boolean;
   setLocalEnvironmentEnabled: (enabled: boolean) => Promise<void>;

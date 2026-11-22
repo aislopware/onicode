@@ -453,3 +453,29 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: scripts/release/github-release.sh "$ONICODE_VERSION" "$RUNNER_TEMP/notes.md"
+
+  # Releases name their commits in Sentry once they ship: desktop and server with the desktop
+  # release, mobile once every platform it shipped succeeded.
+  sentry:
+    name: Record the releases in Sentry
+    needs: [release, mobile]
+    if: >-
+      !cancelled() && github.ref == 'refs/heads/main'
+      && (needs.release.result == 'success' || needs.mobile.result == 'success')
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # set-commits walks back to the last release's commit.
+          fetch-depth: 0
+          filter: blob:none
+      - name: Desktop and server
+        if: needs.release.result == 'success'
+        run: |
+          version="$(node -p 'require("./apps/server/package.json").version')"
+          scripts/release/sentry-release.sh onicode-desktop "$version"
+          scripts/release/sentry-release.sh onicode-server "$version"
+      - name: Mobile
+        if: needs.mobile.result == 'success'
+        run: scripts/release/sentry-release.sh onicode-mobile "$(node -p 'require("./apps/server/package.json").version')"

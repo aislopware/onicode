@@ -5,7 +5,9 @@ import { ScrollView, View } from "react-native";
 import { AppText as Text } from "./ui/AppText";
 import { Button } from "./ui/Button";
 import { copyTextWithHaptic } from "../lib/copyTextWithHaptic";
-import { reportRenderError } from "../lib/crash-reporting";
+import { bugReportsReady, lastReportedErrorId, reportRenderError } from "../lib/crash-reporting";
+import { rootNavigationRef } from "../lib/rootNavigation";
+import { openBugReport } from "../features/diagnostics/bug-report";
 
 interface RenderErrorBoundaryProps {
   readonly children: ReactNode;
@@ -120,6 +122,15 @@ export function RenderFailureView(
           onPress={() => copyTextWithHaptic(props.details, { target: "error details" })}
           fullWidth
         />
+        {bugReportsReady() && rootNavigationRef.isReady() ? (
+          <Button
+            label={gt("Report this bug")}
+            onPress={() =>
+              void openBugReport({ screenshot: true, associatedEventId: lastReportedErrorId() })
+            }
+            fullWidth
+          />
+        ) : null}
         {props.exit ? (
           <Button label={props.exit.label} onPress={props.exit.onPress} tone="text" fullWidth />
         ) : null}

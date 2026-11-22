@@ -63,6 +63,10 @@ No. There are no Onicode servers. Your code and prompts go from your machine to 
 
 Some release builds send error reports to their publisher: crashes, errors, a sample of performance traces, a replay of the screen around an error with all text, media and links masked, and a count of app sessions so crash rates can be measured. Reports leave out log details, URL queries and your home folder path, but an error message or a desktop crash dump can still hold a fragment of what the app was working on. Turn them off for the desktop app and for each environment's server in **Settings → Diagnostics → Error reports**, or on mobile in **Settings → About → Diagnostics**, then restart. Builds from source send nothing.
 
+## How do I report a bug?
+
+In builds that send error reports, describe the problem and send it straight to the build's publisher. It goes with the last minute of masked screen replay and recent errors. On desktop, choose **Help → Report a Bug…**, run **Report a bug** from the command palette, or use the button in **Settings → Diagnostics**. On mobile, shake the device, or tap **Report a bug** in **Settings → About → Diagnostics**, where you can also turn off shaking. Error screens have a **Report this bug** button that links the report to that error. On mobile the report carries a screenshot with text and images masked, which you can leave out. On desktop a screenshot goes only if you tick it, and it is not masked, so check it first. Bug reports need error reports on; with them off, use a GitHub issue instead.
+
 ## Worktrees are eating my disk. How do I clean them up?
 
 Open **Settings → Worktrees → Cleanup** and turn on automatic worktree cleanup. You can also run it now from there. Worktrees add up fast. One user cleared 500 GB. [Storage cleanup](./project-settings.md#storage-cleanup)

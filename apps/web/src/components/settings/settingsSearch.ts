@@ -975,6 +975,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: [msg("Sentry crash reports errors performance screen replay privacy telemetry")],
   },
   {
+    id: "report-bug",
+    title: msg("Report a bug"),
+    to: "/settings/diagnostics",
+    searchTerms: [msg("bug report feedback problem issue crash Sentry")],
+  },
+  {
     id: "server-error-reporting",
     title: msg("Send error reports from this server"),
     to: "/settings/diagnostics",

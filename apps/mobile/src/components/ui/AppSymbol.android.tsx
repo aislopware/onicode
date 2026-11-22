@@ -26,6 +26,7 @@ import IconBan from "@tabler/icons-react-native/IconBan";
 import IconBellRinging from "@tabler/icons-react-native/IconBellRinging";
 import IconBolt from "@tabler/icons-react-native/IconBolt";
 import IconBox from "@tabler/icons-react-native/IconBox";
+import IconBug from "@tabler/icons-react-native/IconBug";
 import IconBrain from "@tabler/icons-react-native/IconBrain";
 import IconCamera from "@tabler/icons-react-native/IconCamera";
 import IconCar from "@tabler/icons-react-native/IconCar";
@@ -53,6 +54,7 @@ import IconCpu from "@tabler/icons-react-native/IconCpu";
 import IconDeviceDesktop from "@tabler/icons-react-native/IconDeviceDesktop";
 import IconDeviceLaptop from "@tabler/icons-react-native/IconDeviceLaptop";
 import IconDeviceMobile from "@tabler/icons-react-native/IconDeviceMobile";
+import IconDeviceMobileVibration from "@tabler/icons-react-native/IconDeviceMobileVibration";
 import IconDots from "@tabler/icons-react-native/IconDots";
 import IconPlusMinus from "@tabler/icons-react-native/IconPlusMinus";
 import IconDotsVertical from "@tabler/icons-react-native/IconDotsVertical";
@@ -236,7 +238,9 @@ const ANDROID_ICON_BY_SF_SYMBOL = {
   "info.circle": IconInfoCircle,
   internaldrive: IconHardDrive,
   iphone: IconDeviceMobile,
+  "iphone.radiowaves.left.and.right": IconDeviceMobileVibration,
   keyboard: IconKeyboard,
+  ladybug: IconBug,
   laptopcomputer: IconDeviceLaptop,
   link: IconLink,
   "list.number": IconListNumbers,

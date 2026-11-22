@@ -6,7 +6,8 @@
 #   2. builds macOS (signed and notarized by better-update) and Linux;
 #   3. checks the notarized zip the way the updater of the native Onicode does before it installs it;
 #   4. releases the macOS and Linux builds to `latest` with the notes file;
-#   5. publishes the GitHub release v<version> with the notes.
+#   5. publishes the GitHub release v<version> with the notes;
+#   6. records the desktop and server releases in Sentry when SENTRY_AUTH_TOKEN is set.
 #
 #   scripts/release/publish.sh <notes-file>
 #
@@ -52,4 +53,8 @@ better-update linux release create "${linux_builds[@]}" --channel latest --notes
 
 # 5. GitHub release.
 scripts/release/github-release.sh "$version" "$notes"
+
+# 6. Sentry.
+scripts/release/sentry-release.sh onicode-desktop "$version"
+scripts/release/sentry-release.sh onicode-server "$version"
 echo "publish.sh: Onicode $version is on the latest macOS and Linux feeds. Windows needs a Windows host: the Release workflow ships it."

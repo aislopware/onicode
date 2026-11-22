@@ -138,6 +138,7 @@ contextBridge.exposeInMainWorld("desktopBridge", {
   },
   setErrorReportingEnabled: (enabled) =>
     ipcRenderer.invoke(IpcChannels.SET_ERROR_REPORTING_ENABLED_CHANNEL, enabled),
+  captureWindowScreenshot: () => ipcRenderer.invoke(IpcChannels.CAPTURE_WINDOW_SCREENSHOT_CHANNEL),
   getSystemLocale: () => {
     const result = ipcRenderer.sendSync(IpcChannels.GET_SYSTEM_LOCALE_CHANNEL);
     return typeof result === "string" ? result : null;

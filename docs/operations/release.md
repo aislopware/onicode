@@ -35,7 +35,8 @@ ships with error reporting off ([Error reports](./observability.md#error-reports
 - `ONICODE_SENTRY_DESKTOP_DSN`, `ONICODE_SENTRY_SERVER_DSN` and `ONICODE_SENTRY_MOBILE_DSN`,
   repository secrets: the projects each build reports to.
 - `SENTRY_AUTH_TOKEN`, a repository secret: an organization token (`org:ci`) that uploads source
-  maps, with the repository variables `SENTRY_URL` and `SENTRY_ORG`.
+  maps and records each shipped release's commits and deploy, with the repository variables
+  `SENTRY_URL` and `SENTRY_ORG`.
 
 A release from a Mac reads the same names from `.env.local` or better-update's `production`
 environment.
