@@ -65,6 +65,10 @@ it("holds a send while a picked photo lands, and drops it when the pick fails", 
   mocks.pickComposerMedia.mockReturnValueOnce(picked.promise);
 
   const pick = state.actions.onPickDraftMedia();
+  // While the picker is open nothing is held yet.
+  expect(nativeImagePastePending(key)).toBe(false);
+  const { acceptSelection } = mocks.pickComposerMedia.mock.calls[0]![0];
+  expect(acceptSelection()).toBe(true);
   // The picker has closed and is still copying the photo; Send must wait for it.
   expect(nativeImagePastePending(key)).toBe(true);
   picked.resolve({ attachments: [photo], error: null });
@@ -73,7 +77,10 @@ it("holds a send while a picked photo lands, and drops it when the pick fails", 
   expect(nativeImagePastePending(key)).toBe(false);
   expect(state.settled).toHaveBeenLastCalledWith(key, false);
 
-  mocks.pickComposerMedia.mockResolvedValueOnce({ attachments: [], error: "Too large" });
+  mocks.pickComposerMedia.mockImplementationOnce(async ({ acceptSelection }) => {
+    acceptSelection();
+    return { attachments: [], error: "Too large" };
+  });
   await state.actions.onPickDraftMedia();
   expect(state.settled).toHaveBeenLastCalledWith(key, true);
   expect(mocks.alert).toHaveBeenCalledOnce();

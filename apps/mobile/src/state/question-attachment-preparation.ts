@@ -16,6 +16,8 @@ const imagePreparations = new Map<string, Set<(threadKey: string | null) => void
 
 /** A paste or accepted picker selection can finish in the thread draft. */
 export function startQuestionImagePreparation(key: string, waitingForSelection = false) {
+  // A pick may hold files, and how many is unknown, so the thread's held send counts no images.
+  const images = waitingForSelection ? 0 : 1;
   let destination: string | null = key;
   let threadOperation: ReturnType<typeof startComposerDraftOperation> | undefined;
   let finishThreadPaste: ((success: boolean) => void) | undefined;
@@ -24,7 +26,7 @@ export function startQuestionImagePreparation(key: string, waitingForSelection =
     destination = waitingForSelection ? null : threadKey;
     if (destination === null) return;
     threadOperation = startComposerDraftOperation(destination);
-    finishThreadPaste = startNativeImagePaste(destination);
+    finishThreadPaste = startNativeImagePaste(destination, images);
   };
   const pending = imagePreparations.get(key) ?? new Set();
   pending.add(resolve);

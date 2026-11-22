@@ -889,7 +889,8 @@ export function useThreadComposerState(input: {
       running: activeThreadBusy && canSteerActiveTurn,
       alternateModifier: followUpOverride !== undefined && followUpOverride !== activeTurnDefault,
       activeTurnDefault,
-      sentAway: press?.away === true,
+      // A redirect answers an approval still pending, so its turn is the one it saw.
+      sentAway: press?.away === true && beforeDispatch === undefined,
     });
     const setupRunning = [selectedThreadActivityRun?.status, selectedThreadRuntime?.status].some(
       (status) => status === "preparing" || status === "starting",

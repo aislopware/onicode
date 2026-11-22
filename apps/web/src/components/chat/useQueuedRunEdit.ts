@@ -1,5 +1,9 @@
 import { msg } from "gt-react";
 import { thrownErrorMessage } from "@onicode/client-runtime/errors";
+import {
+  isAtomCommandInterrupted,
+  squashAtomCommandFailure,
+} from "@onicode/client-runtime/state/runtime";
 import { m } from "~/i18n/messages";
 import { useAtomValue } from "@effect/atom-react";
 import {
@@ -450,24 +454,41 @@ export function useQueuedRunEdit(input: {
       edited.runId,
       saved,
     );
-    if (sendNow?.type === "start") {
-      await resumeThreadQueue({
-        environmentId,
-        input: { threadId: edited.threadId, runId: edited.runId },
-      });
-    } else if (sendNow?.type === "steer") {
-      await promoteQueuedRun({
-        environmentId,
-        input: {
-          threadId: edited.threadId,
-          queuedRunId: edited.runId,
-          targetRunId: sendNow.targetRunId,
-        },
-      });
-    } else if (sendNow?.type === "move-first") {
-      await moveQueuedRunFirst({
-        environmentId,
-        input: { threadId: edited.threadId, runId: edited.runId, beforeRunId: sendNow.beforeRunId },
+    const result =
+      sendNow?.type === "start"
+        ? await resumeThreadQueue({
+            environmentId,
+            input: { threadId: edited.threadId, runId: edited.runId },
+          })
+        : sendNow?.type === "steer"
+          ? await promoteQueuedRun({
+              environmentId,
+              input: {
+                threadId: edited.threadId,
+                queuedRunId: edited.runId,
+                targetRunId: sendNow.targetRunId,
+              },
+            })
+          : sendNow?.type === "move-first"
+            ? await moveQueuedRunFirst({
+                environmentId,
+                input: {
+                  threadId: edited.threadId,
+                  runId: edited.runId,
+                  beforeRunId: sendNow.beforeRunId,
+                },
+              })
+            : null;
+    // The edit has closed, so like the row's Send now the failure needs its own toast.
+    if (result?._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+      const error = squashAtomCommandFailure(result);
+      toastManager.add({
+        type: "error",
+        title: m(msg("Could not send queued message")),
+        description:
+          error instanceof Error
+            ? (thrownErrorMessage(error, m) ?? error.message)
+            : m(msg("An error occurred.")),
       });
     }
   };

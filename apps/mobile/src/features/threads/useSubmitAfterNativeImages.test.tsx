@@ -32,6 +32,7 @@ function setup() {
   let converting = false;
   let generation = 0;
   let blocked = false;
+  let silentSend = false;
   let draftKey = "draft";
   let approvalIds: ReadonlyArray<RuntimeRequestId> = [];
   const onSubmit = vi.fn();
@@ -66,11 +67,12 @@ function setup() {
       watchDraft,
       flushInput: () => flushing,
       // Like the thread screen: a blocked send is turned down, one that goes clears the draft.
-      onSubmit: (action, shownApprovalIds, settings, away) => {
-        if (blocked) return;
+      onSubmit: async (action, shownApprovalIds, settings, away) => {
+        if (blocked) return false;
         if (away === undefined) onSubmit(action, shownApprovalIds, settings);
         else onSubmit(action, shownApprovalIds, settings, away);
-        draftEdited();
+        if (!silentSend) draftEdited();
+        return true;
       },
     });
     const currentConverting = useNativeImagesConverting(draftKey);
@@ -119,6 +121,10 @@ function setup() {
         flushing = Promise.resolve();
         await act(async () => flushed.resolve());
       };
+    },
+    /** A send that goes while nothing the edit watch sees changes, as an upload recording its id. */
+    setSilentSend(value: boolean) {
+      silentSend = value;
     },
     /** Pass `render: false` while unmounted; the next mount reads it. */
     setBlocked(value: boolean, { render: rerender = true } = {}) {
@@ -398,7 +404,8 @@ it("keeps a held send after the composer unmounts, shows it on return, and drops
   expect(state.queue.held).toEqual({ images: 1 });
   await state.finish(true);
   await paste;
-  expect(state.onSubmit).toHaveBeenCalledExactlyOnceWith("steer", ["seen"], settings);
+  // Its composer left, so the turn it was pressed during may be over: it goes marked away.
+  expect(state.onSubmit).toHaveBeenCalledExactlyOnceWith("steer", ["seen"], settings, true);
   expect(state.queue.held).toBeNull();
 
   const edited = state.queue.pasteImages(["edited"]);
@@ -480,7 +487,7 @@ it("sends a send left while away once its images land, unless the thread screen 
   await redirect;
   expect(state.onSubmit).toHaveBeenCalledTimes(3);
   state.remount();
-  expect(state.onSubmit).toHaveBeenLastCalledWith(undefined, ["seen"], SHOWN);
+  expect(state.onSubmit).toHaveBeenLastCalledWith(undefined, ["seen"], SHOWN, true);
   expect(state.onSubmit).toHaveBeenCalledTimes(4);
 
   // Turned down away, as while its thread is still being created, it waits for the composer too.
@@ -495,6 +502,17 @@ it("sends a send left while away once its images land, unless the thread screen 
   state.setBlocked(false, { render: false });
   state.remount();
   expect(state.onSubmit).toHaveBeenCalledTimes(5);
+
+  // One that went is done even when the draft did not visibly change.
+  state.setSilentSend(true);
+  const silent = state.queue.pasteImages(["silent"]);
+  await act(async () => void state.queue.deferSend());
+  state.unmount();
+  await state.finish(true);
+  await silent;
+  expect(state.onSubmit).toHaveBeenCalledTimes(6);
+  state.remount();
+  expect(state.onSubmit).toHaveBeenCalledTimes(6);
 });
 
 it("hands a left send to a composer still showing its draft", async () => {

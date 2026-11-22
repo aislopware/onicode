@@ -10,6 +10,8 @@ import {
   type ScopedThreadRef,
 } from "@onicode/contracts";
 import { useImperativeHandle, type RefObject } from "react";
+import * as Cause from "effect/Cause";
+import { AsyncResult } from "effect/reactivity";
 import { describe, expect, it, vi } from "vite-plus/test";
 import {
   ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
@@ -44,7 +46,7 @@ const mocks = await vi.hoisted(async () => {
   return {
     editQueuedRun: vi.fn<(value: unknown) => Promise<{ readonly _tag: "Success" | "Failure" }>>(),
     promoteQueuedRun: vi.fn<(value: unknown) => Promise<{ readonly _tag: "Success" }>>(),
-    resumeThreadQueue: vi.fn<(value: unknown) => Promise<{ readonly _tag: "Success" }>>(),
+    resumeThreadQueue: vi.fn<(value: unknown) => Promise<unknown>>(),
     promoteCommand: {},
     resumeCommand: {},
     // The projection's runs per thread, written by each test to stand in for the server.
@@ -308,12 +310,19 @@ describe("useQueuedRunEdit", () => {
     { dispatchMode: "queue", submissionIntent: "alternate", steers: false },
     // The turn ended during the save: like the row's Send now, it starts the message.
     { dispatchMode: "steer", submissionIntent: "alternate", steers: true, turnEnds: true },
+    // Another run took the turn first; the closed edit leaves the failure to a toast.
+    { dispatchMode: "steer", submissionIntent: "alternate", steers: true, turnEnds: "taken" },
   ] as const)(
     "a saved edit sent as $submissionIntent/$dispatchMode steers: $steers",
     async (submission) => {
       const { hook } = setup();
       mocks.promoteQueuedRun.mockResolvedValue({ _tag: "Success" });
-      mocks.resumeThreadQueue.mockResolvedValue({ _tag: "Success" });
+      mocks.resumeThreadQueue.mockResolvedValue(
+        "turnEnds" in submission && submission.turnEnds === "taken"
+          ? AsyncResult.failure(Cause.fail(new Error("Another run started")))
+          : { _tag: "Success" },
+      );
+      using toast = vi.spyOn(toastManager, "add");
       const activeRun = RunId.make("run-active");
       mocks.editQueuedRun.mockImplementation(async () => {
         if ("turnEnds" in submission) {
@@ -339,6 +348,7 @@ describe("useQueuedRunEdit", () => {
           environmentId: ENV,
           input: { threadId: THREAD_A.threadId, runId: RUN },
         });
+        expect(toast).toHaveBeenCalledTimes(submission.turnEnds === "taken" ? 1 : 0);
         return;
       }
       expect(mocks.promoteQueuedRun).toHaveBeenCalledExactlyOnceWith({
