@@ -2,6 +2,7 @@ import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
+import { watchEnterPhase } from "../../../test/enterPhase";
 import { render } from "../../../test/render";
 import { SharedTooltipProvider, SharedTooltipTrigger } from "./shared-tooltip";
 import { Tooltip, TooltipPopup, TooltipScrollDismissArea, TooltipTrigger } from "./tooltip";
@@ -103,6 +104,7 @@ it("refreshes a pending shared tooltip if its label changes during the open dela
     </SharedTooltipProvider>,
   );
   const trigger = screen.getByRole("button", { name: "Copy" });
+  using enterPhase = watchEnterPhase("[data-slot='tooltip-popup']");
   await userEvent.hover(trigger);
   await screen.rerender(
     <SharedTooltipProvider>
@@ -113,4 +115,27 @@ it("refreshes a pending shared tooltip if its label changes during the open dela
   );
   await expect.element(page.getByText("Copy code")).toBeVisible();
   expect(page.getByText("Copied").query()).toBeNull();
+  expect(enterPhase.entered).toBe(true);
+});
+
+it("narrows a tooltip whose text wraps to its widest line, so both sides keep the same padding", async () => {
+  await using screen = await render(
+    <Tooltip>
+      <TooltipTrigger>Alert</TooltipTrigger>
+      <TooltipPopup description="Load 25 on 14 CPUs">
+        Heavy processor load on Cong’s Mac mini
+      </TooltipPopup>
+    </Tooltip>,
+  );
+  await userEvent.hover(screen.getByRole("button", { name: "Alert" }));
+  await expect.element(page.getByText("Load 25 on 14 CPUs")).toBeVisible();
+  const popup = document.querySelector<HTMLElement>("[data-slot='tooltip-popup']")!;
+  const box = popup.getBoundingClientRect();
+  const range = document.createRange();
+  range.selectNodeContents(popup.querySelector("[data-slot='tooltip-viewport'] > span")!);
+  const lines = [...range.getClientRects()];
+  expect(new Set(lines.map((line) => Math.round(line.top))).size).toBeGreaterThan(1);
+  const start = Math.min(...lines.map((line) => line.left)) - box.left;
+  const end = box.right - Math.max(...lines.map((line) => line.right));
+  expect(Math.abs(end - start)).toBeLessThanOrEqual(1);
 });

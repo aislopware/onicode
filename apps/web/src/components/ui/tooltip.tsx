@@ -3,6 +3,7 @@ import {
   createContext,
   use,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type ComponentProps,
@@ -10,6 +11,7 @@ import {
   type RefObject,
 } from "react";
 
+import { fitBoxToText } from "~/lib/fitBoxToText";
 import { cn } from "~/lib/utils";
 import { useNativeTitlebarHeight } from "~/lib/windowControlsOverlay";
 
@@ -173,13 +175,12 @@ function TooltipPopup({
           data-slot="tooltip-popup"
           {...props}
         >
-          <div
+          <TooltipViewport
             className={cn(
               "min-w-0 px-2 py-1",
               shortcut && "flex items-center gap-2",
               description !== undefined && "py-1.5 text-left",
             )}
-            data-slot="tooltip-viewport"
           >
             {shortcut || description !== undefined ? (
               <span className="min-w-0">{children}</span>
@@ -190,10 +191,23 @@ function TooltipPopup({
             {description !== undefined ? (
               <TooltipDescription>{description}</TooltipDescription>
             ) : null}
-          </div>
+          </TooltipViewport>
         </TooltipPrimitive.Popup>
       </TooltipPositioner>
     </TooltipPrimitive.Portal>
+  );
+}
+
+function TooltipViewport({ className, children }: { className: string; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- measures the rendered lines after each content change so wrapped text keeps even padding
+  useLayoutEffect(() => {
+    if (ref.current) fitBoxToText(ref.current);
+  });
+  return (
+    <div ref={ref} className={className} data-slot="tooltip-viewport">
+      {children}
+    </div>
   );
 }
 
