@@ -22,7 +22,6 @@ import {
   type ProviderRepositoryRef,
   type PullRequestProviderApi,
 } from "@onicode/source-control-core/server/PullRequestProvider";
-import { unlistedChecks } from "@onicode/source-control-core/server/pullRequestChecks";
 
 import * as OriginCli from "./OriginCli.ts";
 import {
@@ -758,7 +757,8 @@ export const make = Effect.gen(function* () {
           body: pullRequest.body ?? "",
           changedFiles: pullRequest.changedFiles ?? 0,
           reviewers: [],
-          checks: truncated ? [...checks, unlistedChecks("Cursor Origin")] : checks,
+          checks,
+          ...(truncated && { checksTruncated: true }),
           mergeCapabilities: {
             merge: repository?.allowMergeCommit ?? true,
             squash: repository?.allowSquashMerge ?? true,

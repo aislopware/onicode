@@ -2396,8 +2396,15 @@ export const make = Effect.gen(function* () {
                 ),
               };
         if (input.downstreamChecks === false || detail.headPipeline === undefined) return detail;
-        // The stages carry each listed trigger job's downstream pipeline.
-        const stages = yield* pipelineStageChecks({ ...input, url: detail.url });
+        // The stages carry each listed trigger job's downstream pipeline. A push between the reads
+        // can make them a newer pipeline's than the one the detail names.
+        const stageRead = yield* pipelineStageChecks({ ...input, url: detail.url });
+        const stages =
+          stageRead !== null &&
+          stageRead.pipelineId !== null &&
+          stageRead.pipelineId !== detail.headPipeline.id
+            ? null
+            : stageRead;
         if (stages !== null && stages.unlistedStages.length === 0) {
           return { ...detail, checks: stages.checks };
         }

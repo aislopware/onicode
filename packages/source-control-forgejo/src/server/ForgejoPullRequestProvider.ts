@@ -6,7 +6,6 @@ import type { PullRequestCapabilities, PullRequestViewerPermissions } from "@oni
 import { decodeJsonResult } from "@onicode/shared/schemaJson";
 import * as ForgejoCli from "./ForgejoCli.ts";
 import { parseDiffFileRevisions } from "@onicode/source-control-core/server/diffFileRevisions";
-import { unlistedChecks } from "@onicode/source-control-core/server/pullRequestChecks";
 import {
   PullRequestProviderError,
   type ProviderChangeRequestDetail,
@@ -281,8 +280,10 @@ export const make = Effect.gen(function* () {
       ],
       { concurrency: 2 },
     );
-    const checks = markRequiredForgejoChecks(forgejoChecks(statuses.items, pr.html_url), policy);
-    return statuses.truncated ? [...checks, unlistedChecks("Forgejo")] : checks;
+    return {
+      checks: markRequiredForgejoChecks(forgejoChecks(statuses.items, pr.html_url), policy),
+      truncated: statuses.truncated,
+    };
   });
   const unsupported = (operation: string) =>
     Effect.fail(failure(operation, `Forgejo does not expose ${operation} through its API.`));
@@ -358,7 +359,8 @@ export const make = Effect.gen(function* () {
     getChangeRequestChecks: Effect.fn("ForgejoPullRequestProvider.getChangeRequestChecks")(
       function* (input) {
         const pr = yield* getPull(input);
-        return { state: forgejoChangeRequest(pr).state, checks: yield* readChecks(input, pr) };
+        const { checks } = yield* readChecks(input, pr);
+        return { state: forgejoChangeRequest(pr).state, checks };
       },
     ),
     getChangeRequest: Effect.fn("ForgejoPullRequestProvider.getChangeRequest")(function* (input) {
@@ -366,7 +368,7 @@ export const make = Effect.gen(function* () {
         [getPull(input), getRepo(input), getViewer(input)],
         { concurrency: 3 },
       );
-      const checks = yield* readChecks(input, pr);
+      const { checks, truncated } = yield* readChecks(input, pr);
       return {
         ...forgejoChangeRequest(pr),
         headSha: pr.head.sha,
@@ -379,6 +381,7 @@ export const make = Effect.gen(function* () {
           return actor ? [actor] : [];
         }),
         checks,
+        ...(truncated && { checksTruncated: true }),
         baseComparison: !pr.merge_base
           ? "unknown"
           : pr.merge_base === pr.base.sha

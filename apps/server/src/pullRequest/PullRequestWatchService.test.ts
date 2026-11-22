@@ -124,12 +124,14 @@ interface HarnessOptions {
   readonly readState?: PullRequestSummary["state"];
   readonly readChecksState?: PullRequestSummary["checksState"];
   readonly detailChecks?: ReadonlyArray<PullRequestCheck>;
+  readonly detailState?: PullRequestDetail["state"];
 }
 
 const makeHarness = Effect.fn("makePullRequestWatchHarness")(function* (
   options: HarnessOptions = {},
 ) {
   const commands = yield* Ref.make<ReadonlyArray<OrchestrationCommand>>([]);
+  const reads = yield* Ref.make<ReadonlyArray<string>>([]);
   const thread = options.thread === undefined ? makeThread([]) : options.thread;
   const project = options.project === undefined ? makeProject() : options.project;
   const dependencies = Layer.mergeAll(
@@ -161,10 +163,14 @@ const makeHarness = Effect.fn("makePullRequestWatchHarness")(function* (
               baseBranch: "main",
               updatedAt: "2026-08-20T00:00:00.000Z",
             }),
+      invalidate: () => Ref.update(reads, (calls) => [...calls, "invalidate"]),
       detail: () =>
-        Effect.succeed({
-          checks: options.detailChecks ?? [check("build", "failure")],
-        } as unknown as PullRequestDetail),
+        Ref.update(reads, (calls) => [...calls, "detail"]).pipe(
+          Effect.as({
+            state: options.detailState ?? "open",
+            checks: options.detailChecks ?? [check("build", "failure")],
+          } as unknown as PullRequestDetail),
+        ),
     }),
     Layer.succeed(SecureRandom.SecureRandom, testCrypto),
   );
@@ -173,6 +179,7 @@ const makeHarness = Effect.fn("makePullRequestWatchHarness")(function* (
   );
   return {
     commands,
+    reads,
     setWatching: (watching: boolean, target: PullRequestTarget) =>
       service.setWatching({ threadId: THREAD_ID, target, watching }),
   };
@@ -186,6 +193,7 @@ describe("PullRequestWatchService", () => {
         [{ readChecksState: "failing" }, false],
         // GitHub's summary rollup counts a cancelled check a newer run replaced.
         [{ readChecksState: "failing", detailChecks: [check("test", "pending")] }, true],
+        [{ readChecksState: "failing", detailChecks: [check("test", "skipped")] }, undefined],
         [
           {
             readChecksState: "failing",
@@ -246,6 +254,15 @@ describe("PullRequestWatchService", () => {
       expect(
         yield* replaced.setWatching(true, { url: "https://github.com/onicode/onicode/pull/9" }),
       ).toMatchObject({ wasWatching: false, checksState: "passing" });
+      // A detail read cached from before a push would answer for the old head.
+      expect(yield* Ref.get(replaced.reads)).toEqual(["invalidate", "detail"]);
+
+      // The confirming read can find the pull request ended since the summary.
+      const ended = yield* makeHarness({ readChecksState: "failing", detailState: "merged" });
+      expect(
+        yield* ended.setWatching(true, { url: "https://github.com/onicode/onicode/pull/9" }),
+      ).toMatchObject({ watching: false, wasWatching: false, state: "merged" });
+      expect(yield* Ref.get(ended.commands)).toEqual([]);
     }),
   );
 

@@ -1073,13 +1073,8 @@ describe("GitCafePullRequestProvider", () => {
         next: String(Number(request.query.get("after") ?? 0) + 1),
       }));
       assert.strictEqual(truncated.checksState, "failing");
-      assert.deepStrictEqual(
-        truncated.checks.map((check) => [check.name, check.placeholder === true]),
-        [
-          ["Check", false],
-          ["Unlisted checks", true],
-        ],
-      );
+      assert.strictEqual(truncated.checksTruncated, true);
+      assert.strictEqual(detail.checksTruncated, undefined);
     });
   });
 

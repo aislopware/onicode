@@ -737,6 +737,22 @@ describe("evaluatePullRequestWatch", () => {
       [],
     ]);
     assert.deepEqual(superseded([]), [[{ kind: "checks-passed", count: 2, required: false }], []]);
+    // A read the host cut short may have left the failure out, so it settles nothing owed.
+    const owed = evaluatePullRequestWatch(
+      watch(),
+      detail({ checks: [check("build (a)", "failure"), check("e2e", "pending")] }),
+      noRemarks,
+    );
+    const cut = evaluatePullRequestWatch(
+      owed.next,
+      detail({ checks: [check("e2e", "success")], checksTruncated: true }),
+      noRemarks,
+    );
+    assert.deepEqual(cut.next.failedChecks, ["build (a)"]);
+    assert.notInclude(
+      cut.changes.map((change) => change.kind),
+      "checks-finished",
+    );
 
     // Nothing else was pending when the required ones passed, so nothing more is owed.
     const green = evaluatePullRequestWatch(watch(), done, noRemarks);

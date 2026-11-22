@@ -654,7 +654,7 @@ function toCheckEntries(raw: ReadonlyArray<CheckFields> | null | undefined): Rea
     note(`${lineageOf(run)} ${name}`, run.runNumber);
     // A default-named matrix job reports `job (values)`, or `job` if cancelled before it expanded.
     const matrixJob = /^(.+) \([^()]*\)$/u.exec(name)?.[1];
-    if (matrixJob !== undefined) note(`${lineageOf(run)} ${matrixJob}`, run.runNumber);
+    if (matrixJob !== undefined) note(`${lineageOf(run)} ${matrixJob} (matrix)`, run.runNumber);
   }
   return (raw ?? []).flatMap((check) => {
     const name = trimmed(check.name) ?? trimmed(check.context);
@@ -663,11 +663,20 @@ function toCheckEntries(raw: ReadonlyArray<CheckFields> | null | undefined): Rea
     const run = check.workflowRun;
     if (status === "cancelled" && run != null) {
       // Branch protection names required checks, so only a newer same-name check replaces one.
-      // GitHub Enterprise reads omit isRequired; an unexpanded matrix name is never required.
+      // GitHub Enterprise reads omit isRequired; an unexpanded matrix name is never required, and
+      // its expansion replaces a matrix job cancelled before it expanded.
       const anyNameReplaces =
         check.isRequired === false || (check.isRequired == null && name.includes("${{"));
       const replacedBy = anyNameReplaces ? lineageOf(run) : `${lineageOf(run)} ${name}`;
-      if (run.runNumber < (newestRunNumber.get(replacedBy) ?? run.runNumber)) return [];
+      const expandedBy =
+        check.isRequired == null
+          ? newestRunNumber.get(`${lineageOf(run)} ${name} (matrix)`)
+          : undefined;
+      const newest = Math.max(
+        newestRunNumber.get(replacedBy) ?? run.runNumber,
+        expandedBy ?? run.runNumber,
+      );
+      if (run.runNumber < newest) return [];
     }
     return [
       {

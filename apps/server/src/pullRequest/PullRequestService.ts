@@ -2002,6 +2002,7 @@ export const make = Effect.gen(function* () {
             ...(changeRequest.workflowApprovalsRequired === undefined
               ? {}
               : { workflowApprovalsRequired: changeRequest.workflowApprovalsRequired }),
+            ...(changeRequest.checksTruncated === true && { checksTruncated: true }),
             ...(changeRequest.mergeQueueRemoval === undefined
               ? {}
               : { mergeQueueRemoval: changeRequest.mergeQueueRemoval }),

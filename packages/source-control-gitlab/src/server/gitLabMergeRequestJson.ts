@@ -364,6 +364,7 @@ export const PIPELINE_STAGES_GRAPHQL_QUERY = `query($fullPath: ID!, $iid: String
   project(fullPath: $fullPath) {
     mergeRequest(iid: $iid) {
       headPipeline {
+        id
         path
         stages(first: 100) {
           nodes {
@@ -430,6 +431,7 @@ const RawPipelineStagesSchema = Schema.Struct({
               Schema.Struct({
                 headPipeline: Schema.NullOr(
                   Schema.Struct({
+                    id: OptionalString,
                     path: OptionalString,
                     stages: Schema.optional(
                       Schema.NullOr(
@@ -464,6 +466,8 @@ const decodePipelineStages = decodeJsonResult(RawPipelineStagesSchema);
  * show, or GitLab returned only some of them, so the caller keeps the single pipeline check.
  */
 export interface GitLabPipelineStageChecks {
+  /** The REST id of the pipeline these stages are of, where GitLab named it. */
+  readonly pipelineId: number | null;
   readonly checks: ReadonlyArray<PullRequestCheck>;
   /** A stage's own status can pass while a trigger job's downstream pipeline in it failed. */
   readonly unlistedStages: ReadonlyArray<string>;
@@ -520,7 +524,16 @@ export function decodePipelineStageChecksJson(
       });
     }
   }
-  return Result.succeed(checks.length === 0 ? null : { checks, unlistedStages });
+  const pipelineId = Number(/^gid:\/\/gitlab\/Ci::Pipeline\/(\d+)$/u.exec(pipeline?.id ?? "")?.[1]);
+  return Result.succeed(
+    checks.length === 0
+      ? null
+      : {
+          pipelineId: Number.isSafeInteger(pipelineId) ? pipelineId : null,
+          checks,
+          unlistedStages,
+        },
+  );
 }
 
 function toListItem(

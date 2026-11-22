@@ -6822,8 +6822,8 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
   it.effect.each([
     [true, "pending"],
     [false, "pending"],
-    // A read the host could not finish settles nothing, so it is read again like running checks.
-    [false, "unlisted"],
+    // A read the host could not finish settles nothing, so it is read again before long.
+    [true, "unlisted"],
   ] as const)(
     "rereads unfinished checks only on a fingerprint change when it covers them (covers: %s, %s)",
     ([coversDetail, unfinished]) =>
@@ -6920,15 +6920,17 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
         const sweep = reactor.sweep.pipe(Effect.andThen(worker.drain()));
 
+        const step = unfinished === "unlisted" ? "10 minutes" : "2 minutes";
+        const rereads = !coversDetail || unfinished === "unlisted";
         yield* sweep;
-        yield* TestClock.adjust("2 minutes");
+        yield* TestClock.adjust(step);
         yield* sweep;
-        assert.equal(reads, coversDetail ? 1 : 2);
+        assert.equal(reads, rereads ? 2 : 1);
 
         status = "passed";
-        yield* TestClock.adjust("2 minutes");
+        yield* TestClock.adjust(step);
         yield* sweep;
-        assert.equal(reads, coversDetail ? 2 : 3);
+        assert.equal(reads, rereads ? 3 : 2);
 
         yield* orchestrator.dispatch({
           type: "thread.pull-request.watch",
