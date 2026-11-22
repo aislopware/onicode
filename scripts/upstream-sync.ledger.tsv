@@ -3294,3 +3294,4 @@ c00f1172ee	take	fix(mobile): TalkBack can reach the status pill above the compos
 67f17528f2	take	fix(web): snooze labels follow the app language
 dbb5bdb582	take	feat(web): sidebar folder button picks or adds a project; Onicode's sidebar hook order untouched, scenario adapted on the desktop target
 fff245a8c1	take	feat(mobile): favorites only is its own model filter, not a provider
+f9fbb004ac	take	feat(devices): double-tap Home opens the app switcher
