@@ -8,7 +8,10 @@ import { useAtomValue } from "@effect/atom-react";
 import { compactBeforeSendTokens } from "@onicode/client-runtime/state/context-window";
 import { threadRuntimeIsActive } from "@onicode/client-runtime/state/shell";
 import type { ThreadCheckpointSummary } from "@onicode/client-runtime/state/thread-checkpoints";
-import { threadSteersDuringCompaction } from "@onicode/client-runtime/state/thread-workflows";
+import {
+  nativeGoalsFor,
+  threadSteersDuringCompaction,
+} from "@onicode/client-runtime/state/thread-workflows";
 import { resolvePendingHandoff } from "@onicode/client-runtime/handoff";
 import {
   announcedRun,
@@ -893,7 +896,10 @@ export function useThreadComposerState(input: {
     const followUpDispatchMode =
       setupRunning ||
       (followUpAction === "steer" &&
-        commandNeverSteers({ text, attachments }, queueWorkflow?.nativeGoals))
+        commandNeverSteers(
+          { text, attachments },
+          nativeGoalsFor(queueWorkflow?.nativeGoals, modelSelection.instanceId),
+        ))
         ? "queue"
         : followUpAction === "auto"
           ? null

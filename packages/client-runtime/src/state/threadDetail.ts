@@ -109,6 +109,8 @@ function queueWorkflowStatesEqual(
     left.canSendNow === right.canSendNow &&
     left.canPromoteToSteer === right.canPromoteToSteer &&
     left.promoteSkipsCompaction === right.promoteSkipsCompaction &&
+    left.nativeGoals?.instanceId === right.nativeGoals?.instanceId &&
+    left.nativeGoals?.supported === right.nativeGoals?.supported &&
     left.queuedRuns.length === right.queuedRuns.length &&
     left.queuedRuns.every(
       (queued, index) =>

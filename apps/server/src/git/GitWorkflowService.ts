@@ -37,6 +37,7 @@ import {
   withCheckoutSwitchReservation,
   withCheckoutSwitchReservationOrElse,
   withWorkspaceLease,
+  withWorkspaceLeaseOrElse,
 } from "../workspace/workspaceLease.ts";
 
 export class GitWorkflowService extends Context.Service<
@@ -80,9 +81,13 @@ export class GitWorkflowService extends Context.Service<
     /** The checkout's own HEAD file, inside a linked worktree's admin directory when there is one. */
     readonly headPath: (cwd: string) => Effect.Effect<string | null, never>;
     readonly pullCurrentBranch: (cwd: string) => Effect.Effect<VcsPullResult, GitCommandError>;
-    /** For automatic pulls: null, without pulling, while the checkout is busy. */
+    /**
+     * For automatic pulls: null, without pulling, while the checkout is busy or no longer a clean
+     * `branch` without local commits.
+     */
     readonly pullCurrentBranchWhenIdle: (
       cwd: string,
+      branch: string,
     ) => Effect.Effect<VcsPullResult | null, GitCommandError>;
     readonly runStackedAction: (
       input: GitRunStackedActionInput,
@@ -521,12 +526,25 @@ export const make = Effect.gen(function* () {
       );
     }),
     pullCurrentBranchWhenIdle: Effect.fn("GitWorkflowService.pullCurrentBranchWhenIdle")(
-      function (cwd) {
+      function (cwd, branch) {
+        // The caller checked before taking the checkout, and another Git action may have moved it since.
+        const stillEligible = git
+          .statusDetailsLocal(cwd)
+          .pipe(
+            Effect.map(
+              (status) =>
+                status.branch === branch &&
+                !status.hasWorkingTreeChanges &&
+                status.aheadCount === 0,
+            ),
+          );
         return ensureGitCommand("GitWorkflowService.pullCurrentBranchWhenIdle", cwd).pipe(
           Effect.flatMap((handle) => {
             const rootPath = handle.repository.rootPath;
-            // Leased before reserving, so waiting on another Git action holds up no turn start.
-            return withCheckoutLease(
+            // Skips instead of waiting on another Git action, which would stall a status refresh.
+            return withWorkspaceLeaseOrElse(
+              fileSystem,
+              path,
               rootPath,
               withCheckoutSwitchReservationOrElse(
                 fileSystem,
@@ -540,12 +558,21 @@ export const make = Effect.gen(function* () {
                   })
                   .pipe(
                     Effect.matchEffect({
-                      onFailure: () => Effect.succeed(null),
-                      onSuccess: () => git.pullCurrentBranch(cwd),
+                      // Busy skips this pull; a check that could not run carries its cause and
+                      // fails, so the caller logs it instead of skipping quietly forever.
+                      onFailure: (error) =>
+                        error.cause === undefined ? Effect.succeed(null) : Effect.fail(error),
+                      onSuccess: () =>
+                        stillEligible.pipe(
+                          Effect.flatMap((eligible) =>
+                            eligible ? git.pullCurrentBranch(cwd) : Effect.succeed(null),
+                          ),
+                        ),
                     }),
                   ),
                 () => Effect.succeed(null),
               ),
+              () => Effect.succeed(null),
             );
           }),
         );

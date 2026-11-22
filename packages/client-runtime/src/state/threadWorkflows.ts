@@ -4,6 +4,7 @@ import {
   parseGoalCommand,
   type OrchestrationV2ProjectedTurnItem,
   type OrchestrationV2ProviderCapabilities,
+  type ProviderInstanceId,
 } from "@onicode/contracts";
 import { copySorted } from "@onicode/shared/Array";
 import { mFallback, msg } from "gt-i18n";
@@ -48,8 +49,26 @@ export interface ThreadQueueWorkflowState {
   /** The active run is a compaction, so promoting a queued message stops it instead of steering. */
   readonly promoteSkipsCompaction: boolean;
   readonly canSendNow: boolean;
-  /** The provider runs /goal itself; absent when its server does not say. */
-  readonly nativeGoals?: boolean;
+  /** Whether the session's provider runs /goal itself; absent when its server does not say. */
+  readonly nativeGoals?: ThreadNativeGoals;
+}
+
+export interface ThreadNativeGoals {
+  readonly instanceId: ProviderInstanceId;
+  readonly supported: boolean;
+}
+
+/**
+ * Whether a message to `instanceId` runs /goal natively. Only the session's own provider is
+ * known; a message switching providers leaves it to the server.
+ */
+export function nativeGoalsFor(
+  nativeGoals: ThreadNativeGoals | undefined,
+  instanceId: ProviderInstanceId,
+): boolean | undefined {
+  return nativeGoals !== undefined && nativeGoals.instanceId === instanceId
+    ? nativeGoals.supported
+    : undefined;
 }
 
 export function resolveActiveThreadRun(projection: Pick<Projection, "runs">): Run | null {
@@ -141,12 +160,15 @@ export function threadCanSteer(
   });
 }
 
-/** Whether the thread's provider runs /goal itself; undefined when its server does not say. */
-export function threadRunsNativeGoals(
+/** Whether the session's provider runs /goal itself; undefined when its server does not say. */
+export function threadNativeGoals(
   projection: Projection | null | undefined,
-): boolean | undefined {
-  if (projection == null) return undefined;
-  return resolveThreadProviderSession(projection)?.capabilities.turns.supportsNativeGoals;
+): ThreadNativeGoals | undefined {
+  const session = projection == null ? null : resolveThreadProviderSession(projection);
+  const supported = session?.capabilities.turns.supportsNativeGoals;
+  return session == null || supported === undefined
+    ? undefined
+    : { instanceId: session.providerInstanceId, supported };
 }
 
 export function threadSupportsProviderHandoff(projection: Projection | null | undefined): boolean {
@@ -257,9 +279,14 @@ export function deriveThreadQueueWorkflowState(
         (capabilities === undefined || canSteer)) ||
       (hasSteerableProviderTurn && canSteer),
     promoteSkipsCompaction,
-    ...(capabilities?.supportsNativeGoals === undefined
+    ...(session === null || capabilities?.supportsNativeGoals === undefined
       ? {}
-      : { nativeGoals: capabilities.supportsNativeGoals }),
+      : {
+          nativeGoals: {
+            instanceId: session.providerInstanceId,
+            supported: capabilities.supportsNativeGoals,
+          },
+        }),
   };
 }
 
@@ -299,14 +326,13 @@ export function resolveQueuedRunSendNow(
     text: queued.message?.text ?? queued.text,
     attachments: queued.attachments,
   };
-  if (!workflow.promoteSkipsCompaction && commandNeverSteers(message, workflow.nativeGoals)) {
+  const nativeGoals = nativeGoalsFor(workflow.nativeGoals, queued.run.providerInstanceId);
+  if (!workflow.promoteSkipsCompaction && commandNeverSteers(message, nativeGoals)) {
     const first = workflow.queuedRuns[0]!.run.id;
     return first === runId ? null : { type: "move-first", beforeRunId: first };
   }
   const nativeGoal =
-    !workflow.promoteSkipsCompaction &&
-    workflow.nativeGoals === true &&
-    parseGoalCommand(message) !== null;
+    !workflow.promoteSkipsCompaction && nativeGoals === true && parseGoalCommand(message) !== null;
   return canPromoteQueuedRun(
     nativeGoal ? { ...workflow, canPromoteToSteer: true } : workflow,
     queued.run,

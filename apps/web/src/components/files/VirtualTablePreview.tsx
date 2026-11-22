@@ -402,7 +402,8 @@ function ScaledRows(
   const atStart = position.top === 0;
   const rowHeight = (row: number) =>
     contentRef.current?.querySelector<HTMLElement>(`[data-preview-row="${row}"]`)?.offsetHeight ||
-    rowHeights.heights.get(row) ||
+    // Kept for rows scrolled out of view, and cleared with the layout it measured.
+    rowHeightCacheRef.current.entries.get(row)?.height ||
     29;
   // Walks the real heights of mounted rows, so one wheel notch cannot skip a row taller than it.
   // Returns the scaled track position, or the pixels left over once the walk reaches the tail.
@@ -444,14 +445,23 @@ function ScaledRows(
       }
       pendingTailPixels.current = 0;
     }
-    // Read the live position: events can arrive before the last scroll has rendered.
+    // Read the live position: events can arrive before the last scroll has rendered. The DOM
+    // rounds it, so a position kept exact decides which side of the tail start it is on.
     const tailStart = maxFirst * 29 * scale;
-    if (node.scrollTop < tailStart) {
+    const exactTop =
+      restoredTop.current?.actual === node.scrollTop ? restoredTop.current.exact : node.scrollTop;
+    // Inside a tall row one rounded DOM pixel spans many content pixels, so keep the exact top.
+    const scrollToExact = (top: number) => {
+      node.scrollTop = top;
+      restoredTop.current = { exact: top, actual: node.scrollTop };
+      setTop(top);
+    };
+    if (exactTop < tailStart) {
       // A stale tail render's first row is not the scaled track's; the tail branch assumes 29px too.
       if (nativeTail) {
-        const toTail = (tailStart - node.scrollTop) / scale;
+        const toTail = (tailStart - exactTop) / scale;
         if (delta <= toTail) {
-          node.scrollTop += delta * scale;
+          node.scrollTop = exactTop + delta * scale;
           return;
         }
         node.scrollTop = Math.ceil(tailStart);
@@ -459,8 +469,6 @@ function ScaledRows(
         setTop(node.scrollTop);
         return;
       }
-      const exactTop =
-        restoredTop.current?.actual === node.scrollTop ? restoredTop.current.exact : node.scrollTop;
       const next = scaledScroll(exactTop, delta);
       // Past the tail start the rest moves natively, once the tail has rendered.
       if (next.toTail !== undefined) {
@@ -469,15 +477,16 @@ function ScaledRows(
         setTop(node.scrollTop);
         return;
       }
-      // Inside a tall row one rounded DOM pixel spans many content pixels, so keep the exact top.
-      node.scrollTop = next.top;
-      restoredTop.current = { exact: next.top, actual: node.scrollTop };
-      setTop(next.top);
+      scrollToExact(next.top);
       return;
     }
-    // Above the tail's first row the track is scaled again, at 29px a row.
-    const native = Math.max(delta, tailStart - node.scrollTop);
-    node.scrollTop += native + (delta - native) * scale;
+    const native = Math.max(delta, tailStart - exactTop);
+    if (native === delta) {
+      node.scrollTop = exactTop + delta;
+      return;
+    }
+    // Above the tail's first row the walk over row heights takes over again.
+    scrollToExact(scaledScroll(tailStart, delta - native).top);
   };
   const onWheel = useEffectEvent((event: WheelEvent) => {
     const node = ref.current;
@@ -746,7 +755,9 @@ function ScaledRows(
     <div
       ref={ref}
       tabIndex={0}
-      className="min-h-0 flex-1 overflow-auto"
+      // Rows are placed from the scroll position, so the browser must not shift it when a row
+      // above the viewport mounts at its real height.
+      className="min-h-0 flex-1 overflow-auto [overflow-anchor:none]"
       onKeyDown={(event) => {
         const node = event.currentTarget;
         const delta =

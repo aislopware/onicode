@@ -309,6 +309,15 @@ describe("thread workflows", () => {
       review: { type: "move-first", beforeRunId: "plain" },
       goal: { type: "move-first", beforeRunId: "plain" },
     },
+    // A /goal queued for another provider is left to the server, which knows that provider.
+    {
+      steer: true,
+      goals: false,
+      goalInstance: "other",
+      plain: { type: "steer", targetRunId: "active" },
+      review: { type: "move-first", beforeRunId: "plain" },
+      goal: { type: "steer", targetRunId: "active" },
+    },
   ])("moves a queued command first instead of steering it, steer=$steer goals=$goals", (row) => {
     const queued = ["plain", "review", "goal"];
     const text = { plain: "Next", review: "/review", goal: "/goal pause" } as const;
@@ -328,6 +337,7 @@ describe("thread workflows", () => {
             status: "queued",
             userMessageId: `message-${id}`,
             ordinal: index + 2,
+            providerInstanceId: id === "goal" && "goalInstance" in row ? row.goalInstance : "codex",
           })),
         ],
         messages: queued.map((id) => ({
@@ -343,6 +353,7 @@ describe("thread workflows", () => {
           {
             id: "session",
             status: "running",
+            providerInstanceId: "codex",
             capabilities: capabilities({
               queued: true,
               steer: row.steer,

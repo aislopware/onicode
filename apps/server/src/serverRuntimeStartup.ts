@@ -193,10 +193,10 @@ export const autoPullProjects = Effect.fn("autoPullProjects")(function* (
           return;
         }
 
-        if (status.behindCount <= 0) return;
+        if (status.behindCount <= 0 || status.branch === null) return;
 
         // Recovered runs and scheduled tasks may already be working in the checkout.
-        const result = yield* workflow.pullCurrentBranchWhenIdle(cwd);
+        const result = yield* workflow.pullCurrentBranchWhenIdle(cwd, status.branch);
         if (result === null) {
           yield* Effect.logDebug("Skipped automatic project pull", {
             cwd,

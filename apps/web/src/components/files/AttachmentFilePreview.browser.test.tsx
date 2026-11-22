@@ -717,13 +717,21 @@ describe("large text preview recovery", () => {
     await vi.waitFor(() => expect(row()?.offsetHeight).toBeGreaterThan(1000));
     const offset = () =>
       viewport().getBoundingClientRect().top - row()!.getBoundingClientRect().top;
+    const height = row()!.offsetHeight;
+    const wheel = (deltaY: number) =>
+      act(() =>
+        viewport().dispatchEvent(
+          new WheelEvent("wheel", { deltaY, bubbles: true, cancelable: true }),
+        ),
+      );
     const before = offset();
-    await act(() =>
-      viewport().dispatchEvent(
-        new WheelEvent("wheel", { deltaY: 100, bubbles: true, cancelable: true }),
-      ),
-    );
+    await wheel(100);
     await vi.waitFor(() => expect(offset() - before).toBeCloseTo(100, 0));
+    // Past the row, so it unmounts, and back up into it by its measured height.
+    await wheel(height - 100 - before + 3 * 29);
+    await vi.waitFor(() => expect(row()).toBeNull());
+    await wheel(-(3 * 29 + 100));
+    await vi.waitFor(() => expect(offset()).toBeCloseTo(height - 100, 0));
   });
 
   it("scrolls every tall row in the final virtual viewport", async () => {
