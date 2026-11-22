@@ -284,7 +284,8 @@ function runAgent(): void {
           protocolVersion: 1,
           agentCapabilities: {
             loadSession: true,
-            promptCapabilities: { image: false, audio: false, embeddedContext: true },
+            // Prompts are ignored, so it takes images too; image sends test for free.
+            promptCapabilities: { image: true, audio: false, embeddedContext: true },
           },
           authMethods: [],
           agentInfo: { name: "oni-dev-replay", version: "1" },

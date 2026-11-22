@@ -243,6 +243,7 @@ print("Composer image-drop eligibility checks passed")
 private final class ImmediateImageProvider: NSItemProvider {
   let image: UIImage
   private(set) var loadCount = 0
+  var onLoad: (() -> Void)?
 
   init(image: UIImage) {
     self.image = image
@@ -255,6 +256,7 @@ private final class ImmediateImageProvider: NSItemProvider {
     completionHandler: @escaping @Sendable (NSItemProviderReading?, Error?) -> Void
   ) -> Progress {
     loadCount += 1
+    onLoad?()
     completionHandler(image, nil)
     return Progress(totalUnitCount: 1)
   }
@@ -265,13 +267,16 @@ private let pasteProvider = ImmediateImageProvider(image: image)
 private var pastedImages: [[String]] = []
 private var imageReads: [(id: Int, images: Int)] = []
 pasteEditor.text = "Keep this draft"
+pasteProvider.onLoad = {
+  check(imageReads.count == 1 && imageReads[0].images == 1, "An image read must start before its provider loads")
+}
 pasteEditor.onImageReadStart = { imageReads.append((id: $0, images: $1)) }
 pasteEditor.onImageReadEnd = { readId, urls in
   check(imageReads.map { $0.id } == [readId], "An image read must end with the id it started with")
   pastedImages.append(urls)
 }
 pasteEditor.paste(itemProviders: [pasteProvider])
-check(imageReads.count == 1 && imageReads[0].images == 1, "An image read must start before its provider loads")
+check(pasteProvider.loadCount == 1, "The pasted provider must load")
 
 for readOnly in [true, false] {
   let lockedEditor = ComposerTextView()
