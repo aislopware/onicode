@@ -3273,3 +3273,4 @@ cc4bb17955	take	fix(server): thread reads no longer attribute Onicode's compact-
 9de4ec1bfa	take	fix(web,mobile): @-file mentions show by name in message previews; scenario ported to the desktop target as is
 7ddc81d639	take	fix(web): tool calls stay grouped after a usage-limit pause again
 ec35ad6618	take	taken as is
+6972026121	take	taken as is; scenario ported to the desktop harness
