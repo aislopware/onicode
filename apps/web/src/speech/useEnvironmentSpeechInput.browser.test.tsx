@@ -63,6 +63,7 @@ const mocks = vi.hoisted(() => ({
   draft: "",
   appleSpeech: false,
   storedDraft: "",
+  retired: false,
 }));
 
 vi.mock("../components/sidebar/mainAppLocation", () => ({
@@ -263,6 +264,7 @@ function setup(options: { readonly destination?: string | null } = {}) {
   mocks.draft = "";
   mocks.appleSpeech = false;
   mocks.storedDraft = "";
+  mocks.retired = false;
 }
 
 function setDestination(environmentId: string | null) {
@@ -294,6 +296,7 @@ function Probe(props: {
             mocks.storedDraft = text;
           },
           open: () => {},
+          retired: () => mocks.retired,
         }
       : undefined,
     readDraft: () => ({
@@ -499,6 +502,19 @@ it("ends the recording this editor began after it switches to another thread", a
   await act(() => mocks.voice.start());
   await screen.rerender(<Probe ownerKey="thread-b" persistent />);
   // A held dictation shortcut released on thread B stops through B's editor.
+  await act(() => mocks.voice.stop());
+  await vi.waitFor(() => expect(mocks.storedDraft).toBe("Earlier text dictated"));
+  expect(mocks.committed).not.toHaveBeenCalled();
+});
+
+it("stores the words of a draft retired before its editor re-renders", async () => {
+  setup({ destination: "env-a" });
+  mocks.storedDraft = "Earlier text";
+  mocks.draft = "Earlier text";
+  await using _screen = await render(<Probe ownerKey="draft-a" persistent />);
+  await act(() => mocks.voice.start());
+  // A promotion moved the draft to its thread; the editor still shows the draft id.
+  mocks.retired = true;
   await act(() => mocks.voice.stop());
   await vi.waitFor(() => expect(mocks.storedDraft).toBe("Earlier text dictated"));
   expect(mocks.committed).not.toHaveBeenCalled();

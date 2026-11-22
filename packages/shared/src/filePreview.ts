@@ -44,8 +44,10 @@ export function filePreviewKind(
   const extension = name.slice(name.lastIndexOf("."));
   const generic = !mime || GENERIC_MIME_TYPES.has(mime) || mime === "text/plain";
   const richDocuments = options?.richDocuments !== false;
-  const office = richDocuments ? officePreviewKind(file) : null;
-  if (office) return office;
+  const office = officePreviewKind(file);
+  if (office && richDocuments) return office;
+  // Without a rich renderer RTF would show as raw markup, so it goes to the OS viewer.
+  if (office === "rtf") return "unsupported";
   const binary = binaryPreviewKind(file);
   if (binary) return binary;
   if (mime === "application/pdf") return "pdf";
@@ -70,7 +72,6 @@ export function filePreviewKind(
     if (/^\.(md|markdown|mdown|mkd|mdx)$/.test(extension)) return "markdown";
     if (richDocuments && /^\.(mmd|mermaid)$/.test(extension)) return "mermaid";
     if (richDocuments && isWorkspaceFontPreviewPath(name)) return "font";
-    if (richDocuments && extension === ".rtf") return "text";
     const media = mediaMimeTypeFromExtension(extension);
     if (media?.startsWith("image/")) return "image";
     if (media?.startsWith("video/")) return "video";

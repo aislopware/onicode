@@ -18,6 +18,18 @@ function setup(page: number) {
   findGate.page = page;
   findGate.opened = new Promise((resolve) => (findGate.open = resolve));
 }
+// Holds one page's load until the test opens it, so the page measures late.
+const loadGate = vi.hoisted(() => ({ page: 0, opened: Promise.resolve() }));
+function holdPageLoad(page: number) {
+  let resolve = () => {};
+  loadGate.page = page;
+  loadGate.opened = new Promise<void>((done) => (resolve = done));
+  const open = () => {
+    loadGate.page = 0;
+    resolve();
+  };
+  return { open, [Symbol.dispose]: open };
+}
 // Holds a document's close until the test releases it, and counts the opens that did not wait.
 const closeGate = vi.hoisted(() => ({
   held: false,
@@ -71,6 +83,7 @@ vi.mock(import("./pdfDocument"), async (importOriginal) => {
         const getPage = document.getPage.bind(document);
         document.getPage = async (number) => {
           pageReads.loads.set(number, (pageReads.loads.get(number) ?? 0) + 1);
+          if (number === loadGate.page) await loadGate.opened;
           const page = await getPage(number);
           const getTextContent = page.getTextContent.bind(page);
           page.getTextContent = async (params) => {
@@ -334,13 +347,19 @@ it("follows a link to a point on another page and reads links once across a zoom
           // Page 4's object; y 200 is 2800 PDF units below its top edge.
           "<< /Type /Annot /Subtype /Link /Rect [30 690 200 730] /Border [0 0 0] /Dest [9 0 R /XYZ 0 200 0] >>",
           "<< /Type /Annot /Subtype /Link /Rect [30 630 200 670] /Border [0 0 0] /A << /S /URI /URI (https://example.com/) >> >>",
+          // Page 6's top edge.
+          "<< /Type /Annot /Subtype /Link /Rect [30 570 200 610] /Border [0 0 0] /Dest [13 0 R /XYZ 0 792 0] >>",
         ].join(" "),
       },
       page("Filler"),
       page("Filler"),
       // Offscreen and far taller than page 1, whose shape the layout assumes until it loads.
       { ...page("Target"), box: "0 0 612 3000" },
-      page("After"),
+      // Taller than assumed, and mounted only once the reader reaches page 6 below it.
+      { ...page("Taller"), box: "0 0 612 1600" },
+      page("Linked"),
+      // Taller than assumed, and loaded only once the test lets it.
+      { ...page("After"), box: "0 0 612 1200" },
     ]),
   );
   try {
@@ -350,7 +369,8 @@ it("follows a link to a point on another page and reads links once across a zoom
         <PdfViewer src={url} title="Linked PDF" onOpenLink={onOpenLink} />
       </div>,
     );
-    await expect.element(screen.getByText("1 / 5 pages")).toBeVisible();
+    await expect.element(screen.getByText("1 / 7 pages")).toBeVisible();
+    using lastPage = holdPageLoad(7);
     const region = screen.getByRole("region", { name: "Linked PDF" }).element();
     const web = await vi.waitFor(() => {
       const link = region.querySelector<HTMLAnchorElement>('a[href="https://example.com/"]');
@@ -360,13 +380,13 @@ it("follows a link to a point on another page and reads links once across a zoom
     expect(getComputedStyle(web).cursor).toBe("pointer");
     web.dispatchEvent(new MouseEvent("auxclick", { button: 1, bubbles: true, cancelable: true }));
     expect(onOpenLink).toHaveBeenCalledWith("https://example.com/", expect.anything());
-    const internal = await vi.waitFor(() => {
-      const link = Array.from(region.querySelectorAll<HTMLAnchorElement>("a")).find(
-        (anchor) => anchor !== web,
-      );
-      expect(link).toBeDefined();
-      return link!;
-    });
+    const pageLink = (page: number) =>
+      vi.waitFor(() => {
+        const link = region.querySelector<HTMLAnchorElement>(`a[aria-label="Page ${page}"]`);
+        expect(link).not.toBeNull();
+        return link!;
+      });
+    await pageLink(4);
 
     // Link boxes are page-relative, so a zoom repaints the page without reading them again.
     const reads = annotationCounts.get(1);
@@ -379,8 +399,32 @@ it("follows a link to a point on another page and reads links once across a zoom
     // A link's target page loads only when the link is followed.
     expect(loads.get(4)).toBeUndefined();
 
-    internal.click();
-    await expect.element(screen.getByText("4 / 5 pages")).toBeVisible();
+    // The jump holds while the page above it measures taller than assumed.
+    (await pageLink(6)).click();
+    await vi.waitFor(() => {
+      const above = region.querySelector('canvas[aria-label="Page 5"]')!.getBoundingClientRect();
+      const target = region.querySelector('canvas[aria-label="Page 6"]')!.getBoundingClientRect();
+      expect(Math.abs(above.height - (1600 / 612) * above.width)).toBeLessThanOrEqual(1);
+      expect(Math.abs(target.top - region.getBoundingClientRect().top)).toBeLessThanOrEqual(1);
+    });
+    await expect.element(screen.getByText("6 / 7 pages")).toBeVisible();
+    // Next page hands the view back, even pressed with no pointer or key as assistive tech does:
+    // page 7 measuring taller afterwards does not pull the view up to page 6.
+    const next = screen.getByRole("button", { name: "Next page", exact: true }).element();
+    (next as HTMLElement).click();
+    const last = region.querySelector('canvas[aria-label="Page 7"]')!;
+    lastPage.open();
+    await vi.waitFor(() => {
+      const measured = last.getBoundingClientRect();
+      expect(Math.abs(measured.height - (1200 / 612) * measured.width)).toBeLessThanOrEqual(1);
+    });
+    const lastTop = last.getBoundingClientRect().top - region.getBoundingClientRect().top;
+    expect(Math.abs(lastTop - 16)).toBeLessThanOrEqual(1);
+    await expect.element(screen.getByText("7 / 7 pages")).toBeVisible();
+    region.scrollTop = 0;
+    await expect.element(screen.getByText("1 / 7 pages")).toBeVisible();
+    (await pageLink(4)).click();
+    await expect.element(screen.getByText("4 / 7 pages")).toBeVisible();
     await vi.waitFor(() => {
       const target = region.querySelector('canvas[aria-label="Page 4"]')!.getBoundingClientRect();
       const below = region.getBoundingClientRect().top - target.top;

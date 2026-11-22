@@ -1687,6 +1687,14 @@ export function resolveLiveComposerDraftTarget(
   return state.draftThreadsByThreadKey[target] || state.draftsByThreadKey[target] ? target : null;
 }
 
+/** Whether a draft moved into its thread, unlike one that was discarded or emptied. */
+export function isComposerDraftPromoted(target: ComposerThreadTarget): boolean {
+  return (
+    typeof target === "string" &&
+    composerDraftStore.getState().promotedDraftRedirects[target] !== undefined
+  );
+}
+
 /** The stored prompt for a target, empty when it has no draft, or null when the target is gone. */
 export function readComposerDraftPrompt(target: ComposerThreadTarget): string | null {
   const live = resolveLiveComposerDraftTarget(target);

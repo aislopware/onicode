@@ -75,6 +75,7 @@ vi.mock(import("./office/WordDocument"), async () => {
 import { __setClientSettingsForTests, getClientSettings } from "~/hooks/useSettings";
 import { AttachmentFilePreview } from "./AttachmentFilePreview";
 import LargeTextViewer from "./LargeTextViewer";
+import NotebookPreview from "./NotebookPreview";
 import VirtualTablePreview from "./VirtualTablePreview";
 import { OfficeFilePreview } from "./OfficeFilePreview";
 import { MermaidFilePreview } from "./MermaidFilePreview";
@@ -2440,6 +2441,43 @@ it("mounts a bounded set of saved notebook outputs as the reader scrolls", async
   });
   await vi.waitFor(() =>
     expect(screen.container.querySelector("iframe")?.srcdoc).toContain("saved 0-0"),
+  );
+});
+
+it("cuts notebook markdown and text outputs at long lines and at two lines' worth", async () => {
+  const text = `opening words\n\n${"a".repeat(130_000)}\n\nclosing words`;
+  const manyLines = `${"b".repeat(9)}\n`.repeat(25_000);
+  await using screen = await render(
+    <NotebookPreview
+      notebook={{
+        type: "notebook",
+        language: "python",
+        cells: [
+          { kind: "markdown", source: text, outputs: [] },
+          { kind: "code", source: "", outputs: [{ kind: "text", text }] },
+          { kind: "markdown", source: manyLines, outputs: [] },
+          { kind: "code", source: "", outputs: [{ kind: "text", text: manyLines }] },
+        ],
+      }}
+    />,
+  );
+  await vi.waitFor(() => {
+    const markdown = screen.getByRole("region", { name: "Cell 3" }).element().textContent;
+    expect(markdown).toContain("… 230,000 more characters");
+    expect(markdown?.length).toBeLessThan(21_000);
+  });
+  expect(
+    screen.getByRole("region", { name: "Cell 4" }).element().querySelector("pre")?.textContent,
+  ).toBe(`${manyLines.slice(0, 20_000)}… 230,000 more characters`);
+  const shown = `${"a".repeat(10_000)}… 120,000 more characters`;
+  await vi.waitFor(() => {
+    const markdown = screen.getByRole("region", { name: "Cell 1" }).element().textContent;
+    expect(markdown).toContain("opening words");
+    expect(markdown).toContain(shown);
+    expect(markdown).toContain("closing words");
+  });
+  expect(screen.container.querySelector("pre")?.textContent).toBe(
+    `opening words\n\n${shown}\n\nclosing words`,
   );
 });
 

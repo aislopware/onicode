@@ -328,9 +328,15 @@ export default function PdfViewer(props: {
   const scroll = useRef<HTMLDivElement>(null);
   const find = useRef<HTMLInputElement>(null);
   const zoomAnchor = useRef<{ page: number; offset: number; width: number } | null>(null);
-  const linkJump = useRef<{ page: number; top: number | null } | null>(null);
-  // Bumped by each link and each document change; a page load answers only the latest.
+  // Bumped by each link, navigation and document change; a page load answers only the latest.
   const linkRequest = useRef(0);
+  // Held until the reader navigates, so pages measured above the target cannot push it away.
+  // `at` is the scroll top last applied, so only a target that moved or came in reach scrolls.
+  const linkJump = useRef<{ page: number; top: number | null; at: number | null } | null>(null);
+  const releaseLinkJump = () => {
+    linkJump.current = null;
+    linkRequest.current += 1;
+  };
   const initialPage = initialView.page;
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- Own the PDF fetch, load timeout, and pdf.js document task across source changes, retries, and unmounts.
   useEffect(() => {
@@ -383,6 +389,7 @@ export default function PdfViewer(props: {
       .finally(() => clearTimeout(timeout));
     return () => {
       disposed = true;
+      linkJump.current = null;
       linkRequest.current += 1;
       controller.abort();
       clearTimeout(timeout);
@@ -409,6 +416,7 @@ export default function PdfViewer(props: {
       ),
   );
   const jumpToPage = useEffectEvent((index: number) => {
+    releaseLinkJump();
     scroll.current?.scrollTo({ top: pdfPageScrollTop(offsets, index) });
   });
   const saveView = (node: HTMLDivElement, notify = true) => {
@@ -442,11 +450,9 @@ export default function PdfViewer(props: {
   useLayoutEffect(() => {
     if (pdf) restoreView();
   }, [pdf]);
-  /** `top` is a point within the page, in page widths below its top edge. */
-  const showPage = (index: number, top: number | null = null) => {
-    scroll.current?.scrollTo({
-      top: top === null ? pdfPageScrollTop(offsets, index) : offsets[index]! + top * width,
-    });
+  const showPage = (index: number) => {
+    releaseLinkJump();
+    scroll.current?.scrollTo({ top: pdfPageScrollTop(offsets, index) });
   };
   // The target may be an unmeasured page, so its size enters the layout before the scroll.
   const followLink = (link: PdfDestination) => {
@@ -456,7 +462,7 @@ export default function PdfViewer(props: {
       .catch(() => null)
       .then((point) => {
         if (request !== linkRequest.current) return;
-        linkJump.current = { page: link.page, top: point?.top ?? null };
+        linkJump.current = { page: link.page, top: point?.top ?? null, at: null };
         // Always a new array, so the layout effect runs even for an already measured page.
         setRatios((old) =>
           old.map((value, index) => (index === link.page ? (point?.ratio ?? value) : value)),
@@ -464,6 +470,7 @@ export default function PdfViewer(props: {
       });
   };
   const changeZoom = (value: number | null) => {
+    releaseLinkJump();
     zoomAnchor.current = {
       page: current,
       offset: (scroll.current?.scrollTop ?? 0) - (offsets[current]! - 16),
@@ -476,7 +483,6 @@ export default function PdfViewer(props: {
     const anchor = zoomAnchor.current;
     const jump = linkJump.current;
     zoomAnchor.current = null;
-    linkJump.current = null;
     const node = scroll.current;
     if (!node || !pdf) return;
     if (anchor && anchor.width !== width) {
@@ -484,7 +490,18 @@ export default function PdfViewer(props: {
         top: offsets[anchor.page]! - 16 + (anchor.offset * width) / anchor.width,
       });
     }
-    if (jump) showPage(jump.page, jump.top);
+    if (jump) {
+      // `top` is a point within the page, in page widths below its top edge.
+      const target =
+        jump.top === null
+          ? pdfPageScrollTop(offsets, jump.page)
+          : offsets[jump.page]! + jump.top * width;
+      const at = Math.max(0, Math.min(target, node.scrollHeight - node.clientHeight));
+      if (at !== jump.at) {
+        jump.at = at;
+        node.scrollTo({ top: at });
+      }
+    }
     saveView(node, anchor !== null);
   });
   const firstMatch = matches[0];
@@ -546,7 +563,12 @@ export default function PdfViewer(props: {
     };
   }, [pdf, query]);
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+    <div
+      className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+      onWheel={releaseLinkJump}
+      onPointerDown={releaseLinkJump}
+      onKeyDown={releaseLinkJump}
+    >
       <div className="flex min-h-10 shrink-0 flex-wrap items-center gap-1 border-b border-border px-2 py-1 text-xs">
         <span className="mr-auto px-1 tabular-nums" aria-live="polite">
           {pdf

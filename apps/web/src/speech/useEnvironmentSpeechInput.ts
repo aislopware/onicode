@@ -112,6 +112,8 @@ type HookInput = {
         readonly readStoredText: () => string | null;
         readonly commitStoredText: (text: string) => void;
         readonly open: () => void;
+        /** The stored draft moved on, such as by a promotion, before the editor re-rendered. */
+        readonly retired: () => boolean;
       }
     | undefined;
 };
@@ -328,7 +330,10 @@ export function useEnvironmentSpeechInput(input: HookInput) {
     const startContext = readContext();
     const persistent = latestRef.current.input.persistentDraft ?? null;
     // While this editor shows the owner, the live editor is the draft; otherwise the stored one.
-    const live = () => mountedRef.current && latestRef.current.input.ownerKey === owner;
+    const live = () =>
+      mountedRef.current &&
+      latestRef.current.input.ownerKey === owner &&
+      persistent?.retired() !== true;
     return {
       ownerKey: owner,
       label: latestRef.current.input.label ?? null,

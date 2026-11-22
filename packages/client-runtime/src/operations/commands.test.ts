@@ -170,14 +170,15 @@ describe("V2 environment commands", () => {
   );
 
   it.effect.each([
-    { queued: ["command"], denied: false, moved: true },
-    { queued: ["later"], denied: false, moved: true },
-    { queued: ["later", "command"], denied: false, moved: false },
+    { queued: ["command"], denied: false, moved: true, retried: false },
+    { queued: ["later"], denied: false, moved: true, retried: false },
+    // A newer run is first now, so the command goes before that one instead.
+    { queued: ["later", "command"], denied: false, moved: true, retried: true },
     // A refusal for this client is not a stale queue, wherever the run stands.
-    { queued: ["command"], denied: true, moved: false },
+    { queued: ["command"], denied: true, moved: false, retried: false },
   ])(
     "moves a command first, or finds it there, queued=$queued denied=$denied",
-    ({ queued, denied, moved }) =>
+    ({ queued, denied, moved, retried }) =>
       Effect.gen(function* () {
         const commands: OrchestrationV2Command[] = [];
         const supervisor = yield* makeSupervisor({
@@ -199,19 +200,30 @@ describe("V2 environment commands", () => {
         // The head started before the reorder arrived, so the server no longer finds it queued.
         const rejecting = {
           ...session.client,
-          [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: () =>
-            Effect.fail(
-              denied
-                ? new EnvironmentAuthorizationError({
-                    message: "Not allowed.",
-                    requiredScope: "orchestration:operate",
-                  })
-                : new OrchestrationV2DispatchCommandError({
-                    commandId: CommandId.make("move-first"),
-                    commandType: "queued-run.reorder",
-                    message: "Queue target head is not queued.",
-                  }),
-            ),
+          [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: (command: OrchestrationV2Command) => {
+            if (denied) {
+              return Effect.fail(
+                new EnvironmentAuthorizationError({
+                  message: "Not allowed.",
+                  requiredScope: "orchestration:operate",
+                }),
+              );
+            }
+            if (
+              command.type === "queued-run.reorder" &&
+              command.beforeRunId === RunId.make("head")
+            ) {
+              return Effect.fail(
+                new OrchestrationV2DispatchCommandError({
+                  commandId: command.commandId,
+                  commandType: "queued-run.reorder",
+                  message: "Queue target head is not queued.",
+                }),
+              );
+            }
+            commands.push(command);
+            return Effect.succeed({ sequence: commands.length });
+          },
         } as unknown as WsRpcProtocolClient;
         yield* SubscriptionRef.set(
           supervisor.session,
@@ -229,6 +241,9 @@ describe("V2 environment commands", () => {
         );
 
         expect(Exit.isSuccess(exit)).toBe(moved);
+        expect(commands).toEqual(
+          retried ? [expect.objectContaining({ runId: "command", beforeRunId: "later" })] : [],
+        );
       }).pipe(Effect.provide(layerTestRandom)),
   );
 

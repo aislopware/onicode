@@ -187,6 +187,9 @@ it.effect("brings back the turns a closed view had loaded when it opens again", 
     const parentOlder = parentRow("Parent older", 2);
     const parentLatest = parentRow("Parent latest", 5);
     const forkLatest = v2MessageRow("Fork latest", 1);
+    const forkEarlier = v2MessageRow("Fork earlier", 1);
+    const forkLater = v2MessageRow("Fork later", 2);
+    const forkAfterRewind = v2MessageRow("Fork after rewind", 3);
     // As the server builds it: the parent as source, ordinal 0, after the inherited rows.
     const forkMarker = (
       visibility: "synthetic" | "inherited",
@@ -233,6 +236,7 @@ it.effect("brings back the turns a closed view had loaded when it opens again", 
       historyCursor,
       hasMoreHistory: true,
     });
+    const ownForkMarker = forkMarker("synthetic", v2Projection.thread.id);
     const pages: Record<string, Pick<OrchestrationV2ThreadHistoryPage, "items" | "nextCursor">> = {
       "before-recent": { items: [older], nextCursor: "before-older" },
       "before-latest": { items: [recent], nextCursor: "before-recent" },
@@ -240,6 +244,9 @@ it.effect("brings back the turns a closed view had loaded when it opens again", 
       "before-oldest": { items: [], nextCursor: null },
       "before-parent-latest": { items: [parentOlder], nextCursor: "before-parent-older" },
       "before-fork-marker": { items: [parentLatest], nextCursor: "before-parent-latest" },
+      "before-parent-older": { items: [], nextCursor: null },
+      "before-fork-later": { items: [forkEarlier], nextCursor: "before-fork-earlier" },
+      "before-fork-after-rewind": { items: [ownForkMarker], nextCursor: "before-fork-marker" },
     };
     const asked: string[] = [];
     const follow = (
@@ -330,6 +337,23 @@ it.effect("brings back the turns a closed view had loaded when it opens again", 
       ]);
       expect(asked).toEqual(["before-fork-marker", "before-parent-latest"]);
     }
+
+    // The fork was rewound to its fork point, so none of its rows the view showed are left: its
+    // marker stops the read instead of the parent's whole history.
+    const forkOnly = yield* follow([window(1, "before-fork-later", forkLater)], null);
+    (yield* Queue.take(forkOnly)).loadEarlier();
+    yield* Queue.take(forkOnly); // Loading.
+    const forkOnlyClosed = yield* Queue.take(forkOnly);
+    expect(rows(forkOnlyClosed)).toEqual([forkEarlier.sourceItemId, forkLater.sourceItemId]);
+    asked.length = 0;
+    const forkRewound = yield* settled(
+      yield* follow([window(2, "before-fork-after-rewind", forkAfterRewind)], forkOnlyClosed),
+    );
+    expect([rows(forkRewound), forkRewound.thread.historyCursor]).toEqual([
+      [ownForkMarker.sourceItemId, forkAfterRewind.sourceItemId],
+      "before-fork-marker",
+    ]);
+    expect(asked).toEqual(["before-fork-after-rewind"]);
   }).pipe(Effect.scoped),
 );
 
