@@ -456,19 +456,8 @@ function ScaledRows(
       restoredTop.current = { exact: top, actual: node.scrollTop };
       setTop(top);
     };
+    // Walked even before a render leaving the tail commits: heights are looked up by row index.
     if (exactTop < tailStart) {
-      // A stale tail render's first row is not the scaled track's; the tail branch assumes 29px too.
-      if (nativeTail) {
-        const toTail = (tailStart - exactTop) / scale;
-        if (delta <= toTail) {
-          node.scrollTop = exactTop + delta * scale;
-          return;
-        }
-        node.scrollTop = Math.ceil(tailStart);
-        pendingTailPixels.current = delta - toTail;
-        setTop(node.scrollTop);
-        return;
-      }
       const next = scaledScroll(exactTop, delta);
       // Past the tail start the rest moves natively, once the tail has rendered.
       if (next.toTail !== undefined) {

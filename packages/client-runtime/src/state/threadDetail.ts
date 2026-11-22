@@ -116,7 +116,8 @@ function queueWorkflowStatesEqual(
       (queued, index) =>
         queued.run === right.queuedRuns[index]!.run &&
         queued.message === right.queuedRuns[index]!.message &&
-        queued.awaitsCompaction === right.queuedRuns[index]!.awaitsCompaction,
+        queued.awaitsCompaction === right.queuedRuns[index]!.awaitsCompaction &&
+        queued.nativeGoals === right.queuedRuns[index]!.nativeGoals,
     )
   );
 }
