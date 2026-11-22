@@ -470,6 +470,7 @@ export const makeAcpPatchedProtocol = Effect.fn("makeAcpPatchedProtocol")(functi
     }
   });
 
+  // Once off the map only this settles a request, so interruption must not cut it.
   const resolveExtPending = (
     requestId: AcpError.AcpRequestId,
     onFound: (pendingRequest: AcpPendingRequest) => Effect.Effect<void>,
@@ -483,7 +484,7 @@ export const makeAcpPatchedProtocol = Effect.fn("makeAcpPatchedProtocol")(functi
       const next = new Map(pending);
       next.delete(pendingKey);
       return [onFound(pendingRequest), next] as const;
-    }).pipe(Effect.flatten);
+    }).pipe(Effect.flatten, Effect.uninterruptible);
 
   const removeExtPending = (requestId: AcpError.AcpRequestId) =>
     Ref.update(extPending, (pending) => {
@@ -509,6 +510,7 @@ export const makeAcpPatchedProtocol = Effect.fn("makeAcpPatchedProtocol")(functi
           discard: true,
         }),
       ),
+      Effect.uninterruptible,
     );
 
   // Offer first so an ended queue rejects the notification without evicting the

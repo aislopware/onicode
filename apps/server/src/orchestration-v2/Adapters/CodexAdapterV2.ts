@@ -5408,6 +5408,8 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               yield* client
                 .request("thread/goal/set", { threadId: payload.threadId, status: "paused" })
                 .pipe(
+                  // An unanswered pause must not hold back the interrupt.
+                  Effect.timeout("10 seconds"),
                   Effect.catch((cause) =>
                     Effect.logWarning("orchestration-v2.codex-goal-pause-failed", { cause }),
                   ),
@@ -7755,6 +7757,8 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               yield* client
                 .request("thread/goal/set", { threadId: goalThreadId, status: "paused" })
                 .pipe(
+                  // An unanswered pause must not hold back the interrupt.
+                  Effect.timeout("10 seconds"),
                   Effect.tap(({ goal }) =>
                     Effect.sync(() =>
                       goalsByNativeThread.set(goalThreadId, providerGoalFromCodex(goal)),
@@ -7803,16 +7807,14 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
           threadId: string,
           params: Record<string, unknown>,
         ) {
-          const resume = client.raw
-            .request("thread/resume", { threadId, ...params })
-            .pipe(withAppServerDeadline("thread/resume"));
+          const resume = client.raw.request("thread/resume", { threadId, ...params });
           return yield* resume.pipe(
             Effect.catchTags({
               CodexAppServerRequestError: (cause) => {
                 if (/\bsession \S+ is archived\b|\bcodex unarchive\b/i.test(cause.errorMessage)) {
                   return client.raw
                     .request("thread/unarchive", { threadId })
-                    .pipe(withAppServerDeadline("thread/unarchive"), Effect.andThen(resume));
+                    .pipe(Effect.andThen(resume));
                 }
                 if (/\bthread \S+ is closing\b/i.test(cause.errorMessage)) {
                   const closing = threadClosings.get(threadId);
@@ -8197,6 +8199,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
           const applied = yield* client
             .request("thread/settings/update", { threadId, serviceTier })
             .pipe(
+              Effect.timeout("10 seconds"),
               Effect.as(true),
               Effect.catch((cause) =>
                 Effect.logWarning("orchestration-v2.codex-service-tier-update-failed", {
@@ -8340,7 +8343,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               rootProviderThreads.set(nativeThreadId, threadInput.providerThread);
               goalUpdatesHeld.add(nativeThreadId);
               const response = yield* ensureInitialized.pipe(
-                Effect.andThen(resume),
+                Effect.andThen(resume.pipe(withAppServerDeadline("thread/resume"))),
                 Effect.flatMap(decodeCodexResumeMetadata),
                 // Stay registered: a lost or undecodable response may still have resumed the thread.
                 Effect.onError(() =>
@@ -8550,13 +8553,13 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 threadId,
                 ...(hasContext ? { additionalContext } : {}),
               };
-              yield* client
-                .request("turn/steer", steerParams)
-                .pipe(
-                  Effect.tapError((error) =>
-                    codexRefusedRequest(error) ? undoRejectedSteer : Effect.void,
-                  ),
-                );
+              yield* rejectIfRetired.pipe(
+                Effect.andThen(client.request("turn/steer", steerParams)),
+                withAppServerDeadline("turn/steer"),
+                Effect.tapError((error) =>
+                  codexRefusedRequest(error) ? undoRejectedSteer : Effect.void,
+                ),
+              );
             },
             (effect, turnInput) =>
               effect.pipe(
@@ -9343,11 +9346,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 };
               }
               const { historyMode, loaded, cwd } = yield* ensureInitialized.pipe(
-                Effect.andThen(
-                  readCodexThreadHistoryMetadata(client.raw, threadId).pipe(
-                    withAppServerDeadline("thread/read"),
-                  ),
-                ),
+                Effect.andThen(readCodexThreadHistoryMetadata(client.raw, threadId)),
               );
               if (historyMode !== "paginated") {
                 return yield* new ProviderAdapter.ProviderAdapterRollbackThreadError({
@@ -9369,11 +9368,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 });
               }
               const response = yield* ensureInitialized.pipe(
-                Effect.andThen(
-                  revertCodexThread(client, threadId, numTurns).pipe(
-                    withAppServerDeadline("thread/revert"),
-                  ),
-                ),
+                Effect.andThen(revertCodexThread(client, threadId, numTurns)),
               );
               turnTokenUsageByThread.delete(threadId);
               // Codex reloads a reverted thread with an empty keyed context.
@@ -9463,11 +9458,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               let forkedThread = response.thread;
               if (boundary.rollbackTurnCount > 0) {
                 const { historyMode } = yield* ensureInitialized.pipe(
-                  Effect.andThen(
-                    readCodexThreadHistoryMetadata(client.raw, response.thread.id).pipe(
-                      withAppServerDeadline("thread/read"),
-                    ),
-                  ),
+                  Effect.andThen(readCodexThreadHistoryMetadata(client.raw, response.thread.id)),
                 );
                 if (historyMode !== "paginated") {
                   return yield* new ProviderAdapter.ProviderAdapterForkThreadError({
@@ -9478,9 +9469,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 }
                 forkedThread = (yield* ensureInitialized.pipe(
                   Effect.andThen(
-                    revertCodexThread(client, response.thread.id, boundary.rollbackTurnCount).pipe(
-                      withAppServerDeadline("thread/revert"),
-                    ),
+                    revertCodexThread(client, response.thread.id, boundary.rollbackTurnCount),
                   ),
                   Effect.mapError(
                     (cause) =>

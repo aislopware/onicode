@@ -109,6 +109,8 @@ function makeTestAdapter(input: {
   readonly refuseStarts?: Ref.Ref<number>;
   readonly refusalCause?: unknown;
   readonly failInjectionOnce?: Ref.Ref<boolean>;
+  /** Refuses injections with this cause while starts are being refused. */
+  readonly injectionRefusalCause?: unknown;
   readonly nativeThreadGeneration?: Ref.Ref<number>;
   readonly failResume?: boolean;
   /** Like Claude, whose imported session's transcript is gone. */
@@ -273,22 +275,37 @@ function makeTestAdapter(input: {
             ? {}
             : {
                 injectHistory: (history: ProviderAdapter.ProviderAdapterV2HistoricalContext) =>
-                  Ref.update(input.injectedHistory!, (current) => [
-                    ...current,
-                    ...historyResponseItems(history.messages, history.context),
-                  ]).pipe(
+                  Effect.gen(function* () {
+                    if (
+                      input.injectionRefusalCause !== undefined &&
+                      input.refuseStarts !== undefined &&
+                      (yield* Ref.get(input.refuseStarts)) > 0
+                    )
+                      return yield* new ProviderAdapter.ProviderAdapterProtocolError({
+                        driver: input.driver,
+                        detail: "Failed to inject historical context",
+                        cause: input.injectionRefusalCause,
+                      });
+                  }).pipe(
                     Effect.andThen(
-                      Effect.gen(function* () {
-                        if (
-                          input.failInjectionOnce !== undefined &&
-                          (yield* Ref.getAndSet(input.failInjectionOnce, false))
-                        )
-                          return yield* unimplemented(
-                            input.driver,
-                            "lost injection acknowledgement",
-                          );
-                        return true;
-                      }),
+                      Ref.update(input.injectedHistory!, (current) => [
+                        ...current,
+                        ...historyResponseItems(history.messages, history.context),
+                      ]).pipe(
+                        Effect.andThen(
+                          Effect.gen(function* () {
+                            if (
+                              input.failInjectionOnce !== undefined &&
+                              (yield* Ref.getAndSet(input.failInjectionOnce, false))
+                            )
+                              return yield* unimplemented(
+                                input.driver,
+                                "lost injection acknowledgement",
+                              );
+                            return true;
+                          }),
+                        ),
+                      ),
                     ),
                   ),
               }),
@@ -2975,6 +2992,11 @@ describe("orchestration v2 provider switching", () => {
       true,
     ],
     [
+      "a retired Codex app-server that also refused the injection",
+      new CodexAppServerRetiredError(),
+      "refused",
+    ],
+    [
       "background work followed by a lost native session",
       new ClaudeBackgroundWorkBlocksQueryReplacementError(),
       false,
@@ -3000,7 +3022,8 @@ describe("orchestration v2 provider switching", () => {
           refusalCause,
           failResumeOnce,
           nativeThreadGeneration: generation,
-          ...(inject === true ? { injectedHistory } : {}),
+          ...(inject === true || inject === "refused" ? { injectedHistory } : {}),
+          ...(inject === "refused" ? { injectionRefusalCause: refusalCause } : {}),
         }),
       ]);
       yield* Effect.gen(function* () {
