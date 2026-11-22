@@ -718,7 +718,8 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
   // replays them). Both run under applyLock: each batch lands wholly before or after an attempt.
   // Only the attempt's own marker releases its hold; a disconnect clearing awaitingCompletion does not.
   let attempt: unknown;
-  let attemptGeneration = -1;
+  // Items switchMap buffered past a lost session, which the supervisor clears first, are stale.
+  let attemptSession: unknown;
   let catchUp: OrchestrationV2ThreadStreamItem[] = [];
   let attemptSynchronized = false;
   const startAttempt = applyLock.withPermits(1)(
@@ -735,8 +736,9 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     yield* applyLock.withPermits(1)(
       Effect.gen(function* () {
         let completes = false;
+        const liveSession = Option.getOrUndefined(yield* SubscriptionRef.get(supervisor.session));
         for (const [input, item] of received) {
-          if (input !== attempt) continue;
+          if (input !== attempt || attemptSession !== liveSession) continue;
           catchUp.push(item);
           if (item.kind === "synchronized") completes = true;
         }
@@ -1011,23 +1013,13 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     yield* Effect.addFinalizer(() => historyController.value.unregister(registration));
   }
 
-  // The supervisor leaves a connected phase only once the session is gone, so items its
-  // stream still delivers are stale: drop them and let the next attempt replay from the cursor.
-  // An attempt a newer connection already started is not the lost session's.
-  let previousPhase: ReturnType<typeof connectionProjectionPhase> | undefined;
   yield* SubscriptionRef.changes(supervisor.state).pipe(
     Stream.runForEach((connectionState) => {
-      const phase = connectionProjectionPhase(connectionState);
-      const lostSession =
-        previousPhase !== undefined &&
-        previousPhase !== "disconnected" &&
-        attemptGeneration <= connectionState.generation;
-      previousPhase = phase;
-      switch (phase) {
+      switch (connectionProjectionPhase(connectionState)) {
         case "synchronizing":
           return setConnecting;
         case "disconnected":
-          return lostSession ? startAttempt.pipe(Effect.andThen(setDisconnected)) : setDisconnected;
+          return setDisconnected;
         case "ready":
           return setReady;
       }
@@ -1096,7 +1088,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
       ORCHESTRATION_V2_WS_METHODS.subscribeThread,
       Effect.fn("EnvironmentThreadState.makeSubscribeInput")(function* (session) {
         yield* startAttempt;
-        attemptGeneration = (yield* SubscriptionRef.get(supervisor.state)).generation;
+        attemptSession = session;
         let current = yield* SubscriptionRef.get(state);
         // A delete event already cleared this thread. Park without opening the socket.
         if (current.status === "deleted" && httpMisses === 0) {
