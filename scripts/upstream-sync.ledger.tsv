@@ -3306,3 +3306,4 @@ a3323d4a43	take	perf(web): new thread opens its draft without waiting on onicode
 dd19bce823	take	fix(server): a dropped dictation client frees the speech engine within seconds; runSpeechSocket exported for the test, Onicode's revoke tests kept
 0938476b95	take	fix(web): Thinking row no longer shows below a streaming reply (web + mobile)
 7103527dcc	take	fix(web): PR description file links resolve in the PR's repository from a No-project thread
+44979a5875	take	MCP schedule edit sends requireExisting; Onicode's expectedThreadId guard already blocked the resurrection, test now covers it
