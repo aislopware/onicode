@@ -57,6 +57,7 @@ import {
   addPreparingComposerImages,
   getPreparingComposerImages,
   isPreparingComposerImage,
+  joinPreparedImagesToDraft,
   movedPreparingImageThread,
   removePreparingComposerImages,
 } from "./preparingComposerImages";
@@ -343,10 +344,13 @@ export function useComposerAttachmentIntake(input: {
       onCapacityExceeded: (image: ComposerImageAttachment) => rejectedImageNames.push(image.name),
     };
     const draftStore = useComposerDraftStore.getState();
-    const storedImageIds = new Set(
-      movedThread
-        ? draftStore.addImages(movedThread, nextImages, capacityOptions)
-        : addComposerImagesToDraft(nextImages, capacityOptions),
+    const storedImageIds = joinPreparedImagesToDraft(
+      () =>
+        new Set(
+          movedThread
+            ? draftStore.addImages(movedThread, nextImages, capacityOptions)
+            : addComposerImagesToDraft(nextImages, capacityOptions),
+        ),
     );
     // Keep the placeholders until the draft decides whether the images fit,
     // so a held send can be cancelled before the last placeholder disappears.
@@ -364,10 +368,12 @@ export function useComposerAttachmentIntake(input: {
     }
     if (storedImages.length > 0 && imageAttachmentsGetChips && !movedThread) {
       insertedAny =
-        insertAttachmentReferences(
-          storedImages.map(imageContextReference),
-          undefined,
-          pendingInsertion,
+        joinPreparedImagesToDraft(() =>
+          insertAttachmentReferences(
+            storedImages.map(imageContextReference),
+            undefined,
+            pendingInsertion,
+          ),
         ) || insertedAny;
     }
     // Only failures are reported here. Success must not pass `null`: by

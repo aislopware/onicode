@@ -50,6 +50,8 @@ interface ComposerPrimaryActionsProps {
   /** Dictation is running; Send finishes it and submits once the transcript lands. */
   voiceInputActive?: boolean;
   isSendBusy: boolean;
+  /** A send is armed and waiting for its attachments to finish preparing or uploading. */
+  isSendHeld?: boolean;
   sendDisabledReason: string | null;
   isEnvironmentUnavailable: boolean;
   isPreparingWorktree: boolean;
@@ -242,6 +244,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   alternateShortcutLabel = null,
   voiceInputActive = false,
   isSendBusy,
+  isSendHeld = false,
   sendDisabledReason,
   isEnvironmentUnavailable,
   isPreparingWorktree,
@@ -364,7 +367,8 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   if (
     (canInterrupt || stopPhase === "pending" || stopPhase === "timedOut") &&
     !hasSendableContent &&
-    !isEditingQueuedMessage
+    !isEditingQueuedMessage &&
+    !isSendHeld
   ) {
     return (
       <>
@@ -395,14 +399,16 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
             : gt("Submit message");
   const submitStatus = isEnvironmentUnavailable
     ? gt("Environment disconnected")
-    : (sendDisabledReason ??
-      (isPreparingWorktree
-        ? gt("Preparing worktree")
-        : isSendBusy
-          ? isEditingQueuedMessage
-            ? gt("Updating queued message")
-            : gt("Submitting message")
-          : null));
+    : isSendHeld
+      ? gt("Sending when ready")
+      : (sendDisabledReason ??
+        (isPreparingWorktree
+          ? gt("Preparing worktree")
+          : isSendBusy
+            ? isEditingQueuedMessage
+              ? gt("Updating queued message")
+              : gt("Submitting message")
+            : null));
   const modifier = isMacPlatform(navigator.platform) ? "⌘" : "Ctrl";
   const dispatchTooltip =
     alternateAction === "queue"
@@ -427,6 +433,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
         : submitLabel);
 
   const sendBlocked = isSendDisabled || isEnvironmentUnavailable;
+  const isBusyOrHeld = isSendBusy || isSendHeld;
   const sendButton = (
     <button
       type={showResume ? "button" : "submit"}
@@ -442,10 +449,11 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
       }}
       // A blocked send stays focusable so its reason reaches the keyboard; empty and busy do not.
       aria-disabled={sendBlocked || undefined}
-      disabled={!sendBlocked && (isSendBusy || (!hasSendableContent && !showResume))}
+      disabled={!sendBlocked && (isBusyOrHeld || (!hasSendableContent && !showResume))}
       aria-label={submitStatus ?? submitLabel}
+      aria-busy={isBusyOrHeld || undefined}
     >
-      {isSendBusy ? (
+      {isBusyOrHeld ? (
         <Spinner size="sm" aria-hidden="true" />
       ) : showResume ? (
         <PlayIcon className="size-4 fill-current" aria-hidden="true" />
