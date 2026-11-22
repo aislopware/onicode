@@ -432,10 +432,13 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
     entries: ReadonlyArray<readonly [RpcSession, OrchestrationV2ShellStreamItem]>,
   ) {
     // Read under the lock: items buffered across a session change must not land on the
-    // rows the next session loaded.
+    // rows the next session loaded. The supervisor clears a lost session before reporting it.
     const subscription = yield* Ref.get(activeSubscription);
+    const liveSession = Option.getOrUndefined(yield* SubscriptionRef.get(supervisor.session));
     yield* applyLocked(
-      entries.flatMap(([session, item]) => (session === subscription?.session ? [item] : [])),
+      entries.flatMap(([session, item]) =>
+        session === subscription?.session && session === liveSession ? [item] : [],
+      ),
       subscription?.identity ?? null,
     );
   }, snapshotWriteLock.withPermit);
