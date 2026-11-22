@@ -1016,6 +1016,10 @@ function delegatedCompletionWakeDetail(
     .join("\n\n");
 }
 
+/** The `restore` of an `uninterruptibleMask`, or the effect as is outside one. */
+type AfterCommitRestore = <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>;
+const asIs: AfterCommitRestore = (effect) => effect;
+
 // Startup recovery settles whatever is still missed after this window.
 const afterCommitRetrySchedule = Schedule.exponential("1 second").pipe(
   Schedule.modifyDelay(({ duration }) =>
@@ -2301,8 +2305,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
 
   // A command that committed a result has its receipt, so a failed wake offer is retried here
   // instead of failing it: a caller's retry would replay the receipt without offering.
-  const offerDelegatedCompletionDeliveriesAfterCommit = (threadId: ThreadId) =>
-    offerDelegatedCompletionDeliveries(threadId).pipe(
+  const offerDelegatedCompletionDeliveriesAfterCommit = (
+    threadId: ThreadId,
+    restore: AfterCommitRestore = asIs,
+  ) =>
+    restore(offerDelegatedCompletionDeliveries(threadId)).pipe(
       Effect.catchCause((cause) =>
         Effect.logWarning("Retrying a delegated completion wake", { threadId, cause }).pipe(
           Effect.andThen(
@@ -2441,10 +2448,13 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       ["runs", "nodes", "attempts", "providerThreads", "turnItems", "messages"],
       { turnItemTypes: ["user_message"], messageRoles: ["user"] },
     );
+    // A hold placed since the user's start leaves the run to the user.
     const queuedRun =
       queuedRunId === undefined
         ? nextQueuedRun(projection)
-        : projection.runs.find((run) => run.id === queuedRunId && run.status === "queued");
+        : projection.runs.find(
+            (run) => run.id === queuedRunId && run.status === "queued" && run.queueHeld !== true,
+          );
     if (queuedRun === undefined) return;
     // A steer that fell back to the queue keeps its user item, hidden while the
     // run is queued. Republish it before the failure so clients whose bounded
@@ -3576,8 +3586,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     reason: string,
     threadId: ThreadId,
     options: Parameters<typeof startNextQueuedRunOnce>[1],
+    restore: AfterCommitRestore = asIs,
   ) =>
-    startNextQueuedRun(threadId, options).pipe(
+    restore(startNextQueuedRun(threadId, options)).pipe(
       Effect.catchCause((cause) =>
         Effect.logWarning("Retrying a queued run start", { threadId, reason, cause }).pipe(
           Effect.andThen(
@@ -16720,6 +16731,17 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           });
         }
         const selectedRunId = command.type === "queued-run.start" ? command.runId : undefined;
+        // The queue, or another client, can start it before the tap, or its resend, lands.
+        if (
+          projection.runs.some(
+            (run) =>
+              run.id === selectedRunId &&
+              run.status !== "queued" &&
+              (isActiveRun(run) || run.startedAt !== null),
+          )
+        ) {
+          break;
+        }
         const selectedRun =
           selectedRunId === undefined
             ? undefined
@@ -17026,8 +17048,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           // The title was renamed by hand, or another generation is already running.
           command.type === "thread.title.refresh" ||
           command.type === "thread.interrupt.unresponsive" ||
-          // The agent already read the steer.
+          // The agent already read the steer, or the selected message already started.
           command.type === "steer.send-now" ||
+          command.type === "queued-run.start" ||
           command.type === "thread.stop" ||
           command.type === "subagent.stop" ||
           (command.type === "thread.delete" && command.onlyIfUnused === true),
@@ -17147,7 +17170,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       } satisfies OrchestratorV2DispatchResult;
     }
     // A replay plans nothing, so an interrupt between the commit and its starts would strand them.
-    return yield* Effect.uninterruptible(
+    // The starts run interruptible: one cut short hands over to its background retry.
+    return yield* Effect.uninterruptibleMask((restore) =>
       Effect.gen(function* () {
         const acceptedAt = plan.events.at(-1)?.occurredAt ?? (yield* DateTime.now);
         const committed = yield* eventSink
@@ -17176,6 +17200,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             ...(plan.updateDelegatedCompletionOnlyRunId === undefined
               ? {}
               : { updateDelegatedCompletionOnlyRunId: plan.updateDelegatedCompletionOnlyRunId }),
+            ...(command.type === "steer.send-now" ? { updateSentNowOnly: true as const } : {}),
           })
           .pipe(
             Effect.mapError(
@@ -17206,15 +17231,23 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           });
         }
         if (command.type === "queue.resume" || command.type === "queued-run.start") {
-          yield* startNextQueuedRunAfterCommit(command.type, command.threadId, {
-            userStarted: true,
-            ...(command.type === "queued-run.start" ? { queuedRunId: command.runId } : {}),
-          });
+          yield* startNextQueuedRunAfterCommit(
+            command.type,
+            command.threadId,
+            {
+              userStarted: true,
+              ...(command.type === "queued-run.start" ? { queuedRunId: command.runId } : {}),
+            },
+            restore,
+          );
         }
         if (command.type === "thread.runtime-mode.set" && runtimeModeCeiling !== undefined) {
-          yield* startNextQueuedRunAfterCommit("runtime-mode", command.threadId, {
-            userStarted: false,
-          });
+          yield* startNextQueuedRunAfterCommit(
+            "runtime-mode",
+            command.threadId,
+            { userStarted: false },
+            restore,
+          );
         }
         if (
           command.type === "notification.delivery.accept" ||
@@ -17227,20 +17260,23 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                 event.payload.completionDelivery?.state === "claimed",
             ))
         ) {
-          yield* offerDelegatedCompletionDeliveriesAfterCommit(command.threadId);
+          yield* offerDelegatedCompletionDeliveriesAfterCommit(command.threadId, restore);
         }
         if (
           command.type === "delegated_task.wake-policy" ||
           command.type === "delegated_task.remote.complete" ||
           isUnobservedAcknowledgement(command)
         ) {
-          yield* offerDelegatedCompletionDeliveriesAfterCommit(command.parentThreadId);
+          yield* offerDelegatedCompletionDeliveriesAfterCommit(command.parentThreadId, restore);
         }
 
         if (command.type === "message.dispatch" && command.steerFollowUpOfRunId !== undefined) {
-          yield* startNextQueuedRunAfterCommit("steer-follow-up", command.threadId, {
-            latestRunEnded: true,
-          });
+          yield* startNextQueuedRunAfterCommit(
+            "steer-follow-up",
+            command.threadId,
+            { latestRunEnded: true },
+            restore,
+          );
         }
 
         return {

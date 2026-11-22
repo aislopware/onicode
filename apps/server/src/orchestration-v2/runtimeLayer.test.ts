@@ -9441,58 +9441,69 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
       return { send, runFor, end, startedRunIds, releasedAfter, awaitHeld };
     });
 
-  it.effect("a retried Send now leaves a message held since the user's start", () =>
-    Effect.gen(function* () {
-      const orchestrator = yield* Orchestrator.OrchestratorV2;
-      const projections = yield* ProjectionStore.ProjectionStoreV2;
-      const threadId = ThreadId.make("runtime-layer-retried-start-held");
-      const { send, runFor, end, awaitHeld } = yield* queueTestThread(threadId);
-      yield* send("active", "user", true);
-      yield* send("target", "user", false);
-      yield* send("other", "user", false);
-      yield* end("active", "failed");
-      yield* awaitHeld("other");
-      const retrying = yield* Deferred.make<void>();
-      const release = yield* Deferred.make<void>();
-      const canStartQueuedRun = projections.canStartQueuedRun;
-      let attempts = 0;
-      using _canStart = vi.spyOn(projections, "canStartQueuedRun").mockImplementation((id) => {
-        if (id !== threadId) return canStartQueuedRun(id);
-        attempts += 1;
-        return attempts === 1
-          ? Effect.die("projection store offline")
-          : Deferred.succeed(retrying, undefined).pipe(
-              Effect.andThen(Deferred.await(release)),
-              Effect.andThen(canStartQueuedRun(id)),
-            );
-      });
-      const target = yield* runFor("target");
-      yield* orchestrator.dispatch({
-        type: "queued-run.start",
-        commandId: CommandId.make(`${threadId}:send-now`),
-        threadId,
-        runId: target.id,
-      });
-      yield* Deferred.await(retrying);
-      // The user stops before the retry runs.
-      yield* projections.apply({
-        id: EventId.make(`${threadId}:target-held`),
-        type: "run.updated",
-        threadId,
-        runId: target.id,
-        occurredAt: yield* DateTime.now,
-        payload: { ...(yield* runFor("target")), queueHeld: true },
-      });
-      yield* Deferred.succeed(release, undefined);
-      // Waits on the thread lock the retry holds.
-      yield* orchestrator.dispatch({
-        type: "thread.visit",
-        commandId: CommandId.make(`${threadId}:visit`),
-        threadId,
-        visitedAt: "2026-09-07T00:00:00.000Z",
-      });
-      assert.deepInclude(yield* runFor("target"), { status: "queued", queueHeld: true });
-    }),
+  it.effect.each(["dies", "fails"] as const)(
+    "a retried Send now leaves a message held since the user's start when its read %s",
+    (retryRead) =>
+      Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const projections = yield* ProjectionStore.ProjectionStoreV2;
+        const threadId = ThreadId.make(`runtime-layer-retried-start-held-${retryRead}`);
+        const { send, runFor, end, awaitHeld } = yield* queueTestThread(threadId);
+        yield* send("active", "user", true);
+        yield* send("target", "user", false);
+        yield* send("other", "user", false);
+        yield* end("active", "failed");
+        yield* awaitHeld("other");
+        const retrying = yield* Deferred.make<void>();
+        const release = yield* Deferred.make<void>();
+        const canStartQueuedRun = projections.canStartQueuedRun;
+        let attempts = 0;
+        using _canStart = vi.spyOn(projections, "canStartQueuedRun").mockImplementation((id) => {
+          if (id !== threadId) return canStartQueuedRun(id);
+          attempts += 1;
+          return attempts === 1
+            ? Effect.die("projection store offline")
+            : Deferred.succeed(retrying, undefined).pipe(
+                Effect.andThen(Deferred.await(release)),
+                Effect.andThen(
+                  retryRead === "fails"
+                    ? Effect.fail(
+                        new ProjectionStore.ProjectionStoreReadError({
+                          threadId: id,
+                          cause: "projection store offline",
+                        }),
+                      )
+                    : canStartQueuedRun(id),
+                ),
+              );
+        });
+        const target = yield* runFor("target");
+        yield* orchestrator.dispatch({
+          type: "queued-run.start",
+          commandId: CommandId.make(`${threadId}:send-now`),
+          threadId,
+          runId: target.id,
+        });
+        yield* Deferred.await(retrying);
+        // The user stops before the retry runs.
+        yield* projections.apply({
+          id: EventId.make(`${threadId}:target-held`),
+          type: "run.updated",
+          threadId,
+          runId: target.id,
+          occurredAt: yield* DateTime.now,
+          payload: { ...(yield* runFor("target")), queueHeld: true },
+        });
+        yield* Deferred.succeed(release, undefined);
+        // Waits on the thread lock the retry holds.
+        yield* orchestrator.dispatch({
+          type: "thread.visit",
+          commandId: CommandId.make(`${threadId}:visit`),
+          threadId,
+          visitedAt: "2026-09-07T00:00:00.000Z",
+        });
+        assert.deepInclude(yield* runFor("target"), { status: "queued", queueHeld: true });
+      }),
   );
 
   it.effect("releases held agent messages once a later run completes, not the user's", () =>

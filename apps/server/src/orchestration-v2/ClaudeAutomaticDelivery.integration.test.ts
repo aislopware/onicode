@@ -1,7 +1,7 @@
 import type { SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { assert, it } from "@effect/vitest";
+import { assert, it, vi } from "@effect/vitest";
 import {
   ClaudeSettings,
   CommandId,
@@ -1118,6 +1118,8 @@ it.effect.each([
   "the Claude process exits",
   "the server restarts",
   "the user sends it now",
+  // Claude's read commits outside the thread lock, between Send now's plan and its commit.
+  "Claude reads it while the user sends it now",
   "Claude cancels it and the user stops",
   "a later steer lands before the run-end reaction",
   "a later client steer lands before the run-end reaction",
@@ -1953,6 +1955,59 @@ it.effect.each([
         yield* worker.drain();
         assert.deepEqual(late.storedEvents, []);
         assert.equal(offers.length, 3);
+        return;
+      }
+
+      if (outcome === "Claude reads it while the user sends it now") {
+        const sink = yield* EventSink.EventSinkV2;
+        const planned = yield* Deferred.make<void>();
+        const commit = yield* Deferred.make<void>();
+        const commitCommand = sink.commitCommand;
+        using _commit = vi
+          .spyOn(sink, "commitCommand")
+          .mockImplementation((input) =>
+            input.commandId === CommandId.make("send-now")
+              ? Deferred.succeed(planned, undefined).pipe(
+                  Effect.andThen(Deferred.await(commit)),
+                  Effect.andThen(commitCommand(input)),
+                )
+              : commitCommand(input),
+          );
+        const read = yield* watch(
+          (event) =>
+            event.type === "turn-item.updated" &&
+            event.payload.type === "user_message" &&
+            event.payload.messageId === steerId &&
+            event.payload.status === "completed",
+        );
+        const sending = yield* orchestrator
+          .dispatch({
+            type: "steer.send-now",
+            commandId: CommandId.make("send-now"),
+            threadId,
+            messageId: steerId,
+          })
+          .pipe(Effect.forkChild({ startImmediately: true }));
+        yield* Deferred.await(planned);
+        yield* Queue.offer(
+          sdkMessages,
+          frame({
+            type: "command_lifecycle",
+            command_uuid: offers[1]?.uuid,
+            state: "started",
+            uuid: "started-steer",
+            session_id: sessionId,
+          }),
+        );
+        yield* Fiber.join(read);
+        yield* Deferred.succeed(commit, undefined);
+        yield* Fiber.join(sending);
+        yield* worker.drain();
+        const item = (yield* orchestrator.getThreadProjection(threadId)).turnItems.find(
+          (candidate) => candidate.type === "user_message" && candidate.messageId === steerId,
+        );
+        assert.equal(item?.status, "completed");
+        assert.lengthOf(offers, 2);
         return;
       }
 
