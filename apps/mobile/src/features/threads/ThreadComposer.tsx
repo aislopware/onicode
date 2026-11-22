@@ -102,6 +102,7 @@ import { formatTokens } from "@onicode/shared/usageFormat";
 import { ComposerModelControl } from "../../components/ComposerModelControl";
 import {
   composerStripAttachments,
+  discardPastedImages,
   type DraftComposerFileAttachment,
 } from "../../lib/composerImages";
 import { composerAttachmentUploadKey } from "../../lib/composerAttachmentUploadQueue";
@@ -676,6 +677,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
     blocked: isSubmissionLocked || sendBlockedReason !== null,
     approvalIds: props.pendingApprovalIds,
     onPasteImages: onNativePasteImages,
+    discardImages: (uris) => void discardPastedImages(uris),
     // A queued edit's mode and model live on the thread's own draft.
     watchDraft: (onEdit) => watchComposerDraftEdits(composerDraftKey, composerOwnerKey, onEdit),
     flushInput: async () => inputRef.current?.flushPendingInput(),

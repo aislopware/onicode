@@ -1,10 +1,11 @@
-import { act, useLayoutEffect } from "react";
+import { act, StrictMode, useLayoutEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { ProviderInstanceId, RuntimeRequestId } from "@onicode/contracts";
 import type { ActiveTurnComposerAction } from "@onicode/client-runtime/state/composer-dispatch";
 import { expect, it, vi } from "vite-plus/test";
 import {
   abortComposerDraftOperations,
+  onNativeImagePastesSettled,
   startComposerDraftOperation,
   startNativeImagePaste,
 } from "../../state/composerDraftOperations";
@@ -21,6 +22,12 @@ const SHOWN: ComposerDraftSendSettings = {
 
 function setup() {
   let root = createRoot(document.createElement("div"));
+  const roots = [root];
+  // Unmounts the newest composer; the one beside it, if any, takes the harness's renders.
+  const unmountNewest = () => {
+    roots.pop()?.unmount();
+    root = roots.at(-1) ?? root;
+  };
   let queue: ReturnType<typeof useSubmitAfterNativeImages>;
   let converting = false;
   let generation = 0;
@@ -28,6 +35,8 @@ function setup() {
   let draftKey = "draft";
   let approvalIds: ReadonlyArray<RuntimeRequestId> = [];
   const onSubmit = vi.fn();
+  const discardImages = vi.fn();
+  let strict = false;
   let draftEdited = () => {};
   const unwatchDraft = vi.fn();
   const watchDraft = vi.fn((onEdit: () => void) => {
@@ -53,6 +62,7 @@ function setup() {
       blocked,
       approvalIds,
       onPasteImages,
+      discardImages,
       watchDraft,
       flushInput: () => flushing,
       onSubmit: (action, shownApprovalIds, settings) => {
@@ -66,7 +76,18 @@ function setup() {
     });
     return null;
   }
-  const render = () => act(() => root.render(<Probe />));
+  const render = () =>
+    act(() =>
+      root.render(
+        strict ? (
+          <StrictMode>
+            <Probe />
+          </StrictMode>
+        ) : (
+          <Probe />
+        ),
+      ),
+    );
   render();
   return {
     get queue() {
@@ -80,6 +101,7 @@ function setup() {
       return converting;
     },
     onSubmit,
+    discardImages,
     watchDraft,
     unwatchDraft,
     editDraft() {
@@ -125,13 +147,28 @@ function setup() {
     },
     /** Leaving the thread screen unmounts the composer. */
     unmount() {
-      act(() => root.unmount());
+      act(unmountNewest);
     },
-    /** Coming back mounts a new composer, on the same draft unless another thread is opened. */
-    remount(value = draftKey) {
+    /**
+     * Coming back mounts a new composer, on the same draft unless another thread is opened.
+     * Without an unmount first, it mounts beside the current one, as a Files route over a thread.
+     */
+    remount(value = draftKey, options: { strict?: boolean } = {}) {
       draftKey = value;
+      strict = options.strict ?? false;
       root = createRoot(document.createElement("div"));
+      roots.push(root);
       render();
+    },
+    /** The pastes settle, and the composer unmounts before React renders what that queued. */
+    async finishAndUnmount(success: boolean) {
+      await act(async () => {
+        const settled = Promise.withResolvers<void>();
+        using _settled = { [Symbol.dispose]: onNativeImagePastesSettled(() => settled.resolve()) };
+        preparations.shift()!(success);
+        await settled.promise;
+        unmountNewest();
+      });
     },
     async finish(success: boolean) {
       await act(async () => {
@@ -139,7 +176,9 @@ function setup() {
       });
     },
     [Symbol.dispose]() {
-      act(() => root.unmount());
+      act(() => {
+        while (roots.length > 0) unmountNewest();
+      });
     },
   };
 }
@@ -418,6 +457,62 @@ it("sends a send left while away from the composer that comes back, not the one 
   expect(state.onSubmit).toHaveBeenCalledTimes(2);
 });
 
+it("hands a left send to a composer still showing its draft", async () => {
+  using state = setup();
+  // A Files route's composer over the thread sends and leaves; the thread's composer takes over.
+  state.remount();
+  const paste = state.queue.pasteImages(["image"]);
+  await act(async () => void state.queue.deferSend());
+  state.unmount();
+  expect(state.queue.held).toEqual({ images: 1 });
+  await state.finish(true);
+  await paste;
+  expect(state.onSubmit).toHaveBeenCalledOnce();
+});
+
+it("keeps a send whose images land in the batch that unmounts its composer", async () => {
+  using state = setup();
+  const paste = state.queue.pasteImages(["image"]);
+  await act(async () => void state.queue.deferSend());
+  await state.finishAndUnmount(true);
+  await paste;
+  state.remount();
+  expect(state.onSubmit).toHaveBeenCalledOnce();
+});
+
+it("keeps the edit watch on an adopted send when Strict Mode replays its effects", async () => {
+  using state = setup();
+  state.setBlocked(true);
+  const paste = state.queue.pasteImages(["image"]);
+  await act(async () => void state.queue.deferSend());
+  await state.finish(true);
+  await paste;
+  state.unmount();
+  state.remount("draft", { strict: true });
+  expect(state.queue.held).toEqual({ images: 0 });
+  state.editDraft();
+  state.setBlocked(false);
+  expect(state.onSubmit).not.toHaveBeenCalled();
+});
+
+it("drops its own held send and takes the left one when a composer turns to that draft", async () => {
+  using state = setup();
+  const left = state.queue.pasteImages(["left"]);
+  await act(async () => void state.queue.deferSend());
+  state.unmount();
+  state.remount("other");
+  const other = state.queue.pasteImages(["other"]);
+  await act(async () => void state.queue.deferSend());
+  state.setDraftKey("draft");
+  expect(state.queue.held).toEqual({ images: 1 });
+  await state.finish(true);
+  await left;
+  expect(state.onSubmit).toHaveBeenCalledOnce();
+  await state.finish(true);
+  await other;
+  expect(state.onSubmit).toHaveBeenCalledOnce();
+});
+
 it("drops an iOS image read whose draft was discarded or left before it landed", async () => {
   using state = setup();
   let landRead: (uris: ReadonlyArray<string>) => void = () => {};
@@ -436,6 +531,19 @@ it("drops an iOS image read whose draft was discarded or left before it landed",
   state.setDraftKey("queued-edit");
   act(() => landRead(["image"]));
   expect(state.conversionsStarted).toBe(0);
+  expect(state.discardImages).toHaveBeenCalledTimes(2);
+
+  // Leaving during the read ends it with the editor, so the send has no image and is dropped.
+  state.setDraftKey("draft");
+  act(() => {
+    landRead = state.queue.readPastedImages(1);
+  });
+  act(() => void state.queue.deferSend());
+  state.unmount();
+  act(() => landRead([]));
+  state.remount();
+  expect(state.queue.held).toBeNull();
+  expect(state.onSubmit).not.toHaveBeenCalled();
   expect(state.onSubmit).not.toHaveBeenCalled();
 });
 

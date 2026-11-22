@@ -602,6 +602,19 @@ function isOwnedPastedImageUri(uri: string): boolean {
   }
 }
 
+/** Deletes pasted image files that will not be converted. */
+export async function discardPastedImages(uris: ReadonlyArray<string>): Promise<void> {
+  const { File } = await import("expo-file-system");
+  for (const uri of uris.filter(isOwnedPastedImageUri)) {
+    try {
+      const file = new File(uri);
+      if (file.exists) file.delete();
+    } catch (error) {
+      console.warn("Failed to remove temporary pasted image", uri, error);
+    }
+  }
+}
+
 /** Leave out existingCount when the draft store caps after its duplicate check. */
 export async function convertPastedImagesToAttachments(input: {
   readonly uris: ReadonlyArray<string>;
