@@ -1,6 +1,7 @@
 import { msg } from "gt-react";
 
 import { m } from "~/i18n/messages";
+import { readImageColorSpace } from "~/lib/imageCompression";
 
 /** Resolves web references without inheriting the desktop renderer's custom app scheme. */
 export function resolveProtocolRelativeMediaUrl(src: string): string {
@@ -118,7 +119,8 @@ export async function readMediaPng(src: string): Promise<Blob> {
     const canvas = document.createElement("canvas");
     canvas.width = width;
     canvas.height = height;
-    const context = canvas.getContext("2d");
+    // A default sRGB canvas clips wide-gamut colors; the PNG keeps the source's space and profile.
+    const context = canvas.getContext("2d", { colorSpace: await readImageColorSpace(blob) });
     if (!context) throw new Error(m(msg("Image copying is unavailable in this browser.")));
     context.drawImage(image, 0, 0);
     return await new Promise<Blob>((resolve, reject) => {

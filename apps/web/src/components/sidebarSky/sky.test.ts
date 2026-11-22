@@ -62,5 +62,17 @@ describe("sky", () => {
     expect(kindsBetween(new Date(2026, 1, 17, 0, 0), 0.2)).toContain("fireworks");
     expect(kindsBetween(new Date(2026, 8, 25, 19, 30), 1)).toContain("lanterns");
     expect(kindsBetween(new Date(2026, 8, 24, 19, 30), 1)).not.toContain("lanterns");
+
+    // Node re-resolves the default zone when TZ is assigned, like a renderer after the OS zone
+    // changes. 19:30 at UTC-12 is already the next day almost everywhere else.
+    const previous = process.env.TZ;
+    process.env.TZ = "Etc/GMT+12";
+    using _restore = {
+      [Symbol.dispose]: () => {
+        if (previous === undefined) delete process.env.TZ;
+        else process.env.TZ = previous;
+      },
+    };
+    expect(kindsBetween(new Date(2026, 8, 25, 19, 30), 1)).toContain("lanterns");
   });
 });

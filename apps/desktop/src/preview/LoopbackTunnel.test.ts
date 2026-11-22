@@ -187,16 +187,35 @@ const makeTunnel = (
     return { tunnel, login: login!, accessRequests };
   });
 
-/** Routes a stand-in session through the tunnel; returns its proxy port and Chromium's credentials. */
+/**
+ * Routes a stand-in session through the tunnel; returns its proxy port, Chromium's credentials,
+ * and the session's request filter.
+ */
 const routeThroughTunnel = (tunnelUrl: string | null) =>
   Effect.gen(function* () {
     const { tunnel, login } = yield* makeTunnel(tunnelUrl);
     let proxyRules = "";
+    let beforeRequest:
+      | {
+          readonly urls: ReadonlyArray<string>;
+          readonly listener: (
+            details: Electron.OnBeforeRequestListenerDetails,
+            callback: (response: Electron.CallbackResponse) => void,
+          ) => void;
+        }
+      | undefined;
     const session = {
       setProxy: async (config: Electron.ProxyConfig) => {
         proxyRules = config.proxyRules ?? "";
       },
-      webRequest: { onBeforeRequest: () => undefined },
+      webRequest: {
+        onBeforeRequest: (
+          filter: Electron.WebRequestFilter,
+          listener: NonNullable<typeof beforeRequest>["listener"],
+        ) => {
+          beforeRequest = { urls: filter.urls, listener };
+        },
+      },
     };
     yield* tunnel.route({
       environmentId: "remote",
@@ -209,7 +228,7 @@ const routeThroughTunnel = (tunnelUrl: string | null) =>
       host: "127.0.0.1",
       port: proxyPort,
     });
-    return { proxyPort, authorization: authorization!, login };
+    return { proxyPort, authorization: authorization!, login, beforeRequest: beforeRequest! };
   });
 
 /** Sends `request` to the proxy; resolves with the response head, or everything read until close. */
@@ -253,6 +272,8 @@ it.effect.each([
   { authority: "localhost.", host: "" },
   { authority: "[::1]", host: "&host=%3A%3A1" },
   { authority: "127.0.0.1", host: "&host=127.0.0.1" },
+  { authority: "[::ffff:127.0.0.1]", host: "&host=127.0.0.1" },
+  { authority: "[::ffff:7f00:1]", host: "&host=127.0.0.1" },
 ])(
   "carries a CONNECT to $authority over the tunnel WebSocket, not to local listeners",
   ({ authority, host }) =>
@@ -275,6 +296,28 @@ it.effect.each([
       ]);
       expect(decoy.connections()).toBe(0);
     }),
+);
+
+it.effect("keeps requests the proxy bypass would send to this machine in the tunnel", () =>
+  Effect.gen(function* () {
+    const { beforeRequest } = yield* routeThroughTunnel(null);
+    // Chromium canonicalizes `[::ffff:127.0.0.1]` to this form before matching filters.
+    expect(beforeRequest.urls).toContain("http://[::ffff:7f00:1]/*");
+    expect(beforeRequest.urls).toContain("ws://[::ffff:7f00:1]/*");
+    const answer = (url: string) => {
+      let response: Electron.CallbackResponse | undefined;
+      beforeRequest.listener({ url } as Electron.OnBeforeRequestListenerDetails, (value) => {
+        response = value;
+      });
+      return response;
+    };
+    expect(answer("http://[::ffff:7f00:1]:3200/app?q=1")).toEqual({
+      redirectURL: "http://127.0.0.1:3200/app?q=1",
+    });
+    expect(answer("http://0.0.0.0:3200/")).toEqual({ redirectURL: "http://localhost:3200/" });
+    expect(answer("http://[::ffff:0:0]:3200/")).toEqual({ redirectURL: "http://localhost:3200/" });
+    expect(answer("ws://[::ffff:7f00:1]:3200/hmr")).toEqual({ cancel: true });
+  }),
 );
 
 it.effect.each([

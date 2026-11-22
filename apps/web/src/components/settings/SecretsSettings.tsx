@@ -19,7 +19,7 @@ import {
 import { Button } from "../ui/button";
 import { SecretProviderDialog } from "./SecretProviderDialog";
 import { classifySecretProvider } from "./SecretProviderDialog.logic";
-import { secretProviderUses } from "./SecretsSettings.logic";
+import { secretProviderUses, secretsSettingsState } from "./SecretsSettings.logic";
 import {
   classifyProviderEnvironmentAccess,
   resolveRemoteOperateAccess,
@@ -38,12 +38,18 @@ const SECRET_PROVIDER_KINDS: Readonly<
 export function SecretsSettingsPanel() {
   const setting = useSearchableSetting();
   const { scope, environment } = useSettingsScope();
-  const connected = environment?.connection.phase === "connected";
+  const state = secretsSettingsState(environment);
   return (
     <SettingsPageContainer>
-      {connected &&
-      environment.serverConfig !== null &&
-      environment.serverConfig.secretProviderSettings !== true ? (
+      {environment && state === "disabled" ? (
+        <SettingsSection {...setting("secret-providers")}>
+          <p className="px-4 py-3 text-sm text-muted-foreground">
+            <T>
+              Secret providers are turned off on <Var>{environment.label}</Var>.
+            </T>
+          </p>
+        </SettingsSection>
+      ) : environment && state === "outdated" ? (
         <SettingsSection {...setting("secret-providers")}>
           <p className="px-4 py-3 text-sm text-muted-foreground">
             <T>
@@ -51,7 +57,7 @@ export function SecretsSettingsPanel() {
             </T>
           </p>
         </SettingsSection>
-      ) : connected ? (
+      ) : environment && state === "ready" ? (
         <EnvironmentSecretProviders
           key={environment.environmentId}
           environment={environment}

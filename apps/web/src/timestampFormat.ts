@@ -74,7 +74,7 @@ export const weekStartsOn = resolveWeekStartsOn(timestampLocale);
 
 // A formatter keeps the default zone it was built in, so default-zone formatters run in UTC
 // on the wall-clock time, which Date reads from the current zone.
-function wallClockAsUtc(date: Date): Date {
+export function wallClockAsUtc(date: Date): Date {
   return new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
 }
 

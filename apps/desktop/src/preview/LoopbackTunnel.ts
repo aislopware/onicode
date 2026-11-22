@@ -62,8 +62,15 @@ const CONNECT_ESTABLISHED = Buffer.from("HTTP/1.1 200 Connection Established\r\n
 
 const isLoopbackIp = (host: string) =>
   Result.match(NetAddress.ipFromString(host), {
-    onSuccess: NetAddress.isLoopback,
+    onSuccess: (ip) => NetAddress.isLoopback(NetAddress.toCanonical(ip)),
     onFailure: () => false,
+  });
+
+// The environment dials IPv4 loopback, so `::ffff:127.0.0.1` goes to it as `127.0.0.1`.
+const canonicalHost = (host: string) =>
+  Result.match(NetAddress.ipFromString(host), {
+    onSuccess: (ip) => NetAddress.formatIp(NetAddress.toCanonical(ip)),
+    onFailure: () => host,
   });
 
 // A fully qualified `localhost.` keeps its trailing dot.
@@ -72,20 +79,23 @@ export const isLoopbackName = (typed: string) => {
   return name === "localhost" || name.endsWith(".localhost") || isLoopbackIp(name);
 };
 
+// The bypass rules miss these hosts, so they would reach this machine. Patterns can't name a
+// range, so only ::ffff:127.0.0.1 is listed: other mapped 127/8 addresses fail on macOS, and on
+// Linux reach only wildcard listeners, which the page reaches through the LAN address anyway.
 // `*://` matches only http and https, so WebSocket schemes are listed separately.
-const UNSPECIFIED_ADDRESS_URLS = ["http", "https", "ws", "wss"].flatMap((scheme) => [
-  `${scheme}://0.0.0.0/*`,
-  `${scheme}://[::]/*`,
-]);
+const TUNNEL_ESCAPE_URLS = ["http", "https", "ws", "wss"].flatMap((scheme) =>
+  ["0.0.0.0", "[::]", "[::ffff:0:0]", "[::ffff:7f00:1]"].map((host) => `${scheme}://${host}/*`),
+);
 
-const sendUnspecifiedToLocalhost = (
+const keepInTunnel = (
   details: Electron.OnBeforeRequestListenerDetails,
   callback: (response: Electron.CallbackResponse) => void,
 ) => {
   const url = new URL(details.url);
   // A WebSocket handshake can't be redirected.
   if (url.protocol === "ws:" || url.protocol === "wss:") return callback({ cancel: true });
-  url.hostname = "localhost";
+  const unmapped = canonicalHost(url.hostname.replace(/^\[|\]$/g, ""));
+  url.hostname = isLoopbackIp(unmapped) ? unmapped : "localhost";
   callback({ redirectURL: url.toString() });
 };
 
@@ -166,7 +176,7 @@ const parseProxyRequest = (head: string, authorization: string): ProxyRequest =>
   const connect = method === "CONNECT";
   const url = URL.parse(connect ? `http://${target}` : target);
   if (url === null || url.protocol !== "http:") return { refusal: 400 };
-  const host = url.hostname.replace(/^\[|\]$/g, "");
+  const host = canonicalHost(url.hostname.replace(/^\[|\]$/g, ""));
   if (!isLoopbackName(host)) return { refusal: 403 };
   const port = Number(url.port || 80);
   if (connect) return { host, port, forwardHead: undefined, bodyLength: 0 };
@@ -870,11 +880,7 @@ const make = Effect.gen(function* () {
         }),
       catch: (cause) => new LoopbackTunnelRouteError({ environmentId, cause }),
     });
-    // The bypass rules don't cover the unspecified address, so it would reach this machine.
-    session.webRequest.onBeforeRequest(
-      { urls: UNSPECIFIED_ADDRESS_URLS },
-      sendUnspecifiedToLocalhost,
-    );
+    session.webRequest.onBeforeRequest({ urls: TUNNEL_ESCAPE_URLS }, keepInTunnel);
     routed.add(session);
   }, routing.withPermits(1));
 

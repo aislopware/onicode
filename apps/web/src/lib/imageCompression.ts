@@ -318,7 +318,7 @@ function webpIsDisplayP3(bytes: Uint8Array, view: DataView): boolean {
 }
 
 /** Re-encode on a canvas in the source's own color space, so it keeps its gamut and profile. */
-async function readImageColorSpace(file: Blob): Promise<PredefinedColorSpace> {
+export async function readImageColorSpace(file: Blob): Promise<PredefinedColorSpace> {
   const bytes = new Uint8Array(await file.slice(0, MAX_HEIC_METADATA_BYTES).arrayBuffer());
   if (bytes.length < 16) return "srgb";
   const view = new DataView(bytes.buffer);

@@ -5,6 +5,7 @@ import { msg } from "gt-react";
 import { resolveDesktopPairingUrl } from "./pairingUrls";
 import { getPairingTokenFromUrl } from "@onicode/shared/remote";
 import { m, type MessageResolver } from "../../i18n/messages";
+import { wallClockAsUtc } from "../../timestampFormat";
 import {
   type ServerClientSessionRecord,
   type ServerPairingLinkRecord,
@@ -178,6 +179,7 @@ export async function applyWslEnableSelection(input: {
 const accessTimestampFormatter = new Intl.DateTimeFormat(undefined, {
   dateStyle: "medium",
   timeStyle: "short",
+  timeZone: "UTC",
 });
 
 export function formatAccessTimestamp(value: string): string {
@@ -185,7 +187,7 @@ export function formatAccessTimestamp(value: string): string {
   if (Number.isNaN(parsed.getTime())) {
     return value;
   }
-  return accessTimestampFormatter.format(parsed);
+  return accessTimestampFormatter.format(wallClockAsUtc(parsed));
 }
 
 export function parseManualDesktopSshTarget(

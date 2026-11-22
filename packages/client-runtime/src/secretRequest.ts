@@ -1,4 +1,5 @@
 import { errorDisplayMessage } from "./errors/translatable.ts";
+import { hasFeatureFlag } from "./state/server.ts";
 import {
   SecretReference,
   secretRequestPageUrl,
@@ -209,13 +210,17 @@ const decodeConfigByKind = new Map(
   ]),
 );
 
-/** Empty unless the server accepts reference answers; providers this build cannot read are left out. */
+/**
+ * Empty unless the server has secret providers on and accepts reference answers; providers this
+ * build cannot read are left out.
+ */
 export function secretRequestSources(
-  config: Pick<ServerConfig, "secretRequestReferences"> | null | undefined,
+  config: Pick<ServerConfig, "featureFlags" | "secretRequestReferences"> | null | undefined,
   providers: ServerSettings["secretProviders"],
   resolve: MFunctionType = mFallback,
 ): ReadonlyArray<SecretRequestSource> {
-  if (config?.secretRequestReferences !== true) return NO_SOURCES;
+  if (!hasFeatureFlag(config, "secretProviders") || config?.secretRequestReferences !== true)
+    return NO_SOURCES;
   return configuredSecretSources(providers, resolve);
 }
 

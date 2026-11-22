@@ -57,10 +57,21 @@ const resolveEnvironmentPortTarget = (
   };
 };
 
+// `URL` writes `[::ffff:127.0.0.1]` as `[::ffff:7f00:1]`.
+const isMappedLoopback = (host: string): boolean => {
+  const mapped = /^::ffff:(.+)$/.exec(normalizeHostname(host))?.[1];
+  return (
+    mapped !== undefined &&
+    (/^7f[\da-f]{2}:[\da-f]{1,4}$/.test(mapped) ||
+      (mapped.includes(".") && isLocalLoopbackHost(mapped)))
+  );
+};
+
 /** Every name the desktop's preview tunnel treats as the environment's loopback. */
 export const namesLoopback = (host: string): boolean =>
   isLoopbackHost(host) ||
   isLocalLoopbackHost(host) ||
+  isMappedLoopback(host) ||
   normalizeHostname(host) === "::" ||
   normalizeHostname(host).endsWith(".localhost");
 

@@ -235,7 +235,9 @@ export function isLinkedThreadWorking(projection: OrchestrationV2ThreadProjectio
 /** How long a view waits before asking again for a thread whose environment did not answer. */
 export const LINKED_THREAD_RETRY_MS = 15_000;
 
-type HistoryAnchor = Pick<OrchestrationV2ProjectedTurnItem, "sourceThreadId" | "sourceItemId">;
+type HistoryAnchor = Pick<OrchestrationV2ProjectedTurnItem, "sourceThreadId" | "sourceItemId"> & {
+  readonly ordinal: number;
+};
 
 interface LinkedHistoryWindow {
   readonly sequence: number;
@@ -247,10 +249,23 @@ interface LinkedHistoryRequest {
   readonly cursor: string;
 }
 
-function includesHistoryAnchor(rows: ReadonlyArray<HistoryAnchor>, anchor: HistoryAnchor): boolean {
+const historyAnchor = (row: OrchestrationV2ProjectedTurnItem): HistoryAnchor => ({
+  sourceThreadId: row.sourceThreadId,
+  sourceItemId: row.sourceItemId,
+  ordinal: row.item.ordinal,
+});
+
+// A rewind elsewhere can remove the anchor itself; an older row of its source still marks the spot.
+// A fork marker names its parent as source with ordinal 0 but sits after the parent's rows.
+function reachesHistoryAnchor(
+  rows: ReadonlyArray<OrchestrationV2ProjectedTurnItem>,
+  anchor: HistoryAnchor,
+): boolean {
   return rows.some(
     (row) =>
-      row.sourceThreadId === anchor.sourceThreadId && row.sourceItemId === anchor.sourceItemId,
+      row.sourceThreadId === anchor.sourceThreadId &&
+      (row.sourceItemId === anchor.sourceItemId ||
+        (row.item.threadId === anchor.sourceThreadId && row.item.ordinal <= anchor.ordinal)),
   );
 }
 
@@ -350,14 +365,10 @@ export const followLinkedThread = <E, R, E2, R2>(source: {
             );
             loadedHistory = { ...loaded, window };
           } else if (window.sequence > kept.thread.sequence) {
-            const oldest = loaded.restoreThrough ?? kept.thread.projection.visibleTurnItems[0];
-            if (oldest && !includesHistoryAnchor(item.projection.visibleTurnItems, oldest)) {
-              const { sourceThreadId, sourceItemId } = oldest;
-              loadedHistory = {
-                window,
-                nextCursor: window.cursor,
-                restoreThrough: { sourceThreadId, sourceItemId },
-              };
+            const oldestRow = kept.thread.projection.visibleTurnItems[0];
+            const oldest = loaded.restoreThrough ?? (oldestRow && historyAnchor(oldestRow));
+            if (oldest && !reachesHistoryAnchor(item.projection.visibleTurnItems, oldest)) {
+              loadedHistory = { window, nextCursor: window.cursor, restoreThrough: oldest };
             }
           }
         }
@@ -443,7 +454,7 @@ export const followLinkedThread = <E, R, E2, R2>(source: {
           if (
             restoreThrough !== null &&
             (nextCursor === null ||
-              includesHistoryAnchor(thread.projection?.visibleTurnItems ?? [], restoreThrough))
+              reachesHistoryAnchor(thread.projection?.visibleTurnItems ?? [], restoreThrough))
           ) {
             restoreThrough = null;
           }
