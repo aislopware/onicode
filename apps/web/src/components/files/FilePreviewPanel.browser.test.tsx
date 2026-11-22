@@ -638,27 +638,47 @@ describe("source file scroll", () => {
 });
 
 describe("rendered Markdown task saves", () => {
-  it.each([
-    { read: "a truncated read", truncated: true, contents: undefined, shows: "Keep the rest" },
-    {
-      // Task offsets would point past the cut, into the wrong place in the file.
-      read: "a read with a line cut short",
-      truncated: false,
-      contents: `${"a".repeat(12_000)}\n\n- [ ] Keep the rest of this file\n`,
-      shows: `${"a".repeat(10_000)}… 2,000 more characters`,
-    },
-  ])("keeps $read read-only without queuing a replacement", async (row) => {
+  it("renders the whole file of a truncated read, read-only", async () => {
     using _settings = setup();
-    await using screen = await render(markdownPreview(row.truncated, row.contents));
-    using _timers = fakeTimers();
-    expect(screen.container.textContent).toContain(row.shows);
+    state.assetUrl = {
+      _tag: "Success",
+      url: "/assets/tasks.md",
+      expiresAt: Number.MAX_SAFE_INTEGER,
+    };
+    const realFetch = globalThis.fetch;
+    using _fetch = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation((input, init) =>
+        new URL(String(input), location.href).pathname === "/assets/tasks.md"
+          ? Promise.resolve(
+              new Response("- [ ] Keep the rest of this file\n\nPast the first megabyte\n"),
+            )
+          : realFetch(input, init),
+      );
+    await using screen = await render(markdownPreview(true));
+    await expect.element(screen.getByText("Past the first megabyte")).toBeVisible();
     const checkbox = screen.container.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
-    expect(checkbox).not.toBeNull();
     expect(checkbox.disabled).toBe(true);
-    expect(checkbox.readOnly).toBe(true);
     await act(async () => checkbox.click());
-    await vi.advanceTimersByTimeAsync(500);
-    expect(checkbox.checked).toBe(false);
+    expect(state.optimistic).toBeNull();
+    expect(state.writeFile).not.toHaveBeenCalled();
+  });
+
+  it("keeps a read with a line cut short read-only without queuing a replacement", async () => {
+    using _settings = setup();
+    // Task offsets would point past the cut, into the wrong place in the file.
+    await using screen = await render(
+      markdownPreview(false, `${"a".repeat(12_000)}\n\n- [ ] Keep the rest of this file\n`),
+    );
+    await vi.waitFor(() =>
+      expect(screen.container.textContent).toContain(
+        `${"a".repeat(10_000)}… 2,000 more characters`,
+      ),
+    );
+    using _timers = fakeTimers();
+    const checkbox = screen.container.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+    expect(checkbox.disabled).toBe(true);
+    await act(async () => checkbox.click());
     expect(state.optimistic).toBeNull();
     expect(state.writeFile).not.toHaveBeenCalled();
   });
@@ -666,6 +686,8 @@ describe("rendered Markdown task saves", () => {
   it("still toggles and saves tasks from a complete read", async () => {
     using _settings = setup();
     await using screen = await render(markdownPreview(false));
+    // The virtualized list mounts its pieces after measuring the viewport.
+    await expect.element(screen.getByRole("checkbox")).toBeInTheDocument();
     using _timers = fakeTimers();
     const checkbox = screen.container.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
     expect(checkbox).not.toBeNull();

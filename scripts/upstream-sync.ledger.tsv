@@ -3308,3 +3308,4 @@ dd19bce823	take	fix(server): a dropped dictation client frees the speech engine 
 7103527dcc	take	fix(web): PR description file links resolve in the PR's repository from a No-project thread
 44979a5875	take	MCP schedule edit sends requireExisting; Onicode's expectedThreadId guard already blocked the resurrection, test now covers it
 a09738fb43	take	adapted: kept Onicode's ClaudeInstalledBuild restart (#96; any idle turn, managed launcher, wakeups); dropped upstream's adapter + ClaudeExecutable helpers; ported the link-repoint install case as ClaudeInstalledBuild.test.ts
+fb4558d77d	take	kept Onicode's long-line cap and task-toggle gate in FileMarkdownPreview (now per chunk) and its 'Copy keeps every column' notice; kept Onicode's line-cut test beside upstream's full-file test
