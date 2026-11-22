@@ -638,6 +638,15 @@ Redact secrets before uploading.`);
         ["referenced", "acme/web#50"],
         ["closed", null],
       ]);
+      // A cross-reference keeps what a surface needs to open its source, not only a label.
+      expect(issue.events.find((event) => event.kind === "referenced")).toMatchObject({
+        reference: {
+          repository: "acme/web",
+          number: 50,
+          kind: "pull-request",
+          url: "https://github.com/acme/web/pull/50",
+        },
+      });
 
       // A hover card's read is one request with no conversation and no page walks.
       seen.length = 0;
