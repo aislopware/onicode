@@ -1478,7 +1478,15 @@ describe("large text preview recovery", () => {
         [...screen.container.querySelectorAll<HTMLElement>("[data-preview-row]")].find(
           (row) => row.getBoundingClientRect().bottom > viewport().getBoundingClientRect().top + 1,
         )!;
-      await vi.waitFor(() => expect(visibleRow()).toBeDefined());
+      // Long rows render empty until the probe has measured them, and their heights move the rows.
+      await vi.waitFor(() => {
+        expect(visibleRow()).toBeDefined();
+        for (const cell of screen.container.querySelectorAll(
+          "[data-preview-row] > div:last-child",
+        )) {
+          expect(cell.textContent).not.toBe("");
+        }
+      });
       const before = visibleRow().dataset.previewRow;
       const offset =
         visibleRow().getBoundingClientRect().top - viewport().getBoundingClientRect().top;
