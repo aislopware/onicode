@@ -825,6 +825,9 @@ it("a file picked after the phone composer collapses still attaches", async () =
     'form[data-chat-composer-form] input[type="file"]',
   );
   expect(input).not.toBeNull();
+  using openPicker = vi.spyOn(input!, "click").mockImplementation(() => {});
+  await userEvent.click(page.getByRole("button", { name: "Attach files" }));
+  expect(openPicker).toHaveBeenCalledOnce();
 
   // Opening the native picker blurs the editor, which collapses the phone composer. A blur in
   // the frames right after expanding is ignored, so blur again until it collapses.

@@ -963,7 +963,8 @@ export type OrchestratorMcpEnvironmentUnlinkInput =
 export const OrchestratorMcpEnvironmentUnlinkResult = Schema.Struct({
   environmentId: EnvironmentId,
   removed: Schema.Boolean,
-  endedThere: Schema.Boolean,
+  // Older servers never ask the peer to end the session.
+  endedThere: Schema.optionalKey(Schema.Boolean),
 });
 export type OrchestratorMcpEnvironmentUnlinkResult =
   typeof OrchestratorMcpEnvironmentUnlinkResult.Type;

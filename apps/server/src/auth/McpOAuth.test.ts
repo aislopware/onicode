@@ -315,6 +315,17 @@ it.live("signs in with a pairing code and issues a token only /mcp accepts", () 
       const revoked = yield* handler(at("/oauth/mcp/revoke", form({ token: token.access_token })));
       expect(revoked.status).toBe(200);
       yield* auth.authenticateMcpClient(bearer(token.access_token)).pipe(Effect.flip);
+
+      // The thread CLI's own token ends its session the same way.
+      const cli = yield* auth.issueMcpClientSession({
+        label: "Thread CLI",
+        access: "approval-required",
+        purpose: "thread-cli",
+        client: { deviceType: "bot" },
+      });
+      yield* auth.authenticateMcpClient(bearer(cli.token));
+      yield* handler(at("/oauth/mcp/revoke", form({ token: cli.token })));
+      yield* auth.authenticateMcpClient(bearer(cli.token)).pipe(Effect.flip);
     }),
   ),
 );
