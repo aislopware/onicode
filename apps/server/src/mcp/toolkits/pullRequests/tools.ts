@@ -16,6 +16,7 @@ import {
   PullRequestReviewGuideRun,
   PullRequestState,
   PullRequestUnavailableError,
+  PullRequestVisibility,
   PullRequestWatchUntil,
   ThreadPullRequestLinkSource,
   TrimmedNonEmptyString,
@@ -517,6 +518,9 @@ export const ReadPullRequestResult = Schema.Struct({
   }),
   state: Schema.optional(PullRequestState),
   isDraft: Schema.optional(Schema.Boolean),
+  visibility: Schema.optional(PullRequestVisibility).annotate({
+    description: "Only on a host with private PRs.",
+  }),
   author: Schema.optional(Schema.NullOr(Schema.String)),
   headBranch: Schema.optional(Schema.String),
   baseBranch: Schema.optional(Schema.String),
@@ -681,6 +685,10 @@ const CreatePullRequestTool = Tool.make("pull_request_create", {
     body: Schema.String,
     base: Schema.optional(TrimmedNonEmptyString),
     draft: Schema.optional(Schema.Boolean),
+    private: Schema.optional(Schema.Boolean).annotate({
+      description:
+        "Visible to writers only; the branch never reaches origin. Fails on a host without private PRs.",
+    }),
   }),
   success: CreatePullRequestResult,
   failure: PullRequestToolError,
