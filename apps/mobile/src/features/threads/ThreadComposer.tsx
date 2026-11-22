@@ -122,7 +122,10 @@ import {
   resolveComposerSendPresentation,
   type ComposerSendPresentation,
 } from "./composerSendPresentation";
-import { useSubmitAfterNativeImages } from "./useSubmitAfterNativeImages";
+import {
+  useNativeImagesConverting,
+  useSubmitAfterNativeImages,
+} from "./useSubmitAfterNativeImages";
 import { ComposerHeldSendBanner } from "./ComposerHeldSend";
 import { ComposerCommandPopover } from "./ComposerCommandPopover";
 import { ComposerPopoverAnchor } from "./ComposerPopoverAnchor";
@@ -346,9 +349,11 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
   } = useComposerDraft(composerDraftKey);
   const recallingPrompt = useComposerPromptRecallActive(composerDraftKey, draftMessage);
   const queuedEdit = props.queuedEdit ?? null;
+  const imagesConverting = useNativeImagesConverting(composerDraftKey);
   const hasContent =
     draftMessage.trim().length > 0 ||
     draftAttachments.length > 0 ||
+    imagesConverting ||
     (queuedEdit?.existingAttachments.length ?? 0) > 0;
   const showStopAction = !hasContent && props.canStopThread && queuedEdit === null;
   const onResumeQueue = props.onResumeQueue;
@@ -1040,6 +1045,9 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
                     if (isSubmissionLocked) return;
                     void nativeImageSubmit.pasteImages(uris);
                   }}
+                  onPasteImagesRead={(images) =>
+                    isSubmissionLocked ? undefined : nativeImageSubmit.readPastedImages(images)
+                  }
                   onPasteText={(paste) => {
                     if (isSubmissionLocked) return;
                     const insertPaste = () => {

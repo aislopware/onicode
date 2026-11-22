@@ -444,14 +444,20 @@ describe("ChatMarkdown link tooltips", () => {
 describe("ChatMarkdown details", () => {
   it("opens collapsed details by click, and by keyboard without losing focus", async () => {
     setup();
-    await using screen = await render(
+    await using screen = await render(<div style={{ height: 160 }} />);
+    // The pointer rests where the first summary will appear, so it never moves onto it.
+    await userEvent.hover(screen.container.firstElementChild!, { position: { x: 24, y: 24 } });
+    await screen.rerender(
       <ChatMarkdown
         cwd="/tmp/project"
         text={
-          "<details><summary>First</summary>\n\nHidden one\n\n</details>\n\n<details><summary>Second</summary>\n\nHidden two\n\n</details>"
+          "<details><summary>Still</summary>\n\nHidden still\n\n</details>\n\n<details><summary>First</summary>\n\nHidden one\n\n</details>\n\n<details><summary>Second</summary>\n\nHidden two\n\n</details>"
         }
       />,
     );
+    await expect.element(screen.getByRole("button", { name: "Still" })).toBeInTheDocument();
+    await commands.pressPointer();
+    await expect.element(screen.getByText("Hidden still")).toBeVisible();
     await userEvent.click(screen.getByRole("button", { name: "First" }));
     await expect.element(screen.getByText("Hidden one")).toBeVisible();
     await userEvent.tab();

@@ -41,7 +41,8 @@ import {
 } from "~/components/chat/preparingComposerImages";
 import { selectThreadDiffPanelSelection, useDiffPanelStore } from "~/diffPanelStore";
 import { __setClientSettingsForTests } from "~/hooks/useSettings";
-import stylesheet from "~/index.css?inline";
+// Without the app styles the composer overlay sits in flow, so its height loops the timeline.
+import "~/index.css";
 import { environmentContextRecord } from "~/lib/composerContextRecords";
 import { startWorkspaceFocus } from "~/lib/workspaceFocus";
 import { usePromptStashStore } from "~/promptStashStore";
@@ -173,10 +174,6 @@ vi.mock(import("~/rpc/requestLatencyState"), async (original) => ({
 it.each([{ issueSummaries: false }, { issueSummaries: true }])(
   "opens a linked Linear issue from an inactive thread's sidebar badge (summaries: $issueSummaries)",
   async ({ issueSummaries }) => {
-    const style = document.createElement("style");
-    style.textContent = stylesheet;
-    document.head.append(style);
-    using _style = { [Symbol.dispose]: () => style.remove() };
     const first = threadWithHistory("issue-first", 1);
     const linked = threadWithHistory("issue-linked", 1);
     const issueRef = {
@@ -364,10 +361,6 @@ it.each([{ issueSummaries: false }, { issueSummaries: true }])(
 );
 
 it("reads only the linked issues a thread shows", async () => {
-  const style = document.createElement("style");
-  style.textContent = stylesheet;
-  document.head.append(style);
-  using _style = { [Symbol.dispose]: () => style.remove() };
   const many = threadWithHistory("issue-many", 1);
   const few = threadWithHistory("issue-few", 1);
   const issueLinks = (count: number) =>

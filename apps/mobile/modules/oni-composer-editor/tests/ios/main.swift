@@ -263,9 +263,15 @@ private final class ImmediateImageProvider: NSItemProvider {
 private let pasteEditor = ComposerTextView()
 private let pasteProvider = ImmediateImageProvider(image: image)
 private var pastedImages: [[String]] = []
+private var imageReads: [(id: Int, images: Int)] = []
 pasteEditor.text = "Keep this draft"
-pasteEditor.onPasteImages = { pastedImages.append($0) }
+pasteEditor.onImageReadStart = { imageReads.append((id: $0, images: $1)) }
+pasteEditor.onImageReadEnd = { readId, urls in
+  check(imageReads.map { $0.id } == [readId], "An image read must end with the id it started with")
+  pastedImages.append(urls)
+}
 pasteEditor.paste(itemProviders: [pasteProvider])
+check(imageReads.count == 1 && imageReads[0].images == 1, "An image read must start before its provider loads")
 
 for readOnly in [true, false] {
   let lockedEditor = ComposerTextView()
@@ -299,7 +305,7 @@ gifProvider.registerDataRepresentation(forTypeIdentifier: UTType.gif.identifier,
   return nil
 }
 private let gifEditor = ComposerTextView()
-gifEditor.onPasteImages = { urls in
+gifEditor.onImageReadEnd = { _, urls in
   let files = urls.compactMap(URL.init(string:))
   let contents = files.compactMap { try? Data(contentsOf: $0) }
   files.forEach { try? FileManager.default.removeItem(at: $0) }

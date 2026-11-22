@@ -9,7 +9,10 @@ import {
   startNativeImagePaste,
 } from "../../state/composerDraftOperations";
 import type { ComposerDraftSendSettings } from "../../state/use-composer-drafts";
-import { useSubmitAfterNativeImages } from "./useSubmitAfterNativeImages";
+import {
+  useNativeImagesConverting,
+  useSubmitAfterNativeImages,
+} from "./useSubmitAfterNativeImages";
 
 const SHOWN: ComposerDraftSendSettings = {
   runtimeMode: "full-access",
@@ -17,8 +20,9 @@ const SHOWN: ComposerDraftSendSettings = {
 };
 
 function setup() {
-  const root = createRoot(document.createElement("div"));
+  let root = createRoot(document.createElement("div"));
   let queue: ReturnType<typeof useSubmitAfterNativeImages>;
+  let converting = false;
   let generation = 0;
   let blocked = false;
   let draftKey = "draft";
@@ -53,8 +57,10 @@ function setup() {
         if (!blocked) onSubmit(action, shownApprovalIds, settings);
       },
     });
+    const currentConverting = useNativeImagesConverting(draftKey);
     useLayoutEffect(() => {
       queue = current;
+      converting = currentConverting;
     });
     return null;
   }
@@ -67,6 +73,9 @@ function setup() {
         deferSend: (followUp?: ActiveTurnComposerAction, settings = SHOWN) =>
           queue!.deferSend(followUp, settings),
       };
+    },
+    get converting() {
+      return converting;
     },
     onSubmit,
     watchDraft,
@@ -106,6 +115,15 @@ function setup() {
     },
     setApprovalIds(value: ReadonlyArray<string>) {
       approvalIds = value.map((id) => RuntimeRequestId.make(id));
+      render();
+    },
+    /** Leaving the thread screen unmounts the composer. */
+    unmount() {
+      act(() => root.unmount());
+    },
+    /** Coming back mounts a new composer on the same draft. */
+    remount() {
+      root = createRoot(document.createElement("div"));
       render();
     },
     async finish(success: boolean) {
@@ -317,4 +335,75 @@ it("drops a send whose paste was aborted, even if a later paste lands", async ()
   await state.finish(true);
   await later;
   expect(state.onSubmit).not.toHaveBeenCalled();
+});
+
+it("keeps a held send after the composer unmounts, shows it on return, and drops it on an edit", async () => {
+  using state = setup();
+  state.setApprovalIds(["seen"]);
+  const paste = state.queue.pasteImages(["image"]);
+  const settings = { ...SHOWN, runtimeMode: "approval-required" as const };
+  await act(async () => void state.queue.deferSend("steer", settings));
+  state.unmount();
+  state.remount();
+  expect(state.queue.held).toEqual({ images: 1 });
+  await state.finish(true);
+  await paste;
+  expect(state.onSubmit).toHaveBeenCalledExactlyOnceWith("steer", ["seen"], settings);
+  expect(state.queue.held).toBeNull();
+
+  const edited = state.queue.pasteImages(["edited"]);
+  await act(async () => void state.queue.deferSend());
+  state.unmount();
+  state.editDraft();
+  state.remount();
+  expect(state.queue.held).toBeNull();
+  await state.finish(true);
+  await edited;
+
+  const cancelled = state.queue.pasteImages(["cancelled"]);
+  await act(async () => void state.queue.deferSend());
+  state.unmount();
+  state.remount();
+  act(() => state.queue.cancel());
+  expect(state.queue.held).toBeNull();
+  await state.finish(true);
+  await cancelled;
+  expect(state.onSubmit).toHaveBeenCalledOnce();
+});
+
+it("holds a send from the start of an iOS pasteboard read until its image lands", async () => {
+  using state = setup();
+  let landRead: (uris: ReadonlyArray<string>) => void = () => {};
+  act(() => {
+    landRead = state.queue.readPastedImages(1);
+  });
+  act(() => void state.queue.deferSend());
+  expect(state.queue.held).toEqual({ images: 1 });
+  act(() => landRead(["image"]));
+  expect(state.queue.held).toEqual({ images: 1 });
+  await state.finish(true);
+  expect(state.onSubmit).toHaveBeenCalledOnce();
+
+  // A read that found no image drops the send rather than sending without it.
+  act(() => {
+    landRead = state.queue.readPastedImages(1);
+  });
+  act(() => void state.queue.deferSend());
+  act(() => landRead([]));
+  expect(state.queue.held).toBeNull();
+  expect(state.onSubmit).toHaveBeenCalledOnce();
+});
+
+it("counts an image as content to send from its read until it joins the draft", async () => {
+  using state = setup();
+  expect(state.converting).toBe(false);
+  let landRead: (uris: ReadonlyArray<string>) => void = () => {};
+  act(() => {
+    landRead = state.queue.readPastedImages(1);
+  });
+  expect(state.converting).toBe(true);
+  act(() => landRead(["image"]));
+  expect(state.converting).toBe(true);
+  await state.finish(true);
+  expect(state.converting).toBe(false);
 });

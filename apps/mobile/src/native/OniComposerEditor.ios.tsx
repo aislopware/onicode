@@ -62,6 +62,13 @@ type NativeSelectionEvent = NativeSyntheticEvent<{
 
 type NativePasteImagesEvent = NativeSyntheticEvent<{
   readonly uris: ReadonlyArray<string>;
+  /** Set when the files end a read that `onComposerImageReadStart` announced. */
+  readonly readId?: number;
+}>;
+
+type NativeImageReadStartEvent = NativeSyntheticEvent<{
+  readonly readId: number;
+  readonly images: number;
 }>;
 
 type NativePasteTextEvent = NativeSyntheticEvent<{
@@ -107,6 +114,7 @@ interface NativeComposerEditorProps extends ViewProps {
   readonly onComposerChange: (event: NativeEditorEvent) => void;
   readonly onComposerSelectionChange?: (event: NativeSelectionEvent) => void;
   readonly onComposerPasteImages?: (event: NativePasteImagesEvent) => void;
+  readonly onComposerImageReadStart?: (event: NativeImageReadStartEvent) => void;
   readonly onComposerContextPress?: (
     event: NativeSyntheticEvent<{ source: string; start: number; end: number }>,
   ) => void;
@@ -152,6 +160,7 @@ export function ComposerEditor({
   onChangeText,
   onSelectionChange,
   onPasteImages,
+  onPasteImagesRead,
   onPasteText,
   onFocus,
   onBlur,
@@ -352,6 +361,15 @@ export function ComposerEditor({
       return true;
     },
   }));
+  const imageReads = useRef(new Map<number, (uris: ReadonlyArray<string>) => void>());
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- ends image reads whose files can no longer reach JS once the native view unmounts
+  useEffect(() => {
+    const reads = imageReads.current;
+    return () => {
+      for (const land of reads.values()) land([]);
+      reads.clear();
+    };
+  }, []);
   const themeJson = JSON.stringify(createNativeComposerTheme(theme));
   const resolvedTextStyle = StyleSheet.flatten(textStyle) ?? {};
   return (
@@ -399,7 +417,17 @@ export function ComposerEditor({
         setMostRecentEventCount(acknowledgedEventCount);
         forceNativeEventRender((sequence) => sequence + 1);
       }}
-      onComposerPasteImages={(event) => onPasteImages?.(event.nativeEvent.uris)}
+      onComposerImageReadStart={(event) => {
+        const land = onPasteImagesRead?.(event.nativeEvent.images);
+        if (land) imageReads.current.set(event.nativeEvent.readId, land);
+      }}
+      onComposerPasteImages={(event) => {
+        const { uris, readId } = event.nativeEvent;
+        const land = readId === undefined ? undefined : imageReads.current.get(readId);
+        if (readId !== undefined) imageReads.current.delete(readId);
+        if (land) land(uris);
+        else if (uris.length > 0) onPasteImages?.(uris);
+      }}
       onComposerContextPress={(event) => props.onContextPress?.(event.nativeEvent)}
       onComposerPasteContext={(event) => {
         const paste = event.nativeEvent;

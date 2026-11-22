@@ -110,6 +110,11 @@ const browserTestProject = {
         resetPointer: async ({ page }) => {
           await page.mouse.move(-1, -1);
         },
+        // userEvent.click moves the mouse first; this presses wherever it already is.
+        pressPointer: async ({ page }) => {
+          await page.mouse.down();
+          await page.mouse.up();
+        },
       },
     },
   },

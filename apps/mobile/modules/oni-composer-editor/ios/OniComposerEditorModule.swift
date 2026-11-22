@@ -121,6 +121,7 @@ public class OniComposerEditorModule: Module {
         "onComposerSubmit",
         "onComposerRecallPrompt",
         "onComposerPasteImages",
+        "onComposerImageReadStart",
         "onComposerContextPress",
         "onComposerPasteContext",
         "onComposerPasteText",

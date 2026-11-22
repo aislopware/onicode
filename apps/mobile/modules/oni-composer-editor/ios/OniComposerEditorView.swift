@@ -86,6 +86,11 @@ private final class ComposerTextView: UITextView {
   ])
 
   var onPasteImages: (([String]) -> Void)?
+  /// Loading an image can outlast a tap on Send, so JS holds the send from the start of a read.
+  var onImageReadStart: ((Int, Int) -> Void)?
+  /// Ends every read that started, with no files when none loaded.
+  var onImageReadEnd: ((Int, [String]) -> Void)?
+  private var lastImageReadId = 0
   var onPasteContext: (([String: String]) -> Void)?
   var onPasteText: ((String, NSRange) -> Void)?
   var clipboardFragment = ""
@@ -356,6 +361,9 @@ private final class ComposerTextView: UITextView {
   }
 
   func loadImages(from providers: [NSItemProvider]) {
+    lastImageReadId += 1
+    let readId = lastImageReadId
+    onImageReadStart?(readId, providers.count)
     let group = DispatchGroup()
     let lock = NSLock()
     var images = [(data: Data, fileExtension: String)?](repeating: nil, count: providers.count)
@@ -384,15 +392,13 @@ private final class ComposerTextView: UITextView {
     }
 
     group.notify(queue: .main) { [weak self] in
-      guard let self, !self.isReadOnly else {
+      guard let self else {
         return
       }
-      let urls = images.compactMap { $0 }.compactMap {
+      let urls: [String] = self.isReadOnly ? [] : images.compactMap { $0 }.compactMap {
         Self.writeTemporaryImage($0.data, fileExtension: $0.fileExtension)
       }
-      if !urls.isEmpty {
-        self.onPasteImages?(urls)
-      }
+      self.onImageReadEnd?(readId, urls)
     }
   }
 
@@ -556,6 +562,7 @@ public final class OniComposerEditorView: ExpoView, UITextViewDelegate, UITextDr
   let onComposerSubmit = EventDispatcher()
   let onComposerRecallPrompt = EventDispatcher()
   let onComposerPasteImages = EventDispatcher()
+  let onComposerImageReadStart = EventDispatcher()
   let onComposerContextPress = EventDispatcher()
   let onComposerPasteContext = EventDispatcher()
   let onComposerPasteText = EventDispatcher()
@@ -585,6 +592,12 @@ public final class OniComposerEditorView: ExpoView, UITextViewDelegate, UITextDr
     }
     textView.onPasteImages = { [weak self] urls in
       self?.onComposerPasteImages(["uris": urls])
+    }
+    textView.onImageReadStart = { [weak self] readId, images in
+      self?.onComposerImageReadStart(["readId": readId, "images": images])
+    }
+    textView.onImageReadEnd = { [weak self] readId, urls in
+      self?.onComposerPasteImages(["uris": urls, "readId": readId])
     }
     textView.onPasteContext = { [weak self] context in
       guard let self else { return }

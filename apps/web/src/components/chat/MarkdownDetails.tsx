@@ -54,11 +54,18 @@ export function MarkdownDetails({
             className="flex w-full cursor-pointer items-center gap-2 py-2 text-start text-sm font-medium text-foreground [&:dir(rtl)_svg]:rotate-180"
             data-slot="collapsible-trigger"
             data-markdown-details-summary=""
-            // Synchronously, so the pointer's next events reach Base UI's trigger.
-            onPointerEnter={() => flushSync(() => setArmed("hover"))}
-            onFocus={() => flushSync(() => setArmed("focus"))}
-            onClick={() => {
-              setArmed("hover");
+            // Synchronously, so the pointer's next events reach Base UI's trigger. A press that
+            // enters or focuses the button must keep it, though: swapping it drops the click.
+            onPointerEnter={(event) => {
+              if (event.buttons === 0) flushSync(() => setArmed("hover"));
+            }}
+            onFocus={(event) => {
+              if (event.currentTarget.matches(":focus-visible")) flushSync(() => setArmed("focus"));
+            }}
+            onClick={(event) => {
+              const focused =
+                event.currentTarget === event.currentTarget.ownerDocument.activeElement;
+              setArmed(focused ? "focus" : "hover");
               setIsOpen(true);
             }}
           >

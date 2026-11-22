@@ -57,16 +57,23 @@ export function nativeImagePasteKey(draftKey: string): string {
 // send from the draft shown now; one that can still land in it must.
 const nativeImagePastes = new Map<string, { pending: number; failed: boolean }>();
 const nativeImagePasteListeners = new Set<(pasteKey: string, failed: boolean) => void>();
+const nativeImagePasteChangeListeners = new Set<() => void>();
+const notifyNativeImagePastesChanged = () => {
+  for (const changed of nativeImagePasteChangeListeners) changed();
+};
 const settleNativeImagePaste = (pasteKey: string, failed: boolean) => {
+  notifyNativeImagePastesChanged();
   for (const settled of nativeImagePasteListeners) settled(pasteKey, failed);
 };
 
 /** Images converting into a draft, a closed question's included, that a send waits for. */
 export function startNativeImagePaste(draftKey: string, images = 1): (success: boolean) => void {
   const key = nativeImagePasteKey(draftKey);
-  const paste = nativeImagePastes.get(key) ?? { pending: 0, failed: false };
+  const existing = nativeImagePastes.get(key);
+  const paste = existing ?? { pending: 0, failed: false };
   nativeImagePastes.set(key, paste);
   paste.pending += images;
+  if (existing === undefined) notifyNativeImagePastesChanged();
   return (success) => {
     if (!success) paste.failed = true;
     paste.pending -= images;
@@ -90,5 +97,13 @@ export function onNativeImagePastesSettled(
   nativeImagePasteListeners.add(listener);
   return () => {
     nativeImagePasteListeners.delete(listener);
+  };
+}
+
+/** Calls back when a draft starts or stops having images converting into it. */
+export function onNativeImagePastesChanged(listener: () => void): () => void {
+  nativeImagePasteChangeListeners.add(listener);
+  return () => {
+    nativeImagePasteChangeListeners.delete(listener);
   };
 }

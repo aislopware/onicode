@@ -12,6 +12,7 @@ export function ComposerEditor({
   skills: _skills,
   selection,
   onPasteImages,
+  onPasteImagesRead: _onPasteImagesRead,
   onPasteText: _onPasteText,
   style,
   textStyle,
