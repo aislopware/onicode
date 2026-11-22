@@ -30,9 +30,14 @@ import {
 } from "@onicode/contracts";
 
 import * as GitManager from "./GitManager.ts";
+import * as SharedCheckoutGuard from "./sharedCheckoutGuard.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
-import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
+import {
+  withCheckoutSwitchReservation,
+  withCheckoutSwitchReservationOrElse,
+  withWorkspaceLease,
+} from "../workspace/workspaceLease.ts";
 
 export class GitWorkflowService extends Context.Service<
   GitWorkflowService,
@@ -194,12 +199,94 @@ export const make = Effect.gen(function* () {
   const registry = yield* VcsDriverRegistry.VcsDriverRegistry;
   const git = yield* GitVcsDriver.GitVcsDriver;
   const gitManager = yield* GitManager.GitManager;
+  const checkoutGuard = yield* SharedCheckoutGuard.SharedCheckoutGuard;
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
 
   // Nested projects and path aliases must share the checkout's branch-mutation lease.
   const withCheckoutLease = <A, E, R>(rootPath: string, effect: Effect.Effect<A, E, R>) =>
     withWorkspaceLease(fileSystem, path, rootPath, effect);
+
+  const headRef = (cwd: string) =>
+    git
+      .execute({
+        operation: "GitWorkflowService.headRef",
+        cwd,
+        args: ["symbolic-ref", "--quiet", "HEAD"],
+        allowNonZeroExit: true,
+        timeoutMs: 5_000,
+      })
+      .pipe(
+        Effect.map((result) => (result.exitCode === 0 ? result.stdout.replace(/\n$/, "") : null)),
+        Effect.orElseSucceed(() => null),
+      );
+
+  // Turn starts in the checkout wait on the reservation, so none can start between the
+  // check and the checkout.
+  const switchingCheckout = <A, E, R>(
+    input: { readonly operation: string; readonly cwd: string; readonly rootPath: string },
+    effect: Effect.Effect<A, E, R>,
+  ) =>
+    withCheckoutSwitchReservation(
+      fileSystem,
+      path,
+      input.rootPath,
+      withCheckoutLease(
+        input.rootPath,
+        checkoutGuard
+          .assertIdle({ operation: input.operation, cwd: input.cwd, root: input.rootPath })
+          .pipe(Effect.andThen(effect)),
+      ),
+    );
+
+  const busyCheckout = (operation: string, cwd: string, detail: string) =>
+    new GitCommandError({ operation, command: "git checkout", cwd, detail });
+
+  // A step of a longer Git action that holds `leasedRoot`'s lease reserves only for itself,
+  // and without waiting: waiting would deadlock with a restore, which reserves before leasing.
+  // Without a lease held, the step takes both as a ref switch does.
+  const guardCheckoutMove =
+    (operation: string, options: { readonly leasedRoot?: string }): GitManager.CheckoutMoveGuard =>
+    (checkout, effect) => {
+      const leasedRoot = options.leasedRoot;
+      if (leasedRoot === undefined) {
+        return registry.detect({ cwd: checkout }).pipe(
+          Effect.map((handle) => handle?.repository.rootPath ?? checkout),
+          Effect.orElseSucceed(() => checkout),
+          Effect.flatMap((rootPath) =>
+            switchingCheckout({ operation, cwd: checkout, rootPath }, effect),
+          ),
+        );
+      }
+      const idle = checkoutGuard.assertIdle({ operation, cwd: checkout, root: leasedRoot });
+      return withCheckoutSwitchReservationOrElse(
+        fileSystem,
+        path,
+        leasedRoot,
+        idle.pipe(Effect.andThen(effect)),
+        (held) =>
+          held === "checkout-switch"
+            ? Effect.fail(
+                busyCheckout(
+                  operation,
+                  checkout,
+                  "Another branch change is in progress in this checkout. Try again when it finishes.",
+                ),
+              )
+            : // A turn starting or a restore; the guard names a run it can already see.
+              idle.pipe(
+                Effect.andThen(
+                  Effect.fail(
+                    busyCheckout(
+                      operation,
+                      checkout,
+                      "A thread is starting or restoring files in this checkout. Wait for it to finish, or use a worktree for a separate branch.",
+                    ),
+                  ),
+                ),
+              ),
+      );
+    };
 
   const ensureGit = Effect.fn("GitWorkflowService.ensureGit")(function* (
     operation: string,
@@ -423,9 +510,28 @@ export const make = Effect.gen(function* () {
     runStackedAction: Effect.fn("GitWorkflowService.runStackedAction")(function (input, options) {
       return ensureGit("GitWorkflowService.runStackedAction", input.cwd).pipe(
         Effect.flatMap((handle) =>
+          // A feature branch is refused before its name is generated, and again when it is made.
           withCheckoutLease(
             handle.repository.rootPath,
-            gitManager.runStackedAction(input, options),
+            input.featureBranch
+              ? checkoutGuard
+                  .assertIdle({
+                    operation: "GitWorkflowService.runStackedAction",
+                    cwd: input.cwd,
+                    root: handle.repository.rootPath,
+                  })
+                  .pipe(
+                    Effect.andThen(
+                      gitManager.runStackedAction(input, {
+                        ...options,
+                        guardCheckoutMove: guardCheckoutMove(
+                          "GitWorkflowService.runStackedAction",
+                          { leasedRoot: handle.repository.rootPath },
+                        ),
+                      }),
+                    ),
+                  )
+              : gitManager.runStackedAction(input, options),
           ),
         ),
       );
@@ -439,11 +545,20 @@ export const make = Effect.gen(function* () {
         return ensureGit("GitWorkflowService.preparePullRequestThread", input.cwd).pipe(
           Effect.flatMap((handle) =>
             input.mode === "local"
-              ? withCheckoutLease(
-                  handle.repository.rootPath,
+              ? switchingCheckout(
+                  {
+                    operation: "GitWorkflowService.preparePullRequestThread",
+                    cwd: input.cwd,
+                    rootPath: handle.repository.rootPath,
+                  },
                   gitManager.preparePullRequestThread(input),
                 )
-              : gitManager.preparePullRequestThread(input),
+              : gitManager.preparePullRequestThread(input, {
+                  guardCheckoutMove: guardCheckoutMove(
+                    "GitWorkflowService.preparePullRequestThread",
+                    {},
+                  ),
+                }),
           ),
         );
       },
@@ -534,7 +649,14 @@ export const make = Effect.gen(function* () {
       return ensureGitCommand("GitWorkflowService.createRef", input.cwd).pipe(
         Effect.flatMap((handle) =>
           input.switchRef
-            ? withCheckoutLease(handle.repository.rootPath, git.createRef(input))
+            ? switchingCheckout(
+                {
+                  operation: "GitWorkflowService.createRef",
+                  cwd: input.cwd,
+                  rootPath: handle.repository.rootPath,
+                },
+                git.createRef(input),
+              )
             : git.createRef(input),
         ),
       );
@@ -542,7 +664,27 @@ export const make = Effect.gen(function* () {
     switchRef: Effect.fn("GitWorkflowService.switchRef")(function (input) {
       return ensureGitCommand("GitWorkflowService.switchRef", input.cwd).pipe(
         Effect.flatMap((handle) =>
-          withCheckoutLease(handle.repository.rootPath, Effect.scoped(git.switchRef(input))),
+          withCheckoutSwitchReservation(
+            fileSystem,
+            path,
+            handle.repository.rootPath,
+            withCheckoutLease(
+              handle.repository.rootPath,
+              Effect.gen(function* () {
+                // Checking out the current branch again moves nothing, so it is neither
+                // guarded nor run, and its post-checkout hook stays quiet.
+                if ((yield* headRef(input.cwd)) === `refs/heads/${input.refName}`) {
+                  return { refName: input.refName };
+                }
+                yield* checkoutGuard.assertIdle({
+                  operation: "GitWorkflowService.switchRef",
+                  cwd: input.cwd,
+                  root: handle.repository.rootPath,
+                });
+                return yield* Effect.scoped(git.switchRef(input));
+              }),
+            ),
+          ),
         ),
       );
     }),

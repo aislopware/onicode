@@ -8323,11 +8323,15 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
           const memoryShell = ProjectionStore.threadShellFromProjection(
             yield* projectionStore.getThreadProjection(threadId),
           );
+          const blocksCheckout = (yield* projectionStore.listThreadsWithActiveRun()).some(
+            (thread) => thread.id === threadId,
+          );
           return [sqlShell, memoryShell].map((shell) => ({
             latestRunId: shell?.latestRunId ?? null,
             activityRunStatus: shell?.activityRunStatus ?? null,
             activeRunId: shell?.activeRunId ?? null,
             latestUserMessageAt: shell?.latestUserMessageAt != null,
+            blocksCheckout,
           }));
         });
         const visible = {
@@ -8335,12 +8339,14 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
           activityRunStatus: "running" as const,
           activeRunId: runId,
           latestUserMessageAt: true,
+          blocksCheckout: true,
         };
         const hidden = {
           latestRunId: null,
           activityRunStatus: null,
           activeRunId: null,
           latestUserMessageAt: false,
+          blocksCheckout: false,
         };
         assert.deepStrictEqual(yield* presented, [
           silent ? hidden : visible,
@@ -8419,6 +8425,89 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
           [visible, visible].map((shell) =>
             silent ? { ...shell, latestUserMessageAt: false } : shell,
           ),
+        );
+      }),
+  );
+
+  const newWorktree = { type: "worktree", baseRef: "main" } as const;
+  it.effect.each([
+    ["preparing a new worktree", "preparing", newWorktree, {}, false],
+    ["setting up its recorded worktree", "preparing", newWorktree, { worktree: true }, true],
+    ["started in its new worktree", "starting", newWorktree, { worktree: true }, true],
+    ["preparing in the project root", "preparing", { type: "root" }, {}, true],
+    ["running in an archived thread", "running", { type: "root" }, { archived: true }, true],
+    ["running in a deleted thread", "running", { type: "root" }, { deleted: true }, false],
+  ] as const)(
+    "lists a thread %s among those working in their checkout",
+    ([name, status, workspacePreparation, thread, listed]) =>
+      Effect.gen(function* () {
+        const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
+        const now = yield* DateTime.now;
+        const key = name.replaceAll(/\W+/g, "-");
+        const threadId = ThreadId.make(`thread:projection-checkout-run:${key}`);
+        const runId = RunId.make(`run:projection-checkout-run:${key}`);
+        yield* projectionStore.apply({
+          id: EventId.make(`event:projection-checkout-run:${key}:thread`),
+          type: "thread.created",
+          threadId,
+          occurredAt: now,
+          payload: {
+            createdBy: "user",
+            creationSource: "web",
+            id: threadId,
+            projectId: ProjectId.make("project:projection-checkout-run"),
+            title: "New worktree",
+            providerInstanceId,
+            modelSelection,
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            branch: null,
+            worktreePath: "worktree" in thread ? `/worktrees/${key}` : null,
+            activeProviderThreadId: null,
+            lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: threadId },
+            forkedFrom: null,
+            createdAt: now,
+            updatedAt: now,
+            archivedAt: "archived" in thread ? now : null,
+            settledOverride: null,
+            settledAt: null,
+            lastVisitedAt: null,
+            deletedAt: "deleted" in thread ? now : null,
+          },
+        });
+        yield* projectionStore.apply({
+          id: EventId.make(`event:projection-checkout-run:${key}:run`),
+          type: "run.created",
+          threadId,
+          runId,
+          nodeId: NodeId.make(`node:projection-checkout-run:${key}`),
+          driver,
+          occurredAt: now,
+          payload: {
+            id: runId,
+            threadId,
+            ordinal: 1,
+            providerInstanceId,
+            modelSelection,
+            providerThreadId: null,
+            userMessageId: MessageId.make(`message:projection-checkout-run:${key}`),
+            rootNodeId: null,
+            activeAttemptId: null,
+            status,
+            requestedAt: now,
+            startedAt: null,
+            completedAt: null,
+            checkpointId: null,
+            contextHandoffId: null,
+            workspacePreparation,
+          },
+        });
+
+        assert.strictEqual(
+          (yield* projectionStore.listThreadsWithActiveRun()).some(
+            (thread) => thread.id === threadId,
+          ),
+          listed,
         );
       }),
   );

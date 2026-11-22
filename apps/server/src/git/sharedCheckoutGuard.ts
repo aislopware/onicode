@@ -1,33 +1,14 @@
-import {
-  GitCommandError,
-  type OrchestrationV2ThreadShell,
-  type ProjectId,
-} from "@onicode/contracts";
+import { GitCommandError, type ProjectId } from "@onicode/contracts";
+import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Layer from "effect/Layer";
+import * as Path from "effect/Path";
 
-import * as GitWorkflowService from "./GitWorkflowService.ts";
-import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
-import * as ProjectService from "../project/ProjectService.ts";
-
-type CheckoutThread = Pick<
-  OrchestrationV2ThreadShell,
-  "id" | "title" | "projectId" | "worktreePath" | "activityRunStatus"
->;
-
-/** Threads with an active run whose working directory is one of `checkoutPaths`. */
-export function busyThreadsInCheckout<T extends CheckoutThread>(input: {
-  readonly checkoutPaths: ReadonlyArray<string>;
-  readonly projectIds: ReadonlySet<ProjectId>;
-  readonly threads: ReadonlyArray<T>;
-}): ReadonlyArray<T> {
-  return input.threads.filter(
-    (thread) =>
-      (thread.activityRunStatus ?? null) !== null &&
-      (thread.worktreePath === null
-        ? input.projectIds.has(thread.projectId)
-        : input.checkoutPaths.includes(thread.worktreePath)),
-  );
-}
+import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
+import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
+import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
+import { canonicalize, contains } from "../workspace/workspaceLease.ts";
 
 function describeBusyCheckout(titles: ReadonlyArray<string>): string {
   const quoted = titles.map((title) => `'${title}'`);
@@ -39,63 +20,105 @@ function describeBusyCheckout(titles: ReadonlyArray<string>): string {
 }
 
 /** Switching a shared checkout's ref moves every thread working in it, mid-turn included. */
-export const assertCheckoutIdle = Effect.fn("sharedCheckoutGuard.assertCheckoutIdle")(function* (
-  operation: string,
-  cwd: string,
-) {
-  const gitWorkflow = yield* GitWorkflowService.GitWorkflowService;
-  const projectService = yield* ProjectService.ProjectService;
-  const threadManagement = yield* ThreadManagementService.ThreadManagementService;
-  // `git checkout` from a subdirectory moves the whole checkout; records may hold either spelling.
-  const root = yield* gitWorkflow.repositoryRoot(cwd).pipe(Effect.orElseSucceed(() => null));
-  const checkoutPaths = [...new Set([cwd, ...(root === null ? [] : [root])])];
-  const projects = yield* projectService.snapshot.pipe(
-    Effect.map((snapshot) => snapshot.projects),
-    Effect.orElseSucceed(() => []),
-  );
-  // A project rooted inside the checkout shares it, as in a monorepo package, unless it is its
-  // own repository nested there.
-  const nested = yield* Effect.forEach(
-    projects.filter(
-      ({ workspaceRoot }) =>
-        root !== null &&
-        !checkoutPaths.includes(workspaceRoot) &&
-        workspaceRoot.startsWith(`${root}/`),
-    ),
-    (project) =>
-      gitWorkflow.repositoryRoot(project.workspaceRoot).pipe(
-        Effect.map((projectRoot) => (projectRoot === root ? [project] : [])),
-        Effect.orElseSucceed(() => []),
+export class SharedCheckoutGuard extends Context.Service<
+  SharedCheckoutGuard,
+  {
+    /** Fails while a thread with a run in progress works in the checkout at `root`. */
+    readonly assertIdle: (input: {
+      readonly operation: string;
+      readonly cwd: string;
+      readonly root: string;
+    }) => Effect.Effect<void, GitCommandError>;
+  }
+>()("onicode/git/sharedCheckoutGuard") {}
+
+const make = Effect.gen(function* () {
+  const projections = yield* ProjectionStore.ProjectionStoreV2;
+  const projects = yield* ProjectStore.ProjectStoreV2;
+  const registry = yield* VcsDriverRegistry.VcsDriverRegistry;
+  const fileSystem = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+
+  const repositoryRoot = (cwd: string) =>
+    registry
+      .detect({ cwd })
+      .pipe(
+        Effect.flatMap((handle) =>
+          handle?.kind === "git"
+            ? canonicalize(fileSystem, path, handle.repository.rootPath)
+            : Effect.succeed(null),
+        ),
+      );
+
+  const assertIdle: SharedCheckoutGuard["Service"]["assertIdle"] = Effect.fn(
+    "SharedCheckoutGuard.assertIdle",
+  )(function* ({ operation, cwd, root }) {
+    const unverified = (cause: unknown) =>
+      new GitCommandError({
+        operation,
+        command: "git checkout",
+        cwd,
+        detail: "Could not check whether a thread is working in this checkout.",
+        cause,
+      });
+    const threads = yield* projections.listThreadsWithActiveRun().pipe(Effect.mapError(unverified));
+    if (threads.length === 0) return;
+    const localProjectIds = [
+      ...new Set(
+        threads.flatMap((thread) => (thread.worktreePath === null ? [thread.projectId] : [])),
       ),
-    { concurrency: "unbounded" },
-  );
-  const projectIds = new Set(
-    [
-      ...projects.filter(({ workspaceRoot }) => checkoutPaths.includes(workspaceRoot)),
-      ...nested.flat(),
-    ].map(({ id }) => id),
-  );
-  // Archiving does not stop a run, so archived threads can still be working. Each lookup fails
-  // open on its own, so one failure keeps what the others found.
-  const snapshots = yield* Effect.forEach(
-    [
-      ...checkoutPaths.map((worktreePath) => threadManagement.getShellSnapshot({ worktreePath })),
-      ...[...projectIds].map((projectId) => threadManagement.getShellSnapshot({ projectId })),
-    ],
-    (snapshot) => snapshot.pipe(Effect.orElseSucceed(() => ({ threads: [], archivedThreads: [] }))),
-    { concurrency: "unbounded" },
-  );
-  const busy = busyThreadsInCheckout({
-    checkoutPaths,
-    projectIds,
-    threads: snapshots.flatMap((snapshot) => [...snapshot.threads, ...snapshot.archivedThreads]),
+    ];
+    const projectRoots = new Map<ProjectId, string>(
+      localProjectIds.length === 0
+        ? []
+        : (yield* projects
+            .list({ projectIds: localProjectIds, includeDeleted: true })
+            .pipe(Effect.mapError(unverified))).map((project) => [
+            project.projectId,
+            project.workspaceRoot,
+          ]),
+    );
+    const checkout = yield* canonicalize(fileSystem, path, root);
+    // An unreadable repository counts as this one: the switch must not pass on a guess.
+    const sameRepository = (folder: string) =>
+      repositoryRoot(folder).pipe(
+        Effect.map(
+          (folderRoot) => folderRoot === null || path.relative(folderRoot, checkout) === "",
+        ),
+        Effect.orElseSucceed(() => true),
+      );
+    const busy = yield* Effect.filter(
+      threads,
+      (thread) =>
+        Effect.gen(function* () {
+          const own = thread.worktreePath ?? projectRoots.get(thread.projectId);
+          if (own === undefined) return false;
+          const folder = yield* canonicalize(fileSystem, path, path.resolve(own));
+          // A project in a subdirectory shares the checkout, unless it is a repository of its own.
+          if (contains(path, checkout, folder)) {
+            return path.relative(checkout, folder) === "" || (yield* sameRepository(folder));
+          }
+          // A task folder or a folder of repositories reaches the checkouts inside it.
+          return (
+            contains(path, folder, checkout) &&
+            (yield* repositoryRoot(folder).pipe(
+              Effect.map((folderRoot) => folderRoot === null),
+              Effect.orElseSucceed(() => true),
+            ))
+          );
+        }),
+      { concurrency: "unbounded" },
+    );
+    if (busy.length === 0) return;
+    return yield* new GitCommandError({
+      operation,
+      command: "git checkout",
+      cwd,
+      detail: describeBusyCheckout(busy.map((thread) => thread.title)),
+    });
   });
-  const titles = [...new Map(busy.map((thread) => [thread.id, thread.title])).values()];
-  if (titles.length === 0) return;
-  return yield* new GitCommandError({
-    operation,
-    command: "git checkout",
-    cwd,
-    detail: describeBusyCheckout(titles),
-  });
+
+  return SharedCheckoutGuard.of({ assertIdle });
 });
+
+export const layer = Layer.effect(SharedCheckoutGuard, make);

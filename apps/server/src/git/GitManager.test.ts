@@ -56,6 +56,7 @@ import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import * as VcsProjectConfig from "../vcs/VcsProjectConfig.ts";
 import * as GitWorkflowService from "./GitWorkflowService.ts";
+import * as SharedCheckoutGuard from "./sharedCheckoutGuard.ts";
 import type {
   SourceControlProvider,
   SourceControlRefSelector,
@@ -829,6 +830,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
             Layer.provide(
               GitWorkflowService.layer.pipe(
                 Layer.provide(Layer.succeed(GitManager.GitManager, manager)),
+                Layer.provide(Layer.mock(SharedCheckoutGuard.SharedCheckoutGuard)({})),
                 Layer.provide(
                   VcsDriverRegistry.layer.pipe(
                     Layer.provide(VcsProjectConfig.layer),
@@ -4240,6 +4242,42 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
     }),
   );
 
+  it.effect("makes no feature branch when the checkout move is refused", () =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("onicode-git-manager-");
+      yield* initRepo(repoDir);
+      NodeFS.writeFileSync(NodePath.join(repoDir, "README.md"), "hello\nrefused\n");
+      const headBefore = (yield* runGit(repoDir, ["rev-parse", "HEAD"])).stdout.trim();
+
+      const { manager } = yield* makeManager({
+        textGeneration: {
+          generateCommitMessage: () =>
+            Effect.succeed({ subject: "Refused", body: "", branch: "feature/refused" }),
+        },
+      });
+      const error = yield* runStackedAction(
+        manager,
+        { cwd: repoDir, action: "commit", featureBranch: true },
+        {
+          guardCheckoutMove: (checkout) =>
+            Effect.fail(
+              new GitCommandError({
+                operation: "test",
+                command: "git checkout",
+                cwd: checkout,
+                detail: "busy",
+              }),
+            ),
+        },
+      ).pipe(Effect.flip);
+
+      expect(error).toMatchObject({ _tag: "GitCommandError", detail: "busy" });
+      expect((yield* runGit(repoDir, ["branch", "--list"])).stdout.trim()).toBe("* main");
+      expect((yield* runGit(repoDir, ["rev-parse", "HEAD"])).stdout.trim()).toBe(headBefore);
+      expect((yield* runGit(repoDir, ["status", "--porcelain"])).stdout.trim()).toBe("M README.md");
+    }),
+  );
+
   it.effect(
     "pushes and creates PR from a no-upstream branch when local commits are ahead of base",
     () =>
@@ -6288,6 +6326,9 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         const events: string[] = [];
         const workflows = yield* Effect.forEach([0, 1], () =>
           GitWorkflowService.make.pipe(
+            Effect.provideService(SharedCheckoutGuard.SharedCheckoutGuard, {
+              assertIdle: () => Effect.void,
+            }),
             // Cache the real filesystem result so startImmediately reaches lease acquisition.
             Effect.provideService(FileSystem.FileSystem, {
               ...fileSystem,
@@ -7006,59 +7047,80 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       ),
   );
 
-  it.effect("refreshes a reused PR worktree onto the updated pull request head", () =>
-    Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("onicode-git-manager-");
-      yield* initRepo(repoDir);
-      const remoteDir = yield* createBareRemote();
-      yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
-      yield* runGit(repoDir, ["push", "-u", "origin", "main"]);
-      yield* runGit(repoDir, ["checkout", "-b", "feature/pr-reused-stale"]);
-      NodeFS.writeFileSync(NodePath.join(repoDir, "stale.txt"), "stale\n");
-      yield* runGit(repoDir, ["add", "stale.txt"]);
-      yield* runGit(repoDir, ["commit", "-m", "Reused stale PR branch"]);
-      yield* runGit(repoDir, ["push", "-u", "origin", "feature/pr-reused-stale"]);
-      yield* runGit(repoDir, ["checkout", "main"]);
-      const worktreePath = NodePath.join(
-        repoDir,
-        "..",
-        `pr-reused-stale-${NodePath.basename(repoDir)}`,
-      );
-      yield* runGit(repoDir, ["worktree", "add", worktreePath, "feature/pr-reused-stale"]);
+  it.effect.each([false, true])(
+    "refreshes a reused PR worktree onto the updated pull request head unless a thread works there (busy: %s)",
+    (busy) =>
+      Effect.gen(function* () {
+        const repoDir = yield* makeTempDir("onicode-git-manager-");
+        yield* initRepo(repoDir);
+        const remoteDir = yield* createBareRemote();
+        yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
+        yield* runGit(repoDir, ["push", "-u", "origin", "main"]);
+        yield* runGit(repoDir, ["checkout", "-b", "feature/pr-reused-stale"]);
+        NodeFS.writeFileSync(NodePath.join(repoDir, "stale.txt"), "stale\n");
+        yield* runGit(repoDir, ["add", "stale.txt"]);
+        yield* runGit(repoDir, ["commit", "-m", "Reused stale PR branch"]);
+        yield* runGit(repoDir, ["push", "-u", "origin", "feature/pr-reused-stale"]);
+        yield* runGit(repoDir, ["checkout", "main"]);
+        const worktreePath = NodePath.join(
+          repoDir,
+          "..",
+          `pr-reused-stale-${NodePath.basename(repoDir)}`,
+        );
+        yield* runGit(repoDir, ["worktree", "add", worktreePath, "feature/pr-reused-stale"]);
 
-      yield* runGit(repoDir, ["checkout", "-b", "author-push", "origin/feature/pr-reused-stale"]);
-      NodeFS.writeFileSync(NodePath.join(repoDir, "authored.txt"), "authored\n");
-      yield* runGit(repoDir, ["add", "authored.txt"]);
-      yield* runGit(repoDir, ["commit", "-m", "New PR head commit"]);
-      yield* runGit(repoDir, ["push", "origin", "author-push:feature/pr-reused-stale"]);
-      const updatedHead = (yield* runGit(repoDir, ["rev-parse", "author-push"])).stdout.trim();
-      yield* runGit(repoDir, ["checkout", "main"]);
+        yield* runGit(repoDir, ["checkout", "-b", "author-push", "origin/feature/pr-reused-stale"]);
+        NodeFS.writeFileSync(NodePath.join(repoDir, "authored.txt"), "authored\n");
+        yield* runGit(repoDir, ["add", "authored.txt"]);
+        yield* runGit(repoDir, ["commit", "-m", "New PR head commit"]);
+        yield* runGit(repoDir, ["push", "origin", "author-push:feature/pr-reused-stale"]);
+        const updatedHead = (yield* runGit(repoDir, ["rev-parse", "author-push"])).stdout.trim();
+        yield* runGit(repoDir, ["checkout", "main"]);
 
-      const { manager } = yield* makeManager({
-        providerScenario: {
-          pullRequest: {
-            number: 84,
-            title: "Reused stale PR",
-            url: "https://github.com/aislopware/sample-app/pull/84",
-            baseRefName: "main",
-            headRefName: "feature/pr-reused-stale",
-            state: "open",
+        const { manager } = yield* makeManager({
+          providerScenario: {
+            pullRequest: {
+              number: 84,
+              title: "Reused stale PR",
+              url: "https://github.com/aislopware/sample-app/pull/84",
+              baseRefName: "main",
+              headRefName: "feature/pr-reused-stale",
+              state: "open",
+            },
           },
-        },
-      });
+        });
 
-      const result = yield* preparePullRequestThread(manager, {
-        cwd: repoDir,
-        reference: "84",
-        mode: "worktree",
-      });
+        const staleHead = (yield* runGit(worktreePath, ["rev-parse", "HEAD"])).stdout.trim();
+        const guarded: Array<string> = [];
+        const result = yield* manager.preparePullRequestThread(
+          { cwd: repoDir, reference: "84", mode: "worktree" },
+          {
+            guardCheckoutMove: (checkout, effect) => {
+              guarded.push(NodeFS.realpathSync.native(checkout));
+              return busy
+                ? Effect.fail(
+                    new GitCommandError({
+                      operation: "test",
+                      command: "git checkout",
+                      cwd: checkout,
+                      detail: "busy",
+                    }),
+                  )
+                : effect;
+            },
+          },
+        );
 
-      expect(result.worktreePath && NodeFS.realpathSync.native(result.worktreePath)).toBe(
-        NodeFS.realpathSync.native(worktreePath),
-      );
-      expect(result.branch).toBe("feature/pr-reused-stale");
-      expect((yield* runGit(worktreePath, ["rev-parse", "HEAD"])).stdout.trim()).toBe(updatedHead);
-    }),
+        expect(result.worktreePath && NodeFS.realpathSync.native(result.worktreePath)).toBe(
+          NodeFS.realpathSync.native(worktreePath),
+        );
+        expect(result.branch).toBe("feature/pr-reused-stale");
+        expect(guarded).toEqual([NodeFS.realpathSync.native(worktreePath)]);
+        expect(result.isOnPullRequestHead).toBe(!busy);
+        expect((yield* runGit(worktreePath, ["rev-parse", "HEAD"])).stdout.trim()).toBe(
+          busy ? staleHead : updatedHead,
+        );
+      }),
   );
 
   it.effect("resets a clean reused PR worktree onto a force-pushed pull request head", () =>
@@ -7700,36 +7762,41 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
     }),
   );
 
-  it.effect("rejects worktree prep when the PR head branch is checked out in the main repo", () =>
-    Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("onicode-git-manager-");
-      yield* initRepo(repoDir);
-      yield* runGit(repoDir, ["checkout", "-b", "feature/pr-root-only"]);
+  it.effect.each(["the repository root", "a project in a subdirectory"])(
+    "rejects worktree prep from %s when the PR head branch is checked out in the main repo",
+    (from) =>
+      Effect.gen(function* () {
+        const repoDir = yield* makeTempDir("onicode-git-manager-");
+        yield* initRepo(repoDir);
+        yield* runGit(repoDir, ["checkout", "-b", "feature/pr-root-only"]);
+        const cwd =
+          from === "the repository root" ? repoDir : NodePath.join(repoDir, "packages", "app");
+        NodeFS.mkdirSync(cwd, { recursive: true });
 
-      const { manager } = yield* makeManager({
-        providerScenario: {
-          pullRequest: {
-            number: 79,
-            title: "Root-only PR",
-            url: "https://github.com/aislopware/sample-app/pull/79",
-            baseRefName: "main",
-            headRefName: "feature/pr-root-only",
-            state: "open",
+        const { manager } = yield* makeManager({
+          providerScenario: {
+            pullRequest: {
+              number: 79,
+              title: "Root-only PR",
+              url: "https://github.com/aislopware/sample-app/pull/79",
+              baseRefName: "main",
+              headRefName: "feature/pr-root-only",
+              state: "open",
+            },
           },
-        },
-      });
+        });
 
-      const errorMessage = yield* preparePullRequestThread(manager, {
-        cwd: repoDir,
-        reference: "79",
-        mode: "worktree",
-      }).pipe(
-        Effect.flip,
-        Effect.map((error) => error.message),
-      );
+        const errorMessage = yield* preparePullRequestThread(manager, {
+          cwd,
+          reference: "79",
+          mode: "worktree",
+        }).pipe(
+          Effect.flip,
+          Effect.map((error) => error.message),
+        );
 
-      expect(errorMessage).toContain("already checked out in the main repo");
-    }),
+        expect(errorMessage).toContain("already checked out in the main repo");
+      }),
   );
 
   it.effect("create_pr preserves dirty work on an already pushed branch", () =>

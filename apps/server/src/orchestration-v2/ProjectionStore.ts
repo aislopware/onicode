@@ -526,6 +526,11 @@ export interface ActiveShellIndexEntry extends Pick<
   readonly hasRemoteTasks: boolean;
 }
 
+export type ActiveRunThread = Pick<
+  OrchestrationV2ThreadShell,
+  "id" | "projectId" | "title" | "worktreePath"
+>;
+
 /** What thread listings filter and order an active thread by, without building its shell. */
 export type ActiveThreadListEntry = Pick<
   OrchestrationV2ThreadShell,
@@ -641,6 +646,11 @@ export interface ProjectionStoreV2Shape {
   /** Every active thread, in shell order. */
   readonly listActiveShellIndex: () => Effect.Effect<
     ReadonlyArray<ActiveShellIndexEntry>,
+    ProjectionStoreV2Error
+  >;
+  /** Threads with a run the shell shows as in progress, archived ones included. */
+  readonly listThreadsWithActiveRun: () => Effect.Effect<
+    ReadonlyArray<ActiveRunThread>,
     ProjectionStoreV2Error
   >;
   /** Every active thread, or one project's. */
@@ -9699,6 +9709,52 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       }));
     }, Effect.mapError(shellSnapshotReadError));
 
+    const listThreadsWithActiveRun = Effect.fn("ProjectionStore.listThreadsWithActiveRun")(
+      function* () {
+        // Archiving does not stop a run. The shell's activity predicate, less a run preparing a
+        // new worktree before its thread records the folder: until then it works in none.
+        const rows = yield* sql<{
+          readonly thread_id: string;
+          readonly project_id: string;
+          readonly title: string;
+          readonly worktree_path: string | null;
+        }>`
+          SELECT
+            t.thread_id,
+            t.project_id,
+            t.title,
+            json_extract(t.payload_json, '$.worktreePath') AS worktree_path
+          FROM orchestration_v2_projection_threads t
+          -- A status-only list comes from the (thread_id, status) index alone, with the statuses
+          -- listActiveShellIndex reads; the payload predicates then read just the candidates' runs.
+          WHERE t.thread_id IN (
+              SELECT active.thread_id FROM orchestration_v2_projection_runs active
+              WHERE active.status IN ('queued', 'preparing', 'starting', 'running', 'waiting')
+            )
+            AND t.deleted_at IS NULL
+            AND EXISTS (
+              SELECT 1 FROM orchestration_v2_projection_runs r
+                INDEXED BY orchestration_v2_projection_runs_thread_status_idx
+              WHERE r.thread_id = t.thread_id
+                AND r.status IN ('preparing', 'starting', 'running', 'waiting')
+                AND NOT (
+                  r.status = 'preparing'
+                  AND json_extract(r.payload_json, '$.workspacePreparation.type') IS 'worktree'
+                  AND json_extract(t.payload_json, '$.worktreePath') IS NULL
+                )
+                AND NOT ${isSilentShellRun("r")}
+            )
+        `;
+        return rows.map((row): ActiveRunThread => ({
+          id: ThreadId.make(row.thread_id),
+          projectId: ProjectId.make(row.project_id),
+          title: row.title,
+          worktreePath: row.worktree_path,
+        }));
+      },
+      Effect.mapError(shellSnapshotReadError),
+    );
+
     const listActiveThreads = Effect.fn("ProjectionStore.listActiveThreads")(function* (
       projectId?: ProjectId,
     ) {
@@ -9940,6 +9996,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       listActiveSubagentThreadIds: readOnReader(listActiveSubagentThreadIds),
       countThreads: readOnReader(countThreads),
       listActiveShellIndex: readOnReader(listActiveShellIndex),
+      listThreadsWithActiveRun: readOnReader(listThreadsWithActiveRun),
       listActiveThreads: readOnReader(listActiveThreads),
       readShellSnapshot: readOnReader(readShellSnapshot),
       listOlderSettledThreads: readOnReader(listOlderSettledThreads),

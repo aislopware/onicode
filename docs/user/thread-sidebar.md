@@ -2,7 +2,8 @@
 
 Use a new thread for a separate task. Choose **New worktree** when its code changes
 need a separate branch and working directory. Threads in the same checkout share its
-branch, so Onicode refuses a branch switch there while one of them is working.
+branch, so Onicode refuses to switch it to another branch, or to commit on a new branch,
+while one of them is working. Commands an agent runs can still change the branch.
 
 ## Start a thread
 

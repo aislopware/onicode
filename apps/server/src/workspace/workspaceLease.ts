@@ -49,13 +49,15 @@ export const withWorkspaceLeases = <A, E, R>(
     ),
   );
 
-// A restore rewrites files under its directory, so it must exclude provider
-// startup in any overlapping workspace: symlink aliases, parents, and children.
-// Kept apart from withWorkspaceLease because that lease is non-reentrant and
-// restores call Git work that leases the project root.
+// A restore or a ref switch rewrites files under its directory, so it must exclude provider
+// startup in any overlapping workspace: symlink aliases, parents, and children. Kept apart
+// from the non-reentrant withWorkspaceLease, which a restore's Git work takes. Reserve before
+// leasing: a worktree turn start holds its reservation while it waits for its lease.
+export type ReservationKind = "restore" | "checkout-switch" | "turn-start";
+
 interface Reservation {
   readonly cwd: string;
-  readonly kind: "restore" | "turn-start";
+  readonly kind: ReservationKind;
 }
 
 const reservations = new Set<Reservation>();
@@ -63,7 +65,7 @@ let reservationReleased = Deferred.makeUnsafe<void>();
 
 // path.relative folds win32 drive-letter case and treats a POSIX backslash as
 // part of a name, unlike a raw prefix check.
-const contains = (path: Path.Path, parent: string, child: string) => {
+export const contains = (path: Path.Path, parent: string, child: string) => {
   const relative = path.relative(parent, child);
   return (
     relative === "" ||
@@ -72,7 +74,7 @@ const contains = (path: Path.Path, parent: string, child: string) => {
 };
 
 const conflicts = (path: Path.Path, a: Reservation, b: Reservation) =>
-  (a.kind === "restore" || b.kind === "restore") &&
+  (a.kind !== "turn-start" || b.kind !== "turn-start") &&
   (contains(path, a.cwd, b.cwd) || contains(path, b.cwd, a.cwd));
 
 const reserve = (path: Path.Path, reservation: Reservation): Effect.Effect<void> =>
@@ -135,5 +137,32 @@ const withReservation =
 /** Exclusive over every overlapping workspace while checkpoint files are restored. */
 export const withCheckpointRestoreReservation = withReservation("restore");
 
-/** Waits out overlapping restores; turn startups never wait on each other. */
+/** Exclusive over every overlapping workspace while a checkout changes its ref. */
+export const withCheckoutSwitchReservation = withReservation("checkout-switch");
+
+/**
+ * As withCheckoutSwitchReservation, but runs `onBusy` with the kind of the reservation in the
+ * way instead of waiting, so a caller that already holds a lease can take it without deadlocking.
+ */
+export const withCheckoutSwitchReservationOrElse = <A, E, R, A2, E2, R2>(
+  fileSystem: FileSystem.FileSystem,
+  path: Path.Path,
+  cwd: string,
+  effect: Effect.Effect<A, E, R>,
+  onBusy: (held: ReservationKind) => Effect.Effect<A2, E2, R2>,
+): Effect.Effect<A | A2, E | E2, R | R2> =>
+  canonicalize(fileSystem, path, cwd).pipe(
+    Effect.flatMap((canonical) => {
+      const reservation: Reservation = { cwd: canonical, kind: "checkout-switch" };
+      return Effect.suspend((): Effect.Effect<A | A2, E | E2, R | R2> => {
+        for (const held of reservations) {
+          if (conflicts(path, held, reservation)) return onBusy(held.kind);
+        }
+        reservations.add(reservation);
+        return effect;
+      }).pipe(Effect.ensuring(release(reservation)));
+    }),
+  );
+
+/** Waits out overlapping restores and ref switches; turn startups never wait on each other. */
 export const withTurnStartReservation = withReservation("turn-start");
