@@ -3271,3 +3271,4 @@ f10e1eb382	take	taken as is
 ad446450e1	take	fix(server): idle /ws connections behind a reverse proxy no longer drop every 60s; kept Onicode's socket-compression decline line in the conflict
 cc4bb17955	take	fix(server): thread reads no longer attribute Onicode's compact-before-send /compact to the user
 9de4ec1bfa	take	fix(web,mobile): @-file mentions show by name in message previews; scenario ported to the desktop target as is
+7ddc81d639	take	fix(web): tool calls stay grouped after a usage-limit pause again
