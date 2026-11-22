@@ -3274,3 +3274,4 @@ cc4bb17955	take	fix(server): thread reads no longer attribute Onicode's compact-
 7ddc81d639	take	fix(web): tool calls stay grouped after a usage-limit pause again
 ec35ad6618	take	taken as is
 6972026121	take	taken as is; scenario ported to the desktop harness
+bc13afaa3c	take	taken as is; scenario ported to the desktop harness
