@@ -8,9 +8,11 @@ import {
   useComposerDraftStore,
 } from "../composerDraftStore";
 import { showThreadUndoNotice } from "../hooks/showThreadUndoNotice";
+import { closeDraftThreadTerminals } from "./closeDraftThreadTerminals";
 import { discardComposerDraft } from "./discardComposerDraft";
 
 vi.mock("./attachmentUploadQueue", () => ({ releaseDraftAttachments: vi.fn() }));
+vi.mock("./closeDraftThreadTerminals", () => ({ closeDraftThreadTerminals: vi.fn() }));
 vi.mock("../hooks/showThreadUndoNotice", () => ({ showThreadUndoNotice: vi.fn() }));
 
 const environmentId = EnvironmentId.make("environment-local");
@@ -92,8 +94,22 @@ describe("discardComposerDraft", () => {
     const after = useComposerDraftStore.getState();
     expect(after.getDraftSession(draftId)).toEqual(before.getDraftSession(draftId));
     expect(after.draftsByThreadKey).toEqual({});
+    expect(closeDraftThreadTerminals).not.toHaveBeenCalled();
     expect(after.logicalProjectDraftThreadKeyByLogicalProjectKey).toEqual(
       before.logicalProjectDraftThreadKeyByLogicalProjectKey,
+    );
+  });
+
+  it("closes a discarded draft thread's terminals once Undo is committed", () => {
+    useComposerDraftStore.getState().setProjectDraftThreadId(projectRef, draftId);
+    const session = useComposerDraftStore.getState().getDraftSession(draftId)!;
+
+    discardComposerDraft(draftId);
+    expect(closeDraftThreadTerminals).not.toHaveBeenCalled();
+    undoNotice().commit?.();
+    expect(closeDraftThreadTerminals).toHaveBeenCalledExactlyOnceWith(
+      session.environmentId,
+      session.threadId,
     );
   });
 
@@ -107,6 +123,7 @@ describe("discardComposerDraft", () => {
 
     undoNotice().commit?.();
     await expect(fetch(preview.image.previewUrl)).rejects.toThrow();
+    expect(closeDraftThreadTerminals).not.toHaveBeenCalled();
   });
 
   it("keeps newer draft content and releases the discarded preview when Undo is refused", async () => {

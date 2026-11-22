@@ -2620,6 +2620,34 @@ describe("EnvironmentThreads", () => {
     }),
   );
 
+  it.effect("keeps a catch-up held through a disconnect until its own marker", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({ cached: BASE_PROJECTION, completionMarker: true });
+      yield* awaitSubscriptionCount(harness, 1);
+      yield* awaitThreadState(harness.observed, (value) => value.status === "synchronizing");
+      yield* SubscriptionRef.set(harness.supervisorState, {
+        ...AVAILABLE_CONNECTION_STATE,
+        phase: "connected" as const,
+      });
+      yield* Queue.offer(harness.inputs, titleUpdated("Held", CACHED_SNAPSHOT_SEQUENCE + 1));
+      yield* SubscriptionRef.set(harness.supervisorState, {
+        ...AVAILABLE_CONNECTION_STATE,
+        phase: "offline" as const,
+      });
+      yield* awaitThreadState(harness.observed, (value) => value.status === "cached");
+      // The old attempt's next item lands before the resubscribe; the stream then fails.
+      yield* Queue.offerAll(harness.inputs, [
+        titleUpdated("Late", CACHED_SNAPSHOT_SEQUENCE + 2),
+        new Error("socket closed"),
+      ]);
+      const failed = yield* awaitThreadState(harness.observed, (value) =>
+        Option.isSome(value.error),
+      );
+      expect(failed.status).not.toBe("live");
+      expect(Option.getOrThrow(failed.data).thread.title).toBe(BASE_PROJECTION.thread.title);
+    }),
+  );
+
   it.effect("announces request resolution only from a synchronized projection", () =>
     Effect.gen(function* () {
       const announced = yield* Queue.unbounded<ThreadRequestsResolved>();

@@ -3,7 +3,9 @@ import * as NodeFSP from "node:fs/promises";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { FileFinder } from "@ff-labs/fff-node";
 import { it, afterEach, describe, expect } from "@effect/vitest";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
@@ -19,7 +21,7 @@ import * as WorkspacePaths from "./WorkspacePaths.ts";
 
 vi.mock("node:fs/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs/promises")>();
-  return { ...actual, readdir: vi.fn(actual.readdir) };
+  return { ...actual, readdir: vi.fn(actual.readdir), stat: vi.fn(actual.stat) };
 });
 
 const layerTest = Layer.empty.pipe(
@@ -90,6 +92,58 @@ const appendSeparator = (input: string) =>
       ? input
       : `${input}${platform === "win32" ? "\\" : "/"}`,
   );
+
+describe("makeSymlinkTargetStats", () => {
+  const fakeStats = () => {
+    const calls: string[] = [];
+    const answers = new Map<string, (isDirectory: boolean) => void>();
+    const started = new Map<string, PromiseWithResolvers<void>>();
+    const startOf = (fullPath: string) => {
+      if (!started.has(fullPath)) started.set(fullPath, Promise.withResolvers<void>());
+      return started.get(fullPath)!;
+    };
+    const stat = (fullPath: string) => {
+      calls.push(fullPath);
+      startOf(fullPath).resolve();
+      return new Promise<boolean>((resolve) => answers.set(fullPath, resolve));
+    };
+    return {
+      calls,
+      answer: (fullPath: string) => answers.get(fullPath)!(true),
+      started: (fullPath: string) => startOf(fullPath).promise,
+      stat,
+    };
+  };
+
+  it("shares one stat between overlapping browses of a link", async () => {
+    const fake = fakeStats();
+    const isDirectory = WorkspaceEntries.makeSymlinkTargetStats(fake.stat, 1);
+    const signal = new AbortController().signal;
+    const first = isDirectory("/links/share", signal);
+    const second = isDirectory("/links/share", signal);
+    fake.answer("/links/share");
+    expect(await Promise.all([first, second])).toEqual([true, true]);
+    expect(fake.calls).toEqual(["/links/share"]);
+  });
+
+  it("waits for a slot, and gives up without a stat when its timeout aborts", async () => {
+    const fake = fakeStats();
+    const isDirectory = WorkspaceEntries.makeSymlinkTargetStats(fake.stat, 1);
+    const hung = isDirectory("/links/stalled", new AbortController().signal);
+    const timedOut = new AbortController();
+    const abandoned = isDirectory("/links/abandoned", timedOut.signal);
+    const waiting = isDirectory("/links/healthy", new AbortController().signal);
+    timedOut.abort();
+    expect(await abandoned).toBe(false);
+
+    fake.answer("/links/stalled");
+    expect(await hung).toBe(true);
+    await fake.started("/links/healthy");
+    expect(fake.calls).toEqual(["/links/stalled", "/links/healthy"]);
+    fake.answer("/links/healthy");
+    expect(await waiting).toBe(true);
+  });
+});
 
 it.layer(layerTest, { excludeTestServices: true })("WorkspaceEntries", (it) => {
   afterEach(() => {
@@ -1192,6 +1246,55 @@ it.layer(layerTest, { excludeTestServices: true })("WorkspaceEntries", (it) => {
           { name: "real-dir", fullPath: path.join(cwd, "real-dir") },
         ]);
       }),
+    );
+
+    it.effect("keeps resolving healthy links while stats hang on a stalled mount", () =>
+      Effect.gen(function* () {
+        if ((yield* HostProcess.Platform) === "win32") return;
+        const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir({ prefix: "onicode-workspace-browse-stalled-" });
+        yield* writeTextFile(cwd, "share-a/readme.md", "hi");
+        yield* writeTextFile(cwd, "share-b/readme.md", "hi");
+        yield* writeTextFile(cwd, "local/real/readme.md", "hi");
+        yield* fileSystem.makeDirectory(path.join(cwd, "stalled"));
+        yield* fileSystem.symlink(path.join(cwd, "share-a"), path.join(cwd, "stalled/a"));
+        yield* fileSystem.symlink(path.join(cwd, "share-b"), path.join(cwd, "stalled/b"));
+        yield* fileSystem.symlink(path.join(cwd, "local/real"), path.join(cwd, "local/link"));
+        const stalledPaths = new Set([path.join(cwd, "stalled/a"), path.join(cwd, "stalled/b")]);
+        const stalledCalls: string[] = [];
+        const bothStalled = yield* Deferred.make<void>();
+        const releases: Array<() => void> = [];
+        const stat = vi.mocked(NodeFSP.stat);
+        const realStat = stat.getMockImplementation()!;
+        stat.mockImplementation(((target: string) => {
+          if (!stalledPaths.has(target)) return realStat(target);
+          stalledCalls.push(target);
+          if (stalledCalls.length === 2) Deferred.doneUnsafe(bothStalled, Effect.void);
+          return new Promise((resolve) => releases.push(() => resolve(realStat(target))));
+        }) as typeof NodeFSP.stat);
+        yield* Effect.addFinalizer(() =>
+          Effect.sync(() => {
+            for (const release of releases) release();
+            stat.mockImplementation(realStat);
+          }),
+        );
+        const stalled = yield* workspaceEntries
+          .browse({ partialPath: `${path.join(cwd, "stalled")}${path.sep}` })
+          .pipe(Effect.forkChild);
+        yield* Deferred.await(bothStalled);
+        yield* TestClock.adjust("1 second");
+        expect((yield* Fiber.join(stalled)).entries).toEqual([]);
+
+        const healthy = yield* workspaceEntries.browse({
+          partialPath: `${path.join(cwd, "local")}${path.sep}`,
+        });
+        expect(healthy.entries).toEqual([
+          { name: "link", fullPath: path.join(cwd, "local/link") },
+          { name: "real", fullPath: path.join(cwd, "local/real") },
+        ]);
+      }).pipe(Effect.scoped, Effect.provide(TestClock.layer())),
     );
   });
 });

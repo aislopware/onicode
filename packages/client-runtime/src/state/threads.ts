@@ -716,12 +716,15 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
   // Items held until the completion marker apply together, so a replay-only resume renders once.
   // A new attempt drops the previous attempt's held and late items (unapplied, so its cursor
   // replays them). Both run under applyLock: each batch lands wholly before or after an attempt.
+  // Only the attempt's own marker releases its hold; a disconnect clearing awaitingCompletion does not.
   let attempt: unknown;
   let catchUp: OrchestrationV2ThreadStreamItem[] = [];
+  let attemptSynchronized = false;
   const startAttempt = applyLock.withPermits(1)(
     Effect.sync(() => {
       attempt = undefined;
       catchUp = [];
+      attemptSynchronized = false;
     }),
   );
   // Keep this per-batch streaming path untraced for the same reason as applyEventsLocked.
@@ -737,7 +740,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
           if (item.kind === "synchronized") completes = true;
         }
         if (catchUp.length === 0) return;
-        if (!completes && (yield* Ref.get(awaitingCompletion))) {
+        if (!completes && !attemptSynchronized) {
           // A warm resume keeps its "live" status until it learns it is behind.
           yield* SubscriptionRef.updateSome(state, (current) =>
             current.status === "live"
@@ -759,7 +762,10 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
           }
           // Clearing the flag first lets the events before the marker publish
           // "live", so a catch-up ending in the marker is one state change.
-          if (item.kind === "synchronized") yield* Ref.set(awaitingCompletion, false);
+          if (item.kind === "synchronized") {
+            attemptSynchronized = true;
+            yield* Ref.set(awaitingCompletion, false);
+          }
           yield* applyEventsLocked(events);
           events = [];
           yield* applyItemLocked(item);

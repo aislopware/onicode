@@ -14,6 +14,7 @@ import { showThreadUndoNotice } from "../hooks/showThreadUndoNotice";
 import { m } from "../i18n/messages";
 import * as ThreadUndo from "@onicode/client-runtime/state/thread-undo";
 import { releaseDraftAttachments } from "./attachmentUploadQueue";
+import { closeDraftThreadTerminals } from "./closeDraftThreadTerminals";
 
 export function discardComposerDraft(target: ComposerThreadTarget): void {
   const store = useComposerDraftStore.getState();
@@ -39,6 +40,15 @@ export function discardComposerDraft(target: ComposerThreadTarget): void {
   }
 
   const releaseDiscardedDraft = () => {
+    // A draft thread's terminals are reachable only through its session.
+    if (
+      discardsSession &&
+      session &&
+      session.promotedTo == null &&
+      useComposerDraftStore.getState().draftThreadsByThreadKey[key]?.threadId !== session.threadId
+    ) {
+      closeDraftThreadTerminals(session.environmentId, session.threadId);
+    }
     if (!draft) return;
     releaseDraftAttachments([...draft.images, ...draft.files]);
     // Draft-session removal already revoked these previews.
