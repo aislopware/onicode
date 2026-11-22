@@ -3209,3 +3209,4 @@ cd3a57ac72	take	taken; CONFLICT resolved by removing Onicode's remote-machine ic
 15a3daa32a	take	CONFLICT resolved: upstream's mobile-chip sentence plus Onicode's scheduled-task fresh-session sentence
 e3f9db2447	take	taken (other forge, as upstream); kept Onicode's non-draft early return in createPullRequest (skips a provider lookup when no draft is asked and tolerates its failure after the PR exists) around upstream's private/public dispatch; visibility added to Onicode's all-optional ReadPullRequestResult; Tabs import kept beside upstream's Badge/Tooltip; agentContextBudget re-measured for Onicode's tool list (62214, +140 like upstream)
 976aca331a	take	taken; its test sets up a live server through Onicode's ownership lock (acquireServerOwnership + ownerId, dev: false), like the file's other live-server test
+bcace0787e	take	as is
