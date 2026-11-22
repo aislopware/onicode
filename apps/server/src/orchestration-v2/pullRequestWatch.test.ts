@@ -719,6 +719,25 @@ describe("evaluatePullRequestWatch", () => {
     assert.deepEqual(gated.changes, [{ kind: "checks-passed", count: 2, required: true }]);
     assert.deepEqual(evaluatePullRequestWatch(gated.next, promoted, noRemarks).changes, []);
 
+    // A newer run that replaces a cancelled check under another name settles it on that read.
+    const superseded = (checks: ReadonlyArray<PullRequestCheck>) => {
+      const cancelled = evaluatePullRequestWatch(
+        watch(),
+        detail({ checks: [...checks, check("build (a)", "cancelled"), check("e2e", "pending")] }),
+        noRemarks,
+      );
+      const replaced = detail({
+        checks: [...checks, check("build", "success"), check("e2e", "success")],
+      });
+      const settled = evaluatePullRequestWatch(cancelled.next, replaced, noRemarks);
+      return [settled.changes, evaluatePullRequestWatch(settled.next, replaced, noRemarks).changes];
+    };
+    assert.deepEqual(superseded([required("test", "success")]), [
+      [{ kind: "checks-passed", count: 3, required: false }],
+      [],
+    ]);
+    assert.deepEqual(superseded([]), [[{ kind: "checks-passed", count: 2, required: false }], []]);
+
     // Nothing else was pending when the required ones passed, so nothing more is owed.
     const green = evaluatePullRequestWatch(watch(), done, noRemarks);
     assert.deepEqual(green.changes, [{ kind: "checks-passed", count: 1, required: true }]);
@@ -1106,7 +1125,7 @@ describe("evaluatePullRequestWatch", () => {
     const unreadable = evaluatePullRequestWatch(reported.next, detail({ checks: [] }), noRemarks);
     assert.deepEqual(evaluatePullRequestWatch(unreadable.next, failed, noRemarks).changes, []);
 
-    // Nor a read that leaves out one failed check, as GitLab returns when a downstream read fails.
+    // Nor a read that leaves out one failed check, as a host that replaces checks returns.
     const both = detail({ checks: [check("Pipeline", "failure"), check("deploy", "failure")] });
     const told = evaluatePullRequestWatch(watch(), both, noRemarks);
     const partial = detail({ checks: [check("Pipeline", "failure")] });

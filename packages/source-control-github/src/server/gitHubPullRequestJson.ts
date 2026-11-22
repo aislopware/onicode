@@ -659,7 +659,10 @@ function toCheckEntries(raw: ReadonlyArray<CheckFields> | null | undefined): Rea
     const run = check.workflowRun;
     if (status === "cancelled" && run != null) {
       // Branch protection names required checks, so only a newer same-name check replaces one.
-      const replacedBy = check.isRequired === true ? `${lineageOf(run)} ${name}` : lineageOf(run);
+      // GitHub Enterprise reads omit isRequired; an unexpanded matrix name is never required.
+      const anyNameReplaces =
+        check.isRequired === false || (check.isRequired == null && name.includes("${{"));
+      const replacedBy = anyNameReplaces ? lineageOf(run) : `${lineageOf(run)} ${name}`;
       if (run.runNumber < (newestRunNumber.get(replacedBy) ?? run.runNumber)) return [];
     }
     return [
@@ -923,6 +926,8 @@ function toRow(
   };
 }
 
+// Rows and summaries are batched reads, so they take GitHub's own rollup, as github.com shows it.
+// It can count a cancelled check a newer run replaced; detail and the watch filter those out.
 function rollupStates(commits: {
   readonly nodes: ReadonlyArray<{
     readonly commit: { readonly statusCheckRollup: { readonly state: string } | null };
