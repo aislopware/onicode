@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { resolveMarkdownLinkPresentation } from "./markdownLinks";
+import { markdownFileLinkParentSuffixes, resolveMarkdownLinkPresentation } from "./markdownLinks";
 
 describe("resolveMarkdownLinkPresentation", () => {
   it("opens relative directory links as workspace paths", () => {
@@ -77,6 +77,22 @@ describe("resolveMarkdownLinkPresentation", () => {
       path: "docs/My Folder/checklist.xml",
       label: "checklist.xml",
     });
+  });
+
+  it("names the folder when two file links share a filename", () => {
+    const hrefs = [
+      "apps/web/src/index.ts:10",
+      "apps/mobile/src/index.ts",
+      "README.md",
+      "https://example.com/index.ts",
+    ];
+    const suffixes = markdownFileLinkParentSuffixes(hrefs);
+    expect(hrefs.map((href) => resolveMarkdownLinkPresentation(href, suffixes))).toMatchObject([
+      { label: "index.ts · web/src · L10" },
+      { label: "index.ts · mobile/src" },
+      { label: "README.md" },
+      { kind: "external" },
+    ]);
   });
 
   it("does not style app routes as file links", () => {

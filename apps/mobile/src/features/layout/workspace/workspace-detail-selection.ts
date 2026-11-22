@@ -55,6 +55,22 @@ function showsDetail(route: RouteLike, detail: WorkspaceDetail) {
   return IDENTITY[detail.name].every((key) => current?.[key] === target?.[key]);
 }
 
+/**
+ * Whether `shown` is still the top page and still shows the same thread, pull request or issue.
+ * Selecting another detail reuses the page's key, so a late result checks this before navigating.
+ * A page native Back is popping is still on top in the router's state, but no longer shows.
+ */
+export function workspacePageStillShows(
+  state: { readonly index: number; readonly routes: readonly RouteLike[] } | undefined,
+  shown: RouteLike & { readonly key: string },
+): boolean {
+  const top = state?.routes[state.index];
+  if (top?.key !== shown.key || shown.key === nativelyPoppingRoute) return false;
+  return top.name in IDENTITY
+    ? showsDetail(top, shown as WorkspaceDetail)
+    : top.params === shown.params;
+}
+
 // UIKit pops a card by native Back before the router hears of it, so a row tapped meanwhile
 // must not reuse the card on its way out.
 let nativelyPoppingRoute: string | null = null;

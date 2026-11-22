@@ -150,6 +150,32 @@ describe("subscription widget snapshots", () => {
     expect(snapshot.providers[0]?.name).toBe("Codex");
     expect(JSON.stringify(snapshot)).not.toContain("example.com");
   });
+  it("writes reset times in the system clock's hour cycle", () => {
+    const clock = (hourCycle: "h12" | "h23") =>
+      new Date(window.resetsAt).toLocaleTimeString(undefined, {
+        hour: "numeric",
+        minute: "2-digit",
+        hourCycle,
+      });
+    // A 12-hour time contains its 24-hour digits at noon, so only the 24-hour case checks absence.
+    for (const [is24Hour, shown, hidden] of [
+      [true, clock("h23"), clock("h12")],
+      [false, clock("h12"), null],
+    ] as const) {
+      const snapshot = buildSubscriptionUsageSnapshot(
+        presentations(),
+        deepLink,
+        6,
+        undefined,
+        is24Hour,
+      );
+      const session = snapshot.providers[0]?.windows[0];
+      expect(snapshot.is24Hour).toBe(is24Hour);
+      expect(session?.reset).toContain(shown);
+      if (hidden !== null) expect(session?.reset).not.toContain(hidden);
+      expect(session?.accounts?.[0]?.reset).toBe(shown);
+    }
+  });
   it("bounds OS storage and puts the most constrained windows first", () => {
     const windows = Array.from({ length: 20 }, (_, index) => ({
       ...window,

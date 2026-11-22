@@ -14,7 +14,11 @@ import { contextChipIconSource } from "../lib/contextChipIconSource";
 import { markdownFileIconSource } from "../lib/markdownFileIcons";
 import { markdownLinkIcon } from "../lib/markdownLinkIcons";
 import { useUniwindTheme } from "../lib/useUniwindTheme";
-import { resolveMarkdownFileIcon, resolveMarkdownLinkPresentation } from "../lib/markdownLinks";
+import {
+  markdownFileLinkParentSuffixes,
+  resolveMarkdownFileIcon,
+  resolveMarkdownLinkPresentation,
+} from "../lib/markdownLinks";
 import type {
   MarkdownLinkCustomization,
   SelectableMarkdownTextProps,
@@ -66,6 +70,7 @@ export function withChipIcon(
 function presentation(
   url: string,
   props: Pick<SelectableMarkdownTextProps, "linkCustomization" | "skills" | "models" | "textStyle">,
+  parentSuffixByPath: ReadonlyMap<string, string>,
 ): MarkdownLinkCustomization | undefined {
   const custom = props.linkCustomization?.(url);
   if (custom) return custom;
@@ -97,7 +102,7 @@ function presentation(
       },
     };
   }
-  const link = resolveMarkdownLinkPresentation(url);
+  const link = resolveMarkdownLinkPresentation(url, parentSuffixByPath);
   if (link.kind === "file")
     return {
       label: link.label,
@@ -123,6 +128,9 @@ export function useEnrichedLinkVariants(
   const theme = useUniwindTheme();
   const links = useMemo(() => {
     const byUrl = new Map<string, MarkdownLinkCustomization>();
+    const parentSuffixByPath = markdownFileLinkParentSuffixes(
+      urls.filter((url) => !fileHrefs.has(url)),
+    );
     for (const url of urls) {
       if (byUrl.has(url)) continue;
       const label = fileHrefs.has(url) ? fileEmbedLabel?.(url, false) : null;
@@ -132,7 +140,7 @@ export function useEnrichedLinkVariants(
             color: textStyle.fileTextColor,
             icon: markdownFileIconSource(resolveMarkdownFileIcon(label)),
           }
-        : presentation(url, { linkCustomization, skills, models, textStyle });
+        : presentation(url, { linkCustomization, skills, models, textStyle }, parentSuffixByPath);
       if (value) byUrl.set(url, value);
     }
     return byUrl;

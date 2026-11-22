@@ -5,6 +5,7 @@ import {
   setNativelyPoppingWorkspaceRoute,
   workspaceDetailLinkAction,
   workspaceDetailRouter,
+  workspacePageStillShows,
   type WorkspaceDetail,
 } from "./workspace-detail-selection";
 
@@ -118,6 +119,24 @@ describe("selectWorkspaceDetail", () => {
       const selected = select(thread, threadA);
       expect(page(selected)).toEqual({ names: ["Home", "Thread"], index: 1 });
       expect(selected.routes[1]?.key).not.toBe(thread.routes[1]?.key);
+    } finally {
+      setNativelyPoppingWorkspaceRoute(null);
+    }
+  });
+});
+
+describe("workspacePageStillShows", () => {
+  it("lets a late result navigate only while its page still shows the same thread", () => {
+    const thread = select(home(), threadA);
+    const shown = thread.routes[1]!;
+    expect(workspacePageStillShows(thread, shown)).toBe(true);
+    expect(workspacePageStillShows(select(thread, threadB), shown)).toBe(false);
+    expect(workspacePageStillShows(push(thread, "ThreadFiles"), shown)).toBe(false);
+    expect(workspacePageStillShows(select(thread, pullRequest), shown)).toBe(false);
+    expect(workspacePageStillShows(apply(thread, StackActions.pop()), shown)).toBe(false);
+    setNativelyPoppingWorkspaceRoute(shown.key);
+    try {
+      expect(workspacePageStillShows(thread, shown)).toBe(false);
     } finally {
       setNativelyPoppingWorkspaceRoute(null);
     }

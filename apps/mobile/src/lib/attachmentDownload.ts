@@ -1,4 +1,6 @@
 import type { ChatFileAttachment } from "@onicode/contracts";
+import { hostPreviewMimeTypeFromExtension } from "@onicode/shared/filePreview";
+import { GENERIC_MIME_TYPES } from "@onicode/shared/image";
 import type { Directory } from "expo-file-system";
 import type { SharingOptions } from "expo-sharing";
 import { msg } from "gt-react-native";
@@ -56,6 +58,17 @@ function removeDownloadDirectory(directory: Directory): void {
 }
 
 type AttachmentFileMetadata = Pick<ChatFileAttachment, "name" | "mimeType">;
+
+// Android chooses the receiving app by type, so a generic upload type falls back to the extension.
+function handoffMimeType(attachment: AttachmentFileMetadata): string {
+  const mime = attachment.mimeType.split(";", 1)[0]?.trim() ?? "";
+  if (mime && !GENERIC_MIME_TYPES.has(mime.toLowerCase())) return mime;
+  const dot = attachment.name.lastIndexOf(".");
+  return (
+    (dot > 0 ? hostPreviewMimeTypeFromExtension(attachment.name.slice(dot)) : null) ??
+    "application/octet-stream"
+  );
+}
 
 export interface AttachmentPreviewFile {
   readonly uri: string;
@@ -129,7 +142,7 @@ async function createCachedAttachmentFile(attachment: AttachmentFileMetadata) {
         const endHandoff = beginForegroundHandoff();
         try {
           const options: SharingOptions = {
-            mimeType: attachment.mimeType.split(";", 1)[0]?.trim() || "application/octet-stream",
+            mimeType: handoffMimeType(attachment),
             dialogTitle: attachment.name,
           };
           if (sourceIdentifier) {
@@ -189,10 +202,7 @@ export async function openAttachmentInViewer(input: {
     try {
       await requireNativeModule<{ openFile(uri: string, mimeType: string): Promise<void> }>(
         "OniNativeControls",
-      ).openFile(
-        cached.file.uri,
-        input.attachment.mimeType.split(";", 1)[0]?.trim() || "application/octet-stream",
-      );
+      ).openFile(cached.file.uri, handoffMimeType(input.attachment));
       cached.retainAfterHandoff();
     } finally {
       endHandoff();

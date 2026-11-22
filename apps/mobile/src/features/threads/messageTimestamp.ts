@@ -44,6 +44,13 @@ export function formatMessageTimestamp(
   return `${sameYear ? f.date.format(timestamp) : dateWithYear} ${time}`;
 }
 
+/** `is24Hour` is the system clock setting when known; undefined keeps the locale's hour cycle. */
+export function hourCycleOption(
+  is24Hour: boolean | undefined,
+): Pick<Intl.DateTimeFormatOptions, "hourCycle"> {
+  return is24Hour === undefined ? {} : { hourCycle: is24Hour ? "h23" : "h12" };
+}
+
 /** `is24Hour` overrides the locale's hour cycle with the system clock preference when known. */
 export function createMessageTimeFormatter(is24Hour: boolean | undefined, locale?: string) {
   let cached: { timeZone: string; formatter: Intl.DateTimeFormat } | null = null;
@@ -56,7 +63,7 @@ export function createMessageTimeFormatter(is24Hour: boolean | undefined, locale
           hour: "numeric",
           minute: "2-digit",
           timeZone,
-          ...(is24Hour === undefined ? {} : { hourCycle: is24Hour ? "h23" : "h12" }),
+          ...hourCycleOption(is24Hour),
         }),
       };
     }

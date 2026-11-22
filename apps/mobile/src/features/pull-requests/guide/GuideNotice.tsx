@@ -5,6 +5,8 @@ import Animated, { FadeIn, ReduceMotion } from "react-native-reanimated";
 import { AppText as Text } from "../../../components/ui/AppText";
 import { SymbolView } from "../../../components/ui/AppSymbol";
 import { PR_ROW_EXIT, PR_ROW_LAYOUT } from "../pullRequestAnimations";
+import { hourCycleOption } from "../../threads/messageTimestamp";
+import { useSystem24HourClock } from "../../threads/useMessageTimeFormatter";
 import { guideNoticeState } from "./reviewGuideState";
 import type { useReviewGuide } from "./useReviewGuide";
 
@@ -13,6 +15,7 @@ const NOTICE_ENTER = FadeIn.delay(180).duration(120).reduceMotion(ReduceMotion.S
 export function GuideNotice({ state }: { readonly state: ReturnType<typeof useReviewGuide> }) {
   const gt = useGT();
   const messages = useMessages();
+  const is24Hour = useSystem24HourClock();
   const notice = guideNoticeState(state, messages);
   if (notice.kind === "ready") return null;
   const compact = state.data?.guide != null;
@@ -66,6 +69,7 @@ export function GuideNotice({ state }: { readonly state: ReturnType<typeof useRe
                 {new Date(state.data.run.startedAt).toLocaleTimeString([], {
                   hour: "2-digit",
                   minute: "2-digit",
+                  ...hourCycleOption(is24Hour),
                 })}
               </Var>
             </T>

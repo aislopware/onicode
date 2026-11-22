@@ -11,6 +11,7 @@ import { msg } from "gt-react-native";
 
 import { m, type MessageResolver } from "../i18n/messages";
 
+import { hourCycleOption } from "../features/threads/messageTimestamp";
 import { providerColors } from "../features/usage/providerColors";
 import type { WidgetTheme } from "./widgetTheme";
 
@@ -51,6 +52,8 @@ export interface SubscriptionUsageSnapshot {
   theme?: WidgetTheme;
   url?: string;
   text?: SubscriptionUsageText;
+  /** The system clock setting when known, which the widget runtime cannot read. */
+  is24Hour?: boolean;
   checkedAt: number;
   providers: Array<{
     name: string;
@@ -102,8 +105,8 @@ function accountName(account: LimitAccount, resolve: MessageResolver) {
   return `${local[0] ?? ""}${domain[0] ?? ""}`.toUpperCase();
 }
 
-function clockLabel(at: number, from: number) {
-  const time = { hour: "numeric", minute: "2-digit" } as const;
+function clockLabel(at: number, from: number, is24Hour: boolean | undefined) {
+  const time = { hour: "numeric", minute: "2-digit", ...hourCycleOption(is24Hour) } as const;
   if (new Date(at).toDateString() === new Date(from).toDateString())
     return new Date(at).toLocaleTimeString(undefined, time);
   return new Date(at).toLocaleString(
@@ -112,7 +115,11 @@ function clockLabel(at: number, from: number) {
   );
 }
 
-function widgetAccounts(window: LimitPoolWindow, resolve: MessageResolver): WidgetLimitAccount[] {
+function widgetAccounts(
+  window: LimitPoolWindow,
+  resolve: MessageResolver,
+  is24Hour: boolean | undefined,
+): WidgetLimitAccount[] {
   const seen = new Map<string, number>();
   return window.columns.map((column) => {
     // Redacted initials can collide, and the widget keys segments by name.
@@ -133,7 +140,7 @@ function widgetAccounts(window: LimitPoolWindow, resolve: MessageResolver): Widg
       refill: reset ? column.refillPercent : 0,
       ...(reset && {
         resetsAt,
-        reset: clockLabel(resetsAt, checkedAt),
+        reset: clockLabel(resetsAt, checkedAt, is24Hour),
       }),
       ...(column.window.windowDurationMins && {
         durationMs: column.window.windowDurationMins * 60_000,
@@ -146,12 +153,13 @@ function widgetAccounts(window: LimitPoolWindow, resolve: MessageResolver): Widg
 const isUpcoming = (reset: LimitPoolWindow["resets"][number]) =>
   reset.at > Date.parse(reset.member.account.limits.checkedAt);
 
-const resetTime = (at: number) =>
+const resetTime = (at: number, is24Hour: boolean | undefined) =>
   new Date(at).toLocaleString(undefined, {
     month: "short",
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
+    ...hourCycleOption(is24Hour),
   });
 
 function subscriptionUsageText(
@@ -207,6 +215,7 @@ function subscriptionUsageProps(
   configuredDrivers: ReadonlySet<string>,
   maxWindowsPerProvider: number,
   resolve: MessageResolver,
+  is24Hour: boolean | undefined,
 ): SubscriptionUsageSnapshot {
   const pools = collectLimitPools(accounts, now);
   const checked = accounts
@@ -278,10 +287,16 @@ function subscriptionUsageProps(
                 remaining: Math.round(window.remainingPercent),
                 reset: window.resets[0]
                   ? isUpcoming(window.resets[0])
-                    ? resolve(msg("Next reset {time}", { time: resetTime(window.resets[0].at) }))
-                    : resolve(msg("Reset {time}", { time: resetTime(window.resets[0].at) }))
+                    ? resolve(
+                        msg("Next reset {time}", {
+                          time: resetTime(window.resets[0].at, is24Hour),
+                        }),
+                      )
+                    : resolve(
+                        msg("Reset {time}", { time: resetTime(window.resets[0].at, is24Hour) }),
+                      )
                   : resolve(msg("Reset time unavailable")),
-                accounts: widgetAccounts(window, resolve),
+                accounts: widgetAccounts(window, resolve, is24Hour),
               }))
             : [],
         };
@@ -294,6 +309,7 @@ export function buildSubscriptionUsageSnapshot(
   url: string,
   maxWindowsPerProvider = 6,
   resolve: MessageResolver = m,
+  is24Hour?: boolean,
 ): SubscriptionUsageSnapshot {
   const configuredDrivers = new Set(
     [...presentations.values()].flatMap((presentation) =>
@@ -314,10 +330,13 @@ export function buildSubscriptionUsageSnapshot(
     configuredDrivers,
     maxWindowsPerProvider,
     resolve,
+    is24Hour,
   );
   return {
     ...props,
     url,
+    // expo-widgets cannot convert an explicit undefined into a Kotlin value.
+    ...(is24Hour !== undefined && { is24Hour }),
     // The Android widget counts hidden rows across providers, a note row included.
     text: subscriptionUsageText(
       resolve,
