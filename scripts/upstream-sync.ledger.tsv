@@ -3197,3 +3197,4 @@ b9d0f70b3e	take	kept Onicode's hour-cycle timestamp label in the work-log confli
 df67c4f7f9	take	as is
 4e28da0de1	take	as is
 504589183e	take	kept Onicode's off-provider refusal (an off provider never runs when nothing else can take over) on top of upstream's same-instance model fallback; preflight test keeps 'disabled for project' and adds upstream's two states
+4ac5e6e791	take	as is; mobile AddProjectScreen already appends to the browse directory path, so the shared fix covers it
