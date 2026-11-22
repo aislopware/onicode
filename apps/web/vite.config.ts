@@ -89,7 +89,14 @@ const lazyPreviewDependencies = [
 const browserTestProject = {
   extends: true,
   optimizeDeps: {
-    include: ["vite-plus/test/browser", "@base-ui/react/autocomplete", ...lazyPreviewDependencies],
+    include: [
+      "vite-plus/test/browser",
+      "@base-ui/react/autocomplete",
+      "@effect/vitest",
+      "@pierre/diffs/ssr",
+      "effect/testing",
+      ...lazyPreviewDependencies,
+    ],
   },
   test: {
     name: "browser",
