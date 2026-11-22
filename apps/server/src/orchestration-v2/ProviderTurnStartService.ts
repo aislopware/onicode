@@ -69,7 +69,8 @@ import {
 } from "@onicode/provider-core/server/handoffBudget";
 import {
   deliverContextHandoffs,
-  isSlashCommandMessage,
+  isNativeCommandMessage,
+  mayBeNativeCommandMessage,
   withInlineContext,
 } from "./ContextHandoffDelivery.ts";
 import { isProviderCommand, outputInstructions } from "./runOutput.ts";
@@ -593,10 +594,11 @@ export const layer: Layer.Layer<
                   )) ||
                   (source.status === "completed" &&
                     handoff.delivery === undefined &&
-                    // Slash command turns defer history to the next turn.
+                    // Native command turns defer history to the next turn; one that took it
+                    // inline recorded a delivery.
                     projection.messages.some(
                       (message) =>
-                        message.id === source.userMessageId && isSlashCommandMessage(message),
+                        message.id === source.userMessageId && mayBeNativeCommandMessage(message),
                     ))),
             )));
       const isSideChatHandoff = (handoff: OrchestrationV2ContextHandoff) =>
@@ -1055,7 +1057,9 @@ export const layer: Layer.Layer<
               records: providerMessage.context?.records ?? [],
             }),
           );
-      const slashCommand = isSlashCommandMessage(providerMessage);
+      const nativeCommand = (message: Parameters<typeof isNativeCommandMessage>[1]) =>
+        isNativeCommandMessage(session, message);
+      const slashCommand = nativeCommand(providerMessage);
       const goalDriver =
         session.driver === "codex" ||
         session.driver === "claudeAgent" ||
@@ -1078,7 +1082,7 @@ export const layer: Layer.Layer<
       let compactionMessageIdSet: ReadonlySet<string> | undefined;
       const compactionMessageIds = () =>
         (compactionMessageIdSet ??= new Set(
-          projection.messages.filter(isSlashCommandMessage).map((candidate) => candidate.id),
+          projection.messages.filter(nativeCommand).map((candidate) => candidate.id),
         ));
       const restartCancelledWork = pendingRestartCancelledBackgroundWork({
         runs: projection.runs,
@@ -1368,7 +1372,7 @@ export const layer: Layer.Layer<
             const source = runsById.get(attempt.runId);
             if (source === undefined) continue;
             const message = messagesById.get(source.userMessageId);
-            if (message !== undefined && isSlashCommandMessage(message)) continue;
+            if (message !== undefined && nativeCommand(message)) continue;
             lastPromptOrdinal = Math.max(lastPromptOrdinal, source.ordinal);
           }
           const attachments = missedHistory.flatMap((item) =>

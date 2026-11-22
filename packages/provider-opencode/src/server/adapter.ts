@@ -3762,6 +3762,8 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
                 ),
               ),
           ),
+          // A listed command runs through session.command, also with files; others are prompts.
+          runsAsNativeCommand: (message) => /^\/\S+/.test(message.text.trim()),
           compactThread: (turnInput) =>
             runtimeSession.startTurn({
               ...turnInput,

@@ -408,6 +408,8 @@ export interface AcpAdapterV2Flavor {
     text: string,
     turnInput: ProviderAdapter.ProviderAdapterV2TurnInput,
   ) => Effect.Effect<string, never, ChildProcessSpawner.ChildProcessSpawner>;
+  /** Text `rewriteUserText` may turn into a native command, so its turn keeps it verbatim. */
+  readonly mayRewriteToCommand?: (text: string) => boolean;
   readonly driver: ProviderDriverKind;
   readonly capabilities: OrchestrationV2ProviderCapabilities;
   readonly supportsNativeGoals?: Effect.Effect<boolean>;
@@ -9945,6 +9947,13 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           },
           canResumeAfterRestart: canLoadSession || canResumeSession,
           events: Stream.fromEffectRepeat(Queue.take(events)),
+          ...(flavor.mayRewriteToCommand === undefined
+            ? {}
+            : {
+                runsAsNativeCommand: (message: { readonly text: string }) =>
+                  ProviderAdapter.opensWithSlashCommand(message.text) ||
+                  flavor.mayRewriteToCommand!(message.text),
+              }),
           ...(flavor.getModelContextWindow === undefined
             ? {}
             : {

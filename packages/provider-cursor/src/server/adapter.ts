@@ -3255,6 +3255,9 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
           driver: CursorAgentSdk.CURSOR_PROVIDER,
           providerSessionId: input.providerSessionId,
           providerSession: session,
+          // Only a bare `/compress` reaches the SDK as a command; other text is a prompt.
+          runsAsNativeCommand: (message) =>
+            message.attachments.length === 0 && message.text.trim() === "/compress",
           getModelContextWindow: (selection) =>
             selection.instanceId === adapterOptions.instanceId
               ? cursorContextWindowTokens(selection, adapterOptions.getModels?.() ?? [])
