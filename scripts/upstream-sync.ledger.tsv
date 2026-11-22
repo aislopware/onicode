@@ -3247,3 +3247,4 @@ bcb9217e8e	take	applied cleanly; Onicode's hook order kept and the row re-render
 4136ab6ef7	take	applied cleanly; no DocumentText VERSION bump since the missing part threw and cached nothing
 03920ad8aa	take	kept Onicode's handleEvent pump and added the background_work.lost branch with raisedByOni; test query mocks gained Onicode's extra session methods
 3571f28cca	take	applied cleanly
+77d299cc1c	take	applied cleanly
