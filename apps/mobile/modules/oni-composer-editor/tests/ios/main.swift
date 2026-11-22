@@ -260,6 +260,20 @@ private final class ImmediateImageProvider: NSItemProvider {
     completionHandler(image, nil)
     return Progress(totalUnitCount: 1)
   }
+
+  // The system lists a UIImage's types with HEIC first; a pasted screenshot offers PNG.
+  override var registeredTypeIdentifiers: [String] { [UTType.png.identifier] }
+
+  // A PNG takes the passthrough path, which reads the provider's own bytes.
+  override func loadDataRepresentation(
+    forTypeIdentifier typeIdentifier: String,
+    completionHandler: @escaping @Sendable (Data?, Error?) -> Void
+  ) -> Progress {
+    loadCount += 1
+    onLoad?()
+    completionHandler(image.pngData(), nil)
+    return Progress(totalUnitCount: 1)
+  }
 }
 
 private let pasteEditor = ComposerTextView()

@@ -125,6 +125,7 @@ import {
 } from "./composerSendPresentation";
 import {
   useNativeImagesConverting,
+  useNativeImagesConvertingCount,
   useSubmitAfterNativeImages,
 } from "./useSubmitAfterNativeImages";
 import { ComposerHeldSendBanner } from "./ComposerHeldSend";
@@ -351,6 +352,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
   const recallingPrompt = useComposerPromptRecallActive(composerDraftKey, draftMessage);
   const queuedEdit = props.queuedEdit ?? null;
   const imagesConverting = useNativeImagesConverting(composerDraftKey);
+  const pendingNativeImageCount = useNativeImagesConvertingCount(composerDraftKey);
   const hasContent =
     draftMessage.trim().length > 0 ||
     draftAttachments.length > 0 ||
@@ -755,7 +757,8 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
   );
   const hasEditingAttachments =
     (queuedEdit !== null && queuedEdit.existingAttachments.length > 0) ||
-    stripAttachments.length > 0;
+    stripAttachments.length > 0 ||
+    pendingNativeImageCount > 0;
   // Removable attachments: inside the card, or above the focused one-row composer.
   const editingAttachments = hasEditingAttachments ? (
     <>
@@ -776,7 +779,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
           />
         </Animated.View>
       ) : null}
-      {stripAttachments.length > 0 ? (
+      {stripAttachments.length > 0 || pendingNativeImageCount > 0 ? (
         <Animated.View
           className="px-[14px] pb-2.5 pt-2"
           entering={COMPOSER_ATTACHMENT_ENTERING}
@@ -785,6 +788,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
           <ComposerAttachmentStrip
             environmentId={props.environmentId}
             attachments={stripAttachments}
+            pendingImageCount={pendingNativeImageCount}
             onRemove={isSubmissionLocked ? () => undefined : props.onRemoveDraftImage}
             onPressPreview={isSubmissionLocked ? undefined : onPressPreview}
             onPressVideo={isSubmissionLocked ? undefined : onPressVideo}
