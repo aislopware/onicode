@@ -3206,3 +3206,4 @@ ad1b1f9ca4	take	as is; modes file named oni-runtime-modes.json in the agy profil
 426b5a6888	take	as is
 cd3a57ac72	take	taken; CONFLICT resolved by removing Onicode's remote-machine icon (its non-/70 colour tweak goes with it) since the environment line now covers remote threads for every row; hook order in Sidebar.tsx unchanged, row re-render test green
 6f49071a3d	take	taken; test CONFLICT resolved by adding upstream's status column and failed-capture row to Onicode's taskFolder/siblingBound rollback table
+15a3daa32a	take	CONFLICT resolved: upstream's mobile-chip sentence plus Onicode's scheduled-task fresh-session sentence
