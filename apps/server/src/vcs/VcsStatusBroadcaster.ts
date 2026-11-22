@@ -159,16 +159,26 @@ interface CachedRemoteStatus extends CachedValue<VcsStatusRemoteResult | null> {
 interface RemoteStatusRead extends CachedRemoteStatus {
   /** The ahead/behind read failed, so its zero counts mean nothing. */
   readonly divergenceUnknown?: true;
+  /** When the ahead/behind read started; 0 when the counts were not read. */
+  readonly divergenceObservation: number;
+  /** A locked read's publish mark when it took its sequence. */
+  readonly publishedBeforeRead?: number;
 }
 
-/** A failed ahead/behind read keeps the counts cached for the branch instead of 0/0. */
+/** Keeps the counts cached for the branch when the read's are unknown or older. */
 function keepKnownDivergence(
   read: RemoteStatusRead,
   cached: CachedRemoteStatus | null,
+  keepCachedCounts: boolean,
 ): CachedRemoteStatus {
-  const { divergenceUnknown, ...remote } = read;
+  const {
+    divergenceUnknown: _unknown,
+    divergenceObservation: _observation,
+    publishedBeforeRead: _published,
+    ...remote
+  } = read;
   if (
-    divergenceUnknown !== true ||
+    !keepCachedCounts ||
     remote.value === null ||
     cached?.value == null ||
     cached.branch !== remote.branch
@@ -181,6 +191,11 @@ function keepKnownDivergence(
     behindCount: cached.value.behindCount,
   };
   return { ...remote, value, fingerprint: fingerprintStatusPart(value) };
+}
+
+interface UpstreamRead {
+  readonly details: GitVcsDriver.GitRemoteStatusDetails;
+  readonly observation: number;
 }
 
 interface CachedLocalStatus extends CachedValue<VcsStatusLocalResult> {
@@ -352,10 +367,14 @@ export const make = Effect.gen(function* () {
   // Upstream details the turn-end refreshLocalStatus just read, handed once to the PR lookup that
   // follows it so the same no-fetch read is not repeated. Any remote write in between, even a
   // failed one, drops them.
-  const upstreamReads = new Map<string, GitVcsDriver.GitRemoteStatusDetails>();
+  const upstreamReads = new Map<string, UpstreamRead>();
   // Counts locked remote writes that ended, in any checkout, so a divergence read outside the
   // lock can tell that a write which may have moved refs finished while it ran.
   let remoteWritesEnded = 0;
+  // Ahead/behind is read both inside and outside the remote lock, so a read that started earlier
+  // can finish later; only counts read after the cached ones replace them.
+  let divergenceReadsStarted = 0;
+  const divergenceReadPublished = new Map<string, number>();
   const withRemoteWriteLock = <A, E, R>(cwd: string, effect: Effect.Effect<A, E, R>) =>
     Effect.acquireUseRelease(
       Effect.sync(() => activeRemoteReads.set(cwd, (activeRemoteReads.get(cwd) ?? 0) + 1)),
@@ -406,6 +425,7 @@ export const make = Effect.gen(function* () {
       // mistake an older result for a later request.
       localRefreshResults.delete(candidate);
       upstreamReads.delete(candidate);
+      divergenceReadPublished.delete(candidate);
     }
     return cache;
   };
@@ -500,16 +520,47 @@ export const make = Effect.gen(function* () {
     },
   );
 
+  // A locked read takes its sequence before its fetch and forge lookup and reads counts somewhere
+  // in between, so counts published meanwhile can't be ordered against its own; a fresh read can.
+  const rereadCrossedDivergence = Effect.fn("VcsStatusBroadcaster.rereadCrossedDivergence")(
+    function* (cwd: string, read: RemoteStatusRead | null) {
+      if (
+        read?.value?.hasUpstream !== true ||
+        read.publishedBeforeRead === undefined ||
+        read.publishedBeforeRead === (divergenceReadPublished.get(cwd) ?? 0)
+      ) {
+        return read;
+      }
+      const divergenceObservation = ++divergenceReadsStarted;
+      const divergence = yield* workflow
+        .upstreamDivergence(cwd)
+        .pipe(Effect.orElseSucceed(() => null));
+      if (divergence?.refName !== read.branch) return read;
+      const value = {
+        ...read.value,
+        aheadCount: divergence.aheadCount,
+        behindCount: divergence.behindCount,
+      };
+      const { divergenceUnknown: _unknown, ...known } = read;
+      return { ...known, value, fingerprint: fingerprintStatusPart(value), divergenceObservation };
+    },
+  );
+
   const updateCachedRemoteStatus = Effect.fn("VcsStatusBroadcaster.updateCachedRemoteStatus")(
-    function* (cwd: string, remote: RemoteStatusRead | null, options?: { publish?: boolean }) {
+    function* (cwd: string, read: RemoteStatusRead | null, options?: { publish?: boolean }) {
       upstreamReads.delete(cwd);
+      const remote = yield* rereadCrossedDivergence(cwd, read);
       const [changed, value] = yield* Ref.modify(cacheRef, (cache) => {
         const previous = cache.get(cwd) ?? { local: null, remote: null };
         // Resolved at write time, so counts published meanwhile are the ones kept.
+        const observation =
+          remote?.divergenceUnknown === true ? 0 : (remote?.divergenceObservation ?? 0);
+        const newer = observation > (divergenceReadPublished.get(cwd) ?? 0);
         const next =
           remote !== null && remote.branch === previous.local?.value.refName
-            ? keepKnownDivergence(remote, previous.remote)
+            ? keepKnownDivergence(remote, previous.remote, !newer)
             : null;
+        if (next !== null && newer) divergenceReadPublished.set(cwd, observation);
         return [
           [previous.remote?.fingerprint !== next?.fingerprint, next?.value ?? null],
           retainCachedStatus(cache, cwd, { ...previous, remote: next }),
@@ -522,6 +573,54 @@ export const make = Effect.gen(function* () {
         });
       }
       return value;
+    },
+  );
+
+  // Only the counts change, so a PR written since the caller last read the cache stays.
+  const updateCachedDivergence = Effect.fn("VcsStatusBroadcaster.updateCachedDivergence")(
+    function* (
+      cwd: string,
+      divergence: Pick<VcsStatusRemoteResult, "aheadCount" | "behindCount"> & {
+        readonly refName: string;
+      },
+      observation: number,
+    ) {
+      upstreamReads.delete(cwd);
+      const updated = yield* Ref.modify(
+        cacheRef,
+        (cache): readonly [VcsStatusRemoteResult | null, Map<string, CachedVcsStatus>] => {
+          const previous = cache.get(cwd);
+          const remote = previous?.remote;
+          if (
+            !previous ||
+            !remote?.value ||
+            remote.branch !== divergence.refName ||
+            observation <= (divergenceReadPublished.get(cwd) ?? 0)
+          ) {
+            return [null, cache];
+          }
+          divergenceReadPublished.set(cwd, observation);
+          const value = {
+            ...remote.value,
+            aheadCount: divergence.aheadCount,
+            behindCount: divergence.behindCount,
+          };
+          const fingerprint = fingerprintStatusPart(value);
+          return [
+            fingerprint === remote.fingerprint ? null : value,
+            retainCachedStatus(cache, cwd, {
+              ...previous,
+              remote: { ...remote, value, fingerprint },
+            }),
+          ];
+        },
+      );
+      if (updated !== null) {
+        yield* PubSub.publish(changesPubSub, {
+          cwd,
+          event: { _tag: "remoteUpdated", remote: updated },
+        });
+      }
     },
   );
 
@@ -576,7 +675,9 @@ export const make = Effect.gen(function* () {
       Effect.gen(function* () {
         const latest = yield* getCachedStatus(cwd);
         const refreshUpstream = !Duration.isZero(yield* automaticFetchInterval);
-        const remote = latest?.remote ?? (yield* readRemoteStatus(cwd, { refreshUpstream }));
+        const remote = latest?.remote
+          ? { ...latest.remote, divergenceObservation: 0 }
+          : yield* readRemoteStatus(cwd, { refreshUpstream });
         yield* updateCachedRemoteStatus(cwd, remote);
         const parts = yield* getStatusParts(cwd);
         return mergeGitStatusParts(parts.local, parts.remote);
@@ -620,29 +721,23 @@ export const make = Effect.gen(function* () {
     // Divergence is local Git data; a slow forge lookup must not delay turn-end updates.
     if (cached?.remote?.value?.hasUpstream) {
       const writesEnded = remoteWritesEnded;
+      let readStarted = ++divergenceReadsStarted;
       let divergence = yield* workflow.upstreamDivergence(cwd);
       // A read that crossed a remote write may predate what that write published, so the counts
       // are read again; neither read is handed to the PR lookup.
       const crossedWrite = remoteWritesEnded !== writesEnded;
-      if (crossedWrite) divergence = yield* workflow.upstreamDivergence(cwd);
-      const latest = yield* getCachedStatus(cwd);
-      if (divergence && latest?.remote?.value && latest.remote.branch === divergence.refName) {
-        const value = {
-          ...latest.remote.value,
-          aheadCount: divergence.aheadCount,
-          behindCount: divergence.behindCount,
-        };
-        yield* updateCachedRemoteStatus(
-          cwd,
-          {
-            branch: divergence.refName,
-            value,
-            fingerprint: fingerprintStatusPart(value),
-          },
-          { publish: true },
-        );
-        if (!crossedWrite && remoteWritesEnded === writesEnded) {
-          upstreamReads.set(cwd, divergence.details);
+      if (crossedWrite) {
+        readStarted = ++divergenceReadsStarted;
+        divergence = yield* workflow.upstreamDivergence(cwd);
+      }
+      if (divergence) {
+        yield* updateCachedDivergence(cwd, divergence, readStarted);
+        if (
+          !crossedWrite &&
+          remoteWritesEnded === writesEnded &&
+          divergenceReadPublished.get(cwd) === readStarted
+        ) {
+          upstreamReads.set(cwd, { details: divergence.details, observation: readStarted });
         }
       }
     }
@@ -651,34 +746,30 @@ export const make = Effect.gen(function* () {
 
   const readRemoteStatus = Effect.fn("VcsStatusBroadcaster.readRemoteStatus")(function* (
     cwd: string,
-    options?: Parameters<GitWorkflowService.GitWorkflowService["Service"]["remoteStatus"]>[1],
+    options?: Omit<
+      NonNullable<Parameters<GitWorkflowService.GitWorkflowService["Service"]["remoteStatus"]>[1]>,
+      "statusDetails"
+    > & { readonly upstreamRead?: UpstreamRead },
     // After a pull HEAD has moved, so the counts cached before it no longer describe it.
     keepCountsOnUnknown = true,
   ) {
     const branch = yield* workflow.currentBranch(cwd);
     // GitManager's remote TTL cache is keyed by cwd, not the checked-out branch.
     yield* workflow.invalidateRemoteStatus(cwd);
-    const previousRemote = (yield* getCachedStatus(cwd))?.remote;
-    const { statusDetails, ...remoteOptions } = options ?? {};
+    const { upstreamRead, ...remoteOptions } = options ?? {};
+    const reused = upstreamRead?.details.branch === branch ? upstreamRead : undefined;
+    const publishedBeforeRead = divergenceReadPublished.get(cwd) ?? 0;
+    const divergenceObservation = reused?.observation ?? ++divergenceReadsStarted;
     const read: GitRemoteStatusRead | null = yield* workflow.remoteStatus(
       { cwd },
-      statusDetails?.branch === branch ? { ...remoteOptions, statusDetails } : remoteOptions,
+      reused ? { ...remoteOptions, statusDetails: reused.details } : remoteOptions,
     );
-    const latest = yield* getCachedStatus(cwd);
-    // An overlapping turn refresh and fetch can both move divergence during the forge lookup.
-    const refreshed =
-      read?.hasUpstream && latest?.remote !== previousRemote && latest?.remote?.branch === branch
-        ? yield* workflow.upstreamDivergence(cwd)
-        : null;
     let value: VcsStatusRemoteResult | null = null;
     let divergenceUnknown = false;
     if (read !== null) {
       const { divergenceUnknown: unknown, ...remote } = read;
-      value =
-        refreshed?.refName === branch
-          ? { ...remote, aheadCount: refreshed.aheadCount, behindCount: refreshed.behindCount }
-          : remote;
-      divergenceUnknown = unknown === true && refreshed?.refName !== branch;
+      value = remote;
+      divergenceUnknown = unknown === true;
     }
     const currentBranch = yield* workflow.currentBranch(cwd);
     const cached = yield* getCachedStatus(cwd);
@@ -690,6 +781,8 @@ export const make = Effect.gen(function* () {
           branch,
           value,
           fingerprint: fingerprintStatusPart(value),
+          divergenceObservation,
+          publishedBeforeRead,
           ...(divergenceUnknown && keepCountsOnUnknown ? { divergenceUnknown: true as const } : {}),
         } satisfies RemoteStatusRead)
       : null;
@@ -873,12 +966,12 @@ export const make = Effect.gen(function* () {
           const cached = yield* getCachedStatus(cwd);
           if (!cached || cached.remote?.value === null) return null;
           // Turn completion must update divergence even when background polling is paused.
-          const statusDetails = upstreamReads.get(cwd);
+          const upstreamRead = upstreamReads.get(cwd);
           upstreamReads.delete(cwd);
           const remoteRead = yield* readRemoteStatus(cwd, {
             refreshUpstream: false,
             refreshMissingPullRequest: true,
-            ...(statusDetails ? { statusDetails } : {}),
+            ...(upstreamRead ? { upstreamRead } : {}),
           });
           return yield* updateCachedRemoteStatus(cwd, remoteRead, { publish: true });
         }),

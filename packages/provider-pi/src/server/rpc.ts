@@ -18,6 +18,7 @@ import {
   MAX_TOOL_OUTPUT_IMAGE_BASE64_LENGTH,
 } from "@onicode/shared/toolOutput";
 
+import { boundedRedactedText, isCredentialKey } from "@onicode/provider-core/server/failure";
 import { signalProcessGroup } from "@onicode/provider-core/server/processGroup";
 
 export class PiRpcError extends Schema.TaggedError<PiRpcError>()("PiRpcError", {
@@ -164,12 +165,16 @@ const encodeJsonLine = Schema.encodeSync(UnknownFromJsonString);
 
 const PI_ERROR_DETAIL_MAX_CHARS = 200;
 
+// Pi relays the provider's raw response, credentials included; only a redacted summary is kept.
 function summarizePiError(error: unknown): string {
-  const text = typeof error === "string" ? error : JSON.stringify(error);
+  const text =
+    typeof error === "string"
+      ? error
+      : JSON.stringify(error, (key, value: unknown) =>
+          isCredentialKey(key) ? "[REDACTED]" : value,
+        );
   if (text === undefined) return "unknown error";
-  return text.length > PI_ERROR_DETAIL_MAX_CHARS
-    ? `${text.slice(0, PI_ERROR_DETAIL_MAX_CHARS)}…`
-    : text;
+  return boundedRedactedText(text, PI_ERROR_DETAIL_MAX_CHARS);
 }
 
 // Pi 0.84+ may exit 1 during import without any protocol output.
@@ -318,7 +323,6 @@ export const makePiRpcConnection = Effect.fnUntraced(function* (options: PiRpcSp
               new PiRpcError({
                 operation: String(record["command"] ?? "request"),
                 detail: summarizePiError(record["error"]),
-                ...(record["error"] === undefined ? {} : { cause: record["error"] }),
               }),
             );
           }
