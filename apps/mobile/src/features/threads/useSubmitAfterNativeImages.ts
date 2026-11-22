@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from "react";
 import type { RuntimeRequestId } from "@onicode/contracts";
 import type { ActiveTurnComposerAction } from "@onicode/client-runtime/state/composer-dispatch";
 import { useStableCallback } from "../../lib/useStableCallback";
@@ -6,10 +6,44 @@ import {
   nativeImagePasteCount,
   nativeImagePasteKey,
   nativeImagePastePending,
+  onNativeImagePastesChanged,
   onNativeImagePastesSettled,
   startNativeImagePaste,
 } from "../../state/composerDraftOperations";
 import type { ComposerDraftSendSettings } from "../../state/use-composer-drafts";
+
+/** Images still converting count as content, so Send can hold a message that is only them. */
+export function useNativeImagesConverting(draftKey: string): boolean {
+  return useSyncExternalStore(onNativeImagePastesChanged, () =>
+    nativeImagePastePending(nativeImagePasteKey(draftKey)),
+  );
+}
+
+type HeldSend = {
+  readonly draftKey: string;
+  readonly generation: number;
+  /** The pastes it waits on; once they are aborted, nothing later releases it. */
+  readonly pasteKey: string;
+  readonly approvalIds: ReadonlyArray<RuntimeRequestId>;
+  readonly settings: ComposerDraftSendSettings;
+  readonly followUp?: ActiveTurnComposerAction;
+  readonly images: number;
+};
+
+// Sends still held when their composer unmounted, by draft, so a composer back on it shows them.
+const leftSends = new Map<string, { readonly held: HeldSend; readonly cancel: () => void }>();
+const leftSendListeners = new Set<() => void>();
+const subscribeLeftSends = (listener: () => void) => {
+  leftSendListeners.add(listener);
+  return () => {
+    leftSendListeners.delete(listener);
+  };
+};
+const setLeftSend = (draftKey: string, send?: { held: HeldSend; cancel: () => void }) => {
+  if (send) leftSends.set(draftKey, send);
+  else leftSends.delete(draftKey);
+  for (const changed of leftSendListeners) changed();
+};
 
 export function useSubmitAfterNativeImages(props: {
   readonly draftKey: string;
@@ -28,16 +62,6 @@ export function useSubmitAfterNativeImages(props: {
     settingsAtPress: ComposerDraftSendSettings,
   ) => void;
 }) {
-  type HeldSend = {
-    readonly draftKey: string;
-    readonly generation: number;
-    /** The pastes it waits on; once they are aborted, nothing later releases it. */
-    readonly pasteKey: string;
-    readonly approvalIds: ReadonlyArray<RuntimeRequestId>;
-    readonly settings: ComposerDraftSendSettings;
-    readonly followUp?: ActiveTurnComposerAction;
-    readonly images: number;
-  };
   const heldSend = useRef<HeldSend | null>(null);
   const [releasedSend, setReleasedSend] = useState<HeldSend | null>(null);
   const consumedSend = useRef<HeldSend | null>(null);
@@ -45,16 +69,22 @@ export function useSubmitAfterNativeImages(props: {
   const [shownSend, setShownSend] = useState<HeldSend | null>(null);
   const watched = useRef<HeldSend | null>(null);
   const stopWatching = useRef<(() => void) | null>(null);
+  const leftSend = useSyncExternalStore(subscribeLeftSends, () => leftSends.get(props.draftKey));
   const settle = () => {
+    const settled = watched.current;
     watched.current = null;
     stopWatching.current?.();
     stopWatching.current = null;
     setShownSend(null);
+    if (settled !== null && leftSends.get(settled.draftKey)?.held === settled) {
+      setLeftSend(settled.draftKey);
+    }
   };
   const cancel = useStableCallback(() => {
     heldSend.current = null;
     setReleasedSend(null);
     settle();
+    leftSends.get(props.draftKey)?.cancel();
   });
   const sendReleased = useEffectEvent((held: HeldSend) => {
     if (
@@ -91,12 +121,30 @@ export function useSubmitAfterNativeImages(props: {
     consumedSend.current = releasedSend;
     sendReleased(releasedSend);
   }, [releasedSend, props.blocked]);
+  // Leaving the thread keeps a send waiting on its images, as on desktop; an edit still drops it.
+  const leave = useEffectEvent(() => {
+    const held = heldSend.current;
+    const shown = watched.current;
+    if (held === null || shown === null) {
+      stopWatching.current?.();
+      return;
+    }
+    setLeftSend(held.draftKey, { held: shown, cancel });
+    const stop = onNativeImagePastesSettled((key, failed) => {
+      if (key !== held.pasteKey) return;
+      stop();
+      // Null once Cancel or an edit dropped it.
+      if (watched.current === null) return;
+      settle();
+      if (!failed) props.onSubmit(held.followUp, held.approvalIds, held.settings);
+    });
+  });
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- subscribes to pastes settling, including a question's that this composer did not start
   useEffect(() => {
     const unsubscribe = onNativeImagePastesSettled(pastesSettled);
     return () => {
       unsubscribe();
-      stopWatching.current?.();
+      leave();
     };
   }, []);
   const dropLeftSend = useEffectEvent((draftKey: string) => {
@@ -135,15 +183,33 @@ export function useSubmitAfterNativeImages(props: {
       return true;
     },
   );
-  const pasteImages = useStableCallback((uris: ReadonlyArray<string>) => {
-    // Another image changes what the held send would carry, as an edit does.
-    if (watched.current !== null) cancel();
+  const convertImages = useStableCallback((uris: ReadonlyArray<string>) => {
     const finish = startNativeImagePaste(props.draftKey, uris.length);
     return props.onPasteImages(uris).then(finish, (error: unknown) => {
       finish(false);
       throw error;
     });
   });
-  const held = shownSend?.draftKey === props.draftKey ? { images: shownSend.images } : null;
-  return { deferSend, pasteImages, held, cancel };
+  const pasteImages = useStableCallback((uris: ReadonlyArray<string>) => {
+    // Another image changes what the held send would carry, as an edit does.
+    if (watched.current !== null || leftSends.has(props.draftKey)) cancel();
+    return convertImages(uris);
+  });
+  /** iOS reads a large pasteboard image off the main thread, so Send can come before its files. */
+  const readPastedImages = useStableCallback((images: number) => {
+    if (watched.current !== null || leftSends.has(props.draftKey)) cancel();
+    const finishRead = startNativeImagePaste(props.draftKey, images);
+    return (uris: ReadonlyArray<string>) => {
+      // Conversion takes over the hold before the read lets go of it.
+      if (uris.length > 0) void convertImages(uris);
+      finishRead(uris.length > 0);
+    };
+  });
+  const held =
+    shownSend?.draftKey === props.draftKey
+      ? { images: shownSend.images }
+      : leftSend
+        ? { images: leftSend.held.images }
+        : null;
+  return { deferSend, pasteImages, readPastedImages, held, cancel };
 }

@@ -72,6 +72,13 @@ export interface ComposerEditorProps {
   readonly readResetGeneration?: () => number;
   readonly onSelectionChange?: (selection: ComposerEditorSelection) => void;
   readonly onPasteImages?: (uris: ReadonlyArray<string>) => void;
+  /**
+   * iOS: a pasted or dropped image started loading, which can outlast a tap on Send. The returned
+   * callback gets its files, none if no image loaded; without one they go to `onPasteImages`.
+   */
+  readonly onPasteImagesRead?: (
+    images: number,
+  ) => ((uris: ReadonlyArray<string>) => void) | undefined;
   readonly onContextPress?: (reference: {
     readonly source: string;
     readonly start: number;

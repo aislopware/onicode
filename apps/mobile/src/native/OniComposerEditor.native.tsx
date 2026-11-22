@@ -143,6 +143,7 @@ export function ComposerEditor({
   onChangeText,
   onSelectionChange,
   onPasteImages,
+  onPasteImagesRead: _onPasteImagesRead,
   onPasteText,
   onFocus,
   onBlur,
