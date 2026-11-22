@@ -130,7 +130,10 @@ export type ScheduledTaskDraft = {
   readonly runtimeMode: RuntimeMode;
 };
 
+// Fields a mode leaves behind when the user switches away and back are not edits.
 function draftSignature(draft: ScheduledTaskDraft): string {
+  const { mode } = draft.schedule;
+  const worktree = draft.workspace === "worktree";
   return JSON.stringify([
     draft.title,
     draft.prompt,
@@ -141,17 +144,17 @@ function draftSignature(draft: ScheduledTaskDraft): string {
     [...(draft.modelSelection?.options ?? [])]
       .sort((a, b) => a.id.localeCompare(b.id))
       .map((option) => [option.id, option.value]),
-    draft.schedule.mode,
-    draft.schedule.timeOfDay,
-    draft.schedule.runAt,
-    [...draft.schedule.weekdays].sort((a, b) => a - b),
-    draft.schedule.intervalMinutes,
+    mode,
+    mode === "fixed_time" ? draft.schedule.timeOfDay : null,
+    mode === "once" ? draft.schedule.runAt : null,
+    mode === "fixed_time" ? [...draft.schedule.weekdays].sort((a, b) => a - b) : null,
+    mode === "interval" ? draft.schedule.intervalMinutes : null,
     draft.threadMode,
     draft.workspace,
-    draft.baseRef,
-    draft.checkoutPath,
+    worktree ? draft.baseRef : null,
+    draft.workspace === "existing_worktree" ? draft.checkoutPath : null,
     draft.enabled,
-    draft.startFromOrigin,
+    worktree ? draft.startFromOrigin : null,
     draft.runtimeMode,
   ]);
 }

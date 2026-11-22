@@ -43,7 +43,7 @@ import { formatRelativeTime } from "../../timestampFormat";
 import { useClientSettings, useEnvironmentSettings } from "../../hooks/useSettings";
 import { getCustomModelOptionsByInstance } from "../../modelSelection";
 import { providerInstanceEntriesFor } from "../../providerInstances";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link, useBlocker, useNavigate } from "@tanstack/react-router";
 import { useNowMinute } from "../../hooks/useNowMinute";
 import { useEnvironment, type EnvironmentPresentation } from "../../state/environments";
 import {
@@ -60,12 +60,12 @@ import { formatEnvironmentQueryError, useEnvironmentQuery } from "../../state/qu
 import { EMPTY_SERVER_PROVIDERS, serverEnvironment } from "../../state/server";
 import { threadFamilies } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
-import { isConfirmDialogActive, requestConfirmDialog } from "../../confirmDialog";
+import { requestConfirmDialog } from "../../confirmDialog";
 import { WorktreeBaseBranchPicker } from "../WorktreeBaseBranchPicker";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import { ConnectionStatusDot, connectionPhaseDotClassName } from "../ConnectionStatusDot";
 import { AuthOrchestrationOperateScope, clampManagedRuntimeMode } from "@onicode/contracts";
-import { resolvePastedPath } from "@onicode/shared/path";
+import { normalizeProjectPathForDispatch, resolvePastedPath } from "@onicode/shared/path";
 import { readEnvironmentScope } from "~/state/session";
 import { useSettingsScope } from "./SettingsScopeContext";
 import { EnvironmentRow, useEnvironmentTransportLabel } from "./EnvironmentRow";
@@ -793,18 +793,37 @@ function ScheduledTaskEditorDialog({
   const gt = useGT();
   const [saving, setSaving] = useState(false);
   const form = useRef<ScheduledTaskEditorFormHandle>(null);
-  const requestClose = async () => {
-    // The Escape that dismisses the confirmation must not queue another one.
-    if (saving || isConfirmDialogActive()) return;
-    if (form.current?.hasChanges()) {
-      const message = `${gt("Discard changes?")}\n${gt("Your unsaved changes will be lost.")}`;
-      const discard =
-        (await requestConfirmDialog(message, { variant: "destructive" })) ??
-        window.confirm(message);
-      if (!discard) return;
-    }
+  const asking = useRef(false);
+  const leaving = useRef(false);
+  const confirmDiscard = async () => {
+    if (!form.current?.hasChanges()) return true;
+    const message = `${gt("Discard changes?")}\n${gt("Your unsaved changes will be lost.")}`;
+    const pending = requestConfirmDialog(message, { variant: "destructive" });
+    if (pending === undefined) return window.confirm(message);
+    asking.current = true;
+    return pending.finally(() => {
+      asking.current = false;
+    });
+  };
+  const close = () => {
+    leaving.current = true;
     onClose();
   };
+  const requestClose = async () => {
+    // The Escape that dismisses the confirmation must not queue another one.
+    if (saving || asking.current) return;
+    // A navigation can unmount the editor while the confirmation is open.
+    if ((await confirmDiscard()) && form.current !== null) close();
+  };
+  // Leaving the page unmounts the editor; Back and shortcuts would drop the draft unasked.
+  useBlocker({
+    shouldBlockFn: async ({ current, next }) => {
+      if (leaving.current || next.pathname === current.pathname) return false;
+      if (asking.current) return true;
+      return !(await confirmDiscard());
+    },
+    enableBeforeUnload: false,
+  });
   return (
     <Dialog
       open
@@ -822,7 +841,7 @@ function ScheduledTaskEditorDialog({
           task={task}
           saving={saving}
           onSavingChange={setSaving}
-          onClose={onClose}
+          onClose={close}
         />
       </DialogPopup>
     </Dialog>
@@ -1062,14 +1081,6 @@ function ScheduledTaskEditorForm({
         },
   );
   const [draft, setDraft] = useState(initialDraft);
-  useImperativeHandle(
-    ref,
-    () => ({
-      hasChanges: () =>
-        environmentId !== initialEnvironmentId || hasDraftChanges(initialDraft, draft),
-    }),
-    [environmentId, initialEnvironmentId, initialDraft, draft],
-  );
   // Pinned first. The chosen project stays listed after it is archived.
   const projects = scopedProjects
     .filter(
@@ -1108,11 +1119,26 @@ function ScheduledTaskEditorForm({
 
   const firstInstance = instanceEntries[0];
   const draftSelection = draft.modelKey ? splitModelKey(draft.modelKey) : null;
+  const defaultModel = scheduledTaskDefaultModel(
+    settings,
+    selectedProject ?? null,
+    instanceEntries,
+  );
+  const defaultModelKey = defaultModel ? `${defaultModel.instanceId}:${defaultModel.model}` : "";
+  useImperativeHandle(
+    ref,
+    () => ({
+      hasChanges: () =>
+        environmentId !== initialEnvironmentId ||
+        hasDraftChanges(initialDraft, draft, defaultModelKey),
+    }),
+    [environmentId, initialEnvironmentId, initialDraft, draft, defaultModelKey],
+  );
   const activeSelection =
     draftSelection &&
     instanceEntries.some((entry) => entry.instanceId === draftSelection.instanceId && entry.enabled)
       ? draftSelection
-      : scheduledTaskDefaultModel(settings, selectedProject ?? null, instanceEntries);
+      : defaultModel;
   const activeInstanceId =
     activeSelection?.instanceId ?? firstInstance?.instanceId ?? ("" as ProviderInstanceId);
   const activeModel = activeSelection?.model ?? "";
@@ -1206,7 +1232,10 @@ function ScheduledTaskEditorForm({
       draft.workspaceMode === "root"
         ? { type: "root" }
         : draft.workspaceMode === "existing_worktree"
-          ? { type: "existing_worktree", worktreePath: draft.existingWorktreePath.trim() }
+          ? {
+              type: "existing_worktree",
+              worktreePath: normalizeProjectPathForDispatch(draft.existingWorktreePath),
+            }
           : {
               type: "worktree",
               baseRef: worktreeBaseRef,

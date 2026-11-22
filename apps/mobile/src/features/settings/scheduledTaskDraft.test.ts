@@ -11,6 +11,7 @@ import {
 import {
   createDraft,
   editDraft,
+  hasScheduledTaskDraftChanges,
   scheduledTaskDefaultModel,
   DEFAULT_SCHEDULE,
   scheduleDraftForTask,
@@ -165,6 +166,18 @@ describe("scheduled task worktree base", () => {
     lastRunError: null,
     runCount: 0,
   } satisfies ScheduledTask;
+
+  it("counts only edits the saved task would carry", () => {
+    const draft = editDraft(rootTask);
+    const changed = (next: Partial<typeof draft>) =>
+      hasScheduledTaskDraftChanges(draft, { ...draft, ...next });
+    expect(changed({ schedule: { ...draft.schedule, runAt: "2026-11-23T09:00:00.000Z" } })).toBe(
+      false,
+    );
+    expect(changed({ baseRef: "release", checkoutPath: "/x" })).toBe(false);
+    expect(changed({ schedule: { ...draft.schedule, intervalMinutes: "5" } })).toBe(true);
+    expect(changed({ schedule: { ...draft.schedule, mode: "once" } })).toBe(true);
+  });
 
   it("leaves the base automatic for new tasks and tasks without a worktree", () => {
     expect(createDraft(ProjectId.make("project"), null).baseRef).toBe("");

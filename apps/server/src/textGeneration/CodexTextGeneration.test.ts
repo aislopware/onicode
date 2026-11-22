@@ -668,6 +668,8 @@ const PREFLIGHT_PRIMARY_STATES = [
   "cannot generate text, fallback disabled for project",
   "model cannot generate text",
   "model cannot generate text, fallback disabled for project",
+  "probing, cannot generate text yet",
+  "probing, cannot generate text yet, fallback disabled for project",
   "disabled",
   "disabled for project",
   "disabled, thread default model cannot generate text",
@@ -723,6 +725,9 @@ it.effect.each(PREFLIGHT_PRIMARY_STATES)("text generation preflight: %s", (prima
           : {}),
         ...(primaryState.startsWith("cannot generate text") && instanceId === primary
           ? { supportsTextGeneration: false }
+          : {}),
+        ...(primaryState.startsWith("probing") && instanceId === primary
+          ? { status: "warning", auth: { status: "unknown" }, supportsTextGeneration: false }
           : {}),
         ...(primaryState.startsWith("model cannot generate text") && instanceId === primary
           ? {
@@ -847,7 +852,7 @@ it.effect.each(PREFLIGHT_PRIMARY_STATES)("text generation preflight: %s", (prima
     }
     if (primaryState.endsWith("cannot generate text, fallback disabled for project")) {
       expect((yield* Effect.flip(generate)).detail).toBe(
-        "codex cannot generate text with chat-model and no other provider can take over. Pick another text generation model in Settings.",
+        "codex cannot title threads with chat-model and no other provider can take over. Pick another text generation model in Settings.",
       );
       expect(calls).toEqual([]);
       return;
@@ -856,6 +861,7 @@ it.effect.each(PREFLIGHT_PRIMARY_STATES)("text generation preflight: %s", (prima
     expect(calls).toEqual([
       primaryState === "ready" ||
       primaryState === "pending" ||
+      primaryState === "probing, cannot generate text yet, fallback disabled for project" ||
       primaryState === "not installed, fallback disabled for project" ||
       primaryState === "signed out, fallback failed"
         ? selection
@@ -872,7 +878,7 @@ it.effect.each(PREFLIGHT_PRIMARY_STATES)("text generation preflight: %s", (prima
 );
 
 it.effect(
-  "a review guide aimed at a text generator falls back to an agent that can read the checkout",
+  "a review guide aimed at a text generator or a non-investigating agent falls back to one that can read the checkout",
   () =>
     Effect.gen(function* () {
       const claude = ProviderInstanceId.make("claudeAgent");
@@ -922,7 +928,14 @@ it.effect(
                 getInstance: (id) =>
                   Effect.succeed(instances.find((candidate) => candidate.instanceId === id)),
               }),
-              ServerSettings.layerTest({}),
+              ServerSettings.layerTest({
+                providerInstances: {
+                  [ProviderInstanceId.make("opencode")]: {
+                    driver: ProviderDriverKind.make("opencode"),
+                    enabled: true,
+                  },
+                },
+              }),
               Layer.mock(TextGenerators.TextGenerators)({
                 runner: (id) =>
                   Effect.succeed(
@@ -950,6 +963,32 @@ it.effect(
       };
       yield* (yield* serviceWith([instance])).generateReviewGuide(input);
       expect(calls.map((selection) => selection.instanceId)).toEqual([claude]);
+
+      // An agent that cannot investigate hands over too, instead of refusing at run time.
+      const opencode = ProviderInstanceId.make("opencode");
+      const opencodeDriver = ProviderDriverKind.make("opencode");
+      const nonInvestigating = {
+        ...instance,
+        instanceId: opencode,
+        driverKind: opencodeDriver,
+        continuationIdentity: { driverKind: opencodeDriver, continuationKey: opencode },
+        snapshot: {
+          getSnapshot: Effect.map(instance.snapshot.getSnapshot, (snapshot) => ({
+            ...snapshot,
+            instanceId: opencode,
+            driver: opencodeDriver,
+          })),
+        } as ProviderInstance["snapshot"],
+        textGeneration: TextGeneration.TextGeneration.of({
+          ...instance.textGeneration,
+          generateReviewGuide: () => Effect.die("opencode cannot investigate"),
+        }),
+      } satisfies ProviderInstance;
+      yield* (yield* serviceWith([nonInvestigating, instance])).generateReviewGuide({
+        ...input,
+        modelSelection: { instanceId: opencode, model: "some/model" },
+      });
+      expect(calls.map((selection) => selection.instanceId)).toEqual([claude, claude]);
 
       // With no agent ready, it says what is missing instead of looking up a provider by that id.
       const failure = yield* Effect.flip((yield* serviceWith([])).generateReviewGuide(input));

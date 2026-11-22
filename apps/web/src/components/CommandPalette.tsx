@@ -225,6 +225,7 @@ import {
   createCommandPaletteSearchState,
   type CommandPaletteGroup,
   resolveAddProjectEntry,
+  browsedFolder,
   type AddProjectCloneFlow,
   type AddProjectEnvironmentOption,
   buildPaletteRemoteSourceReadiness,
@@ -2474,10 +2475,8 @@ function OpenCommandPaletteDialog(props: {
   };
 
   // A folder the server listed is a real path; only typed text is trimmed.
-  const browsedAddProjectPath = browsePath.namesDirectory
-    ? browseResult?.parentPath
-    : exactBrowseEntry?.fullPath;
-  const resolvedAddProjectPath = browsedAddProjectPath ?? query.trim();
+  const browsedProjectFolder = browsedFolder(browsePath, browseResult, exactBrowseEntry);
+  const resolvedAddProjectPath = browsedProjectFolder.path ?? query.trim();
 
   const canBrowseUp = !relativePathNeedsActiveProject && browsePath.canBrowseUp;
 
@@ -2721,7 +2720,7 @@ function OpenCommandPaletteDialog(props: {
     browseAccessError === null &&
     query.trim().length > 0 &&
     !hasHighlightedBrowseItem &&
-    (browsePath.namesDirectory ? !browseResult : exactBrowseEntry === null);
+    !browsedProjectFolder.exists;
   const useMetaForMod = isMacPlatform(navigator.platform);
   const submitModifierLabel = useMetaForMod ? "\u2318" : "Ctrl";
   const submitActionLabel = isCloneDestinationStep
@@ -2878,7 +2877,7 @@ function OpenCommandPaletteDialog(props: {
       if (isCloneDestinationStep) {
         void submitAddProjectCloneFlow(resolvedAddProjectPath);
       } else {
-        void handleAddProject(resolvedAddProjectPath, browsedAddProjectPath !== undefined);
+        void handleAddProject(resolvedAddProjectPath, browsedProjectFolder.path !== undefined);
       }
       return;
     }
@@ -3154,7 +3153,7 @@ function OpenCommandPaletteDialog(props: {
           if (isCloneDestinationStep) {
             void submitAddProjectCloneFlow(resolvedAddProjectPath);
           } else {
-            void handleAddProject(resolvedAddProjectPath, browsedAddProjectPath !== undefined);
+            void handleAddProject(resolvedAddProjectPath, browsedProjectFolder.path !== undefined);
           }
         }}
       />

@@ -139,6 +139,8 @@ it.layer(layerTest)("KiroDriver binary path", (it) => {
         [path.join("/test-home", ".local", "bin", "kiro-cli")],
       );
       assert.isTrue(snapshot.installed);
+      // Its text generation refuses every operation, so preflight must hand the work elsewhere.
+      assert.isFalse(snapshot.supportsTextGeneration);
     }),
   );
 });
