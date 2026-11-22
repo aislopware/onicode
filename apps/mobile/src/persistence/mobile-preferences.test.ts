@@ -18,6 +18,7 @@ function loadWith(options: {
   readonly stored: Option.Option<string> | "unavailable";
   readonly secure?: Readonly<Record<string, string>> | undefined;
   readonly secureReadFails?: boolean | undefined;
+  readonly save?: boolean | undefined;
 }) {
   let stored = options.stored;
   const unavailable = Effect.fail(
@@ -51,8 +52,8 @@ function loadWith(options: {
   return Effect.gen(function* () {
     const store = yield* MobilePreferences.MobilePreferencesStore;
     const loaded = yield* store.load;
-    const saved = yield* store.savePatch({ baseFontSize: 18 });
-    return { loaded, saved };
+    const saved = options.save === false ? undefined : yield* store.savePatch({ baseFontSize: 18 });
+    return { loaded, saved, stored };
   }).pipe(
     Effect.provide(
       MobilePreferences.layer.pipe(
@@ -80,8 +81,18 @@ describe("MobilePreferencesStore", () => {
       for (const options of damaged) {
         const result = yield* loadWith(options);
         expect(result.loaded.errorReportingEnabled).toBe(false);
-        expect(result.saved.errorReportingEnabled).toBe(false);
+        expect(result.saved?.errorReportingEnabled).toBe(false);
       }
+
+      // Loading alone must not overwrite an opt-in while the fallback is briefly unreadable.
+      const optedIn = `{ "errorReportingEnabled": true }`;
+      const unreadable = yield* loadWith({
+        stored: Option.some(optedIn),
+        secureReadFails: true,
+        save: false,
+      });
+      expect(unreadable.loaded.errorReportingEnabled).toBe(false);
+      expect(unreadable.stored).toEqual(Option.some(optedIn));
     }),
   );
 });

@@ -143,12 +143,14 @@ describe("mobile connection storage", () => {
 
   it("falls back to secure storage when SQLite cannot save preferences", async () => {
     mocks.setDatabaseFailures(true, true);
-    await expect(savePreferencesPatch({ baseFontSize: 19 })).resolves.toEqual({ baseFontSize: 19 });
+    // The unreadable database may hold an error reporting opt-out, so the save keeps it.
+    const saved = { baseFontSize: 19, errorReportingEnabled: false };
+    await expect(savePreferencesPatch({ baseFontSize: 19 })).resolves.toEqual(saved);
     const fallback = JSON.parse(mocks.getStoredValue("onicode.preferences.fallback") ?? "") as {
       readonly payload: string;
       readonly updatedAt: number;
     };
-    expect(JSON.parse(fallback.payload)).toEqual({ baseFontSize: 19 });
+    expect(JSON.parse(fallback.payload)).toEqual(saved);
     expect(fallback.updatedAt).toEqual(expect.any(Number));
   });
 

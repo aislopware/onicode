@@ -606,15 +606,17 @@ const make = Effect.fn("MobilePreferencesStore.make")(function* () {
       }
     }
 
+    // `consentUnknown`: a store that could not be read now may hold an opt-out. Loading keeps
+    // reporting off without saving, so a recovered store restores an opt-in; a save keeps it off.
     if (parsed !== null) {
       const preferences = sanitizePreferences(parsed);
-      // The fallback holds the newest save when the database failed; if it is unreadable, it may
-      // hold an opt-out the database lacks. Keep reporting off and save that.
-      const fallbackUnreadable =
-        fallbackResult._tag === "Failure" || (fallbackJson !== null && fallback === null);
-      if (!fallbackUnreadable || preferences.errorReportingEnabled === false) return preferences;
-      const optedOut = { ...preferences, errorReportingEnabled: false };
-      if (databaseAvailable) {
+      // A damaged fallback is replaced by the next save and may hold a newer opt-out: save it.
+      if (
+        fallbackJson !== null &&
+        fallback === null &&
+        preferences.errorReportingEnabled !== false
+      ) {
+        const optedOut = { ...preferences, errorReportingEnabled: false };
         yield* saveJson(yield* encode(PREFERENCES_KEY, optedOut)).pipe(
           Effect.catch((error) =>
             Effect.logWarning("Could not save the error reporting opt-out.").pipe(
@@ -622,28 +624,36 @@ const make = Effect.fn("MobilePreferencesStore.make")(function* () {
             ),
           ),
         );
+        return { preferences: optedOut, consentUnknown: false };
       }
-      return optedOut;
+      return { preferences, consentUnknown: fallbackResult._tag === "Failure" };
     }
-    // Stored preferences that could not be read may hold an opt-out this must not undo.
-    const unreadable =
-      !databaseAvailable ||
-      Option.isSome(storedJson) ||
-      fallbackJson !== null ||
-      legacyJson !== null;
-    return unreadable ? { errorReportingEnabled: false } : {};
+    // Damaged stored preferences are replaced by the next save; keep any opt-out they held.
+    const damaged = Option.isSome(storedJson) || fallbackJson !== null || legacyJson !== null;
+    return {
+      preferences: damaged ? { errorReportingEnabled: false } : {},
+      consentUnknown: !databaseAvailable,
+    };
   });
 
   const load = lock
     .withPermits(1)(loadUnlocked)
-    .pipe(Effect.mapError((cause) => new MobilePreferencesLoadError({ cause })));
+    .pipe(
+      Effect.map(({ preferences, consentUnknown }) =>
+        consentUnknown ? { ...preferences, errorReportingEnabled: false } : preferences,
+      ),
+      Effect.mapError((cause) => new MobilePreferencesLoadError({ cause })),
+    );
 
   const update = Effect.fn("MobilePreferencesStore.update")(
     (transform: (current: Preferences) => Partial<Preferences>) =>
       lock
         .withPermits(1)(
           Effect.gen(function* () {
-            const current = yield* loadUnlocked;
+            const loaded = yield* loadUnlocked;
+            const current = loaded.consentUnknown
+              ? { ...loaded.preferences, errorReportingEnabled: false }
+              : loaded.preferences;
             const patch = yield* Effect.try({
               try: () => transform(current),
               catch: (cause) => new MobilePreferencesSaveError({ cause }),
