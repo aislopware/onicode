@@ -3216,3 +3216,4 @@ bcace0787e	take	as is
 70b5e489b9	take	as is
 c3a330d834	take	taken; threadCanSteer takes Onicode's optional steersAfterCompaction (server holds steers during automatic compaction) so ChatView keeps that capability, with rows for it in the gating table; both composerDispatch imports kept; mobile already gates on canPromoteToSteer, which takes the same supportsSteering fix
 c198f73b37	take	taken as is
+379a98ac22	take	conflict resolved: host-only MAC skip combined with Onicode's tailnetOnly filter
