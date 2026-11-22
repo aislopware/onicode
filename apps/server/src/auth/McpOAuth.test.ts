@@ -299,6 +299,22 @@ it.live("signs in with a pairing code and issues a token only /mcp accepts", () 
         }),
       );
       expect(ticket.status).toBe(401);
+
+      // Revocation ends only an MCP client's own session; any other token is answered alike and kept.
+      const owner = yield* auth.exchangeBootstrapCredentialForAccessToken(
+        (yield* auth.issuePairingCredential()).credential,
+        undefined,
+        { deviceType: "desktop" },
+      );
+      const bearer = (token: string) =>
+        HttpServerRequest.fromWeb(at("/api", { headers: { authorization: `Bearer ${token}` } }));
+      for (const other of ["not-a-token", owner.access_token]) {
+        expect((yield* handler(at("/oauth/mcp/revoke", form({ token: other })))).status).toBe(200);
+      }
+      yield* auth.authenticateHttpRequest(bearer(owner.access_token));
+      const revoked = yield* handler(at("/oauth/mcp/revoke", form({ token: token.access_token })));
+      expect(revoked.status).toBe(200);
+      yield* auth.authenticateMcpClient(bearer(token.access_token)).pipe(Effect.flip);
     }),
   ),
 );

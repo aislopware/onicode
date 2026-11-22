@@ -503,6 +503,13 @@ export const AuthMcpTokenRequest = Schema.Struct({
 }).pipe(HttpApiSchema.asFormUrlEncoded());
 export type AuthMcpTokenRequest = typeof AuthMcpTokenRequest.Type;
 
+/** RFC 7009: the holder of an access token ends its session. */
+export const AuthMcpRevokeRequest = Schema.Struct({
+  token: Schema.optionalKey(Schema.RedactedFromValue(Schema.String)),
+  token_type_hint: Schema.optionalKey(Schema.String),
+}).pipe(HttpApiSchema.asFormUrlEncoded());
+export type AuthMcpRevokeRequest = typeof AuthMcpRevokeRequest.Type;
+
 export const AuthMcpTokenResult = Schema.Struct({
   access_token: Schema.String,
   token_type: Schema.Literal("Bearer"),
