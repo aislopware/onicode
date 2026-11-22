@@ -911,11 +911,36 @@ describe("question answer paths", () => {
           ext: "docx",
           bounded: true,
           parts: {
-            "word/document.xml":
-              '<w:document xmlns:w="urn:w"><w:body><w:p><w:r><w:t>Before</w:t></w:r><w:r><w:drawing><wps:wsp><wps:txbx><w:txbxContent><w:p><w:pPr><w:pStyle w:val="Heading2"/></w:pPr><w:r><w:t>Callout</w:t></w:r></w:p></w:txbxContent></wps:txbx></wps:wsp></w:drawing></w:r><w:r><w:t>after</w:t></w:r></w:p></w:body></w:document>',
+            "word/document.xml": [
+              '<w:document xmlns:w="urn:w"><w:body>',
+              '<w:p><w:r><w:t>Before</w:t></w:r><w:r><w:drawing><wps:wsp><wps:txbx><w:txbxContent><w:p><w:pPr><w:pStyle w:val="Heading2"/></w:pPr><w:r><w:t>Callout</w:t></w:r></w:p></w:txbxContent></wps:txbx></wps:wsp></w:drawing></w:r><w:r><w:t>after</w:t></w:r></w:p>',
+              '<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:drawing><wps:wsp><wps:txbx><w:txbxContent><w:p><w:r><w:t>Box text</w:t></w:r></w:p></w:txbxContent></wps:txbx></wps:wsp></w:drawing></w:r><w:r><w:t>Title</w:t></w:r></w:p>',
+              '<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:drawing><wps:wsp><wps:txbx><w:txbxContent><w:p><w:pPr><w:pStyle w:val="Heading2"/></w:pPr><w:r><w:t>Only box</w:t></w:r></w:p></w:txbxContent></wps:txbx></wps:wsp></w:drawing></w:r></w:p>',
+              '<w:p><w:pPr><w:pPrChange><w:pPr><w:pStyle w:val="Heading1"/></w:pPr></w:pPrChange></w:pPr><w:r><w:t>Normal now</w:t></w:r></w:p>',
+              "<w:p><w:r><w:t>Empty</w:t></w:r><w:r><w:drawing><wps:wsp><wps:txbx><w:txbxContent><w:p/></w:txbxContent></wps:txbx></wps:wsp></w:drawing></w:r><w:r><w:t>box</w:t></w:r></w:p>",
+              "<w:p><w:r><w:t>Ends</w:t></w:r><w:r><w:drawing><wps:wsp><wps:txbx><w:txbxContent><w:p><w:r><w:t>Last</w:t></w:r></w:p></w:txbxContent></wps:txbx></wps:wsp></w:drawing></w:r></w:p>",
+              "<w:p><w:r><w:t>Next</w:t></w:r></w:p>",
+              "</w:body></w:document>",
+            ].join(""),
           },
-          expected: ["Before\n## Callout\nafter"],
-          absent: ["## Before"],
+          expected: [
+            "Before\n## Callout\nafter",
+            "Box text\n# Title",
+            "## Only box",
+            "Normal now",
+            "Emptybox",
+            "Ends\nLast\nNext",
+          ],
+          absent: ["## Before", "# Box", "# ## ", "# Normal now", "Last\n\n"],
+        },
+        {
+          ext: "odt",
+          bounded: true,
+          parts: {
+            "content.xml":
+              "<document><p>Before<frame><text-box><p>Callout</p><p>Second</p></text-box></frame>after</p></document>",
+          },
+          expected: ["Before\nCallout\nSecond\nafter"],
         },
         {
           ext: "docx",

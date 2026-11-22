@@ -176,13 +176,28 @@ function* all(
     else yield* all(child, name, skip);
   }
 }
-// `lineOpen` reports whether the enclosing paragraph's current line already has text.
-function* text(node: XmlNode, lineOpen?: () => boolean): Generator<TextPart, void> {
+const TEXT_BOXES = new Set(["txbxContent", "text-box"]);
+/** The enclosing paragraph's current line, so a text box inside it starts a line of its own. */
+interface Line {
+  open: boolean;
+  boxes: number;
+  afterBox: boolean;
+}
+function* text(node: XmlNode, line?: Line): Generator<TextPart, void> {
   if (HIDDEN.has(node.name)) return;
-  // Word text boxes hold their own paragraphs inside the anchoring paragraph.
-  if (node.name === "txbxContent") {
-    if (lineOpen?.()) yield "\n";
-    yield* paragraphs(node);
+  // Word and OpenDocument text boxes hold their own paragraphs inside the anchoring paragraph.
+  if (TEXT_BOXES.has(node.name)) {
+    if (!node.hasText) return;
+    if (line?.open) yield "\n";
+    if (line) line.boxes++;
+    try {
+      yield* paragraphs(node);
+    } finally {
+      if (line) {
+        line.boxes--;
+        line.afterBox = true;
+      }
+    }
   } else if (["tab", "ptab", "cell"].includes(node.name)) yield "\t";
   else if (["br", "line-break", "cr"].includes(node.name)) yield "\n";
   else if (node.name === "noBreakHyphen") yield "\u2011";
@@ -192,7 +207,7 @@ function* text(node: XmlNode, lineOpen?: () => boolean): Generator<TextPart, voi
   } else
     for (const child of node.children) {
       if (typeof child === "string") yield child;
-      else yield* text(child, lineOpen);
+      else yield* text(child, line);
     }
 }
 // SpreadsheetML `t` and `v` values are ST_Xstring: `_xHHHH_` is one UTF-16 code unit, and an
@@ -212,7 +227,6 @@ function* xstringText(node: XmlNode): Generator<string, void> {
         literal ? `_${literal}` : String.fromCharCode(Number.parseInt(hex!, 16)),
     );
 }
-const TEXT_BOX = new Set(["txbxContent"]);
 function* paragraphs(node: XmlNode): Generator<TextPart, void> {
   if (HIDDEN.has(node.name)) return;
   for (const child of node.children) {
@@ -220,23 +234,33 @@ function* paragraphs(node: XmlNode): Generator<TextPart, void> {
     else if (["br", "line-break", "cr"].includes(child.name)) yield "\n";
     else if (["tbl", "table"].includes(child.name)) yield* table(child);
     else if (["p", "h"].includes(child.name) || /^h[1-6]$/.test(child.name)) {
-      const style = all(child, "pStyle", TEXT_BOX).next().value?.attrs.val ?? "";
+      // Only the paragraph's own properties: not a text box's, nor a tracked change's old style.
+      const properties = children(child).find((node) => node.name === "pPr");
+      const style = children(properties).find((node) => node.name === "pStyle")?.attrs.val ?? "";
       const level =
         child.name === "h"
           ? Number(child.attrs["outline-level"]) || 1
           : /^h[1-6]$/.test(child.name)
             ? Number(child.name[1])
             : Number(style.match(/^Heading([1-6])$/i)?.[1]) || 0;
-      if (level) yield `${"#".repeat(Math.min(6, level))} `;
-      let open = false;
-      for (const part of text(child, () => open)) {
+      // Word puts an anchored text box first, so the marker waits for the paragraph's own text.
+      let marker = level ? `${"#".repeat(Math.min(6, level))} ` : "";
+      const line: Line = { open: false, boxes: 0, afterBox: false };
+      for (const part of text(child, line)) {
+        const own = line.boxes === 0;
         if (typeof part === "string") {
+          if (own && part.trim() !== "") {
+            if (marker) yield marker;
+            marker = "";
+            line.afterBox = false;
+          } else if (own && marker) continue;
           const tail = part.slice(part.lastIndexOf("\n") + 1).trim() !== "";
-          open = part.includes("\n") ? tail : open || tail;
-        }
+          line.open = part.includes("\n") ? tail : line.open || tail;
+        } else if (own) line.afterBox = false;
         yield part;
       }
-      yield "\n";
+      // A text box that ends the paragraph has already ended its line.
+      if (!line.afterBox) yield "\n";
     } else {
       yield* paragraphs(child);
       if (["li", "div", "section"].includes(child.name)) yield "\n";

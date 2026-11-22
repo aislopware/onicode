@@ -2,6 +2,8 @@ import {
   createAdvertisedEndpoint,
   type CreateAdvertisedEndpointInput,
 } from "@onicode/shared/advertisedEndpoint";
+import { isMachineLocalInterface } from "@onicode/shared/hostClassification";
+import * as HostProcess from "@onicode/shared/HostProcess";
 import {
   DesktopServerExposureModeSchema,
   type AdvertisedEndpoint,
@@ -90,6 +92,7 @@ const isHttpsEndpointUrl = (value: string): boolean => {
 const resolveLanAdvertisedHost = (
   networkInterfaces: DesktopNetworkInterfaces.NetworkInterfaces,
   explicitHost: string | undefined,
+  platform: NodeJS.Platform,
 ): string | null => {
   const normalizedExplicitHost = normalizeOptionalHost(explicitHost);
   if (normalizedExplicitHost) {
@@ -102,10 +105,13 @@ const resolveLanAdvertisedHost = (
         (address) =>
           !address.internal && address.family === "IPv4" && isUsableLanIpv4Address(address.address),
       )
-      .map((address) => ({ name, address: address.address })),
+      .map((address) => ({
+        address: address.address,
+        fallback:
+          HOST_ONLY_INTERFACE.test(name) || isMachineLocalInterface(name, address.mac, platform),
+      })),
   );
-  const preferred =
-    lanAddresses.find(({ name }) => !HOST_ONLY_INTERFACE.test(name)) ?? lanAddresses[0];
+  const preferred = lanAddresses.find(({ fallback }) => !fallback) ?? lanAddresses[0];
   return preferred?.address ?? null;
 };
 
@@ -135,6 +141,7 @@ const resolveDesktopServerExposure = (input: {
   readonly mode: DesktopServerExposureMode;
   readonly port: number;
   readonly networkInterfaces: DesktopNetworkInterfaces.NetworkInterfaces;
+  readonly platform: NodeJS.Platform;
   readonly advertisedHostOverride?: string;
 }): ResolvedDesktopServerExposure => {
   const localHttpUrl = `http://${DESKTOP_LOOPBACK_HOST}:${input.port}`;
@@ -151,9 +158,14 @@ const resolveDesktopServerExposure = (input: {
     };
   }
 
-  const advertisedHost = (
-    input.mode === "tailnet-only" ? resolveTailnetAdvertisedHost : resolveLanAdvertisedHost
-  )(input.networkInterfaces, input.advertisedHostOverride);
+  const advertisedHost =
+    input.mode === "tailnet-only"
+      ? resolveTailnetAdvertisedHost(input.networkInterfaces, input.advertisedHostOverride)
+      : resolveLanAdvertisedHost(
+          input.networkInterfaces,
+          input.advertisedHostOverride,
+          input.platform,
+        );
 
   return {
     mode: input.mode,
@@ -337,7 +349,7 @@ interface ResolvedRuntimeState {
   readonly unavailable: boolean;
 }
 
-const initialRuntimeState = (): RuntimeState =>
+const initialRuntimeState = (platform: NodeJS.Platform): RuntimeState =>
   runtimeStateFromResolvedExposure({
     requestedMode: DesktopAppSettings.DEFAULT_DESKTOP_SETTINGS.serverExposureMode,
     settings: DesktopAppSettings.DEFAULT_DESKTOP_SETTINGS,
@@ -345,6 +357,7 @@ const initialRuntimeState = (): RuntimeState =>
       mode: DesktopAppSettings.DEFAULT_DESKTOP_SETTINGS.serverExposureMode,
       port: 0,
       networkInterfaces: {},
+      platform,
     }),
     port: 0,
   });
@@ -401,6 +414,7 @@ function resolveRuntimeState(input: {
   readonly settings: DesktopAppSettings.DesktopSettings;
   readonly port: number;
   readonly networkInterfaces: DesktopNetworkInterfaces.NetworkInterfaces;
+  readonly platform: NodeJS.Platform;
   readonly advertisedHostOverride: Option.Option<string>;
 }): ResolvedRuntimeState {
   const advertisedHostOverride = Option.getOrUndefined(input.advertisedHostOverride);
@@ -408,6 +422,7 @@ function resolveRuntimeState(input: {
     mode: input.requestedMode,
     port: input.port,
     networkInterfaces: input.networkInterfaces,
+    platform: input.platform,
     ...(advertisedHostOverride ? { advertisedHostOverride } : {}),
   });
   // Tailnet-only binds even before Tailscale is up; the server's filter keeps the LAN out.
@@ -425,6 +440,7 @@ function resolveRuntimeState(input: {
         mode: "local-only",
         port: input.port,
         networkInterfaces: input.networkInterfaces,
+        platform: input.platform,
         ...(advertisedHostOverride ? { advertisedHostOverride } : {}),
       })
     : requestedExposure;
@@ -446,6 +462,7 @@ const withCurrentAdvertisedHost = (
   state: RuntimeState,
   networkInterfaces: DesktopNetworkInterfaces.NetworkInterfaces,
   advertisedHostOverride: Option.Option<string>,
+  platform: NodeJS.Platform,
 ): RuntimeState => {
   if (state.mode === "local-only") {
     return state;
@@ -455,6 +472,7 @@ const withCurrentAdvertisedHost = (
     mode: state.mode,
     port: state.port,
     networkInterfaces,
+    platform,
     ...(override ? { advertisedHostOverride: override } : {}),
   });
   return {
@@ -496,7 +514,8 @@ export const make = Effect.gen(function* () {
   const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const httpClient = yield* HttpClient.HttpClient;
   const desktopSettings = yield* DesktopAppSettings.DesktopAppSettings;
-  const stateRef = yield* Ref.make(initialRuntimeState());
+  const platform = yield* HostProcess.Platform;
+  const stateRef = yield* Ref.make(initialRuntimeState(platform));
   // Serialize read-persist-write changes so stale runtime state cannot overwrite another update.
   const changePermit = yield* Semaphore.make(1);
   // Turning Serve on or off relaunches the app, so the next run starts without a problem.
@@ -531,7 +550,12 @@ export const make = Effect.gen(function* () {
   const readCurrentState = (currentNetworkInterfaces: DesktopNetworkInterfaces.NetworkInterfaces) =>
     Ref.get(stateRef).pipe(
       Effect.map((state) =>
-        withCurrentAdvertisedHost(state, currentNetworkInterfaces, config.desktopLanHostOverride),
+        withCurrentAdvertisedHost(
+          state,
+          currentNetworkInterfaces,
+          config.desktopLanHostOverride,
+          platform,
+        ),
       ),
     );
 
@@ -551,6 +575,7 @@ export const make = Effect.gen(function* () {
         settings: withinPolicy(settings),
         port,
         networkInterfaces: currentNetworkInterfaces,
+        platform,
         advertisedHostOverride: config.desktopLanHostOverride,
       });
       yield* Ref.set(stateRef, resolved.state);
@@ -574,6 +599,7 @@ export const make = Effect.gen(function* () {
       settings: withinPolicy(nextSettings),
       port: previous.port,
       networkInterfaces: currentNetworkInterfaces,
+      platform,
       advertisedHostOverride: config.desktopLanHostOverride,
     });
 
