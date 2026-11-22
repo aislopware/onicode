@@ -15,16 +15,23 @@ export function createReplayHold(replay: HeldReplay, addressIsPrivate: () => boo
   let interrupted = false;
   let tasks: Promise<unknown> = Promise.resolve();
 
+  // In-flight sends by replay id, so a report opened during an error's send links that replay.
+  const sends = new Map<string, Promise<string | undefined>>();
+
   /**
-   * Sends the buffer and starts a fresh one, resolving to the sent replay's id. With `expectedId`,
-   * sends only while that replay is still the current one.
+   * Sends the replay recording now, or `expectedId`, and starts a fresh buffer, resolving to the
+   * sent replay's id. A replay already being sent is not sent twice.
    */
   const sendBuffered = (expectedId?: string): Promise<string | undefined> => {
+    const replayId = expectedId ?? replay.getReplayId();
+    // Stopped on a private address: nothing to send.
+    if (replayId === undefined) return Promise.resolve(undefined);
+    const sending = sends.get(replayId);
+    if (sending) return sending;
     const run = tasks.then(async () => {
-      const replayId = replay.getReplayId();
-      // Stopped on a private address, or already sent for an earlier error. A stopped replay
-      // would restart in full recording on flush, so it is left alone.
-      if (replayId === undefined || (expectedId !== undefined && replayId !== expectedId)) return;
+      // Already sent, or stopped since. A stopped replay would restart in full recording on
+      // flush, so it is left alone.
+      if (replay.getReplayId() !== replayId) return undefined;
       held = true;
       interrupted = false;
       try {
@@ -37,7 +44,8 @@ export function createReplayHold(replay: HeldReplay, addressIsPrivate: () => boo
         if (!addressIsPrivate()) replay.startBuffering();
       }
     });
-    tasks = run.catch(() => {});
+    sends.set(replayId, run);
+    tasks = run.catch(() => {}).finally(() => sends.delete(replayId));
     return run;
   };
 

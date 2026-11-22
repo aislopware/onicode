@@ -248,7 +248,9 @@ function RootRouteErrorView({ error }: ErrorComponentProps) {
 
 function ReportErrorButton({ error }: { readonly error: unknown }) {
   const [session, setSession] = useState<number>();
-  const sent = useBugReportStore((state) => session !== undefined && state.sentSession === session);
+  const sent = useBugReportStore(
+    (state) => session !== undefined && state.sentSessions.includes(session),
+  );
   if (!bugReportsSupported()) return null;
   return (
     <>

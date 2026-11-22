@@ -82,10 +82,10 @@ export function beginBugReportReplay(): Promise<string | undefined> {
 }
 
 /** Whether the report was handed to Sentry, which stores it until it is sent. */
-export function sendBugReport(report: BugReport): boolean {
+export async function sendBugReport(report: BugReport): Promise<boolean> {
   if (!reporter) return false;
   try {
-    reporter.sendBugReport(report);
+    await reporter.sendBugReport(report);
     return true;
   } catch (error) {
     console.warn("Sending a bug report failed", error);

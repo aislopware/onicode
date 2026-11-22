@@ -11,18 +11,17 @@ set -uo pipefail
 [[ $# -eq 2 ]] || { echo 'usage: sentry-release.sh <project> <version>' >&2; exit 2; }
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 
-# The environment wins, then .env.local, then .env, as for the builds.
-for name in SENTRY_AUTH_TOKEN SENTRY_URL SENTRY_ORG; do
-  [[ -n "${!name:-}" ]] && continue
-  for file in "$root/.env.local" "$root/.env"; do
-    value="$(sed -n "s/^${name}=//p" "$file" 2> /dev/null | tail -1)"
-    value="${value%\"}" value="${value#\"}"
-    if [[ -n "$value" ]]; then
-      export "$name=$value"
-      break
-    fi
-  done
-done
+# The environment wins, then .env.local, then .env, read the way the builds read them.
+# shellcheck disable=SC2016 # the backticks are JavaScript
+while IFS= read -r -d '' assignment; do export "${assignment?}"; done < <(
+  cd "$root" && node --input-type=module -e '
+    import { loadRepoEnv } from "./scripts/lib/public-config.ts";
+    const env = loadRepoEnv();
+    for (const name of ["SENTRY_AUTH_TOKEN", "SENTRY_URL", "SENTRY_ORG"]) {
+      if (env[name]) process.stdout.write(`${name}=${env[name]}\0`);
+    }
+  '
+)
 [[ -n "${SENTRY_AUTH_TOKEN:-}" ]] || exit 0
 
 project="$1"

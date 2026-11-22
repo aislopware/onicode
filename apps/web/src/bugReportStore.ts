@@ -19,7 +19,8 @@ interface BugReportState {
   readonly replayId: Promise<string | undefined> | undefined;
   /** Bumps on each open, so each report starts empty and a late send closes only its own form. */
   readonly session: number;
-  readonly sentSession: number | undefined;
+  /** Sessions whose report was sent; sends can finish in any order. */
+  readonly sentSessions: readonly number[];
 }
 
 export const useBugReportStore = create<BugReportState>(() => ({
@@ -30,7 +31,7 @@ export const useBugReportStore = create<BugReportState>(() => ({
   screenshotUrl: undefined,
   replayId: undefined,
   session: 0,
-  sentSession: undefined,
+  sentSessions: [],
 }));
 
 let opening = false;
@@ -73,7 +74,7 @@ export async function openBugReport(
 export function closeBugReport(session: number, sent: boolean): void {
   useBugReportStore.setState((state) => ({
     ...(state.session === session ? { open: false } : {}),
-    sentSession: sent ? session : state.sentSession,
+    ...(sent ? { sentSessions: [...state.sentSessions, session] } : {}),
   }));
 }
 

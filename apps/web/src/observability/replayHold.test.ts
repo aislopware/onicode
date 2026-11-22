@@ -39,13 +39,13 @@ function fakeReplay() {
 }
 
 describe("createReplayHold", () => {
-  it("sends a report's replay after a pending error flush, from a fresh buffer", async () => {
+  it("sends each replay once and buffers afresh after each", async () => {
     const { replay, calls, flushed } = fakeReplay();
     const hold = createReplayHold(replay, () => false);
     const error = hold.sendBuffered("replay-1");
-    const report = hold.sendBuffered();
     await flushed();
     expect(await error).toBe("replay-1");
+    const report = hold.sendBuffered();
     await flushed();
     expect(await report).toBe("replay-2");
     expect(calls).toEqual([
@@ -58,15 +58,20 @@ describe("createReplayHold", () => {
     ]);
   });
 
-  it("leaves the fresh buffer alone when a second error asks for a replay already sent", async () => {
+  it("links a report opened during an error's send to that replay, not the next buffer", async () => {
     const { replay, calls, flushed } = fakeReplay();
     const hold = createReplayHold(replay, () => false);
-    const first = hold.sendBuffered("replay-1");
-    const second = hold.sendBuffered("replay-1");
+    const error = hold.sendBuffered("replay-1");
+    const report = hold.sendBuffered();
+    const secondError = hold.sendBuffered("replay-1");
     await flushed();
-    expect(await first).toBe("replay-1");
-    expect(await second).toBeUndefined();
+    expect(await error).toBe("replay-1");
+    expect(await report).toBe("replay-1");
+    expect(await secondError).toBe("replay-1");
+    // The fresh buffer stays untouched for whatever comes next.
     expect(calls).toEqual(["flush replay-1", "stop replay-1", "buffer replay-2"]);
+    expect(await hold.sendBuffered("replay-1")).toBeUndefined();
+    expect(calls).toHaveLength(3);
   });
 
   it("stops at once on a private address mid-send, links nothing, and does not restart", async () => {

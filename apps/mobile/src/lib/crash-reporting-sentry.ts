@@ -27,7 +27,8 @@ export interface SentryReporter {
   readonly registerNavigationContainer: (container: unknown) => void;
   /** Sends the replay buffered before the sheet opened, resolving to its id. */
   readonly beginBugReport: () => Promise<string | undefined>;
-  readonly sendBugReport: (report: BugReport) => void;
+  /** Resolves once Sentry has the report, which the native transport stores until it is sent. */
+  readonly sendBugReport: (report: BugReport) => Promise<void>;
   readonly captureScreenshot: () => Promise<BugReportScreenshot | undefined>;
   /** Native shake detection, which needs no permission. `undefined` stops it. */
   readonly onShake: (handler: (() => void) | undefined) => void;
@@ -101,47 +102,45 @@ export function startSentry(options: {
       return run;
     },
     // The native transport stores the envelope before sending, so a report survives going offline.
-    sendBugReport: (report) => {
-      void report.replayId
-        .catch(() => undefined)
-        .then((replayId) =>
-          Sentry.withScope((scope) => {
-            if (replayId) {
-              scope.addEventProcessor((event) => {
-                if (event.type === "feedback" && event.contexts?.feedback) {
-                  event.contexts.feedback.replay_id = replayId;
-                }
-                return event;
-              });
+    sendBugReport: async (report) => {
+      // A stuck native capture must not hold the report; it then goes without its replay.
+      const replayId = await Promise.race([
+        report.replayId.catch(() => undefined),
+        new Promise<undefined>((resolve) => setTimeout(resolve, 10_000)),
+      ]);
+      Sentry.withScope((scope) => {
+        if (replayId) {
+          scope.addEventProcessor((event) => {
+            if (event.type === "feedback" && event.contexts?.feedback) {
+              event.contexts.feedback.replay_id = replayId;
             }
-            Sentry.captureFeedback(
-              {
-                message: report.message,
-                ...(report.email ? { email: report.email } : {}),
-                ...(report.associatedEventId
-                  ? { associatedEventId: report.associatedEventId }
-                  : {}),
-                source: "onicode",
-              },
-              {
-                includeReplay: false,
-                ...(report.screenshot
-                  ? {
-                      attachments: [
-                        {
-                          filename: report.screenshot.filename,
-                          data: report.screenshot.data,
-                          contentType: report.screenshot.contentType,
-                        },
-                      ],
-                    }
-                  : {}),
-              },
-              scope,
-            );
-          }),
-        )
-        .catch((error: unknown) => console.warn("Sending a bug report failed", error));
+            return event;
+          });
+        }
+        Sentry.captureFeedback(
+          {
+            message: report.message,
+            ...(report.email ? { email: report.email } : {}),
+            ...(report.associatedEventId ? { associatedEventId: report.associatedEventId } : {}),
+            source: "onicode",
+          },
+          {
+            includeReplay: false,
+            ...(report.screenshot
+              ? {
+                  attachments: [
+                    {
+                      filename: report.screenshot.filename,
+                      data: report.screenshot.data,
+                      contentType: report.screenshot.contentType,
+                    },
+                  ],
+                }
+              : {}),
+          },
+          scope,
+        );
+      });
     },
     captureScreenshot: async () => (await NATIVE.captureScreenshot())?.[0],
     onShake: (handler) => {

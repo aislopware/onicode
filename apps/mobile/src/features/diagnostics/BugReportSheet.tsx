@@ -43,7 +43,7 @@ export function BugReportSheet() {
   const [email, setEmail] = useState("");
   // Sentry masks text and images in the native capture, so it can go by default.
   const [attachScreenshot, setAttachScreenshot] = useState(true);
-  const [status, setStatus] = useState<"editing" | "failed" | "sent">("editing");
+  const [status, setStatus] = useState<"editing" | "sending" | "failed" | "sent">("editing");
   const close = () => navigation.goBack();
   const header = <SheetHeader title={gt("Report a bug")} onCancel={close} />;
 
@@ -82,9 +82,10 @@ export function BugReportSheet() {
   }
 
   const trimmed = message.trim();
-  const submit = () => {
-    if (trimmed.length === 0) return;
-    const sent = sendBugReport({
+  const submit = async () => {
+    if (trimmed.length === 0 || status === "sending") return;
+    setStatus("sending");
+    const sent = await sendBugReport({
       message: trimmed,
       email: email.trim() || undefined,
       associatedEventId: draft.associatedEventId,
@@ -113,7 +114,8 @@ export function BugReportSheet() {
           tone="primary"
           fullWidth
           disabled={trimmed.length === 0}
-          onPress={submit}
+          loading={status === "sending"}
+          onPress={() => void submit()}
         />
       }
     >
