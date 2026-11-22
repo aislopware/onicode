@@ -1451,7 +1451,7 @@ describe("large text preview recovery", () => {
     "preserves the source row when indexing grows beyond %i lines (mixed heights: %s)",
     async (count, mixed) => {
       const view = (count: number) => (
-        <div style={{ display: "flex", height: 400, width: 600 }}>
+        <div style={{ display: "flex", height: 400, width: 520 }}>
           <VirtualTablePreview
             name="growing.txt"
             count={count}
@@ -1471,7 +1471,7 @@ describe("large text preview recovery", () => {
       const viewport = () => screen.container.querySelector<HTMLElement>('[tabindex="0"]')!;
       await vi.waitFor(() => expect(viewport()?.scrollHeight).toBeGreaterThan(400));
       await act(() => {
-        viewport().scrollTop = count === 100 ? 100 * 29 - 400 + 1200 : 1200;
+        viewport().scrollTop = count === 100 ? 100 * 29 - 400 + 1100 : 1100;
         viewport().dispatchEvent(new Event("scroll", { bubbles: true }));
       });
       const visibleRow = () =>
@@ -1499,7 +1499,7 @@ describe("large text preview recovery", () => {
               viewport().getBoundingClientRect().top -
               offset,
           ),
-        ).toBeLessThan(Math.max(5, visibleRow().offsetHeight / 29 + 1));
+        ).toBeLessThan(2);
       });
     },
   );

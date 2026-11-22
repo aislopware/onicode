@@ -342,6 +342,9 @@ function ScaledRows(
   const handledReveal = useRef<string | null>(null);
   const pendingReveal = useRef<{ row: number; attempts: number } | null>(null);
   const pendingEnd = useRef(false);
+  // The DOM rounds scrollTop, and one pixel of a compressed track is several logical pixels; keep
+  // the exact position an anchor restore asked for while the DOM still holds its rounding.
+  const restoredTop = useRef<{ exact: number; actual: number } | null>(null);
   // Downward pixels past the tail start, held until the tail renders and the DOM can scroll that far.
   const pendingTailPixels = useRef(0);
   const position = { top, height: props.viewportHeight };
@@ -372,8 +375,10 @@ function ScaledRows(
     const node = ref.current;
     if (!node || (previous.scale === scale && previous.maxFirst === maxFirst)) return;
     const previousEnd = previous.maxFirst * 29 * previous.scale;
-    let logicalTop = Math.min(previous.maxFirst * 29, node.scrollTop / previous.scale);
-    let remaining = Math.max(0, node.scrollTop - previousEnd);
+    const scrollTop =
+      restoredTop.current?.actual === node.scrollTop ? restoredTop.current.exact : node.scrollTop;
+    let logicalTop = Math.min(previous.maxFirst * 29, scrollTop / previous.scale);
+    let remaining = Math.max(0, scrollTop - previousEnd);
     // Native-tail pixels cross rows of different heights before returning to the scaled track.
     for (const height of previous.heights) {
       logicalTop += Math.min(1, remaining / height) * 29;
@@ -387,8 +392,10 @@ function ScaledRows(
       remaining = Math.max(0, remaining - 1);
       if (!remaining) break;
     }
-    node.scrollTop = Math.min(maxFirst * 29, logicalTop) * scale + nativeOffset;
-    setTop(node.scrollTop);
+    const exact = Math.min(maxFirst * 29, logicalTop) * scale + nativeOffset;
+    node.scrollTop = exact;
+    restoredTop.current = { exact, actual: node.scrollTop };
+    setTop(exact);
   });
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- Scroll the DOM viewport to a requested line after its virtual track has committed.
   useLayoutEffect(() => {
@@ -729,7 +736,11 @@ function ScaledRows(
           setTop(node.scrollTop);
         }
       }}
-      onScroll={(event) => setTop(event.currentTarget.scrollTop)}
+      onScroll={(event) => {
+        const scrollTop = event.currentTarget.scrollTop;
+        if (restoredTop.current?.actual !== scrollTop) restoredTop.current = null;
+        setTop(restoredTop.current?.exact ?? scrollTop);
+      }}
     >
       <div className="relative" style={{ height: scrollHeight }}>
         {measures ? (
