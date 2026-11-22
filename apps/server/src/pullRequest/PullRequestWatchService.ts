@@ -2,6 +2,7 @@ import {
   CommandId,
   ThreadId,
   type OrchestrationV2ThreadShell,
+  type PullRequestChecksState,
   type PullRequestUnavailableError,
   type PullRequestWatchUntil,
 } from "@onicode/contracts";
@@ -68,6 +69,8 @@ export class PullRequestWatchService extends Context.Service<
         readonly wasWatching: boolean;
         /** Set when the PR already ended, so no watch was registered. */
         readonly state?: "merged" | "closed";
+        /** CI as the start read saw it. Checks that already passed never wake the watch. */
+        readonly checksState?: PullRequestChecksState;
       },
       | PullRequestWatchFailedError
       | PullRequestWatchFromSubagentError
@@ -132,6 +135,7 @@ const make = Effect.gen(function* () {
     // verdict (state left out, no checks yet, all skipped, a manual GitLab job) leaves the seed to
     // the link, since an old pass would read as news.
     let checksPendingAtStart: boolean | undefined;
+    let checksStateAtStart: PullRequestChecksState | undefined;
     if (watching && !wasWatching) {
       const read = yield* pullRequests
         .summary(
@@ -156,6 +160,7 @@ const make = Effect.gen(function* () {
         read?.checksState === undefined || read.checksState === null
           ? undefined
           : read.checksState === "pending";
+      checksStateAtStart = read?.checksState ?? undefined;
     }
     const uuid = yield* random.uuidV4().pipe(Effect.orDie);
     yield* engine
@@ -185,6 +190,7 @@ const make = Effect.gen(function* () {
       ...target,
       watching: watchedLink(after)?.watch !== undefined,
       wasWatching,
+      ...(checksStateAtStart !== undefined && { checksState: checksStateAtStart }),
     };
   });
 
