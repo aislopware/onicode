@@ -695,6 +695,37 @@ describe("large text preview recovery", () => {
     );
   });
 
+  it("stops inside a tall row a wheel notch reaches instead of skipping it", async () => {
+    await using screen = await render(
+      <div style={{ display: "flex", height: 400, width: 600 }}>
+        <VirtualTablePreview
+          name="tall.csv"
+          count={100}
+          columns={1}
+          source
+          wrap
+          getRows={(page) =>
+            Array.from({ length: 32 }, (_, i) =>
+              page * 32 + i === 1 ? ["wrapped source text ".repeat(500)] : ["short"],
+            )
+          }
+        />
+      </div>,
+    );
+    const viewport = () => screen.container.querySelector<HTMLElement>('[tabindex="0"]')!;
+    const row = () => screen.container.querySelector<HTMLElement>('[data-preview-row="1"]');
+    await vi.waitFor(() => expect(row()?.offsetHeight).toBeGreaterThan(1000));
+    const offset = () =>
+      viewport().getBoundingClientRect().top - row()!.getBoundingClientRect().top;
+    const before = offset();
+    await act(() =>
+      viewport().dispatchEvent(
+        new WheelEvent("wheel", { deltaY: 100, bubbles: true, cancelable: true }),
+      ),
+    );
+    await vi.waitFor(() => expect(offset() - before).toBeCloseTo(100, 0));
+  });
+
   it("scrolls every tall row in the final virtual viewport", async () => {
     const view = (loaded: boolean) => (
       <div style={{ display: "flex", height: 400, width: 600 }}>

@@ -32,7 +32,7 @@ const MAX_SHOWN_TEXT_CHARS = 2 * MAX_SHOWN_LINE_CHARS;
 type ShownPart = { readonly at: number; readonly text: string; readonly cut: number };
 
 /** `text` as runs to lay out, each followed by how many characters were left out after it. */
-function cappedParts(text: string): ShownPart[] {
+function cappedParts(text: string, total = MAX_SHOWN_TEXT_CHARS): ShownPart[] {
   if (text.length <= MAX_SHOWN_LINE_CHARS) return [{ at: 0, text, cut: 0 }];
   const parts: ShownPart[] = [];
   let from = 0;
@@ -47,7 +47,7 @@ function cappedParts(text: string): ShownPart[] {
     start = end + 1;
   }
   parts.push({ at: from, text: text.slice(from), cut: 0 });
-  let room = MAX_SHOWN_TEXT_CHARS;
+  let room = total;
   for (const [index, part] of parts.entries()) {
     if (part.text.length <= room) {
       room -= part.text.length;
@@ -74,7 +74,16 @@ export function LineCappedText(props: { text: string; more: (count: number) => s
 
 /** `text` cut like `LineCappedText`, for text rendered as markdown. */
 export function lineCappedText(text: string, more: (count: number) => string): string {
-  return cappedParts(text)
+  return joinParts(cappedParts(text), more);
+}
+
+/** A markdown file with each line cut like a source line; the file read already bounds its length. */
+export function lineCutMarkdown(text: string, more: (count: number) => string): string {
+  return joinParts(cappedParts(text, Number.POSITIVE_INFINITY), more);
+}
+
+function joinParts(parts: ReadonlyArray<ShownPart>, more: (count: number) => string): string {
+  return parts
     .map((part) => (part.cut > 0 ? part.text + cutSuffix(part.cut, more) : part.text))
     .join("");
 }

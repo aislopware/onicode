@@ -400,9 +400,40 @@ function ScaledRows(
     handledReveal.current = key;
   }, [props.revealLine, props.revealRequestId, props.count, headerRows, scale]);
   const atStart = position.top === 0;
-  const rowHeight = () =>
-    contentRef.current?.querySelector<HTMLElement>(`[data-preview-row="${first}"]`)?.offsetHeight ||
+  const rowHeight = (row: number) =>
+    contentRef.current?.querySelector<HTMLElement>(`[data-preview-row="${row}"]`)?.offsetHeight ||
+    rowHeights.heights.get(row) ||
     29;
+  // Walks the real heights of mounted rows, so one wheel notch cannot skip a row taller than it.
+  // Returns the scaled track position, or the pixels left over once the walk reaches the tail.
+  const scaledScroll = (scrollTop: number, delta: number) => {
+    const rowPixels = scale * 29;
+    let index = Math.floor(scrollTop / rowPixels);
+    let fraction = scrollTop / rowPixels - index;
+    let remaining = delta;
+    while (remaining > 0) {
+      if (index >= maxFirst) return { top: maxFirst * rowPixels, toTail: remaining };
+      const height = rowHeight(index + headerRows);
+      const left = (1 - fraction) * height;
+      if (remaining < left) return { top: (index + fraction + remaining / height) * rowPixels };
+      remaining -= left;
+      index += 1;
+      fraction = 0;
+    }
+    while (remaining < 0 && (index > 0 || fraction > 0)) {
+      if (fraction === 0) {
+        index -= 1;
+        fraction = 1;
+      }
+      const height = rowHeight(index + headerRows);
+      if (-remaining < fraction * height) {
+        return { top: (index + fraction + remaining / height) * rowPixels };
+      }
+      remaining += fraction * height;
+      fraction = 0;
+    }
+    return { top: (index + fraction) * rowPixels };
+  };
   const scrollByContent = (node: HTMLElement, delta: number) => {
     pendingEnd.current = false;
     pendingReveal.current = null;
@@ -417,16 +448,31 @@ function ScaledRows(
     const tailStart = maxFirst * 29 * scale;
     if (node.scrollTop < tailStart) {
       // A stale tail render's first row is not the scaled track's; the tail branch assumes 29px too.
-      const rate = nativeTail ? scale : (scale * 29) / rowHeight();
-      const toTail = (tailStart - node.scrollTop) / rate;
-      if (delta <= toTail) {
-        node.scrollTop += delta * rate;
+      if (nativeTail) {
+        const toTail = (tailStart - node.scrollTop) / scale;
+        if (delta <= toTail) {
+          node.scrollTop += delta * scale;
+          return;
+        }
+        node.scrollTop = Math.ceil(tailStart);
+        pendingTailPixels.current = delta - toTail;
+        setTop(node.scrollTop);
         return;
       }
+      const exactTop =
+        restoredTop.current?.actual === node.scrollTop ? restoredTop.current.exact : node.scrollTop;
+      const next = scaledScroll(exactTop, delta);
       // Past the tail start the rest moves natively, once the tail has rendered.
-      node.scrollTop = Math.ceil(tailStart);
-      pendingTailPixels.current = delta - toTail;
-      setTop(node.scrollTop);
+      if (next.toTail !== undefined) {
+        node.scrollTop = Math.ceil(tailStart);
+        pendingTailPixels.current = next.toTail;
+        setTop(node.scrollTop);
+        return;
+      }
+      // Inside a tall row one rounded DOM pixel spans many content pixels, so keep the exact top.
+      node.scrollTop = next.top;
+      restoredTop.current = { exact: next.top, actual: node.scrollTop };
+      setTop(next.top);
       return;
     }
     // Above the tail's first row the track is scaled again, at 29px a row.

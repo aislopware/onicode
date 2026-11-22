@@ -630,10 +630,20 @@ describe("source file scroll", () => {
 });
 
 describe("rendered Markdown task saves", () => {
-  it("keeps a truncated read read-only without queuing a replacement", async () => {
+  it.each([
+    { read: "a truncated read", truncated: true, contents: undefined, shows: "Keep the rest" },
+    {
+      // Task offsets would point past the cut, into the wrong place in the file.
+      read: "a read with a line cut short",
+      truncated: false,
+      contents: `${"a".repeat(12_000)}\n\n- [ ] Keep the rest of this file\n`,
+      shows: `${"a".repeat(10_000)}… 2,000 more characters`,
+    },
+  ])("keeps $read read-only without queuing a replacement", async (row) => {
     using _settings = setup();
-    await using screen = await render(markdownPreview(true));
+    await using screen = await render(markdownPreview(row.truncated, row.contents));
     using _timers = fakeTimers();
+    expect(screen.container.textContent).toContain(row.shows);
     const checkbox = screen.container.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
     expect(checkbox).not.toBeNull();
     expect(checkbox.disabled).toBe(true);
