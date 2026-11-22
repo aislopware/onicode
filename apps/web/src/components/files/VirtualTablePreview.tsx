@@ -102,7 +102,7 @@ export default function VirtualTablePreview(props: {
                   key={i}
                   className="min-w-32 max-w-80 border-b px-3 py-1.5 text-left font-medium whitespace-nowrap"
                 >
-                  {cell.slice(0, shownLength(cell, MAX_SHOWN_CELL_CHARS))}
+                  {cell.slice(0, shownLength(cell, MAX_SIZING_CELL_CHARS))}
                 </th>
               ))}
             </tr>
@@ -118,7 +118,7 @@ export default function VirtualTablePreview(props: {
                       key={j}
                       className="max-w-80 border-b px-3 py-1.5 whitespace-pre-wrap break-words tabular-nums"
                     >
-                      {cell.slice(0, shownLength(cell, MAX_SHOWN_CELL_CHARS))}
+                      {cell.slice(0, shownLength(cell, MAX_SIZING_CELL_CHARS))}
                     </td>
                   ))}
                 </tr>
@@ -342,6 +342,8 @@ function ScaledRows(
   const handledReveal = useRef<string | null>(null);
   const pendingReveal = useRef<{ row: number; attempts: number } | null>(null);
   const pendingEnd = useRef(false);
+  // Downward pixels past the tail start, held until the tail renders and the DOM can scroll that far.
+  const pendingTailPixels = useRef(0);
   const position = { top, height: props.viewportHeight };
   const scrollHeight = Math.min(8_000_000, props.count * 29);
   // Chromium caps a scroll surface at 33 million pixels. Scale the track for
@@ -402,6 +404,7 @@ function ScaledRows(
     node.scrollTop = Math.max(0, (row - headerRows) * 29) * scale;
     setTop(node.scrollTop);
     pendingEnd.current = false;
+    pendingTailPixels.current = 0;
     pendingReveal.current = { row, attempts: 0 };
     handledReveal.current = key;
   }, [props.revealLine, props.revealRequestId, props.count, headerRows, scale]);
@@ -412,15 +415,27 @@ function ScaledRows(
   const scrollByContent = (node: HTMLElement, delta: number) => {
     pendingEnd.current = false;
     pendingReveal.current = null;
+    if (pendingTailPixels.current) {
+      if (delta > 0) {
+        pendingTailPixels.current += delta;
+        return;
+      }
+      pendingTailPixels.current = 0;
+    }
     // Read the live position: events can arrive before the last scroll has rendered.
     const tailStart = maxFirst * 29 * scale;
     if (node.scrollTop < tailStart) {
       // A stale tail render's first row is not the scaled track's; the tail branch assumes 29px too.
       const rate = nativeTail ? scale : (scale * 29) / rowHeight();
       const toTail = (tailStart - node.scrollTop) / rate;
-      // Past the tail start the rest moves natively, as in the tail itself.
-      node.scrollTop +=
-        delta <= toTail ? delta * rate : tailStart - node.scrollTop + delta - toTail;
+      if (delta <= toTail) {
+        node.scrollTop += delta * rate;
+        return;
+      }
+      // Past the tail start the rest moves natively, once the tail has rendered.
+      node.scrollTop = Math.ceil(tailStart);
+      pendingTailPixels.current = delta - toTail;
+      setTop(node.scrollTop);
       return;
     }
     // Above the tail's first row the track is scaled again, at 29px a row.
@@ -655,6 +670,14 @@ function ScaledRows(
     node.scrollTop += delta < 0 ? Math.floor(step) : Math.ceil(step);
     setTop(node.scrollTop);
   });
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- Finish a downward scroll into the native tail once the tail has rendered and can hold it.
+  useLayoutEffect(() => {
+    const node = ref.current;
+    if (!pendingTailPixels.current || !nativeTail || !node || !rowHeightsSettledRef.current) return;
+    node.scrollTop += pendingTailPixels.current;
+    pendingTailPixels.current = 0;
+    setTop(node.scrollTop);
+  });
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- Complete End-key scrolling after the final worker row has loaded and its DOM layout has settled.
   useLayoutEffect(() => {
     const node = ref.current;
@@ -700,6 +723,7 @@ function ScaledRows(
         } else if (event.key === "Home" || event.key === "End") {
           event.preventDefault();
           pendingEnd.current = event.key === "End";
+          pendingTailPixels.current = 0;
           pendingReveal.current = null;
           node.scrollTop = event.key === "Home" ? 0 : node.scrollHeight;
           setTop(node.scrollTop);
@@ -751,6 +775,8 @@ const MAX_SYNC_SCAN_CHARS = 128_000;
 // Some scripts lay out slowly: 130K characters of Thai took 2.4 s, and of Japanese 2.6 s, in Chromium.
 // Mobile's table preview cuts cells at the same length; source lines stop where VS Code's do.
 const MAX_SHOWN_CELL_CHARS = 2_000;
+// Columns stop at 20rem, which 200 characters of 12px text always fill.
+const MAX_SIZING_CELL_CHARS = 200;
 const MAX_SHOWN_LINE_CHARS = 10_000;
 // 256 characters of Japanese lay out in about 4 ms.
 const COSTLY_ROW_CHARS = 256;

@@ -1116,13 +1116,18 @@ describe("large text preview recovery", () => {
         : "a".repeat(130_000);
     // Every text node the preview adds, the column-sizing table and the probe included.
     let longest = 0;
+    let longestSizing = 0;
     const read = (records: MutationRecord[]) => {
       for (const record of records) {
         for (const added of record.addedNodes) {
           const walker = document.createTreeWalker(added, NodeFilter.SHOW_TEXT);
           for (let node: Node | null = walker.currentNode; node; node = walker.nextNode()) {
             if (node.nodeType === Node.TEXT_NODE) {
-              longest = Math.max(longest, node.nodeValue?.length ?? 0);
+              const length = node.nodeValue?.length ?? 0;
+              longest = Math.max(longest, length);
+              if (node.parentElement?.closest('table[aria-hidden="true"]')) {
+                longestSizing = Math.max(longestSizing, length);
+              }
             }
           }
         }
@@ -1161,6 +1166,8 @@ describe("large text preview recovery", () => {
     read(observer.takeRecords());
     // The probe measures the shown text and its "… N more characters" in one node.
     expect(longest).toBe(input.kept + `… ${left} more characters`.length);
+    // Column widths stop growing long before 200 characters.
+    expect(longestSizing).toBe(input.source ? 0 : 200);
   });
 
   it.each([
@@ -1303,6 +1310,51 @@ describe("large text preview recovery", () => {
     });
     await act(() => wheel(2_100));
     await vi.waitFor(() => expect(firstRow()).toBe(4_999_987));
+  });
+
+  it("wheels from the scaled track back into a tall native tail by the wheel's pixels", async () => {
+    await using screen = await render(
+      <div style={{ display: "flex", height: 400, width: 600 }}>
+        <VirtualTablePreview
+          name="huge.log"
+          count={5_000_000}
+          columns={1}
+          source
+          wrap
+          getRows={(page) =>
+            Array.from({ length: 32 }, (_, i) =>
+              page * 32 + i >= 4_999_987 ? ["x ".repeat(200)] : ["line-" + (page * 32 + i + 1)],
+            )
+          }
+        />
+      </div>,
+    );
+    const viewport = () => screen.container.querySelector<HTMLElement>('[tabindex="0"]')!;
+    await act(() =>
+      viewport().dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true })),
+    );
+    await vi.waitFor(() =>
+      expect(screen.container.querySelector('[data-preview-row="4999999"]')).not.toBeNull(),
+    );
+    const bottom = viewport().scrollHeight - viewport().clientHeight;
+    await act(() => {
+      viewport().scrollTop = bottom - 1;
+      viewport().dispatchEvent(new Event("scroll", { bubbles: true }));
+    });
+    // The tail's 13 wrapped rows start 2px below the end of the scaled track.
+    const distance = bottom - (8_000_000 - viewport().clientHeight - 2) + 580;
+    const wheel = (deltaY: number) =>
+      viewport().dispatchEvent(
+        new WheelEvent("wheel", { deltaY, bubbles: true, cancelable: true }),
+      );
+    await act(() => wheel(-distance));
+    await vi.waitFor(() =>
+      expect(screen.container.querySelector('[data-preview-row="4999967"]')).not.toBeNull(),
+    );
+    await act(() => wheel(distance));
+    await vi.waitFor(() =>
+      expect(Math.abs(viewport().scrollTop - (bottom - 1))).toBeLessThanOrEqual(2),
+    );
   });
 
   it("covers the viewport top a pixel before the native tail", async () => {

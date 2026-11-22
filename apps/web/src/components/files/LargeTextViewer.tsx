@@ -248,7 +248,7 @@ export default function LargeTextViewer(props: {
       ) : null}
       {meta.columns === 1024 ? (
         <FileSurfaceNotice>
-          <T>Showing the first 1,024 columns. Copy and Save keep every column.</T>
+          <T>Showing the first 1,024 columns. Copy keeps every column.</T>
         </FileSurfaceNotice>
       ) : null}
       {meta.count > 0 ? (
