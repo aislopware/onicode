@@ -39,8 +39,11 @@ export function resolveComposerDispatchMode(input: {
    * whether the turn takes it or the message only moves to the front.
    */
   readonly editingQueuedRun?: boolean;
+  /** Sent after its thread screen left: the turn it saw may have ended or been replaced. */
+  readonly sentAway?: boolean;
 }): ComposerDispatchMode {
   if (!input.running) return "auto";
+  if (input.sentAway === true) return "queue";
   if (input.canSteer === false && input.editingQueuedRun !== true) return "queue";
   const defaultAction = input.activeTurnDefault ?? "steer";
   if (input.alternateModifier) return defaultAction === "queue" ? "steer" : "queue";

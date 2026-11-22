@@ -44,7 +44,9 @@ const mocks = await vi.hoisted(async () => {
   return {
     editQueuedRun: vi.fn<(value: unknown) => Promise<{ readonly _tag: "Success" | "Failure" }>>(),
     promoteQueuedRun: vi.fn<(value: unknown) => Promise<{ readonly _tag: "Success" }>>(),
+    resumeThreadQueue: vi.fn<(value: unknown) => Promise<{ readonly _tag: "Success" }>>(),
     promoteCommand: {},
+    resumeCommand: {},
     // The projection's runs per thread, written by each test to stand in for the server.
     threadRuns: Atom.family((_key: string) =>
       Atom.make<ReadonlyArray<RunStatus> | null>(null).pipe(Atom.keepAlive),
@@ -54,7 +56,11 @@ const mocks = await vi.hoisted(async () => {
 
 vi.mock("../../state/use-atom-command", () => ({
   useAtomCommand: (command: unknown) =>
-    command === mocks.promoteCommand ? mocks.promoteQueuedRun : mocks.editQueuedRun,
+    command === mocks.promoteCommand
+      ? mocks.promoteQueuedRun
+      : command === mocks.resumeCommand
+        ? mocks.resumeThreadQueue
+        : mocks.editQueuedRun,
 }));
 
 vi.mock("../../hooks/useSettings", () => ({
@@ -71,6 +77,7 @@ vi.mock("../../state/threads", async () => {
       snapshotAtom: () => Atom.make(null),
       editQueuedRun: {},
       promoteQueuedRun: mocks.promoteCommand,
+      resumeThreadQueue: mocks.resumeCommand,
     },
     environmentThreadDetails: {
       statusAtom: () => Atom.make("ready"),
@@ -195,6 +202,7 @@ function view(
 function setup() {
   mocks.editQueuedRun.mockReset();
   mocks.promoteQueuedRun.mockReset();
+  mocks.resumeThreadQueue.mockReset();
   useAttachmentUploadStore.setState({ uploadsByImageId: {} });
   useComposerDraftStore.setState({ draftsByThreadKey: {}, draftThreadsByThreadKey: {} });
   setRuns(THREAD_A, "queued");
@@ -298,13 +306,21 @@ describe("useQueuedRunEdit", () => {
     { dispatchMode: "steer", submissionIntent: "foreground", steers: false },
     // Cmd+Enter with Steer as the default queues, so the message stays queued.
     { dispatchMode: "queue", submissionIntent: "alternate", steers: false },
+    // The turn ended during the save: like the row's Send now, it starts the message.
+    { dispatchMode: "steer", submissionIntent: "alternate", steers: true, turnEnds: true },
   ] as const)(
     "a saved edit sent as $submissionIntent/$dispatchMode steers: $steers",
     async (submission) => {
       const { hook } = setup();
-      mocks.editQueuedRun.mockResolvedValue({ _tag: "Success" });
       mocks.promoteQueuedRun.mockResolvedValue({ _tag: "Success" });
+      mocks.resumeThreadQueue.mockResolvedValue({ _tag: "Success" });
       const activeRun = RunId.make("run-active");
+      mocks.editQueuedRun.mockImplementation(async () => {
+        if ("turnEnds" in submission) {
+          appAtomRegistry.set(mocks.threadRuns(runsKey(THREAD_A)), [{ id: RUN, status: "queued" }]);
+        }
+        return { _tag: "Success" };
+      });
       appAtomRegistry.set(mocks.threadRuns(runsKey(THREAD_A)), [
         { id: activeRun, status: "running", activeAttemptId: "attempt-1" },
         { id: RUN, status: "queued" },
@@ -315,6 +331,14 @@ describe("useQueuedRunEdit", () => {
       expect(mocks.editQueuedRun).toHaveBeenCalledOnce();
       if (!submission.steers) {
         expect(mocks.promoteQueuedRun).not.toHaveBeenCalled();
+        return;
+      }
+      if ("turnEnds" in submission) {
+        expect(mocks.promoteQueuedRun).not.toHaveBeenCalled();
+        expect(mocks.resumeThreadQueue).toHaveBeenCalledExactlyOnceWith({
+          environmentId: ENV,
+          input: { threadId: THREAD_A.threadId, runId: RUN },
+        });
         return;
       }
       expect(mocks.promoteQueuedRun).toHaveBeenCalledExactlyOnceWith({

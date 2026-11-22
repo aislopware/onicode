@@ -55,7 +55,8 @@ export function nativeImagePasteKey(draftKey: string): string {
 
 // A paste aborted with its draft (discarded, or left for a queued edit) must not hold or drop a
 // send from the draft shown now; one that can still land in it must.
-const nativeImagePastes = new Map<string, { pending: number; failed: boolean }>();
+// `holds` counts the pastes and picks still landing; `images` only the images they named.
+const nativeImagePastes = new Map<string, { holds: number; images: number; failed: boolean }>();
 const nativeImagePasteListeners = new Set<(pasteKey: string, failed: boolean) => void>();
 const nativeImagePasteChangeListeners = new Set<() => void>();
 const notifyNativeImagePastesChanged = () => {
@@ -66,18 +67,23 @@ const settleNativeImagePaste = (pasteKey: string, failed: boolean) => {
   for (const settled of nativeImagePasteListeners) settled(pasteKey, failed);
 };
 
-/** Images converting into a draft, a closed question's included, that a send waits for. */
+/**
+ * Images converting into a draft, a closed question's included, or a pick whose files are still
+ * landing (`images` 0, as its count is unknown), that a send waits for.
+ */
 export function startNativeImagePaste(draftKey: string, images = 1): (success: boolean) => void {
   const key = nativeImagePasteKey(draftKey);
   const existing = nativeImagePastes.get(key);
-  const paste = existing ?? { pending: 0, failed: false };
+  const paste = existing ?? { holds: 0, images: 0, failed: false };
   nativeImagePastes.set(key, paste);
-  paste.pending += images;
+  paste.holds += 1;
+  paste.images += images;
   if (existing === undefined) notifyNativeImagePastesChanged();
   return (success) => {
     if (!success) paste.failed = true;
-    paste.pending -= images;
-    if (paste.pending > 0 || nativeImagePastes.get(key) !== paste) return;
+    paste.holds -= 1;
+    paste.images -= images;
+    if (paste.holds > 0 || nativeImagePastes.get(key) !== paste) return;
     nativeImagePastes.delete(key);
     settleNativeImagePaste(key, paste.failed);
   };
@@ -88,7 +94,7 @@ export function nativeImagePastePending(pasteKey: string): boolean {
 }
 
 export function nativeImagePasteCount(pasteKey: string): number {
-  return nativeImagePastes.get(pasteKey)?.pending ?? 0;
+  return nativeImagePastes.get(pasteKey)?.images ?? 0;
 }
 
 export function onNativeImagePastesSettled(

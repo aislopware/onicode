@@ -2,7 +2,11 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   abortComposerDraftOperations,
+  nativeImagePasteCount,
+  nativeImagePasteKey,
+  nativeImagePastePending,
   startComposerDraftOperation,
+  startNativeImagePaste,
 } from "./composerDraftOperations";
 
 describe("composer draft operations", () => {
@@ -38,5 +42,18 @@ describe("composer draft operations", () => {
     abortComposerDraftOperations("thread-d");
 
     expect(after.signal.aborted).toBe(true);
+  });
+
+  it("holds a send for a pick that counts no images until the pick itself finishes", () => {
+    const key = nativeImagePasteKey("thread-e");
+    const pick = startNativeImagePaste("thread-e", 0);
+    const paste = startNativeImagePaste("thread-e", 2);
+    expect(nativeImagePasteCount(key)).toBe(2);
+
+    paste(true);
+    expect(nativeImagePastePending(key)).toBe(true);
+    expect(nativeImagePasteCount(key)).toBe(0);
+    pick(true);
+    expect(nativeImagePastePending(key)).toBe(false);
   });
 });

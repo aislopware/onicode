@@ -98,32 +98,33 @@ index 2b9a914..92b8c1f 100644
  }
 \ No newline at end of file
 diff --git a/ios/ExpoPasteInputView.swift b/ios/ExpoPasteInputView.swift
-index 39b2302..4020f04 100644
+index 39b2302..489b2cd 100644
 --- a/ios/ExpoPasteInputView.swift
 +++ b/ios/ExpoPasteInputView.swift
-@@ -31,6 +31,8 @@ private enum MediaPayload {
+@@ -31,6 +31,9 @@ private enum MediaPayload {
  
  class ExpoPasteInputView: ExpoView {
    private let onPaste = EventDispatcher()
 +  private let onImageReadStart = EventDispatcher()
-+  private var lastImageReadId = 0
++  // Shared by every view, so a remounted wrapper's read cannot answer an older one in JS.
++  private static var lastImageReadId = 0
    private let mediaProcessingQueue = DispatchQueue(label: "expo.modules.pasteinput.media-processing", qos: .userInitiated)
    private var textInputView: UIView?
    private var isMonitoring: Bool = false
-@@ -551,6 +553,12 @@ class ExpoPasteInputView: ExpoView {
+@@ -551,6 +554,12 @@ class ExpoPasteInputView: ExpoView {
    }
  
    private func emitImagesAsync(for payloads: [MediaPayload]) {
 +    // Files are written off the main thread, so a tap can reach JS before them. The read start
 +    // lets JS hold it; exactly one onPaste (images or unsupported) with this readId follows.
-+    lastImageReadId += 1
-+    let readId = lastImageReadId
++    Self.lastImageReadId += 1
++    let readId = Self.lastImageReadId
 +    onImageReadStart(["readId": readId])
 +
      mediaProcessingQueue.async { [weak self] in
        guard let self else {
          return
-@@ -564,11 +572,11 @@ class ExpoPasteInputView: ExpoView {
+@@ -564,11 +573,11 @@ class ExpoPasteInputView: ExpoView {
          }
  
          if uris.isEmpty {
@@ -137,7 +138,7 @@ index 39b2302..4020f04 100644
        }
      }
    }
-@@ -905,20 +913,19 @@ class ExpoPasteInputView: ExpoView {
+@@ -905,20 +914,19 @@ class ExpoPasteInputView: ExpoView {
      ])
    }
    

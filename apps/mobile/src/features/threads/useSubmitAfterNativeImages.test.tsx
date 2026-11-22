@@ -65,8 +65,12 @@ function setup() {
       discardImages,
       watchDraft,
       flushInput: () => flushing,
-      onSubmit: (action, shownApprovalIds, settings) => {
-        if (!blocked) onSubmit(action, shownApprovalIds, settings);
+      // Like the thread screen: a blocked send is turned down, one that goes clears the draft.
+      onSubmit: (action, shownApprovalIds, settings, away) => {
+        if (blocked) return;
+        if (away === undefined) onSubmit(action, shownApprovalIds, settings);
+        else onSubmit(action, shownApprovalIds, settings, away);
+        draftEdited();
       },
     });
     const currentConverting = useNativeImagesConverting(draftKey);
@@ -428,7 +432,7 @@ it("sends a send left while away once its images land, unless the thread screen 
   expect(state.queue.held).toBeNull();
   await state.finish(true);
   await paste;
-  expect(state.onSubmit).toHaveBeenCalledExactlyOnceWith("steer", [], settings);
+  expect(state.onSubmit).toHaveBeenCalledExactlyOnceWith("steer", [], settings, true);
   state.unmount();
   state.remount("draft");
   expect(state.queue.held).toBeNull();
@@ -478,6 +482,19 @@ it("sends a send left while away once its images land, unless the thread screen 
   state.remount();
   expect(state.onSubmit).toHaveBeenLastCalledWith(undefined, ["seen"], SHOWN);
   expect(state.onSubmit).toHaveBeenCalledTimes(4);
+
+  // Turned down away, as while its thread is still being created, it waits for the composer too.
+  state.setApprovalIds([]);
+  const declined = state.queue.pasteImages(["declined"]);
+  await act(async () => void state.queue.deferSend());
+  state.unmount();
+  state.setBlocked(true, { render: false });
+  await state.finish(true);
+  await declined;
+  expect(state.onSubmit).toHaveBeenCalledTimes(4);
+  state.setBlocked(false, { render: false });
+  state.remount();
+  expect(state.onSubmit).toHaveBeenCalledTimes(5);
 });
 
 it("hands a left send to a composer still showing its draft", async () => {

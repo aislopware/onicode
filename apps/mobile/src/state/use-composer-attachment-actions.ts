@@ -23,7 +23,7 @@ import {
   getComposerDraftSnapshot,
   type ComposerDraftInsertion,
 } from "./use-composer-drafts";
-import { startComposerDraftOperation } from "./composerDraftOperations";
+import { startComposerDraftOperation, startNativeImagePaste } from "./composerDraftOperations";
 
 export function useComposerAttachmentActions(props: {
   readonly draftKey: string | null;
@@ -56,6 +56,25 @@ export function useComposerAttachmentActions(props: {
     const operation = startComposerDraftOperation(key);
     return work(operation.signal).finally(operation.finish);
   };
+  // A picker hands over its files after it closes, so a Send pressed meanwhile waits for them.
+  const pickIntoDraft = async (
+    key: string,
+    title: string,
+    pick: (existingCount: number) => Promise<{
+      readonly attachments: ReadonlyArray<DraftComposerAttachment>;
+      readonly error?: string | null;
+    }>,
+  ) => {
+    const insertion = captureComposerDraftInsertion(key);
+    const finish = startNativeImagePaste(key, 0);
+    let landed = false;
+    await withDraftOperation(key, async (signal) => {
+      const result = await pick(countComposerDraftAttachmentsAfterSelection(key, insertion));
+      const rejected = await append(key, signal, result.attachments, insertion, true);
+      report(title, result.error, rejected);
+      landed = !signal.aborted && !result.error && rejected === 0;
+    }).finally(() => finish(landed));
+  };
   const report = (title: string, error: string | null | undefined, rejected: number) => {
     const problems = [
       ...(error ? [error] : []),
@@ -74,18 +93,12 @@ export function useComposerAttachmentActions(props: {
   const onPickDraftMedia = async () => {
     const key = props.draftKey;
     if (!key || props.locked) return;
-    const insertion = captureComposerDraftInsertion(key);
-    await withDraftOperation(key, async (signal) => {
-      const result = await pickComposerMedia({
-        existingCount: countComposerDraftAttachmentsAfterSelection(key, insertion),
+    await pickIntoDraft(key, m(msg("Could not attach photo or video")), (existingCount) =>
+      pickComposerMedia({
+        existingCount,
         maxVideoBytes: capabilities?.fileAttachments?.maxUploadBytes,
-      });
-      report(
-        m(msg("Could not attach photo or video")),
-        result.error,
-        await append(key, signal, result.attachments, insertion),
-      );
-    });
+      }),
+    );
   };
   const onPickDraftFiles = async () => {
     const key = props.draftKey;
@@ -98,17 +111,9 @@ export function useComposerAttachmentActions(props: {
       );
       return;
     }
-    const insertion = captureComposerDraftInsertion(key);
-    await withDraftOperation(key, async (signal) => {
-      const result = await pickComposerFiles({
-        existingCount: countComposerDraftAttachmentsAfterSelection(key, insertion),
-        maxBytes,
-      });
-      report(
-        m(msg("Could not attach file")),
-        result.error,
-        await append(key, signal, result.files, insertion),
-      );
+    await pickIntoDraft(key, m(msg("Could not attach file")), async (existingCount) => {
+      const result = await pickComposerFiles({ existingCount, maxBytes });
+      return { attachments: result.files, error: result.error };
     });
   };
   const onNativePasteImages = async (uris: ReadonlyArray<string>) => {

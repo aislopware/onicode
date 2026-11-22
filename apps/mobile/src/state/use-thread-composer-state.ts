@@ -889,6 +889,7 @@ export function useThreadComposerState(input: {
       running: activeThreadBusy && canSteerActiveTurn,
       alternateModifier: followUpOverride !== undefined && followUpOverride !== activeTurnDefault,
       activeTurnDefault,
+      sentAway: press?.away === true,
     });
     const setupRunning = [selectedThreadActivityRun?.status, selectedThreadRuntime?.status].some(
       (status) => status === "preparing" || status === "starting",
