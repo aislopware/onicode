@@ -54,6 +54,7 @@ import {
   emitThreadEvent,
   hasPendingAssetUrl,
   installFakeEnvironment,
+  projectionOf,
   rejectPendingCommand,
   threadWithHistory,
   threadWithQuestion,
@@ -104,7 +105,7 @@ const insertText = (text: string) => cdp().send("Input.insertText", { text });
 class LaunchRefused extends Schema.TaggedError<LaunchRefused>()("LaunchRefused", {}) {}
 
 /** Holds every call to `method` until `release`, then ends it with `end`, until disposed. */
-function holdRpc(method: string, end: Effect.Effect<never, Error>) {
+function holdRpc(method: string, end: Effect.Effect<unknown, Error>) {
   let release = () => {};
   const held = new Promise<void>((resolve) => {
     release = resolve;
@@ -645,12 +646,21 @@ it("a failed image-only first send of a new thread keeps the new draft", async (
   expect(page.getByText("Copy message", { exact: true }).query()).toBeNull();
 });
 
-it.each(["new", "existing"] as const)(
+it.each([
+  "new",
+  "existing",
+  "background",
+  "background behind Settings",
+  "existing background behind Settings",
+] as const)(
   "Enter while an image compresses shows a cancellable banner, cancels on edit or Esc, and still sends after leaving a %s thread",
   async (kind) => {
     const thread = threadWithHistory(`upload-wait-${kind}`, 1);
     const other = threadWithHistory(`upload-wait-other-${kind}`, 1);
-    using _environment = installFakeEnvironment(kind === "existing" ? [thread, other] : [other], {
+    const existing = kind.startsWith("existing");
+    const background = kind.includes("background");
+    const behindSettings = kind.endsWith("behind Settings");
+    using _environment = installFakeEnvironment(existing ? [thread, other] : [other], {
       acceptCommands: true,
     });
     __setClientSettingsForTests({
@@ -658,17 +668,22 @@ it.each(["new", "existing"] as const)(
       onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
     });
     const draftId = DraftId.make(`draft-upload-wait-${kind}`);
-    if (kind === "new") {
+    if (!existing) {
       useComposerDraftStore
         .getState()
         .setProjectDraftThreadId(scopeProjectRef(ENVIRONMENT_ID, PROJECT_ID), draftId, {
           threadId: thread.id,
         });
     }
-    using launch = holdRpc(ORCHESTRATION_V2_WS_METHODS.launchThread, Effect.interrupt);
+    using launch = holdRpc(
+      ORCHESTRATION_V2_WS_METHODS.launchThread,
+      background
+        ? Effect.succeed({ threadId: thread.id, projection: projectionOf(thread), resumed: false })
+        : Effect.interrupt,
+    );
     const router = getRouter(
       createMemoryHistory({
-        initialEntries: [kind === "new" ? `/draft/${draftId}` : `/${ENVIRONMENT_ID}/${thread.id}`],
+        initialEntries: [existing ? `/${ENVIRONMENT_ID}/${thread.id}` : `/draft/${draftId}`],
       }),
     );
     await router.load();
@@ -712,13 +727,37 @@ it.each(["new", "existing"] as const)(
     await expect.element(page.getByText("Sending once image is ready")).not.toBeInTheDocument();
 
     // Enter arms again; leaving the thread still sends once the image is ready.
-    await userEvent.keyboard("{Enter}");
+    // Existing threads send and start a new thread with Mod+Alt+Enter.
+    await userEvent.keyboard(
+      !background
+        ? "{Enter}"
+        : existing
+          ? "{ControlOrMeta>}{Alt>}{Enter}{/Alt}{/ControlOrMeta}"
+          : "{ControlOrMeta>}{Enter}{/ControlOrMeta}",
+    );
     await expect.element(page.getByText("Sending once image is ready")).toBeVisible();
-    await router.navigate({ to: `/${ENVIRONMENT_ID}/${other.id}` });
-    await expect.element(page.getByText(`Answer 0 for upload-wait-other-${kind}.`)).toBeVisible();
+    const awayPath = behindSettings ? "/settings/general" : `/${ENVIRONMENT_ID}/${other.id}`;
+    await router.navigate({ to: awayPath });
+    if (!behindSettings) {
+      await expect.element(page.getByText(`Answer 0 for upload-wait-other-${kind}.`)).toBeVisible();
+    }
 
     compressed.resolve();
-    if (kind === "new") {
+    if (background) {
+      if (existing) {
+        await vi.waitFor(() =>
+          expect(dispatchedCommands()).toContainEqual(
+            expect.objectContaining({ type: "message.dispatch", threadId: thread.id }),
+          ),
+        );
+      } else {
+        await launch.called;
+        launch.release();
+      }
+      // A background send confirms itself without opening a fresh composer over where the user is.
+      await expect.element(page.getByText("Started in background")).toBeVisible();
+      expect(router.state.location.pathname).toBe(awayPath);
+    } else if (kind === "new") {
       await launch.called;
     } else {
       await vi.waitFor(() =>

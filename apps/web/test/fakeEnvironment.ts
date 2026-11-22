@@ -362,7 +362,7 @@ function shellOf(thread: FakeThread): OrchestrationV2ThreadShell {
   };
 }
 
-function projectionOf(thread: FakeThread): OrchestrationV2ThreadProjection {
+export function projectionOf(thread: FakeThread): OrchestrationV2ThreadProjection {
   const shell = shellOf(thread);
   const visibleTurnItems: OrchestrationV2ProjectedTurnItem[] = thread.items.map(
     (item, position) => ({

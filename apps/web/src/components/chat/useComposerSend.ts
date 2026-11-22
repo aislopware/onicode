@@ -55,7 +55,8 @@ import {
 } from "@onicode/client-runtime/environment";
 import { createModelSelection } from "@onicode/shared/model";
 import { type SetStateAction, useLayoutEffect, useRef } from "react";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useRouter } from "@tanstack/react-router";
+import { isAppModalPage } from "../sidebar/mainAppLocation";
 import {
   isAtomCommandInterrupted,
   settlePromise,
@@ -395,6 +396,7 @@ export function useComposerSend(input: ComposerSendInput) {
   const linkedEnvironments = useLinkedEnvironments(environmentId);
   const handleNewThread = useNewThreadHandler();
   const navigate = useNavigate();
+  const router = useRouter();
   const clientSettingsHydrated = useClientSettingsHydrated();
   const startThreadTurn = useOrchestrationCommand(threadEnvironment.startTurn, {
     reportFailure: false,
@@ -1643,7 +1645,29 @@ export function useComposerSend(input: ComposerSendInput) {
           createdAt: messageCreatedAt,
         },
       });
-      if (backgroundThreadRef) {
+      // A send held for an image can finish after the user moved on, started to, or opened
+      // Settings or Usage over the composer; what they are looking at stays.
+      const composerShown = () =>
+        isCurrentRouteThread() &&
+        router.state.status === "idle" &&
+        !isAppModalPage(router.latestLocation.pathname);
+      const showStartedInBackground = (threadRef: ScopedThreadRef) =>
+        toastManager.add({
+          type: "success",
+          title: m(msg("Started in background")),
+          timeout: 5_000,
+          actionProps: {
+            children: m(msg("Open", { $context: "verb, opens the background thread" })),
+            onClick: () => {
+              void navigate({
+                to: "/$environmentId/$threadId",
+                params: buildThreadRouteParams(threadRef),
+              });
+            },
+          },
+        });
+      const backgroundDraftShown = composerShown();
+      if (backgroundThreadRef && backgroundDraftShown) {
         try {
           backgroundDraftOpened = Boolean(
             await handleNewThread(
@@ -1693,27 +1717,12 @@ export function useComposerSend(input: ComposerSendInput) {
           }
         }
         if (backgroundThreadRef) {
-          if (backgroundDraftOpened) {
-            toastManager.add({
-              type: "success",
-              title: m(msg("Started in background")),
-              timeout: 5_000,
-              actionProps: {
-                children: m(msg("Open", { $context: "verb, opens the background thread" })),
-                onClick: () => {
-                  void navigate({
-                    to: "/$environmentId/$threadId",
-                    params: buildThreadRouteParams(backgroundThreadRef),
-                  });
-                },
-              },
-            });
+          if (backgroundDraftOpened || !backgroundDraftShown) {
+            showStartedInBackground(backgroundThreadRef);
           }
-        } else if (
-          submissionIntent === "background" &&
-          currentRouteThreadKeyRef.current === routeThreadKey
-        ) {
-          handleNewThreadInActiveProject();
+        } else if (submissionIntent === "background") {
+          if (composerShown()) handleNewThreadInActiveProject();
+          else showStartedInBackground(scopeThreadRef(environmentId, threadIdForSend));
         }
         void recordPromptSent(environmentId);
       }

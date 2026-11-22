@@ -13,6 +13,7 @@ import {
   withSettingsSecrets,
 } from "@onicode/contracts";
 import * as Context from "effect/Context";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Equal from "effect/Equal";
 import * as Exit from "effect/Exit";
@@ -559,7 +560,15 @@ export const makeProviderInstanceRegistry = Effect.fn(
   const hostEnvironment = yield* HostProcess.Environment;
   const readHostPath = () => hostEnvironment.PATH ?? hostEnvironment.Path ?? hostEnvironment.path;
   // Read before the first build, so a PATH that changes during a build still counts as a change.
-  const builtOnHostPath = yield* Ref.make(readHostPath());
+  const initialBuild = yield* Deferred.make<void>();
+  yield* Deferred.succeed(initialBuild, undefined);
+  const initialPath = readHostPath();
+  // `path` is the last PATH claimed and `builtPath` the last one whose rebuild finished.
+  const hostPathBuild = yield* Ref.make({
+    path: initialPath,
+    builtPath: initialPath,
+    built: initialBuild,
+  });
   const reconcile: ProviderInstanceRegistryMutator.ProviderInstanceRegistryMutatorShape["reconcile"] =
     (configMap) =>
       semaphore.withPermits(1)(
@@ -645,14 +654,51 @@ export const makeProviderInstanceRegistry = Effect.fn(
   const rebuildOnHostPathChange = Effect.fn("ProviderInstanceRegistry.rebuildOnHostPathChange")(
     function* (select: Effect.Effect<ReadonlyArray<ProviderInstanceId>>) {
       const hostPath = readHostPath();
-      // Checked outside the lock, so a refresh never waits behind a reconcile for an unchanged PATH.
-      if (hostPath === (yield* Ref.getAndSet(builtOnHostPath, hostPath))) return;
-      yield* semaphore.withPermits(1)(
+      // Claiming a new PATH and starting its rebuild in the registry's scope are one step, so a
+      // refresh dropped meanwhile (its client left) cannot strand the others on a half-done rebuild.
+      yield* Effect.uninterruptible(
         Effect.gen(function* () {
-          const instanceIds = yield* select;
-          yield* reconcileWithR(yield* Ref.get(configMapRef), new Set(instanceIds));
-        }).pipe(Effect.provideContext(driverContext)),
+          const built = yield* Deferred.make<void>();
+          const claimed = yield* Ref.modify(hostPathBuild, (current) =>
+            current.path === hostPath
+              ? [false, current]
+              : [true, { ...current, path: hostPath, built }],
+          );
+          if (!claimed) return;
+          const worker = yield* semaphore
+            .withPermits(1)(
+              Effect.gen(function* () {
+                const instanceIds = yield* select;
+                yield* reconcileWithR(yield* Ref.get(configMapRef), new Set(instanceIds));
+              }),
+            )
+            .pipe(
+              Effect.provideContext(driverContext),
+              // A rebuild that did not finish leaves the PATH for the next refresh to claim.
+              Effect.onExit((exit) =>
+                Ref.update(hostPathBuild, (current) =>
+                  Exit.isSuccess(exit)
+                    ? { ...current, builtPath: hostPath }
+                    : current.built === built
+                      ? { ...current, path: current.builtPath }
+                      : current,
+                ),
+              ),
+              Effect.forkIn(parentScope),
+            );
+          // Observed rather than completed inside the worker: a closed scope never starts it.
+          worker.addObserver((exit) => Deferred.doneUnsafe(built, exit));
+        }),
       );
+      // Waits for the PATH's rebuild, and for one a newer PATH started meanwhile, so a refresh
+      // never probes an instance that is about to be replaced. It waits behind the registry lock.
+      let awaited: Deferred.Deferred<void> | undefined;
+      while (true) {
+        const { built } = yield* Ref.get(hostPathBuild);
+        if (built === awaited) return;
+        yield* Deferred.await(built);
+        awaited = built;
+      }
     },
   );
   const applySecret: ProviderInstanceRegistryMutator.ProviderInstanceRegistryMutatorShape["applySecret"] =

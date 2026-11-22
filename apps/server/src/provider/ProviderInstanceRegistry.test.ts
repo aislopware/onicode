@@ -1022,6 +1022,78 @@ describe("ProviderInstanceRegistry secret environment", () => {
       yield* rebuild;
       yield* rebuild;
       expect(fixture.created).toHaveLength(2);
+
+      // A refresh that arrives mid-rebuild must not probe the instance about to be replaced.
+      env.PATH = "/usr/bin:/opt/homebrew/bin";
+      const selecting = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      const held = yield* mutator
+        .rebuildOnHostPathChange(
+          Deferred.succeed(selecting, undefined).pipe(
+            Effect.andThen(Deferred.await(release)),
+            Effect.as([instanceId]),
+          ),
+        )
+        .pipe(Effect.forkChild({ startImmediately: true }));
+      yield* Deferred.await(selecting);
+      const unchanged = yield* rebuild.pipe(
+        Effect.andThen(Effect.sync(() => fixture.created.length)),
+        Effect.forkChild({ startImmediately: true }),
+      );
+      yield* Deferred.succeed(release, undefined);
+      yield* Fiber.join(held);
+      expect(yield* Fiber.join(unchanged)).toBe(3);
+
+      // A refresh dropped mid-rebuild (its client left) still finishes the rebuild for the others.
+      env.PATH = "/usr/bin:/opt/local/bin";
+      const dropped = yield* Deferred.make<void>();
+      const resume = yield* Deferred.make<void>();
+      const interrupted = yield* mutator
+        .rebuildOnHostPathChange(
+          Deferred.succeed(dropped, undefined).pipe(
+            Effect.andThen(Deferred.await(resume)),
+            Effect.as([instanceId]),
+          ),
+        )
+        .pipe(Effect.forkChild({ startImmediately: true }));
+      yield* Deferred.await(dropped);
+      yield* Fiber.interrupt(interrupted);
+      const afterDrop = yield* rebuild.pipe(
+        Effect.andThen(Effect.sync(() => fixture.created.length)),
+        Effect.forkChild({ startImmediately: true }),
+      );
+      // A PATH that changes again while a waiter waits is rebuilt before that waiter returns.
+      env.PATH = "/usr/bin:/nix/bin";
+      const newer = yield* rebuild.pipe(Effect.forkChild({ startImmediately: true }));
+      yield* Deferred.succeed(resume, undefined);
+      yield* Fiber.join(newer);
+      expect(yield* Fiber.join(afterDrop)).toBe(5);
+
+      // A failed rebuild fails its waiters, and the PATH reverts to the last one that built.
+      env.PATH = "/usr/bin:/snap/bin";
+      const failing = yield* Deferred.make<void>();
+      const fail = yield* Deferred.make<void>();
+      const broken = yield* mutator
+        .rebuildOnHostPathChange(
+          Deferred.succeed(failing, undefined).pipe(
+            Effect.andThen(Deferred.await(fail)),
+            Effect.andThen(Effect.die("select failed")),
+          ),
+        )
+        .pipe(Effect.exit, Effect.forkChild({ startImmediately: true }));
+      yield* Deferred.await(failing);
+      const waiter = yield* rebuild.pipe(Effect.exit, Effect.forkChild({ startImmediately: true }));
+      env.PATH = "/usr/bin:/sbin";
+      const brokenNewer = yield* mutator
+        .rebuildOnHostPathChange(Effect.die("select failed"))
+        .pipe(Effect.exit, Effect.forkChild({ startImmediately: true }));
+      yield* Deferred.succeed(fail, undefined);
+      expect(Exit.isFailure(yield* Fiber.join(broken))).toBe(true);
+      expect(Exit.isFailure(yield* Fiber.join(waiter))).toBe(true);
+      expect(Exit.isFailure(yield* Fiber.join(brokenNewer))).toBe(true);
+      env.PATH = "/usr/bin:/snap/bin";
+      yield* rebuild;
+      expect(fixture.created).toHaveLength(6);
     }).pipe(Effect.provideService(HostProcess.Environment, env));
   });
 
