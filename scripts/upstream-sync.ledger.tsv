@@ -3230,3 +3230,4 @@ c585a58598	take	fix(mobile): prevent clipped percentages in usage limit cards (#
 989247488d	take	conflict: added the three optimizer entries to Onicode's include list, which keeps its shared lazyPreviewDependencies array
 62a7108904	take	fix(github): superseded runs' cancelled checks no longer block PR watches (#30434)
 a8363dad7f	take	fix(web): keybindings using '+' show a plus keycap instead of empty pills (#40808)
+d27d29fe2d	take	conflict: kept Onicode's Show more button styling (row-highlight tokens), took upstream's focus handling
