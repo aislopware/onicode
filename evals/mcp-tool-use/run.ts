@@ -25,6 +25,7 @@ import {
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Config from "effect/Config";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -56,6 +57,7 @@ import { PULL_REQUEST_LINKING_INSTRUCTIONS } from "@onicode/provider-core/server
 import { makeSideChatContext } from "../../apps/server/src/orchestration-v2/ContextHandoffService.ts";
 import { withInlineContext } from "../../apps/server/src/orchestration-v2/ContextHandoffDelivery.ts";
 import { outputInstructions } from "../../apps/server/src/orchestration-v2/runOutput.ts";
+import { stoppedDelegatedTasksNote } from "../../apps/server/src/orchestration-v2/RestartBackgroundNote.ts";
 import { AttachmentToolkit } from "../../apps/server/src/mcp/toolkits/attachment/tools.ts";
 import { DeviceToolkit } from "../../apps/server/src/mcp/toolkits/device/tools.ts";
 import { EnvironmentToolkit } from "../../apps/server/src/mcp/toolkits/environment/tools.ts";
@@ -194,6 +196,13 @@ const PriorToolCall = Schema.Struct({
   result: Schema.Unknown,
   /** Repository-relative file whose current contents supply this tool result. */
   resultFile: Schema.optional(Schema.String),
+});
+
+/** A delegated task, by the fields Onicode names it with. */
+const StoppedDelegatedTask = Schema.Struct({
+  id: Schema.String,
+  title: Schema.optional(Schema.String),
+  prompt: Schema.String,
 });
 
 /**
@@ -387,6 +396,11 @@ export const McpToolUseCase = Schema.Struct({
     sideChat: Schema.optional(
       Schema.Struct({ parentThreadId: Schema.String, digest: Schema.Array(Schema.String) }),
     ),
+    /**
+     * Delegated tasks a Stop on this thread interrupted before they finished: Onicode's turn start
+     * puts its note naming them ahead of `prompt`, after any side-chat context.
+     */
+    stoppedDelegatedTasks: Schema.optional(Schema.Array(StoppedDelegatedTask)),
   }),
   /** Empty to resume a top-level thread without side-chat context after its last tool result. */
   prompt: Schema.String,
@@ -1218,6 +1232,33 @@ const loadTools = (tools: Array<ApiTool>, id: string, found: ReadonlyArray<ApiTo
   return { type: "tool_result", tool_use_id: id, content };
 };
 
+const decodeSubagent = Schema.decodeUnknownSync(Contracts.OrchestrationV2Subagent);
+const STOPPED_AT = DateTime.makeUnsafe("2026-11-01T10:00:00.000Z");
+
+/** An app-owned task a Stop interrupted, as Onicode records the tasks its note names. */
+const stoppedSubagent = (task: typeof StoppedDelegatedTask.Type) =>
+  decodeSubagent({
+    id: task.id,
+    threadId: "thread-parent",
+    runId: "run-stopped",
+    parentNodeId: "node-root",
+    origin: "app_owned",
+    createdBy: "agent",
+    driver: "codex",
+    providerInstanceId: "codex",
+    providerThreadId: null,
+    childThreadId: null,
+    nativeTaskRef: null,
+    prompt: task.prompt,
+    title: task.title ?? null,
+    model: null,
+    status: "interrupted",
+    result: null,
+    startedAt: STOPPED_AT,
+    completedAt: STOPPED_AT,
+    updatedAt: STOPPED_AT,
+  });
+
 /** Messages for a case: reminders, context, prior turns with real tool blocks, then the prompt. */
 export const buildMessages = (sample: Sample) => {
   const { testCase, base, tools } = sample;
@@ -1295,8 +1336,14 @@ export const buildMessages = (sample: Sample) => {
     testCase.promptContext === undefined
       ? testCase.prompt
       : projectComposerContextForProvider({ text: testCase.prompt, ...testCase.promptContext });
-  const prompt =
-    sideChatContext === undefined ? userText : withInlineContext(sideChatContext, userText);
+  const stopped = testCase.setup.stoppedDelegatedTasks;
+  const inlineContext = [
+    sideChatContext,
+    stopped === undefined ? undefined : stoppedDelegatedTasksNote(stopped.map(stoppedSubagent)),
+  ]
+    .filter((part) => part !== undefined)
+    .join("\n\n");
+  const prompt = withInlineContext(inlineContext, userText);
   const childPrompt = () => taskPrompt({ task: prompt, role: delegateRole });
   // Turn start appends them after everything else in the user text.
   const owed =
