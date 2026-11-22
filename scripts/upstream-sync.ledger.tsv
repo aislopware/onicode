@@ -3174,3 +3174,4 @@ b5709bb865	take	MISSING migration 103 test applied to Onicode's 108_IssueTracker
 10586f9e31	take	CONFLICTs resolved without ONICODE_TELEMETRY_ENABLED and the hosted-app/release-channel parts (removed surfaces); kept PNPM_HOME beside the new flag; adopted upstream's runtime secret_providers flag over Onicode's build-time ONICODE_FEATURE_SECRETS gate (web inline secret card adapted); env.ts deleted with its two dead isElectron test mocks
 63fa4c892e	take	taken as is
 2ea1c51f18	take	fix(acp): a late session update no longer marks a stopped thread active (#40629)
+76b421864b	take	fix(web): Ctrl+click in the composer no longer outlines the whole line (#40628); @tiptap/extension-paragraph pinned to Onicode's tiptap ^3.34.0
