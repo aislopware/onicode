@@ -128,6 +128,10 @@ const layerCheckoutWorkflow = (harness: CheckoutHarness) =>
           Effect.sync(() => harness.events.push(`create-${input.switchRef === true}`)).pipe(
             Effect.as({ refName: input.refName }),
           ),
+        pullCurrentBranch: () =>
+          Effect.sync(() => harness.events.push("pull")).pipe(
+            Effect.as({ status: "pulled" as const, refName: "main", upstreamRef: "origin/main" }),
+          ),
       }),
     ),
     Layer.provide(
@@ -246,6 +250,9 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("GitWorkflowServi
     ["committing", null, ["commit"]],
     ["checking out a pull request locally", "busy", []],
     ["checking out a pull request in a worktree", null, []],
+    ["pulling", "busy", []],
+    // An automatic pull skips the checkout without a refusal to show.
+    ["pulling automatically", null, []],
   ] as const)(
     "while a thread works in the checkout: %s (refusal: %s, moves: %j)",
     ([operation, refusal, moves]) =>
@@ -263,21 +270,25 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("GitWorkflowServi
                 ? workflow.createRef({ cwd, refName: "feature", switchRef: true })
                 : operation === "creating a branch"
                   ? workflow.createRef({ cwd, refName: "feature" })
-                  : operation === "committing on a new branch" || operation === "committing"
-                    ? workflow.runStackedAction({
-                        cwd,
-                        actionId: "commit",
-                        action: "commit",
-                        featureBranch: operation === "committing on a new branch",
-                      })
-                    : workflow.preparePullRequestThread({
-                        cwd,
-                        reference: "91",
-                        mode:
-                          operation === "checking out a pull request locally"
-                            ? "local"
-                            : "worktree",
-                      });
+                  : operation === "pulling"
+                    ? workflow.pullCurrentBranch(cwd)
+                    : operation === "pulling automatically"
+                      ? workflow.pullCurrentBranchWhenIdle(cwd)
+                      : operation === "committing on a new branch" || operation === "committing"
+                        ? workflow.runStackedAction({
+                            cwd,
+                            actionId: "commit",
+                            action: "commit",
+                            featureBranch: operation === "committing on a new branch",
+                          })
+                        : workflow.preparePullRequestThread({
+                            cwd,
+                            reference: "91",
+                            mode:
+                              operation === "checking out a pull request locally"
+                                ? "local"
+                                : "worktree",
+                          });
         assert.deepEqual(
           { refusal: yield* failureDetail(run), moves: harness.events },
           { refusal, moves: [...moves] },

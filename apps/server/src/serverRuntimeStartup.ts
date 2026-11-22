@@ -39,6 +39,7 @@ import * as ThreadLaunch from "./orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadManagement from "./orchestration-v2/ThreadManagementService.ts";
 import * as ProjectService from "./project/ProjectService.ts";
 import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
+import * as GitWorkflowService from "./git/GitWorkflowService.ts";
 import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as ServerSettings from "./serverSettings.ts";
@@ -153,6 +154,7 @@ export const autoPullProjects = Effect.fn("autoPullProjects")(function* (
   settings = DEFAULT_SERVER_SETTINGS,
 ) {
   const git = yield* GitVcsDriver.GitVcsDriver;
+  const workflow = yield* GitWorkflowService.GitWorkflowService;
   const workspaceRoots = [
     ...new Set(
       projects
@@ -193,7 +195,15 @@ export const autoPullProjects = Effect.fn("autoPullProjects")(function* (
 
         if (status.behindCount <= 0) return;
 
-        const result = yield* git.pullCurrentBranch(cwd);
+        // Recovered runs and scheduled tasks may already be working in the checkout.
+        const result = yield* workflow.pullCurrentBranchWhenIdle(cwd);
+        if (result === null) {
+          yield* Effect.logDebug("Skipped automatic project pull", {
+            cwd,
+            reason: "checkout-busy",
+          });
+          return;
+        }
         yield* Effect.logDebug("Automatic project pull completed", {
           cwd,
           status: result.status,
