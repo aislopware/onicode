@@ -10,9 +10,13 @@ describe("lineCutMarkdown", () => {
     ["a comment closed past the cut", `<!-- ${"x".repeat(12_000)} -->`, " -->… "],
     // A comment that only closes on a later line stays open, as in the file.
     ["a comment closed on a later line", `<!-- ${"x".repeat(12_000)}\n-->`, "… "],
+    // The cut falls inside the close itself.
+    ["a close cut halfway", `<!-- ${"x".repeat(9_993)}-->${"y".repeat(2_000)}`, "-- -->… "],
+    // In a fenced code block the delimiters are text, so nothing is added.
+    ["a fenced code line", `\`\`\`\n<!-- ${"x".repeat(12_000)} -->\n\`\`\``, "… "],
   ])("keeps the document after %s", (_name, line, joint) => {
     const shown = lineCutMarkdown(`${line}\n\n# After`, more);
-    expect(shown).toContain(`${"x".repeat(9_995)}${joint}`);
+    expect(shown).toContain(`${"x".repeat(100)}${joint}`);
     expect(shown.endsWith("\n\n# After")).toBe(true);
   });
 });

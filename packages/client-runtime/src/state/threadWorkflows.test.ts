@@ -318,12 +318,26 @@ describe("thread workflows", () => {
       review: { type: "move-first", beforeRunId: "plain" },
       goal: { type: "steer", targetRunId: "active" },
     },
+    // One that named no model runs on the thread's pick, this session's provider, as the server has it.
+    {
+      steer: true,
+      goals: false,
+      goalInstance: "other",
+      goalFollowsThread: true,
+      plain: { type: "steer", targetRunId: "active" },
+      review: { type: "move-first", beforeRunId: "plain" },
+      goal: { type: "move-first", beforeRunId: "plain" },
+    },
   ])("moves a queued command first instead of steering it, steer=$steer goals=$goals", (row) => {
     const queued = ["plain", "review", "goal"];
     const text = { plain: "Next", review: "/review", goal: "/goal pause" } as const;
     const projection = (activeStatus: string) =>
       ({
-        thread: { id: "thread", activeProviderThreadId: "provider-thread" },
+        thread: {
+          id: "thread",
+          activeProviderThreadId: "provider-thread",
+          modelSelection: { instanceId: "codex" },
+        },
         runs: [
           {
             id: "active",
@@ -344,6 +358,7 @@ describe("thread workflows", () => {
           id: `message-${id}`,
           text: text[id as keyof typeof text],
           attachments: [],
+          ...(id === "goal" && "goalFollowsThread" in row ? { followsThreadSelection: true } : {}),
         })),
         providerTurns: [{ id: "turn", runAttemptId: "attempt-active", status: "running" }],
         providerThreads: [

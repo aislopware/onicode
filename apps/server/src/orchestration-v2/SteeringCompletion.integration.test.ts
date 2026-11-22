@@ -1127,21 +1127,53 @@ it.effect("sends a selected held message once and preserves the remaining queue 
           .map((run) => run.userMessageId),
         [MessageId.make("message:queued-last"), MessageId.make("message:queued-first")],
       );
-      // A cancelled target is not a started head, so moving before it is refused, not a move first.
+      const runOf = (projection: typeof before, text: string) =>
+        projection.runs.find((run) => run.userMessageId === MessageId.make(`message:${text}`))!.id;
+      // A target cancelled before it started was never ahead of the queue: the move is refused.
+      yield* orchestrator.dispatch({
+        type: "message.dispatch",
+        commandId: CommandId.make("queued-dropped"),
+        threadId,
+        messageId: MessageId.make("message:queued-dropped"),
+        text: "queued-dropped",
+        attachments: [],
+        modelSelection: runSelection,
+        dispatchMode: { type: "queue_after_active" },
+        createdBy: "user",
+        creationSource: "web",
+      });
+      const withDropped = yield* orchestrator.getThreadProjection(threadId);
+      yield* orchestrator.dispatch({
+        type: "queued-run.cancel",
+        commandId: CommandId.make("cancel-queued-dropped"),
+        threadId,
+        runId: runOf(withDropped, "queued-dropped"),
+      });
       const cancelledTarget = yield* orchestrator
         .dispatch({
           type: "queued-run.reorder",
           commandId: CommandId.make("move-before-cancelled"),
           threadId,
-          runId: before.runs.find(
-            (run) => run.userMessageId === MessageId.make("message:queued-first"),
-          )!.id,
-          beforeRunId: before.runs.find(
-            (run) => run.userMessageId === MessageId.make("message:first"),
-          )!.id,
+          runId: runOf(withDropped, "queued-first"),
+          beforeRunId: runOf(withDropped, "queued-dropped"),
         })
         .pipe(Effect.flip);
       assert.equal(cancelledTarget._tag, "OrchestratorDispatchError");
+      // A head that started is ahead of the queue even after it ended: the move goes first.
+      yield* orchestrator.dispatch({
+        type: "queued-run.reorder",
+        commandId: CommandId.make("move-before-ended-head"),
+        threadId,
+        runId: runOf(withDropped, "queued-first"),
+        beforeRunId: runOf(withDropped, "first"),
+      });
+      assert.deepEqual(
+        (yield* orchestrator.getThreadProjection(threadId)).runs
+          .filter((run) => run.status === "queued")
+          .toSorted((left, right) => (left.queuePosition ?? 0) - (right.queuePosition ?? 0))
+          .map((run) => run.userMessageId),
+        [MessageId.make("message:queued-first"), MessageId.make("message:queued-last")],
+      );
     }).pipe(Effect.provide(layer));
   }),
 );

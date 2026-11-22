@@ -706,7 +706,10 @@ describe("large text preview recovery", () => {
           wrap
           getRows={(page) =>
             Array.from({ length: 32 }, (_, i) =>
-              page * 32 + i === 1 ? ["wrapped source text ".repeat(500)] : ["short"],
+              // Row 86 is the last before the native tail of a 400px viewport.
+              page * 32 + i === 1 || page * 32 + i === 86
+                ? ["wrapped source text ".repeat(500)]
+                : ["short"],
             )
           }
         />
@@ -732,6 +735,35 @@ describe("large text preview recovery", () => {
     await vi.waitFor(() => expect(row()).toBeNull());
     await wheel(-(3 * 29 + 100));
     await vi.waitFor(() => expect(offset()).toBeCloseTo(height - 100, 0));
+    // Two notches up out of the tail before a render leaves it both walk the tall row's height,
+    // once a visit has measured it.
+    const end = () =>
+      act(() =>
+        viewport().dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true })),
+      );
+    const tail = () => screen.container.querySelector<HTMLElement>('[data-preview-row="99"]');
+    const tallAboveTail = () =>
+      screen.container.querySelector<HTMLElement>('[data-preview-row="86"]');
+    await end();
+    await vi.waitFor(() => expect(tail()).not.toBeNull());
+    await wheel(-300);
+    await vi.waitFor(() => expect(tallAboveTail()?.offsetHeight).toBeGreaterThan(1000));
+    await end();
+    await vi.waitFor(() => expect(tallAboveTail()).toBeNull());
+    const tailTop = () => screen.container.querySelector<HTMLElement>('[data-preview-row="87"]')!;
+    const above = tailTop().getBoundingClientRect().top - viewport().getBoundingClientRect().top;
+    await act(() => {
+      for (const deltaY of [-100, -100]) {
+        viewport().dispatchEvent(
+          new WheelEvent("wheel", { deltaY, bubbles: true, cancelable: true }),
+        );
+      }
+    });
+    await vi.waitFor(() =>
+      expect(
+        tallAboveTail()!.getBoundingClientRect().bottom - viewport().getBoundingClientRect().top,
+      ).toBeCloseTo(above + 200, 0),
+    );
   });
 
   it("scrolls every tall row in the final virtual viewport", async () => {

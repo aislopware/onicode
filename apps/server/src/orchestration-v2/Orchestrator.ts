@@ -2,7 +2,6 @@ import type {
   OrchestrationV2ThreadLinkMetadata,
   OrchestrationV2SearchThreadInput,
   OrchestrationV2SearchThreadResult,
-  OrchestrationV2RunStatus,
   OrchestrationV2ThreadHistoryPage,
   ProjectId,
 } from "@onicode/contracts";
@@ -1719,12 +1718,6 @@ const hasRunningDelegatedTasks = (subagents: ReadonlyArray<OrchestrationV2Subage
       task.childThreadId !== null &&
       isOrchestrationV2WorkActive(task.status),
   );
-
-const STARTED_RUN_STATUSES: ReadonlySet<OrchestrationV2RunStatus> = new Set([
-  "starting",
-  "running",
-  "waiting",
-]);
 
 const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(function* () {
   const checkpointService = yield* CheckpointServiceV2;
@@ -12860,14 +12853,12 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     }
     const reorderableRuns = queuedRuns.filter((run) => !isAutomaticCompletionRun(projection, run));
     const withoutMoving = reorderableRuns.filter((run) => run.id !== command.runId);
-    // A target that left the queue by starting, as the head does, is ahead of every queued run,
-    // so going before it is going first. A cancelled target still refuses the move.
+    // A target that left the queue by starting, as the head does, is ahead of every queued run
+    // even once it ends, so going before it is going first. One cancelled unstarted refuses.
     const targetLeftQueue =
       command.beforeRunId !== null &&
       !queuedRuns.some((run) => run.id === command.beforeRunId) &&
-      projection.runs.some(
-        (run) => run.id === command.beforeRunId && STARTED_RUN_STATUSES.has(run.status),
-      );
+      projection.runs.some((run) => run.id === command.beforeRunId && run.startedAt !== null);
     const beforeIndex =
       command.beforeRunId === null
         ? withoutMoving.length

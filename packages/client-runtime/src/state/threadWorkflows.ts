@@ -39,6 +39,8 @@ export interface QueuedThreadRun {
    * sends it into the turn; one that fails or is stopped leaves it an ordinary queued message.
    */
   readonly awaitsCompaction: boolean;
+  /** Whether the provider it runs on runs /goal itself; absent when unknown. */
+  readonly nativeGoals?: boolean;
 }
 
 export interface ThreadQueueWorkflowState {
@@ -239,10 +241,22 @@ export function deriveThreadQueueWorkflowState(
     projection.providerTurns.some(
       (turn) => turn.runAttemptId === activeRun.activeAttemptId && turn.status === "running",
     );
+  const nativeGoals =
+    session === null || capabilities?.supportsNativeGoals === undefined
+      ? undefined
+      : { instanceId: session.providerInstanceId, supported: capabilities.supportsNativeGoals };
   const queuedRuns = copySorted(getUserQueuedThreadRuns(projection), compareQueuedRuns).map(
     (run) => {
       const message = projection.messages.find((candidate) => candidate.id === run.userMessageId);
+      // A message that named no model runs on the thread's pick when it starts, as the server has it.
+      const runNativeGoals = nativeGoalsFor(
+        nativeGoals,
+        message?.followsThreadSelection === true
+          ? projection.thread.modelSelection.instanceId
+          : run.providerInstanceId,
+      );
       return {
+        ...(runNativeGoals === undefined ? {} : { nativeGoals: runNativeGoals }),
         run,
         // The server keeps the field after the turn or its compaction ends, so the running
         // compaction decides, not the field alone.
@@ -279,14 +293,7 @@ export function deriveThreadQueueWorkflowState(
         (capabilities === undefined || canSteer)) ||
       (hasSteerableProviderTurn && canSteer),
     promoteSkipsCompaction,
-    ...(session === null || capabilities?.supportsNativeGoals === undefined
-      ? {}
-      : {
-          nativeGoals: {
-            instanceId: session.providerInstanceId,
-            supported: capabilities.supportsNativeGoals,
-          },
-        }),
+    ...(nativeGoals === undefined ? {} : { nativeGoals }),
   };
 }
 
@@ -326,7 +333,7 @@ export function resolveQueuedRunSendNow(
     text: queued.message?.text ?? queued.text,
     attachments: queued.attachments,
   };
-  const nativeGoals = nativeGoalsFor(workflow.nativeGoals, queued.run.providerInstanceId);
+  const { nativeGoals } = queued;
   if (!workflow.promoteSkipsCompaction && commandNeverSteers(message, nativeGoals)) {
     const first = workflow.queuedRuns[0]!.run.id;
     return first === runId ? null : { type: "move-first", beforeRunId: first };

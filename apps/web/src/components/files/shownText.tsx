@@ -91,13 +91,20 @@ function joinParts(
     .map((part) => {
       if (part.cut === 0) return part.text;
       const end = part.at + part.text.length;
-      // A comment whose close was cut would swallow the rest of the document.
+      // A comment whose close was cut, even halfway, would swallow the rest of the document.
       const closesComment =
         part.text.lastIndexOf("<!--") > part.text.lastIndexOf("-->") &&
-        text.slice(end, end + part.cut).includes("-->");
+        text.slice(Math.max(part.at, end - 2), end + part.cut).includes("-->") &&
+        !insideFence(text, end);
       return part.text + (closesComment ? " -->" : "") + cutSuffix(part.cut, more);
     })
     .join("");
+}
+
+/** Whether `at` is inside a fenced code block, where `<!--` is literal text. */
+function insideFence(text: string, at: number): boolean {
+  const before = text.slice(0, text.lastIndexOf("\n", at - 1) + 1);
+  return (before.match(/^ {0,3}(?:```|~~~)/gm)?.length ?? 0) % 2 === 1;
 }
 
 /** The length of a cell's text the preview lays out, never splitting a surrogate pair. */

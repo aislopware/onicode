@@ -47,6 +47,8 @@ interface CheckoutHarness {
   working: boolean;
   /** The guard cannot read which threads are working. */
   unverified?: boolean;
+  /** The checkout's local state when a pull rechecks it. */
+  local?: { readonly hasWorkingTreeChanges: boolean; readonly aheadCount: number };
   onGuard: Effect.Effect<void>;
 }
 
@@ -136,11 +138,15 @@ const layerCheckoutWorkflow = (harness: CheckoutHarness) =>
             Effect.as({ status: "pulled" as const, refName: "main", upstreamRef: "origin/main" }),
           ),
         statusDetailsLocal: () =>
-          Effect.succeed({
-            branch: "main",
-            hasWorkingTreeChanges: false,
-            aheadCount: 0,
-          } as GitVcsDriver.GitStatusDetails),
+          Effect.sync(
+            () =>
+              ({
+                branch: "main",
+                hasWorkingTreeChanges: false,
+                aheadCount: 0,
+                ...harness.local,
+              }) as GitVcsDriver.GitStatusDetails,
+          ),
       }),
     ),
     Layer.provide(
@@ -318,8 +324,17 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("GitWorkflowServi
     Effect.gen(function* () {
       const harness = makeCheckoutHarness();
       const workflow = yield* checkoutWorkflow(harness);
-      // Another Git action moved the checkout off the branch the caller checked.
+      // Another Git action moved the checkout off the branch the caller checked, or left it with
+      // changed files or a local commit.
       assert.strictEqual(yield* workflow.pullCurrentBranchWhenIdle("/repo", "release"), null);
+      for (const local of [
+        { hasWorkingTreeChanges: true, aheadCount: 0 },
+        { hasWorkingTreeChanges: false, aheadCount: 1 },
+      ]) {
+        harness.local = local;
+        assert.strictEqual(yield* workflow.pullCurrentBranchWhenIdle("/repo", "main"), null);
+      }
+      delete harness.local;
       assert.deepEqual(harness.events, []);
       assert.strictEqual(
         (yield* workflow.pullCurrentBranchWhenIdle("/repo", "main"))?.status,
