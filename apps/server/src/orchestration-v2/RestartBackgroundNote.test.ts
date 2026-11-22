@@ -17,6 +17,7 @@ import {
   isRestartNoteContinuation,
   pendingRestartCancelledBackgroundWork,
   pendingStoppedDelegatedTasks,
+  settledStoppedRunIds,
   restartContinuationNote,
   stoppedDelegatedTasksNote,
   mergeRestartCancelledBackgroundWork,
@@ -328,4 +329,11 @@ it("tells the next completed turn about delegated tasks its Stop interrupted, on
   assert.deepEqual(pending([spawning, racing, run(3, claudeThread, { requestedAt: at(2) })]), []);
   // A fresh-context turn on another provider thread never carried the note.
   assert.deepEqual(pending([spawning, run(3, codexThread, { requestedAt: at(2) })]), [stopped]);
+
+  // Turn starts stop reading a stopped run once every task ended and none still owes the note.
+  const told = [spawning, run(3, claudeThread, { requestedAt: at(2) })];
+  assert.deepEqual(settledStoppedRunIds([spawning.id], subagents, pending([spawning])), []);
+  assert.deepEqual(settledStoppedRunIds([spawning.id], subagents, pending(told)), [spawning.id]);
+  const running = [...subagents, task("running", { status: "running", completedAt: null })];
+  assert.deepEqual(settledStoppedRunIds([spawning.id], running, pending(told)), []);
 });
