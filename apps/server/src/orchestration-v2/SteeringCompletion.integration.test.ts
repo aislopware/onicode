@@ -2103,6 +2103,18 @@ it.effect("resumes a stopped queue for a steer that missed a completed turn", ()
         createdBy: "user",
         creationSource: "web",
       });
+      // Held behind the stopped queue; the steer is placed ahead of it, shifting it down.
+      yield* orchestrator.dispatch({
+        type: "message.dispatch",
+        commandId: CommandId.make("agent-later"),
+        threadId,
+        messageId: MessageId.make("message:agent-later"),
+        text: "agent later",
+        attachments: [],
+        dispatchMode: { type: "queue_after_active" },
+        createdBy: "agent",
+        creationSource: "mcp",
+      });
       // Still active when the worker finds the turn over, so the steer queues behind it.
       const waiting = yield* orchestrator.streamDomainEvents.pipe(
         Stream.filter(
@@ -2144,7 +2156,7 @@ it.effect("resumes a stopped queue for a steer that missed a completed turn", ()
       assert.deepEqual(
         { queue, started: startedTexts },
         {
-          queue: ["late steer"],
+          queue: ["late steer", "agent later"],
           started: [
             "first",
             `[Onicode: this message came through Onicode's tools, not from the user typing in this chat.]\n\nsecond`,

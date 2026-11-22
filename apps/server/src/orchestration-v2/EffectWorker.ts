@@ -421,7 +421,9 @@ export const layerExecutor: Layer.Layer<
                         ...(followsRun
                           ? { steerFollowUpOfRunId: run.id }
                           : { steerMissedRunId: run.id }),
-                        ...(effect.request.steerFollowUpAfterRunOrdinal !== undefined
+                        // An automatic delivery that missed its turn queues in arrival order.
+                        ...((error.steerDeclined === true || !automatic) &&
+                        effect.request.steerFollowUpAfterRunOrdinal !== undefined
                           ? {
                               steerFollowUpAfterRunOrdinal:
                                 effect.request.steerFollowUpAfterRunOrdinal,
