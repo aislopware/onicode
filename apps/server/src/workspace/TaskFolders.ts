@@ -886,7 +886,8 @@ const make = Effect.gen(function* () {
     withWorkspaceLease(fileSystem, path, taskFolder.projectPath, effect);
 
   // A checkout that makes the branch can stop after making it, so the branch is counted as made
-  // before it starts, unless it was there before: when listed, or when Git finds it.
+  // before it starts, unless it was there before: when listed, or when Git refuses to make it.
+  // A concurrent creation's loser often fails on the ref lock, not "already exists".
   const makingBranch = <A, E>(
     madeIn: Set<string>,
     listed: boolean,
@@ -899,7 +900,10 @@ const make = Effect.gen(function* () {
       Effect.andThen(checkout),
       Effect.tapError((error) =>
         Effect.sync(() => {
-          if (isGitCommandError(error) && error.reason === "branch_already_exists")
+          if (
+            isGitCommandError(error) &&
+            error.operation === "GitVcsDriver.createWorktree.createBranch"
+          )
             madeIn.delete(repositoryPath);
         }),
       ),
