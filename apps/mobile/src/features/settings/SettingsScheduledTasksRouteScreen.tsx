@@ -23,7 +23,7 @@ import {
   squashAtomCommandFailure,
   type AtomCommandResult,
 } from "@onicode/client-runtime/state/runtime";
-import { resolvePastedPath } from "@onicode/shared/path";
+import { normalizeProjectPathForDispatch, resolvePastedPath } from "@onicode/shared/path";
 import { scheduledTaskWorktreeBaseRef } from "@onicode/client-runtime/scheduled-task-worktree";
 import { scheduleTimeZoneLabel } from "@onicode/client-runtime/scheduled-task-time-zone";
 import type { MessageResolver } from "../../i18n/messages";
@@ -760,7 +760,10 @@ function TaskForm({
         draft.workspace === "root"
           ? { type: "root" }
           : draft.workspace === "existing_worktree"
-            ? { type: "existing_worktree", worktreePath: draft.checkoutPath.trim() }
+            ? {
+                type: "existing_worktree",
+                worktreePath: normalizeProjectPathForDispatch(draft.checkoutPath),
+              }
             : {
                 type: "worktree",
                 baseRef: worktreeBaseRef,

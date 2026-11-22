@@ -210,8 +210,27 @@ describe("unsaved scheduled task edits", () => {
     ["an edited name", { ...draft, title: "Review stale issues" }, true],
     ["a weekday removed", { ...draft, weekdays: new Set([1]) }, true],
     ["other weekdays of the same count", { ...draft, weekdays: new Set([1, 4]) }, true],
+    [
+      "Once picked and switched back",
+      { ...draft, runAt: "2026-11-23T09:00", savedRunAt: "2026-11-23T08:00:00.000Z" },
+      false,
+    ],
+    ["an interval edited and switched back", { ...draft, intervalMinutes: "30" }, false],
+    ["a different schedule mode", { ...draft, scheduleMode: "interval" as const }, true],
+    [
+      "a checkout path left by a checkout mode not chosen",
+      { ...draft, existingWorktreePath: "/x" },
+      false,
+    ],
   ])("%s has changes: %s", (_label, current, expected) => {
-    expect(hasDraftChanges(draft, current)).toBe(expected);
+    expect(hasDraftChanges(draft, current, "codex:gpt-5")).toBe(expected);
+  });
+  it("counts picking the model already shown as the default as no change", () => {
+    const blank = { ...draft, modelKey: "" };
+    expect(hasDraftChanges(blank, { ...draft, modelKey: "codex:gpt-5" }, "codex:gpt-5")).toBe(
+      false,
+    );
+    expect(hasDraftChanges(blank, { ...draft, modelKey: "codex:gpt-6" }, "codex:gpt-5")).toBe(true);
   });
 });
 

@@ -280,14 +280,16 @@ describe("ScheduledTasksSettings", () => {
     await expect.element(name).toHaveValue("My draft");
   });
 
-  it("keeps a new task's draft on an outside click and asks before Escape or Cancel drops it", async () => {
+  it("keeps a new task's draft on an outside click and asks before Escape, Cancel, or leaving drops it", async () => {
     setup();
-    await using _screen = await render(
+    await using screen = await render(
       <>
         <ScheduledTasksSettings />
         <ConfirmDialogHost />
       </>,
+      { router: "/settings/scheduled-tasks" },
     );
+    const history = screen.router!.history;
     await userEvent.click(page.getByRole("button", { name: "New task" }));
     const dialog = page.getByRole("dialog");
     const name = dialog.getByRole("textbox", { name: "Name" });
@@ -304,6 +306,13 @@ describe("ScheduledTasksSettings", () => {
     expect(confirmation.element().textContent).toContain("Discard changes?");
     await userEvent.click(confirmation.getByRole("button", { name: "Cancel", exact: true }));
     await expect.element(confirmation).not.toBeInTheDocument();
+    await expect.element(name).toHaveValue("My draft");
+
+    history.push("/settings/general");
+    await expect.element(confirmation).toBeVisible();
+    await userEvent.click(confirmation.getByRole("button", { name: "Cancel", exact: true }));
+    await expect.element(confirmation).not.toBeInTheDocument();
+    expect(history.location.pathname).toBe("/settings/scheduled-tasks");
     await expect.element(name).toHaveValue("My draft");
 
     await userEvent.click(dialog.getByRole("button", { name: "Cancel", exact: true }));

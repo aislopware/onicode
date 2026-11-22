@@ -227,12 +227,38 @@ export function taskToDraft(task: ScheduledTask): DraftState {
   };
 }
 
-export function hasDraftChanges(initial: DraftState, current: DraftState): boolean {
-  const { weekdays, ...rest } = initial;
+// Fields a mode leaves behind when the user switches away and back are not edits.
+function relevantDraftFields(draft: DraftState, defaultModelKey: string) {
+  const { weekdays: _weekdays, ...fields } = draft;
+  return {
+    ...fields,
+    modelKey: draft.modelKey || defaultModelKey,
+    intervalMinutes: draft.scheduleMode === "interval" ? draft.intervalMinutes : "",
+    timeOfDay: draft.scheduleMode === "fixed" ? draft.timeOfDay : "",
+    runAt: draft.scheduleMode === "once" ? draft.runAt : "",
+    savedRunAt: draft.scheduleMode === "once" ? draft.savedRunAt : "",
+    baseRef: draft.workspaceMode === "worktree" ? draft.baseRef : "",
+    startFromOrigin: draft.workspaceMode === "worktree" ? draft.startFromOrigin : false,
+    existingWorktreePath:
+      draft.workspaceMode === "existing_worktree" ? draft.existingWorktreePath : "",
+  };
+}
+
+/** `defaultModelKey` is the model the picker shows while the draft names none. */
+export function hasDraftChanges(
+  initial: DraftState,
+  current: DraftState,
+  defaultModelKey: string,
+): boolean {
+  const before = relevantDraftFields(initial, defaultModelKey);
+  const after = relevantDraftFields(current, defaultModelKey);
+  const weekdaysChanged =
+    current.scheduleMode === "fixed" &&
+    (initial.weekdays.size !== current.weekdays.size ||
+      [...initial.weekdays].some((day) => !current.weekdays.has(day)));
   return (
-    weekdays.size !== current.weekdays.size ||
-    [...weekdays].some((day) => !current.weekdays.has(day)) ||
-    (Object.keys(rest) as Array<keyof typeof rest>).some((key) => rest[key] !== current[key])
+    weekdaysChanged ||
+    (Object.keys(before) as Array<keyof typeof before>).some((key) => before[key] !== after[key])
   );
 }
 

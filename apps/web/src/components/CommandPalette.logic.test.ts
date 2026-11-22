@@ -1,4 +1,5 @@
 import { threadKey } from "@onicode/client-runtime/state/entities";
+import { getFilesystemBrowsePath } from "@onicode/client-runtime/state/filesystem";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { EnvironmentId, ProjectId, ProviderInstanceId, ThreadId } from "@onicode/contracts";
 import type { Thread } from "../types";
@@ -14,6 +15,7 @@ import {
   filterCommandPaletteGroups,
   reduceCommandPaletteUiState,
   resolveAddProjectEntry,
+  browsedFolder,
   createCommandPaletteSearchState,
   reduceCommandPaletteSearchState,
   type CommandPaletteUiState,
@@ -107,6 +109,20 @@ describe("reduceCommandPaletteUiState", () => {
       mode: "command",
       openIntent: { kind: "add-project" },
       session: 2,
+    });
+  });
+});
+
+describe("browsedFolder", () => {
+  it("adds a bare Windows drive the server listed instead of offering to create it", () => {
+    const listed = { parentPath: "D:\\", entries: [] };
+    expect(browsedFolder(getFilesystemBrowsePath("D:", "Win32"), listed, null)).toEqual({
+      exists: true,
+      path: "D:\\",
+    });
+    expect(browsedFolder(getFilesystemBrowsePath("D:\\new", "Win32"), listed, null)).toEqual({
+      exists: false,
+      path: undefined,
     });
   });
 });

@@ -186,6 +186,17 @@ export function resolveAddProjectEntry(
   return { kind: "choose-source", environmentId: defaultEnvironmentId };
 }
 
+/** The folder a browse query names, as the server listed it; absent until it exists. */
+export function browsedFolder(
+  browsePath: { readonly namesDirectory: boolean },
+  browseResult: { readonly parentPath?: string } | null | undefined,
+  exactEntry: { readonly fullPath: string } | null | undefined,
+): { readonly exists: boolean; readonly path: string | undefined } {
+  return browsePath.namesDirectory
+    ? { exists: Boolean(browseResult), path: browseResult?.parentPath }
+    : { exists: exactEntry !== null, path: exactEntry?.fullPath };
+}
+
 export interface CommandPaletteThreadContentMatch {
   readonly source: "user" | "assistant";
   readonly snippet: string;

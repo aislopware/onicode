@@ -70,6 +70,25 @@ const resolveInstance = (
 // Review guides investigate the checkout read-only; the other drivers reject that request.
 const INVESTIGATING_DRIVERS = new Set(["codex", "claudeAgent"]);
 
+const CANNOT_GENERATE: Record<TextGenerationOp, string> = {
+  generateCommitMessage: "write commit messages",
+  generatePrContent: "write pull requests",
+  generateBranchName: "name branches",
+  generateThreadTitle: "title threads",
+  generateReviewGuide: "write review guides",
+  generateTranscriptionPostProcessing: "clean up transcripts",
+};
+
+const WRITER_HINT = "Pick another source control writer or text generation model in Settings.";
+const PICK_ANOTHER_MODEL: Record<TextGenerationOp, string> = {
+  generateCommitMessage: WRITER_HINT,
+  generatePrContent: WRITER_HINT,
+  generateBranchName: WRITER_HINT,
+  generateThreadTitle: "Pick another text generation model in Settings.",
+  generateReviewGuide: "Pick another review guide model in Settings.",
+  generateTranscriptionPostProcessing: "Pick another cleanup or text generation model in Settings.",
+};
+
 /** @public */
 export const make = Effect.gen(function* () {
   const registry = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
@@ -118,16 +137,19 @@ export const make = Effect.gen(function* () {
       selected !== undefined &&
       (!selected.enabled ||
         !resolveProjectProviderInstanceEnabled(settings, projectId ?? null, selected.instanceId));
+    // A provider still probing, or signed out, can report no text generation until it is ready.
     const cannotGenerateText =
       selected !== undefined &&
-      (!isProviderTextGenerationCapable(selected) ||
+      ((selected.status === "ready" && !isProviderTextGenerationCapable(selected)) ||
         selected.models.find((model) => model.slug === selection.model)?.supportsTextGeneration ===
-          false);
+          false ||
+        (operation === "generateReviewGuide" && !INVESTIGATING_DRIVERS.has(selected.driver)));
     // Only a failed probe counts: a pending one is also not installed yet.
     const unusable =
       textGeneratorCannotRun ||
       off ||
       cannotGenerateText ||
+      (selected !== undefined && !isProviderTextGenerationCapable(selected)) ||
       (selected !== undefined &&
         selected.status === "error" &&
         (!selected.installed || selected.auth.status === "unauthenticated"));
@@ -169,7 +191,7 @@ export const make = Effect.gen(function* () {
       if (fallback === null && cannotGenerateText) {
         return yield* new TextGenerationError({
           operation,
-          detail: `${selected?.displayName ?? selection.instanceId} cannot generate text with ${selection.model} and no other provider can take over. Pick another text generation model in Settings.`,
+          detail: `${selected?.displayName ?? selection.instanceId} cannot ${CANNOT_GENERATE[operation]} with ${selection.model} and no other provider can take over. ${PICK_ANOTHER_MODEL[operation]}`,
         });
       }
       selection = fallback ?? selection;
