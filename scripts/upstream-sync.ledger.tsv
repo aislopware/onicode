@@ -3200,3 +3200,4 @@ df67c4f7f9	take	as is
 4ac5e6e791	take	as is; mobile AddProjectScreen already appends to the browse directory path, so the shared fix covers it
 c9e9e7d36a	take	as is
 7966f202ef	take	as is; Onicode's agy MCP server is named onicode, matching the guard
+ad1b1f9ca4	take	as is; modes file named oni-runtime-modes.json in the agy profile, server-local
