@@ -25,17 +25,22 @@ export interface CodexTurnTokenUsageState {
   readonly byTurnId: Map<string, CodexTurnTokenUsageAccumulator>;
 }
 
+// The wire counts are signed int64; token schemas take non-negative safe integers.
+const codexTokenCount = (count: number): number => Math.max(0, count);
+const addCodexTokens = (left: number, right: number): number =>
+  Math.min(left + right, Number.MAX_SAFE_INTEGER);
+
 function codexTokenUsageBreakdown(
   usage: EffectCodexSchema.V2ThreadTokenUsageUpdatedNotification__TokenUsageBreakdown,
 ): CodexCumulativeTokenUsage {
   return {
-    inputTokens: usage.inputTokens,
-    cachedInputTokens: usage.cachedInputTokens,
-    ...(usage.cacheWriteInputTokens !== undefined
-      ? { cacheCreationTokens: usage.cacheWriteInputTokens }
+    inputTokens: codexTokenCount(usage.inputTokens),
+    cachedInputTokens: codexTokenCount(usage.cachedInputTokens),
+    ...(usage.cacheWriteInputTokens != null
+      ? { cacheCreationTokens: codexTokenCount(usage.cacheWriteInputTokens) }
       : {}),
-    outputTokens: usage.outputTokens,
-    reasoningTokens: usage.reasoningOutputTokens,
+    outputTokens: codexTokenCount(usage.outputTokens),
+    reasoningTokens: codexTokenCount(usage.reasoningOutputTokens),
   };
 }
 
@@ -122,14 +127,20 @@ export function accumulateCodexTurnTokenUsage(
   ) {
     accumulator.observed = true;
   }
-  accumulator.inputTokens += delta.inputTokens;
-  accumulator.cachedInputTokens += delta.cachedInputTokens;
-  accumulator.outputTokens += delta.outputTokens;
-  accumulator.reasoningTokens += delta.reasoningTokens;
+  accumulator.inputTokens = addCodexTokens(accumulator.inputTokens, delta.inputTokens);
+  accumulator.cachedInputTokens = addCodexTokens(
+    accumulator.cachedInputTokens,
+    delta.cachedInputTokens,
+  );
+  accumulator.outputTokens = addCodexTokens(accumulator.outputTokens, delta.outputTokens);
+  accumulator.reasoningTokens = addCodexTokens(accumulator.reasoningTokens, delta.reasoningTokens);
   if (delta.cacheCreationTokens === undefined) {
     accumulator.cacheCreationTokens = undefined;
   } else if (accumulator.cacheCreationTokens !== undefined) {
-    accumulator.cacheCreationTokens += delta.cacheCreationTokens;
+    accumulator.cacheCreationTokens = addCodexTokens(
+      accumulator.cacheCreationTokens,
+      delta.cacheCreationTokens,
+    );
   }
 }
 

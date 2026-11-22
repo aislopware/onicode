@@ -6121,7 +6121,7 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
     {
       name: "reports cache writes as cache creation, not only as input",
       tokens: { input: 1200, output: 40, reasoning: 0, cache: { read: 300, write: 2500 } },
-      expected: { input: 4000, cached: 300, write: 2500, output: 40 },
+      expected: { status: "complete" as const, input: 4000, cached: 300, write: 2500, output: 40 },
     },
     {
       // Event counts are only checked finite; token schemas take safe non-negative integers.
@@ -6132,7 +6132,7 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
         reasoning: 0.4,
         cache: { read: 2 ** 60, write: 2500.4 },
       },
-      expected: { input: 3700, cached: 0, write: 2500, output: 0 },
+      expected: { status: "partial" as const, input: 3700, cached: 0, write: 2500, output: 0 },
     },
   ])("$name", ({ tokens, expected }) =>
     Effect.gen(function* () {
@@ -6161,6 +6161,7 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       const providerTurn =
         settled?.type === "provider_turn.updated" ? settled.providerTurn : undefined;
       assert.deepInclude(providerTurn?.turnTokenUsage, {
+        usageStatus: expected.status,
         inputTokens: expected.input,
         cachedInputTokens: expected.cached,
         cacheCreationTokens: expected.write,

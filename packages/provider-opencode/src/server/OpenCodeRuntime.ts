@@ -43,6 +43,7 @@ import {
 } from "@onicode/shared/model";
 import { parseSemver } from "@onicode/shared/semver";
 import { resolveSpawnCommand } from "@onicode/shared/shell";
+import { openCodeContextWindow } from "./tokenCounts.ts";
 const encodeUnknownJsonStringExit = Schema.encodeUnknownExit(Schema.fromJsonString(Schema.Unknown));
 const OPENCODE_EMPTY_CONFIG_CONTENT = "{}";
 
@@ -295,7 +296,7 @@ export const readOpenCodeCatalogModel = Effect.fnUntraced(function* (
     ?.models[model.modelID];
   const entry: OpenCodeCatalogModel | undefined = catalogModel && {
     variants: new Set(Object.keys(catalogModel.variants ?? {})),
-    contextWindow: catalogModel.limit?.input ?? catalogModel.limit?.context,
+    contextWindow: openCodeContextWindow(catalogModel.limit?.input ?? catalogModel.limit?.context),
   };
   // Keep only what this model needs; provider.list can return several megabytes.
   cache?.set(key, entry);

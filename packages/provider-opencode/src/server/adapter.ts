@@ -86,6 +86,7 @@ import {
   subagentThreadTitle,
 } from "@onicode/provider-core/server/subagentProjection";
 import { openCodeCommandFailed, openCodeToolOutput, openCodeToolTurnItem } from "./toolItems.ts";
+import { addOpenCodeTokens, sanitizeOpenCodeTokens } from "./tokenCounts.ts";
 
 export const OPENCODE_PROVIDER = ProviderDriverKind.make("opencode");
 export const OPENCODE_DEFAULT_INSTANCE_ID = defaultInstanceIdForDriver(OPENCODE_PROVIDER);
@@ -259,12 +260,29 @@ function accumulateOpenCodeStepUsage(
 ): void {
   if (accumulator.partIds.has(part.id)) return;
   accumulator.partIds.add(part.id);
-  accumulator.inputTokens += part.tokens.input + part.tokens.cache.read + part.tokens.cache.write;
-  accumulator.cachedInputTokens += part.tokens.cache.read;
-  accumulator.cacheCreationTokens += part.tokens.cache.write;
-  accumulator.outputTokens += part.tokens.output + part.tokens.reasoning;
-  accumulator.reasoningTokens += part.tokens.reasoning;
-  accumulator.lastStep = part;
+  const { tokens, exact } = sanitizeOpenCodeTokens(part.tokens);
+  if (!exact) accumulator.complete = false;
+  accumulator.inputTokens = addOpenCodeTokens(
+    accumulator.inputTokens,
+    tokens.input,
+    tokens.cache.read,
+    tokens.cache.write,
+  );
+  accumulator.cachedInputTokens = addOpenCodeTokens(
+    accumulator.cachedInputTokens,
+    tokens.cache.read,
+  );
+  accumulator.cacheCreationTokens = addOpenCodeTokens(
+    accumulator.cacheCreationTokens,
+    tokens.cache.write,
+  );
+  accumulator.outputTokens = addOpenCodeTokens(
+    accumulator.outputTokens,
+    tokens.output,
+    tokens.reasoning,
+  );
+  accumulator.reasoningTokens = addOpenCodeTokens(accumulator.reasoningTokens, tokens.reasoning);
+  accumulator.lastStep = { ...part, tokens };
 }
 
 // The last step's prompt plus output is the context the next request starts from.
@@ -275,10 +293,10 @@ function openCodeContextUsage(
 ): Pick<OrchestrationV2ProviderTurn, "tokenUsage"> {
   if (lastStep === null) return {};
   const { tokens } = lastStep;
-  const inputTokens = tokens.input + tokens.cache.read + tokens.cache.write;
+  const inputTokens = addOpenCodeTokens(tokens.input, tokens.cache.read, tokens.cache.write);
   return {
     tokenUsage: {
-      usedTokens: inputTokens + tokens.output,
+      usedTokens: addOpenCodeTokens(inputTokens, tokens.output),
       maxTokens: contextWindow ?? null,
       inputTokens,
       cachedInputTokens: tokens.cache.read,

@@ -226,8 +226,12 @@ export function normalizeClaudeTurnTokenUsage(
     claudeTokenCount(finalUsage?.output_tokens) !== undefined &&
     inputTokens !== undefined &&
     rawOutputTokens !== undefined &&
-    BILLED_USAGE_FIELDS.every(
-      (field) => finalUsage?.[field] == null || claudeTokenCount(finalUsage[field]) !== undefined,
+    // A count dropped from any segment, final or steered, leaves the sum short.
+    [finalUsage, ...earlierSegmentUsage].every((segment) =>
+      BILLED_USAGE_FIELDS.every((field) => {
+        const count = (segment as Record<string, unknown> | null | undefined)?.[field];
+        return count == null || claudeTokenCount(count) !== undefined;
+      }),
     )
   ) {
     return {
