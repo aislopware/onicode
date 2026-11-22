@@ -164,13 +164,10 @@ export function pendingStoppedDelegatedTasks(input: {
   readonly subagents: ReadonlyArray<OrchestrationV2Subagent>;
   readonly compactionMessageIds: ReadonlySet<string>;
 }): ReadonlyArray<OrchestrationV2Subagent> {
+  const threadRuns = input.runs.filter((run) => run.providerThreadId === input.providerThreadId);
   const stoppedRunIds = new Set(
-    input.runs
-      .filter(
-        (run) =>
-          run.providerThreadId === input.providerThreadId &&
-          run.delegatedCompletion?.disposition === "stopped",
-      )
+    threadRuns
+      .filter((run) => run.delegatedCompletion?.disposition === "stopped")
       .map((run) => run.id),
   );
   if (stoppedRunIds.size === 0) return [];
@@ -179,16 +176,19 @@ export function pendingStoppedDelegatedTasks(input: {
       .filter((turn) => turn.status === "completed")
       .map((turn) => turn.runAttemptId),
   );
-  const toldRunRequests = input.runs
-    .filter(
-      (run) =>
-        run.providerThreadId === input.providerThreadId &&
-        !input.compactionMessageIds.has(run.userMessageId) &&
-        input.attempts.some(
-          (attempt) => attempt.runId === run.id && completedAttemptIds.has(attempt.id),
-        ),
-    )
-    .map((run) => DateTime.toEpochMillis(run.requestedAt));
+  const completedRunIds = new Set(
+    input.attempts
+      .filter((attempt) => completedAttemptIds.has(attempt.id))
+      .map((attempt) => attempt.runId),
+  );
+  // A task is told once any told run was requested after it ended, so only the latest matters.
+  const lastToldRequest = threadRuns.reduce(
+    (latest, run) =>
+      completedRunIds.has(run.id) && !input.compactionMessageIds.has(run.userMessageId)
+        ? Math.max(latest, DateTime.toEpochMillis(run.requestedAt))
+        : latest,
+    Number.NEGATIVE_INFINITY,
+  );
   return input.subagents.filter(
     (task) =>
       task.origin === "app_owned" &&
@@ -198,10 +198,25 @@ export function pendingStoppedDelegatedTasks(input: {
       task.cancelledRunId === undefined &&
       task.completionDelivery?.state === "disposed" &&
       task.completedAt !== null &&
-      !toldRunRequests.some(
-        (requestedAt) => requestedAt > DateTime.toEpochMillis(task.completedAt!),
-      ),
+      lastToldRequest <= DateTime.toEpochMillis(task.completedAt),
   );
+}
+
+/**
+ * Stopped runs that can never owe the note again: each task ended and none is pending. An ended
+ * task's time is fixed and told runs only accumulate, so callers need not read them again.
+ */
+export function settledStoppedRunIds(
+  stoppedRunIds: ReadonlyArray<OrchestrationV2Run["id"]>,
+  subagents: ReadonlyArray<OrchestrationV2Subagent>,
+  pending: ReadonlyArray<OrchestrationV2Subagent>,
+): ReadonlyArray<OrchestrationV2Run["id"]> {
+  const open = new Set(
+    subagents
+      .filter((task) => task.completedAt === null || pending.includes(task))
+      .map((task) => task.runId),
+  );
+  return stoppedRunIds.filter((runId) => !open.has(runId));
 }
 
 export function stoppedDelegatedTasksNote(tasks: ReadonlyArray<OrchestrationV2Subagent>): string {

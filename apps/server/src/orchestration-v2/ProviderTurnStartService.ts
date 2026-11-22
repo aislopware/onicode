@@ -92,6 +92,7 @@ import {
   isRestartNoteContinuation,
   pendingRestartCancelledBackgroundWork,
   pendingStoppedDelegatedTasks,
+  settledStoppedRunIds,
   restartCancelledBackgroundWorkNote,
   stoppedDelegatedTasksNote,
 } from "./RestartBackgroundNote.ts";
@@ -409,6 +410,9 @@ export const layer: Layer.Layer<
             ),
       };
     };
+
+    // Stopped runs whose delegated tasks all ended and were told; that cannot change.
+    const settledStoppedRuns = new Set<RunId>();
 
     const makeDeliverySession = (
       session: ProviderAdapter.ProviderAdapterV2SessionRuntime,
@@ -1091,29 +1095,38 @@ export const layer: Layer.Layer<
         run,
         attempts: projection.attempts,
       });
-      // The turn start context omits settled tasks, so read them only after a Stop disposed some.
+      // The turn start context omits settled tasks, so read them only after a Stop disposed some,
+      // and only for stopped runs that may still owe the note.
       // A failed read fails the start: a turn that ran without the note would count as telling it.
       const stoppedRunIds = projection.runs
         .filter(
           (source) =>
             source.providerThreadId === run.providerThreadId &&
-            source.delegatedCompletion?.disposition === "stopped",
+            source.delegatedCompletion?.disposition === "stopped" &&
+            !settledStoppedRuns.has(source.id),
         )
         .map((source) => source.id);
       const stoppedTasks =
         stoppedRunIds.length === 0 || compactionMessageIds().has(run.userMessageId)
           ? []
-          : pendingStoppedDelegatedTasks({
-              providerThreadId: run.providerThreadId,
-              runs: projection.runs,
-              providerTurns: projection.providerTurns,
-              attempts: projection.attempts,
-              compactionMessageIds: compactionMessageIds(),
-              subagents: (yield* projectionStore.getThreadRecords(
+          : yield* Effect.gen(function* () {
+              const { subagents } = yield* projectionStore.getThreadRecords(
                 projection.thread.id,
                 ["subagents"],
                 { subagentRunIds: stoppedRunIds },
-              )).subagents,
+              );
+              const pending = pendingStoppedDelegatedTasks({
+                providerThreadId: run.providerThreadId,
+                runs: projection.runs,
+                providerTurns: projection.providerTurns,
+                attempts: projection.attempts,
+                compactionMessageIds: compactionMessageIds(),
+                subagents,
+              });
+              for (const runId of settledStoppedRunIds(stoppedRunIds, subagents, pending)) {
+                settledStoppedRuns.add(runId);
+              }
+              return pending;
             });
       const restartNote = [
         restartCancelledWork.length === 0

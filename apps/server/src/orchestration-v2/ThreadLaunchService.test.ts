@@ -1300,6 +1300,61 @@ it.effect("renames a temporary branch with a configured prefix when generation s
   }).pipe(Effect.provide(harness.layer));
 });
 
+it.effect(
+  "renames the branch of a thread that stores the worktree path with a trailing slash",
+  () => {
+    const siblingId = ThreadId.make("thread:launch:alias-sibling");
+    const siblingRenamed = Deferred.makeUnsafe<boolean>();
+    const harness = makeHarness({
+      generateBranchName: () => Effect.succeed({ branch: "fix-alias" }),
+      dispatch: (command, dispatch) =>
+        command.commandId === "alias-rename:workspace" && command.type === "thread.metadata.update"
+          ? dispatch(command).pipe(
+              // A thread sharing the new worktree records its path in another spelling.
+              Effect.tap(() =>
+                dispatch({
+                  type: "thread.create",
+                  commandId: CommandId.make("command:launch:alias-sibling"),
+                  threadId: siblingId,
+                  projectId,
+                  title: "Sibling",
+                  modelSelection,
+                  runtimeMode: "full-access",
+                  interactionMode: "default",
+                  branch: command.branch ?? null,
+                  worktreePath: `${command.worktreePath}/`,
+                  createdBy: "user",
+                  creationSource: "web",
+                }),
+              ),
+            )
+          : command.commandId === `alias-rename:branch-rename:${siblingId}`
+            ? dispatch(command).pipe(
+                Effect.onExit((exit) => Deferred.succeed(siblingRenamed, Exit.isSuccess(exit))),
+              )
+            : dispatch(command),
+    });
+    return Effect.gen(function* () {
+      const launches = yield* ThreadLaunch.ThreadLaunchService;
+      const threads = yield* ThreadManagement.ThreadManagementService;
+      const launched = yield* launches.launch(
+        launchInput({
+          command: "alias-rename",
+          thread: "alias-rename-thread",
+          message: "Fix the alias",
+          workspace: { type: "worktree", baseRef: "main" },
+        }),
+      );
+      assert.isTrue(yield* Deferred.await(siblingRenamed));
+      assert.equal(
+        (yield* threads.getThreadProjection(launched.threadId)).thread.branch,
+        "fix-alias",
+      );
+      assert.equal((yield* threads.getThreadProjection(siblingId)).thread.branch, "fix-alias");
+    }).pipe(Effect.provide(harness.layer));
+  },
+);
+
 function scheduledTaskInput(id: string, targetProjectId: ProjectId) {
   return {
     id: ScheduledTaskId.make(id),
