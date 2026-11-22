@@ -6546,7 +6546,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
 
   /**
    * A promoted message's place: the messages queued ahead of it, and the steers already sent into
-   * its turn, except promotions that were queued behind it.
+   * its turn, except those that were queued behind it.
    */
   const promotedSteerAhead = Effect.fn("Orchestrator.promotedSteerAhead")(function* (
     projection: Pick<OrchestrationV2ThreadProjection, "runs" | "turnItems" | "thread">,
@@ -6573,11 +6573,16 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     const ahead = yield* Effect.forEach(sentIntoTurn, (messageId) =>
       effectOutbox.steers(projection.thread.id, messageId).pipe(
         Effect.map((effects) => {
-          const latest = effects.at(-1)?.request;
+          const steers = effects.flatMap((effect) =>
+            effect.request.type === "provider-turn.steer" ? [effect.request] : [],
+          );
+          const afterMessageIds = steers.at(-1)?.steerFollowUpAfterMessageIds;
+          // Another steer stays behind the runs queued when it was first sent.
           const behind =
             promoted !== undefined &&
-            latest?.type === "provider-turn.steer" &&
-            latest.steerFollowUpAfterMessageIds?.includes(promoted.userMessageId) === true;
+            (afterMessageIds === undefined
+              ? (steers[0]?.steerFollowUpAfterRunOrdinal ?? -1) >= promoted.ordinal
+              : afterMessageIds.includes(promoted.userMessageId));
           return behind ? [] : [messageId];
         }),
       ),
@@ -8546,6 +8551,15 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
               (item) => item.type === "user_message" && item.messageId === command.messageId,
             ) ?? unreadNotice
           )?.ordinal ?? -1;
+        // A message queued then that went back to the queue, as a promotion its turn never read
+        // does, has a newer run.
+        const earlierRunMessageIds = new Set(
+          projection.runs.flatMap((candidate) =>
+            candidate.ordinal <= afterRunOrdinal && candidate.userMessageId !== command.messageId
+              ? [candidate.userMessageId]
+              : [],
+          ),
+        );
         // Earlier declined steers have newer runs but retain their original turn-item ordinals.
         const earlierSteerMessageIds = new Set(
           projection.turnItems.flatMap((item) =>
@@ -8566,6 +8580,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                   // A steer that runs after Stop goes ahead of the runs Stop holds, as it starts first.
                   !(steerRunsAfterStop && candidate.queueHeld === true) &&
                   (candidate.ordinal <= afterRunOrdinal ||
+                    earlierRunMessageIds.has(candidate.userMessageId) ||
                     earlierSteerMessageIds.has(candidate.userMessageId) ||
                     earlierNoticeItemIds.has(
                       idAllocator.derive.userTurnItem({ messageId: candidate.userMessageId }),
@@ -12838,10 +12853,18 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     }
     const reorderableRuns = queuedRuns.filter((run) => !isAutomaticCompletionRun(projection, run));
     const withoutMoving = reorderableRuns.filter((run) => run.id !== command.runId);
+    // A target that left the queue, as the head does when it starts, is ahead of every queued
+    // run, so going before it is going first.
+    const targetLeftQueue =
+      command.beforeRunId !== null &&
+      !queuedRuns.some((run) => run.id === command.beforeRunId) &&
+      projection.runs.some((run) => run.id === command.beforeRunId);
     const beforeIndex =
       command.beforeRunId === null
         ? withoutMoving.length
-        : withoutMoving.findIndex((run) => run.id === command.beforeRunId);
+        : targetLeftQueue
+          ? 0
+          : withoutMoving.findIndex((run) => run.id === command.beforeRunId);
     if (beforeIndex === -1) {
       return yield* new OrchestratorDispatchError({
         commandId: command.commandId,

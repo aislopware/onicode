@@ -1172,7 +1172,8 @@ export const moveQueuedRunFirst = Effect.fn("EnvironmentCommands.moveQueuedRunFi
     });
   return yield* reorder(yield* allocateCommandId(input), input.beforeRunId).pipe(
     // The first run can start between the tap and the command, which leaves this one first
-    // or puts a newer run first, which this one then goes before.
+    // or puts a newer run first, which this one then goes before. Current servers place it first
+    // themselves; older ones refuse the started target.
     Effect.catchTags({
       OrchestrationV2DispatchCommandError: (error) =>
         getProjection(input.threadId).pipe(
