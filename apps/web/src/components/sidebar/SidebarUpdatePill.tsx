@@ -13,7 +13,11 @@ import { useLocalStorage } from "../../hooks/useLocalStorage";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { cn } from "../../lib/utils";
 import { ensureLocalApi } from "../../localApi";
-import { useDesktopUpdateState } from "../../state/desktopUpdate";
+import {
+  desktopUpdateRestartingVersionAtom,
+  markDesktopUpdateRestarting,
+  useDesktopUpdateState,
+} from "../../state/desktopUpdate";
 import { usePrimaryManagedPolicy } from "../../state/managedPolicy";
 import { primaryServerSettingsAtom } from "../../state/server";
 import { stackedThreadToast, toastManager } from "../ui/toast";
@@ -190,7 +194,10 @@ async function installLocalUpdate(
     const actionError = shouldToastDesktopUpdateActionResult(result)
       ? getDesktopUpdateActionError(result)
       : null;
-    if (!actionError) return true;
+    if (!actionError) {
+      markDesktopUpdateRestarting(result.state.downloadedVersion);
+      return true;
+    }
     reportError(m(msg("Could not install update")), actionError);
     return false;
   } catch (error) {
@@ -232,6 +239,7 @@ function SidebarUpdateControl() {
   const continuesThreads = useAtomValue(primaryServerSettingsAtom).continueThreadsAfterServerUpdate;
   const restartNote = getDesktopUpdateRestartNote(continuesThreads, messages);
   const [promptSnooze, setPromptSnooze] = useLocalStorage(PROMPT_SNOOZE_KEY, null, PromptSnooze);
+  const restartingVersion = useAtomValue(desktopUpdateRestartingVersionAtom);
   const [promptClock, setPromptClock] = useState(() => Date.now());
   const [requiredSkipped, setRequiredSkipped] = useState(false);
   const [isActionPending, setIsActionPending] = useState(false);
@@ -429,10 +437,11 @@ function SidebarUpdateControl() {
     setIsActionPending(false);
   };
 
-  const promptVersion =
+  const readyVersion =
     run === null && !isActionPending && !isConfirmingEverything
       ? getDesktopUpdatePromptVersion(state, promptSnooze, promptClock)
       : null;
+  const promptVersion = readyVersion === restartingVersion ? null : readyVersion;
   const promptTitle = gt("Onicode {version} is ready", { version: promptVersion ?? "" });
   const promptActionLabel = runsEverything
     ? gt("Update", { $context: "verb, confirms the update" })

@@ -4,6 +4,8 @@ import { page, userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
 import { act, fakeTimers, render, stubGlobal } from "../../../test/render";
+import { AppAtomRegistryProvider, appAtomRegistry } from "../../rpc/atomRegistry";
+import { desktopUpdateRestartingVersionAtom } from "../../state/desktopUpdate";
 import { ToastProvider } from "../ui/toast";
 import { SidebarUpdatePill } from "./SidebarUpdatePill";
 import type { UpdateEverythingRow } from "./updateEverything.logic";
@@ -88,6 +90,7 @@ function setup(
   mocks.update = update;
   mocks.hasUpdates = hasUpdates;
   mocks.rows = rows;
+  appAtomRegistry.set(desktopUpdateRestartingVersionAtom, null);
 }
 
 function publish(update: DesktopUpdateState | null) {
@@ -198,6 +201,32 @@ describe("SidebarUpdatePill restart prompt", () => {
     expect(JSON.parse(localStorage.getItem(PROMPT_SNOOZE_KEY) ?? "null")).toMatchObject({
       version: "0.0.51",
     });
+  });
+
+  it("stays closed while the app quits into the update it started", async () => {
+    localStorage.removeItem(PROMPT_SNOOZE_KEY);
+    const installUpdate = vi.fn(async () => ({
+      accepted: true,
+      completed: false,
+      state: downloadedUpdate(),
+    }));
+    using _bridge = stubGlobal("desktopBridge", { installUpdate });
+    setup(downloadedUpdate());
+    await using screen = await render(
+      <AppAtomRegistryProvider>
+        <ToastProvider>
+          <SidebarUpdatePill />
+        </ToastProvider>
+      </AppAtomRegistryProvider>,
+    );
+    const pill = screen.getByRole("button", {
+      name: "Update 0.0.51 downloaded. Click to restart and install.",
+    });
+    await userEvent.click(page.getByRole("button", { name: "Restart to update" }));
+    expect(installUpdate).toHaveBeenCalledOnce();
+    await expect.element(pill).not.toHaveAttribute("aria-disabled");
+    await expect.element(page.getByText("Onicode 0.0.51 is ready")).not.toBeInTheDocument();
+    localStorage.removeItem("onicode:update-everything-result:v1");
   });
 
   it("keeps a required update on screen, then restarts into it without a click", async () => {

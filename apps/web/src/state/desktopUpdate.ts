@@ -9,6 +9,7 @@ import { Atom } from "effect/reactivity";
 import { msg } from "gt-react";
 
 import { m } from "../i18n/messages";
+import { appAtomRegistry } from "../rpc/atomRegistry";
 
 type DesktopUpdateBridge = Pick<DesktopBridge, "getUpdateState" | "onUpdateState">;
 
@@ -90,4 +91,14 @@ export const desktopUpdateStateAtom = createDesktopUpdateStateAtom(getDesktopUpd
 
 export function useDesktopUpdateState(): DesktopUpdateState | null {
   return AsyncResult.getOrElse(useAtomValue(desktopUpdateStateAtom), () => null);
+}
+
+/** The version this app already asked the desktop to install; the app quits into it moments later. */
+export const desktopUpdateRestartingVersionAtom = Atom.make<string | null>(null).pipe(
+  Atom.keepAlive,
+  Atom.withLabel("desktop:update-restarting-version"),
+);
+
+export function markDesktopUpdateRestarting(version: string | null): void {
+  appAtomRegistry.set(desktopUpdateRestartingVersionAtom, version);
 }
