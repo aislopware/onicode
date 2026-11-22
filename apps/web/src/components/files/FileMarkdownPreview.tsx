@@ -2,6 +2,7 @@ import type { ScopedThreadRef } from "@onicode/contracts";
 
 import ChatMarkdown from "~/components/ChatMarkdown";
 import { resolvePathLinkTarget } from "@onicode/shared/fileLinks";
+import { withMarkdownDefinitions } from "@onicode/shared/markdownChunks";
 import { maskMarkdownFrontmatter } from "@onicode/shared/markdownFrontmatter";
 import { lineCutMarkdown, useMoreCharactersLabel } from "./shownText";
 
@@ -12,6 +13,8 @@ export function FileMarkdownPreview(props: {
   readonly threadRef: ScopedThreadRef;
   readonly workspaceMutationId: string | null;
   readonly className?: string;
+  /** Link definitions shared from elsewhere in the file; never laid out, so never cut. */
+  readonly definitions?: string;
   readonly onTaskListChange?:
     | ((input: { readonly markerOffset: number; readonly checked: boolean }) => void)
     | undefined;
@@ -30,7 +33,7 @@ export function FileMarkdownPreview(props: {
   const text = lineCutMarkdown(masked, more);
   return (
     <ChatMarkdown
-      text={text}
+      text={props.definitions ? withMarkdownDefinitions(text, props.definitions) : text}
       cwd={props.cwd}
       imageBaseDir={imageBaseDir}
       threadRef={props.threadRef}
