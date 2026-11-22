@@ -3282,3 +3282,4 @@ bc13afaa3c	take	taken as is; scenario ported to the desktop harness
 01794015f8	take	fix(web): prioritize visible saved notebook outputs; kept Onicode's LineCappedText and border colour in the conflict; scenarios ported to desktop target
 87554a7b86	take	fix(web): editing a queued message keeps its attachment chips resolved; kept Onicode's composer slot counters and tooltip helper name in the conflicts
 28706aceb6	take	fix(server): unlinking an environment ends its session on the other machine; dropped T3 Connect hosted-approval and OAuth discovery parts, revoke checks Onicode's MCP client subjects (no session method in Onicode)
+7ed41b7c23	take	fix(mobile): scope Git result banners to their originating thread
