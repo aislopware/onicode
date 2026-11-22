@@ -54,6 +54,7 @@ const reactTests = [
   "src/features/home/home-list-options.test.tsx",
   "src/features/home/home-route-visibility.test.tsx",
   "src/features/layout/workspace/useSearchScrollRestoration.test.tsx",
+  "src/features/layout/workspace/useWorkspacePageStillShows.test.tsx",
   "src/features/connection/useRetryEnvironment.test.tsx",
   "src/features/connection/ConnectionsNewRouteScreen.test.tsx",
   "src/features/connection/LinkedEnvironmentsSection.test.tsx",
