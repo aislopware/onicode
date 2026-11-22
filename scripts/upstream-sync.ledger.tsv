@@ -3225,3 +3225,4 @@ c198f73b37	take	taken as is
 0ae3154695	take	fix(server): migration 75 no longer fails on an unreadable subagent payload (#30783)
 671e05bc8c	take	GitHub test conflict: kept Onicode's hover-card summary assertions, added upstream's reference assertion; new contract field optional
 8435a8cd41	take	fix(server): tell a stopped parent which delegated tasks its Stop interrupted (#34499)
+f931f03d61	take	upstream migration 106 renumbered to Onicode 111 (WorktreePathKeyIndex); reconcile test updated
