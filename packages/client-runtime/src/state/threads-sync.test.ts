@@ -2620,7 +2620,10 @@ describe("EnvironmentThreads", () => {
     }),
   );
 
-  it.effect("keeps a catch-up held through a disconnect until its own marker", () =>
+  it.effect.each([
+    { late: "an event", marker: [] },
+    { late: "an event and its marker", marker: [synchronized()] },
+  ])("drops $late the lost session's stream delivers after a disconnect", ({ marker }) =>
     Effect.gen(function* () {
       const harness = yield* makeHarness({ cached: BASE_PROJECTION, completionMarker: true });
       yield* awaitSubscriptionCount(harness, 1);
@@ -2635,16 +2638,20 @@ describe("EnvironmentThreads", () => {
         phase: "offline" as const,
       });
       yield* awaitThreadState(harness.observed, (value) => value.status === "cached");
-      // The old attempt's next item lands before the resubscribe; the stream then fails.
+      // The old stream's buffered items land before the resubscribe; the stream then fails.
       yield* Queue.offerAll(harness.inputs, [
         titleUpdated("Late", CACHED_SNAPSHOT_SEQUENCE + 2),
+        ...marker,
         new Error("socket closed"),
       ]);
       const failed = yield* awaitThreadState(harness.observed, (value) =>
         Option.isSome(value.error),
       );
-      expect(failed.status).not.toBe("live");
+      expect(failed.status).toBe("cached");
       expect(Option.getOrThrow(failed.data).thread.title).toBe(BASE_PROJECTION.thread.title);
+      yield* TestClock.adjust("250 millis");
+      yield* awaitSubscriptionCount(harness, 2);
+      expect(yield* Ref.get(harness.lastSubscribeAfterSequence)).toBe(CACHED_SNAPSHOT_SEQUENCE);
     }),
   );
 

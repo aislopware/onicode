@@ -58,7 +58,7 @@ import type {
 import { waitForDraftHeroTransition } from "./components/chat/draftHeroTransition";
 import { getLocalStorageItem } from "./hooks/useLocalStorage";
 import { readThreadPreviewState } from "./previewStateStore";
-import { threadHasKnownTerminal } from "./state/terminalSessions";
+import { draftThreadHasKnownTerminal } from "./draftTerminalPresence";
 import {
   readInstanceCustomModels,
   resolveAppModelSelection,
@@ -1717,7 +1717,7 @@ function draftThreadHasTerminal(draftThread: DraftThreadState | undefined): bool
   return (
     draftThread !== undefined &&
     draftThread.promotedTo == null &&
-    threadHasKnownTerminal(draftThread.environmentId, draftThread.threadId)
+    draftThreadHasKnownTerminal(draftThread.environmentId, draftThread.threadId)
   );
 }
 

@@ -20,12 +20,14 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { AsyncResult, Atom, type AtomRegistry } from "effect/reactivity";
 
+import { registerDraftTerminalCheck } from "../draftTerminalPresence";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { formatEnvironmentQueryError } from "./query";
 import { terminalEnvironment } from "./terminal";
 import { environmentAtomList, environmentIdsKey } from "./environmentAtomList";
 import {
   environmentSession,
+  readEnvironmentScope,
   sessionHasScope,
   useEnvironmentScope,
   useEnvironmentsWithScope,
@@ -302,6 +304,7 @@ export function threadHasKnownTerminal(
   threadId: string,
   registry: AtomRegistry.AtomRegistry = appAtomRegistry,
 ): boolean {
+  if (!readEnvironmentScope(environmentId, AuthTerminalReadScope)) return false;
   const encoded = registry.get(terminalLabelsFamily(environmentId));
   if (encoded === "[]") return false;
   return (JSON.parse(encoded) as Array<[string, string]>).some(([id]) => id === threadId);
@@ -332,3 +335,7 @@ export function useTerminalLabelsByThreadKey(
   }
   return labels;
 }
+
+registerDraftTerminalCheck((environmentId, threadId) =>
+  threadHasKnownTerminal(environmentId, threadId),
+);

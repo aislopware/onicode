@@ -20,7 +20,7 @@ import { lazy, Suspense, useRef, useState, type ReactNode } from "react";
 import { T, useGT, useMessages } from "gt-react";
 
 import { useComposerDraftStore } from "../../composerDraftStore";
-import { releaseProjectDraftUploads } from "../../lib/composerDraftUploads";
+import { releaseProjectDrafts } from "../../lib/composerDraftUploads";
 import { carryFanoutSelections } from "../chat/draftFanoutSelections";
 import { persistClientSettingsUpdate, useClientSettings } from "../../hooks/useSettings";
 import { readLocalApi } from "../../localApi";
@@ -406,7 +406,7 @@ function ProjectDetail({
       }
       const projectRef = scopeProjectRef(member.environmentId, member.id);
       await waitForProjectRemoval(projectRef);
-      releaseProjectDraftUploads(
+      releaseProjectDrafts(
         projectRef,
         memberThreads.map((thread) => scopeThreadRef(thread.environmentId, thread.id)),
       );

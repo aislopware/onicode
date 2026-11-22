@@ -143,6 +143,18 @@ describe("makeSymlinkTargetStats", () => {
     fake.answer("/links/healthy");
     expect(await waiting).toBe(true);
   });
+
+  it("answers at once when only stats that outlived a timeout hold the pool", async () => {
+    const fake = fakeStats();
+    const isDirectory = WorkspaceEntries.makeSymlinkTargetStats(fake.stat, 1);
+    const timedOut = new AbortController();
+    const hung = isDirectory("/links/stalled", timedOut.signal);
+    timedOut.abort();
+    expect(await hung).toBe(false);
+
+    expect(await isDirectory("/links/next", new AbortController().signal)).toBe(false);
+    expect(fake.calls).toEqual(["/links/stalled"]);
+  });
 });
 
 it.layer(layerTest, { excludeTestServices: true })("WorkspaceEntries", (it) => {

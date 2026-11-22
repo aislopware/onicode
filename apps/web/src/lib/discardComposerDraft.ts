@@ -40,12 +40,15 @@ export function discardComposerDraft(target: ComposerThreadTarget): void {
   }
 
   const releaseDiscardedDraft = () => {
-    // A draft thread's terminals are reachable only through its session.
+    // A draft thread's terminals are reachable only through a session for that thread.
     if (
       discardsSession &&
       session &&
       session.promotedTo == null &&
-      useComposerDraftStore.getState().draftThreadsByThreadKey[key]?.threadId !== session.threadId
+      !Object.values(useComposerDraftStore.getState().draftThreadsByThreadKey).some(
+        (other) =>
+          other.environmentId === session.environmentId && other.threadId === session.threadId,
+      )
     ) {
       closeDraftThreadTerminals(session.environmentId, session.threadId);
     }

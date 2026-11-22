@@ -164,39 +164,79 @@ const MAX_PENDING_SYMLINK_TARGET_STATS = 3;
 
 /**
  * Whether a link's target is a folder, with at most `max` target stats in flight. Overlapping
- * browses, as typing makes, share one stat per link; a full pool makes callers wait for a slot
- * until their signal aborts, which reads as "not a folder".
+ * browses, as typing makes, share one stat per link. A full pool makes callers wait for a slot
+ * until their signal aborts, which reads as "not a folder"; a pool held only by stats that
+ * outlived a caller's timeout answers that at once.
  */
 export function makeSymlinkTargetStats(
   isDirectory: (fullPath: string) => Promise<boolean>,
   max = MAX_PENDING_SYMLINK_TARGET_STATS,
 ) {
-  const pending = new Map<string, Promise<boolean>>();
-  const waiters = new Set<() => void>();
+  const pending = new Map<string, { readonly result: Promise<boolean>; stuck: boolean }>();
+  // First in, first woken; a woken caller that starts no stat passes its wake on.
+  const waiters: Array<() => void> = [];
+  const wakeNext = () => waiters.shift()?.();
+  const untilAborted = <A>(promise: Promise<A>, signal: AbortSignal, onAbort: () => void) =>
+    new Promise<A | undefined>((resolve) => {
+      const abort = () => {
+        onAbort();
+        resolve(undefined);
+      };
+      signal.addEventListener("abort", abort, { once: true });
+      void promise.then((value) => {
+        signal.removeEventListener("abort", abort);
+        resolve(value);
+      });
+    });
+  const awaitStat = async (
+    entry: { readonly result: Promise<boolean>; stuck: boolean },
+    signal: AbortSignal,
+  ) =>
+    (await untilAborted(entry.result, signal, () => {
+      entry.stuck = true;
+    })) ?? false;
   return async (fullPath: string, signal: AbortSignal): Promise<boolean> => {
+    let woken = false;
+    const passOn = () => {
+      if (woken) wakeNext();
+    };
     for (;;) {
+      if (signal.aborted) {
+        passOn();
+        return false;
+      }
       const shared = pending.get(fullPath);
-      if (shared) return shared;
+      if (shared) {
+        passOn();
+        return awaitStat(shared, signal);
+      }
       if (pending.size < max) break;
-      await new Promise<void>((resolve) => {
-        const wake = () => {
-          waiters.delete(wake);
-          signal.removeEventListener("abort", wake);
-          resolve();
-        };
-        waiters.add(wake);
-        signal.addEventListener("abort", wake);
-      });
-      if (signal.aborted) return false;
+      if ([...pending.values()].every((entry) => entry.stuck)) {
+        passOn();
+        return false;
+      }
+      const wake = Promise.withResolvers<true>();
+      const waiter = () => wake.resolve(true);
+      waiters.push(waiter);
+      woken =
+        (await untilAborted(wake.promise, signal, () => {
+          const queued = waiters.indexOf(waiter);
+          // Already taken off the queue: its wake is on the way, so hand it on.
+          if (queued === -1) wakeNext();
+          else waiters.splice(queued, 1);
+        })) === true;
     }
-    const stat = isDirectory(fullPath)
-      .catch(() => false)
-      .finally(() => {
-        pending.delete(fullPath);
-        for (const wake of waiters) wake();
-      });
-    pending.set(fullPath, stat);
-    return stat;
+    const entry = {
+      result: isDirectory(fullPath)
+        .catch(() => false)
+        .finally(() => {
+          pending.delete(fullPath);
+          wakeNext();
+        }),
+      stuck: false,
+    };
+    pending.set(fullPath, entry);
+    return awaitStat(entry, signal);
   };
 }
 
@@ -326,7 +366,8 @@ export const make = Effect.gen(function* () {
                 Option.getOrElse(isDirectory, () => false) ? candidate : null,
               ),
             ),
-          { concurrency: MAX_PENDING_SYMLINK_TARGET_STATS },
+          // The pool bounds the stats; every candidate shares one timeout window.
+          { concurrency: "unbounded" },
         );
         for (const candidate of resolvedSymlinks) {
           if (candidate !== null) entries.push(candidate);
