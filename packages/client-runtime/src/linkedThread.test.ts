@@ -474,7 +474,8 @@ describe("connectLinkedEnvironment", () => {
   it("signs in over the tailnet where the link cannot pair this device", async () => {
     const signIns: Array<string> = [];
     const tailnetIpv4 = "http://100.101.1.2:3773";
-    const outcome = await connectLinkedEnvironment({
+    const silentLan = Promise.withResolvers<boolean>();
+    const connecting = connectLinkedEnvironment({
       label: "vm (saved name)",
       requestPairing: async () => ({
         type: "unsupported",
@@ -482,17 +483,22 @@ describe("connectLinkedEnvironment", () => {
         ...target,
         urls: [lan, tailnetIpv4, tailnet],
       }),
-      reaches: async () => true,
+      // A LAN address that never answers, as away from home, must not hold up the tailnet.
+      reaches: (host) => (host === lan ? silentLan.promise : Promise.resolve(true)),
       pair: async () => true,
       signIn: async (host) => {
         signIns.push(host);
         return host === tailnet;
       },
     });
-    // The LAN address answers first, but only tailnet addresses can sign a device in.
-    expect({ outcome, signIns }).toEqual({
-      outcome: { type: "connected" },
-      signIns: [tailnetIpv4, tailnet],
-    });
+    try {
+      // oxlint-disable-next-line onicode/no-real-time-wait-in-tests -- Let the runnable probe continuations finish while the LAN probe stays pending.
+      const pending = NodeTimersPromises.setImmediate("still waiting for the LAN address");
+      // Only tailnet addresses can sign a device in.
+      expect(await Promise.race([connecting, pending])).toEqual({ type: "connected" });
+      expect(signIns).toEqual([tailnetIpv4, tailnet]);
+    } finally {
+      silentLan.resolve(false);
+    }
   });
 });
