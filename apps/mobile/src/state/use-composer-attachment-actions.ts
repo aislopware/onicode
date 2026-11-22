@@ -17,6 +17,7 @@ import {
 } from "../lib/composerImages";
 import {
   appendComposerDraftAttachments,
+  joinNativeImagesToDraft,
   captureComposerDraftInsertion,
   countComposerDraftAttachmentsAfterSelection,
   getComposerDraftSnapshot,
@@ -36,6 +37,7 @@ export function useComposerAttachmentActions(props: {
     signal: AbortSignal,
     attachments: ReadonlyArray<DraftComposerAttachment>,
     insertion: ComposerDraftInsertion,
+    pasted = false,
   ) => {
     if (signal.aborted) {
       await Promise.all(
@@ -45,7 +47,9 @@ export function useComposerAttachmentActions(props: {
       );
       return 0;
     }
-    return appendComposerDraftAttachments(key, attachments, { appendReference: true, insertion });
+    const insert = () =>
+      appendComposerDraftAttachments(key, attachments, { appendReference: true, insertion });
+    return pasted ? joinNativeImagesToDraft(insert) : insert();
   };
   // A picker may finish after its draft was discarded or the composer moved off it.
   const withDraftOperation = async <T>(key: string, work: (signal: AbortSignal) => Promise<T>) => {
@@ -114,7 +118,7 @@ export function useComposerAttachmentActions(props: {
     return withDraftOperation(key, async (signal) => {
       try {
         const result = await convertPastedImagesToAttachments({ uris });
-        const rejected = await append(key, signal, result.attachments, insertion);
+        const rejected = await append(key, signal, result.attachments, insertion, true);
         report(m(msg("Could not paste images")), result.error, rejected);
         if (signal.aborted) return false;
         if (result.error) return false;

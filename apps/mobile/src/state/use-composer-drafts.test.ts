@@ -188,6 +188,7 @@ import {
 } from "./composerDraftOperations";
 import { questionAttachmentDraftKey } from "./question-attachments";
 import {
+  appendUnsentQuestionAttachments,
   pickQuestionAttachments,
   resolveQuestionImagePreparations,
 } from "./question-attachment-preparation";
@@ -232,6 +233,9 @@ import {
   stickyComposerModelSelectionAtom,
   undoComposerDraftMergeState,
   updateComposerDraftSettings,
+  watchComposerDraftEdits,
+  joinNativeImagesToDraft,
+  releaseComposerDraftModelSelection,
 } from "./use-composer-drafts";
 import { retainComposerAttachmentFileForPreview } from "../lib/composerAttachmentPreviewRetention";
 
@@ -1911,6 +1915,62 @@ describe("mobile composer drafts", () => {
     clearComposerDraftContent(first, { clearModelSelection: true, clearWorkspaceSelection: true });
     expect(appAtomRegistry.get(composerDraftsAtom)[first]).toBeUndefined();
     expect(getComposerDraftSnapshot(second).text).toBe("second idea");
+  });
+
+  it("reports edits to what a held send carries or where it goes, not images joining it", () => {
+    const key = "environment-1:held";
+    const thread = "environment-1:thread";
+    const image = (id: string) => ({
+      id,
+      type: "image" as const,
+      name: `${id}.png`,
+      mimeType: "image/png",
+      sizeBytes: 3,
+      previewUri: `file:///documents/oni-composer-attachments/${id}.png`,
+    });
+    const following = {
+      mode: "local" as const,
+      branch: "main",
+      worktreePath: null,
+      followsCurrentCheckout: true,
+    };
+    const pick = { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.5" };
+    appAtomRegistry.set(composerDraftsAtom, {
+      [key]: { text: "look", attachments: [], workspaceSelection: following, modelSelection: pick },
+      [thread]: { text: "", attachments: [] },
+    });
+    const onEdit = vi.fn();
+    // A queued edit's settings live on its thread's draft.
+    onTestFinished(watchComposerDraftEdits(key, thread, onEdit));
+    const change = (draftKey: string, draft: Partial<ComposerDraft>) =>
+      appAtomRegistry.set(composerDraftsAtom, {
+        ...appAtomRegistry.get(composerDraftsAtom),
+        [draftKey]: { ...getComposerDraftSnapshot(draftKey), ...draft },
+      });
+
+    joinNativeImagesToDraft(() =>
+      appendComposerDraftAttachments(key, [image("pasted")], { appendReference: true }),
+    );
+    change(key, { attachments: getComposerDraftSnapshot(key).attachments.map((a) => ({ ...a })) });
+    change(key, { freshContext: true });
+    change(key, { workspaceSelection: { ...following, branch: "next" } });
+    // The server accepting the pick shows the same model.
+    releaseComposerDraftModelSelection(key, pick);
+    change(thread, { text: "restored by a failed delivery" });
+    expect(onEdit).not.toHaveBeenCalled();
+
+    appendComposerDraftAttachments(key, [image("picked")], { appendReference: true });
+    // A question that ended returns its unsent attachments; the user never added them to the send.
+    appendUnsentQuestionAttachments(key, [image("returned")]);
+    change(key, { text: "look again" });
+    change(key, { attachments: [] });
+    updateComposerDraftSettings(key, { runtimeMode: "approval-required" });
+    updateComposerDraftSettings(key, { modelSelection: pick });
+    updateComposerDraftSettings(key, {
+      workspaceSelection: { mode: "worktree", branch: "main", worktreePath: null },
+    });
+    updateComposerDraftSettings(thread, { interactionMode: "plan" });
+    expect(onEdit).toHaveBeenCalledTimes(8);
   });
 
   it("retargets a new-task draft to another project, keeping only a pull request workspace", () => {

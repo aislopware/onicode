@@ -33,9 +33,12 @@ export function composerDraftAbortGeneration(draftKey: string): number {
 export function abortComposerDraftOperations(draftKey: string): void {
   const operations = operationsByDraftKey.get(draftKey);
   if (!operations) return;
+  const pasteKey = nativeImagePasteKey(draftKey);
   operationsByDraftKey.delete(draftKey);
   abortGenerations.set(draftKey, composerDraftAbortGeneration(draftKey) + 1);
   for (const controller of operations) controller.abort();
+  // Its pastes can no longer land, so a send held for them drops now, not once they finish.
+  if (nativeImagePastes.delete(pasteKey)) settleNativeImagePaste(pasteKey, true);
 }
 
 export function abortComposerDraftOperationsWhere(matches: (draftKey: string) => boolean): void {
@@ -54,24 +57,31 @@ export function nativeImagePasteKey(draftKey: string): string {
 // send from the draft shown now; one that can still land in it must.
 const nativeImagePastes = new Map<string, { pending: number; failed: boolean }>();
 const nativeImagePasteListeners = new Set<(pasteKey: string, failed: boolean) => void>();
+const settleNativeImagePaste = (pasteKey: string, failed: boolean) => {
+  for (const settled of nativeImagePasteListeners) settled(pasteKey, failed);
+};
 
 /** Images converting into a draft, a closed question's included, that a send waits for. */
-export function startNativeImagePaste(draftKey: string): (success: boolean) => void {
+export function startNativeImagePaste(draftKey: string, images = 1): (success: boolean) => void {
   const key = nativeImagePasteKey(draftKey);
   const paste = nativeImagePastes.get(key) ?? { pending: 0, failed: false };
   nativeImagePastes.set(key, paste);
-  paste.pending += 1;
+  paste.pending += images;
   return (success) => {
     if (!success) paste.failed = true;
-    paste.pending -= 1;
-    if (paste.pending > 0) return;
+    paste.pending -= images;
+    if (paste.pending > 0 || nativeImagePastes.get(key) !== paste) return;
     nativeImagePastes.delete(key);
-    for (const settled of nativeImagePasteListeners) settled(key, paste.failed);
+    settleNativeImagePaste(key, paste.failed);
   };
 }
 
 export function nativeImagePastePending(pasteKey: string): boolean {
   return nativeImagePastes.has(pasteKey);
+}
+
+export function nativeImagePasteCount(pasteKey: string): number {
+  return nativeImagePastes.get(pasteKey)?.pending ?? 0;
 }
 
 export function onNativeImagePastesSettled(

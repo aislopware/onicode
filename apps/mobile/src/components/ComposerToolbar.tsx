@@ -18,6 +18,7 @@ import Animated, { FadeIn, useReducedMotion } from "react-native-reanimated";
 import { cn } from "../lib/cn";
 import { AppText as Text } from "./ui/AppText";
 import { SymbolView } from "./ui/AppSymbol";
+import { AppActivityIndicator } from "./ui/AppActivityIndicator";
 import { useAndroidControlSizing } from "./ui/useAndroidControlSizing";
 
 const COMPOSER_TOOLBAR_GAP = 8;
@@ -290,6 +291,7 @@ export function ComposerActionButton(props: {
   readonly icon: ComponentProps<typeof SymbolView>["name"];
   readonly onPress: () => void;
   readonly variant?: "primary" | "danger";
+  readonly busy?: boolean;
   // Menu injects onLongPress on Android and onTouchStart/onPress on iOS.
   readonly onLongPress?: PressableProps["onLongPress"];
   readonly onTouchStart?: PressableProps["onTouchStart"];
@@ -301,7 +303,7 @@ export function ComposerActionButton(props: {
     <Pressable
       accessibilityLabel={props.accessibilityLabel}
       accessibilityRole="button"
-      accessibilityState={{ disabled: props.disabled }}
+      accessibilityState={{ disabled: props.disabled, busy: props.busy }}
       className="size-[44px] shrink-0 items-center justify-center active:opacity-70"
       style={props.size === "large" ? { width: 62 } : undefined}
       disabled={props.disabled}
@@ -322,24 +324,28 @@ export function ComposerActionButton(props: {
       >
         {/* Fade the icon as one layer: a translucent tint, or opacity on a Tabler icon (which
             copies it onto every path), stacks where the SVG strokes overlap. */}
-        <View
-          className={fadeIcon ? "opacity-38" : undefined}
-          needsOffscreenAlphaCompositing={fadeIcon}
-        >
-          <SymbolView
-            name={props.icon}
-            size={props.size === "large" ? Math.round(20 * scale) : smallIconSize}
-            weight="semibold"
-            tintColorClassName={
-              props.variant === "danger"
-                ? "accent-danger-foreground"
-                : props.disabled
-                  ? "accent-foreground"
-                  : "accent-primary-foreground"
-            }
-            type="monochrome"
-          />
-        </View>
+        {props.busy ? (
+          <AppActivityIndicator size="small" colorClassName="accent-foreground" />
+        ) : (
+          <View
+            className={fadeIcon ? "opacity-38" : undefined}
+            needsOffscreenAlphaCompositing={fadeIcon}
+          >
+            <SymbolView
+              name={props.icon}
+              size={props.size === "large" ? Math.round(20 * scale) : smallIconSize}
+              weight="semibold"
+              tintColorClassName={
+                props.variant === "danger"
+                  ? "accent-danger-foreground"
+                  : props.disabled
+                    ? "accent-foreground"
+                    : "accent-primary-foreground"
+              }
+              type="monochrome"
+            />
+          </View>
+        )}
       </View>
     </Pressable>
   );

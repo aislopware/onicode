@@ -1641,6 +1641,65 @@ export function sameComposerDraftState(a: ComposerDraft, b: ComposerDraft): bool
   );
 }
 
+// The draft's place, less the branch of a local checkout the draft follows as it moves.
+const draftPlace = (draft: ComposerDraft) => {
+  const selection = draft.workspaceSelection;
+  return JSON.stringify([
+    draft.project,
+    selection?.followsCurrentCheckout ? { ...selection, branch: null } : selection,
+  ]);
+};
+
+// Releasing a pick the server accepted shows the same model, so only a new pick counts.
+const settingsEdited = (before: ComposerDraft, after: ComposerDraft) =>
+  before.runtimeMode !== after.runtimeMode ||
+  before.interactionMode !== after.interactionMode ||
+  (after.modelSelection !== undefined &&
+    JSON.stringify(before.modelSelection) !== JSON.stringify(after.modelSelection));
+
+const contentEdited = (before: ComposerDraft, after: ComposerDraft) =>
+  before.text !== after.text ||
+  before.context !== after.context ||
+  draftPlace(before) !== draftPlace(after) ||
+  before.attachments.some(({ id }) => !after.attachments.some((kept) => kept.id === id)) ||
+  after.attachments.some(({ id }) => !before.attachments.some((known) => known.id === id));
+
+let joiningNativeImages = 0;
+
+/** Adds the images a held send waits for, with their references; the edit watcher expects them. */
+export function joinNativeImagesToDraft<T>(insert: () => T): T {
+  joiningNativeImages += 1;
+  try {
+    return insert();
+  } finally {
+    joiningNativeImages -= 1;
+  }
+}
+
+/**
+ * Calls `onEdit` when the user changes what a held send carries or where it goes. A queued edit
+ * reads its mode and model from `settingsKey`, the thread's own draft.
+ */
+export function watchComposerDraftEdits(
+  draftKey: string,
+  settingsKey: string,
+  onEdit: () => void,
+): () => void {
+  let draft = getComposerDraftSnapshot(draftKey);
+  let settings = getComposerDraftSnapshot(settingsKey);
+  return appAtomRegistry.subscribe(composerDraftsAtom, () => {
+    const nextDraft = getComposerDraftSnapshot(draftKey);
+    const nextSettings = getComposerDraftSnapshot(settingsKey);
+    const edited =
+      contentEdited(draft, nextDraft) ||
+      settingsEdited(draft, nextDraft) ||
+      settingsEdited(settings, nextSettings);
+    draft = nextDraft;
+    settings = nextSettings;
+    if (edited && joiningNativeImages === 0) onEdit();
+  });
+}
+
 /** Restore untouched drafts exactly; after concurrent edits, remove only merged text and attachments. */
 export function undoComposerDraftMergeState(
   current: Record<string, ComposerDraft>,

@@ -1839,6 +1839,9 @@
   "c08eec50972ec67c": "Use compatible versions of the app and server to connect.",
   "206281759a765d0a": "Retry now",
   "1e2fc5b4723ab831": "Link several machines to {environment}…",
+  "87433cf138dc3e2c": "{linked, plural, one {Linked # machine.} other {Linked # machines.}}",
+  "d044bb95248da10c": "Linked {linked} of {total}. The ones that failed stay selected, so you can try them again.",
+  "59e45b02b09e183d": "{environment} is not connected.",
   "4e7b0a3ced2d0f97": "Link several environments",
   "3a57c9bbcd12529f": "Could not check which machines are already linked, so none can be picked: {error}",
   "7f99aaba0befc867": "Machines",
@@ -1848,8 +1851,6 @@
   "e5ac7abeaeb78750": "Select none",
   "ab520df47bca22d2": "Select all",
   "5bcbf210d2a21be3": "What agents here may do there",
-  "87433cf138dc3e2c": "{linked, plural, one {Linked # machine.} other {Linked # machines.}}",
-  "d044bb95248da10c": "Linked {linked} of {total}. The ones that failed stay selected, so you can try them again.",
   "d2fbaffe08b6cf60": "{count, plural, one {Link # machine} other {Link # machines}}",
   "b550d04490078bda": "Agents here can then launch, message and wait on threads on each machine you pick. Each appears under Authorized clients in that machine's Sharing & access, where it can be revoked.",
   "c2553b323479499a": "This app knows no other machines. Add them under Environments first.",
@@ -3910,6 +3911,8 @@
   "f361df7c168544f1": "Dismiss error",
   "73af9dd121cb467b": "Dismiss feedback notice",
   "7c1fee250333bb01": "Copy ID",
+  "1a1f128d70c62304": "{count, plural, one {Sending once image is ready} other {Sending once {count} images are ready}}",
+  "5af3ab719a9725fb": "Sending message",
   "2b7fd345e4f4fd6e": "Cancel editing queued message",
   "b2ec7dff2dde1179": "Editing queued message",
   "faeebf9714efe741": "Dismiss usage limits",
@@ -4336,6 +4339,7 @@
   "a70abf17e99c2d6d": "Remove some text or an attachment, then paste again.",
   "94f312446d9f210d": "Stop agent",
   "fbafbe78b5e37966": "Resume thread",
+  "48d6389202ad6754": "Sending when ready",
   "c19358bac32e58e8": "This connection cannot control this task. You can still edit your draft.",
   "1b30548ce8e56b75": "Edit task",
   "2269639b96d04225": "Could not start task",
@@ -5266,6 +5270,5 @@
   "ad208e3e32c85029": "Hide all",
   "3328503592789bed": "Zen",
   "856812e7e1fc445e": "Tool calls in chat",
-  "8d545d54c0a9e950": "Hide the commands, edits, and searches agents run. Hide successful keeps failures. Zen shows only final answers. Approvals, questions, and errors always show.",
-  "59e45b02b09e183d": "{environment} is not connected."
+  "8d545d54c0a9e950": "Hide the commands, edits, and searches agents run. Hide successful keeps failures. Zen shows only final answers. Approvals, questions, and errors always show."
 }

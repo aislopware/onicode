@@ -1839,6 +1839,9 @@
   "c08eec50972ec67c": "Use versões compatíveis do app e do servidor para conectar.",
   "206281759a765d0a": "Tentar agora",
   "1e2fc5b4723ab831": "Vincular várias máquinas a {environment}…",
+  "87433cf138dc3e2c": "{linked, plural, one {# máquina vinculada.} other {# máquinas vinculadas.}}",
+  "d044bb95248da10c": "{linked} de {total} vinculadas. As que falharam continuam selecionadas para você tentar de novo.",
+  "59e45b02b09e183d": "{environment} não está conectado.",
   "4e7b0a3ced2d0f97": "Vincular vários ambientes",
   "3a57c9bbcd12529f": "Não foi possível verificar quais máquinas já estão vinculadas, então nenhuma pode ser escolhida: {error}",
   "7f99aaba0befc867": "Máquinas",
@@ -1848,8 +1851,6 @@
   "e5ac7abeaeb78750": "Desmarcar tudo",
   "ab520df47bca22d2": "Selecionar tudo",
   "5bcbf210d2a21be3": "O que os agentes daqui podem fazer lá",
-  "87433cf138dc3e2c": "{linked, plural, one {# máquina vinculada.} other {# máquinas vinculadas.}}",
-  "d044bb95248da10c": "{linked} de {total} vinculadas. As que falharam continuam selecionadas para você tentar de novo.",
   "d2fbaffe08b6cf60": "{count, plural, one {Vincular # máquina} other {Vincular # máquinas}}",
   "b550d04490078bda": "Os agentes daqui poderão então iniciar threads em cada máquina escolhida, enviar mensagens e aguardá-las. Cada vínculo aparece em Clientes autorizados em Compartilhamento e acesso da respectiva máquina, onde pode ser revogado.",
   "c2553b323479499a": "Este app não conhece outras máquinas. Adicione-as primeiro em Ambientes.",
@@ -3903,6 +3904,8 @@
   "f361df7c168544f1": "Dispensar erro",
   "73af9dd121cb467b": "Dispensar aviso de feedback",
   "7c1fee250333bb01": "Copiar ID",
+  "1a1f128d70c62304": "{count, plural, one {Enviando assim que a imagem estiver pronta} other {Enviando assim que {count} imagens estiverem prontas}}",
+  "5af3ab719a9725fb": "Enviando mensagem",
   "2b7fd345e4f4fd6e": "Cancelar a edição da mensagem na fila",
   "b2ec7dff2dde1179": "Editando mensagem da fila",
   "faeebf9714efe741": "Dispensar limites de uso",
@@ -4328,6 +4331,7 @@
   "a70abf17e99c2d6d": "Remova parte do texto ou um anexo e cole novamente.",
   "94f312446d9f210d": "Parar agente",
   "fbafbe78b5e37966": "Retomar thread",
+  "48d6389202ad6754": "Enviando quando estiver pronto",
   "c19358bac32e58e8": "Esta conexão não pode controlar esta tarefa. Você ainda pode editar seu rascunho.",
   "1b30548ce8e56b75": "Editar tarefa",
   "2269639b96d04225": "Não foi possível iniciar a tarefa",
@@ -5258,6 +5262,5 @@
   "ad208e3e32c85029": "Ocultar todas",
   "3328503592789bed": "Zen",
   "856812e7e1fc445e": "Chamadas de ferramentas no chat",
-  "8d545d54c0a9e950": "Oculta os comandos, edições e pesquisas que os agentes executam. \"Ocultar bem-sucedidas\" mantém as falhas. Zen mostra só as respostas finais. Aprovações, perguntas e erros sempre aparecem.",
-  "59e45b02b09e183d": "{environment} não está conectado."
+  "8d545d54c0a9e950": "Oculta os comandos, edições e pesquisas que os agentes executam. \"Ocultar bem-sucedidas\" mantém as falhas. Zen mostra só as respostas finais. Aprovações, perguntas e erros sempre aparecem."
 }

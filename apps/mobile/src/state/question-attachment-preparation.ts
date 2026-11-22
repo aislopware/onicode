@@ -7,6 +7,7 @@ import { startComposerDraftOperation, startNativeImagePaste } from "./composerDr
 import { changeQuestionAttachmentPreparation } from "./question-attachments";
 import {
   appendComposerDraftAttachments,
+  joinNativeImagesToDraft,
   getComposerDraftSnapshot,
   releaseUnusedComposerAttachmentFiles,
 } from "./use-composer-drafts";
@@ -49,7 +50,10 @@ export function startQuestionImagePreparation(key: string, waitingForSelection =
       const rejected =
         target === key
           ? scope.append(result.attachments)
-          : appendUnsentQuestionAttachments(target, result.attachments);
+          : // The image a held send counts on, unlike attachments a question returns unsent.
+            joinNativeImagesToDraft(() =>
+              appendUnsentQuestionAttachments(target, result.attachments),
+            );
       landedInThread = !result.error && rejected === 0 && result.attachments.length > 0;
       return { error: result.error, rejected };
     },
