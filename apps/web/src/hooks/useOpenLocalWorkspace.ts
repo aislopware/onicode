@@ -112,7 +112,7 @@ export function useOpenLocalWorkspace() {
             input: { projectId: projectRef.projectId, archived: false },
           }).then((result) => reportProjectFailure(m(msg("Failed to unarchive project")), result));
         }
-        return openThread(projectRef, { acceptOpenedMeanwhile: true });
+        return openThread(projectRef);
       },
     });
 
