@@ -1434,6 +1434,8 @@ export function planComposerTurn(input: {
   readonly dispatchMode: ComposerDispatchMode;
   /** The turn starts a new provider session, so it neither compacts first nor steers. */
   readonly freshContext: boolean;
+  /** The provider runs /goal itself; undefined when its server does not say. */
+  readonly nativeGoals?: boolean | undefined;
 }) {
   const isFirstMessage =
     !input.sendQueuesBehindSetup && (!input.isServerThread || input.activeMessageCount === 0);
@@ -1453,7 +1455,7 @@ export function planComposerTurn(input: {
   };
   const dispatchMode =
     (input.freshContext && (input.dispatchMode === "steer" || input.dispatchMode === "restart")) ||
-    (input.dispatchMode === "steer" && commandNeverSteers(message))
+    (input.dispatchMode === "steer" && commandNeverSteers(message, input.nativeGoals))
       ? "queue"
       : input.dispatchMode;
   return {

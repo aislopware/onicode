@@ -891,7 +891,9 @@ export function useThreadComposerState(input: {
       (status) => status === "preparing" || status === "starting",
     );
     const followUpDispatchMode =
-      setupRunning || (followUpAction === "steer" && commandNeverSteers({ text, attachments }))
+      setupRunning ||
+      (followUpAction === "steer" &&
+        commandNeverSteers({ text, attachments }, queueWorkflow?.nativeGoals))
         ? "queue"
         : followUpAction === "auto"
           ? null

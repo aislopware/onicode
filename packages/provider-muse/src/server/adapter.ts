@@ -126,6 +126,7 @@ const MuseProviderCapabilitiesV2 = {
     exposesNativeThreadId: true,
   },
   turns: {
+    supportsNativeGoals: false,
     exposesNativeTurnId: true,
     emitsTurnStarted: true,
     emitsTurnCompleted: true,

@@ -101,6 +101,7 @@ export const CursorProviderCapabilitiesV2 = {
     exposesNativeThreadId: true,
   },
   turns: {
+    supportsNativeGoals: false,
     exposesNativeTurnId: true,
     emitsTurnStarted: true,
     emitsTurnCompleted: true,

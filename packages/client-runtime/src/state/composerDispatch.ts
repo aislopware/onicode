@@ -15,13 +15,17 @@ export type ActiveTurnComposerAction = Exclude<ComposerDispatchMode, "auto">;
 /**
  * A command waits for the turn instead of joining it. Current servers queue one sent as a steer
  * and older ones steer it, so clients send it as a queue; only /goal needs the steer, to stop the
- * turn first.
+ * turn first, unless the provider says it does not run /goal itself.
  */
-export function commandNeverSteers(message: {
-  readonly text: string;
-  readonly attachments: ReadonlyArray<unknown>;
-}): boolean {
-  return isSlashCommand(message) && parseGoalCommand(message) === null;
+export function commandNeverSteers(
+  message: {
+    readonly text: string;
+    readonly attachments: ReadonlyArray<unknown>;
+  },
+  /** The provider runs /goal itself; undefined from a server that does not say. */
+  nativeGoals?: boolean,
+): boolean {
+  return isSlashCommand(message) && (nativeGoals === false || parseGoalCommand(message) === null);
 }
 
 export function resolveComposerDispatchMode(input: {

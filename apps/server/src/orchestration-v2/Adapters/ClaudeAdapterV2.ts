@@ -621,6 +621,7 @@ export const ClaudeProviderCapabilitiesV2 = {
     exposesNativeThreadId: true,
   },
   turns: {
+    supportsNativeGoals: true,
     exposesNativeTurnId: false,
     emitsTurnStarted: true,
     emitsTurnCompleted: true,
