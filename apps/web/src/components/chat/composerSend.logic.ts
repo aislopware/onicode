@@ -105,6 +105,25 @@ export function multipleModelSendBlock(input: {
   return null;
 }
 
+/**
+ * What a prompt that opens a panel does instead of sending, or null when it sends as a message.
+ * Panels open on the thread on screen, so a command dictated elsewhere stays in its own draft.
+ */
+export function composerPanelCommand<View>(input: {
+  readonly usageLimits: boolean;
+  readonly sessionView: View | null;
+  readonly detached: boolean;
+}):
+  | { readonly type: "keep-draft" }
+  | { readonly type: "usage-limits" }
+  | { readonly type: "session-view"; readonly view: View }
+  | null {
+  if (!input.usageLimits && input.sessionView === null) return null;
+  if (input.detached) return { type: "keep-draft" };
+  if (input.usageLimits) return { type: "usage-limits" };
+  return input.sessionView === null ? null : { type: "session-view", view: input.sessionView };
+}
+
 /** Why a message sent over pending approvals did not go out, or null to stop quietly. */
 export function approvalRedirectNotice(
   input: {

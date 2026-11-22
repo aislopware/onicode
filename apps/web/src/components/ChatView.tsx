@@ -558,6 +558,7 @@ export default function ChatView(props: ChatViewProps) {
     serverProjection,
     promptRef,
     composerRef,
+    currentRouteThreadKeyRef,
   });
   const composerDraftTarget = queuedRunEdit.draftTarget;
   const reportedModelSelection = serverProjection

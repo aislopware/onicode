@@ -475,23 +475,31 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
     }).pipe(Effect.provide(layerKeybindings())),
   );
 
-  it.effect("preserves sibling shortcuts when adding to an inherited command", () =>
-    Effect.gen(function* () {
-      const { keybindingsConfigPath } = yield* ServerConfig.ServerConfig;
-      const keybindings = yield* Keybindings.Keybindings;
-      yield* writeKeybindingsConfig(keybindingsConfigPath, []);
+  // Settings sends one machine's edit to every environment, where the replaced rule may not exist.
+  it.effect.each([
+    ["no replace target", undefined],
+    ["a replace target this config never had", { key: "f10", command: "chat.new" }],
+  ] as const)(
+    "preserves sibling shortcuts when adding to an inherited command: %s",
+    ([, replace]) =>
+      Effect.gen(function* () {
+        const { keybindingsConfigPath } = yield* ServerConfig.ServerConfig;
+        const keybindings = yield* Keybindings.Keybindings;
+        yield* writeKeybindingsConfig(keybindingsConfigPath, []);
 
-      const added = { key: "f9", command: "chat.new" } as const;
-      const saved = yield* keybindings.upsertKeybindingRule(added);
-      assert.deepEqual(
-        saved.keybindings.filter((rule) => rule.command === added.command),
-        SharedKeybindings.compileResolvedKeybindingsConfig([
-          { key: "mod+n", command: added.command, when: "!terminalFocus" },
-          { key: "mod+shift+o", command: added.command, when: "!terminalFocus" },
-          added,
-        ]),
-      );
-    }).pipe(Effect.provide(layerKeybindings())),
+        const added = { key: "f9", command: "chat.new" } as const;
+        const saved = yield* keybindings.upsertKeybindingRule(
+          replace ? { ...added, replace } : added,
+        );
+        assert.deepEqual(
+          saved.keybindings.filter((rule) => rule.command === added.command),
+          SharedKeybindings.compileResolvedKeybindingsConfig([
+            { key: "mod+n", command: added.command, when: "!terminalFocus" },
+            { key: "mod+shift+o", command: added.command, when: "!terminalFocus" },
+            added,
+          ]),
+        );
+      }).pipe(Effect.provide(layerKeybindings())),
   );
 
   it.effect("preserves sibling shortcuts by rejecting an edit that would evict saved rules", () =>

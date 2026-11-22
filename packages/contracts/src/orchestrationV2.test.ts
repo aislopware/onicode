@@ -1,5 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
 import * as DateTime from "effect/DateTime";
+import * as Exit from "effect/Exit";
+import * as Rpc from "effect/rpc/Rpc";
 import * as Schema from "effect/Schema";
 
 import {
@@ -13,6 +15,7 @@ import {
 } from "./index.ts";
 import {
   latestProviderTurnForAttempt,
+  ORCHESTRATION_V2_WS_METHODS,
   OrchestrationV2CheckpointFileSummary,
   repositoryRewindCheckpoint,
   OrchestrationV2ProviderCapabilities,
@@ -27,6 +30,7 @@ import {
   OrchestrationV2TurnItemJson,
   withMessageSenderNote,
 } from "./orchestrationV2.ts";
+import { WsRpcGroup } from "./rpc.ts";
 
 const now = DateTime.makeUnsafe("2026-04-20T00:00:00.000Z");
 
@@ -505,6 +509,43 @@ describe("thread open stats", () => {
     const opens = { openedAt: 1, score: 1, picks: [{ query: "upl", at: 1 }] };
     expect(decode({ ...shell, opens }).opens).toEqual(opens);
     expect(decode({ ...shell, opens: { openedAt: "2026-10-01", score: 1 } }).opens).toBeNull();
+
+    // A one-shot RPC decodes the thread inside its Exit, whose wire codec drops catchDecoding.
+    const decodeProjectionExit = Schema.decodeUnknownSync(
+      Schema.toCodecJson(
+        Rpc.exitSchema(WsRpcGroup.requests.get(ORCHESTRATION_V2_WS_METHODS.getThreadProjection)!),
+      ),
+    );
+    const picks = ["a", "b", "c", "d"].map((query) => ({ query, at: 1 }));
+    const exit = decodeProjectionExit({
+      _tag: "Success",
+      value: {
+        thread: { ...shell, opens: { ...opens, picks }, tags: [{ name: "release" }] },
+        ...Object.fromEntries(
+          [
+            "runs",
+            "attempts",
+            "nodes",
+            "subagents",
+            "providerSessions",
+            "providerThreads",
+            "providerTurns",
+            "runtimeRequests",
+            "messages",
+            "plans",
+            "turnItems",
+            "checkpointScopes",
+            "checkpoints",
+            "contextHandoffs",
+            "contextTransfers",
+            "visibleTurnItems",
+          ].map((key) => [key, []]),
+        ),
+        updatedAt: shell.updatedAt,
+      },
+    });
+    if (!Exit.isSuccess(exit)) throw new Error("expected a successful exit");
+    expect(exit.value).toMatchObject({ thread: { opens: null, tags: [] } });
   });
 });
 

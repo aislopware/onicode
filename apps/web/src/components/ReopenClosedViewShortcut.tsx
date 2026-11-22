@@ -55,12 +55,6 @@ import {
 import { toastManager } from "./ui/toast";
 import { readIssueListPreferences } from "./issue/issueListPreferences";
 
-declare module "@tanstack/react-router" {
-  interface HistoryState {
-    reopenedViewId?: string;
-  }
-}
-
 const PREVIEW_FORWARDED_COMMANDS = [
   "workspace.focusNext",
   "workspace.focusPrevious",
@@ -193,22 +187,18 @@ export function ReopenClosedViewShortcut() {
     }
 
     const { history } = router;
-    if (router.buildLocation(destination).publicHref === history.location.href) {
-      const { reopenedViewId } = history.location.state;
-      await navigate({ ...destination, state: reopenedViewId ? { reopenedViewId } : {} });
-      return;
-    }
+    const href = router.buildLocation(destination).publicHref;
+    // Navigating to the same URL would push a duplicate entry if its history state differed.
+    if (href === history.location.href) return;
 
     // An allowing blocker can defer the commit. Only the reopen's first history hop extends the queue.
     const unsubscribe = history.subscribe(({ location, action }) => {
       if (location === request.location) return;
       unsubscribe();
-      if (action.type === "PUSH" && location.state.reopenedViewId === restore.id) {
-        request.location = location;
-      }
+      if (action.type === "PUSH" && location.href === href) request.location = location;
     });
     try {
-      await navigate({ ...destination, state: { reopenedViewId: restore.id } });
+      await navigate(destination);
     } catch (error) {
       unsubscribe();
       throw error;

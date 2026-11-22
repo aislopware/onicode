@@ -529,6 +529,19 @@ const RTF_CHARACTERS = new Map([
   ["rtlmark", "\u200f"],
 ]);
 
+const rtfCodePage = (value: number) =>
+  (
+    {
+      65001: "utf-8",
+      932: "shift_jis",
+      936: "gbk",
+      949: "euc-kr",
+      950: "big5",
+      874: "windows-874",
+      10000: "macintosh",
+    } as Record<number, string>
+  )[value] ?? `windows-${value}`;
+
 export function openRtf(bytes: ArrayBuffer): OfficeWorkerResult {
   if (bytes.byteLength > 8 * 1024 * 1024) throw new PreviewError({ code: "rtf-too-large" });
   // Keep byte offsets intact for binary destinations and multibyte code pages.
@@ -548,6 +561,8 @@ export function openRtf(bytes: ArrayBuffer): OfficeWorkerResult {
     fontTable: false,
     decoder: new TextDecoder("windows-1252"),
   };
+  // A font's \cpg, else its \fcharset, encodes the bytes written in that font.
+  const fontCodePages = new Map<number, TextDecoder>();
   const fonts = new Map<number, TextDecoder>();
   let defaultFont = 0;
   const stack: (typeof state)[] = [];
@@ -568,7 +583,9 @@ export function openRtf(bytes: ArrayBuffer): OfficeWorkerResult {
   const flush = () => {
     if (encodedLength) {
       run += escape(
-        (fonts.get(state.font) ?? state.decoder).decode(encoded.subarray(0, encodedLength)),
+        (fontCodePages.get(state.font) ?? fonts.get(state.font) ?? state.decoder).decode(
+          encoded.subarray(0, encodedLength),
+        ),
       );
       encodedLength = 0;
     }
@@ -681,6 +698,12 @@ export function openRtf(bytes: ArrayBuffer): OfficeWorkerResult {
           } as Record<number, string>
         )[arg];
         if (label) fonts.set(state.font, new TextDecoder(label));
+      } else if (word === "cpg" && state.fontTable) {
+        try {
+          fontCodePages.set(state.font, new TextDecoder(rtfCodePage(arg)));
+        } catch {
+          // An unsupported font code page leaves the font's \fcharset in effect.
+        }
       } else if (
         [
           "colortbl",
@@ -705,20 +728,8 @@ export function openRtf(bytes: ArrayBuffer): OfficeWorkerResult {
         state.skip = true;
       else if (word === "mac") state.decoder = new TextDecoder("macintosh");
       else if (word === "ansicpg") {
-        const label =
-          (
-            {
-              65001: "utf-8",
-              932: "shift_jis",
-              936: "gbk",
-              949: "euc-kr",
-              950: "big5",
-              874: "windows-874",
-              10000: "macintosh",
-            } as Record<number, string>
-          )[arg] ?? `windows-${arg}`;
         try {
-          state.decoder = new TextDecoder(label);
+          state.decoder = new TextDecoder(rtfCodePage(arg));
         } catch {
           throw new PreviewError({ code: "rtf-code-page" });
         }

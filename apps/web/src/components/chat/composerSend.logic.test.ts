@@ -8,6 +8,7 @@ import { threadContextRecord } from "@onicode/shared/composerContextReferences";
 import {
   approvalRedirectNotice,
   composerDraftContentChanged,
+  composerPanelCommand,
   loadBalancingSendWarning,
   multipleModelSendBlock,
   referencedThreadContexts,
@@ -129,6 +130,33 @@ describe("multipleModelSendBlock", () => {
     { selectionCount: 0 },
   ])("needs a new Git thread with a branch and models (%o)", (override) => {
     expect(multipleModelSendBlock({ ...ready, ...override })).toBe("needs-new-git-thread");
+  });
+});
+
+describe("composerPanelCommand", () => {
+  it.each([
+    { usageLimits: true, sessionView: null, expected: { type: "usage-limits" } },
+    {
+      usageLimits: false,
+      sessionView: "status",
+      expected: { type: "session-view", view: "status" },
+    },
+    { usageLimits: false, sessionView: null, expected: null },
+  ])("opens the panel for an attached send (%o)", ({ expected, ...input }) => {
+    expect(composerPanelCommand({ ...input, detached: false })).toEqual(expected);
+  });
+
+  it.each([
+    { usageLimits: true, sessionView: null },
+    { usageLimits: false, sessionView: "status" },
+  ])("keeps a detached send's command in its draft (%o)", (input) => {
+    expect(composerPanelCommand({ ...input, detached: true })).toEqual({ type: "keep-draft" });
+  });
+
+  it("sends a detached prompt that opens no panel", () => {
+    expect(
+      composerPanelCommand({ usageLimits: false, sessionView: null, detached: true }),
+    ).toBeNull();
   });
 });
 

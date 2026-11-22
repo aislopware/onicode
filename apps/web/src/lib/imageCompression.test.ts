@@ -56,6 +56,10 @@ function makeHeicFile(options?: {
   width?: number;
   height?: number;
   lastModified?: number;
+  /** nclx color primaries, one `colr` each, at `ipco` indexes 2 onwards. */
+  colorPrimaries?: number[];
+  /** `pitm` item and `ipma` entries, each an item id followed by its `ipco` indexes. */
+  items?: { primary: number; associations: number[][] };
 }): File {
   const encoder = new TextEncoder();
   const makeBox = (name: string, ...contents: Uint8Array[]) => {
@@ -74,12 +78,35 @@ function makeHeicFile(options?: {
   const view = new DataView(dimensions.buffer);
   view.setUint32(4, options?.width ?? 4000);
   view.setUint32(8, options?.height ?? 3000);
-  const properties = makeBox("iprp", makeBox("ipco", makeBox("ispe", dimensions)));
+  const colors = (options?.colorPrimaries ?? []).map((primaries) => {
+    const nclx = new Uint8Array(11);
+    nclx.set(encoder.encode("nclx"));
+    new DataView(nclx.buffer).setUint16(4, primaries);
+    return makeBox("colr", nclx);
+  });
+  const items = options?.items;
+  const pitm = items ? [makeBox("pitm", new Uint8Array([0, 0, 0, 0, 0, items.primary]))] : [];
+  const ipma = items
+    ? [
+        makeBox(
+          "ipma",
+          new Uint8Array([0, 0, 0, 0, 0, 0, 0, items.associations.length]),
+          ...items.associations.map(
+            ([item, ...indexes]) => new Uint8Array([0, item!, indexes.length, ...indexes]),
+          ),
+        ),
+      ]
+    : [];
+  const properties = makeBox(
+    "iprp",
+    makeBox("ipco", makeBox("ispe", dimensions), ...colors),
+    ...ipma,
+  );
 
   return new File(
     [
       makeBox("ftyp", encoder.encode("heic"), new Uint8Array(4)),
-      makeBox("meta", new Uint8Array(4), properties),
+      makeBox("meta", new Uint8Array(4), ...pitm, properties),
     ],
     options?.name ?? "photo.heic",
     {
@@ -97,6 +124,7 @@ function stubCanvasPipeline(
   const close = vi.fn();
   const fillRect = vi.fn();
   const canvasSizes: Array<{ width: number; height: number }> = [];
+  const colorSpaces: Array<PredefinedColorSpace | undefined> = [];
   vi.stubGlobal(
     "createImageBitmap",
     vi.fn(async () => ({ width: 4000, height: 3000, close })),
@@ -110,7 +138,8 @@ function stubCanvasPipeline(
       ) {
         canvasSizes.push({ width, height });
       }
-      getContext() {
+      getContext(_type: string, settings?: CanvasRenderingContext2DSettings) {
+        colorSpaces.push(settings?.colorSpace);
         return {
           fillStyle: "",
           fillRect,
@@ -134,7 +163,7 @@ function stubCanvasPipeline(
     vi.stubGlobal("HTMLCanvasElement", HtmlCanvas);
     vi.stubGlobal("document", { createElement: () => new HtmlCanvas(0, 0) });
   }
-  return { close, fillRect, canvasSizes };
+  return { close, fillRect, canvasSizes, colorSpaces };
 }
 
 afterEach(() => {
@@ -347,6 +376,31 @@ describe("HEIC attachment preparation", () => {
       { width: 2000, height: 1500 },
       { width: 256, height: 256 },
     ]);
+  });
+
+  // ipco index 2 is a Display P3 nclx and index 3 an sRGB one.
+  it.each([
+    { name: "sRGB primary beside a P3 item", primary: 1, colorSpace: "srgb" },
+    { name: "P3 primary beside an sRGB item", primary: 2, colorSpace: "display-p3" },
+    { name: "primary with no color", primary: 3, colorSpace: "display-p3" },
+  ])("draws a HEIC $name in its color space", async ({ primary, colorSpace }) => {
+    const { colorSpaces } = stubCanvasPipeline(() => 4);
+    const original = makeHeicFile({
+      colorPrimaries: [12, 1],
+      items: {
+        primary,
+        associations: [
+          [2, 1, 2],
+          [1, 1, 3],
+          [3, 1],
+        ],
+      },
+    });
+
+    const result = await prepareImageForAttachment(original, 1024);
+
+    expect(result.ok).toBe(true);
+    expect([...new Set(colorSpaces)]).toEqual([colorSpace]);
   });
 
   it("rejects oversized HEIC dimensions before loading the decoder", async () => {

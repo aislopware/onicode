@@ -291,6 +291,13 @@ Third}`;
     const result = openRtf(input.buffer);
     if (result.type !== "document") throw new Error("Expected document");
     expect(result.pages[0]!.html).toBe("<p>А А<br>あ</p>");
+    const fontCodePage = openRtf(
+      bytes(
+        String.raw`{\rtf1\ansi{\fonttbl{\f0\fcharset204\cpg1252 A;}{\f1\cpg1252\fcharset204 B;}}\f0\'c0\f1\'c0}`,
+      ),
+    );
+    if (fontCodePage.type !== "document") throw new Error("Expected document");
+    expect(fontCodePage.pages[0]!.html).toBe("<p>ÀÀ</p>");
     for (const header of [String.raw`\mac`, String.raw`\mac\ansicpg10000`]) {
       const mac = openRtf(bytes(String.raw`{\rtf1` + header + String.raw` Caf\'8e Cr\'8fme}`));
       if (mac.type !== "document") throw new Error("Expected document");

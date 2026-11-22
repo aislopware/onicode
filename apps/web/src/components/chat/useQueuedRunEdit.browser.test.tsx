@@ -1,3 +1,4 @@
+import { scopedThreadKey } from "@onicode/client-runtime/environment";
 import type { ThreadStructure } from "@onicode/client-runtime/state/shell";
 import {
   EnvironmentId,
@@ -28,6 +29,7 @@ import { deriveComposerSendState } from "../ChatView.logic";
 import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
 import { AppAtomRegistryProvider, appAtomRegistry } from "../../rpc/atomRegistry";
 import { useQueuedRunEdit } from "./useQueuedRunEdit";
+import type { ChatComposerHandle } from "./ChatComposer";
 import { readAttachmentUpload, useAttachmentUploadStore } from "../../lib/attachmentUploadQueue";
 
 interface RunStatus {
@@ -110,6 +112,10 @@ const THREAD_B: ScopedThreadRef = { environmentId: ENV, threadId: ThreadId.make(
 const RUN = RunId.make("run-1");
 
 type HookResult = ReturnType<typeof useQueuedRunEdit>;
+type ComposerRefs = Pick<
+  Parameters<typeof useQueuedRunEdit>[0],
+  "promptRef" | "composerRef" | "currentRouteThreadKeyRef"
+>;
 
 function projection(runs: ReadonlyArray<RunStatus>, messages: ReadonlyArray<unknown>) {
   return { runs, messages } as unknown as ThreadStructure;
@@ -124,6 +130,7 @@ function Harness(props: {
   readonly runStatus: string;
   readonly hookRef: RefObject<HookResult | null>;
   readonly messages: ReadonlyArray<unknown>;
+  readonly refs: ComposerRefs | undefined;
 }) {
   const result = useQueuedRunEdit({
     environmentId: ENV,
@@ -133,6 +140,8 @@ function Harness(props: {
     serverProjection: projection([{ id: RUN, status: props.runStatus }], props.messages),
     promptRef: { current: "" },
     composerRef: { current: null },
+    currentRouteThreadKeyRef: { current: scopedThreadKey(props.threadRef) },
+    ...props.refs,
   });
   useImperativeHandle(props.hookRef, () => result);
   const draft = useComposerThreadDraft(result.draftTarget);
@@ -167,10 +176,17 @@ function view(
   runStatus: string,
   hook: { current: HookResult | null },
   messages: ReadonlyArray<unknown> = [],
+  refs?: ComposerRefs,
 ) {
   return (
     <AppAtomRegistryProvider>
-      <Harness threadRef={threadRef} runStatus={runStatus} hookRef={hook} messages={messages} />
+      <Harness
+        threadRef={threadRef}
+        runStatus={runStatus}
+        hookRef={hook}
+        messages={messages}
+        refs={refs}
+      />
     </AppAtomRegistryProvider>
   );
 }
@@ -444,6 +460,45 @@ describe("useQueuedRunEdit", () => {
     await act(() => setRuns(THREAD_A, "running"));
 
     expect(promptOf(THREAD_A)).toBe("changed");
+  });
+
+  it("leaves the composer on screen alone when a save from another thread lands", async () => {
+    const { hook } = setup();
+    let finishSave: (result: { readonly _tag: "Success" }) => void = () => {};
+    mocks.editQueuedRun.mockReturnValue(
+      new Promise((resolve) => {
+        finishSave = resolve;
+      }),
+    );
+    const composer = { resetCursorState: vi.fn(), focusAtEnd: vi.fn() };
+    const refs = {
+      promptRef: { current: "" },
+      composerRef: { current: composer as unknown as ChatComposerHandle },
+      currentRouteThreadKeyRef: { current: scopedThreadKey(THREAD_A) },
+    };
+    await using screen = await render(view(THREAD_A, "queued", hook, [], refs));
+    using _frame = vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      callback(0);
+      return 0;
+    });
+    await beginChangedEdit(hook);
+    // Not inside act(): act would hold the rerender until the save settles.
+    const saved = requireHook(hook).saveEdit(savedContent("changed"), () => {});
+    await vi.waitFor(() => expect(mocks.editQueuedRun).toHaveBeenCalledOnce());
+
+    // ChatView stays mounted across server threads, so the hook sees thread B in place.
+    refs.currentRouteThreadKeyRef.current = scopedThreadKey(THREAD_B);
+    await screen.rerender(view(THREAD_B, "queued", hook, [], refs));
+    refs.promptRef.current = "typing in B";
+    composer.focusAtEnd.mockClear();
+    finishSave({ _tag: "Success" });
+    await act(() => saved);
+
+    expect(refs.promptRef.current).toBe("typing in B");
+    expect(composer.resetCursorState).not.toHaveBeenCalled();
+    expect(composer.focusAtEnd).not.toHaveBeenCalled();
+    await screen.rerender(view(THREAD_A, "queued", hook, [], refs));
+    expect(requireHook(hook).isEditing).toBe(false);
   });
 
   it("does not copy a saved edit into the thread draft when the run starts mid-save", async () => {

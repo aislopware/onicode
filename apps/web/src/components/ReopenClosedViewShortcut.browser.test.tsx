@@ -272,6 +272,49 @@ describe("root reopen shortcut", () => {
     expect(history.location.pathname).toBe("/remote/thread-2");
   });
 
+  it("takes one Back to leave a reopened thread after clicking its sidebar row", async () => {
+    setup();
+    const reopened = { ...ref, threadId: "thread-2" } as ScopedThreadRef;
+    useClosedViewStore.getState().remember({
+      kind: "panel-tab",
+      threadRef: reopened,
+      surface: { kind: "diff", id: "diff" },
+    });
+    const history = createMemoryHistory({ initialEntries: ["/remote/thread-1"] });
+    const root = createRootRoute({
+      component: () => (
+        <>
+          <ReopenClosedViewShortcut />
+          <Outlet />
+        </>
+      ),
+    });
+    const router = createRouter({
+      history,
+      routeTree: root.addChildren([
+        createRoute({ getParentRoute: () => root, path: "$environmentId/$threadId" }),
+      ]),
+    });
+    state.navigate.mockImplementation(router.navigate);
+    using _platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("Linux x86_64");
+    // The test supplies its own routes and history.
+    await using _view = await render(<RouterProvider router={router} />, { router: false });
+
+    await act(() => {
+      press();
+    });
+    await vi.waitFor(() => expect(history.location.pathname).toBe("/remote/thread-2"));
+    await act(() =>
+      router.navigate({
+        to: "/$environmentId/$threadId",
+        params: { environmentId: "remote", threadId: "thread-2" },
+      }),
+    );
+    await act(() => history.back());
+
+    await vi.waitFor(() => expect(history.location.pathname).toBe("/remote/thread-1"));
+  });
+
   it("does not create a second browser when navigation fails after restoring it", async () => {
     setup();
     const store = useClosedViewStore.getState();

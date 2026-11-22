@@ -23,6 +23,7 @@ import {
   type ServerSettingsPatch,
 } from "@onicode/contracts";
 import { applyServerSettingsPatch } from "@onicode/shared/serverSettings";
+import { visibleThreadPullRequests } from "@onicode/shared/threadPullRequests";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -584,6 +585,7 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
   const activation = yield* Deferred.make<void>();
   const snapshots = yield* Ref.make(options.snapshot);
   const snapshotReadCount = yield* Ref.make(0);
+  const pullRequestLinkReads = yield* Ref.make(0);
   const snapshotReads = yield* Queue.unbounded<number>();
   const candidateReads = yield* Ref.make<ReadonlyArray<string | undefined>>([]);
   const settings = yield* Ref.make(options.settings ?? DEFAULT_SERVER_SETTINGS);
@@ -683,16 +685,14 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
         ),
     }),
     Layer.mock(ProjectionStore.ProjectionStoreV2)({
-      getThreadsWithPullRequests: (_threadId, readOptions) =>
-        Ref.get(snapshots).pipe(
-          Effect.map((snapshot) =>
-            snapshot.threads
-              .filter(
-                (thread) => readOptions?.includeArchived === true || thread.archivedAt === null,
-              )
-              .map((thread) => ({ ...thread, pullRequests: thread.pullRequests ?? [] })),
+      getPullRequestLinkKeys: Ref.update(pullRequestLinkReads, (count) => count + 1).pipe(
+        Effect.andThen(Ref.get(snapshots)),
+        Effect.map((snapshot) =>
+          snapshot.threads.flatMap((thread) =>
+            visibleThreadPullRequests(thread.pullRequests ?? []),
           ),
         ),
+      ),
       ...options.projections,
       getSettlementCandidates: (threadId) =>
         Ref.update(candidateReads, (reads) => [...reads, threadId]).pipe(
@@ -770,6 +770,7 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
     settings,
     snapshots,
     snapshotReadCount,
+    pullRequestLinkReads,
     settingsReadCount,
     snapshotReads,
     candidateReads,
@@ -1763,6 +1764,8 @@ describe("ThreadSettlementServiceV2 worker", () => {
           yield* startHarness(reactor, fixture.activation, fixture.snapshotReads);
           assert.deepStrictEqual(yield* Ref.get(fixture.commands), []);
           assert.deepStrictEqual(yield* Ref.get(fixture.invalidatedCwds), []);
+          // Other threads' links only matter once a branch pull request reads merged or closed.
+          assert.strictEqual(yield* Ref.get(fixture.pullRequestLinkReads), 0);
 
           yield* Ref.set(state, "merged");
           yield* fixture.publishMerge;
@@ -1773,6 +1776,7 @@ describe("ThreadSettlementServiceV2 worker", () => {
             [ThreadId.make("branch-thread")],
           );
           assert.deepStrictEqual(yield* Ref.get(fixture.invalidatedCwds), ["/workspace/project"]);
+          assert.strictEqual(yield* Ref.get(fixture.pullRequestLinkReads), 1);
           yield* reactor.drain;
         }).pipe(Effect.provide(fixture.layer));
       }),
@@ -2248,6 +2252,15 @@ describe("ThreadSettlementServiceV2 terminals", () => {
       });
       const shared = appThread("shared-checkout-thread", "settled");
       const missing = appThread("removed-worktree-thread", "settled", "/worktrees/removed");
+      // The parent owns the worktree, so only the parent's skip is worth a warning.
+      const missingSubagent = {
+        ...appThread("removed-worktree-subagent", "settled", "/worktrees/removed"),
+        lineage: {
+          parentThreadId: missing.id,
+          relationshipToParent: "subagent" as const,
+          rootThreadId: missing.id,
+        },
+      };
       const worktree = appThread("worktree-thread", "settled", "/worktrees/thread");
       const scriptless = makeProject(ProjectId.make("scriptless-project"));
       const missingScriptless = {
@@ -2264,7 +2277,7 @@ describe("ThreadSettlementServiceV2 terminals", () => {
       } as const;
       const fixture = yield* makeHarness({
         snapshot: makeSnapshot([], [{ ...makeProject(), scripts: [teardown] }, scriptless]),
-        currentThreads: [shared, missing, missingScriptless, worktree],
+        currentThreads: [shared, missing, missingSubagent, missingScriptless, worktree],
         existingWorktreePaths: ["/worktrees/thread"],
       });
 
@@ -2273,6 +2286,7 @@ describe("ThreadSettlementServiceV2 terminals", () => {
         yield* startHarness(service, fixture.activation, fixture.snapshotReads);
         yield* fixture.publishEvent(settledEvent(shared));
         yield* fixture.publishEvent(settledEvent(missing));
+        yield* fixture.publishEvent(settledEvent(missingSubagent));
         yield* fixture.publishEvent(settledEvent(missingScriptless));
         yield* fixture.publishEvent(settledEvent(worktree));
         const run = yield* Queue.take(fixture.scriptRuns);

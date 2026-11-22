@@ -8,6 +8,7 @@ import { makeThreadFind } from "./ThreadFind.ts";
 import { unsentManualContinuationSource } from "@onicode/shared/orchestrationV2ManualContinuation";
 import type {
   OrchestrationV2ThreadLinkMetadata,
+  ThreadPullRequestLink,
   OrchestrationV2SearchThreadInput,
   OrchestrationV2SearchThreadResult,
   OrchestrationV2ThreadHistoryPage,
@@ -213,6 +214,11 @@ export type ProjectionLimitRecoveryCandidate = Pick<
 export type ProjectionThreadPullRequests = Pick<
   OrchestrationV2AppThread,
   "id" | "projectId" | "lineage" | "settledOverride" | "settledAt" | "pullRequests"
+>;
+
+export type ProjectionPullRequestLinkKey = Pick<
+  ThreadPullRequestLink,
+  "host" | "repository" | "number" | "url"
 >;
 
 export type ProjectionSettlementCandidate = Pick<
@@ -680,8 +686,12 @@ export interface ProjectionStoreV2Shape {
   ) => Effect.Effect<ReadonlyArray<ProjectionSettlementCandidate>, ProjectionStoreV2Error>;
   readonly getThreadsWithPullRequests: (
     threadId?: ThreadId,
-    options?: { readonly includeArchived?: boolean },
   ) => Effect.Effect<ReadonlyArray<ProjectionThreadPullRequests>, ProjectionStoreV2Error>;
+  /** Every thread's visible pull request links, archived threads included. */
+  readonly getPullRequestLinkKeys: Effect.Effect<
+    ReadonlyArray<ProjectionPullRequestLinkKey>,
+    ProjectionStoreV2Error
+  >;
   /** Titles of the given threads that exist, archived ones included. */
   readonly getThreadLinkMetadata: (
     threadIds: ReadonlyArray<ThreadId>,
@@ -9068,12 +9078,12 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
 
     const getThreadsWithPullRequests: ProjectionStoreV2Shape["getThreadsWithPullRequests"] =
       Effect.fn("ProjectionStore.getThreadsWithPullRequests")(
-        function* (threadId, options) {
+        function* (threadId) {
           const rows = yield* sql<PayloadRow>`
           SELECT payload_json
           FROM orchestration_v2_projection_threads
           WHERE deleted_at IS NULL${threadId === undefined ? sql`` : sql` AND thread_id = ${threadId}`}
-            ${options?.includeArchived === true ? sql`` : sql`AND json_extract(payload_json, '$.archivedAt') IS NULL`}
+            AND json_extract(payload_json, '$.archivedAt') IS NULL
             AND json_array_length(payload_json, '$.pullRequests') > 0
           ORDER BY updated_at ASC, thread_id ASC
         `;
@@ -9092,6 +9102,26 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
         },
         Effect.mapError((cause) => new ProjectionStoreSetupError({ cause })),
       );
+
+    const getPullRequestLinkKeys: ProjectionStoreV2Shape["getPullRequestLinkKeys"] = sql<{
+      readonly host: string;
+      readonly repository: string;
+      readonly number: number;
+      readonly url: string;
+    }>`
+      SELECT DISTINCT
+        json_extract(link.value, '$.host') AS host,
+        json_extract(link.value, '$.repository') AS repository,
+        json_extract(link.value, '$.number') AS number,
+        json_extract(link.value, '$.url') AS url
+      FROM orchestration_v2_projection_threads AS threads,
+        json_each(threads.payload_json, '$.pullRequests') AS link
+      WHERE threads.deleted_at IS NULL
+        AND json_extract(link.value, '$.source') IS NOT 'stack-dismissed'
+    `.pipe(
+      Effect.mapError((cause) => new ProjectionStoreSetupError({ cause })),
+      Effect.withSpan("ProjectionStore.getPullRequestLinkKeys"),
+    );
 
     const getThreadWorktreePaths: ProjectionStoreV2Shape["getThreadWorktreePaths"] = (options) =>
       sql<{ readonly thread_id: string; readonly worktree_path: string }>`
@@ -9918,6 +9948,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       findThread: readOnReader(findThread),
       getSettlementCandidates: readOnReader(getSettlementCandidates),
       getThreadsWithPullRequests: readOnReader(getThreadsWithPullRequests),
+      getPullRequestLinkKeys: getPullRequestLinkKeys.pipe(NodeSqliteClient.readOnly),
       getThreadTitles: readOnReader(getThreadTitles),
       getThreadLinkMetadata: readOnReader(getThreadLinkMetadata),
       getThreadWorktreePaths: readOnReader(getThreadWorktreePaths),

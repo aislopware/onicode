@@ -508,20 +508,18 @@ export const make = Effect.gen(function* () {
     };
     const groups = Map.groupBy(lookupCandidates, lookupKey);
     // A thread with no link of its own does not settle from a pull request another thread links,
-    // archived threads included.
-    const explicitlyLinked = new Set(
-      groups.size === 0
-        ? []
-        : (yield* projections.getThreadsWithPullRequests(undefined, {
-            includeArchived: true,
-          })).flatMap((thread) =>
-            visibleThreadPullRequests(thread.pullRequests ?? []).map(threadPullRequestKeyOf),
-          ),
+    // archived threads included. Most sweeps never ask, so the links are read on first need.
+    const explicitlyLinked = yield* Effect.cached(
+      projections.getPullRequestLinkKeys.pipe(
+        Effect.map((links) => new Set(links.map(threadPullRequestKeyOf))),
+      ),
     );
     const ownedByAnotherThread = (pullRequest: GitManager.GitBranchPullRequest | null) => {
-      if (pullRequest === null || pullRequest.state === "open") return false;
+      if (pullRequest === null || pullRequest.state === "open") return Effect.succeed(false);
       const key = branchPullRequestKey(pullRequest);
-      return key !== null && explicitlyLinked.has(key);
+      return key === null
+        ? Effect.succeed(false)
+        : Effect.map(explicitlyLinked, (linked) => linked.has(key));
     };
 
     // wouldSettle and pullRequestFor run per lookup group; the git and pull request reads they make carry the spans.
@@ -554,7 +552,7 @@ export const make = Effect.gen(function* () {
       if (
         thread.linkedPullRequest == null &&
         reference != null &&
-        explicitlyLinked.has(threadPullRequestKeyOf(legacyThreadPullRequestKey(reference)))
+        (yield* explicitlyLinked).has(threadPullRequestKeyOf(legacyThreadPullRequestKey(reference)))
       ) {
         return undefined;
       }
@@ -635,14 +633,14 @@ export const make = Effect.gen(function* () {
         { refresh, confirmTerminal: false },
       );
       noPullRequestRechecks.record(key, nowMs, remembered !== null);
-      if (ownedByAnotherThread(remembered)) return undefined;
+      if (yield* ownedByAnotherThread(remembered)) return undefined;
       if (refresh || remembered === null || remembered.state === "open") return remembered;
       if (!(yield* wouldSettle(group, remembered))) return undefined;
       const fresh = yield* git.branchPullRequest(
         { cwd, branch: thread.branch },
         { freshGitState: true },
       );
-      return ownedByAnotherThread(fresh) ? undefined : fresh;
+      return (yield* ownedByAnotherThread(fresh)) ? undefined : fresh;
     });
 
     // A merge, a shell close and a thread's own events read at once; only scheduled sweeps wait.
@@ -752,6 +750,19 @@ export const make = Effect.gen(function* () {
       yield* terminals.closeOnSettle({ threadId });
       const worktreePath = settled.worktreePath;
       if (worktreePath === null) return;
+      // The parent's worktree belongs to the parent; shared-worktree children
+      // skip duplicate cleanup there.
+      if (
+        settled.lineage.relationshipToParent === "subagent" &&
+        settled.lineage.parentThreadId !== null
+      ) {
+        const parent = yield* projections.getThread(settled.lineage.parentThreadId).pipe(
+          Effect.catchTags({
+            ProjectionStoreThreadNotFoundError: () => Effect.succeed(null),
+          }),
+        );
+        if (parent?.worktreePath === worktreePath) return;
+      }
       if (!(yield* fileSystem.exists(worktreePath))) {
         // A settle script that tears something down would otherwise be skipped with no trace.
         const project = Option.getOrUndefined(yield* projectStore.getShell(settled.projectId));
@@ -771,19 +782,6 @@ export const make = Effect.gen(function* () {
       if (thread.deletedAt !== null || thread.settledOverride !== "settled") return;
       const settledAtMs = toMillis(thread.settledAt);
       if (settledAtMs === null || settleActionRunAt.get(threadId) === settledAtMs) return;
-      // The parent's worktree belongs to the parent; shared-worktree children
-      // skip duplicate cleanup there.
-      if (
-        thread.lineage.relationshipToParent === "subagent" &&
-        thread.lineage.parentThreadId !== null
-      ) {
-        const parent = yield* projections.getThread(thread.lineage.parentThreadId).pipe(
-          Effect.catchTags({
-            ProjectionStoreThreadNotFoundError: () => Effect.succeed(null),
-          }),
-        );
-        if (parent?.worktreePath === worktreePath) return;
-      }
       const run = yield* projectScripts.runForThread({
         threadId,
         projectId: thread.projectId,
