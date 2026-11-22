@@ -115,7 +115,6 @@ import {
   composerTargetKey,
   isComposerDraftPromoted,
   readComposerDraftPrompt,
-  resolveLiveComposerDraftTarget,
   useComposerDraftStore,
   useComposerThreadDraft,
 } from "../../composerDraftStore";
@@ -234,6 +233,7 @@ import { buildPullRequestReferenceContext } from "../pullRequest/pullRequestDeta
 import { getComposerPromptInjectionState, getComposerReasoningStep } from "./composerProviderState";
 import { readPromptUltrathink } from "./TraitsPicker";
 import { useApplyThreadModelPick } from "./useApplyThreadModelPick";
+import { resolveDictationDraftTarget } from "./useQueuedRunEdit";
 import {
   buildAttachmentVideoPreview,
   buildExpandedImagePreview,
@@ -1960,10 +1960,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     persistentDraft: questionAttachmentTarget
       ? undefined
       : {
-          readStoredText: () => readComposerDraftPrompt(composerDraftTarget),
+          readStoredText: () => {
+            const stored = resolveDictationDraftTarget(composerDraftTarget);
+            return stored === null ? null : (readComposerDraftPrompt(stored) ?? "");
+          },
           commitStoredText: (text) => {
-            const live = resolveLiveComposerDraftTarget(composerDraftTarget);
-            if (live !== null) setComposerDraftPrompt(live, text);
+            const stored = resolveDictationDraftTarget(composerDraftTarget);
+            if (stored !== null) setComposerDraftPrompt(stored, text);
           },
           retired: () => isComposerDraftPromoted(composerDraftTarget),
           // The route, not the draft target: a queued-message edit has a draft id but no route.
@@ -2333,7 +2336,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           return;
         }
         // A discarded draft sends nothing.
-        if (resolveLiveComposerDraftTarget(capturedDraftTarget) === null) return;
+        if (resolveDictationDraftTarget(capturedDraftTarget) === null) return;
         const latestDraft = useComposerDraftStore.getState().getComposerDraft(capturedDraftTarget);
         submitComposerDraft({
           prompt: transcribedText,
