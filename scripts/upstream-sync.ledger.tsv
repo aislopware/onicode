@@ -3310,3 +3310,4 @@ dd19bce823	take	fix(server): a dropped dictation client frees the speech engine 
 a09738fb43	take	adapted: kept Onicode's ClaudeInstalledBuild restart (#96; any idle turn, managed launcher, wakeups); dropped upstream's adapter + ClaudeExecutable helpers; ported the link-repoint install case as ClaudeInstalledBuild.test.ts
 fb4558d77d	take	kept Onicode's long-line cap and task-toggle gate in FileMarkdownPreview (now per chunk) and its 'Copy keeps every column' notice; kept Onicode's line-cut test beside upstream's full-file test
 ba947e37e1	take	taken as is
+0ee3a92b7e	take	taken as is (other forge, follows upstream)
