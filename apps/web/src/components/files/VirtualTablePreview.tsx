@@ -1,10 +1,16 @@
 /* oxlint-disable react/no-array-index-key -- Positions identify source rows and columns. */
-import { useGT } from "gt-react";
 import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
 import { useClientSettings } from "~/hooks/useSettings";
 import { observeResize } from "~/lib/observeResize";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { PREVIEW_PAGE_ROWS } from "./largeTextProtocol";
+import {
+  CellText,
+  MAX_SHOWN_LINE_CHARS,
+  shownLength,
+  shownText,
+  useMoreCharactersLabel,
+} from "./shownText";
 
 export default function VirtualTablePreview(props: {
   readonly name: string;
@@ -284,28 +290,6 @@ function RowPage(
         );
       })}
     </div>
-  );
-}
-
-function useMoreCharactersLabel() {
-  const gt = useGT();
-  return (count: number) =>
-    gt("{count, plural, one {{formatted} more character} other {{formatted} more characters}}", {
-      count,
-      formatted: count.toLocaleString(),
-    });
-}
-
-function CellText(props: { text: string; limit: number; more: (count: number) => string }) {
-  const end = shownLength(props.text, props.limit);
-  if (end === props.text.length) return props.text;
-  return (
-    <>
-      {props.text.slice(0, end)}
-      <span className="text-muted-foreground select-none">
-        {cutSuffix(props.text.length - end, props.more)}
-      </span>
-    </>
   );
 }
 
@@ -789,11 +773,10 @@ const MAX_GLYPH_WIDTH_EM = 1.35;
 const MAX_CACHED_ROW_HEIGHTS = 512;
 const MAX_SYNC_SCAN_CHARS = 128_000;
 // Some scripts lay out slowly: 130K characters of Thai took 2.4 s, and of Japanese 2.6 s, in Chromium.
-// Mobile's table preview cuts cells at the same length; source lines stop where VS Code's do.
+// Mobile's table preview cuts cells at the same length.
 const MAX_SHOWN_CELL_CHARS = 2_000;
 // Columns stop at 20rem, which 200 characters of 12px text always fill.
 const MAX_SIZING_CELL_CHARS = 200;
-const MAX_SHOWN_LINE_CHARS = 10_000;
 // 256 characters of Japanese lay out in about 4 ms.
 const COSTLY_ROW_CHARS = 256;
 const MAX_SYNC_MEASURE_PASSES = 4;
@@ -959,26 +942,6 @@ function measureRowFullHeight(
     measureProbeEntries(probe, rest, sizes, options.className, measured);
   }
   return { height: result.height, scannedChars };
-}
-
-/** The length of a cell's text the preview lays out, never splitting a surrogate pair. */
-function shownLength(text: string, limit: number): number {
-  if (text.length <= limit) return text.length;
-  const before = text.charCodeAt(limit - 1);
-  const after = text.charCodeAt(limit);
-  return before >= 0xd800 && before <= 0xdbff && after >= 0xdc00 && after <= 0xdfff
-    ? limit - 1
-    : limit;
-}
-
-function cutSuffix(count: number, more: (count: number) => string): string {
-  return `… ${more(count)}`;
-}
-
-/** The text a cell lays out: at most `limit` characters, then how many were left out. */
-function shownText(text: string, limit: number, more: (count: number) => string): string {
-  const end = shownLength(text, limit);
-  return end === text.length ? text : text.slice(0, end) + cutSuffix(text.length - end, more);
 }
 
 /** Whether a row's shown text costs enough layout to wait until the probe says it is on screen. */

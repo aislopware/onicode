@@ -17,6 +17,7 @@ import { msg, useGT } from "gt-react-native";
 import { m } from "../../i18n/messages";
 
 import * as Dialog from "../../components/ui/Dialog";
+import { useWorkspacePageStillShows } from "../layout/workspace/useWorkspacePageStillShows";
 import { uuidv4 } from "../../lib/uuid";
 import { appAtomRegistry } from "../../state/atom-registry";
 import { environmentThreadShells, threadEnvironment } from "../../state/threads";
@@ -41,6 +42,7 @@ export function useStartSideChat() {
   const setRuntimeMode = useAtomCommand(threadEnvironment.setRuntimeMode, { reportFailure: false });
   const startTurn = useAtomCommand(threadEnvironment.startTurn, { reportFailure: false });
   const openLinkedThread = useOpenLinkedThread();
+  const pageStillShows = useWorkspacePageStillShows();
 
   const alertFailure = (
     failure: Extract<AtomCommandResult<unknown, unknown>, { readonly _tag: "Failure" }>,
@@ -124,7 +126,10 @@ export function useStartSideChat() {
       discard();
       return false;
     }
-    openLinkedThread({ environmentId: source.environmentId, threadId: targetThreadId });
+    // If the user has moved on from the page that started it, leave them there.
+    if (pageStillShows()) {
+      openLinkedThread({ environmentId: source.environmentId, threadId: targetThreadId });
+    }
     return true;
   };
 }

@@ -85,7 +85,9 @@ import {
   beginBackgroundDraftSubmissionByRef,
   clearBackgroundDraftSubmissionByRef,
   finalizePromotedDraftThreadByRef,
+  isComposerDraftPromoted,
   markPromotedDraftThreadByRef,
+  queuedRunEditDraftId,
   resolveDraftPromotionNavigationTarget,
   restoreFailedDraftThread,
   subscribeDraftThreadPromotion,
@@ -1548,7 +1550,24 @@ describe("composerDraftStore draft promotion", () => {
     const state = useComposerDraftStore.getState();
     expect(state.getDraftSession(draftId)).toBeNull();
     expect(state.getPromotedDraftRedirect(draftId)).toEqual(threadRef);
+    expect(isComposerDraftPromoted(draftId)).toBe(true);
     expect(draftFor(threadId, TEST_ENVIRONMENT_ID)?.prompt).toBe("typed during setup");
+  });
+
+  it("counts neither a discarded draft nor an emptied queued edit as promoted", () => {
+    const store = useComposerDraftStore.getState();
+    store.setProjectDraftThreadId(projectRef, draftId, { threadId });
+    store.setPrompt(draftId, "typed");
+    expect(isComposerDraftPromoted(draftId)).toBe(false);
+    store.clearDraftThread(draftId);
+    expect(isComposerDraftPromoted(draftId)).toBe(false);
+
+    const editId = queuedRunEditDraftId(threadRef, "run-promotion");
+    store.setPrompt(editId, "queued text");
+    store.setPrompt(editId, "");
+    expect(useComposerDraftStore.getState().getComposerDraft(editId)).toBeNull();
+    expect(isComposerDraftPromoted(editId)).toBe(false);
+    expect(isComposerDraftPromoted(threadRef)).toBe(false);
   });
 
   it("holds a background submission on its draft until the send settles", async () => {

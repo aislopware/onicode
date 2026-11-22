@@ -131,6 +131,7 @@ import { openSettings } from "../settings/settings-navigation";
 import { ThreadInspectorHeader, type ThreadInspectorPresentation } from "./thread-inspector-header";
 import { InspectorContentScope, ThreadInspectorPreview } from "./thread-inspector-preview";
 import { useStartSideChat } from "./useStartSideChat";
+import { useWorkspacePageStillShows } from "../layout/workspace/useWorkspacePageStillShows";
 import { useThreadStatusAnnouncements } from "./useThreadStatusAnnouncements";
 import type { ThreadInspectorMode, ThreadInspectorTarget } from "./thread-inspector-navigation";
 import { useSelectWorkspaceDetail } from "../layout/workspace/useSelectWorkspaceDetail";
@@ -469,6 +470,7 @@ function ThreadRouteContent(
     };
   })();
   const navigation = useNavigation();
+  const pageStillShows = useWorkspacePageStillShows();
   const selectDetail = useSelectWorkspaceDetail();
   const openPullRequest = useOpenPullRequest();
   const mergeBack = useAtomCommand(threadEnvironment.mergeBack, "merge thread back");
@@ -496,7 +498,7 @@ function ThreadRouteContent(
       },
     });
     mergeBackBusyRef.current = false;
-    if (result._tag !== "Success") return;
+    if (result._tag !== "Success" || !pageStillShows()) return;
     selectDetail({
       name: "Thread",
       params: { environmentId: selectedThread.environmentId, threadId: mergeBackTargetThreadId },
@@ -949,7 +951,7 @@ function ThreadRouteContent(
       }),
     });
     localResendBusy.current = false;
-    if (launched._tag !== "Success") return;
+    if (launched._tag !== "Success" || !pageStillShows()) return;
     navigation.dispatch(
       StackActions.replace("Thread", {
         environmentId: String(selectedThread.environmentId),

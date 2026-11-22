@@ -255,7 +255,8 @@ const historyAnchor = (row: OrchestrationV2ProjectedTurnItem): HistoryAnchor => 
   ordinal: row.item.ordinal,
 });
 
-// A rewind elsewhere can remove the anchor itself; an older row of its source still marks the spot.
+// A rewind elsewhere can remove the anchor itself; an older row of its source still marks the spot,
+// and so does the source's own fork marker, which every row of that source follows.
 // A fork marker names its parent as source with ordinal 0 but sits after the parent's rows.
 function reachesHistoryAnchor(
   rows: ReadonlyArray<OrchestrationV2ProjectedTurnItem>,
@@ -263,9 +264,10 @@ function reachesHistoryAnchor(
 ): boolean {
   return rows.some(
     (row) =>
-      row.sourceThreadId === anchor.sourceThreadId &&
-      (row.sourceItemId === anchor.sourceItemId ||
-        (row.item.threadId === anchor.sourceThreadId && row.item.ordinal <= anchor.ordinal)),
+      (row.item.type === "fork" && row.item.threadId === anchor.sourceThreadId) ||
+      (row.sourceThreadId === anchor.sourceThreadId &&
+        (row.sourceItemId === anchor.sourceItemId ||
+          (row.item.threadId === anchor.sourceThreadId && row.item.ordinal <= anchor.ordinal))),
   );
 }
 

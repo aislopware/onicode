@@ -113,6 +113,7 @@ import {
   composerFileNeedsReattach,
   composerDraftHasUserContent,
   composerTargetKey,
+  isComposerDraftPromoted,
   readComposerDraftPrompt,
   resolveLiveComposerDraftTarget,
   useComposerDraftStore,
@@ -1942,6 +1943,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             const live = resolveLiveComposerDraftTarget(composerDraftTarget);
             if (live !== null) setComposerDraftPrompt(live, text);
           },
+          retired: () => isComposerDraftPromoted(composerDraftTarget),
           // The route, not the draft target: a queued-message edit has a draft id but no route.
           open: () =>
             void (routeKind === "draft" && typeof composerDraftTarget === "string"
@@ -2282,14 +2284,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       event?.preventDefault();
       const queuedOwnerKey = attachmentTargetKey;
       const capturedDraftTarget = composerDraftTarget;
-      const capturedDetachedSend =
-        questionAttachmentTarget === null ? (captureDetachedSend?.() ?? null) : null;
+      const answeringQuestion = questionAttachmentTarget !== null;
+      const capturedDetachedSend = answeringQuestion ? null : (captureDetachedSend?.() ?? null);
       const capturedSendContext =
         capturedDetachedSend !== null
           ? (composerRef.current?.getSendContext(atPress.settings) ?? null)
           : null;
       const capturedSubmissionTarget = submissionTarget;
       submitAfterDictation((transcribedText) => {
+        // A draft promoted meanwhile already holds the transcript, and sends nothing.
+        if (!answeringQuestion && isComposerDraftPromoted(capturedDraftTarget)) return;
         const stillLive =
           composerMountedRef.current && attachmentTargetKeyRef.current === queuedOwnerKey;
         if (stillLive) {
@@ -2306,11 +2310,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         ) {
           return;
         }
-        const liveTarget = resolveLiveComposerDraftTarget(capturedDraftTarget);
-        const latestDraft =
-          liveTarget !== null
-            ? useComposerDraftStore.getState().getComposerDraft(liveTarget)
-            : null;
+        // A discarded draft sends nothing.
+        if (resolveLiveComposerDraftTarget(capturedDraftTarget) === null) return;
+        const latestDraft = useComposerDraftStore.getState().getComposerDraft(capturedDraftTarget);
         submitComposerDraft({
           prompt: transcribedText,
           submissionTarget: capturedSubmissionTarget,

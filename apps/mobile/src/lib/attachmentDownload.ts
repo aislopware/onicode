@@ -62,11 +62,13 @@ type AttachmentFileMetadata = Pick<ChatFileAttachment, "name" | "mimeType">;
 // Android chooses the receiving app by type, so a generic upload type falls back to the extension.
 function handoffMimeType(attachment: AttachmentFileMetadata): string {
   const mime = attachment.mimeType.split(";", 1)[0]?.trim() ?? "";
-  if (mime && !GENERIC_MIME_TYPES.has(mime.toLowerCase())) return mime;
   const dot = attachment.name.lastIndexOf(".");
+  const extension = dot > 0 ? attachment.name.slice(dot) : "";
+  // macOS can upload RTF as text/plain, which a viewer would show as raw markup.
+  const plainRtf = mime.toLowerCase() === "text/plain" && extension.toLowerCase() === ".rtf";
+  if (mime && !plainRtf && !GENERIC_MIME_TYPES.has(mime.toLowerCase())) return mime;
   return (
-    (dot > 0 ? hostPreviewMimeTypeFromExtension(attachment.name.slice(dot)) : null) ??
-    "application/octet-stream"
+    (extension ? hostPreviewMimeTypeFromExtension(extension) : null) ?? "application/octet-stream"
   );
 }
 

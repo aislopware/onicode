@@ -117,7 +117,7 @@ import { imageMimeType } from "@onicode/shared/image";
 import { videoMimeType } from "@onicode/shared/video";
 import { SymbolView, type AppSymbolName } from "../../components/ui/AppSymbol";
 import { textDirection } from "@onicode/shared/textDirection";
-import { useFocusEffect, useNavigation, useRoute } from "@react-navigation/native";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { useNativeWorkspaceColumnsSupported } from "../../native/NativeWorkspaceColumns";
 import { useDeviceType } from "../../native/native-layout-metrics";
 import { isDuoDevice } from "../../lib/device-type";
@@ -329,7 +329,7 @@ import { openSettings } from "../settings/settings-navigation";
 import { loopbackUrlForDevice } from "../browser/browserTabs";
 import { useLocalPreviewUrl, useOpenLocalPreview } from "../browser/useOpenLocalPreview";
 import { useSelectWorkspaceDetail } from "../layout/workspace/useSelectWorkspaceDetail";
-import { workspacePageStillShows } from "../layout/workspace/workspace-detail-selection";
+import { useWorkspacePageStillShows } from "../layout/workspace/useWorkspacePageStillShows";
 import { useMessageTimeFormatter } from "./useMessageTimeFormatter";
 
 const WIDE_MARKDOWN_BLOCK_OPTIONS = {
@@ -449,6 +449,7 @@ function AssistantForkButton(props: {
   readonly iconSize: number;
   readonly projectedItem: OrchestrationV2ProjectedTurnItem;
   readonly sourceTitle: string;
+  readonly pageStillShows: () => boolean;
 }) {
   const support = useV2ItemSupport({
     environmentId: props.environmentId,
@@ -458,8 +459,6 @@ function AssistantForkButton(props: {
   const gt = useGT();
   const forkFromRun = useAtomCommand(threadEnvironment.forkFromRun, "fork from response");
   const selectDetail = useSelectWorkspaceDetail();
-  const navigation = useNavigation();
-  const route = useRoute();
   const [busy, setBusy] = useState(false);
   const canFork = canForkProjectedAssistantItem({
     projectedItem: props.projectedItem,
@@ -509,8 +508,8 @@ function AssistantForkButton(props: {
               );
               return;
             }
-            // `route` is the page as pressed; if the user has moved on since, leave them there.
-            if (!workspacePageStillShows(navigation.getState(), route)) return;
+            // If the user has moved on from the page they pressed it on, leave them there.
+            if (!props.pageStillShows()) return;
             selectDetail({
               name: "Thread",
               params: { environmentId: props.environmentId, threadId: targetThreadId },
@@ -2117,6 +2116,8 @@ function renderFeedEntry(
     readonly markdownContentWidth: number;
     readonly contentWidth: number;
     readonly threadTitle: string;
+    /** The feed's page, since a row unmounts once it scrolls out of the list's window. */
+    readonly pageStillShows: () => boolean;
     readonly workflowOpening: WorkflowOpening | null;
     readonly userMessageGrouping: GroupedThreadFeedRow["userMessageGrouping"];
     readonly m: ReturnType<typeof useMessages>;
@@ -2813,6 +2814,7 @@ function renderFeedEntry(
                 iconSize={props.replyActionSize.icon}
                 projectedItem={message.projectedItem}
                 sourceTitle={props.threadTitle}
+                pageStillShows={props.pageStillShows}
               />
             ) : null}
             <Text className="font-oni-medium text-xs tabular-nums text-foreground-secondary">
@@ -3269,6 +3271,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   const duoColumns = useNativeWorkspaceColumnsSupported() && isDuoDevice(deviceType);
   const openPullRequest = useOpenPullRequest();
   const navigation = useNavigation();
+  const pageStillShows = useWorkspacePageStillShows();
   const openThreadLink = useOpenThreadLink(props.environmentId);
   const openLocalPreview = useOpenLocalPreview();
   const localPreviewUrl = useLocalPreviewUrl(props.environmentId);
@@ -4451,6 +4454,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
             markdownContentWidth,
             contentWidth,
             threadTitle: props.threadTitle,
+            pageStillShows,
             skills: props.skills,
             workspaceRoot: props.workspaceRoot,
             workflowOpening,

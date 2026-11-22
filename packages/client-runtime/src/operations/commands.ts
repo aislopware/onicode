@@ -1147,25 +1147,32 @@ export const promoteQueuedRun = Effect.fn("EnvironmentCommands.promoteQueuedRun"
 export const moveQueuedRunFirst = Effect.fn("EnvironmentCommands.moveQueuedRunFirst")(function* (
   input: MoveQueuedRunFirstInput,
 ) {
-  return yield* dispatch({
-    type: "queued-run.reorder",
-    commandId: yield* allocateCommandId(input),
-    threadId: input.threadId,
-    runId: input.runId,
-    beforeRunId: input.beforeRunId,
-  }).pipe(
-    // The first run can start between the tap and the command, which leaves this one first.
+  const reorder = (commandId: CommandId, beforeRunId: RunId) =>
+    dispatch({
+      type: "queued-run.reorder",
+      commandId,
+      threadId: input.threadId,
+      runId: input.runId,
+      beforeRunId,
+    });
+  return yield* reorder(yield* allocateCommandId(input), input.beforeRunId).pipe(
+    // The first run can start between the tap and the command, which leaves this one first
+    // or puts a newer run first, which this one then goes before.
     Effect.catchTags({
       OrchestrationV2DispatchCommandError: (error) =>
         getProjection(input.threadId).pipe(
+          Effect.mapError(() => error),
           Effect.flatMap((projection) => {
             const queued = getUserQueuedThreadRuns(projection);
             const first = copySorted(queued, compareQueuedRuns)[0];
-            return queued.some((run) => run.id === input.runId) && first?.id !== input.runId
-              ? Effect.fail(error)
-              : Effect.void;
+            if (!queued.some((run) => run.id === input.runId) || first?.id === input.runId) {
+              return Effect.void;
+            }
+            if (first === undefined || first.id === input.beforeRunId) return Effect.fail(error);
+            return allocateCommandId({}).pipe(
+              Effect.flatMap((commandId) => reorder(commandId, first.id)),
+            );
           }),
-          Effect.mapError(() => error),
         ),
     }),
   );

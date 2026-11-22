@@ -9,6 +9,7 @@ import ReadOnlySourcePreview from "./ReadOnlySourcePreview";
 import DocumentPages from "./DocumentPages";
 import { FileSurfaceNotice } from "./fileSurfaceChrome";
 import type { OfficeWorkerResult } from "./officePreviewProtocol";
+import { LineCappedText, lineCappedText, useMoreCharactersLabel } from "./shownText";
 
 // Saved notebooks must not load URLs or turn authored links into app actions.
 function inertNotebookMarkdown() {
@@ -48,6 +49,7 @@ export default function NotebookPreview(props: {
 }) {
   const gt = useGT();
   const messages = useMessages();
+  const more = useMoreCharactersLabel();
   const [visible, setVisible] = useState(20);
   const scroll = useRef<HTMLDivElement>(null);
   const [outputView, setOutputView] = useState(() => ({
@@ -126,7 +128,7 @@ export default function NotebookPreview(props: {
               </div>
               {cell.kind === "markdown" ? (
                 <ChatMarkdown
-                  text={cell.source}
+                  text={lineCappedText(cell.source, more)}
                   cwd={undefined}
                   parseRawHtml={false}
                   extraRemarkPlugins={NOTEBOOK_PLUGINS}
@@ -169,7 +171,7 @@ export default function NotebookPreview(props: {
                     />
                   ) : (
                     <pre className="overflow-x-auto p-4 text-xs whitespace-pre-wrap break-words">
-                      {output.text}
+                      <LineCappedText text={output.text} more={more} />
                     </pre>
                   )}
                 </div>

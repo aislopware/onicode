@@ -236,6 +236,8 @@ describe("openAttachmentInViewer", () => {
     ["notes.rtf", "application/octet-stream", "application/rtf"],
     ["notes.RTF", "", "application/rtf"],
     ["notes.rtf", "text/rtf", "text/rtf"],
+    ["notes.rtf", "text/plain", "application/rtf"],
+    ["page.html", "text/plain; charset=utf-8", "text/plain"],
     ["report.pdf", "application/pdf; name=report.pdf", "application/pdf"],
     ["blob", "application/octet-stream", "application/octet-stream"],
   ])("hands %s (%j) to the OS viewer as %s", async (name, mimeType, expected) => {
