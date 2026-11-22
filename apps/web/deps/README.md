@@ -10,6 +10,6 @@ The Words tarball comes from the [`fork/t3-words` branch](https://github.com/pin
 - `texDelimiters`: with `math`, `\(…\)` and `\[…\]` are math, as the llm-math syntax reads them.
 - `autolinkBoundaries`: end ASCII bare URLs before CJK/Arabic punctuation and keep trailing `_`/`~` when not closing emphasis.
 
-Upstream syncs bring new tarballs. To build one yourself, commit the change on `fork/t3-words`, bump `packages/words/package.json` to the next `0.2.2-t3.N` and update `t3-fork.json`'s `source`, then run `moon run words:build` (or `node scripts/build.ts && tsdown`) and `npm pack` in `packages/words`. Name the archive with the first eight characters of the source commit, such as `pierre-words-0.2.2-t3.4-7c04b7f1.tgz`, update the path in `apps/web/package.json`, and run `vp i`.
+Upstream syncs bring new tarballs. Onicode cannot push to that fork: for a change of its own, fork it, commit the change there, bump `packages/words/package.json` to the next `0.2.2-t3.N` and update `t3-fork.json`'s `source`, then run `moon run words:build` (or `node scripts/build.ts && tsdown`) and `npm pack` in `packages/words`. Name the archive with the first eight characters of the source commit, such as `pierre-words-0.2.2-t3.4-7c04b7f1.tgz`, update the path in `apps/web/package.json`, and run `vp i`.
 
 Change it through the fork, never with a pnpm patch: the next tarball would drop the patch without a trace.

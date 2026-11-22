@@ -6,6 +6,7 @@ import { create } from "zustand";
 import {
   composerTargetKey,
   type ComposerThreadTarget,
+  type DraftThreadState,
   useComposerDraftStore,
 } from "../../composerDraftStore";
 import { useStableCallback } from "../../hooks/useStableCallback";
@@ -122,6 +123,25 @@ export function removePreparingComposerImages(
   return removed;
 }
 
+/** Where a draft's thread would start; a held send captured the old place, so a move cancels it. */
+function draftPlaceChanged(
+  previous: DraftThreadState | null,
+  next: DraftThreadState | null,
+): boolean {
+  if (previous === next) return false;
+  if (!previous || !next) return true;
+  return (
+    previous.environmentId !== next.environmentId ||
+    previous.projectId !== next.projectId ||
+    previous.envMode !== next.envMode ||
+    previous.startFromOrigin !== next.startFromOrigin ||
+    previous.worktreePath !== next.worktreePath ||
+    previous.worktreeRepositories !== next.worktreeRepositories ||
+    // A local draft's branch follows the checkout; only a new worktree's base is a choice.
+    (next.envMode === "worktree" && previous.branch !== next.branch)
+  );
+}
+
 // Bumped on cancel so a send held for the cancelled images is dropped rather than released.
 const cancelGenerations = new Map<string, number>();
 
@@ -172,6 +192,7 @@ export function holdComposerSend(
   if (heldSends.has(targetKey)) return Promise.resolve({ status: "cancelled" });
   return new Promise((resolve) => {
     let draft = useComposerDraftStore.getState().getComposerDraft(draftTarget);
+    let draftThread = useComposerDraftStore.getState().getDraftThread(draftTarget);
     const settle = (result: HeldComposerSendResult) => {
       if (heldSends.get(targetKey) !== settle) return;
       heldSends.delete(targetKey);
@@ -192,9 +213,11 @@ export function holdComposerSend(
     });
     const stopWatchingDraft = useComposerDraftStore.subscribe((state) => {
       const next = state.getComposerDraft(draftTarget);
+      const nextThread = state.getDraftThread(draftTarget);
       if (
         !preparedImagesJoiningDraft &&
         (composerDraftContentChanged(draft, next) ||
+          draftPlaceChanged(draftThread, nextThread) ||
           draft?.modelSelectionByProvider !== next?.modelSelectionByProvider ||
           draft?.activeProvider !== next?.activeProvider ||
           draft?.runtimeMode !== next?.runtimeMode ||
@@ -203,6 +226,7 @@ export function holdComposerSend(
         settle({ status: "cancelled" });
       }
       draft = next;
+      draftThread = nextThread;
     });
     useHeldSendStore.setState((state) => ({
       targetKeys: { ...state.targetKeys, [targetKey]: true },

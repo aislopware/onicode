@@ -12,11 +12,18 @@ import {
   type ReactNode,
 } from "react";
 
-import { Tooltip, TooltipPopup, TooltipTrigger, useTooltipScrollTracker } from "./tooltip";
+import {
+  TOOLTIP_DELAY_MS,
+  TOOLTIP_WARM_MS,
+  Tooltip,
+  TooltipPopup,
+  TooltipTrigger,
+  useTooltipScrollTracker,
+} from "./tooltip";
 
-// Base UI's tooltip timing: open after a rest, reopen at once right after another closed.
-const OPEN_DELAY_MS = 600;
-const REOPEN_WINDOW_MS = 400;
+// The app's tooltip timing: open after a rest, reopen at once right after another closed.
+const OPEN_DELAY_MS = TOOLTIP_DELAY_MS;
+const REOPEN_WINDOW_MS = TOOLTIP_WARM_MS;
 // Time to travel from the trigger into a hoverable popup.
 const CLOSE_GRACE_MS = 100;
 

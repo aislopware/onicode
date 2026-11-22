@@ -1,8 +1,8 @@
-import { scopeThreadRef } from "@onicode/client-runtime/environment";
-import { EnvironmentId, ProviderDriverKind, ThreadId } from "@onicode/contracts";
+import { scopeProjectRef, scopeThreadRef } from "@onicode/client-runtime/environment";
+import { EnvironmentId, ProjectId, ProviderDriverKind, ThreadId } from "@onicode/contracts";
 import { expect, it } from "vite-plus/test";
 
-import { composerTargetKey, useComposerDraftStore } from "../../composerDraftStore";
+import { composerTargetKey, DraftId, useComposerDraftStore } from "../../composerDraftStore";
 import {
   addPreparingComposerImages,
   cancelHeldComposerSend,
@@ -52,6 +52,40 @@ it("holds a message send until its images join the draft, and cancels on edit, c
     addPreparingComposerImages(target, [preparingImage("later")]);
     const cancelled = holdComposerSend(draftTarget);
     cancel();
+    await expect(cancelled).resolves.toEqual({ status: "cancelled" });
+    cancelPreparingComposerImages(target);
+  }
+});
+
+it("cancels a held draft send when the draft moves machine or a new worktree's base, not when a local branch syncs", async () => {
+  const draftId = DraftId.make("draft-held-place");
+  const target = composerTargetKey(draftId);
+  const drafts = useComposerDraftStore.getState();
+  const projectA = scopeProjectRef(EnvironmentId.make("environment-a"), ProjectId.make("project"));
+  const projectB = scopeProjectRef(EnvironmentId.make("environment-b"), ProjectId.make("project"));
+  using _store = {
+    [Symbol.dispose]: () => {
+      cancelPreparingComposerImages(target);
+      drafts.clearProjectDraftThreadById(projectA, draftId);
+      drafts.clearProjectDraftThreadById(projectB, draftId);
+    },
+  };
+  drafts.setProjectDraftThreadId(projectA, draftId, { threadId: ThreadId.make("held-place") });
+  drafts.setPrompt(draftId, "check");
+
+  addPreparingComposerImages(target, [preparingImage("local")]);
+  const kept = holdComposerSend(draftId);
+  drafts.setDraftThreadContext(draftId, { branch: "synced-checkout" });
+  removePreparingComposerImages(target, new Set(["local"]));
+  await expect(kept).resolves.toEqual({ status: "ready" });
+
+  for (const move of [
+    () => drafts.setDraftThreadContext(draftId, { projectRef: projectB }),
+    () => drafts.setDraftThreadContext(draftId, { envMode: "worktree", branch: "release" }),
+  ]) {
+    addPreparingComposerImages(target, [preparingImage("moved")]);
+    const cancelled = holdComposerSend(draftId);
+    move();
     await expect(cancelled).resolves.toEqual({ status: "cancelled" });
     cancelPreparingComposerImages(target);
   }
