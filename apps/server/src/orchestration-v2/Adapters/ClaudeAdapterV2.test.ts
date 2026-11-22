@@ -1113,7 +1113,7 @@ describe("ClaudeAdapterV2 context usage", () => {
     ]);
   });
 
-  it("counts missing, negative, or non-finite usage fields as zero", () => {
+  it("counts missing, negative, non-finite, or unsafe usage fields as zero", () => {
     const partialUsage = ClaudeAdapterV2.claudeProviderTurnTokenUsage(
       {
         input_tokens: 1_200,
@@ -1130,6 +1130,25 @@ describe("ClaudeAdapterV2 context usage", () => {
       inputTokens: 1_200,
       cachedInputTokens: 0,
       outputTokens: 0,
+      reasoningOutputTokens: 0,
+      updatedAt: "2026-08-29T00:03:00.000Z",
+    });
+    const unsafeUsage = ClaudeAdapterV2.claudeProviderTurnTokenUsage(
+      {
+        input_tokens: Number.MAX_SAFE_INTEGER,
+        cache_creation_input_tokens: 2 ** 60,
+        cache_read_input_tokens: 10,
+        output_tokens: 5,
+      },
+      { maxTokens: 200_000 },
+      "2026-08-29T00:03:00.000Z",
+    );
+    assert.deepEqual(decodeProviderTurnTokenUsage(unsafeUsage), {
+      usedTokens: Number.MAX_SAFE_INTEGER,
+      maxTokens: 200_000,
+      inputTokens: Number.MAX_SAFE_INTEGER,
+      cachedInputTokens: 10,
+      outputTokens: 5,
       reasoningOutputTokens: 0,
       updatedAt: "2026-08-29T00:03:00.000Z",
     });
@@ -11822,6 +11841,27 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           delta: { stop_reason: "end_turn", stop_sequence: null },
           usage: { output_tokens: 80 },
         }),
+        // Repeated empty deltas change nothing and must not emit again.
+        usageStreamFrame({
+          type: "message_delta",
+          delta: { stop_reason: "end_turn", stop_sequence: null },
+          usage: {},
+        }),
+        // A snapshot with more input than a partial delta reported replaces it.
+        usageStreamFrame({
+          type: "message_start",
+          message: { id: "msg_partial_delta", usage: {} },
+        }),
+        usageStreamFrame({
+          type: "message_delta",
+          delta: { stop_reason: "tool_use", stop_sequence: null },
+          usage: { input_tokens: 1_000 },
+        }),
+        usageSnapshotFrame("msg_partial_delta", "00000000-0000-4000-8000-000000000678", {
+          input_tokens: 3,
+          cache_read_input_tokens: 50_000,
+          output_tokens: 20,
+        }),
         usageStreamFrame({
           type: "message_start",
           message: { id: "msg_null_usage", usage: null },
@@ -11853,6 +11893,8 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           { usedTokens: 12_345, inputTokens: 12_345, outputTokens: 0, cachedInputTokens: 0 },
           { usedTokens: 12_500, inputTokens: 12_500, outputTokens: 0, cachedInputTokens: 0 },
           { usedTokens: 12_580, inputTokens: 12_500, outputTokens: 80, cachedInputTokens: 0 },
+          { usedTokens: 1_000, inputTokens: 1_000, outputTokens: 0, cachedInputTokens: 0 },
+          { usedTokens: 50_023, inputTokens: 50_003, outputTokens: 20, cachedInputTokens: 50_000 },
           { usedTokens: 12_640, inputTokens: 12_600, outputTokens: 40, cachedInputTokens: 0 },
         ],
       );
@@ -11868,65 +11910,92 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     ),
   );
 
-  it.effect("measures a model outside the catalog against the window Claude reports", () =>
-    Effect.gen(function* () {
-      const harness = yield* makeWakeHarness;
-      const modelSelection = {
-        instanceId: ProviderInstanceId.make(ClaudeAdapterV2.CLAUDE_PROVIDER),
-        model: "gateway-model",
-      } satisfies ModelSelection;
-      assert.strictEqual(harness.runtime.getModelContextWindow?.(modelSelection), undefined);
-      yield* harness.runtime.startTurn(
-        makeClaudeTestTurnInput({
-          threadId: harness.threadId,
-          providerThread: harness.providerThread,
-          now: yield* DateTime.now,
-          attemptId: RunAttemptId.make("attempt-reported-context-window"),
-          text: "Continue.",
-          attachments: [],
-          modelSelection,
-        }),
-      );
-      const usage = { ...zeroUsage, input_tokens: 9_667, output_tokens: 2 };
-      const frames = [
-        usageStreamFrame({ type: "message_start", message: { id: "msg_gateway", usage } }),
-        makeResultFrame({
-          uuid: "00000000-0000-4000-8000-000000000680",
-          result: "OK",
-          modelUsage: {
-            "gateway-model": {
-              inputTokens: 9_667,
-              outputTokens: 2,
-              cacheReadInputTokens: 0,
-              cacheCreationInputTokens: 0,
-              webSearchRequests: 0,
-              costUSD: 0,
-              contextWindow: 1_048_576,
-              maxOutputTokens: 32_000,
+  it.effect.each([
+    { name: "a usage frame", compacted: false, windows: [null, 1_048_576], tokens: [9_669, 9_669] },
+    // An empty start frame after the boundary must not hide the compaction count.
+    {
+      name: "a compaction",
+      compacted: true,
+      windows: [null, null, 1_048_576],
+      tokens: [9_669, 400, 400],
+    },
+  ])(
+    "measures a model outside the catalog against the window Claude reports after $name",
+    ({ compacted, windows: expectedWindows, tokens }) =>
+      Effect.gen(function* () {
+        const harness = yield* makeWakeHarness;
+        const modelSelection = {
+          instanceId: ProviderInstanceId.make(ClaudeAdapterV2.CLAUDE_PROVIDER),
+          model: "gateway-model",
+        } satisfies ModelSelection;
+        assert.strictEqual(harness.runtime.getModelContextWindow?.(modelSelection), undefined);
+        yield* harness.runtime.startTurn(
+          makeClaudeTestTurnInput({
+            threadId: harness.threadId,
+            providerThread: harness.providerThread,
+            now: yield* DateTime.now,
+            attemptId: RunAttemptId.make("attempt-reported-context-window"),
+            text: "Continue.",
+            attachments: [],
+            modelSelection,
+          }),
+        );
+        const usage = { ...zeroUsage, input_tokens: 9_667, output_tokens: 2 };
+        const frames = [
+          usageStreamFrame({ type: "message_start", message: { id: "msg_gateway", usage } }),
+          ...(compacted
+            ? [
+                claudeSdkFrame({
+                  type: "system",
+                  subtype: "compact_boundary",
+                  compact_metadata: { trigger: "auto", pre_tokens: 9_669, post_tokens: 400 },
+                  uuid: "00000000-0000-4000-8000-000000000681",
+                  session_id: WAKE_NATIVE_SESSION,
+                }),
+                usageStreamFrame({
+                  type: "message_start",
+                  message: { id: "msg_gateway_after", usage: {} },
+                }),
+              ]
+            : []),
+          makeResultFrame({
+            uuid: "00000000-0000-4000-8000-000000000680",
+            result: "OK",
+            modelUsage: {
+              "gateway-model": {
+                inputTokens: 9_667,
+                outputTokens: 2,
+                cacheReadInputTokens: 0,
+                cacheCreationInputTokens: 0,
+                webSearchRequests: 0,
+                costUSD: 0,
+                contextWindow: 1_048_576,
+                maxOutputTokens: 32_000,
+              },
             },
-          },
-        }),
-      ];
-      for (const frame of frames) yield* Queue.offer(harness.sdkMessages, frame);
-      const terminal = yield* Queue.take(harness.terminalReceipts);
-      assert.equal(terminal.status, "completed");
-      const windows = harness.events.flatMap((event) =>
-        event.type === "provider_turn.updated" && event.providerTurn.tokenUsage
-          ? [event.providerTurn.tokenUsage.maxTokens]
-          : [],
-      );
-      assert.deepEqual(windows, [null, 1_048_576]);
-      assert.strictEqual(harness.runtime.getModelContextWindow?.(modelSelection), 1_048_576);
-    }).pipe(
-      Effect.provide(
-        Layer.mergeAll(
-          IdAllocator.layer,
-          McpProviderSessions.layer,
-          NodeServices.layer,
-          NodeCrypto.layer,
+          }),
+        ];
+        for (const frame of frames) yield* Queue.offer(harness.sdkMessages, frame);
+        const terminal = yield* Queue.take(harness.terminalReceipts);
+        assert.equal(terminal.status, "completed");
+        const windows = harness.events.flatMap((event) =>
+          event.type === "provider_turn.updated" && event.providerTurn.tokenUsage
+            ? [event.providerTurn.tokenUsage.maxTokens]
+            : [],
+        );
+        assert.deepEqual(windows, expectedWindows);
+        assert.deepEqual(reportedContextTokens(harness.events), tokens);
+        assert.strictEqual(harness.runtime.getModelContextWindow?.(modelSelection), 1_048_576);
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            IdAllocator.layer,
+            McpProviderSessions.layer,
+            NodeServices.layer,
+            NodeCrypto.layer,
+          ),
         ),
       ),
-    ),
   );
 
   it.effect.each([
