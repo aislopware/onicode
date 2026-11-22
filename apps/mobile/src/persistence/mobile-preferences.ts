@@ -606,7 +606,25 @@ const make = Effect.fn("MobilePreferencesStore.make")(function* () {
       }
     }
 
-    if (parsed !== null) return sanitizePreferences(parsed);
+    if (parsed !== null) {
+      const preferences = sanitizePreferences(parsed);
+      // The fallback holds the newest save when the database failed; if it is unreadable, it may
+      // hold an opt-out the database lacks. Keep reporting off and save that.
+      const fallbackUnreadable =
+        fallbackResult._tag === "Failure" || (fallbackJson !== null && fallback === null);
+      if (!fallbackUnreadable || preferences.errorReportingEnabled === false) return preferences;
+      const optedOut = { ...preferences, errorReportingEnabled: false };
+      if (databaseAvailable) {
+        yield* saveJson(yield* encode(PREFERENCES_KEY, optedOut)).pipe(
+          Effect.catch((error) =>
+            Effect.logWarning("Could not save the error reporting opt-out.").pipe(
+              Effect.annotateLogs({ error }),
+            ),
+          ),
+        );
+      }
+      return optedOut;
+    }
     // Stored preferences that could not be read may hold an opt-out this must not undo.
     const unreadable =
       !databaseAvailable ||

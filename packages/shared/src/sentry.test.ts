@@ -162,6 +162,8 @@ describe("makeSentryEffectInstrumentation logger", () => {
       yield* Effect.gen(function* () {
         yield* Effect.logError("Unhandled defect", { cause: Cause.die({ path: "/Users/ada" }) });
         yield* Effect.logError("Request failed", thrown);
+        yield* Effect.logError("Unhandled defect", { cause: Cause.die({ _tag: "Parsed" }) });
+        yield* Effect.logError("Unhandled defect", { cause: Cause.die({ _tag: "/Users/ada" }) });
       }).pipe(
         Effect.provide(Logger.layer([makeSentryEffectInstrumentation().logger])),
         Effect.ensuring(Effect.sync(() => scope.setClient(previous))),
@@ -174,6 +176,8 @@ describe("makeSentryEffectInstrumentation logger", () => {
       ).toEqual([
         ["NonErrorDefect: Defect that is not an Error: object", false],
         ["thrown", true],
+        ["NonErrorDefect: Defect that is not an Error: Parsed", false],
+        ["NonErrorDefect: Defect that is not an Error: object", false],
       ]);
     }),
   );

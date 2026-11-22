@@ -16,7 +16,8 @@ import * as MobileSecureStorage from "./mobile-secure-storage";
 
 function loadWith(options: {
   readonly stored: Option.Option<string> | "unavailable";
-  readonly secure?: Readonly<Record<string, string>>;
+  readonly secure?: Readonly<Record<string, string>> | undefined;
+  readonly secureReadFails?: boolean | undefined;
 }) {
   let stored = options.stored;
   const unavailable = Effect.fail(
@@ -38,7 +39,12 @@ function loadWith(options: {
   } as unknown as MobileDatabase.MobileDatabase["Service"];
   const secure = new Map(Object.entries(options.secure ?? {}));
   const secureStorage = MobileSecureStorage.MobileSecureStorage.of({
-    getItem: (key) => Effect.sync(() => secure.get(key) ?? null),
+    getItem: (key) =>
+      options.secureReadFails
+        ? Effect.fail(
+            new MobileSecureStorage.MobileSecureStorageError({ operation: "read", key, cause: "" }),
+          )
+        : Effect.sync(() => secure.get(key) ?? null),
     setItem: (key, value) => Effect.sync(() => void secure.set(key, value)),
     removeItem: (key) => Effect.sync(() => void secure.delete(key)),
   });
@@ -63,12 +69,15 @@ describe("MobilePreferencesStore", () => {
       const fresh = yield* loadWith({ stored: Option.none() });
       expect(fresh.loaded.errorReportingEnabled).toBeUndefined();
 
-      for (const options of [
+      const damaged: ReadonlyArray<Parameters<typeof loadWith>[0]> = [
         { stored: Option.some("{not-json") },
         { stored: Option.some(`{ "errorReportingEnabled": "no" }`) },
         { stored: Option.none(), secure: { "onicode.preferences": "{not-json" } },
         { stored: "unavailable" },
-      ] as const) {
+        { stored: Option.some("{}"), secure: { "onicode.preferences.fallback": "{not-json" } },
+        { stored: Option.some("{}"), secureReadFails: true },
+      ];
+      for (const options of damaged) {
         const result = yield* loadWith(options);
         expect(result.loaded.errorReportingEnabled).toBe(false);
         expect(result.saved.errorReportingEnabled).toBe(false);

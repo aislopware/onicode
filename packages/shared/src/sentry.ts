@@ -299,7 +299,10 @@ function defectError(defect: unknown): Error {
 
 function valueKind(value: unknown): string {
   if (typeof value !== "object" || value === null) return value === null ? "null" : typeof value;
-  if ("_tag" in value && typeof value._tag === "string") return value._tag;
+  // A tag is code, but only an identifier-shaped one is trusted not to carry data.
+  if ("_tag" in value && typeof value._tag === "string" && /^[A-Za-z]\w{0,63}$/u.test(value._tag)) {
+    return value._tag;
+  }
   return Array.isArray(value) ? "array" : "object";
 }
 

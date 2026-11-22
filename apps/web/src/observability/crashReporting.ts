@@ -58,6 +58,8 @@ function makeReplayIntegration(): ReplayIntegration | undefined {
     blockAllMedia: true,
     // A new window must not resume a replay recorded on an address this one has not checked.
     stickySession: false,
+    // The buffer restarts at each 60s snapshot; an error just after one still gets its replay.
+    minReplayDuration: 0,
     // rrweb records addresses before any attribute masking, and file links put paths in them.
     block: ["a[href]", "iframe", "webview"],
     beforeAddRecordingEvent: scrub,
@@ -77,21 +79,11 @@ function makeReplayIntegration(): ReplayIntegration | undefined {
 
 const addressIsPrivate = () => addressHasQuery(window.location.hash, window.location.search);
 
-// Sentry drops a replay shorter than its 4.999s `minReplayDuration`.
-const MIN_REPLAY_MS = 5_500;
-// Sentry starts buffering inside init.
-let bufferStartedAt = Date.now();
-
-function startBuffering(replay: ReplayIntegration): void {
-  replay.startBuffering();
-  bufferStartedAt = Date.now();
-}
-
 /** Buffers a new replay unless the current address may carry a prompt. */
 function restartBuffering(replay: ReplayIntegration): void {
   // Without a flush, stop drops the buffer synchronously, so nothing recorded here is sent.
   void replay.stop({ flush: false });
-  if (!addressIsPrivate()) startBuffering(replay);
+  if (!addressIsPrivate()) replay.startBuffering();
 }
 
 /**
@@ -103,7 +95,7 @@ function makeErrorReplaySender(replay: ReplayIntegration): (replayId: unknown) =
   return (replayId) => {
     if (sending) return;
     sending = true;
-    const send = () => {
+    setTimeout(() => {
       // A stopped replay would restart in full recording here, possibly on a private address.
       if (replayId === undefined || replay.getReplayId() !== replayId) {
         sending = false;
@@ -116,8 +108,7 @@ function makeErrorReplaySender(replay: ReplayIntegration): (replayId: unknown) =
           sending = false;
           restartBuffering(replay);
         });
-    };
-    setTimeout(send, Math.max(0, bufferStartedAt + MIN_REPLAY_MS - Date.now()));
+    });
   };
 }
 
@@ -125,9 +116,13 @@ function pauseReplayOnAddressesWithQuery(replay: ReplayIntegration): void {
   const sync = () => {
     const paused = addressIsPrivate();
     if (paused && replay.getReplayId() !== undefined) void replay.stop({ flush: false });
-    else if (!paused && replay.getReplayId() === undefined) startBuffering(replay);
+    else if (!paused && replay.getReplayId() === undefined) replay.startBuffering();
   };
-  // The router's hash history uses pushState, which fires no hashchange.
-  window.navigation?.addEventListener("currententrychange", sync);
+  // The router's hash history uses pushState, which fires no hashchange. Sentry can restart an
+  // expired replay a few microtasks after the address changed, so check once more after that.
+  window.navigation?.addEventListener("currententrychange", () => {
+    sync();
+    setTimeout(sync);
+  });
   sync();
 }
