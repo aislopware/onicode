@@ -3255,3 +3255,4 @@ d5497d66cc	take	adapted: Onicode's live-state notify throttle (#219) now passes 
 501e39d54a	take	taken as is
 1e78f37618	take	adapted: Onicode calls useSidebarDrafts earlier (hook order for the compiler row cache); passed draftTerminalLabels there; row re-render guard green
 b23f1e8af9	take	adapted: turn/start deadline wraps inside Onicode's refused-request additionalContext restore (an unanswered request keeps the context, outcome unknown)
+a985332c44	take	kept Onicode's probedPathDirectory (bare-drive PATH fix) in the now-async Windows PATH scan
