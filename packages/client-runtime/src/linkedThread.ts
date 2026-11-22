@@ -99,11 +99,13 @@ export async function connectLinkedEnvironment(options: {
       () => null,
     ),
   );
-  let host: string | null = null;
-  for (const probe of probes) {
-    host = await probe;
-    if (host !== null) break;
-  }
+  const preferredHost = async () => {
+    for (const probe of probes) {
+      const reached = await probe;
+      if (reached !== null) return reached;
+    }
+    return null;
+  };
   if (pairing.type === "unsupported") {
     // Only an address reached over the tailnet signs in, and it need not be the first that answers.
     for (const [index, url] of urls.entries()) {
@@ -111,8 +113,9 @@ export async function connectLinkedEnvironment(options: {
         return { type: "connected" };
       }
     }
-    return { type: "manual", label, host: host ?? urls[0] ?? null };
+    return { type: "manual", label, host: (await preferredHost()) ?? urls[0] ?? null };
   }
+  const host = await preferredHost();
   if (host === null) return { type: "unreachable", label };
   return (await options.pair({ host, pairingCode: pairing.credential }))
     ? { type: "connected" }

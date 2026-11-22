@@ -110,9 +110,16 @@ test(
       // the same label would find two.
       try {
         await onicode.open("/settings/connections");
+        // The map is the default view; its rows carry no actions menu.
         const list = screen.getByRole("button", "List", { exact: true });
-        if (await list.isVisible()) await list.tap();
-        if (await moreActions.isVisible()) {
+        const appears = (locator: typeof list) =>
+          locator.waitFor({ timeout: 15_000 }).then(
+            () => true,
+            () => false,
+          );
+        if (await appears(list)) await list.tap();
+        // A pairing still finishing lands here; its row may appear only after the page renders.
+        if (await appears(moreActions)) {
           await moreActions.tap();
           await screen.getByRole("menuitem", "Remove from this device…").tap();
           await screen.getByRole("button", "Confirm").tap();
