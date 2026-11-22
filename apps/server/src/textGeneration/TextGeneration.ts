@@ -129,25 +129,31 @@ export const make = Effect.gen(function* () {
           (selected.status === "error" &&
             (!selected.installed || selected.auth.status === "unauthenticated"))));
     if (unusable || exhaustedUsageWindow(selected, now, selection.model)) {
-      const fallback = fallbackTextGenerationModelSelection(
-        settings.providerInstances,
-        (instanceId, driver, model) => {
-          const provider = snapshots.find((candidate) => candidate.instanceId === instanceId);
-          return (
-            instanceId !== selection.instanceId &&
-            provider?.enabled === true &&
-            resolveProjectProviderInstanceEnabled(settings, projectId ?? null, instanceId) &&
-            provider.installed &&
-            provider.auth.status !== "unauthenticated" &&
-            provider.status !== "error" &&
-            isProviderAvailable(provider) &&
-            isProviderTextGenerationCapable(provider) &&
-            (operation !== "generateReviewGuide" || INVESTIGATING_DRIVERS.has(driver)) &&
-            !exhaustedUsageWindow(provider, now, model)
-          );
-        },
-        { defaultModelSelection: settings.defaultModelSelection },
-      );
+      const rejected = selection;
+      const fallbackWhere = (sameInstance: boolean) =>
+        fallbackTextGenerationModelSelection(
+          settings.providerInstances,
+          (instanceId, driver, model) => {
+            const provider = snapshots.find((candidate) => candidate.instanceId === instanceId);
+            return (
+              (sameInstance ? model !== rejected.model : instanceId !== rejected.instanceId) &&
+              provider?.enabled === true &&
+              resolveProjectProviderInstanceEnabled(settings, projectId ?? null, instanceId) &&
+              provider.installed &&
+              provider.auth.status !== "unauthenticated" &&
+              provider.status !== "error" &&
+              isProviderAvailable(provider) &&
+              isProviderTextGenerationCapable(provider) &&
+              provider.models.find((candidate) => candidate.slug === model)
+                ?.supportsTextGeneration !== false &&
+              (operation !== "generateReviewGuide" || INVESTIGATING_DRIVERS.has(driver)) &&
+              !exhaustedUsageWindow(provider, now, model)
+            );
+          },
+          { defaultModelSelection: settings.defaultModelSelection },
+        );
+      // Another instance first; the rejected instance's other models only when none qualifies.
+      const fallback = fallbackWhere(false) ?? fallbackWhere(true);
       // A provider the user turned off is never run, even when nothing else can take over.
       if (fallback === null && off) {
         return yield* new TextGenerationError({
