@@ -2101,9 +2101,10 @@ const make = Effect.gen(function* () {
     waitTimedOut: boolean,
     acknowledgeTerminal: boolean,
   ): Effect.fn.Return<OrchestratorMcpDelegateTaskResult, OrchestratorMcpFailure> {
+    const there = task.result === null ? yield* remoteDelegation.runStatus(scope, task) : null;
     const status: OrchestratorMcpDelegateTaskResult["status"] =
       task.result === null
-        ? (yield* remoteDelegation.runStatus(scope, task)) === "starting"
+        ? there?.status === "starting"
           ? "starting"
           : "running"
         : task.status === "completed" ||
@@ -2146,7 +2147,7 @@ const make = Effect.gen(function* () {
           ),
         );
     }
-    return {
+    const result = {
       taskId: task.id,
       childThreadId: null,
       ...(task.remoteChild === undefined
@@ -2176,6 +2177,10 @@ const make = Effect.gen(function* () {
       pendingApproval: null,
       waitTimedOut,
     } satisfies OrchestratorMcpDelegateTaskResult;
+    // A child waiting on a question or approval there needs an answer, not a wake.
+    return terminal || task.completionDelivery?.state === "disposed" || there?.asking === true
+      ? result
+      : { ...result, next: ORCHESTRATOR_MCP_RUNNING_TASK_NEXT };
   });
 
   const waitForTask = Effect.fn("OrchestratorMcpService.waitForTask")(

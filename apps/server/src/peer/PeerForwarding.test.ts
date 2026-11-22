@@ -351,9 +351,11 @@ const makeLaptop = Effect.gen(function* () {
         Layer.mock(ProjectCloneTracker.ProjectCloneTracker)({}),
         Layer.mock(SecretRequests.SecretRequests)({}),
         ServerSettings.layerTest(),
-        // No thread here delegated to the box, so a send there is no follow-up.
+        // No thread here delegated to the box, so a send there is no follow-up, and a wait
+        // there wakes no one here.
         Layer.mock(RemoteDelegation.RemoteDelegation)({
           followUp: (_scope, _environmentId, _request, sent) => Effect.succeed(sent),
+          waited: (_scope, _environmentId, waited) => Effect.succeed(waited),
         }),
         Layer.mock(PeerLinkRequests.PeerLinkRequests)({}),
       ),

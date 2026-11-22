@@ -149,22 +149,63 @@ describe("renderCliShim", () => {
   );
 
   it("extracts the AppImage where it cannot be mounted", () => {
-    const { shim } = fakeAppImage(false);
-    const result = run(shim, ["--version"], { APPIMAGE_EXTRACT_AND_RUN: "1" });
+    const { root, shim } = fakeAppImage(false);
+    const unmounts = NodePath.join(root, "unmounts");
+    const fusermount = NodePath.join(root, "fusermount-wrapper");
+    writeExecutable(fusermount, `#!/bin/sh\necho "$*" >>'${unmounts}'\n`);
+    const result = run(shim, ["--version"], {
+      APPIMAGE_EXTRACT_AND_RUN: "1",
+      FUSERMOUNT_PROG: fusermount,
+    });
     expect(result.status).toBe(3);
     expect(result.stdout).toMatch(
       /squashfs-root\/resources\/app\.asar\/apps\/server\/dist\/bin\.mjs/,
     );
+    expect(NodeFS.existsSync(unmounts)).toBe(false);
   });
 
   // The server skips its compile cache only under APPIMAGE; each mount path is new.
   it("tells the CLI it runs from the mounted AppImage", () => {
-    const { appImage, shim } = fakeAppImage();
-    const result = run(shim, ["--version"]);
+    const { root, appImage, shim } = fakeAppImage();
+    // Hosts without fusermount on PATH name it in FUSERMOUNT_PROG, which the runtime reads too.
+    const unmounts = NodePath.join(root, "unmounts");
+    const fusermount = NodePath.join(root, "fusermount-wrapper");
+    writeExecutable(fusermount, `#!/bin/sh\necho "$*" >>'${unmounts}'\n`);
+    const result = run(shim, ["--version"], { FUSERMOUNT_PROG: fusermount });
     expect(result.status).toBe(3);
     expect(result.stdout).toContain(`appimage=${appImage}`);
+    // Without setsid it extracts the image instead, which leaves nothing to unmount.
+    const unmounted = NodeFS.existsSync(unmounts) ? NodeFS.readFileSync(unmounts, "utf8") : null;
+    expect(unmounted === null ? null : /^-uz \//.test(unmounted)).toBe(hasSetsid ? true : null);
     const closedStdin = NodeChildProcess.spawnSync("sh", ["-c", '"$0" --version <&-', shim]);
     expect(closedStdin.status).toBe(3);
+  });
+
+  it("passes the caller's stdin and descriptors to the CLI", () => {
+    const { root, shim } = fakeAppImage(
+      true,
+      '#!/bin/sh\nread -r bootstrap <&9\nread -r input\necho "bootstrap=$bootstrap stdin=$input"\n',
+    );
+    const bootstrap = NodePath.join(root, "bootstrap");
+    NodeFS.writeFileSync(bootstrap, "envelope\n");
+    const result = NodeChildProcess.spawnSync(
+      "sh",
+      ["-c", '"$0" --bootstrap-fd 9 9<"$1"', shim, bootstrap],
+      { encoding: "utf8", input: "typed\n" },
+    );
+    expect(result.stdout).toBe("bootstrap=envelope stdin=typed\n");
+    // With no descriptor free to hold stdin, the CLI keeps every one and reads no input.
+    const crowded = NodeChildProcess.spawnSync(
+      "sh",
+      [
+        "-c",
+        '"$0" --bootstrap-fd 9 3<"$1" 4<"$1" 5<"$1" 6<"$1" 7<"$1" 8<"$1" 9<"$1"',
+        shim,
+        bootstrap,
+      ],
+      { encoding: "utf8", input: "typed\n" },
+    );
+    expect(crowded.stdout).toBe("bootstrap=envelope stdin=\n");
   });
 
   it("keeps the install's Onicode home under sudo, unless one is set", () => {

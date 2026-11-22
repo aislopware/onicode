@@ -5,12 +5,14 @@ import {
   OrchestratorMcpCapabilitiesInput,
   OrchestratorMcpCapabilitiesResult,
   OrchestratorMcpFailure,
+  ORCHESTRATOR_MCP_RUNNING_TASK_NEXT,
   type OrchestratorMcpDelegateTaskInput,
   type OrchestratorMcpTaskCancelResult,
   type OrchestratorMcpThreadRun,
   type OrchestratorMcpThreadSendInput,
   type OrchestratorMcpThreadSendResult,
   type OrchestratorMcpThreadTimelineItem,
+  type OrchestratorMcpThreadWaitResult,
   type OrchestrationV2RemoteTaskChild,
   type OrchestrationV2Subagent,
   type ProjectId,
@@ -113,6 +115,16 @@ export class RemoteDelegation extends Context.Service<
       sent: OrchestratorMcpThreadSendResult,
     ) => Effect.Effect<OrchestratorMcpThreadSendResult, OrchestratorMcpFailure>;
     /**
+     * A `oni_thread_wait` there that timed out on the thread of one of this
+     * thread's open tasks: its follower wakes the caller here when it ends,
+     * which the other side cannot know, so the caller is told not to wait.
+     */
+    readonly waited: (
+      scope: McpInvocationContext.McpInvocationScope,
+      environmentId: EnvironmentId,
+      waited: OrchestratorMcpThreadWaitResult,
+    ) => Effect.Effect<OrchestratorMcpThreadWaitResult>;
+    /**
      * Stops the task's thread there, then completes it here as cancelled. A
      * task that already has its result keeps it; its thread there is still
      * stopped, as cancelling a local task stops follow-up work on its child.
@@ -126,13 +138,17 @@ export class RemoteDelegation extends Context.Service<
       },
     ) => Effect.Effect<OrchestratorMcpTaskCancelResult, OrchestratorMcpFailure>;
     /**
-     * The status of the task's run there, or null when it cannot be read: an
-     * unreachable machine reads as no news rather than failing the read here.
+     * The status of the task's run there and whether its thread there waits on
+     * a question or approval, or null when it cannot be read: an unreachable
+     * machine reads as no news rather than failing the read here.
      */
     readonly runStatus: (
       scope: ThreadScope,
       task: OrchestrationV2Subagent,
-    ) => Effect.Effect<OrchestratorMcpThreadRun["status"] | null>;
+    ) => Effect.Effect<{
+      readonly status: OrchestratorMcpThreadRun["status"] | null;
+      readonly asking: boolean;
+    } | null>;
     /**
      * Follows every open remote task until it ends, including after a
      * restart, and a finished one again when a Stop here owes it a stop there.
@@ -550,6 +566,30 @@ const make = Effect.gen(function* () {
     // Only this call follows the task it records, so a caller that goes away must not stop it
     // in between.
     Effect.uninterruptible,
+  );
+
+  const waited: RemoteDelegation["Service"]["waited"] = Effect.fn("RemoteDelegation.waited")(
+    function* (scope, environmentId, result) {
+      const thread = scope.thread;
+      if (thread === undefined || !result.timedOut || result.status === "waiting") return result;
+      const parent = yield* threads
+        .getThreadRecords(thread.threadId, ["subagents"])
+        .pipe(Effect.orElseSucceed(() => undefined));
+      const open = parent?.subagents.find(
+        (task) =>
+          task.origin === "app_owned" &&
+          task.remoteChild?.environmentId === environmentId &&
+          task.remoteChild.threadId === result.threadId &&
+          task.result === null &&
+          task.completionDelivery?.state !== "disposed",
+      )?.remoteChild;
+      if (open === undefined) return result;
+      // A child waiting on a question or approval there needs an answer, not a wake.
+      const there = yield* readThere({ ...scope, thread }, open);
+      return there?.asking === true
+        ? result
+        : { ...result, next: ORCHESTRATOR_MCP_RUNNING_TASK_NEXT };
+    },
   );
 
   /**
@@ -1079,21 +1119,27 @@ const make = Effect.gen(function* () {
     },
   );
 
-  const runStatus = Effect.fn("RemoteDelegation.runStatus")(
-    function* (scope: ThreadScope, task: OrchestrationV2Subagent) {
-      const remote = task.remoteChild;
-      if (remote?.runId === undefined) return null;
+  const readThere = Effect.fn("RemoteDelegation.readThere")(
+    function* (scope: ThreadScope, remote: OrchestrationV2RemoteTaskChild) {
       const read = yield* forwarding.readThread(
         followScope(scope.thread, remote),
         remote.environmentId,
         { threadId: remote.threadId, limit: 1, runLimit: 50 },
       );
-      return read.recentRuns.find((run) => run.runId === remote.runId)?.status ?? null;
+      return {
+        status: read.recentRuns.find((run) => run.runId === remote.runId)?.status ?? null,
+        asking: read.thread.pendingRequestCount > 0,
+      };
     },
-    // A forwarded read has no deadline of its own; a silent peer must not stall task_status.
+    // A forwarded read has no deadline of its own; a silent peer must not stall the caller.
     Effect.timeout(Duration.seconds(3)),
     Effect.orElseSucceed(() => null),
   );
+
+  const runStatus: RemoteDelegation["Service"]["runStatus"] = (scope, task) =>
+    task.remoteChild?.runId === undefined
+      ? Effect.succeed(null)
+      : readThere(scope, task.remoteChild);
 
   const start: RemoteDelegation["Service"]["start"] = () =>
     forkParked(
@@ -1121,7 +1167,7 @@ const make = Effect.gen(function* () {
       }).pipe(Effect.ignoreCause({ log: true })),
     );
 
-  return RemoteDelegation.of({ delegate, followUp, cancel, runStatus, start });
+  return RemoteDelegation.of({ delegate, followUp, waited, cancel, runStatus, start });
 });
 
 /** A defect, logged, as a failure, so a retry covers it. */
