@@ -35,13 +35,13 @@ type TooltipActionsRef = RefObject<TooltipPrimitive.Root.Actions | null>;
 
 // The compiler freezes context values; update hovered tooltips through calls instead of shared ref writes.
 function createTooltipHoverTracker() {
-  let hovered: { trigger: HTMLElement; actionsRef: TooltipActionsRef } | null = null;
+  let hovered: { trigger: HTMLElement; owner: object; close: () => void } | null = null;
   return {
-    hover(trigger: HTMLElement, actionsRef: TooltipActionsRef) {
-      hovered = { trigger, actionsRef };
+    hover(trigger: HTMLElement, owner: object, close: () => void) {
+      hovered = { trigger, owner, close };
     },
-    release(actionsRef: TooltipActionsRef) {
-      if (hovered?.actionsRef === actionsRef) hovered = null;
+    release(owner: object) {
+      if (hovered?.owner === owner) hovered = null;
     },
     dismissUnfocused() {
       const tooltip = hovered;
@@ -51,8 +51,7 @@ function createTooltipHoverTracker() {
         return;
       }
       hovered = null;
-      // Base UI also cancels delayed hover opens through this action.
-      tooltip.actionsRef.current?.close();
+      tooltip.close();
     },
   };
 }
@@ -110,7 +109,8 @@ function TooltipTrigger(props: TooltipPrimitive.Trigger.Props) {
       {...props}
       onMouseEnter={(event) => {
         props.onMouseEnter?.(event);
-        tracker.hover(event.currentTarget, actionsRef);
+        // Base UI also cancels delayed hover opens through this action.
+        tracker.hover(event.currentTarget, actionsRef, () => actionsRef.current?.close());
       }}
     />
   );
@@ -229,6 +229,9 @@ function TooltipRow({
   );
 }
 
+/** The enclosing TooltipScrollDismissArea's tracker, for triggers that bypass TooltipTrigger. */
+const useTooltipScrollTracker = () => use(TooltipScrollContext);
+
 export {
   TOOLTIP_DELAY_MS,
   TOOLTIP_WARM_MS,
@@ -239,4 +242,5 @@ export {
   TooltipDescription,
   TooltipRow,
   TooltipScrollDismissArea,
+  useTooltipScrollTracker,
 };

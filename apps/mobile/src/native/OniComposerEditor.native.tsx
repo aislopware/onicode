@@ -1,6 +1,7 @@
 import { PASTED_TEXT_ATTACHMENT_THRESHOLD_BYTES } from "@onicode/client-runtime/text-paste";
 import { PROVIDER_SEND_TURN_MAX_INPUT_CHARS } from "@onicode/contracts";
 import { collectComposerInlineTokens } from "@onicode/shared/composerInlineTokens";
+import { markdownMathRanges } from "@onicode/shared/markdownMath";
 import { composerContextEditorTokens, composerSkillLabels } from "../lib/composerContext";
 import { DEFAULT_COMPOSER_ENTER_BEHAVIOR } from "../lib/composerEnterBehavior";
 import { useComposerModelTokens } from "./useComposerModelTokens";
@@ -161,11 +162,12 @@ export function ComposerEditor({
   // an abandoned render from leaking a trailing token into the next one.
   const [confirmedTokens, setConfirmedTokens] = useState(() => ({
     value: props.value,
-    tokens: collectComposerInlineTokens(props.value),
+    tokens: collectComposerInlineTokens(props.value, { findMath: markdownMathRanges }),
   }));
   let tokens = confirmedTokens.tokens;
   if (confirmedTokens.value !== props.value) {
     tokens = collectComposerInlineTokens(props.value, {
+      findMath: markdownMathRanges,
       preserveTrailingFrom: confirmedTokens.tokens,
     });
     setConfirmedTokens({ value: props.value, tokens });

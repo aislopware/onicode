@@ -14,7 +14,7 @@ import {
   IDLE_COMPACTION_TITLES,
 } from "@onicode/client-runtime/user-message";
 import type { HandoffTimelineRun } from "@onicode/client-runtime/handoff";
-import { renderCodexDirectivesForCopy } from "@onicode/shared/codexMarkdownDirectives";
+import { renderCodexDirectivesForCopy } from "~/markdown/markdownText";
 import {
   commandDisplayText,
   commandProgramName,

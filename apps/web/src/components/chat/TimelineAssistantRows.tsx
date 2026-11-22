@@ -1,4 +1,4 @@
-import { shouldPreserveAssistantLineBreaks } from "@onicode/shared/markdownPipeline";
+import { shouldPreserveAssistantLineBreaks } from "@onicode/shared/assistantInsights";
 import { MessageId, type RunId, type TurnItemId } from "@onicode/contracts";
 import { canForkProjectedAssistantItem } from "@onicode/client-runtime/state/thread-workflows";
 import { agentWorkingDirectories } from "@onicode/client-runtime/workspace-basename-lookup";
