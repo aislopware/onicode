@@ -726,6 +726,27 @@ describe("pull request detail decoding", () => {
     expect(detail.checks.map((check) => [check.name, check.status])).toEqual([
       ["test (ubuntu)", "success"],
     ]);
+
+    // Branch protection can name `test`, which another job's `test (ubuntu)` does not report.
+    const required = detailOf([
+      inWorkflow({
+        name: "test",
+        workflowName: "CI",
+        runNumber: 41,
+        conclusion: "CANCELLED",
+        isRequired: true,
+      }),
+      inWorkflow({
+        name: "test (ubuntu)",
+        workflowName: "CI",
+        runNumber: 42,
+        conclusion: "SUCCESS",
+      }),
+    ]);
+    expect(required.checks.map((check) => [check.name, check.status])).toContainEqual([
+      "test",
+      "cancelled",
+    ]);
   });
 
   it("keeps a cancelled check when the newer run is another workflow with the same name", () => {

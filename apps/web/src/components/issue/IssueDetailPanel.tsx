@@ -1,7 +1,6 @@
 import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import {
   issueEventSentence,
-  issueLinkHost,
   issueWriteAccess,
   linksChangeRequestsOnItsHost,
 } from "@onicode/client-runtime/issue-presentation";
@@ -43,7 +42,8 @@ import {
 import { msg, T, useGT, useMessages, Var } from "gt-react";
 
 import { anchorOpenHandlers, useOpenLink } from "~/browser/useOpenLink";
-import { useContext, useState, type ReactNode } from "react";
+import { useOpenPrLink } from "~/lib/openPullRequestLink";
+import { useContext, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { m } from "~/i18n/messages";
@@ -348,13 +348,13 @@ function LinkedPullRequestRow({
   link,
   scope,
   onSelect,
-  openLink,
+  openPrLink,
 }: {
   link: IssueLinkedPullRequest;
   /** The issue's own repository, left off a pull request that lives in it. */
   scope: string;
   onSelect: (() => void) | null;
-  openLink: ReturnType<typeof useOpenLink>;
+  openPrLink: ReturnType<typeof useOpenPrLink>;
 }) {
   const body = (
     <>
@@ -385,7 +385,7 @@ function LinkedPullRequestRow({
       target="_blank"
       rel="noopener noreferrer"
       className={className}
-      {...anchorOpenHandlers(openLink, link.url)}
+      onClick={(event) => openPrLink(event, link.url)}
     >
       {body}
     </a>
@@ -400,8 +400,8 @@ function IssueEventText({
 }: {
   event: IssueEvent;
   sentence: string;
-  /** Opens the source beside this issue, and says whether it did; if not, the link goes to the host. */
-  onOpen: (source: IssueEventReference) => boolean;
+  /** Opens the source, and says whether it did; if not, the link goes to the host. */
+  onOpen: (source: IssueEventReference, click: ReactMouseEvent<HTMLElement>) => boolean;
 }) {
   const source = event.reference;
   const at = event.detail === null ? -1 : sentence.indexOf(event.detail);
@@ -413,7 +413,7 @@ function IssueEventText({
         tone="muted"
         render={<a href={source.url} target="_blank" rel="noopener noreferrer" />}
         onClick={(click) => {
-          if (!click.metaKey && !click.ctrlKey && onOpen(source)) click.preventDefault();
+          if (!click.metaKey && !click.ctrlKey && onOpen(source, click)) click.preventDefault();
         }}
       >
         {event.detail}
@@ -444,6 +444,7 @@ export function IssueDetailPanel({
   const gt = useGT();
   const messages = useMessages();
   const openLink = useOpenLink(threadRef);
+  const openPrLink = useOpenPrLink(threadRef ?? undefined);
   const detailAtom = issueEnvironment.detail({ environmentId, input: reference });
   const detailQuery = useEnvironmentQuery(detailAtom);
   const registry = useContext(RegistryContext);
@@ -493,32 +494,28 @@ export function IssueDetailPanel({
   const tracker = issueTrackerPresentation(detail.tracker);
   const currentState = issueStatePresentation(detail.state);
 
-  const linkHost = (repository: string) => {
-    const host = issueLinkHost(detail, reference.host, repository);
-    return host === undefined ? {} : { host };
-  };
-  // Another tracker's pull request links open on their host's site, which no host here serves.
+  // Another tracker's pull request links open by their URL, as their host may not be the issue's.
   const selectPullRequest =
     !linksChangeRequestsOnItsHost(detail) || !onSelectPullRequest
       ? null
       : (pullRequest: { readonly repository: string; readonly number: number }) =>
           onSelectPullRequest({
             projectId: reference.projectId,
-            ...linkHost(pullRequest.repository),
+            host: detail.host,
             repository: pullRequest.repository,
             number: pullRequest.number,
           });
-  const openEventSource = (source: IssueEventReference) => {
+  const openEventSource = (source: IssueEventReference, click: ReactMouseEvent<HTMLElement>) => {
     if (source.kind === "pull-request") {
-      if (!selectPullRequest) return false;
-      selectPullRequest(source);
+      if (selectPullRequest) selectPullRequest(source);
+      else openPrLink(click, source.url);
       return true;
     }
     if (!onSelectIssue) return false;
     onSelectIssue({
       projectId: reference.projectId,
       tracker: reference.tracker,
-      ...linkHost(source.repository),
+      host: reference.host ?? detail.host,
       scope: source.repository,
       key: String(source.number),
       url: source.url,
@@ -877,7 +874,7 @@ export function IssueDetailPanel({
                   key={`${link.repository}#${link.number}`}
                   link={link}
                   scope={detail.scope}
-                  openLink={openLink}
+                  openPrLink={openPrLink}
                   onSelect={selectPullRequest ? () => selectPullRequest(link) : null}
                 />
               ))}

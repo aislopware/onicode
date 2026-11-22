@@ -40,15 +40,6 @@ function isAtLeastAsNew(candidate: string | null, kept: string | null): boolean 
   );
 }
 
-/** Stands for the checks a read cut short left out, one of which could have failed. */
-export const unlistedChecks = (host: string): PullRequestCheck => ({
-  name: "Unlisted checks",
-  status: "neutral",
-  description: `${host} could not list all of this pull request's checks.`,
-  url: null,
-  placeholder: true,
-});
-
 export function rollupCheckStatuses(
   statuses: ReadonlyArray<PullRequestCheckStatus>,
 ): PullRequestChecksState | null {

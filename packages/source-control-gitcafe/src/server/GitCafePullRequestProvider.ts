@@ -3,7 +3,6 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { randomUuidV4 } from "@onicode/provider-core/server/randomUuid";
-import { unlistedChecks } from "@onicode/source-control-core/server/pullRequestChecks";
 import {
   IsoDateTime,
   NonNegativeInt,
@@ -1044,10 +1043,8 @@ export const make = Effect.gen(function* () {
         mergeCommitSha: pull.mergeResultOid || pull.providerMerge?.mergeCommitOid || null,
         ...settledMerge(pull),
         reviewers: Json.toReviewers(listed, input.host),
-        checks:
-          checks !== null && checks.next !== null
-            ? [...checkList, unlistedChecks("GitCafe")]
-            : checkList,
+        checks: checkList,
+        ...(checks !== null && checks.next !== null && { checksTruncated: true }),
         ...(checksState === null ? {} : { checksState }),
         mergeability:
           status.merge.conflicts === "conflicting"

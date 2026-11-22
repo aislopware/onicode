@@ -3171,6 +3171,23 @@ layer("GitLabPullRequestCli.layer", (it) => {
       }),
     );
 
+    it.effect("keeps the pipeline check where the stages are a newer pipeline's", () =>
+      Effect.gen(function* () {
+        // A push between the two reads starts pipeline 10 after the detail named pipeline 9.
+        const newer = JSON.parse(stages);
+        newer.data.project.mergeRequest.headPipeline.id = "gid://gitlab/Ci::Pipeline/10";
+        answer(Effect.succeed(output(JSON.stringify(newer))));
+
+        const detail = yield* read(true);
+
+        expect(detail.checks.map((check) => check.name)).toEqual([
+          "Pipeline",
+          "publish",
+          "child-pipeline",
+        ]);
+      }),
+    );
+
     it.effect("asks for no stages when the caller only needs the merge request", () =>
       Effect.gen(function* () {
         answer(Effect.succeed(output(stages)));

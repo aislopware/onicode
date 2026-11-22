@@ -332,6 +332,7 @@ describe("decodePipelineStageChecksJson", () => {
               stages === null
                 ? null
                 : {
+                    id: "gid://gitlab/Ci::Pipeline/9",
                     path: "/fork/web/-/pipelines/9",
                     stages: { nodes: stages, pageInfo: { hasNextPage } },
                   },
@@ -399,6 +400,7 @@ describe("decodePipelineStageChecksJson", () => {
     );
     const checks = stages?.checks;
 
+    expect(stages?.pipelineId).toBe(9);
     expect(stages?.unlistedStages).toEqual([]);
     expect(checks?.map((check) => [check.name, check.status, check.url])).toEqual([
       ["build / compile", "success", "https://gitlab.example.com/acme/web/-/jobs/2"],
@@ -445,6 +447,7 @@ describe("decodePipelineStageChecksJson", () => {
         ),
       ),
     ).toEqual({
+      pipelineId: 9,
       checks: [
         {
           name: "test",

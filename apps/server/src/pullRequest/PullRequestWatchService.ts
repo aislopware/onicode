@@ -138,15 +138,15 @@ const make = Effect.gen(function* () {
     let checksPendingAtStart: boolean | undefined;
     let checksStateAtStart: PullRequestChecksState | undefined;
     if (watching && !wasWatching) {
+      const reference = {
+        projectId: thread.projectId,
+        host: target.host,
+        repository: target.repository,
+        number: target.number,
+      };
       const read = yield* pullRequests
         .summary(
-          {
-            projectId: thread.projectId,
-            host: target.host,
-            repository: target.repository,
-            number: target.number,
-            allowStale: false,
-          },
+          { ...reference, allowStale: false },
           { recoverTransientFailure: false, bypassCache: true },
         )
         .pipe(
@@ -158,29 +158,26 @@ const make = Effect.gen(function* () {
         );
       if (read?.state === "merged" || read?.state === "closed") return alreadyEnded(read.state);
       // A summary can take the host's own rollup, which counts a cancelled check a newer run
-      // replaced; a complete check read settles it.
-      const checksState =
+      // replaced; a fresh, complete check read settles it.
+      const confirmed =
         read?.checksState === "failing"
-          ? yield* pullRequests
-              .detail({
-                projectId: thread.projectId,
-                host: target.host,
-                repository: target.repository,
-                number: target.number,
-                allowStale: false,
-              })
-              .pipe(
-                Effect.map((detail) =>
+          ? yield* pullRequests.invalidate({ reference }).pipe(
+              Effect.andThen(pullRequests.detail({ ...reference, allowStale: false })),
+              Effect.map((detail) => ({
+                state: detail.state,
+                checksState:
+                  detail.checksTruncated === true ||
                   detail.checks.some((check) => check.placeholder === true)
                     ? read.checksState
-                    : (rollupCheckStatuses(detail.checks.map((check) => check.status)) ??
-                      read.checksState),
-                ),
-                Effect.catchTags({
-                  PullRequestOperationError: () => Effect.succeed(read.checksState),
-                }),
-              )
-          : read?.checksState;
+                    : rollupCheckStatuses(detail.checks.map((check) => check.status)),
+              })),
+              Effect.catchTags({ PullRequestOperationError: () => Effect.undefined }),
+            )
+          : undefined;
+      if (confirmed?.state === "merged" || confirmed?.state === "closed") {
+        return alreadyEnded(confirmed.state);
+      }
+      const checksState = confirmed === undefined ? read?.checksState : confirmed.checksState;
       checksPendingAtStart =
         checksState === undefined || checksState === null ? undefined : checksState === "pending";
       checksStateAtStart = checksState ?? undefined;

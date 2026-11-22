@@ -49,6 +49,7 @@ export function evaluatePullRequestWatch(
     | "capabilities"
     | "headSha"
     | "checks"
+    | "checksTruncated"
     | "mergeability"
     | "viewer"
     | "author"
@@ -77,14 +78,16 @@ export function evaluatePullRequestWatch(
   let checksPending = headMoved ? false : (watch.checksPending ?? watch.checksAwaitedSince != null);
   // An unavailable approval read cannot establish success or that no checks exist.
   const unread = detail.checks.some((check) => check.placeholder === true);
+  const cutShort = detail.checksTruncated === true;
   const checks = detail.checks.filter((check) => check.placeholder !== true);
   const failed = checks.filter(isFailedCheck);
   const awaiting = checks.filter((check) => check.status === "action-required");
   const failedBefore = failedChecks;
   const newlyFailed = failed.filter((check) => !failedBefore.includes(check.name));
-  // A failed check a later read leaves out did not run again: hosts replace and rename checks,
-  // and a read they could not finish carries a placeholder instead.
+  // A failed check a complete read leaves out did not run again: hosts replace and rename checks.
+  // A read cut short may have left it out, and one they could not finish carries a placeholder.
   const missing = (name: string) => !checks.some((check) => check.name === name);
+  const dropped = cutShort && failedBefore.some(missing);
   if (checks.length > 0) {
     // A run awaiting approval waits on a person, like a review, so only running checks count.
     // An unfinished baseline read keeps the seed below for the next one.
@@ -103,7 +106,7 @@ export function evaluatePullRequestWatch(
     // A read the host could not finish keeps the failures it left out.
     failedChecks = [
       ...new Set([
-        ...(unread ? failedBefore.filter(missing) : []),
+        ...(unread || cutShort ? failedBefore.filter(missing) : []),
         ...failed.map((check) => check.name),
       ]),
     ];
@@ -161,7 +164,7 @@ export function evaluatePullRequestWatch(
     const running =
       awaitingApproval.length > 0 ||
       checks.some((check) => check.status === "pending" || check.status === "action-required");
-    const finished = !unread && !running;
+    const finished = !unread && !running && !dropped;
     const settled = !running && failed.length === 0;
     // Once one wake is owed, it stays owed until every check has finished, whatever the checks
     // do in between. A failed check that runs again owes it too; one that shares its name with

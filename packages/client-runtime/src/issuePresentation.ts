@@ -9,20 +9,6 @@ export function linksChangeRequestsOnItsHost(issue: Pick<IssueDetail, "tracker">
   return sourceControlClients.find(issue.tracker) !== undefined;
 }
 
-/**
- * The host to name when opening a repository an issue links. An issue opened without one is in
- * the project's own repository, which needs none, and naming it there would key a second view.
- */
-export function issueLinkHost(
-  issue: Pick<IssueDetail, "host" | "scope">,
-  openedOn: string | undefined,
-  repository: string,
-): string | undefined {
-  return (
-    openedOn ?? (repository.toLowerCase() === issue.scope.toLowerCase() ? undefined : issue.host)
-  );
-}
-
 /** "completed" → "Completed"; a reason the tracker spells with a dash reads as words. */
 function issueCloseReasonLabel(reason: string): string {
   const words = reason.replace(/[-_]+/g, " ").trim();

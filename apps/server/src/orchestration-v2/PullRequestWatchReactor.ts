@@ -100,6 +100,8 @@ interface LastRead {
   readonly at: number;
   readonly fingerprint: string;
   readonly inFlight: boolean;
+  /** When a read the host could not finish was taken; it settles nothing until read again. */
+  readonly unreadAt: number | null;
   readonly remarksComplete: boolean;
   readonly watches: ReadonlySet<string>;
   readonly status: string | null;
@@ -204,7 +206,8 @@ function planRead(
       activity ||
       checksDue ||
       last.status !== fingerprint.status ||
-      (last.inFlight && fingerprint.coversDetail !== true),
+      (last.inFlight && fingerprint.coversDetail !== true) ||
+      (last.unreadAt !== null && now - last.unreadAt >= QUIET_REREAD_MS),
     activity,
   };
 }
@@ -760,10 +763,10 @@ export const make = Effect.gen(function* () {
           ? (threadTails.get(group.key)?.fetchedAt ?? now)
           : last.at,
       fingerprint: group.fingerprint,
-      // A read the host could not finish settles nothing, so it counts as running checks.
       inFlight:
         detail.mergeability === "unknown" ||
-        detail.checks.some((check) => check.status === "pending" || check.placeholder === true),
+        detail.checks.some((check) => check.status === "pending"),
+      unreadAt: detail.checks.some((check) => check.placeholder === true) ? now : null,
       remarksComplete: plan.activity ? remarks !== null : (last?.remarksComplete ?? false),
       watches: new Set(group.targets.map(watchKey)),
       status: fingerprint?.status ?? null,

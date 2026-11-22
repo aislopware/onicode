@@ -1,6 +1,5 @@
 import { SourceControlProviderKind } from "@onicode/contracts";
 import { removeAgentCredits } from "@onicode/source-control-core/server/mergeMessage";
-import { unlistedChecks } from "@onicode/source-control-core/server/pullRequestChecks";
 import * as Cache from "effect/Cache";
 import * as Duration from "effect/Duration";
 import * as Equal from "effect/Equal";
@@ -383,14 +382,11 @@ export const make = Effect.gen(function* () {
           Effect.map(([workflowApprovals, unfinishedRuns]) => ({
             ...pullRequest,
             author: withAvatar(pullRequest.author, new Map(), input.host),
-            checks: [
-              ...withWorkflowApprovals(
-                withUnfinishedWorkflowRuns(pullRequest.checks, unfinishedRuns),
-                workflowApprovals.runs,
-                workflowApprovals.unavailable,
-              ),
-              ...(pullRequest.checksTruncated ? [unlistedChecks("GitHub")] : []),
-            ],
+            checks: withWorkflowApprovals(
+              withUnfinishedWorkflowRuns(pullRequest.checks, unfinishedRuns),
+              workflowApprovals.runs,
+              workflowApprovals.unavailable,
+            ),
             ...(workflowApprovals.unavailable
               ? {}
               : { workflowApprovalsRequired: workflowApprovals.runs.length }),

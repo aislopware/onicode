@@ -2,7 +2,6 @@ import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import { StackActions, useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import {
   issueEventSentence,
-  issueLinkHost,
   linksChangeRequestsOnItsHost,
 } from "@onicode/client-runtime/issue-presentation";
 import { createIssueCommentPager } from "@onicode/client-runtime/state/issues";
@@ -22,6 +21,7 @@ import { T, useGT, useMessages, Var } from "gt-react-native";
 import { useContext, useState } from "react";
 import { Platform, Pressable, Share, View } from "react-native";
 import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
+import { useNavigateToPullRequest } from "../../native/useOpenPullRequest";
 import { KeyboardStickyView } from "react-native-keyboard-controller";
 
 import { RelativeTime } from "../../components/RelativeTime";
@@ -254,22 +254,15 @@ function IssueIdentity(props: {
   );
 }
 
-function linkHost(
-  issue: Pick<IssueDetail, "host" | "scope">,
-  params: IssueParams,
-  repository: string,
-): { readonly host?: string } {
-  const host = issueLinkHost(issue, params.host, repository);
-  return host === undefined ? {} : { host };
-}
-
 function LinkedPullRequests(props: {
   readonly params: IssueParams;
-  readonly issue: Pick<IssueDetail, "tracker" | "host" | "scope">;
+  readonly issue: Pick<IssueDetail, "tracker" | "host">;
   readonly links: ReadonlyArray<IssueLinkedPullRequest>;
 }) {
   const gt = useGT();
   const navigation = useNavigation();
+  const navigateToPullRequest = useNavigateToPullRequest();
+  // Another tracker's links open by their URL, as their host may not be the issue's.
   const inApp = linksChangeRequestsOnItsHost(props.issue);
   return (
     <View className="gap-2">
@@ -295,10 +288,10 @@ function LinkedPullRequests(props: {
                       projectId: props.params.projectId,
                       repository: link.repository,
                       number: link.number,
-                      ...linkHost(props.issue, props.params, link.repository),
+                      host: props.issue.host,
                     }),
                   )
-                : void tryOpenExternalUrl(link.url)
+                : void navigateToPullRequest(link.url, props.params)
             }
             className="flex-row items-center gap-2 rounded-2xl bg-grouped-card p-3 active:opacity-70"
           >
@@ -435,12 +428,13 @@ function IssueEventRow({
   event,
 }: {
   readonly params: IssueParams;
-  readonly issue: Pick<IssueDetail, "tracker" | "host" | "scope">;
+  readonly issue: Pick<IssueDetail, "tracker" | "host">;
   readonly event: IssueEvent;
 }) {
   const gt = useGT();
   const messages = useMessages();
   const navigation = useNavigation();
+  const navigateToPullRequest = useNavigateToPullRequest();
   const sentence = issueEventSentence(event, messages);
   const source = event.reference;
   const at = event.detail === null ? -1 : sentence.indexOf(event.detail);
@@ -452,7 +446,7 @@ function IssueEventRow({
           environmentId: params.environmentId,
           projectId: params.projectId,
           tracker: params.tracker,
-          ...linkHost(issue, params, target.repository),
+          host: params.host ?? issue.host,
           scope: target.repository,
           issueKey: String(target.number),
         }),
@@ -464,11 +458,11 @@ function IssueEventRow({
           projectId: params.projectId,
           repository: target.repository,
           number: target.number,
-          ...linkHost(issue, params, target.repository),
+          host: issue.host,
         }),
       );
     } else {
-      void tryOpenExternalUrl(target.url);
+      void navigateToPullRequest(target.url, params);
     }
   };
   return (
