@@ -86,18 +86,25 @@ export function SharedTooltipProvider({ children }: { children: ReactNode }) {
   const [api] = useState<SharedTooltipApi>(() => ({
     show(anchor, content, immediate) {
       clearTimer();
+      // The first show mounts the root closed and opens it in a later commit: a root that mounts
+      // open skips Base UI's enter phase and slides in from the window's top-left corner.
+      const mounting = current.current === null;
+      if (mounting) commit({ ...content, anchor, open: false });
       const open = current.current?.open === true;
       const reopen = performance.now() - lastClosedAt.current < REOPEN_WINDOW_MS;
-      if (immediate || open || reopen) {
+      if (!mounting && (immediate || open || reopen)) {
         commit({ ...content, anchor, open: true });
         return;
       }
       pending.current = { ...content, anchor, open: true };
-      timer.current = setTimeout(() => {
-        const next = pending.current;
-        pending.current = null;
-        if (next) commit(next);
-      }, OPEN_DELAY_MS);
+      timer.current = setTimeout(
+        () => {
+          const next = pending.current;
+          pending.current = null;
+          if (next) commit(next);
+        },
+        mounting && immediate ? 0 : OPEN_DELAY_MS,
+      );
     },
     refresh(anchor, content) {
       if (pending.current?.anchor === anchor) {

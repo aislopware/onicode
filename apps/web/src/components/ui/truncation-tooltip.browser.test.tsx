@@ -2,6 +2,7 @@ import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
+import { watchEnterPhase } from "../../../test/enterPhase";
 import { render } from "../../../test/render";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./tooltip";
 import { TruncationTooltip } from "./truncation-tooltip";
@@ -31,9 +32,11 @@ it("shows cut-off text in full on hover, and nothing for text that fits or expla
     </div>,
   );
   const tipText = () => document.querySelector("[data-truncation-tooltip]")?.textContent;
+  using enterPhase = watchEnterPhase("[data-truncation-tooltip]");
 
   await userEvent.hover(screen.getByTestId("cut"));
   await vi.waitFor(() => expect(tipText()).toBe(LONG));
+  expect(enterPhase.entered).toBe(true);
 
   await userEvent.hover(screen.getByTestId("fits"));
   await vi.waitFor(() => expect(tipText()).toBeUndefined());

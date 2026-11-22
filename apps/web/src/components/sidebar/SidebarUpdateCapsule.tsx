@@ -7,7 +7,7 @@ import {
   DownloadIcon,
   TriangleAlertIcon,
 } from "lucide-react";
-import { useState, useSyncExternalStore, type ReactNode } from "react";
+import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 
 import type { MessageResolver } from "~/i18n/messages";
 import { useMediaQuery } from "~/hooks/useMediaQuery";
@@ -204,12 +204,18 @@ export function SidebarUpdateCapsule({
     view.glyph !== "downloading";
   const restart = run.localVersion === null ? onRestart : undefined;
   // The restart is seconds away and "Later" lives in the popup, so the countdown brings it up.
-  const [open, setOpen] = useState(run.phase === "countdown");
+  const [open, setOpen] = useState(false);
   const [phaseSeen, setPhaseSeen] = useState(run.phase);
   if (phaseSeen !== run.phase) {
     setPhaseSeen(run.phase);
     if (run.phase === "countdown") setOpen(true);
   }
+  const [countdownAtMount] = useState(run.phase === "countdown");
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- a popover that mounts open skips Base UI's enter phase and slides in from the window corner, so it opens after one closed commit
+  useEffect(() => {
+    // oxlint-disable-next-line react/set-state-in-effect -- Base UI needs one closed commit first.
+    if (countdownAtMount) setOpen(true);
+  }, [countdownAtMount]);
 
   const headline = view.slow
     ? gt("{summary}. {machine}: {status}, {elapsed}", {

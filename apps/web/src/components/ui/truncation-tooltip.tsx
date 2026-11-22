@@ -55,7 +55,6 @@ export function visibleText(element: HTMLElement): string {
 }
 
 interface CutOffTip {
-  readonly id: number;
   readonly text: string;
   readonly code: boolean;
   readonly instant: boolean;
@@ -76,7 +75,6 @@ export function TruncationTooltip() {
     let pointerX = 0;
     let timer: number | undefined;
     let closedAt = Number.NEGATIVE_INFINITY;
-    let nextId = 0;
 
     const close = () => {
       window.clearTimeout(timer);
@@ -90,9 +88,7 @@ export function TruncationTooltip() {
       const rect = element.getBoundingClientRect();
       // Above the text, at the pointer: a wide row would otherwise put it far from the eye.
       const x = atPointer ? Math.min(rect.right, Math.max(rect.left, pointerX)) : rect.left;
-      nextId += 1;
       setTip({
-        id: nextId,
         text,
         code: /mono/iu.test(getComputedStyle(element).fontFamily),
         instant,
@@ -154,21 +150,24 @@ export function TruncationTooltip() {
     };
   }, []);
 
-  if (!tip) return null;
+  // The root stays mounted: one that mounts already open skips Base UI's enter phase and slides
+  // in from the window's top-left corner.
   return (
-    <Tooltip key={tip.id} open={open} onOpenChange={setOpen}>
-      <TooltipPopup
-        anchor={tip.anchor}
-        side="top"
-        variant={tip.code ? "code" : "default"}
-        className={cn(
-          tip.instant && "duration-0",
-          tip.text.length > 80 && "font-normal leading-normal text-pretty",
-        )}
-        data-truncation-tooltip
-      >
-        <span className="line-clamp-[12] whitespace-pre-line">{tip.text}</span>
-      </TooltipPopup>
+    <Tooltip open={open && tip !== null} onOpenChange={setOpen}>
+      {tip ? (
+        <TooltipPopup
+          anchor={tip.anchor}
+          side="top"
+          variant={tip.code ? "code" : "default"}
+          className={cn(
+            tip.instant && "duration-0",
+            tip.text.length > 80 && "font-normal leading-normal text-pretty",
+          )}
+          data-truncation-tooltip
+        >
+          <span className="line-clamp-[12] whitespace-pre-line">{tip.text}</span>
+        </TooltipPopup>
+      ) : null}
     </Tooltip>
   );
 }
