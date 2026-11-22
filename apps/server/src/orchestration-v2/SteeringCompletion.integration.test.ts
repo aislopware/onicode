@@ -1110,6 +1110,23 @@ it.effect("sends a selected held message once and preserves the remaining queue 
         })
         .pipe(Effect.flip);
       assert.equal(busy._tag, "OrchestratorDispatchError");
+      // A move sent before the selected run started lands after it: the moved run goes first.
+      yield* orchestrator.dispatch({
+        type: "queued-run.reorder",
+        commandId: CommandId.make("move-before-selected"),
+        threadId,
+        runId: before.runs.find(
+          (run) => run.userMessageId === MessageId.make("message:queued-last"),
+        )!.id,
+        beforeRunId: selected.id,
+      });
+      assert.deepEqual(
+        (yield* orchestrator.getThreadProjection(threadId)).runs
+          .filter((run) => run.status === "queued")
+          .toSorted((left, right) => (left.queuePosition ?? 0) - (right.queuePosition ?? 0))
+          .map((run) => run.userMessageId),
+        [MessageId.make("message:queued-last"), MessageId.make("message:queued-first")],
+      );
     }).pipe(Effect.provide(layer));
   }),
 );

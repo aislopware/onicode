@@ -1120,6 +1120,8 @@ it.effect.each([
   "Claude cancels it twice",
   "the Claude process exits",
   "the server restarts",
+  // Each promotion is sent into the turn while the steer and any earlier promotion are unread.
+  "the server restarts after both queued messages are sent now",
   "the user sends it now",
   // Claude's read commits outside the thread lock, between Send now's plan and its commit.
   "Claude reads it while the user sends it now",
@@ -1251,12 +1253,12 @@ it.effect.each([
             event.payload.id === runId &&
             event.payload.status === status,
         );
-      const pending = () =>
+      const pending = (messageId = steerId) =>
         watch(
           (event) =>
             event.type === "turn-item.updated" &&
             event.payload.type === "user_message" &&
-            event.payload.messageId === steerId &&
+            event.payload.messageId === messageId &&
             event.payload.status === "pending",
         );
       const answer = (offer: SDKUserMessage) =>
@@ -1750,11 +1752,40 @@ it.effect.each([
       yield* send("steer", { type: "steer_active", targetRunId: parent.id });
       yield* worker.drain();
       yield* Fiber.join(unread);
-      yield* send("after", { type: "queue_after_active" }, "claude-opus-4-1");
+      const promotesBoth =
+        outcome === "the server restarts after both queued messages are sent now";
+      // Sent now on another model, "after" would change the turn's model instead of waiting unread.
+      yield* send(
+        "after",
+        { type: "queue_after_active" },
+        promotesBoth ? undefined : "claude-opus-4-1",
+      );
       assert.deepEqual(
         offers.map((offer) => offer.priority),
         [undefined, "next"],
       );
+      if (promotesBoth) {
+        for (const id of ["before", "after"]) {
+          const run = (yield* queued).find(
+            (candidate) => candidate.userMessageId === MessageId.make(id),
+          )!;
+          // A person's steer commits read; Claude's report that it waits unread lands after.
+          const unreadPromotion = yield* pending(MessageId.make(id));
+          yield* orchestrator.dispatch({
+            type: "queued-message.promote-to-steer",
+            commandId: CommandId.make(`promote-${id}`),
+            threadId,
+            queuedRunId: run.id,
+            targetRunId: parent.id,
+          });
+          yield* worker.drain();
+          yield* Fiber.join(unreadPromotion);
+        }
+        assert.deepEqual(
+          offers.map((offer) => offer.priority),
+          [undefined, "next", "next", "next"],
+        );
+      }
 
       if (outcome === "Claude cancels it twice") {
         // The run-end reaction starts the next run outside the worker, so drain after it commits.
@@ -2061,12 +2092,13 @@ it.effect.each([
       });
       yield* orchestrator.recoverDelegatedTasks;
       yield* worker.drain();
+      // Sent now, "before" still goes ahead of the steer sent while it was queued.
       assert.deepEqual(yield* queuedOrder, [
         [MessageId.make("before"), true],
         [steerId, true],
         [MessageId.make("after"), true],
       ]);
-      assert.equal(offers.length, 2);
+      assert.equal(offers.length, promotesBoth ? 4 : 2);
     }).pipe(
       Effect.provide(
         ProviderReplayHarness.layerWithRegistry(
