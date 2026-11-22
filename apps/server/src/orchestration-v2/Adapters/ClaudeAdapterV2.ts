@@ -33,6 +33,8 @@ import {
   claudeLedgerDelta,
   claudeModelLedger,
   claudeReportedContextWindows,
+  claudeTokenCount,
+  claudeTokenSum,
   normalizeClaudeTurnTokenUsage,
   type ClaudeLedgerUsage,
   type ClaudeModelLedger,
@@ -314,27 +316,15 @@ function claudeReportedContextLimits(
     "maxTokens" | "autoCompactThreshold" | "isAutoCompactEnabled"
   >,
 ): ClaudeContextLimits | undefined {
-  if (!(usage.maxTokens > 0)) return undefined;
+  const maxTokens = claudeTokenCount(usage.maxTokens);
+  if (maxTokens === undefined || maxTokens <= 0) return undefined;
+  const autoCompactThreshold = claudeTokenCount(usage.autoCompactThreshold);
   return {
-    maxTokens: usage.maxTokens,
-    ...(usage.isAutoCompactEnabled && usage.autoCompactThreshold !== undefined
-      ? { autoCompactThreshold: usage.autoCompactThreshold }
+    maxTokens,
+    ...(usage.isAutoCompactEnabled && autoCompactThreshold !== undefined && autoCompactThreshold > 0
+      ? { autoCompactThreshold }
       : {}),
   };
-}
-
-function optionalClaudeUsageTokenCount(value: unknown): number | undefined {
-  if (typeof value !== "number" || value < 0) return undefined;
-  const count = Math.round(value);
-  return Number.isSafeInteger(count) ? count : undefined;
-}
-
-// Token schemas take safe integers only; a malformed proxy frame must not fail ingestion.
-function safeClaudeTokenSum(...counts: ReadonlyArray<number>): number {
-  return Math.min(
-    counts.reduce((total, count) => total + count, 0),
-    Number.MAX_SAFE_INTEGER,
-  );
 }
 
 function claudeMessageInputTokens(usage: {
@@ -342,27 +332,26 @@ function claudeMessageInputTokens(usage: {
   readonly cache_creation_input_tokens?: number | null | undefined;
   readonly cache_read_input_tokens?: number | null | undefined;
 }): number {
-  return safeClaudeTokenSum(
-    optionalClaudeUsageTokenCount(usage.input_tokens) ?? 0,
-    optionalClaudeUsageTokenCount(usage.cache_creation_input_tokens) ?? 0,
-    optionalClaudeUsageTokenCount(usage.cache_read_input_tokens) ?? 0,
+  return claudeTokenSum(
+    claudeTokenCount(usage.input_tokens) ?? 0,
+    claudeTokenCount(usage.cache_creation_input_tokens) ?? 0,
+    claudeTokenCount(usage.cache_read_input_tokens) ?? 0,
   );
 }
 
-function sameClaudeUsageCounts(left: ClaudeMessageUsage, right: ClaudeMessageUsage): boolean {
-  return claudeUsageCountFields.every(
-    (field) =>
-      (optionalClaudeUsageTokenCount(left[field]) ?? 0) ===
-      (optionalClaudeUsageTokenCount(right[field]) ?? 0),
-  );
-}
-
-const claudeUsageCountFields = [
+const CLAUDE_USAGE_COUNT_FIELDS = [
   "input_tokens",
   "cache_creation_input_tokens",
   "cache_read_input_tokens",
   "output_tokens",
 ] as const;
+type ClaudeUsageCountField = (typeof CLAUDE_USAGE_COUNT_FIELDS)[number];
+
+function reportedClaudeUsageFields(usage: {
+  readonly [field in ClaudeUsageCountField]?: number | null | undefined;
+}): ReadonlyArray<ClaudeUsageCountField> {
+  return CLAUDE_USAGE_COUNT_FIELDS.filter((field) => claudeTokenCount(usage[field]) !== undefined);
+}
 
 export function claudeProviderTurnTokenUsage(
   usage: {
@@ -377,8 +366,8 @@ export function claudeProviderTurnTokenUsage(
   requestedAt?: DateTime.Utc,
 ) {
   const inputTokens = claudeMessageInputTokens(usage);
-  const outputTokens = optionalClaudeUsageTokenCount(usage.output_tokens) ?? 0;
-  const cachedInputTokens = optionalClaudeUsageTokenCount(usage.cache_read_input_tokens) ?? 0;
+  const outputTokens = claudeTokenCount(usage.output_tokens) ?? 0;
+  const cachedInputTokens = claudeTokenCount(usage.cache_read_input_tokens) ?? 0;
   const promptCacheTtlMs = claudePromptCacheTtlMs(usage.cache_creation);
   // The cache lifetime starts with the request, not when its response ends.
   const promptCacheExpiresAt =
@@ -386,7 +375,7 @@ export function claudeProviderTurnTokenUsage(
       ? undefined
       : DateTime.formatIso(DateTime.add(requestedAt, { milliseconds: promptCacheTtlMs }));
   return {
-    usedTokens: safeClaudeTokenSum(inputTokens, outputTokens),
+    usedTokens: claudeTokenSum(inputTokens, outputTokens),
     maxTokens: limits.maxTokens,
     inputTokens,
     cachedInputTokens,
@@ -416,21 +405,17 @@ function mergeClaudeStreamUsage(
   return {
     ...current,
     input_tokens:
-      optionalClaudeUsageTokenCount(delta.input_tokens) ??
-      optionalClaudeUsageTokenCount(current.input_tokens) ??
-      0,
+      claudeTokenCount(delta.input_tokens) ?? claudeTokenCount(current.input_tokens) ?? 0,
     cache_creation_input_tokens:
-      optionalClaudeUsageTokenCount(delta.cache_creation_input_tokens) ??
-      optionalClaudeUsageTokenCount(current.cache_creation_input_tokens) ??
+      claudeTokenCount(delta.cache_creation_input_tokens) ??
+      claudeTokenCount(current.cache_creation_input_tokens) ??
       null,
     cache_read_input_tokens:
-      optionalClaudeUsageTokenCount(delta.cache_read_input_tokens) ??
-      optionalClaudeUsageTokenCount(current.cache_read_input_tokens) ??
+      claudeTokenCount(delta.cache_read_input_tokens) ??
+      claudeTokenCount(current.cache_read_input_tokens) ??
       null,
     output_tokens:
-      optionalClaudeUsageTokenCount(delta.output_tokens) ??
-      optionalClaudeUsageTokenCount(current.output_tokens) ??
-      0,
+      claudeTokenCount(delta.output_tokens) ?? claudeTokenCount(current.output_tokens) ?? 0,
   };
 }
 export const CLAUDE_DEFAULT_INSTANCE_ID = defaultInstanceIdForDriver(CLAUDE_PROVIDER);
@@ -5594,17 +5579,19 @@ interface ActiveClaudeTurnContext {
       { readonly startedAt: DateTime.Utc; readonly ordinal: number; text: string }
     >;
   };
-  // Snapshots repeat message_start input, sometimes as zeros, so they only fill gaps in streamed usage.
-  // Without start input (some proxies), deltas may carry part of it and a fuller snapshot wins.
+  // Snapshots repeat message_start input, sometimes as zeros, so they only fill gaps in streamed usage:
+  // all of it while streamed input is 0, else only counts no frame of the message reported (proxies).
   // Compaction clears usage without forgetting the root request.
   // `requestedAt` starts the request's prompt cache lifetime.
   streamUsage: {
     readonly messageId: string;
-    readonly startReportedInput: boolean;
+    readonly reported: Set<ClaudeUsageCountField>;
     requestedAt?: DateTime.Utc;
     usage: ClaudeMessageUsage | null;
   } | null;
   compactionTokens: number | undefined;
+  // Repeated frames (empty proxy deltas) must not re-send an identical meter reading.
+  lastContextUsageKey: string | undefined;
   readonly toolCalls: Map<string, ActiveClaudeToolCall>;
   // A successful status can precede the boundary that supplies its token counts.
   compaction: Extract<OrchestrationV2TurnItem, { type: "compaction" }> | null;
@@ -7075,6 +7062,14 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             if (claudeMessageInputTokens(usage) <= 0) return;
             context.compactionTokens = undefined;
           }
+          const usageKey = [
+            ...Object.entries(tokenUsage)
+              .filter(([field]) => field !== "updatedAt")
+              .map(([field, value]) => `${field}=${String(value)}`),
+            `model=${context.executedModel ?? ""}`,
+          ].join(",");
+          if (usageKey === context.lastContextUsageKey) return;
+          context.lastContextUsageKey = usageKey;
           yield* emitProviderEvent({
             type: "provider_turn.updated",
             driver: CLAUDE_PROVIDER,
@@ -11848,7 +11843,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               const usage: ClaudeMessageUsage = event.message.usage ?? {};
               context.streamUsage = {
                 messageId: event.message.id,
-                startReportedInput: claudeMessageInputTokens(usage) > 0,
+                reported: new Set(reportedClaudeUsageFields(usage)),
                 usage,
               };
               yield* emitContextUsage(context, usage, true);
@@ -11856,10 +11851,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               const usage: typeof event.usage | null | undefined = event.usage;
               const stream = context.streamUsage;
               if (stream?.usage && usage != null) {
-                const merged = mergeClaudeStreamUsage(stream.usage, usage);
-                const changed = !sameClaudeUsageCounts(stream.usage, merged);
-                stream.usage = merged;
-                if (changed) yield* emitContextUsage(context, merged);
+                stream.usage = mergeClaudeStreamUsage(stream.usage, usage);
+                for (const field of reportedClaudeUsageFields(usage)) stream.reported.add(field);
+                yield* emitContextUsage(context, stream.usage);
               }
             } else if (
               event.type === "content_block_start" &&
@@ -12209,10 +12203,10 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             forgetSteerNotes(context);
             if (context.streamUsage !== null) context.streamUsage.usage = null;
             const postTokens = message.compact_metadata.post_tokens;
+            const postTokenCount = claudeTokenCount(postTokens);
+            const beforeTokenCount = claudeTokenCount(message.compact_metadata.pre_tokens);
             const afterTokenCount =
-              typeof postTokens === "number" && Number.isFinite(postTokens) && postTokens > 0
-                ? Math.round(postTokens)
-                : undefined;
+              postTokenCount !== undefined && postTokenCount > 0 ? postTokenCount : undefined;
             context.compactionTokens = afterTokenCount;
             if (afterTokenCount !== undefined) yield* emitContextUsage(context, afterTokenCount);
             yield* emitProviderEvent({
@@ -12224,9 +12218,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 title: "Context compacted",
                 completedAt: compaction.completedAt ?? now,
                 updatedAt: now,
-                ...(message.compact_metadata.pre_tokens === undefined
-                  ? {}
-                  : { beforeTokenCount: message.compact_metadata.pre_tokens }),
+                ...(beforeTokenCount === undefined ? {} : { beforeTokenCount }),
                 ...(afterTokenCount === undefined ? {} : { afterTokenCount }),
               },
             });
@@ -12350,23 +12342,43 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               if (stream === null || stream.messageId !== message.message.id) {
                 context.streamUsage = {
                   messageId: message.message.id,
-                  startReportedInput: claudeMessageInputTokens(snapshotUsage) > 0,
+                  reported: new Set(reportedClaudeUsageFields(snapshotUsage)),
                   usage: snapshotUsage,
                 };
                 yield* emitContextUsage(context, snapshotUsage);
-              } else if (
-                stream.usage !== null &&
-                claudeMessageInputTokens(snapshotUsage) > claudeMessageInputTokens(stream.usage) &&
-                (!stream.startReportedInput || claudeMessageInputTokens(stream.usage) <= 0)
-              ) {
-                stream.usage = {
-                  ...snapshotUsage,
-                  output_tokens: Math.max(
-                    optionalClaudeUsageTokenCount(snapshotUsage.output_tokens) ?? 0,
-                    optionalClaudeUsageTokenCount(stream.usage.output_tokens) ?? 0,
-                  ),
-                };
-                yield* emitContextUsage(context, stream.usage);
+              } else if (stream.usage !== null) {
+                const current = stream.usage;
+                const cacheCreation = current.cache_creation ?? snapshotUsage.cache_creation;
+                if (
+                  claudeMessageInputTokens(current) <= 0 &&
+                  claudeMessageInputTokens(snapshotUsage) > 0
+                ) {
+                  stream.usage = {
+                    ...snapshotUsage,
+                    ...(cacheCreation == null ? {} : { cache_creation: cacheCreation }),
+                    output_tokens: Math.max(
+                      claudeTokenCount(snapshotUsage.output_tokens) ?? 0,
+                      claudeTokenCount(current.output_tokens) ?? 0,
+                    ),
+                  };
+                } else {
+                  const gaps = reportedClaudeUsageFields(snapshotUsage).filter(
+                    (field) => !stream.reported.has(field),
+                  );
+                  if (gaps.length > 0) {
+                    stream.usage = {
+                      ...current,
+                      ...(cacheCreation == null ? {} : { cache_creation: cacheCreation }),
+                      ...Object.fromEntries(
+                        gaps.map((field) => [field, claudeTokenCount(snapshotUsage[field])]),
+                      ),
+                    };
+                  }
+                }
+                for (const field of reportedClaudeUsageFields(snapshotUsage)) {
+                  stream.reported.add(field);
+                }
+                if (stream.usage !== current) yield* emitContextUsage(context, stream.usage);
               }
             }
             const parentToolUseId = message.parent_tool_use_id;
@@ -14595,6 +14607,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               },
               streamUsage: null,
               compactionTokens: undefined,
+              lastContextUsageKey: undefined,
               toolCalls: new Map(),
               compaction: null,
               ignoredTaskIds: new Set(),

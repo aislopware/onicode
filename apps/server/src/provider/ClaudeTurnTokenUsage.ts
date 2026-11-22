@@ -1,10 +1,18 @@
 import type { SDKResultMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { RuntimeTurnState, TurnTokenUsage } from "@onicode/contracts";
 
-function finiteNonNegativeInteger(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0
-    ? Math.round(value)
-    : undefined;
+/** Token schemas take safe integers only, so a malformed proxy count is treated as missing. */
+export function claudeTokenCount(value: unknown): number | undefined {
+  if (typeof value !== "number" || value < 0) return undefined;
+  const count = Math.round(value);
+  return Number.isSafeInteger(count) ? count : undefined;
+}
+
+export function claudeTokenSum(...counts: ReadonlyArray<number>): number {
+  return Math.min(
+    counts.reduce((total, count) => total + count, 0),
+    Number.MAX_SAFE_INTEGER,
+  );
 }
 
 const BILLED_USAGE_FIELDS = [
@@ -16,9 +24,9 @@ const BILLED_USAGE_FIELDS = [
 
 function addKnownCount(finalCount: unknown, earlierCounts: ReadonlyArray<unknown>): unknown {
   const counts = [finalCount, ...earlierCounts]
-    .map(finiteNonNegativeInteger)
+    .map(claudeTokenCount)
     .filter((count) => count !== undefined);
-  return counts.length === 0 ? finalCount : counts.reduce((sum, count) => sum + count, 0);
+  return counts.length === 0 ? finalCount : claudeTokenSum(...counts);
 }
 
 // Steering aborts the current segment; each SDK result reports only that segment's usage.
@@ -67,12 +75,12 @@ export function claudeModelLedger(modelUsage: unknown): ClaudeModelLedger | unde
   const ledger = new Map<string, { readonly input: number; readonly output: number }>();
   for (const [model, entry] of Object.entries(modelUsage as Record<string, unknown>)) {
     const fields = (entry ?? {}) as Record<string, unknown>;
-    const input = finiteNonNegativeInteger(fields.inputTokens);
-    const output = finiteNonNegativeInteger(fields.outputTokens);
+    const input = claudeTokenCount(fields.inputTokens);
+    const output = claudeTokenCount(fields.outputTokens);
     if (input === undefined || output === undefined) return undefined;
-    const cacheRead = finiteNonNegativeInteger(fields.cacheReadInputTokens) ?? 0;
-    const cacheWrite = finiteNonNegativeInteger(fields.cacheCreationInputTokens) ?? 0;
-    ledger.set(model, { input: input + cacheRead + cacheWrite, output });
+    const cacheRead = claudeTokenCount(fields.cacheReadInputTokens) ?? 0;
+    const cacheWrite = claudeTokenCount(fields.cacheCreationInputTokens) ?? 0;
+    ledger.set(model, { input: claudeTokenSum(input, cacheRead, cacheWrite), output });
   }
   return ledger;
 }
@@ -82,9 +90,7 @@ export function claudeReportedContextWindows(modelUsage: unknown): ReadonlyMap<s
   const windows = new Map<string, number>();
   if (typeof modelUsage !== "object" || modelUsage === null) return windows;
   for (const [model, entry] of Object.entries(modelUsage as Record<string, unknown>)) {
-    const window = finiteNonNegativeInteger(
-      (entry as Record<string, unknown> | null)?.contextWindow,
-    );
+    const window = claudeTokenCount((entry as Record<string, unknown> | null)?.contextWindow);
     if (window !== undefined && window > 0) windows.set(model, window);
   }
   return windows;
@@ -106,8 +112,8 @@ export function claudeLedgerDelta(
   }
   for (const [model, after] of current) {
     const before = previous.get(model);
-    inputTokens += after.input - (before?.input ?? 0);
-    outputTokens += after.output - (before?.output ?? 0);
+    inputTokens = claudeTokenSum(inputTokens, after.input - (before?.input ?? 0));
+    outputTokens = claudeTokenSum(outputTokens, after.output - (before?.output ?? 0));
   }
   return { inputTokens, outputTokens };
 }
@@ -119,8 +125,8 @@ export function addClaudeLedgerUsage(
   return left === undefined || right === undefined
     ? undefined
     : {
-        inputTokens: left.inputTokens + right.inputTokens,
-        outputTokens: left.outputTokens + right.outputTokens,
+        inputTokens: claudeTokenSum(left.inputTokens, right.inputTokens),
+        outputTokens: claudeTokenSum(left.outputTokens, right.outputTokens),
       };
 }
 
@@ -154,12 +160,12 @@ export function normalizeClaudeTurnTokenUsage(
   };
   const finalUsage = result?.usage as Record<string, unknown> | undefined;
   const usage = withEarlierSegmentUsage(finalUsage ?? {}, earlierSegmentUsage);
-  const uncachedInputTokens = finiteNonNegativeInteger(usage.input_tokens);
-  const cachedInputTokens = finiteNonNegativeInteger(usage.cache_read_input_tokens);
-  const cacheCreationTokens = finiteNonNegativeInteger(usage.cache_creation_input_tokens);
-  const rawOutputTokens = finiteNonNegativeInteger(usage.output_tokens);
+  const uncachedInputTokens = claudeTokenCount(usage.input_tokens);
+  const cachedInputTokens = claudeTokenCount(usage.cache_read_input_tokens);
+  const cacheCreationTokens = claudeTokenCount(usage.cache_creation_input_tokens);
+  const rawOutputTokens = claudeTokenCount(usage.output_tokens);
   const outputDetails = usage.output_tokens_details as Record<string, unknown> | undefined;
-  const thinkingTokens = finiteNonNegativeInteger(outputDetails?.thinking_tokens);
+  const thinkingTokens = claudeTokenCount(outputDetails?.thinking_tokens);
   const cachedInputContribution = usage.cache_read_input_tokens == null ? 0 : cachedInputTokens;
   const cacheCreationContribution =
     usage.cache_creation_input_tokens == null ? 0 : cacheCreationTokens;
@@ -167,7 +173,7 @@ export function normalizeClaudeTurnTokenUsage(
     uncachedInputTokens !== undefined &&
     cachedInputContribution !== undefined &&
     cacheCreationContribution !== undefined
-      ? uncachedInputTokens + cachedInputContribution + cacheCreationContribution
+      ? claudeTokenSum(uncachedInputTokens, cachedInputContribution, cacheCreationContribution)
       : undefined;
   const hasKnownUsage =
     uncachedInputTokens !== undefined ||
@@ -216,13 +222,12 @@ export function normalizeClaudeTurnTokenUsage(
   if (
     terminalStatus === "completed" &&
     result?.subtype === "success" &&
-    finiteNonNegativeInteger(finalUsage?.input_tokens) !== undefined &&
-    finiteNonNegativeInteger(finalUsage?.output_tokens) !== undefined &&
+    claudeTokenCount(finalUsage?.input_tokens) !== undefined &&
+    claudeTokenCount(finalUsage?.output_tokens) !== undefined &&
     inputTokens !== undefined &&
     rawOutputTokens !== undefined &&
     BILLED_USAGE_FIELDS.every(
-      (field) =>
-        finalUsage?.[field] == null || finiteNonNegativeInteger(finalUsage[field]) !== undefined,
+      (field) => finalUsage?.[field] == null || claudeTokenCount(finalUsage[field]) !== undefined,
     )
   ) {
     return {

@@ -223,6 +223,24 @@ const OpenCode2ProviderCapabilities = {
 type EventOf<T extends OpenCodeEvent["type"]> = Extract<OpenCodeEvent, { readonly type: T }>;
 type Tokens = EventOf<"session.step.ended">["data"]["tokens"];
 
+// Event counts are only checked finite; token schemas take safe non-negative integers.
+const tokenCount = (value: number): number => {
+  const count = Math.round(value);
+  return Number.isSafeInteger(count) && count > 0 ? count : 0;
+};
+const addTokens = (...counts: ReadonlyArray<number>): number =>
+  Math.min(
+    counts.reduce((total, count) => total + count, 0),
+    Number.MAX_SAFE_INTEGER,
+  );
+const sanitizedTokens = (tokens: NonNullable<Tokens>): NonNullable<Tokens> => ({
+  ...tokens,
+  input: tokenCount(tokens.input),
+  output: tokenCount(tokens.output),
+  reasoning: tokenCount(tokens.reasoning),
+  cache: { read: tokenCount(tokens.cache.read), write: tokenCount(tokens.cache.write) },
+});
+
 interface TurnOwner {
   readonly appThread: OrchestrationV2AppThread;
   readonly threadId: OrchestrationV2AppThread["id"];
@@ -2426,10 +2444,14 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
           ? {}
           : {
               tokenUsage: {
-                usedTokens:
-                  lastStep.input + lastStep.cache.read + lastStep.cache.write + lastStep.output,
+                usedTokens: addTokens(
+                  lastStep.input,
+                  lastStep.cache.read,
+                  lastStep.cache.write,
+                  lastStep.output,
+                ),
                 maxTokens: window ?? null,
-                inputTokens: lastStep.input + lastStep.cache.read + lastStep.cache.write,
+                inputTokens: addTokens(lastStep.input, lastStep.cache.read, lastStep.cache.write),
                 cachedInputTokens: lastStep.cache.read,
                 outputTokens: lastStep.output,
                 reasoningOutputTokens: lastStep.reasoning,
@@ -3003,15 +3025,20 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
           return;
         case "session.step.ended":
         case "session.step.failed": {
-          const tokens = event.data.tokens;
-          if (tokens === undefined) return;
+          if (event.data.tokens === undefined) return;
+          const tokens = sanitizedTokens(event.data.tokens);
           turn.steps += 1;
           turn.lastStep = tokens;
-          turn.usage.input += tokens.input + tokens.cache.read + tokens.cache.write;
-          turn.usage.cached += tokens.cache.read;
-          turn.usage.cacheWrite += tokens.cache.write;
-          turn.usage.output += tokens.output + tokens.reasoning;
-          turn.usage.reasoning += tokens.reasoning;
+          turn.usage.input = addTokens(
+            turn.usage.input,
+            tokens.input,
+            tokens.cache.read,
+            tokens.cache.write,
+          );
+          turn.usage.cached = addTokens(turn.usage.cached, tokens.cache.read);
+          turn.usage.cacheWrite = addTokens(turn.usage.cacheWrite, tokens.cache.write);
+          turn.usage.output = addTokens(turn.usage.output, tokens.output, tokens.reasoning);
+          turn.usage.reasoning = addTokens(turn.usage.reasoning, tokens.reasoning);
           return;
         }
         case "session.retry.scheduled":
