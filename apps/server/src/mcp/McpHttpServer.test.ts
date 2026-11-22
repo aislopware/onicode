@@ -2022,6 +2022,10 @@ it.effect("lists optional tools to a deferring client only after tool_search loa
         tool("preview_open", "Opens a browser preview."),
         tool("preview_snapshot", "Reads a page."),
         tool("schedule_task", "Schedules a task."),
+        tool("environment_links", "Lists linked environments.").annotate(
+          McpSchema.EnabledWhen,
+          McpInvocationContext.hiddenWhileLinksOff,
+        ),
       );
       const reads = McpToolAccess.reads(() => Effect.succeed({}));
       const serverLayer = McpHttpServer.layerMcpTransport(
@@ -2033,6 +2037,7 @@ it.effect("lists optional tools to a deferring client only after tool_search loa
               preview_open: reads,
               preview_snapshot: reads,
               schedule_task: reads,
+              environment_links: reads,
             }),
           ),
           McpHttpServer.layerToolSearch,
@@ -2116,6 +2121,10 @@ it.effect("lists optional tools to a deferring client only after tool_search loa
       ).toEqual({ tools: [{ name: "preview_open", description: "Opens a browser preview." }] });
       expect(yield* deferring.listed).toEqual(["delegate_task", "preview_open", "tool_search"]);
       expect(yield* other.listed).toEqual(everything);
+      // A tool hidden from this caller, here while links are off, is not found either.
+      expect(
+        (yield* deferring.call("tool_search", { query: "linked environments" })).structuredContent,
+      ).toEqual({ tools: [] });
 
       // A session whose own driver works the panel's pages never lists the page tools.
       const driving = yield* session("drivingToken", false);

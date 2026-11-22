@@ -1162,7 +1162,15 @@ const layerToolExposure = Layer.effect(
     const server = yield* McpServer.McpServer;
     return McpToolExposure.make(
       () =>
-        server.tools.map(({ tool }) => ({ name: tool.name, description: tool.description ?? "" })),
+        server.tools
+          // Search finds only what this caller could list; these predicates read the request's scope.
+          .filter(({ annotations }) => {
+            const enabledWhen = Context.getOrUndefined(annotations, McpSchema.EnabledWhen);
+            return (
+              enabledWhen === undefined || enabledWhen({ protocolVersion: "", capabilities: {} })
+            );
+          })
+          .map(({ tool }) => ({ name: tool.name, description: tool.description ?? "" })),
       () => server.notifications["notifications/tools/list_changed"]({}),
     );
   }),
