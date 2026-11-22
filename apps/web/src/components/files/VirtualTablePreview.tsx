@@ -621,6 +621,11 @@ function ScaledRows(
     });
     return () => cancelAnimationFrame(frameId);
   });
+  const firstCells = props.getRows(Math.floor(first / PREVIEW_PAGE_ROWS))?.[
+    first % PREVIEW_PAGE_ROWS
+  ];
+  // A placeholder first row grows when the probe measures it, before the content observer fires.
+  const firstRowReady = firstCells ? ready(first, firstCells) : false;
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- Measure mounted row offsets and observe content resizes to position the virtual rows against the scroll track.
   useLayoutEffect(() => {
     if (atStart) return;
@@ -629,14 +634,14 @@ function ScaledRows(
     const update = () => {
       const row = node.querySelector<HTMLElement>(`[data-preview-row="${first}"]`);
       const height = node.clientHeight;
-      const rowHeight = row?.offsetHeight || 29;
+      const rowHeight = (firstRowReady && row?.offsetHeight) || 29;
       setLayout((old) =>
         old.height === height && old.rowHeight === rowHeight ? old : { height, rowHeight },
       );
     };
     update();
     return observeResize(node, update);
-  }, [first, atStart]);
+  }, [first, atStart, firstRowReady]);
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- Correct the DOM scroll position once a requested worker row has loaded and its actual bounds are measurable.
   useLayoutEffect(() => {
     const pending = pendingReveal.current;
