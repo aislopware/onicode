@@ -307,8 +307,8 @@ it("app-stream-assistant-turn", async () => {
   expect(counted.components.ConversationTimeline).toBeLessThanOrEqual(3);
   expect(counted.components.UserTimelineRow).toBeUndefined();
   expect(counted.components.AssistantTimelineRow).toBe(STREAM_DELTAS);
-  // Each delta adds a paragraph; finished blocks keep their render.
-  expect(counted.components.MarkdownParagraph).toBe(STREAM_DELTAS);
+  // Paragraphs without skill chips are static HTML, never a component render.
+  expect(counted.components.MarkdownParagraph).toBeUndefined();
   await report("app-stream-assistant-turn", [counted], { commits: false });
 });
 
