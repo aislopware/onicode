@@ -164,7 +164,7 @@ const isProviderAdapterOpenSessionError = Schema.is(
  * Claude refuses these before it reads the prompt: replacing a process running background work,
  * launch arguments whose appended system prompt or settings cannot be read, or MCP registration
  * that never answers while the query opens. A query that ends before the turn attaches (such as a
- * rejected resume point) never received the prompt either.
+ * rejected resume point) never received the prompt either, nor did a retired Codex app-server.
  */
 const PROMPT_REFUSAL_TAGS = [
   "ClaudeBackgroundWorkBlocksQueryReplacementError",
@@ -172,20 +172,33 @@ const PROMPT_REFUSAL_TAGS = [
   "ClaudeAppendSystemPromptMissingValueError",
   "ClaudeSettingsLaunchArgError",
   "ClaudeMcpRegistrationTimeoutError",
+  "CodexAppServerRetiredError",
 ] as const;
+
+// Codex requests that act on a thread. An unanswered read, such as config/read, acted on nothing.
+const CODEX_ACTING_METHODS: ReadonlySet<unknown> = new Set([
+  "thread/start",
+  "thread/resume",
+  "thread/fork",
+  "turn/start",
+]);
+
+const unansweredCodexRequest = (error: unknown, acting: boolean): boolean =>
+  Predicate.isTagged(error, "CodexAppServerUnresponsiveError") &&
+  Predicate.hasProperty(error, "method") &&
+  CODEX_ACTING_METHODS.has(error.method) === acting;
 
 const refusedBeforePrompt = (error: unknown): boolean =>
   PROMPT_REFUSAL_TAGS.some((tag) => Predicate.isTagged(error, tag)) ||
+  unansweredCodexRequest(error, false) ||
   (isProviderAdapterProtocolError(error) &&
     error.driver === CLAUDE_PROVIDER &&
     error.detail === CLAUDE_QUERY_ENDED_BEFORE_TURN_DETAIL) ||
   (Predicate.hasProperty(error, "cause") && refusedBeforePrompt(error.cause));
 
 // The provider may have acted on a request it never answered, so a retry could duplicate it.
-const OUTCOME_UNKNOWN_TAGS = ["CodexAppServerUnresponsiveError"] as const;
-
 const outcomeUnknown = (error: unknown): boolean =>
-  OUTCOME_UNKNOWN_TAGS.some((tag) => Predicate.isTagged(error, tag)) ||
+  unansweredCodexRequest(error, true) ||
   (Predicate.hasProperty(error, "cause") && outcomeUnknown(error.cause));
 
 /**

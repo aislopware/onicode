@@ -205,6 +205,15 @@ export const makeCodexAppServerPatchedProtocol = Effect.fn("makeCodexAppServerPa
         Effect.andThen(Ref.set(pending, new Map())),
       );
 
+    // Closing the scope interrupts the reader without a termination, so nothing else fails
+    // these: a request still waiting on a released app-server would wait forever.
+    yield* Effect.addFinalizer(() => {
+      const closed = new CodexError.CodexAppServerInputStreamEndedError({});
+      return Ref.set(terminationFailure, Option.some(closed)).pipe(
+        Effect.andThen(failAllPending(closed)),
+      );
+    });
+
     const handleTermination = (classify: () => Effect.Effect<CodexError.CodexAppServerError>) =>
       Ref.modify(terminationHandled, (handled) => {
         if (handled) {
