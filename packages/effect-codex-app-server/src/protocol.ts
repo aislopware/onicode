@@ -203,6 +203,7 @@ export const makeCodexAppServerPatchedProtocol = Effect.fn("makeCodexAppServerPa
           }),
         ),
         Effect.andThen(Ref.set(pending, new Map())),
+        Effect.uninterruptible,
       );
 
     // Closing the scope interrupts the reader without a termination, so nothing else fails

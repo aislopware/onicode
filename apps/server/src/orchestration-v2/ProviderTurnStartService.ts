@@ -175,8 +175,13 @@ const PROMPT_REFUSAL_TAGS = [
   "ProviderSessionReleasedBeforeTurnError",
 ] as const;
 
-// Codex reads that act on nothing; any other unanswered request may have acted.
-const CODEX_READ_METHODS: ReadonlySet<unknown> = new Set(["config/read", "thread/goal/get"]);
+// Codex requests safe to repeat; any other unanswered request may have acted.
+const CODEX_READ_METHODS: ReadonlySet<unknown> = new Set([
+  "config/read",
+  "thread/goal/get",
+  // Repeating it is harmless, and the request it precedes was not sent.
+  "thread/unarchive",
+]);
 
 const unansweredCodexRequest = (error: unknown, read: boolean): boolean =>
   Predicate.isTagged(error, "CodexAppServerUnresponsiveError") &&
@@ -1549,7 +1554,7 @@ export const layer: Layer.Layer<
               }),
             );
             if (forked._tag === "Success") return forked.success;
-            if (outcomeUnknown(forked.failure)) {
+            if (outcomeUnknown(forked.failure) || appServerGone(forked.failure)) {
               return yield* loadFromProvider(Effect.fail(forked.failure));
             }
             if (input.willRetry === true) return yield* forked.failure;
@@ -2220,11 +2225,12 @@ export const layer: Layer.Layer<
             ...(session.injectHistory === undefined
               ? {}
               : {
+                  // A refused injection wrote nothing, so the history goes inline like unsupported.
                   inject: (history: ProviderAdapter.ProviderAdapterV2HistoricalContext) =>
                     session.injectHistory!({
                       providerThread: runningProviderThread,
                       ...history,
-                    }),
+                    }).pipe(Effect.catchIf(refusedBeforePrompt, () => Effect.succeed(false))),
                 }),
             persist: persistHandoff,
           });
