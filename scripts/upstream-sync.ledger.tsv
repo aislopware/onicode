@@ -3188,3 +3188,4 @@ a9447cedbd	take	fix(web): Cite button appears as fast after a double-click as af
 c7a9fba06b	take	taken as is
 f9b19a7f85	take	CONFLICT resolved by hand; kept Onicode's null return for an unreadable project folder: callers tell 'cannot read' from 'no repositories'
 28a420060b	take	adopted upstream over Onicode's optional submodules folders: required field, fallback walk removed (only caller always passes it)
+c5fa33b27e	take	promptDropped is an optional contract field (wire-compatible); only Cursor emits it, so Claude/Codex paths are unchanged; conflict kept Onicode's LostToolCalls type
