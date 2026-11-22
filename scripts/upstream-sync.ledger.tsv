@@ -3178,3 +3178,4 @@ b5709bb865	take	MISSING migration 103 test applied to Onicode's 108_IssueTracker
 b5a0352bfd	take	fix(server): log when a settle script is skipped because its worktree is gone (#40627)
 a9447cedbd	take	fix(web): Cite button appears as fast after a double-click as after a drag (#33221)
 67bf1e693a	take	fix(desktop): AppImage onicode serve stops cleanly under systemd (#40624)
+047fb5b162	skip	relay is a removed surface; Onicode's push gateway already truncates titles by code point (infra/push-gateway/src/payloads.ts truncate uses Array.from), so no emoji is split
