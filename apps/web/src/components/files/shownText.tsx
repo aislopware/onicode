@@ -61,8 +61,13 @@ function cappedParts(text: string, total = MAX_SHOWN_TEXT_CHARS): ShownPart[] {
 }
 
 /** Multi-line text with each line cut like a source line, and the whole cut short. */
-export function LineCappedText(props: { text: string; more: (count: number) => string }) {
-  return cappedParts(props.text).map((part) => (
+export function LineCappedText(props: {
+  text: string;
+  more: (count: number) => string;
+  /** How many characters to lay out in all; defaults to two source lines' worth. */
+  total?: number;
+}) {
+  return cappedParts(props.text, props.total).map((part) => (
     <Fragment key={part.at}>
       {part.text}
       {part.cut > 0 ? (
@@ -75,6 +80,16 @@ export function LineCappedText(props: { text: string; more: (count: number) => s
 /** `text` cut like `LineCappedText`, for text rendered as markdown. */
 export function lineCappedText(text: string, more: (count: number) => string): string {
   return joinParts(text, cappedParts(text), more);
+}
+
+export function hasLineLongerThan(text: string, limit: number): boolean {
+  for (let start = 0; start < text.length;) {
+    const newline = text.indexOf("\n", start);
+    const end = newline < 0 ? text.length : newline;
+    if (end - start > limit) return true;
+    start = end + 1;
+  }
+  return false;
 }
 
 /** A markdown file with each line cut like a source line; the file read already bounds its length. */

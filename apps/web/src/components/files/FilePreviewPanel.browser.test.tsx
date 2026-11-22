@@ -677,10 +677,51 @@ describe("rendered Markdown task saves", () => {
     );
     using _timers = fakeTimers();
     const checkbox = screen.container.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+    expect(checkbox).not.toBeNull();
     expect(checkbox.disabled).toBe(true);
+    expect(checkbox.readOnly).toBe(true);
     await act(async () => checkbox.click());
+    await vi.advanceTimersByTimeAsync(500);
+    expect(checkbox.checked).toBe(false);
     expect(state.optimistic).toBeNull();
     expect(state.writeFile).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { before: "a line cut short", head: `${"a".repeat(12_000)}\n` },
+    // Shared with every piece, so a cut copy would disable tasks far from it.
+    {
+      before: "a long link definition",
+      head: `[logo]: https://example.com/${"a".repeat(11_000)}\n`,
+    },
+  ])("saves a task in a later piece than $before", async ({ head }) => {
+    using _settings = setup();
+    const contents = `${head}\nIntro\n\n# Tasks\n\n- [ ] Ship it\n`;
+    await using screen = await render(markdownPreview(false, contents));
+    await expect.element(screen.getByRole("checkbox")).toBeInTheDocument();
+    using _timers = fakeTimers();
+    const checkbox = screen.container.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+    expect(checkbox.disabled).toBe(false);
+    await act(async () => checkbox.click());
+    await vi.advanceTimersByTimeAsync(500);
+    expect(state.writeFile).toHaveBeenCalledExactlyOnceWith({
+      environmentId,
+      input: {
+        cwd: "/workspace",
+        relativePath: "tasks.md",
+        contents: contents.replace("- [ ] Ship it", "- [x] Ship it"),
+      },
+    });
+  });
+
+  it("cuts the lines of a block too long to render as Markdown", async () => {
+    using _settings = setup();
+    await using screen = await render(markdownPreview(false, `${"a".repeat(140_000)}\n`));
+    await vi.waitFor(() =>
+      expect(screen.container.textContent).toContain(
+        `${"a".repeat(10_000)}… 130,000 more characters`,
+      ),
+    );
   });
 
   it("still toggles and saves tasks from a complete read", async () => {

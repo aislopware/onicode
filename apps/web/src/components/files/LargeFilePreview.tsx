@@ -9,6 +9,7 @@ import { FileSurfaceLoading } from "./fileSurfaceChrome";
 import { useFullFileMarkdown, useFullFileText } from "./fullFileText";
 import { FULL_TEXT_MAX_BYTES } from "./largeTextProtocol";
 import SourceFilePreview from "./ReadOnlySourcePreview";
+import { hasLineLongerThan, MAX_SHOWN_LINE_CHARS } from "./shownText";
 
 const LargeTextViewer = lazy(() => import("./LargeTextViewer"));
 
@@ -34,7 +35,11 @@ export default function LargeFilePreview(props: {
   readonly revealRequestId: number;
   readonly wordWrap: boolean;
 }) {
-  const plain = props.delimiter !== null || props.sizeBytes > FULL_TEXT_MAX_BYTES;
+  const plain =
+    props.delimiter !== null ||
+    props.sizeBytes > FULL_TEXT_MAX_BYTES ||
+    // The source viewer lays out a whole line; the plain viewer cuts it like a source line.
+    (props.markdownCwd === null && hasLineLongerThan(props.preview, MAX_SHOWN_LINE_CHARS));
   return plain ? <PlainViewer {...props} /> : <FullTextPreview {...props} />;
 }
 

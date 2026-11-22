@@ -4,11 +4,8 @@ import type { KeyboardEventHandler } from "react";
 
 import { Spinner } from "~/components/ui/spinner";
 import { FileMarkdownPreview } from "./FileMarkdownPreview";
-import {
-  LARGE_MARKDOWN_CHUNK_MAX_CHARS,
-  type MarkdownChunk,
-  withMarkdownDefinitions,
-} from "@onicode/shared/markdownChunks";
+import { LineCappedText, useMoreCharactersLabel } from "./shownText";
+import { LARGE_MARKDOWN_CHUNK_MAX_CHARS, type MarkdownChunk } from "@onicode/shared/markdownChunks";
 
 const ESTIMATED_LINE_PX = 24;
 
@@ -35,6 +32,7 @@ export function ChunkedMarkdown(props: {
     | undefined;
 }) {
   const { chunks, onTaskListChange } = props;
+  const more = useMoreCharactersLabel();
   const items: ChunkItem[] = [];
   let start = 0;
   let lines = 0;
@@ -78,11 +76,16 @@ export function ChunkedMarkdown(props: {
             {item.chunk.text.length > LARGE_MARKDOWN_CHUNK_MAX_CHARS ? (
               // One block this long (a huge fence or HTML block) is too slow to parse.
               <pre className="mx-auto max-w-4xl overflow-x-auto px-6 font-mono text-xs whitespace-pre">
-                {item.chunk.text}
+                <LineCappedText
+                  text={item.chunk.text}
+                  more={more}
+                  total={Number.POSITIVE_INFINITY}
+                />
               </pre>
             ) : (
               <FileMarkdownPreview
-                text={withMarkdownDefinitions(item.chunk.text, props.definitions)}
+                text={item.chunk.text}
+                definitions={props.definitions}
                 cwd={props.cwd}
                 relativePath={props.relativePath}
                 threadRef={props.threadRef}
