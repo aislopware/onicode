@@ -562,6 +562,17 @@ export const makeAcpPatchedProtocol = Effect.fn("makeAcpPatchedProtocol")(functi
         )
       : Effect.succeed(fallback);
 
+  // Closing the scope interrupts the reader without a termination, so nothing else fails these:
+  // an extension request on a released connection would wait forever.
+  // A termination the close interrupted mid-way keeps none of its error, hence the fallback.
+  yield* Effect.addFinalizer(() =>
+    Ref.set(terminationHandled, true).pipe(
+      Effect.andThen(Deferred.fail(terminationFailure, new AcpError.AcpInputStreamEndedError({}))),
+      Effect.andThen(Deferred.await(terminationFailure).pipe(Effect.flip)),
+      Effect.flatMap(failAllExtPending),
+    ),
+  );
+
   const handleTermination = (classify: () => Effect.Effect<AcpError.AcpError>) =>
     Ref.modify(terminationHandled, (handled) => {
       if (handled) {

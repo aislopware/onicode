@@ -2299,18 +2299,21 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
         const readStdioMcpServers = (cwd: string | null | undefined) =>
           ensureInitialized.pipe(
             Effect.andThen(
-              client.request("config/read", {
-                ...(cwd == null ? {} : { cwd }),
-                includeLayers: false,
-              }),
+              client
+                .request("config/read", {
+                  ...(cwd == null ? {} : { cwd }),
+                  includeLayers: false,
+                })
+                .pipe(
+                  Effect.map((response) => codexStdioMcpServerNames(response.config.mcp_servers)),
+                  Effect.catch(() =>
+                    Effect.logDebug("Codex config read failed.").pipe(
+                      Effect.as<ReadonlyArray<string>>([]),
+                    ),
+                  ),
+                  withAppServerDeadline("config/read"),
+                ),
             ),
-            Effect.map((response) => codexStdioMcpServerNames(response.config.mcp_servers)),
-            Effect.catch(() =>
-              Effect.logDebug("Codex config read failed.").pipe(
-                Effect.as<ReadonlyArray<string>>([]),
-              ),
-            ),
-            withAppServerDeadline("config/read"),
           );
         const now = yield* DateTime.now;
         const session = providerSession({
@@ -7800,14 +7803,16 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
           threadId: string,
           params: Record<string, unknown>,
         ) {
-          const resume = client.raw.request("thread/resume", { threadId, ...params });
+          const resume = client.raw
+            .request("thread/resume", { threadId, ...params })
+            .pipe(withAppServerDeadline("thread/resume"));
           return yield* resume.pipe(
             Effect.catchTags({
               CodexAppServerRequestError: (cause) => {
                 if (/\bsession \S+ is archived\b|\bcodex unarchive\b/i.test(cause.errorMessage)) {
                   return client.raw
                     .request("thread/unarchive", { threadId })
-                    .pipe(Effect.andThen(resume));
+                    .pipe(withAppServerDeadline("thread/unarchive"), Effect.andThen(resume));
                 }
                 if (/\bthread \S+ is closing\b/i.test(cause.errorMessage)) {
                   const closing = threadClosings.get(threadId);
@@ -7871,7 +7876,9 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               ...(yield* Ref.get(settledTurns)),
               ...(yield* Ref.get(activeTurns)),
             ]);
-            const started = yield* client.request("turn/start", turnStartParams).pipe(
+            // Another thread can retire the shared app-server while this one set up its turn.
+            const started = yield* rejectIfRetired.pipe(
+              Effect.andThen(client.request("turn/start", turnStartParams)),
               withAppServerDeadline("turn/start"),
               Effect.tapError((error) =>
                 codexRefusedRequest(error)
@@ -7937,16 +7944,14 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             yield* applyThreadName(threadId, turnInput.appThread.title);
             yield* startNativeTurn(turnInput, yield* codexInput);
             if (activation.stopped) return;
-            const { goal } = yield* client.request("thread/goal/set", {
-              threadId,
-              status: "active",
-            });
+            const { goal } = yield* client
+              .request("thread/goal/set", { threadId, status: "active" })
+              .pipe(withAppServerDeadline("thread/goal/set"));
             goalsByNativeThread.set(threadId, providerGoalFromCodex(goal));
             if (activation.stopped) {
-              const paused = yield* client.request("thread/goal/set", {
-                threadId,
-                status: "paused",
-              });
+              const paused = yield* client
+                .request("thread/goal/set", { threadId, status: "paused" })
+                .pipe(withAppServerDeadline("thread/goal/set"));
               goalsByNativeThread.set(threadId, providerGoalFromCodex(paused.goal));
             }
           }).pipe(
@@ -7979,13 +7984,12 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             if (command.type === "set") yield* validateCodexGoalObjective(command.objective);
             const threadId = yield* getNativeThreadId(turnInput.providerThread);
             rootProviderThreads.set(threadId, turnInput.providerThread);
-            const readGoal = client
-              .request("thread/goal/get", { threadId })
-              .pipe(
-                Effect.map((response) =>
-                  response.goal == null ? null : providerGoalFromCodex(response.goal),
-                ),
-              );
+            const readGoal = client.request("thread/goal/get", { threadId }).pipe(
+              withAppServerDeadline("thread/goal/get"),
+              Effect.map((response) =>
+                response.goal == null ? null : providerGoalFromCodex(response.goal),
+              ),
+            );
             const current = yield* readGoal;
             goalsByNativeThread.set(threadId, current);
             if (command.type === "show") {
@@ -7996,7 +8000,9 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             }
             goalsPausedForWake.delete(threadId);
             if (command.type === "clear") {
-              const { cleared } = yield* client.request("thread/goal/clear", { threadId });
+              const { cleared } = yield* client
+                .request("thread/goal/clear", { threadId })
+                .pipe(withAppServerDeadline("thread/goal/clear"));
               goalsByNativeThread.set(threadId, null);
               return yield* completeGoalCommandTurn(turnInput, cleared ? null : "No goal is set.");
             }
@@ -8004,22 +8010,27 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               return yield* completeGoalCommandTurn(turnInput, "No goal is set.");
             }
             if (command.type === "pause") {
-              const { goal } = yield* client.request("thread/goal/set", {
-                threadId,
-                status: "paused",
-              });
+              const { goal } = yield* client
+                .request("thread/goal/set", { threadId, status: "paused" })
+                .pipe(withAppServerDeadline("thread/goal/set"));
               goalsByNativeThread.set(threadId, providerGoalFromCodex(goal));
               return yield* completeGoalCommandTurn(turnInput, null);
             }
             if (command.type === "set") {
               goalUpdatesHeld.add(threadId);
-              if (current !== null) yield* client.request("thread/goal/clear", { threadId });
+              if (current !== null) {
+                yield* client
+                  .request("thread/goal/clear", { threadId })
+                  .pipe(withAppServerDeadline("thread/goal/clear"));
+              }
               // Keep paused until our turn starts so Codex cannot start one first.
-              const { goal } = yield* client.request("thread/goal/set", {
-                threadId,
-                objective: command.objective,
-                status: "paused",
-              });
+              const { goal } = yield* client
+                .request("thread/goal/set", {
+                  threadId,
+                  objective: command.objective,
+                  status: "paused",
+                })
+                .pipe(withAppServerDeadline("thread/goal/set"));
               goalsByNativeThread.set(threadId, providerGoalFromCodex(goal));
             }
             // A bare objective gets echoed back, and "start this goal" gets a
@@ -8329,7 +8340,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               rootProviderThreads.set(nativeThreadId, threadInput.providerThread);
               goalUpdatesHeld.add(nativeThreadId);
               const response = yield* ensureInitialized.pipe(
-                Effect.andThen(resume.pipe(withAppServerDeadline("thread/resume"))),
+                Effect.andThen(resume),
                 Effect.flatMap(decodeCodexResumeMetadata),
                 // Stay registered: a lost or undecodable response may still have resumed the thread.
                 Effect.onError(() =>
@@ -8384,7 +8395,9 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 new Map(current).set(threadId, turnInput),
               );
               // Clear on interruption; a late turn/started must not be adopted after an interrupted start.
-              yield* client.request("thread/compact/start", { threadId }).pipe(
+              yield* rejectIfRetired.pipe(
+                Effect.andThen(client.request("thread/compact/start", { threadId })),
+                withAppServerDeadline("thread/compact/start"),
                 Effect.onError(() =>
                   Ref.update(pendingRootTurns, (current) => {
                     const next = new Map(current);
@@ -8410,6 +8423,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
           ),
           injectHistory: Effect.fn("CodexAdapterV2.injectHistory")(
             function* (input) {
+              yield* rejectIfRetired;
               const threadId = yield* getNativeThreadId(input.providerThread);
               return yield* client
                 .request("thread/inject_items", {
@@ -8417,6 +8431,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                   items: historyResponseItems(input.messages, input.context),
                 })
                 .pipe(
+                  withAppServerDeadline("thread/inject_items"),
                   Effect.as(true),
                   // Retry only unknown-method errors, which precede history mutation. Transport or payload errors leave delivery ambiguous.
                   Effect.catchTags({
@@ -9328,7 +9343,11 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 };
               }
               const { historyMode, loaded, cwd } = yield* ensureInitialized.pipe(
-                Effect.andThen(readCodexThreadHistoryMetadata(client.raw, threadId)),
+                Effect.andThen(
+                  readCodexThreadHistoryMetadata(client.raw, threadId).pipe(
+                    withAppServerDeadline("thread/read"),
+                  ),
+                ),
               );
               if (historyMode !== "paginated") {
                 return yield* new ProviderAdapter.ProviderAdapterRollbackThreadError({
@@ -9350,7 +9369,11 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 });
               }
               const response = yield* ensureInitialized.pipe(
-                Effect.andThen(revertCodexThread(client, threadId, numTurns)),
+                Effect.andThen(
+                  revertCodexThread(client, threadId, numTurns).pipe(
+                    withAppServerDeadline("thread/revert"),
+                  ),
+                ),
               );
               turnTokenUsageByThread.delete(threadId);
               // Codex reloads a reverted thread with an empty keyed context.
@@ -9391,6 +9414,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
           ),
           forkThread: Effect.fn("CodexAdapterV2.forkThread")(
             function* (threadInput) {
+              yield* rejectIfRetired;
               const threadId = yield* getNativeThreadId(threadInput.sourceProviderThread);
               const boundary = yield* resolveCodexForkBoundary(threadInput);
               const forkRequest = client.request("thread/fork", {
@@ -9413,15 +9437,16 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 Effect.andThen(forkRequest),
                 withAppServerDeadline("thread/fork"),
               );
+              const unarchive = client.raw
+                .request("thread/unarchive", { threadId })
+                .pipe(withAppServerDeadline("thread/unarchive"));
               const response = yield* ensureInitialized.pipe(
                 Effect.andThen(
                   fork.pipe(
                     Effect.catchTags({
                       CodexAppServerRequestError: (cause) =>
                         /\bsession \S+ is archived\b|\bcodex unarchive\b/i.test(cause.errorMessage)
-                          ? client.raw
-                              .request("thread/unarchive", { threadId })
-                              .pipe(Effect.andThen(fork))
+                          ? unarchive.pipe(Effect.andThen(fork))
                           : Effect.fail(cause),
                     }),
                   ),
@@ -9438,7 +9463,11 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               let forkedThread = response.thread;
               if (boundary.rollbackTurnCount > 0) {
                 const { historyMode } = yield* ensureInitialized.pipe(
-                  Effect.andThen(readCodexThreadHistoryMetadata(client.raw, response.thread.id)),
+                  Effect.andThen(
+                    readCodexThreadHistoryMetadata(client.raw, response.thread.id).pipe(
+                      withAppServerDeadline("thread/read"),
+                    ),
+                  ),
                 );
                 if (historyMode !== "paginated") {
                   return yield* new ProviderAdapter.ProviderAdapterForkThreadError({
@@ -9449,7 +9478,9 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 }
                 forkedThread = (yield* ensureInitialized.pipe(
                   Effect.andThen(
-                    revertCodexThread(client, response.thread.id, boundary.rollbackTurnCount),
+                    revertCodexThread(client, response.thread.id, boundary.rollbackTurnCount).pipe(
+                      withAppServerDeadline("thread/revert"),
+                    ),
                   ),
                   Effect.mapError(
                     (cause) =>

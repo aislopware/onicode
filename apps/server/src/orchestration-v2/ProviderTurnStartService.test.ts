@@ -3347,6 +3347,27 @@ effectIt.effect("fails rather than starts a fresh thread when a resume outcome i
   }),
 );
 
+effectIt.effect(
+  "retries rather than starts a fresh thread when the app-server retired during a resume",
+  () =>
+    Effect.gen(function* () {
+      const harness = makeLocalCommandHarness({
+        text: "Continue",
+        resumeFailure: new ProviderAdapter.ProviderAdapterEventStreamError({
+          driver: ProviderDriverKind.make("codex"),
+          providerSessionId: ProviderSessionId.make("resume-provider-session"),
+          cause: { _tag: "CodexAppServerUnresponsiveError", method: "config/read" },
+        }),
+      });
+
+      const error = yield* harness.startWithRetry.pipe(Effect.flip);
+
+      expect(error._tag).toBe("ProviderTurnStartError");
+      expect(harness.fallbackEnsureThread).not.toHaveBeenCalled();
+      expect(harness.projection().runs.at(-1)?.status).toBe("starting");
+    }),
+);
+
 effectIt.effect("fails the run without a retry when the provider needs sign-in", () =>
   Effect.gen(function* () {
     const harness = makeLocalCommandHarness({

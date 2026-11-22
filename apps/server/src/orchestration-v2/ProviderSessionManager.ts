@@ -212,6 +212,16 @@ export class ProviderSessionReleaseError extends Schema.TaggedError<ProviderSess
   }
 }
 
+/** The session went away between attach and markBusy, before anything was sent. */
+export class ProviderSessionReleasedBeforeTurnError extends Schema.TaggedError<ProviderSessionReleasedBeforeTurnError>()(
+  "ProviderSessionReleasedBeforeTurnError",
+  {},
+) {
+  override get message(): string {
+    return "The provider session was released while the turn started.";
+  }
+}
+
 export class ProviderSessionActivityError extends Schema.TaggedError<ProviderSessionActivityError>()(
   "ProviderSessionActivityError",
   {
@@ -2690,7 +2700,7 @@ export const layerWithOptions = (
                             threadId: input.threadId,
                             providerThreadId: input.providerThread.id,
                             runId: input.runId,
-                            cause: "The provider session was released while the turn started.",
+                            cause: new ProviderSessionReleasedBeforeTurnError(),
                           }),
                         ),
                   ),

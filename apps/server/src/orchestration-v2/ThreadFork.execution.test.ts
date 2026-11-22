@@ -1896,7 +1896,10 @@ it.effect("merge-back rejects a second fork's context until the first is consume
   }).pipe(Effect.provide(forkCases[0]!.layer)),
 );
 
-const runForkWithFailingNativeSource = (forkFailures: number) => {
+const runForkWithFailingNativeSource = (
+  forkFailures: number,
+  cause: unknown = "Session not found: native-deleted-source; authorization=BearerSyntheticSecret",
+) => {
   const driver = ProviderDriverKind.make("claudeAgent");
   const instanceId = ProviderInstanceId.make("claudeAgent");
   const modelSelection = { instanceId, model: "test-model" };
@@ -1948,8 +1951,7 @@ const runForkWithFailingNativeSource = (forkFailures: number) => {
                   new ProviderAdapter.ProviderAdapterForkThreadError({
                     driver,
                     providerThreadId: sourceProviderThread.id,
-                    cause:
-                      "Session not found: native-deleted-source; authorization=BearerSyntheticSecret",
+                    cause,
                   }),
                 )
               : Effect.succeed({
@@ -2096,11 +2098,11 @@ const runForkWithFailingNativeSource = (forkFailures: number) => {
     }
 
     const projection = yield* orchestrator.getThreadProjection(targetThreadId);
+    if (projection.runs[0]?.status !== "running") return { projection, turn: undefined, forkCalls };
     assert.deepEqual(
       projection.turnItems.flatMap((item) => (item.type === "error" ? [item.title] : [])),
       [],
     );
-    assert.equal(projection.runs[0]?.status, "running");
     return { projection, turn: yield* Deferred.await(started), forkCalls };
   }).pipe(
     Effect.provide(
@@ -2115,6 +2117,7 @@ const runForkWithFailingNativeSource = (forkFailures: number) => {
 it.effect("a native fork whose source session is gone starts fresh with the source history", () =>
   Effect.gen(function* () {
     const { projection, turn } = yield* runForkWithFailingNativeSource(Number.POSITIVE_INFINITY);
+    assert.equal(projection.runs[0]?.status, "running");
     // Resolving the fork transfer stops later sends from retrying the native fork.
     assert.equal(projection.contextTransfers[0]?.status, "resolved_portable");
     assert.isNull(projection.providerThreads[0]?.forkedFrom);
@@ -2131,8 +2134,22 @@ it.effect("a native fork whose source session is gone starts fresh with the sour
 it.effect("a native fork that fails before its last attempt still forks natively", () =>
   Effect.gen(function* () {
     const { projection, forkCalls } = yield* runForkWithFailingNativeSource(1);
+    assert.equal(projection.runs[0]?.status, "running");
     assert.equal(forkCalls, 2);
     assert.equal(projection.contextTransfers[0]?.status, "consumed");
     assert.equal(projection.contextTransfers[0]?.resolution?.strategy, "native_fork");
+  }),
+);
+
+// The app-server may have created the fork before it went silent, so a retry could fork twice.
+it.effect("a native fork whose request went unanswered fails rather than forks again", () =>
+  Effect.gen(function* () {
+    const { projection, forkCalls } = yield* runForkWithFailingNativeSource(
+      Number.POSITIVE_INFINITY,
+      { _tag: "CodexAppServerUnresponsiveError", method: "thread/fork" },
+    );
+    assert.equal(forkCalls, 1);
+    assert.equal(projection.runs[0]?.status, "failed");
+    assert.notEqual(projection.contextTransfers[0]?.status, "resolved_portable");
   }),
 );
