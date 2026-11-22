@@ -177,6 +177,7 @@ describe("extractMarkdownLinkHrefs", () => {
     ["See [the [docs] guide](docs/guide.md) and [[1]](src/a.ts)", ["docs/guide.md", "src/a.ts"]],
     ["[a [b](x) [c \\[d](y) [e\\]](z)", ["x", "y", "z"]],
     ["[a [b]\n\nc](src/a.ts) [outer [inner]()](src/b.ts)", []],
+    ["> [the [docs]\n>\n> guide](old/readme.md) [readme](readme.md)", ["readme.md"]],
     [`See ${serializeComposerFileLink("pages/posts/[id].tsx")} now`, ["pages/posts/%5Bid%5D.tsx"]],
   ])("extracts links from incomplete and nested text", (markdown, hrefs) => {
     expect(extractMarkdownLinkHrefs(markdown)).toEqual(hrefs);
