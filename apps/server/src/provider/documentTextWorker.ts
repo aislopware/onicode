@@ -471,6 +471,9 @@ const isLeadByte = (encoding: string, value: number) =>
   encoding === "shift_jis"
     ? (value >= 0x81 && value <= 0x9f) || (value >= 0xe0 && value <= 0xfc)
     : ["gbk", "euc-kr", "big5"].includes(encoding) && value >= 0x81 && value <= 0xfe;
+// Unified Hangul's ASCII trail bytes are letters; Shift_JIS, GBK and Big5 take 0x40-0x7E.
+const isAsciiTrailByte = (encoding: string, char: string) =>
+  encoding === "euc-kr" ? /[A-Za-z]/.test(char) : char >= "@" && char <= "~";
 
 function* rtf(source: string): Generator<string, void> {
   if (!source.startsWith("{\\rtf")) throw new Error("Invalid RTF document");
@@ -530,7 +533,8 @@ function* rtf(source: string): Generator<string, void> {
     const char = source[i]!;
     // Windows writers emit a double-byte character's printable ASCII trail byte literally.
     const escaped = char === "\\" && ["\\", "{", "}"].includes(source[i + 1]!);
-    if (lead && (escaped || (char >= "@" && char <= "~" && !"\\{}".includes(char)))) {
+    const trail = escaped ? source[i + 1]! : "\\{}".includes(char) ? "" : char;
+    if (lead && run && isAsciiTrailByte(run.encoding, trail)) {
       if (escaped) i++;
       yield byte(source.charCodeAt(i));
       continue;

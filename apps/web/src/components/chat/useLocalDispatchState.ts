@@ -1,5 +1,5 @@
 import { type EnvironmentId, type MessageId, type RuntimeRequestId } from "@onicode/contracts";
-import { useState } from "react";
+import { type RefObject, useState } from "react";
 import { type ComposerSubmissionIntent } from "../../composer-logic";
 import { type SessionPhase, type Thread } from "../../types";
 import {
@@ -9,8 +9,9 @@ import {
 } from "../ChatView.logic";
 
 export function useLocalDispatchState(input: {
-  threadKey: string;
   environmentId: EnvironmentId;
+  routeThreadKey: string;
+  currentRouteThreadKeyRef: RefObject<string | null>;
   activeThread: Thread | undefined;
   activeLatestRun: Thread["latestRun"] | null;
   latestUserMessageId: MessageId | null;
@@ -19,21 +20,16 @@ export function useLocalDispatchState(input: {
   activePendingUserInput: RuntimeRequestId | null;
   threadError: string | null | undefined;
 }) {
-  const { threadKey } = input;
-  // ChatView stays mounted across threads, and a detached send still holds its own thread's
-  // setters, so each thread keeps its own snapshot.
-  const [dispatches, setDispatches] = useState<ReadonlyMap<string, LocalDispatchSnapshot>>(
-    () => new Map(),
-  );
-  const localDispatch = dispatches.get(threadKey) ?? null;
+  const key = input.routeThreadKey;
+  const [stored, setLocalDispatch] = useState<{
+    key: string;
+    snapshot: LocalDispatchSnapshot;
+  } | null>(null);
+  // ChatView stays mounted across threads, and a detached send still holds its own thread's setters.
+  const localDispatch = stored?.key === key ? stored.snapshot : null;
 
   const resetLocalDispatch = () => {
-    setDispatches((current) => {
-      if (!current.has(threadKey)) return current;
-      const next = new Map(current);
-      next.delete(threadKey);
-      return next;
-    });
+    setLocalDispatch((current) => (current?.key === key ? null : current));
   };
 
   const serverAcknowledgedLocalDispatch = hasServerAcknowledgedLocalDispatch({
@@ -51,24 +47,27 @@ export function useLocalDispatchState(input: {
     preparingWorktree?: boolean;
     submissionIntent?: ComposerSubmissionIntent;
   }) => {
+    // A send that finishes after the user left its thread has no busy state on screen to show.
+    if (input.currentRouteThreadKeyRef.current !== key) return;
     const preparingWorktree = Boolean(options?.preparingWorktree);
-    setDispatches((current) => {
-      const active = serverAcknowledgedLocalDispatch ? undefined : current.get(threadKey);
+    setLocalDispatch((current) => {
+      const active =
+        serverAcknowledgedLocalDispatch || current?.key !== key ? null : current.snapshot;
       if (active) {
         const submissionIntent = options?.submissionIntent ?? active.submissionIntent;
         return active.preparingWorktree === preparingWorktree &&
           active.submissionIntent === submissionIntent
           ? current
-          : new Map(current).set(threadKey, { ...active, preparingWorktree, submissionIntent });
+          : { key, snapshot: { ...active, preparingWorktree, submissionIntent } };
       }
-      return new Map(current).set(
-        threadKey,
-        createLocalDispatchSnapshot(input.activeThread, {
+      return {
+        key,
+        snapshot: createLocalDispatchSnapshot(input.activeThread, {
           ...options,
           environmentId: input.environmentId,
           latestUserMessageId: input.latestUserMessageId,
         }),
-      );
+      };
     });
   };
 
