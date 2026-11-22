@@ -1,6 +1,7 @@
 import {
   type ChatAttachment,
   isCompactionCommandMessage,
+  parseGoalCommand,
   type OrchestrationV2ProjectedTurnItem,
   type OrchestrationV2ProviderCapabilities,
 } from "@onicode/contracts";
@@ -47,6 +48,8 @@ export interface ThreadQueueWorkflowState {
   /** The active run is a compaction, so promoting a queued message stops it instead of steering. */
   readonly promoteSkipsCompaction: boolean;
   readonly canSendNow: boolean;
+  /** The provider runs /goal itself; absent when its server does not say. */
+  readonly nativeGoals?: boolean;
 }
 
 export function resolveActiveThreadRun(projection: Pick<Projection, "runs">): Run | null {
@@ -136,6 +139,14 @@ export function threadCanSteer(
     run: projection?.runs.find((run) => run.id === input.activeRunId),
     messages: projection?.messages,
   });
+}
+
+/** Whether the thread's provider runs /goal itself; undefined when its server does not say. */
+export function threadRunsNativeGoals(
+  projection: Projection | null | undefined,
+): boolean | undefined {
+  if (projection == null) return undefined;
+  return resolveThreadProviderSession(projection)?.capabilities.turns.supportsNativeGoals;
 }
 
 export function threadSupportsProviderHandoff(projection: Projection | null | undefined): boolean {
@@ -246,6 +257,9 @@ export function deriveThreadQueueWorkflowState(
         (capabilities === undefined || canSteer)) ||
       (hasSteerableProviderTurn && canSteer),
     promoteSkipsCompaction,
+    ...(capabilities?.supportsNativeGoals === undefined
+      ? {}
+      : { nativeGoals: capabilities.supportsNativeGoals }),
   };
 }
 
@@ -268,7 +282,8 @@ export type QueuedRunSendNow =
 
 /**
  * What a queued row's Send now does, or null when it can't. While a turn runs, a command that
- * never steers is only moved to the front, which needs no steering capability either.
+ * never steers is only moved to the front, which needs no steering capability either; nor does
+ * /goal on a provider that runs it, which the server moves first, stopping the turn if it must.
  */
 export function resolveQueuedRunSendNow(
   workflow: ThreadQueueWorkflowState,
@@ -284,11 +299,18 @@ export function resolveQueuedRunSendNow(
     text: queued.message?.text ?? queued.text,
     attachments: queued.attachments,
   };
-  if (!workflow.promoteSkipsCompaction && commandNeverSteers(message)) {
+  if (!workflow.promoteSkipsCompaction && commandNeverSteers(message, workflow.nativeGoals)) {
     const first = workflow.queuedRuns[0]!.run.id;
     return first === runId ? null : { type: "move-first", beforeRunId: first };
   }
-  return canPromoteQueuedRun(workflow, queued.run)
+  const nativeGoal =
+    !workflow.promoteSkipsCompaction &&
+    workflow.nativeGoals === true &&
+    parseGoalCommand(message) !== null;
+  return canPromoteQueuedRun(
+    nativeGoal ? { ...workflow, canPromoteToSteer: true } : workflow,
+    queued.run,
+  )
     ? { type: "steer", targetRunId: workflow.activeRun.id }
     : null;
 }

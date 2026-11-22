@@ -830,6 +830,7 @@ export const AcpProviderCapabilitiesV2 = {
     exposesNativeThreadId: true,
   },
   turns: {
+    supportsNativeGoals: false,
     exposesNativeTurnId: false,
     emitsTurnStarted: true,
     emitsTurnCompleted: true,

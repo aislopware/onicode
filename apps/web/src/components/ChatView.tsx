@@ -114,6 +114,7 @@ import {
 import {
   getUserQueuedThreadRuns,
   threadCanSteer,
+  threadRunsNativeGoals,
   threadSupportsProviderHandoff,
 } from "@onicode/client-runtime/state/thread-workflows";
 import { resolvePendingHandoff } from "@onicode/client-runtime/handoff";
@@ -3179,6 +3180,7 @@ export default function ChatView(props: ChatViewProps) {
     openUsageLimits,
     providerSessionViews: sessionViews,
     openProviderSessionView: openSessionViewStable,
+    nativeGoals: threadRunsNativeGoals(serverProjection),
     clearUsageLimitsFor,
     needsLoadBalancing,
     loadBalancing,

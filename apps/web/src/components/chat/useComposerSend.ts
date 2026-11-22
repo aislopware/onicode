@@ -259,6 +259,8 @@ interface ComposerSendInput {
   readonly openUsageLimits: UsageLimitsPanel["open"];
   readonly providerSessionViews: ReadonlyArray<ProviderSessionView>;
   readonly openProviderSessionView: (view: ProviderSessionView) => void;
+  /** The provider runs /goal itself; undefined when its server does not say. */
+  readonly nativeGoals: boolean | undefined;
   readonly clearUsageLimitsFor: UsageLimitsPanel["clearFor"];
   readonly needsLoadBalancing: boolean;
   readonly loadBalancing: DraftEnvironmentRouting["loadBalancing"];
@@ -363,6 +365,7 @@ export function useComposerSend(input: ComposerSendInput) {
     openUsageLimits,
     providerSessionViews,
     openProviderSessionView,
+    nativeGoals,
     clearUsageLimitsFor,
     needsLoadBalancing,
     loadBalancing,
@@ -1089,6 +1092,7 @@ export function useComposerSend(input: ComposerSendInput) {
       phase,
       dispatchMode,
       freshContext: freshArm !== undefined,
+      nativeGoals,
     });
     if (missingWorktreeBaseBranch) {
       setThreadError(

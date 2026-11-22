@@ -283,6 +283,7 @@ export const CodexProviderCapabilitiesV2 = {
     exposesNativeThreadId: true,
   },
   turns: {
+    supportsNativeGoals: true,
     exposesNativeTurnId: true,
     emitsTurnStarted: true,
     emitsTurnCompleted: true,

@@ -133,6 +133,7 @@ const OpenCodeProviderCapabilitiesV2 = {
     exposesNativeThreadId: true,
   },
   turns: {
+    supportsNativeGoals: false,
     exposesNativeTurnId: false,
     emitsTurnStarted: true,
     emitsTurnCompleted: true,

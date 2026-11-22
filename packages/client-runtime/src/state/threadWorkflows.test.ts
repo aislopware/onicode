@@ -19,6 +19,7 @@ const capabilities = (input?: {
   readonly interrupt?: boolean;
   readonly nativeFork?: boolean;
   readonly portableFork?: boolean;
+  readonly goals?: boolean;
 }) =>
   ({
     turns: {
@@ -26,6 +27,7 @@ const capabilities = (input?: {
       supportsActiveSteering: input?.steer ?? false,
       supportsSteeringByInterruptRestart: input?.restartSteer ?? false,
       supportsInterrupt: input?.interrupt ?? false,
+      ...(input?.goals === undefined ? {} : { supportsNativeGoals: input.goals }),
     },
     threads: {
       canForkThread: input?.nativeFork ?? false,
@@ -291,7 +293,23 @@ describe("thread workflows", () => {
       review: { type: "move-first", beforeRunId: "plain" },
       goal: { type: "steer", targetRunId: "active" },
     },
-  ])("moves a queued command first instead of steering it, steer=$steer", (row) => {
+    // The server moves /goal first for a provider that runs it, stopping the turn if it must.
+    {
+      steer: false,
+      goals: true,
+      plain: null,
+      review: { type: "move-first", beforeRunId: "plain" },
+      goal: { type: "steer", targetRunId: "active" },
+    },
+    // Without a provider that runs it, /goal is a command like any other.
+    {
+      steer: true,
+      goals: false,
+      plain: { type: "steer", targetRunId: "active" },
+      review: { type: "move-first", beforeRunId: "plain" },
+      goal: { type: "move-first", beforeRunId: "plain" },
+    },
+  ])("moves a queued command first instead of steering it, steer=$steer goals=$goals", (row) => {
     const queued = ["plain", "review", "goal"];
     const text = { plain: "Next", review: "/review", goal: "/goal pause" } as const;
     const projection = (activeStatus: string) =>
@@ -325,7 +343,11 @@ describe("thread workflows", () => {
           {
             id: "session",
             status: "running",
-            capabilities: capabilities({ queued: true, steer: row.steer }),
+            capabilities: capabilities({
+              queued: true,
+              steer: row.steer,
+              ...(row.goals === undefined ? {} : { goals: row.goals }),
+            }),
           },
         ],
       }) as never;
