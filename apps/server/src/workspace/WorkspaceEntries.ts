@@ -164,18 +164,27 @@ const MAX_PENDING_SYMLINK_TARGET_STATS = 3;
 
 /**
  * Whether a link's target is a folder, with at most `max` target stats in flight. Overlapping
- * browses, as typing makes, share one stat per link. A full pool makes callers wait for a slot
- * until their signal aborts, which reads as "not a folder"; a pool held only by stats that
- * outlived a caller's timeout answers that at once.
+ * browses, as typing makes, share one stat per link, queued callers included. A full pool makes
+ * callers wait for a slot until their signal aborts, which reads as "not a folder"; a stat that
+ * outlived a caller's timeout, or a pool held only by such stats, answers that at once.
  */
 export function makeSymlinkTargetStats(
   isDirectory: (fullPath: string) => Promise<boolean>,
   max = MAX_PENDING_SYMLINK_TARGET_STATS,
 ) {
   const pending = new Map<string, { readonly result: Promise<boolean>; stuck: boolean }>();
-  // First in, first woken; a woken caller that starts no stat passes its wake on.
-  const waiters: Array<() => void> = [];
-  const wakeNext = () => waiters.shift()?.();
+  // First in, first woken for a free slot; a woken caller that starts no stat passes its wake
+  // on. Callers queued for a link whose stat starts join it instead.
+  type Waiter = { readonly fullPath: string; reason?: "slot" | "joined"; wake?: () => void };
+  const waiters: Waiter[] = [];
+  const release = (waiter: Waiter, reason: "slot" | "joined") => {
+    waiter.reason = reason;
+    waiter.wake?.();
+  };
+  const wakeNext = () => {
+    const waiter = waiters.shift();
+    if (waiter) release(waiter, "slot");
+  };
   const untilAborted = <A>(promise: Promise<A>, signal: AbortSignal, onAbort: () => void) =>
     new Promise<A | undefined>((resolve) => {
       const abort = () => {
@@ -208,23 +217,23 @@ export function makeSymlinkTargetStats(
       const shared = pending.get(fullPath);
       if (shared) {
         passOn();
-        return awaitStat(shared, signal);
+        return shared.stuck ? false : awaitStat(shared, signal);
       }
       if (pending.size < max) break;
       if ([...pending.values()].every((entry) => entry.stuck)) {
         passOn();
         return false;
       }
-      const wake = Promise.withResolvers<true>();
-      const waiter = () => wake.resolve(true);
+      const wake = Promise.withResolvers<void>();
+      const waiter: Waiter = { fullPath, wake: wake.resolve };
       waiters.push(waiter);
-      woken =
-        (await untilAborted(wake.promise, signal, () => {
-          const queued = waiters.indexOf(waiter);
-          // Already taken off the queue: its wake is on the way, so hand it on.
-          if (queued === -1) wakeNext();
-          else waiters.splice(queued, 1);
-        })) === true;
+      await untilAborted(wake.promise, signal, () => {
+        const queued = waiters.indexOf(waiter);
+        if (queued !== -1) waiters.splice(queued, 1);
+        // Already given a free slot: hand it on.
+        else if (waiter.reason === "slot") wakeNext();
+      });
+      woken = !signal.aborted && waiter.reason === "slot";
     }
     const entry = {
       result: isDirectory(fullPath)
@@ -236,6 +245,10 @@ export function makeSymlinkTargetStats(
       stuck: false,
     };
     pending.set(fullPath, entry);
+    for (const waiter of waiters.filter((queued) => queued.fullPath === fullPath)) {
+      waiters.splice(waiters.indexOf(waiter), 1);
+      release(waiter, "joined");
+    }
     return awaitStat(entry, signal);
   };
 }
@@ -366,8 +379,7 @@ export const make = Effect.gen(function* () {
                 Option.getOrElse(isDirectory, () => false) ? candidate : null,
               ),
             ),
-          // The pool bounds the stats; every candidate shares one timeout window.
-          { concurrency: "unbounded" },
+          { concurrency: MAX_PENDING_SYMLINK_TARGET_STATS },
         );
         for (const candidate of resolvedSymlinks) {
           if (candidate !== null) entries.push(candidate);

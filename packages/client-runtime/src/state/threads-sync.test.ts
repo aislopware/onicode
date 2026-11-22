@@ -2621,9 +2621,9 @@ describe("EnvironmentThreads", () => {
   );
 
   it.effect.each([
-    { late: "an event", marker: [] },
-    { late: "an event and its marker", marker: [synchronized()] },
-  ])("drops $late the lost session's stream delivers after a disconnect", ({ marker }) =>
+    { late: "an event after its marker", synced: true, marker: [] },
+    { late: "an event and its marker", synced: false, marker: [synchronized()] },
+  ])("drops $late the lost session's stream delivers after a disconnect", ({ synced, marker }) =>
     Effect.gen(function* () {
       const harness = yield* makeHarness({ cached: BASE_PROJECTION, completionMarker: true });
       yield* awaitSubscriptionCount(harness, 1);
@@ -2632,7 +2632,12 @@ describe("EnvironmentThreads", () => {
         ...AVAILABLE_CONNECTION_STATE,
         phase: "connected" as const,
       });
-      yield* Queue.offer(harness.inputs, titleUpdated("Held", CACHED_SNAPSHOT_SEQUENCE + 1));
+      if (synced) {
+        yield* Queue.offer(harness.inputs, synchronized());
+        yield* awaitThreadState(harness.observed, (value) => value.status === "live");
+      } else {
+        yield* Queue.offer(harness.inputs, titleUpdated("Held", CACHED_SNAPSHOT_SEQUENCE + 1));
+      }
       yield* SubscriptionRef.set(harness.supervisorState, {
         ...AVAILABLE_CONNECTION_STATE,
         phase: "offline" as const,
@@ -2653,6 +2658,41 @@ describe("EnvironmentThreads", () => {
       yield* awaitSubscriptionCount(harness, 2);
       expect(yield* Ref.get(harness.lastSubscribeAfterSequence)).toBe(CACHED_SNAPSHOT_SEQUENCE);
     }),
+  );
+
+  it.effect(
+    "keeps a newer connection's catch-up when the lost session's disconnect lands late",
+    () =>
+      Effect.gen(function* () {
+        const harness = yield* makeHarness({ cached: BASE_PROJECTION, completionMarker: true });
+        yield* awaitSubscriptionCount(harness, 1);
+        const lost = { ...AVAILABLE_CONNECTION_STATE, generation: 1 };
+        yield* SubscriptionRef.set(harness.supervisorState, {
+          ...lost,
+          phase: "connected" as const,
+        });
+        yield* SubscriptionRef.set(harness.supervisorState, { ...lost, phase: "offline" as const });
+        yield* Queue.offer(harness.inputs, new Error("socket closed"));
+        yield* awaitThreadState(harness.observed, (value) => Option.isSome(value.error));
+        yield* SubscriptionRef.set(harness.supervisorState, {
+          ...AVAILABLE_CONNECTION_STATE,
+          generation: 2,
+          phase: "connected" as const,
+        });
+        yield* TestClock.adjust("250 millis");
+        yield* awaitSubscriptionCount(harness, 2);
+        yield* Queue.offer(harness.inputs, titleUpdated("Fresh", CACHED_SNAPSHOT_SEQUENCE + 1));
+        // A watcher that lags behind the new subscribe sees the old generation's disconnect now.
+        yield* SubscriptionRef.set(harness.supervisorState, { ...lost, phase: "offline" as const });
+        yield* SubscriptionRef.set(harness.supervisorState, {
+          ...AVAILABLE_CONNECTION_STATE,
+          generation: 2,
+          phase: "connected" as const,
+        });
+        yield* Queue.offer(harness.inputs, synchronized());
+        const live = yield* awaitThreadState(harness.observed, (value) => value.status === "live");
+        expect(Option.getOrThrow(live.data).thread.title).toBe("Fresh");
+      }),
   );
 
   it.effect("announces request resolution only from a synchronized projection", () =>

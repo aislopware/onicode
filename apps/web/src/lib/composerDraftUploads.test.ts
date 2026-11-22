@@ -4,12 +4,12 @@ import { expect, it, vi } from "vite-plus/test";
 
 import { DraftId, useComposerDraftStore } from "../composerDraftStore";
 import { closeDraftThreadTerminals } from "./closeDraftThreadTerminals";
-import { releaseProjectDrafts } from "./composerDraftUploads";
+import { closeUnreachableDraftThreadTerminals, releaseProjectDrafts } from "./composerDraftUploads";
 
 vi.mock("./attachmentUploadQueue", () => ({ releaseDraftAttachments: vi.fn() }));
 vi.mock("./closeDraftThreadTerminals", () => ({ closeDraftThreadTerminals: vi.fn() }));
 
-it("closes the terminals of a removed project's unsent draft threads", () => {
+it("closes a removed project's unsent draft terminals once no kept draft reaches them", () => {
   const environmentId = EnvironmentId.make("environment-local");
   const projectRef = scopeProjectRef(environmentId, ProjectId.make("project-1"));
   const otherProjectRef = scopeProjectRef(environmentId, ProjectId.make("project-2"));
@@ -28,9 +28,17 @@ it("closes the terminals of a removed project's unsent draft threads", () => {
   store.setProjectDraftThreadId(otherProjectRef, DraftId.make("draft-other"), {
     threadId: ThreadId.make("thread-other"),
   });
+  store.setLogicalProjectDraftThreadId("logical-moved", projectRef, DraftId.make("draft-moved"), {
+    threadId: ThreadId.make("thread-moved"),
+  });
   expect(store.getDraftSession(DraftId.make("draft-sent"))).not.toBeNull();
 
-  releaseProjectDrafts(projectRef);
+  const draftThreads = releaseProjectDrafts(projectRef);
+  expect(closeDraftThreadTerminals).not.toHaveBeenCalled();
+  // Removing one checkout of a project group moves its draft to another member.
+  store.setDraftThreadContext(DraftId.make("draft-moved"), { projectRef: otherProjectRef });
+  store.clearProjectDraftThreadId(projectRef);
+  closeUnreachableDraftThreadTerminals(draftThreads);
 
   expect(closeDraftThreadTerminals).toHaveBeenCalledExactlyOnceWith(
     environmentId,

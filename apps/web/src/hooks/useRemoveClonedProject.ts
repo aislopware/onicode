@@ -6,7 +6,10 @@ import { msg } from "gt-react";
 
 import { useComposerDraftStore } from "../composerDraftStore";
 import { resolveThreadRouteTarget } from "../threadRoutes";
-import { releaseProjectDrafts } from "../lib/composerDraftUploads";
+import {
+  closeUnreachableDraftThreadTerminals,
+  releaseProjectDrafts,
+} from "../lib/composerDraftUploads";
 import { waitForProjectRemoval } from "../state/entities";
 import { projectEnvironment } from "../state/projects";
 import { useAtomCommand } from "../state/use-atom-command";
@@ -44,10 +47,11 @@ export function useRemoveClonedProject() {
     const viewingThisProject =
       viewingDraft?.environmentId === projectRef.environmentId &&
       viewingDraft.projectId === projectRef.projectId;
-    releaseProjectDrafts(projectRef);
+    const draftThreads = releaseProjectDrafts(projectRef);
     const projectDraft = draftStore.getDraftThreadByProjectRef(projectRef);
     if (projectDraft) draftStore.clearDraftThread(projectDraft.draftId);
     draftStore.clearProjectDraftThreadId(projectRef);
+    closeUnreachableDraftThreadTerminals(draftThreads);
     if (viewingThisProject) void router.navigate({ to: "/", replace: true });
     return true;
   };
