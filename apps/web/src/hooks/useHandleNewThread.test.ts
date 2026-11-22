@@ -21,11 +21,6 @@ const testState = vi.hoisted(() => {
   let storedDraft: {
     readonly draftId: string;
     readonly environmentId: string;
-    readonly projectId?: string;
-    readonly envMode?: string;
-    readonly branch?: string;
-    readonly worktreePath?: string;
-    readonly runtimeMode?: string;
     readonly promotedTo: null;
     readonly threadId: string;
   } | null = null;
@@ -122,7 +117,6 @@ const testState = vi.hoisted(() => {
       draftStore.setDraftThreadContext.mockClear();
       draftStore.setLogicalProjectDraftThreadId.mockClear();
       draftStore.setPrompt.mockClear();
-      draftStore.applyStickyState.mockClear();
       projectFileRead = new Promise<ProjectFile>((resolve) => {
         completeProjectFileRead = resolve;
       });
