@@ -478,14 +478,22 @@ describe("source file scroll", () => {
       await anchored;
       await mouse("mouseMoved", startRect.left + 80, nearEdgeY);
       await mouse("mouseMoved", startRect.left + 80, outsideEdgeY);
-      await vi.waitFor(() => {
-        const firstMounted = Number(rows()[0]?.getAttribute("data-line"));
-        if (direction === "down") {
-          expect(firstMounted).toBeGreaterThanOrEqual(targetFirstMounted);
-        } else {
-          expect(firstMounted).toBeLessThanOrEqual(targetFirstMounted);
-        }
-      });
+      const firstMounted = () => Number(rows()[0]?.getAttribute("data-line"));
+      const shifted = () =>
+        direction === "down"
+          ? firstMounted() >= targetFirstMounted
+          : firstMounted() <= targetFirstMounted;
+      // Chromium's selection autoscroll runs on frame timers that stall under load, so the
+      // test scrolls in steps itself and extends the drag after each scroll lands.
+      for (let step = 0; step < 40 && !shifted(); step++) {
+        const scrolled = new Promise((resolve) =>
+          scroller.addEventListener("scroll", resolve, { once: true }),
+        );
+        scroller.scrollTop += direction === "down" ? 200 : -200;
+        await scrolled;
+        await mouse("mouseMoved", startRect.left + 80, outsideEdgeY + (step % 2));
+      }
+      await vi.waitFor(() => expect(shifted()).toBe(true));
       await mouse("mouseReleased", startRect.left + 80, outsideEdgeY);
 
       const overlayRanges = shadowRoot()!.querySelectorAll("[data-selection-range]");
