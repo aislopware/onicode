@@ -115,6 +115,12 @@ import { formatTerminalContextReference, type TerminalContextDraft } from "./lib
 import { createDeferredStorage } from "./lib/storage";
 import { applyPreviewServerSnapshot, resetPreviewStateForTests } from "./previewStateStore";
 
+const threadsWithTerminals = vi.hoisted(() => new Set<string>());
+vi.mock("./state/terminalSessions", () => ({
+  threadHasKnownTerminal: (_environmentId: string, threadId: string) =>
+    threadsWithTerminals.has(threadId),
+}));
+
 function makeImage(input: {
   id: string;
   previewUrl: string;
@@ -1014,17 +1020,32 @@ describe("composerDraftStore project draft thread mapping", () => {
     expect(draftByKey(draftId)).toBeUndefined();
   });
 
-  it("keeps a draft with an open page when remapping a project to a new draft thread", () => {
+  it.each([
+    {
+      reachable: "an open page",
+      open: () => {
+        applyPreviewServerSnapshot(scopeThreadRef(TEST_ENVIRONMENT_ID, threadId), {
+          threadId,
+          tabId: "tab-link",
+          navStatus: { _tag: "Success", url: "https://example.com/", title: "Example" },
+          canGoBack: false,
+          canGoForward: false,
+          updatedAt: "2026-10-09T00:00:00.000Z",
+        });
+        return resetPreviewStateForTests;
+      },
+    },
+    {
+      reachable: "a terminal",
+      open: () => {
+        threadsWithTerminals.add(threadId);
+        return () => threadsWithTerminals.clear();
+      },
+    },
+  ])("keeps a draft with $reachable when remapping a project to a new draft thread", ({ open }) => {
     const store = useComposerDraftStore.getState();
     store.setProjectDraftThreadId(projectRef, draftId, { threadId });
-    applyPreviewServerSnapshot(scopeThreadRef(TEST_ENVIRONMENT_ID, threadId), {
-      threadId,
-      tabId: "tab-link",
-      navStatus: { _tag: "Success", url: "https://example.com/", title: "Example" },
-      canGoBack: false,
-      canGoForward: false,
-      updatedAt: "2026-10-09T00:00:00.000Z",
-    });
+    const close = open();
     try {
       store.setProjectDraftThreadId(projectRef, otherDraftId, { threadId: otherThreadId });
 
@@ -1032,7 +1053,7 @@ describe("composerDraftStore project draft thread mapping", () => {
       const persisted = partializeComposerDraftStoreState(useComposerDraftStore.getState());
       expect(persisted.draftThreadsByThreadKey[draftId]?.threadId).toBe(threadId);
     } finally {
-      resetPreviewStateForTests();
+      close();
     }
   });
 

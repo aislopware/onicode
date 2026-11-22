@@ -9,6 +9,8 @@ import {
   attachedTerminalSessionAtom,
   knownTerminalSessionsAtom,
   selectKnownTerminalSessions,
+  terminalLabelsFamily,
+  threadHasKnownTerminal,
 } from "./terminalSessions";
 
 const attachCalls = vi.hoisted(() => [] as unknown[]);
@@ -139,6 +141,27 @@ describe("knownTerminalSessionsAtom", () => {
     const previousSuccess = Option.some(metadataResult(first));
     registry.set(metadataAtom, AsyncResult.failure(Cause.die("unavailable"), { previousSuccess }));
     expect(registry.get(sessions)).toBeNull();
+    unsubscribe();
+  });
+});
+
+describe("terminalLabelsFamily", () => {
+  it("keeps its value when an upsert reorders two threads' terminals", () => {
+    const registry = AtomRegistry.make();
+    const labels = terminalLabelsFamily(environmentA);
+    const first = summary(threadA, "term-1", { label: "Dev server" });
+    const other = summary(threadB, "term-1", { label: "Tests" });
+    registry.set(metadataAtom, AsyncResult.success([first, other]));
+    const notified: unknown[] = [];
+    const unsubscribe = registry.subscribe(labels, (value) => notified.push(value));
+
+    registry.set(
+      metadataAtom,
+      AsyncResult.success([other, { ...first, updatedAt: "2026-09-04T00:01:00.000Z" }]),
+    );
+    expect(notified).toEqual([]);
+    expect(threadHasKnownTerminal(environmentA, threadB, registry)).toBe(true);
+    expect(threadHasKnownTerminal(environmentA, ThreadId.make("thread-c"), registry)).toBe(false);
     unsubscribe();
   });
 });

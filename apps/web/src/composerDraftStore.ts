@@ -58,6 +58,7 @@ import type {
 import { waitForDraftHeroTransition } from "./components/chat/draftHeroTransition";
 import { getLocalStorageItem } from "./hooks/useLocalStorage";
 import { readThreadPreviewState } from "./previewStateStore";
+import { threadHasKnownTerminal } from "./state/terminalSessions";
 import {
   readInstanceCustomModels,
   resolveAppModelSelection,
@@ -1711,6 +1712,15 @@ function draftThreadHasOpenPreview(draftThread: DraftThreadState | undefined): b
   return Object.keys(readThreadPreviewState(ref).sessions).length > 0;
 }
 
+// Its terminals are reachable only through the draft's sidebar row.
+function draftThreadHasTerminal(draftThread: DraftThreadState | undefined): boolean {
+  return (
+    draftThread !== undefined &&
+    draftThread.promotedTo == null &&
+    threadHasKnownTerminal(draftThread.environmentId, draftThread.threadId)
+  );
+}
+
 function isComposerThreadKeyInUse(mappings: Record<string, string>, threadKey: string): boolean {
   return Object.values(mappings).includes(threadKey);
 }
@@ -2411,7 +2421,8 @@ export function partializeComposerDraftStoreState(
           mappedDraftKeys.has(threadKey) ||
           isDraftThreadPromoting(draftThread) ||
           composerDraftHasUserContent(state.draftsByThreadKey[threadKey]) ||
-          draftThreadHasOpenPreview(draftThread),
+          draftThreadHasOpenPreview(draftThread) ||
+          draftThreadHasTerminal(draftThread),
       )
       .map(([threadKey]) => threadKey),
   );
@@ -3018,7 +3029,8 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               !composerDraftHasUserContent(
                 state.draftsByThreadKey[previousThreadKeyForLogicalProject],
               ) &&
-              !draftThreadHasOpenPreview(previousDraftThread)
+              !draftThreadHasOpenPreview(previousDraftThread) &&
+              !draftThreadHasTerminal(previousDraftThread)
             ) {
               delete nextDraftThreadsByThreadKey[previousThreadKeyForLogicalProject];
               if (state.draftsByThreadKey[previousThreadKeyForLogicalProject] !== undefined) {

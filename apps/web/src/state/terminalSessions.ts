@@ -18,8 +18,9 @@ import {
 
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import { AsyncResult, Atom } from "effect/reactivity";
+import { AsyncResult, Atom, type AtomRegistry } from "effect/reactivity";
 
+import { appAtomRegistry } from "../rpc/atomRegistry";
 import { formatEnvironmentQueryError } from "./query";
 import { terminalEnvironment } from "./terminal";
 import { environmentAtomList, environmentIdsKey } from "./environmentAtomList";
@@ -281,19 +282,30 @@ export function useThreadRunningTerminalIds(input: {
   return selectRunningSubprocessTerminalIds(sessions ?? []);
 }
 
-// A string so status updates that keep every label notify no one.
-const terminalLabelsFamily = Atom.family((environmentId: EnvironmentId) =>
+// A string in thread order so status updates that keep every label notify no one:
+// an upsert moves its terminal to the end of the metadata.
+export const terminalLabelsFamily = Atom.family((environmentId: EnvironmentId) =>
   Atom.make((get) => {
     const metadata = get(terminalEnvironment.metadata({ environmentId, input: null }));
     if (metadata._tag !== "Success") return "[]";
     return JSON.stringify(
-      Array.from(terminalMetadataIndex(metadata.value).byThreadId, ([threadId, summaries]) => [
-        threadId,
-        summaries[0]!.label,
-      ]),
+      Array.from(terminalMetadataIndex(metadata.value).byThreadId)
+        .toSorted(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+        .map(([threadId, summaries]) => [threadId, summaries[0]!.label]),
     );
   }).pipe(Atom.withLabel(`web-terminal-labels:${environmentId}`)),
 );
+
+/** Whether the client knows of a terminal for this thread, as the sidebar lists it. */
+export function threadHasKnownTerminal(
+  environmentId: EnvironmentId,
+  threadId: string,
+  registry: AtomRegistry.AtomRegistry = appAtomRegistry,
+): boolean {
+  const encoded = registry.get(terminalLabelsFamily(environmentId));
+  if (encoded === "[]") return false;
+  return (JSON.parse(encoded) as Array<[string, string]>).some(([id]) => id === threadId);
+}
 const terminalLabelsListAtom = environmentAtomList("web-terminal-labels", terminalLabelsFamily);
 const terminalLabelsByResults = new WeakMap<ReadonlyArray<string>, ReadonlyMap<string, string>>();
 

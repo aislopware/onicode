@@ -157,30 +157,57 @@ const resolveBrowseTarget = Effect.fn("WorkspaceEntries.resolveBrowseTarget")(fu
 
 // A link to an unresponsive network share must not hold up the local entries beside it.
 const SYMLINK_TARGET_STAT_TIMEOUT = Duration.seconds(1);
-// A timed-out stat cannot be cancelled and keeps a libuv worker (4 by default) busy,
-// so cap target stats in flight to leave most of the pool to other fs work.
-const MAX_PENDING_SYMLINK_TARGET_STATS = 2;
+// A timed-out stat cannot be cancelled and keeps a libuv worker (4 by default) busy, so cap
+// target stats in flight to leave a worker for other fs work. Three, so links to healthy
+// folders still resolve while two stats hang on a stalled mount.
+const MAX_PENDING_SYMLINK_TARGET_STATS = 3;
+
+/**
+ * Whether a link's target is a folder, with at most `max` target stats in flight. Overlapping
+ * browses, as typing makes, share one stat per link; a full pool makes callers wait for a slot
+ * until their signal aborts, which reads as "not a folder".
+ */
+export function makeSymlinkTargetStats(
+  isDirectory: (fullPath: string) => Promise<boolean>,
+  max = MAX_PENDING_SYMLINK_TARGET_STATS,
+) {
+  const pending = new Map<string, Promise<boolean>>();
+  const waiters = new Set<() => void>();
+  return async (fullPath: string, signal: AbortSignal): Promise<boolean> => {
+    for (;;) {
+      const shared = pending.get(fullPath);
+      if (shared) return shared;
+      if (pending.size < max) break;
+      await new Promise<void>((resolve) => {
+        const wake = () => {
+          waiters.delete(wake);
+          signal.removeEventListener("abort", wake);
+          resolve();
+        };
+        waiters.add(wake);
+        signal.addEventListener("abort", wake);
+      });
+      if (signal.aborted) return false;
+    }
+    const stat = isDirectory(fullPath)
+      .catch(() => false)
+      .finally(() => {
+        pending.delete(fullPath);
+        for (const wake of waiters) wake();
+      });
+    pending.set(fullPath, stat);
+    return stat;
+  };
+}
 
 /** @public */
 export const make = Effect.gen(function* () {
   const path = yield* Path.Path;
   const workspacePaths = yield* WorkspacePaths.WorkspacePaths;
   const workspaceSearchIndexes = yield* WorkspaceSearchIndex.WorkspaceSearchIndexMap;
-  let pendingSymlinkTargetStats = 0;
-  const statSymlinkTarget = (candidate: { readonly name: string; readonly fullPath: string }) => {
-    if (pendingSymlinkTargetStats >= MAX_PENDING_SYMLINK_TARGET_STATS) {
-      return Promise.resolve(null);
-    }
-    pendingSymlinkTargetStats++;
-    return NodeFSP.stat(candidate.fullPath)
-      .then(
-        (stats) => (stats.isDirectory() ? candidate : null),
-        () => null,
-      )
-      .finally(() => {
-        pendingSymlinkTargetStats--;
-      });
-  };
+  const symlinkTargetIsDirectory = makeSymlinkTargetStats((fullPath) =>
+    NodeFSP.stat(fullPath).then((stats) => stats.isDirectory()),
+  );
   const vcsProcess = yield* VcsProcess.VcsProcess;
 
   const normalizeWorkspaceRoot = Effect.fn("WorkspaceEntries.normalizeWorkspaceRoot")(function* (
@@ -293,9 +320,11 @@ export const make = Effect.gen(function* () {
         const resolvedSymlinks = yield* Effect.forEach(
           symlinkCandidates,
           (candidate) =>
-            Effect.promise(() => statSymlinkTarget(candidate)).pipe(
+            Effect.promise((signal) => symlinkTargetIsDirectory(candidate.fullPath, signal)).pipe(
               Effect.timeoutOption(SYMLINK_TARGET_STAT_TIMEOUT),
-              Effect.map(Option.getOrNull),
+              Effect.map((isDirectory) =>
+                Option.getOrElse(isDirectory, () => false) ? candidate : null,
+              ),
             ),
           { concurrency: MAX_PENDING_SYMLINK_TARGET_STATS },
         );
