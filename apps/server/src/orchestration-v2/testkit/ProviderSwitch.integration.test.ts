@@ -587,6 +587,16 @@ class ClaudeMcpRegistrationTimeoutError extends Schema.TaggedError<ClaudeMcpRegi
   {},
 ) {}
 
+// Same tags as the Codex adapter's unexported errors.
+class CodexAppServerRetiredError extends Schema.TaggedError<CodexAppServerRetiredError>()(
+  "CodexAppServerRetiredError",
+  {},
+) {}
+class CodexAppServerUnresponsiveError extends Schema.TaggedError<CodexAppServerUnresponsiveError>()(
+  "CodexAppServerUnresponsiveError",
+  { method: Schema.String },
+) {}
+
 describe("orchestration v2 provider switching", () => {
   it.live.each([
     "compact-native",
@@ -2948,6 +2958,11 @@ describe("orchestration v2 provider switching", () => {
         driver: CLAUDE_DRIVER,
         detail: "Claude provider query ended before the turn could start.",
       }),
+    ],
+    ["a retired Codex app-server", new CodexAppServerRetiredError()],
+    [
+      "a Codex config read past its deadline",
+      new CodexAppServerUnresponsiveError({ method: "config/read" }),
     ],
     // Injected history is text only, so a refusal after injection must not settle the image.
     [

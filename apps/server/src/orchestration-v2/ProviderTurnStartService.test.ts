@@ -3312,6 +3312,21 @@ effectIt.effect("fails rather than retries a provider thread request with an unk
   }),
 );
 
+effectIt.effect("retries a provider thread request whose unanswered read acted on nothing", () =>
+  Effect.gen(function* () {
+    const harness = makeLocalCommandHarness({
+      text: "Continue",
+      ensureThreadFailure: { _tag: "CodexAppServerUnresponsiveError", method: "config/read" },
+    });
+
+    const error = yield* harness.startWithRetry.pipe(Effect.flip);
+
+    expect(error._tag).toBe("ProviderTurnStartError");
+    expect(harness.startRootRun).not.toHaveBeenCalled();
+    expect(harness.projection().runs.at(-1)?.status).toBe("starting");
+  }),
+);
+
 effectIt.effect("fails rather than starts a fresh thread when a resume outcome is unknown", () =>
   Effect.gen(function* () {
     const harness = makeLocalCommandHarness({

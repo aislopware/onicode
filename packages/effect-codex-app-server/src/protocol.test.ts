@@ -1,10 +1,12 @@
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as Logger from "effect/Logger";
 import * as PlatformError from "effect/PlatformError";
 import * as Queue from "effect/Queue";
 import * as References from "effect/References";
+import * as Scope from "effect/Scope";
 import * as Schema from "effect/Schema";
 import * as Sink from "effect/Sink";
 import * as Stdio from "effect/Stdio";
@@ -952,6 +954,29 @@ it.layer(NodeServices.layer)("effect-codex-app-server protocol", (it) => {
         yield* Queue.take(output);
       }).pipe(Effect.scoped);
       assert.equal(terminations, 0);
+    }),
+  );
+
+  it.effect("fails pending and later requests once its scope closes", () =>
+    Effect.gen(function* () {
+      const { stdio, output } = yield* makeInMemoryStdio();
+      const protocolScope = yield* Scope.make();
+      const transport = yield* CodexProtocol.makeCodexAppServerPatchedProtocol({ stdio }).pipe(
+        Scope.provide(protocolScope),
+      );
+      const pending = yield* transport.request("thread/fork", {}).pipe(Effect.forkScoped);
+      yield* Queue.take(output);
+
+      yield* Scope.close(protocolScope, Exit.void);
+
+      const failureOf = Effect.match({
+        onFailure: (error: CodexError.CodexAppServerError) => error,
+        onSuccess: () => assert.fail("Expected the request to fail"),
+      });
+      const failure = yield* Fiber.join(pending).pipe(failureOf);
+      assert.instanceOf(failure, CodexError.CodexAppServerInputStreamEndedError);
+      const later = yield* transport.request("thread/read", {}).pipe(failureOf);
+      assert.instanceOf(later, CodexError.CodexAppServerInputStreamEndedError);
     }),
   );
 
