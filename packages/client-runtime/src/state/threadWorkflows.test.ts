@@ -253,10 +253,10 @@ describe("thread workflows", () => {
   );
 
   it("offers to skip a running compaction even when the provider cannot steer", () => {
-    const state = deriveThreadQueueWorkflowState({
+    const projection = (status: string) => ({
       thread: { id: "thread", activeProviderThreadId: null },
       runs: [
-        { id: "compact", status: "running", userMessageId: "message-compact", ordinal: 1 },
+        { id: "compact", status, userMessageId: "message-compact", ordinal: 1 },
         { id: "queued", status: "queued", userMessageId: "message-queued", ordinal: 2 },
         { id: "command", status: "queued", userMessageId: "message-command", ordinal: 3 },
       ],
@@ -268,10 +268,16 @@ describe("thread workflows", () => {
       providerThreads: [],
       providerTurns: [],
       providerSessions: [],
-    } as never);
+    });
+    const state = deriveThreadQueueWorkflowState(projection("running") as never);
 
     expect(state.canPromoteToSteer).toBe(true);
     expect(state.promoteSkipsCompaction).toBe(true);
+    // Waiting for its checkpoint, the compaction is over and nothing takes a steer.
+    expect(deriveThreadQueueWorkflowState(projection("waiting") as never)).toMatchObject({
+      canPromoteToSteer: false,
+      promoteSkipsCompaction: false,
+    });
     // Skipping compaction starts a command as its own turn, so it is not just moved first.
     expect(resolveQueuedRunSendNow(state, "command" as never)).toEqual({
       type: "steer",

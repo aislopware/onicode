@@ -457,6 +457,8 @@ export interface ComposerSendPress extends ComposerDraftSendSettings {
   readonly draftKey: string;
   /** False while a paste iOS recorded has not reached the draft, so the draft is not yet final. */
   readonly flushInput: () => Promise<boolean>;
+  /** Sent after its thread screen left, so the turn it saw may have ended or been replaced. */
+  readonly away?: boolean;
 }
 
 export interface ComposerDraftProject {

@@ -85,6 +85,14 @@ it.each([
   // A saved queued edit still asks for Send now, which moves a /compact to the front.
   { canSteer: false, editingQueuedRun: true, alternateModifier: true, mode: "steer" },
   { canSteer: false, editingQueuedRun: true, alternateModifier: false, mode: "queue" },
+  // Sent after its screen left, the turn it saw may be over or replaced.
+  {
+    canSteer: true,
+    editingQueuedRun: false,
+    alternateModifier: true,
+    sentAway: true,
+    mode: "queue",
+  },
 ] as const)(
   "dispatches $mode with canSteer $canSteer while editing a queued run: $editingQueuedRun",
   ({ mode, ...input }) => {

@@ -621,6 +621,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
     followUp: ActiveTurnComposerAction | undefined,
     approvalIdsAtPress: ReadonlyArray<RuntimeRequestId>,
     settingsAtPress: ComposerDraftSendSettings,
+    away = false,
   ) => {
     if (isSubmissionLocked || sendBlockedReason !== null) return;
     if (pendingPastedTextAttachmentCountRef.current > 0) return;
@@ -662,6 +663,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
       ...settingsAtPress,
       draftKey: composerDraftKey,
       flushInput: async () => (await inputRef.current?.flushPendingInput()) ?? true,
+      away,
     };
     const sent = await settlePromise(() =>
       onSendMessage(followUp, stillSendable, approvalIdsAtPress, press),
@@ -683,8 +685,8 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
     // A queued edit's mode and model live on the thread's own draft.
     watchDraft: (onEdit) => watchComposerDraftEdits(composerDraftKey, composerOwnerKey, onEdit),
     flushInput: async () => inputRef.current?.flushPendingInput(),
-    onSubmit: (followUp, approvalIdsAtPress, settingsAtPress) =>
-      void handleSend(followUp, approvalIdsAtPress, settingsAtPress),
+    onSubmit: (followUp, approvalIdsAtPress, settingsAtPress, away) =>
+      handleSend(followUp, approvalIdsAtPress, settingsAtPress, away),
   });
   // Kept out of handleSend: a reference to the hook declared after it stops the compiler caching it.
   const heldSend = nativeImageSubmit.held;

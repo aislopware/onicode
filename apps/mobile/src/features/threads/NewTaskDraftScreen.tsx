@@ -62,6 +62,7 @@ import { makeTurnCommandMetadata } from "../../lib/commandMetadata";
 import {
   clearComposerDraftContent,
   getComposerDraftSnapshot,
+  sameComposerDraftState,
   updateComposerDraftSettings,
   scheduleUnusedComposerAttachmentCleanup,
   type ComposerSendPress,
@@ -708,9 +709,10 @@ export function NewTaskDraftScreen(props: {
       return null;
     }
     // Persist locally before clearing or leaving the draft; server setup runs on the thread.
-    flow.setSubmitting(true);
+    // A start left while its image converted has no flow on the stack to lock.
+    if (mountedRef.current) flow.setSubmitting(true);
     const queued = await settlePromise(() => enqueueThreadOutboxMessage(message));
-    flow.setSubmitting(false);
+    if (mountedRef.current) flow.setSubmitting(false);
     if (AsyncResult.isFailure(queued)) {
       const error = squashAtomCommandFailure(queued);
       Dialog.alert(
@@ -730,8 +732,11 @@ export function NewTaskDraftScreen(props: {
     }
     // The composer has moved to the submitted thread; a pick still converting
     // would otherwise resurrect this draft.
-    abortComposerDraftOperations(draftKey);
     const draftSnapshot = getComposerDraftSnapshot(draftKey);
+    // Reopened while the write was pending, the draft keeps its new edits along with what was sent.
+    if (!mountedRef.current && !sameComposerDraftState(draftSnapshot, draft))
+      return message.messageId;
+    abortComposerDraftOperations(draftKey);
     // The queued message owns the attachments now, so the sweep is deferred
     // until the write confirms it.
     clearComposerDraftContent(draftKey, {

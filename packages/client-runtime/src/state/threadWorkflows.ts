@@ -236,8 +236,11 @@ export function deriveThreadQueueWorkflowState(
   const activeMessage = projection.messages.find(
     (message) => message.id === activeRun?.userMessageId,
   );
+  // Waiting for its checkpoint, the compaction is over.
   const promoteSkipsCompaction =
-    activeMessage !== undefined && isCompactionCommandMessage(activeMessage);
+    activeRun?.status !== "waiting" &&
+    activeMessage !== undefined &&
+    isCompactionCommandMessage(activeMessage);
   const hasSteerableProviderTurn =
     activeRun?.status === "running" &&
     activeRun.activeAttemptId !== null &&

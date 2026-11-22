@@ -249,6 +249,7 @@ export function useQueuedRunEdit(input: {
   const editQueuedRunCommand = useEditQueuedRunCommand();
   const promoteQueuedRun = useAtomCommand(threadEnvironment.promoteQueuedRun);
   const moveQueuedRunFirst = useAtomCommand(threadEnvironment.moveQueuedRunFirst);
+  const resumeThreadQueue = useAtomCommand(threadEnvironment.resumeThreadQueue);
   const editKey = scopedThreadKey(routeThreadRef);
   const storedEdit = useAtomValue(queuedRunEdits.atom)[editKey] ?? null;
   const editing = activeThreadId === null ? null : storedEdit;
@@ -435,7 +436,7 @@ export function useQueuedRunEdit(input: {
     });
   });
 
-  // The same move as the queued row's "Send now" while a turn runs.
+  // The same move as the queued row's "Send now".
   const steerSavedRun = async (
     edited: EditingQueuedRun,
     saved: { readonly text: string; readonly attachments: ReadonlyArray<unknown> },
@@ -449,7 +450,12 @@ export function useQueuedRunEdit(input: {
       edited.runId,
       saved,
     );
-    if (sendNow?.type === "steer") {
+    if (sendNow?.type === "start") {
+      await resumeThreadQueue({
+        environmentId,
+        input: { threadId: edited.threadId, runId: edited.runId },
+      });
+    } else if (sendNow?.type === "steer") {
       await promoteQueuedRun({
         environmentId,
         input: {

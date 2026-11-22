@@ -100,7 +100,9 @@ export function useSubmitAfterNativeImages(props: {
     followUp: ActiveTurnComposerAction | undefined,
     approvalIdsAtPress: ReadonlyArray<RuntimeRequestId>,
     settingsAtPress: ComposerDraftSendSettings,
-  ) => void;
+    /** Its composer left; settles once the send went or was turned down. */
+    away?: boolean,
+  ) => void | Promise<unknown>;
 }) {
   const heldSend = useRef<HeldSend | null>(null);
   const [releasedSend, setReleasedSend] = useState<HeldSend | null>(null);
@@ -176,12 +178,27 @@ export function useSubmitAfterNativeImages(props: {
     heldSend.current = null;
     released.current = null;
     setReleasedSend(null);
-    const submit = props.onSubmit;
+    const { onSubmit: submit, watchDraft } = props;
     // Only the thread screen sees a blocker clear, and a redirect declines its approvals there.
     const sendAway =
       props.blocked || shown.approvalIds.length > 0
         ? undefined
-        : () => submit(shown.followUp, shown.approvalIds, shown.settings);
+        : () => {
+            // A send that went clears the draft; one turned down leaves it for a returning composer.
+            let draftChanged = false;
+            const stop = watchDraft(() => {
+              draftChanged = true;
+            });
+            void Promise.resolve(submit(shown.followUp, shown.approvalIds, shown.settings, true))
+              .catch(() => undefined)
+              .then(() => {
+                stop();
+                // A newer press parked meanwhile is the one to keep.
+                if (!draftChanged && !parkedSends.has(shown.draftKey)) {
+                  park(shown, true, watchDraft, undefined);
+                }
+              });
+          };
     // A closed question's image still converting joins a released send first.
     if (ready && sendAway && !nativeImagePastePending(shown.pasteKey)) sendAway();
     else park(shown, ready, props.watchDraft, sendAway);
