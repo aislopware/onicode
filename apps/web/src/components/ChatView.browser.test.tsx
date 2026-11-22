@@ -18,6 +18,7 @@ import {
   mergeWithDefaultKeybindings,
 } from "@onicode/shared/keybindings";
 import type * as Context from "effect/Context";
+import * as Schema from "effect/Schema";
 import * as Effect from "effect/Effect";
 import { expect, it, vi } from "vite-plus/test";
 import { cdp, page, userEvent } from "vite-plus/test/browser";
@@ -99,6 +100,8 @@ function acceptAttachmentUploads(gate?: () => Promise<void>): Disposable {
 
 // One input event, where typing a key at a time takes seconds on a loaded CI runner.
 const insertText = (text: string) => cdp().send("Input.insertText", { text });
+
+class LaunchRefused extends Schema.TaggedError<LaunchRefused>()("LaunchRefused", {}) {}
 
 /** Holds every call to `method` until `release`, then ends it with `end`, until disposed. */
 function holdRpc(method: string, end: Effect.Effect<never, Error>) {
@@ -593,7 +596,7 @@ it("a new draft does not load its reserved thread before the server lists it", a
   expect(threadRequests).toEqual([]);
 });
 
-it("an interrupted image-only first send of a new thread says it may not have been sent", async () => {
+it("a failed image-only first send of a new thread keeps the new draft", async () => {
   using _environment = installFakeEnvironment([]);
   __setClientSettingsForTests({
     ...DEFAULT_CLIENT_SETTINGS,
@@ -605,8 +608,11 @@ it("an interrupted image-only first send of a new thread says it may not have be
     .setProjectDraftThreadId(scopeProjectRef(ENVIRONMENT_ID, PROJECT_ID), draftId, {
       threadId: ThreadId.make("thread-image-only-interrupted"),
     });
-  // A dropped connection interrupts a new thread's launch, which is not resent.
-  using launch = holdRpc(ORCHESTRATION_V2_WS_METHODS.launchThread, Effect.interrupt);
+  // A refusal fails at once; an interrupted launch would wait for a reconnect and be resent.
+  using launch = holdRpc(
+    ORCHESTRATION_V2_WS_METHODS.launchThread,
+    Effect.fail(new LaunchRefused()),
+  );
   const router = getRouter(createMemoryHistory({ initialEntries: [`/draft/${draftId}`] }));
   await router.load();
   await using _app = await render(<AppRoot router={router} />, {
@@ -633,7 +639,7 @@ it("an interrupted image-only first send of a new thread says it may not have be
   await expect.element(editor).toHaveTextContent("next draft");
   launch.release();
 
-  await expect.element(page.getByText("Message may not have been sent")).toBeVisible();
+  await expect.element(page.getByText("Message not sent")).toBeVisible();
   await expect.element(editor).toHaveTextContent("next draft");
   // With no text there is nothing to copy.
   expect(page.getByText("Copy message", { exact: true }).query()).toBeNull();
