@@ -3288,3 +3288,4 @@ bc13afaa3c	take	taken as is; scenario ported to the desktop harness
 55880c41b4	take	fix(client-runtime): count ambiguous projects in chat file links; adopted upstream's matcher over Onicode's equivalent rootHits fix; scenarios ported to the desktop target
 2e62a71893	take	fix(mobile): keep media actions on each sent image page
 024dba275d	take	perf(server): a run's provider turn lookup is linear, not quadratic
+c7df7004af	take	fix(web): a photo picked on a phone attaches even when the composer collapses; test adapted to Onicode's collapsed-first phone composer and restores the viewport
