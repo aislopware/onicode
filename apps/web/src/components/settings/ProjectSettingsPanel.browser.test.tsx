@@ -49,7 +49,7 @@ const state = vi.hoisted(() => ({
       }) => Promise<AsyncResult.Success<void>>
     >(),
   confirm: vi.fn<() => Promise<boolean>>(),
-  releaseUploads: vi.fn(),
+  releaseUploads: vi.fn(() => []),
   clearDraft: vi.fn(),
   toast: vi.fn(),
 }));

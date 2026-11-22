@@ -153,7 +153,22 @@ describe("makeSymlinkTargetStats", () => {
     expect(await hung).toBe(false);
 
     expect(await isDirectory("/links/next", new AbortController().signal)).toBe(false);
+    expect(await isDirectory("/links/stalled", new AbortController().signal)).toBe(false);
     expect(fake.calls).toEqual(["/links/stalled"]);
+  });
+
+  it("lets a queued browse of a link join the stat another caller starts for it", async () => {
+    const fake = fakeStats();
+    const isDirectory = WorkspaceEntries.makeSymlinkTargetStats(fake.stat, 1);
+    const signal = new AbortController().signal;
+    const busy = isDirectory("/links/busy", signal);
+    const first = isDirectory("/links/share", signal);
+    const second = isDirectory("/links/share", signal);
+    fake.answer("/links/busy");
+    await fake.started("/links/share");
+    fake.answer("/links/share");
+    expect(await Promise.all([busy, first, second])).toEqual([true, true, true]);
+    expect(fake.calls).toEqual(["/links/busy", "/links/share"]);
   });
 });
 
