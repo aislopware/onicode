@@ -3224,3 +3224,4 @@ c198f73b37	take	taken as is
 1acfd37c17	skip	kept Onicode's effort picker: reasoning levels are one slider (single focus stop, arrows change the value) and options are segment rows, so upstream's first-letter focus over radio rows has nothing to land on; typeahead on the slider would have to change the level, which upstream deliberately avoids
 0ae3154695	take	fix(server): migration 75 no longer fails on an unreadable subagent payload (#30783)
 671e05bc8c	take	GitHub test conflict: kept Onicode's hover-card summary assertions, added upstream's reference assertion; new contract field optional
+8435a8cd41	take	fix(server): tell a stopped parent which delegated tasks its Stop interrupted (#34499)
