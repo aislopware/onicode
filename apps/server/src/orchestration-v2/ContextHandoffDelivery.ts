@@ -1,9 +1,11 @@
 import type {
   OrchestrationV2ContextHandoff,
   OrchestrationV2ProviderThread,
+  OrchestrationV2ThreadProjection,
 } from "@onicode/contracts";
 import * as ProviderAdapter from "@onicode/provider-core/server/ProviderAdapter";
 import { ContextHandoffBudgetError } from "@onicode/provider-core/server/failure";
+import { unsentManualContinuationSource } from "@onicode/shared/orchestrationV2ManualContinuation";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import {
@@ -40,6 +42,38 @@ export const leavesNotesForNextPrompt = (
 ): boolean =>
   (message.role === "user" && ProviderAdapter.opensWithSlashCommand(message.text)) ||
   isNativeCommandMessage(session, message);
+
+/**
+ * Messages of turns that left notes and missed images for the next prompt. A resume replays its
+ * unsent source's prompt under an empty message of its own, so that prompt classifies it.
+ */
+export const notesWaitingMessageIds = (
+  session: CommandSession,
+  projection: Pick<
+    OrchestrationV2ThreadProjection,
+    "runs" | "attempts" | "providerTurns" | "messages"
+  >,
+): ReadonlySet<string> => {
+  const ids = new Set<string>(
+    projection.messages
+      .filter((message) => leavesNotesForNextPrompt(session, message))
+      .map((message) => message.id),
+  );
+  for (const run of projection.runs) {
+    // A steering restart replaces the run's message with the text it sent.
+    if (
+      run.manualContinuationOfRunId === undefined ||
+      projection.attempts.some(
+        (attempt) => attempt.runId === run.id && attempt.reason === "steering_restart",
+      )
+    ) {
+      continue;
+    }
+    const replayed = unsentManualContinuationSource(run, projection);
+    if (replayed !== undefined && ids.has(replayed.userMessageId)) ids.add(run.userMessageId);
+  }
+  return ids;
+};
 
 /** The provider prompt for a turn that carries inline context ahead of the user's text. */
 export const withInlineContext = (context: string, userText: string): string =>

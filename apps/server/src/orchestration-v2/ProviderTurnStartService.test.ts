@@ -489,6 +489,7 @@ function makeLocalCommandHarness(input: {
   readonly failReadsAfterRunning?: boolean;
   readonly missingProviderSession?: boolean;
   readonly recoveryReadFailure?: string;
+  readonly runsAsNativeCommand?: ProviderAdapter.ProviderAdapterV2SessionRuntime["runsAsNativeCommand"];
   readonly previousTurn?: {
     readonly runStatus: "failed" | "completed" | "interrupted";
     readonly turnStatus: "running" | "completed" | "interrupted";
@@ -1208,6 +1209,9 @@ function makeLocalCommandHarness(input: {
                     providerSession,
                     ensureThread: () => Effect.succeed(providerThread),
                     resumeThread: () => Effect.succeed(projection.providerThreads[0]),
+                    ...(input.runsAsNativeCommand === undefined
+                      ? {}
+                      : { runsAsNativeCommand: input.runsAsNativeCommand }),
                   } as never)
                 : Effect.die("A local command must not open a native session."),
   );
@@ -1400,6 +1404,9 @@ function makeLocalCommandHarness(input: {
                     driver: providerThread.driver,
                     providerSessionId,
                     interruptTurn,
+                    ...(input.runsAsNativeCommand === undefined
+                      ? {}
+                      : { runsAsNativeCommand: input.runsAsNativeCommand }),
                   } as unknown as ProviderAdapter.ProviderAdapterV2SessionRuntime),
             ),
         }),
@@ -2824,6 +2831,35 @@ effectIt.effect("leaves delegated children to their own runs when the parent sta
       relatedThreadIds: [ThreadId.make("thread:provider_native")],
       relatedProviderThreadIds: [ProviderThreadId.make("provider-thread:provider_native")],
     });
+  }),
+);
+
+// A target that sends `/review` as a prompt still leaves notes for the next prompt, as main did.
+effectIt.effect("leaves the stopped-task note for the turn after a command sent as a prompt", () =>
+  Effect.gen(function* () {
+    const harness = makeLocalCommandHarness({
+      text: "/review the diff",
+      previousTurn: { runStatus: "completed", turnStatus: "completed" },
+      runsAsNativeCommand: () => false,
+    });
+    // Not an auth command: the start reaches the provider.
+    harness.tryHandlePromptCommand.mockReturnValue(Effect.succeed(false));
+    const projection = harness.projection();
+    harness.setProjection({
+      ...projection,
+      runs: projection.runs.map((source, index) =>
+        index === 0
+          ? {
+              ...source,
+              delegatedCompletion: { disposition: "stopped", nextGeneration: 1, delivery: null },
+            }
+          : source,
+      ),
+    });
+    yield* harness.start;
+    expect(
+      harness.getThreadRecords.mock.calls.some(([, , filter]) => filter?.stoppedSubagents),
+    ).toBe(false);
   }),
 );
 

@@ -2372,6 +2372,7 @@ const commandReadsSkipSettledLeafNodes = Effect.gen(function* () {
     ["pending-delivery", settledRun, "completed", "pending"],
     ["claimed", settledRun, "completed", "claimed"],
     ["no-delivery", settledRun, "interrupted", null],
+    ["stopped", settledRun, "interrupted", "disposed"],
     ["running", settledRun, "running", null],
     ["active-run-delivered", activeRun, "completed", "delivered"],
   ] as const;
@@ -2569,19 +2570,28 @@ const commandReadsSkipSettledLeafNodes = Effect.gen(function* () {
     subagentNames(yield* store.getThreadRecords(threadId, ["subagents"])),
     subagents.map(([name]) => name).toSorted(),
   );
-  // Tasks that ended at or after the time; running ones have not ended.
-  const endedSince = (since: DateTime.Utc) =>
-    store.getThreadRecords(threadId, ["subagents"], {
-      subagentRunIds: [settledRun.id],
-      subagentsCompletedSince: since,
-    });
-  assert.deepEqual(
-    subagentNames(yield* endedSince(now)),
-    subagents
-      .flatMap(([name, run, status]) => (run === settledRun && status !== "running" ? [name] : []))
-      .toSorted(),
+  // A stopped-delegation note reads only the tasks a Stop left, ended since its last delivery.
+  const stoppedTrace = traceSqlStatements();
+  const stoppedSince = (endedSince: DateTime.Utc | undefined) =>
+    store
+      .getThreadRecords(threadId, ["subagents"], {
+        subagentRunIds: [settledRun.id],
+        stoppedSubagents: { endedSince },
+      })
+      .pipe(Effect.withTracer(stoppedTrace.tracer));
+  assert.deepEqual(subagentNames(yield* stoppedSince(undefined)), ["stopped"]);
+  assert.deepEqual(subagentNames(yield* stoppedSince(now)), ["stopped"]);
+  assert.deepEqual(subagentNames(yield* stoppedSince(DateTime.add(now, { milliseconds: 1 }))), []);
+  const stoppedQuery = stoppedTrace.statements.find((statement) =>
+    statement.includes("FROM orchestration_v2_projection_subagents"),
   );
-  assert.deepEqual(subagentNames(yield* endedSince(DateTime.add(now, { milliseconds: 1 }))), []);
+  assert.isDefined(stoppedQuery);
+  assert.include(
+    (yield* sql.unsafe<{ readonly detail: string }>(`EXPLAIN QUERY PLAN ${stoppedQuery}`))
+      .map((row) => row.detail)
+      .join("\n"),
+    "subagents_settled_idx (thread_id=? AND status=? AND completion_delivery_state=?",
+  );
   // A command about one settled task keeps it, and reads only its node and turn item.
   const deliveredId = NodeId.make("node:settled-subagents:delivered");
   const forTask = yield* store.getThreadRecords(threadId, ["subagents", "nodes", "turnItems"], {

@@ -416,8 +416,8 @@ export interface ProjectionRecordFilter {
   readonly contextTransferStatuses?: ReadonlyArray<OrchestrationV2ContextTransfer["status"]>;
   readonly subagentIds?: ReadonlyArray<NodeId>;
   readonly subagentRunIds?: ReadonlyArray<RunId>;
-  /** Only subagents that ended at or after this time. */
-  readonly subagentsCompletedSince?: DateTime.Utc | undefined;
+  /** Only interrupted tasks whose result was disposed, as a Stop leaves them, ended since the time if given. */
+  readonly stoppedSubagents?: { readonly endedSince: DateTime.Utc | undefined };
   readonly subagentChildThreadIds?: ReadonlyArray<ThreadId>;
   readonly nodeIds?: ReadonlyArray<NodeId>;
   readonly turnItemRequestIds?: ReadonlyArray<RuntimeRequestId>;
@@ -4381,7 +4381,8 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
               ${filter?.subagentIds === undefined ? sql`` : sql`AND subagent_id IN (SELECT value FROM json_each(${encodeIdList(filter.subagentIds)}))`}
               ${filter?.subagentChildThreadIds === undefined ? sql`` : sql`AND child_thread_id IN (SELECT value FROM json_each(${encodeIdList(filter.subagentChildThreadIds)}))`}
               ${filter?.subagentRunIds === undefined ? sql`` : sql`AND run_id IN (SELECT value FROM json_each(${encodeIdList(filter.subagentRunIds)}))`}
-              ${filter?.subagentsCompletedSince === undefined ? sql`` : sql`AND completed_at >= ${DateTime.formatIso(filter.subagentsCompletedSince)}`}
+              ${filter?.stoppedSubagents === undefined ? sql`` : sql`AND status = 'interrupted' AND completion_delivery_state = 'disposed'`}
+              ${filter?.stoppedSubagents?.endedSince === undefined ? sql`` : sql`AND completed_at >= ${DateTime.formatIso(filter.stoppedSubagents.endedSince)}`}
               ${
                 filter?.omitSettledSubagents === true
                   ? sql`AND subagent.rowid IN (${unsettledSubagentRowids(threadId)})`
@@ -5680,7 +5681,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             const messageIds = [run, unsentSource].flatMap((source) =>
               source === undefined ? [] : [source.userMessageId],
             );
-            // Earlier native command turns defer context too; isNativeCommandMessage narrows the match.
+            // Earlier native command turns defer context too; turn start narrows the match per provider.
             const messages = yield* sql<PayloadRow>`
               SELECT payload_json FROM (
                 SELECT payload_json, created_at, message_id FROM orchestration_v2_projection_messages

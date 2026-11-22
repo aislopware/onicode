@@ -1,6 +1,10 @@
 import { assert, it } from "@effect/vitest";
 
-import { isNativeCommandMessage, leavesNotesForNextPrompt } from "./ContextHandoffDelivery.ts";
+import {
+  isNativeCommandMessage,
+  leavesNotesForNextPrompt,
+  notesWaitingMessageIds,
+} from "./ContextHandoffDelivery.ts";
 
 const user = (text: string) => ({ role: "user", text, attachments: [] });
 const runsNothing = { runsAsNativeCommand: () => false };
@@ -37,4 +41,29 @@ it.each([
 ])("classifies $name", ({ session, text, native, wait }) => {
   assert.equal(isNativeCommandMessage(session, user(text)), native);
   assert.equal(leavesNotesForNextPrompt(session, user(text)), wait);
+});
+
+it.each([
+  { name: "an unsent command", accepted: false, steered: false, held: true },
+  { name: "a command its provider already took", accepted: true, steered: false, held: false },
+  { name: "an unsent command it steered away from", accepted: false, steered: true, held: false },
+])("classifies a resume of $name by what it replays", ({ accepted, steered, held }) => {
+  const source = { id: "run:source", userMessageId: "message:source" };
+  const resume = {
+    id: "run:resume",
+    userMessageId: "message:resume",
+    manualContinuationOfRunId: source.id,
+  };
+  const projection = {
+    runs: [source, resume],
+    attempts: [
+      { id: "attempt:source", runId: source.id, attemptOrdinal: 1, reason: "initial" },
+      ...(steered
+        ? [{ id: "attempt:steer", runId: resume.id, attemptOrdinal: 2, reason: "steering_restart" }]
+        : []),
+    ],
+    providerTurns: accepted ? [{ runAttemptId: "attempt:source" }] : [],
+    messages: [{ id: source.userMessageId, ...user("/review") }],
+  } as unknown as Parameters<typeof notesWaitingMessageIds>[1];
+  assert.equal(notesWaitingMessageIds(runsNothing, projection).has(resume.userMessageId), held);
 });
