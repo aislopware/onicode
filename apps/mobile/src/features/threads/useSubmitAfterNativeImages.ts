@@ -83,6 +83,8 @@ export function useSubmitAfterNativeImages(props: {
   /** Approvals shown now; a held send carries those shown when Send was pressed. */
   readonly approvalIds: ReadonlyArray<RuntimeRequestId>;
   readonly onPasteImages: (uris: ReadonlyArray<string>) => Promise<boolean>;
+  /** Deletes the files of an iOS read that no longer lands in a draft. */
+  readonly discardImages: (uris: ReadonlyArray<string>) => void;
   /** Calls back when the user edits what a held send carries; returns the unsubscribe. */
   readonly watchDraft: (onEdit: () => void) => () => void;
   /** Lands input the editor took before the press, such as an autocorrection the tap accepted. */
@@ -95,6 +97,8 @@ export function useSubmitAfterNativeImages(props: {
 }) {
   const heldSend = useRef<HeldSend | null>(null);
   const [releasedSend, setReleasedSend] = useState<HeldSend | null>(null);
+  // Set with the state, so an unmount in the same batch still sees a release that has not rendered.
+  const released = useRef<HeldSend | null>(null);
   const consumedSend = useRef<HeldSend | null>(null);
   // From the press until the send goes or is dropped, including while a blocker holds it.
   const [shownSend, setShownSend] = useState<HeldSend | null>(null);
@@ -111,6 +115,7 @@ export function useSubmitAfterNativeImages(props: {
   };
   const cancel = useStableCallback(() => {
     heldSend.current = null;
+    released.current = null;
     setReleasedSend(null);
     settle();
   });
@@ -139,6 +144,7 @@ export function useSubmitAfterNativeImages(props: {
       settle();
       return;
     }
+    released.current = held;
     setReleasedSend(held);
     // Only another blocker holds it now.
     setShownSend((shown) => shown && { ...shown, images: 0 });
@@ -147,6 +153,7 @@ export function useSubmitAfterNativeImages(props: {
   useEffect(() => {
     if (!releasedSend || props.blocked || consumedSend.current === releasedSend) return;
     consumedSend.current = releasedSend;
+    if (released.current === releasedSend) released.current = null;
     sendReleased(releasedSend);
   }, [releasedSend, props.blocked]);
   // Leaving the thread keeps a held send for the composer that comes back to its draft.
@@ -156,24 +163,32 @@ export function useSubmitAfterNativeImages(props: {
     const watching = stopWatching.current !== null;
     settle();
     if (shown === null || !watching) return;
-    const unsent = releasedSend !== null && consumedSend.current !== releasedSend;
-    if (heldSend.current === null && !unsent) return;
+    if (heldSend.current === null && released.current === null) return;
     park(shown, heldSend.current === null, props.watchDraft);
     // The parked send is the only copy, so a remount's paste listener cannot release it again.
     heldSend.current = null;
+    released.current = null;
     setReleasedSend(null);
   });
-  const adopt = useEffectEvent((draftKey: string) => {
-    const parked = parkedSends.get(draftKey);
-    if (!parked) return;
+  // A held send belongs to the draft it was pressed in; showing another draft drops it.
+  const showDraft = useEffectEvent((draftKey: string, parked: ParkedSend | undefined) => {
+    if (watched.current !== null && watched.current.draftKey !== draftKey) cancel();
+    // Another composer on the draft may have taken it in this commit.
+    if (!parked || parkedSends.get(draftKey) !== parked) return;
     unpark(draftKey, parked);
+    // Only one send can be held for a draft; this composer's own press wins.
+    if (watched.current !== null) return;
     // A discard while it was parked dropped it, so the draft is the one Send was pressed in.
     const held: HeldSend = { ...parked.held, generation: props.readResetGeneration() };
     watched.current = held;
     stopWatching.current = props.watchDraft(cancel);
     setShownSend(parked.ready ? { ...held, images: 0 } : held);
-    if (parked.ready) setReleasedSend(held);
-    else heldSend.current = held;
+    if (!parked.ready) {
+      heldSend.current = held;
+      return;
+    }
+    released.current = held;
+    setReleasedSend(held);
   });
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- subscribes to pastes settling, including a question's that this composer did not start
   useEffect(() => {
@@ -183,13 +198,9 @@ export function useSubmitAfterNativeImages(props: {
       leave();
     };
   }, []);
-  // oxlint-disable-next-line onicode/no-unreasoned-state-sync, react/set-state-in-effect -- takes over a send a composer on this draft left behind when it unmounted
-  useEffect(() => adopt(props.draftKey), [props.draftKey]);
-  const dropLeftSend = useEffectEvent((draftKey: string) => {
-    if (shownSend !== null && shownSend.draftKey !== draftKey) cancel();
-  });
-  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- a held send belongs to the draft it was pressed in; leaving that draft stops watching it
-  useEffect(() => dropLeftSend(props.draftKey), [props.draftKey]);
+  // Takes over a send that another composer on this draft left, on mount or as it leaves.
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync, react/set-state-in-effect -- adopts from the module's store of sends whose composer unmounted
+  useEffect(() => showDraft(props.draftKey, parkedSend), [props.draftKey, parkedSend]);
   // Stable so the composer's send handler, which calls these, stays in the compiler's cache.
   const deferSend = useStableCallback(
     (followUp: ActiveTurnComposerAction | undefined, settings: ComposerDraftSendSettings) => {
@@ -246,6 +257,7 @@ export function useSubmitAfterNativeImages(props: {
       const lands = uris.length > 0 && !operation.signal.aborted && shownDraftKey() === draftKey;
       // Conversion takes over the hold before the read lets go of it.
       if (lands) void convertImages(uris);
+      else if (uris.length > 0) props.discardImages(uris);
       finishRead(lands);
     };
   });
