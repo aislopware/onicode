@@ -3,9 +3,18 @@ const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 const { getDefaultConfig } = require("expo/metro-config");
 const { withUniwindConfig } = require("uniwind/metro");
+const { loadRepoEnv } = require("../../scripts/lib/public-config.ts");
 
+// Builds with a Sentry DSN get a Debug ID in each production bundle and its source map, which is
+// how Sentry matches a bundle to its uploaded map. Builds without one keep Expo's config.
 /** @type {import("expo/metro-config").MetroConfig} */
-const config = getDefaultConfig(__dirname);
+const config = loadRepoEnv().ONICODE_SENTRY_MOBILE_DSN?.trim()
+  ? require("@sentry/react-native/metro").getSentryExpoConfig(__dirname, {
+      optionsFile: false,
+      // Its dev middleware only adds source lines to events from a dev build.
+      enableSourceContextInDevelopment: false,
+    })
+  : getDefaultConfig(__dirname);
 const workspaceRoot = path.resolve(__dirname, "../..");
 const generatedLicenseModuleRoot = path.join(__dirname, ".generated", "third-party-licenses");
 const licenseGeneratorSource = path.join(

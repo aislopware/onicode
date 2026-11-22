@@ -12,6 +12,7 @@ import { installNotificationBadge } from "./methods/notificationBadge.ts";
 import { installRemoteDesktop } from "./methods/remoteDesktop.ts";
 import { getClientSettings, setClientSettings } from "./methods/clientSettings.ts";
 import { getConnectionCatalog, setConnectionCatalog } from "./methods/connectionCatalog.ts";
+import { getErrorReporting, setErrorReportingEnabled } from "./methods/errorReporting.ts";
 import {
   getHostEnvironmentId,
   getLocalEnvironmentEnabled,
@@ -109,6 +110,8 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handleSync(getSystemLocale);
   yield* ipc.handleSync(getPreferredSystemLanguages);
   yield* ipc.handleSync(getPrimaryPasteEnabled);
+  yield* ipc.handleSync(getErrorReporting);
+  yield* ipc.handle(setErrorReportingEnabled);
   yield* ipc.handleSync(getWindowFullscreenState);
   yield* ipc.handleSync(getLocalEnvironmentBootstraps);
   yield* ipc.handleSync(getLocalEnvironmentEnabled);

@@ -15,9 +15,13 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
 import { tryCopyTextWithHaptic } from "../../lib/copyTextWithHaptic";
+import { crashReportingAvailable, crashReportingLaunchPreference } from "../../lib/crash-reporting";
 import { ListActionRow as SettingsActionRow } from "../../components/ui/ListActionRow";
+import { mobilePreferencesAtom, saveMobilePreferences } from "../../state/preferences";
+import { useAtomCommand } from "../../state/use-atom-command";
 import { SettingsScreen } from "../settings/components/SettingsScreen";
 import { SettingsSection } from "../settings/components/SettingsSection";
+import { SettingsSwitchRow } from "../settings/components/SettingsSwitchRow";
 import {
   formatStartupCrashReport,
   parseStartupCrashRecords,
@@ -99,6 +103,8 @@ export function SettingsDiagnosticsRouteScreen() {
         contentContainerClassName="gap-6 px-5 pt-4"
         contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
       >
+        <ErrorReportingSection />
+
         <SettingsSection title={gt("Startup crashes")}>
           {state.status === "loading" ? (
             <View className="items-center gap-3 px-6 py-8">
@@ -145,6 +151,47 @@ export function SettingsDiagnosticsRouteScreen() {
         </View>
       </ScrollView>
     </SettingsScreen>
+  );
+}
+
+/** This device's consent to Sentry reports, read once at launch. */
+function ErrorReportingSection() {
+  const gt = useGT();
+  const savePreferences = useAtomCommand(saveMobilePreferences);
+  const preferences = useAtomValue(mobilePreferencesAtom);
+  const saved = AsyncResult.isSuccess(preferences)
+    ? preferences.value.errorReportingEnabled !== false
+    : null;
+  const launched = crashReportingLaunchPreference();
+  const restartNeeded =
+    crashReportingAvailable && saved !== null && launched !== undefined && saved !== launched;
+
+  return (
+    <View className="gap-3">
+      <SettingsSection title={gt("Error reports")}>
+        <SettingsSwitchRow
+          icon="exclamationmark.triangle"
+          label={gt("Send error reports")}
+          subtitle={
+            crashReportingAvailable
+              ? gt(
+                  "Send crashes, errors, sampled performance traces, and a screen replay around each error to the publisher of this Onicode build. Replays mask all text and media.",
+                )
+              : gt("This build of Onicode does not send error reports.")
+          }
+          value={crashReportingAvailable && saved === true}
+          disabled={!crashReportingAvailable || saved === null}
+          onValueChange={(value) => {
+            void savePreferences({ errorReportingEnabled: value });
+          }}
+        />
+      </SettingsSection>
+      {restartNeeded ? (
+        <Text className="px-2 text-sm text-foreground-muted">
+          <T>Restart Onicode to apply.</T>
+        </Text>
+      ) : null}
+    </View>
   );
 }
 

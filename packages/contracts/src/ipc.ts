@@ -1118,6 +1118,12 @@ export interface DesktopBridge {
   getPreferredSystemLanguages: () => readonly string[];
   /** False when the OS turned off middle-click PRIMARY paste (`gtk-enable-primary-paste`). */
   getPrimaryPasteEnabled?: () => boolean;
+  /**
+   * This app's own error reports, apart from any environment's: whether Sentry runs now and the
+   * saved choice, which applies on restart. Null in builds that send no reports.
+   */
+  getErrorReporting?: () => { readonly running: boolean; readonly saved: boolean } | null;
+  setErrorReportingEnabled?: (enabled: boolean) => Promise<void>;
   getLocalEnvironmentBootstraps: () => readonly DesktopEnvironmentBootstrap[];
   getLocalEnvironmentEnabled: () => boolean;
   setLocalEnvironmentEnabled: (enabled: boolean) => Promise<void>;

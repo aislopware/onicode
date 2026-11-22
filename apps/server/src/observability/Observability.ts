@@ -18,6 +18,7 @@ import * as ServerLogger from "../serverLogger.ts";
 import * as BrowserTraceCollector from "./BrowserTraceCollector.ts";
 import * as HeapAttribution from "./HeapAttribution.ts";
 import * as OtlpExportFailures from "./OtlpExportFailures.ts";
+import * as ServerSentry from "./ServerSentry.ts";
 
 export const layer = Layer.unwrap(
   Effect.gen(function* () {
@@ -29,6 +30,7 @@ export const layer = Layer.unwrap(
     const layerSerialization = SharedObservability.layerOtlpSerialization(traces.protocol);
     const resource = ServerConfig.otlpResource(config, yield* HostProcess.Hostname);
     const attribution = yield* ResourceAttribution.ResourceAttribution;
+    const sentry = yield* ServerSentry.start();
 
     const layerTraceReferences = Layer.mergeAll(
       Layer.succeed(Tracer.MinimumTraceLevel, config.traceMinLevel),
@@ -64,13 +66,19 @@ export const layer = Layer.unwrap(
                 resource,
               }).pipe(Effect.provide(OtlpExportFailures.layer("traces")));
 
+        const sentryDelegate =
+          sentry === undefined
+            ? delegate
+            : sentry.wrapTracer(
+                delegate ?? Tracer.make({ span: (options) => new Tracer.NativeSpan(options) }),
+              );
         const tracer = yield* makeLocalFileTracer({
           filePath: config.serverTracePath,
           maxBytes: config.traceMaxBytes,
           maxFiles: config.traceMaxFiles,
           batchWindowMs: config.traceBatchWindowMs,
           sink,
-          ...(delegate ? { delegate } : {}),
+          ...(sentryDelegate ? { delegate: sentryDelegate } : {}),
         });
 
         const heapAttribution = yield* HeapAttribution.make(tracer);
@@ -102,7 +110,12 @@ export const layer = Layer.unwrap(
 
     return layerOtelWarnings.pipe(
       Layer.provideMerge(
-        Layer.mergeAll(ServerLogger.layer, layerTraceReferences, layerTracer, metricsLayer),
+        Layer.mergeAll(
+          ServerLogger.layerWithSentry(sentry),
+          layerTraceReferences,
+          layerTracer,
+          metricsLayer,
+        ),
       ),
       Layer.provide(
         OtelEnvironment.layerResourceAttributes(config.otelEnvironment.resourceAttributes),

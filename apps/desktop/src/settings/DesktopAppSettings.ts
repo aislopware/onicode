@@ -25,6 +25,8 @@ import {
 import { isValidDistroName } from "../wsl/wslPathParsing.ts";
 
 export interface DesktopSettings {
+  // Read before Electron is ready, so a change applies on restart.
+  readonly errorReportingEnabled: boolean;
   readonly localEnvironmentEnabled: boolean;
   readonly linuxPasswordStore: LinuxPasswordStorePreference;
   readonly mainWindowBounds: DesktopWindowBounds | null;
@@ -64,6 +66,7 @@ export const DEFAULT_MAIN_WINDOW_SIZE = {
 } as const;
 
 export const DEFAULT_DESKTOP_SETTINGS: DesktopSettings = {
+  errorReportingEnabled: true,
   localEnvironmentEnabled: true,
   linuxPasswordStore: DEFAULT_LINUX_PASSWORD_STORE,
   mainWindowBounds: null,
@@ -89,6 +92,10 @@ const optionalReadableKey = <S extends Schema.Top>(schema: S) =>
   Schema.optionalKey(schema.pipe(Schema.catchDecoding(() => Effect.succeedNone)));
 
 const DesktopSettingsDocument = Schema.Struct({
+  // An unreadable consent counts as an opt-out, so the next write keeps reporting off.
+  errorReporting: Schema.optionalKey(
+    Schema.Boolean.pipe(Schema.catchDecoding(() => Effect.succeedSome(false))),
+  ),
   localEnvironmentEnabled: optionalReadableKey(Schema.Boolean),
   linuxPasswordStore: optionalReadableKey(Schema.Unknown),
   mainWindowBounds: optionalReadableKey(Schema.NullOr(DesktopWindowBoundsDocument)),
@@ -108,7 +115,25 @@ type Mutable<T> = { -readonly [K in keyof T]: T[K] };
 const DesktopSettingsJson = fromLenientJson(DesktopSettingsDocument);
 const decodeDesktopSettingsJson = Schema.decodeEffect(DesktopSettingsJson);
 const encodeDesktopSettingsJson = Schema.encodeEffect(DesktopSettingsJson);
+const decodeDesktopSettingsJsonOption = Schema.decodeUnknownOption(DesktopSettingsJson);
 const decodeDesktopWindowBounds = Schema.decodeUnknownOption(DesktopWindowBoundsSchema);
+
+// A damaged file must not undo an opt-out, here or in the file written over it.
+const UNREADABLE_DESKTOP_SETTINGS: DesktopSettings = {
+  ...DEFAULT_DESKTOP_SETTINGS,
+  errorReportingEnabled: false,
+};
+
+/**
+ * The error reporting consent in a settings file's text. On when the file says nothing about it;
+ * off when the file cannot be read, so a damaged file never undoes an opt-out.
+ */
+export function parseErrorReportingConsent(raw: string): boolean {
+  return Option.match(decodeDesktopSettingsJsonOption(raw), {
+    onNone: () => UNREADABLE_DESKTOP_SETTINGS.errorReportingEnabled,
+    onSome: (document) => normalizeDesktopSettingsDocument(document).errorReportingEnabled,
+  });
+}
 const desktopWindowBoundsEquivalence = Schema.toEquivalence(DesktopWindowBoundsSchema);
 
 const settingsChange = (settings: DesktopSettings, changed: boolean): DesktopSettingsChange => ({
@@ -144,6 +169,9 @@ export class DesktopAppSettings extends Context.Service<
   {
     readonly load: Effect.Effect<DesktopSettings>;
     readonly get: Effect.Effect<DesktopSettings>;
+    readonly setErrorReportingEnabled: (
+      enabled: boolean,
+    ) => Effect.Effect<DesktopSettingsChange, DesktopSettingsWriteError>;
     readonly setLocalEnvironmentEnabled: (
       enabled: boolean,
     ) => Effect.Effect<DesktopSettingsChange, DesktopSettingsWriteError>;
@@ -197,6 +225,7 @@ function normalizeDesktopSettingsDocument(parsed: DesktopSettingsDocument): Desk
     (parsed.wslBackendEnabled === undefined && parsed.wslMode === "wsl");
 
   return {
+    errorReportingEnabled: parsed.errorReporting !== false,
     localEnvironmentEnabled: parsed.localEnvironmentEnabled !== false,
     linuxPasswordStore: normalizeLinuxPasswordStorePreference(parsed.linuxPasswordStore),
     mainWindowBounds,
@@ -215,6 +244,10 @@ function toDesktopSettingsDocument(
   defaults: DesktopSettings,
 ): DesktopSettingsDocument {
   const document: Mutable<DesktopSettingsDocument> = {};
+
+  if (settings.errorReportingEnabled !== defaults.errorReportingEnabled) {
+    document.errorReporting = settings.errorReportingEnabled;
+  }
 
   if (settings.localEnvironmentEnabled !== defaults.localEnvironmentEnabled) {
     document.localEnvironmentEnabled = settings.localEnvironmentEnabled;
@@ -324,6 +357,12 @@ function setWslOnly(settings: DesktopSettings, enabled: boolean): DesktopSetting
       };
 }
 
+function setErrorReportingEnabled(settings: DesktopSettings, enabled: boolean): DesktopSettings {
+  return settings.errorReportingEnabled === enabled
+    ? settings
+    : { ...settings, errorReportingEnabled: enabled };
+}
+
 function setLocalEnvironmentEnabled(settings: DesktopSettings, enabled: boolean): DesktopSettings {
   return settings.localEnvironmentEnabled === enabled
     ? settings
@@ -351,7 +390,7 @@ function readSettings(
         onSome: (raw) =>
           decodeDesktopSettingsJson(raw).pipe(
             Effect.map(normalizeDesktopSettingsDocument),
-            Effect.orElseSucceed(() => DEFAULT_DESKTOP_SETTINGS),
+            Effect.orElseSucceed(() => UNREADABLE_DESKTOP_SETTINGS),
           ),
       }),
     ),
@@ -482,7 +521,7 @@ export const make = Effect.gen(function* () {
           ).pipe(
             Effect.annotateLogs({ settingsPath: environment.desktopSettingsPath }),
             Effect.andThen(Ref.set(persistenceEnabled, false)),
-            Effect.as(DEFAULT_DESKTOP_SETTINGS),
+            Effect.as(UNREADABLE_DESKTOP_SETTINGS),
           ),
         ),
       );
@@ -526,6 +565,13 @@ export const make = Effect.gen(function* () {
 
       return yield* persist((settings) => setWslOnly(settings, enabled));
     }),
+    setErrorReportingEnabled: Effect.fn("desktop.settings.setErrorReportingEnabled")(
+      function* (enabled) {
+        yield* Effect.annotateCurrentSpan({ enabled });
+
+        return yield* persist((settings) => setErrorReportingEnabled(settings, enabled));
+      },
+    ),
     setLocalEnvironmentEnabled: Effect.fn("desktop.settings.setLocalEnvironmentEnabled")(
       function* (enabled) {
         yield* Effect.annotateCurrentSpan({ enabled });
@@ -588,6 +634,11 @@ export const layerTest = (initialSettings: DesktopSettings = DEFAULT_DESKTOP_SET
         setWslOnly: Effect.fn("DesktopAppSettings.setWslOnly")(function (enabled) {
           return update((settings) => setWslOnly(settings, enabled));
         }),
+        setErrorReportingEnabled: Effect.fn("DesktopAppSettings.setErrorReportingEnabled")(
+          function (enabled) {
+            return update((settings) => setErrorReportingEnabled(settings, enabled));
+          },
+        ),
         setLocalEnvironmentEnabled: Effect.fn("DesktopAppSettings.setLocalEnvironmentEnabled")(
           function (enabled) {
             return update((settings) => setLocalEnvironmentEnabled(settings, enabled));

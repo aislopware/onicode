@@ -190,6 +190,8 @@ export interface Preferences {
   readonly agentNotifications?: AgentNotificationPreferences;
   readonly pullRequestSavedViews?: ReadonlyArray<PullRequestSavedView>;
   readonly issueSavedViews?: ReadonlyArray<IssueSavedView>;
+  /** Whether this device sends error reports in builds that have Sentry. Unset means on. */
+  readonly errorReportingEnabled?: boolean;
 }
 
 export class MobilePreferencesLoadError extends Schema.TaggedError<MobilePreferencesLoadError>()(
@@ -275,6 +277,7 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     agentNotifications?: AgentNotificationPreferences;
     pullRequestSavedViews?: ReadonlyArray<PullRequestSavedView>;
     issueSavedViews?: ReadonlyArray<IssueSavedView>;
+    errorReportingEnabled?: boolean;
   } = {};
 
   if (Array.isArray(parsed.hiddenNavigationTabs)) {
@@ -390,6 +393,10 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   }
   if (typeof parsed.useLastProjectForNewThreads === "boolean") {
     preferences.useLastProjectForNewThreads = parsed.useLastProjectForNewThreads;
+  }
+  if (parsed.errorReportingEnabled !== undefined) {
+    // An unreadable consent counts as an opt-out, so the next save keeps reporting off.
+    preferences.errorReportingEnabled = parsed.errorReportingEnabled === true;
   }
   if (isThreadProject(parsed.lastThreadProject)) {
     preferences.lastThreadProject = parsed.lastThreadProject;
@@ -580,8 +587,9 @@ const make = Effect.fn("MobilePreferencesStore.make")(function* () {
       }
     }
 
+    let legacyJson: string | null = null;
     if (parsed === null) {
-      const legacyJson = yield* secureStorage.getItem(PREFERENCES_KEY);
+      legacyJson = yield* secureStorage.getItem(PREFERENCES_KEY);
       const legacyPreferences = parsePayload(legacyJson);
       parsed = legacyPreferences;
       if (legacyJson !== null && legacyPreferences !== null && databaseAvailable) {
@@ -598,19 +606,54 @@ const make = Effect.fn("MobilePreferencesStore.make")(function* () {
       }
     }
 
-    return parsed === null ? {} : sanitizePreferences(parsed);
+    // `consentUnknown`: a store that could not be read now may hold an opt-out. Loading keeps
+    // reporting off without saving, so a recovered store restores an opt-in; a save keeps it off.
+    if (parsed !== null) {
+      const preferences = sanitizePreferences(parsed);
+      // A damaged fallback is replaced by the next save and may hold a newer opt-out: save it.
+      if (
+        fallbackJson !== null &&
+        fallback === null &&
+        preferences.errorReportingEnabled !== false
+      ) {
+        const optedOut = { ...preferences, errorReportingEnabled: false };
+        yield* saveJson(yield* encode(PREFERENCES_KEY, optedOut)).pipe(
+          Effect.catch((error) =>
+            Effect.logWarning("Could not save the error reporting opt-out.").pipe(
+              Effect.annotateLogs({ error }),
+            ),
+          ),
+        );
+        return { preferences: optedOut, consentUnknown: false };
+      }
+      return { preferences, consentUnknown: fallbackResult._tag === "Failure" };
+    }
+    // Damaged stored preferences are replaced by the next save; keep any opt-out they held.
+    const damaged = Option.isSome(storedJson) || fallbackJson !== null || legacyJson !== null;
+    return {
+      preferences: damaged ? { errorReportingEnabled: false } : {},
+      consentUnknown: !databaseAvailable,
+    };
   });
 
   const load = lock
     .withPermits(1)(loadUnlocked)
-    .pipe(Effect.mapError((cause) => new MobilePreferencesLoadError({ cause })));
+    .pipe(
+      Effect.map(({ preferences, consentUnknown }) =>
+        consentUnknown ? { ...preferences, errorReportingEnabled: false } : preferences,
+      ),
+      Effect.mapError((cause) => new MobilePreferencesLoadError({ cause })),
+    );
 
   const update = Effect.fn("MobilePreferencesStore.update")(
     (transform: (current: Preferences) => Partial<Preferences>) =>
       lock
         .withPermits(1)(
           Effect.gen(function* () {
-            const current = yield* loadUnlocked;
+            const loaded = yield* loadUnlocked;
+            const current = loaded.consentUnknown
+              ? { ...loaded.preferences, errorReportingEnabled: false }
+              : loaded.preferences;
             const patch = yield* Effect.try({
               try: () => transform(current),
               catch: (cause) => new MobilePreferencesSaveError({ cause }),

@@ -130,6 +130,14 @@ contextBridge.exposeInMainWorld("desktopBridge", {
   },
   revealWindow: () => ipcRenderer.invoke(IpcChannels.REVEAL_WINDOW_CHANNEL),
   getPrimaryPasteEnabled: () => primaryPasteEnabled,
+  getErrorReporting: () => {
+    const result: unknown = ipcRenderer.sendSync(IpcChannels.GET_ERROR_REPORTING_CHANNEL);
+    return typeof result === "object" && result !== null
+      ? (result as { running: boolean; saved: boolean })
+      : null;
+  },
+  setErrorReportingEnabled: (enabled) =>
+    ipcRenderer.invoke(IpcChannels.SET_ERROR_REPORTING_ENABLED_CHANNEL, enabled),
   getSystemLocale: () => {
     const result = ipcRenderer.sendSync(IpcChannels.GET_SYSTEM_LOCALE_CHANNEL);
     return typeof result === "string" ? result : null;

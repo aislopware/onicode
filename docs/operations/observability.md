@@ -142,6 +142,69 @@ waiting. Read CPU together with page faults:
 
 Provider event NDJSON files still exist for provider runtime streams. Those are separate from the main server trace file.
 
+## Error Reports (Sentry)
+
+Release builds can send errors, a 5% sample of traces, and on-error screen replays to Sentry. The
+repository names no Sentry project: each DSN is inlined at build time from the environment, and a
+build without one never loads the SDK. Development runs (`vp run dev`, a development mobile
+variant, or any Metro-served bundle) send nothing even with a DSN, unless `ONICODE_SENTRY_DEV=1`
+is set to test the integration.
+
+| Variable                                        | Read by                                            |
+| ----------------------------------------------- | -------------------------------------------------- |
+| `ONICODE_SENTRY_SERVER_DSN`                     | server build (`apps/server/vite.config.ts`)        |
+| `ONICODE_SENTRY_DESKTOP_DSN`                    | desktop main build (`apps/desktop/vite.config.ts`) |
+| `ONICODE_SENTRY_MOBILE_DSN`                     | mobile app config (`apps/mobile/app.config.ts`)    |
+| `SENTRY_AUTH_TOKEN`, `SENTRY_URL`, `SENTRY_ORG` | source map uploads                                 |
+
+Values come from `.env`, `.env.local`, or the process environment. Release workflows take them from
+GitHub secrets (`SENTRY_URL` and `SENTRY_ORG` are repository variables). With a token,
+`scripts/build-desktop-artifact.ts` injects debug IDs and uploads the server, desktop main, and
+renderer source maps before packaging; a failed upload only warns. The standalone CLI executable
+(SEA) has no source maps, so its server frames stay unsymbolicated.
+
+Consent is per process owner and on by default, and changes apply on restart. A server follows its
+`observability.errorReporting` setting. The desktop app follows `errorReporting` in its own
+`desktop-settings.json`, apart from any environment, and reads it before Electron is ready, because
+Sentry's Electron SDK must start then; the renderer asks main over IPC and reports through it.
+Mobile keeps a device-local switch and loads the SDK only after it reads it, so errors in the first
+moments of a launch are not reported. A settings file that exists but cannot be read or decoded
+counts as off, and the next write of that file or store saves the opt-out, so damage never undoes
+one.
+
+What leaves the machine is narrowed at capture, not only scrubbed after: logs contribute their
+text parts and never their structured fields, span attributes only numbers and booleans, and
+defects only when they are `Error`s (others by their kind). Console and DOM click breadcrumbs are
+off. Every payload then loses URL queries and fragments and the home folder path
+(`packages/shared/src/sentryScrub.ts`).
+
+The renderer's replay masks every attribute outside a layout and state allowlist. rrweb records
+`href` and `src` before any masking, so it blocks every link, frame and media element. It stops
+without flushing on routes whose address carries a query, since prompt links put the prompt
+there. On an error it sends the buffered recording and starts a new buffer; Sentry's default would
+keep uploading the rest of the session. The attribute allowlist sets a private field of the replay
+integration; if a Sentry upgrade removes it, replays turn off rather than record unmasked
+attributes. Electron minidumps carry raw stack memory and are sent as is.
+
+Mobile adds `@sentry/react-native/expo` only when `ONICODE_SENTRY_MOBILE_DSN` is set. Without
+`SENTRY_AUTH_TOKEN` it turns off the native source map, dSYM and ProGuard uploads; that switch is a
+plugin prop, so the token's presence is part of the native fingerprint, and the plan and the build
+of a release must see the same environment. The release workflow sets `SENTRY_ALLOW_FAILURE` so a
+failed upload only warns. For OTA updates, the workflow downloads the source map better-update
+stored with each update and uploads it; the map carries the bundle's debug ID.
+
+Effect spans reach Sentry through a tracer bridge (`packages/shared/src/sentry.ts`), not OTLP: it
+keeps Effect's own trace ids and sampling for the local trace file, ties captured errors to the
+span they happened in, and leaves user-configured OTLP export alone. Long-lived spans such as
+thread subscriptions open for minutes, so a child of a span older than 30 seconds starts a new
+Sentry trace; otherwise one sampling decision would cover hours of work. Error and Fatal logs
+become Sentry issues, using the error under a `cause` or `error` field when there is one; they
+count as handled, except DefectReporter's "Unhandled defect", so logged errors do not mark
+sessions as crashed. Info and Warn logs become breadcrumbs.
+
+Self-hosted Sentry may need the `organizations:trace-spans-format` feature flag before span-streamed
+traces show their waterfall.
+
 ## Run The Server In Instrumented Mode
 
 There are two useful modes:

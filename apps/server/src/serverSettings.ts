@@ -872,6 +872,7 @@ const make = Effect.gen(function* () {
           continueThreadsAfterServerUpdate: false,
           usageHistoryRetentionDays: "unlimited",
           enablePreviewTunnel: false,
+          observability: { ...managed.defaults.observability, errorReporting: false },
         };
         if (failure._tag === "Failure") {
           parseFailure = Option.some(Cause.squash(failure.cause));

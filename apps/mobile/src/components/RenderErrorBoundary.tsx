@@ -5,6 +5,7 @@ import { ScrollView, View } from "react-native";
 import { AppText as Text } from "./ui/AppText";
 import { Button } from "./ui/Button";
 import { copyTextWithHaptic } from "../lib/copyTextWithHaptic";
+import { reportRenderError } from "../lib/crash-reporting";
 
 interface RenderErrorBoundaryProps {
   readonly children: ReactNode;
@@ -65,7 +66,8 @@ export class RenderErrorBoundary extends Component<
     return { failed: true, error };
   }
 
-  override componentDidCatch(_error: unknown, info: { componentStack?: string }) {
+  override componentDidCatch(error: unknown, info: { componentStack?: string }) {
+    reportRenderError(error, info.componentStack);
     this.setState({ componentStack: info.componentStack });
   }
 

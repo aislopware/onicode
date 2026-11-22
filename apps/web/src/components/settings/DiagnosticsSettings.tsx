@@ -44,6 +44,7 @@ import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { toastManager } from "../ui/toast";
 import { formatDiagnosticsDuration } from "./DiagnosticsSettings.logic";
+import { ErrorReportingSettings } from "./ErrorReportingSettings";
 import { ExpandableText } from "./ExpandableText";
 import { ResourceTelemetryDiagnostics } from "./ResourceTelemetryDiagnostics";
 import { formatCpuTime } from "./ResourceTelemetryDiagnostics.logic";
@@ -1438,6 +1439,7 @@ function DiagnosticsSettingsBody() {
           <EmptyRows label={isInitialLoading ? gt("Loading span names…") : gt("No spans found.")} />
         )}
       </SettingsSection>
+      {exportFormEnvironmentId === environmentId && <ErrorReportingSettings />}
       {exportFormEnvironmentId === environmentId && <TelemetryExportSettings />}
     </SettingsPageContainer>
   );

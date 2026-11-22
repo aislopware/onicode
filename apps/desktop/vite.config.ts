@@ -4,6 +4,7 @@ import * as NodeOS from "node:os";
 import { defaultInclude, defineConfig } from "vite-plus";
 
 import { isDesktopRuntimeExternalDependency } from "../../scripts/lib/desktop-external-packages.ts";
+import { loadRepoEnv } from "../../scripts/lib/public-config.ts";
 
 const domTests = ["src/preview/PickPreload.test.ts"];
 
@@ -67,6 +68,12 @@ export default defineConfig({
       outputOptions: { codeSplitting: false },
       entry: ["src/main.ts"],
       clean: true,
+      define: {
+        // A build with a Sentry project names it here; without one the app never starts Sentry.
+        __ONICODE_SENTRY_DESKTOP_DSN__: JSON.stringify(
+          loadRepoEnv().ONICODE_SENTRY_DESKTOP_DSN?.trim() ?? "",
+        ),
+      },
       deps: {
         alwaysBundle: (id) => !id.startsWith("node:") && !isMainProcessExternal(id),
         neverBundle: isMainProcessExternal,

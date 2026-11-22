@@ -1,4 +1,5 @@
 import { installAgentAwareness } from "./features/agent-awareness/agentAwareness";
+import { installCrashReporting } from "./features/diagnostics/crash-reporting-startup";
 import {
   installAgentNotificationNavigation,
   setAgentNotificationPathname,
@@ -99,6 +100,10 @@ import {
 import { workspaceDetailLinkAction } from "./features/layout/workspace/workspace-detail-selection";
 import { NativeLayoutMetricsProvider } from "./native/native-layout-metrics";
 import {
+  markCrashReportingAppLoaded,
+  registerCrashReportingNavigation,
+} from "./lib/crash-reporting";
+import {
   attachRootNavigation,
   flushRootNavigationQueue,
   linkToRootPath,
@@ -185,6 +190,7 @@ function handleNavigationStateChange(state: NavigationState | undefined): void {
 }
 
 function handleNavigationReady(): void {
+  registerCrashReportingNavigation(rootNavigationRef);
   handleNavigationStateChange(rootNavigationRef.getRootState());
   flushRootNavigationQueue();
 }
@@ -192,6 +198,7 @@ function handleNavigationReady(): void {
 declare const module: { readonly hot?: FoundationHotModule } | undefined;
 
 const appServiceDisposers = [
+  installCrashReporting(),
   installUiRuntimeMemoryWarningGc(),
   subscribeComposerDraftModelReconciliation({
     registry: appAtomRegistry,
@@ -248,6 +255,7 @@ function SplashScreenCoordinator() {
     hidden.current = true;
     settleLaunchSplashHomeRows();
     void SplashScreen.hide();
+    markCrashReportingAppLoaded();
   }, [isReady, shellCachesRead, homeRowsPending, waitEnded]);
 
   return null;

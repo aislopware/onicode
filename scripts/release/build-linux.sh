@@ -28,6 +28,10 @@ docker run --rm --platform "$platform" \
   --volume "onicode-linux-cargo-$arch:/usr/local/cargo/registry" \
   --env ONICODE_RELEASE_CHANNEL="${ONICODE_RELEASE_CHANNEL:-stable}" --env ARCH="$arch" \
   --env ONICODE_PUSH_GATEWAY_URLS="${ONICODE_PUSH_GATEWAY_URLS:-}" \
+  --env ONICODE_SENTRY_DESKTOP_DSN="${ONICODE_SENTRY_DESKTOP_DSN:-}" \
+  --env ONICODE_SENTRY_SERVER_DSN="${ONICODE_SENTRY_SERVER_DSN:-}" \
+  --env SENTRY_AUTH_TOKEN="${SENTRY_AUTH_TOKEN:-}" --env SENTRY_URL="${SENTRY_URL:-}" \
+  --env SENTRY_ORG="${SENTRY_ORG:-}" \
   "$image" bash -euo pipefail -c '
     mkdir /work
     tar -C /src --exclude=node_modules --exclude=./release --exclude="./native/*/target" -cf - . \

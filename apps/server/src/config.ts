@@ -75,6 +75,8 @@ export class ServerConfig extends Context.Service<
     readonly otlpTracesExport: SignalExport;
     readonly otlpMetricsExport: SignalExport;
     readonly otlpLogsExport: SignalExport;
+    /** The persisted consent to Sentry reporting; unset means off. */
+    readonly errorReportingEnabled?: boolean;
     readonly otlpTracesSource?: OtlpEndpointSource;
     readonly otlpTracesVariable?: string;
     readonly otlpMetricsSource?: OtlpEndpointSource;

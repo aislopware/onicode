@@ -11,6 +11,7 @@ import * as SharedObservability from "@onicode/shared/observability";
 import * as OtelEnvironment from "@onicode/shared/otelEnvironment";
 import { releaseResourceAttributes } from "@onicode/shared/releaseResource";
 import {
+  noPersistedServerObservabilitySettings,
   parsePersistedServerObservabilitySettings,
   type PersistedServerObservabilitySettings,
 } from "@onicode/shared/serverSettings";
@@ -34,6 +35,7 @@ import { OtlpExporter, OtlpLogger, OtlpTracer } from "effect/observability";
 
 import desktopPackageJson from "../../package.json" with { type: "json" };
 
+import * as DesktopCrashReporting from "./DesktopCrashReporting.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
 
 const DESKTOP_LOG_FILE_MAX_BYTES = 10 * 1024 * 1024;
@@ -330,12 +332,6 @@ export const makeRotatingLogFileWriter = Effect.fn("makeRotatingLogFileWriter")(
   } satisfies RotatingLogFileWriter;
 });
 
-const noPersistedObservabilitySettings: PersistedServerObservabilitySettings = {
-  otlpTracesUrl: undefined,
-  otlpMetricsUrl: undefined,
-  otlpLogsUrl: undefined,
-};
-
 const readPersistedObservabilitySettings: Effect.Effect<
   PersistedServerObservabilitySettings,
   never,
@@ -345,7 +341,7 @@ const readPersistedObservabilitySettings: Effect.Effect<
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
   const raw = yield* fileSystem.readFileString(environment.serverSettingsPath).pipe(Effect.option);
   return Option.isNone(raw)
-    ? noPersistedObservabilitySettings
+    ? noPersistedServerObservabilitySettings
     : parsePersistedServerObservabilitySettings(raw.value);
 });
 
@@ -603,6 +599,8 @@ const layerTelemetry = Layer.unwrap(
   Effect.gen(function* () {
     const environment = yield* DesktopEnvironment.DesktopEnvironment;
     const endpoints = yield* resolveOtlpEndpoints;
+    const sentry = (yield* DesktopCrashReporting.DesktopCrashReporting).instrumentation;
+    const sentryLoggers = sentry === undefined ? [] : [sentry.logger];
     // Unpackaged runs launch a script, so Electron reports its own version.
     const serviceVersion = environment.isPackaged
       ? environment.appVersion
@@ -627,7 +625,7 @@ const layerTelemetry = Layer.unwrap(
     // Logger.layer replaces the logger set. tracerLogger would duplicate OTLP in-span messages.
     const layerLogger = Logger.layer(
       endpoints.logs === undefined
-        ? [Logger.consolePretty(), Logger.tracerLogger]
+        ? [Logger.consolePretty(), Logger.tracerLogger, ...sentryLoggers]
         : [
             Logger.consolePretty(),
             OtlpLogger.make({
@@ -636,6 +634,7 @@ const layerTelemetry = Layer.unwrap(
               headers: endpoints.logs.export.headers,
               resource,
             }),
+            ...sentryLoggers,
           ],
       { mergeWithExisting: false },
     ).pipe(
@@ -671,13 +670,19 @@ const layerTelemetry = Layer.unwrap(
                   SharedObservability.layerOtlpSerialization(endpoints.traces.export.protocol),
                 ),
               );
+        const sentryDelegate =
+          sentry === undefined
+            ? delegate
+            : sentry.wrapTracer(
+                delegate ?? Tracer.make({ span: (options) => new Tracer.NativeSpan(options) }),
+              );
         const tracer = yield* makeLocalFileTracer({
           filePath: tracePath,
           maxBytes: DESKTOP_LOG_FILE_MAX_BYTES,
           maxFiles: DESKTOP_LOG_FILE_MAX_FILES,
           batchWindowMs: DESKTOP_TRACE_BATCH_WINDOW_MS,
           sink,
-          ...(delegate ? { delegate } : {}),
+          ...(sentryDelegate ? { delegate: sentryDelegate } : {}),
         });
 
         return Layer.succeed(Tracer.Tracer, tracer);

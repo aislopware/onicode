@@ -145,16 +145,23 @@ describe("DesktopSettings", () => {
       ),
   );
 
-  it.effect("falls back to defaults when the settings file is malformed", () =>
+  it.effect("falls back to defaults with error reporting off when the file is malformed", () =>
     withSettings(
       Effect.gen(function* () {
         const environment = yield* DesktopEnvironment.DesktopEnvironment;
         const fileSystem = yield* FileSystem.FileSystem;
         const settings = yield* DesktopAppSettings.DesktopAppSettings;
         yield* fileSystem.makeDirectory(environment.stateDir, { recursive: true });
-        yield* fileSystem.writeFileString(environment.desktopSettingsPath, "{not-json");
+        for (const damaged of ["{not-json", `{ "errorReporting": "no" }`]) {
+          yield* fileSystem.writeFileString(environment.desktopSettingsPath, damaged);
 
-        assert.deepEqual(yield* settings.load, DesktopAppSettings.DEFAULT_DESKTOP_SETTINGS);
+          assert.isFalse((yield* settings.load).errorReportingEnabled);
+          yield* settings.setMainWindowBounds({ x: 10, y: 20, width: 800, height: 600 }, false);
+          assert.include(
+            yield* fileSystem.readFileString(environment.desktopSettingsPath),
+            `"errorReporting":false`,
+          );
+        }
       }),
     ),
   );
@@ -221,6 +228,7 @@ describe("DesktopSettings", () => {
         );
 
         assert.deepEqual(yield* settings.load, {
+          errorReportingEnabled: true,
           linuxPasswordStore: "auto",
           localEnvironmentEnabled: true,
           mainWindowBounds: { x: 120, y: 80, width: 1280, height: 900 },
@@ -257,6 +265,13 @@ describe("DesktopSettings", () => {
       }),
     ),
   );
+
+  it("reads error reporting consent, keeping it off when the file is damaged", () => {
+    assert.isTrue(DesktopAppSettings.parseErrorReportingConsent(`{ "wslOnly": true }`));
+    assert.isFalse(DesktopAppSettings.parseErrorReportingConsent(`{ "errorReporting": false }`));
+    assert.isFalse(DesktopAppSettings.parseErrorReportingConsent(`{ "errorReporting": "no" }`));
+    assert.isFalse(DesktopAppSettings.parseErrorReportingConsent(`{ "errorReporting": fal`));
+  });
 
   it.effect("rejects window bounds that do not satisfy the domain schema", () =>
     withSettings(

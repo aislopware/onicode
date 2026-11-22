@@ -44,6 +44,16 @@ const ServerObservabilitySettingsJson = fromLenientJson(
 const decodeServerObservabilitySettingsJson = Schema.decodeUnknownOption(
   ServerObservabilitySettingsJson,
 );
+// Consent decodes on its own, so an invalid OTLP field cannot undo an opt-out.
+const decodeErrorReportingJson = Schema.decodeUnknownOption(
+  fromLenientJson(
+    Schema.Struct({
+      observability: Schema.optionalKey(
+        Schema.Struct({ errorReporting: Schema.optionalKey(Schema.Boolean) }),
+      ),
+    }),
+  ),
+);
 
 export function isModelSelectionProviderEnabled(
   settings: ServerSettings,
@@ -178,7 +188,15 @@ export interface PersistedServerObservabilitySettings {
   readonly otlpTracesUrl: string | undefined;
   readonly otlpMetricsUrl: string | undefined;
   readonly otlpLogsUrl: string | undefined;
+  readonly errorReporting: boolean;
 }
+
+export const noPersistedServerObservabilitySettings: PersistedServerObservabilitySettings = {
+  otlpTracesUrl: undefined,
+  otlpMetricsUrl: undefined,
+  otlpLogsUrl: undefined,
+  errorReporting: true,
+};
 
 function normalizePersistedServerSettingString(
   value: string | null | undefined,
@@ -193,7 +211,7 @@ function extractPersistedServerObservabilitySettings(input: {
     readonly otlpMetricsUrl?: string;
     readonly otlpLogsUrl?: string;
   };
-}): PersistedServerObservabilitySettings {
+}): Omit<PersistedServerObservabilitySettings, "errorReporting"> {
   return {
     otlpTracesUrl: normalizePersistedServerSettingString(input.observability?.otlpTracesUrl),
     otlpMetricsUrl: normalizePersistedServerSettingString(input.observability?.otlpMetricsUrl),
@@ -201,14 +219,24 @@ function extractPersistedServerObservabilitySettings(input: {
   };
 }
 
+/**
+ * Reads the observability settings from a settings file's text. Error reporting defaults to on
+ * only when the file says nothing about it; a file it cannot read keeps reporting off.
+ */
 export function parsePersistedServerObservabilitySettings(
   raw: string,
 ): PersistedServerObservabilitySettings {
   const decoded = decodeServerObservabilitySettingsJson(raw);
-  if (Option.isSome(decoded)) {
-    return extractPersistedServerObservabilitySettings(decoded.value);
-  }
-  return { otlpTracesUrl: undefined, otlpMetricsUrl: undefined, otlpLogsUrl: undefined };
+  const errorReporting = Option.match(decodeErrorReportingJson(raw), {
+    onNone: () => false,
+    onSome: (settings) => settings.observability?.errorReporting ?? true,
+  });
+  return {
+    ...(Option.isSome(decoded)
+      ? extractPersistedServerObservabilitySettings(decoded.value)
+      : noPersistedServerObservabilitySettings),
+    errorReporting,
+  };
 }
 
 function shouldReplaceTextGenerationModelSelection(

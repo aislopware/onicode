@@ -59,7 +59,9 @@ No. Onicode is a serious developer tool. Locally runnable models are not capable
 
 ## Does my code go to Onicode servers?
 
-No. There are no Onicode servers. Your code and prompts go from your machine to your provider (Anthropic, OpenAI, etc.), and your devices reach your machine over your own network or Tailscale. Onicode sends no usage data anywhere.
+No. There are no Onicode servers. Your code and prompts go from your machine to your provider (Anthropic, OpenAI, etc.), and your devices reach your machine over your own network or Tailscale. Apart from the error reports below, Onicode sends no usage data anywhere.
+
+Some release builds send error reports to their publisher: crashes, errors, a sample of performance traces, a replay of the screen around an error with all text, media and links masked, and a count of app sessions so crash rates can be measured. Reports leave out log details, URL queries and your home folder path, but an error message or a desktop crash dump can still hold a fragment of what the app was working on. Turn them off for the desktop app and for each environment's server in **Settings → Diagnostics → Error reports**, or on mobile in **Settings → About → Diagnostics**, then restart. Builds from source send nothing.
 
 ## Worktrees are eating my disk. How do I clean them up?
 

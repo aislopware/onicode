@@ -57,6 +57,16 @@ env:
   BETTER_UPDATE_URL: https://updates.jmango360.dev
   BETTER_UPDATE_ROBOT: ${{ secrets.BETTER_UPDATE_ROBOT }}
   BETTER_UPDATE_DISABLE_UPDATE_NOTIFIER: "1"
+  # Linux and Windows builds set it too; telemetry and Sentry read it as a release build.
+  ONICODE_RELEASE_CHANNEL: stable
+  # Sentry projects the builds report to, and the org token that uploads their source maps.
+  # Unset, a build reports nothing and uploads nothing.
+  ONICODE_SENTRY_DESKTOP_DSN: ${{ secrets.ONICODE_SENTRY_DESKTOP_DSN }}
+  ONICODE_SENTRY_SERVER_DSN: ${{ secrets.ONICODE_SENTRY_SERVER_DSN }}
+  ONICODE_SENTRY_MOBILE_DSN: ${{ secrets.ONICODE_SENTRY_MOBILE_DSN }}
+  SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+  SENTRY_URL: ${{ vars.SENTRY_URL }}
+  SENTRY_ORG: ${{ vars.SENTRY_ORG }}
 
 jobs:
   macos:
@@ -125,6 +135,9 @@ jobs:
     uses: ./.github/workflows/desktop-windows.yml
     secrets:
       ONICODE_PUSH_GATEWAY_URL: ${{ secrets.ONICODE_PUSH_GATEWAY_URL }}
+      ONICODE_SENTRY_DESKTOP_DSN: ${{ secrets.ONICODE_SENTRY_DESKTOP_DSN }}
+      ONICODE_SENTRY_SERVER_DSN: ${{ secrets.ONICODE_SENTRY_SERVER_DSN }}
+      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
 
   windows:
     name: Upload Windows
@@ -170,6 +183,8 @@ jobs:
       # The push gateway these builds register with. A gateway serves only the builds signed for
       # it, so ours is a secret rather than a default in the repository.
       ONICODE_PUSH_GATEWAY_URL: ${{ secrets.ONICODE_PUSH_GATEWAY_URL }}
+      # A failed Sentry source map, dSYM or ProGuard upload warns instead of failing the build.
+      SENTRY_ALLOW_FAILURE: "true"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # BETTER_UPDATE_BUILD_DIR keeps better-update's staging copy and DerivedData at the same paths
@@ -281,6 +296,17 @@ jobs:
           if ! jq -e --arg r "$RUNTIME" '.data.results | length > 0 and all(.runtimeVersion == $r)' > /dev/null <<< "$published"; then
             echo "::error::The update was not published for the planned runtime $RUNTIME."
             exit 1
+          fi
+          # better-update keeps each update's source map; Sentry matches it to crashes by its debug ID.
+          if [[ -n "$SENTRY_AUTH_TOKEN" ]]; then
+            maps="$RUNNER_TEMP/ota-source-maps"
+            mkdir -p "$maps"
+            for id in $(jq -r '.data.results[].updateId' <<< "$published"); do
+              better-update update sourcemap "$id" --output "$maps/$id.map" > /dev/null \
+                || echo "::warning::Update $id has no stored source map."
+            done
+            npx --yes @sentry/cli@3.8.2 sourcemaps upload --project onicode-mobile "$maps" \
+              || echo "::warning::Uploading the OTA source maps to Sentry failed."
           fi
 
       - if: steps.plan.outputs.native == 'true' && runner.environment == 'github-hosted'

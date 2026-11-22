@@ -634,6 +634,14 @@
     "./assistantInsights": {
       "types": "./src/assistantInsights.ts",
       "import": "./src/assistantInsights.ts"
+    },
+    "./sentry": {
+      "types": "./src/sentry.ts",
+      "default": "./src/sentry.ts"
+    },
+    "./sentryScrub": {
+      "types": "./src/sentryScrub.ts",
+      "default": "./src/sentryScrub.ts"
     }
   },
   "scripts": {
@@ -643,6 +651,7 @@
   "dependencies": {
     "@noble/hashes": "catalog:",
     "@onicode/contracts": "workspace:*",
+    "@sentry/core": "catalog:",
     "effect": "catalog:",
     "ffi-rs": "1.3.7",
     "get-east-asian-width": "^1.7.0",
