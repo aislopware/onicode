@@ -549,6 +549,15 @@ export function attachmentContextRecord(
     : { ...base, kind: "file" };
 }
 
+/** Sent attachments carry their SnapShot source (up to 100 KB with the app icon); records skip it. */
+function withoutSnapShotSource(
+  record: ImageContextRecord | FileContextRecord,
+): ImageContextRecord | FileContextRecord {
+  if (record.kind !== "image" || record.source === undefined) return record;
+  const { source: _source, ...rest } = record;
+  return rest;
+}
+
 export function buildMessageContext(input: {
   terminalContexts: ReadonlyArray<TerminalContextDraft>;
   reviewComments: ReadonlyArray<ReviewCommentContext>;
@@ -574,7 +583,9 @@ export function buildMessageContext(input: {
         screenshotContextId: screenshotAttachmentIds.has(annotation.id) ? annotation.id : undefined,
       }),
     ),
-    ...(input.attachments ?? []).map(attachmentContextRecord),
+    ...(input.attachments ?? []).map((bound) =>
+      withoutSnapShotSource(attachmentContextRecord(bound)),
+    ),
   ];
   return records.length === 0 ? undefined : { version: 1, records };
 }
@@ -726,7 +737,13 @@ export function isSameComposerContextPayload(
 ): boolean {
   if (left.kind !== right.kind) return false;
   const stableKey = (record: ComposerContextRecord) => {
-    const { label: _label, contextId: _contextId, ...rest } = record;
+    // Sent records omit an image's SnapShot source, so it never tells two copies apart.
+    const known = asKnownContextRecord(record);
+    const {
+      label: _label,
+      contextId: _contextId,
+      ...rest
+    } = known?.kind === "image" ? withoutSnapShotSource(known) : record;
     const sortDeep = (value: unknown): unknown => {
       if (Array.isArray(value)) return value.map(sortDeep);
       if (value === null || typeof value !== "object") return value;

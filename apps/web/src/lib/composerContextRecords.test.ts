@@ -202,6 +202,12 @@ describe("composerContextRecords", () => {
             sizeBytes: 1,
             file: new File(["x"], "shot.png"),
             previewUrl: "blob:shot",
+            source: {
+              kind: "snap-shot",
+              capturedAt: "2026-01-01T00:00:00.000Z",
+              appName: "Safari",
+              windowTitle: "Example",
+            },
           },
           attachmentId: "uploaded-image",
         },
@@ -223,6 +229,8 @@ describe("composerContextRecords", () => {
     const image = context.records.find((record) => record.kind === "image");
     expect(preview).toMatchObject({ screenshotContextId: image!.contextId });
     expect(image).toMatchObject({ attachmentId: "uploaded-image" });
+    // The sent attachment carries the SnapShot source; the record must not repeat it on the wire.
+    expect(image).not.toHaveProperty("source");
   });
 
   it("shortens a long annotation comment label without splitting an emoji", () => {

@@ -284,6 +284,43 @@ describe("queued message file edits", () => {
     ).toBeNull();
   });
 
+  it("matches a removed queued SnapShot from a chip copied without its source", () => {
+    const imageId = ChatAttachmentId.make("server-shot-1");
+    const contextId = ComposerContextId.make("image_local-shot");
+    const removedAttachment = {
+      type: "image" as const,
+      id: imageId,
+      name: "shot.png",
+      mimeType: "image/png",
+      sizeBytes: 12,
+      source: {
+        kind: "snap-shot" as const,
+        capturedAt: "2026-11-22T14:00:00.000Z",
+        appName: "Safari",
+        windowTitle: "Example",
+      },
+    };
+    const record = {
+      version: 1 as const,
+      kind: "image" as const,
+      contextId,
+      label: "shot.png",
+      attachmentId: imageId,
+      name: "shot.png",
+      mimeType: "image/png",
+      sizeBytes: 12,
+    };
+
+    expect(
+      matchRestorableQueuedAttachment({
+        environmentId,
+        sourceEnvironmentId: environmentId,
+        record,
+        removedQueuedAttachments: [{ attachment: removedAttachment, contextIds: [contextId] }],
+      }),
+    ).toEqual({ attachment: removedAttachment, contextId });
+  });
+
   it("does not overwrite a separate draft when the queued run leaves", () => {
     const store = useComposerDraftStore.getState();
     store.setPrompt(threadTarget, "Separate draft");
