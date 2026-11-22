@@ -3249,3 +3249,4 @@ bcb9217e8e	take	applied cleanly; Onicode's hook order kept and the row re-render
 3571f28cca	take	applied cleanly
 77d299cc1c	take	applied cleanly
 31790d8d3e	take	taken as is
+66ca7cdbb1	take	adapted: kept Onicode's ClaudeContextLimits argument; new partial-usage test passes { maxTokens }
