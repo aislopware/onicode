@@ -3296,3 +3296,4 @@ dbb5bdb582	take	feat(web): sidebar folder button picks or adds a project; Onicod
 fff245a8c1	take	feat(mobile): favorites only is its own model filter, not a provider
 f9fbb004ac	take	feat(devices): double-tap Home opens the app switcher
 735c1e7401	take	test(desktop): AppImage shim test's fake server ignores a second stop signal
+7e3a9ba1b9	take	fix(server): task folder branch race; adopted upstream over Onicode's branch_already_exists check: any refused createBranch step means this attempt did not make the branch (a racing loser fails on the ref lock); kept Onicode's per-root branchMadeIn, which removal also reads; upstream's projectIsRepository test row taken
