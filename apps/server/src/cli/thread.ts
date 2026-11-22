@@ -876,21 +876,40 @@ const threadListCommand = Command.make("list", {
       flags,
       Effect.fn("cli.thread.list")(function* (tools) {
         const project = yield* resolveProject(tools, flags.project);
-        const threads: Array<OrchestratorMcpThreadListItem> = [];
-        let cursor: number | null = 0;
-        while (cursor !== null) {
-          const page: OrchestratorMcpThreadListResult = yield* tools.call(
+        const listPage = (from: number, olderServer: boolean) =>
+          tools.call(
             "oni_thread_list",
-            {
-              projectId: project.id,
-              includeSubagents: false,
-              includeDelegated: true,
-              limit: 100,
-              cursor,
-            },
+            olderServer
+              ? { projectId: project.id, includeSubagents: true, limit: 100, cursor: from }
+              : {
+                  projectId: project.id,
+                  includeSubagents: false,
+                  includeDelegated: true,
+                  limit: 100,
+                  cursor: from,
+                },
             OrchestratorMcpThreadListResult,
           );
-          threads.push(...page.threads);
+        const threads: Array<OrchestratorMcpThreadListItem> = [];
+        // A server older than `includeDelegated` refuses it; subagents are then left out here.
+        let olderServer = false;
+        let cursor: number | null = 0;
+        while (cursor !== null) {
+          const from: number = cursor;
+          const page: OrchestratorMcpThreadListResult = yield* listPage(from, olderServer).pipe(
+            Effect.catchIf(
+              (error) => from === 0 && !olderServer && error.message.includes("includeDelegated"),
+              () => {
+                olderServer = true;
+                return listPage(0, true);
+              },
+            ),
+          );
+          threads.push(
+            ...(olderServer
+              ? page.threads.filter((thread) => thread.relationshipToParent !== "subagent")
+              : page.threads),
+          );
           cursor = page.nextCursor;
         }
         if (flags.json) {

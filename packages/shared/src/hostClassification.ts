@@ -181,3 +181,34 @@ export const isWildcardHost = (host: string | undefined): boolean =>
 
 export const formatHostForUrl = (host: string): string =>
   host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
+
+/**
+ * Container and VM networks (Docker, libvirt, VMware, VirtualBox, Hyper-V, and
+ * macOS's `bridge100`+) have private addresses only this machine reaches. A
+ * host bridge such as `br0` or Proxmox's `vmbr0` carries the LAN address, so
+ * it stays listed.
+ */
+const VIRTUAL_INTERFACE =
+  /^(docker|br-|veth|virbr|vmnet|vboxnet|vEthernet|podman|cni|flannel|cali|lxcbr|lxdbr|bridge[1-9]\d\d)/;
+
+// VirtualBox and VMware host-only adapters on Windows. Their names are mutable; Linux bridges can inherit these MACs.
+const WINDOWS_HOST_ADAPTER_MAC = /^(0a:00:27|00:50:56:c0:00):/i;
+
+/**
+ * systemd-nspawn's `ve-*`/`vz-*` and NixOS containers' `vb-*` name host-side
+ * veths after the machine. Windows aliases are user-renameable, so these
+ * prefixes only apply to Linux interface discovery.
+ */
+const LINUX_CONTAINER_INTERFACE = /^(ve-|vb-|vz-)/;
+
+const isVirtualInterface = (name: string, platform: NodeJS.Platform): boolean =>
+  VIRTUAL_INTERFACE.test(name) || (platform === "linux" && LINUX_CONTAINER_INTERFACE.test(name));
+
+/** A container, VM or host-only adapter: its address reaches no other device. */
+export const isMachineLocalInterface = (
+  name: string,
+  mac: string | undefined,
+  platform: NodeJS.Platform,
+): boolean =>
+  isVirtualInterface(name, platform) ||
+  (platform === "win32" && mac !== undefined && WINDOWS_HOST_ADAPTER_MAC.test(mac));

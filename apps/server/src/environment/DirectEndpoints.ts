@@ -18,18 +18,14 @@ import * as NodeOS from "node:os";
 import * as HostProcess from "@onicode/shared/HostProcess";
 import {
   formatHostForUrl,
+  isMachineLocalInterface,
   isTailnetHost,
   isWildcardHost,
 } from "@onicode/shared/hostClassification";
 
 import * as ServerConfig from "../config.ts";
 import * as ServerEnvironment from "./ServerEnvironment.ts";
-import {
-  isLoopbackHost,
-  isPrivateNetworkAddress,
-  isVirtualInterface,
-  WINDOWS_HOST_ADAPTER_MAC,
-} from "../startupAccess.ts";
+import { isLoopbackHost, isPrivateNetworkAddress } from "../startupAccess.ts";
 
 type NetworkInterfacesMap = ReturnType<typeof NodeOS.networkInterfaces>;
 
@@ -76,14 +72,13 @@ export function resolveBoundEndpoints(input: {
   const addresses = isWildcardHost(input.host)
     ? Object.entries(input.interfaces)
         .flatMap(([name, entries]) =>
-          isVirtualInterface(name, input.platform) ? [] : (entries ?? []),
-        )
-        .filter(
-          (entry) =>
-            !entry.internal &&
-            entry.family === "IPv4" &&
-            isAdvertisableAddress(entry.address) &&
-            !(input.platform === "win32" && WINDOWS_HOST_ADAPTER_MAC.test(entry.mac)),
+          (entries ?? []).filter(
+            (entry) =>
+              !entry.internal &&
+              entry.family === "IPv4" &&
+              isAdvertisableAddress(entry.address) &&
+              !isMachineLocalInterface(name, entry.mac, input.platform),
+          ),
         )
         .map((entry) => entry.address)
     : [input.host!].filter(

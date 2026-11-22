@@ -62,6 +62,26 @@ it("skips public and container addresses for a private-network listener", () => 
   ).toBe("http://localhost:3773");
 });
 
+it("advertises IPv6 only on an IPv6 wildcard bind, after real IPv4 and before container IPv4", () => {
+  const ipv6 = (address: string): NodeOS.NetworkInterfaceInfo => ({
+    ...ipv4(address),
+    family: "IPv6",
+    netmask: "ffff:ffff:ffff:ffff::",
+    scopeid: 0,
+    cidr: `${address}/64`,
+  });
+  const pair = (host: string, interfaces: Record<string, NodeOS.NetworkInterfaceInfo[]>) =>
+    resolveHeadlessConnectionString(host, 3773, { interfaces, platform: "linux" });
+  const interfaces = {
+    docker0: [ipv4("172.17.0.1")],
+    eth0: [ipv6("fe80::1"), ipv6("2001:db8::5")],
+  };
+  expect(pair("::", interfaces)).toBe("http://[2001:db8::5]:3773");
+  expect(pair("0.0.0.0", interfaces)).toBe("http://172.17.0.1:3773");
+  expect(pair("0.0.0.0", { eth0: [ipv6("2001:db8::5")] })).toBe("http://localhost:3773");
+  expect(pair("::", { eth0: [ipv6("fe80::1")] })).toBe("http://localhost:3773");
+});
+
 it("prefers a LAN address over a tailnet one for a private-network pairing URL", () => {
   expect(
     resolveHeadlessConnectionString("0.0.0.0", 3773, {

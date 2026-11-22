@@ -5,6 +5,7 @@ import * as NodeOS from "node:os";
 
 import {
   formatHostForUrl,
+  isMachineLocalInterface,
   isPrivateNetworkHost,
   isSharedAddressSpaceHost,
   isWildcardHost,
@@ -41,28 +42,6 @@ export const isLoopbackHost = (host: string | undefined): boolean => {
     host.startsWith("127.")
   );
 };
-
-/**
- * Container and VM networks (Docker, libvirt, VMware, VirtualBox, Hyper-V, and
- * macOS's `bridge100`+) have private addresses only this machine reaches. A
- * host bridge such as `br0` or Proxmox's `vmbr0` carries the LAN address, so
- * it stays listed.
- */
-const VIRTUAL_INTERFACE =
-  /^(docker|br-|veth|virbr|vmnet|vboxnet|vEthernet|podman|cni|flannel|cali|lxcbr|lxdbr|bridge[1-9]\d\d)/;
-
-// VirtualBox and VMware host-only adapters on Windows. Their names are mutable; Linux bridges can inherit these MACs.
-export const WINDOWS_HOST_ADAPTER_MAC = /^(0a:00:27|00:50:56:c0:00):/i;
-
-/**
- * systemd-nspawn's `ve-*`/`vz-*` and NixOS containers' `vb-*` name host-side
- * veths after the machine. Windows aliases are user-renameable, so these
- * prefixes only apply to Linux interface discovery.
- */
-const LINUX_CONTAINER_INTERFACE = /^(ve-|vb-|vz-)/;
-
-export const isVirtualInterface = (name: string, platform: NodeJS.Platform): boolean =>
-  VIRTUAL_INTERFACE.test(name) || (platform === "linux" && LINUX_CONTAINER_INTERFACE.test(name));
 
 /**
  * Loopback or private-range IPv4 (LAN, tailnet, CGNAT), not link-local, in
@@ -176,43 +155,38 @@ const resolveHeadlessConnectionHost = (
     return normalizeHost(host);
   }
 
-  // Virtual and host-only adapters reach no other device: never advertised on a private-network
-  // listener, and otherwise only when no other interface has an address.
-  const interfaceEntries = Object.entries(interfaces)
-    .flatMap(([name, entries]) =>
-      (entries ?? []).map((entry) => ({
-        entry,
-        virtual:
-          isVirtualInterface(name, platform) ||
-          (platform === "win32" && WINDOWS_HOST_ADAPTER_MAC.test(entry.mac)),
-      })),
-    )
-    .filter(({ virtual }) => !(privateNetworkOnly && virtual))
-    .toSorted((a, b) => Number(a.virtual) - Number(b.virtual))
-    .map(({ entry }) => entry);
-  const externalIpv4Entries = interfaceEntries.filter(
-    (entry) =>
-      !entry.internal &&
+  const entries = Object.entries(interfaces).flatMap(([name, list]) =>
+    (list ?? []).flatMap((entry) => {
+      if (entry.internal) return [];
+      const machineLocal = isMachineLocalInterface(name, entry.mac, platform);
+      return privateNetworkOnly && machineLocal ? [] : [{ entry, machineLocal }];
+    }),
+  );
+  const ipv4 = entries.filter(
+    ({ entry }) =>
       isIpv4Family(entry.family) &&
       (!privateNetworkOnly || isPrivateNetworkAddress(entry.address)) &&
       (!tailnetOnly || isSharedAddressSpaceHost(entry.address)),
   );
-  // A tailnet or other CGNAT address reaches fewer devices than the LAN one.
-  const externalIpv4 = privateNetworkOnly
-    ? (externalIpv4Entries.find((entry) => !isSharedAddressSpaceHost(entry.address)) ??
-      externalIpv4Entries[0])
-    : externalIpv4Entries[0];
-  if (externalIpv4) {
-    return externalIpv4.address;
-  }
   if (privateNetworkOnly || tailnetOnly) {
-    return "localhost";
+    // A tailnet or other CGNAT address reaches fewer devices than the LAN one.
+    const preferred =
+      ipv4.find(
+        ({ entry, machineLocal }) => !machineLocal && !isSharedAddressSpaceHost(entry.address),
+      ) ??
+      ipv4.find(({ machineLocal }) => !machineLocal) ??
+      ipv4[0];
+    return preferred?.entry.address ?? "localhost";
   }
-
-  const externalIpv6 = interfaceEntries.find(
-    (entry) => !entry.internal && isIpv6Family(entry.family),
-  );
-  return externalIpv6 ? normalizeHost(externalIpv6.address) : "localhost";
+  // Only `::` listens on IPv6; a link-local address needs a zone a URL cannot carry.
+  const ipv6 =
+    host === "0.0.0.0"
+      ? []
+      : entries.filter(({ entry }) => isIpv6Family(entry.family) && !/^fe80:/i.test(entry.address));
+  // A container, VM or host-only adapter is advertised only when nothing else has an address.
+  const preferred =
+    [...ipv4, ...ipv6].find(({ machineLocal }) => !machineLocal) ?? ipv4[0] ?? ipv6[0];
+  return preferred ? normalizeHost(preferred.entry.address) : "localhost";
 };
 
 export const resolveHeadlessConnectionString = (

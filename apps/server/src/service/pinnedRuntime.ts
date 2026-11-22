@@ -811,27 +811,29 @@ const selectUnusedRuntimes = Effect.fn("service.pinned_runtime.select_unused")(f
   const path = yield* Path.Path;
   const versionsDir = pinnedRuntimeVersionsDir(path, input.baseDir);
   const entries = yield* fs.readDirectory(versionsDir).pipe(Effect.orElseSucceed(() => []));
-  // An interrupted prune has already renamed its runtime out of the way.
-  const pruned = new Set(
-    entries
-      .filter((entry) => entry.startsWith(PINNED_RUNTIME_PRUNED_PREFIX))
-      .map((entry) => path.join(versionsDir, entry)),
-  );
-
+  // Only real directories: a link or file under these names is not one this module wrote.
+  const directoryModifiedAt = (entryPath: string) =>
+    fs.lstat(entryPath).pipe(
+      Effect.map((info) =>
+        info.type === "Directory" ? Option.getOrUndefined(info.mtime)?.getTime() : null,
+      ),
+      Effect.orElseSucceed(() => null),
+    );
+  const pruned = new Set<string>();
   const settledBefore =
     (yield* Clock.currentTimeMillis) - Duration.toMillis(PINNED_RUNTIME_PRUNE_GRACE);
   const completed: Array<string> = [];
   for (const version of entries) {
+    const entryPath = path.join(versionsDir, version);
+    // An interrupted prune has already renamed its runtime out of the way.
+    if (version.startsWith(PINNED_RUNTIME_PRUNED_PREFIX)) {
+      if ((yield* directoryModifiedAt(entryPath)) !== null) pruned.add(entryPath);
+      continue;
+    }
     if (version.startsWith(PINNED_RUNTIME_STAGING_PREFIX)) {
       // A crashed or interrupted install leaves its staging directory behind.
-      const stagingDir = path.join(versionsDir, version);
-      const modifiedAt = yield* fs.lstat(stagingDir).pipe(
-        Effect.map((info) =>
-          info.type === "Directory" ? Option.getOrUndefined(info.mtime)?.getTime() : undefined,
-        ),
-        Effect.orElseSucceed(() => undefined),
-      );
-      if (modifiedAt !== undefined && modifiedAt < settledBefore) pruned.add(stagingDir);
+      const modifiedAt = yield* directoryModifiedAt(entryPath);
+      if (modifiedAt != null && modifiedAt < settledBefore) pruned.add(entryPath);
       continue;
     }
     if (!isExactServiceVersion(version)) continue;

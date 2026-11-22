@@ -55,127 +55,154 @@ vi.mock("../auth/EnvironmentAuth.ts", async (importOriginal) => {
 const threadId = ThreadId.make("thread-1");
 const runId = RunId.make("run-1");
 
-it.effect("list includes delegated threads; the server leaves out subagents", () =>
-  Effect.gen(function* () {
-    const fs = yield* FileSystem.FileSystem;
-    const path = yield* Path.Path;
-    const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "oni-thread-list-" });
-    const statePath = path.join(baseDir, "userdata", "server-runtime.json");
-    yield* ServerOwnership.acquireServerOwnership(statePath).pipe(
-      Effect.provide(ProcessRunner.layer),
-    );
-    yield* persistServerRuntimeState({
-      path: statePath,
-      state: {
-        ...(yield* makePersistedServerRuntimeState({
-          config: { host: "127.0.0.1", dev: false },
-          port: 3_773,
-        })),
-        ownerId: "test-owner",
-      },
-    });
-    const projectId = ProjectId.make("project-1");
-    const item = (id: string) => ({
-      threadId: id,
-      projectId,
-      title: id,
-      createdBy: "user",
-      creationSource: "web",
-      status: "idle",
-      latestRunId: null,
-      providerInstanceId: "codex",
-      model: "test",
-      runtimeMode: "full-access",
-      interactionMode: "default",
-      linkedPullRequest: null,
-      settled: false,
-      settledAt: null,
-      snoozed: false,
-      snoozedUntil: null,
-      parentThreadId: null,
-      relationshipToParent: null,
-      itemCount: 0,
-      createdAt: "2026-01-01T00:00:00.000Z",
-      updatedAt: "2026-01-01T00:00:00.000Z",
-    });
-    const root = item("root");
-    const delegated = {
-      ...item("delegated"),
-      delegatedFrom: { environmentId: "env-1", threadId: "remote", title: "Remote" },
-    };
-    const subagent = {
-      ...item("child"),
-      parentThreadId: "root",
-      relationshipToParent: "subagent",
-    };
-    const listCalls: Array<Record<string, unknown>> = [];
-    using _session = vi.spyOn(McpBridge, "mcpToolSession").mockReturnValue(
-      Effect.succeed({
-        call: (tool, args) => {
-          if (tool === "oni_project_list")
-            return Effect.succeed({
-              structuredContent: {
-                projects: [{ id: projectId, title: "Project", workspaceRoot: baseDir }],
-                nextCursor: null,
-              },
-            });
-          if (tool === "oni_thread_list") {
-            listCalls.push(args);
-            const all = args.includeSubagents
-              ? [root, subagent, delegated]
-              : args.includeDelegated
-                ? [root, delegated]
-                : [root];
-            const cursor = Number(args.cursor);
-            return Effect.succeed({
-              structuredContent: {
-                projectId,
-                currentThreadId: null,
-                threads: all.slice(cursor, cursor + 2),
-                nextCursor: cursor + 2 < all.length ? cursor + 2 : null,
-                total: all.length,
-              },
-            });
-          }
-          return Effect.die(`unexpected ${tool} call`);
+it.effect.each([
+  {
+    server: "current",
+    calls: [
+      { includeSubagents: false, includeDelegated: true, cursor: 0 },
+      { includeSubagents: false, includeDelegated: true, cursor: 2 },
+    ],
+  },
+  {
+    // It refuses `includeDelegated` and lists subagents, which the CLI leaves out.
+    server: "older",
+    calls: [
+      { includeSubagents: false, includeDelegated: true, cursor: 0 },
+      { includeSubagents: true, includeDelegated: undefined, cursor: 0 },
+      { includeSubagents: true, includeDelegated: undefined, cursor: 2 },
+    ],
+  },
+] as const)(
+  "list includes delegated threads; the $server server leaves out subagents",
+  ({ server, calls }) =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "oni-thread-list-" });
+      const statePath = path.join(baseDir, "userdata", "server-runtime.json");
+      yield* ServerOwnership.acquireServerOwnership(statePath).pipe(
+        Effect.provide(ProcessRunner.layer),
+      );
+      yield* persistServerRuntimeState({
+        path: statePath,
+        state: {
+          ...(yield* makePersistedServerRuntimeState({
+            config: { host: "127.0.0.1", dev: false },
+            port: 3_773,
+          })),
+          ownerId: "test-owner",
         },
-      }),
-    );
-    yield* Command.runWith(threadCommand, { version: "0.0.0" })([
-      "list",
-      "--project",
-      projectId,
-      "--json",
-      "--base-dir",
-      baseDir,
-    ]);
-    const listed = JSON.parse(String((yield* TestConsole.logLines).at(-1))) as Array<{
-      threadId: string;
-    }>;
-    assert.deepStrictEqual(
-      listed.map((entry) => entry.threadId),
-      ["root", "delegated"],
-    );
-    // Pages hold only rows the CLI shows: subagents never cost a page.
-    assert.deepStrictEqual(
-      listCalls.map(({ includeSubagents, includeDelegated, cursor }) => ({
-        includeSubagents,
-        includeDelegated,
-        cursor,
-      })),
-      [{ includeSubagents: false, includeDelegated: true, cursor: 0 }],
-    );
-  }).pipe(
-    Effect.scoped,
-    Effect.provide(
-      Layer.mergeAll(
-        NodeServices.layer,
-        NodeCrypto.layer,
-        NetService.layer,
-        ConfigProvider.layer(ConfigProvider.fromEnv({ env: { ONICODE_PORT: "3773" } })),
+      });
+      const projectId = ProjectId.make("project-1");
+      const item = (id: string) => ({
+        threadId: id,
+        projectId,
+        title: id,
+        createdBy: "user",
+        creationSource: "web",
+        status: "idle",
+        latestRunId: null,
+        providerInstanceId: "codex",
+        model: "test",
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        linkedPullRequest: null,
+        settled: false,
+        settledAt: null,
+        snoozed: false,
+        snoozedUntil: null,
+        parentThreadId: null,
+        relationshipToParent: null,
+        itemCount: 0,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      });
+      const root = item("root");
+      const delegated = {
+        ...item("delegated"),
+        delegatedFrom: { environmentId: "env-1", threadId: "remote", title: "Remote" },
+      };
+      const subagent = {
+        ...item("child"),
+        parentThreadId: "root",
+        relationshipToParent: "subagent",
+      };
+      const delegatedLater = { ...delegated, threadId: "delegated-later" };
+      const listCalls: Array<Record<string, unknown>> = [];
+      using _session = vi.spyOn(McpBridge, "mcpToolSession").mockReturnValue(
+        Effect.succeed({
+          call: (tool, args) => {
+            if (tool === "oni_project_list")
+              return Effect.succeed({
+                structuredContent: {
+                  projects: [{ id: projectId, title: "Project", workspaceRoot: baseDir }],
+                  nextCursor: null,
+                },
+              });
+            if (tool === "oni_thread_list") {
+              listCalls.push(args);
+              if (server === "older" && "includeDelegated" in args)
+                return Effect.fail(
+                  new McpBridge.AcpMcpBridgeError({
+                    message:
+                      'Onicode MCP tools/call failed: {"code":-32602,"message":"Unknown argument \\"includeDelegated\\"."}',
+                  }),
+                );
+              const all = args.includeSubagents
+                ? [root, subagent, delegated, delegatedLater]
+                : args.includeDelegated
+                  ? [root, delegated, delegatedLater]
+                  : [root];
+              const cursor = Number(args.cursor);
+              return Effect.succeed({
+                structuredContent: {
+                  projectId,
+                  currentThreadId: null,
+                  threads: all.slice(cursor, cursor + 2),
+                  nextCursor: cursor + 2 < all.length ? cursor + 2 : null,
+                  total: all.length,
+                },
+              });
+            }
+            return Effect.die(`unexpected ${tool} call`);
+          },
+        }),
+      );
+      yield* Command.runWith(threadCommand, { version: "0.0.0" })([
+        "list",
+        "--project",
+        projectId,
+        "--json",
+        "--base-dir",
+        baseDir,
+      ]);
+      const listed = JSON.parse(String((yield* TestConsole.logLines).at(-1))) as Array<{
+        threadId: string;
+      }>;
+      assert.deepStrictEqual(
+        listed.map((entry) => entry.threadId),
+        ["root", "delegated", "delegated-later"],
+      );
+      // On a current server, pages hold only rows the CLI shows: subagents never cost a page.
+      assert.deepStrictEqual(
+        listCalls.map(({ includeSubagents, includeDelegated, cursor }) => ({
+          includeSubagents,
+          includeDelegated,
+          cursor,
+        })),
+        [...calls],
+      );
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(
+        Layer.mergeAll(
+          NodeServices.layer,
+          NodeCrypto.layer,
+          NetService.layer,
+          ConfigProvider.layer(ConfigProvider.fromEnv({ env: { ONICODE_PORT: "3773" } })),
+        ),
       ),
     ),
-  ),
 );
 
 it.effect(

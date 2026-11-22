@@ -4,6 +4,7 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
+import * as HostProcess from "@onicode/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
@@ -313,21 +314,41 @@ describe("DesktopServerExposure", () => {
     );
   });
 
-  it.effect("advertises the Wi-Fi or Ethernet address ahead of bridges and tunnels", () =>
-    withHarness(
-      {
+  it.effect.each([
+    {
+      platform: "darwin",
+      interfaces: {
         bridge0: [{ address: "192.168.2.1", family: "IPv4", internal: false }],
         utun4: [{ address: "10.8.0.2", family: "IPv4", internal: false }],
         en0: [{ address: "192.168.1.20", family: "IPv4", internal: false }],
       },
-      Effect.gen(function* () {
-        const serverExposure = yield* DesktopServerExposure.DesktopServerExposure;
-        yield* serverExposure.configureFromSettings({ port: 4173 });
+    },
+    {
+      // A renamed VirtualBox host-only adapter keeps its MAC.
+      platform: "win32",
+      interfaces: {
+        "vEthernet (WSL)": [{ address: "172.29.16.1", family: "IPv4", internal: false }],
+        "Ethernet 2": [
+          { address: "192.168.56.1", family: "IPv4", internal: false, mac: "0a:00:27:00:00:0a" },
+        ],
+        "Wi-Fi": [
+          { address: "192.168.1.20", family: "IPv4", internal: false, mac: "3c:22:fb:12:34:56" },
+        ],
+      },
+    },
+  ] as const)(
+    "advertises the Wi-Fi or Ethernet address ahead of bridges, tunnels and VM adapters on $platform",
+    ({ platform, interfaces }) =>
+      withHarness(
+        interfaces,
+        Effect.gen(function* () {
+          const serverExposure = yield* DesktopServerExposure.DesktopServerExposure;
+          yield* serverExposure.configureFromSettings({ port: 4173 });
 
-        const change = yield* serverExposure.setMode("network-accessible");
-        assert.equal(change.state.advertisedHost, "192.168.1.20");
-      }),
-    ),
+          const change = yield* serverExposure.setMode("network-accessible");
+          assert.equal(change.state.advertisedHost, "192.168.1.20");
+        }),
+      ).pipe(Effect.provideService(HostProcess.Platform, platform)),
   );
 
   it.effect("advertises the current LAN address after the network changes", () => {
