@@ -3262,3 +3262,4 @@ b479ce21ed	take	adapted: no relay, so no via/network hint; socket failures keep 
 ad2bdc76a5	take	conflict: kept Onicode's null-safe checksPendingAtStart, added checksStateAtStart
 a445025645	take	taken as is
 2f19cec079	take	taken as is (registry agents run from install receipts, so no download inside the 90s initialize window)
+1d02824868	take	taken as is
