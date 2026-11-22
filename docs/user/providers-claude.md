@@ -63,9 +63,10 @@ When you return to a large thread after Claude's prompt cache expires, a
 **Compact** chip with the thread's token count shows
 next to the send button. While it is on, Enter summarizes the history first, then
 sends your message. Click the chip to switch it to **Keep** and keep the full
-history for that message. The mobile app shows no chip: an eligible message sent
-from it summarizes first. While a scheduled task's fresh session is the latest
-one, your message goes back to your own conversation without summarizing. The cache lasts about an hour on a Claude
+history for that message. The mobile app shows the same chip, labelled with the
+token count: tap it to keep the full history for that message. While a scheduled task's
+fresh session is the latest one, your message goes back to your own conversation without
+summarizing. The cache lasts about an hour on a Claude
 subscription and 5 minutes with an API key, Bedrock, or Vertex. See [commands and skills](./composer.md#commands-and-skills) for using
 composer commands.
 
