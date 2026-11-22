@@ -3187,3 +3187,4 @@ a9447cedbd	take	fix(web): Cite button appears as fast after a double-click as af
 571b8697da	take	taken as is; guard lives at the ws handler like upstream, no MCP path switches refs
 c7a9fba06b	take	taken as is
 f9b19a7f85	take	CONFLICT resolved by hand; kept Onicode's null return for an unreadable project folder: callers tell 'cannot read' from 'no repositories'
+28a420060b	take	adopted upstream over Onicode's optional submodules folders: required field, fallback walk removed (only caller always passes it)
