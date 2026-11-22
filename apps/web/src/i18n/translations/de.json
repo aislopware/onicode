@@ -9017,6 +9017,15 @@
   "1c9374501ee389d3": "Füge ein 1Password-Konto hinzu und wähle es dann als Quelle einer Anbietervariable.",
   "382541febe15f472": "Kontosichtbarkeit umschalten",
   "40426afd511710f8": "Nicht unterstützter Anbieter ({kind})",
+  "4b7c63d4186bd018": [
+    "Geheimnisanbieter sind auf ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " deaktiviert."
+  ],
   "b1d03d34f50893f3": [
     "Aktualisiere Onicode auf ",
     {

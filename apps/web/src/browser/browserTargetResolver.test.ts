@@ -34,6 +34,8 @@ describe("browser target resolver", () => {
       "http://app.localhost:5173",
       "http://127.0.0.2:5173",
       "http://[::]:5173",
+      "http://[::ffff:127.0.0.1]:5173",
+      "http://[::ffff:7f00:1]:5173",
     ]) {
       expect(resolveExternalServerUrl(EnvironmentId.make("environment-1"), url)).toBeNull();
     }

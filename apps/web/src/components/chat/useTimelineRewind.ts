@@ -15,7 +15,7 @@ import {
   type RunId,
 } from "@onicode/contracts";
 import { scopeThreadRef } from "@onicode/client-runtime/environment";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useRouter } from "@tanstack/react-router";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -81,6 +81,7 @@ export function useTimelineRewind(input: TimelineRewindInput) {
     setThreadError,
   } = input;
   const navigate = useNavigate();
+  const router = useRouter();
   const createAttachmentAssetUrl = useAtomQueryRunner(assetEnvironment.createUrl, {
     reportFailure: false,
     refresh: true,
@@ -190,6 +191,7 @@ export function useTimelineRewind(input: TimelineRewindInput) {
     readonly runId: RunId;
   }) => {
     if (!activeThread || activeEnvironmentUnavailable) return;
+    const startedOn = router.state.location.href;
     const targetThreadId = newThreadId();
     const targetThreadRef = scopeThreadRef(environmentId, targetThreadId);
     const result = await forkThreadFromRun({
@@ -223,6 +225,8 @@ export function useTimelineRewind(input: TimelineRewindInput) {
       );
       return;
     }
+    // A user who has gone elsewhere since the press is not moved again; the fork is in the sidebar.
+    if (router.state.location.href !== startedOn) return;
     await navigate({
       to: "/$environmentId/$threadId",
       params: buildThreadRouteParams(targetThreadRef),

@@ -102,6 +102,11 @@ export async function reopenClosedView(
   const ref = view.threadRef;
 
   if (view.kind === "browser") {
+    // What the user does in the panel while the browser starts, such as picking a tab or closing
+    // the panel, stands; the restored tab waits behind it.
+    const panelRef = rightPanelHostRef(ref);
+    const userActions = () => useRightPanelStore.getState().getUserActionRevision(panelRef);
+    const userActionsBeforeOpen = userActions();
     const url = view.snapshot.navStatus._tag === "Idle" ? undefined : view.snapshot.navStatus.url;
     const result = await openPreviewSession({
       openPreview: options.openPreview,
@@ -115,7 +120,7 @@ export async function reopenClosedView(
         : { colorScheme: view.snapshot.colorScheme }),
     });
     if (result._tag === "Failure") return false;
-    panels.openBrowser(ref, result.value.tabId);
+    panels.openBrowser(ref, result.value.tabId, userActions() !== userActionsBeforeOpen);
     return true;
   }
   const surface = view.surface;

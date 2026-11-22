@@ -1,6 +1,10 @@
 import {
   EnvironmentId,
   EventId,
+  RunId,
+  ThreadId,
+  TurnItemId,
+  type OrchestrationV2ProjectedTurnItem,
   type OrchestrationV2ThreadHistoryPage,
   type OrchestrationV2ThreadStreamItem,
   type PeerLinkClientPairingResult,
@@ -168,20 +172,74 @@ it.effect("brings back the turns a closed view had loaded when it opens again", 
     const older = v2MessageRow("Older", 1);
     const recent = v2MessageRow("Recent", 2);
     const latest = v2MessageRow("Latest", 3);
+    const oldest = v2MessageRow("Oldest", 0);
+    const afterRewind = v2MessageRow("After rewind", 4);
+    const parentThreadId = ThreadId.make("thread-parent");
+    const parentRow = (text: string, ordinal: number): OrchestrationV2ProjectedTurnItem => {
+      const row = v2MessageRow(text, ordinal);
+      return {
+        ...row,
+        visibility: "inherited",
+        sourceThreadId: parentThreadId,
+        item: { ...row.item, threadId: parentThreadId },
+      };
+    };
+    const parentOlder = parentRow("Parent older", 2);
+    const parentLatest = parentRow("Parent latest", 5);
+    const forkLatest = v2MessageRow("Fork latest", 1);
+    // As the server builds it: the parent as source, ordinal 0, after the inherited rows.
+    const forkMarker = (
+      visibility: "synthetic" | "inherited",
+      threadId: ThreadId,
+    ): OrchestrationV2ProjectedTurnItem => {
+      const id = TurnItemId.make(`turn-item:fork:${threadId}`);
+      return {
+        position: 0,
+        visibility,
+        sourceThreadId: parentThreadId,
+        sourceItemId: id,
+        item: {
+          id,
+          threadId,
+          runId: null,
+          nodeId: null,
+          providerTurnId: null,
+          nativeItemRef: null,
+          parentItemId: null,
+          ordinal: 0,
+          status: "completed",
+          title: "Forked from conversation",
+          startedAt: null,
+          completedAt: v2Now,
+          updatedAt: v2Now,
+          type: "fork",
+          source: { type: "run", threadId: parentThreadId, runId: RunId.make("run-parent") },
+          targetThreadId: threadId,
+        },
+      };
+    };
     const window = (
       snapshotSequence: number,
       historyCursor: string,
-      row: typeof recent,
+      ...rows: ReadonlyArray<OrchestrationV2ProjectedTurnItem>
     ): OrchestrationV2ThreadStreamItem => ({
       kind: "snapshot",
       snapshotSequence,
-      projection: { ...v2Projection, turnItems: [row.item], visibleTurnItems: [row] },
+      projection: {
+        ...v2Projection,
+        turnItems: rows.map((row) => row.item),
+        visibleTurnItems: rows,
+      },
       historyCursor,
       hasMoreHistory: true,
     });
     const pages: Record<string, Pick<OrchestrationV2ThreadHistoryPage, "items" | "nextCursor">> = {
       "before-recent": { items: [older], nextCursor: "before-older" },
       "before-latest": { items: [recent], nextCursor: "before-recent" },
+      "before-after-rewind": { items: [oldest], nextCursor: "before-oldest" },
+      "before-oldest": { items: [], nextCursor: null },
+      "before-parent-latest": { items: [parentOlder], nextCursor: "before-parent-older" },
+      "before-fork-marker": { items: [parentLatest], nextCursor: "before-parent-latest" },
     };
     const asked: string[] = [];
     const follow = (
@@ -195,7 +253,7 @@ it.effect("brings back the turns a closed view had loaded when it opens again", 
           historyPage: (cursor) =>
             Effect.sync(() => {
               asked.push(cursor);
-              return { ...pages[cursor]!, snapshotSequence: 3, hasMoreHistory: true };
+              return { ...pages[cursor]!, snapshotSequence: 4, hasMoreHistory: true };
             }),
           previous,
         }).pipe(
@@ -237,6 +295,41 @@ it.effect("brings back the turns a closed view had loaded when it opens again", 
       "before-older",
     ]);
     expect(asked).toEqual(["before-recent", "before-latest", "before-recent"]);
+
+    // Another client rewound past the oldest row it showed: an older row of that source stops it.
+    asked.length = 0;
+    const rewound = yield* settled(
+      yield* follow([window(4, "before-after-rewind", afterRewind)], closed),
+    );
+    expect([rows(rewound), rewound.thread.historyCursor]).toEqual([
+      [oldest.sourceItemId, afterRewind.sourceItemId],
+      "before-oldest",
+    ]);
+    expect(asked).toEqual(["before-after-rewind"]);
+
+    // A fork marker in the new window is newer than the parent rows it showed, despite ordinal 0.
+    const forked = yield* follow([window(1, "before-parent-latest", parentLatest)], null);
+    (yield* Queue.take(forked)).loadEarlier();
+    yield* Queue.take(forked); // Loading.
+    const forkClosed = yield* Queue.take(forked);
+    expect(rows(forkClosed)).toEqual([parentOlder.sourceItemId, parentLatest.sourceItemId]);
+    for (const marker of [
+      forkMarker("synthetic", v2Projection.thread.id),
+      // Forked again: the first fork's marker comes along as an inherited row.
+      forkMarker("inherited", ThreadId.make("thread-middle")),
+    ]) {
+      asked.length = 0;
+      const reopened = yield* settled(
+        yield* follow([window(2, "before-fork-marker", marker, forkLatest)], forkClosed),
+      );
+      expect(rows(reopened)).toEqual([
+        parentOlder.sourceItemId,
+        parentLatest.sourceItemId,
+        marker.sourceItemId,
+        forkLatest.sourceItemId,
+      ]);
+      expect(asked).toEqual(["before-fork-marker", "before-parent-latest"]);
+    }
   }).pipe(Effect.scoped),
 );
 

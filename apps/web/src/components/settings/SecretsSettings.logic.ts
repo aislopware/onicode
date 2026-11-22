@@ -4,11 +4,13 @@ import {
   EasDeviceHostConfig,
   isSecretReference,
   secretReferencesInSettings,
+  type ServerConfig,
   type ServerSettings,
   SimlockDeviceHostConfig,
   TextGeneratorConfig,
   UsageLimitSourceConfig,
 } from "@onicode/contracts";
+import { hasFeatureFlag } from "@onicode/client-runtime/state/server";
 import { getProviderClient } from "@onicode/client-runtime/provider-clients";
 import { sourceControlClients } from "@onicode/client-runtime/source-control-clients";
 import { msg } from "gt-react";
@@ -127,4 +129,23 @@ export function secretProviderUses(
         : [];
     }),
   ];
+}
+
+/** What the Secrets page shows for the selected environment; flags are per environment. */
+export function secretsSettingsState(
+  environment:
+    | {
+        readonly connection: { readonly phase: string };
+        readonly serverConfig: Pick<ServerConfig, "featureFlags" | "secretProviderSettings"> | null;
+      }
+    | null
+    | undefined,
+): "offline" | "disabled" | "outdated" | "ready" {
+  if (environment?.connection.phase !== "connected") return "offline";
+  const config = environment.serverConfig;
+  if (config === null) return "ready";
+  // A server from before feature flags sends none: it needs an update, not a flag.
+  if (config.featureFlags === undefined) return "outdated";
+  if (!hasFeatureFlag(config, "secretProviders")) return "disabled";
+  return config.secretProviderSettings === true ? "ready" : "outdated";
 }

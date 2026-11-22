@@ -197,7 +197,8 @@ interface RightPanelStoreState {
   setLinkedThreadTitle: (ref: ScopedThreadRef, surfaceId: string, title: string) => void;
   openDevice: (ref: ScopedThreadRef, target: DeviceTabTarget, automatic?: boolean) => void;
   renameDevice: (ref: ScopedThreadRef, surfaceId: string, title: string) => void;
-  openBrowser: (ref: ScopedThreadRef, tabId: string | null) => void;
+  /** `background` adds the tab without selecting it or showing the panel. */
+  openBrowser: (ref: ScopedThreadRef, tabId: string | null, background?: boolean) => void;
   openFile: (ref: ScopedThreadRef, relativePath: string, line?: number) => void;
   /** Moves in place; "" opens the root explorer. folderTrail keeps the return path; keepSource opens beside the source. */
   navigateFolder: (
@@ -980,16 +981,23 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
             ),
           })),
         ),
-      openBrowser: (ref, tabId) =>
-        set((state) =>
-          userAction(state, scopedThreadKey(ref), (current) => {
+      openBrowser: (ref, tabId, background = false) =>
+        set((state) => {
+          const update = (current: ThreadRightPanelState) => {
             const surface = browserSurface(tabId);
+            if (background) {
+              // The placeholder may be the selected tab, so a background tab leaves it.
+              return { ...upsertSurface(current, surface, false), isOpen: current.isOpen };
+            }
             const withoutPlaceholder = tabId
               ? current.surfaces.filter((entry) => entry.id !== "browser:new")
               : current.surfaces;
             return upsertSurface({ ...current, surfaces: withoutPlaceholder }, surface);
-          }),
-        ),
+          };
+          return background
+            ? automaticUpdate(state, scopedThreadKey(rightPanelHostRef(ref)), update)
+            : userAction(state, scopedThreadKey(ref), update);
+        }),
       openPullRequest: (ref, target) =>
         set((state) =>
           userAction(state, scopedThreadKey(ref), (current) => {

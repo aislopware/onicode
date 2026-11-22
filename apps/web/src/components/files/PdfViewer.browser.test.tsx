@@ -37,6 +37,17 @@ function holdClose() {
   });
   return new Promise<void>((resolve) => (closeGate.reopening = resolve));
 }
+// Counts each page's loads and link annotation reads by page number.
+const pageReads = vi.hoisted(() => ({
+  loads: new Map<number, number>(),
+  annotations: new Map<number, number>(),
+  wrapped: new WeakSet<object>(),
+}));
+function countPageReads() {
+  pageReads.loads.clear();
+  pageReads.annotations.clear();
+  return pageReads;
+}
 vi.mock(import("./pdfDocument"), async (importOriginal) => {
   const actual = await importOriginal();
   return {
@@ -59,12 +70,21 @@ vi.mock(import("./pdfDocument"), async (importOriginal) => {
       const promise = task.promise.then((document) => {
         const getPage = document.getPage.bind(document);
         document.getPage = async (number) => {
+          pageReads.loads.set(number, (pageReads.loads.get(number) ?? 0) + 1);
           const page = await getPage(number);
           const getTextContent = page.getTextContent.bind(page);
           page.getTextContent = async (params) => {
             if (number === findGate.page) await findGate.opened;
             return getTextContent(params);
           };
+          if (!pageReads.wrapped.has(page)) {
+            pageReads.wrapped.add(page);
+            const getAnnotations = page.getAnnotations.bind(page);
+            page.getAnnotations = (params) => {
+              pageReads.annotations.set(number, (pageReads.annotations.get(number) ?? 0) + 1);
+              return getAnnotations(params);
+            };
+          }
           return page;
         };
         return document;
@@ -297,7 +317,13 @@ it("restores page, within-page offset and zoom after a remount", async () => {
   }
 });
 
-it("follows a link to another page and exposes a web link", async () => {
+it("follows a link to a point on another page and reads links once across a zoom", async () => {
+  const { loads, annotations: annotationCounts } = countPageReads();
+  const page = (text: string) => ({
+    box: "0 0 612 792",
+    rotate: 0,
+    text: `BT /F1 24 Tf 30 700 Td (${text}) Tj ET`,
+  });
   const url = URL.createObjectURL(
     testPdf([
       {
@@ -305,11 +331,16 @@ it("follows a link to another page and exposes a web link", async () => {
         rotate: 0,
         text: "BT /F1 24 Tf 30 700 Td (See p. 2) Tj 0 -60 Td (Website) Tj ET",
         annots: [
-          "<< /Type /Annot /Subtype /Link /Rect [30 690 200 730] /Border [0 0 0] /Dest [5 0 R /XYZ 0 792 0] >>",
+          // Page 4's object; y 200 is 2800 PDF units below its top edge.
+          "<< /Type /Annot /Subtype /Link /Rect [30 690 200 730] /Border [0 0 0] /Dest [9 0 R /XYZ 0 200 0] >>",
           "<< /Type /Annot /Subtype /Link /Rect [30 630 200 670] /Border [0 0 0] /A << /S /URI /URI (https://example.com/) >> >>",
         ].join(" "),
       },
-      { box: "0 0 612 792", rotate: 0, text: "BT /F1 24 Tf 30 700 Td (Target) Tj ET" },
+      page("Filler"),
+      page("Filler"),
+      // Offscreen and far taller than page 1, whose shape the layout assumes until it loads.
+      { ...page("Target"), box: "0 0 612 3000" },
+      page("After"),
     ]),
   );
   try {
@@ -319,7 +350,7 @@ it("follows a link to another page and exposes a web link", async () => {
         <PdfViewer src={url} title="Linked PDF" onOpenLink={onOpenLink} />
       </div>,
     );
-    await expect.element(screen.getByText("1 / 2 pages")).toBeVisible();
+    await expect.element(screen.getByText("1 / 5 pages")).toBeVisible();
     const region = screen.getByRole("region", { name: "Linked PDF" }).element();
     const web = await vi.waitFor(() => {
       const link = region.querySelector<HTMLAnchorElement>('a[href="https://example.com/"]');
@@ -336,8 +367,25 @@ it("follows a link to another page and exposes a web link", async () => {
       expect(link).toBeDefined();
       return link!;
     });
+
+    // Link boxes are page-relative, so a zoom repaints the page without reading them again.
+    const reads = annotationCounts.get(1);
+    expect(reads).toBe(1);
+    const canvas = region.querySelector<HTMLCanvasElement>('canvas[aria-label="Page 1"]')!;
+    const painted = canvas.width;
+    await screen.getByRole("button", { name: "Zoom in", exact: true }).click();
+    await vi.waitFor(() => expect(canvas.width).not.toBe(painted));
+    expect(annotationCounts.get(1)).toBe(reads);
+    // A link's target page loads only when the link is followed.
+    expect(loads.get(4)).toBeUndefined();
+
     internal.click();
-    await expect.element(screen.getByText("2 / 2 pages")).toBeVisible();
+    await expect.element(screen.getByText("4 / 5 pages")).toBeVisible();
+    await vi.waitFor(() => {
+      const target = region.querySelector('canvas[aria-label="Page 4"]')!.getBoundingClientRect();
+      const below = region.getBoundingClientRect().top - target.top;
+      expect(Math.abs(below - (2800 / 612) * target.width)).toBeLessThanOrEqual(1);
+    });
   } finally {
     URL.revokeObjectURL(url);
   }

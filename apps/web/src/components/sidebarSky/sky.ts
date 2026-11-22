@@ -230,16 +230,22 @@ export function skyWeatherAt(date: Date): SkyWeather {
   };
 }
 
+// A formatter keeps the zone it was built in, so it reads the local date as a UTC one.
 const LUNAR_CALENDAR = (() => {
   try {
-    return new Intl.DateTimeFormat("en-u-ca-chinese", { month: "numeric", day: "numeric" });
+    return new Intl.DateTimeFormat("en-u-ca-chinese", {
+      month: "numeric",
+      day: "numeric",
+      timeZone: "UTC",
+    });
   } catch {
     return null;
   }
 })();
 
 function lunarDateOf(date: Date): { readonly month: number; readonly day: number } | null {
-  const parts = LUNAR_CALENDAR?.formatToParts(date) ?? [];
+  const localDate = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate(), 12));
+  const parts = LUNAR_CALENDAR?.formatToParts(localDate) ?? [];
   const month = parts.find((part) => part.type === "month")?.value ?? "";
   const day = Number(parts.find((part) => part.type === "day")?.value);
   // A leap month is written with a suffix ("6bis") and is not a festival month.

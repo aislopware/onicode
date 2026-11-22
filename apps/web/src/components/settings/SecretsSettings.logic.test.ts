@@ -2,7 +2,7 @@ import { ServerSettings } from "@onicode/contracts";
 import * as Schema from "effect/Schema";
 import { expect, it } from "vite-plus/test";
 
-import { secretProviderUses } from "./SecretsSettings.logic";
+import { secretProviderUses, secretsSettingsState } from "./SecretsSettings.logic";
 
 const personal = (reference: string) => ({ provider: "personal", reference });
 const work = { provider: "work", reference: "op://Work/token" };
@@ -61,3 +61,24 @@ it.each([
 ])("lists what reads from secret provider %s", (providerId, uses) => {
   expect(secretProviderUses(settings, providerId).map((use) => use.label)).toEqual(uses);
 });
+
+it.each([
+  ["has secret providers on", "connected", { secretProviders: true }, true, "ready"],
+  ["has secret providers off", "connected", {}, true, "disabled"],
+  ["is offline", "disconnected", { secretProviders: true }, true, "offline"],
+  ["predates the setting", "connected", { secretProviders: true }, undefined, "outdated"],
+  ["predates feature flags", "connected", undefined, undefined, "outdated"],
+] as const)(
+  "decides the Secrets page from the selected environment, which %s",
+  (_, phase, featureFlags, secretProviderSettings, expected) => {
+    expect(
+      secretsSettingsState({
+        connection: { phase },
+        serverConfig: {
+          ...(featureFlags === undefined ? {} : { featureFlags }),
+          ...(secretProviderSettings === undefined ? {} : { secretProviderSettings }),
+        },
+      }),
+    ).toBe(expected);
+  },
+);

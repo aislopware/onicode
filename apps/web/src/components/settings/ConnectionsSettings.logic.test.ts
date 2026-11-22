@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import {
   applyWslEnableSelection,
   canRevokeOtherClients,
+  formatAccessTimestamp,
   isServerNetworkAccessible,
   parseManualDesktopSshTarget,
   resolveAccessEnvironmentId,
@@ -64,6 +65,28 @@ describe("canRevokeOtherClients", () => {
     { name: "sessions still loading", sessions: null, pairingLinks: 0, expected: true },
   ])("with $name: $expected", ({ sessions, pairingLinks, expected }) => {
     expect(canRevokeOtherClients(sessions, pairingLinks)).toBe(expected);
+  });
+});
+
+describe("formatAccessTimestamp", () => {
+  it("shows the time in the zone the app is in now, not the one it started in", () => {
+    // Node re-resolves the default zone when TZ is assigned, like a renderer after the OS zone changes.
+    const previous = process.env.TZ;
+    process.env.TZ = "Asia/Tokyo";
+    using _restore = {
+      [Symbol.dispose]: () => {
+        if (previous === undefined) delete process.env.TZ;
+        else process.env.TZ = previous;
+      },
+    };
+    const value = "2026-01-15T23:30:00.000Z";
+    expect(formatAccessTimestamp(value)).toBe(
+      new Intl.DateTimeFormat(undefined, {
+        dateStyle: "medium",
+        timeStyle: "short",
+        timeZone: "Asia/Tokyo",
+      }).format(new Date(value)),
+    );
   });
 });
 

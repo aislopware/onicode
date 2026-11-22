@@ -215,6 +215,52 @@ describe("reopenClosedView", () => {
     ).toBe("browser:new-tab");
   });
 
+  it.each([
+    {
+      case: "opened a file",
+      during: () => useRightPanelStore.getState().openFile(threadRef, "src/app.ts"),
+      isOpen: true,
+    },
+    {
+      // The selected tab stays the file, so only the close itself says the user acted.
+      case: "closed the panel",
+      before: () => useRightPanelStore.getState().openFile(threadRef, "src/app.ts"),
+      during: () => useRightPanelStore.getState().close(threadRef),
+      isOpen: false,
+    },
+  ])(
+    "restores a browser tab behind what the user did while it started: $case",
+    async ({ before, during, isOpen }) => {
+      before?.();
+      const requested = Promise.withResolvers<(snapshot: PreviewSessionSnapshot) => void>();
+      const reopened = reopenClosedView(
+        { kind: "browser", threadRef, snapshot },
+        {
+          openPreview: () =>
+            new Promise((resolve) =>
+              requested.resolve((value) => resolve(AsyncResult.success(value))),
+            ),
+          workspaceAvailable: true,
+        },
+      );
+      const start = await requested.promise;
+      during();
+      start({ ...snapshot, tabId: "new-tab" });
+
+      expect(await reopened).toBe(true);
+      const panel = selectThreadRightPanelState(
+        useRightPanelStore.getState().byThreadKey,
+        threadRef,
+      );
+      expect(panel.isOpen).toBe(isOpen);
+      expect(panel.activeSurfaceId).toBe("file:src/app.ts");
+      expect(panel.surfaces.map((surface) => surface.id)).toEqual([
+        "file:src/app.ts",
+        "browser:new-tab",
+      ]);
+    },
+  );
+
   it("leaves the panel unchanged when a browser resource fails to reopen", async () => {
     const result = await reopenClosedView(
       { kind: "browser", threadRef, snapshot },

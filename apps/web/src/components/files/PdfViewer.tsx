@@ -43,19 +43,48 @@ type PdfPosition = PdfViewState & { width: number; ratios: readonly number[] };
 // Thread switches unmount the preview; retain only the most recent documents.
 const positions = new Map<string, PdfPosition>();
 
+/** An explicit destination and the index of the page it names. */
+type PdfDestination = { page: number; dest: readonly unknown[] };
 type PdfLink = { box: readonly [number, number, number, number] } & (
   | { url: string }
-  | { page: number }
+  | PdfDestination
 );
 
-// Resolves a link annotation's destination, named or explicit, to a page index.
-async function pdfLinkPage(pdf: PDFDocumentProxy, dest: unknown): Promise<number | null> {
+// Destination kinds that name a top edge, and that edge's index after the page and kind.
+const DESTINATION_TOP: Readonly<Record<string, number>> = { XYZ: 1, FitH: 0, FitBH: 0 };
+
+/** Resolves a link annotation's destination, named or explicit, without loading its page. */
+async function pdfLinkDestination(
+  pdf: PDFDocumentProxy,
+  dest: unknown,
+): Promise<PdfDestination | null> {
   const explicit: unknown = typeof dest === "string" ? await pdf.getDestination(dest) : dest;
   if (!Array.isArray(explicit)) return null;
-  const [ref] = explicit as unknown[];
-  if (Number.isInteger(ref)) return ref as number;
-  if (typeof ref !== "object" || ref === null) return null;
-  return pdf.getPageIndex(ref as Parameters<PDFDocumentProxy["getPageIndex"]>[0]);
+  const ref: unknown = explicit[0];
+  const page = Number.isInteger(ref)
+    ? (ref as number)
+    : typeof ref === "object" && ref !== null
+      ? await pdf.getPageIndex(ref as Parameters<PDFDocumentProxy["getPageIndex"]>[0])
+      : null;
+  if (page === null || page < 0 || page >= pdf.numPages) return null;
+  return { page, dest: explicit };
+}
+
+/**
+ * Loads a destination's page for its height / width and, when the destination names one, its
+ * top edge's distance below the page top in page widths.
+ */
+async function pdfDestinationPoint(pdf: PDFDocumentProxy, { page, dest }: PdfDestination) {
+  const viewport = (await pdf.getPage(page + 1)).getViewport({ scale: 1 });
+  const ratio = viewport.height / viewport.width;
+  const [, kind, ...args] = dest;
+  const name = (kind as { name?: unknown } | undefined)?.name;
+  const index = typeof name === "string" ? DESTINATION_TOP[name] : undefined;
+  const y = index === undefined ? undefined : args[index];
+  if (typeof y !== "number") return { ratio, top: null };
+  const left = name === "XYZ" && typeof args[0] === "number" ? args[0] : 0;
+  const [, top] = viewport.convertToViewportPoint(left, y);
+  return { ratio, top: Math.max(0, top / viewport.width) };
 }
 
 export type PdfViewState = {
@@ -72,7 +101,7 @@ function PdfPage(props: {
   query: string;
   onSize: (index: number, ratio: number) => void;
   onError: (error: string) => void;
-  onPageLink: (index: number) => void;
+  onPageLink: (target: PdfDestination) => void;
   onOpenLink: ((url: string, event: MouseEvent) => void) | undefined;
 }) {
   const gt = useGT();
@@ -142,31 +171,7 @@ function PdfPage(props: {
         buffer.width = 0;
         painted.current = pdf;
       });
-      const linked = page.getAnnotations({ intent: "display" }).then(async (annotations) => {
-        const found: PdfLink[] = [];
-        for (const annotation of annotations) {
-          if (annotation.subtype !== "Link") continue;
-          const [x1, y1] = viewport.convertToViewportPoint(annotation.rect[0], annotation.rect[1]);
-          const [x2, y2] = viewport.convertToViewportPoint(annotation.rect[2], annotation.rect[3]);
-          const box = [
-            Math.min(x1, x2) / viewport.width,
-            Math.min(y1, y2) / viewport.height,
-            Math.abs(x2 - x1) / viewport.width,
-            Math.abs(y2 - y1) / viewport.height,
-          ] as const;
-          if (typeof annotation.url === "string" && /^https?:\/\//i.test(annotation.url)) {
-            found.push({ box, url: annotation.url });
-            continue;
-          }
-          const target = await pdfLinkPage(pdf, annotation.dest).catch(() => null);
-          if (target !== null && target >= 0 && target < pdf.numPages)
-            found.push({ box, page: target });
-        }
-        if (!cancelled) setLinks(found);
-      });
-      // A page whose annotations cannot be read still renders, without links.
-      const linkedOrNone = linked.catch(() => undefined);
-      await Promise.all([shown, layer.render(), linkedOrNone]);
+      await Promise.all([shown, layer.render()]);
     })().catch((cause: unknown) => {
       if (!cancelled)
         onError(thrownErrorMessage(cause, m) ?? m(msg("This PDF page could not render.")));
@@ -180,6 +185,40 @@ function PdfPage(props: {
       void Promise.allSettled([paint?.promise]).then(() => loadedPage?.cleanup());
     };
   }, [pdf, index, width, onSize, onError]);
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- Read the page's link annotations once per page; their boxes are page-relative, so a zoom keeps them.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const page = await pdf.getPage(index + 1);
+      const annotations = await page.getAnnotations({ intent: "display" });
+      const viewport = page.getViewport({ scale: 1 });
+      const found: PdfLink[] = [];
+      for (const annotation of annotations) {
+        if (cancelled) return;
+        if (annotation.subtype !== "Link") continue;
+        const [x1, y1] = viewport.convertToViewportPoint(annotation.rect[0], annotation.rect[1]);
+        const [x2, y2] = viewport.convertToViewportPoint(annotation.rect[2], annotation.rect[3]);
+        const box = [
+          Math.min(x1, x2) / viewport.width,
+          Math.min(y1, y2) / viewport.height,
+          Math.abs(x2 - x1) / viewport.width,
+          Math.abs(y2 - y1) / viewport.height,
+        ] as const;
+        if (typeof annotation.url === "string" && /^https?:\/\//i.test(annotation.url)) {
+          found.push({ box, url: annotation.url });
+          continue;
+        }
+        const target = await pdfLinkDestination(pdf, annotation.dest).catch(() => null);
+        if (target !== null) found.push({ box, ...target });
+      }
+      if (!cancelled) setLinks(found);
+    })()
+      // A page whose annotations cannot be read still renders, without links.
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [pdf, index]);
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- Highlight pdf.js-owned text nodes and observe asynchronous text layer mutations for the current search query.
   useEffect(() => {
     const node = text.current;
@@ -246,7 +285,7 @@ function PdfPage(props: {
                 style={style}
                 onClick={(event) => {
                   event.preventDefault();
-                  props.onPageLink(link.page);
+                  props.onPageLink(link);
                 }}
               />
             );
@@ -289,6 +328,9 @@ export default function PdfViewer(props: {
   const scroll = useRef<HTMLDivElement>(null);
   const find = useRef<HTMLInputElement>(null);
   const zoomAnchor = useRef<{ page: number; offset: number; width: number } | null>(null);
+  const linkJump = useRef<{ page: number; top: number | null } | null>(null);
+  // Bumped by each link and each document change; a page load answers only the latest.
+  const linkRequest = useRef(0);
   const initialPage = initialView.page;
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- Own the PDF fetch, load timeout, and pdf.js document task across source changes, retries, and unmounts.
   useEffect(() => {
@@ -341,6 +383,7 @@ export default function PdfViewer(props: {
       .finally(() => clearTimeout(timeout));
     return () => {
       disposed = true;
+      linkRequest.current += 1;
       controller.abort();
       clearTimeout(timeout);
       closePdf(task);
@@ -399,8 +442,26 @@ export default function PdfViewer(props: {
   useLayoutEffect(() => {
     if (pdf) restoreView();
   }, [pdf]);
-  const showPage = (index: number) => {
-    scroll.current?.scrollTo({ top: pdfPageScrollTop(offsets, index) });
+  /** `top` is a point within the page, in page widths below its top edge. */
+  const showPage = (index: number, top: number | null = null) => {
+    scroll.current?.scrollTo({
+      top: top === null ? pdfPageScrollTop(offsets, index) : offsets[index]! + top * width,
+    });
+  };
+  // The target may be an unmeasured page, so its size enters the layout before the scroll.
+  const followLink = (link: PdfDestination) => {
+    if (!pdf) return;
+    const request = ++linkRequest.current;
+    void pdfDestinationPoint(pdf, link)
+      .catch(() => null)
+      .then((point) => {
+        if (request !== linkRequest.current) return;
+        linkJump.current = { page: link.page, top: point?.top ?? null };
+        // Always a new array, so the layout effect runs even for an already measured page.
+        setRatios((old) =>
+          old.map((value, index) => (index === link.page ? (point?.ratio ?? value) : value)),
+        );
+      });
   };
   const changeZoom = (value: number | null) => {
     zoomAnchor.current = {
@@ -410,10 +471,12 @@ export default function PdfViewer(props: {
     };
     setZoom(value);
   };
-  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- Restore the DOM scroll anchor after the new zoom width has committed to page layout.
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- Restore the zoom anchor or follow a link once the new width or page size has committed to page layout.
   useLayoutEffect(() => {
     const anchor = zoomAnchor.current;
+    const jump = linkJump.current;
     zoomAnchor.current = null;
+    linkJump.current = null;
     const node = scroll.current;
     if (!node || !pdf) return;
     if (anchor && anchor.width !== width) {
@@ -421,6 +484,7 @@ export default function PdfViewer(props: {
         top: offsets[anchor.page]! - 16 + (anchor.offset * width) / anchor.width,
       });
     }
+    if (jump) showPage(jump.page, jump.top);
     saveView(node, anchor !== null);
   });
   const firstMatch = matches[0];
@@ -631,7 +695,7 @@ export default function PdfViewer(props: {
                   query={query}
                   onSize={onSize}
                   onError={setError}
-                  onPageLink={showPage}
+                  onPageLink={followLink}
                   onOpenLink={props.onOpenLink}
                 />
               </div>

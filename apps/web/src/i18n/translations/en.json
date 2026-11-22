@@ -9024,6 +9024,15 @@
   "1c9374501ee389d3": "Add a 1Password account, then pick it as the source of a provider variable.",
   "382541febe15f472": "Toggle account visibility",
   "40426afd511710f8": "Unsupported provider ({kind})",
+  "4b7c63d4186bd018": [
+    "Secret providers are turned off on ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    "."
+  ],
   "b1d03d34f50893f3": [
     "Update Onicode on ",
     {

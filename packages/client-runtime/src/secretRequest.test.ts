@@ -152,16 +152,21 @@ describe("secretRequestSources", () => {
     },
   };
 
-  it("offers configured providers only when the server accepts reference answers", () => {
-    expect(secretRequestSources({ secretRequestReferences: true }, providers)).toMatchObject([
+  const accepting = { featureFlags: { secretProviders: true }, secretRequestReferences: true };
+
+  it("offers configured providers only when the server has them on and accepts reference answers", () => {
+    expect(secretRequestSources(accepting, providers)).toMatchObject([
       { id: onePassword, label: "1Password" },
     ]);
-    expect(secretRequestSources({}, providers)).toEqual([]);
-    expect(secretRequestSources({ secretRequestReferences: true }, {})).toEqual([]);
+    expect(secretRequestSources({ featureFlags: { secretProviders: true } }, providers)).toEqual(
+      [],
+    );
+    expect(secretRequestSources({ secretRequestReferences: true }, providers)).toEqual([]);
+    expect(secretRequestSources(accepting, {})).toEqual([]);
   });
 
   it("answers with a reference only in the provider's syntax", () => {
-    const [source] = secretRequestSources({ secretRequestReferences: true }, providers);
+    const [source] = secretRequestSources(accepting, providers);
     if (source === undefined) throw new Error("expected a source");
     const item = {
       id: TurnItemId.make("item-1"),
