@@ -3298,3 +3298,4 @@ f9fbb004ac	take	feat(devices): double-tap Home opens the app switcher
 735c1e7401	take	test(desktop): AppImage shim test's fake server ignores a second stop signal
 7e3a9ba1b9	take	fix(server): task folder branch race; adopted upstream over Onicode's branch_already_exists check: any refused createBranch step means this attempt did not make the branch (a racing loser fails on the ref lock); kept Onicode's per-root branchMadeIn, which removal also reads; upstream's projectIsRepository test row taken
 e213da2a32	take	fix(client-runtime): refresh stale server clock offset after host sleep; webhook delivery RPCs in the ws.ts conflict dropped (removed surface); serverTime optional, so older mobile builds and servers still decode
+68e81cd145	take	fix(server): settled-subagent check reads run status from runs_run_status_idx
