@@ -404,8 +404,8 @@ const make = Effect.gen(function* () {
     const guide: PullRequestReviewGuide = {
       headSha,
       generatedAt: yield* nowIso,
-      modelSelection,
       ...normalizeReviewGuide(generated, change),
+      modelSelection: generated.modelSelection ?? modelSelection,
     };
     yield* ownership.withPermits(1)(
       Effect.gen(function* () {

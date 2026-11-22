@@ -12,6 +12,7 @@ import * as Queue from "effect/Queue";
 import * as Tracer from "effect/Tracer";
 import {
   ProjectId,
+  ProviderInstanceId,
   GitCommandError,
   type PullRequestActivity,
   type PullRequestDetail,
@@ -46,6 +47,7 @@ const ACME_APP = {
   name: "app",
 };
 
+const fallbackSelection = { instanceId: ProviderInstanceId.make("claudeAgent"), model: "opus" };
 const reference: PullRequestRef = {
   projectId,
   host: "github.com",
@@ -600,7 +602,8 @@ it.layer(layerBase, { excludeTestServices: true })("PullRequestReviewGuideServic
             origin: { canonicalKey: "github.com/acme/app", remoteUrl: repositories.remote },
           },
           locator: { source: "git-remote", remoteName: "upstream", remoteUrl: parent },
-          generate: () => Effect.succeed({ stops: [] }),
+          // A fallback model wrote it; the guide credits that one, not the requested one.
+          generate: () => Effect.succeed({ stops: [], modelSelection: fallbackSelection }),
         }),
       );
       const service = Context.get(
@@ -612,6 +615,7 @@ it.layer(layerBase, { excludeTestServices: true })("PullRequestReviewGuideServic
       const result = yield* runs.settled(service, reference);
       assert.notStrictEqual(result.run?._tag, "Failed", JSON.stringify(result.run));
       assert.strictEqual(result.guide?.headSha, repositories.headSha);
+      assert.deepStrictEqual(result.guide?.modelSelection, fallbackSelection);
     }),
   );
 

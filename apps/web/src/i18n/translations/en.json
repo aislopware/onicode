@@ -8938,6 +8938,8 @@
   "34fb848f079bdf69": "Actions for {title}",
   "51a11a609473c784": "Discard changes?",
   "6c414592eb76e7fc": "Your unsaved changes will be lost.",
+  "8159d63eabe4a529": "Saving task",
+  "ca5c0dfbcc8de70f": "Wait for the task to finish saving before leaving.",
   "c0b576266d462f4b": "Thread {id}",
   "03cab990d7237818": "Started by the first run",
   "60392cc09f60047a": "Each run starts a new thread with the workspace and model below.",

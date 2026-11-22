@@ -244,6 +244,22 @@ function relevantDraftFields(draft: DraftState, defaultModelKey: string) {
   };
 }
 
+export type EditorLeaveDecision = "allow" | "block" | "wait-for-save" | "ask";
+
+/** What a navigation does to an open editor; one that keeps the editor mounted needs no answer. */
+export function editorLeaveDecision(input: {
+  readonly closing: boolean;
+  readonly unmountsEditor: boolean;
+  readonly asking: boolean;
+  readonly saving: boolean;
+}): EditorLeaveDecision {
+  if (input.closing || !input.unmountsEditor) return "allow";
+  if (input.asking) return "block";
+  // Leaving cannot cancel an upsert already sent.
+  if (input.saving) return "wait-for-save";
+  return "ask";
+}
+
 /** `defaultModelKey` is the model the picker shows while the draft names none. */
 export function hasDraftChanges(
   initial: DraftState,

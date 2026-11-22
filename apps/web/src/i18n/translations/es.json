@@ -8926,6 +8926,8 @@
   "34fb848f079bdf69": "Acciones de {title}",
   "51a11a609473c784": "¿Descartar los cambios?",
   "6c414592eb76e7fc": "Se perderán los cambios sin guardar.",
+  "8159d63eabe4a529": "Guardando tarea",
+  "ca5c0dfbcc8de70f": "Espera a que la tarea termine de guardarse antes de salir.",
   "c0b576266d462f4b": "Hilo {id}",
   "03cab990d7237818": "Lo inicia la primera ejecución",
   "60392cc09f60047a": "Cada ejecución inicia un hilo nuevo con el espacio de trabajo y el modelo de abajo.",

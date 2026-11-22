@@ -8928,6 +8928,8 @@
   "34fb848f079bdf69": "Ações de {title}",
   "51a11a609473c784": "Descartar alterações?",
   "6c414592eb76e7fc": "Suas alterações não salvas serão perdidas.",
+  "8159d63eabe4a529": "Salvando tarefa",
+  "ca5c0dfbcc8de70f": "Aguarde a tarefa terminar de salvar antes de sair.",
   "c0b576266d462f4b": "Thread {id}",
   "03cab990d7237818": "Iniciada pela primeira execução",
   "60392cc09f60047a": "Cada execução inicia uma nova thread com o workspace e o modelo abaixo.",
