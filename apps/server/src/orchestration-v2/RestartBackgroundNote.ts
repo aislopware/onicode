@@ -151,26 +151,19 @@ export function restartCancelledBackgroundWorkNote(
   ].join("\n");
 }
 
-/**
- * Delegated tasks a Stop on this provider thread interrupted, until a turn requested after they
- * ended completes. A run's turn start reads tasks after its request, but can record startedAt
- * later. A fresh context starts a new provider thread, so it never inherits the note.
- */
-export function pendingStoppedDelegatedTasks(input: {
+type StoppedNoteHistory = {
   readonly providerThreadId: OrchestrationV2Run["providerThreadId"];
   readonly runs: ReadonlyArray<OrchestrationV2Run>;
   readonly providerTurns: ReadonlyArray<Pick<ProviderTurnState, "runAttemptId" | "status">>;
   readonly attempts: ReadonlyArray<Attempt>;
-  readonly subagents: ReadonlyArray<OrchestrationV2Subagent>;
   readonly compactionMessageIds: ReadonlySet<string>;
-}): ReadonlyArray<OrchestrationV2Subagent> {
-  const threadRuns = input.runs.filter((run) => run.providerThreadId === input.providerThreadId);
-  const stoppedRunIds = new Set(
-    threadRuns
-      .filter((run) => run.delegatedCompletion?.disposition === "stopped")
-      .map((run) => run.id),
-  );
-  if (stoppedRunIds.size === 0) return [];
+};
+
+/**
+ * When the latest completed turn that could carry the note was requested. Tasks that ended
+ * before it were told, so a read for pending tasks need not return them.
+ */
+export function stoppedNoteToldAt(input: StoppedNoteHistory): DateTime.Utc | undefined {
   const completedAttemptIds = new Set(
     input.providerTurns
       .filter((turn) => turn.status === "completed")
@@ -181,14 +174,39 @@ export function pendingStoppedDelegatedTasks(input: {
       .filter((attempt) => completedAttemptIds.has(attempt.id))
       .map((attempt) => attempt.runId),
   );
-  // A task is told once any told run was requested after it ended, so only the latest matters.
-  const lastToldRequest = threadRuns.reduce(
-    (latest, run) =>
-      completedRunIds.has(run.id) && !input.compactionMessageIds.has(run.userMessageId)
-        ? Math.max(latest, DateTime.toEpochMillis(run.requestedAt))
-        : latest,
-    Number.NEGATIVE_INFINITY,
+  let toldAt: DateTime.Utc | undefined;
+  for (const run of input.runs) {
+    if (
+      run.providerThreadId === input.providerThreadId &&
+      completedRunIds.has(run.id) &&
+      !input.compactionMessageIds.has(run.userMessageId) &&
+      (toldAt === undefined || DateTime.isGreaterThan(run.requestedAt, toldAt))
+    ) {
+      toldAt = run.requestedAt;
+    }
+  }
+  return toldAt;
+}
+
+/**
+ * Delegated tasks a Stop on this provider thread interrupted, until a turn requested after they
+ * ended completes. A run's turn start reads tasks after its request, but can record startedAt
+ * later. A fresh context starts a new provider thread, so it never inherits the note.
+ */
+export function pendingStoppedDelegatedTasks(
+  input: StoppedNoteHistory & { readonly subagents: ReadonlyArray<OrchestrationV2Subagent> },
+): ReadonlyArray<OrchestrationV2Subagent> {
+  const stoppedRunIds = new Set(
+    input.runs
+      .filter(
+        (run) =>
+          run.providerThreadId === input.providerThreadId &&
+          run.delegatedCompletion?.disposition === "stopped",
+      )
+      .map((run) => run.id),
   );
+  if (stoppedRunIds.size === 0) return [];
+  const toldAt = stoppedNoteToldAt(input);
   return input.subagents.filter(
     (task) =>
       task.origin === "app_owned" &&
@@ -198,25 +216,8 @@ export function pendingStoppedDelegatedTasks(input: {
       task.cancelledRunId === undefined &&
       task.completionDelivery?.state === "disposed" &&
       task.completedAt !== null &&
-      lastToldRequest <= DateTime.toEpochMillis(task.completedAt),
+      (toldAt === undefined || !DateTime.isGreaterThan(toldAt, task.completedAt)),
   );
-}
-
-/**
- * Stopped runs that can never owe the note again: each task ended and none is pending. An ended
- * task's time is fixed and told runs only accumulate, so callers need not read them again.
- */
-export function settledStoppedRunIds(
-  stoppedRunIds: ReadonlyArray<OrchestrationV2Run["id"]>,
-  subagents: ReadonlyArray<OrchestrationV2Subagent>,
-  pending: ReadonlyArray<OrchestrationV2Subagent>,
-): ReadonlyArray<OrchestrationV2Run["id"]> {
-  const open = new Set(
-    subagents
-      .filter((task) => task.completedAt === null || pending.includes(task))
-      .map((task) => task.runId),
-  );
-  return stoppedRunIds.filter((runId) => !open.has(runId));
 }
 
 export function stoppedDelegatedTasksNote(tasks: ReadonlyArray<OrchestrationV2Subagent>): string {

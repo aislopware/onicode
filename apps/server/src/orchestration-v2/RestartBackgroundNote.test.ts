@@ -17,9 +17,9 @@ import {
   isRestartNoteContinuation,
   pendingRestartCancelledBackgroundWork,
   pendingStoppedDelegatedTasks,
-  settledStoppedRunIds,
   restartContinuationNote,
   stoppedDelegatedTasksNote,
+  stoppedNoteToldAt,
   mergeRestartCancelledBackgroundWork,
 } from "./RestartBackgroundNote.ts";
 
@@ -330,10 +330,22 @@ it("tells the next completed turn about delegated tasks its Stop interrupted, on
   // A fresh-context turn on another provider thread never carried the note.
   assert.deepEqual(pending([spawning, run(3, codexThread, { requestedAt: at(2) })]), [stopped]);
 
-  // Turn starts stop reading a stopped run once every task ended and none still owes the note.
-  const told = [spawning, run(3, claudeThread, { requestedAt: at(2) })];
-  assert.deepEqual(settledStoppedRunIds([spawning.id], subagents, pending([spawning])), []);
-  assert.deepEqual(settledStoppedRunIds([spawning.id], subagents, pending(told)), [spawning.id]);
-  const running = [...subagents, task("running", { status: "running", completedAt: null })];
-  assert.deepEqual(settledStoppedRunIds([spawning.id], running, pending(told)), []);
+  // A turn requested as the task ended may not have seen it; turn starts read from that time.
+  const sameTime = [spawning, run(3, claudeThread, { requestedAt: at(1) })];
+  assert.deepEqual(pending(sameTime), [stopped]);
+  const toldAt = (
+    runs: ReadonlyArray<OrchestrationV2Run>,
+    compactionMessageIds = new Set<string>(),
+  ) =>
+    stoppedNoteToldAt({
+      providerThreadId: claudeThread,
+      runs,
+      providerTurns: runs.map(turnFor),
+      attempts: runs.map((source) => ({ id: source.activeAttemptId!, runId: source.id })),
+      compactionMessageIds,
+    });
+  const told = run(3, claudeThread, { requestedAt: at(2) });
+  assert.deepEqual(toldAt([spawning, racing, told]), at(2));
+  // A compaction turn carries no note.
+  assert.deepEqual(toldAt([spawning, racing, told], new Set([told.userMessageId])), at(0));
 });

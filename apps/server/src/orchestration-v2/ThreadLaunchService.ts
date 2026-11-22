@@ -970,7 +970,7 @@ const make = Effect.gen(function* () {
                       branch: renamed.branch,
                       expectedBranch: oldBranch,
                       // The lookup matches any spelling of the path; the guard compares the stored one.
-                      expectedWorktreePath: thread.worktreePath ?? worktreeCwd,
+                      expectedWorktreePath: thread.worktreePath,
                     })
                     .pipe(
                       Effect.catchCause((cause) =>

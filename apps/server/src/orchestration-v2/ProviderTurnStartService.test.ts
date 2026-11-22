@@ -2827,55 +2827,6 @@ effectIt.effect("leaves delegated children to their own runs when the parent sta
   }),
 );
 
-effectIt.effect.each([
-  { label: "stops reading a stopped run whose tasks all ended", running: false, reads: 1 },
-  { label: "keeps reading a stopped run while a task still runs", running: true, reads: 2 },
-])("$label", ({ running, reads }) => {
-  const harness = makeLocalCommandHarness({
-    text: "Continue",
-    previousTurn: { runStatus: "completed", turnStatus: "completed" },
-  });
-  const initial = harness.projection();
-  const [previous, ...rest] = initial.runs;
-  const stopped = {
-    ...previous!,
-    delegatedCompletion: { disposition: "stopped" as const, nextGeneration: 1, delivery: null },
-  };
-  const task = {
-    id: NodeId.make("still-running-task"),
-    threadId: initial.thread.id,
-    runId: stopped.id,
-    parentNodeId: NodeId.make("still-running-task:parent"),
-    origin: "app_owned" as const,
-    createdBy: "agent" as const,
-    driver: ProviderDriverKind.make("codex"),
-    providerInstanceId: ProviderInstanceId.make("codex"),
-    providerThreadId: null,
-    childThreadId: null,
-    nativeTaskRef: null,
-    prompt: "work",
-    title: null,
-    model: null,
-    status: "running" as const,
-    result: null,
-    startedAt: null,
-    completedAt: null,
-    updatedAt: initial.updatedAt,
-  };
-  const seeded = { ...initial, runs: [stopped, ...rest], subagents: running ? [task] : [] };
-  const current = initial.runs.at(-1)!;
-  const stoppedReads = () =>
-    harness.getThreadRecords.mock.calls.filter(([, , filter]) => filter?.subagentRunIds).length;
-  return Effect.gen(function* () {
-    const service = yield* ProviderTurnStart.ProviderTurnStartServiceV2;
-    harness.setProjection(seeded);
-    yield* service.start({ threadId: initial.thread.id, runId: current.id });
-    harness.setProjection(seeded);
-    yield* service.start({ threadId: initial.thread.id, runId: current.id });
-    expect(stoppedReads()).toBe(reads);
-  }).pipe(Effect.provide(harness.layer));
-});
-
 effectIt.effect("does not start another turn when abandoned-turn cleanup fails", () =>
   Effect.gen(function* () {
     const harness = makeLocalCommandHarness({
