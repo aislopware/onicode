@@ -82,11 +82,9 @@ export function evaluatePullRequestWatch(
   const awaiting = checks.filter((check) => check.status === "action-required");
   const failedBefore = failedChecks;
   const newlyFailed = failed.filter((check) => !failedBefore.includes(check.name));
-  // A read that leaves out a failed check, such as a GitLab downstream pipeline whose read
-  // failed, says nothing about it: the check did not run again, and the read is not complete.
-  // Names are not carried further, since hosts replace and rename checks on later reads.
+  // A failed check a later read leaves out did not run again: hosts replace and rename checks,
+  // and a read they could not finish carries a placeholder instead.
   const missing = (name: string) => !checks.some((check) => check.name === name);
-  const dropped = failedBefore.filter(missing);
   if (checks.length > 0) {
     // A run awaiting approval waits on a person, like a review, so only running checks count.
     // An unfinished baseline read keeps the seed below for the next one.
@@ -157,7 +155,7 @@ export function evaluatePullRequestWatch(
     const running =
       awaitingApproval.length > 0 ||
       checks.some((check) => check.status === "pending" || check.status === "action-required");
-    const finished = !unread && !running && dropped.length === 0;
+    const finished = !unread && !running;
     const settled = !running && failed.length === 0;
     // Once one wake is owed, it stays owed until every check has finished, whatever the checks
     // do in between. A failed check that runs again owes it too; one that shares its name with

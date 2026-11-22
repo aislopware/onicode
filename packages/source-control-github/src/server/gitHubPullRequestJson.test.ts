@@ -767,6 +767,15 @@ describe("pull request detail decoding", () => {
       true,
       "cancelled",
     ],
+    // GitHub Enterprise reads omit isRequired.
+    [
+      "a pull request run, if requiredness is unknown",
+      "pull_request",
+      "pull_request",
+      "CANCELLED",
+      undefined,
+      "cancelled",
+    ],
   ])(
     "keeps an older run's check when the newer run is %s",
     (_label, olderEvent, newerEvent, conclusion, isRequired, status) => {
