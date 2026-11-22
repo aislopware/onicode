@@ -1,11 +1,14 @@
 import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import { StackActions, useNavigation, type StaticScreenProps } from "@react-navigation/native";
-import { issueEventSentence } from "@onicode/client-runtime/issue-presentation";
-import { sourceControlClients } from "@onicode/client-runtime/source-control-clients";
+import {
+  issueChangeRequestHost,
+  issueEventSentence,
+} from "@onicode/client-runtime/issue-presentation";
 import { createIssueCommentPager } from "@onicode/client-runtime/state/issues";
 import { threadTitleText } from "@onicode/client-runtime/operations";
 import type {
   IssueComment,
+  IssueDetail,
   IssueEvent,
   IssueEventReference,
   IssueLinkedPullRequest,
@@ -252,12 +255,13 @@ function IssueIdentity(props: {
 
 function LinkedPullRequests(props: {
   readonly params: IssueParams;
+  readonly issue: Pick<IssueDetail, "tracker" | "host">;
   readonly links: ReadonlyArray<IssueLinkedPullRequest>;
 }) {
   const gt = useGT();
   const navigation = useNavigation();
   // Only a git host's tracker shares its host with the change request it links.
-  const sameHost = sourceControlClients.find(props.params.tracker) !== undefined;
+  const host = issueChangeRequestHost(props.issue);
   return (
     <View className="gap-2">
       <PullRequestSectionHeading>
@@ -275,14 +279,14 @@ function LinkedPullRequests(props: {
               title: link.title,
             })}
             onPress={() =>
-              sameHost
+              host !== undefined
                 ? navigation.dispatch(
                     StackActions.push("PullRequest", {
                       environmentId: props.params.environmentId,
                       projectId: props.params.projectId,
                       repository: link.repository,
                       number: link.number,
-                      ...(props.params.host ? { host: props.params.host } : {}),
+                      host,
                     }),
                   )
                 : void tryOpenExternalUrl(link.url)
@@ -418,9 +422,11 @@ function IssueCommentCard(props: {
 
 function IssueEventRow({
   params,
+  issue,
   event,
 }: {
   readonly params: IssueParams;
+  readonly issue: Pick<IssueDetail, "tracker" | "host">;
   readonly event: IssueEvent;
 }) {
   const gt = useGT();
@@ -430,28 +436,27 @@ function IssueEventRow({
   const source = event.reference;
   const at = event.detail === null ? -1 : sentence.indexOf(event.detail);
   // Only a git host's tracker shares its host with the change request it links.
-  const sameHost = sourceControlClients.find(params.tracker) !== undefined;
+  const pullRequestHost = issueChangeRequestHost(issue);
   const openSource = (target: IssueEventReference) => {
-    const host = params.host ? { host: params.host } : {};
     if (target.kind === "issue") {
       navigation.dispatch(
         StackActions.push("Issue", {
           environmentId: params.environmentId,
           projectId: params.projectId,
           tracker: params.tracker,
-          ...host,
+          host: params.host ?? issue.host,
           scope: target.repository,
           issueKey: String(target.number),
         }),
       );
-    } else if (sameHost) {
+    } else if (pullRequestHost !== undefined) {
       navigation.dispatch(
         StackActions.push("PullRequest", {
           environmentId: params.environmentId,
           projectId: params.projectId,
           repository: target.repository,
           number: target.number,
-          ...host,
+          host: pullRequestHost,
         }),
       );
     } else {
@@ -572,7 +577,7 @@ function IssueRoute({ params }: { readonly params: IssueParams }) {
         ...detail.events.map((event) => ({
           key: `e:${event.id}`,
           at: event.createdAt,
-          content: <IssueEventRow params={params} event={event} />,
+          content: <IssueEventRow params={params} issue={detail} event={event} />,
         })),
       ].sort((left, right) => Date.parse(left.at) - Date.parse(right.at))
     : [];
@@ -756,7 +761,11 @@ function IssueRoute({ params }: { readonly params: IssueParams }) {
                       }
                     />
                     {detail.linkedPullRequests.length > 0 ? (
-                      <LinkedPullRequests params={params} links={detail.linkedPullRequests} />
+                      <LinkedPullRequests
+                        params={params}
+                        issue={detail}
+                        links={detail.linkedPullRequests}
+                      />
                     ) : null}
                     <LinkedThreads params={params} host={detail.host} url={detail.url} />
                     <View className="gap-3">
