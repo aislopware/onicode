@@ -3244,7 +3244,7 @@ c80f41f64c	take	fixture conflict: took upstream's description, kept Onicode's co
 3d7bb17181	take	applied cleanly
 5799b8af59	take	applied cleanly
 bcb9217e8e	take	applied cleanly; Onicode's hook order kept and the row re-render guard stays green
-4136ab6ef7	take	applied cleanly; no DocumentText VERSION bump since the missing part threw and cached nothing
+4136ab6ef7	take	applied cleanly; DocumentText VERSION bumped to 7 after review: the old extractor cached a skip note for these files
 03920ad8aa	take	kept Onicode's handleEvent pump and added the background_work.lost branch with raisedByOni; test query mocks gained Onicode's extra session methods
 3571f28cca	take	applied cleanly
 77d299cc1c	take	applied cleanly
