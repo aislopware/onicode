@@ -3279,3 +3279,4 @@ bc13afaa3c	take	taken as is; scenario ported to the desktop harness
 3806763022	take	adapted: kept Onicode's tailnet sign-in for unsupported pairings (it now awaits only tailnet addresses' probes, in order, instead of the removed answers array); scenario ported to the desktop harness (second-environment, hash route, unpair/unlink cleanup)
 25440f5bd5	take	fix(web): navigate Excel sheets from the focused tab; scenario ported to desktop target with fflate fixtures
 9b7f5eb447	take	fix(mobile): bound app-owned composer attachment filenames
+01794015f8	take	fix(web): prioritize visible saved notebook outputs; kept Onicode's LineCappedText and border colour in the conflict; scenarios ported to desktop target
