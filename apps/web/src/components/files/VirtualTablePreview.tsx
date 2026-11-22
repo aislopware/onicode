@@ -18,6 +18,7 @@ export default function VirtualTablePreview(props: {
   readonly revealLine?: number | null;
   readonly revealRequestId?: number;
 }) {
+  const more = useMoreCharactersLabel();
   const ref = useRef<HTMLDivElement>(null);
   const [left, setLeft] = useState(0);
   const [size, setSize] = useState({ width: 0, height: 600 });
@@ -101,7 +102,7 @@ export default function VirtualTablePreview(props: {
                   key={i}
                   className="min-w-32 max-w-80 border-b px-3 py-1.5 text-left font-medium whitespace-nowrap"
                 >
-                  {cell}
+                  {cell.slice(0, shownLength(cell, MAX_SHOWN_CELL_CHARS))}
                 </th>
               ))}
             </tr>
@@ -117,7 +118,7 @@ export default function VirtualTablePreview(props: {
                       key={j}
                       className="max-w-80 border-b px-3 py-1.5 whitespace-pre-wrap break-words tabular-nums"
                     >
-                      {cell}
+                      {cell.slice(0, shownLength(cell, MAX_SHOWN_CELL_CHARS))}
                     </td>
                   ))}
                 </tr>
@@ -151,11 +152,21 @@ export default function VirtualTablePreview(props: {
                         className="shrink-0 overflow-hidden border-r border-border px-3 py-1.5 text-ellipsis whitespace-pre"
                         style={{ width: sizes[column] }}
                       >
-                        {props.header?.[column] ?? columnLabel(column)}
+                        <CellText
+                          text={props.header?.[column] ?? columnLabel(column)}
+                          limit={MAX_SHOWN_CELL_CHARS}
+                          more={more}
+                        />
                       </div>
                     }
                   />
-                  <TooltipPopup>{props.header?.[column] ?? columnLabel(column)}</TooltipPopup>
+                  <TooltipPopup>
+                    <CellText
+                      text={props.header?.[column] ?? columnLabel(column)}
+                      limit={MAX_SHOWN_CELL_CHARS}
+                      more={more}
+                    />
+                  </TooltipPopup>
                 </Tooltip>
               ))}
             </div>
@@ -276,13 +287,22 @@ function RowPage(
   );
 }
 
+function useMoreCharactersLabel() {
+  const gt = useGT();
+  return (count: number) =>
+    gt("{count, plural, one {{formatted} more character} other {{formatted} more characters}}", {
+      count,
+      formatted: count.toLocaleString(),
+    });
+}
+
 function CellText(props: { text: string; limit: number; more: (count: number) => string }) {
   const end = shownLength(props.text, props.limit);
   if (end === props.text.length) return props.text;
   return (
     <>
       {props.text.slice(0, end)}
-      <span className="text-muted-foreground">
+      <span className="text-muted-foreground select-none">
         {cutSuffix(props.text.length - end, props.more)}
       </span>
     </>
@@ -295,12 +315,7 @@ function ScaledRows(
     width: number;
   },
 ) {
-  const gt = useGT();
-  const more = (count: number) =>
-    gt("{count, plural, one {{formatted} more character} other {{formatted} more characters}}", {
-      count,
-      formatted: count.toLocaleString(),
-    });
+  const more = useMoreCharactersLabel();
   const ref = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const rowProbeRef = useRef<HTMLDivElement>(null);
@@ -395,12 +410,20 @@ function ScaledRows(
     contentRef.current?.querySelector<HTMLElement>(`[data-preview-row="${first}"]`)?.offsetHeight ||
     29;
   const scrollByContent = (node: HTMLElement, delta: number) => {
-    if (!nativeTail) {
-      node.scrollTop += delta * ((scale * 29) / rowHeight());
+    pendingEnd.current = false;
+    pendingReveal.current = null;
+    // Read the live position: events can arrive before the last scroll has rendered.
+    const tailStart = maxFirst * 29 * scale;
+    if (node.scrollTop < tailStart) {
+      const rate = (scale * 29) / rowHeight();
+      const toTail = (tailStart - node.scrollTop) / rate;
+      // Past the tail start the rest moves natively, as in the tail itself.
+      node.scrollTop +=
+        delta <= toTail ? delta * rate : tailStart - node.scrollTop + delta - toTail;
       return;
     }
     // Above the tail's first row the track is scaled again, at 29px a row.
-    const native = Math.max(delta, maxFirst * 29 * scale - node.scrollTop);
+    const native = Math.max(delta, tailStart - node.scrollTop);
     node.scrollTop += native + (delta - native) * scale;
   };
   const onWheel = useEffectEvent((event: WheelEvent) => {
@@ -410,7 +433,6 @@ function ScaledRows(
       event.deltaY * (event.deltaMode === 1 ? 29 : event.deltaMode === 2 ? node.clientHeight : 1);
     if (!delta) return;
     event.preventDefault();
-    pendingEnd.current = false;
     scrollByContent(node, delta);
   });
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- Install a non-passive native wheel listener so virtual scrolling can prevent the browser's default scroll.
@@ -433,16 +455,23 @@ function ScaledRows(
     : `${props.sizes.join(",")}|${typographyKey}`;
   const knownHeights =
     measures && rowHeights.key.startsWith(`${sizesKey}|`) ? rowHeights.heights : undefined;
+  // Source widths come from the probe, so they are only current while the heights are.
   const singleLine = (row: readonly string[]) =>
     rowHeights.fontSize > 0 &&
+    (!props.source || knownHeights !== undefined) &&
     isSingleLineRow(
       row,
       props.source ? 1 : props.columns,
       props.source ? rowHeights.sizes : props.sizes,
       rowHeights.fontSize,
     );
+  const limit = props.source ? MAX_SHOWN_LINE_CHARS : MAX_SHOWN_CELL_CHARS;
+  // Rows with little text lay out cheaply wherever they are, so only costly ones wait for the probe.
   const ready = (index: number, row: readonly string[]) =>
-    !measures || singleLine(row) || knownHeights?.has(index) === true;
+    !measures ||
+    !isCostlyRow(row, props.columns, limit) ||
+    singleLine(row) ||
+    knownHeights?.has(index) === true;
   let visibleRows = Math.ceil(position.height / 29) + 1;
   // Rows past the measured heights that fill the viewport cannot show, so they are neither mounted
   // nor measured. The native tail mounts every row so its scroll extent reaches the last one.
@@ -470,7 +499,7 @@ function ScaledRows(
     const probeStyle = getComputedStyle(probe);
     const columns = props.source ? 1 : props.columns;
     const sizes = props.source ? [Math.max(1, probe.clientWidth - props.rowHeader)] : props.sizes;
-    const cacheKey = `${sizesKey}|${probeStyle.font}|${sizes.join(",")}`;
+    const cacheKey = `${sizesKey}|${probeStyle.font}|${sizes.join(",")}|${more(2)}`;
     if (rowHeightCacheRef.current.key !== cacheKey) {
       rowHeightCacheRef.current = { key: cacheKey, entries: new Map() };
       syncMeasurePassesRef.current = 0;
@@ -502,7 +531,12 @@ function ScaledRows(
     for (const { index, row } of mounted) {
       if (measuredRows >= needed) break;
       let height = BASE_ROW_HEIGHT;
-      if (!isSingleLineRow(row, columns, sizes, fontSize)) {
+      // Hidden columns change a row's height, so with them every multi-line row is measured.
+      const costly = isCostlyRow(row, columns, limit);
+      if (
+        (costly || props.hasHorizontalOverflow) &&
+        !isSingleLineRow(row, columns, sizes, fontSize)
+      ) {
         const existing = cache.get(index);
         if (existing && (existing.row === row || sameRowCells(existing.row, row))) {
           existing.row = row;
@@ -511,7 +545,7 @@ function ScaledRows(
           break;
         } else {
           const measured = measureRowFullHeight(probe, row, columns, sizes, fontSize, lineHeight, {
-            limit: props.source ? MAX_SHOWN_LINE_CHARS : MAX_SHOWN_CELL_CHARS,
+            limit,
             className: props.source ? SOURCE_PROBE_CELL_CLASS_NAME : PROBE_CELL_CLASS_NAME,
             more,
           });
@@ -519,7 +553,7 @@ function ScaledRows(
           cache.set(index, { row, height: measured.height });
         }
         height = cache.get(index)!.height;
-        next.set(index, height);
+        if (costly || height > BASE_ROW_HEIGHT) next.set(index, height);
       }
       measuredRows += 1;
       if (nativeTail || covered >= target) continue;
@@ -591,6 +625,7 @@ function ScaledRows(
       !pending ||
       !node ||
       !row ||
+      !rowHeightsSettledRef.current ||
       !props.getRows(Math.floor(pending.row / PREVIEW_PAGE_ROWS))?.[pending.row % PREVIEW_PAGE_ROWS]
     )
       return;
@@ -625,7 +660,11 @@ function ScaledRows(
     const content = contentRef.current;
     if (!pendingEnd.current || !nativeTail || !node || !content || !props.count) return;
     const last = props.count - 1;
-    if (!props.getRows(Math.floor(last / PREVIEW_PAGE_ROWS))?.[last % PREVIEW_PAGE_ROWS]) return;
+    // Every tail row must be loaded: a page arriving later can still push the last row down.
+    for (let index = first; index <= last; index++) {
+      if (!props.getRows(Math.floor(index / PREVIEW_PAGE_ROWS))?.[index % PREVIEW_PAGE_ROWS])
+        return;
+    }
     const row = content.querySelector<HTMLElement>(`[data-preview-row="${last}"]`);
     if (!row || (!atStart && layout.height !== content.clientHeight)) return;
     node.scrollTop = node.scrollHeight;
@@ -655,7 +694,6 @@ function ScaledRows(
                   ? -node.clientHeight
                   : null;
         if (delta !== null) {
-          pendingEnd.current = false;
           event.preventDefault();
           scrollByContent(node, delta);
         } else if (event.key === "Home" || event.key === "End") {
@@ -713,6 +751,8 @@ const MAX_SYNC_SCAN_CHARS = 128_000;
 // Mobile's table preview cuts cells at the same length; source lines stop where VS Code's do.
 const MAX_SHOWN_CELL_CHARS = 2_000;
 const MAX_SHOWN_LINE_CHARS = 10_000;
+// 256 characters of Japanese lay out in about 4 ms.
+const COSTLY_ROW_CHARS = 256;
 const MAX_SYNC_MEASURE_PASSES = 4;
 const PROBE_CELL_CLASS_NAME =
   "box-border border-r border-b border-transparent px-3 py-1.5 whitespace-pre-wrap break-words tabular-nums";
@@ -881,8 +921,11 @@ function measureRowFullHeight(
 /** The length of a cell's text the preview lays out, never splitting a surrogate pair. */
 function shownLength(text: string, limit: number): number {
   if (text.length <= limit) return text.length;
-  const code = text.charCodeAt(limit - 1);
-  return code >= 0xd800 && code <= 0xdbff ? limit - 1 : limit;
+  const before = text.charCodeAt(limit - 1);
+  const after = text.charCodeAt(limit);
+  return before >= 0xd800 && before <= 0xdbff && after >= 0xdc00 && after <= 0xdfff
+    ? limit - 1
+    : limit;
 }
 
 function cutSuffix(count: number, more: (count: number) => string): string {
@@ -893,6 +936,16 @@ function cutSuffix(count: number, more: (count: number) => string): string {
 function shownText(text: string, limit: number, more: (count: number) => string): string {
   const end = shownLength(text, limit);
   return end === text.length ? text : text.slice(0, end) + cutSuffix(text.length - end, more);
+}
+
+/** Whether a row's shown text costs enough layout to wait until the probe says it is on screen. */
+function isCostlyRow(row: readonly string[], columns: number, limit: number): boolean {
+  let chars = 0;
+  for (let column = 0; column < Math.min(columns, row.length); column++) {
+    chars += Math.min(row[column]?.length ?? 0, limit);
+    if (chars > COSTLY_ROW_CHARS) return true;
+  }
+  return false;
 }
 
 /** Whether every cell surely fits one line, so the row is 29px without a probe layout. */
