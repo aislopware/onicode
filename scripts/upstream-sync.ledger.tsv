@@ -3277,3 +3277,4 @@ ec35ad6618	take	taken as is
 bc13afaa3c	take	taken as is; scenario ported to the desktop harness
 4e1c1fea7a	take	adapted: vite.config reactTests drops upstream's ThreadGuestShareSheet test (guest links removed)
 3806763022	take	adapted: kept Onicode's tailnet sign-in for unsupported pairings (it now awaits only tailnet addresses' probes, in order, instead of the removed answers array); scenario ported to the desktop harness (second-environment, hash route, unpair/unlink cleanup)
+25440f5bd5	take	fix(web): navigate Excel sheets from the focused tab; scenario ported to desktop target with fflate fixtures
