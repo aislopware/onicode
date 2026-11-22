@@ -3289,3 +3289,4 @@ bc13afaa3c	take	taken as is; scenario ported to the desktop harness
 2e62a71893	take	fix(mobile): keep media actions on each sent image page
 024dba275d	take	perf(server): a run's provider turn lookup is linear, not quadratic
 c7df7004af	take	fix(web): a photo picked on a phone attaches even when the composer collapses; test adapted to Onicode's collapsed-first phone composer and restores the viewport
+02a4c18d64	take	fix(mobile): cancel pending media actions when swiping gallery pages
