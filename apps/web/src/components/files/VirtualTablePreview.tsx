@@ -1,4 +1,5 @@
 /* oxlint-disable react/no-array-index-key -- Positions identify source rows and columns. */
+import { useGT } from "gt-react";
 import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
 import { useClientSettings } from "~/hooks/useSettings";
 import { observeResize } from "~/lib/observeResize";
@@ -166,6 +167,7 @@ export default function VirtualTablePreview(props: {
             hasHorizontalOverflow={hasHorizontalOverflow}
             rowHeader={rowHeader}
             firstColumn={firstColumn}
+            width={width}
             viewportHeight={size.height - (props.source ? 0 : 29)}
           />
         </div>
@@ -184,6 +186,8 @@ function RowPage(
     viewportHeight: number;
     from: number;
     limit?: number;
+    ready: (index: number, row: readonly string[]) => boolean;
+    more: (count: number) => string;
   },
 ) {
   const rows = props.getRows(props.page);
@@ -203,6 +207,8 @@ function RowPage(
         const row = rows?.[local];
         const index = start + local;
         const rowMinHeight = !props.source && row ? props.rowHeights?.get(index) : undefined;
+        // A long row shows its text once the probe has measured it, so rows past the viewport never lay it out.
+        const ready = row ? props.ready(index, row) : false;
         return (
           <div
             key={local}
@@ -252,7 +258,15 @@ function RowPage(
                 }
                 style={props.source ? undefined : { width: props.sizes[column] }}
               >
-                {row?.[column] ?? ""}
+                {ready ? (
+                  <CellText
+                    text={row?.[column] ?? ""}
+                    limit={props.source ? MAX_SHOWN_LINE_CHARS : MAX_SHOWN_CELL_CHARS}
+                    more={props.more}
+                  />
+                ) : (
+                  ""
+                )}
               </div>
             ))}
           </div>
@@ -262,11 +276,31 @@ function RowPage(
   );
 }
 
+function CellText(props: { text: string; limit: number; more: (count: number) => string }) {
+  const end = shownLength(props.text, props.limit);
+  if (end === props.text.length) return props.text;
+  return (
+    <>
+      {props.text.slice(0, end)}
+      <span className="text-muted-foreground">
+        {cutSuffix(props.text.length - end, props.more)}
+      </span>
+    </>
+  );
+}
+
 function ScaledRows(
-  props: Omit<Parameters<typeof RowPage>[0], "page" | "from" | "rowHeights"> & {
+  props: Omit<Parameters<typeof RowPage>[0], "page" | "from" | "rowHeights" | "ready" | "more"> & {
     hasHorizontalOverflow: boolean;
+    width: number;
   },
 ) {
+  const gt = useGT();
+  const more = (count: number) =>
+    gt("{count, plural, one {{formatted} more character} other {{formatted} more characters}}", {
+      count,
+      formatted: count.toLocaleString(),
+    });
   const ref = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const rowProbeRef = useRef<HTMLDivElement>(null);
@@ -274,10 +308,13 @@ function ScaledRows(
     key: string;
     entries: Map<number, CachedRowHeight>;
   }>({ key: "", entries: new Map() });
+  // Heights of measured multi-line rows, and the probe's metrics for telling single-line rows apart.
   const [rowHeights, setRowHeights] = useState<{
     key: string;
     heights: ReadonlyMap<number, number>;
-  }>({ key: "", heights: new Map() });
+    fontSize: number;
+    sizes: readonly number[];
+  }>({ key: "", heights: new Map(), fontSize: 0, sizes: [] });
   const [, setRowMeasureTick] = useState(0);
   const syncMeasurePassesRef = useRef(0);
   // Whether this commit laid out the final row heights; End waits for them before it settles.
@@ -357,6 +394,15 @@ function ScaledRows(
   const rowHeight = () =>
     contentRef.current?.querySelector<HTMLElement>(`[data-preview-row="${first}"]`)?.offsetHeight ||
     29;
+  const scrollByContent = (node: HTMLElement, delta: number) => {
+    if (!nativeTail) {
+      node.scrollTop += delta * ((scale * 29) / rowHeight());
+      return;
+    }
+    // Above the tail's first row the track is scaled again, at 29px a row.
+    const native = Math.max(delta, maxFirst * 29 * scale - node.scrollTop);
+    node.scrollTop += native + (delta - native) * scale;
+  };
   const onWheel = useEffectEvent((event: WheelEvent) => {
     const node = ref.current;
     if (!node || event.ctrlKey || Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
@@ -365,7 +411,7 @@ function ScaledRows(
     if (!delta) return;
     event.preventDefault();
     pendingEnd.current = false;
-    node.scrollTop += delta * (nativeTail ? 1 : (scale * 29) / rowHeight());
+    scrollByContent(node, delta);
   });
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- Install a non-passive native wheel listener so virtual scrolling can prevent the browser's default scroll.
   useEffect(() => {
@@ -380,19 +426,31 @@ function ScaledRows(
   const page = Math.floor(first / PREVIEW_PAGE_ROWS);
   // Rows mount from `first`: rows above it never show, and measuring their full text is costly.
   const from = first % PREVIEW_PAGE_ROWS;
-  const sizesKey = `${props.sizes.join(",")}|${typographyKey}`;
-  const activeRowHeights =
-    props.hasHorizontalOverflow && rowHeights.key.startsWith(`${sizesKey}|`)
-      ? rowHeights.heights
-      : undefined;
+  // Unwrapped source lines are always one row tall; other rows are measured by the probe.
+  const measures = !props.source || props.wrap === true;
+  const sizesKey = props.source
+    ? `source:${props.width}|${typographyKey}`
+    : `${props.sizes.join(",")}|${typographyKey}`;
+  const knownHeights =
+    measures && rowHeights.key.startsWith(`${sizesKey}|`) ? rowHeights.heights : undefined;
+  const singleLine = (row: readonly string[]) =>
+    rowHeights.fontSize > 0 &&
+    isSingleLineRow(
+      row,
+      props.source ? 1 : props.columns,
+      props.source ? rowHeights.sizes : props.sizes,
+      rowHeights.fontSize,
+    );
+  const ready = (index: number, row: readonly string[]) =>
+    !measures || singleLine(row) || knownHeights?.has(index) === true;
   let visibleRows = Math.ceil(position.height / 29) + 1;
   // Rows past the measured heights that fill the viewport cannot show, so they are neither mounted
   // nor measured. The native tail mounts every row so its scroll extent reaches the last one.
-  if (!nativeTail && activeRowHeights) {
-    const target = position.height + rowFraction * (activeRowHeights.get(first) ?? 29);
+  if (!nativeTail && knownHeights) {
+    const target = position.height + rowFraction * (knownHeights.get(first) ?? BASE_ROW_HEIGHT);
     let rows = 0;
     for (let covered = 0; rows < visibleRows && covered < target; rows++) {
-      covered += activeRowHeights.get(first + rows) ?? 29;
+      covered += knownHeights.get(first + rows) ?? BASE_ROW_HEIGHT;
     }
     visibleRows = Math.min(visibleRows, rows + 1);
   }
@@ -404,20 +462,23 @@ function ScaledRows(
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- Measure mounted rows across all columns before paint so horizontal column virtualization keeps row heights and vertical scroll position stable.
   useLayoutEffect(() => {
     const probe = rowProbeRef.current;
-    if (!props.hasHorizontalOverflow || !probe) {
+    if (!measures || !probe) {
       syncMeasurePassesRef.current = 0;
       rowHeightsSettledRef.current = true;
       return;
     }
     const probeStyle = getComputedStyle(probe);
-    const cacheKey = `${sizesKey}|${probeStyle.font}`;
+    const columns = props.source ? 1 : props.columns;
+    const sizes = props.source ? [Math.max(1, probe.clientWidth - props.rowHeader)] : props.sizes;
+    const cacheKey = `${sizesKey}|${probeStyle.font}|${sizes.join(",")}`;
     if (rowHeightCacheRef.current.key !== cacheKey) {
       rowHeightCacheRef.current = { key: cacheKey, entries: new Map() };
       syncMeasurePassesRef.current = 0;
     }
     const cache = rowHeightCacheRef.current.entries;
-    const mountedIndices: number[] = [];
-    const uncached: Array<{ index: number; row: readonly string[] }> = [];
+    const fontSize = Number.parseFloat(probeStyle.fontSize) || 12;
+    const lineHeight = Number.parseFloat(probeStyle.lineHeight) || fontSize * 1.333;
+    const mounted: Array<{ index: number; row: readonly string[] }> = [];
     for (let pageOffset = 0; pageOffset < pageCount; pageOffset++) {
       const currentPage = page + pageOffset;
       const rows = props.getRows(currentPage);
@@ -426,55 +487,64 @@ function ScaledRows(
       const limit = visibleEnd - pageOffset * PREVIEW_PAGE_ROWS;
       const count = Math.min(PREVIEW_PAGE_ROWS, props.count - start, limit);
       for (let local = pageOffset === 0 ? from : 0; local < count; local++) {
-        const index = start + local;
         const row = rows[local];
-        if (!row) continue;
-        mountedIndices.push(index);
+        if (row) mounted.push({ index: start + local, row });
+      }
+    }
+    // Rows are measured in order and only until they fill the viewport, like the mounted range.
+    const next = new Map<number, number>();
+    let measuredRows = 0;
+    let covered = 0;
+    let target = Number.POSITIVE_INFINITY;
+    let needed = mounted.length;
+    let scannedChars = 0;
+    let hasRemainingUncached = false;
+    for (const { index, row } of mounted) {
+      if (measuredRows >= needed) break;
+      let height = BASE_ROW_HEIGHT;
+      if (!isSingleLineRow(row, columns, sizes, fontSize)) {
         const existing = cache.get(index);
         if (existing && (existing.row === row || sameRowCells(existing.row, row))) {
           existing.row = row;
+        } else if (next.size > 0 && scannedChars >= MAX_SYNC_SCAN_CHARS) {
+          hasRemainingUncached = true;
+          break;
         } else {
-          uncached.push({ index, row });
+          const measured = measureRowFullHeight(probe, row, columns, sizes, fontSize, lineHeight, {
+            limit: props.source ? MAX_SHOWN_LINE_CHARS : MAX_SHOWN_CELL_CHARS,
+            className: props.source ? SOURCE_PROBE_CELL_CLASS_NAME : PROBE_CELL_CLASS_NAME,
+            more,
+          });
+          scannedChars += measured.scannedChars;
+          cache.set(index, { row, height: measured.height });
         }
+        height = cache.get(index)!.height;
+        next.set(index, height);
       }
+      measuredRows += 1;
+      if (nativeTail || covered >= target) continue;
+      if (measuredRows === 1) target = props.viewportHeight + rowFraction * height;
+      covered += height;
+      // The rows that reach the target plus one spare, the same range the render mounts.
+      if (covered >= target) needed = measuredRows + 1;
     }
-    let hasRemainingUncached = false;
-    if (uncached.length > 0) {
-      const fontSize = Number.parseFloat(probeStyle.fontSize) || 12;
-      const lineHeight = Number.parseFloat(probeStyle.lineHeight) || fontSize * 1.333;
-      const { measured, remaining } = measureRowsFullHeight(
-        probe,
-        uncached,
-        props.columns,
-        props.sizes,
-        fontSize,
-        lineHeight,
-        MAX_SYNC_SCAN_CHARS,
-      );
-      hasRemainingUncached = remaining;
-      for (const [index, entry] of measured) cache.set(index, entry);
-      if (cache.size > MAX_CACHED_ROW_HEIGHTS) {
-        const keep = new Set(mountedIndices);
-        for (const key of cache.keys()) {
-          if (cache.size <= MAX_CACHED_ROW_HEIGHTS) break;
-          if (!keep.has(key)) cache.delete(key);
-        }
+    if (cache.size > MAX_CACHED_ROW_HEIGHTS) {
+      const keep = new Set(mounted.map((entry) => entry.index));
+      for (const key of cache.keys()) {
+        if (cache.size <= MAX_CACHED_ROW_HEIGHTS) break;
+        if (!keep.has(key)) cache.delete(key);
       }
-    }
-    const next = new Map<number, number>();
-    for (const index of mountedIndices) {
-      const height = cache.get(index)?.height;
-      if (height && height > BASE_ROW_HEIGHT) next.set(index, height);
     }
     const publish = () =>
       setRowHeights((old) =>
-        old.key === cacheKey && sameRowHeightMap(old.heights, next)
+        old.key === cacheKey && old.fontSize === fontSize && sameRowHeightMap(old.heights, next)
           ? old
-          : { key: cacheKey, heights: next },
+          : { key: cacheKey, heights: next, fontSize, sizes },
       );
     rowHeightsSettledRef.current =
       !hasRemainingUncached &&
       rowHeights.key === cacheKey &&
+      rowHeights.fontSize === fontSize &&
       sameRowHeightMap(rowHeights.heights, next);
     if (!hasRemainingUncached) {
       syncMeasurePassesRef.current = 0;
@@ -560,9 +630,10 @@ function ScaledRows(
     if (!row || (!atStart && layout.height !== content.clientHeight)) return;
     node.scrollTop = node.scrollHeight;
     setTop(node.scrollTop);
+    // Tail rows shorter than the viewport end above its bottom, so End is done once the last shows.
     if (
       rowHeightsSettledRef.current &&
-      Math.abs(row.getBoundingClientRect().bottom - node.getBoundingClientRect().bottom) < 1
+      row.getBoundingClientRect().bottom < node.getBoundingClientRect().bottom + 1
     )
       pendingEnd.current = false;
   });
@@ -586,7 +657,7 @@ function ScaledRows(
         if (delta !== null) {
           pendingEnd.current = false;
           event.preventDefault();
-          node.scrollTop += delta * (nativeTail ? 1 : (scale * 29) / rowHeight());
+          scrollByContent(node, delta);
         } else if (event.key === "Home" || event.key === "End") {
           event.preventDefault();
           pendingEnd.current = event.key === "End";
@@ -598,11 +669,11 @@ function ScaledRows(
       onScroll={(event) => setTop(event.currentTarget.scrollTop)}
     >
       <div className="relative" style={{ height: scrollHeight }}>
-        {!props.source ? (
+        {measures ? (
           <div
             ref={rowProbeRef}
             aria-hidden="true"
-            className="pointer-events-none invisible absolute top-0 left-0 h-0 w-0 overflow-hidden"
+            className={`pointer-events-none invisible absolute top-0 left-0 h-0 overflow-hidden ${props.source ? "right-0 font-mono" : "w-0"}`}
           />
         ) : null}
         <div
@@ -618,7 +689,9 @@ function ScaledRows(
               {...props}
               page={page + offset}
               from={offset === 0 ? from : 0}
-              rowHeights={activeRowHeights}
+              rowHeights={props.hasHorizontalOverflow ? knownHeights : undefined}
+              ready={ready}
+              more={more}
               limit={visibleEnd - offset * PREVIEW_PAGE_ROWS}
             />
           ))}
@@ -636,9 +709,14 @@ const MAX_MEASURED_CELLS_PER_ROW = 16;
 const MAX_GLYPH_WIDTH_EM = 1.35;
 const MAX_CACHED_ROW_HEIGHTS = 512;
 const MAX_SYNC_SCAN_CHARS = 128_000;
+// Some scripts lay out slowly: 130K characters of Thai took 2.4 s, and of Japanese 2.6 s, in Chromium.
+// Mobile's table preview cuts cells at the same length; source lines stop where VS Code's do.
+const MAX_SHOWN_CELL_CHARS = 2_000;
+const MAX_SHOWN_LINE_CHARS = 10_000;
 const MAX_SYNC_MEASURE_PASSES = 4;
 const PROBE_CELL_CLASS_NAME =
   "box-border border-r border-b border-transparent px-3 py-1.5 whitespace-pre-wrap break-words tabular-nums";
+const SOURCE_PROBE_CELL_CLASS_NAME = "box-border px-3 py-1 whitespace-pre-wrap break-words";
 
 interface CachedRowHeight {
   row: readonly string[];
@@ -707,19 +785,19 @@ function collectRowHeightCandidates(
   columns: number,
   sizes: readonly number[],
   fontSize: number,
+  shown: (text: string) => string,
 ): { candidates: RowCellCandidate[]; scannedChars: number } {
   const candidates: RowCellCandidate[] = [];
   const limit = Math.min(columns, row.length);
-  const maxGlyphWidth = fontSize * MAX_GLYPH_WIDTH_EM;
   let scannedChars = 0;
   for (let column = 0; column < limit; column++) {
-    const text = row[column];
-    if (!text) continue;
+    const cell = row[column];
+    if (!cell) continue;
     const width = sizes[column];
-    if (!width) continue;
+    if (!width || fitsOneLine(cell, width, fontSize)) continue;
+    const text = shown(cell);
     const innerWidth = Math.max(1, width - CELL_HORIZONTAL_INSET);
     const hasControlWhitespace = text.includes("\n") || text.includes("\r") || text.includes("\t");
-    if (!hasControlWhitespace && text.length * maxGlyphWidth <= innerWidth) continue;
     scannedChars += text.length;
     const upperLines = estimateUpperLines(text, innerWidth, fontSize);
     if (!hasControlWhitespace && upperLines <= 1) continue;
@@ -735,6 +813,7 @@ function measureProbeEntries(
   probe: HTMLElement,
   entries: ReadonlyArray<{ index: number; column: number; text: string }>,
   sizes: readonly number[],
+  className: string,
   results: Map<number, CachedRowHeight>,
 ): void {
   if (entries.length === 0) return;
@@ -742,7 +821,7 @@ function measureProbeEntries(
   const nodes: Array<{ index: number; node: HTMLDivElement }> = [];
   for (const entry of entries) {
     const node = document.createElement("div");
-    node.className = PROBE_CELL_CLASS_NAME;
+    node.className = className;
     node.style.width = `${sizes[entry.column]}px`;
     node.textContent = entry.text;
     fragment.append(node);
@@ -757,59 +836,88 @@ function measureProbeEntries(
   probe.replaceChildren();
 }
 
-function measureRowsFullHeight(
+function measureRowFullHeight(
   probe: HTMLElement,
-  rows: ReadonlyArray<{ index: number; row: readonly string[] }>,
+  row: readonly string[],
   columns: number,
   sizes: readonly number[],
   fontSize: number,
   lineHeight: number,
-  maxScanChars: number,
-): { measured: Map<number, CachedRowHeight>; remaining: boolean } {
-  const measured = new Map<number, CachedRowHeight>();
-  const firstPassEntries: Array<{ index: number; column: number; text: string }> = [];
-  const overflowRows: Array<{ index: number; candidates: RowCellCandidate[] }> = [];
-  let scannedChars = 0;
-  let remaining = false;
-  for (const { index, row } of rows) {
-    if (measured.size > 0 && scannedChars >= maxScanChars) {
-      remaining = true;
-      break;
+  options: { limit: number; className: string; more: (count: number) => string },
+): { height: number; scannedChars: number } {
+  const { candidates, scannedChars } = collectRowHeightCandidates(
+    row,
+    columns,
+    sizes,
+    fontSize,
+    (text) => shownText(text, options.limit, options.more),
+  );
+  const result = { row, height: BASE_ROW_HEIGHT };
+  const measured = new Map([[0, result]]);
+  measureProbeEntries(
+    probe,
+    candidates
+      .slice(0, MAX_MEASURED_CELLS_PER_ROW)
+      .map((candidate) => ({ index: 0, column: candidate.column, text: candidate.text })),
+    sizes,
+    options.className,
+    measured,
+  );
+  if (candidates.length > MAX_MEASURED_CELLS_PER_ROW) {
+    const measuredLines = Math.max(
+      1,
+      Math.floor((result.height - CELL_VERTICAL_INSET + 0.5) / lineHeight),
+    );
+    const rest: Array<{ index: number; column: number; text: string }> = [];
+    for (const candidate of candidates.slice(MAX_MEASURED_CELLS_PER_ROW)) {
+      if (candidate.upperLines <= measuredLines) break;
+      rest.push({ index: 0, column: candidate.column, text: candidate.text });
     }
-    const collected = collectRowHeightCandidates(row, columns, sizes, fontSize);
-    scannedChars += collected.scannedChars;
-    measured.set(index, { row, height: BASE_ROW_HEIGHT });
-    const firstBatchCount = Math.min(collected.candidates.length, MAX_MEASURED_CELLS_PER_ROW);
-    for (let candidateIndex = 0; candidateIndex < firstBatchCount; candidateIndex++) {
-      const candidate = collected.candidates[candidateIndex]!;
-      firstPassEntries.push({ index, column: candidate.column, text: candidate.text });
-    }
-    if (collected.candidates.length > MAX_MEASURED_CELLS_PER_ROW) {
-      overflowRows.push({ index, candidates: collected.candidates });
-    }
+    measureProbeEntries(probe, rest, sizes, options.className, measured);
   }
-  measureProbeEntries(probe, firstPassEntries, sizes, measured);
-  if (overflowRows.length > 0) {
-    const secondPassEntries: Array<{ index: number; column: number; text: string }> = [];
-    for (const { index, candidates } of overflowRows) {
-      const bestHeight = measured.get(index)?.height ?? BASE_ROW_HEIGHT;
-      const measuredLines = Math.max(
-        1,
-        Math.floor((bestHeight - CELL_VERTICAL_INSET + 0.5) / lineHeight),
-      );
-      for (
-        let candidateIndex = MAX_MEASURED_CELLS_PER_ROW;
-        candidateIndex < candidates.length;
-        candidateIndex++
-      ) {
-        const candidate = candidates[candidateIndex]!;
-        if (candidate.upperLines <= measuredLines) break;
-        secondPassEntries.push({ index, column: candidate.column, text: candidate.text });
-      }
-    }
-    measureProbeEntries(probe, secondPassEntries, sizes, measured);
+  return { height: result.height, scannedChars };
+}
+
+/** The length of a cell's text the preview lays out, never splitting a surrogate pair. */
+function shownLength(text: string, limit: number): number {
+  if (text.length <= limit) return text.length;
+  const code = text.charCodeAt(limit - 1);
+  return code >= 0xd800 && code <= 0xdbff ? limit - 1 : limit;
+}
+
+function cutSuffix(count: number, more: (count: number) => string): string {
+  return `… ${more(count)}`;
+}
+
+/** The text a cell lays out: at most `limit` characters, then how many were left out. */
+function shownText(text: string, limit: number, more: (count: number) => string): string {
+  const end = shownLength(text, limit);
+  return end === text.length ? text : text.slice(0, end) + cutSuffix(text.length - end, more);
+}
+
+/** Whether every cell surely fits one line, so the row is 29px without a probe layout. */
+function isSingleLineRow(
+  row: readonly string[],
+  columns: number,
+  sizes: readonly number[],
+  fontSize: number,
+): boolean {
+  const limit = Math.min(columns, row.length);
+  for (let column = 0; column < limit; column++) {
+    const text = row[column];
+    const width = sizes[column];
+    if (text && width && !fitsOneLine(text, width, fontSize)) return false;
   }
-  return { measured, remaining };
+  return true;
+}
+
+function fitsOneLine(text: string, width: number, fontSize: number): boolean {
+  return (
+    text.length * fontSize * MAX_GLYPH_WIDTH_EM <= Math.max(1, width - CELL_HORIZONTAL_INSET) &&
+    !text.includes("\n") &&
+    !text.includes("\r") &&
+    !text.includes("\t")
+  );
 }
 
 function sameRowCells(left: readonly string[], right: readonly string[]): boolean {
