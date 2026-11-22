@@ -3300,3 +3300,4 @@ f9fbb004ac	take	feat(devices): double-tap Home opens the app switcher
 e213da2a32	take	fix(client-runtime): refresh stale server clock offset after host sleep; webhook delivery RPCs in the ws.ts conflict dropped (removed surface); serverTime optional, so older mobile builds and servers still decode
 68e81cd145	take	fix(server): settled-subagent check reads run status from runs_run_status_idx
 324ac49c5e	take	fix(server): fresh-session scheduled runs release every idle Codex thread; per-native-thread idle unload keying applied inside Onicode's dropThreadAttachment helper, which upstream inlines
+fe9c98c98f	take	only the tool_search EnabledWhen filter (search no longer finds tools hidden from the caller; test on a links-only tool); the agent feedback feature itself (reports to T3 through PostHog telemetry, migration 108, Labs setting, cards, oni feedback CLI, feedback MCP tool, eval cases) skipped: telemetry is a removed surface

@@ -3430,10 +3430,7 @@ export const layerWithOptions = (
           };
           const updated = new Map(current);
           updated.set(key, updatedEntry);
-          return [
-            Option.some({ entry: updatedEntry, idleUnloadFibers }),
-            updated,
-          ] as const;
+          return [Option.some({ entry: updatedEntry, idleUnloadFibers }), updated] as const;
         }).pipe(
           Effect.tap((dropped) =>
             Option.isSome(dropped)
