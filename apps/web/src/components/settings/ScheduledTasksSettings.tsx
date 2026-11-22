@@ -12,7 +12,7 @@ import {
   PlusIcon,
   Trash2Icon,
 } from "lucide-react";
-import { type ReactNode, useRef, useState } from "react";
+import { type ReactNode, type Ref, useImperativeHandle, useRef, useState } from "react";
 import type {
   EnvironmentId,
   ModelSelection,
@@ -60,7 +60,7 @@ import { formatEnvironmentQueryError, useEnvironmentQuery } from "../../state/qu
 import { EMPTY_SERVER_PROVIDERS, serverEnvironment } from "../../state/server";
 import { threadFamilies } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
-import { requestConfirmDialog } from "../../confirmDialog";
+import { isConfirmDialogActive, requestConfirmDialog } from "../../confirmDialog";
 import { WorktreeBaseBranchPicker } from "../WorktreeBaseBranchPicker";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import { ConnectionStatusDot, connectionPhaseDotClassName } from "../ConnectionStatusDot";
@@ -73,6 +73,7 @@ import { SettingsGroup } from "./SettingsGroup";
 import { settingsScopeEnvironmentLabel, settingsScopeEnvironmentLabels } from "./settingsScopeAxis";
 import {
   changeDraftProject,
+  hasDraftChanges,
   moveDraftToThread,
   scheduleDraftErrors,
   scheduledTaskDestinationThreads,
@@ -789,19 +790,34 @@ function ScheduledTaskEditorDialog({
   readonly task: ScheduledTask | null;
   readonly onClose: () => void;
 }) {
+  const gt = useGT();
   const [saving, setSaving] = useState(false);
+  const form = useRef<ScheduledTaskEditorFormHandle>(null);
+  const requestClose = async () => {
+    // The Escape that dismisses the confirmation must not queue another one.
+    if (saving || isConfirmDialogActive()) return;
+    if (form.current?.hasChanges()) {
+      const message = `${gt("Discard changes?")}\n${gt("Your unsaved changes will be lost.")}`;
+      const discard =
+        (await requestConfirmDialog(message, { variant: "destructive" })) ??
+        window.confirm(message);
+      if (!discard) return;
+    }
+    onClose();
+  };
   return (
     <Dialog
       open
-      // A stray click outside would discard the unsaved draft; Escape and Cancel still close it.
+      // A stray click outside would discard the unsaved draft; Escape, Cancel, and Close ask first.
       disablePointerDismissal
       onOpenChange={(open) => {
-        if (!open && !saving) onClose();
+        if (!open) void requestClose();
       }}
     >
       {/* The form owns the draft so a keystroke re-renders it, not the dialog chrome. */}
       <DialogPopup className="max-w-xl">
         <ScheduledTaskEditorForm
+          ref={form}
           initialEnvironmentId={initialEnvironmentId}
           task={task}
           saving={saving}
@@ -987,13 +1003,17 @@ function ScheduledTaskDestination({
   );
 }
 
+type ScheduledTaskEditorFormHandle = { readonly hasChanges: () => boolean };
+
 function ScheduledTaskEditorForm({
+  ref,
   initialEnvironmentId,
   task,
   saving,
   onSavingChange: setSaving,
   onClose,
 }: {
+  readonly ref: Ref<ScheduledTaskEditorFormHandle>;
   readonly initialEnvironmentId: EnvironmentId;
   readonly task: ScheduledTask | null;
   readonly saving: boolean;
@@ -1033,13 +1053,22 @@ function ScheduledTaskEditorForm({
   const upsertTask = useAtomCommand(serverEnvironment.upsertScheduledTask, {
     label: "scheduled task upsert",
   });
-  const [draft, setDraft] = useState<DraftState>(() =>
+  const [initialDraft] = useState<DraftState>(() =>
     task
       ? taskToDraft(task)
       : {
           ...EMPTY_DRAFT,
           projectId: defaultScheduledTaskProjectId(scopedProjects, scope),
         },
+  );
+  const [draft, setDraft] = useState(initialDraft);
+  useImperativeHandle(
+    ref,
+    () => ({
+      hasChanges: () =>
+        environmentId !== initialEnvironmentId || hasDraftChanges(initialDraft, draft),
+    }),
+    [environmentId, initialEnvironmentId, initialDraft, draft],
   );
   // Pinned first. The chosen project stays listed after it is archived.
   const projects = scopedProjects

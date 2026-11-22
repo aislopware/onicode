@@ -8926,6 +8926,8 @@
   "0a1ab3194d17d5de": "En pause",
   "4be6feb63e301484": "Activer {title}",
   "34fb848f079bdf69": "Actions pour {title}",
+  "51a11a609473c784": "Abandonner les modifications ?",
+  "6c414592eb76e7fc": "Vos modifications non enregistrées seront perdues.",
   "c0b576266d462f4b": "Fil {id}",
   "03cab990d7237818": "Démarré par la première exécution",
   "60392cc09f60047a": "Chaque exécution démarre un nouveau fil avec l’espace de travail et le modèle ci-dessous.",

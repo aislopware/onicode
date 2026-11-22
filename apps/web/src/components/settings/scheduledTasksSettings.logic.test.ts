@@ -20,6 +20,7 @@ import { deriveProviderInstanceEntries } from "../../providerInstances";
 import {
   scheduledTaskDefaultModel,
   defaultScheduledTaskProjectId,
+  hasDraftChanges,
   matchesScheduledTaskScope,
   scheduleFromDraft,
   scheduleLabel,
@@ -195,6 +196,22 @@ describe("fixed-time scheduled tasks", () => {
     expect(scheduleFromDraft(draft)).toEqual({ type: "fixed_time", timeOfDay: "14:30" });
     // A native time input reports "" when it is cleared or only partly filled.
     expect(scheduleFromDraft({ ...draft, timeOfDay: "" })).toBeNull();
+  });
+});
+
+describe("unsaved scheduled task edits", () => {
+  const draft = taskToDraft({
+    ...legacyTask,
+    schedule: { type: "fixed_time", timeOfDay: "09:00", weekdays: [1, 3] },
+  });
+  it.each([
+    ["an untouched draft", draft, false],
+    ["the same weekdays toggled off and back on", { ...draft, weekdays: new Set([3, 1]) }, false],
+    ["an edited name", { ...draft, title: "Review stale issues" }, true],
+    ["a weekday removed", { ...draft, weekdays: new Set([1]) }, true],
+    ["other weekdays of the same count", { ...draft, weekdays: new Set([1, 4]) }, true],
+  ])("%s has changes: %s", (_label, current, expected) => {
+    expect(hasDraftChanges(draft, current)).toBe(expected);
   });
 });
 

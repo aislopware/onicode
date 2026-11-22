@@ -227,6 +227,15 @@ export function taskToDraft(task: ScheduledTask): DraftState {
   };
 }
 
+export function hasDraftChanges(initial: DraftState, current: DraftState): boolean {
+  const { weekdays, ...rest } = initial;
+  return (
+    weekdays.size !== current.weekdays.size ||
+    [...weekdays].some((day) => !current.weekdays.has(day)) ||
+    (Object.keys(rest) as Array<keyof typeof rest>).some((key) => rest[key] !== current[key])
+  );
+}
+
 export function moveDraftToThread(
   draft: DraftState,
   thread: { readonly id: ThreadId; readonly projectId: ProjectId },

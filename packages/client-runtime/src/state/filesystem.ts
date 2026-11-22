@@ -73,14 +73,14 @@ export function getFilesystemBrowsePath(query: string, platform = "", enabled = 
   // A bare drive has no separator, so it would otherwise filter its own listing by "D:".
   const browseQuery = /^[a-zA-Z]:$/.test(query) ? `${query}\\` : query;
   const directoryPath = isBrowsing ? getBrowseDirectoryPath(browseQuery) : "";
-  const filterQuery =
-    isBrowsing && !hasTrailingPathSeparator(browseQuery)
-      ? getBrowseLeafPathSegment(browseQuery)
-      : "";
+  const namesDirectory = isBrowsing && hasTrailingPathSeparator(browseQuery);
+  const filterQuery = isBrowsing && !namesDirectory ? getBrowseLeafPathSegment(browseQuery) : "";
   const parentPath = isBrowsing ? getBrowseParentPath(directoryPath) : null;
 
   return {
     isBrowsing,
+    /** The query is the listed directory itself, not a name to filter it by. */
+    namesDirectory,
     directoryPath,
     filterQuery,
     parentPath,

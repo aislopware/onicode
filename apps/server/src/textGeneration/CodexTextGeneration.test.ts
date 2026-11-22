@@ -665,7 +665,9 @@ const PREFLIGHT_PRIMARY_STATES = [
   "signed out",
   "signed out, fallback failed",
   "cannot generate text",
+  "cannot generate text, fallback disabled for project",
   "model cannot generate text",
+  "model cannot generate text, fallback disabled for project",
   "disabled",
   "disabled for project",
   "disabled, thread default model cannot generate text",
@@ -719,20 +721,24 @@ it.effect.each(PREFLIGHT_PRIMARY_STATES)("text generation preflight: %s", (prima
         ...(primaryState === "signed out, fallback failed" && instanceId === fallback
           ? { status: "error", auth: { status: "unknown" } }
           : {}),
-        ...(primaryState === "cannot generate text" && instanceId === primary
+        ...(primaryState.startsWith("cannot generate text") && instanceId === primary
           ? { supportsTextGeneration: false }
           : {}),
-        ...(primaryState === "model cannot generate text" && instanceId === primary
+        ...(primaryState.startsWith("model cannot generate text") && instanceId === primary
           ? {
+              // Otherwise the instance's default text model takes over.
               models: [
-                {
-                  slug: selection.model,
-                  name: selection.model,
-                  isCustom: false,
-                  supportsTextGeneration: false,
-                  capabilities: null,
-                },
-              ],
+                selection.model,
+                ...(primaryState.endsWith("fallback disabled for project")
+                  ? [DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER[driver] ?? ""]
+                  : []),
+              ].map((slug) => ({
+                slug,
+                name: slug,
+                isCustom: false,
+                supportsTextGeneration: false,
+                capabilities: null,
+              })),
             }
           : {}),
         ...((primaryState === "not installed, fallback model cannot generate text" ||
@@ -836,6 +842,13 @@ it.effect.each(PREFLIGHT_PRIMARY_STATES)("text generation preflight: %s", (prima
     if (primaryState === "disabled, fallback disabled for project") {
       // A provider that is off is never run, even when nothing else can take over.
       expect((yield* Effect.flip(generate)).detail).toMatch(/is off/);
+      expect(calls).toEqual([]);
+      return;
+    }
+    if (primaryState.endsWith("cannot generate text, fallback disabled for project")) {
+      expect((yield* Effect.flip(generate)).detail).toBe(
+        "codex cannot generate text with chat-model and no other provider can take over. Pick another text generation model in Settings.",
+      );
       expect(calls).toEqual([]);
       return;
     }

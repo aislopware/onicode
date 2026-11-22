@@ -73,6 +73,7 @@ describe("filesystem browse model", () => {
   it("derives the browse target and navigation state", () => {
     expect(getFilesystemBrowsePath("~/projects/onicode")).toEqual({
       isBrowsing: true,
+      namesDirectory: false,
       directoryPath: "~/projects/",
       filterQuery: "onicode",
       parentPath: "~/",
@@ -80,11 +81,15 @@ describe("filesystem browse model", () => {
     });
     expect(getFilesystemBrowsePath("D:", "Win32")).toEqual({
       isBrowsing: true,
+      namesDirectory: true,
       directoryPath: "D:\\",
       filterQuery: "",
       parentPath: null,
       canBrowseUp: false,
     });
+    expect(getFilesystemBrowsePath("d:", "Win32").namesDirectory).toBe(true);
+    expect(getFilesystemBrowsePath("~/projects/").namesDirectory).toBe(true);
+    expect(getFilesystemBrowsePath("D:", "MacIntel").namesDirectory).toBe(false);
     expect(getFilesystemBrowsePath("C:\\Users\\test", "MacIntel").isBrowsing).toBe(false);
     expect(getFilesystemBrowsePath("~/projects/", "", false).isBrowsing).toBe(false);
   });
