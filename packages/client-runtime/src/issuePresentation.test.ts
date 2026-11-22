@@ -1,7 +1,7 @@
-import type { IssueDetail, IssueState } from "@onicode/contracts";
+import { IssueTrackerKind, type IssueDetail, type IssueState } from "@onicode/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { issueWriteAccess } from "./issuePresentation.ts";
+import { issueChangeRequestHost, issueWriteAccess } from "./issuePresentation.ts";
 
 const workflow: ReadonlyArray<IssueState> = [
   { category: "open", name: "Backlog" },
@@ -38,5 +38,19 @@ describe("issueWriteAccess", () => {
     expect(issueWriteAccess(issue({ writable: false }), true).states).toEqual([]);
     expect(issueWriteAccess(issue({}), false).states).toEqual([]);
     expect(issueWriteAccess(issue({ states: [] }), true).states).toEqual([]);
+  });
+});
+
+describe("issueChangeRequestHost", () => {
+  // A reference opened from Activity may carry no host; the issue's resolved host still serves
+  // a change request in another repository, which the server refuses without one.
+  it.each([
+    ["gitlab", "gitlab.acme.dev", "gitlab.acme.dev"],
+    ["github", "github.com", "github.com"],
+    ["linear", "linear.app", undefined],
+  ])("reads a %s issue's change requests on %s", (tracker, host, expected) => {
+    expect(issueChangeRequestHost({ tracker: IssueTrackerKind.make(tracker), host })).toBe(
+      expected,
+    );
   });
 });

@@ -1,5 +1,9 @@
 import { RegistryContext, useAtomValue } from "@effect/atom-react";
-import { issueEventSentence, issueWriteAccess } from "@onicode/client-runtime/issue-presentation";
+import {
+  issueChangeRequestHost,
+  issueEventSentence,
+  issueWriteAccess,
+} from "@onicode/client-runtime/issue-presentation";
 import { createIssueCommentPager } from "@onicode/client-runtime/state/issues";
 import {
   issueAssigneeHeld,
@@ -488,13 +492,15 @@ export function IssueDetailPanel({
   const tracker = issueTrackerPresentation(detail.tracker);
   const currentState = issueStatePresentation(detail.state);
 
-  const host = reference.host === undefined ? {} : { host: reference.host };
+  // A reference opened from Activity may lack the host the detail resolved.
+  const changeRequestHost = issueChangeRequestHost(detail);
+  const pullRequestHost = changeRequestHost === undefined ? {} : { host: changeRequestHost };
   const openEventSource = (source: IssueEventReference) => {
     if (source.kind === "pull-request") {
       if (!onSelectPullRequest) return false;
       onSelectPullRequest({
         projectId: reference.projectId,
-        ...host,
+        ...pullRequestHost,
         repository: source.repository,
         number: source.number,
       });
@@ -504,7 +510,7 @@ export function IssueDetailPanel({
     onSelectIssue({
       projectId: reference.projectId,
       tracker: reference.tracker,
-      ...host,
+      host: reference.host ?? detail.host,
       scope: source.repository,
       key: String(source.number),
       url: source.url,
@@ -869,7 +875,7 @@ export function IssueDetailPanel({
                       ? () =>
                           onSelectPullRequest({
                             projectId: reference.projectId,
-                            ...(reference.host === undefined ? {} : { host: reference.host }),
+                            ...pullRequestHost,
                             repository: link.repository,
                             number: link.number,
                           })

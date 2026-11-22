@@ -2,6 +2,18 @@ import type { IssueDetail, IssueEvent } from "@onicode/contracts";
 import { mFallback, msg } from "gt-i18n";
 import type { MFunctionType } from "gt-i18n/types";
 
+import { sourceControlClients } from "./sourceControlClients.ts";
+
+/**
+ * The host a change request an issue names is read on. A git-host tracker shares the issue's
+ * resolved host; another tracker's links resolve against the project's own repository.
+ */
+export function issueChangeRequestHost(
+  issue: Pick<IssueDetail, "tracker" | "host">,
+): string | undefined {
+  return sourceControlClients.find(issue.tracker) === undefined ? undefined : issue.host;
+}
+
 /** "completed" → "Completed"; a reason the tracker spells with a dash reads as words. */
 function issueCloseReasonLabel(reason: string): string {
   const words = reason.replace(/[-_]+/g, " ").trim();
