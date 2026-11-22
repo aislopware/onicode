@@ -25,9 +25,11 @@ import {
 import * as AcpSessionRuntime from "@onicode/provider-acp/server/AcpSessionRuntime";
 import {
   acpPermissionDisposition,
+  unknownRecord,
   type AcpRuntimePolicy,
 } from "@onicode/provider-acp/server/clientPolicy";
 import type { AcpSessionModeState } from "@onicode/provider-acp/server/runtimeModel";
+import { ONICODE_MCP_TOOL_NAMES } from "@onicode/shared/oniMcpToolPresentation";
 import packageJson from "../../../package.json" with { type: "json" };
 import { normalizeAntigravitySessionUpdate } from "./AntigravityProtocol.ts";
 
@@ -181,13 +183,40 @@ export function antigravitySessionMode(
   return modeId === "yolo" || modeId === "auto_edit" ? "default" : modeId;
 }
 
+// Only calls that name Onicode's server: before agy 1.5.8 "Running <tool>" names no server, so another
+// MCP server's tool of the same name would pass.
+const ANTIGRAVITY_ONI_MCP_TITLE = /^Run mcp_onicode_(?<tool>[A-Za-z0-9_]+)\??$/;
+
+function isAntigravityOniMcpRequest(request: EffectAcpSchema.RequestPermissionRequest): boolean {
+  const rawInput = unknownRecord(request.toolCall.rawInput);
+  if (rawInput?.ServerName !== undefined) {
+    return (
+      rawInput.ServerName === "onicode" &&
+      typeof rawInput.ToolName === "string" &&
+      ONICODE_MCP_TOOL_NAMES.has(rawInput.ToolName)
+    );
+  }
+  if (typeof rawInput?.CommandLine === "string") return false;
+  const tool = ANTIGRAVITY_ONI_MCP_TITLE.exec(request.toolCall.title?.trim() ?? "")?.groups?.tool;
+  return tool !== undefined && ONICODE_MCP_TOOL_NAMES.has(tool);
+}
+
 export function antigravityPermissionDisposition(
   policy: AcpRuntimePolicy,
   request: EffectAcpSchema.RequestPermissionRequest,
 ) {
   const disposition = acpPermissionDisposition(policy, request);
+  if (disposition === "deny") return "deny";
+  // Onicode authorizes its own MCP server, so Auto and Auto-accept edits run it unasked, as Claude does.
+  if (
+    (policy.runtimeMode === "auto" || policy.runtimeMode === "auto-accept-edits") &&
+    (policy.approvalPolicy === undefined || policy.approvalPolicy === "never") &&
+    isAntigravityOniMcpRequest(request)
+  ) {
+    return "allow";
+  }
   // agy's Auto has already reviewed what it sends; the user decides unless the sandbox forbids it.
-  return policy.runtimeMode === "auto" && disposition !== "deny" ? "ask" : disposition;
+  return policy.runtimeMode === "auto" ? "ask" : disposition;
 }
 
 /** The runtime mode an Antigravity session mode grants; the inverse of `antigravityPermissionMode`. */
