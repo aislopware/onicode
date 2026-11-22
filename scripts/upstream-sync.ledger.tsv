@@ -3253,3 +3253,4 @@ bcb9217e8e	take	applied cleanly; Onicode's hook order kept and the row re-render
 ac62463284	take	taken as is
 d5497d66cc	take	adapted: Onicode's live-state notify throttle (#219) now passes the change into live at once (the held catch-up lands as one change into live, which it would otherwise hold); burst test offers the marker first
 501e39d54a	take	taken as is
+1e78f37618	take	adapted: Onicode calls useSidebarDrafts earlier (hook order for the compiler row cache); passed draftTerminalLabels there; row re-render guard green
