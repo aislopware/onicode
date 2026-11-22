@@ -3283,3 +3283,4 @@ bc13afaa3c	take	taken as is; scenario ported to the desktop harness
 87554a7b86	take	fix(web): editing a queued message keeps its attachment chips resolved; kept Onicode's composer slot counters and tooltip helper name in the conflicts
 28706aceb6	take	fix(server): unlinking an environment ends its session on the other machine; dropped T3 Connect hosted-approval and OAuth discovery parts, revoke checks Onicode's MCP client subjects (no session method in Onicode)
 7ed41b7c23	take	fix(mobile): scope Git result banners to their originating thread
+000ba180be	take	fix(web): keep the conversation when a pairing tab closes; kept Onicode's Tailscale sign-in in the conflict; scenario ported to the desktop target
