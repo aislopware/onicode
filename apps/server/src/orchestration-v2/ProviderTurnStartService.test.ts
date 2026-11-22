@@ -2282,6 +2282,27 @@ effectIt.effect("prompts providers without native resume to continue", () =>
 );
 
 effectIt.effect.each([
+  { contextRun: "current" },
+  { contextRun: "failed", switchedProvider: true },
+] as const)(
+  "a resume that carries pending context asks a provider without native resume to continue: %j",
+  (sideChat) =>
+    Effect.gen(function* () {
+      const harness = makeLocalCommandHarness({
+        text: "",
+        manualContinuation: true,
+        nativeResumeUnsupported: true,
+        sideChat,
+      });
+      yield* harness.start;
+      expect(harness.startTurn.mock.calls.map(([turn]) => turn.message.text)).toEqual([
+        withInlineContext("SIDE_CHAT_CONTEXT", "Continue where you left off."),
+      ]);
+      expect(harness.startRootRun.mock.calls[0]?.[0].resume).toBe(false);
+    }),
+);
+
+effectIt.effect.each([
   { contextRun: "current", runtimeMode: "full-access", context: "SIDE_CHAT_CONTEXT" },
   {
     contextRun: "current",

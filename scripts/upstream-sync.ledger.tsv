@@ -3211,3 +3211,4 @@ e3f9db2447	take	taken (other forge, as upstream); kept Onicode's non-draft early
 976aca331a	take	taken; its test sets up a live server through Onicode's ownership lock (acquireServerOwnership + ownerId, dev: false), like the file's other live-server test
 bcace0787e	take	as is
 4c3d83ff24	take	as is
+7f125d83d1	take	test only; kept Onicode's prompted manual resume: providers without native resume always get 'Continue where you left off.' through the start path (with pending context inlined), so upstream's resume-unsupported early failure, its pending-context exemption and the always-present delivery resumeTurn are not needed; upstream's two pending-context cases pass on Onicode's source unchanged (asserting resume=false instead of upstream's settledRuns, which Onicode's harness lacks)
