@@ -192,12 +192,21 @@ const handlers = {
         return yield* remote.followUp(scope, environmentId, input, sent);
       }),
   ),
-  oni_thread_wait: McpToolAccess.reads((input) =>
-    Effect.gen(function* () {
-      const scope = yield* McpInvocationContext.McpInvocationContext;
-      const service = yield* OrchestratorMcpService.OrchestratorMcpService;
-      return yield* service.waitForThread(scope, input);
-    }),
+  oni_thread_wait: McpToolAccess.afterForwarding(
+    McpToolAccess.reads((input) =>
+      Effect.gen(function* () {
+        const scope = yield* McpInvocationContext.McpInvocationContext;
+        const service = yield* OrchestratorMcpService.OrchestratorMcpService;
+        return yield* service.waitForThread(scope, input);
+      }),
+    ),
+    // There the thread's parent is here, so only this side knows its end wakes the caller.
+    (_input, environmentId, result) =>
+      Effect.gen(function* () {
+        const scope = yield* McpInvocationContext.McpInvocationContext;
+        const remote = yield* RemoteDelegation.RemoteDelegation;
+        return yield* remote.waited(scope, environmentId, result);
+      }),
   ),
   oni_environment_links: McpToolAccess.reads(() =>
     Effect.gen(function* () {

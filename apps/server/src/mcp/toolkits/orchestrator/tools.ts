@@ -64,8 +64,8 @@ const linkingDependencies = [
   PeerLinkRequests.PeerLinkRequests,
   PeerLinks.PeerLinks,
 ];
-/** A send there may record a follow-up to a remote task. */
-const sendDependencies = [...dependencies, RemoteDelegation.RemoteDelegation];
+/** A send or wait there may concern a remote task this thread follows. */
+const forwardedDependencies = [...dependencies, RemoteDelegation.RemoteDelegation];
 const threadMetadataDependencies = [
   McpInvocationContext.McpInvocationContext,
   ThreadManagementService.ThreadManagementService,
@@ -288,7 +288,7 @@ const ThreadSendTool = Tool.make("oni_thread_send", {
   success: OrchestratorMcpThreadSendResult,
   failure: OrchestratorMcpFailure,
   failureMode: "return",
-  dependencies: sendDependencies,
+  dependencies: forwardedDependencies,
 })
   .annotate(Tool.Title, "Send to a Onicode thread")
   .annotate(Tool.Destructive, true)
@@ -301,7 +301,7 @@ const ThreadWaitTool = Tool.make("oni_thread_wait", {
   success: OrchestratorMcpThreadWaitResult,
   failure: OrchestratorMcpFailure,
   failureMode: "return",
-  dependencies,
+  dependencies: forwardedDependencies,
 })
   .annotate(Tool.Title, "Wait for a Onicode thread")
   .annotate(Tool.Readonly, true)

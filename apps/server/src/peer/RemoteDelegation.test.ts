@@ -8,6 +8,7 @@ import {
   MessageId,
   type ModelSelection,
   NodeId,
+  ORCHESTRATOR_MCP_RUNNING_TASK_NEXT,
   type OrchestrationV2Run,
   type OrchestrationV2ServerCommand,
   type OrchestratorMcpThreadReadInput,
@@ -115,6 +116,8 @@ interface BoxThread {
   /** The first message the thread there was launched with. */
   readonly message: Ref.Ref<string | null>;
   readonly status: Ref.Ref<OrchestrationV2Run["status"]>;
+  /** A question or approval waits for an answer there. */
+  readonly asking: Ref.Ref<boolean>;
   readonly reply: Ref.Ref<string | null>;
   readonly error: Ref.Ref<string | null>;
   readonly laterError: Ref.Ref<string | null>;
@@ -173,6 +176,7 @@ const makeBoxThread = Effect.gen(function* () {
     launchedWith: yield* Ref.make<LaunchedWith | null>(null),
     message: yield* Ref.make<string | null>(null),
     status: yield* Ref.make<OrchestrationV2Run["status"]>("running"),
+    asking: yield* Ref.make(false),
     reply: yield* Ref.make<string | null>("Working…"),
     error: yield* Ref.make<string | null>(null),
     laterError: yield* Ref.make<string | null>(null),
@@ -275,11 +279,15 @@ const boxToolkitLayer = (thread: BoxThread) => {
       const status = yield* Ref.get(thread.status);
       const runless = yield* Ref.get(thread.runless);
       const model = yield* Ref.get(thread.executedModel);
+      const asking = yield* Ref.get(thread.asking);
       return shell === null
         ? (null as never)
         : {
             ...idleThreadProjection(shell),
             runs: runless ? [] : [runOf(status)],
+            runtimeRequests: (asking
+              ? [{ status: "pending", responseCapability: { type: "live" } }]
+              : []) as never,
             providerTurns: (model === null
               ? []
               : [{ runAttemptId: "attempt:box", ordinal: 1, model }]) as never,
@@ -1044,6 +1052,7 @@ it.effect("a task delegated to the box wakes the laptop's parent when it ends th
         status: "running",
         childThreadId: null,
         remoteChild: { environmentId: box.environmentId, label: "Box" },
+        next: ORCHESTRATOR_MCP_RUNNING_TASK_NEXT,
       });
       // The box launched it in the project with the same repository.
       expect(yield* Ref.get(thread.launched)).toBe(delegated.remoteChild.threadId);
@@ -1113,9 +1122,37 @@ it.effect("a task delegated to the box wakes the laptop's parent when it ends th
         summary: null,
         hasPendingQuestion: false,
         pendingApproval: null,
+        next: ORCHESTRATOR_MCP_RUNNING_TASK_NEXT,
       });
       // A running task there needs its local row, not the parent's run or transfer history.
       expect(historyReads).toEqual([]);
+      // The box has no record of the task, so only this side knows its end wakes the parent.
+      const waitTimedOut = {
+        threadId: delegated.remoteChild.threadId,
+        runId: boxRunId,
+        status: "running",
+        timedOut: true,
+      } as const;
+      expect(yield* a.remote.waited(parentScope, box.environmentId, waitTimedOut)).toEqual({
+        ...waitTimedOut,
+        next: ORCHESTRATOR_MCP_RUNNING_TASK_NEXT,
+      });
+      // A child waiting on a question there needs an answer, not a wake.
+      yield* Ref.set(thread.asking, true);
+      const asking = yield* a.call("task_status", { taskId: delegated.taskId });
+      expect(asking.structuredContent).toMatchObject({ status: "running" });
+      expect(asking.structuredContent).not.toHaveProperty("next");
+      expect(yield* a.remote.waited(parentScope, box.environmentId, waitTimedOut)).toEqual(
+        waitTimedOut,
+      );
+      yield* Ref.set(thread.asking, false);
+      // A run that ended its turn there and is finishing still wakes the parent when it ends.
+      yield* Ref.set(thread.status, "waiting");
+      const finishing = yield* a.call("task_status", { taskId: delegated.taskId });
+      expect(finishing.structuredContent).toMatchObject({
+        next: ORCHESTRATOR_MCP_RUNNING_TASK_NEXT,
+      });
+      yield* Ref.set(thread.status, "running");
 
       yield* Ref.set(thread.reply, "All 412 tests pass on the box.");
       yield* Ref.set(thread.status, "completed");
@@ -1159,6 +1196,10 @@ it.effect("a task delegated to the box wakes the laptop's parent when it ends th
         status: "completed",
         summary: "All 412 tests pass on the box.",
       });
+      expect(status.structuredContent).not.toHaveProperty("next");
+      expect(yield* a.remote.waited(parentScope, box.environmentId, waitTimedOut)).toEqual(
+        waitTimedOut,
+      );
       // Delivery validation still reads messages; choosing the observer does not need another read.
       expect(messageReads).toHaveLength(2);
       expect(messageReads.filter((query) => !/\bmessage_id\s+IN\b/i.test(query))).toHaveLength(1);

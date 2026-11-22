@@ -1,9 +1,11 @@
 // @effect-diagnostics nodeBuiltinImport:off -- The synchronous shell probe runs real commands with isolated config files.
+import * as NodePathLayer from "@effect/platform-node/NodePath";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it as effectIt } from "@effect/vitest";
 import * as HostProcess from "@onicode/shared/HostProcess";
 import { DesktopHostTelemetryMessage } from "@onicode/contracts";
 import * as Schema from "effect/Schema";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
@@ -758,6 +760,37 @@ effectIt.layer(NodeServices.layer)("resolveCommandPath", (it) => {
       Effect.provideService(HostProcess.Platform, "win32"),
       Effect.provideService(CommandResolutionCache, new Map()),
       Effect.provideServiceEffect(PathDirectoryListings, makePathDirectoryListings),
+    ),
+  );
+
+  it.effect("lists the drive root that a bare drive PATH entry probes", () =>
+    Effect.gen(function* () {
+      const noop = FileSystem.makeNoop({});
+      // Node reads a bare `C:` as that drive's working directory, which lacks the command.
+      const listings: Record<string, Array<string>> = { "C:": [], "C:\\": ["codex.cmd"] };
+      const resolved = yield* resolveCommandPath("codex", {
+        env: { PATH: "C:", PATHEXT: ".CMD" },
+      }).pipe(
+        Effect.provideService(FileSystem.FileSystem, {
+          ...noop,
+          stat: (file) =>
+            file in listings
+              ? Effect.succeed({
+                  type: "Directory",
+                  mtime: Option.some(DateTime.toDateUtc(DateTime.makeUnsafe(0))),
+                } as FileSystem.File.Info)
+              : file.toLowerCase() === "c:\\codex.cmd"
+                ? Effect.succeed({ type: "File" } as FileSystem.File.Info)
+                : noop.stat(file),
+          readDirectory: (directory) => Effect.succeed(listings[directory] ?? []),
+        }),
+      );
+      expect(resolved).toBe("C:\\codex.CMD");
+    }).pipe(
+      Effect.provideService(HostProcess.Platform, "win32"),
+      Effect.provideService(CommandResolutionCache, new Map()),
+      Effect.provideServiceEffect(PathDirectoryListings, makePathDirectoryListings),
+      Effect.provide(NodePathLayer.layerWin32),
     ),
   );
 

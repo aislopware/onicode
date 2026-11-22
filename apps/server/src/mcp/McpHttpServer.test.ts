@@ -62,6 +62,7 @@ import * as McpSessionRegistry from "./McpSessionRegistry.ts";
 import * as OrchestratorMcpService from "./OrchestratorMcpService.ts";
 import * as PreviewAutomationBroker from "./PreviewAutomationBroker.ts";
 import { OrchestratorToolkit } from "./toolkits/orchestrator/tools.ts";
+import * as RemoteDelegation from "../peer/RemoteDelegation.ts";
 import { PreviewToolkit } from "./toolkits/preview/tools.ts";
 import { PreviewControlsToolkit } from "./toolkits/previewControls/tools.ts";
 import { ProjectToolkit } from "./toolkits/project/tools.ts";
@@ -335,6 +336,7 @@ const layerRecordingTools = (calls: Array<unknown>) => {
       Layer.mergeAll(
         McpToolAccessTestkit.liveThreadsLayer,
         Layer.mock(OrchestratorMcpService.OrchestratorMcpService)({}),
+        Layer.mock(RemoteDelegation.RemoteDelegation)({}),
         Layer.mock(ProjectService.ProjectService)({}),
         Layer.mock(PreviewManager.PreviewManager)({}),
         Layer.mock(PreviewAutomationBroker.PreviewAutomationBroker)({}),

@@ -109,13 +109,12 @@ function resolveSpawnExecutableWithNode(
   for (const pathEntry of (readEnvPath(env) ?? "").split(pathDelimiterForPlatform(platform))) {
     const normalizedPathEntry = normalizePathEntry(pathEntry, platform);
     if (normalizedPathEntry.length === 0) continue;
+    const directory = probedPathDirectory(normalizedPathEntry, path.join);
     const names =
-      platform === "win32"
-        ? listPathDirectorySync(normalizedPathEntry, path.isAbsolute)
-        : undefined;
+      platform === "win32" ? listPathDirectorySync(directory, path.isAbsolute) : undefined;
     for (const candidate of candidates) {
       if (isAbsentFromListing(names, candidate)) continue;
-      const candidatePath = path.join(normalizedPathEntry, candidate);
+      const candidatePath = path.join(directory, candidate);
       if (isExecutable(candidatePath)) return candidatePath;
     }
   }
@@ -621,6 +620,12 @@ function isAbsentFromListing(names: ReadonlySet<string> | undefined, candidate: 
   );
 }
 
+// A bare drive `C:` names that drive's working directory, but joins a candidate at the drive root
+// (`C:\codex.cmd`), so list and probe the joined directory.
+function probedPathDirectory(entry: string, join: (...segments: Array<string>) => string): string {
+  return join(entry, ".");
+}
+
 // The listing must start after the mtime's timestamp step has passed, and a relative entry
 // names another directory once the working directory changes.
 function isReusableListing(
@@ -788,14 +793,15 @@ const findOnPath = Effect.fnUntraced(function* (
   const listings = platform === "win32" ? yield* PathDirectoryListings : undefined;
   const matches: string[] = [];
   for (const pathEntry of pathEntries) {
-    let listing = listings && (yield* Cache.get(listings, pathEntry));
-    if (listings && listing?.names && listing.modified !== (yield* directoryMtime(pathEntry))) {
-      yield* Cache.invalidate(listings, pathEntry);
-      listing = yield* Cache.get(listings, pathEntry);
+    const directory = probedPathDirectory(pathEntry, path.join);
+    let listing = listings && (yield* Cache.get(listings, directory));
+    if (listings && listing?.names && listing.modified !== (yield* directoryMtime(directory))) {
+      yield* Cache.invalidate(listings, directory);
+      listing = yield* Cache.get(listings, directory);
     }
     for (const candidate of commandCandidates) {
       if (isAbsentFromListing(listing?.names, candidate)) continue;
-      const candidatePath = path.join(pathEntry, candidate);
+      const candidatePath = path.join(directory, candidate);
       if (yield* isExecutableFile(candidatePath, platform, windowsPathExtensions)) {
         matches.push(candidatePath);
         if (isLast(candidatePath)) return matches;

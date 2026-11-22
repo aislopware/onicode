@@ -26,6 +26,13 @@ export type CliShimTarget =
   | { readonly kind: "direct"; readonly executable: string; readonly entry: string }
   | { readonly kind: "windows"; readonly executable: string; readonly entry: string };
 
+const onDescriptor = (line: (fd: number) => string, none = ":") => [
+  'case "$in" in',
+  ...[9, 8, 7, 6, 5, 4, 3].map((fd) => `  ${fd}) ${line(fd)} ;;`),
+  `  *) ${none} ;;`,
+  "esac",
+];
+
 /** Embed this install's home and executable path so `sudo`, which clears the environment, uses the same install. */
 export const renderCliShim = (input: {
   readonly target: CliShimTarget;
@@ -98,8 +105,8 @@ export const renderCliShim = (input: {
     'setsid "$app" --appimage-mount >"$work/mount" 2>/dev/null &',
     "mounter=$!",
     // It unmounts itself on TERM, which it now ignores, so the trap unmounts it. Lazily, like the
-    // runtime: the server's own children may still be exiting.
-    `trap '[ -z "$mount" ] || fusermount3 -uz "$mount" 2>/dev/null || fusermount -uz "$mount" 2>/dev/null; kill -HUP "$mounter" 2>/dev/null; rm -rf "$work"' EXIT`,
+    // runtime: the server's own children may still be exiting. The runtime honors FUSERMOUNT_PROG.
+    `trap '[ -z "$mounter" ] || [ -z "$mount" ] || { [ -n "$FUSERMOUNT_PROG" ] && "$FUSERMOUNT_PROG" -uz "$mount"; } 2>/dev/null || fusermount3 -uz "$mount" 2>/dev/null || fusermount -uz "$mount" 2>/dev/null; [ -z "$mounter" ] || kill -HUP "$mounter" 2>/dev/null; rm -rf "$work"' EXIT`,
     "trap 'exit 130' INT TERM HUP",
     "mount=",
     'while kill -0 "$mounter" 2>/dev/null; do',
@@ -110,27 +117,42 @@ export const renderCliShim = (input: {
     "done",
     // Without FUSE the runtime cannot mount (it prints why and exits); extracting the image still works.
     'if [ -z "$mount" ]; then',
+    // The mounter has exited; its pid may belong to another process by the time the CLI ends.
+    "  mounter=",
     '  (cd "$work" && "$app" --appimage-extract >/dev/null) || { echo "Could not open $app." >&2; exit 1; }',
     '  mount="$work/squashfs-root"',
     "fi",
     // The runtime sets this when it launches the app; the CLI skips its path-keyed compile cache on it.
     'export APPIMAGE="$app"',
-    // The shell must outlive the CLI to unmount, so it forwards TERM and HUP; the terminal sends
-    // Ctrl-C to the CLI directly. A background child would read /dev/null, so pass stdin on fd 9.
-    // With stdin closed, `exec 9<&0` would end the shell; `command` makes it a normal error.
-    "{ command exec 9<&0; } 2>/dev/null || exec 9</dev/null",
-    `${run("$mount")} <&9 9<&- &`,
-    "cli=$!",
-    "exec 9<&-",
-    `trap 'kill -TERM "$cli" 2>/dev/null' TERM`,
-    `trap 'kill -HUP "$cli" 2>/dev/null' HUP`,
+    // A background child reads /dev/null, so stdin goes to it on the highest free descriptor,
+    // leaving the caller's own (`--bootstrap-fd`) to the CLI. With stdin closed, `exec N<&0`
+    // would end the shell; `command` makes it a normal error. With 3 to 9 all taken, the CLI
+    // reads /dev/null rather than lose one of them.
+    "in=9",
+    'while [ "$in" -ge 3 ] && { true <&"$in"; } 2>/dev/null; do in=$((in - 1)); done',
+    // Descriptors in redirections must be literal: an eval'd `exec` ends bash 3.2's sh.
+    ...onDescriptor((fd) => `{ command exec ${fd}<&0; } 2>/dev/null || exec ${fd}</dev/null`),
+    // The shell must outlive the CLI to unmount, so it forwards TERM and HUP, trapped before the
+    // CLI starts so neither ends the shell first. The terminal sends Ctrl-C to the CLI directly.
+    "cli=",
+    "early=",
+    'forward() { sig=$1; if [ -n "$cli" ]; then kill -"$1" "$cli" 2>/dev/null; else early=$1; fi; }',
+    "trap 'forward TERM' TERM",
+    "trap 'forward HUP' HUP",
     "trap '' INT",
-    "status=0",
-    'wait "$cli" || status=$?',
-    // A trapped signal interrupts wait; wait again for the CLI's own exit status.
-    'while kill -0 "$cli" 2>/dev/null; do',
-    "  status=0",
-    '  wait "$cli" || status=$?',
+    ...onDescriptor((fd) => `${run("$mount")} <&${fd} ${fd}<&- &`, `${run("$mount")} &`),
+    "cli=$!",
+    ...onDescriptor((fd) => `exec ${fd}<&-`),
+    '[ -z "$early" ] || kill -"$early" "$cli" 2>/dev/null',
+    // A trapped signal interrupts wait, by when the CLI may have exited and been reaped; waiting
+    // again gets its status, or 127 once an earlier wait already collected it.
+    "status=",
+    "while :; do",
+    "  sig=",
+    '  wait "$cli"',
+    "  code=$?",
+    '  [ "$code" -eq 127 ] && [ -n "$status" ] || status=$code',
+    '  [ -n "$sig" ] || break',
     "done",
     'exit "$status"',
     "",
