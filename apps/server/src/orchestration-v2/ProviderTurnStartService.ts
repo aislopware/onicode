@@ -164,7 +164,7 @@ const isProviderAdapterOpenSessionError = Schema.is(
  * Claude refuses these before it reads the prompt: replacing a process running background work,
  * launch arguments whose appended system prompt or settings cannot be read, or MCP registration
  * that never answers while the query opens. A query that ends before the turn attaches (such as a
- * rejected resume point) never received the prompt either, nor did a retired Codex app-server.
+ * rejected resume point) never received the prompt either, nor did a released session.
  */
 const PROMPT_REFUSAL_TAGS = [
   "ClaudeBackgroundWorkBlocksQueryReplacementError",
@@ -172,25 +172,25 @@ const PROMPT_REFUSAL_TAGS = [
   "ClaudeAppendSystemPromptMissingValueError",
   "ClaudeSettingsLaunchArgError",
   "ClaudeMcpRegistrationTimeoutError",
-  "CodexAppServerRetiredError",
+  "ProviderSessionReleasedBeforeTurnError",
 ] as const;
 
-// Codex requests that act on a thread. An unanswered read, such as config/read, acted on nothing.
-const CODEX_ACTING_METHODS: ReadonlySet<unknown> = new Set([
-  "thread/start",
-  "thread/resume",
-  "thread/fork",
-  "turn/start",
-]);
+// Codex reads that act on nothing; any other unanswered request may have acted.
+const CODEX_READ_METHODS: ReadonlySet<unknown> = new Set(["config/read", "thread/goal/get"]);
 
-const unansweredCodexRequest = (error: unknown, acting: boolean): boolean =>
+const unansweredCodexRequest = (error: unknown, read: boolean): boolean =>
   Predicate.isTagged(error, "CodexAppServerUnresponsiveError") &&
-  Predicate.hasProperty(error, "method") &&
-  CODEX_ACTING_METHODS.has(error.method) === acting;
+  (Predicate.hasProperty(error, "method") && CODEX_READ_METHODS.has(error.method)) === read;
+
+// The shared app-server is going away without having acted on this request: retry on a new one.
+const appServerGone = (error: unknown): boolean =>
+  Predicate.isTagged(error, "CodexAppServerRetiredError") ||
+  unansweredCodexRequest(error, true) ||
+  (Predicate.hasProperty(error, "cause") && appServerGone(error.cause));
 
 const refusedBeforePrompt = (error: unknown): boolean =>
   PROMPT_REFUSAL_TAGS.some((tag) => Predicate.isTagged(error, tag)) ||
-  unansweredCodexRequest(error, false) ||
+  appServerGone(error) ||
   (isProviderAdapterProtocolError(error) &&
     error.driver === CLAUDE_PROVIDER &&
     error.detail === CLAUDE_QUERY_ENDED_BEFORE_TURN_DETAIL) ||
@@ -198,7 +198,7 @@ const refusedBeforePrompt = (error: unknown): boolean =>
 
 // The provider may have acted on a request it never answered, so a retry could duplicate it.
 const outcomeUnknown = (error: unknown): boolean =>
-  unansweredCodexRequest(error, true) ||
+  unansweredCodexRequest(error, false) ||
   (Predicate.hasProperty(error, "cause") && outcomeUnknown(error.cause));
 
 /**
@@ -1549,6 +1549,9 @@ export const layer: Layer.Layer<
               }),
             );
             if (forked._tag === "Success") return forked.success;
+            if (outcomeUnknown(forked.failure)) {
+              return yield* loadFromProvider(Effect.fail(forked.failure));
+            }
             if (input.willRetry === true) return yield* forked.failure;
             if (!(yield* isCurrentAttemptInStatus("starting"))) return undefined;
             // Retries are spent (e.g. the source's native session is gone): start fresh with portable history.
@@ -1857,7 +1860,8 @@ export const layer: Layer.Layer<
         if (
           resumed._tag === "Failure" &&
           (resumed.failure._tag === "ProviderAdapterThreadInUseError" ||
-            outcomeUnknown(resumed.failure))
+            outcomeUnknown(resumed.failure) ||
+            appServerGone(resumed.failure))
         ) {
           return yield* loadFromProvider(Effect.fail(resumed.failure));
         }

@@ -354,6 +354,34 @@ it.layer(NodeServices.layer)("effect-acp protocol", (it) => {
     }),
   );
 
+  it.effect("fails pending and later extension requests once the connection scope closes", () =>
+    Effect.gen(function* () {
+      const { stdio, output } = yield* makeInMemoryStdio();
+      const connection = yield* Scope.make();
+      const transport = yield* AcpProtocol.makeAcpPatchedProtocol({
+        stdio,
+        serverRequestMethods: new Set(),
+      }).pipe(Scope.provide(connection));
+      const pending = yield* transport.request("x/pending", {}).pipe(Effect.forkScoped);
+      yield* Queue.take(output);
+
+      yield* Scope.close(connection, Exit.void);
+
+      const failureOf = Effect.match({
+        onFailure: (error: AcpError.AcpError) => error,
+        onSuccess: () => assert.fail("Expected the request to fail"),
+      });
+      assert.instanceOf(
+        yield* Fiber.join(pending).pipe(failureOf),
+        AcpError.AcpInputStreamEndedError,
+      );
+      assert.instanceOf(
+        yield* transport.request("x/later", {}).pipe(failureOf),
+        AcpError.AcpInputStreamEndedError,
+      );
+    }),
+  );
+
   it.effect("keeps the ended raw backlog intact when notifications arrive after termination", () =>
     Effect.gen(function* () {
       const { stdio, input } = yield* makeInMemoryStdio();

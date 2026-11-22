@@ -11650,6 +11650,88 @@ describe("CodexAdapterV2 post-settle continuation", () => {
     ),
   );
 
+  it.effect.each([
+    { method: "thread/compact/start", params: { threadId: "unanswered-turn-rpc" } },
+    {
+      method: "thread/inject_items",
+      params: { threadId: "unanswered-turn-rpc", items: historyResponseItems([], "") },
+    },
+  ])("fails a $method the shared app-server never answers", ({ method, params }) =>
+    Effect.gen(function* () {
+      const written = yield* Deferred.make<void>();
+      const harness = yield* makeCodexReplayHarness(
+        makeCodexReplayTranscript({
+          scenario: "codex-unanswered-turn-rpc",
+          entries: [
+            ...codexReplayPreamble({
+              nativeThreadId: "unanswered-turn-rpc",
+              nativeTurnId: "unanswered-turn",
+              prompt: "unused",
+            }).slice(0, 5),
+            { type: "expect_outbound", label: method, frame: { id: 3, method, params } },
+            {
+              type: "emit_inbound",
+              label: "request-written",
+              frame: { method: "onicode/test/requestWritten", params: {} },
+            },
+          ],
+        }),
+        undefined,
+        undefined,
+        undefined,
+        (entry) =>
+          entry.label === "request-written" ? Deferred.succeed(written, undefined) : Effect.void,
+      );
+      const request =
+        method === "thread/compact/start"
+          ? harness.runtime.compactThread!(
+              makeCodexTestTurnInput({
+                threadId: harness.threadId,
+                providerThread: harness.providerThread,
+                now: yield* DateTime.now,
+                attemptId: RunAttemptId.make("unanswered-turn-rpc-attempt"),
+                text: "/compact",
+              }),
+            )
+          : harness.runtime.injectHistory!({
+              providerThread: harness.providerThread,
+              messages: [],
+              context: "",
+            });
+      const settled = yield* request.pipe(
+        Effect.exit,
+        Effect.timeoutOption("5 minutes"),
+        Effect.forkChild,
+      );
+      yield* Deferred.await(written);
+      yield* TestClock.adjust("5 minutes");
+
+      const exit = yield* Fiber.join(settled);
+      assert.isTrue(Option.isSome(exit), `${method} was still waiting after 5 minutes`);
+      let failure: unknown =
+        Option.isSome(exit) && Exit.isFailure(exit.value)
+          ? Cause.squash(exit.value.cause)
+          : undefined;
+      while (
+        !Predicate.isTagged(failure, "CodexAppServerUnresponsiveError") &&
+        Predicate.hasProperty(failure, "cause")
+      ) {
+        failure = failure.cause;
+      }
+      assert.deepInclude(failure, { _tag: "CodexAppServerUnresponsiveError", method });
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(
+        Layer.mergeAll(
+          IdAllocator.layer,
+          McpProviderSessions.layer,
+          NodeServices.layer,
+          NodeCrypto.layer,
+        ),
+      ),
+    ),
+  );
+
   it.effect("fails a fork the shared app-server never answers", () =>
     Effect.gen(function* () {
       const nativeThreadId = "unanswered-fork-source";

@@ -207,12 +207,13 @@ export const makeCodexAppServerPatchedProtocol = Effect.fn("makeCodexAppServerPa
 
     // Closing the scope interrupts the reader without a termination, so nothing else fails
     // these: a request still waiting on a released app-server would wait forever.
-    yield* Effect.addFinalizer(() => {
-      const closed = new CodexError.CodexAppServerInputStreamEndedError({});
-      return Ref.set(terminationFailure, Option.some(closed)).pipe(
-        Effect.andThen(failAllPending(closed)),
-      );
-    });
+    yield* Effect.addFinalizer(() =>
+      Ref.updateAndGet(terminationFailure, (failure) =>
+        Option.isSome(failure)
+          ? failure
+          : Option.some(new CodexError.CodexAppServerInputStreamEndedError({})),
+      ).pipe(Effect.flatMap((failure) => failAllPending(Option.getOrThrow(failure)))),
+    );
 
     const handleTermination = (classify: () => Effect.Effect<CodexError.CodexAppServerError>) =>
       Ref.modify(terminationHandled, (handled) => {
@@ -295,6 +296,7 @@ export const makeCodexAppServerPatchedProtocol = Effect.fn("makeCodexAppServerPa
         return next;
       });
 
+    // Once off the map only this handler settles the request, so interruption must not cut it.
     const resolvePending = (
       requestId: string,
       handler: (pendingRequest: CodexAppServerPendingRequest) => Effect.Effect<void>,
@@ -307,7 +309,7 @@ export const makeCodexAppServerPatchedProtocol = Effect.fn("makeCodexAppServerPa
         const next = new Map(current);
         next.delete(requestId);
         return [handler(pendingRequest), next] as const;
-      }).pipe(Effect.flatten);
+      }).pipe(Effect.flatten, Effect.uninterruptible);
 
     const respond = (requestId: string | number, result: unknown) =>
       offerOutgoing(toProtocolMessage(requestId, { result }));

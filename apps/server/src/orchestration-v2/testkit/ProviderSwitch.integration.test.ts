@@ -2961,6 +2961,10 @@ describe("orchestration v2 provider switching", () => {
     ],
     ["a retired Codex app-server", new CodexAppServerRetiredError()],
     [
+      "a session released as the turn started",
+      new ProviderSessionManager.ProviderSessionReleasedBeforeTurnError(),
+    ],
+    [
       "a Codex config read past its deadline",
       new CodexAppServerUnresponsiveError({ method: "config/read" }),
     ],
