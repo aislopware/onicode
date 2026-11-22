@@ -3487,23 +3487,28 @@ describe("orchestration v2 provider switching", () => {
             yield* waitForRun(2);
             const slashTurn = (yield* Ref.get(capturedTurns)).at(-1)!;
             assert.equal(slashTurn.driver, GROK_DRIVER);
-            if (!verbatim) {
+            if (verbatim) {
+              assert.equal(
+                slashTurn.text,
+                firstMessage,
+                "ACP only expands a native slash command when the prompt starts with it",
+              );
+            } else {
               assert.include(slashTurn.text, originalPrompt);
               assert.include(slashTurn.text, `User message:\n${firstMessage}`);
-              return;
             }
-            assert.equal(
-              slashTurn.text,
-              firstMessage,
-              "ACP only expands a native slash command when the prompt starts with it",
-            );
 
             yield* dispatch("next", "Continue", GROK_MODEL_SELECTION);
             yield* waitForRun(3);
             const next = (yield* Ref.get(capturedTurns)).at(-1)!;
-            assert.include(next.text, originalPrompt);
-            assert.include(next.text, codexResponse);
-            assert.include(next.text, "User message:\nContinue");
+            if (verbatim) {
+              assert.include(next.text, originalPrompt);
+              assert.include(next.text, codexResponse);
+              assert.include(next.text, "User message:\nContinue");
+            } else {
+              // The command turn took the handoff inline, so it is not sent again.
+              assert.equal(next.text, "Continue");
+            }
           }).pipe(
             Effect.provide(
               ProviderReplayHarness.layerWithRegistry(

@@ -18,18 +18,28 @@ type CommandMessage = {
   readonly attachments?: ReadonlyArray<unknown> | undefined;
 };
 
-/** Providers only run a native command that opens the prompt, so its turn defers inline context to the next one. */
-export const isNativeCommandMessage = (
-  session: Pick<ProviderAdapter.ProviderAdapterV2SessionRuntime, "runsAsNativeCommand">,
-  message: CommandMessage,
-): boolean =>
-  message.role === "user" &&
-  (session.runsAsNativeCommand?.({ text: message.text, attachments: message.attachments ?? [] }) ??
-    ProviderAdapter.opensWithSlashCommand(message.text));
+type CommandSession = Pick<ProviderAdapter.ProviderAdapterV2SessionRuntime, "runsAsNativeCommand">;
 
 /** Every message a provider could run as a command opens with `/`, as the projection index reads them. */
 export const mayBeNativeCommandMessage = (message: CommandMessage): boolean =>
   message.role === "user" && message.text.trim().startsWith("/");
+
+/** Providers only run a native command that opens the prompt, so its turn defers inline context to the next one. */
+export const isNativeCommandMessage = (session: CommandSession, message: CommandMessage): boolean =>
+  mayBeNativeCommandMessage(message) &&
+  (session.runsAsNativeCommand?.({ text: message.text, attachments: message.attachments ?? [] }) ??
+    ProviderAdapter.opensWithSlashCommand(message.text));
+
+/**
+ * A turn whose restart notes and missed images wait for the next prompt. Handoffs record their
+ * delivery, but these are inferred from history, which older servers classified by text alone.
+ */
+export const leavesNotesForNextPrompt = (
+  session: CommandSession,
+  message: CommandMessage,
+): boolean =>
+  (message.role === "user" && ProviderAdapter.opensWithSlashCommand(message.text)) ||
+  isNativeCommandMessage(session, message);
 
 /** The provider prompt for a turn that carries inline context ahead of the user's text. */
 export const withInlineContext = (context: string, userText: string): string =>

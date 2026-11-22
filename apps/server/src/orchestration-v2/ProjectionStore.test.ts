@@ -2569,6 +2569,19 @@ const commandReadsSkipSettledLeafNodes = Effect.gen(function* () {
     subagentNames(yield* store.getThreadRecords(threadId, ["subagents"])),
     subagents.map(([name]) => name).toSorted(),
   );
+  // Tasks that ended at or after the time; running ones have not ended.
+  const endedSince = (since: DateTime.Utc) =>
+    store.getThreadRecords(threadId, ["subagents"], {
+      subagentRunIds: [settledRun.id],
+      subagentsCompletedSince: since,
+    });
+  assert.deepEqual(
+    subagentNames(yield* endedSince(now)),
+    subagents
+      .flatMap(([name, run, status]) => (run === settledRun && status !== "running" ? [name] : []))
+      .toSorted(),
+  );
+  assert.deepEqual(subagentNames(yield* endedSince(DateTime.add(now, { milliseconds: 1 }))), []);
   // A command about one settled task keeps it, and reads only its node and turn item.
   const deliveredId = NodeId.make("node:settled-subagents:delivered");
   const forTask = yield* store.getThreadRecords(threadId, ["subagents", "nodes", "turnItems"], {

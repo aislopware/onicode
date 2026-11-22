@@ -70,6 +70,7 @@ import {
 import {
   deliverContextHandoffs,
   isNativeCommandMessage,
+  leavesNotesForNextPrompt,
   mayBeNativeCommandMessage,
   withInlineContext,
 } from "./ContextHandoffDelivery.ts";
@@ -92,9 +93,9 @@ import {
   isRestartNoteContinuation,
   pendingRestartCancelledBackgroundWork,
   pendingStoppedDelegatedTasks,
-  settledStoppedRunIds,
   restartCancelledBackgroundWorkNote,
   stoppedDelegatedTasksNote,
+  stoppedNoteToldAt,
 } from "./RestartBackgroundNote.ts";
 
 const LOST_WAKE_OUTPUT_NOTE =
@@ -410,9 +411,6 @@ export const layer: Layer.Layer<
             ),
       };
     };
-
-    // Stopped runs whose delegated tasks all ended and were told; that cannot change.
-    const settledStoppedRuns = new Set<RunId>();
 
     const makeDeliverySession = (
       session: ProviderAdapter.ProviderAdapterV2SessionRuntime,
@@ -1061,9 +1059,9 @@ export const layer: Layer.Layer<
               records: providerMessage.context?.records ?? [],
             }),
           );
-      const nativeCommand = (message: Parameters<typeof isNativeCommandMessage>[1]) =>
-        isNativeCommandMessage(session, message);
-      const slashCommand = nativeCommand(providerMessage);
+      const slashCommand = isNativeCommandMessage(session, providerMessage);
+      const notesWait = (message: Parameters<typeof leavesNotesForNextPrompt>[1]) =>
+        leavesNotesForNextPrompt(session, message);
       const goalDriver =
         session.driver === "codex" ||
         session.driver === "claudeAgent" ||
@@ -1086,7 +1084,7 @@ export const layer: Layer.Layer<
       let compactionMessageIdSet: ReadonlySet<string> | undefined;
       const compactionMessageIds = () =>
         (compactionMessageIdSet ??= new Set(
-          projection.messages.filter(nativeCommand).map((candidate) => candidate.id),
+          projection.messages.filter(notesWait).map((candidate) => candidate.id),
         ));
       const restartCancelledWork = pendingRestartCancelledBackgroundWork({
         runs: projection.runs,
@@ -1096,37 +1094,35 @@ export const layer: Layer.Layer<
         attempts: projection.attempts,
       });
       // The turn start context omits settled tasks, so read them only after a Stop disposed some,
-      // and only for stopped runs that may still owe the note.
+      // and only those that ended after the last turn that told the note.
       // A failed read fails the start: a turn that ran without the note would count as telling it.
       const stoppedRunIds = projection.runs
         .filter(
           (source) =>
             source.providerThreadId === run.providerThreadId &&
-            source.delegatedCompletion?.disposition === "stopped" &&
-            !settledStoppedRuns.has(source.id),
+            source.delegatedCompletion?.disposition === "stopped",
         )
         .map((source) => source.id);
       const stoppedTasks =
         stoppedRunIds.length === 0 || compactionMessageIds().has(run.userMessageId)
           ? []
           : yield* Effect.gen(function* () {
-              const { subagents } = yield* projectionStore.getThreadRecords(
-                projection.thread.id,
-                ["subagents"],
-                { subagentRunIds: stoppedRunIds },
-              );
-              const pending = pendingStoppedDelegatedTasks({
+              const history = {
                 providerThreadId: run.providerThreadId,
                 runs: projection.runs,
                 providerTurns: projection.providerTurns,
                 attempts: projection.attempts,
                 compactionMessageIds: compactionMessageIds(),
-                subagents,
-              });
-              for (const runId of settledStoppedRunIds(stoppedRunIds, subagents, pending)) {
-                settledStoppedRuns.add(runId);
-              }
-              return pending;
+              };
+              const { subagents } = yield* projectionStore.getThreadRecords(
+                projection.thread.id,
+                ["subagents"],
+                {
+                  subagentRunIds: stoppedRunIds,
+                  subagentsCompletedSince: stoppedNoteToldAt(history),
+                },
+              );
+              return pendingStoppedDelegatedTasks({ ...history, subagents });
             });
       const restartNote = [
         restartCancelledWork.length === 0
@@ -1385,7 +1381,7 @@ export const layer: Layer.Layer<
             const source = runsById.get(attempt.runId);
             if (source === undefined) continue;
             const message = messagesById.get(source.userMessageId);
-            if (message !== undefined && nativeCommand(message)) continue;
+            if (message !== undefined && notesWait(message)) continue;
             lastPromptOrdinal = Math.max(lastPromptOrdinal, source.ordinal);
           }
           const attachments = missedHistory.flatMap((item) =>
@@ -2242,7 +2238,7 @@ export const layer: Layer.Layer<
           const { resume: _resume, ...contextInput } = startInput;
           const { message: resumeMessage, resume: _resumeIntent, ...resumeInput } = startInput;
           const missedAttachments =
-            compact || slashCommand
+            compact || notesWait(providerMessage)
               ? []
               : retryHandoff.attachments.filter(
                   (missed) =>
