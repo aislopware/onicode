@@ -3227,3 +3227,4 @@ c198f73b37	take	taken as is
 8435a8cd41	take	fix(server): tell a stopped parent which delegated tasks its Stop interrupted (#34499)
 f931f03d61	take	upstream migration 106 renumbered to Onicode 111 (WorktreePathKeyIndex); reconcile test updated
 c585a58598	take	fix(mobile): prevent clipped percentages in usage limit cards (#40778)
+989247488d	take	conflict: added the three optimizer entries to Onicode's include list, which keeps its shared lazyPreviewDependencies array
