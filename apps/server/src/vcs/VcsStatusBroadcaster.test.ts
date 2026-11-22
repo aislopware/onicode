@@ -97,7 +97,7 @@ function layerTestFor(state: {
   beforeInvalidate?: Effect.Effect<void>;
   branchRead?: () => Effect.Effect<string | null>;
   fileSystem?: FileSystem.FileSystem;
-  pullCurrentBranch?: GitWorkflowService.GitWorkflowService["Service"]["pullCurrentBranch"];
+  pullCurrentBranchWhenIdle?: GitWorkflowService.GitWorkflowService["Service"]["pullCurrentBranchWhenIdle"];
   headPath?: string;
   headPathCalls?: number;
   failLocalStatus?: boolean;
@@ -216,7 +216,9 @@ function layerTestFor(state: {
             state.localInvalidationCalls += 1;
             state.remoteInvalidationCalls += 1;
           }),
-        ...(state.pullCurrentBranch ? { pullCurrentBranch: state.pullCurrentBranch } : {}),
+        ...(state.pullCurrentBranchWhenIdle
+          ? { pullCurrentBranchWhenIdle: state.pullCurrentBranchWhenIdle }
+          : {}),
         headPath: () =>
           Effect.sync(() => {
             state.headPathCalls = (state.headPathCalls ?? 0) + 1;
@@ -1143,7 +1145,7 @@ describe("VcsStatusBroadcaster", () => {
             invalidateLocalStatus: () => Effect.void,
             invalidateRemoteStatus: () => Effect.void,
             invalidateStatus: () => Effect.void,
-            pullCurrentBranch: () =>
+            pullCurrentBranchWhenIdle: () =>
               Effect.sync(() => {
                 pullCalls += 1;
                 remoteStatus = { ...remoteStatus, behindCount: 0 };
@@ -1327,7 +1329,7 @@ describe("VcsStatusBroadcaster", () => {
       remoteStatusCalls: 0,
       localInvalidationCalls: 0,
       remoteInvalidationCalls: 0,
-      pullCurrentBranch: () =>
+      pullCurrentBranchWhenIdle: () =>
         Effect.sync(() => {
           pullCalls += 1;
           return { status: "pulled" as const, refName: "main", upstreamRef: "origin/main" };
@@ -2026,7 +2028,7 @@ describe("VcsStatusBroadcaster", () => {
       if (autoPull) {
         state.currentLocalStatus = { ...baseLocalStatus, isDefaultRef: true };
         state.currentRemoteStatus = { ...remoteStatusWithPr, aheadCount: 0, behindCount: 5 };
-        state.pullCurrentBranch = () =>
+        state.pullCurrentBranchWhenIdle = () =>
           operation === "autoPullFailure"
             ? Effect.fail(
                 new GitCommandError({

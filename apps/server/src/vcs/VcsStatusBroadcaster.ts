@@ -822,7 +822,7 @@ export const make = Effect.gen(function* () {
         return null;
 
       pullAttempted = true;
-      yield* workflow.pullCurrentBranch(cwd);
+      if ((yield* workflow.pullCurrentBranchWhenIdle(cwd)) === null) return null;
       yield* workflow.invalidateStatus(cwd);
       yield* refreshLocalStatusCore(cwd);
       const refreshedRemote = yield* readRemoteStatus(cwd, { refreshUpstream: false }, false);

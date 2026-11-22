@@ -80,6 +80,10 @@ export class GitWorkflowService extends Context.Service<
     /** The checkout's own HEAD file, inside a linked worktree's admin directory when there is one. */
     readonly headPath: (cwd: string) => Effect.Effect<string | null, never>;
     readonly pullCurrentBranch: (cwd: string) => Effect.Effect<VcsPullResult, GitCommandError>;
+    /** For automatic pulls: null, without pulling, while the checkout is busy. */
+    readonly pullCurrentBranchWhenIdle: (
+      cwd: string,
+    ) => Effect.Effect<VcsPullResult | null, GitCommandError>;
     readonly runStackedAction: (
       input: GitRunStackedActionInput,
       options?: GitManager.GitRunStackedActionOptions,
@@ -504,9 +508,49 @@ export const make = Effect.gen(function* () {
     }),
     pullCurrentBranch: Effect.fn("GitWorkflowService.pullCurrentBranch")(function (cwd) {
       return ensureGitCommand("GitWorkflowService.pullCurrentBranch", cwd).pipe(
-        Effect.andThen(git.pullCurrentBranch(cwd)),
+        Effect.flatMap((handle) =>
+          switchingCheckout(
+            {
+              operation: "GitWorkflowService.pullCurrentBranch",
+              cwd,
+              rootPath: handle.repository.rootPath,
+            },
+            git.pullCurrentBranch(cwd),
+          ),
+        ),
       );
     }),
+    pullCurrentBranchWhenIdle: Effect.fn("GitWorkflowService.pullCurrentBranchWhenIdle")(
+      function (cwd) {
+        return ensureGitCommand("GitWorkflowService.pullCurrentBranchWhenIdle", cwd).pipe(
+          Effect.flatMap((handle) => {
+            const rootPath = handle.repository.rootPath;
+            // Leased before reserving, so waiting on another Git action holds up no turn start.
+            return withCheckoutLease(
+              rootPath,
+              withCheckoutSwitchReservationOrElse(
+                fileSystem,
+                path,
+                rootPath,
+                checkoutGuard
+                  .assertIdle({
+                    operation: "GitWorkflowService.pullCurrentBranchWhenIdle",
+                    cwd,
+                    root: rootPath,
+                  })
+                  .pipe(
+                    Effect.matchEffect({
+                      onFailure: () => Effect.succeed(null),
+                      onSuccess: () => git.pullCurrentBranch(cwd),
+                    }),
+                  ),
+                () => Effect.succeed(null),
+              ),
+            );
+          }),
+        );
+      },
+    ),
     runStackedAction: Effect.fn("GitWorkflowService.runStackedAction")(function (input, options) {
       return ensureGit("GitWorkflowService.runStackedAction", input.cwd).pipe(
         Effect.flatMap((handle) =>

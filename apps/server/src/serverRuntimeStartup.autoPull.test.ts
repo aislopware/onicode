@@ -33,6 +33,7 @@ import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
 import * as ServerSettings from "./serverSettings.ts";
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
 import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
+import * as GitWorkflowService from "./git/GitWorkflowService.ts";
 
 it.effect("parks automatic pull until activation without delaying command readiness", () =>
   Effect.gen(function* () {
@@ -151,6 +152,7 @@ it.effect("parks automatic pull until activation without delaying command readin
             Effect.onInterrupt(() => Deferred.succeed(statusInterrupted, undefined)),
           ),
       }),
+      Layer.mock(GitWorkflowService.GitWorkflowService)({}),
       // No provider logins or Connect link, so startup records no owners.
       FileSystem.layerNoop({}),
       Layer.mock(ServerSecretStore.ServerSecretStore)({ get: () => Effect.succeedNone }),

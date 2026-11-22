@@ -227,5 +227,6 @@ with its configured upstream. Choose an environment to set the default or a proj
 On mobile, use **Settings → Source control & issues** to change selected environment defaults or project overrides.
 
 Onicode only pulls when it can fast-forward and the checkout has no changed files, untracked files,
-or local commits. It skips checkouts on another branch or without an upstream. If a checkout has
-local work, resolve it yourself before automatic pulls can resume.
+or local commits. It skips checkouts on another branch or without an upstream, and tries again later
+while a thread is working in the checkout. If a checkout has local work, resolve it yourself before
+automatic pulls can resume.
