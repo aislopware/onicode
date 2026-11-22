@@ -33,14 +33,15 @@ type HeldSend = {
 
 type ParkedSend = {
   readonly held: HeldSend;
-  /** Its images joined the draft; it waits only for a composer to send it. */
+  /** Its images joined the draft. */
   ready: boolean;
   /** Ends the edit and paste watches that drop it while no composer holds it. */
   readonly stop: () => void;
 };
 
-// Sends whose composer unmounted, by draft. The thread screen owns the send path, so the next
-// composer on the draft adopts and sends it; an edit, a failed image or a discard drops it.
+// Sends whose composer unmounted, by draft. One goes through the send path its composer left once
+// its images land, unless a blocker or an approval it answers needs the thread screen; then the
+// next composer on the draft adopts and sends it. An edit, a failed image or a discard drops it.
 const parkedSends = new Map<string, ParkedSend>();
 const parkedSendListeners = new Set<() => void>();
 const subscribeParkedSends = (listener: () => void) => {
@@ -55,14 +56,20 @@ const unpark = (draftKey: string, parked: ParkedSend) => {
   parked.stop();
   for (const changed of parkedSendListeners) changed();
 };
-const park = (held: HeldSend, ready: boolean, watchDraft: (onEdit: () => void) => () => void) => {
+const park = (
+  held: HeldSend,
+  ready: boolean,
+  watchDraft: (onEdit: () => void) => () => void,
+  sendAway: (() => void) | undefined,
+) => {
   const previous = parkedSends.get(held.draftKey);
   if (previous) unpark(held.draftKey, previous);
   const stopWatchingDraft = watchDraft(() => unpark(held.draftKey, parked));
   const stopWatchingPastes = onNativeImagePastesSettled((key, failed) => {
     if (key !== held.pasteKey) return;
-    if (failed) unpark(held.draftKey, parked);
+    if (failed || sendAway) unpark(held.draftKey, parked);
     else parked.ready = true;
+    if (!failed) sendAway?.();
   });
   const parked: ParkedSend = {
     held,
@@ -156,7 +163,7 @@ export function useSubmitAfterNativeImages(props: {
     if (released.current === releasedSend) released.current = null;
     sendReleased(releasedSend);
   }, [releasedSend, props.blocked]);
-  // Leaving the thread keeps a held send for the composer that comes back to its draft.
+  // Leaving the thread keeps a held send, to go once its images land or from a returning composer.
   const leave = useEffectEvent(() => {
     const shown = watched.current;
     // Watching starts once the press's own input landed; before that an edit could go unseen.
@@ -164,11 +171,20 @@ export function useSubmitAfterNativeImages(props: {
     settle();
     if (shown === null || !watching) return;
     if (heldSend.current === null && released.current === null) return;
-    park(shown, heldSend.current === null, props.watchDraft);
+    const ready = heldSend.current === null;
     // The parked send is the only copy, so a remount's paste listener cannot release it again.
     heldSend.current = null;
     released.current = null;
     setReleasedSend(null);
+    const submit = props.onSubmit;
+    // Only the thread screen sees a blocker clear, and a redirect declines its approvals there.
+    const sendAway =
+      props.blocked || shown.approvalIds.length > 0
+        ? undefined
+        : () => submit(shown.followUp, shown.approvalIds, shown.settings);
+    // A closed question's image still converting joins a released send first.
+    if (ready && sendAway && !nativeImagePastePending(shown.pasteKey)) sendAway();
+    else park(shown, ready, props.watchDraft, sendAway);
   });
   // A held send belongs to the draft it was pressed in; showing another draft drops it.
   const showDraft = useEffectEvent((draftKey: string, parked: ParkedSend | undefined) => {

@@ -1,0 +1,257 @@
+diff --git a/android/src/main/java/expo/modules/pasteinput/ExpoPasteInputModule.kt b/android/src/main/java/expo/modules/pasteinput/ExpoPasteInputModule.kt
+index 8ed80e2..6af0f6e 100644
+--- a/android/src/main/java/expo/modules/pasteinput/ExpoPasteInputModule.kt
++++ b/android/src/main/java/expo/modules/pasteinput/ExpoPasteInputModule.kt
+@@ -8,7 +8,7 @@ class ExpoPasteInputModule : Module() {
+     Name("ExpoPasteInput")
+     
+     View(ExpoPasteInputView::class) {
+-      Events("onPaste")
++      Events("onPaste", "onImageReadStart")
+     }
+   }
+ }
+diff --git a/build/TextInputWrapper.types.d.ts b/build/TextInputWrapper.types.d.ts
+index 4c430a2..18fc2f4 100644
+--- a/build/TextInputWrapper.types.d.ts
++++ b/build/TextInputWrapper.types.d.ts
+@@ -1,12 +1,18 @@
+ import type { ViewProps } from "react-native";
++/** iOS: `readId` names the image read an `onImageReadStart` announced. */
+ export type PasteEventPayload = {
+     type: "text";
+     value: string;
+ } | {
+     type: "images";
+     uris: string[];
++    readId?: number;
+ } | {
+     type: "unsupported";
++    readId?: number;
++};
++export type ImageReadStartPayload = {
++    readId: number;
+ };
+ export interface TextInputWrapperViewProps extends ViewProps {
+     /**
+@@ -14,6 +20,11 @@ export interface TextInputWrapperViewProps extends ViewProps {
+      * @param payload - The paste event payload containing type and content
+      */
+     onPaste?: (payload: PasteEventPayload) => void;
++    /**
++     * iOS: a pasted image started loading off the main thread. One `onPaste` with the same
++     * `readId`, images or unsupported, follows while the view stays mounted.
++     */
++    onImageReadStart?: (payload: ImageReadStartPayload) => void;
+     /**
+      * Child components to wrap. Typically a TextInput component.
+      */
+diff --git a/build/TextInputWrapperView.js b/build/TextInputWrapperView.js
+index ea1797c..1414a3b 100644
+--- a/build/TextInputWrapperView.js
++++ b/build/TextInputWrapperView.js
+@@ -2,14 +2,17 @@ import { requireNativeView } from "expo";
+ import * as React from "react";
+ const NativeTextInputWrapper = requireNativeView("ExpoPasteInput");
+ export const TextInputWrapperView = React.forwardRef((props, ref) => {
+-    const { onPaste, children, ...viewProps } = props;
++    const { onPaste, onImageReadStart, children, ...viewProps } = props;
+     const handlePaste = React.useCallback((event) => {
+         if (onPaste) {
+             // Expo View events wrap the payload in nativeEvent
+             onPaste(event.nativeEvent);
+         }
+     }, [onPaste]);
+-    return (<NativeTextInputWrapper ref={ref} onPaste={handlePaste} {...viewProps}>
++    const handleImageReadStart = React.useCallback((event) => {
++        onImageReadStart?.(event.nativeEvent);
++    }, [onImageReadStart]);
++    return (<NativeTextInputWrapper ref={ref} onPaste={handlePaste} onImageReadStart={handleImageReadStart} {...viewProps}>
+       {children}
+     </NativeTextInputWrapper>);
+ });
+diff --git a/build/TextInputWrapperView.web.js b/build/TextInputWrapperView.web.js
+index ec27287..a1fff27 100644
+--- a/build/TextInputWrapperView.web.js
++++ b/build/TextInputWrapperView.web.js
+@@ -1,7 +1,7 @@
+ import * as React from "react";
+ import { View } from "react-native";
+ export const TextInputWrapperView = React.forwardRef((props, ref) => {
+-    const { onPaste, ...viewProps } = props;
++    const { onPaste, onImageReadStart, ...viewProps } = props;
+     return (<View ref={ref} {...viewProps}>
+       {props.children}
+     </View>);
+diff --git a/ios/ExpoPasteInputModule.swift b/ios/ExpoPasteInputModule.swift
+index 2b9a914..92b8c1f 100644
+--- a/ios/ExpoPasteInputModule.swift
++++ b/ios/ExpoPasteInputModule.swift
+@@ -5,7 +5,7 @@ public class ExpoPasteInputModule: Module {
+     Name("ExpoPasteInput")
+     
+     View(ExpoPasteInputView.self) {
+-      Events("onPaste")
++      Events("onPaste", "onImageReadStart")
+     }
+   }
+ }
+\ No newline at end of file
+diff --git a/ios/ExpoPasteInputView.swift b/ios/ExpoPasteInputView.swift
+index 39b2302..4020f04 100644
+--- a/ios/ExpoPasteInputView.swift
++++ b/ios/ExpoPasteInputView.swift
+@@ -31,6 +31,8 @@ private enum MediaPayload {
+ 
+ class ExpoPasteInputView: ExpoView {
+   private let onPaste = EventDispatcher()
++  private let onImageReadStart = EventDispatcher()
++  private var lastImageReadId = 0
+   private let mediaProcessingQueue = DispatchQueue(label: "expo.modules.pasteinput.media-processing", qos: .userInitiated)
+   private var textInputView: UIView?
+   private var isMonitoring: Bool = false
+@@ -551,6 +553,12 @@ class ExpoPasteInputView: ExpoView {
+   }
+ 
+   private func emitImagesAsync(for payloads: [MediaPayload]) {
++    // Files are written off the main thread, so a tap can reach JS before them. The read start
++    // lets JS hold it; exactly one onPaste (images or unsupported) with this readId follows.
++    lastImageReadId += 1
++    let readId = lastImageReadId
++    onImageReadStart(["readId": readId])
++
+     mediaProcessingQueue.async { [weak self] in
+       guard let self else {
+         return
+@@ -564,11 +572,11 @@ class ExpoPasteInputView: ExpoView {
+         }
+ 
+         if uris.isEmpty {
+-          self.handleUnsupportedPaste()
++          self.handleUnsupportedPaste(readId: readId)
+           return
+         }
+ 
+-        self.emitImages(uris: uris)
++        self.emitImages(uris: uris, readId: readId)
+       }
+     }
+   }
+@@ -905,20 +913,19 @@ class ExpoPasteInputView: ExpoView {
+     ])
+   }
+   
+-  private func handleUnsupportedPaste() {
+-    onPaste([
+-      "type": "unsupported"
+-    ])
+-  }
+-
+-  private func emitImages(uris: [String]) {
+-    guard !uris.isEmpty else {
+-      return
++  private func handleUnsupportedPaste(readId: Int? = nil) {
++    var payload: [String: Any] = ["type": "unsupported"]
++    if let readId {
++      payload["readId"] = readId
+     }
++    onPaste(payload)
++  }
+ 
++  private func emitImages(uris: [String], readId: Int) {
+     onPaste([
+       "type": "images",
+-      "uris": uris
++      "uris": uris,
++      "readId": readId
+     ])
+   }
+ 
+diff --git a/src/TextInputWrapper.types.ts b/src/TextInputWrapper.types.ts
+index a0e8b1b..78410d0 100644
+--- a/src/TextInputWrapper.types.ts
++++ b/src/TextInputWrapper.types.ts
+@@ -1,9 +1,12 @@
+ import type { ViewProps } from "react-native";
+ 
++/** iOS: `readId` names the image read an `onImageReadStart` announced. */
+ export type PasteEventPayload =
+   | { type: "text"; value: string }
+-  | { type: "images"; uris: string[] }
+-  | { type: "unsupported" };
++  | { type: "images"; uris: string[]; readId?: number }
++  | { type: "unsupported"; readId?: number };
++
++export type ImageReadStartPayload = { readId: number };
+ 
+ export interface TextInputWrapperViewProps extends ViewProps {
+   /**
+@@ -12,6 +15,12 @@ export interface TextInputWrapperViewProps extends ViewProps {
+    */
+   onPaste?: (payload: PasteEventPayload) => void;
+ 
++  /**
++   * iOS: a pasted image started loading off the main thread. One `onPaste` with the same
++   * `readId`, images or unsupported, follows while the view stays mounted.
++   */
++  onImageReadStart?: (payload: ImageReadStartPayload) => void;
++
+   /**
+    * Child components to wrap. Typically a TextInput component.
+    */
+diff --git a/src/TextInputWrapperView.tsx b/src/TextInputWrapperView.tsx
+index 867779a..a4dc233 100644
+--- a/src/TextInputWrapperView.tsx
++++ b/src/TextInputWrapperView.tsx
+@@ -2,6 +2,7 @@ import { requireNativeView } from "expo";
+ import * as React from "react";
+ import type { View } from "react-native";
+ import type {
++  ImageReadStartPayload,
+   PasteEventPayload,
+   TextInputWrapperViewProps,
+ } from "./TextInputWrapper.types";
+@@ -12,7 +13,7 @@ export const TextInputWrapperView = React.forwardRef<
+   View,
+   TextInputWrapperViewProps
+ >((props, ref) => {
+-  const { onPaste, children, ...viewProps } = props;
++  const { onPaste, onImageReadStart, children, ...viewProps } = props;
+ 
+   const handlePaste = React.useCallback(
+     (event: { nativeEvent: PasteEventPayload }) => {
+@@ -24,8 +25,20 @@ export const TextInputWrapperView = React.forwardRef<
+     [onPaste],
+   );
+ 
++  const handleImageReadStart = React.useCallback(
++    (event: { nativeEvent: ImageReadStartPayload }) => {
++      onImageReadStart?.(event.nativeEvent);
++    },
++    [onImageReadStart],
++  );
++
+   return (
+-    <NativeTextInputWrapper ref={ref} onPaste={handlePaste} {...viewProps}>
++    <NativeTextInputWrapper
++      ref={ref}
++      onPaste={handlePaste}
++      onImageReadStart={handleImageReadStart}
++      {...viewProps}
++    >
+       {children}
+     </NativeTextInputWrapper>
+   );
+diff --git a/src/TextInputWrapperView.web.tsx b/src/TextInputWrapperView.web.tsx
+index 9712cc0..695a4dc 100644
+--- a/src/TextInputWrapperView.web.tsx
++++ b/src/TextInputWrapperView.web.tsx
+@@ -6,7 +6,7 @@ export const TextInputWrapperView = React.forwardRef<
+   View,
+   TextInputWrapperViewProps
+ >((props, ref) => {
+-  const { onPaste, ...viewProps } = props;
++  const { onPaste, onImageReadStart, ...viewProps } = props;
+   return (
+     <View ref={ref} {...viewProps}>
+       {props.children}

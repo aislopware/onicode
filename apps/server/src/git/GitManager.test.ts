@@ -6461,6 +6461,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
           GitWorkflowService.make.pipe(
             Effect.provideService(SharedCheckoutGuard.SharedCheckoutGuard, {
               assertIdle: () => Effect.void,
+              busyThreads: () => Effect.succeed([]),
             }),
             // Cache the real filesystem result so startImmediately reaches lease acquisition.
             Effect.provideService(FileSystem.FileSystem, {

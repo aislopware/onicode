@@ -29,6 +29,15 @@ export class SharedCheckoutGuard extends Context.Service<
       readonly cwd: string;
       readonly root: string;
     }) => Effect.Effect<void, GitCommandError>;
+    /**
+     * The titles of the threads with a run in progress in the checkout at `root`; fails only
+     * when that cannot be checked.
+     */
+    readonly busyThreads: (input: {
+      readonly operation: string;
+      readonly cwd: string;
+      readonly root: string;
+    }) => Effect.Effect<ReadonlyArray<string>, GitCommandError>;
   }
 >()("onicode/git/sharedCheckoutGuard") {}
 
@@ -50,8 +59,8 @@ const make = Effect.gen(function* () {
         ),
       );
 
-  const assertIdle: SharedCheckoutGuard["Service"]["assertIdle"] = Effect.fn(
-    "SharedCheckoutGuard.assertIdle",
+  const busyThreads: SharedCheckoutGuard["Service"]["busyThreads"] = Effect.fn(
+    "SharedCheckoutGuard.busyThreads",
   )(function* ({ operation, cwd, root }) {
     const unverified = (cause: unknown) =>
       new GitCommandError({
@@ -62,7 +71,7 @@ const make = Effect.gen(function* () {
         cause,
       });
     const threads = yield* projections.listThreadsWithActiveRun().pipe(Effect.mapError(unverified));
-    if (threads.length === 0) return;
+    if (threads.length === 0) return [];
     const localProjectIds = [
       ...new Set(
         threads.flatMap((thread) => (thread.worktreePath === null ? [thread.projectId] : [])),
@@ -109,16 +118,23 @@ const make = Effect.gen(function* () {
         }),
       { concurrency: "unbounded" },
     );
+    return busy.map((thread) => thread.title);
+  });
+
+  const assertIdle: SharedCheckoutGuard["Service"]["assertIdle"] = Effect.fn(
+    "SharedCheckoutGuard.assertIdle",
+  )(function* (input) {
+    const busy = yield* busyThreads(input);
     if (busy.length === 0) return;
     return yield* new GitCommandError({
-      operation,
+      operation: input.operation,
       command: "git checkout",
-      cwd,
-      detail: describeBusyCheckout(busy.map((thread) => thread.title)),
+      cwd: input.cwd,
+      detail: describeBusyCheckout(busy),
     });
   });
 
-  return SharedCheckoutGuard.of({ assertIdle });
+  return SharedCheckoutGuard.of({ assertIdle, busyThreads });
 });
 
 export const layer = Layer.effect(SharedCheckoutGuard, make);

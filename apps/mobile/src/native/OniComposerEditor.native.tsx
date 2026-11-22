@@ -174,7 +174,9 @@ export function ComposerEditor({
     setConfirmedTokens({ value: props.value, tokens });
   }
   const theme = useUniwindTheme();
-  const handlePaste = useNativePaste((uris) => onPasteImages?.(uris));
+  const paste = useNativePaste(() => (uris) => {
+    if (uris.length > 0) onPasteImages?.(uris);
+  });
 
   useImperativeHandle(
     ref,
@@ -325,7 +327,7 @@ export function ComposerEditor({
   const resolvedTextStyle = StyleSheet.flatten(textStyle) ?? {};
   const regularFontFamily = FONT_FAMILIES.regular;
   return (
-    <TextInputWrapper onPaste={handlePaste} style={[{ minHeight: 0 }, style]}>
+    <TextInputWrapper {...paste} style={[{ minHeight: 0 }, style]}>
       <NativeView
         ref={nativeRef}
         controlledDocumentJson={controlledDocumentJson}

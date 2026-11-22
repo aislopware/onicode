@@ -152,12 +152,15 @@ export function threadCanSteer(
   const turns = projection && resolveThreadProviderSession(projection)?.capabilities.turns;
   // A steer submitted before the session attaches can wait for its provider turn.
   if (turns && !supportsSteering(turns)) return false;
+  const run = projection?.runs.find((candidate) => candidate.id === input.activeRunId);
+  // Its provider turn has ended and only the checkpoint is pending: nothing takes a steer.
+  if (run?.status === "waiting") return false;
   return !compactionBlocksSteering({
     compactCommandIsActive: input.compactCommandIsActive,
     compactionRunning: input.compactionRunning,
     steersDuringCompaction:
       turns?.activeSteeringDuringCompaction === true || input.steersAfterCompaction === true,
-    run: projection?.runs.find((run) => run.id === input.activeRunId),
+    run,
     messages: projection?.messages,
   });
 }

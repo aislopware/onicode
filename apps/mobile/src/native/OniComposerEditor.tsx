@@ -28,7 +28,9 @@ export function ComposerEditor({
   const inputRef = useRef<TextInputInstance>(null);
   const bodyText = useScaledTextRole("body");
   const fontFamily = FONT_FAMILIES.regular;
-  const handlePaste = useNativePaste((uris) => onPasteImages?.(uris));
+  const paste = useNativePaste(() => (uris) => {
+    if (uris.length > 0) onPasteImages?.(uris);
+  });
 
   useImperativeHandle(
     ref,
@@ -43,7 +45,7 @@ export function ComposerEditor({
   );
 
   return (
-    <TextInputWrapper onPaste={handlePaste} style={[{ minHeight: 0 }, style]}>
+    <TextInputWrapper {...paste} style={[{ minHeight: 0 }, style]}>
       <TextInput
         ref={inputRef}
         {...props}

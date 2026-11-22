@@ -98,6 +98,7 @@ overrides:
   mdast-util-to-hast: 13.2.2
   expo-audio: 58.0.12
   expo-network: 58.0.5
+  expo-paste-input: 0.2.2
   "@cursor/sdk": 1.4.2
   expo-sharing: 58.0.23
   expo-widgets: 58.0.29
@@ -197,6 +198,8 @@ patchedDependencies:
   expo-audio@58.0.12: patches/expo-audio@58.0.12.patch
   expo-video@58.0.14: patches/expo-video@58.0.14.patch
   expo-network@58.0.5: patches/expo-network@58.0.5.patch
+  # iOS: announces an image read before its files exist, so a send can wait for it.
+  expo-paste-input@0.2.2: patches/expo-paste-input@0.2.2.patch
   "@effect/vitest@4.1.5": patches/@effect__vitest@4.1.5.patch
   "@expo/metro-config@58.0.23": patches/@expo__metro-config@58.0.23.patch
   expo-sharing@58.0.23: patches/expo-sharing@58.0.23.patch

@@ -50,6 +50,13 @@ export function ReviewCommentComposerSheet(props: ReviewCommentComposerSheetProp
   const { environmentId, threadId } = props.route.params;
   const [commentText, setCommentText] = useState("");
   const [attachments, setAttachments] = useState<ReadonlyArray<DraftComposerImageAttachment>>([]);
+  // Submit reads the ref: a paste's read start may not have rendered before the tap.
+  const loadingImages = useRef(0);
+  const [imagesLoading, setImagesLoading] = useState(false);
+  const changeLoadingImages = (delta: number) => {
+    loadingImages.current += delta;
+    setImagesLoading(loadingImages.current > 0);
+  };
   const attachmentsRef = useRef(attachments);
   const isMountedRef = useRef(true);
   // Store file references before React commits, so closing the sheet can release them.
@@ -94,7 +101,11 @@ export function ReviewCommentComposerSheet(props: ReviewCommentComposerSheetProp
   const firstNumber = firstLine ? getReviewUnifiedLineNumber(firstLine) : null;
   const lastNumber = lastLine ? getReviewUnifiedLineNumber(lastLine) : null;
   const canSubmit =
-    commentText.trim().length > 0 && target !== null && !!environmentId && !!threadId;
+    commentText.trim().length > 0 &&
+    target !== null &&
+    !!environmentId &&
+    !!threadId &&
+    !imagesLoading;
   const selectionLabel =
     selectedLines.length === 1
       ? firstNumber !== null
@@ -114,25 +125,34 @@ export function ReviewCommentComposerSheet(props: ReviewCommentComposerSheetProp
     clearReviewCommentTarget();
     navigation.goBack();
   };
-  const handleNativePaste = useNativePaste((uris) => {
-    void (async () => {
-      const result = await convertPastedImagesToAttachments({
-        uris,
-        existingCount: attachmentsRef.current.length,
-      }).catch((error: unknown) => {
-        console.error("[review comment] error converting pasted images", error);
-        return null;
-      });
-      if (result === null) return;
-      appendImages(result.attachments);
-      if (result.error && isMountedRef.current) {
-        Dialog.alert(gt("Could not paste image"), result.error);
-      }
-    })();
+  async function appendPastedImages(uris: ReadonlyArray<string>): Promise<void> {
+    if (uris.length === 0) return;
+    const result = await convertPastedImagesToAttachments({
+      uris,
+      existingCount: attachmentsRef.current.length,
+    }).catch((error: unknown) => {
+      console.error("[review comment] error converting pasted images", error);
+      return null;
+    });
+    if (result === null) return;
+    appendImages(result.attachments);
+    if (result.error && isMountedRef.current) {
+      Dialog.alert(gt("Could not paste image"), result.error);
+    }
+  }
+  // An image still loading would land after the comment left with the sheet.
+  const paste = useNativePaste(() => {
+    changeLoadingImages(1);
+    return (uris) => {
+      void appendPastedImages(uris).finally(() => changeLoadingImages(-1));
+    };
   });
 
   async function handlePickImages(): Promise<void> {
-    const result = await pickComposerImages({ existingCount: attachmentsRef.current.length });
+    changeLoadingImages(1);
+    const result = await pickComposerImages({
+      existingCount: attachmentsRef.current.length,
+    }).finally(() => changeLoadingImages(-1));
     appendImages(result.images);
     if (result.error && isMountedRef.current) {
       setPendingConnectionError(result.error);
@@ -140,7 +160,13 @@ export function ReviewCommentComposerSheet(props: ReviewCommentComposerSheetProp
   }
 
   const handleSubmit = () => {
-    if (!target || !environmentId || !threadId || commentText.trim().length === 0) {
+    if (
+      !target ||
+      !environmentId ||
+      !threadId ||
+      commentText.trim().length === 0 ||
+      loadingImages.current > 0
+    ) {
       return;
     }
 
@@ -258,7 +284,7 @@ export function ReviewCommentComposerSheet(props: ReviewCommentComposerSheetProp
               </Text>
               <View className="min-h-[132px] flex-1 overflow-hidden rounded-[20px] border border-border bg-card">
                 <View className="min-h-0 flex-1 px-4 pt-3.5">
-                  <TextInputWrapper onPaste={handleNativePaste} style={{ flex: 1, minHeight: 0 }}>
+                  <TextInputWrapper {...paste} style={{ flex: 1, minHeight: 0 }}>
                     <TextInput
                       autoFocus
                       multiline

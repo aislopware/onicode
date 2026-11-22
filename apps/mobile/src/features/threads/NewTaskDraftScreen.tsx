@@ -280,6 +280,14 @@ export function NewTaskDraftScreen(props: {
     });
   const queuesInsteadOfStarting = !environmentConnected || attachmentsUploading;
   const promptInputRef = useRef<ComposerEditorHandle>(null);
+  const mountedRef = useRef(true);
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- a start held for a pasted image can finish after this screen unmounted, and must not navigate then
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
   const loadedBranchesProjectKeyRef = useRef<string | null>(null);
   const [isReturningToProjectPicker, setIsReturningToProjectPicker] = useState(false);
   const incomingShare = props.incomingShareId ? getShare(props.incomingShareId) : null;
@@ -712,11 +720,14 @@ export function NewTaskDraftScreen(props: {
       return null;
     }
     promptInputRef.current?.blur();
-    navigation.dispatch(
-      CommonActions.setParams(
-        submittedThreadParams(String(message.environmentId), String(message.threadId)),
-      ),
-    );
+    // Left while its image converted: the route is gone or shows another draft now.
+    if (mountedRef.current) {
+      navigation.dispatch(
+        CommonActions.setParams(
+          submittedThreadParams(String(message.environmentId), String(message.threadId)),
+        ),
+      );
+    }
     // The composer has moved to the submitted thread; a pick still converting
     // would otherwise resurrect this draft.
     abortComposerDraftOperations(draftKey);

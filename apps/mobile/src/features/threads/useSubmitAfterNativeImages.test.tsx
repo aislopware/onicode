@@ -417,20 +417,21 @@ it("keeps a held send after the composer unmounts, shows it on return, and drops
   expect(state.onSubmit).toHaveBeenCalledOnce();
 });
 
-it("sends a send left while away from the composer that comes back, not the one that left", async () => {
+it("sends a send left while away once its images land, unless the thread screen must send it", async () => {
   using state = setup();
   const paste = state.queue.pasteImages(["image"]);
-  await act(async () => void state.queue.deferSend());
+  const settings = { ...SHOWN, runtimeMode: "approval-required" as const };
+  await act(async () => void state.queue.deferSend("steer", settings));
   state.unmount();
-  await state.finish(true);
-  await paste;
-  expect(state.onSubmit).not.toHaveBeenCalled();
   // Split view opens another thread in its place; that composer leaves it alone.
   state.remount("other");
   expect(state.queue.held).toBeNull();
-  expect(state.onSubmit).not.toHaveBeenCalled();
+  await state.finish(true);
+  await paste;
+  expect(state.onSubmit).toHaveBeenCalledExactlyOnceWith("steer", [], settings);
   state.unmount();
   state.remount("draft");
+  expect(state.queue.held).toBeNull();
   expect(state.onSubmit).toHaveBeenCalledOnce();
 
   // Its images joined while another blocker held it.
@@ -455,6 +456,28 @@ it("sends a send left while away from the composer that comes back, not the one 
   await state.finish(true);
   await early;
   expect(state.onSubmit).toHaveBeenCalledTimes(2);
+
+  // A blocker when it left, or an approval it answers, waits for the composer to come back.
+  state.setBlocked(true);
+  const waiting = state.queue.pasteImages(["waiting"]);
+  await act(async () => void state.queue.deferSend());
+  state.unmount();
+  await state.finish(true);
+  await waiting;
+  expect(state.onSubmit).toHaveBeenCalledTimes(2);
+  state.setBlocked(false, { render: false });
+  state.remount();
+  expect(state.onSubmit).toHaveBeenCalledTimes(3);
+  state.setApprovalIds(["seen"]);
+  const redirect = state.queue.pasteImages(["redirect"]);
+  await act(async () => void state.queue.deferSend());
+  state.unmount();
+  await state.finish(true);
+  await redirect;
+  expect(state.onSubmit).toHaveBeenCalledTimes(3);
+  state.remount();
+  expect(state.onSubmit).toHaveBeenLastCalledWith(undefined, ["seen"], SHOWN);
+  expect(state.onSubmit).toHaveBeenCalledTimes(4);
 });
 
 it("hands a left send to a composer still showing its draft", async () => {
@@ -470,12 +493,13 @@ it("hands a left send to a composer still showing its draft", async () => {
   expect(state.onSubmit).toHaveBeenCalledOnce();
 });
 
-it("keeps a send whose images land in the batch that unmounts its composer", async () => {
+it("sends a send whose images land in the batch that unmounts its composer", async () => {
   using state = setup();
   const paste = state.queue.pasteImages(["image"]);
   await act(async () => void state.queue.deferSend());
   await state.finishAndUnmount(true);
   await paste;
+  expect(state.onSubmit).toHaveBeenCalledOnce();
   state.remount();
   expect(state.onSubmit).toHaveBeenCalledOnce();
 });
