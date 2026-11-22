@@ -3232,3 +3232,4 @@ c585a58598	take	fix(mobile): prevent clipped percentages in usage limit cards (#
 a8363dad7f	take	fix(web): keybindings using '+' show a plus keycap instead of empty pills (#40808)
 d27d29fe2d	take	conflict: kept Onicode's Show more button styling (row-highlight tokens), took upstream's focus handling
 4868aeb03d	take	conflicts: kept Onicode's imports and patch list (newer versions, no Clerk/alchemy patches), added the @legendapp/list patch; lockfile regenerated with vp i
+aa0a8513aa	take	perf(dev): incremental, cached server typecheck like web and desktop (#30879)
