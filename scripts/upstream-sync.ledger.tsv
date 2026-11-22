@@ -3218,3 +3218,4 @@ c3a330d834	take	taken; threadCanSteer takes Onicode's optional steersAfterCompac
 c198f73b37	take	taken as is
 379a98ac22	take	conflict resolved: host-only MAC skip combined with Onicode's tailnetOnly filter
 418e1ace0f	take	fix(server): Word text boxes keep their paragraph breaks for agents (#40782)
+356dff3352	take	fix(web): RTF previews respect hidden character formatting (#40783)
