@@ -72,6 +72,7 @@ import {
   isNativeCommandMessage,
   leavesNotesForNextPrompt,
   mayBeNativeCommandMessage,
+  notesWaitingMessageIds,
   withInlineContext,
 } from "./ContextHandoffDelivery.ts";
 import { isProviderCommand, outputInstructions } from "./runOutput.ts";
@@ -1083,9 +1084,7 @@ export const layer: Layer.Layer<
       );
       let compactionMessageIdSet: ReadonlySet<string> | undefined;
       const compactionMessageIds = () =>
-        (compactionMessageIdSet ??= new Set(
-          projection.messages.filter(notesWait).map((candidate) => candidate.id),
-        ));
+        (compactionMessageIdSet ??= notesWaitingMessageIds(session, projection));
       const restartCancelledWork = pendingRestartCancelledBackgroundWork({
         runs: projection.runs,
         providerTurns: projection.providerTurns,
@@ -1119,7 +1118,7 @@ export const layer: Layer.Layer<
                 ["subagents"],
                 {
                   subagentRunIds: stoppedRunIds,
-                  subagentsCompletedSince: stoppedNoteToldAt(history),
+                  stoppedSubagents: { endedSince: stoppedNoteToldAt(history) },
                 },
               );
               return pendingStoppedDelegatedTasks({ ...history, subagents });
@@ -1374,14 +1373,12 @@ export const layer: Layer.Layer<
           // until a later run's is accepted. Slash command starts carry none. A missed run's
           // own accepted attempt predates its unsent steering input, so it does not count.
           const runsById = new Map(projection.runs.map((source) => [source.id, source]));
-          const messagesById = new Map(projection.messages.map((message) => [message.id, message]));
           let lastPromptOrdinal = 0;
           for (const attempt of acceptedAttempts) {
             if (missedRunIds.has(attempt.runId)) continue;
             const source = runsById.get(attempt.runId);
             if (source === undefined) continue;
-            const message = messagesById.get(source.userMessageId);
-            if (message !== undefined && notesWait(message)) continue;
+            if (compactionMessageIds().has(source.userMessageId)) continue;
             lastPromptOrdinal = Math.max(lastPromptOrdinal, source.ordinal);
           }
           const attachments = missedHistory.flatMap((item) =>
