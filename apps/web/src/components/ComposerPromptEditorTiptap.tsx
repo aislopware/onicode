@@ -1249,6 +1249,15 @@ function ComposerPromptEditorTiptapInner(
       editable: !disabled,
       editorProps: {
         attributes: editorAttributes,
+        // A modifier-click would node-select the nearest selectable ancestor (quote, list item).
+        handleClickOn: (view, pos, node, _nodePos, event, direct) => {
+          if (!direct || node.isAtom || !(event.metaKey || event.ctrlKey)) return false;
+          const $pos = view.state.doc.resolve(pos);
+          view.dispatch(
+            view.state.tr.setSelection(TextSelection.between($pos, $pos)).setMeta("pointer", true),
+          );
+          return true;
+        },
         handleDOMEvents: {
           // Composer commands keep precedence; otherwise true skips the editor's keymaps without
           // preventDefault, so a bound app command still runs.

@@ -16,7 +16,7 @@ type TextPart = string | typeof CELL_START | typeof CELL_END | { fallback: strin
 const TRUNCATED = "\n\n[Extracted text truncated at document extraction limits.]";
 // Parts the document never displays: the XHTML head, tracked deletions and moves, field codes,
 // phonetic guides, paragraph properties such as tab-stop definitions, drawing anchor layout
-// values and encoded field data.
+// values, encoded field data and inert HTML templates.
 const HIDDEN = new Set([
   "head",
   "script",
@@ -34,6 +34,7 @@ const HIDDEN = new Set([
   "sizeRelH",
   "sizeRelV",
   "fldData",
+  "template",
   // An OpenDocument index keeps its templates beside the generated index; only the latter is content.
   "table-of-content-source",
   "illustration-index-source",
@@ -161,10 +162,15 @@ function hasInlineTab(node: XmlNode, names: readonly string[]): boolean {
     (names.includes(node.name) || children(node).some((child) => hasInlineTab(child, names)))
   );
 }
-function* all(node: XmlNode, name: string | readonly string[]): Generator<XmlNode, void> {
+function* all(
+  node: XmlNode,
+  name: string | readonly string[],
+  skip?: ReadonlySet<string>,
+): Generator<XmlNode, void> {
   for (const child of children(node)) {
+    if (skip?.has(child.name)) continue;
     if (typeof name === "string" ? child.name === name : name.includes(child.name)) yield child;
-    else yield* all(child, name);
+    else yield* all(child, name, skip);
   }
 }
 function* text(node: XmlNode): Generator<string, void> {
@@ -275,9 +281,9 @@ function hasCellText(cell: XmlNode): boolean {
 }
 function* table(node: XmlNode): Generator<TextPart, void> {
   let rowCount = 0;
-  for (const row of all(node, ["tr", "table-row"])) {
+  for (const row of all(node, ["tr", "table-row"], HIDDEN)) {
     // Word nests a cell inside w:sdt when a content control wraps the whole cell.
-    const cells = [...all(row, ["tc", "table-cell", "covered-table-cell", "td", "th"])];
+    const cells = [...all(row, ["tc", "table-cell", "covered-table-cell", "td", "th"], HIDDEN)];
     // ODS writers pad sheets with repeated empty rows and trailing cells.
     while (cells.length && !hasCellText(cells.at(-1)!)) cells.pop();
     if (!cells.length) continue;
@@ -435,19 +441,32 @@ function* notebook(source: string): Generator<string, void> {
   }
 }
 
-// Per-byte decoding only supports the single-byte \fcharset values.
+// \fcharset values mapped to the Windows code page that encodes them.
 const FONT_CODE_PAGES = new Map([
-  [77, "macintosh"],
-  [161, "windows-1253"],
-  [162, "windows-1254"],
-  [163, "windows-1258"],
-  [177, "windows-1255"],
-  [178, "windows-1256"],
-  [186, "windows-1257"],
-  [204, "windows-1251"],
-  [222, "windows-874"],
-  [238, "windows-1250"],
+  [77, 10000],
+  [128, 932],
+  [129, 949],
+  [134, 936],
+  [136, 950],
+  [161, 1253],
+  [162, 1254],
+  [163, 1258],
+  [177, 1255],
+  [178, 1256],
+  [186, 1257],
+  [204, 1251],
+  [222, 874],
+  [238, 1250],
 ]);
+const CODE_PAGES = new Map([
+  [932, "shift_jis"],
+  [936, "gbk"],
+  [949, "euc-kr"],
+  [950, "big5"],
+  [10000, "macintosh"],
+]);
+const codePage = (value: number) =>
+  value === 874 || (value >= 1250 && value <= 1258) ? `windows-${value}` : CODE_PAGES.get(value);
 
 function* rtf(source: string): Generator<string, void> {
   if (!source.startsWith("{\\rtf")) throw new Error("Invalid RTF document");
@@ -460,10 +479,25 @@ function* rtf(source: string): Generator<string, void> {
     decoder: new TextDecoder("windows-1252"),
   };
   const stack: Array<typeof state> = [];
-  // A font's \fcharset, not the document code page, encodes the bytes written in that font.
-  const fonts = new Map<number, typeof state.decoder>();
+  // A font's \cpg, else its \fcharset, not the document code page, encodes its bytes.
+  const fontCodePages = new Map<number, typeof state.decoder>();
+  const fontCharsets = new Map<number, typeof state.decoder>();
   let defaultFont = 0;
-  const decoder = () => fonts.get(state.font) ?? state.decoder;
+  const decoder = () =>
+    fontCodePages.get(state.font) ?? fontCharsets.get(state.font) ?? state.decoder;
+  // A multibyte character spans consecutive bytes, so the decoder streams until the run ends.
+  let run: typeof state.decoder | undefined;
+  const byte = (value: number) => {
+    const current = decoder();
+    const rest = run && run !== current ? run.decode() : "";
+    run = current;
+    return rest + current.decode(Uint8Array.of(value), { stream: true });
+  };
+  const endRun = () => {
+    const rest = run?.decode() ?? "";
+    run = undefined;
+    return rest;
+  };
   const hidden = () => state.skip || state.deleted;
   const symbols = new Map([
     ["endash", "–"],
@@ -487,6 +521,14 @@ function* rtf(source: string): Generator<string, void> {
   let fallback = 0;
   for (let i = 0; i < source.length; i++) {
     const char = source[i]!;
+    if (
+      run &&
+      char.charCodeAt(0) < 128 &&
+      char !== "\n" &&
+      char !== "\r" &&
+      !source.startsWith("\\'", i)
+    )
+      yield endRun();
     if (char === "{" || char === "}") fallback = 0;
     if (char === "{") {
       stack.push({ ...state });
@@ -498,7 +540,7 @@ function* rtf(source: string): Generator<string, void> {
       const word = /^([a-z]+)(-?\d+)? ?/i.exec(rest);
       if (hex) {
         if (fallback) fallback--;
-        else if (!hidden()) yield decoder().decode(Uint8Array.of(Number.parseInt(hex[1]!, 16)));
+        else if (!hidden()) yield byte(Number.parseInt(hex[1]!, 16));
         i += 3;
       } else if (word) {
         i += word[0].length;
@@ -537,23 +579,27 @@ function* rtf(source: string): Generator<string, void> {
         else if (control === "deff") state.font = defaultFont = value;
         else if (control === "f") {
           state.font = value;
-          if (state.fontTable) fonts.delete(value);
+          if (state.fontTable) {
+            fontCodePages.delete(value);
+            fontCharsets.delete(value);
+          }
         } else if (control === "fcharset" && state.fontTable) {
-          const codePage = FONT_CODE_PAGES.get(value);
-          if (codePage) fonts.set(state.font, new TextDecoder(codePage));
+          const label = codePage(FONT_CODE_PAGES.get(value) ?? 0);
+          if (label) fontCharsets.set(state.font, new TextDecoder(label));
+        } else if (control === "cpg" && state.fontTable) {
+          const label = codePage(value);
+          if (label) fontCodePages.set(state.font, new TextDecoder(label));
         }
         if (control === "deleted") state.deleted = value !== 0;
         else if (control === "plain") {
           state.deleted = false;
           state.font = defaultFont;
         }
-        if (control === "mac" || (control === "ansicpg" && value === 10000))
-          state.decoder = new TextDecoder("macintosh");
+        if (control === "mac") state.decoder = new TextDecoder("macintosh");
         else if (control === "ansicpg") {
-          // Per-byte decoding only supports single-byte Windows code pages.
-          if (value !== 874 && (value < 1250 || value > 1258))
-            throw new Error("Unsupported RTF code page");
-          state.decoder = new TextDecoder(`windows-${value}`, { fatal: true });
+          const label = codePage(value);
+          if (!label) throw new Error("Unsupported RTF code page");
+          state.decoder = new TextDecoder(label, { fatal: true });
         } else if (control === "uc") {
           if (!Number.isSafeInteger(value) || value < 0)
             throw new Error("Invalid RTF fallback count");
@@ -579,10 +625,10 @@ function* rtf(source: string): Generator<string, void> {
       }
     } else if (char !== "\n" && char !== "\r") {
       if (fallback) fallback--;
-      else if (!hidden())
-        yield char.charCodeAt(0) < 128 ? char : decoder().decode(Uint8Array.of(char.charCodeAt(0)));
+      else if (!hidden()) yield char.charCodeAt(0) < 128 ? char : byte(char.charCodeAt(0));
     }
   }
+  yield endRun();
 }
 
 async function* document(path: string, extension: string): AsyncGenerator<TextPart, void> {

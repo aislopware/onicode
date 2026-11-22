@@ -18,10 +18,13 @@ export function useLocalDispatchState(input: {
   activePendingUserInput: RuntimeRequestId | null;
   threadError: string | null | undefined;
 }) {
-  const [localDispatch, setLocalDispatch] = useState<LocalDispatchSnapshot | null>(null);
+  const threadId = input.activeThread?.id ?? null;
+  const [storedDispatch, setLocalDispatch] = useState<LocalDispatchSnapshot | null>(null);
+  // ChatView stays mounted across threads, and a detached send still holds its own thread's setters.
+  const localDispatch = storedDispatch?.threadId === threadId ? storedDispatch : null;
 
   const resetLocalDispatch = () => {
-    setLocalDispatch(null);
+    setLocalDispatch((current) => (current?.threadId === threadId ? null : current));
   };
 
   const serverAcknowledgedLocalDispatch = hasServerAcknowledgedLocalDispatch({
@@ -41,7 +44,8 @@ export function useLocalDispatchState(input: {
   }) => {
     const preparingWorktree = Boolean(options?.preparingWorktree);
     setLocalDispatch((current) => {
-      const active = serverAcknowledgedLocalDispatch ? null : current;
+      const active =
+        serverAcknowledgedLocalDispatch || current?.threadId !== threadId ? null : current;
       if (active) {
         const submissionIntent = options?.submissionIntent ?? active.submissionIntent;
         return active.preparingWorktree === preparingWorktree &&

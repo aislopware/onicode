@@ -54,8 +54,39 @@ export function isHeicImageFile(file: Pick<File, "name" | "type">): boolean {
 }
 
 interface HeicMetadataBox {
+  type: number;
   payloadOffset: number;
   endOffset: number;
+}
+
+function* heicMetadataBoxes(
+  view: DataView,
+  startOffset: number,
+  endOffset: number,
+): Generator<HeicMetadataBox> {
+  let offset = startOffset;
+  while (offset + 8 <= endOffset) {
+    let size = view.getUint32(offset);
+    let headerSize = 8;
+    if (size === 1) {
+      if (offset + 16 > endOffset) return;
+      const extendedSize = view.getBigUint64(offset + 8);
+      if (extendedSize > BigInt(Number.MAX_SAFE_INTEGER)) return;
+      size = Number(extendedSize);
+      headerSize = 16;
+    } else if (size === 0) {
+      size = endOffset - offset;
+    }
+    if (size < headerSize || size > endOffset - offset) return;
+
+    const nextOffset = offset + size;
+    yield {
+      type: view.getUint32(offset + 4),
+      payloadOffset: offset + headerSize,
+      endOffset: nextOffset,
+    };
+    offset = nextOffset;
+  }
 }
 
 function findHeicMetadataBox(
@@ -64,28 +95,48 @@ function findHeicMetadataBox(
   endOffset: number,
   type: number,
 ): HeicMetadataBox | null {
-  let offset = startOffset;
-  while (offset + 8 <= endOffset) {
-    let size = view.getUint32(offset);
-    let headerSize = 8;
-    if (size === 1) {
-      if (offset + 16 > endOffset) return null;
-      const extendedSize = view.getBigUint64(offset + 8);
-      if (extendedSize > BigInt(Number.MAX_SAFE_INTEGER)) return null;
-      size = Number(extendedSize);
-      headerSize = 16;
-    } else if (size === 0) {
-      size = endOffset - offset;
-    }
-    if (size < headerSize || size > endOffset - offset) return null;
-
-    const nextOffset = offset + size;
-    if (view.getUint32(offset + 4) === type) {
-      return { payloadOffset: offset + headerSize, endOffset: nextOffset };
-    }
-    offset = nextOffset;
+  for (const box of heicMetadataBoxes(view, startOffset, endOffset)) {
+    if (box.type === type) return box;
   }
   return null;
+}
+
+/** 1-based `ipco` indexes that `ipma` associates with the `pitm` item */
+function heicPrimaryItemProperties(
+  view: DataView,
+  meta: HeicMetadataBox,
+  properties: HeicMetadataBox,
+): number[] {
+  const pitm = findHeicMetadataBox(view, meta.payloadOffset + 4, meta.endOffset, 0x7069746d);
+  if (!pitm || pitm.payloadOffset + 6 > pitm.endOffset) return [];
+  const wideItem = view.getUint8(pitm.payloadOffset) !== 0;
+  if (wideItem && pitm.payloadOffset + 8 > pitm.endOffset) return [];
+  const primary = wideItem
+    ? view.getUint32(pitm.payloadOffset + 4)
+    : view.getUint16(pitm.payloadOffset + 4);
+  const indexes: number[] = [];
+  for (const ipma of heicMetadataBoxes(view, properties.payloadOffset, properties.endOffset)) {
+    if (ipma.type !== 0x69706d61) continue;
+    if (ipma.payloadOffset + 8 > ipma.endOffset) return [];
+    const itemSize = view.getUint8(ipma.payloadOffset) < 1 ? 2 : 4;
+    const indexSize = view.getUint8(ipma.payloadOffset + 3) & 1 ? 2 : 1;
+    let offset = ipma.payloadOffset + 8;
+    for (let entry = view.getUint32(ipma.payloadOffset + 4); entry > 0; entry -= 1) {
+      if (offset + itemSize + 1 > ipma.endOffset) return [];
+      const item = itemSize === 2 ? view.getUint16(offset) : view.getUint32(offset);
+      const end = offset + itemSize + 1 + view.getUint8(offset + itemSize) * indexSize;
+      if (end > ipma.endOffset) return [];
+      if (item === primary) {
+        for (let index = offset + itemSize + 1; index < end; index += indexSize) {
+          const association = indexSize === 2 ? view.getUint16(index) : view.getUint8(index);
+          // The top bit marks the property essential.
+          indexes.push(association & (indexSize === 2 ? 0x7fff : 0x7f));
+        }
+      }
+      offset = end;
+    }
+  }
+  return indexes;
 }
 
 // D50-adapted Display P3 primaries, as an ICC profile's rXYZ, gXYZ and bXYZ tags carry them.
@@ -148,30 +199,27 @@ async function readHeicMetadata(file: File): Promise<HeicMetadataResult> {
   );
   if (!containers) return unreadable;
 
-  let offset = containers.payloadOffset;
-  let foundImageDimensions = false;
-  while (offset < containers.endOffset) {
-    const image = findHeicMetadataBox(view, offset, containers.endOffset, 0x69737065);
-    if (!image) break;
+  const propertyBoxes = [
+    ...heicMetadataBoxes(view, containers.payloadOffset, containers.endOffset),
+  ];
+  const images = propertyBoxes.filter((box) => box.type === 0x69737065);
+  if (images.length === 0) return unreadable;
+  for (const image of images) {
     if (image.payloadOffset + 12 > image.endOffset) return unreadable;
     const width = view.getUint32(image.payloadOffset + 4);
     const height = view.getUint32(image.payloadOffset + 8);
     if (width === 0 || height === 0) return unreadable;
     if (width > MAX_HEIC_DECODE_PIXELS / height) return { ok: false, reason: "too-large" };
-    foundImageDimensions = true;
-    offset = image.endOffset;
   }
-  if (!foundImageDimensions) return unreadable;
 
-  let displayP3 = false;
-  offset = containers.payloadOffset;
-  while (!displayP3 && offset < containers.endOffset) {
-    const color = findHeicMetadataBox(view, offset, containers.endOffset, 0x636f6c72);
-    if (!color) break;
-    displayP3 = heicColorIsDisplayP3(view, color);
-    offset = color.endOffset;
-  }
-  return { ok: true, displayP3 };
+  const isColor = (box: HeicMetadataBox | undefined): box is HeicMetadataBox =>
+    box?.type === 0x636f6c72;
+  const primaryColors = heicPrimaryItemProperties(view, meta, properties)
+    .map((index) => propertyBoxes[index - 1])
+    .filter(isColor);
+  // Without a color association on the primary item, any color property decides.
+  const colors = primaryColors.length > 0 ? primaryColors : propertyBoxes.filter(isColor);
+  return { ok: true, displayP3: colors.some((color) => heicColorIsDisplayP3(view, color)) };
 }
 
 async function inflateIccProfile(deflated: Uint8Array<ArrayBuffer>): Promise<Uint8Array | null> {

@@ -669,7 +669,18 @@ const make = Effect.gen(function* () {
         Effect.gen(function* () {
           const customConfig = yield* loadWritableCustomKeybindingsConfig();
           const rule = keybindingRuleFromInput(input);
-          const replaceTarget = replaceTargetFromUpsertInput(input);
+          const requestedReplaceTarget = replaceTargetFromUpsertInput(input);
+          // Settings sends an edit to every environment; where its target never existed, it is an add.
+          const replaceTarget =
+            requestedReplaceTarget &&
+            (customConfig.some(
+              ({ rule: entry }) => entry && isSameKeybindingRule(entry, requestedReplaceTarget),
+            ) ||
+              DEFAULT_KEYBINDINGS.some((entry) =>
+                isSameKeybindingRule(entry, requestedReplaceTarget),
+              ))
+              ? requestedReplaceTarget
+              : null;
           // A saved rule overrides every inherited default for its command.
           let siblingDefaults: ReadonlyArray<KeybindingRule> = [];
           if (

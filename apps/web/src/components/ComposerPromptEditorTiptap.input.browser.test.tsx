@@ -711,17 +711,28 @@ it("reopens a long draft scrolled to its caret without taking focus", async () =
   expect(caret.bottom).toBeLessThanOrEqual(scroller.getBoundingClientRect().bottom - 48 + 1);
 });
 
-it("does not outline the line under a click made with the node-select modifier held", async () => {
-  await using screen = await mountEditor("ship it");
-  const { editor } = screen;
-  const paragraph = editor.view.dom.querySelector("p")!;
-  const mod = isMacPlatform(navigator.platform) ? "Meta" : "Control";
-  await userEvent.keyboard(`{${mod}>}`);
-  await userEvent.click(paragraph);
-  await userEvent.keyboard(`{/${mod}}`);
-  await vi.waitFor(() => expect(document.activeElement).toBe(editor.view.dom));
-  expect(getComputedStyle(paragraph).outlineStyle).toBe("none");
-});
+it.each([
+  { name: "a plain line", value: "ship it" },
+  { name: "a line in a quote", value: "> line one\n> line two" },
+  { name: "a list item", value: "- one\n- two" },
+])(
+  "does not select the block under a click on $name made with the node-select modifier held",
+  async ({ value }) => {
+    await using screen = await mountEditor(value);
+    const { editor } = screen;
+    const paragraph = [...editor.view.dom.querySelectorAll("p")].at(-1)!;
+    const mod = isMacPlatform(navigator.platform) ? "Meta" : "Control";
+    await userEvent.keyboard(`{${mod}>}`);
+    await userEvent.click(paragraph);
+    await userEvent.keyboard(`{/${mod}}`);
+    await vi.waitFor(() => expect(document.activeElement).toBe(editor.view.dom));
+    expect(editor.state.selection).not.toBeInstanceOf(NodeSelection);
+    expect(getComputedStyle(paragraph).outlineStyle).toBe("none");
+    await userEvent.keyboard("X");
+    await vi.waitFor(() => expect(serializeEditorDoc(editor.state.doc).value).toContain("X"));
+    expect(serializeEditorDoc(editor.state.doc).value.replace("X", "")).toBe(value);
+  },
+);
 
 describe("Markdown markers around styled text", () => {
   it.each([

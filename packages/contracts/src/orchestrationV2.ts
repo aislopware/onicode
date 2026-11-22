@@ -19,6 +19,7 @@ import {
   MessageId,
   EnvironmentId,
   NodeId,
+  ForwardCompatibleNullable,
   ForwardCompatibleUnion,
   ForwardCompatibleUnionArray,
   hasUnknownUnionTag,
@@ -463,9 +464,7 @@ export type OrchestrationV2ThreadOpens = typeof OrchestrationV2ThreadOpens.Type;
 
 // Open stats only rank search results, so a value this build cannot read (an
 // older or newer shape) becomes null instead of failing the whole thread.
-const LenientThreadOpens = Schema.NullOr(OrchestrationV2ThreadOpens).pipe(
-  Schema.catchDecoding(() => Effect.succeedSome(null)),
-);
+const LenientThreadOpens = ForwardCompatibleNullable(OrchestrationV2ThreadOpens);
 
 const OrchestrationV2LastTitleRegeneration = Schema.Struct({
   ...ThreadTitleRegenerationOutcome.fields,

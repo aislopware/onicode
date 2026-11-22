@@ -1,5 +1,5 @@
-import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
+import * as SchemaTransformation from "effect/SchemaTransformation";
 
 import { TrimmedNonEmptyString } from "./baseSchemas.ts";
 
@@ -12,7 +12,18 @@ export const ThreadTag = TrimmedNonEmptyString.check(
 );
 export type ThreadTag = typeof ThreadTag.Type;
 
-/** Tags read back from storage or a peer. Lenient so a later tag rule never fails a whole thread. */
-export const StoredThreadTags = Schema.Array(Schema.String).pipe(
-  Schema.catchDecoding(() => Effect.succeedSome([])),
+const isStringArray = Schema.is(Schema.Array(Schema.String));
+
+/**
+ * Tags read back from storage or a peer. Lenient so a later tag shape never fails a whole thread.
+ * A transform from Unknown, not catchDecoding, which RPC Exit wire codecs drop.
+ */
+export const StoredThreadTags = Schema.Unknown.pipe(
+  Schema.decodeTo(
+    Schema.Array(Schema.String),
+    SchemaTransformation.transform<ReadonlyArray<string>, unknown>({
+      decode: (raw) => (isStringArray(raw) ? raw : []),
+      encode: (tags) => tags,
+    }),
+  ),
 );

@@ -364,6 +364,27 @@ describe("question answer paths", () => {
       String.raw`{\rtf1\ansi{\fonttbl{\f0\fcharset178 A;}{\f0\fcharset0 B;}{\f1\fcharset0 C;}{\f2\fcharset178 D;}{\f2 E;}}{\stylesheet{\s0\f1\fcharset178 N;}}\f0 \'e3\f1\'e3\f2\'e3}`,
       "ããã",
     ],
+    [
+      "Shift_JIS font character set",
+      String.raw`{\rtf1\ansi\ansicpg1252{\fonttbl{\f0\fcharset128 MS Mincho;}}\f0 \'82\'a0}`,
+      "あ",
+    ],
+    [
+      "multibyte font character sets",
+      String.raw`{\rtf1\ansi{\fonttbl{\f0\fcharset136 MingLiU;}{\f1\fcharset134 SimSun;}{\f2\fcharset129 Batang;}}\f0\'a4\'a4\f1\'d6\'d0\f2\'c7\'d1}`,
+      "中中한",
+    ],
+    [
+      "font code page over character set",
+      String.raw`{\rtf1\ansi{\fonttbl{\f0\fcharset204\cpg1252 A;}{\f1\cpg1252\fcharset204 B;}{\f2\fcharset204 C;}}\f0\'c0\f1\'c0\f2\'c0}`,
+      "ÀÀА",
+    ],
+    [
+      "Shift_JIS document code page",
+      String.raw`{\rtf1\ansi\ansicpg932 \'93\'fa
+\'96\'7b}`,
+      "日本",
+    ],
     ["destination symbol", String.raw`{\rtf1\ansi\u945\*Z}`, "αZ"],
     ["multiple units", String.raw`{\rtf1\ansi\uc4\u945?\tab\'3f\~Z}`, "αZ"],
     ["binary unit", String.raw`{\rtf1\ansi\u945\bin3 abcZ}`, "αZ"],
@@ -793,7 +814,7 @@ describe("question answer paths", () => {
               '<package><item id="bad" href="bad.xhtml"/><item id="good" href="good.xhtml"/><itemref idref="bad"/><itemref idref="good"/></package>',
             "bad.xhtml": "<html><p>Discard this broken chapter</html>",
             "good.xhtml":
-              '<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd"><html><p>North&nbsp;Harbor &NotEqualTilde; &CounterClockwiseContourIntegral; &amp; &lt;tag&gt; &quot;quoted&quot;</p><p><![CDATA[Literal &nbsp;]]></p><table><tr><td>&nbsp; </td></tr><tr><td>Kept&nbsp;cell</td></tr></table></html>',
+              '<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd"><html><p>North&nbsp;Harbor &NotEqualTilde; &CounterClockwiseContourIntegral; &amp; &lt;tag&gt; &quot;quoted&quot;</p><p><![CDATA[Literal &nbsp;]]></p><table><tr><td>&nbsp; </td></tr><template><tr><td>Stale row</td></tr></template><tr><td>Kept&nbsp;cell</td><template><td>Stale cell</td></template></tr></table></html>',
           },
           expected: [
             "## Chapter 2",
@@ -802,7 +823,7 @@ describe("question answer paths", () => {
             "Kept cell",
             "[Skipped document part: bad.xhtml (missing or invalid XML).]",
           ],
-          absent: ["Discard this broken chapter", "[Extracted text truncated"],
+          absent: ["Discard this broken chapter", "Stale", "[Extracted text truncated"],
         },
         ...["pptx", "xlsx"].map((ext) => ({
           ext,
@@ -1501,7 +1522,7 @@ describe("question answer paths", () => {
       const deepLimited = yield* Effect.promise(() => extractDocumentText(deepPath, ".rtf"));
       expect(deepLimited).toBe("Kept\n\n[Extracted text truncated at document extraction limits.]");
       const unsupportedPath = NodePath.join(config.attachmentsDir, "unsupported-codepage.rtf");
-      NodeFS.writeFileSync(unsupportedPath, String.raw`{\rtf1\ansi\ansicpg932 \'82\'a0}`);
+      NodeFS.writeFileSync(unsupportedPath, String.raw`{\rtf1\ansi\ansicpg437 \'82}`);
       yield* Effect.promise(async () => {
         await expect(extractDocumentText(unsupportedPath, ".rtf")).rejects.toThrow(
           "Unsupported RTF code page",

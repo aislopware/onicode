@@ -108,6 +108,7 @@ import {
   approvalRedirectNotice,
   type SendAtPress,
   composerDraftContentChanged,
+  composerPanelCommand,
   loadBalancingSendWarning,
   multipleModelSendBlock,
   referencedThreadContexts,
@@ -445,13 +446,20 @@ export function useComposerSend(input: ComposerSendInput) {
     // What the user pressed send on; uploads below can take a while, and a redirect must not
     // decline approvals for a draft that changed meanwhile.
     const promptAtSend = detachedOverride ? detachedOverride.prompt : promptRef.current;
-    if (
-      usageLimitsOffered &&
-      usageLimitsKey !== null &&
-      !directAnnotation &&
-      !draftHasNonPromptContent(composerDraftTarget) &&
-      isUsageLimitsCommand(promptAtSend)
-    ) {
+    const panelOnlyPrompt = !directAnnotation && !draftHasNonPromptContent(composerDraftTarget);
+    const panelCommand = composerPanelCommand({
+      usageLimits:
+        panelOnlyPrompt &&
+        usageLimitsOffered &&
+        usageLimitsKey !== null &&
+        isUsageLimitsCommand(promptAtSend),
+      sessionView: panelOnlyPrompt
+        ? providerSessionViewForPrompt(promptAtSend, providerSessionViews)
+        : null,
+      detached: detachedOverride !== undefined,
+    });
+    if (panelCommand?.type === "keep-draft") return;
+    if (panelCommand?.type === "usage-limits") {
       if (openUsageLimits()) {
         setComposerDraftPrompt(composerDraftTarget, "");
         if (currentRouteThreadKeyRef.current === routeThreadKey) {
@@ -461,16 +469,11 @@ export function useComposerSend(input: ComposerSendInput) {
       }
       return;
     }
-    const sessionView = directAnnotation
-      ? null
-      : providerSessionViewForPrompt(promptAtSend, providerSessionViews);
-    if (sessionView !== null && !draftHasNonPromptContent(composerDraftTarget)) {
-      // The view opens on the thread on screen, so a command dictated elsewhere stays in its draft.
-      if (detachedOverride) return;
+    if (panelCommand?.type === "session-view") {
       promptRef.current = "";
       setComposerDraftPrompt(composerDraftTarget, "");
       composerRef.current?.resetCursorState();
-      openProviderSessionView(sessionView);
+      openProviderSessionView(panelCommand.view);
       return;
     }
 
