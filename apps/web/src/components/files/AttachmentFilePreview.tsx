@@ -48,6 +48,7 @@ import {
   FileSurfaceLoading,
   FileSurfaceNotice,
 } from "./fileSurfaceChrome";
+import { lineCutMarkdown, useMoreCharactersLabel } from "./shownText";
 
 const LargeTextViewer = lazy(() => import("./LargeTextViewer"));
 
@@ -131,6 +132,7 @@ export function AttachmentFilePreview(props: {
     props.asset && "attachmentId" in props.asset ? props.asset.attachmentId : undefined;
   const gt = useGT();
   const messages = useMessages();
+  const more = useMoreCharactersLabel();
   const { copyToClipboard, isCopied } = useCopyToClipboard({
     target: namedClipboardTarget(props.name),
   });
@@ -317,7 +319,7 @@ export function AttachmentFilePreview(props: {
     ) : kind === "markdown" && rendered ? (
       <ScrollArea className="min-h-0 flex-1">
         <ChatMarkdown
-          text={maskMarkdownFrontmatter(content.text)}
+          text={lineCutMarkdown(maskMarkdownFrontmatter(content.text), more)}
           cwd={undefined}
           className="mx-auto max-w-4xl px-6 py-5"
         />
