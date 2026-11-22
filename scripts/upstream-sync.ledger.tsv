@@ -3269,3 +3269,4 @@ f10e1eb382	take	taken as is
 344de5fe8e	take	fix(antigravity): bound silent post-settle background command holds
 5ddcc2598d	take	fix(desktop): WSL is not offered or started when only the Windows install stub exists
 ad446450e1	take	fix(server): idle /ws connections behind a reverse proxy no longer drop every 60s; kept Onicode's socket-compression decline line in the conflict
+cc4bb17955	take	fix(server): thread reads no longer attribute Onicode's compact-before-send /compact to the user
