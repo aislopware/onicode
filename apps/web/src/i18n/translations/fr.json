@@ -5041,7 +5041,7 @@
   "13b14784f8707ddd": "0 octet",
   "f6e9581cba3467fa": "Indexation…",
   "2d1f293ac12463fc": "Chargement du reste du fichier…",
-  "59c6ca413e5da836": "Affichage des 1 024 premières colonnes. Copier et Enregistrer conservent toutes les colonnes.",
+  "6574fce81dc65af6": "Affichage des 1 024 premières colonnes. Copier conserve toutes les colonnes.",
   "2a6e1b1f209c3888": "Ce fichier est vide.",
   "192fc79eb3b5b2cb": "Ce diagramme contient des URL de ressources, du balisage, des métadonnées de nœuds ou une configuration personnalisée. Affichez la source Mermaid pour l’examiner en toute sécurité.",
   "3bd23d5083b5d405": "{count, plural, one {{formatted} cellule} other {{formatted} cellules}}",
