@@ -3181,3 +3181,4 @@ a9447cedbd	take	fix(web): Cite button appears as fast after a double-click as af
 047fb5b162	skip	relay is a removed surface; Onicode's push gateway already truncates titles by code point (infra/push-gateway/src/payloads.ts truncate uses Array.from), so no emoji is split
 5028eb10a4	take	Windows PATH listings shared across requests; dropped upstream's ManagedPolicyFileError/Stream imports in window.test.ts (not in Onicode)
 83edd5e722	take	taken as is
+15d945faef	take	reveal of a missing path fails with RevealTargetMissing; dropped upstream's ExternalLauncherBrowserSpawnError union member (not in Onicode)
