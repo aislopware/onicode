@@ -39,8 +39,10 @@ function setup() {
   });
   let flushing = Promise.resolve();
   const preparations: Array<(success: boolean) => void> = [];
+  let conversionsStarted = 0;
   // Like the real paste, a draft operation that discarding the draft aborts.
   const onPasteImages = () => {
+    conversionsStarted += 1;
     const operation = startComposerDraftOperation(draftKey);
     return new Promise<boolean>((resolve) => preparations.push(resolve)).finally(operation.finish);
   };
@@ -92,9 +94,13 @@ function setup() {
         await act(async () => flushed.resolve());
       };
     },
-    setBlocked(value: boolean) {
+    /** Pass `render: false` while unmounted; the next mount reads it. */
+    setBlocked(value: boolean, { render: rerender = true } = {}) {
       blocked = value;
-      render();
+      if (rerender) render();
+    },
+    get conversionsStarted() {
+      return conversionsStarted;
     },
     /** A clear after a send: the draft resets, but work still landing in it carries on. */
     reset() {
@@ -121,8 +127,9 @@ function setup() {
     unmount() {
       act(() => root.unmount());
     },
-    /** Coming back mounts a new composer on the same draft. */
-    remount() {
+    /** Coming back mounts a new composer, on the same draft unless another thread is opened. */
+    remount(value = draftKey) {
+      draftKey = value;
       root = createRoot(document.createElement("div"));
       render();
     },
@@ -369,6 +376,67 @@ it("keeps a held send after the composer unmounts, shows it on return, and drops
   await state.finish(true);
   await cancelled;
   expect(state.onSubmit).toHaveBeenCalledOnce();
+});
+
+it("sends a send left while away from the composer that comes back, not the one that left", async () => {
+  using state = setup();
+  const paste = state.queue.pasteImages(["image"]);
+  await act(async () => void state.queue.deferSend());
+  state.unmount();
+  await state.finish(true);
+  await paste;
+  expect(state.onSubmit).not.toHaveBeenCalled();
+  // Split view opens another thread in its place; that composer leaves it alone.
+  state.remount("other");
+  expect(state.queue.held).toBeNull();
+  expect(state.onSubmit).not.toHaveBeenCalled();
+  state.unmount();
+  state.remount("draft");
+  expect(state.onSubmit).toHaveBeenCalledOnce();
+
+  // Its images joined while another blocker held it.
+  state.setBlocked(true);
+  const blocked = state.queue.pasteImages(["blocked"]);
+  await act(async () => void state.queue.deferSend());
+  await state.finish(true);
+  await blocked;
+  state.unmount();
+  state.setBlocked(false, { render: false });
+  state.remount();
+  expect(state.onSubmit).toHaveBeenCalledTimes(2);
+
+  // Before the press's own input landed, an edit could go unseen, so it is not kept.
+  const release = state.holdFlush();
+  const early = state.queue.pasteImages(["early"]);
+  act(() => void state.queue.deferSend());
+  state.unmount();
+  await release();
+  state.remount();
+  expect(state.queue.held).toBeNull();
+  await state.finish(true);
+  await early;
+  expect(state.onSubmit).toHaveBeenCalledTimes(2);
+});
+
+it("drops an iOS image read whose draft was discarded or left before it landed", async () => {
+  using state = setup();
+  let landRead: (uris: ReadonlyArray<string>) => void = () => {};
+  act(() => {
+    landRead = state.queue.readPastedImages(1);
+  });
+  act(() => void state.queue.deferSend());
+  state.discard();
+  expect(state.queue.held).toBeNull();
+  act(() => landRead(["image"]));
+  expect(state.converting).toBe(false);
+
+  act(() => {
+    landRead = state.queue.readPastedImages(1);
+  });
+  state.setDraftKey("queued-edit");
+  act(() => landRead(["image"]));
+  expect(state.conversionsStarted).toBe(0);
+  expect(state.onSubmit).not.toHaveBeenCalled();
 });
 
 it("holds a send from the start of an iOS pasteboard read until its image lands", async () => {
