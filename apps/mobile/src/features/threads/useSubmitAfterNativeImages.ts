@@ -29,6 +29,8 @@ type HeldSend = {
   readonly settings: ComposerDraftSendSettings;
   readonly followUp?: ActiveTurnComposerAction;
   readonly images: number;
+  /** Its composer left before it went, so the turn it was pressed during may be over. */
+  readonly left?: true;
 };
 
 type ParkedSend = {
@@ -100,7 +102,7 @@ export function useSubmitAfterNativeImages(props: {
     followUp: ActiveTurnComposerAction | undefined,
     approvalIdsAtPress: ReadonlyArray<RuntimeRequestId>,
     settingsAtPress: ComposerDraftSendSettings,
-    /** Its composer left; settles once the send went or was turned down. */
+    /** Its composer left first. Resolves true once the message went. */
     away?: boolean,
   ) => void | Promise<unknown>;
 }) {
@@ -143,7 +145,7 @@ export function useSubmitAfterNativeImages(props: {
       return;
     }
     settle();
-    props.onSubmit(held.followUp, held.approvalIds, held.settings);
+    void props.onSubmit(held.followUp, held.approvalIds, held.settings, held.left);
   });
   const pastesSettled = useEffectEvent((key: string, failed: boolean) => {
     const held = heldSend.current;
@@ -191,17 +193,17 @@ export function useSubmitAfterNativeImages(props: {
             });
             void Promise.resolve(submit(shown.followUp, shown.approvalIds, shown.settings, true))
               .catch(() => undefined)
-              .then(() => {
+              .then((went) => {
                 stop();
                 // A newer press parked meanwhile is the one to keep.
-                if (!draftChanged && !parkedSends.has(shown.draftKey)) {
-                  park(shown, true, watchDraft, undefined);
+                if (went !== true && !draftChanged && !parkedSends.has(shown.draftKey)) {
+                  park({ ...shown, left: true }, true, watchDraft, undefined);
                 }
               });
           };
     // A closed question's image still converting joins a released send first.
     if (ready && sendAway && !nativeImagePastePending(shown.pasteKey)) sendAway();
-    else park(shown, ready, props.watchDraft, sendAway);
+    else park({ ...shown, left: true }, ready, props.watchDraft, sendAway);
   });
   // A held send belongs to the draft it was pressed in; showing another draft drops it.
   const showDraft = useEffectEvent((draftKey: string, parked: ParkedSend | undefined) => {

@@ -671,8 +671,9 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
     inFlightThreadIdsRef.current.delete(threadKey);
     if (AsyncResult.isFailure(sent)) {
       console.error("[composer] send failed", squashAtomCommandFailure(sent));
-      return;
+      return false;
     }
+    return sent.value !== null;
   };
 
   const nativeImageSubmit = useSubmitAfterNativeImages({

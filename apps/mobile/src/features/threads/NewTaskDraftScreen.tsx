@@ -62,7 +62,7 @@ import { makeTurnCommandMetadata } from "../../lib/commandMetadata";
 import {
   clearComposerDraftContent,
   getComposerDraftSnapshot,
-  sameComposerDraftState,
+  composerDraftContentEdited,
   updateComposerDraftSettings,
   scheduleUnusedComposerAttachmentCleanup,
   type ComposerSendPress,
@@ -730,13 +730,15 @@ export function NewTaskDraftScreen(props: {
         ),
       );
     }
+    const draftSnapshot = getComposerDraftSnapshot(draftKey);
+    // Reopened while the write was pending, the draft keeps its new edits along with what was
+    // sent, and a pick started there still lands.
+    if (!mountedRef.current && composerDraftContentEdited(draft, draftSnapshot)) {
+      return message.messageId;
+    }
     // The composer has moved to the submitted thread; a pick still converting
     // would otherwise resurrect this draft.
-    const draftSnapshot = getComposerDraftSnapshot(draftKey);
-    // Reopened while the write was pending, the draft keeps its new edits along with what was sent.
-    if (!mountedRef.current && !sameComposerDraftState(draftSnapshot, draft))
-      return message.messageId;
-    abortComposerDraftOperations(draftKey);
+    if (mountedRef.current) abortComposerDraftOperations(draftKey);
     // The queued message owns the attachments now, so the sweep is deferred
     // until the write confirms it.
     clearComposerDraftContent(draftKey, {

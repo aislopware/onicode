@@ -457,7 +457,7 @@ export interface ComposerSendPress extends ComposerDraftSendSettings {
   readonly draftKey: string;
   /** False while a paste iOS recorded has not reached the draft, so the draft is not yet final. */
   readonly flushInput: () => Promise<boolean>;
-  /** Sent after its thread screen left, so the turn it saw may have ended or been replaced. */
+  /** Pressed in a composer that left before it went, so the turn it saw may be over. */
   readonly away?: boolean;
 }
 
@@ -1661,7 +1661,8 @@ const settingsEdited = (before: ComposerDraft, after: ComposerDraft) =>
   (after.modelSelection !== undefined &&
     JSON.stringify(before.modelSelection) !== JSON.stringify(after.modelSelection));
 
-const contentEdited = (before: ComposerDraft, after: ComposerDraft) =>
+/** What a send carries or where it goes changed, attachment uploads aside. */
+export const composerDraftContentEdited = (before: ComposerDraft, after: ComposerDraft) =>
   before.text !== after.text ||
   before.context !== after.context ||
   draftPlace(before) !== draftPlace(after) ||
@@ -1695,7 +1696,7 @@ export function watchComposerDraftEdits(
     const nextDraft = getComposerDraftSnapshot(draftKey);
     const nextSettings = getComposerDraftSnapshot(settingsKey);
     const edited =
-      contentEdited(draft, nextDraft) ||
+      composerDraftContentEdited(draft, nextDraft) ||
       settingsEdited(draft, nextDraft) ||
       settingsEdited(settings, nextSettings);
     draft = nextDraft;
