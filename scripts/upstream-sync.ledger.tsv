@@ -3275,3 +3275,4 @@ cc4bb17955	take	fix(server): thread reads no longer attribute Onicode's compact-
 ec35ad6618	take	taken as is
 6972026121	take	taken as is; scenario ported to the desktop harness
 bc13afaa3c	take	taken as is; scenario ported to the desktop harness
+4e1c1fea7a	take	adapted: vite.config reactTests drops upstream's ThreadGuestShareSheet test (guest links removed)
