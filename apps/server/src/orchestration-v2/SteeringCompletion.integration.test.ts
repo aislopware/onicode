@@ -1127,6 +1127,21 @@ it.effect("sends a selected held message once and preserves the remaining queue 
           .map((run) => run.userMessageId),
         [MessageId.make("message:queued-last"), MessageId.make("message:queued-first")],
       );
+      // A cancelled target is not a started head, so moving before it is refused, not a move first.
+      const cancelledTarget = yield* orchestrator
+        .dispatch({
+          type: "queued-run.reorder",
+          commandId: CommandId.make("move-before-cancelled"),
+          threadId,
+          runId: before.runs.find(
+            (run) => run.userMessageId === MessageId.make("message:queued-first"),
+          )!.id,
+          beforeRunId: before.runs.find(
+            (run) => run.userMessageId === MessageId.make("message:first"),
+          )!.id,
+        })
+        .pipe(Effect.flip);
+      assert.equal(cancelledTarget._tag, "OrchestratorDispatchError");
     }).pipe(Effect.provide(layer));
   }),
 );

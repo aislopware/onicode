@@ -74,17 +74,29 @@ export function LineCappedText(props: { text: string; more: (count: number) => s
 
 /** `text` cut like `LineCappedText`, for text rendered as markdown. */
 export function lineCappedText(text: string, more: (count: number) => string): string {
-  return joinParts(cappedParts(text), more);
+  return joinParts(text, cappedParts(text), more);
 }
 
 /** A markdown file with each line cut like a source line; the file read already bounds its length. */
 export function lineCutMarkdown(text: string, more: (count: number) => string): string {
-  return joinParts(cappedParts(text, Number.POSITIVE_INFINITY), more);
+  return joinParts(text, cappedParts(text, Number.POSITIVE_INFINITY), more);
 }
 
-function joinParts(parts: ReadonlyArray<ShownPart>, more: (count: number) => string): string {
+function joinParts(
+  text: string,
+  parts: ReadonlyArray<ShownPart>,
+  more: (count: number) => string,
+): string {
   return parts
-    .map((part) => (part.cut > 0 ? part.text + cutSuffix(part.cut, more) : part.text))
+    .map((part) => {
+      if (part.cut === 0) return part.text;
+      const end = part.at + part.text.length;
+      // A comment whose close was cut would swallow the rest of the document.
+      const closesComment =
+        part.text.lastIndexOf("<!--") > part.text.lastIndexOf("-->") &&
+        text.slice(end, end + part.cut).includes("-->");
+      return part.text + (closesComment ? " -->" : "") + cutSuffix(part.cut, more);
+    })
     .join("");
 }
 

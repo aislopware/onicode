@@ -1,17 +1,21 @@
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import type * as FileSystem from "effect/FileSystem";
 import type * as Path from "effect/Path";
 import * as Semaphore from "effect/Semaphore";
 
 const leases = new Map<string, { semaphore: Semaphore.Semaphore; users: number }>();
 
-const holdLease = <A, E, R>(key: string, effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+const useLease = <A, E, R>(
+  key: string,
+  use: (semaphore: Semaphore.Semaphore) => Effect.Effect<A, E, R>,
+): Effect.Effect<A, E, R> =>
   Effect.suspend(() => {
     const lease = leases.get(key) ?? { semaphore: Semaphore.makeUnsafe(1), users: 0 };
     leases.set(key, lease);
     lease.users++;
-    return lease.semaphore.withPermit(effect).pipe(
+    return use(lease.semaphore).pipe(
       Effect.ensuring(
         Effect.sync(() => {
           lease.users--;
@@ -20,6 +24,9 @@ const holdLease = <A, E, R>(key: string, effect: Effect.Effect<A, E, R>): Effect
       ),
     );
   });
+
+const holdLease = <A, E, R>(key: string, effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+  useLease(key, (semaphore) => semaphore.withPermit(effect));
 
 /** Keyed by the real path, so callers that name one checkout through a symlink share its lease. */
 export const withWorkspaceLease = <A, E, R>(
@@ -30,6 +37,23 @@ export const withWorkspaceLease = <A, E, R>(
 ): Effect.Effect<A, E, R> =>
   canonicalize(fileSystem, path, path.resolve(cwd)).pipe(
     Effect.flatMap((key) => holdLease(key, effect)),
+  );
+
+/** As withWorkspaceLease, but runs `onBusy` instead of waiting while another holder has it. */
+export const withWorkspaceLeaseOrElse = <A, E, R, A2, E2, R2>(
+  fileSystem: FileSystem.FileSystem,
+  path: Path.Path,
+  cwd: string,
+  effect: Effect.Effect<A, E, R>,
+  onBusy: () => Effect.Effect<A2, E2, R2>,
+): Effect.Effect<A | A2, E | E2, R | R2> =>
+  canonicalize(fileSystem, path, path.resolve(cwd)).pipe(
+    Effect.flatMap((key) =>
+      useLease(key, (semaphore) => semaphore.withPermitsIfAvailable(1)(effect)),
+    ),
+    Effect.flatMap((leased): Effect.Effect<A | A2, E2, R2> =>
+      Option.isSome(leased) ? Effect.succeed(leased.value) : onBusy(),
+    ),
   );
 
 /**

@@ -23,6 +23,7 @@ import {
   withCheckoutSwitchReservation,
   withCheckoutSwitchReservationOrElse,
   withTurnStartReservation,
+  withWorkspaceLease,
 } from "../workspace/workspaceLease.ts";
 
 // Synchronous, so a forked workflow runs up to its first wait before the test goes on.
@@ -44,6 +45,8 @@ interface CheckoutHarness {
   /** Guard checks, each with whether a ref switch held the checkout's reservation then. */
   readonly guards: Array<string>;
   working: boolean;
+  /** The guard cannot read which threads are working. */
+  unverified?: boolean;
   onGuard: Effect.Effect<void>;
 }
 
@@ -132,6 +135,12 @@ const layerCheckoutWorkflow = (harness: CheckoutHarness) =>
           Effect.sync(() => harness.events.push("pull")).pipe(
             Effect.as({ status: "pulled" as const, refName: "main", upstreamRef: "origin/main" }),
           ),
+        statusDetailsLocal: () =>
+          Effect.succeed({
+            branch: "main",
+            hasWorkingTreeChanges: false,
+            aheadCount: 0,
+          } as GitVcsDriver.GitStatusDetails),
       }),
     ),
     Layer.provide(
@@ -144,6 +153,15 @@ const layerCheckoutWorkflow = (harness: CheckoutHarness) =>
               Effect.gen(function* () {
                 harness.guards.push(`guard-${yield* probeSwitchReservation(path)}`);
                 yield* harness.onGuard;
+                if (harness.unverified) {
+                  return yield* new GitCommandError({
+                    operation,
+                    command: "git checkout",
+                    cwd,
+                    detail: "unverified",
+                    cause: new Error("projection read failed"),
+                  });
+                }
                 if (harness.working) {
                   return yield* new GitCommandError({
                     operation,
@@ -273,7 +291,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("GitWorkflowServi
                   : operation === "pulling"
                     ? workflow.pullCurrentBranch(cwd)
                     : operation === "pulling automatically"
-                      ? workflow.pullCurrentBranchWhenIdle(cwd)
+                      ? workflow.pullCurrentBranchWhenIdle(cwd, "main")
                       : operation === "committing on a new branch" || operation === "committing"
                         ? workflow.runStackedAction({
                             cwd,
@@ -294,6 +312,40 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("GitWorkflowServi
           { refusal, moves: [...moves] },
         );
       }),
+  );
+
+  it.effect("an automatic pull rechecks the branch once the checkout is free", () =>
+    Effect.gen(function* () {
+      const harness = makeCheckoutHarness();
+      const workflow = yield* checkoutWorkflow(harness);
+      // Another Git action moved the checkout off the branch the caller checked.
+      assert.strictEqual(yield* workflow.pullCurrentBranchWhenIdle("/repo", "release"), null);
+      assert.deepEqual(harness.events, []);
+      assert.strictEqual(
+        (yield* workflow.pullCurrentBranchWhenIdle("/repo", "main"))?.status,
+        "pulled",
+      );
+      assert.deepEqual(harness.events, ["pull"]);
+      // Another Git action holding the checkout skips the pull instead of waiting for it.
+      const path = yield* Path.Path;
+      assert.strictEqual(
+        yield* withWorkspaceLease(
+          syncFileSystem,
+          path,
+          "/repo",
+          workflow.pullCurrentBranchWhenIdle("/repo", "main"),
+        ),
+        null,
+      );
+      assert.deepEqual(harness.events, ["pull"]);
+      // A guard that could not check fails the pull instead of skipping it quietly.
+      harness.unverified = true;
+      assert.strictEqual(
+        yield* failureDetail(workflow.pullCurrentBranchWhenIdle("/repo", "main")),
+        "unverified",
+      );
+      assert.deepEqual(harness.events, ["pull"]);
+    }),
   );
 
   it.effect("a ref switch checks the checkout only after a turn start there has started", () =>

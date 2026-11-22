@@ -284,6 +284,7 @@ it.effect("automatic pull only updates enabled, behind, clean default-branch che
         Effect.succeed({
           isRepo: true,
           isDefaultBranch: cwd !== "/feature",
+          branch: cwd === "/feature" ? "feature" : "main",
           hasUpstream: true,
           hasWorkingTreeChanges: cwd === "/dirty",
           aheadCount: cwd === "/ahead" ? 1 : 0,

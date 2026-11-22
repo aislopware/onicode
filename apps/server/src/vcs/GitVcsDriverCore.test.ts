@@ -54,6 +54,7 @@ import {
   windowsLongPathConfigEnv,
 } from "./GitVcsDriverCore.ts";
 import { autoPullProjects } from "../serverRuntimeStartup.ts";
+import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import * as GitVcsDriver from "./GitVcsDriver.ts";
 import { VcsAutomaticFetchInterval } from "./VcsAutomaticFetchInterval.ts";
 import { gitConfigEnv } from "./VcsProcess.ts";
@@ -1609,7 +1610,15 @@ describe("pullCurrentBranch", () => {
         const startup = yield* autoPullProjects(
           [{ id: ProjectId.make("behind"), workspaceRoot: cwd, autoPull: true }],
           { ...DEFAULT_SERVER_SETTINGS, defaultAutoPull: true },
-        ).pipe(Effect.provideService(GitVcsDriver.GitVcsDriver, driver), Effect.forkChild);
+        ).pipe(
+          Effect.provideService(GitVcsDriver.GitVcsDriver, driver),
+          Effect.provide(
+            Layer.mock(GitWorkflowService.GitWorkflowService)({
+              pullCurrentBranchWhenIdle: (cwd) => driver.pullCurrentBranch(cwd),
+            }),
+          ),
+          Effect.forkChild,
+        );
         yield* Deferred.await(fetchHeld);
         yield* TestClock.adjust("6 seconds");
         yield* Deferred.succeed(release, undefined);

@@ -421,6 +421,30 @@ describe("derived thread state through a streamed message", () => {
     expect(thread.queue()?.queuedRuns.map((queued) => queued.text)).toEqual(["Then run lint"]);
   });
 
+  it("follows a session whose /goal support changes alone", () => {
+    const session = {
+      id: "session",
+      providerInstanceId: v2Projection.thread.providerInstanceId,
+      capabilities: { turns: { supportsNativeGoals: false } },
+    };
+    using thread = setup({
+      ...initial,
+      providerThreads: [
+        { id: "provider-thread", appThreadId: v2ThreadId, providerSessionId: "session" },
+      ],
+      providerSessions: [session],
+    } as never);
+    expect(thread.queue()?.nativeGoals?.supported).toBe(false);
+    thread.apply({
+      id: EventId.make("event-session"),
+      type: "provider-session.updated",
+      threadId: v2ThreadId,
+      occurredAt: later,
+      payload: { ...session, capabilities: { turns: { supportsNativeGoals: true } } },
+    } as never);
+    expect(thread.queue()?.nativeGoals?.supported).toBe(true);
+  });
+
   it("drops a held steer's wait when its turn stops compacting", () => {
     const compaction: OrchestrationV2TurnItem = {
       ...assistant,

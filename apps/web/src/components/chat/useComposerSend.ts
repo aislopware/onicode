@@ -54,6 +54,10 @@ import {
   scopeThreadRef,
 } from "@onicode/client-runtime/environment";
 import { createModelSelection } from "@onicode/shared/model";
+import {
+  nativeGoalsFor,
+  type ThreadNativeGoals,
+} from "@onicode/client-runtime/state/thread-workflows";
 import { type SetStateAction, useLayoutEffect, useRef } from "react";
 import { useNavigate, useRouter } from "@tanstack/react-router";
 import { isAppModalPage } from "../sidebar/mainAppLocation";
@@ -259,8 +263,7 @@ interface ComposerSendInput {
   readonly openUsageLimits: UsageLimitsPanel["open"];
   readonly providerSessionViews: ReadonlyArray<ProviderSessionView>;
   readonly openProviderSessionView: (view: ProviderSessionView) => void;
-  /** The provider runs /goal itself; undefined when its server does not say. */
-  readonly nativeGoals: boolean | undefined;
+  readonly nativeGoals: ThreadNativeGoals | undefined;
   readonly clearUsageLimitsFor: UsageLimitsPanel["clearFor"];
   readonly needsLoadBalancing: boolean;
   readonly loadBalancing: DraftEnvironmentRouting["loadBalancing"];
@@ -1092,7 +1095,7 @@ export function useComposerSend(input: ComposerSendInput) {
       phase,
       dispatchMode,
       freshContext: freshArm !== undefined,
-      nativeGoals,
+      nativeGoals: nativeGoalsFor(nativeGoals, ctxSelectedModelSelection.instanceId),
     });
     if (missingWorktreeBaseBranch) {
       setThreadError(

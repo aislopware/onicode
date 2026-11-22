@@ -817,12 +817,13 @@ export const make = Effect.gen(function* () {
         !local.isRepo ||
         !local.isDefaultRef ||
         local.hasWorkingTreeChanges ||
+        local.refName === null ||
         local.refName !== remoteRead?.branch
       )
         return null;
 
       pullAttempted = true;
-      if ((yield* workflow.pullCurrentBranchWhenIdle(cwd)) === null) return null;
+      if ((yield* workflow.pullCurrentBranchWhenIdle(cwd, local.refName)) === null) return null;
       yield* workflow.invalidateStatus(cwd);
       yield* refreshLocalStatusCore(cwd);
       const refreshedRemote = yield* readRemoteStatus(cwd, { refreshUpstream: false }, false);
