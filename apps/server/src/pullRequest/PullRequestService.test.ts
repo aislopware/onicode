@@ -1105,6 +1105,58 @@ it.effect.each([
     }),
 );
 
+it.effect("reads a checkout's own change request by the host its repository identity names", () =>
+  Effect.gen(function* () {
+    let reads = 0;
+    const service = yield* makeService({
+      projects: [
+        project({
+          id: "ssh",
+          title: "ssh",
+          workspaceRoot: "/ssh",
+          repository: "team/repo",
+          provider: "forgejo",
+          host: "ssh.forge.example",
+          remoteUrl: "ssh://git@ssh.forge.example:2222/team/repo.git",
+        }),
+      ],
+      providers: [
+        fakePullRequestProvider(SourceControlProviderKind.make("forgejo"), {
+          getChangeRequest: (input) => {
+            reads++;
+            assert.strictEqual(input.host, "forge.example:3000");
+            return Effect.succeed(hostedChangeRequest("Body"));
+          },
+        }),
+      ],
+      resolveHandle: ({ context }) =>
+        Effect.succeed({
+          context: {
+            ...context!,
+            provider: {
+              kind: SourceControlProviderKind.make("forgejo"),
+              name: "Forgejo",
+              baseUrl: "http://forge.example:3000",
+            },
+          },
+          provider: undefined as never,
+        }),
+    });
+    // An issue names the host of the checkout's identity, not the server it was refined to.
+    for (const host of [undefined, "ssh.forge.example", "forge.example:3000"]) {
+      yield* service.detail({
+        projectId: "ssh" as ProjectId,
+        ...(host === undefined ? {} : { host }),
+        repository: "team/repo",
+        number: 1,
+        allowStale: false,
+      });
+    }
+    // All three name one pull request, so one read serves them.
+    assert.strictEqual(reads, 1);
+  }),
+);
+
 it.effect("reads a repository once when several worktrees share it", () =>
   Effect.gen(function* () {
     let calls = 0;

@@ -92,6 +92,7 @@ import {
   type GitLabMergeRequestDetail,
   type GitLabMergeRequestListItem,
   type GitLabMergeRequestListState,
+  type GitLabPipelineStageChecks,
   type GitLabProjectUsers,
 } from "./gitLabMergeRequestJson.ts";
 import type {
@@ -1633,6 +1634,7 @@ export const make = Effect.gen(function* () {
     readonly cwd: string;
     readonly host?: string | undefined;
     readonly pipeline: { readonly id: number; readonly projectId: number };
+    readonly stages?: ReadonlyArray<string>;
   }): Effect.Effect<{
     readonly checks: ReadonlyArray<PullRequestCheck>;
     readonly whole: boolean;
@@ -1647,9 +1649,12 @@ export const make = Effect.gen(function* () {
       ])}`,
     }).pipe(
       Effect.map((result) => {
-        const decoded = decodeTriggerJobChecksJson(result.stdout.trim());
+        const decoded = decodeTriggerJobChecksJson(result.stdout.trim(), input.stages);
         return Result.isSuccess(decoded)
-          ? { checks: decoded.success.checks, whole: decoded.success.rawCount < MAX_PAGE_SIZE }
+          ? {
+              checks: decoded.success.checks,
+              whole: decoded.success.rawCount < MAX_PAGE_SIZE && decoded.success.unreadable === 0,
+            }
           : { checks: [], whole: false };
       }),
       Effect.orElseSucceed(() => ({ checks: [], whole: false })),
@@ -1662,7 +1667,7 @@ export const make = Effect.gen(function* () {
     readonly repository: string;
     readonly number: number;
     readonly url: string;
-  }): Effect.Effect<ReadonlyArray<PullRequestCheck> | null> =>
+  }): Effect.Effect<GitLabPipelineStageChecks | null> =>
     URL.canParse(input.url)
       ? graphqlRead({
           cwd: input.cwd,
@@ -2391,14 +2396,27 @@ export const make = Effect.gen(function* () {
                 ),
               };
         if (input.downstreamChecks === false || detail.headPipeline === undefined) return detail;
-        // The stages already carry each trigger job's downstream pipeline.
+        // The stages carry each listed trigger job's downstream pipeline.
         const stages = yield* pipelineStageChecks({ ...input, url: detail.url });
-        if (stages !== null) return { ...detail, checks: stages };
+        if (stages !== null && stages.unlistedStages.length === 0) {
+          return { ...detail, checks: stages.checks };
+        }
         const downstream = yield* triggerJobChecks({
           cwd: input.cwd,
           host: input.host,
           pipeline: detail.headPipeline,
+          ...(stages === null ? {} : { stages: stages.unlistedStages }),
         });
+        if (stages !== null) {
+          return {
+            ...detail,
+            checks: [
+              ...stages.checks,
+              ...downstream.checks,
+              ...(downstream.whole ? [] : [UNLISTED_JOBS]),
+            ],
+          };
+        }
         // The one pipeline check can pass while a job or downstream pipeline it covers failed.
         const checks = [
           ...detail.checks,

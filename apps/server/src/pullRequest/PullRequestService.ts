@@ -1049,7 +1049,17 @@ export const make = Effect.gen(function* () {
         const repository = ref.repository.trim();
         const host = ref.host?.trim().toLowerCase();
         if (own !== undefined && own.repository.toLowerCase() === repository.toLowerCase()) {
-          if (host === undefined || host === own.host) return Effect.succeed(own);
+          // Issues name the host of the checkout's identity, which discovery can refine.
+          const identity = own.project.repositoryIdentity;
+          if (
+            host === undefined ||
+            host === own.host ||
+            (identity !== undefined &&
+              identity !== null &&
+              host === sourceControlDefinitions.changeRequestHost(identity, identity.provider))
+          ) {
+            return Effect.succeed(own);
+          }
         }
         if (host === undefined) {
           if (own === undefined) {

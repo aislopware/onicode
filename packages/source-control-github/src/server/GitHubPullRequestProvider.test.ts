@@ -529,6 +529,44 @@ it.effect("adds unstarted same-repository workflow runs as pending, not as appro
   ),
 );
 
+it.effect("marks the checks incomplete when GitHub could not list them all", () =>
+  Effect.gen(function* () {
+    const provider = yield* make;
+    const detail = yield* provider.getChangeRequest({
+      cwd: "/w",
+      repository: "acme/web",
+      host: "github.com",
+      number: 7,
+    });
+
+    expect(detail.checks).toEqual([
+      { name: "lint", status: "success", description: null, url: null },
+      {
+        name: "Unlisted checks",
+        status: "neutral",
+        description: "GitHub could not list all of this pull request's checks.",
+        url: null,
+        placeholder: true,
+      },
+    ]);
+  }).pipe(
+    Effect.provide(
+      Layer.mock(GitHubPullRequestApi.GitHubPullRequestApi)({
+        revalidateChecks: (_input, read) => read,
+        getPullRequestDetail: () =>
+          Effect.succeed({
+            ...openDetail,
+            isCrossRepository: false,
+            checksTruncated: true,
+            checks: [{ name: "lint", status: "success" as const, description: null, url: null }],
+          }),
+        listUnfinishedWorkflowRuns: () => Effect.succeed([]),
+        getViewerAccess: () => Effect.succeed(coreFields.viewerAccess),
+      }),
+    ),
+  ),
+);
+
 it.effect("keeps an unsafe workflow approval scope visible as unknown", () =>
   Effect.gen(function* () {
     const provider = yield* make;

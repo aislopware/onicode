@@ -1,8 +1,9 @@
 import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import { StackActions, useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import {
-  issueChangeRequestHost,
   issueEventSentence,
+  issueLinkHost,
+  linksChangeRequestsOnItsHost,
 } from "@onicode/client-runtime/issue-presentation";
 import { createIssueCommentPager } from "@onicode/client-runtime/state/issues";
 import { threadTitleText } from "@onicode/client-runtime/operations";
@@ -253,15 +254,23 @@ function IssueIdentity(props: {
   );
 }
 
+function linkHost(
+  issue: Pick<IssueDetail, "host" | "scope">,
+  params: IssueParams,
+  repository: string,
+): { readonly host?: string } {
+  const host = issueLinkHost(issue, params.host, repository);
+  return host === undefined ? {} : { host };
+}
+
 function LinkedPullRequests(props: {
   readonly params: IssueParams;
-  readonly issue: Pick<IssueDetail, "tracker" | "host">;
+  readonly issue: Pick<IssueDetail, "tracker" | "host" | "scope">;
   readonly links: ReadonlyArray<IssueLinkedPullRequest>;
 }) {
   const gt = useGT();
   const navigation = useNavigation();
-  // Only a git host's tracker shares its host with the change request it links.
-  const host = issueChangeRequestHost(props.issue);
+  const inApp = linksChangeRequestsOnItsHost(props.issue);
   return (
     <View className="gap-2">
       <PullRequestSectionHeading>
@@ -279,14 +288,14 @@ function LinkedPullRequests(props: {
               title: link.title,
             })}
             onPress={() =>
-              host !== undefined
+              inApp
                 ? navigation.dispatch(
                     StackActions.push("PullRequest", {
                       environmentId: props.params.environmentId,
                       projectId: props.params.projectId,
                       repository: link.repository,
                       number: link.number,
-                      host,
+                      ...linkHost(props.issue, props.params, link.repository),
                     }),
                   )
                 : void tryOpenExternalUrl(link.url)
@@ -426,7 +435,7 @@ function IssueEventRow({
   event,
 }: {
   readonly params: IssueParams;
-  readonly issue: Pick<IssueDetail, "tracker" | "host">;
+  readonly issue: Pick<IssueDetail, "tracker" | "host" | "scope">;
   readonly event: IssueEvent;
 }) {
   const gt = useGT();
@@ -435,8 +444,7 @@ function IssueEventRow({
   const sentence = issueEventSentence(event, messages);
   const source = event.reference;
   const at = event.detail === null ? -1 : sentence.indexOf(event.detail);
-  // Only a git host's tracker shares its host with the change request it links.
-  const pullRequestHost = issueChangeRequestHost(issue);
+  const inApp = linksChangeRequestsOnItsHost(issue);
   const openSource = (target: IssueEventReference) => {
     if (target.kind === "issue") {
       navigation.dispatch(
@@ -444,19 +452,19 @@ function IssueEventRow({
           environmentId: params.environmentId,
           projectId: params.projectId,
           tracker: params.tracker,
-          host: params.host ?? issue.host,
+          ...linkHost(issue, params, target.repository),
           scope: target.repository,
           issueKey: String(target.number),
         }),
       );
-    } else if (pullRequestHost !== undefined) {
+    } else if (inApp) {
       navigation.dispatch(
         StackActions.push("PullRequest", {
           environmentId: params.environmentId,
           projectId: params.projectId,
           repository: target.repository,
           number: target.number,
-          host: pullRequestHost,
+          ...linkHost(issue, params, target.repository),
         }),
       );
     } else {

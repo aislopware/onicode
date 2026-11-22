@@ -100,7 +100,13 @@ export function evaluatePullRequestWatch(
       if (!checksBaseline) changes.push({ kind: "checks-awaiting-approval", checks: awaiting });
       approvalAnnounced = true;
     }
-    failedChecks = failed.map((check) => check.name);
+    // A read the host could not finish keeps the failures it left out.
+    failedChecks = [
+      ...new Set([
+        ...(unread ? failedBefore.filter(missing) : []),
+        ...failed.map((check) => check.name),
+      ]),
+    ];
 
     // Approval reads can omit gated runs. Keep each hold until its jobs finish.
     const awaitingNow = [...new Set(awaiting.map(approvalKey))];
@@ -331,10 +337,10 @@ export function evaluatePullRequestWatch(
 // Lowercase only: `Promise<T>` is a type argument.
 const TAG_NAMES =
   "a|abbr|b|blockquote|br|caption|cite|code|dd|del|details|div|dl|dt|em|h[1-6]|hr|i|img|ins|kbd|li|mark|ol|p|picture|pre|q|s|samp|small|source|span|strike|strong|sub|summary|sup|table|tbody|td|tfoot|th|thead|tr|tt|ul|var";
-// A code span comes first so its tags stay literal; it cannot cross a blank line. A tag stops at
-// the next `<`, which keeps unclosed openers from rescanning the rest of the body.
+// A code span comes first so its tags stay literal; it cannot cross a blank or quoted blank line.
+// A tag stops at the next `<`, which keeps unclosed openers from rescanning the rest of the body.
 const PROSE_MARKUP = new RegExp(
-  "(?<!`)(?<ticks>`+)(?!`)(?:(?!\\n[ \\t\\r]*\\n)[\\s\\S])*?(?<!`)\\k<ticks>(?!`)" +
+  "(?<!`)(?<ticks>`+)(?!`)(?:(?!\\n(?:[ \\t\\r]*| {0,3}>[ \\t\\r>]*)\\n)[\\s\\S])*?(?<!`)\\k<ticks>(?!`)" +
     `|<(?<closing>/?)(?<name>${TAG_NAMES})(?=[\\s/>])(?:[^<>"']|"[^"]*"|'[^']*')*>`,
   "g",
 );

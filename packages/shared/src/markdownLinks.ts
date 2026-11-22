@@ -545,12 +545,11 @@ function markdownLinkDestinationScanner(markdown: string) {
 export function extractMarkdownLinkHrefs(markdown: string): string[] {
   const hrefs: string[] = [];
   const scanDestination = markdownLinkDestinationScanner(markdown);
-  const bracket = new RegExp(String.raw`[[\]\\]|${PARAGRAPH_END}`, "g");
+  const bracket = new RegExp(String.raw`${ESCAPE}|[[\]]|${PARAGRAPH_END}`, "g");
   let openBrackets = 0;
   for (let match = bracket.exec(markdown); match; match = bracket.exec(markdown)) {
-    if (match[0] === "\\") {
-      bracket.lastIndex = match.index + 2;
-    } else if (match[0].startsWith("\n")) {
+    if (match[0].startsWith("\\")) continue;
+    if (match[0].startsWith("\n")) {
       openBrackets = 0;
     } else if (match[0] === "[") {
       openBrackets += 1;

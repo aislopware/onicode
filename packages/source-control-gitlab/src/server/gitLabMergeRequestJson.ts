@@ -45,6 +45,7 @@ const RawPipelineSchema = Schema.Struct({
 
 const RawTriggerJobSchema = Schema.Struct({
   name: Schema.String,
+  stage: Schema.optional(Schema.NullOr(Schema.String)),
   allow_failure: Schema.optional(Schema.NullOr(Schema.Boolean)),
   downstream_pipeline: Schema.optional(Schema.NullOr(RawPipelineSchema)),
 });
@@ -462,10 +463,16 @@ const decodePipelineStages = decodeJsonResult(RawPipelineStagesSchema);
  * not list whole stays one check with GitLab's stage status. Null where there are no stages to
  * show, or GitLab returned only some of them, so the caller keeps the single pipeline check.
  */
+export interface GitLabPipelineStageChecks {
+  readonly checks: ReadonlyArray<PullRequestCheck>;
+  /** A stage's own status can pass while a trigger job's downstream pipeline in it failed. */
+  readonly unlistedStages: ReadonlyArray<string>;
+}
+
 export function decodePipelineStageChecksJson(
   raw: string,
   origin: string,
-): Result.Result<ReadonlyArray<PullRequestCheck> | null, DecodeFailure> {
+): Result.Result<GitLabPipelineStageChecks | null, DecodeFailure> {
   const decoded = decodePipelineStages(raw);
   if (!Result.isSuccess(decoded)) {
     return Result.fail(decoded.failure);
@@ -481,6 +488,7 @@ export function decodePipelineStageChecksJson(
   }
   const link = (path: string | null) => (path?.startsWith("/") ? `${origin}${path}` : null);
   const checks: Array<PullRequestCheck> = [];
+  const unlistedStages: Array<string> = [];
   for (const stage of pipeline?.stages?.nodes ?? []) {
     const name = trimmed(stage?.name);
     if (stage === null || name === null) continue;
@@ -490,6 +498,7 @@ export function decodePipelineStageChecksJson(
       stage.jobs?.pageInfo?.hasNextPage !== true &&
       jobs.every((job) => job !== null && trimmed(job.name) !== null);
     if (!listedWhole) {
+      unlistedStages.push(name);
       checks.push({
         name,
         status: toPipelineStatus(stage.status),
@@ -511,7 +520,7 @@ export function decodePipelineStageChecksJson(
       });
     }
   }
-  return Result.succeed(checks.length === 0 ? null : checks);
+  return Result.succeed(checks.length === 0 ? null : { checks, unlistedStages });
 }
 
 function toListItem(
@@ -667,6 +676,8 @@ export function decodeMergeRequestDetailJson(
 export interface GitLabTriggerJobChecks {
   readonly checks: ReadonlyArray<PullRequestCheck>;
   readonly rawCount: number;
+  /** Entries GitLab returned that could hide a failed downstream pipeline. */
+  readonly unreadable: number;
 }
 
 /**
@@ -676,27 +687,36 @@ export interface GitLabTriggerJobChecks {
  */
 export function decodeTriggerJobChecksJson(
   raw: string,
+  /** Only these stages' trigger jobs, named as the stage checks name them. */
+  stages?: ReadonlyArray<string>,
 ): Result.Result<GitLabTriggerJobChecks, DecodeFailure> {
   const decoded = decodeUnknownList(raw);
   if (!Result.isSuccess(decoded)) {
     return Result.fail(decoded.failure);
   }
   const checks: PullRequestCheck[] = [];
+  let unreadable = 0;
   for (const entry of decoded.success) {
     const job = decodeTriggerJobEntry(entry);
-    if (Exit.isFailure(job)) continue;
-    const name = trimmed(job.value.name);
+    const name = Exit.isSuccess(job) ? trimmed(job.value.name) : null;
+    if (Exit.isFailure(job) || name === null) {
+      unreadable++;
+      continue;
+    }
     const downstream = job.value.downstream_pipeline;
-    if (name === null || !downstream) continue;
+    if (!downstream) continue;
+    const stage = trimmed(job.value.stage);
+    if (stages !== undefined && stage === null) unreadable++;
+    if (stages !== undefined && (stage === null || !stages.includes(stage))) continue;
     const status = toPipelineStatus(downstream.status);
     checks.push({
-      name,
+      name: stages === undefined ? name : `${stage} / ${name}`,
       status: allowedFailureStatus(status, job.value.allow_failure),
       description: "Downstream pipeline",
       url: trimmed(downstream.web_url),
     });
   }
-  return Result.succeed({ checks, rawCount: decoded.success.length });
+  return Result.succeed({ checks, rawCount: decoded.success.length, unreadable });
 }
 
 export function decodeViewerJson(raw: string): Result.Result<string | null, DecodeFailure> {

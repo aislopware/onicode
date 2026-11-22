@@ -649,8 +649,12 @@ function toCheckEntries(raw: ReadonlyArray<CheckFields> | null | undefined): Rea
   for (const check of raw ?? []) {
     const run = check.workflowRun;
     if (run == null || !PULL_REQUEST_EVENTS.has(run.event)) continue;
+    const name = trimmed(check.name) ?? "";
     note(lineageOf(run), run.runNumber);
-    note(`${lineageOf(run)} ${trimmed(check.name) ?? ""}`, run.runNumber);
+    note(`${lineageOf(run)} ${name}`, run.runNumber);
+    // A default-named matrix job reports `job (values)`, or `job` if cancelled before it expanded.
+    const matrixJob = /^(.+) \([^()]*\)$/u.exec(name)?.[1];
+    if (matrixJob !== undefined) note(`${lineageOf(run)} ${matrixJob}`, run.runNumber);
   }
   return (raw ?? []).flatMap((check) => {
     const name = trimmed(check.name) ?? trimmed(check.context);
