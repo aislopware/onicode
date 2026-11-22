@@ -3,6 +3,7 @@ import { appendUserInputAttachmentPaths } from "../provider/userInputAttachments
 import {
   AuthProvidersManageScope,
   type ChatAttachment,
+  CommandId,
   type OrchestrationV2Command,
 } from "@onicode/contracts";
 import * as Effect from "effect/Effect";
@@ -109,7 +110,11 @@ export const dispatchCommand = Effect.fn("ThreadMessageIntake.dispatchCommand")(
       ? yield* withQueuedAttachmentsOnSignOutText(incoming)
       : incoming;
   const threads = yield* ThreadManagement.ThreadManagementService;
-  if (command.type === "runtime-request.respond" && command.attachmentsByQuestionId) {
+  if (
+    command.type === "runtime-request.respond" &&
+    command.attachmentsByQuestionId &&
+    !(yield* threads.hasReceipt(command.commandId))
+  ) {
     const config = yield* ServerConfig.ServerConfig;
     const incomingByQuestionId = command.attachmentsByQuestionId;
     yield* AttachmentClaims.validateAttachmentLimits(Object.values(incomingByQuestionId).flat());
@@ -178,8 +183,14 @@ export const dispatchCommand = Effect.fn("ThreadMessageIntake.dispatchCommand")(
     (command.type !== "queued-run.edit" || command.attachments === undefined)
   )
     return yield* threads.dispatch(command);
-  // An accepted edit's retry replays its receipt even if a later cleanup removed its files.
-  if (command.type === "queued-run.edit" && !(yield* threads.hasReceipt(command.commandId))) {
+  // An accepted command's retry replays its receipt even if a later cleanup removed its files.
+  if (
+    (command.type === "queued-run.edit" ||
+      command.attachments.some(AttachmentClaims.attachmentIsPendingUpload)) &&
+    (yield* threads.hasReceipt(command.commandId))
+  )
+    return yield* threads.dispatch(command);
+  if (command.type === "queued-run.edit") {
     const config = yield* ServerConfig.ServerConfig;
     const fileSystem = yield* FileSystem.FileSystem;
     // A stale view can keep a file that another client's edit dropped and deleted.
@@ -235,6 +246,11 @@ export const sendToThread = Effect.fn("ThreadMessageIntake.sendToThread")(functi
   input: ThreadManagement.ThreadManagementSendInput,
 ) {
   const threads = yield* ThreadManagement.ThreadManagementService;
+  if (
+    input.attachments.some(AttachmentClaims.attachmentIsPendingUpload) &&
+    (yield* threads.hasReceipt(input.commandId))
+  )
+    return yield* threads.sendToThread(input);
   const claimed = yield* AttachmentClaims.claimPendingAttachments(input);
   return yield* threads.sendToThread({ ...input, attachments: claimed.attachments }).pipe(
     Effect.tap((result) => releaseUnusedClaims(claimed.claimedPaths, result.message.attachments)),
@@ -259,6 +275,13 @@ export const launchThread = Effect.fn("ThreadMessageIntake.launchThread")(functi
       message: "Uploaded attachments need a thread id at launch.",
     });
   }
+  // A new thread's create carries its first message; a reused thread's takes its own command.
+  const threads = yield* ThreadManagement.ThreadManagementService;
+  if (
+    (input.reuseExistingThread !== true && (yield* threads.hasReceipt(input.commandId))) ||
+    (yield* threads.hasReceipt(CommandId.make(`${input.commandId}:initial-message`)))
+  )
+    return yield* launches.launch(input);
   const claimed = yield* AttachmentClaims.claimPendingAttachments({
     threadId: input.threadId,
     attachments: input.initialMessage.attachments,

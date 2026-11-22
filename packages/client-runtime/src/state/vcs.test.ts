@@ -165,6 +165,7 @@ describe("branch subscriptions", () => {
           connect: Effect.void,
           disconnect: Effect.void,
           retryNow: Effect.void,
+          closed: Effect.never,
         });
         const environmentRegistry = EnvironmentRegistry.EnvironmentRegistry.of({
           followStream: (_environmentId, stream) =>
@@ -253,6 +254,7 @@ describe("cached VCS refs", () => {
         connect: Effect.void,
         disconnect: Effect.void,
         retryNow: Effect.void,
+        closed: Effect.never,
       } satisfies EnvironmentSupervisor.EnvironmentSupervisor["Service"]);
       const followStream: EnvironmentRegistry.EnvironmentRegistry["Service"]["followStream"] = (
         _environmentId,
@@ -408,6 +410,7 @@ describe("cached VCS refs", () => {
         connect: Effect.void,
         disconnect: Effect.void,
         retryNow: Effect.void,
+        closed: Effect.never,
       } satisfies EnvironmentSupervisor.EnvironmentSupervisor["Service"]);
       const run: EnvironmentRegistry.EnvironmentRegistry["Service"]["run"] = (
         _environmentId,
@@ -522,6 +525,7 @@ describe("cached VCS refs", () => {
         connect: Effect.void,
         disconnect: Effect.void,
         retryNow: Effect.void,
+        closed: Effect.never,
       } satisfies EnvironmentSupervisor.EnvironmentSupervisor["Service"]);
       const run: EnvironmentRegistry.EnvironmentRegistry["Service"]["run"] = (
         _environmentId,
@@ -608,6 +612,7 @@ describe("cached VCS refs", () => {
         connect: Effect.void,
         disconnect: Effect.void,
         retryNow: Effect.void,
+        closed: Effect.never,
       } satisfies EnvironmentSupervisor.EnvironmentSupervisor["Service"]);
       const refs = yield* Stream.unwrap(
         makeCachedVcsRefsChanges(
@@ -669,6 +674,7 @@ describe("cached VCS refs", () => {
         connect: Effect.void,
         disconnect: Effect.void,
         retryNow: Effect.void,
+        closed: Effect.never,
       } satisfies EnvironmentSupervisor.EnvironmentSupervisor["Service"]);
       const refs = yield* Stream.unwrap(
         makeCachedVcsRefsChanges({ cwd: "/repo", limit: 100 }).pipe(
@@ -697,6 +703,7 @@ describe("cached VCS refs", () => {
         connect: Effect.void,
         disconnect: Effect.void,
         retryNow: Effect.void,
+        closed: Effect.never,
       } satisfies EnvironmentSupervisor.EnvironmentSupervisor["Service"]);
       const refs = yield* Stream.unwrap(
         makeCachedVcsRefsChanges({ cwd: "/repo", limit: 100 }).pipe(
@@ -757,6 +764,7 @@ describe("cached VCS refs", () => {
         connect: Effect.void,
         disconnect: Effect.void,
         retryNow: Effect.void,
+        closed: Effect.never,
       } satisfies EnvironmentSupervisor.EnvironmentSupervisor["Service"]);
 
       const fiber = yield* Stream.unwrap(
@@ -806,6 +814,7 @@ describe("cached VCS refs", () => {
         connect: Effect.void,
         disconnect: Effect.void,
         retryNow: Effect.void,
+        closed: Effect.never,
       } satisfies EnvironmentSupervisor.EnvironmentSupervisor["Service"]);
       const refs = yield* Stream.unwrap(
         makeCachedVcsRefsChanges({ cwd: "/repo", limit: 100 }).pipe(
@@ -852,6 +861,7 @@ describe("cached VCS refs", () => {
         connect: Effect.void,
         disconnect: Effect.void,
         retryNow: Effect.void,
+        closed: Effect.never,
       } satisfies EnvironmentSupervisor.EnvironmentSupervisor["Service"]);
 
       const refs = yield* Stream.unwrap(

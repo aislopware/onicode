@@ -9157,7 +9157,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
           branch: null,
           worktreePath: process.cwd(),
         });
-        for (const index of [0, 1]) {
+        for (const [index, text] of ["Active", "Queued", "Queued last"].entries()) {
           yield* orchestrator.dispatch({
             type: "message.dispatch",
             createdBy: "user",
@@ -9165,7 +9165,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
             commandId: CommandId.make(`${threadId}:message:${index}`),
             threadId,
             messageId: MessageId.make(`${threadId}:message:${index}`),
-            text: index === 0 ? "Active" : "Queued",
+            text,
             attachments: [],
             modelSelection,
             dispatchMode: { type: index === 0 ? "start_immediately" : "queue_after_active" },
@@ -9174,9 +9174,10 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
 
         const before = yield* orchestrator.getThreadProjection(threadId);
         const activeRun = before.runs.find((run) => run.status === "starting");
-        const queuedRun = before.runs.find((run) => run.status === "queued");
+        const [queuedRun, lastRun] = before.runs.filter((run) => run.status === "queued");
         assert.isDefined(activeRun);
         assert.isDefined(queuedRun);
+        assert.isDefined(lastRun);
         assert.isNotNull(activeRun.rootNodeId);
 
         const promotedRunIds = yield* Queue.unbounded<RunId>();
@@ -9251,12 +9252,34 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
           assert.equal(yield* Queue.take(heldRunIds), queuedRun.id);
           const held = yield* orchestrator.getThreadProjection(threadId);
           assert.equal(held.runs.find((run) => run.id === queuedRun.id)?.status, "queued");
-          yield* orchestrator.dispatch({
-            type: "queue.resume",
+          const resume = {
+            type: "queue.resume" as const,
             commandId: CommandId.make(`${threadId}:resume`),
             threadId,
-          });
+          };
+          yield* orchestrator.dispatch(resume);
           assert.equal(yield* Queue.take(promotedRunIds), queuedRun.id);
+          // The resumed run fails before its run-end reaction holds the queue, then the
+          // client resends the Resume whose reply it lost.
+          const resumed = (yield* orchestrator.getThreadProjection(threadId)).runs.find(
+            (run) => run.id === queuedRun.id,
+          )!;
+          yield* (yield* ProjectionStore.ProjectionStoreV2).apply({
+            id: EventId.make(`${threadId}:resumed-failed`),
+            type: "run.updated",
+            threadId,
+            runId: queuedRun.id,
+            occurredAt: now,
+            payload: { ...resumed, status: "failed", completedAt: now },
+          });
+          const replayed = yield* orchestrator.dispatch(resume);
+          assert.isTrue(replayed.replayed);
+          assert.deepInclude(
+            (yield* orchestrator.getThreadProjection(threadId)).runs.find(
+              (run) => run.id === lastRun.id,
+            ),
+            { status: "queued" },
+          );
           return;
         }
         yield* orchestrator.resumeQueuedRuns;

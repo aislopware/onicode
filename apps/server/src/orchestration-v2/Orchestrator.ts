@@ -16897,14 +16897,6 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           }),
       ),
     );
-    if (command.type === "queue.resume" || command.type === "queued-run.start") {
-      yield* mapDispatchError(command)(
-        startNextQueuedRun(command.threadId, {
-          userStarted: true,
-          ...(command.type === "queued-run.start" ? { queuedRunId: command.runId } : {}),
-        }),
-      );
-    }
     return {
       sequence: receipt.resultSequence,
       storedEvents,
@@ -17186,14 +17178,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         commandThreadId: commandThreadId(command),
       });
     }
-    // A replayed receipt starts these again, so their caller can retry.
     if (command.type === "queue.resume" || command.type === "queued-run.start") {
-      yield* mapDispatchError(command)(
-        startNextQueuedRun(command.threadId, {
-          userStarted: true,
-          ...(command.type === "queued-run.start" ? { queuedRunId: command.runId } : {}),
-        }),
-      );
+      yield* startNextQueuedRunAfterCommit(command.type, command.threadId, {
+        userStarted: true,
+        ...(command.type === "queued-run.start" ? { queuedRunId: command.runId } : {}),
+      });
     }
     if (command.type === "thread.runtime-mode.set" && runtimeModeCeiling !== undefined) {
       yield* startNextQueuedRunAfterCommit("runtime-mode", command.threadId, {

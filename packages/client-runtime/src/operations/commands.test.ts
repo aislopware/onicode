@@ -52,6 +52,7 @@ import {
   promoteQueuedRun,
   revertThreadCheckpoint,
   resumeThreadQueue,
+  sendSteerNow,
   startThreadTurn,
 } from "./commands.ts";
 
@@ -147,6 +148,7 @@ const makeSupervisor = Effect.fn("TestEnvironmentCommands.makeSupervisor")(funct
     connect: Effect.void,
     disconnect: Effect.void,
     retryNow: Effect.void,
+    closed: Effect.never,
   } satisfies EnvironmentSupervisor.EnvironmentSupervisor["Service"]);
 });
 
@@ -509,7 +511,7 @@ describe("V2 environment commands", () => {
 
   // A dead socket reaches the caller as a protocol error, or as an interrupt when
   // the supervisor closes the session before the protocol reports the error.
-  it.effect.each([
+  const socketLosses = [
     [
       "protocol error",
       new RpcClientError.RpcClientError({
@@ -520,7 +522,9 @@ describe("V2 environment commands", () => {
       }),
     ],
     ["session close", Effect.failCause(Cause.interrupt())],
-  ] as const)("retries a message dispatch lost to a %s with the same command id", ([, loss]) =>
+  ] as const;
+
+  it.effect.each(socketLosses)("resends a message lost to a %s with its command id", ([, loss]) =>
     Effect.gen(function* () {
       const commands: OrchestrationV2Command[] = [];
       const supervisor = yield* makeSupervisor({ commands, projects: [] });
@@ -568,7 +572,7 @@ describe("V2 environment commands", () => {
     }).pipe(Effect.provide(layerTestRandom)),
   );
 
-  it.effect("stops resending a message whose dispatch keeps losing the socket", () =>
+  it.effect.each(socketLosses)("gives up on a message lost to a %s every time", ([name, loss]) =>
     Effect.gen(function* () {
       const commands: OrchestrationV2Command[] = [];
       const supervisor = yield* makeSupervisor({ commands, projects: [] });
@@ -582,12 +586,7 @@ describe("V2 environment commands", () => {
               supervisor.session,
               Option.some({ ...healthySession, client: dyingClient }),
             );
-            return yield* new RpcClientError.RpcClientError({
-              reason: new RpcClientError.RpcClientDefect({
-                message: "socket closed",
-                cause: new Error("socket closed"),
-              }),
-            });
+            return yield* loss;
           }),
       } as unknown as WsRpcProtocolClient;
       yield* SubscriptionRef.set(
@@ -595,7 +594,7 @@ describe("V2 environment commands", () => {
         Option.some({ ...healthySession, client: dyingClient }),
       );
 
-      const error = yield* startThreadTurn({
+      const cause = yield* startThreadTurn({
         commandId: CommandId.make("command-socket-killer"),
         threadId: v2ThreadId,
         message: {
@@ -608,6 +607,7 @@ describe("V2 environment commands", () => {
         interactionMode: "default",
       }).pipe(
         Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor),
+        Effect.sandbox,
         Effect.flip,
       );
 
@@ -616,7 +616,10 @@ describe("V2 environment commands", () => {
         "command-socket-killer",
         "command-socket-killer",
       ]);
-      expect(error._tag).toBe("RpcClientError");
+      // The composer reports a send that gave up on a closing session as possibly sent.
+      expect(Cause.hasInterruptsOnly(cause) ? "interrupt" : Cause.squash(cause)).toBe(
+        name === "session close" ? "interrupt" : loss,
+      );
     }).pipe(Effect.provide(layerTestRandom)),
   );
 
@@ -759,6 +762,11 @@ describe("V2 environment commands", () => {
         resumeThreadQueue({ commandId, threadId: v2ThreadId, runId: RunId.make("queued") }),
     },
     {
+      name: "resumed queue",
+      method: ORCHESTRATION_V2_WS_METHODS.dispatchCommand,
+      send: (commandId: CommandId) => resumeThreadQueue({ commandId, threadId: v2ThreadId }),
+    },
+    {
       name: "queued message steered",
       method: ORCHESTRATION_V2_WS_METHODS.dispatchCommand,
       send: (commandId: CommandId) =>
@@ -768,6 +776,12 @@ describe("V2 environment commands", () => {
           queuedRunId: RunId.make("queued"),
           targetRunId: RunId.make("running"),
         }),
+    },
+    {
+      name: "steer sent now",
+      method: ORCHESTRATION_V2_WS_METHODS.dispatchCommand,
+      send: (commandId: CommandId) =>
+        sendSteerNow({ commandId, threadId: v2ThreadId, messageId: MessageId.make("steer") }),
     },
   ] as const;
 
@@ -835,6 +849,76 @@ describe("V2 environment commands", () => {
       expect(attempts).toEqual(["command-turn-send"]);
       expect(Exit.isFailure(exit)).toBe(true);
     }).pipe(Effect.provide(layerTestRandom)),
+  );
+
+  it.effect.each([
+    { status: "completed", sent: true },
+    { status: "pending", sent: false },
+  ] as const)(
+    "a steer refused as not waiting counts as sent once read, status=$status",
+    ({ status, sent }) =>
+      Effect.gen(function* () {
+        const supervisor = yield* makeSupervisor({
+          commands: [],
+          projects: [],
+          projection: {
+            ...v2Projection,
+            turnItems: [
+              {
+                id: TurnItemId.make("steer-item"),
+                threadId: v2ThreadId,
+                runId: RunId.make("running"),
+                nodeId: null,
+                providerThreadId: null,
+                providerTurnId: null,
+                nativeItemRef: null,
+                parentItemId: null,
+                ordinal: 1,
+                status,
+                title: null,
+                startedAt: v2Now,
+                completedAt: null,
+                updatedAt: v2Now,
+                type: "user_message",
+                createdBy: "user",
+                creationSource: "web",
+                messageId: MessageId.make("steer"),
+                inputIntent: "steer",
+                text: "Use the other API",
+                attachments: [],
+              },
+            ],
+          },
+        });
+        const session = Option.getOrThrow(yield* SubscriptionRef.get(supervisor.session));
+        yield* SubscriptionRef.set(
+          supervisor.session,
+          Option.some({
+            ...session,
+            client: {
+              ...session.client,
+              [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: (command: OrchestrationV2Command) =>
+                Effect.fail(
+                  new OrchestrationV2DispatchCommandError({
+                    commandId: command.commandId,
+                    commandType: command.type,
+                    message: "Message steer is not a steer waiting to be read.",
+                  }),
+                ),
+            } as unknown as WsRpcProtocolClient,
+          }),
+        );
+
+        const exit = yield* sendSteerNow({
+          threadId: v2ThreadId,
+          messageId: MessageId.make("steer"),
+        }).pipe(
+          Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor),
+          Effect.exit,
+        );
+
+        expect(Exit.isSuccess(exit)).toBe(sent);
+      }).pipe(Effect.provide(layerTestRandom)),
   );
 
   it.effect("Stop with no run left ends the thread's pull request watches", () =>

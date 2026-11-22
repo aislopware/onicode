@@ -607,6 +607,37 @@ describe("queued task whose launch reply is lost", () => {
     expect(remaining()).toEqual([]);
   });
 
+  it("does not launch a task deleted while its socket was down", async () => {
+    setOperateGrant("secondary", true);
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    state.cleanups.push(() => vi.useRealTimers());
+    const queued = queuedTask();
+    await state.manager.enqueue(queued);
+    const sent = Promise.withResolvers<void>();
+    const reconnected = Promise.withResolvers<void>();
+    const launched: Array<unknown> = [];
+    // Like startThreadTurn: unless the caller opts out, a lost socket waits for the next one.
+    state.start.mockImplementation(async ({ input }) => {
+      sent.resolve();
+      if (input.resendAfterSocketLoss === false) {
+        return AsyncResult.failure(Cause.fail(new Error("Socket is not connected")));
+      }
+      await reconnected.promise;
+      launched.push(input);
+      return AsyncResult.success({});
+    });
+    const drained = runDrain();
+    await sent.promise;
+    await state.manager.remove(queued);
+    reconnected.resolve();
+    await drained;
+    vi.advanceTimersByTime(threadOutboxRetryDelayMs(1));
+
+    expect(launched).toEqual([]);
+    expect(state.start).toHaveBeenCalledOnce();
+    expect(remaining()).toEqual([]);
+  });
+
   it("resends a pull request task in its launched worktree without checking out again", async () => {
     state.checkout.mockResolvedValueOnce(
       AsyncResult.success({

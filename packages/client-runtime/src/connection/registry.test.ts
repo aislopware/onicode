@@ -1,11 +1,16 @@
 import {
+  CommandId,
   type DesktopSshEnvironmentTarget,
   EnvironmentId,
+  ORCHESTRATION_V2_WS_METHODS,
   type OrchestrationV2ShellSnapshot,
   type ServerConfig,
+  ThreadId,
 } from "@onicode/contracts";
 import { describe, expect, it } from "@effect/vitest";
+import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -61,6 +66,7 @@ import * as RpcSession from "../rpc/session.ts";
 import * as EnvironmentSupervisor from "./supervisor.ts";
 import * as ConnectionWakeups from "./wakeups.ts";
 import { runDesktopCommitWithReconnectObserver } from "../state/server.ts";
+import { resumeThreadQueue } from "../operations/commands.ts";
 import { v2ShellSnapshot } from "../state/orchestrationV2TestFixtures.ts";
 
 const TARGET = new PrimaryConnectionTarget({
@@ -174,6 +180,7 @@ const makeHarness = Effect.fn("TestEnvironmentRegistry.makeHarness")(function* (
     ) => Effect.Effect<ConnectionBlockedError | undefined>;
     readonly initialDisabled?: ReadonlyArray<EnvironmentId>;
     readonly directEndpoints?: ServerConfig["directEndpoints"];
+    readonly client?: RpcSession.RpcSession["client"];
   },
 ) {
   const storedTargets = yield* Ref.make<ReadonlyArray<ConnectionTarget>>(initialTargets);
@@ -375,7 +382,7 @@ const makeHarness = Effect.fn("TestEnvironmentRegistry.makeHarness")(function* (
       yield* Ref.update(sessions, (current) => [...current, { closed }]);
       const session = yield* Effect.acquireRelease(
         Effect.succeed({
-          client: {} as RpcSession.RpcSession["client"],
+          client: options?.client ?? ({} as RpcSession.RpcSession["client"]),
           initialConfig:
             options?.directEndpoints === undefined
               ? Effect.die(new Error("Config is not used by registry tests."))
@@ -949,7 +956,16 @@ describe("EnvironmentRegistry", () => {
         ...REMOTE_TARGET,
         label: "Replacement remote environment",
       });
-      const harness = yield* makeHarness([REMOTE_TARGET]);
+      const dispatched = yield* Deferred.make<void>();
+      const harness = yield* makeHarness([REMOTE_TARGET], [], [], {
+        // The frame is lost, so the send waits for this supervisor to reconnect.
+        client: {
+          [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: () =>
+            Deferred.succeed(dispatched, undefined).pipe(
+              Effect.andThen(Effect.failCause(Cause.interrupt())),
+            ),
+        } as unknown as RpcSession.RpcSession["client"],
+      });
 
       yield* Effect.gen(function* () {
         const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
@@ -989,12 +1005,32 @@ describe("EnvironmentRegistry", () => {
             ),
         );
 
+        const send = yield* Effect.forkChild(
+          registry
+            .run(
+              REMOTE_TARGET.environmentId,
+              resumeThreadQueue({
+                commandId: CommandId.make("command-before-replacement"),
+                threadId: ThreadId.make("thread-before-replacement"),
+              }),
+            )
+            .pipe(
+              Effect.provideService(
+                SecureRandom.SecureRandom,
+                SecureRandom.make((size) => new Uint8Array(size)),
+              ),
+            ),
+        );
+        yield* Deferred.await(dispatched);
         yield* Deferred.await(firstObserved).pipe(Effect.timeout("1 second"));
         yield* registry.register(sshRegistration(replacement));
         yield* Deferred.await(secondObserved).pipe(Effect.timeout("1 second"));
         yield* Fiber.interrupt(subscription);
 
         expect(yield* Ref.get(labels)).toEqual([REMOTE_TARGET.label, replacement.label]);
+        // The replaced supervisor never reconnects, so the send ends instead of holding the thread.
+        const sent = yield* Fiber.await(send);
+        expect(Exit.isFailure(sent) && Cause.hasInterruptsOnly(sent.cause)).toBe(true);
       }).pipe(Effect.provide(harness.layer), Effect.scoped);
     }),
   );

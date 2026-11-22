@@ -60,6 +60,7 @@ const layerFailingDispatchHandler =
 const layerFailingDispatch = (captured: OrchestrationV2ServerCommand[]) =>
   Layer.mock(ThreadManagementService.ThreadManagementService)({
     dispatch: layerFailingDispatchHandler(captured),
+    hasReceipt: () => Effect.succeed(false),
   });
 
 const NOW = DateTime.makeUnsafe("2026-09-13T00:00:00.000Z");
@@ -208,6 +209,7 @@ it.effect("releases claimed copies when the command was already rejected", () =>
     }).pipe(
       Effect.provide(
         Layer.mock(ThreadManagementService.ThreadManagementService)({
+          hasReceipt: () => Effect.succeed(false),
           dispatch: (command) =>
             Effect.fail(
               new OrchestratorCommandPreviouslyRejectedError({
@@ -255,41 +257,48 @@ it.effect("releases claimed copies when dispatch replays an earlier accepted res
       requestId: "request-replay",
       attachmentsByQuestionId: { q: [earlierAttachment] },
     });
-    const result = yield* dispatchCommand({
-      type: "runtime-request.respond",
-      commandId: CommandId.make("answer-replay"),
-      threadId,
-      requestId: RuntimeRequestId.make("request-replay"),
-      answers: { q: ["one"] },
-      attachmentsByQuestionId: {
-        q: [
-          {
-            type: "image",
-            id: pendingId,
-            name: "screen.png",
-            mimeType: "image/png",
-            sizeBytes: 3,
-          },
-        ],
-      },
-    }).pipe(
-      Effect.provide(
-        Layer.mock(ThreadManagementService.ThreadManagementService)({
-          dispatch: () => Effect.succeed({ sequence: 1, storedEvents }),
-        }),
-      ),
-      Effect.result,
-    );
-    expect(result._tag).toBe("Success");
-    expect(
+    // Without a receipt yet, a concurrent first attempt can still commit before this dispatch.
+    const respond = (receipt: boolean) =>
+      dispatchCommand({
+        type: "runtime-request.respond",
+        commandId: CommandId.make("answer-replay"),
+        threadId,
+        requestId: RuntimeRequestId.make("request-replay"),
+        answers: { q: ["one"] },
+        attachmentsByQuestionId: {
+          q: [
+            {
+              type: "image",
+              id: pendingId,
+              name: "screen.png",
+              mimeType: "image/png",
+              sizeBytes: 3,
+            },
+          ],
+        },
+      }).pipe(
+        Effect.provide(
+          Layer.mock(ThreadManagementService.ThreadManagementService)({
+            hasReceipt: () => Effect.succeed(receipt),
+            dispatch: () => Effect.succeed({ sequence: 1, storedEvents }),
+          }),
+        ),
+        Effect.result,
+      );
+    const threadFiles = () =>
       NodeFS.readdirSync(config.attachmentsDir).filter((entry) =>
         entry.startsWith("thread-replay-"),
-      ),
-    ).toEqual([`${earlierAttachment.id}.png`]);
+      );
+    expect((yield* respond(false))._tag).toBe("Success");
+    expect(threadFiles()).toEqual([`${earlierAttachment.id}.png`]);
     expect(
       NodeFS.readFileSync(NodePath.join(config.attachmentsDir, `${earlierAttachment.id}.png`)),
     ).toEqual(Buffer.from([4, 4, 4]));
     expect(NodeFS.existsSync(NodePath.join(config.attachmentsDir, `${pendingId}.png`))).toBe(true);
+    // The pending sweep removes the upload; a retry of the accepted answer replays without it.
+    NodeFS.rmSync(NodePath.join(config.attachmentsDir, `${pendingId}.png`));
+    expect((yield* respond(true))._tag).toBe("Success");
+    expect(threadFiles()).toEqual([`${earlierAttachment.id}.png`]);
   }).pipe(Effect.provide(layerIntakeTest)),
 );
 
@@ -345,6 +354,7 @@ it.effect("a retried response re-claims the preserved pending uploads", () =>
     const retry = yield* dispatchCommand(command).pipe(
       Effect.provide(
         Layer.mock(ThreadManagementService.ThreadManagementService)({
+          hasReceipt: () => Effect.succeed(false),
           dispatch: (dispatched) => {
             captured.push(dispatched);
             return Effect.succeed({ sequence: 1, storedEvents: [] });
