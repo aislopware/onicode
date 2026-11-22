@@ -3221,3 +3221,4 @@ c198f73b37	take	taken as is
 356dff3352	take	fix(web): RTF previews respect hidden character formatting (#40783)
 5fc2eb2f47	take	fix(mobile): the iOS composer keeps its keyboard and caret after dictation (#33916)
 997103be46	take	fix(shared): find file links whose labels contain brackets (#40781)
+1acfd37c17	skip	kept Onicode's effort picker: reasoning levels are one slider (single focus stop, arrows change the value) and options are segment rows, so upstream's first-letter focus over radio rows has nothing to land on; typeahead on the slider would have to change the level, which upstream deliberately avoids
