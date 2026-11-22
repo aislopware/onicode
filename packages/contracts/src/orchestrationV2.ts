@@ -3571,6 +3571,8 @@ export const OrchestrationV2Command = Schema.Union([
     manualContinuationOfRunId: Schema.optional(RunId),
     steerFollowUpOfRunId: Schema.optional(RunId),
     steerFollowUpAfterRunOrdinal: Schema.optional(NonNegativeInt),
+    /** A promoted message's place: the messages queued ahead of it when it was promoted. */
+    steerFollowUpAfterMessageIds: Schema.optional(Schema.Array(MessageId)),
     /** The run whose turn failed or was stopped before it took this steer; it returns to the queue, held. */
     steerMissedRunId: Schema.optional(RunId),
     usageLimitRecoveryRequestId: Schema.optional(CommandId),

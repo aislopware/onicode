@@ -75,6 +75,7 @@ export const OrchestrationEffectRequestV2 = Schema.Union([
     messageId: MessageId,
     modelSelection: Schema.optional(ModelSelection),
     steerFollowUpAfterRunOrdinal: Schema.optional(NonNegativeInt),
+    steerFollowUpAfterMessageIds: Schema.optional(Schema.Array(MessageId)),
   }),
   Schema.Struct({
     type: Schema.Literal("provider-turn.steer-now"),
@@ -237,11 +238,11 @@ export interface EffectOutboxV2Shape {
   readonly listByCommandId: (
     commandId: CommandId,
   ) => Effect.Effect<ReadonlyArray<OrchestrationEffectV2>, EffectOutboxError>;
-  /** A message's first steer effect: it records which runs were queued before the message. */
-  readonly firstSteer: (
+  /** A message's steer effects, oldest first. Each records the queue its message stays behind. */
+  readonly steers: (
     threadId: ThreadId,
     messageId: MessageId,
-  ) => Effect.Effect<Option.Option<OrchestrationEffectV2>, EffectOutboxError>;
+  ) => Effect.Effect<ReadonlyArray<OrchestrationEffectV2>, EffectOutboxError>;
   readonly cancelUnsettled: (input: {
     readonly threadId: ThreadId;
     readonly effectTypes: ReadonlyArray<OrchestrationEffectRequestV2["type"]>;
@@ -493,7 +494,7 @@ export const layer: Layer.Layer<EffectOutboxV2, never, SqlClient.SqlClient> = La
               : new EffectOutboxError({ operation: "list", cause }),
           ),
         ),
-      firstSteer: (threadId, messageId) =>
+      steers: (threadId, messageId) =>
         sql<EffectRow>`
           SELECT *
           FROM orchestration_v2_effect_outbox
@@ -501,15 +502,13 @@ export const layer: Layer.Layer<EffectOutboxV2, never, SqlClient.SqlClient> = La
             AND effect_type = 'provider-turn.steer'
             AND json_extract(payload_json, '$.messageId') = ${messageId}
           ORDER BY rowid ASC
-          LIMIT 1
         `.pipe(
           NodeSqliteClient.readOnly,
-          Effect.flatMap((rows) => decodeRows("first-steer", rows)),
-          Effect.map((effects) => Option.fromNullishOr(effects[0])),
+          Effect.flatMap((rows) => decodeRows("steers", rows)),
           Effect.mapError((cause) =>
             isEffectOutboxError(cause)
               ? cause
-              : new EffectOutboxError({ operation: "first-steer", cause }),
+              : new EffectOutboxError({ operation: "steers", cause }),
           ),
         ),
       cancelUnsettled: Effect.fn("EffectOutbox.cancelUnsettled")(

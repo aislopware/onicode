@@ -427,6 +427,12 @@ export const layerExecutor: Layer.Layer<
                           ? {
                               steerFollowUpAfterRunOrdinal:
                                 effect.request.steerFollowUpAfterRunOrdinal,
+                              ...(effect.request.steerFollowUpAfterMessageIds === undefined
+                                ? {}
+                                : {
+                                    steerFollowUpAfterMessageIds:
+                                      effect.request.steerFollowUpAfterMessageIds,
+                                  }),
                             }
                           : {}),
                         text: message.text,

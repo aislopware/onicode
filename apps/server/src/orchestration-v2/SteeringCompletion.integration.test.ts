@@ -2185,6 +2185,19 @@ it.effect.each(["complete", "stop-before-end"] as const)(
         const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
         const threadId = yield* startFirstTurn;
         const first = started[0]!;
+        if (timing === "stop-before-end") {
+          yield* orchestrator.dispatch({
+            type: "message.dispatch",
+            commandId: CommandId.make("queued-earlier"),
+            threadId,
+            messageId: MessageId.make("message:queued-earlier"),
+            text: "queued earlier",
+            attachments: [],
+            dispatchMode: { type: "queue_after_active" },
+            createdBy: "user",
+            creationSource: "web",
+          });
+        }
         yield* orchestrator.dispatch({
           type: "message.dispatch",
           commandId: CommandId.make("steer"),
@@ -2250,11 +2263,12 @@ it.effect.each(["complete", "stop-before-end"] as const)(
           const queued = (yield* orchestrator.getThreadProjection(threadId)).runs
             .filter((run) => run.status === "queued")
             .toSorted((left, right) => (left.queuePosition ?? 0) - (right.queuePosition ?? 0));
-          // The unread steer goes next; Stop's hold stays on the rest of the queue.
+          // The unread steer goes next and shows first; Stop's hold stays on the rest of the queue.
           assert.deepEqual(
             queued.map((run) => [run.userMessageId, run.queueHeld === true]),
             [
               [MessageId.make("message:steer"), false],
+              [MessageId.make("message:queued-earlier"), true],
               [MessageId.make("message:queued-later"), true],
             ],
           );
@@ -2294,6 +2308,14 @@ const declinedSteerTimings = [
   "two-steers",
   // A steer that named no model runs on the pick made after its decline.
   "pick-after-decline",
+  // A queued message promoted to a steer goes back to its place in the queue.
+  "promoted",
+  "promoted-after-reorder",
+  "promoted-again",
+  "promoted-after-later-promotion",
+  // Promotions and steers still in flight keep the order they were sent in.
+  "promoted-while-earlier-in-flight",
+  "promoted-while-steer-in-flight",
 ] as const;
 
 it.effect.each(declinedSteerTimings)(
@@ -2388,22 +2410,112 @@ it.effect.each(declinedSteerTimings)(
             );
         }
         const messageId = MessageId.make("message:declined");
-        yield* orchestrator.dispatch({
-          type: "message.dispatch",
-          commandId: CommandId.make("steer"),
-          threadId,
-          messageId,
-          text: "follow up",
-          attachments: [],
-          ...(timing === "queued-model" ? { modelSelection: steerSelection } : {}),
-          dispatchMode: { type: "steer_active", targetRunId: first.runId },
-          createdBy: "user",
-          creationSource: "web",
-        });
+        const queuedLater = MessageId.make("message:queued-later");
+        const queuedLast = MessageId.make("message:queued-last");
+        const queueMessage = (id: MessageId) =>
+          orchestrator.dispatch({
+            type: "message.dispatch",
+            commandId: CommandId.make(`queue-${id}`),
+            threadId,
+            messageId: id,
+            text: id,
+            attachments: [],
+            dispatchMode: { type: "queue_after_active" },
+            createdBy: "user",
+            creationSource: "web",
+          });
+        const queuedRunOf = (id: MessageId) =>
+          orchestrator
+            .getThreadProjection(threadId)
+            .pipe(
+              Effect.map((projection) =>
+                projection.runs.find((run) => run.userMessageId === id && run.status === "queued")!,
+              ),
+            );
+        const promoteInFlight = (id: MessageId, commandId: string) =>
+          Effect.gen(function* () {
+            yield* orchestrator.dispatch({
+              type: "queued-message.promote-to-steer",
+              commandId: CommandId.make(commandId),
+              threadId,
+              queuedRunId: (yield* queuedRunOf(id)).id,
+              targetRunId: first.runId,
+            });
+          });
+        const promote = (id: MessageId, commandId: string) =>
+          promoteInFlight(id, commandId).pipe(Effect.andThen(worker.drain()));
+        if (timing === "promoted-again") {
+          // Declined once, it goes ahead of what was queued after it was sent; promoted and
+          // declined again, it keeps that place.
+          yield* orchestrator.dispatch({
+            type: "message.dispatch",
+            commandId: CommandId.make("steer-first"),
+            threadId,
+            messageId,
+            text: "follow up",
+            attachments: [],
+            dispatchMode: { type: "steer_active", targetRunId: first.runId },
+            createdBy: "user",
+            creationSource: "web",
+          });
+          yield* queueMessage(queuedLater);
+          yield* worker.drain();
+          yield* promote(messageId, "steer");
+        } else if (timing === "promoted-while-steer-in-flight") {
+          yield* orchestrator.dispatch({
+            type: "message.dispatch",
+            commandId: CommandId.make("steer"),
+            threadId,
+            messageId,
+            text: "follow up",
+            attachments: [],
+            dispatchMode: { type: "steer_active", targetRunId: first.runId },
+            createdBy: "user",
+            creationSource: "web",
+          });
+          yield* queueMessage(queuedLater);
+          yield* promoteInFlight(queuedLater, "promote-later");
+        } else if (timing === "promoted-while-earlier-in-flight") {
+          yield* queueMessage(messageId);
+          yield* queueMessage(queuedLater);
+          yield* promoteInFlight(messageId, "steer");
+          yield* promoteInFlight(queuedLater, "promote-later");
+        } else if (timing.startsWith("promoted")) {
+          yield* queueMessage(messageId);
+          yield* queueMessage(queuedLater);
+          if (timing === "promoted-after-reorder") {
+            yield* queueMessage(queuedLast);
+            yield* orchestrator.dispatch({
+              type: "queued-run.reorder",
+              commandId: CommandId.make("reorder"),
+              threadId,
+              runId: (yield* queuedRunOf(queuedLater)).id,
+              beforeRunId: (yield* queuedRunOf(messageId)).id,
+            });
+          }
+          if (timing === "promoted-after-later-promotion") {
+            yield* promote(queuedLater, "promote-later");
+          }
+          yield* promote(messageId, "steer");
+        } else {
+          yield* orchestrator.dispatch({
+            type: "message.dispatch",
+            commandId: CommandId.make("steer"),
+            threadId,
+            messageId,
+            text: "follow up",
+            attachments: [],
+            ...(timing === "queued-model" ? { modelSelection: steerSelection } : {}),
+            dispatchMode: { type: "steer_active", targetRunId: first.runId },
+            createdBy: "user",
+            creationSource: "web",
+          });
+        }
         yield* worker.drain();
         const pending = yield* orchestrator.getThreadProjection(threadId);
         const queued = pending.runs.find(
-          (run) => run.userMessageId === messageId && run.id !== first.runId,
+          (run) =>
+            run.userMessageId === messageId && run.id !== first.runId && run.status !== "cancelled",
         );
         const effects = yield* (yield* EffectOutbox.EffectOutboxV2).listByCommandId(
           CommandId.make("steer"),
@@ -2437,6 +2549,21 @@ it.effect.each(declinedSteerTimings)(
               MessageId.make("message:steer-later"),
               MessageId.make("message:queued-last"),
             ],
+          );
+          return;
+        }
+        if (timing.startsWith("promoted")) {
+          assert.deepEqual(
+            pending.runs
+              .filter((run) => run.status === "queued")
+              .toSorted(
+                (left, right) =>
+                  (left.queuePosition ?? left.ordinal) - (right.queuePosition ?? right.ordinal),
+              )
+              .map((run) => run.userMessageId),
+            timing === "promoted-after-reorder"
+              ? [queuedLater, messageId, queuedLast]
+              : [messageId, queuedLater],
           );
           return;
         }

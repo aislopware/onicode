@@ -576,6 +576,22 @@ export class OrchestratorV2 extends Context.Service<OrchestratorV2, Orchestrator
   "onicode/orchestration-v2/Orchestrator/OrchestratorV2",
 ) {}
 
+/** The messages queued ahead of a queued run, in queue order. */
+function messagesQueuedAhead(
+  projection: Pick<OrchestrationV2ThreadProjection, "runs">,
+  runId: RunId,
+): ReadonlyArray<MessageId> {
+  const queued = projection.runs
+    .filter((run) => run.status === "queued")
+    .toSorted(
+      (left, right) =>
+        (left.queuePosition ?? left.ordinal) - (right.queuePosition ?? right.ordinal) ||
+        left.ordinal - right.ordinal,
+    );
+  const index = queued.findIndex((run) => run.id === runId);
+  return (index === -1 ? queued : queued.slice(0, index)).map((run) => run.userMessageId);
+}
+
 /** Run ordinals can skip values: a queued run moves past newer runs when it starts. */
 function nextRunOrdinal(projection: Pick<OrchestrationV2ThreadProjection, "runs">): number {
   return projection.runs.reduce((max, run) => Math.max(max, run.ordinal), 0) + 1;
@@ -3802,11 +3818,12 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       if (message === undefined) continue;
       const stopped = yield* projectionStore.hasRunInterruptRequest(threadId, run.id);
       // The message's first steer effect recorded which runs were queued before it was sent; a
-      // queued message that was promoted also stays behind only the runs queued before its own.
-      const firstSteer = Option.getOrUndefined(
-        yield* effectOutbox.firstSteer(threadId, message.id),
-      )?.request;
-      const steer = firstSteer?.type === "provider-turn.steer" ? firstSteer : undefined;
+      // promotion's latest steer effect saved its place in the queue.
+      const steers = (yield* effectOutbox.steers(threadId, message.id)).flatMap((effect) =>
+        effect.request.type === "provider-turn.steer" ? [effect.request] : [],
+      );
+      const steer = steers[0];
+      const afterMessageIds = steers.at(-1)?.steerFollowUpAfterMessageIds;
       const afterRunOrdinal = Math.max(
         0,
         Math.min(
@@ -3824,6 +3841,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         message,
         steer,
         afterRunOrdinal,
+        afterMessageIds,
         held: stopped && item.type === "notification",
       });
     }
@@ -3832,10 +3850,13 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     placed.sort(
       (left, right) =>
         Number(left.held) - Number(right.held) ||
+        // A promotion's saved place names the messages that go ahead of it.
+        Number(left.afterMessageIds?.includes(right.message.id) === true) -
+          Number(right.afterMessageIds?.includes(left.message.id) === true) ||
         left.afterRunOrdinal - right.afterRunOrdinal ||
         left.item.ordinal - right.item.ordinal,
     );
-    for (const { run, message, steer, afterRunOrdinal, held } of placed) {
+    for (const { run, message, steer, afterRunOrdinal, afterMessageIds, held } of placed) {
       yield* dispatchWithReceiptEffect({
         type: "message.dispatch",
         commandId: CommandId.make(`${UNREAD_STEER_COMMAND_PREFIX}${run.id}:${message.id}`),
@@ -3843,7 +3864,13 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         messageId: message.id,
         ...(held
           ? { steerMissedRunId: run.id }
-          : { steerFollowUpOfRunId: run.id, steerFollowUpAfterRunOrdinal: afterRunOrdinal }),
+          : {
+              steerFollowUpOfRunId: run.id,
+              steerFollowUpAfterRunOrdinal: afterRunOrdinal,
+              ...(afterMessageIds === undefined
+                ? {}
+                : { steerFollowUpAfterMessageIds: afterMessageIds }),
+            }),
         ...(message.followsThreadSelection === true
           ? {}
           : { modelSelection: steer?.modelSelection ?? run.modelSelection }),
@@ -6501,6 +6528,47 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     }
   });
 
+  /**
+   * A promoted message's place: the messages queued ahead of it, and the steers already sent into
+   * its turn, except promotions that were queued behind it.
+   */
+  const promotedSteerAhead = Effect.fn("Orchestrator.promotedSteerAhead")(function* (
+    projection: Pick<OrchestrationV2ThreadProjection, "runs" | "turnItems" | "thread">,
+    queuedRunId: RunId,
+    targetRunId: RunId,
+  ) {
+    const promoted = projection.runs.find((run) => run.id === queuedRunId);
+    const queuedMessageIds = new Set(
+      projection.runs.flatMap((run) => (run.status === "queued" ? [run.userMessageId] : [])),
+    );
+    const sentIntoTurn = [
+      ...new Set(
+        projection.turnItems.flatMap((item) =>
+          item.type === "user_message" &&
+          item.runId === targetRunId &&
+          (item.inputIntent === "steer" || item.inputIntent === "promoted_queued_to_steer") &&
+          item.messageId !== promoted?.userMessageId &&
+          !queuedMessageIds.has(item.messageId)
+            ? [item.messageId]
+            : [],
+        ),
+      ),
+    ];
+    const ahead = yield* Effect.forEach(sentIntoTurn, (messageId) =>
+      effectOutbox.steers(projection.thread.id, messageId).pipe(
+        Effect.map((effects) => {
+          const latest = effects.at(-1)?.request;
+          const behind =
+            promoted !== undefined &&
+            latest?.type === "provider-turn.steer" &&
+            latest.steerFollowUpAfterMessageIds?.includes(promoted.userMessageId) === true;
+          return behind ? [] : [messageId];
+        }),
+      ),
+    );
+    return [...messagesQueuedAhead(projection, queuedRunId), ...ahead.flat()];
+  });
+
   const dispatchSteerIntoRun = Effect.fn("Orchestrator.dispatchSteerIntoRun")(function* (input: {
     readonly command: Extract<
       OrchestrationV2Command,
@@ -6820,6 +6888,14 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           !steerCarriesSelection &&
           session.providerSession.capabilities.turns.activeSteeringConfirmsRead === true,
       });
+      const promotedAhead =
+        input.command.type === "queued-message.promote-to-steer"
+          ? yield* promotedSteerAhead(
+              input.projection,
+              input.command.queuedRunId,
+              targetRun.id,
+            ).pipe(mapDispatchError(input.command))
+          : undefined;
       yield* Ref.update(input.effects, (existing) => [
         ...existing,
         {
@@ -6837,6 +6913,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
               0,
               ...input.projection.runs.map((run) => run.ordinal),
             ),
+            ...(promotedAhead === undefined ? {} : { steerFollowUpAfterMessageIds: promotedAhead }),
           },
         } satisfies PendingOrchestrationEffectV2,
       ]);
@@ -8430,7 +8507,21 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       const noticeFollowsStop =
         steerFollowUpSource !== undefined && stopReachedSteerSource && !steerRunsAfterStop;
       let steerFollowUpQueuePosition: number | undefined;
-      if (command.steerFollowUpAfterRunOrdinal !== undefined) {
+      if (command.steerFollowUpAfterMessageIds !== undefined) {
+        const ahead = new Set(command.steerFollowUpAfterMessageIds);
+        steerFollowUpQueuePosition =
+          Math.max(
+            0,
+            ...projection.runs
+              .filter(
+                (candidate) =>
+                  candidate.status === "queued" &&
+                  !(steerRunsAfterStop && candidate.queueHeld === true) &&
+                  ahead.has(candidate.userMessageId),
+              )
+              .map((candidate) => candidate.queuePosition ?? candidate.ordinal),
+          ) + 1;
+      } else if (command.steerFollowUpAfterRunOrdinal !== undefined) {
         const afterRunOrdinal = command.steerFollowUpAfterRunOrdinal;
         const steerOrdinal =
           // A notice's item is a notification, which the command projection leaves out.
@@ -8456,6 +8547,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
               .filter(
                 (candidate) =>
                   candidate.status === "queued" &&
+                  // A steer that runs after Stop goes ahead of the runs Stop holds, as it starts first.
+                  !(steerRunsAfterStop && candidate.queueHeld === true) &&
                   (candidate.ordinal <= afterRunOrdinal ||
                     earlierSteerMessageIds.has(candidate.userMessageId) ||
                     earlierNoticeItemIds.has(
