@@ -3258,3 +3258,4 @@ b23f1e8af9	take	adapted: turn/start deadline wraps inside Onicode's refused-requ
 a985332c44	take	kept Onicode's probedPathDirectory (bare-drive PATH fix) in the now-async Windows PATH scan
 b479ce21ed	take	adapted: no relay, so no via/network hint; socket failures keep hop server; restored isSocketErrorReason for socket-shaped RPC errors
 620cf4770d	skip	serves the hosted web app only: Electron ships no Chrome page translator, and patching Node.prototype adds a check to every DOM removeChild/insertBefore
+30372d0fad	take	file-backed image drafts, outbox v4 writes (v4 reader since #9713, in Onicode native 3.0.0/2.3.0)
