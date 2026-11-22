@@ -974,7 +974,7 @@ it.effect.each([
 
 it.effect("sends a selected held message once and preserves the remaining queue order", () =>
   Effect.gen(function* () {
-    const { started, steered, layer, startFirstTurn } =
+    const { started, steered, layer, startFirstTurn, capabilitiesGate } =
       yield* nextTurnSelectionHarness("send-held-message");
     yield* Effect.gen(function* () {
       const orchestrator = yield* Orchestrator.OrchestratorV2;
@@ -1032,10 +1032,24 @@ it.effect("sends a selected held message once and preserves the remaining queue 
       // The client's socket drops right after the commit; the resend only replays its receipt.
       const committed = yield* Deferred.make<void>();
       const release = yield* Deferred.make<void>();
+      // The start after the commit then blocks on a probe; the interrupt must not wait for it.
+      const startEntered = yield* Deferred.make<void>();
+      const startRelease = yield* Deferred.make<void>();
+      const startedBy: Array<number> = [];
+      const blockStart = Deferred.succeed(startEntered, undefined).pipe(
+        Effect.andThen(Deferred.await(startRelease)),
+        Effect.andThen(Effect.fiberId),
+        Effect.map((id) => void startedBy.push(id)),
+      );
       const commitCommand = sink.commitCommand;
       using _commit = vi.spyOn(sink, "commitCommand").mockImplementation((input) =>
         input.commandId === command.commandId
           ? commitCommand(input).pipe(
+              Effect.tap(() =>
+                Effect.sync(() => {
+                  capabilitiesGate.entered = blockStart;
+                }),
+              ),
               Effect.tap(() => Deferred.succeed(committed, undefined)),
               Effect.tap(() => Deferred.await(release)),
             )
@@ -1049,10 +1063,16 @@ it.effect("sends a selected held message once and preserves the remaining queue 
         Effect.forkChild({ startImmediately: true }),
       );
       yield* Deferred.succeed(release, undefined);
+      yield* Deferred.await(startEntered);
+      yield* Deferred.succeed(startRelease, undefined);
       yield* Fiber.join(interrupting);
+      capabilitiesGate.entered = Effect.void;
       yield* worker.drain();
       yield* orchestrator.dispatch(command);
       yield* worker.drain();
+      // The background retry started it, not the interrupted call.
+      assert.isNotEmpty(startedBy);
+      assert.notInclude(startedBy, dropped.id);
       const after = yield* orchestrator.getThreadProjection(threadId);
       assert.equal(after.runs.find((run) => run.id === selected.id)?.status, "running");
       assert.deepEqual(
@@ -1072,13 +1092,24 @@ it.effect("sends a selected held message once and preserves the remaining queue 
         [MessageId.make("message:queued-first"), MessageId.make("message:queued-last")],
       );
       assert.isFalse(after.runs.some((run) => run.status === "queued" && run.queueHeld));
-      const duplicate = yield* orchestrator
+      // Another client's tap on the started message has nothing left to send.
+      const duplicate = yield* orchestrator.dispatch({
+        ...command,
+        commandId: CommandId.make("send-selected-again"),
+      });
+      assert.deepEqual(duplicate.storedEvents, []);
+      yield* worker.drain();
+      assert.lengthOf(started, 2);
+      const busy = yield* orchestrator
         .dispatch({
           ...command,
-          commandId: CommandId.make("send-selected-again"),
+          commandId: CommandId.make("send-queued-first"),
+          runId: after.runs.find(
+            (run) => run.userMessageId === MessageId.make("message:queued-first"),
+          )!.id,
         })
         .pipe(Effect.flip);
-      assert.equal(duplicate._tag, "OrchestratorDispatchError");
+      assert.equal(busy._tag, "OrchestratorDispatchError");
     }).pipe(Effect.provide(layer));
   }),
 );

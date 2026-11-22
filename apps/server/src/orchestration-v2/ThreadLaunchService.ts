@@ -157,6 +157,7 @@ export class ThreadLaunchError extends Schema.TaggedError<ThreadLaunchError>()(
       "resolve-project",
       "read-receipt",
       "read-accepted-message",
+      "read-claimed-thread",
       "generate-metadata",
       "provision-worktree",
       "run-setup-script",
@@ -1501,9 +1502,10 @@ const make = Effect.gen(function* () {
         const threadId =
           claimed.storedEvents.find((stored) => stored.event.type.startsWith("thread."))?.event
             .threadId ?? candidateThreadId;
+        // The claim may have committed the first message, so this read is not project resolution.
         const committedThread = yield* threads
           .getThreadShell(threadId)
-          .pipe(Effect.mapError(mapError(input, "resolve-project", threadId)));
+          .pipe(Effect.mapError(mapError(input, "read-claimed-thread", threadId)));
         if (committedThread?.projectId !== input.projectId) {
           return yield* mapError(input, "resolve-project", threadId)("Project identity changed.");
         }

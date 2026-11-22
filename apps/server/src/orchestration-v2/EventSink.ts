@@ -221,6 +221,11 @@ export interface EventSinkV2Shape {
     };
     /** Like writeWithEffects' updateDelegatedCompletionOnly, for this run's run.updated only. */
     readonly updateDelegatedCompletionOnlyRunId?: RunId;
+    /**
+     * User message items take only `sentNow` onto the stored item: the provider's read of the
+     * message commits outside the thread lock and must not be undone by the plan's snapshot.
+     */
+    readonly updateSentNowOnly?: true;
   }) => Effect.Effect<
     {
       readonly receipt: CommandReceiptStore.CommandReceiptV2;
@@ -488,6 +493,34 @@ const layerBase: Layer.Layer<
             : {
                 ...event,
                 payload: { ...current, delegatedCompletion: event.payload.delegatedCompletion },
+              };
+        }),
+      );
+    });
+
+    const updateSentNowOnly = Effect.fnUntraced(function* (
+      events: ReadonlyArray<OrchestrationV2DomainEvent>,
+    ) {
+      return yield* Effect.forEach(events, (event) =>
+        Effect.gen(function* () {
+          if (event.type !== "turn-item.updated" || event.payload.type !== "user_message") {
+            return event;
+          }
+          const current = yield* projectionStore.getTurnItem({
+            threadId: event.threadId,
+            itemId: event.payload.id,
+          });
+          return current?.type !== "user_message"
+            ? event
+            : {
+                ...event,
+                payload: {
+                  ...current,
+                  ...(event.payload.sentNow === undefined
+                    ? {}
+                    : { sentNow: event.payload.sentNow }),
+                  updatedAt: event.payload.updatedAt,
+                },
               };
         }),
       );
@@ -846,10 +879,12 @@ const layerBase: Layer.Layer<
           }
 
           const runId = input.updateDelegatedCompletionOnlyRunId;
-          const normalized = yield* normalizeEvents(
+          const planned =
             runId === undefined
               ? input.events
-              : yield* updateDelegatedCompletionOnly(input.events, (id) => id === runId),
+              : yield* updateDelegatedCompletionOnly(input.events, (id) => id === runId);
+          const normalized = yield* normalizeEvents(
+            input.updateSentNowOnly === true ? yield* updateSentNowOnly(planned) : planned,
           );
           const storedEvents = yield* eventStore.append({
             commandId: input.commandId,

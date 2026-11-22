@@ -3071,6 +3071,39 @@ it.effect("shared intake preserves durable attachment bytes after a lost launch 
     assert.isNotNull(latePath);
     assert.deepEqual(yield* fs.readFile(latePath), new Uint8Array([1, 2, 3, 4]));
 
+    // The create commits the first message, so a failed read after it keeps the message's copies.
+    const unread = {
+      ...launchInput({ command: "intake-shell-unread", thread: "intake-shell-unread" }),
+      initialMessage: {
+        messageId: MessageId.make("intake-shell-unread-message"),
+        text: "Unread",
+        attachments: [attachment],
+      },
+    };
+    const getThreadShell = threads.getThreadShell;
+    const shellFailure = yield* Effect.gen(function* () {
+      using _shell = vi
+        .spyOn(threads, "getThreadShell")
+        .mockImplementation((id) =>
+          id === unread.threadId
+            ? Effect.fail(
+                new Orchestrator.OrchestratorProjectionError({ threadId: id, cause: "busy" }),
+              )
+            : getThreadShell(id),
+        );
+      return yield* ThreadMessageIntake.launchThread(unread).pipe(Effect.flip);
+    });
+    assert.equal(shellFailure._tag, "ThreadLaunchError");
+    const unreadAttachment = (yield* threads.getThreadProjection(unread.threadId)).messages[0]
+      ?.attachments[0];
+    assert.isDefined(unreadAttachment);
+    const unreadPath = resolveAttachmentPath({
+      attachmentsDir: config.attachmentsDir,
+      attachment: unreadAttachment,
+    });
+    assert.isNotNull(unreadPath);
+    assert.deepEqual(yield* fs.readFile(unreadPath), new Uint8Array([1, 2, 3, 4]));
+
     // A concurrent attempt read no receipt and claimed copies; when its replay cannot read the
     // message the first attempt accepted, nothing holds those copies.
     const raced = launchInput({ command: "intake-raced", thread: "intake-raced" });
