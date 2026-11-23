@@ -21,6 +21,11 @@ import * as SpeechService from "./SpeechService.ts";
 // A recording client streams audio continuously; behind a proxy a vanished
 // client never closes the server side, so silence is the only sign it is gone.
 const SPEECH_SOCKET_IDLE_TIMEOUT = "15 seconds";
+// Desktop opens the stream while a first-use microphone prompt may still be on screen.
+const SPEECH_SOCKET_FIRST_AUDIO_TIMEOUT = "2 minutes";
+// The client gives up on an unanswered start or frame after two minutes, so a later answer is
+// never read.
+const SPEECH_ANSWER_TIMEOUT = "2 minutes";
 
 const decodeCommand = Schema.decodeUnknownEffect(Schema.fromJsonString(SpeechStreamCommand));
 
@@ -49,12 +54,14 @@ export const runSpeechSocket = Effect.fn("speech.runSocket")(function* (
         const command = yield* decodeCommand(data);
         if (command.type === "start") {
           if (stream) return yield* fail("Speech stream already started.");
-          stream = yield* speech.startStream(command.options).pipe(Scope.provide(scope));
+          stream = yield* speech
+            .startStream(command.options)
+            .pipe(Scope.provide(scope), Effect.timeout(SPEECH_ANSWER_TIMEOUT));
           yield* send({ type: "ready" });
           return;
         }
         if (!stream) return yield* fail("Start speech transcription before finishing.");
-        const text = yield* stream.finish;
+        const text = yield* stream.finish.pipe(Effect.timeout(SPEECH_ANSWER_TIMEOUT));
         ended = true;
         yield* send({ type: "finished", text });
         yield* writer.write(new Socket.CloseEvent(1000));
@@ -62,13 +69,15 @@ export const runSpeechSocket = Effect.fn("speech.runSocket")(function* (
         if (data.byteLength > SPEECH_STREAM_MAX_CHUNK_BYTES)
           return yield* fail("Speech audio chunk is too large.");
         if (!stream) return yield* fail("Start speech transcription before sending audio.");
-        const update = yield* stream.feed(data);
+        const update = yield* stream.feed(data).pipe(Effect.timeout(SPEECH_ANSWER_TIMEOUT));
         yield* send({ type: "update", ...update });
       }
     }).pipe(
-      Effect.catch((cause) =>
+      // A defect or an unwritable socket must not end the loop that answers frames.
+      Effect.catchCause((cause) =>
         Effect.logError("live transcription operation failed", { cause }).pipe(
           Effect.andThen(fail("Live transcription failed. Please try recording again.")),
+          Effect.ignore,
         ),
       ),
     );
@@ -76,13 +85,17 @@ export const runSpeechSocket = Effect.fn("speech.runSocket")(function* (
   const reader = yield* socket.reader;
   // Silence only counts while every received frame has been answered.
   let unanswered = 0;
+  let heardAudio = false;
   const activity = yield* Queue.sliding<void>(1);
   const idle = Effect.gen(function* () {
     while (true) {
       const heard = yield* Queue.take(activity).pipe(
-        Effect.timeoutOption(SPEECH_SOCKET_IDLE_TIMEOUT),
+        Effect.timeoutOption(
+          heardAudio ? SPEECH_SOCKET_IDLE_TIMEOUT : SPEECH_SOCKET_FIRST_AUDIO_TIMEOUT,
+        ),
       );
-      if (Option.isNone(heard) && unanswered === 0) return;
+      // An ended stream answers nothing more, though its socket may stay open.
+      if (unanswered === 0 && (ended || Option.isNone(heard))) return;
     }
   });
   const read = Effect.gen(function* () {
@@ -99,6 +112,7 @@ export const runSpeechSocket = Effect.fn("speech.runSocket")(function* (
     while (true) {
       const frames = yield* reader.pull;
       unanswered += frames.length;
+      heardAudio ||= frames.some((frame) => typeof frame !== "string");
       yield* Queue.offer(activity, undefined);
       yield* Effect.forEach(frames, (frame) => Queue.offer(pending, frame), {
         discard: true,
