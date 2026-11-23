@@ -250,6 +250,15 @@ describe("API CORS", () => {
       );
       expect(allowedHeaders.has(ORCHESTRATION_PROTOCOL_HEADER)).toBe(true);
       expect(allowedHeaders.has("authorization")).toBe(true);
+
+      // Desktop strips its Origin on requests to remote servers.
+      for (const method of ["GET", "OPTIONS"]) {
+        const originless = await handler(
+          new Request("https://backend.example/api/environment", { method }),
+        );
+        expect(originless.headers.get("access-control-allow-origin")).toBe("*");
+        expect(originless.headers.get("access-control-allow-credentials")).toBeNull();
+      }
     } finally {
       await dispose();
     }
