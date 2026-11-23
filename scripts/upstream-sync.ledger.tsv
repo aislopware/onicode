@@ -3429,3 +3429,4 @@ fd44bde571	take	taken; conflict was Onicode's OfficeArchive Map in place of JSZi
 7d8a145c6c	take	taken; conflict was only placement next to Onicode's dev-home guards (isDevHome, sharesInstallHome), both kept; the leftovers record lives in this home's stateDir, so seeded dev copies never inherit one
 302e94a3f1	take	taken; conflict was only Onicode's reportBugClick beside it, kept
 9292b03dc8	take	taken as is
+0a0389e517	take	taken as is; new contract field is optional, so older mobile builds still decode
