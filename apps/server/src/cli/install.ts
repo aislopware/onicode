@@ -328,7 +328,7 @@ export const offerCliInstall = Effect.fn("cli.install.offer")(function* <E, R, E
     .readFileString(path.join(runtimeDir, "launchers"))
     .pipe(Effect.orElseSucceed(() => ""));
   const candidates = [
-    ...launchers.split(/\r?\n/).filter(Boolean),
+    ...launchers.split(/\r?\n/).filter((launcher) => path.isAbsolute(launcher)),
     path.join(path.dirname(runtimeDir), "bin", windows ? "onicode.cmd" : "onicode"),
     ...(environment.PATH ?? environment.Path ?? "")
       .split(windows ? ";" : ":")
@@ -338,7 +338,7 @@ export const offerCliInstall = Effect.fn("cli.install.offer")(function* <E, R, E
       .flatMap((directory) => names.map((name) => path.join(directory, name))),
   ];
   for (const candidate of candidates) {
-    if (yield* fs.exists(candidate).pipe(Effect.orElseSucceed(() => false))) return true;
+    if (yield* resolveCommandPath(candidate, { env: environment })) return true;
   }
 
   const declinedFile = path.join(runtimeDir, "install-prompt-declined");
