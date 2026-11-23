@@ -7,6 +7,8 @@ import {
   type ProjectSnapshot,
   ProjectId,
 } from "@onicode/contracts";
+import { expandHomePath } from "@onicode/provider-core/server/pathExpansion";
+import * as HostProcess from "@onicode/shared/HostProcess";
 import * as Console from "effect/Console";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
@@ -396,9 +398,10 @@ const projectAddCommand = Command.make("add", {
           (project) => project.deletedAt === null && project.workspaceRoot === workspaceRoot,
         );
         const path = yield* Path.Path;
+        const home = yield* HostProcess.HomeDirectory;
         const named = flags.track
           .map((folder) => {
-            const resolved = path.resolve(folder);
+            const resolved = path.resolve(expandHomePath(folder, home));
             return {
               path: resolved,
               name: (path.basename(resolved) || resolved).slice(0, 128).trim(),
