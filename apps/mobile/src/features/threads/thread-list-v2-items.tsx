@@ -37,6 +37,7 @@ import { canSnooze } from "@onicode/client-runtime/state/thread-settled";
 import { threadChipCopyTarget } from "@onicode/client-runtime/thread-reference";
 import type { MenuAction } from "@react-native-menu/menu";
 import { msg, T, useGT, useMessages } from "gt-react-native";
+import { useFormattingLocale } from "../../i18n/I18nProvider";
 import { memo, useCallback, useMemo, useState, type ComponentProps } from "react";
 import { Platform, Pressable, Text as RNText, useWindowDimensions, View } from "react-native";
 import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
@@ -802,6 +803,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     Platform.OS === "android" ? androidTitleLineHeight : titleTypography.lineHeight * fontScale;
   const gt = useGT();
   const m = useMessages();
+  const formattingLocale = useFormattingLocale();
   const {
     thread,
     variant,
@@ -964,6 +966,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       secondary: swipeActions.secondary,
       now: props.snoozePresetMinute || snoozeGateNow,
       presets: props.snoozePresets,
+      locale: formattingLocale,
     },
     m,
   );
@@ -1227,6 +1230,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         displayedPresets: snoozePresets,
         now: new Date(),
         presets: props.snoozePresets,
+        locale: formattingLocale,
       });
       if (snoozeSelection._tag === "selected") {
         handleSnooze(snoozeSelection.preset.snoozedUntil);
@@ -1259,6 +1263,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       setCustomSnoozeOpen,
       snoozePresets,
       props.snoozePresets,
+      formattingLocale,
     ],
   );
   const primaryAction = useMemo(() => {

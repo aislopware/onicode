@@ -102,6 +102,22 @@ describe("resolveThreadListV2SnoozePresets", () => {
     // The evening preset is gone by 19:15; a reading from 10:00 would still offer it.
     expect(presets.map((preset) => preset.id)).not.toContain("at:today:18:00");
   });
+
+  it("labels a wake on another day in the app's formatting locale", () => {
+    const lateEvening = new Date(2026, 4, 8, 23, 30);
+    const wake = new Date(2026, 4, 9, 0, 30);
+
+    const presets = resolveThreadListV2SnoozePresets({
+      secondary: "snooze",
+      now: lateEvening.toISOString(),
+      presets: [{ kind: "after", minutes: 60 }],
+      locale: "de-DE",
+    });
+
+    expect(presets[0]?.whenLabel).toBe(
+      `${wake.toLocaleDateString("de-DE", { weekday: "short" })} ${wake.toLocaleTimeString("de-DE", { hour: "numeric", minute: "2-digit" })}`,
+    );
+  });
 });
 
 describe("layoutThreadListV2RowMenuActions", () => {
