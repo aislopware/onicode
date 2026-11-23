@@ -3494,3 +3494,4 @@ fa2ee196b5	take	taken with adaptation; CONFLICT: kept Onicode's threadTitleText 
 7f0e736cdb	take	adapted upstream's test: asserts the IssueOperationError and host instead of only that it is not tracker-unsupported
 a369642c1c	take	taken as is; test conflict kept both tests
 da7d298fae	take	taken as is
+e166aa1db1	take	taken as is
