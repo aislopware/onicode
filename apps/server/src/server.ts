@@ -72,6 +72,7 @@ import * as McpProviderSessions from "@onicode/provider-core/server/McpProviderS
 import * as OpenCodeRuntime from "@onicode/provider-opencode/server/OpenCodeRuntime";
 import * as OpenCodeServerLedger from "@onicode/provider-opencode/server/OpenCodeServerLedger";
 import * as ProviderHostLive from "./provider/ProviderHostLive.ts";
+import * as ProviderMaintenanceRunner from "./provider/providerMaintenanceRunner.ts";
 import * as DocumentText from "./provider/DocumentText.ts";
 import * as AcpRegistrySupport from "@onicode/provider-acp-registry/server/AcpRegistrySupport";
 import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
@@ -860,7 +861,8 @@ const layerMakeRoutes = Layer.mergeAll(
     ServerBrowserStream.routeLayer,
     PreviewCdpBridge.layerBackend,
     PreviewTunnel.routeLayer,
-    Ws.layer,
+    // One runner for the server, so installs outlive the connection that started them.
+    Ws.layer.pipe(Layer.provide(ProviderMaintenanceRunner.layer)),
     speechStreamRouteLayer,
   ),
   McpHttpServer.layer.pipe(
