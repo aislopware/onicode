@@ -32,6 +32,7 @@ import {
   awaitAttachmentUploads,
   getUploadedAttachments,
   refreshExpiredAttachmentUploads,
+  startAttachmentUpload,
   useAttachmentUploadStore,
 } from "../../lib/attachmentUploadQueue";
 import { composerDraftContentChanged } from "./composerSend.logic";
@@ -710,6 +711,11 @@ export function usePendingThreadRequests(input: {
       const drafts = useComposerDraftStore.getState();
       const attachmentIds = questionKeys.flatMap((key) => {
         const draft = drafts.getComposerDraft(key);
+        // The composer that uploads attachments may show another thread by now, so images that
+        // finished preparing after it left start uploading here.
+        for (const image of draft?.images ?? []) {
+          startAttachmentUpload({ environmentId: scope.environmentId, image, draftTarget: key });
+        }
         return draft ? [...draft.images, ...draft.files].map((attachment) => attachment.id) : [];
       });
       // An answer goes only with its attachments uploaded; a live composer waits on that too.

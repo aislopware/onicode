@@ -1879,6 +1879,8 @@ export function useComposerSend(input: ComposerSendInput) {
       sendInFlightRef.current = false;
     });
     if (status === "ready") return sendWithEnvironmentRefreshLatest(...args);
+    // A draft sent or discarded meanwhile was the user's own doing.
+    if (draftId && detachedDraftSendState(draftId, undefined) === "gone") return;
     toastManager.add(
       stackedThreadToast({
         type: "info",
