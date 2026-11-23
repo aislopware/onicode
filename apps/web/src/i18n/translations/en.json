@@ -3986,6 +3986,8 @@
   "7af596fd1e3ac2a2": "Merge back to {parentTitle}",
   "566239c645ce0fff": "Merge back to source conversation",
   "1cfeabb8818f121f": "Complete a run in this fork before merging it back",
+  "ea371763a3afff56": "Unarchive {parentTitle} to merge this conversation back into it",
+  "d8b65e5e9c5fbe26": "Unarchive the source conversation to merge this one back",
   "36cf99230450eeaf": "Merge this conversation back into {parentTitle}",
   "bda1cc7b91e07680": "Merge this conversation back into its source",
   "de93e39b51ae5ebf": "Stop subagent {threadTitle}",

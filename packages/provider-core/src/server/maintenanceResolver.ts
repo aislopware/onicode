@@ -1219,11 +1219,15 @@ export const resolveMacPortsOwner = Effect.fn("resolveMacPortsOwner")(function* 
   }
   for (const portPath of portPaths) {
     if (!(yield* fileSystem.exists(portPath).pipe(Effect.orElseSucceed(() => false)))) continue;
-    const prefix = `${normalizeCommandPath(path.dirname(path.dirname(portPath)))}/`;
+    const prefixDir = path.dirname(path.dirname(portPath));
+    const prefix = `${normalizeCommandPath(prefixDir)}/`;
     const owned = commandPaths.filter((commandPath) =>
       normalizeCommandPath(commandPath).startsWith(prefix),
     );
     if (owned.length === 0) continue;
+    // Any `bin/port` on the way up, such as a script in ~/bin, is MacPorts only with its registry.
+    const registry = path.join(prefixDir, "var", "macports", "registry");
+    if (!(yield* fileSystem.exists(registry).pipe(Effect.orElseSucceed(() => false)))) continue;
     const output = yield* runProbe(portPath, ["provides", ...owned], context.env);
     // A failed registry lookup is no proof that the files are free to update.
     if (output === null) return "";

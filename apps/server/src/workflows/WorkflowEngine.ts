@@ -45,6 +45,7 @@ import {
   isSettled,
   type PullRequest,
   type PullRequestAddress,
+  type PullRequestQuery,
   type PullRequestWatch,
   pullRequestReferenceOf,
   standingOf,
@@ -62,6 +63,7 @@ import * as WorkflowStore from "./WorkflowStore.ts";
 const SWEEP_EVERY = Duration.seconds(15);
 const LOOK_EVERY = Duration.minutes(1);
 const LOOK_AT_MOST = 100;
+const LOOK_PAGES = 10;
 const DEFAULT_SIGNAL_TTL = Duration.days(7);
 const RESUME_LOOK_EVERY = Duration.millis(25);
 const RESUME_LOOKS = 80;
@@ -73,6 +75,9 @@ const END_AFTER = ["5 minutes", "20 minutes", "80 minutes", "5 hours"] as const;
 const PRUNE_AFTER = Duration.hours(1);
 const PRUNE_BATCH = 100;
 const CANCEL_WAITS = Duration.seconds(30);
+// A stop that does not get through is tried less often, and given up a day after the cancel.
+const STOP_RETRY_MOST = Duration.hours(1);
+const STOP_GIVE_UP = Duration.days(1);
 // Times of day are the server's own, as they are for scheduled tasks.
 const localNow = DateTime.withCurrentZoneLocal(DateTime.nowInCurrentZone);
 
@@ -100,6 +105,7 @@ const make = Effect.fn("WorkflowEngine.make")(function* (
     },
     pullRequests: {
       list: plain(trackers.pullRequests.list),
+      listPage: plain(trackers.pullRequests.listPage),
       read: plain(trackers.pullRequests.read),
       comment: plain(trackers.pullRequests.comment),
       act: plain(trackers.pullRequests.act),
@@ -108,6 +114,7 @@ const make = Effect.fn("WorkflowEngine.make")(function* (
   const scope = yield* Scope.Scope;
   const agents = yield* WorkflowAgents;
   const stopTurn = plain(agents.interrupt);
+  const threadModel = plain(agents.model);
   const context = yield* Effect.context<WorkflowEngine.WorkflowEngine>();
   // The engine keeps 64-bit ids, which this SQLite client only reads when asked for BigInts.
   const withEngine = <A, E>(effect: Effect.Effect<A, E, WorkflowEngine.WorkflowEngine>) =>
@@ -329,6 +336,32 @@ const make = Effect.fn("WorkflowEngine.make")(function* (
   const millisOf = (at: string) =>
     Option.match(DateTime.make(at), { onNone: () => undefined, onSome: DateTime.toEpochMillis });
   /**
+   * Pull requests come newest updated first, and one is updated no earlier than it opened, so
+   * every one opened since the mark is on a page before the first that reaches past it.
+   */
+  const pullRequestsSince = Effect.fn("WorkflowEngine.pullRequestsSince")(function* (
+    trigger: string,
+    query: PullRequestQuery,
+    sinceMillis: number,
+  ) {
+    const entries: Array<PullRequest> = [];
+    let cursors: Parameters<typeof forge.pullRequests.listPage>[1];
+    for (let page = 0; page < LOOK_PAGES; page++) {
+      const read = yield* forge.pullRequests.listPage(query, cursors);
+      entries.push(...read.entries);
+      const oldest = read.entries.at(-1);
+      if (read.next === undefined || oldest === undefined) return entries;
+      if ((millisOf(oldest.updatedAt) ?? sinceMillis) < sinceMillis) return entries;
+      cursors = read.next;
+    }
+    yield* Effect.logWarning(
+      "More pull requests changed than one look reads; older new ones among them start no run",
+      { trigger, read: entries.length },
+    );
+    return entries;
+  });
+
+  /**
    * Start a run for each issue or pull request opened since the trigger last looked. The first
    * look only notes the time, so a workflow never starts on everything that was already there.
    */
@@ -347,6 +380,7 @@ const make = Effect.fn("WorkflowEngine.make")(function* (
         const at = DateTime.toEpochMillis(now);
         if (last !== undefined && at - last < Duration.toMillis(LOOK_EVERY)) continue;
         lookedAt.set(id, at);
+        const sinceMillis = millisOf(since) ?? at;
         const found =
           trigger.kind === "issues"
             ? forge.issues.list({
@@ -358,13 +392,16 @@ const make = Effect.fn("WorkflowEngine.make")(function* (
                 labels: trigger.labels,
                 query: trigger.query,
               })
-            : forge.pullRequests.list({
-                project: trigger.project,
-                state: "all",
-                limit: LOOK_AT_MOST,
-                query: trigger.query,
-              });
-        const sinceMillis = millisOf(since) ?? at;
+            : pullRequestsSince(
+                id,
+                {
+                  project: trigger.project,
+                  state: "all",
+                  limit: LOOK_AT_MOST,
+                  query: trigger.query,
+                },
+                sinceMillis,
+              );
         yield* found.pipe(
           Effect.flatMap(
             Effect.fnUntraced(function* (entries: ReadonlyArray<Issue | PullRequest>) {
@@ -376,7 +413,11 @@ const make = Effect.fn("WorkflowEngine.make")(function* (
                   return created === undefined || created < sinceMillis ? [] : [{ entry, created }];
                 })
                 .toSorted((a, b) => a.created - b.created);
-              if (entries.length >= LOOK_AT_MOST && fresh.length === entries.length) {
+              if (
+                trigger.kind === "issues" &&
+                entries.length >= LOOK_AT_MOST &&
+                fresh.length === entries.length
+              ) {
                 yield* Effect.logWarning(
                   "More new items than one look reads; older ones among them start no run",
                   { trigger: id, read: entries.length },
@@ -511,13 +552,47 @@ const make = Effect.fn("WorkflowEngine.make")(function* (
   });
   const resume: Workflows["Service"]["resume"] = (runId) => resumeRun(runId);
 
-  /** A run the engine holds as failed while its row says it goes on: paused, after all. */
+  /** Whether the engine was ever handed the run; a storage that cannot say counts as yes. */
+  const submitted = (row: WorkflowStore.RunRow) => {
+    if (Option.isNone(messages) || Option.isNone(sharding)) return Effect.succeed(true);
+    const entityId = EntityId.make(row.run_id);
+    return messages.value
+      .requestIdForPrimaryKey({
+        address: EntityAddress.make({
+          shardId: sharding.value.getShardId(entityId, "default"),
+          entityType: EntityType.make(`Workflow/${row.engine_tag}`),
+          entityId,
+        }),
+        tag: "run",
+        id: "",
+      })
+      .pipe(
+        Effect.map(Option.isSome),
+        Effect.orElseSucceed(() => true),
+      );
+  };
+
+  /**
+   * A run the engine holds as failed while its row says it goes on: paused, after all. A run
+   * whose start was cut off between its row and the engine is handed to the engine.
+   */
   const reconcile = Effect.fn("WorkflowEngine.reconcile")(function* (row: WorkflowStore.RunRow) {
     if (resuming.has(row.run_id)) return;
     const engine = byTag.get(row.engine_tag);
     if (engine === undefined) return;
     const result = yield* withEngine(engine.poll(row.run_id));
-    if (Option.isNone(result) || result.value._tag !== "Suspended") return;
+    if (Option.isNone(result)) {
+      if (row.status !== "running" || row.input_json === null) return;
+      if (yield* withEngine(submitted(row))) return;
+      yield* withEngine(
+        engine.execute(
+          { idempotencyKey: row.idempotency_key, input: WorkflowStore.jsonValue(row.input_json) },
+          { discard: true },
+        ),
+      );
+      return;
+    }
+    if (result.value._tag !== "Suspended") return;
     if (result.value.failed !== true) return;
     const cause = result.value.cause;
     // Held as it was: a run that waited for a person still does.
@@ -539,6 +614,11 @@ const make = Effect.fn("WorkflowEngine.make")(function* (
     ending.add(row.run_id);
     // A step still running would race the cleanup: a machine deleted before it is made.
     yield* link.inFlight.settled(row.run_id);
+    // So would an agent its cancel has not stopped yet, which after a restart only the store knows.
+    if ((yield* store.runningThreads(row.run_id)).length > 0) {
+      ending.delete(row.run_id);
+      return;
+    }
     // The body may have run its own `onEnd` just as the run was cancelled: once is enough.
     const steps = yield* store.steps(row.run_id);
     if (steps.some((step) => step.name === END_STEP && step.status === "completed")) {
@@ -607,12 +687,17 @@ const make = Effect.fn("WorkflowEngine.make")(function* (
       yield* Effect.ignore(cancel(child.run_id, "the run that invoked it was cancelled"));
     }
     // A cancel cut short after the run was ended: what it had not stopped yet is stopped here.
+    const stillStopping = new Set<string>();
     for (const row of yield* store.cancelsCutShort(END_STEP)) {
+      const threads = yield* store.runningThreads(row.run_id);
+      for (const { name } of threads) stillStopping.add(`${row.run_id}/${name}`);
       if (cancelling.has(row.run_id) || ending.has(row.run_id)) continue;
       const engine = byTag.get(row.engine_tag);
       if (engine !== undefined) yield* withEngine(engine.interrupt(row.run_id));
-      yield* stopSteps(row.run_id, yield* store.runningThreads(row.run_id));
+      yield* stopSteps(row, threads);
     }
+    // A step whose turn ended on its own while its stop backed off is not asked again.
+    for (const key of stopRetries.keys()) if (!stillStopping.has(key)) stopRetries.delete(key);
     // A run that ended without its parent hearing of it. Telling twice is harmless.
     for (const child of yield* store.untold) yield* ended(child.run_id);
     yield* store.mailExpire;
@@ -701,6 +786,30 @@ const make = Effect.fn("WorkflowEngine.make")(function* (
         Stream.fromSubscription(changes).pipe(
           Stream.debounce(WATCH_SETTLE),
           Stream.mapEffect(() => snapshot),
+        ),
+      );
+    }),
+  );
+  const watchChanges: Workflows["Service"]["watchChanges"] = Stream.unwrap(
+    Effect.gen(function* () {
+      const changes = yield* PubSub.subscribe(store.changes);
+      const written = new Set<string>();
+      const changed = Effect.gen(function* () {
+        const runIds = [...written];
+        written.clear();
+        const rows = yield* Effect.forEach(runIds, (runId) => store.run(runId));
+        return {
+          changedRuns: rows.flatMap((row) => (row === undefined ? [] : [toRun(row)])),
+          questions: yield* questions,
+        };
+      });
+      return Stream.concat(
+        Stream.fromEffect(snapshot),
+        Stream.fromSubscription(changes).pipe(
+          Stream.tap((runId) => Effect.sync(() => written.add(runId))),
+          Stream.debounce(WATCH_SETTLE),
+          Stream.mapEffect(() => changed),
+          Stream.filter((change) => change.changedRuns.length > 0),
         ),
       );
     }),
@@ -811,15 +920,51 @@ const make = Effect.fn("WorkflowEngine.make")(function* (
     ).pipe(Effect.ignore);
   });
 
-  /** A step in flight cannot be interrupted, so the agent it waits on is stopped instead. */
+  // When each refused stop may be tried again, by run and step. A restart tries them all at once.
+  const stopRetries = new Map<string, { readonly tries: number; readonly dueMs: number }>();
+  /**
+   * A step in flight cannot be interrupted, so the agent it waits on is stopped instead. A step
+   * whose stop does not get through stays running, so the sweep stops it again.
+   */
   const stopSteps = Effect.fn("WorkflowEngine.stopSteps")(function* (
-    runId: string,
-    threads: ReadonlyArray<Parameters<typeof stopTurn>[0]>,
+    run: Pick<WorkflowStore.RunRow, "run_id" | "ended_at">,
+    threads: ReadonlyArray<{ readonly name: string } & Parameters<typeof stopTurn>[0]>,
   ) {
-    yield* Effect.forEach(threads, (thread) => Effect.ignore(stopTurn(thread)), {
-      discard: true,
-    });
-    yield* store.stepsCancelled(runId, END_STEP);
+    const nowMs = DateTime.toEpochMillis(yield* DateTime.now);
+    const givenUp =
+      run.ended_at !== null &&
+      nowMs - DateTime.toEpochMillis(DateTime.makeUnsafe(run.ended_at)) >=
+        Duration.toMillis(STOP_GIVE_UP);
+    const stopped: Array<string> = [];
+    const refused: Array<string> = [];
+    for (const { name, ...thread } of threads) {
+      const key = `${run.run_id}/${name}`;
+      const retry = stopRetries.get(key);
+      if (retry !== undefined && nowMs < retry.dueMs && !givenUp) continue;
+      const stop = yield* Effect.result(stopTurn(thread));
+      // A thread or link that is gone has no agent left to stop, and a day on one is let go.
+      if (Result.isSuccess(stop) || stop.failure.final === true || givenUp) {
+        stopRetries.delete(key);
+        stopped.push(name);
+        if (Result.isFailure(stop)) refused.push(stop.failure.reason);
+        continue;
+      }
+      const tries = (retry?.tries ?? 0) + 1;
+      const rest = Math.min(
+        Duration.toMillis(SWEEP_EVERY) * 2 ** (tries - 1),
+        Duration.toMillis(STOP_RETRY_MOST),
+      );
+      stopRetries.set(key, { tries, dueMs: nowMs + rest });
+      refused.push(stop.failure.reason);
+    }
+    if (refused.length > 0) {
+      yield* Effect.logWarning("Could not stop the agent of a cancelled run", {
+        runId: run.run_id,
+        refused,
+        givenUp,
+      });
+    }
+    yield* store.stepsCancelled(run.run_id, END_STEP, stopped);
   });
 
   // Cancels under way, whose slow part the sweep must not take for one cut short.
@@ -844,7 +989,7 @@ const make = Effect.fn("WorkflowEngine.make")(function* (
           }),
         );
         if (!cancelled) return;
-        yield* stopSteps(runId, threads);
+        yield* stopSteps(row, threads);
         // What this run invoked was part of it.
         yield* Effect.forEach(
           yield* store.children(runId),
@@ -901,24 +1046,34 @@ const make = Effect.fn("WorkflowEngine.make")(function* (
     cancel,
     get: Effect.fn("Workflows.get")(function* (runId) {
       const row = yield* requireRun(runId);
-      const steps = yield* store.steps(runId);
-      return {
-        run: toRun(row),
-        references: yield* store.references(runId),
-        steps: steps.map((step) => ({
-          name: step.name,
-          kind: step.kind,
-          status: step.status,
-          attempts: Number(step.attempts),
-          detail: step.detail,
-          threadId: step.thread_id,
-          environmentId: step.environment_id,
-          result: step.result_json === null ? null : WorkflowStore.jsonValue(step.result_json),
-          said: step.said,
-          startedAt: step.started_at,
-          endedAt: step.ended_at,
-        })),
-      };
+      // Read here, so a client shows each step's model without asking for every step's thread.
+      const steps = yield* Effect.forEach(yield* store.steps(runId), (step) =>
+        Effect.map(
+          step.kind === "agent" && step.thread_id !== null
+            ? threadModel({
+                threadId: step.thread_id,
+                ...(step.environment_id === null ? {} : { environment: step.environment_id }),
+              })
+            : Effect.undefined,
+          (model) => ({
+            name: step.name,
+            kind: step.kind,
+            status: step.status,
+            attempts: Number(step.attempts),
+            detail: step.detail,
+            threadId: step.thread_id,
+            environmentId: step.environment_id,
+            ...(model === undefined
+              ? {}
+              : { model: { instanceId: model.instanceId, model: model.model } }),
+            result: step.result_json === null ? null : WorkflowStore.jsonValue(step.result_json),
+            said: step.said,
+            startedAt: step.started_at,
+            endedAt: step.ended_at,
+          }),
+        ),
+      );
+      return { run: toRun(row), references: yield* store.references(runId), steps };
     }),
     list: Effect.fn("Workflows.list")(function* (filter) {
       return (yield* store.runs(filter?.status)).map(toRun);
@@ -947,6 +1102,7 @@ const make = Effect.fn("WorkflowEngine.make")(function* (
       yield* keyValues.delete(key);
     }),
     watch,
+    watchChanges,
     sweep,
   });
 });

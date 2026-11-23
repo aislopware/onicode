@@ -2,12 +2,14 @@ import { useAtomValue } from "@effect/atom-react";
 import { scopeThreadRef } from "@onicode/client-runtime/environment";
 import {
   isAtomCommandInterrupted,
+  selectEnvironmentQueryData,
   squashAtomCommandFailure,
   type AtomCommandResult,
 } from "@onicode/client-runtime/state/runtime";
 import {
   EnvironmentId,
   ThreadId,
+  type ScopedThreadRef,
   type WorkflowQuestion,
   type WorkflowRun,
   type WorkflowRunReference,
@@ -42,8 +44,9 @@ import { cn } from "../../lib/utils";
 import { useQuietThreadShell } from "../../state/entities";
 import { useEnvironment, useEnvironmentProviders } from "../../state/environments";
 import { type MessageResolver } from "../../i18n/messages";
-import { useEnvironmentQuery } from "../../state/query";
+import { useEnvironmentQuery, useEnvironmentQuerySelector } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
+import { threadFamilies } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
 import ChatMarkdown from "../ChatMarkdown";
@@ -75,6 +78,22 @@ import {
 } from "@onicode/client-runtime/workflows";
 import type { WorkflowPaneTab } from "./workflowPane.logic";
 import { WorkflowReferenceChip } from "./WorkflowReferences";
+
+/**
+ * A step thread's shell, and the model it runs. The shell list leaves an idle step's thread out, and
+ * the run names the model only for this environment's agents, so a linked one's family read does.
+ */
+function useStepThread(ref: ScopedThreadRef | null, known: WorkflowBeat["model"]) {
+  const shell = useQuietThreadShell(ref);
+  const family = useEnvironmentQuerySelector(
+    ref !== null && shell === null && known === null
+      ? threadFamilies.familyAtom(ref.environmentId, ref.threadId)
+      : null,
+    selectEnvironmentQueryData,
+  );
+  const row = family?.threads.find((thread) => thread.id === ref?.threadId);
+  return { shell, modelSelection: shell?.modelSelection ?? known ?? row?.modelSelection ?? null };
+}
 
 /** An agent's thread, as a step names it: the linked environment it is in, or null for this one. */
 export interface WorkflowThreadTarget {
@@ -1215,14 +1234,15 @@ function WorkflowBeatRow({
     beat.thread?.environmentId == null
       ? environmentId
       : EnvironmentId.make(beat.thread.environmentId);
-  const shell = useQuietThreadShell(
+  const { shell, modelSelection } = useStepThread(
     beat.thread === null
       ? null
       : scopeThreadRef(threadEnvironmentId, ThreadId.make(beat.thread.threadId)),
+    beat.model,
   );
   const provider = useEnvironmentProviders()
     .get(threadEnvironmentId)
-    ?.find((candidate) => candidate.instanceId === shell?.modelSelection.instanceId);
+    ?.find((candidate) => candidate.instanceId === modelSelection?.instanceId);
   const under = beat.status === "running";
   const failed = beat.status === "failed";
   const said = workflowAgentSummary(beat).said;
@@ -1240,7 +1260,7 @@ function WorkflowBeatRow({
   // A question waits on a person until its step ends, answered or not; the list of open
   // questions drops it a moment before the step reports done.
   const needsYou = (under && (asks || beat.kind === "ask")) || agentAsks !== null;
-  const model = shell === null ? null : formatModelSlugName(shell.modelSelection.model);
+  const model = modelSelection === null ? null : formatModelSlugName(modelSelection.model);
   const verb = (() => {
     if (!under) return null;
     if (agentAsks !== null) return agentAsks;
@@ -1631,14 +1651,15 @@ function WorkflowAgentCard({
       : EnvironmentId.make(beat.thread.environmentId);
   // This client can only show a thread on an environment it is itself connected to.
   const threadEnvironment = useEnvironment(threadEnvironmentId);
-  const shell = useQuietThreadShell(
+  const { shell, modelSelection } = useStepThread(
     beat.thread === null
       ? null
       : scopeThreadRef(threadEnvironmentId, ThreadId.make(beat.thread.threadId)),
+    beat.model,
   );
   const provider = useEnvironmentProviders()
     .get(threadEnvironmentId)
-    ?.find((candidate) => candidate.instanceId === shell?.modelSelection.instanceId);
+    ?.find((candidate) => candidate.instanceId === modelSelection?.instanceId);
   const under = beat.status === "running";
   const length = formatDuration(elapsedOf(beat));
   const summary = workflowAgentSummary(beat);
@@ -1653,7 +1674,7 @@ function WorkflowAgentCard({
           ? gt("starting")
           : gt("working");
   const sub = [
-    shell === null ? null : formatModelSlugName(shell.modelSelection.model),
+    modelSelection === null ? null : formatModelSlugName(modelSelection.model),
     liveWord,
     length,
     beat.attempts > 1 ? nthTry(beat.attempts, m) : null,

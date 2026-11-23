@@ -52,10 +52,19 @@ export class PullRequestUrlUnavailableError extends Schema.TaggedError<PullReque
 
 export class PullRequestRepositoryInvalidError extends Schema.TaggedError<PullRequestRepositoryInvalidError>()(
   "PullRequestRepositoryInvalidError",
+  { repositoryPathHint: Schema.String },
+) {
+  override get message(): string {
+    return `Pass repository as ${this.repositoryPathHint}, without the host.`;
+  }
+}
+
+export class PullRequestHostInvalidError extends Schema.TaggedError<PullRequestHostInvalidError>()(
+  "PullRequestHostInvalidError",
   {},
 ) {
   override get message(): string {
-    return "Pass repository as owner/repo, without the host.";
+    return "Pass host as a hostname, such as github.com, without a scheme or path.";
   }
 }
 
@@ -64,7 +73,8 @@ export type PullRequestTargetError =
   | PullRequestTargetIncompleteError
   | PullRequestHostRequiredError
   | PullRequestUrlUnavailableError
-  | PullRequestRepositoryInvalidError;
+  | PullRequestRepositoryInvalidError
+  | PullRequestHostInvalidError;
 
 export interface ResolvedTarget {
   readonly host: string;
@@ -102,6 +112,12 @@ export const resolveTarget = Effect.fn("PullRequestsToolkit.resolveTarget")(func
   }
   if (input.repository === undefined || input.number === undefined) {
     return yield* new PullRequestTargetIncompleteError({});
+  }
+  if (
+    input.host !== undefined &&
+    URL.parse(`https://${input.host}`)?.host !== input.host.toLowerCase().replace(/:443$/u, "")
+  ) {
+    return yield* new PullRequestHostInvalidError({});
   }
   // Azure DevOps tools name the project's repository by its bare name, which no URL can be built
   // from, so it is read as the project's full repository path.
@@ -141,7 +157,9 @@ export const resolveTarget = Effect.fn("PullRequestsToolkit.resolveTarget")(func
     // A known forge returns no URL when the repository is not in its shape.
     return yield* definition === null || definition.kind === "unknown"
       ? new PullRequestUrlUnavailableError({})
-      : new PullRequestRepositoryInvalidError({});
+      : new PullRequestRepositoryInvalidError({
+          repositoryPathHint: definition.repositoryPathHint,
+        });
   }
   return {
     ...normalizeThreadPullRequestKey({ host, repository, number: input.number, url }),

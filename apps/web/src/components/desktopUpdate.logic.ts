@@ -260,11 +260,14 @@ export function getRequiredDesktopUpdateView(
   return { phase: "failed", version, retry: action === "download" ? "download" : "check" };
 }
 
-export function getDesktopUpdateActionError(result: DesktopUpdateActionResult): string | null {
+export function getDesktopUpdateActionError(
+  result: DesktopUpdateActionResult,
+  resolve: MessageResolver = m,
+): string | null {
   if (!result.accepted || result.completed) return null;
-  if (typeof result.state.message !== "string") return null;
-  const message = result.state.message.trim();
-  return message.length > 0 ? message : null;
+  const message = result.state.message?.trim() ?? "";
+  if (message.length > 0) return message;
+  return result.failed === true ? resolve(msg("An unexpected error occurred.")) : null;
 }
 
 /**

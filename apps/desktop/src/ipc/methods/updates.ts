@@ -38,8 +38,7 @@ export const installUpdate = DesktopIpc.makeIpcMethod({
   handler: Effect.fn("desktop.ipc.updates.install")(function* (expectedVersion) {
     const updates = yield* DesktopUpdates.DesktopUpdates;
     if (expectedVersion === undefined) return yield* updates.install;
-    const { accepted, completed, state } = yield* updates.installPrepared(expectedVersion);
-    return { accepted, completed, state };
+    return yield* updates.installPrepared(expectedVersion);
   }),
 });
 

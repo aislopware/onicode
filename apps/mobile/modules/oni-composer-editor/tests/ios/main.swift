@@ -242,11 +242,15 @@ print("Composer image-drop eligibility checks passed")
 
 private final class ImmediateImageProvider: NSItemProvider {
   let image: UIImage
+  let representations: [(type: UTType, data: Data?)]
   private(set) var loadCount = 0
+  private(set) var requestedTypes: [String] = []
   var onLoad: (() -> Void)?
 
-  init(image: UIImage) {
+  /// A pasted screenshot offers PNG; a nil representation fails to load.
+  init(image: UIImage, representations: [(type: UTType, data: Data?)]? = nil) {
     self.image = image
+    self.representations = representations ?? [(.png, image.pngData())]
     super.init()
     registerObject(image, visibility: .all)
   }
@@ -261,17 +265,17 @@ private final class ImmediateImageProvider: NSItemProvider {
     return Progress(totalUnitCount: 1)
   }
 
-  // The system lists a UIImage's types with HEIC first; a pasted screenshot offers PNG.
-  override var registeredTypeIdentifiers: [String] { [UTType.png.identifier] }
+  override var registeredTypeIdentifiers: [String] { representations.map { $0.type.identifier } }
 
-  // A PNG takes the passthrough path, which reads the provider's own bytes.
   override func loadDataRepresentation(
     forTypeIdentifier typeIdentifier: String,
     completionHandler: @escaping @Sendable (Data?, Error?) -> Void
   ) -> Progress {
     loadCount += 1
     onLoad?()
-    completionHandler(image.pngData(), nil)
+    requestedTypes.append(typeIdentifier)
+    let data = representations.first { $0.type.identifier == typeIdentifier }?.data
+    completionHandler(data, data == nil ? CocoaError(.fileReadUnknown) : nil)
     return Progress(totalUnitCount: 1)
   }
 }
@@ -332,7 +336,61 @@ gifEditor.onImageReadEnd = { _, urls in
   check(contents.first == gifBytes, "A pasted animated GIF must keep its original bytes")
   check(contents.count == 2 && contents[1] == image.pngData(), "The still image beside a GIF must still attach as PNG")
   print("Composer GIF-paste checks passed")
-  exit(0)
+  checkPassthroughChoices()
+}
+
+func pastedFiles(_ provider: NSItemProvider, then: @escaping ([(fileExtension: String, data: Data)]) -> Void) {
+  let editor = ComposerTextView()
+  editor.onImageReadEnd = { _, urls in
+    withExtendedLifetime(editor) {}
+    let files = urls.compactMap(URL.init(string:))
+    let pasted: [(fileExtension: String, data: Data)] = files.map {
+      ($0.pathExtension, (try? Data(contentsOf: $0)) ?? Data())
+    }
+    files.forEach { try? FileManager.default.removeItem(at: $0) }
+    then(pasted)
+  }
+  editor.paste(itemProviders: [provider])
+}
+
+/// Photos, Safari and Files providers also list PNG or HEIC beside the JPEG they hold.
+func checkJPEGPassthrough(_ typeLists: [[UTType]], jpegBytes: Data, then: @escaping () -> Void) {
+  guard let types = typeLists.first else { return then() }
+  let representations: [(type: UTType, data: Data?)] = types.map { type in
+    (type: type, data: type == .jpeg ? jpegBytes : Data("synthesized".utf8))
+  }
+  let photo = ImmediateImageProvider(image: image, representations: representations)
+  pastedFiles(photo) { pasted in
+    check(photo.requestedTypes == [UTType.jpeg.identifier] && pasted.map { $0.fileExtension } == ["jpg"] &&
+          pasted.first?.data == jpegBytes,
+          "A provider offering \(types.map(\.identifier)) must attach its JPEG's exact bytes: \(photo.requestedTypes)")
+    checkJPEGPassthrough(Array(typeLists.dropFirst()), jpegBytes: jpegBytes, then: then)
+  }
+}
+
+func checkPassthroughChoices() {
+  let jpegBytes = image.jpegData(compressionQuality: 0.9)!
+  let gifAfterPreview = ImmediateImageProvider(image: image, representations: [(.png, image.pngData()), (.gif, gifBytes)])
+  pastedFiles(gifAfterPreview) { pasted in
+    check(pasted.map { $0.fileExtension } == ["gif"] && pasted.first?.data == gifBytes,
+          "A provider listing a PNG preview before its GIF must attach the GIF: \(pasted.map { $0.fileExtension })")
+    checkJPEGPassthrough([[.heic, .jpeg], [.jpeg, .png], [.heic, .jpeg, .png]], jpegBytes: jpegBytes) {
+      // A UIImage-backed provider lists synthesized types, HEIC first; its pixels must stay lossless.
+      pastedFiles(NSItemProvider(object: image)) { pasted in
+        let decoded = pasted.first.flatMap { UIImage(data: $0.data) }
+        check(pasted.map { $0.fileExtension } == ["png"] && decoded?.cgImage?.width == image.cgImage?.width,
+              "A UIImage-backed provider must attach a lossless PNG: \(pasted.map { $0.fileExtension })")
+        let broken = ImmediateImageProvider(image: image, representations: [(.jpeg, nil)])
+        pastedFiles(broken) { pasted in
+          check(broken.requestedTypes == [UTType.jpeg.identifier] && pasted.map { $0.fileExtension } == ["png"] &&
+                pasted.first?.data == image.pngData(),
+                "A failed data representation must fall back to the decoded image as PNG: \(pasted.map { $0.fileExtension })")
+          print("Composer passthrough-choice checks passed")
+          exit(0)
+        }
+      }
+    }
+  }
 }
 
 // Inline provider completion places the attachment callback before this main-queue check.

@@ -188,6 +188,7 @@ type ShellTrimRow = Pick<
  */
 interface ShellTrimFacts {
   readonly subagentParentIds: ReadonlySet<string>;
+  /** Subagents and workflow steps, whose transcript events the shell stream drops. */
   readonly subagentThreadIds: Set<string>;
   /** Only the store's index knows these; shells alone leave it empty. */
   readonly remoteTaskParentIds: ReadonlySet<string>;
@@ -197,6 +198,12 @@ interface ShellTrimFacts {
 }
 
 const NEWEST_SETTLED_KEPT = 25;
+
+// False for a thread shown only inside another view: a subagent in its parent's, a workflow step
+// in its run's.
+const shownWhenIdle = (
+  lineage: Pick<OrchestrationV2ThreadShell["lineage"], "relationshipToParent" | "workflowStep">,
+) => lineage.relationshipToParent !== "subagent" && lineage.workflowStep !== true;
 
 function shellTrimFacts(rows: ReadonlyArray<ShellTrimRow>): ShellTrimFacts {
   const subagentParentIds = new Set<string>();
@@ -208,6 +215,8 @@ function shellTrimFacts(rows: ReadonlyArray<ShellTrimRow>): ShellTrimFacts {
     if (row.lineage.relationshipToParent === "subagent") {
       subagentThreadIds.add(row.id);
       if (row.lineage.parentThreadId) subagentParentIds.add(row.lineage.parentThreadId);
+    } else if (row.lineage.workflowStep === true) {
+      subagentThreadIds.add(row.id);
     } else if (
       isListedThreadLineage(row.lineage) &&
       row.settledOverride === "settled" &&
@@ -254,7 +263,7 @@ function omitIdleSubagentShellsWith(
 ): ReadonlyArray<OrchestrationV2ThreadShell> {
   return threads.filter(
     (thread) =>
-      thread.lineage.relationshipToParent !== "subagent" ||
+      shownWhenIdle(thread.lineage) ||
       isLiveSubagentShell(thread) ||
       facts.subagentParentIds.has(thread.id) ||
       facts.remoteTaskParentIds.has(thread.id),
@@ -298,10 +307,9 @@ function omitOlderSettledShellsWith(
 }
 
 /**
- * Idle subagent children have no sidebar row, so clients that opt in read them from their thread
- * family instead. A child stays while it is live or the parent of another child, so the request
- * and working walks over shell rows never meet a gap in a nested chain. It also stays as the
- * parent of a task in a linked environment, whose clients nest that task under it.
+ * Idle subagent children and workflow steps have no sidebar row; opted-in clients read their
+ * family instead. A child stays while live or a parent of another child, so walks over shell
+ * rows never meet a gap, and as the parent of a task in a linked environment.
  */
 export function omitIdleSubagentShells(
   threads: ReadonlyArray<OrchestrationV2ThreadShell>,
@@ -376,7 +384,7 @@ function shellSubscriberThreadIds(
   const facts = shellTrimFacts(index);
   const subagents = index.filter(
     (entry) =>
-      entry.lineage.relationshipToParent === "subagent" &&
+      !shownWhenIdle(entry.lineage) &&
       (!options.omitIdleSubagents ||
         entry.mayBeLive ||
         entry.hasRemoteTasks ||
@@ -389,7 +397,7 @@ function shellSubscriberThreadIds(
   const keptSubagentIds = new Set(subagents.map((entry) => entry.id));
   const beforeMs = facts.olderSettledBeforeMs;
   return index.flatMap((entry) =>
-    entry.lineage.relationshipToParent === "subagent"
+    !shownWhenIdle(entry.lineage)
       ? keptSubagentIds.has(entry.id)
         ? [entry.id]
         : []
@@ -531,7 +539,7 @@ export type ShellApplicationEvent =
       readonly event: Pick<OrchestrationV2StoredEvent["event"], "threadId">;
     };
 
-/** Focused subagents receive these updates through their thread subscription. */
+/** Focused subagents and workflow steps receive these updates through their thread subscription. */
 export function shouldPublishShellApplicationEvent(
   stored: ApplicationStoredEvent,
   subagentThreadIds: Set<string>,
@@ -539,9 +547,7 @@ export function shouldPublishShellApplicationEvent(
   if ("aggregateKind" in stored) return true;
   const { event } = stored;
   if (event.type === "thread.created") {
-    if (event.payload.lineage.relationshipToParent === "subagent") {
-      subagentThreadIds.add(event.threadId);
-    }
+    if (!shownWhenIdle(event.payload.lineage)) subagentThreadIds.add(event.threadId);
     return true;
   }
   if (event.type === "thread.deleted") {

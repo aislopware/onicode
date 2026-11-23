@@ -1,6 +1,7 @@
 import * as AzureDevOpsDriver from "@onicode/source-control-azure-devops/server/driver";
 import * as BitbucketDriver from "@onicode/source-control-bitbucket/server/driver";
 import * as CursorOriginDriver from "@onicode/source-control-cursor-origin/server/driver";
+import { parseGitRemoteHost } from "@onicode/source-control-core/shared/definition";
 import { builtInSourceControlDefinitions } from "@onicode/source-control-definitions/registry";
 import * as ForgejoDriver from "@onicode/source-control-forgejo/server/driver";
 import * as GitCafeDriver from "@onicode/source-control-gitcafe/server/driver";
@@ -24,6 +25,43 @@ export const BUILT_IN_SOURCE_CONTROL_DRIVER_LIST = [
 ];
 
 export const sourceControlDefinitions = builtInSourceControlDefinitions;
+
+const namesForge = (remoteUrl: string) =>
+  (sourceControlDefinitions.recognizeRemote(remoteUrl)?.kind ?? "unknown") !== "unknown";
+
+/** A remote on a forge's public host, such as `git@github.com:o/r`. */
+function isPublicForgeRemote(remoteUrl: string): boolean {
+  const hostname = parseGitRemoteHost(remoteUrl)?.hostname;
+  return (
+    hostname !== undefined &&
+    sourceControlDefinitions.findByPublicHost(hostname) !== undefined &&
+    namesForge(remoteUrl)
+  );
+}
+
+/** Whether `preferredRemoteUrl` can pick a remote's configured URL over this fetch URL. */
+export const configuredRemoteUrlMayWin = (fetchUrl: string) => !isPublicForgeRemote(fetchUrl);
+
+/** Each remote's configured URL from `git config --get-regexp` output, before url.*.insteadOf. */
+export function parseConfiguredRemoteUrls(config: string): Map<string, string> {
+  const urls = new Map<string, string>();
+  for (const line of config.split("\n")) {
+    const match = /^remote\.(\S+)\.url (.+)$/u.exec(line);
+    // Git fetches from the first of several configured URLs.
+    if (match?.[1] && match[2] && !urls.has(match[1])) urls.set(match[1], match[2]);
+  }
+  return urls;
+}
+
+/**
+ * Which of a remote's configured URL and its `url.*.insteadOf` fetch URL (a proxy, mirror, SSH
+ * alias like `github.work`, or expanded shorthand like `gh:`) names its repository. A forge's label
+ * matches any host carrying it, so over a fetch URL naming a forge only a public host wins.
+ */
+export function preferredRemoteUrl(configuredUrl: string, fetchUrl: string): string {
+  if (!configuredRemoteUrlMayWin(fetchUrl) || !namesForge(configuredUrl)) return fetchUrl;
+  return !namesForge(fetchUrl) || isPublicForgeRemote(configuredUrl) ? configuredUrl : fetchUrl;
+}
 
 /** A host CLI command that merges or closes a change request, such as `gh pr merge`. */
 export const isChangeRequestCloseCommand = (command: string) =>

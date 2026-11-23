@@ -3985,6 +3985,8 @@
   "7af596fd1e3ac2a2": "Merga tillbaka till {parentTitle}",
   "566239c645ce0fff": "Merga tillbaka till källkonversationen",
   "1cfeabb8818f121f": "Slutför en körning i den här forken innan du mergar tillbaka den",
+  "ea371763a3afff56": "Avarkivera {parentTitle} för att merga tillbaka den här konversationen dit",
+  "d8b65e5e9c5fbe26": "Avarkivera källkonversationen för att merga tillbaka den här",
   "36cf99230450eeaf": "Merga tillbaka den här konversationen till {parentTitle}",
   "bda1cc7b91e07680": "Merga tillbaka den här konversationen till källan",
   "de93e39b51ae5ebf": "Stoppa subagenten {threadTitle}",

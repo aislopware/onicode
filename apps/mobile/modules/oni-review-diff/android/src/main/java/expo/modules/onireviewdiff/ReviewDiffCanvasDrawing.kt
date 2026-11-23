@@ -70,10 +70,17 @@ internal class ReviewDiffCanvasDrawing(context: Context) {
     )
   }
 
-  fun fileHeaderCheckboxHitRect(top: Int, bottom: Int, width: Int, style: DiffStyle): RectF {
-    val checkbox = fileHeaderCheckboxRect(top, bottom, width, style)
-    return RectF(checkbox.left - 14f * density, top.toFloat(), width.toFloat(), bottom.toFloat())
-  }
+  fun fileHeaderCountsRight(top: Int, bottom: Int, width: Int, style: DiffStyle): Float =
+    fileHeaderCheckboxRect(top, bottom, width, style).left - 10f * density
+
+  // The Viewed target stops where the +N count ends, so a tap on the count still collapses.
+  fun fileHeaderCheckboxHitRect(top: Int, bottom: Int, width: Int, style: DiffStyle): RectF =
+    RectF(
+      fileHeaderCountsRight(top, bottom, width, style),
+      top.toFloat(),
+      width.toFloat(),
+      bottom.toFloat()
+    )
 
   fun drawDisclosureChevron(
     canvas: Canvas,

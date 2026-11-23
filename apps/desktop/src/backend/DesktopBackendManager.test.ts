@@ -15,6 +15,7 @@ import * as Clock from "effect/Clock";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
@@ -409,6 +410,54 @@ describe("DesktopBackendManager", () => {
       yield* Deferred.succeed(finishRecording, undefined);
       yield* Fiber.join(run);
       assert.isTrue(yield* Ref.get(forgotten));
+    }),
+  );
+
+  it.effect("finishes a run stopped while its ownership record is being written", () =>
+    Effect.gen(function* () {
+      const recording = yield* Deferred.make<void>();
+      const finishRecording = yield* Deferred.make<void>();
+      const childExit = yield* Deferred.make<ChildProcessSpawner.ExitCode>();
+      const forgotten = yield* Ref.make(false);
+      const layerSpawner = Layer.succeed(
+        ChildProcessSpawner.ChildProcessSpawner,
+        ChildProcessSpawner.make(() =>
+          // Closing the run scope stops the child, as the Node spawner's SIGTERM does.
+          Effect.addFinalizer(() =>
+            Deferred.succeed(childExit, ChildProcessSpawner.ExitCode(143)).pipe(Effect.asVoid),
+          ).pipe(Effect.as(makeProcess({ exitCode: Deferred.await(childExit) }))),
+        ),
+      );
+      const runScope = yield* Scope.make("sequential");
+      const run = yield* DesktopBackendManager.runBackendProcess({
+        ...baseConfig,
+        desktopTelemetryStream: Stream.empty,
+        trackProcess: () =>
+          Deferred.succeed(recording, undefined).pipe(
+            Effect.andThen(Deferred.await(finishRecording)),
+            Effect.as(Ref.set(forgotten, true)),
+          ),
+      }).pipe(
+        Effect.provide(Layer.merge(layerSpawner, layerHealthyHttpClient)),
+        Scope.provide(runScope),
+        Effect.forkChild,
+      );
+
+      yield* Deferred.await(recording);
+      // The stop reaches the recording before it finishes.
+      const stop = yield* Scope.close(runScope, Exit.void).pipe(
+        Effect.forkChild({ startImmediately: true }),
+      );
+      yield* Deferred.succeed(finishRecording, undefined);
+      yield* Fiber.join(stop);
+      const exit = yield* Fiber.await(run);
+      assert.deepEqual(
+        Exit.isSuccess(exit) ? exit.value : exit.cause,
+        { code: Option.some(ChildProcessSpawner.ExitCode(143)), reason: "code=143" },
+        "the stop re-raised the recording's interrupt",
+      );
+      // The interrupted recording has nothing to forget; recovery handles any record it left.
+      assert.isFalse(yield* Ref.get(forgotten));
     }),
   );
 

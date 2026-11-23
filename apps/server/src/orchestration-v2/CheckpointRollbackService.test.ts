@@ -892,6 +892,7 @@ const seedRollbackHistory = Effect.gen(function* () {
   const deletedRefs: CheckpointId[] = [];
   const discardedRepositoryOrdinals: number[] = [];
   const committed: OrchestrationV2DomainEvent[] = [];
+  let duringRewind: Effect.Effect<void> = Effect.void;
   const serviceLayer = layerCheckpointRollbackService.pipe(
     Layer.provide(
       Layer.mergeAll(
@@ -935,6 +936,7 @@ const seedRollbackHistory = Effect.gen(function* () {
               rollbackThread: (input: ProviderAdapter.ProviderAdapterV2RollbackThreadInput) =>
                 Effect.gen(function* () {
                   rollbackCounts.push(yield* resolveCodexRollbackTurnCount(input));
+                  yield* duringRewind;
                   return { providerThread: input.providerThread };
                 }),
             } as never),
@@ -969,6 +971,9 @@ const seedRollbackHistory = Effect.gen(function* () {
     discardedRepositoryOrdinals,
     repositoryScopeId,
     committed,
+    setDuringRewind: (effect: Effect.Effect<void>) => {
+      duringRewind = effect;
+    },
   };
 });
 
@@ -1114,6 +1119,38 @@ it.layer(ProjectionStore.layer.pipe(Layer.provideMerge(SqlitePersistence.layerMe
         assert.deepEqual(history.rollbackCounts, []);
         assert.deepEqual(history.restored, []);
         assert.deepEqual(history.committed, []);
+      }),
+    );
+
+    it.effect("leaves a thread deleted during the provider rewind as deletion left it", () =>
+      Effect.gen(function* () {
+        const history = yield* seedRollbackHistory;
+        const thread = yield* history.store.getThread(history.threadId);
+        history.setDuringRewind(
+          history.store
+            .apply({
+              id: EventId.make("rollback-history-deleted-during-rewind"),
+              type: "thread.deleted",
+              threadId: history.threadId,
+              providerInstanceId: thread.providerInstanceId,
+              occurredAt: history.now,
+              payload: { ...thread, deletedAt: history.now, updatedAt: history.now },
+            })
+            .pipe(Effect.asVoid, Effect.orDie),
+        );
+
+        yield* history.rollback(2);
+
+        assert.deepEqual(history.rollbackCounts, [4]);
+        assert.deepEqual(
+          [
+            history.restored,
+            history.deletedRefs,
+            history.discardedRepositoryOrdinals,
+            history.committed,
+          ],
+          [[], [], [], []],
+        );
       }),
     );
   },

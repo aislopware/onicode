@@ -28,6 +28,18 @@ const REPOSITORY_PAGE_PATH = /^\/([^/]+(?:\/[^/]+)+?)\/-\//u;
 
 const KIND = SourceControlProviderKind.make("gitlab");
 
+// A group/project path of GitLab's path characters, not led by the host as in `gitlab.com/g/p`.
+function isProjectPath(repository: string, host: string): boolean {
+  const segments = repository.split("/");
+  const first = segments[0]?.toLowerCase();
+  return (
+    segments.length >= 2 &&
+    segments.every((segment) => /^[\w.-]+$/u.test(segment) && !/^\.\.?$/u.test(segment)) &&
+    first !== host.toLowerCase() &&
+    first !== host.toLowerCase().replace(/:\d+$/u, "")
+  );
+}
+
 export const definition = defineSourceControl({
   kind: KIND,
   label: "GitLab",
@@ -45,10 +57,19 @@ export const definition = defineSourceControl({
   publishHost: () => "gitlab.com",
   newRepositoryOwner: (account) => ({ owner: account }),
   defaultCloneTransport: "ssh",
-  changeRequestUrl: ({ host, repository, number, remoteUrl, webUrl }) =>
-    webUrl
-      ? changeRequestUrlBelow(webUrl, `-/merge_requests/${number}`)
-      : `${remoteWebOrigin(host, remoteUrl)}/${repository}/-/merge_requests/${number}`,
+  changeRequestUrl: ({ host, repository, number, remoteUrl, webUrl }) => {
+    if (!Number.isSafeInteger(number) || number < 1) return null;
+    if (webUrl) return changeRequestUrlBelow(webUrl, `-/merge_requests/${number}`);
+    if (!isProjectPath(repository, host)) return null;
+    try {
+      return new URL(
+        `/${repository}/-/merge_requests/${number}`,
+        remoteWebOrigin(host, remoteUrl),
+      ).toString();
+    } catch {
+      return null;
+    }
+  },
   parseChangeRequestUrl: (url) => parseChangeRequestPath(url, CHANGE_REQUEST_PATH),
   parseIssueUrl: (url) => parseIssuePath(url, ISSUE_PATH),
   commitUrl: (input) => buildCommitUrl(input, "-/commit"),

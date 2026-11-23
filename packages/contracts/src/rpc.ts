@@ -449,8 +449,8 @@ import {
   WorkflowRunGetInput,
   WorkflowRunResumeInput,
   WorkflowCounts,
-  WorkflowRunsSnapshot,
   WorkflowRunsSubscribeInput,
+  WorkflowRunsUpdate,
 } from "./workflow.ts";
 import {
   ScheduledTaskDeleteInput,
@@ -2411,7 +2411,7 @@ const WsSubscribeServerLifecycleRpc = Rpc.make(WS_METHODS.subscribeServerLifecyc
 
 const WsWorkflowsSubscribeRpc = Rpc.make(WS_METHODS.workflowsSubscribe, {
   payload: WorkflowRunsSubscribeInput,
-  success: WorkflowRunsSnapshot,
+  success: WorkflowRunsUpdate,
   error: EnvironmentAuthorizationError,
   stream: true,
 });

@@ -112,10 +112,18 @@ describe("opening a workspace tab", () => {
 
   it("opens the remembered page beside the list with columns, and the list without", () => {
     const state = { routes: [home, thread] };
-    const selections = { threads: thread.params, pullRequests: pullRequest.params };
+    const selections = {
+      threads: thread.params,
+      pullRequests: pullRequest.params,
+      issues: issue.params,
+    };
     expect(names(workspaceTabNavigationState(state, "pullRequests", selections, columns))).toEqual([
       "Home",
       "PullRequest",
+    ]);
+    expect(names(workspaceTabNavigationState(state, "issues", selections, columns))).toEqual([
+      "Home",
+      "Issue",
     ]);
     expect(
       names(
@@ -136,7 +144,7 @@ describe("opening a workspace tab", () => {
       ),
     ).toEqual(["Home", "Settings", "SettingsVoice"]);
     // A hidden tab renders its page under the key that opening the tab later uses.
-    for (const tab of ["pullRequests", "settings"] as const) {
+    for (const tab of ["pullRequests", "issues", "settings"] as const) {
       expect(workspaceTabNavigationState(state, tab, selections, columns).routes.at(-1)?.key).toBe(
         workspaceTabPage(state, tab, selections, columns)?.key,
       );

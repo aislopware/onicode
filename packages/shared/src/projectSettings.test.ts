@@ -34,6 +34,12 @@ describe("resolveSendEnvMode", () => {
       resolveSendEnvMode({ requestedEnvMode: mode, isGitRepo: false, tracksGitRepositories: true }),
     ).toBe(mode);
   });
+
+  it("uses local for No project while its git status still assumes a repository", () => {
+    expect(
+      resolveSendEnvMode({ requestedEnvMode: "worktree", isGitRepo: true, isScratchProject: true }),
+    ).toBe("local");
+  });
 });
 
 describe("resolveProjectSettings", () => {

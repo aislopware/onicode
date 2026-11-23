@@ -91,8 +91,16 @@ function makeRegistry(input: {
   readonly discovery?: ReadonlyArray<SourceControlProviderDiscoverySpec>;
   readonly run?: SourceControlHost.SourceControlHost["Service"]["process"]["run"];
   readonly settings?: Partial<ServerSettings.ServerSettingsService["Service"]>;
+  /** `git config --get-regexp` output for the remotes' configured URLs. */
+  readonly configuredUrls?: string;
+  readonly onConfigRead?: () => void;
 }) {
   const driver = {
+    execute: () =>
+      Effect.sync(() => {
+        input.onConfigRead?.();
+        return TestSourceControlHost.processOutput(input.configuredUrls ?? "");
+      }),
     listRemotes: () =>
       Effect.succeed({
         remotes: input.remotes.map((remote) => ({
@@ -185,6 +193,31 @@ it.effect("routes an unknown remote to the integration that claims its server", 
       baseUrl: "https://self-hosted.example.test",
     });
     assert.deepStrictEqual(asked, ["gitlab-cli auth status --hostname self-hosted.example.test"]);
+  }),
+);
+
+it.effect("reads a remote by its configured URL when insteadOf points it at a proxy", () =>
+  Effect.gen(function* () {
+    const registry = yield* makeRegistry({
+      remotes: [{ name: "origin", url: "https://proxy.example.test/acme/web.git" }],
+      configuredUrls: "remote.origin.url https://github.com/acme/web.git\n",
+    });
+
+    const handle = yield* registry.resolveHandle({ cwd: "/repo" });
+
+    assert.strictEqual(handle.provider.kind, kind("github"));
+    assert.strictEqual(handle.context?.remoteUrl, "https://github.com/acme/web.git");
+
+    let configReads = 0;
+    const named = yield* makeRegistry({
+      remotes: [{ name: "origin", url: "git@github.com:acme/web.git" }],
+      onConfigRead: () => configReads++,
+    });
+    assert.strictEqual(
+      (yield* named.resolveHandle({ cwd: "/repo" })).provider.kind,
+      kind("github"),
+    );
+    assert.strictEqual(configReads, 0);
   }),
 );
 

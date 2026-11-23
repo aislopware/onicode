@@ -97,6 +97,7 @@ describe("V2 preview upgrade", () => {
         [115, "ReadableEscapedLinkLabels"],
         [116, "DeferredSkillCommandIndex"],
         [117, "SupersededRunAttemptIndex"],
+        [118, "ActiveShellIndexWorkflowStep"],
       ]);
       assert.deepStrictEqual(yield* runMigrations(), []);
       assert.deepStrictEqual(yield* sql`SELECT * FROM orchestration_v2_legacy_imports`, imports);
@@ -237,6 +238,7 @@ describe("V2 preview upgrade", () => {
         [115, "ReadableEscapedLinkLabels"],
         [116, "DeferredSkillCommandIndex"],
         [117, "SupersededRunAttemptIndex"],
+        [118, "ActiveShellIndexWorkflowStep"],
       ]);
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );

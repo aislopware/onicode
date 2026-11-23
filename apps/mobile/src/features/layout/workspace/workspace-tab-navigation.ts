@@ -4,7 +4,7 @@ import {
   type SettingsPageTarget,
 } from "../../settings/components/settings-page-targets";
 import { settingsNavigationState } from "../../settings/settings-navigation";
-import type { WorkspaceTab } from "./workspace-tabs-state";
+import { workspaceUsesColumns, type WorkspaceTab } from "./workspace-tabs-state";
 
 type RouteLike = {
   readonly name: string;
@@ -191,7 +191,7 @@ function keyedPage<Route extends RouteLike>(route: Route): Route & { readonly ke
 
 function detailRoute(
   state: { readonly routes: readonly RouteLike[] },
-  tab: "threads" | "pullRequests" | "issues",
+  tab: WorkspaceTab,
   selections: WorkspaceSelections,
   check: WorkspaceSelectionCheck,
   seedPullRequest?: (identity: Omit<PullRequestSelection, "key">) => object,
@@ -232,6 +232,7 @@ function detailRoute(
       }) ?? { key: issue.key, name: "Issue", params: identityOf(issue) }
     );
   }
+  if (tab !== "pullRequests") return undefined;
   const pullRequest = selections.pullRequests;
   if (!pullRequest || !check.pullRequest(pullRequest)) return undefined;
   return (
@@ -285,7 +286,7 @@ export function workspaceTabNavigationState<
   }
   const home = state.routes.find((route) => route.name === "Home") ?? { name: "Home" };
   const detail =
-    options.columns && (tab === "threads" || tab === "pullRequests")
+    options.columns && workspaceUsesColumns(tab)
       ? detailRoute(state, tab, selections, options.check, options.seedPullRequest)
       : undefined;
   const routes = [keyed(home), ...(detail ? [keyedPage(detail)] : []), ...overlays];

@@ -235,8 +235,15 @@ export class WorkflowStore extends Context.Service<
     readonly mark: (runId: string, name: string) => Effect.Effect<number>;
     /** The runs this one invoked that have not ended. */
     readonly children: (runId: string) => Effect.Effect<ReadonlyArray<RunRow>>;
-    /** The steps a cancelled run left in flight are over: nothing will end them. */
-    readonly stepsCancelled: (runId: string, except: string) => Effect.Effect<void>;
+    /**
+     * The steps a cancelled run left in flight are over: nothing will end them. An agent step is
+     * over only once its agent is stopped, so only those in `stopped` are.
+     */
+    readonly stepsCancelled: (
+      runId: string,
+      except: string,
+      stopped: ReadonlyArray<string>,
+    ) => Effect.Effect<void>;
     /** Cancelled runs whose `onEnd` has not completed and may still be tried, with its tries. */
     readonly runsToEnd: (
       step: string,
@@ -263,6 +270,7 @@ export class WorkflowStore extends Context.Service<
     /** The threads of agent steps still running in this run, with each step's own turn. */
     readonly runningThreads: (runId: string) => Effect.Effect<
       ReadonlyArray<{
+        readonly name: string;
         readonly threadId: string;
         readonly environment?: string;
         readonly turnId?: string;
@@ -549,13 +557,15 @@ export const make = Effect.gen(function* () {
         }
         return taken.length > 0;
       },
-      (effect) =>
+      (effect, runId) =>
         sql.withTransaction(effect).pipe(
           Effect.catchIf(
             (error) => error === "seen",
             () => Effect.succeed(false),
           ),
           Effect.orDie,
+          // A paused run is not woken, so its answered question is told here.
+          Effect.tap((taken) => (taken ? PubSub.publish(changes, runId) : Effect.void)),
         ),
     ),
     waitsToWake: Effect.gen(function* () {
@@ -616,6 +626,7 @@ export const make = Effect.gen(function* () {
           ),
           Effect.orDie,
         );
+      if (outcome === "delivered") yield* PubSub.publish(changes, runId);
       return outcome;
     }),
     prunable: Effect.fn("WorkflowStore.prunable")(function* (before, limit) {
@@ -671,15 +682,17 @@ export const make = Effect.gen(function* () {
         SELECT * FROM workflow_runs WHERE parent_run_id = ${runId} AND ended_at IS NULL
       `.pipe(Effect.orDie);
     }),
-    stepsCancelled: Effect.fn("WorkflowStore.stepsCancelled")(function* (runId, except) {
+    stepsCancelled: Effect.fn("WorkflowStore.stepsCancelled")(function* (runId, except, stopped) {
       const at = yield* now;
-      yield* write(
-        runId,
-        sql`
+      const named = stopped.length === 0 ? sql`` : sql`OR name IN ${sql.in(stopped)}`;
+      // The sweep asks again while a stop backs off; only a step it ends tells the watchers.
+      const ended = yield* sql`
           UPDATE workflow_steps SET status = 'failed', detail = 'cancelled', ended_at = ${at}
           WHERE run_id = ${runId} AND status = 'running' AND name != ${except}
-        `,
-      );
+            AND (thread_id IS NULL ${named})
+          RETURNING name
+        `.pipe(Effect.orDie);
+      if (ended.length > 0) yield* PubSub.publish(changes, runId);
     }),
     runsToEnd: Effect.fn("WorkflowStore.runsToEnd")(function* (step, tries) {
       return yield* sql<
@@ -720,14 +733,16 @@ export const make = Effect.gen(function* () {
     ),
     runningThreads: Effect.fn("WorkflowStore.runningThreads")(function* (runId) {
       const rows = yield* sql<{
+        name: string;
         thread_id: string;
         environment_id: string | null;
         turn_id: string | null;
       }>`
-        SELECT thread_id, environment_id, turn_id FROM workflow_steps
+        SELECT name, thread_id, environment_id, turn_id FROM workflow_steps
         WHERE run_id = ${runId} AND status = 'running' AND thread_id IS NOT NULL
       `.pipe(Effect.orDie);
       return rows.map((row) => ({
+        name: row.name,
         threadId: row.thread_id,
         ...(row.environment_id === null ? {} : { environment: row.environment_id }),
         ...(row.turn_id === null ? {} : { turnId: row.turn_id }),

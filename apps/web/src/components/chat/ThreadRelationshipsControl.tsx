@@ -1,4 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
+import { thrownErrorMessage } from "@onicode/client-runtime/errors";
+import { squashAtomCommandFailure } from "@onicode/client-runtime/state/runtime";
 import { threadKey } from "@onicode/client-runtime/state/entities";
 import { ThreadDetailsControl } from "./ThreadDetailsControl";
 import { ThreadHoverCardPopup } from "../ThreadHoverCard";
@@ -584,7 +586,12 @@ export function ThreadRelationshipsPanel(props: {
         ? row
         : { ...row, edge: { ...row.edge, status: workflowGroup.workflow.status } };
     });
-  const canMerge = mergeTargetThreadId !== null && latestMergeBackRun !== null;
+  // The server refuses an archived parent; a deleted one is absent here, so its refusal explains it.
+  const mergeTargetArchived =
+    mergeTargetThreadId !== null &&
+    graph.nodes.get(mergeTargetThreadId)?.thread?.archivedAt != null;
+  const canMerge =
+    mergeTargetThreadId !== null && latestMergeBackRun !== null && !mergeTargetArchived;
   const unlistedThreadIds = relationshipRows
     .filter(
       ({ threadId, edge }) =>
@@ -699,7 +706,9 @@ export function ThreadRelationshipsPanel(props: {
   };
 
   const merge = async () => {
-    if (!latestMergeBackRun || mergeTargetThreadId === null || busyAction !== null) return;
+    if (!canMerge || !latestMergeBackRun || mergeTargetThreadId === null || busyAction !== null) {
+      return;
+    }
     if (mergeErrorToastId.current !== null) {
       toastManager.close(mergeErrorToastId.current);
       mergeErrorToastId.current = null;
@@ -715,9 +724,11 @@ export function ThreadRelationshipsPanel(props: {
     });
     setBusyAction(null);
     if (result._tag === "Failure") {
+      const description = thrownErrorMessage(squashAtomCommandFailure(result), m);
       mergeErrorToastId.current = toastManager.add({
         type: "error",
         title: gt("Could not merge back"),
+        ...(description ? { description } : {}),
       });
       return;
     }
@@ -994,9 +1005,15 @@ export function ThreadRelationshipsPanel(props: {
               <TooltipPopup side="left">
                 {latestMergeBackRun === null
                   ? gt("Complete a run in this fork before merging it back")
-                  : parentTitle
-                    ? gt("Merge this conversation back into {parentTitle}", { parentTitle })
-                    : gt("Merge this conversation back into its source")}
+                  : mergeTargetArchived
+                    ? parentTitle
+                      ? gt("Unarchive {parentTitle} to merge this conversation back into it", {
+                          parentTitle,
+                        })
+                      : gt("Unarchive the source conversation to merge this one back")
+                    : parentTitle
+                      ? gt("Merge this conversation back into {parentTitle}", { parentTitle })
+                      : gt("Merge this conversation back into its source")}
               </TooltipPopup>
             </Tooltip>
             <span className="shrink-0 border border-transparent ps-1 pe-2.5 text-2xs font-medium text-muted-foreground">

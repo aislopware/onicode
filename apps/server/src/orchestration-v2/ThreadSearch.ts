@@ -214,7 +214,7 @@ export function buildSearchSnippet(text: string, matchStart: number): string {
   return `${start > 0 ? "…" : ""}${shown.slice(0, end)}${cut ? "…" : ""}`;
 }
 
-// Filter hidden subagents and side chats before the hit limit; JS checks word starts and ranking.
+// Filter subagents, side chats and workflow steps before the hit limit; JS checks word starts.
 // Both paths narrow ASCII tokens with Latin-1 and Extended-A/B/Additional accent variants.
 // Without FTS5 trigrams, or for two-character CJK words, scan the same eligible messages;
 // accented queries and non-Latin case can still miss: "fermée"/"fermee", "ОШИБКА"/"ошибка".
@@ -235,6 +235,7 @@ export const messageHitsQuery = (
         AND json_extract(threads.payload_json, '$.lineage.relationshipToParent')
           IS NOT 'subagent'
         AND json_extract(threads.payload_json, '$.lineage.sideChat') IS NOT 1
+        AND json_extract(threads.payload_json, '$.lineage.workflowStep') IS NOT 1
     )
     ${
       match === null
@@ -428,6 +429,7 @@ export const make = Effect.gen(function* () {
         AND json_extract(threads.payload_json, '$.lineage.relationshipToParent')
           IS NOT 'subagent'
         AND json_extract(threads.payload_json, '$.lineage.sideChat') IS NOT 1
+        AND json_extract(threads.payload_json, '$.lineage.workflowStep') IS NOT 1
         AND (${projectId} IS NULL OR threads.project_id = ${projectId})
     `,
   });
@@ -459,6 +461,7 @@ export const make = Effect.gen(function* () {
         AND json_extract(threads.payload_json, '$.lineage.relationshipToParent')
           IS NOT 'subagent'
         AND json_extract(threads.payload_json, '$.lineage.sideChat') IS NOT 1
+        AND json_extract(threads.payload_json, '$.lineage.workflowStep') IS NOT 1
         AND json_extract(threads.payload_json, '$.settledOverride') = 'settled'
         AND json_extract(threads.payload_json, '$.settledAt') < ${before}
         AND (${projectIds} IS NULL
@@ -482,6 +485,7 @@ export const make = Effect.gen(function* () {
         AND json_extract(threads.payload_json, '$.lineage.relationshipToParent')
           IS NOT 'subagent'
         AND json_extract(threads.payload_json, '$.lineage.sideChat') IS NOT 1
+        AND json_extract(threads.payload_json, '$.lineage.workflowStep') IS NOT 1
         AND json_extract(threads.payload_json, '$.settledOverride') = 'settled'
         AND json_extract(threads.payload_json, '$.settledAt') < ${before}
         AND (${projectIds} IS NULL

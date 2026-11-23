@@ -9,6 +9,7 @@ import {
   type Project as ProjectRecord,
   type ServerProvider,
   ONICODE_PROJECT_FILE_NAME,
+  trimAsciiWhitespace,
 } from "@onicode/contracts";
 import * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
@@ -172,7 +173,7 @@ const defaultWorktreeStrategy = Effect.fn("mcp.defaultWorktreeStrategy")(functio
     })
     .pipe(Effect.orElseSucceed(() => null));
   if (head?.exitCode === 1) return undefined;
-  const branch = head?.exitCode === 0 ? head.stdout.trim() : "";
+  const branch = head?.exitCode === 0 ? trimAsciiWhitespace(head.stdout) : "";
   if (branch.length === 0) return yield* unreadable;
   return { type: "worktree" as const, baseRef: branch };
 });

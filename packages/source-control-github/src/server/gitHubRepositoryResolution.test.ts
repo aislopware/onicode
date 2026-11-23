@@ -5,6 +5,7 @@ import {
   resolveGitHubRepository,
   parseGitHubRepositorySelector,
   selectGitHubBaseRepository,
+  withConfiguredRemoteUrls,
 } from "./gitHubRepositoryResolution.ts";
 
 describe("selectGitHubBaseRepository", () => {
@@ -343,5 +344,19 @@ describe("parseGitHubRepositorySelector", () => {
     ]) {
       assert.strictEqual(parseGitHubRepositorySelector(selector, "github.com"), null, selector);
     }
+  });
+});
+
+describe("withConfiguredRemoteUrls", () => {
+  it.each([
+    ["https://github.com/a/b.git", "https://proxy.example/a/b.git", true],
+    ["git@github.com:a/b.git", "git@github.work:a/b.git", true],
+    ["git@github.personal:a/b.git", "git@github.com:a/b.git", false],
+    ["git@github.work:a/b.git", "https://github.corp.example/a/b.git", false],
+  ])("weighs configured %s against fetch URL %s", (configuredUrl, fetchUrl, configuredWins) => {
+    assert.strictEqual(
+      withConfiguredRemoteUrls(`origin\t${fetchUrl} (fetch)`, `remote.origin.url ${configuredUrl}`),
+      `origin\t${configuredWins ? configuredUrl : fetchUrl} (fetch)`,
+    );
   });
 });

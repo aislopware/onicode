@@ -21,6 +21,38 @@ export function parseFetchRemotes(
     .map((match) => ({ name: match[1]!, url: match[2]! }));
 }
 
+/**
+ * `git remote -v` applies url.*.insteadOf, which can point a GitHub remote at a proxy or alias. The
+ * configured URL (`remote.<name>.url <url>`) wins unless the fetch URL names github.com, when only
+ * it names GitHub or it names github.com: the server's `preferredRemoteUrl` rule.
+ */
+export function withConfiguredRemoteUrls(remotes: string, config: string): string {
+  const configured = new Map<string, string>();
+  for (const line of config.split("\n")) {
+    const match = /^remote\.(.+)\.url\s+(\S+)$/u.exec(line.trim());
+    // Git fetches from the first of several configured URLs.
+    if (match && !configured.has(match[1]!)) configured.set(match[1]!, match[2]!);
+  }
+  if (configured.size === 0) return remotes;
+  return remotes
+    .split("\n")
+    .map((line) => {
+      const match = /^(\S+)\s+(\S+)(\s+\(fetch\).*)$/u.exec(line.trim());
+      const configuredUrl = match === null ? undefined : configured.get(match[1]!);
+      if (match === null || configuredUrl === undefined) return line;
+      const configuredHost = gitHubApiHostForRemote(configuredUrl);
+      const fetchHost = gitHubApiHostForRemote(match[2]!);
+      const preferred =
+        configuredHost !== null &&
+        fetchHost !== "github.com" &&
+        (configuredHost === "github.com" || fetchHost === null)
+          ? configuredUrl
+          : match[2]!;
+      return `${match[1]}\t${preferred}${match[3]}`;
+    })
+    .join("\n");
+}
+
 /** gh priority: marked default, upstream/github/origin, sole remote. Null if ambiguous. */
 export function selectGitHubBaseRepository(input: {
   readonly remotes: string;

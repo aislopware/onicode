@@ -34,6 +34,19 @@ private extension ReviewDiffContentView {
           "The end of every unwrapped line must remain reachable")
   }
 
+  func fileHeaderTap(leftOfCheckbox distance: CGFloat) -> String {
+    let row = rows[0]
+    let card = CGRect(x: 0, y: 0, width: viewportWidth, height: style.fileHeaderHeight)
+    let checkbox = fileHeaderInteractiveRects(for: row, cardRect: card).checkbox
+    let handlers = (onToggleFile, onToggleViewedFile)
+    defer { (onToggleFile, onToggleViewedFile) = handlers }
+    var tapped = "none"
+    onToggleFile = { _ in tapped = "collapse" }
+    onToggleViewedFile = { _ in tapped = "viewed" }
+    handleFileHeaderTap(row: row, rect: card, point: CGPoint(x: checkbox.minX - distance, y: card.midY))
+    return tapped
+  }
+
   func preparedOffsetAddress() -> UInt {
     guard let geometry = preparedRowGeometry else { fatalError("Geometry was not prepared") }
     return geometry.offsets.withUnsafeBufferPointer { UInt(bitPattern: $0.baseAddress) }
@@ -102,6 +115,9 @@ let originalHeight = geometryView.contentHeight
 geometryView.mergeTokensByRowId(["a:line:29": [ReviewDiffNativeToken(content: geometryRows[31].content ?? "", color: "#ff0000", fontStyle: 3)]])
 geometryView.selectedRowIds = ["a:line:29"]
 check(geometryView.contentHeight == originalHeight, "Tokens and selection must preserve geometry")
+check(geometryView.fileHeaderTap(leftOfCheckbox: 12) == "collapse",
+      "A tap on the end of the +N count must collapse the file, not toggle Viewed")
+check(geometryView.fileHeaderTap(leftOfCheckbox: 8) == "viewed", "The gap beside the Viewed checkbox must toggle it")
 
 // The runner instruments the production resolver in its temporary compile input only.
 private enum HeaderLookupReads {

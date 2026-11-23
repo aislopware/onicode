@@ -747,7 +747,8 @@ it.effect("a launch that omits its workspace follows the new-threads-in-a-worktr
       });
       const git = yield* GitVcsDriver.GitVcsDriver.pipe(Effect.provide(dependencies));
       for (const args of [
-        ["init", "-b", "main"],
+        // Git allows Unicode whitespace at a branch name's edges.
+        ["init", "-b", "main\u3000"],
         ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "--allow-empty", "-m", "init"],
       ]) {
         yield* git.execute({ operation: "test.setupRepo", cwd: repo, args });
@@ -775,9 +776,9 @@ it.effect("a launch that omits its workspace follows the new-threads-in-a-worktr
       }
 
       expect(
-        launched.map((launch) => launch.workspaceStrategy.type),
+        launched.map((launch) => launch.workspaceStrategy),
         source,
-      ).toEqual(["worktree", "root"]);
+      ).toMatchObject([{ type: "worktree", baseRef: "main\u3000" }, { type: "root" }]);
     }
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );

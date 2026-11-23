@@ -48,6 +48,8 @@ it.effect("a run still waits while one of the things it started side by side is 
             idempotencyKey: "k",
             input: {},
           });
+          // Nor is a sweep that finds no step left to mark cancelled.
+          yield* store.stepsCancelled("r1", "onEnd", []);
           assert.equal(yield* PubSub.remaining(told), 0);
         }),
       );

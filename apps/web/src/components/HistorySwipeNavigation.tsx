@@ -44,9 +44,10 @@ function readMainContentBounds(): SwipeBounds {
 }
 
 // `event.target` stops at a shadow host; the composed path also reaches scrollers inside it.
+// Sub-pixel content rounds up to 1px of overflow, which `overflow-y: auto` alone makes scrollable.
 function hasHorizontalScroller(path: readonly EventTarget[]): boolean {
   for (const element of path) {
-    if (!(element instanceof Element) || element.scrollWidth <= element.clientWidth) continue;
+    if (!(element instanceof Element) || element.scrollWidth - element.clientWidth <= 1) continue;
     const { overflowX } = getComputedStyle(element);
     if (overflowX !== "auto" && overflowX !== "scroll") continue;
     return true;

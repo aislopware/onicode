@@ -291,7 +291,7 @@ const layerThreadManagementProvided = ThreadManagementService.layerWithLegacyImp
       layerLegacyV1ThreadImporterProvided,
       layerCommandReceiptStoreProvided,
       layerProviderSessionManagerProvided,
-      layerThreadWorktreeRestore,
+      layerThreadWorktreeRestore.pipe(Layer.provide(ProjectionStore.layer)),
     ),
   ),
 );

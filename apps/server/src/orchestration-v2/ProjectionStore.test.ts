@@ -3323,6 +3323,7 @@ it.effect("SQL list older settled threads below a cursor", () =>
       readonly settledDay: number | null;
       readonly project?: string;
       readonly subagent?: boolean;
+      readonly workflowStep?: boolean;
       readonly archived?: boolean;
       readonly snoozedUntilDay?: number;
     }) =>
@@ -3348,6 +3349,7 @@ it.effect("SQL list older settled threads below a cursor", () =>
             parentThreadId: input.subagent === true ? id("b") : null,
             relationshipToParent: input.subagent === true ? "subagent" : null,
             rootThreadId: input.subagent === true ? id("b") : id(input.name),
+            ...(input.workflowStep === true ? { workflowStep: true } : {}),
           },
           forkedFrom: null,
           createdAt: now,
@@ -3368,6 +3370,8 @@ it.effect("SQL list older settled threads below a cursor", () =>
     yield* createThread({ name: "recent", settledDay: 20 });
     yield* createThread({ name: "unsettled", settledDay: null });
     yield* createThread({ name: "child", settledDay: 1, subagent: true });
+    // A workflow run's agent step shows inside its run, not on the shelf.
+    yield* createThread({ name: "step", settledDay: 1, workflowStep: true });
     yield* createThread({ name: "archived", settledDay: 1, archived: true });
 
     const list = (
@@ -3762,16 +3766,17 @@ it.effect("SQL snapshot windows leave handoff bodies in SQLite without changing 
   }).pipe(Effect.provide(layerTest)),
 );
 
-it.effect("lists only active subagent IDs without loading shell data", () =>
+it.effect("lists only active subagent and workflow step IDs without loading shell data", () =>
   Effect.gen(function* () {
     const store = yield* ProjectionStore.ProjectionStoreV2;
     const sql = yield* SqlClient.SqlClient;
     const createdAt = "2026-01-05T00:00:00.000Z";
-    for (const [id, relationship, archivedAt, deletedAt] of [
-      ["parent", null, null, null],
-      ["active-subagent", "subagent", null, null],
-      ["archived-subagent", "subagent", createdAt, null],
-      ["deleted-subagent", "subagent", null, createdAt],
+    for (const [id, relationship, archivedAt, deletedAt, workflowStep] of [
+      ["parent", null, null, null, undefined],
+      ["active-subagent", "subagent", null, null, undefined],
+      ["archived-subagent", "subagent", createdAt, null, undefined],
+      ["deleted-subagent", "subagent", null, createdAt, undefined],
+      ["workflow-step", null, null, null, true],
     ] as const) {
       yield* sql`
         INSERT INTO orchestration_v2_projection_threads (
@@ -3780,14 +3785,17 @@ it.effect("lists only active subagent IDs without loading shell data", () =>
         ) VALUES (
           ${id}, 'project:test', ${id}, 'codex', 'full-access', 'default',
           ${createdAt}, ${createdAt}, ${archivedAt}, ${deletedAt},
-          ${JSON.stringify({ lineage: { relationshipToParent: relationship }, archivedAt })}
+          ${JSON.stringify({
+            lineage: { relationshipToParent: relationship, workflowStep },
+            archivedAt,
+          })}
         )
       `;
     }
 
     assert.sameMembers(
       [...(yield* store.listActiveSubagentThreadIds())],
-      [ThreadId.make("active-subagent")],
+      [ThreadId.make("active-subagent"), ThreadId.make("workflow-step")],
     );
   }).pipe(Effect.provide(layerTest)),
 );

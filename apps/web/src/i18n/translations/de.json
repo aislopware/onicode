@@ -3987,6 +3987,8 @@
   "7af596fd1e3ac2a2": "In {parentTitle} zurückführen",
   "566239c645ce0fff": "In die Quellunterhaltung zurückführen",
   "1cfeabb8818f121f": "Schließe einen Lauf in diesem Fork ab, bevor du ihn zurückführst",
+  "ea371763a3afff56": "Hol {parentTitle} aus dem Archiv, um diese Unterhaltung dorthin zurückzuführen",
+  "d8b65e5e9c5fbe26": "Hol die Quellunterhaltung aus dem Archiv, um diese zurückzuführen",
   "36cf99230450eeaf": "Diese Unterhaltung in {parentTitle} zurückführen",
   "bda1cc7b91e07680": "Diese Unterhaltung in ihre Quelle zurückführen",
   "de93e39b51ae5ebf": "Subagent {threadTitle} stoppen",

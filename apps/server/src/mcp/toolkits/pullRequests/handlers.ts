@@ -26,7 +26,6 @@ import * as Schema from "effect/Schema";
 
 import * as GitManager from "../../../git/GitManager.ts";
 import * as Orchestrator from "../../../orchestration-v2/Orchestrator.ts";
-import * as ProjectService from "../../../project/ProjectService.ts";
 import * as PullRequestWatchService from "../../../pullRequest/PullRequestWatchService.ts";
 import { resolveTarget, type ResolvedTarget } from "../../../pullRequest/pullRequestTarget.ts";
 import * as PullRequestReviewGuideService from "../../../pullRequest/PullRequestReviewGuideService.ts";
@@ -282,8 +281,6 @@ const make = Effect.gen(function* () {
   const watches = yield* PullRequestWatchService.PullRequestWatchService;
   const pullRequests = yield* PullRequestService.PullRequestService;
   const git = yield* GitManager.GitManager;
-
-  const projects = yield* ProjectService.ProjectService;
   const random = yield* SecureRandom.SecureRandom;
 
   const commandId = (tag: string, threadId: ThreadId) =>
@@ -371,31 +368,30 @@ const make = Effect.gen(function* () {
             Effect.orElseSucceed(() => null),
             Effect.map((shell) => shell ?? undefined),
           );
-    const known = yield* projects
-      .listShells()
-      .pipe(Effect.mapError((cause) => new PullRequestListFailedError({ cause })));
+    const known = yield* pullRequests.addressedProjects.pipe(
+      Effect.mapError((cause) => new PullRequestListFailedError({ cause })),
+    );
     const callerProject =
       callerThread === undefined
         ? undefined
-        : yield* pullRequests
-            .addressedProject(callerThread.projectId)
-            .pipe(Effect.mapError((cause) => new PullRequestListFailedError({ cause })));
+        : known.find((project) => project.id === callerThread.projectId);
     // A pull request named by host and repository builds its URL through the project that holds
     // it, which need not be the caller's.
     const urlProject = (input: PullRequestTargetInput) =>
-      input.url === undefined && input.host !== undefined && input.repository !== undefined
-        ? (projectForPullRequest(
+      (input.url === undefined && input.host !== undefined && input.repository !== undefined
+        ? projectForPullRequest(
             known,
             { host: input.host, repository: input.repository },
             callerProject,
-          ) ?? callerProject)
-        : callerProject;
-    return yield* Effect.forEach(targets, (input) =>
-      resolveTarget(input, urlProject(input)).pipe(
+          )
+        : undefined) ?? callerProject;
+    return yield* Effect.forEach(targets, (input) => {
+      const holder = urlProject(input);
+      return resolveTarget(input, holder).pipe(
         Effect.map((target) => ({
           input,
           target,
-          project: projectForPullRequest(known, target, callerProject),
+          project: projectForPullRequest(known, target, holder),
           callerProject,
           failure: null,
         })),
@@ -408,8 +404,8 @@ const make = Effect.gen(function* () {
             failure: error.message,
           }),
         ),
-      ),
-    );
+      );
+    });
   });
 
   const guideReference = (

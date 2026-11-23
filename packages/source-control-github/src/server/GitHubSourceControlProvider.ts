@@ -41,6 +41,7 @@ import {
   parseGitHubRepositorySelector,
   parsePullRequestReference,
   resolveGitHubRepository,
+  withConfiguredRemoteUrls,
   type GitHubRepositoryLocator,
 } from "./gitHubRepositoryResolution.ts";
 import * as SourceControlRateLimit from "@onicode/source-control-core/server/SourceControlRateLimit";
@@ -571,13 +572,14 @@ export const make = Effect.gen(function* () {
   const readRemotes = (cwd: string) =>
     Effect.all([
       gitRead(cwd, ["remote", "-v"]),
-      gitRead(cwd, ["config", "--get-regexp", "^remote\\..*\\.gh-resolved$"]),
+      gitRead(cwd, ["config", "--get-regexp", "^remote\\..*\\.(url|gh-resolved)$"]),
     ]).pipe(
       Effect.orElseSucceed(() => [null, null] as const),
-      Effect.map(([remotes, resolved]) => ({
-        remotes: remotes?.exitCode === 0 ? remotes.stdout : "",
-        resolved: resolved?.exitCode === 0 ? resolved.stdout : "",
-      })),
+      Effect.map(([remotes, config]) => {
+        const resolved = config?.exitCode === 0 ? config.stdout : "";
+        const fetched = remotes?.exitCode === 0 ? remotes.stdout : "";
+        return { remotes: withConfiguredRemoteUrls(fetched, resolved), resolved };
+      }),
     );
 
   const resolveRepository = Effect.fn("GitHubSourceControlProvider.resolveRepository")(
@@ -832,10 +834,7 @@ export const make = Effect.gen(function* () {
       const headOwner =
         pullRequest.headRepositoryOwnerLogin ?? headNameWithOwner?.split("/")[0] ?? null;
 
-      const remotes = yield* gitRead(input.cwd, ["remote", "-v"]).pipe(
-        Effect.map((result) => (result.exitCode === 0 ? result.stdout : "")),
-        Effect.mapError(gitFailure),
-      );
+      const { remotes } = yield* readRemotes(input.cwd);
       const remoteFor = (nameWithOwner: string) =>
         parseFetchRemotes(remotes).find(
           (remote) =>

@@ -85,6 +85,16 @@ describe("GitLab change request URLs", () => {
         webUrl: "https://gitlab.com/group/sub/project",
       }),
     ).toBe("https://gitlab.com/group/sub/project/-/merge_requests/4");
+    for (const [host, repository] of [
+      ["gitlab.com", "gitlab.com/group/project"],
+      ["gitlab.internal:8080", "gitlab.internal/team/app"],
+      ["gitlab.com", "project"],
+      ["gitlab.com", "group//project"],
+      ["gitlab.com", "group/../project"],
+      ["bad host", "team/app"],
+    ] as const) {
+      expect(definition.changeRequestUrl({ host, repository, number: 4 }), repository).toBeNull();
+    }
   });
 
   it("links authors, bots included, to their profile on the repository's host", () => {

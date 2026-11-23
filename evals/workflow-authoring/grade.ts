@@ -100,6 +100,9 @@ const world = Effect.fn("gradeWorkflow.world")(function* (
     interrupt: Effect.fn("gradeWorkflow.agents.interrupt")(function* () {
       return yield* Effect.succeed("ended" as const);
     }),
+    model: Effect.fn("gradeWorkflow.agents.model")(function* () {
+      return yield* Effect.undefined;
+    }),
   });
   const engine = (loaded: ReadonlyArray<WorkflowDefinition>) =>
     WorkflowEngine.layer(loaded).pipe(

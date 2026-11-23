@@ -498,6 +498,13 @@ function ThreadRouteContent(
       },
     });
     mergeBackBusyRef.current = false;
+    // An archived or deleted source refuses the merge, and only the server's reason says so.
+    if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+      Dialog.alert(
+        gt("Could not merge back"),
+        errorDisplayMessage(squashAtomCommandFailure(result), m) ?? gt("Try again."),
+      );
+    }
     if (result._tag !== "Success" || !pageStillShows()) return;
     selectDetail({
       name: "Thread",

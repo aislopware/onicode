@@ -258,10 +258,15 @@ export class PullRequestService extends Context.Service<
     readonly changes: (input: PullRequestRef) => Stream.Stream<void>;
     /** Whether the project's checkout is on a forge Onicode reads change requests from. */
     readonly servesProject: (projectId: ProjectId) => Effect.Effect<boolean>;
-    /** The project as `servesProject` sees it: identity resolved, its forge refined. */
+    /** The project as `servesProject` sees it: identity resolved, its forge and host refined. */
     readonly addressedProject: (
       projectId: ProjectId,
     ) => Effect.Effect<OrchestrationProjectShell | undefined, PullRequestError>;
+    /** Every project as `addressedProject` sees it, from one read. */
+    readonly addressedProjects: Effect.Effect<
+      ReadonlyArray<OrchestrationProjectShell>,
+      PullRequestError
+    >;
     readonly threadComments: (
       input: PullRequestThreadCommentsInput,
     ) => Effect.Effect<PullRequestThreadCommentsResult, PullRequestError>;
@@ -382,6 +387,11 @@ interface WorkspaceProjects {
   >;
   readonly viewerRoots: ReadonlyMap<string, ReadonlyArray<string>>;
   readonly refinedProjectIdsByHost: ReadonlyMap<string, ReadonlyArray<ProjectId>>;
+  /** The forge and host each served project's change requests are read from. */
+  readonly addressed: ReadonlyMap<
+    ProjectId,
+    { readonly kind: SourceControlProviderKind; readonly host: string }
+  >;
 }
 
 // Inherited by fibers forked inside the scope, so it is closed, not just dropped, when the scope ends.
@@ -988,6 +998,7 @@ export const make = Effect.gen(function* () {
         >();
         const viewerRoots = new Map<string, string[]>();
         const refinedProjectIdsByHost = new Map<string, ProjectId[]>();
+        const addressed = new Map<ProjectId, { kind: SourceControlProviderKind; host: string }>();
         const seen = new Set<string>();
         for (const project of projects) {
           if (filter.projectId !== undefined && project.id !== filter.projectId) continue;
@@ -1016,6 +1027,7 @@ export const make = Effect.gen(function* () {
           const registered = registry.get(kind);
           const api = registered?.servesHost?.(host) === false ? null : registered;
           if (api !== null) {
+            addressed.set(project.id, { kind, host });
             const roots = viewerRoots.get(host);
             if (roots === undefined) viewerRoots.set(host, [project.workspaceRoot]);
             else if (!roots.includes(project.workspaceRoot)) roots.push(project.workspaceRoot);
@@ -1047,7 +1059,14 @@ export const make = Effect.gen(function* () {
                 : sourceControlDefinitions.canonicalRepositoryKey(repositoryKey.toLowerCase()),
           });
         }
-        return { projects, supported, unimplemented, viewerRoots, refinedProjectIdsByHost };
+        return {
+          projects,
+          supported,
+          unimplemented,
+          viewerRoots,
+          refinedProjectIdsByHost,
+          addressed,
+        };
       }),
     );
 
@@ -1190,16 +1209,53 @@ export const make = Effect.gen(function* () {
       Effect.orElseSucceed(() => true),
     );
 
+  const addressProject = (
+    project: OrchestrationProjectShell,
+    own: { readonly kind: SourceControlProviderKind; readonly host: string } | undefined,
+  ): OrchestrationProjectShell => {
+    const identity = project.repositoryIdentity;
+    if (own === undefined || identity == null) return project;
+    // A project stored before repository keys existed has none.
+    const legacyKey: string | undefined = identity.canonicalKey;
+    const [keyHost, ...keyPath] = legacyKey?.split("/") ?? [];
+    const rehost =
+      keyPath.length > 0 &&
+      sourceControlDefinitions.changeRequestHost(identity, own.kind) !== own.host;
+    if (identity.provider === own.kind && !rehost) return project;
+    if (!rehost) {
+      return { ...project, repositoryIdentity: { ...identity, provider: own.kind } };
+    }
+    // Change request URLs are built on the key's host, so it takes the one discovery named, as
+    // for an SSH alias like `github.com-work`. A fork on the same host follows it.
+    const [originHost, ...originPath] = identity.origin?.canonicalKey.split("/") ?? [];
+    const origin =
+      identity.origin !== undefined && originHost === keyHost && originPath.length > 0
+        ? { ...identity.origin, canonicalKey: [own.host, ...originPath].join("/") }
+        : identity.origin;
+    return {
+      ...project,
+      repositoryIdentity: {
+        ...identity,
+        provider: own.kind,
+        canonicalKey: [own.host, ...keyPath].join("/"),
+        ...(origin === undefined ? {} : { origin }),
+      },
+    };
+  };
+
   const addressedProject: PullRequestService["Service"]["addressedProject"] = (projectId) =>
     listWorkspaceProjects({ projectId }).pipe(
-      Effect.map(({ projects, supported }) => {
-        const own = supported[0];
-        if (own === undefined) return projects.find((project) => project.id === projectId);
-        const identity = own.project.repositoryIdentity;
-        return identity == null || identity.provider === own.kind
-          ? own.project
-          : { ...own.project, repositoryIdentity: { ...identity, provider: own.kind } };
+      Effect.map(({ projects, addressed }) => {
+        const project = projects.find((candidate) => candidate.id === projectId);
+        return project && addressProject(project, addressed.get(projectId));
       }),
+    );
+
+  const addressedProjects: PullRequestService["Service"]["addressedProjects"] =
+    listWorkspaceProjects({}).pipe(
+      Effect.map(({ projects, addressed }) =>
+        projects.map((project) => addressProject(project, addressed.get(project.id))),
+      ),
     );
 
   const changes: PullRequestService["Service"]["changes"] = (input) =>
@@ -4196,6 +4252,7 @@ export const make = Effect.gen(function* () {
     changes,
     servesProject,
     addressedProject,
+    addressedProjects,
     preview: credentialCached(preview),
     threadComments,
     diff: credentialCached(diff),

@@ -449,9 +449,53 @@ layer("GitLabCli.layer", (it) => {
       }),
   );
 
-  it.effect.each(["not-found", "command-failed"] as const)(
-    "exposes fixed repository lookup details only for not-found (%s)",
-    (failureKind) =>
+  it.effect.each([
+    {
+      failureKind: "not-found",
+      repository: "missing/\tproject",
+      auth: processOutput("gitlab.com\n  ✓ Logged in to gitlab.com as alice (GITLAB_TOKEN)\n"),
+      authCall: { args: ["auth", "status", "--hostname", "gitlab.com"], env: {} },
+      detail: "Repository missing/ project was not found. Check the owner and name and try again.",
+    },
+    // A login for another host does not reach a private project on the default host.
+    {
+      failureKind: "not-found",
+      repository: "group/private",
+      auth: processOutput(
+        "gitlab.work.internal\n  ✓ Logged in to gitlab.work.internal as alice (keyring)\ngitlab.com\n  x gitlab.com has not been authenticated with glab.\n",
+      ),
+      authCall: { args: ["auth", "status", "--hostname", "gitlab.com"], env: {} },
+      detail:
+        "Repository group/private was not found, or gitlab.com hides it because glab is not signed in there. Run `glab auth login --hostname gitlab.com` and try again.",
+    },
+    {
+      failureKind: "command-failed",
+      repository: "missing/\tproject",
+      auth: null,
+      authCall: null,
+      detail: undefined,
+    },
+    // GitLab reads a private project as missing to glab with no login for its host, and the
+    // environment token belongs to the default host.
+    {
+      failureKind: "not-found",
+      repository: "https://gitlab.example.com/group/private",
+      auth: {
+        ...processOutput(""),
+        exitCode: ChildProcessSpawner.ExitCode(1),
+        stderr:
+          "x gitlab.example.com has not been authenticated with glab. Run `glab auth login --hostname gitlab.example.com` to authenticate.",
+      },
+      authCall: {
+        args: ["auth", "status", "--hostname", "gitlab.example.com"],
+        env: { GITLAB_TOKEN: "", GITLAB_ACCESS_TOKEN: "", OAUTH_TOKEN: "" },
+      },
+      detail:
+        "Repository https://gitlab.example.com/group/private was not found, or gitlab.example.com hides it because glab is not signed in there. Run `glab auth login --hostname gitlab.example.com` and try again.",
+    },
+  ] as const)(
+    "exposes fixed repository lookup details only for not-found ($failureKind $repository)",
+    ({ failureKind, repository, auth, authCall, detail }) =>
       Effect.gen(function* () {
         const cause = new VcsProcessExitError({
           operation: "GitLabCli.execute",
@@ -462,23 +506,18 @@ layer("GitLabCli.layer", (it) => {
           failureKind,
         });
         mockedRun.mockReturnValueOnce(Effect.fail(cause));
+        if (auth !== null) mockedRun.mockReturnValueOnce(Effect.succeed(auth));
 
         const error = yield* Effect.gen(function* () {
           const glab = yield* GitLabCli.GitLabCli;
-          return yield* glab.getRepositoryCloneUrls({
-            cwd: "/repo",
-            repository: "missing/\tproject",
-          });
+          return yield* glab.getRepositoryCloneUrls({ cwd: "/repo", repository });
         }).pipe(Effect.flip);
 
         assert.strictEqual(error._tag, "GitLabCliCommandError");
         assert.strictEqual(error.cause, cause);
-        assert.strictEqual(
-          userFacingSourceControlDetail(error),
-          failureKind === "not-found"
-            ? "Repository missing/ project was not found. Check the owner and name and try again."
-            : undefined,
-        );
+        assert.strictEqual(userFacingSourceControlDetail(error), detail);
+        if (authCall === null) expect(mockedRun).toHaveBeenCalledTimes(1);
+        else expect(mockedRun).toHaveBeenLastCalledWith(expect.objectContaining(authCall));
       }),
   );
 

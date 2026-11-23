@@ -9,6 +9,7 @@ import * as Schema from "effect/Schema";
 
 import * as ServerConfig from "../config.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
+import { ProjectionStoreV2 } from "../orchestration-v2/ProjectionStore.ts";
 import { scratchFolderRoot } from "../project/ManagedProjectFolders.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import { makeIsManagedWorktreePath } from "../worktreesDirectory.ts";
@@ -258,12 +259,18 @@ export const layerThreadWorktreeRestore = Layer.effect(
   Effect.gen(function* () {
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
+    const projections = yield* ProjectionStoreV2;
     const restore = yield* makeRestoreMissingWorktree;
     return {
       restore: Effect.fn("ThreadWorktreeRestore.restore")(function* (thread: WorktreeThread) {
-        return yield* thread.worktreePath === null
-          ? restore(thread)
-          : withWorkspaceLease(fileSystem, path, thread.worktreePath, restore(thread));
+        if (thread.worktreePath === null) return yield* restore(thread);
+        // Cleanup removes a deleted thread's worktree under this lease, so the thread is read
+        // again inside it: one deleted since the caller read it gets no new checkout.
+        const restoreLive = projections.getThreadShell(thread.id).pipe(
+          Effect.orElseSucceed(() => thread),
+          Effect.flatMap((current) => (current === null ? Effect.void : restore(thread))),
+        );
+        return yield* withWorkspaceLease(fileSystem, path, thread.worktreePath, restoreLive);
       }),
     };
   }),
@@ -295,14 +302,23 @@ export const makePrepareTerminalLaunch = Effect.fn(
     ) {
       return { input, recover: TerminalCwdRecovery.defaultValue() };
     }
+    // Runs under the terminal's workspace lease, where cleanup removes a deleted thread's
+    // worktree; a thread deleted since the launch was prepared gets no new checkout.
     const recover = (error: TerminalCwdNotFoundError) =>
-      restoreMissingWorktree(thread).pipe(
-        Effect.catch((cause) =>
-          Effect.logWarning("failed to recreate missing worktree", {
-            threadId: thread.id,
-            worktreePath,
-            cause,
-          }).pipe(Effect.andThen(Effect.fail(error))),
+      getThreadShell(thread.id).pipe(
+        Effect.orElseSucceed(() => thread),
+        Effect.flatMap((current) =>
+          current === null
+            ? Effect.fail(error)
+            : restoreMissingWorktree(thread).pipe(
+                Effect.catch((cause) =>
+                  Effect.logWarning("failed to recreate missing worktree", {
+                    threadId: thread.id,
+                    worktreePath,
+                    cause,
+                  }).pipe(Effect.andThen(Effect.fail(error))),
+                ),
+              ),
         ),
       );
     // The lease must cover the worktree root, even when the terminal opens in a subdirectory.

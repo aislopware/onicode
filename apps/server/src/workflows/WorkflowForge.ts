@@ -9,6 +9,7 @@ import {
   type IssueRef,
   type PullRequestAction,
   type PullRequestDetail,
+  type PullRequestListCursors,
   PullRequestListEntry,
   type PullRequestListState,
   type PullRequestMergeMethod,
@@ -141,6 +142,11 @@ export interface PullRequestQuery {
   readonly query?: string | undefined;
   readonly limit?: number | undefined;
 }
+/** One page of pull requests, newest updated first, and where the next page starts. */
+export interface PullRequestPage {
+  readonly entries: ReadonlyArray<PullRequest>;
+  readonly next: PullRequestListCursors | undefined;
+}
 
 type PullRequestSeen = Parameters<typeof pullRequestReference>[1];
 /** A pull request as a run's reference, under the key every way of naming it shares. */
@@ -212,6 +218,10 @@ export class WorkflowForge extends Context.Service<
       readonly list: (
         query: PullRequestQuery,
       ) => Effect.Effect<ReadonlyArray<PullRequest>, WorkflowForgeError>;
+      readonly listPage: (
+        query: PullRequestQuery,
+        cursors: PullRequestListCursors | undefined,
+      ) => Effect.Effect<PullRequestPage, WorkflowForgeError>;
       readonly read: (
         pullRequest: PullRequestAddress,
       ) => Effect.Effect<PullRequestDetail, WorkflowForgeError>;
@@ -252,6 +262,7 @@ export const unavailable = WorkflowForge.of({
   },
   pullRequests: {
     list: missing("Pull requests"),
+    listPage: missing("Pull requests"),
     read: missing("Pull requests"),
     comment: missing("Pull requests"),
     act: missing("Pull requests"),
@@ -274,6 +285,31 @@ export const layer = Layer.effect(
         return yield* new WorkflowForgeError({ reason: `No project is registered at ${project}.` });
       }
       return found.value.id;
+    });
+
+    const listPage = Effect.fn("WorkflowForge.pullRequests.listPage")(function* (
+      query: PullRequestQuery,
+      cursors: PullRequestListCursors | undefined,
+    ) {
+      const result = yield* pullRequests
+        .list({
+          projectId: yield* projectIdOf(query.project),
+          state: query.state ?? "open",
+          ...(query.query === undefined ? {} : { query: query.query }),
+          ...(query.limit === undefined ? {} : { limit: query.limit }),
+          ...(cursors === undefined ? {} : { cursors }),
+        })
+        .pipe(Effect.mapError(failed("Could not list pull requests")));
+      const problem = result.errors[0];
+      if (result.entries.length === 0 && problem !== undefined) {
+        return yield* new WorkflowForgeError({
+          reason: `Could not list pull requests: ${problem.message}`,
+        });
+      }
+      return {
+        entries: result.entries,
+        next: Object.keys(result.nextCursors).length === 0 ? undefined : result.nextCursors,
+      } satisfies PullRequestPage;
     });
 
     const issueRef = Effect.fn("WorkflowForge.issueRef")(function* (issue: IssueAddress) {
@@ -405,23 +441,8 @@ export const layer = Layer.effect(
         }),
       },
       pullRequests: {
-        list: Effect.fn("WorkflowForge.pullRequests.list")(function* (query) {
-          const result = yield* pullRequests
-            .list({
-              projectId: yield* projectIdOf(query.project),
-              state: query.state ?? "open",
-              ...(query.query === undefined ? {} : { query: query.query }),
-              ...(query.limit === undefined ? {} : { limit: query.limit }),
-            })
-            .pipe(Effect.mapError(failed("Could not list pull requests")));
-          const problem = result.errors[0];
-          if (result.entries.length === 0 && problem !== undefined) {
-            return yield* new WorkflowForgeError({
-              reason: `Could not list pull requests: ${problem.message}`,
-            });
-          }
-          return result.entries;
-        }),
+        list: (query) => Effect.map(listPage(query, undefined), (page) => page.entries),
+        listPage,
         read: Effect.fn("WorkflowForge.pullRequests.read")(function* (pullRequest) {
           const ref = yield* pullRequestRef(pullRequest);
           // Fresh, not a held copy: checks that passed before a push must not end a wait after it.

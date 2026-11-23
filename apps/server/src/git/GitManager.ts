@@ -64,7 +64,11 @@ import {
   normalizeThreadPullRequestKey,
   threadPullRequestKeyOf,
 } from "../sourceControl/threadPullRequests.ts";
-import { sourceControlDefinitions } from "../sourceControl/sourceControlDefinitions.ts";
+import {
+  configuredRemoteUrlMayWin,
+  preferredRemoteUrl,
+  sourceControlDefinitions,
+} from "../sourceControl/sourceControlDefinitions.ts";
 
 import {
   GitManagerError,
@@ -817,6 +821,19 @@ export const make = Effect.gen(function* () {
         allowNonZeroExit: true,
       })
       .pipe(Effect.map((result) => result.stdout.split("\n", 1)[0]?.trim() || null));
+  // `git remote get-url` applies url.*.insteadOf to the URL git fetches from; null when no remote.
+  const readRewrittenRemoteUrl = (cwd: string, remoteName: string) =>
+    gitCore
+      .execute({
+        operation: "GitManager.readRewrittenRemoteUrl",
+        cwd,
+        args: ["remote", "get-url", "--", remoteName],
+        allowNonZeroExit: true,
+      })
+      .pipe(
+        Effect.map((result) => (result.exitCode === 0 ? result.stdout.trim() || null : null)),
+        Effect.orElseSucceed(() => null),
+      );
   const changeRequestTermsFor = Effect.fn("GitManager.changeRequestTermsFor")(function* (
     cwd: string,
   ) {
@@ -1849,16 +1866,26 @@ export const make = Effect.gen(function* () {
       branch === null
         ? "origin"
         : ((yield* readConfigValueNullable(cwd, `branch.${branch}.remote`)) ?? "origin");
+    const preferredFetchUrl = yield* readRewrittenRemoteUrl(cwd, preferredRemoteName);
+    const remoteName = preferredFetchUrl === null ? "origin" : preferredRemoteName;
+    const fetchUrl =
+      preferredFetchUrl ??
+      (remoteName === preferredRemoteName ? null : yield* readRewrittenRemoteUrl(cwd, remoteName));
+    const configuredUrl =
+      fetchUrl !== null && configuredRemoteUrlMayWin(fetchUrl)
+        ? yield* readRemoteUrlNullable(cwd, remoteName)
+        : null;
     const remoteUrl =
-      (yield* readRemoteUrlNullable(cwd, preferredRemoteName)) ??
-      (yield* readRemoteUrlNullable(cwd, "origin"));
+      fetchUrl === null || configuredUrl === null
+        ? fetchUrl
+        : preferredRemoteUrl(configuredUrl, fetchUrl);
 
     const provider = remoteUrl ? sourceControlDefinitions.recognizeRemote(remoteUrl) : null;
     if (!remoteUrl || provider?.kind !== "unknown") return provider;
     const handle = yield* sourceControlProviders
       .resolveHandle({
         cwd,
-        context: { provider, remoteName: preferredRemoteName, remoteUrl },
+        context: { provider, remoteName, remoteUrl },
       })
       .pipe(Effect.orElseSucceed(() => null));
     return handle?.context?.provider ?? provider;

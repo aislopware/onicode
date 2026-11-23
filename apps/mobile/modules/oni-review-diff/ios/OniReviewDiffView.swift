@@ -1029,6 +1029,7 @@ private struct ReviewDiffFileHeaderInteractiveRects {
   let chevron: CGRect
   let icon: CGRect
   let checkbox: CGRect
+  let countsMaxX: CGFloat
   let checkboxHitTarget: CGRect
 }
 
@@ -2197,7 +2198,7 @@ private final class ReviewDiffContentView: UIView, UIGestureRecognizerDelegate {
     let addWidth = textWidth(addText, font: fileHeaderMetaFont)
     let countsGap = min(style.fileHeaderCountGap, 4)
     let countsWidth = deleteWidth + countsGap + addWidth
-    let countsX = interactiveRects.checkbox.minX - 10 - countsWidth
+    let countsX = interactiveRects.countsMaxX - countsWidth
     drawSingleLineText(
       deleteText,
       rect: CGRect(x: countsX, y: centerY - 9, width: deleteWidth, height: 18),
@@ -2325,7 +2326,7 @@ private final class ReviewDiffContentView: UIView, UIGestureRecognizerDelegate {
     let addWidth = textWidth("+\(additions)", font: fileHeaderMetaFont)
     let countsGap = min(style.fileHeaderCountGap, 4)
     let countsWidth = deleteWidth + countsGap + addWidth
-    let countsX = interactiveRects.checkbox.minX - 10 - countsWidth
+    let countsX = interactiveRects.countsMaxX - countsWidth
     let pathX = interactiveRects.icon.maxX + 10
     let pathWidth = max(CGFloat(24), countsX - pathX - 12)
     let displayPath: String
@@ -2350,15 +2351,17 @@ private final class ReviewDiffContentView: UIView, UIGestureRecognizerDelegate {
     let chevronRect = CGRect(x: cardRect.minX + horizontalPadding, y: centerY - 10, width: 20, height: 20)
     let iconRect = CGRect(x: chevronRect.maxX + 8, y: centerY - 10, width: 20, height: 20)
     let checkboxRect = CGRect(x: cardRect.maxX - horizontalPadding - 20, y: centerY - 10, width: 20, height: 20)
-    let checkboxHitMinX = checkboxRect.minX - 14
+    // The Viewed target stops where the +N count ends, so a tap on the count still collapses.
+    let countsMaxX = checkboxRect.minX - 10
     return ReviewDiffFileHeaderInteractiveRects(
       chevron: chevronRect,
       icon: iconRect,
       checkbox: checkboxRect,
+      countsMaxX: countsMaxX,
       checkboxHitTarget: CGRect(
-        x: checkboxHitMinX,
+        x: countsMaxX,
         y: cardRect.minY,
-        width: cardRect.maxX - checkboxHitMinX,
+        width: cardRect.maxX - countsMaxX,
         height: cardRect.height
       )
     )

@@ -311,7 +311,7 @@ function ProjectBindings({
     }));
     const result = await bind({
       environmentId,
-      input: issueTrackerBindInput(projectId, tracker, binding),
+      input: issueTrackerBindInput(projectId, tracker, binding, bindings[projectId]),
     });
     if (result._tag !== "Success") setPicks((current) => ({ ...current, [projectId]: before }));
     setSaving(false);

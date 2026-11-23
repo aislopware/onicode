@@ -164,15 +164,15 @@ export function issueTrackerBindingFor(
   };
 }
 
-/** The request that saves a project's picks under this account; an unbind names the account. */
+/** The request that saves a project's picks under this account, naming the binding it replaces. */
 export function issueTrackerBindInput(
   projectId: ProjectId,
-  { accountId }: TrackerAccount,
+  tracker: TrackerAccount,
   binding: IssueTrackerProjectBinding | null,
+  current: IssueTrackerProjectBinding | undefined,
 ): IssueTrackerBindProjectInput {
-  return binding === null && accountId !== undefined
-    ? { projectId, binding, accountId }
-    : { projectId, binding };
+  const accountId = binding === null ? tracker.accountId : current?.accountId;
+  return accountId === undefined ? { projectId, binding } : { projectId, binding, accountId };
 }
 
 export function issueTrackerScopeOptions(

@@ -33,6 +33,7 @@ import {
   readOutputSchema,
   resolveProject,
   threadCommand,
+  ThreadToolFailedError,
   type ThreadTools,
   titleFromMessage,
   waitForRun,
@@ -781,6 +782,41 @@ it.effect("show retains pull request metadata when reading a later message windo
     assert.strictEqual(thread.status, "completed");
     assert.deepStrictEqual(thread.pullRequests, [link]);
     assert.strictEqual(thread.openPullRequestCount, 1);
+  }),
+);
+
+it.effect("show reads a short thread from a server that refuses afterPosition -1", () =>
+  Effect.gen(function* () {
+    const items = [
+      { position: 0, itemId: "question", type: "user_message" },
+      { position: 1, itemId: "answer", type: "assistant_message" },
+    ];
+    const call = ((_tool: string, input: unknown) => {
+      const args = input as { readonly afterPosition?: number; readonly limit: number };
+      if (args.afterPosition === -1)
+        return Effect.fail(
+          new ThreadToolFailedError({
+            tool: "oni_thread_read",
+            detail: `The server refused the arguments: Invalid parameters for tool 'oni_thread_read': Expected a value greater than or equal to 0 at ["afterPosition"]`,
+          }),
+        );
+      // Such a server reads from the start without a position.
+      const from = (args.afterPosition ?? -1) + 1;
+      const page = items.slice(from, from + args.limit);
+      return Effect.succeed({
+        thread: { itemCount: items.length },
+        items: page,
+        nextPosition: page.at(-1)?.position ?? null,
+        hasMore: from + args.limit < items.length,
+      });
+    }) as ThreadTools["call"];
+
+    const { messages } = yield* readLatestMessages({ call }, threadId, 10);
+
+    assert.deepStrictEqual(
+      messages.map((item) => item.itemId),
+      ["question", "answer"],
+    );
   }),
 );
 

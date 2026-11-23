@@ -3985,6 +3985,8 @@
   "7af596fd1e3ac2a2": "Fusionner dans {parentTitle}",
   "566239c645ce0fff": "Fusionner dans la conversation source",
   "1cfeabb8818f121f": "Terminez une exécution dans ce fork avant de le fusionner en retour",
+  "ea371763a3afff56": "Désarchivez {parentTitle} pour y fusionner cette conversation",
+  "d8b65e5e9c5fbe26": "Désarchivez la conversation source pour y fusionner celle-ci",
   "36cf99230450eeaf": "Fusionner cette conversation dans {parentTitle}",
   "bda1cc7b91e07680": "Fusionner cette conversation dans sa source",
   "de93e39b51ae5ebf": "Arrêter le sous-agent {threadTitle}",

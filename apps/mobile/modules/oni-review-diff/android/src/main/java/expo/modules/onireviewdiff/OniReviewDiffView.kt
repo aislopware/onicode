@@ -1092,7 +1092,8 @@ private class DiffCanvasView(context: Context) : View(context) {
     val addText = "+${row.additions}"
     val addWidth = boldTextPaint.measureText(addText)
     val countGap = 4f * density
-    val countsX = checkboxRect.left - 10f * density - deleteWidth - countGap - addWidth
+    val countsX = drawing.fileHeaderCountsRight(top, bottom, width, style) -
+      deleteWidth - countGap - addWidth
     val baseline = centeredBaseline(top, bottom, boldTextPaint)
     canvas.drawText(deleteText, countsX, baseline, boldTextPaint)
     boldTextPaint.color = theme.addText
@@ -1155,14 +1156,13 @@ private class DiffCanvasView(context: Context) : View(context) {
     val top = 0
     val bottom = rowHeight(row)
     val iconRect = drawing.fileHeaderIconRect(top, bottom, style)
-    val checkboxRect = drawing.fileHeaderCheckboxRect(top, bottom, width, style)
     drawing.configureUiPaint(
       paint = boldTextPaint,
       color = theme.deleteText,
       size = style.fileHeaderMetaFontSizePx,
       weight = style.fileHeaderMetaFontWeight,
     )
-    val countsX = checkboxRect.left - 10f * density -
+    val countsX = drawing.fileHeaderCountsRight(top, bottom, width, style) -
       boldTextPaint.measureText("-${row.deletions}") - 4f * density -
       boldTextPaint.measureText("+${row.additions}")
     return maxHeaderPathOffset(fileHeaderPathLayout(row, top, bottom, iconRect, countsX))

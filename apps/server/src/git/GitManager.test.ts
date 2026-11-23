@@ -1006,6 +1006,62 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
     }),
   );
 
+  it.effect("local status names the forge a remote's insteadOf rewrite points at", () =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("onicode-git-manager-");
+      yield* initRepo(repoDir);
+      // `github.personal` carries GitHub's label, but the rewrite names the real host.
+      yield* runGit(repoDir, [
+        "remote",
+        "add",
+        "origin",
+        "git@github.personal:aislopware/sample-app.git",
+      ]);
+      yield* runGit(repoDir, ["config", "url.git@github.com:.insteadOf", "git@github.personal:"]);
+      const { manager } = yield* makeManager();
+
+      expect((yield* manager.localStatus({ cwd: repoDir })).sourceControlProvider).toEqual({
+        kind: "github",
+        name: "GitHub",
+        baseUrl: "https://github.com",
+      });
+
+      // A shorthand names no host until it is rewritten.
+      yield* runGit(repoDir, ["remote", "set-url", "origin", "gh:aislopware/sample-app.git"]);
+      yield* runGit(repoDir, ["config", "url.https://github.com/.insteadOf", "gh:"]);
+      yield* manager.invalidateLocalStatus(repoDir);
+
+      expect((yield* manager.localStatus({ cwd: repoDir })).sourceControlProvider?.kind).toBe(
+        "github",
+      );
+
+      // A path-prefix shorthand names no host at all.
+      yield* runGit(repoDir, ["remote", "set-url", "origin", "acme/sample-app.git"]);
+      yield* runGit(repoDir, ["config", "url.https://github.com/acme/.insteadOf", "acme/"]);
+      yield* manager.invalidateLocalStatus(repoDir);
+
+      expect((yield* manager.localStatus({ cwd: repoDir })).sourceControlProvider?.kind).toBe(
+        "github",
+      );
+
+      // An alias rewritten to a self-hosted server is probed by that server's name, as the
+      // repository identity and provider detection read it.
+      yield* runGit(repoDir, ["remote", "set-url", "origin", "corp-alias:team/app.git"]);
+      yield* runGit(repoDir, [
+        "config",
+        "url.https://code.corp.internal/.insteadOf",
+        "corp-alias:",
+      ]);
+      yield* manager.invalidateLocalStatus(repoDir);
+
+      expect((yield* manager.localStatus({ cwd: repoDir })).sourceControlProvider).toEqual({
+        kind: "unknown",
+        name: "code.corp.internal",
+        baseUrl: "https://code.corp.internal",
+      });
+    }),
+  );
+
   it.effect("status reports the latest of a branch's closed and merged PRs", () =>
     Effect.gen(function* () {
       const repoDir = yield* makeTempDir("onicode-git-manager-");

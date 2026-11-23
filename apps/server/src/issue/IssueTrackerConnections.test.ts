@@ -23,6 +23,7 @@ const LINEAR = IssueTrackerKind.make("linear");
 describe("IssueTrackerConnections", () => {
   it.effect("keeps each account's key and bindings apart, and no key past its account", () => {
     const secrets = new Map<string, string>();
+    const written: Array<string> = [];
     const probing = Deferred.makeUnsafe<void>();
     const released = Deferred.makeUnsafe<void>();
     let random = 0;
@@ -63,7 +64,10 @@ describe("IssueTrackerConnections", () => {
                 ),
               ),
             set: (name, value) =>
-              Effect.sync(() => void secrets.set(name, new TextDecoder().decode(value))),
+              Effect.sync(() => {
+                written.push(name);
+                secrets.set(name, new TextDecoder().decode(value));
+              }),
             remove: (name) => Effect.sync(() => void secrets.delete(name)),
           }),
           Layer.succeed(
@@ -104,6 +108,28 @@ describe("IssueTrackerConnections", () => {
       // An older client offers the added account's project as unbound; its unbind leaves it.
       yield* connections.bindProject({ projectId: "home" as ProjectId, binding: null });
       expect((yield* connections.list).accountBindings).toHaveProperty("home");
+      // Nor does its bind replace it with the first account's; a bind that names it does.
+      expect(
+        yield* Effect.flip(
+          connections.bindProject({
+            projectId: "home" as ProjectId,
+            binding: { tracker: LINEAR, scope: "ENG" },
+          }),
+        ),
+      ).toMatchObject({
+        detail: "This project is bound with another account. Update Onicode to change it.",
+      });
+      expect((yield* connections.list).accountBindings).toMatchObject({ home: { accountId } });
+      yield* connections.bindProject({
+        projectId: "moved" as ProjectId,
+        binding: { tracker: LINEAR, accountId, scope: "ENG" },
+      });
+      yield* connections.bindProject({
+        projectId: "moved" as ProjectId,
+        binding: { tracker: LINEAR, scope: "ENG" },
+        ...(accountId === undefined ? {} : { accountId }),
+      });
+      expect((yield* connections.list).bindings).toHaveProperty("moved");
       yield* Effect.flip(connections.connect({ tracker: LINEAR, token: "bad", addAccount: true }));
       expect(
         yield* Effect.flip(
@@ -136,9 +162,18 @@ describe("IssueTrackerConnections", () => {
       ).toMatchObject({ detail: "This account is not saved on the server." });
 
       // An account that cannot be saved takes its new key with it.
-      yield* (yield* SqlClient.SqlClient)`DROP TABLE issue_tracker_accounts`;
-      yield* Effect.flip(connections.connect({ tracker: LINEAR, token: "home", addAccount: true }));
-      expect(secrets.size).toBe(1);
+      yield* (yield* SqlClient.SqlClient)`
+        CREATE TRIGGER refuse_account BEFORE INSERT ON issue_tracker_accounts
+        BEGIN SELECT RAISE(ABORT, 'refused'); END
+      `;
+      written.length = 0;
+      expect(
+        yield* Effect.flip(
+          connections.connect({ tracker: LINEAR, token: "home", addAccount: true }),
+        ),
+      ).toMatchObject({ detail: "The account could not be saved." });
+      expect(written).toHaveLength(1);
+      expect([...secrets.keys()]).toEqual(["issue-tracker-bGluZWFy-token"]);
     }).pipe(Effect.provide(layer));
   });
 });

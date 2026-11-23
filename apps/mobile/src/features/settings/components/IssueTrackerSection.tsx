@@ -260,7 +260,7 @@ export function IssueTrackerProjectRows(props: {
     }));
     const result = await bind({
       environmentId,
-      input: issueTrackerBindInput(projectId, tracker, binding),
+      input: issueTrackerBindInput(projectId, tracker, binding, props.bindings[projectId]),
     });
     if (result._tag !== "Success") setPicks((current) => ({ ...current, [projectId]: before }));
     setSaving(false);

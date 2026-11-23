@@ -208,7 +208,11 @@ const makeHarness = Effect.fn("makePullRequestsToolkitHarness")(function* (
       dispatch,
     }),
     Layer.mock(PullRequestService.PullRequestService)({
-      addressedProject: () => Effect.succeed(project ?? undefined),
+      addressedProject: (projectId) =>
+        Effect.succeed(
+          options.projects?.find((candidate) => candidate.id === projectId) ?? project ?? undefined,
+        ),
+      addressedProjects: Effect.succeed(options.projects ?? (project ? [project] : [])),
       ...options.pullRequests,
     }),
     Layer.mock(GitManager.GitManager)(options.git ?? {}),
@@ -419,7 +423,7 @@ describe("pull request toolkit handlers", () => {
     }),
   );
 
-  it.effect("says when repository is not owner/repo on a known host", () =>
+  it.effect("says when repository is not in its host's path shape, or host is no hostname", () =>
     Effect.gen(function* () {
       const harness = yield* makeHarness({ project: makeProject() });
       const error = yield* harness
@@ -427,7 +431,34 @@ describe("pull request toolkit handlers", () => {
         .pipe(Effect.flip);
       expect(error).toMatchObject({ _tag: "PullRequestRepositoryInvalidError" });
       expect(error.message).toContain("owner/repo");
+      const badHost = yield* harness
+        .call("link_pull_request", { host: "github.com/org", repository: "org/repo", number: 1 })
+        .pipe(Effect.flip);
+      expect(badHost).toMatchObject({ _tag: "PullRequestHostInvalidError" });
+      const badHostBareRepository = yield* harness
+        .call("link_pull_request", { host: "github.com/org", repository: "repo", number: 1 })
+        .pipe(Effect.flip);
+      expect(badHostBareRepository).toMatchObject({ _tag: "PullRequestHostInvalidError" });
+
+      const onGitLab = yield* makeHarness({
+        project: makeProject({
+          canonicalKey: "gitlab.com/group/project",
+          locator: {
+            source: "git-remote",
+            remoteName: "origin",
+            remoteUrl: "git@gitlab.com:group/project.git",
+          },
+          provider: SourceControlProviderKind.make("gitlab"),
+          displayName: "group/project",
+        }),
+      });
+      const gitLabError = yield* onGitLab
+        .call("link_pull_request", { repository: "gitlab.com/group/project", number: 42 })
+        .pipe(Effect.flip);
+      expect(gitLabError).toMatchObject({ _tag: "PullRequestRepositoryInvalidError" });
+      expect(gitLabError.message).toBe("Pass repository as group/project, without the host.");
       expect(yield* Ref.get(harness.commands)).toEqual([]);
+      expect(yield* Ref.get(onGitLab.commands)).toEqual([]);
     }),
   );
 
@@ -807,7 +838,7 @@ describe("pull request guide tools", () => {
       }),
   );
 
-  it.effect("finds an Azure DevOps checkout for a pull request named by its full path", () =>
+  it.effect("finds another project's checkout for a pull request named by host and path", () =>
     Effect.gen(function* () {
       const azure = {
         ...makeProject({
@@ -824,13 +855,74 @@ describe("pull request guide tools", () => {
         }),
         id: ProjectId.make("project-azure"),
       };
-      const harness = yield* makeHarness({ projects: [makeProject(), azure] });
-      const result = yield* harness.call("write_pull_request_guides", {
-        pullRequests: [{ host: "dev.azure.com", repository: "org/project/_git/web", number: 9 }],
+      // A GitHub Enterprise Server whose hostname does not say so is known only once refined.
+      const enterpriseIdentity = {
+        canonicalKey: "code.example.test/team/app",
+        locator: {
+          source: "git-remote" as const,
+          remoteName: "origin",
+          remoteUrl: "git@code.example.test:team/app.git",
+        },
+        provider: SourceControlProviderKind.make("unknown"),
+        displayName: "team/app",
+        owner: "team",
+        name: "app",
+      };
+      const enterprise = {
+        ...makeProject(enterpriseIdentity),
+        id: ProjectId.make("project-enterprise"),
+      };
+      // An SSH alias names its web host only once refined.
+      const toolsIdentity = {
+        canonicalKey: "github.com-work/acme/tools",
+        locator: {
+          source: "git-remote" as const,
+          remoteName: "origin",
+          remoteUrl: "git@github.com-work:acme/tools.git",
+        },
+        provider: SourceControlProviderKind.make("github"),
+        displayName: "acme/tools",
+        owner: "acme",
+        name: "tools",
+      };
+      const tools = { ...makeProject(toolsIdentity), id: ProjectId.make("project-tools") };
+      const projects = [makeProject(), azure, enterprise, tools];
+      const harness = yield* makeHarness({
+        projects,
+        pullRequests: {
+          addressedProjects: Effect.succeed([
+            makeProject(),
+            azure,
+            {
+              ...enterprise,
+              repositoryIdentity: {
+                ...enterpriseIdentity,
+                provider: SourceControlProviderKind.make("github"),
+              },
+            },
+            {
+              ...tools,
+              repositoryIdentity: { ...toolsIdentity, canonicalKey: "github.com/acme/tools" },
+            },
+          ]),
+        },
       });
-      expect(result.guides.map((guide) => guide.outcome)).toEqual(["started"]);
+      const result = yield* harness.call("write_pull_request_guides", {
+        pullRequests: [
+          { host: "dev.azure.com", repository: "org/project/_git/web", number: 9 },
+          { host: "code.example.test", repository: "team/app", number: 4 },
+          { host: "github.com", repository: "acme/tools", number: 5 },
+        ],
+      });
+      expect(result.guides.map((guide) => [guide.outcome, guide.url])).toEqual([
+        ["started", expect.any(String)],
+        ["started", "https://code.example.test/team/app/pull/4"],
+        ["started", "https://github.com/acme/tools/pull/5"],
+      ]);
       expect((yield* Ref.get(harness.guideRequests)).map((ref) => ref.projectId)).toEqual([
         "project-azure",
+        "project-enterprise",
+        "project-tools",
       ]);
     }),
   );
