@@ -1108,7 +1108,10 @@ describe("CodexAdapterV2 process exit", () => {
       // Output closes only after the protocol records the process termination.
       yield* Deferred.await(outputEnded);
       const rpcError = yield* client.request("thread/list", {}).pipe(Effect.flip);
-      assert.strictEqual(rpcError, terminationError);
+      assert.deepInclude(rpcError, {
+        _tag: "CodexAppServerRequestNotSentError",
+        cause: terminationError,
+      });
       // Without the fix the stream never ends, so this waits until the project timeout.
       const readerExit = yield* Fiber.await(eventReader);
       // A failure, not a clean end, carries the Codex error into the session's lastError.
@@ -1482,7 +1485,10 @@ describe("CodexAdapterV2 session initialize", () => {
         .pipe(Effect.flip, Effect.forkChild({ startImmediately: true }));
       yield* TestClock.adjust("30 seconds");
 
-      assert.equal((yield* Fiber.join(ensured))._tag, "ProviderAdapterEnsureThreadError");
+      const failure = yield* Fiber.join(ensured);
+      assert.equal(failure._tag, "ProviderAdapterEnsureThreadError");
+      // Turn start retries a silent initialize on a fresh app-server rather than failing the run.
+      assert.isTrue(failedOnDeadline(Exit.fail(failure), "initialize"));
       // A waiter fails at once instead of re-sending initialize to the hung app-server.
       assert.equal((yield* Fiber.join(waiting))._tag, "ProviderAdapterEnsureThreadError");
       assert.equal(session.initializeRequests(), 1);
@@ -1751,6 +1757,138 @@ describe("CodexAdapterV2 session initialize", () => {
         ),
       ),
     ),
+  );
+
+  // A deadline retires the app-server with its pipes still open, so only the retirement check
+  // keeps a turn from writing to it.
+  it.effect.each(["turn/start", "turn/steer"] as const)(
+    "refuses %s once another thread retired the shared app-server",
+    (method) =>
+      Effect.gen(function* () {
+        const scenario = method === "turn/start" ? "retired-before-start" : "retired-before-steer";
+        const preamble = codexReplayPreamble({
+          nativeThreadId: scenario,
+          nativeTurnId: `turn-${scenario}`,
+          prompt: "Hello",
+        });
+        const configRead = (id: number) =>
+          ({
+            type: "expect_outbound",
+            label: "config/read",
+            frame: {
+              id,
+              method: "config/read",
+              params: { cwd: "/workspace", includeLayers: false },
+            },
+          }) satisfies CodexReplay.CodexAppServerReplayEntry;
+        const entries: ReadonlyArray<CodexReplay.CodexAppServerReplayEntry> =
+          method === "turn/start"
+            ? [
+                ...preamble.slice(0, 5),
+                configRead(3),
+                requestWritten,
+                {
+                  type: "expect_outbound",
+                  label: "thread/name/set",
+                  frame: {
+                    id: 4,
+                    method: "thread/name/set",
+                    params: { threadId: scenario, name: CODEX_TEST_THREAD_TITLE },
+                  },
+                },
+                { type: "emit_inbound", label: "thread/name/set", frame: { id: 4, result: {} } },
+                configRead(5),
+                {
+                  type: "emit_inbound",
+                  label: "config/read-before-turn",
+                  frame: { id: 5, result: { config: {}, origins: {} } },
+                },
+              ]
+            : [...preamble, configRead(4), requestWritten];
+        const written = yield* Deferred.make<void>();
+        const turnReadAnswering = yield* Deferred.make<void>();
+        const answerTurnRead = yield* Deferred.make<void>();
+        const session = yield* openReplaySession(
+          makeCodexReplayTranscript({ scenario, entries }),
+          (entry) =>
+            entry.label === "config/read-before-turn"
+              ? Deferred.succeed(turnReadAnswering, undefined).pipe(
+                  Effect.andThen(Deferred.await(answerTurnRead)),
+                )
+              : awaitRequestWritten(written)(entry),
+        );
+        const threadId = ThreadId.make(`thread-${scenario}`);
+        const turnInput = makeCodexTestTurnInput({
+          threadId,
+          providerThread: yield* session.ensureThread(threadId),
+          now: yield* DateTime.now,
+          attemptId: RunAttemptId.make(`${scenario}-attempt`),
+          text: "Hello",
+        });
+        // The other thread's config/read never answers, and its deadline retires the app-server.
+        const retireFromOtherThread = Effect.gen(function* () {
+          const other = yield* session
+            .ensureThread(`thread-${scenario}-other`)
+            .pipe(Effect.exit, Effect.forkChild({ startImmediately: true }));
+          yield* Deferred.await(written);
+          return other;
+        });
+
+        let refused: Exit.Exit<unknown, unknown>;
+        if (method === "turn/start") {
+          const other = yield* retireFromOtherThread;
+          // Its deadline then passes while this turn waits on its own config/read.
+          yield* TestClock.adjust("1 minute");
+          const outcome = yield* session.runtime
+            .startTurn(turnInput)
+            .pipe(Effect.exit, Effect.forkChild({ startImmediately: true }));
+          yield* Deferred.await(turnReadAnswering);
+          yield* TestClock.adjust("1 minute");
+          assert.isTrue(failedOnDeadline(yield* Fiber.join(other), "config/read"));
+          yield* Deferred.succeed(answerTurnRead, undefined);
+          refused = yield* Fiber.join(outcome);
+        } else {
+          yield* session.runtime.startTurn(turnInput);
+          const started = yield* session.events.pipe(
+            Stream.filter((event) => event.type === "provider_turn.updated"),
+            Stream.runHead,
+          );
+          const providerTurnId =
+            Option.isSome(started) && started.value.type === "provider_turn.updated"
+              ? started.value.providerTurn.id
+              : undefined;
+          assert.isDefined(providerTurnId);
+          if (providerTurnId === undefined) return;
+          const other = yield* retireFromOtherThread;
+          yield* TestClock.adjust("2 minutes");
+          assert.isTrue(failedOnDeadline(yield* Fiber.join(other), "config/read"));
+          refused = yield* Effect.exit(
+            session.runtime.steerTurn({
+              ...turnInput,
+              providerTurnId,
+              message: { ...turnInput.message, text: "Hurry up." },
+            }),
+          );
+        }
+
+        let error: unknown = Exit.isFailure(refused) ? Cause.squash(refused.cause) : undefined;
+        while (!Predicate.isTagged(error, "CodexAppServerRetiredError")) {
+          if (!Predicate.hasProperty(error, "cause")) {
+            return assert.fail(`${method} was not refused as retired: ${String(error)}`);
+          }
+          error = error.cause;
+        }
+      }).pipe(
+        Effect.scoped,
+        Effect.provide(
+          Layer.mergeAll(
+            IdAllocator.layer,
+            McpProviderSessions.layer,
+            NodeServices.layer,
+            NodeCrypto.layer,
+          ),
+        ),
+      ),
   );
 });
 
@@ -12380,6 +12518,21 @@ describe("CodexAdapterV2 post-settle continuation", () => {
           ),
         ),
       ),
+    );
+
+    it.effect("reports a goal request refused after the accepted prompt by its closure", () =>
+      Effect.gen(function* () {
+        // Turn start treats an unsent error as a refused prompt and would resend its context.
+        const exited = new CodexError.CodexAppServerProcessExitedError({ code: 1 });
+        const notSent = new CodexError.CodexAppServerRequestNotSentError({
+          method: "thread/goal/set",
+          cause: exited,
+        });
+        assert.strictEqual(
+          yield* CodexAdapterV2.afterAcceptedPrompt(Effect.fail(notSent)).pipe(Effect.flip),
+          exited,
+        );
+      }),
     );
 
     it.effect("rejects an oversized /goal objective before any goal request", () =>

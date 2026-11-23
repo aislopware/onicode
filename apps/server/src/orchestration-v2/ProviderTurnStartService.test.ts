@@ -3312,7 +3312,7 @@ effectIt.effect("fails rather than retries a provider thread request with an unk
   }),
 );
 
-effectIt.effect.each(["config/read", "thread/unarchive"])(
+effectIt.effect.each(["initialize", "config/read", "thread/unarchive"])(
   "retries a provider thread request whose unanswered %s is safe to repeat",
   (method) =>
     Effect.gen(function* () {
@@ -3349,16 +3349,23 @@ effectIt.effect("fails rather than starts a fresh thread when a resume outcome i
   }),
 );
 
-effectIt.effect(
-  "retries rather than starts a fresh thread when the app-server retired during a resume",
-  () =>
+effectIt.effect.each([
+  { _tag: "CodexAppServerUnresponsiveError", method: "config/read" },
+  {
+    _tag: "CodexAppServerRequestNotSentError",
+    method: "thread/resume",
+    cause: { _tag: "CodexAppServerProcessExitedError", code: 1 },
+  },
+])(
+  "retries rather than starts a fresh thread when the app-server went away during a resume ($_tag)",
+  (cause) =>
     Effect.gen(function* () {
       const harness = makeLocalCommandHarness({
         text: "Continue",
         resumeFailure: new ProviderAdapter.ProviderAdapterEventStreamError({
           driver: ProviderDriverKind.make("codex"),
           providerSessionId: ProviderSessionId.make("resume-provider-session"),
-          cause: { _tag: "CodexAppServerUnresponsiveError", method: "config/read" },
+          cause,
         }),
       });
 

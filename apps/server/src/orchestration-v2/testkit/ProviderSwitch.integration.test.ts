@@ -70,6 +70,7 @@ import {
 import * as ProviderReplayHarness from "./ProviderReplayHarness.ts";
 import { checkpointWorkspace } from "@onicode/provider-testing/replayWorkspace";
 import * as ProviderAdapter from "@onicode/provider-core/server/ProviderAdapter";
+import * as CodexErrors from "effect-codex-app-server/errors";
 
 const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 
@@ -2984,6 +2985,13 @@ describe("orchestration v2 provider switching", () => {
     [
       "a Codex config read past its deadline",
       new CodexAppServerUnresponsiveError({ method: "config/read" }),
+    ],
+    [
+      "a turn start the exited Codex app-server never received",
+      new CodexErrors.CodexAppServerRequestNotSentError({
+        method: "turn/start",
+        cause: new CodexErrors.CodexAppServerProcessExitedError({ code: 1 }),
+      }),
     ],
     // Injected history is text only, so a refusal after injection must not settle the image.
     [

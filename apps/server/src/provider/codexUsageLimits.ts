@@ -6,6 +6,7 @@ import type {
 } from "@onicode/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Option from "effect/Option";
+import * as Predicate from "effect/Predicate";
 import type * as CodexErrors from "effect-codex-app-server/errors";
 
 import { clampPercent, makeUsageLimits } from "@onicode/provider-core/server/usageLimits";
@@ -160,6 +161,10 @@ export function codexRateLimitsFailureMessage(error: CodexErrors.CodexAppServerE
       return "Codex could not be started to read usage.";
     case "CodexAppServerProcessExitedError":
       return "Codex exited before it could report usage.";
+    case "CodexAppServerRequestNotSentError":
+      return Predicate.isTagged(error.cause, "CodexAppServerProcessExitedError")
+        ? "Codex exited before it could report usage."
+        : "Codex did not answer the usage request.";
     default:
       return "Codex did not answer the usage request.";
   }

@@ -255,15 +255,14 @@ it.layer(NodeServices.layer)("effect-codex-app-server client", (it) => {
       assert.equal(failure.operation, "read-input-stream");
       assert.strictEqual(failure.cause, handlerFailure);
       assert.strictEqual(yield* Fiber.join(termination), failure);
-      assert.strictEqual(
-        yield* client.raw.request("thread/read", {}).pipe(
-          Effect.match({
-            onFailure: (error) => error,
-            onSuccess: () => assert.fail("Expected the retired transport to reject requests"),
-          }),
-        ),
-        failure,
+      const refused = yield* client.raw.request("thread/read", {}).pipe(
+        Effect.match({
+          onFailure: (error) => error,
+          onSuccess: () => assert.fail("Expected the retired transport to reject requests"),
+        }),
       );
+      assert.instanceOf(refused, CodexError.CodexAppServerRequestNotSentError);
+      assert.strictEqual(refused.cause, failure);
       // Retiring the transport closes the app-server's stdin, so it does not live on unread.
       assert.equal(yield* handle.exitCode, 0);
     }),
@@ -297,9 +296,11 @@ it.live("reports the stderr error when the process exits before initialize", () 
       });
     }).pipe(Effect.flip, Effect.provide(context), Effect.ensuring(Scope.close(scope, Exit.void)));
 
-    assert.instanceOf(error, CodexError.CodexAppServerProcessExitedError);
+    // The exit can be seen before the request is written, which refuses it unsent.
+    const exited = error._tag === "CodexAppServerRequestNotSentError" ? error.cause : error;
+    assert.instanceOf(exited, CodexError.CodexAppServerProcessExitedError);
     assert.equal(
-      error.message,
+      exited.message,
       "Codex App Server process exited with code 1: Error: Missing optional dependency @openai/codex-darwin-arm64. Reinstall Codex: npm install -g @openai/codex@latest",
     );
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
