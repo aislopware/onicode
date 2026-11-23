@@ -3360,3 +3360,4 @@ d775f66a15	skip	upstream repo governance (VOUCHED.td vouch list); Onicode has no
 58aa80dcdf	take	taken as is
 73bb8ece1f	take	taken as is
 6cfc3bf0d5	take	taken as is
+12f19b83c0	take	taken as is; GitLab's host parsing already guards with try/catch
