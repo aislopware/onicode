@@ -20,6 +20,7 @@ import { extendConnectionAttemptTimeout, keepOutboundFetchOnHttp1 } from "./outb
 import { sharedServerCommandFlags } from "./cli/config.ts";
 import { projectCommand } from "./cli/project.ts";
 import { threadCommand } from "./cli/thread.ts";
+import { workflowCommand } from "./cli/workflow.ts";
 import { runDefaultServerCommand, serveCommand, startCommand } from "./cli/server.ts";
 import { updateCommand } from "./cli/update.ts";
 import {
@@ -65,6 +66,7 @@ export const cli = Command.make("onicode", { ...sharedServerCommandFlags }).pipe
     browserCommand,
     projectCommand,
     threadCommand,
+    workflowCommand,
     upCommand,
     statusCommand,
     serviceCommand,
