@@ -8551,6 +8551,8 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         ordinal: number,
         note: string,
         extra: ReadonlyArray<Note> = [],
+        text = "What did the app report?",
+        modelSelection?: ModelSelection,
       ) {
         const offered = harness.offeredMessages.length;
         yield* harness.runtime.startTurn({
@@ -8560,8 +8562,9 @@ describe("ClaudeAdapterV2 background wake turns", () => {
             now: yield* DateTime.now,
             attemptId: RunAttemptId.make(`mcp-app-context-${ordinal}`),
             providerTurnOrdinal: ordinal,
-            text: "What did the app report?",
+            text,
             attachments: [],
+            ...(modelSelection === undefined ? {} : { modelSelection }),
           }),
           appContext: [{ key: "mcp_app_item-1", text: note }, ...extra],
         });
@@ -8634,6 +8637,21 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       yield* interruptTurn(0);
       assert.include(yield* runTurn(1, "Created Jira issue PROJ-42"), "PROJ-42");
       yield* finishTurn(1);
+      // Only a leading `/name` runs as a command and holds its note; a leading path does not.
+      // Without an Ultrathink prefix the prompt opens with the text itself.
+      const high = { ...CLAUDE_TEST_MODEL_SELECTION, options: [{ id: "effort", value: "high" }] };
+      const otherTurn = (ordinal: number, note: string, text: string) =>
+        runTurn(
+          ordinal,
+          "Created Jira issue PROJ-42",
+          [{ key: `mcp_app_item-${ordinal}`, text: note }],
+          text,
+          high,
+        );
+      assert.include(yield* otherTurn(100, "Log note", "/tmp/app.log crashed"), "Log note");
+      yield* finishTurn(100);
+      assert.notInclude(yield* otherTurn(101, "Command note", " /review"), "Command note");
+      yield* finishTurn(101);
       // Already in Claude's history: resending it every turn would only grow the context.
       assert.notInclude(yield* runTurn(2, "Created Jira issue PROJ-42"), "PROJ-42");
       // regression: #38541 a note the app changes mid-turn rides on the next steer, once.
