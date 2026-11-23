@@ -7300,13 +7300,9 @@ describe("AcpAdapterV2", () => {
         const event = yield* Queue.take(events);
         if (event.type === "turn.terminal" && event.providerTurnId === firstProviderTurnId) break;
       }
-      const snapshotBeforeRollback = yield* runtime.readThreadSnapshot({ providerThread });
-      // Turns reach orchestration as events; the session keeps no record of them.
-      assert.deepEqual(snapshotBeforeRollback.providerTurns, []);
-
       const rolledBack = yield* runtime.rollbackThread({
         providerThread: { ...providerThread, appThreadId: rollbackThreadId },
-        providerThreadTurns: snapshotBeforeRollback.providerTurns,
+        providerThreadTurns: [],
         target: {
           type: "thread_start",
           checkpointId: CheckpointId.make("checkpoint-acp-rollback-session"),
@@ -7314,7 +7310,6 @@ describe("AcpAdapterV2", () => {
         },
       });
       assert.isString(rolledBack.providerThread.nativeThreadRef?.nativeId);
-      assert.deepEqual(rolledBack.providerTurns, []);
       assert.equal(
         runtimeInputs[1]?.processEnvironment?.ONICODE_ACP_MCP_AUTHORIZATION,
         "Bearer rollback-target-token",
@@ -7339,7 +7334,6 @@ describe("AcpAdapterV2", () => {
       const snapshotAfterRollback = yield* runtime.readThreadSnapshot({
         providerThread: rolledBack.providerThread,
       });
-      assert.deepEqual(snapshotAfterRollback.providerTurns, []);
       assert.deepEqual(snapshotAfterRollback.messages, []);
       const sessionEventsBeforeSecondTurn = sessionEventCount;
 

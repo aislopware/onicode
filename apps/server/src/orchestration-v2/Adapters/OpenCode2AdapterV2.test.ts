@@ -6990,7 +6990,7 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
     }),
   );
 
-  it.effect("drops the turns a rollback cut from the snapshot it returns", () =>
+  it.effect("reverts OpenCode at the prompt of the first turn a rollback cuts", () =>
     Effect.gen(function* () {
       const kept = `msg_oni_turn_${SESSION}:attempt:opencode2-adapter`;
       const dropped = `msg_oni_turn_${SESSION}:attempt:opencode2-adapter:2`;
@@ -7042,7 +7042,7 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       yield* runtime.startTurn(secondTurn(thread));
       yield* Deferred.await(bothEnded);
       const [first, second] = turns;
-      const snapshot = yield* runtime.rollbackThread({
+      yield* runtime.rollbackThread({
         providerThread: thread,
         target: {
           type: "provider_turn",
@@ -7052,10 +7052,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
         },
         providerThreadTurns: [first!, second!],
       });
-      assert.deepEqual(
-        snapshot.providerTurns.map((turn) => turn.id),
-        [first!.id],
-      );
     }),
   );
 
@@ -7111,10 +7107,7 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
   );
 
   it.effect.each([
-    [
-      "keeps the recorded turns before the target when rolling back a session not loaded yet",
-      false,
-    ],
+    ["reverts a session not loaded yet at the first recorded turn after the target", false],
   ] as const)("%s", ([, running]) =>
     Effect.gen(function* () {
       const first = `msg_oni_turn_${SESSION}:attempt:first`;
@@ -7186,10 +7179,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
         );
       } else {
         assert.isTrue(Exit.isSuccess(rollback));
-        assert.deepEqual(
-          Exit.isSuccess(rollback) ? rollback.value.providerTurns.map((turn) => turn.id) : [],
-          [kept.id],
-        );
       }
     }),
   );
@@ -7477,7 +7466,7 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
           ],
           "msg_external",
         );
-        const snapshot = yield* runtime.rollbackThread({
+        yield* runtime.rollbackThread({
           providerThread: thread,
           target: {
             type: "provider_turn",
@@ -7487,10 +7476,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
           },
           providerThreadTurns: [first, second],
         });
-        assert.deepEqual(
-          snapshot.providerTurns.map((turn) => turn.id),
-          [first.id],
-        );
       }),
   );
 
@@ -7989,7 +7974,7 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
         yield* runtime.startTurn(continuationTurn(thread, offers[1]!));
         yield* Deferred.await(bothEnded);
         const [first, continuation] = turns;
-        const snapshot = yield* runtime.rollbackThread({
+        yield* runtime.rollbackThread({
           providerThread: thread,
           target: {
             type: "provider_turn",
@@ -7999,10 +7984,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
           },
           providerThreadTurns: [first!, continuation!],
         });
-        assert.deepEqual(
-          snapshot.providerTurns.map((turn) => turn.id),
-          [first!.id],
-        );
       }),
   );
 
@@ -8111,7 +8092,7 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
         yield* runtime.startTurn(continuationTurn(thread, yield* Deferred.await(offered)));
         yield* Deferred.await(bothEnded);
         const [first, continuation] = turns;
-        const snapshot = yield* runtime.rollbackThread({
+        yield* runtime.rollbackThread({
           providerThread: thread,
           target: {
             type: "provider_turn",
@@ -8121,10 +8102,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
           },
           providerThreadTurns: [first!, continuation!],
         });
-        assert.deepEqual(
-          snapshot.providerTurns.map((turn) => turn.id),
-          [first!.id],
-        );
       }),
   );
 
