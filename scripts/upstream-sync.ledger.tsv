@@ -3321,3 +3321,4 @@ fb23f12f1f	skip	MCP Events milestones only serve outside bots (SEP-3415); Onicod
 05c100fbd8	take	fix(server): skip queued checkpoint restores after thread deletion
 65b2e6dae6	take	fix(web): stop resource monitor refresh spinning after data arrives
 def64e3a54	take	taken as is
+6b38ec931a	take	desktop Origin/Sec-Fetch stripping taken with Clerk preserve-host removed; server CORS split dropped: kept Onicode's wildcard layerApiCors, which already answers originless and any-origin requests without credentialed dev CORS
