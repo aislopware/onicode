@@ -1,5 +1,4 @@
 import {
-  GitCommandError,
   type ProjectId,
   type ProjectTrackedFolder,
   TASK_FOLDER_DEFAULT_REPOSITORIES_MAX,
@@ -45,7 +44,6 @@ import * as TaskFolderStore from "./TaskFolderStore.ts";
 import { projectFolders, parseGitmodulesPaths } from "./WorkspaceFolders.ts";
 import { canonicalize, withWorkspaceLease, withWorkspaceLeases } from "./workspaceLease.ts";
 
-const isGitCommandError = Schema.is(GitCommandError);
 // Each worktree is a checkout: enough at once to finish four repositories together, few enough
 // to leave Git's server-wide process slots to running threads.
 const REPOSITORY_CONCURRENCY = 4;
@@ -886,28 +884,18 @@ const make = Effect.gen(function* () {
     withWorkspaceLease(fileSystem, path, taskFolder.projectPath, effect);
 
   // A checkout that makes the branch can stop after making it, so the branch is counted as made
-  // once Git is about to make it, unless it was there before: when listed, or when Git refuses
-  // to make it. A concurrent creation's loser often fails on the ref lock, not "already exists".
+  // once Git made it, unless it was there before. A creation stopped before then, or one that lost
+  // a race to make it, leaves the winner's branch alone.
   const makingBranch = <A, E>(
     madeIn: Set<string>,
     listed: boolean,
     repositoryPath: string,
-    checkout: (onCreatingBranch: () => Effect.Effect<void>) => Effect.Effect<A, E>,
+    checkout: (onBranchCreated: () => Effect.Effect<void>) => Effect.Effect<A, E>,
   ) =>
     checkout(() =>
       Effect.sync(() => {
         if (!listed) madeIn.add(repositoryPath);
       }),
-    ).pipe(
-      Effect.tapError((error) =>
-        Effect.sync(() => {
-          if (
-            isGitCommandError(error) &&
-            error.operation === "GitVcsDriver.createWorktree.createBranch"
-          )
-            madeIn.delete(repositoryPath);
-        }),
-      ),
     );
 
   const createRepositoryWorktree = Effect.fnUntraced(function* (
@@ -941,7 +929,7 @@ const make = Effect.gen(function* () {
     }
     yield* fileSystem.makeDirectory(path.dirname(worktreePath), { recursive: true });
     const start = yield* repositoryStart(repository.path, startFromOrigin, baseBranch);
-    yield* makingBranch(madeIn, listed, repository.path, (onCreatingBranch) =>
+    yield* makingBranch(madeIn, listed, repository.path, (onBranchCreated) =>
       git.createWorktree(
         {
           cwd: repository.path,
@@ -950,7 +938,7 @@ const make = Effect.gen(function* () {
           baseRefName: start.baseRefName,
           path: worktreePath,
         },
-        { progress: { onCreatingBranch } },
+        { progress: { onBranchCreated } },
       ),
     );
     return {
@@ -1079,7 +1067,7 @@ const make = Effect.gen(function* () {
             madeIn,
             projectNames.includes(branch),
             taskPlan.projectRoot,
-            (onCreatingBranch) =>
+            (onBranchCreated) =>
               git.createWorktree(
                 {
                   cwd: taskPlan.projectRoot,
@@ -1088,7 +1076,7 @@ const make = Effect.gen(function* () {
                   baseRefName: input.projectStart.baseRefName,
                   path: empty.projectPath,
                 },
-                { progress: { ...input.projectProgress, onCreatingBranch } },
+                { progress: { ...input.projectProgress, onBranchCreated } },
               ),
           );
         } else {
