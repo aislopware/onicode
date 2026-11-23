@@ -8101,6 +8101,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         (projection.messages.some((candidate) => candidate.id === command.messageId) &&
           // A result its run still holds unread moves on while that run's turn goes on.
           unreadNotice === undefined &&
+          // A declined steer follow-up falls back to the queue it was dispatched from.
+          command.steerFollowUpOfRunId === undefined &&
           !isUndeliveredMailboxSteer(projection, command.messageId))
       ) {
         return yield* new OrchestratorDispatchError({
@@ -8177,6 +8179,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     const commandNotice = noticeKind === "command" && command.creationSource === "server";
     if (
       !freshContext &&
+      // A steer follow-up was declined by the active turn; steering it again loses it.
+      command.steerFollowUpOfRunId === undefined &&
       // Steering refuses a command, so a notice that reads like one stays queued.
       !isSlashCommand(command) &&
       (delegatedCompletion !== undefined
