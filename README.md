@@ -38,7 +38,7 @@ vp i
 vp run dev
 ```
 
-See [Development](./docs/operations/development.md) for the rest.
+See [Development](./docs/operations/00_development.md) for the rest.
 
 ---
 

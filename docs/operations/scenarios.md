@@ -64,7 +64,7 @@ base commit whose database schema differs. Projects go through the API (`/api/pr
 since each CLI call starts a process that takes about 0.7 s; a base older than that endpoint
 cannot run a scenario. New threads default to the replay agent's `showcase` recording: type a
 message and send it. To play something else, add a recording to the
-[replay agent](development.md#replay-provider).
+[replay agent](00_development.md#replay-provider).
 
 Write one test per file: a proof runs the file and needs exactly one test in it.
 
