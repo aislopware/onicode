@@ -824,6 +824,8 @@ export interface ProviderAdapterV2SessionRuntime {
     providerThread: OrchestrationV2ProviderThread,
     options?: { readonly includeSubagents?: boolean },
   ) => Effect.Effect<boolean>;
+  /** Pins the session against idle release only, while releasing would cost more than keeping it. */
+  readonly holdsIdleRelease?: Effect.Effect<boolean>;
   /**
    * Set only if all session background tasks and tool calls end with its process. Releasing the
    * session then clears its task roster and interrupts its open tool calls; otherwise threads

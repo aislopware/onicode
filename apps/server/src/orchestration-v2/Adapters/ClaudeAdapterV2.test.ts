@@ -16598,12 +16598,15 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           ]);
           yield* TestClock.adjust("2 minutes");
           assert.equal(harness.processQueues.length, 1);
+          assert.isFalse(yield* harness.runtime.holdsIdleRelease!);
 
           yield* install("second");
           // The build is part of the cached prefix: a new one waits for that cache to lapse,
           // unless the turn changes model, whose own cache is cold anyway.
           yield* runTurn();
           assert.equal(harness.processQueues.length, 1);
+          // An idle release would relaunch on the new build just the same.
+          assert.isTrue(yield* harness.runtime.holdsIdleRelease!);
           modelSelection = { ...CLAUDE_TEST_MODEL_SELECTION, model: "claude-opus-4-6" };
           // An update landing after the spawn, before its first `init`, is still newer.
           yield* runTurn([], "2.1.322", install("second-b"));
@@ -16614,6 +16617,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           yield* runTurn([], "2.1.322");
           assert.equal(harness.processQueues.length, 2);
           yield* TestClock.adjust("3 minutes");
+          assert.isFalse(yield* harness.runtime.holdsIdleRelease!);
           yield* runTurn([], "2.1.322");
           assert.equal(harness.processQueues.length, 3);
 
