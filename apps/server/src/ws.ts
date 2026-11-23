@@ -62,6 +62,7 @@ import {
   OrchestrationV2GetThreadProjectionError,
   OrchestrationV2ThreadLaunchError,
   type OrchestrationProjectShell,
+  type OrchestrationV2Command,
   type OrchestrationV2ShellSnapshot,
   type OrchestrationV2ShellStreamItem,
   type OrchestrationV2ThreadStreamItem,
@@ -252,6 +253,7 @@ import * as UsageService from "./usage/UsageService.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
 import * as TriageService from "./triage/TriageService.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
+import * as PullRequestWatchService from "./pullRequest/PullRequestWatchService.ts";
 import * as IssueService from "./issue/IssueService.ts";
 import * as ThreadIssueService from "./orchestration-v2/ThreadIssueService.ts";
 import * as IssueTrackerConnections from "./issue/IssueTrackerConnections.ts";
@@ -1391,6 +1393,7 @@ export const layerWsRpc = (
       const scheduledTasks = yield* ScheduledTasks.ScheduledTaskService;
       const secretRequests = yield* SecretRequests.SecretRequests;
       const pullRequests = yield* PullRequestService.PullRequestService;
+      const pullRequestWatches = yield* PullRequestWatchService.PullRequestWatchService;
       const issues = yield* IssueService.IssueService;
       const threadIssues = yield* ThreadIssueService.ThreadIssueService;
       const issueTrackers = yield* IssueTrackerConnections.IssueTrackerConnections;
@@ -1898,6 +1901,13 @@ export const layerWsRpc = (
         return yield* mutateProjectWithClone(projectService, projectCloneTracker, mutation);
       });
 
+      const seedClientCommand = (
+        command: OrchestrationV2Command,
+      ): Effect.Effect<OrchestrationV2Command> =>
+        command.type === "thread.pull-request.watch"
+          ? pullRequestWatches.seedClientWatch(command)
+          : Effect.succeed(command);
+
       const handlers = ServerWsRpcGroup.of({
         [WS_METHODS.issuesList]: (input) => issues.list(input),
         [WS_METHODS.issuesDetail]: (input) => issues.detail(input),
@@ -1937,16 +1947,18 @@ export const layerWsRpc = (
                 .enqueueCommand(
                   (command.type === "prepared-run.retry"
                     ? threadLaunch.retryPreparation(command)
-                    : ThreadMessageIntake.dispatchCommand(
-                        ThreadManagementService.withCreationProvenance(command, {
-                          createdBy: "user",
-                          creationSource:
-                            "creationSource" in command ? command.creationSource : "web",
-                        }),
-                        {
-                          managesProviders:
-                            currentSession.scopes.includes(AuthProvidersManageScope),
-                        },
+                    : Effect.flatMap(seedClientCommand(command), (seeded) =>
+                        ThreadMessageIntake.dispatchCommand(
+                          ThreadManagementService.withCreationProvenance(seeded, {
+                            createdBy: "user",
+                            creationSource:
+                              "creationSource" in seeded ? seeded.creationSource : "web",
+                          }),
+                          {
+                            managesProviders:
+                              currentSession.scopes.includes(AuthProvidersManageScope),
+                          },
+                        ),
                       )
                   ).pipe(Effect.provide(intakeContext)),
                 )
@@ -3548,7 +3560,7 @@ export const layerWsRpc = (
         yield* OtherWsRpcGroup.toHandlers(otherHandlers),
       );
     }),
-  );
+  ).pipe(Layer.provide(PullRequestWatchService.layer));
 
 // Default socket-level Defect frames end every pending client request.
 export const WS_RPC_SERVER_OPTIONS = {

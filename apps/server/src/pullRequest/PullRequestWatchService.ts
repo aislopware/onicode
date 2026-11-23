@@ -1,8 +1,10 @@
 import {
   CommandId,
   ThreadId,
+  type OrchestrationV2Command,
   type OrchestrationV2ThreadShell,
   type PullRequestChecksState,
+  type PullRequestRef,
   type PullRequestUnavailableError,
   type PullRequestWatchUntil,
 } from "@onicode/contracts";
@@ -56,6 +58,11 @@ export class PullRequestWatchThreadNotFoundError extends Schema.TaggedError<Pull
   }
 }
 
+type PullRequestWatchCommand = Extract<
+  OrchestrationV2Command,
+  { readonly type: "thread.pull-request.watch" }
+>;
+
 export class PullRequestWatchService extends Context.Service<
   PullRequestWatchService,
   {
@@ -79,8 +86,20 @@ export class PullRequestWatchService extends Context.Service<
       | PullRequestTargetError
       | PullRequestUnavailableError
     >;
+    /** Seeds a client's watch start with CI as a fresh read finds it; other commands pass as is. */
+    readonly seedClientWatch: (
+      command: PullRequestWatchCommand,
+    ) => Effect.Effect<PullRequestWatchCommand>;
   }
 >()("onicode/pullRequest/PullRequestWatchService") {}
+
+interface StartRead {
+  readonly ended?: "merged" | "closed";
+  readonly checksState?: PullRequestChecksState | undefined;
+  readonly checksPending?: boolean | undefined;
+  /** The head the verdict describes, so a push before the first watch read is news. */
+  readonly headSha?: string | undefined;
+}
 
 const make = Effect.gen(function* () {
   const engine = yield* Orchestrator.OrchestratorV2;
@@ -98,6 +117,60 @@ const make = Effect.gen(function* () {
       return yield* new PullRequestWatchThreadNotFoundError({ threadId });
     }
     return thread;
+  });
+
+  // Pending: nothing has failed, so any failure the first read finds is news. A read without a
+  // verdict (state left out, no checks yet, all skipped, a manual GitLab job) leaves the seed to
+  // the link, since an old pass would read as news.
+  const readStart = Effect.fn("PullRequestWatchService.readStart")(function* (
+    reference: PullRequestRef,
+  ) {
+    const read = yield* pullRequests
+      .summary(
+        { ...reference, allowStale: false },
+        { recoverTransientFailure: false, bypassCache: true },
+      )
+      .pipe(
+        Effect.catchTags({
+          // Host and transport errors can recover while the watch is active.
+          // A failed read leaves the seed to the link's last sync.
+          PullRequestOperationError: () => Effect.undefined,
+        }),
+      );
+    const ended = (state: "merged" | "closed"): StartRead => ({ ended: state });
+    if (read?.state === "merged" || read?.state === "closed") return ended(read.state);
+    // A summary can take the host's own rollup: GitHub's counts a cancelled check a newer run
+    // replaced, and GitLab's covers only the parent pipeline. The watch reads every check, so a
+    // verdict needs a fresh, complete read of them; an incomplete one keeps only a failure.
+    const confirmed =
+      read?.checksState === "failing" || read?.checksState === "passing"
+        ? yield* pullRequests.invalidate({ reference }).pipe(
+            Effect.andThen(pullRequests.detail({ ...reference, allowStale: false })),
+            Effect.map((detail) => ({
+              state: detail.state,
+              headSha: detail.headSha,
+              checksState:
+                detail.checksTruncated === true ||
+                detail.checks.some((check) => check.placeholder === true)
+                  ? read.checksState === "failing"
+                    ? "failing"
+                    : undefined
+                  : rollupCheckStatuses(detail.checks.map((check) => check.status)),
+            })),
+            Effect.catchTags({ PullRequestOperationError: () => Effect.undefined }),
+          )
+        : undefined;
+    if (confirmed?.state === "merged" || confirmed?.state === "closed") {
+      return ended(confirmed.state);
+    }
+    const checksState =
+      (confirmed === undefined ? read?.checksState : confirmed.checksState) ?? undefined;
+    const start: StartRead = {
+      checksState,
+      checksPending: checksState === undefined ? undefined : checksState === "pending",
+      headSha: confirmed?.headSha ?? read?.headSha,
+    };
+    return start;
   });
 
   // Keep the registration span stable across the service extraction.
@@ -132,55 +205,15 @@ const make = Effect.gen(function* () {
     });
     // A closed snapshot still gets a read below, since the PR may have reopened.
     if (watching && before?.snapshot?.state === "merged") return alreadyEnded("merged");
-    // Pending: nothing has failed, so any failure the first read finds is news. A read without a
-    // verdict (state left out, no checks yet, all skipped, a manual GitLab job) leaves the seed to
-    // the link, since an old pass would read as news.
-    let checksPendingAtStart: boolean | undefined;
-    let checksStateAtStart: PullRequestChecksState | undefined;
+    let start: StartRead | undefined;
     if (watching && !wasWatching) {
-      const reference = {
+      start = yield* readStart({
         projectId: thread.projectId,
         host: target.host,
         repository: target.repository,
         number: target.number,
-      };
-      const read = yield* pullRequests
-        .summary(
-          { ...reference, allowStale: false },
-          { recoverTransientFailure: false, bypassCache: true },
-        )
-        .pipe(
-          Effect.catchTags({
-            // Host and transport errors can recover while the watch is active.
-            // A failed read leaves the seed to the link's last sync.
-            PullRequestOperationError: () => Effect.undefined,
-          }),
-        );
-      if (read?.state === "merged" || read?.state === "closed") return alreadyEnded(read.state);
-      // A summary can take the host's own rollup, which counts a cancelled check a newer run
-      // replaced; a fresh, complete check read settles it.
-      const confirmed =
-        read?.checksState === "failing"
-          ? yield* pullRequests.invalidate({ reference }).pipe(
-              Effect.andThen(pullRequests.detail({ ...reference, allowStale: false })),
-              Effect.map((detail) => ({
-                state: detail.state,
-                checksState:
-                  detail.checksTruncated === true ||
-                  detail.checks.some((check) => check.placeholder === true)
-                    ? read.checksState
-                    : rollupCheckStatuses(detail.checks.map((check) => check.status)),
-              })),
-              Effect.catchTags({ PullRequestOperationError: () => Effect.undefined }),
-            )
-          : undefined;
-      if (confirmed?.state === "merged" || confirmed?.state === "closed") {
-        return alreadyEnded(confirmed.state);
-      }
-      const checksState = confirmed === undefined ? read?.checksState : confirmed.checksState;
-      checksPendingAtStart =
-        checksState === undefined || checksState === null ? undefined : checksState === "pending";
-      checksStateAtStart = checksState ?? undefined;
+      });
+      if (start.ended !== undefined) return alreadyEnded(start.ended);
     }
     const uuid = yield* random.uuidV4().pipe(Effect.orDie);
     yield* engine
@@ -194,9 +227,10 @@ const make = Effect.gen(function* () {
         watching,
         ...(watching ? { link: { url: target.url, source: "agent" as const } } : {}),
         ...(watching && input.until !== undefined && { until: input.until }),
-        ...(watching && checksPendingAtStart !== undefined
-          ? { checksPending: checksPendingAtStart }
+        ...(watching && start?.checksPending !== undefined
+          ? { checksPending: start.checksPending }
           : {}),
+        ...(watching && start?.headSha !== undefined ? { headSha: start.headSha } : {}),
       })
       .pipe(
         Effect.catchCause((cause) =>
@@ -210,11 +244,41 @@ const make = Effect.gen(function* () {
       ...target,
       watching: watchedLink(after)?.watch !== undefined,
       wasWatching,
-      ...(checksStateAtStart !== undefined && { checksState: checksStateAtStart }),
+      ...(start?.checksState !== undefined && { checksState: start.checksState }),
     };
   });
 
-  return PullRequestWatchService.of({ setWatching });
+  const seedClientWatch = Effect.fn("PullRequestWatchService.seedClientWatch")(function* (
+    command: PullRequestWatchCommand,
+  ) {
+    // A caller that read CI itself keeps its answer.
+    if (!command.watching || command.checksPending !== undefined) return command;
+    const thread = yield* engine
+      .getThreadShell(command.threadId)
+      .pipe(Effect.orElseSucceed(() => null));
+    if (thread === null || thread.deletedAt !== null) return command;
+    const link = threadPullRequestsOf(thread).find(
+      (candidate) =>
+        candidate.source !== "stack-dismissed" && threadPullRequestKeysEqual(candidate, command),
+    );
+    if (link?.watch !== undefined || link?.snapshot?.state === "merged") return command;
+    // A read the server cannot make leaves the seed to the link, as before.
+    const start = yield* readStart({
+      projectId: thread.projectId,
+      host: command.host,
+      repository: command.repository,
+      number: command.number,
+    }).pipe(Effect.orElseSucceed(() => undefined));
+    if (start === undefined || start.ended !== undefined) return command;
+    if (start.checksPending === undefined && start.headSha === undefined) return command;
+    return {
+      ...command,
+      ...(start.checksPending !== undefined && { checksPending: start.checksPending }),
+      ...(start.headSha !== undefined && { headSha: start.headSha }),
+    };
+  });
+
+  return PullRequestWatchService.of({ setWatching, seedClientWatch });
 });
 
 export const layer = Layer.effect(PullRequestWatchService, make);

@@ -5576,7 +5576,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                 : withUntil(
                     existing.watch ?? {
                       startedAt,
-                      headSha: null,
+                      // The head the caller read CI on: a push before the first read is news.
+                      headSha: command.headSha ?? null,
                       failedChecks: [],
                       passed: false,
                       passedChecks: [],
