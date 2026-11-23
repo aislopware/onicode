@@ -375,7 +375,8 @@ const failedActivityGroupsCache = new WeakMap<
 const presentedActivityGroupsCache = new WeakMap<
   ThreadFeedActivityGroup,
   {
-    readonly liveRunId: RunId | null;
+    /** The working run when some activity here belongs to it (null: runless), else undefined. */
+    readonly liveRunId: RunId | null | undefined;
     readonly activeTail: boolean;
     readonly locale: string | undefined;
     readonly rows: ReadonlyArray<ThreadFeedEntry>;
@@ -2209,7 +2210,7 @@ function appendPresentedFeedEntry(
   const liveRunId =
     isWorking && entry.activities.some((activity) => activity.runId === activeRunId)
       ? activeRunId
-      : null;
+      : undefined;
   let cached = presentedActivityGroupsCache.get(entry);
   if (
     !cached ||

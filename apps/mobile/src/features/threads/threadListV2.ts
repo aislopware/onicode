@@ -38,6 +38,7 @@ import type { SnoozePresetSetting } from "@onicode/contracts/settings";
 import type { MenuAction } from "@react-native-menu/menu";
 
 import type { ThreadListProvider } from "../../state/thread-list-environments";
+import { hourCycleOption } from "./messageTimestamp";
 import type { ThreadMoveAvailability } from "./threadOrder";
 
 import { relativeTime } from "../../lib/time";
@@ -88,29 +89,44 @@ export function resolveThreadListV2SnoozePresets(
     readonly secondary: "snooze" | null;
     readonly now: string;
     readonly presets: ReadonlyArray<SnoozePresetSetting> | undefined;
-    readonly locale?: string;
-  },
+  } & SnoozeLabelFormat,
   resolve: MessageResolver = m,
 ): ReadonlyArray<SnoozePreset> {
   return input.secondary === "snooze"
-    ? resolveSnoozePresets(new Date(input.now), presetOptions(input.presets, input.locale), resolve)
+    ? resolveSnoozePresets(new Date(input.now), presetOptions(input.presets, input), resolve)
     : [];
+}
+
+/** The app's formatting locale and the system 24-hour clock setting (undefined: the locale decides). */
+interface SnoozeLabelFormat {
+  readonly locale?: string;
+  readonly is24Hour?: boolean | undefined;
 }
 
 function presetOptions(
   presets: ReadonlyArray<SnoozePresetSetting> | undefined,
-  locale: string | undefined,
+  { locale, is24Hour }: SnoozeLabelFormat,
 ) {
-  return { ...(presets ? { presets } : {}), locale };
+  return {
+    ...(presets ? { presets } : {}),
+    locale,
+    formatTime: (date: Date) =>
+      date.toLocaleTimeString(locale, {
+        hour: "numeric",
+        minute: "2-digit",
+        ...hourCycleOption(is24Hour),
+      }),
+  };
 }
 
-export function resolveThreadListV2SnoozeMenuSelection(input: {
-  readonly event: string;
-  readonly displayedPresets: ReadonlyArray<SnoozePreset>;
-  readonly now: Date;
-  readonly presets: ReadonlyArray<SnoozePresetSetting> | undefined;
-  readonly locale?: string;
-}):
+export function resolveThreadListV2SnoozeMenuSelection(
+  input: {
+    readonly event: string;
+    readonly displayedPresets: ReadonlyArray<SnoozePreset>;
+    readonly now: Date;
+    readonly presets: ReadonlyArray<SnoozePresetSetting> | undefined;
+  } & SnoozeLabelFormat,
+):
   | { readonly _tag: "selected"; readonly preset: SnoozePreset }
   | { readonly _tag: "expired" }
   | { readonly _tag: "not-snooze" } {
@@ -119,7 +135,7 @@ export function resolveThreadListV2SnoozeMenuSelection(input: {
     shown: input.displayedPresets,
     id: input.event.slice("snooze:".length),
     now: input.now,
-    ...presetOptions(input.presets, input.locale),
+    ...presetOptions(input.presets, input),
     resolve: m,
   });
   return preset ? { _tag: "selected", preset } : { _tag: "expired" };

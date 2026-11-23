@@ -249,6 +249,9 @@ it("hands the previous Android gallery image to the photo library once after a s
     preview.container.querySelector<HTMLButtonElement>("[data-action=save-image]")!;
   expect(saveImage().textContent).toBe("Saving image…");
   expect(saveImage().disabled).toBe(true);
+  expect(preview.container.querySelector<HTMLButtonElement>("[data-action=share]")!.disabled).toBe(
+    true,
+  );
   await act(async () => saveImage().click());
   expect(harness.download).toHaveBeenCalledOnce();
   const uri = "file:///cache/first.png";
