@@ -1409,6 +1409,17 @@ function failureResetAt(
   );
 }
 
+// An async alert can carry phase final_answer, but it is mid-turn news, not the turn's answer.
+// Either item frame may be the one that marks it async, so read the turn's record.
+function isCodexFinalAnswerItem(
+  context: Pick<ActiveCodexTurnContext, "asyncMessageIds">,
+  item: { readonly id: string; readonly phase?: string | null },
+) {
+  return (
+    !context.asyncMessageIds.has(item.id) && (item.phase == null || item.phase === "final_answer")
+  );
+}
+
 interface ActiveCodexTurnContext {
   hookStopReason?: string;
   appliedServiceTier?: string;
@@ -1443,6 +1454,7 @@ interface ActiveCodexTurnContext {
   readonly fileChangeKindsByItem: Map<string, CodexFileChangeKinds>;
   readonly messagePhases: Map<string, "commentary" | "partial_answer" | "final_answer">;
   readonly asyncMessageIds: Set<string>;
+  providerRetryWatch?: Fiber.Fiber<unknown> | undefined;
   readonly itemPositions: Map<
     string,
     { readonly ordinal: number; readonly startedAt: DateTime.Utc }
@@ -2508,6 +2520,17 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
         const deferredRootTerminals = yield* Ref.make(new Map<string, DeferredCodexRootTerminal>());
         const offeredContinuationItemsByTurn = yield* Ref.make(new Map<string, Set<string>>());
         const finalAnswerItemIdsByTurn = yield* Ref.make(new Map<string, Set<string>>());
+        const forgetFinalAnswerItem = (turnId: string, itemId: string) =>
+          Ref.update(finalAnswerItemIdsByTurn, (current) => {
+            const itemIds = current.get(turnId);
+            if (!itemIds?.has(itemId)) return current;
+            const updated = new Map(current);
+            const remaining = new Set(itemIds);
+            remaining.delete(itemId);
+            if (remaining.size === 0) updated.delete(turnId);
+            else updated.set(turnId, remaining);
+            return updated;
+          });
         const completedFinalAnswerTextsByTurn = yield* Ref.make(new Map<string, Set<string>>());
         const imageTurns = new Map<
           string,
@@ -2709,6 +2732,12 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             return emitGoalUpdate(nativeThreadId);
           });
 
+        const clearProviderRetryWatch = (context: ActiveCodexTurnContext) => {
+          const fiber = context.providerRetryWatch;
+          context.providerRetryWatch = undefined;
+          return fiber === undefined ? Effect.void : Fiber.interrupt(fiber);
+        };
+
         // Only new model output proves recovery; local item/completed can arrive during upstream retries.
         // Runs on every model output frame and is almost always a no-op; only a pending retry gets a span.
         const completeProviderRetry = Effect.fnUntraced(function* (
@@ -2727,6 +2756,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
           if (providerRetry === undefined) {
             return;
           }
+          yield* clearProviderRetryWatch(context);
           context.recoveredProviderRetries = (context.recoveredProviderRetries ?? 0) + 1;
           yield* emitProviderEvent({
             type: "turn_item.updated",
@@ -5571,17 +5601,27 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               updated.set(context.providerTurnId, state);
               return updated;
             });
-            yield* failStalledProviderRetry(context, state, payload.error.codexErrorInfo).pipe(
-              // Every notice aims at the same deadline, so repeated notices cannot extend it.
-              Effect.delay(
-                Math.max(
-                  0,
-                  PROVIDER_RETRY_BUDGET_MS -
-                    (DateTime.toEpochMillis(updatedAt) - DateTime.toEpochMillis(state.startedAt)),
+            yield* clearProviderRetryWatch(context);
+            // Every notice aims at the same deadline, so repeated notices cannot extend it.
+            // Only the wait is interruptible: a fired failure runs on its own fiber.
+            context.providerRetryWatch = yield* Effect.sleep(
+              Math.max(
+                0,
+                PROVIDER_RETRY_BUDGET_MS -
+                  (DateTime.toEpochMillis(updatedAt) - DateTime.toEpochMillis(state.startedAt)),
+              ),
+            ).pipe(
+              Effect.andThen(
+                failStalledProviderRetry(context, state, payload.error.codexErrorInfo).pipe(
+                  Effect.forkIn(scope),
                 ),
               ),
               Effect.forkIn(scope, { startImmediately: true }),
             );
+            // A turn that settled meanwhile already cleared its watch, so drop the new one too.
+            if ((yield* Ref.get(activeTurns)).get(context.nativeTurnId) !== context) {
+              yield* clearProviderRetryWatch(context);
+            }
             yield* emitProviderEvent({
               type: "turn_item.updated",
               driver: CODEX_PROVIDER,
@@ -5725,7 +5765,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               if (payload.item.phase != null)
                 context.messagePhases.set(payload.item.id, payload.item.phase);
               if (payload.item.delivery === "async") context.asyncMessageIds.add(payload.item.id);
-              if (payload.item.phase == null || payload.item.phase === "final_answer") {
+              if (isCodexFinalAnswerItem(context, payload.item)) {
                 yield* Ref.update(finalAnswerItemIdsByTurn, (current) => {
                   const updated = new Map(current);
                   const itemIds = new Set(updated.get(payload.turnId) ?? []);
@@ -6114,23 +6154,14 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 threadId: artifacts.node.threadId,
                 runtimeRequest: artifacts.request,
               });
-              yield* Ref.update(finalAnswerItemIdsByTurn, (current) => {
-                const ids = current.get(payload.turnId);
-                if (!ids?.has(payload.item.id)) return current;
-                const next = new Map(current);
-                const remaining = new Set(ids);
-                remaining.delete(payload.item.id);
-                if (remaining.size === 0) next.delete(payload.turnId);
-                else next.set(payload.turnId, remaining);
-                return next;
-              });
+              yield* forgetFinalAnswerItem(payload.turnId, payload.item.id);
               return;
             }
 
             if (payload.item.phase != null)
               context.messagePhases.set(payload.item.id, payload.item.phase);
             if (payload.item.delivery === "async") context.asyncMessageIds.add(payload.item.id);
-            const finalAnswer = payload.item.phase == null || payload.item.phase === "final_answer";
+            const finalAnswer = isCodexFinalAnswerItem(context, payload.item);
             if (finalAnswer) {
               yield* Ref.update(finalAnswerItemIdsByTurn, (current) => {
                 const updated = new Map(current);
@@ -6139,6 +6170,8 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 updated.set(payload.turnId, itemIds);
                 return updated;
               });
+            } else {
+              yield* forgetFinalAnswerItem(payload.turnId, payload.item.id);
             }
             const completedTextsBefore =
               (yield* Ref.get(completedFinalAnswerTextsByTurn)).get(payload.turnId) ??
@@ -6148,21 +6181,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               itemId: payload.item.id,
               finalText: payload.item.text,
             });
-            yield* Ref.update(finalAnswerItemIdsByTurn, (current) => {
-              const itemIds = current.get(payload.turnId);
-              if (itemIds === undefined || !itemIds.has(payload.item.id)) {
-                return current;
-              }
-              const updated = new Map(current);
-              const remainingItemIds = new Set(itemIds);
-              remainingItemIds.delete(payload.item.id);
-              if (remainingItemIds.size === 0) {
-                updated.delete(payload.turnId);
-              } else {
-                updated.set(payload.turnId, remainingItemIds);
-              }
-              return updated;
-            });
+            yield* forgetFinalAnswerItem(payload.turnId, payload.item.id);
             const emitted =
               !finalAnswer ||
               completedTextsBefore.size === 0 ||
@@ -7399,6 +7418,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 updated.delete(input.nativeTurnId);
                 return updated;
               });
+              yield* clearProviderRetryWatch(input.context);
               if (input.context.nativeStartReady !== undefined) {
                 yield* Deferred.succeed(input.context.nativeStartReady, undefined);
               }

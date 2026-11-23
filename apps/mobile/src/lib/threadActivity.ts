@@ -1226,7 +1226,8 @@ function finalAnswerIds(feed: ReadonlyArray<ThreadFeedEntry>): ReadonlySet<Messa
       entry.type === "message" &&
       entry.message.role === "assistant" &&
       entry.message.projectedItem?.item.type === "assistant_message" &&
-      entry.message.projectedItem.item.phase === "final_answer"
+      entry.message.projectedItem.item.phase === "final_answer" &&
+      entry.message.projectedItem.item.delivery !== "async"
     ) {
       ids.add(entry.message.id);
     }
@@ -1995,6 +1996,7 @@ export function deriveThreadFeedPresentation(
       (latestRow.message.runId === activeRunId &&
         latestRow.message.projectedItem?.item.type === "assistant_message" &&
         latestRow.message.projectedItem.item.phase === "final_answer" &&
+        latestRow.message.projectedItem.item.delivery !== "async" &&
         !feed.some((entry) =>
           entry.type === "message"
             ? isSteerMessage(entry.message) && entry.message.runId === activeRunId

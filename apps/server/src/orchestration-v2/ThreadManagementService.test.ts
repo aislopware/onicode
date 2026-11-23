@@ -1193,6 +1193,10 @@ it.effect.each([
   // A delegated-completion wake cancelled unstarted because the turn already took the result.
   { status: "completed" as const, followUp: "cancelled-delegated", settles: true },
   { status: "completed" as const, followUp: "stopped-delegated", settles: false },
+  // Work the settle blocker waits on can end with no run update.
+  { status: "completed" as const, followUp: "subagent-finished", settles: true },
+  { status: "completed" as const, followUp: "background-task-finished", settles: true },
+  { status: "completed" as const, followUp: "approval-answered", settles: true },
 ])("settleAfterRun handles $status with $followUp follow-up", ({ status, followUp, settles }) =>
   Effect.gen(function* () {
     const projectId = ProjectId.make("project:thread-management:settle-after-run");
@@ -1201,7 +1205,13 @@ it.effect.each([
     const followUpId = RunId.make(`${runId}:follow-up`);
     const subscribed = yield* Deferred.make<void>();
     const events = yield* Queue.unbounded<OrchestrationV2StoredEvent>();
+    const providerThreadEvents = yield* Queue.unbounded<OrchestrationV2StoredEvent>();
+    const turnItemEvents = yield* Queue.unbounded<OrchestrationV2StoredEvent>();
+    const requestEvents = yield* Queue.unbounded<OrchestrationV2StoredEvent>();
     const replayRejected = yield* Deferred.make<void>();
+    const refusedForBlocker = yield* Deferred.make<void>();
+    const blocked = followUp.endsWith("-finished") || followUp.endsWith("-answered");
+    let blocking = blocked;
     let sequence = 0;
     let sequenceReads = 0;
     let rejectedCommandId: CommandId | undefined;
@@ -1226,10 +1236,20 @@ it.effect.each([
               return sequence;
             }),
           restartContinuationPending: () => Effect.succeed(false),
-          streamStoredEventsFrom: () =>
+          streamStoredEventsFrom: (input) =>
             Stream.fromEffect(Deferred.succeed(subscribed, undefined)).pipe(
               Stream.drain,
-              Stream.concat(Stream.fromQueue(events)),
+              Stream.concat(
+                Stream.fromQueue(
+                  input?.eventType === "provider-thread.updated"
+                    ? providerThreadEvents
+                    : input?.eventType === "turn-item.updated"
+                      ? turnItemEvents
+                      : input?.eventType === "runtime-request.updated"
+                        ? requestEvents
+                        : events,
+                ),
+              ),
             ),
           getThreadRecords: (_threadId, _fields, filter) =>
             Effect.sync(
@@ -1269,7 +1289,15 @@ it.effect.each([
             ),
           dispatch: (command) =>
             Effect.gen(function* () {
-              if (followUp !== "none" && !raced) {
+              if (blocking) {
+                yield* Deferred.succeed(refusedForBlocker, undefined);
+                return yield* new Orchestrator.OrchestratorDispatchError({
+                  commandId: command.commandId,
+                  commandType: command.type,
+                  cause: "Thread is waiting on background work or an approval",
+                });
+              }
+              if (followUp !== "none" && !blocked && !raced) {
                 raced = true;
                 rejectedCommandId = command.commandId;
                 return yield* new Orchestrator.OrchestratorDispatchError({
@@ -1300,7 +1328,38 @@ it.effect.each([
     const fiber = yield* service
       .settleAfterRun({ projectId, threadId, runId })
       .pipe(Effect.forkChild);
-    if (followUp !== "none") {
+    if (blocked) {
+      yield* Deferred.await(refusedForBlocker);
+      blocking = false;
+      sequence = 1;
+      yield* followUp === "subagent-finished"
+        ? Queue.offer(turnItemEvents, {
+            sequence,
+            event: {
+              type: "turn-item.updated",
+              threadId,
+              payload: { type: "subagent", status: "completed" },
+            },
+          } as unknown as OrchestrationV2StoredEvent)
+        : followUp === "approval-answered"
+          ? Queue.offer(requestEvents, {
+              sequence,
+              event: {
+                type: "runtime-request.updated",
+                threadId,
+                payload: { id: "request:settle-after-run", status: "resolved" },
+              },
+            } as unknown as OrchestrationV2StoredEvent)
+          : Queue.offer(providerThreadEvents, {
+              sequence,
+              event: {
+                type: "provider-thread.updated",
+                threadId,
+                payload: { id: "provider-thread:settle-after-run", pendingBackgroundTasks: [] },
+              },
+            } as unknown as OrchestrationV2StoredEvent);
+    }
+    if (followUp !== "none" && !blocked) {
       yield* Deferred.await(subscribed);
       expect(dispatched).toEqual([]);
       nextRun.status =

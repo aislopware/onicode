@@ -1531,23 +1531,28 @@ describe("buildThreadFeed", () => {
       outcome: "completed",
       summary: "Task finished",
     };
-    for (const [phase, steered, replyRunId, thinking] of [
-      ["final_answer", null, runId, false],
-      ["commentary", null, runId, true],
-      ["final_answer", steer, runId, true],
-      ["final_answer", notice, runId, true],
-      ["final_answer", null, RunId.make("run-0"), true],
+    // An asynchronous alert is mid-turn news, not the answer.
+    for (const [phase, steered, replyRunId, thinking, delivery] of [
+      ["final_answer", null, runId, false, undefined],
+      ["commentary", null, runId, true, undefined],
+      ["final_answer", steer, runId, true, undefined],
+      ["final_answer", notice, runId, true, undefined],
+      ["final_answer", null, RunId.make("run-0"), true, undefined],
+      ["final_answer", null, runId, true, "async"],
     ] as const) {
       const completedReply = buildThreadFeed([
         projected(userMessage(), 0),
         ...(steered ? [projected(steered, 1)] : []),
-        projected({ ...assistantMessage(), phase, runId: replyRunId }, 2),
+        projected(
+          { ...assistantMessage(), phase, runId: replyRunId, ...(delivery ? { delivery } : {}) },
+          2,
+        ),
       ]);
       expect(
         deriveThreadFeedPresentation(completedReply, run, new Set(), new Set(), startedAt).some(
           (row) => row.type === "thinking",
         ),
-        `${phase} steered=${steered?.type} ${replyRunId}`,
+        `${phase} ${delivery} steered=${steered?.type} ${replyRunId}`,
       ).toBe(thinking);
     }
   });
@@ -1619,6 +1624,8 @@ describe("buildThreadFeed", () => {
         phase === "final_answer",
       );
     }
+    const alert = { ...answer, phase: "final_answer" as const, delivery: "async" as const };
+    expect(rows([user, alert, steer, final], "zen").includes("answer")).toBe(false);
     const confirmed = { ...answer, phase: "final_answer" as const };
     const continued = buildThreadFeed(
       [user, confirmed, passed, final].map((item, index) => projected(item, index)),

@@ -970,40 +970,103 @@ describe("ThreadSettlementServiceV2 worker", () => {
       const noPr = makeThread("idle-none", { branch: "none" });
       const merged = makeThread("idle-merged", { branch: "merged" });
       const failed = makeThread("idle-failed", { branch: "failed" });
+      const cachedMiss = makeThread("idle-cached-miss", { branch: "cached-miss" });
+      // Its cached answer is the merged PR a new one replaced since its last host read.
+      const reopened = makeThread("idle-reopened", { branch: "reopened" });
+      // Expires between the first two sweeps, after the first read its branch.
+      const expiring = makeThread("idle-expiring", {
+        branch: "expiring",
+        latestUserMessageAt: DateTime.makeUnsafe(Date.parse(NOW) - 3 * DAY_MS + 30_000),
+      });
+      const refreshed = new Set<string>();
+      let removeSettled: (command: AutoSettleCommand) => Effect.Effect<void> = () => Effect.void;
       const fixture = yield* makeHarness({
-        snapshot: makeSnapshot([openPr, reused, reusedOwner, noPr, merged, failed]),
+        snapshot: makeSnapshot([
+          openPr,
+          reused,
+          reusedOwner,
+          noPr,
+          merged,
+          failed,
+          cachedMiss,
+          reopened,
+          expiring,
+        ]),
         settings: {
           ...DEFAULT_SERVER_SETTINGS,
           sidebarAutoSettleAfterDays: 3,
           sidebarAutoSettleKeepPullRequests: true,
         },
+        // The host answer stays cached, fresh git state or not, until a lookup refreshes it.
         branchPullRequest: ({ branch, cwd }, options) =>
-          branch === "open"
-            ? Effect.succeed(makeBranchPullRequest("open"))
-            : branch === "reused"
-              ? Effect.succeed(
-                  options?.freshGitState === true
-                    ? { ...makeBranchPullRequest("open"), number: 43 }
-                    : { ...makeBranchPullRequest("merged"), mergedAt: "2026-07-01T00:00:00.000Z" },
-                )
-              : branch === "merged"
-                ? Effect.succeed({ ...makeBranchPullRequest("merged"), mergedAt: earlier })
-                : branch === "failed"
-                  ? Effect.fail(
-                      new GitManagerError({
-                        operation: "branchPullRequest",
-                        cwd,
-                        detail: "failed",
-                      }),
+          Effect.suspend(() => {
+            if (options?.refresh === true) refreshed.add(branch);
+            return branch === "open"
+              ? Effect.succeed(makeBranchPullRequest("open"))
+              : branch === "reused"
+                ? Effect.succeed(
+                    refreshed.has(branch)
+                      ? { ...makeBranchPullRequest("open"), number: 43 }
+                      : {
+                          ...makeBranchPullRequest("merged"),
+                          mergedAt: "2026-07-01T00:00:00.000Z",
+                        },
+                  )
+                : branch === "cached-miss"
+                  ? Effect.succeed(
+                      refreshed.has(branch)
+                        ? { ...makeBranchPullRequest("open"), number: 44 }
+                        : null,
                     )
-                  : Effect.succeed(null),
+                  : branch === "reopened"
+                    ? Effect.succeed(
+                        options?.refresh === true
+                          ? { ...makeBranchPullRequest("open"), number: 45 }
+                          : { ...makeBranchPullRequest("merged"), mergedAt: earlier },
+                      )
+                    : branch === "merged"
+                      ? Effect.succeed({ ...makeBranchPullRequest("merged"), mergedAt: earlier })
+                      : branch === "failed"
+                        ? Effect.fail(
+                            new GitManagerError({
+                              operation: "branchPullRequest",
+                              cwd,
+                              detail: "failed",
+                            }),
+                          )
+                        : Effect.succeed(null);
+          }),
+        onDispatch: (command) => removeSettled(command),
       });
+      removeSettled = (command) =>
+        Ref.update(fixture.snapshots, (snapshot) => ({
+          ...snapshot,
+          threads: snapshot.threads.filter((thread) => thread.id !== command.threadId),
+        }));
       yield* Effect.gen(function* () {
         const service = yield* ThreadSettlementService.ThreadSettlementServiceV2;
         yield* startHarness(service, fixture.activation, fixture.snapshotReads);
+        // A sweep looks up only a few branches, so the next one reaches the rest.
+        yield* TestClock.adjust("1 minute");
+        yield* Queue.take(fixture.snapshotReads);
+        yield* service.drain;
         expect(
           (yield* Ref.get(fixture.commands)).map((command) => command.threadId).toSorted(),
-        ).toEqual([failed.id, merged.id, noPr.id]);
+        ).toEqual([expiring.id, merged.id, noPr.id]);
+        // One host read settles a retained branch; the expiring one was read once before expiring.
+        const reads = (yield* Ref.get(fixture.branchCalls)).map((call) => call.branch);
+        expect(
+          [noPr, merged, expiring].map(
+            (thread) => reads.filter((branch) => branch === thread.branch).length,
+          ),
+        ).toEqual([1, 1, 2]);
+        // Once its branch had an open PR, a sweep reads the cache and the host confirms a miss.
+        yield* TestClock.adjust("1 minute");
+        yield* Queue.take(fixture.snapshotReads);
+        yield* service.drain;
+        expect((yield* Ref.get(fixture.commands)).map((command) => command.threadId)).not.toContain(
+          reopened.id,
+        );
       }).pipe(Effect.provide(fixture.layer));
     }),
   );
@@ -1716,91 +1779,144 @@ describe("ThreadSettlementServiceV2 worker", () => {
   );
 
   it.effect.each([
-    { kind: "an unlinked", linked: false },
-    { kind: "a quiet linked", linked: true },
-  ])("settles $kind branch thread its agent merged from a shell, past the cache", ({ linked }) =>
-    Effect.gen(function* () {
-      yield* TestClock.setTime(Date.parse(NOW));
-      const thread = makeThread("shell-merged", {
-        branch: "saved-feature",
-        latestUserMessageAt: DateTime.makeUnsafe("2026-08-27T00:00:00.000Z"),
-        ...(linked
-          ? {
-              branchPullRequest: {
-                projectId: PROJECT_ID,
-                repository: "owner/repository",
-                number: 42,
-                url: "https://example.test/owner/repository/pull/42",
-              },
-            }
-          : {}),
-      });
-      const fixture = yield* makeHarness({
-        snapshot: makeSnapshot([thread]),
-        // The host already merged it; only a fresh read sees that past the cached open lookup.
-        branchPullRequest: (_input, lookupOptions) =>
-          Effect.succeed(makeBranchPullRequest(lookupOptions?.refresh ? "merged" : "open")),
-        pullRequestSummary: (input, readOptions) =>
-          Effect.succeed({
-            ...makePullRequestSummary({
-              ...input,
-              state: readOptions?.bypassCache ? "merged" : "open",
-              updatedAt: DateTime.formatIso(DateTime.makeUnsafe(Date.parse(NOW) - 2 * DAY_MS)),
+    { kind: "an unlinked", linked: false, after: "" },
+    { kind: "a quiet linked", linked: true, after: "" },
+    { kind: "an unlinked", linked: false, after: " after a failed read" },
+    { kind: "an unlinked", linked: false, after: " after a rejected settle" },
+    { kind: "an unlinked", linked: false, after: " while reads keep failing" },
+  ])(
+    "reads past the cache for $kind branch thread its agent merged from a shell$after",
+    ({ linked, after }) =>
+      Effect.gen(function* () {
+        yield* TestClock.setTime(Date.parse(NOW));
+        // Reads that keep failing retry at doubling gaps: 1, 2, 4 and 8 minutes after the first.
+        const failingReads = yield* Ref.make(
+          after === " after a failed read"
+            ? 1
+            : after === " while reads keep failing"
+              ? Number.POSITIVE_INFINITY
+              : 0,
+        );
+        const freshReads = yield* Ref.make(0);
+        const rejectNextSettle = yield* Ref.make(after === " after a rejected settle");
+        const thread = makeThread("shell-merged", {
+          branch: "saved-feature",
+          latestUserMessageAt: DateTime.makeUnsafe("2026-08-27T00:00:00.000Z"),
+          ...(linked
+            ? {
+                branchPullRequest: {
+                  projectId: PROJECT_ID,
+                  repository: "owner/repository",
+                  number: 42,
+                  url: "https://example.test/owner/repository/pull/42",
+                },
+              }
+            : {}),
+        });
+        const fixture = yield* makeHarness({
+          snapshot: makeSnapshot([thread]),
+          // The host already merged it; only a fresh read sees that past the cached open lookup.
+          branchPullRequest: ({ cwd }, lookupOptions) =>
+            lookupOptions?.refresh !== true
+              ? Effect.succeed(makeBranchPullRequest("open"))
+              : Effect.flatMap(
+                  Ref.update(freshReads, (count) => count + 1).pipe(
+                    Effect.andThen(
+                      Ref.getAndUpdate(failingReads, (count) => Math.max(count - 1, 0)),
+                    ),
+                  ),
+                  (failing) =>
+                    failing > 0
+                      ? Effect.fail(
+                          new GitManagerError({
+                            operation: "branchPullRequest",
+                            cwd,
+                            detail: "host unavailable",
+                          }),
+                        )
+                      : Effect.succeed(makeBranchPullRequest("merged")),
+                ),
+          pullRequestSummary: (input, readOptions) =>
+            Effect.succeed({
+              ...makePullRequestSummary({
+                ...input,
+                state: readOptions?.bypassCache ? "merged" : "open",
+                updatedAt: DateTime.formatIso(DateTime.makeUnsafe(Date.parse(NOW) - 2 * DAY_MS)),
+              }),
+              ...(readOptions?.bypassCache ? { mergedAt: NOW } : {}),
             }),
-            ...(readOptions?.bypassCache ? { mergedAt: NOW } : {}),
-          }),
-      });
-      const at = DateTime.makeUnsafe(NOW);
-      const runId = RunId.make("run:shell-merged");
-      const runEnded: OrchestrationV2DomainEvent = {
-        type: "run.background-work-cancelled",
-        id: EventId.make("event:shell-merged:run-ended"),
-        threadId: thread.id,
-        occurredAt: at,
-        payload: { runId, restartCancelledBackgroundWork: [] },
-      };
-
-      yield* Effect.gen(function* () {
-        const reactor = yield* ThreadSettlementService.ThreadSettlementServiceV2;
-        yield* startHarness(reactor, fixture.activation, fixture.snapshotReads);
-        yield* fixture.publishEvent(runEnded);
-        yield* Queue.take(fixture.snapshotReads);
-        yield* reactor.drain;
-        assert.deepStrictEqual(yield* Ref.get(fixture.commands), []);
-
-        yield* fixture.publishEvent({
-          type: "turn-item.updated",
-          id: EventId.make("event:shell-merged:command"),
+          // As when the thread changed after the sweep read it.
+          onDispatch: () =>
+            Effect.flatMap(Ref.getAndSet(rejectNextSettle, false), (rejects) =>
+              rejects ? Effect.die(new Error("thread changed before settlement")) : Effect.void,
+            ),
+        });
+        const at = DateTime.makeUnsafe(NOW);
+        const runId = RunId.make("run:shell-merged");
+        const runEnded: OrchestrationV2DomainEvent = {
+          type: "run.background-work-cancelled",
+          id: EventId.make("event:shell-merged:run-ended"),
           threadId: thread.id,
-          runId,
           occurredAt: at,
-          payload: {
-            id: TurnItemId.make("item:shell-merged:command"),
+          payload: { runId, restartCancelledBackgroundWork: [] },
+        };
+
+        yield* Effect.gen(function* () {
+          const reactor = yield* ThreadSettlementService.ThreadSettlementServiceV2;
+          yield* startHarness(reactor, fixture.activation, fixture.snapshotReads);
+          yield* fixture.publishEvent(runEnded);
+          yield* Queue.take(fixture.snapshotReads);
+          yield* reactor.drain;
+          assert.deepStrictEqual(yield* Ref.get(fixture.commands), []);
+
+          yield* fixture.publishEvent({
+            type: "turn-item.updated",
+            id: EventId.make("event:shell-merged:command"),
             threadId: thread.id,
             runId,
-            nodeId: null,
-            providerThreadId: null,
-            providerTurnId: null,
-            nativeItemRef: null,
-            parentItemId: null,
-            ordinal: 1,
-            status: "completed",
-            title: null,
-            startedAt: at,
-            completedAt: at,
-            updatedAt: at,
-            type: "command_execution",
-            input: "gh pr merge 42 --squash",
-          },
-        });
-        yield* Queue.take(fixture.snapshotReads);
-        yield* reactor.drain;
-        assert.deepStrictEqual(
-          (yield* Ref.get(fixture.commands)).map((command) => command.threadId),
-          [thread.id],
-        );
-      }).pipe(Effect.provide(fixture.layer));
-    }),
+            occurredAt: at,
+            payload: {
+              id: TurnItemId.make("item:shell-merged:command"),
+              threadId: thread.id,
+              runId,
+              nodeId: null,
+              providerThreadId: null,
+              providerTurnId: null,
+              nativeItemRef: null,
+              parentItemId: null,
+              ordinal: 1,
+              status: "completed",
+              title: null,
+              startedAt: at,
+              completedAt: at,
+              updatedAt: at,
+              type: "command_execution",
+              input: "gh pr merge 42 --squash",
+            },
+          });
+          yield* Queue.take(fixture.snapshotReads);
+          yield* reactor.drain;
+          for (
+            let sweep = 0;
+            sweep < (after === " while reads keep failing" ? 8 : after === "" ? 0 : 1);
+            sweep++
+          ) {
+            yield* TestClock.adjust("1 minute");
+            yield* Queue.take(fixture.snapshotReads);
+            yield* reactor.drain;
+          }
+          if (after === " while reads keep failing")
+            assert.strictEqual(yield* Ref.get(freshReads), 5);
+          assert.deepStrictEqual(
+            (yield* Ref.get(fixture.commands)).map((command) => command.threadId),
+            after === " after a rejected settle"
+              ? [thread.id, thread.id]
+              : after === " while reads keep failing"
+                ? []
+                : [thread.id],
+          );
+        }).pipe(Effect.provide(fixture.layer));
+      }),
   );
 
   it.effect(
@@ -2043,6 +2159,116 @@ describe("ThreadSettlementServiceV2 worker", () => {
           yield* branches,
           threads.map((thread) => thread.branch),
         );
+      }).pipe(Effect.provide(fixture.layer));
+    }),
+  );
+
+  it.effect("a sweep verifies a few expired retained branches and keeps the rest for later", () =>
+    Effect.gen(function* () {
+      yield* TestClock.setTime(Date.parse(NOW));
+      const threads = Array.from({ length: 5 }, (_, index) =>
+        makeThread(`retained-${index}`, {
+          branch: `retained-${index}`,
+          latestUserMessageAt: DateTime.makeUnsafe(Date.parse(NOW) - (index + 4) * DAY_MS),
+        }),
+      );
+      let removeSettled: (command: AutoSettleCommand) => Effect.Effect<void> = () => Effect.void;
+      const fixture = yield* makeHarness({
+        snapshot: makeSnapshot(threads),
+        settings: {
+          ...DEFAULT_SERVER_SETTINGS,
+          sidebarAutoSettleAfterDays: 3,
+          sidebarAutoSettleKeepPullRequests: true,
+        },
+        onDispatch: (command) => removeSettled(command),
+      });
+      removeSettled = (command) =>
+        Ref.update(fixture.snapshots, (snapshot) => ({
+          ...snapshot,
+          threads: snapshot.threads.filter((thread) => thread.id !== command.threadId),
+        }));
+      const settled = Ref.get(fixture.commands).pipe(
+        Effect.map((commands) => commands.map((command) => command.threadId).toSorted()),
+      );
+      const branches = Ref.get(fixture.branchCalls).pipe(
+        Effect.map((calls) => [...new Set(calls.map((call) => call.branch))].toSorted()),
+      );
+
+      yield* Effect.gen(function* () {
+        const reactor = yield* ThreadSettlementService.ThreadSettlementServiceV2;
+        yield* startHarness(reactor, fixture.activation, fixture.snapshotReads);
+        const firstSweep = threads.slice(0, 4);
+        assert.deepStrictEqual(
+          yield* branches,
+          firstSweep.map((thread) => thread.branch),
+        );
+        assert.deepStrictEqual(
+          yield* settled,
+          firstSweep.map((thread) => thread.id),
+        );
+
+        yield* TestClock.adjust("1 minute");
+        yield* Queue.take(fixture.snapshotReads);
+        yield* reactor.drain;
+        assert.deepStrictEqual(
+          yield* settled,
+          threads.map((thread) => thread.id),
+        );
+      }).pipe(Effect.provide(fixture.layer));
+    }),
+  );
+
+  it.effect("an expired retained branch that cannot be read backs off, then settles a day on", () =>
+    Effect.gen(function* () {
+      yield* TestClock.setTime(Date.parse(NOW));
+      // Idle long enough that its branch waits the longest between reads.
+      const thread = makeThread("retained-unreadable", {
+        branch: "unreadable",
+        latestUserMessageAt: DateTime.makeUnsafe(Date.parse(NOW) - 12 * DAY_MS),
+      });
+      const failing = yield* Ref.make(false);
+      const fixture = yield* makeHarness({
+        snapshot: makeSnapshot([thread]),
+        settings: {
+          ...DEFAULT_SERVER_SETTINGS,
+          sidebarAutoSettleAfterDays: 3,
+          sidebarAutoSettleKeepPullRequests: true,
+        },
+        branchPullRequest: ({ cwd, branch }) =>
+          Effect.flatMap(Ref.get(failing), (fails) =>
+            fails
+              ? Effect.fail(
+                  new GitManagerError({
+                    operation: "branchPullRequest",
+                    cwd,
+                    detail: `Multiple remotes track ${branch}. Its pull request is ambiguous.`,
+                  }),
+                )
+              : Effect.succeed(makeBranchPullRequest("open")),
+          ),
+      });
+      const reads = Ref.get(fixture.branchCalls).pipe(Effect.map((calls) => calls.length));
+      const settled = Ref.get(fixture.commands).pipe(Effect.map((commands) => commands.length));
+
+      yield* Effect.gen(function* () {
+        const reactor = yield* ThreadSettlementService.ThreadSettlementServiceV2;
+        yield* startHarness(reactor, fixture.activation, fixture.snapshotReads);
+        yield* Ref.set(failing, true);
+        yield* TestClock.adjust("1 minute");
+        yield* Queue.take(fixture.snapshotReads);
+        yield* reactor.drain;
+        assert.strictEqual(yield* reads, 2);
+
+        // A failed read waits like one that found no pull request, and keeps the thread a while.
+        yield* TestClock.adjust("23 hours");
+        yield* reactor.drain;
+        assert.strictEqual(yield* reads, 2);
+        assert.strictEqual(yield* settled, 0);
+
+        yield* TestClock.adjust("1 hour");
+        yield* reactor.drain;
+        assert.strictEqual(yield* reads, 3);
+        assert.strictEqual(yield* settled, 1);
       }).pipe(Effect.provide(fixture.layer));
     }),
   );

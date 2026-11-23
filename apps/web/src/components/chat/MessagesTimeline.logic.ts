@@ -799,7 +799,8 @@ function retainedAssistantReplyEntryIds(
     if (
       entry.kind === "message" &&
       entry.projectedItem?.item.type === "assistant_message" &&
-      entry.projectedItem.item.phase === "final_answer"
+      entry.projectedItem.item.phase === "final_answer" &&
+      entry.projectedItem.item.delivery !== "async"
     )
       replyEntryIds.add(entry.id);
 
@@ -2394,6 +2395,7 @@ export function deriveMessagesTimelineRows(
       (latestTimelineEntry.message.runId === input.latestRun?.runId &&
         latestTimelineEntry.projectedItem?.item.type === "assistant_message" &&
         latestTimelineEntry.projectedItem.item.phase === "final_answer" &&
+        latestTimelineEntry.projectedItem.item.delivery !== "async" &&
         !timelineEntries.some((entry) =>
           entry.kind === "message"
             ? timelineEntryIsSteer(entry) && entry.message.runId === input.latestRun?.runId

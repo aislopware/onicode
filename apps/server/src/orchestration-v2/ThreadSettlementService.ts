@@ -330,8 +330,9 @@ export const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   // A shell merge or close sends no event, and the branch lookup caches an open pull request for
-  // a minute, so these threads' next lookup reads the host fresh.
-  const shellClosedThreads = new Set<ThreadId>();
+  // a minute, so these threads read the host fresh until a lookup does and its settle is accepted.
+  // Keyed to the closing command's event, so a close during that lookup is not cleared with it.
+  const shellClosedThreads = new Map<ThreadId, string>();
   // Each summary read can be a host CLI process (one `az` per read on Azure DevOps), so a quiet
   // open pull request is read on the sync reactor's quiet cadence rather than every sweep.
   const quietOpenReadAt = new Map<string, number>();
@@ -377,6 +378,9 @@ export const make = Effect.gen(function* () {
         isAutoSettlementCandidate(thread, nowMs),
     );
 
+    const failedSettles = new Set<ThreadId>();
+    // Groups this sweep read past every cache, which is what a shell close asks for.
+    const freshlyRead = new Set<string>();
     // Runs per candidate thread, thousands per sweep on busy servers; the sweep owns the span.
     const settleThread = Effect.fnUntraced(
       function* (thread: (typeof candidates)[number], pullRequest: SettlementPullRequest | null) {
@@ -425,10 +429,15 @@ export const make = Effect.gen(function* () {
           Effect.catchCauseIf(
             (cause) => !Cause.hasInterruptsOnly(cause),
             (cause) =>
-              Effect.logWarning("automatic thread settlement skipped", {
-                threadId: thread.id,
-                cause: Cause.pretty(cause),
-              }).pipe(Effect.as(null)),
+              Effect.sync(() => failedSettles.add(thread.id)).pipe(
+                Effect.andThen(
+                  Effect.logWarning("automatic thread settlement skipped", {
+                    threadId: thread.id,
+                    cause: Cause.pretty(cause),
+                  }),
+                ),
+                Effect.as(null),
+              ),
           ),
         ),
     );
@@ -566,6 +575,7 @@ export const make = Effect.gen(function* () {
 
     const pullRequestFor = Effect.fnUntraced(function* (
       group: ReadonlyArray<(typeof lookupCandidates)[number]>,
+      refresh: boolean,
     ) {
       const thread = group[0]!;
       const reference = thread.linkedPullRequest ?? thread.branchPullRequest;
@@ -585,9 +595,7 @@ export const make = Effect.gen(function* () {
           return yield* Effect.die(new Error("linked pull request project not found"));
         }
         const readKey = quietReadKey(reference);
-        const shellClosed =
-          group.filter((member) => shellClosedThreads.delete(member.id)).length > 0;
-        if (shellClosed) quietOpenReadAt.delete(readKey);
+        if (refresh) quietOpenReadAt.delete(readKey);
         else if (!matchesMerge && quietOpenReadAt.has(readKey)) {
           return { state: "open", closedAt: null, mergedAt: null } satisfies SettlementPullRequest;
         }
@@ -603,8 +611,10 @@ export const make = Effect.gen(function* () {
                 repository: reference.repository,
                 number: reference.number,
               },
-              { recoverTransientFailure: false, bypassCache: shellClosed },
+              { recoverTransientFailure: false, bypassCache: refresh },
             );
+        noPullRequestRechecks.succeeded(lookupKey(thread));
+        if (refresh) freshlyRead.add(lookupKey(thread));
         if (
           "updatedAt" in summary &&
           summary.state === "open" &&
@@ -641,73 +651,76 @@ export const make = Effect.gen(function* () {
       if (cwd === undefined) {
         return yield* Effect.die(new Error("thread project not found"));
       }
-      const refresh = group.filter((member) => shellClosedThreads.delete(member.id)).length > 0;
       const key = lookupKey(thread);
-      const hasDeferred = group.some((member) => deferred.has(member.id));
-      if (scheduledLookups !== null && !refresh && !hasDeferred && !scheduledLookups.has(key)) {
-        return undefined;
-      }
+      if (!refresh && budgetedLookups.has(key) && !scheduledLookups.has(key)) return undefined;
+      const retained = group.some((member) => deferred.has(member.id));
+      // A pull request another thread links is not this branch's own, so it keeps nothing here.
+      const ownPullRequest = (pullRequest: GitManager.GitBranchPullRequest | null) =>
+        Effect.map(ownedByAnotherThread(pullRequest), (owned) => (owned ? null : pullRequest));
+      // Any answer but an open PR settles a retained thread, so unless its branch last had one
+      // it asks the host: a cached answer misses a PR opened since, as on a reused branch.
+      const readHost = refresh || (retained && !noPullRequestRechecks.found(key));
       // Remembered git state is enough to rule a thread out; only an answer
       // that would settle it is confirmed against fresh git state.
       const remembered = yield* git.branchPullRequest(
         { cwd, branch: thread.branch },
-        { refresh, confirmTerminal: false },
+        { refresh: readHost, confirmTerminal: false },
       );
-      noPullRequestRechecks.record(key, nowMs, remembered !== null);
-      if (refresh || remembered === null || remembered.state === "open") {
-        return (yield* ownedByAnotherThread(remembered)) ? undefined : remembered;
-      }
-      // A deferred thread confirms first: a reused branch can have a new open PR.
+      if (refresh) freshlyRead.add(key);
       if (
-        !hasDeferred &&
-        ((yield* ownedByAnotherThread(remembered)) || !(yield* wouldSettle(group, remembered)))
+        readHost ||
+        remembered?.state === "open" ||
+        (!retained &&
+          (remembered === null ||
+            (yield* ownedByAnotherThread(remembered)) ||
+            !(yield* wouldSettle(group, remembered))))
       ) {
+        noPullRequestRechecks.record(key, nowMs, remembered !== null, retained);
+        if (readHost || remembered === null || remembered.state === "open") {
+          return yield* ownPullRequest(remembered);
+        }
         return undefined;
       }
+      // A retained thread settles on any answer but an open PR, so the host confirms a cached one.
       const fresh = yield* git.branchPullRequest(
         { cwd, branch: thread.branch },
-        { freshGitState: true },
+        retained ? { refresh: true } : { freshGitState: true },
       );
-      return (yield* ownedByAnotherThread(fresh)) ? undefined : fresh;
+      noPullRequestRechecks.record(key, nowMs, fresh !== null, retained);
+      return yield* ownPullRequest(fresh);
     });
 
-    // A merge, a shell close and a thread's own events read at once; only scheduled sweeps wait.
-    const scheduledLookups =
-      mergedPullRequest !== null || threadId !== undefined
-        ? null
-        : noPullRequestRechecks.select(
-            nowMs,
-            [...groups]
-              .filter(
-                ([key, group]) =>
-                  key.startsWith('["branch",') && !group.some((member) => deferred.has(member.id)),
-              )
-              .map(([key, group]) => ({
-                key,
-                activityAtMs: Math.max(...group.map(threadActivityAtMs)),
-              })),
-          );
-
-    const settleDeferred = (group: ReadonlyArray<(typeof lookupCandidates)[number]>) =>
-      Effect.forEach(
-        group.filter((thread) => deferred.has(thread.id)),
-        (thread) => settleThread(thread, null),
-        { discard: true },
-      );
+    // A shell close and a thread's own events read at once, and a merge reads every branch it can
+    // settle. Retained threads only wait for a lookup, so theirs stay in the budget even then.
+    const budgetedLookups = new Map(
+      threadId !== undefined
+        ? []
+        : [...groups].filter(
+            ([key, group]) =>
+              key.startsWith('["branch",') &&
+              (mergedPullRequest === null || group.every((member) => deferred.has(member.id))),
+          ),
+    );
+    const scheduledLookups = noPullRequestRechecks.select(
+      nowMs,
+      Array.from(budgetedLookups, ([key, group]) => ({
+        key,
+        activityAtMs: Math.max(...group.map(threadActivityAtMs)),
+        retained: group.some((member) => deferred.has(member.id)),
+      })),
+    );
 
     yield* Effect.forEach(
       groups.values(),
-      (group) =>
-        Effect.gen(function* () {
-          // A thread of a project whose folder is not a repository has no branch pull request.
-          const pullRequest = yield* pullRequestFor(group).pipe(
-            Effect.catchIf(
-              (error) => error._tag === "GitCommandError" && error.reason === "not_a_repository",
-              () => Effect.void,
-            ),
-          );
-          if (pullRequest === undefined) return yield* settleDeferred(group);
-          yield* Effect.forEach(
+      (group) => {
+        const key = lookupKey(group[0]!);
+        const retained = group.some((member) => deferred.has(member.id));
+        const shellCloses = group.flatMap((member) => {
+          const close = shellClosedThreads.get(member.id);
+          return close === undefined ? [] : [[member.id, close] as const];
+        });
+        const settleGroup = (pullRequest: SettlementPullRequest | null) =>
+          Effect.forEach(
             group,
             (thread) =>
               settleThread(
@@ -716,16 +729,48 @@ export const make = Effect.gen(function* () {
               ),
             { discard: true },
           );
-        }).pipe(
+        // A thread of a project whose folder is not a repository has no branch pull request.
+        return pullRequestFor(
+          group,
+          shellCloses.length > 0 && noPullRequestRechecks.refreshDue(key, nowMs),
+        ).pipe(
+          Effect.catchIf(
+            (error) => error._tag === "GitCommandError" && error.reason === "not_a_repository",
+            () => Effect.succeed(null),
+          ),
+          Effect.flatMap((pullRequest) =>
+            Effect.andThen(
+              // Not looked up: a retained thread waits for a sweep that verifies its branch.
+              pullRequest === undefined ? Effect.void : settleGroup(pullRequest),
+              Effect.sync(() => {
+                if (!freshlyRead.has(key)) return;
+                for (const [member, close] of shellCloses) {
+                  if (!failedSettles.has(member) && shellClosedThreads.get(member) === close) {
+                    shellClosedThreads.delete(member);
+                  }
+                }
+              }),
+            ),
+          ),
           Effect.catchCauseIf(
             (cause) => !Cause.hasInterruptsOnly(cause),
             (cause) =>
               Effect.logWarning("automatic thread settlement skipped", {
                 threadIds: group.map((thread) => thread.id),
                 cause: Cause.pretty(cause),
-              }).pipe(Effect.andThen(settleDeferred(group))),
+              }).pipe(
+                // A branch unreadable for a day shows no open PR to keep a retained thread.
+                Effect.andThen(
+                  Effect.suspend(() =>
+                    noPullRequestRechecks.failed(key, nowMs, retained) && retained
+                      ? settleGroup(null)
+                      : Effect.void,
+                  ),
+                ),
+              ),
           ),
-        ),
+        );
+      },
       { concurrency: 8, discard: true },
     );
     if (threadId === undefined) noPullRequestRechecks.retain(groups);
@@ -882,7 +927,7 @@ export const make = Effect.gen(function* () {
             (definition) => definition.changeRequestCloseCommand?.test(item.input) === true,
           )
         ) {
-          shellClosedThreads.add(event.threadId);
+          shellClosedThreads.set(event.threadId, event.id);
         }
         return turnItemUpdateCanEndBackgroundWork(item)
           ? enqueueThread(event.threadId)
