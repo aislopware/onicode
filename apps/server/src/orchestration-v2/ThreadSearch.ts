@@ -181,7 +181,7 @@ function buildMessageSearch(
 
 // A thread shows a link as its text, so in-thread find cannot reach a match
 // in the address; messages are matched as they read.
-const MARKDOWN_LINK = /!?\[((?:\\.|[^\\\]\n])*)\]\([^)\s]*\)/g;
+const MARKDOWN_LINK = /!?\[((?:\\.|[^\\[\]\n]|\[(?:\\.|[^\\[\]\n])*\])*)\]\([^)\s]*\)/g;
 const linkText = (_link: string, label: string) => label.replace(/\\([!-/:-@[-`{-~])/g, "$1");
 
 // Result rows show one line, so the match must sit near the start to be seen.

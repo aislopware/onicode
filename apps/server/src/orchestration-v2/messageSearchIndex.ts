@@ -49,9 +49,20 @@ const readableText = (row: string) =>
   `COALESCE(${row}.search_text, json_extract(${row}.payload_json, '$.text'))`;
 
 // A file mention stores `__init__.py` as `[\_\_init\_\_.py](...)`; the index
-// holds the label as it reads, so search can find the name as typed. Escaped
-// brackets stay escaped so the label still ends at its own `](`.
+// holds the label as it reads, so search can find the name as typed. Brackets
+// stay escaped only when unbalanced, so the label still ends at its own `](`.
 const LINK_LABEL = /(!?\[)((?:\\.|[^\\\]\n])*)(\]\([^)\s]*\))/g;
+const MARKDOWN_ESCAPE = /\\([!-/:-@[-`{-~])/g;
+const BALANCED_BRACKETS = /^(?:[^[\]]|\[[^[\]]*\])*$/;
+
+const readableLabel = (label: string) => {
+  const unescaped = label.replace(MARKDOWN_ESCAPE, "$1");
+  return BALANCED_BRACKETS.test(unescaped)
+    ? unescaped
+    : label.replace(MARKDOWN_ESCAPE, (escape, char: string) =>
+        char === "[" || char === "]" || char === "\\" ? escape : char,
+      );
+};
 
 /**
  * What search_text holds for a message: its text as it reads, a quote's
@@ -61,8 +72,7 @@ const LINK_LABEL = /(!?\[)((?:\\.|[^\\\]\n])*)(\]\([^)\s]*\))/g;
 export const readableSearchText = (text: string) => {
   const readable = assistantCitationsToPlainText(text).replace(
     LINK_LABEL,
-    (_link, open: string, label: string, close: string) =>
-      open + label.replace(/\\([*_])/g, "$1") + close,
+    (_link, open: string, label: string, close: string) => open + readableLabel(label) + close,
   );
   return readable === text ? null : readable;
 };
