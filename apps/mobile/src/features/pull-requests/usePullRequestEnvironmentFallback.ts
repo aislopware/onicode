@@ -9,7 +9,10 @@ import {
   type PullRequestEnvironmentTarget,
 } from "./pullRequestEnvironmentFallback";
 
-export function usePullRequestEnvironmentFallback(params: PullRequestEnvironmentTarget) {
+/** Returns the params to read with: a missing host is filled from the first render. */
+export function usePullRequestEnvironmentFallback<Params extends PullRequestEnvironmentTarget>(
+  params: Params,
+): Params {
   const navigation = useNavigation();
   const projects = useProjects();
   const isReady = useConnectionsReady();
@@ -19,8 +22,8 @@ export function usePullRequestEnvironmentFallback(params: PullRequestEnvironment
   const own = projects.find(
     (project) => project.environmentId === params.environmentId && project.id === params.projectId,
   );
-  const host = withProjectChangeRequestHost(params, own?.repositoryIdentity).host;
-  const missingHost = params.host === undefined ? host : undefined;
+  const resolved = withProjectChangeRequestHost(params, own?.repositoryIdentity);
+  const missingHost = params.host === undefined ? resolved.host : undefined;
   // Only while focused: a screen kept as a placeholder throws on any navigation action.
   useFocusEffect(
     useCallback(() => {
@@ -28,4 +31,5 @@ export function usePullRequestEnvironmentFallback(params: PullRequestEnvironment
       else if (missingHost !== undefined) navigation.setParams({ host: missingHost });
     }, [fallback, missingHost, navigation]),
   );
+  return resolved;
 }

@@ -58,6 +58,9 @@ export class PullRequestWatchThreadNotFoundError extends Schema.TaggedError<Pull
   }
 }
 
+// A pressed Watch waits on this read, so a slow host falls back to the link's last sync.
+export const CLIENT_WATCH_READ_DEADLINE = "5 seconds";
+
 type PullRequestWatchCommand = Extract<
   OrchestrationV2Command,
   { readonly type: "thread.pull-request.watch" }
@@ -163,8 +166,13 @@ const make = Effect.gen(function* () {
     if (confirmed?.state === "merged" || confirmed?.state === "closed") {
       return ended(confirmed.state);
     }
+    // A pass the detail could not confirm may be the parent pipeline only; a failure stands.
     const checksState =
-      (confirmed === undefined ? read?.checksState : confirmed.checksState) ?? undefined;
+      (confirmed === undefined
+        ? read?.checksState === "passing"
+          ? undefined
+          : read?.checksState
+        : confirmed.checksState) ?? undefined;
     const start: StartRead = {
       checksState,
       checksPending: checksState === undefined ? undefined : checksState === "pending",
@@ -262,13 +270,17 @@ const make = Effect.gen(function* () {
         candidate.source !== "stack-dismissed" && threadPullRequestKeysEqual(candidate, command),
     );
     if (link?.watch !== undefined || link?.snapshot?.state === "merged") return command;
-    // A read the server cannot make leaves the seed to the link, as before.
+    // A read the server cannot make, or not in time, leaves the seed to the link, as before.
     const start = yield* readStart({
       projectId: thread.projectId,
       host: command.host,
       repository: command.repository,
       number: command.number,
-    }).pipe(Effect.orElseSucceed(() => undefined));
+    }).pipe(
+      Effect.timeoutOption(CLIENT_WATCH_READ_DEADLINE),
+      Effect.map(Option.getOrUndefined),
+      Effect.orElseSucceed(() => undefined),
+    );
     if (start === undefined || start.ended !== undefined) return command;
     if (start.checksPending === undefined && start.headSha === undefined) return command;
     return {
