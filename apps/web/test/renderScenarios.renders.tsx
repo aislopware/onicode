@@ -107,7 +107,6 @@ function timelineFor() {
     latestRun: null,
     turnDiffSummaries: [],
     runs: [],
-    onOpenTurnDiff: () => {},
     onOpenThread: () => {},
     onForkFromRun: async () => {},
     supportsConversationRollback: false,
