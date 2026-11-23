@@ -97,7 +97,10 @@ export function resolveThreadListV2SnoozePresets(
     : [];
 }
 
-/** The app's formatting locale and the system 24-hour clock setting (undefined: the locale decides). */
+/**
+ * The app's formatting locale names the weekday; times follow the device locale and its 24-hour
+ * setting (undefined: the locale decides), like the app's other time labels.
+ */
 interface SnoozeLabelFormat {
   readonly locale?: string;
   readonly is24Hour?: boolean | undefined;
@@ -111,7 +114,7 @@ function presetOptions(
     ...(presets ? { presets } : {}),
     locale,
     formatTime: (date: Date) =>
-      date.toLocaleTimeString(locale, {
+      date.toLocaleTimeString(undefined, {
         hour: "numeric",
         minute: "2-digit",
         ...hourCycleOption(is24Hour),
