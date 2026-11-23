@@ -3389,3 +3389,4 @@ f00893a512	take	adopted upstream's trimAsciiWhitespace refname read over Onicode
 c8f8ad17ac	take	conflict: Onicode shares rtfCodePage between \ansicpg and \cpg; added 0 and 866 there instead of upstream's inline map
 0d2d6a0233	take	conflict: kept Onicode's composerContextReferences import beside upstream's; scenario ported on the desktop (WEB) target
 9f24cac6d4	take	conflict only in test imports (Onicode lacks toBranchActionErrorMessage); mobile already defaults No project to the current checkout
+3b3255ccec	take	taken as is; every Onicode visibility caller passes full runs or pre-filters cancelled-and-started in SQL
