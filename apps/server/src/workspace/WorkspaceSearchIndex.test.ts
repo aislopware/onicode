@@ -1,3 +1,5 @@
+// @effect-diagnostics nodeBuiltinImport:off
+import * as NodeFSP from "node:fs/promises";
 import {
   FileFinder,
   type FileItem,
@@ -22,6 +24,11 @@ import { vi } from "vite-plus/test";
 
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as WorkspaceSearchIndex from "./WorkspaceSearchIndex.ts";
+
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs/promises")>();
+  return { ...actual, stat: vi.fn(actual.stat) };
+});
 
 const testLayer = VcsProcess.layer.pipe(Layer.provideMerge(NodeServices.layer));
 
@@ -628,6 +635,71 @@ it.effect("answers from the last symlink scan while a slow rescan runs", () =>
 
       yield* Deferred.succeed(gate, undefined);
       expect(yield* listedPaths(searchIndex)).toEqual(["new-link.ts", "old-link.ts"]);
+    }),
+  ).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("lists the links beside one whose target hangs, and asks it again later", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      if ((yield* HostProcess.Platform) === "win32") return;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const cwd = yield* fileSystem.makeTempDirectoryScoped({ prefix: "onicode-symlink-stalled-" });
+      yield* fileSystem.makeDirectory(path.join(cwd, "share"));
+      yield* fileSystem.writeFileString(path.join(cwd, "a.ts"), "");
+      yield* fileSystem.symlink("share", path.join(cwd, "stalled"));
+      yield* fileSystem.symlink("a.ts", path.join(cwd, "link.ts"));
+      const stalledPath = path.join(cwd, "stalled");
+      const healthyPath = path.join(cwd, "link.ts");
+      const stalledStarted = yield* Deferred.make<void>();
+      const stalledProbed = Promise.withResolvers<void>();
+      const releases: Array<() => void> = [];
+      const stat = vi.mocked(NodeFSP.stat);
+      const realStat = stat.getMockImplementation()!;
+      // The healthy link answers only once the stalled one is probed too, so a walk that probes
+      // one link at a time never finishes, whichever order the folder lists them in.
+      stat.mockImplementation(((target: string) => {
+        if (target === healthyPath) return stalledProbed.promise.then(() => realStat(target));
+        if (target !== stalledPath) return realStat(target);
+        Deferred.doneUnsafe(stalledStarted, Effect.void);
+        stalledProbed.resolve();
+        return new Promise((resolve) => releases.push(() => resolve(realStat(target))));
+      }) as typeof NodeFSP.stat);
+      // The healthy link resolves with real I/O; the clock moves only after it answered.
+      const linkResolved = yield* Deferred.make<void>();
+      const realpath = NodeFSP.realpath;
+      const realpathSpy = vi.spyOn(NodeFSP, "realpath").mockImplementation((async (
+        target: string,
+      ) => {
+        const resolved = await realpath(target);
+        if (target.endsWith(`${path.sep}link.ts`)) Deferred.doneUnsafe(linkResolved, Effect.void);
+        return resolved;
+      }) as typeof NodeFSP.realpath);
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => {
+          for (const release of releases) release();
+          stat.mockImplementation(realStat);
+          realpathSpy.mockRestore();
+        }),
+      );
+      const { directorySearch } = fakeSymlinkFinder([]);
+
+      const searchIndex = yield* WorkspaceSearchIndex.make(cwd);
+      const listing = yield* Effect.forkChild(listedPaths(searchIndex));
+      yield* Deferred.await(stalledStarted);
+      yield* Deferred.await(linkResolved);
+      yield* TestClock.adjust("1 second");
+      expect(yield* Fiber.join(listing)).toEqual(["link.ts"]);
+
+      // A scan that left a link unanswered is kept for a while, then asked again, though a
+      // watcher is up.
+      yield* TestClock.adjust("2 seconds");
+      expect(yield* listedPaths(searchIndex)).toEqual(["link.ts"]);
+      expect(directorySearch).toHaveBeenCalledTimes(1);
+      yield* TestClock.adjust("30 seconds");
+      expect(yield* listedPaths(searchIndex)).toEqual(["link.ts"]);
+      expect(directorySearch).toHaveBeenCalledTimes(2);
     }),
   ).pipe(Effect.provide(testLayer)),
 );

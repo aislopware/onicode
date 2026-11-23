@@ -25,6 +25,7 @@ import * as Schema from "effect/Schema";
 
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import { isWithinRoot } from "./KnownWorkspaces.ts";
+import { MAX_PENDING_LINK_TARGET_PROBES, resolveLinkTarget } from "./linkTargets.ts";
 import * as TaskFolderStore from "./TaskFolderStore.ts";
 
 /** A tracked folder a thread works in, besides its own cwd. */
@@ -134,18 +135,30 @@ const folderProbes = Effect.gen(function* () {
       Effect.orElseSucceed(() => false),
     );
 
+  // A link to a stalled network mount would hang every probe below it and hold libuv's workers.
+  // One that does not answer in time is left out of this scan; a later scan finds it again.
+  const linksToFolder = (target: string) =>
+    resolveLinkTarget(target).pipe(Effect.map((linked) => linked?.kind === "directory"));
+
   const childFolders = (folder: string) =>
-    fileSystem.readDirectory(folder).pipe(
-      Effect.orElseSucceed((): ReadonlyArray<string> => []),
-      Effect.map((names) =>
-        names
-          .filter((name) => !name.startsWith(".") && name !== "node_modules")
-          .toSorted()
-          .map((name) => path.join(folder, name)),
+    fileSystem.readDirectoryEntries(folder).pipe(
+      Effect.orElseSucceed((): ReadonlyArray<FileSystem.DirectoryEntry> => []),
+      Effect.flatMap((entries) =>
+        Effect.filter(
+          entries
+            .filter(({ name }) => !name.startsWith(".") && name !== "node_modules")
+            .toSorted((left, right) =>
+              left.name < right.name ? -1 : left.name > right.name ? 1 : 0,
+            ),
+          ({ name, type }) =>
+            type === "SymbolicLink" ? linksToFolder(path.join(folder, name)) : Effect.succeed(true),
+          { concurrency: MAX_PENDING_LINK_TARGET_PROBES },
+        ),
       ),
+      Effect.map((children) => children.map(({ name }) => path.join(folder, name))),
     );
 
-  return { exists, realPath, classify, ownsHistory, childFolders };
+  return { exists, realPath, classify, ownsHistory, linksToFolder, childFolders };
 });
 
 const readCodeWorkspaceFolders = Effect.fn("WorkspaceFolders.readCodeWorkspaceFolders")(function* (
@@ -184,17 +197,22 @@ const scanFolders = Effect.fn("WorkspaceFolders.scan")(function* (
 > {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const { exists, realPath, classify, ownsHistory, childFolders } = yield* folderProbes;
+  const { exists, realPath, classify, ownsHistory, linksToFolder, childFolders } =
+    yield* folderProbes;
   const root = path.resolve(
     expandHomePath(input.workspaceRoot.trim(), yield* HostProcess.HomeDirectory),
   );
-  const names = (yield* fileSystem
-    .readDirectory(root)
+  const entries = yield* fileSystem
+    .readDirectoryEntries(root)
     .pipe(
       Effect.mapError(
         () => new WorkspaceFoldersError({ operation: "scan", detail: `Could not read ${root}.` }),
       ),
-    )).toSorted();
+    );
+  const names = entries.map((entry) => entry.name).toSorted();
+  const links = new Set(
+    entries.flatMap((entry) => (entry.type === "SymbolicLink" ? [entry.name] : [])),
+  );
   const codeWorkspaceFile = names.find((name) => name.endsWith(CODE_WORKSPACE_EXTENSION)) ?? null;
   const listed =
     codeWorkspaceFile === null ? null : yield* readCodeWorkspaceFolders(root, codeWorkspaceFile);
@@ -206,6 +224,7 @@ const scanFolders = Effect.fn("WorkspaceFolders.scan")(function* (
     (name) => {
       const folderPath = path.join(root, name);
       return Effect.gen(function* () {
+        if (links.has(name) && !(yield* linksToFolder(folderPath))) return [];
         if (yield* ownsHistory(folderPath)) return [{ path: folderPath, name: boundedName(name) }];
         if (yield* exists(path.join(folderPath, ".git"))) return [];
         const nested = yield* Effect.filter(yield* childFolders(folderPath), ownsHistory, {

@@ -6,7 +6,6 @@ import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as RcMap from "effect/RcMap";
 import * as Schema from "effect/Schema";
@@ -30,6 +29,7 @@ import { normalizeSearchQuery } from "@onicode/shared/searchRanking";
 
 import { expandHomePath } from "@onicode/provider-core/server/pathExpansion";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
+import { MAX_PENDING_LINK_TARGET_PROBES, resolveLinkTarget } from "./linkTargets.ts";
 import * as WorkspacePaths from "./WorkspacePaths.ts";
 import * as WorkspaceSearchIndex from "./WorkspaceSearchIndex.ts";
 
@@ -124,9 +124,6 @@ const IGNORED_FILES_LIMIT = 200;
 /** Paths sent to one `git check-ignore` call when labelling a folder's children. */
 const IGNORE_CHECK_CHUNK_SIZE = 1000;
 
-/** Children classified at once when listing a folder; each symlink costs a realpath and a stat. */
-const SYMLINK_RESOLVE_BATCH_SIZE = 64;
-
 const resolveBrowseTarget = Effect.fn("WorkspaceEntries.resolveBrowseTarget")(function* (
   input: FilesystemBrowseInput,
   path: Path.Path,
@@ -155,112 +152,11 @@ const resolveBrowseTarget = Effect.fn("WorkspaceEntries.resolveBrowseTarget")(fu
   );
 });
 
-// A link to an unresponsive network share must not hold up the local entries beside it.
-const SYMLINK_TARGET_STAT_TIMEOUT = Duration.seconds(1);
-// A timed-out stat cannot be cancelled and keeps a libuv worker (4 by default) busy, so cap
-// target stats in flight to leave a worker for other fs work. Three, so links to healthy
-// folders still resolve while two stats hang on a stalled mount.
-const MAX_PENDING_SYMLINK_TARGET_STATS = 3;
-
-/**
- * Whether a link's target is a folder, with at most `max` target stats in flight. Overlapping
- * browses, as typing makes, share one stat per link, queued callers included. A full pool makes
- * callers wait for a slot until their signal aborts, which reads as "not a folder"; a stat that
- * outlived a caller's timeout, or a pool held only by such stats, answers that at once.
- */
-export function makeSymlinkTargetStats(
-  isDirectory: (fullPath: string) => Promise<boolean>,
-  max = MAX_PENDING_SYMLINK_TARGET_STATS,
-) {
-  const pending = new Map<string, { readonly result: Promise<boolean>; stuck: boolean }>();
-  // First in, first woken for a free slot; a woken caller that starts no stat passes its wake
-  // on. Callers queued for a link whose stat starts join it instead.
-  type Waiter = { readonly fullPath: string; reason?: "slot" | "joined"; wake?: () => void };
-  const waiters: Waiter[] = [];
-  const release = (waiter: Waiter, reason: "slot" | "joined") => {
-    waiter.reason = reason;
-    waiter.wake?.();
-  };
-  const wakeNext = () => {
-    const waiter = waiters.shift();
-    if (waiter) release(waiter, "slot");
-  };
-  const untilAborted = <A>(promise: Promise<A>, signal: AbortSignal, onAbort: () => void) =>
-    new Promise<A | undefined>((resolve) => {
-      const abort = () => {
-        onAbort();
-        resolve(undefined);
-      };
-      signal.addEventListener("abort", abort, { once: true });
-      void promise.then((value) => {
-        signal.removeEventListener("abort", abort);
-        resolve(value);
-      });
-    });
-  const awaitStat = async (
-    entry: { readonly result: Promise<boolean>; stuck: boolean },
-    signal: AbortSignal,
-  ) =>
-    (await untilAborted(entry.result, signal, () => {
-      entry.stuck = true;
-    })) ?? false;
-  return async (fullPath: string, signal: AbortSignal): Promise<boolean> => {
-    let woken = false;
-    const passOn = () => {
-      if (woken) wakeNext();
-    };
-    for (;;) {
-      if (signal.aborted) {
-        passOn();
-        return false;
-      }
-      const shared = pending.get(fullPath);
-      if (shared) {
-        passOn();
-        return shared.stuck ? false : awaitStat(shared, signal);
-      }
-      if (pending.size < max) break;
-      if ([...pending.values()].every((entry) => entry.stuck)) {
-        passOn();
-        return false;
-      }
-      const wake = Promise.withResolvers<void>();
-      const waiter: Waiter = { fullPath, wake: wake.resolve };
-      waiters.push(waiter);
-      await untilAborted(wake.promise, signal, () => {
-        const queued = waiters.indexOf(waiter);
-        if (queued !== -1) waiters.splice(queued, 1);
-        // Already given a free slot: hand it on.
-        else if (waiter.reason === "slot") wakeNext();
-      });
-      woken = !signal.aborted && waiter.reason === "slot";
-    }
-    const entry = {
-      result: isDirectory(fullPath)
-        .catch(() => false)
-        .finally(() => {
-          pending.delete(fullPath);
-          wakeNext();
-        }),
-      stuck: false,
-    };
-    pending.set(fullPath, entry);
-    for (const waiter of waiters.filter((queued) => queued.fullPath === fullPath)) {
-      waiters.splice(waiters.indexOf(waiter), 1);
-      release(waiter, "joined");
-    }
-    return awaitStat(entry, signal);
-  };
-}
-
 /** @public */
 export const make = Effect.gen(function* () {
   const path = yield* Path.Path;
   const workspacePaths = yield* WorkspacePaths.WorkspacePaths;
   const workspaceSearchIndexes = yield* WorkspaceSearchIndex.WorkspaceSearchIndexMap;
-  const symlinkTargetIsDirectory = makeSymlinkTargetStats((fullPath) =>
-    NodeFSP.stat(fullPath).then((stats) => stats.isDirectory()),
-  );
   const vcsProcess = yield* VcsProcess.VcsProcess;
 
   const normalizeWorkspaceRoot = Effect.fn("WorkspaceEntries.normalizeWorkspaceRoot")(function* (
@@ -373,13 +269,10 @@ export const make = Effect.gen(function* () {
         const resolvedSymlinks = yield* Effect.forEach(
           symlinkCandidates,
           (candidate) =>
-            Effect.promise((signal) => symlinkTargetIsDirectory(candidate.fullPath, signal)).pipe(
-              Effect.timeoutOption(SYMLINK_TARGET_STAT_TIMEOUT),
-              Effect.map((isDirectory) =>
-                Option.getOrElse(isDirectory, () => false) ? candidate : null,
-              ),
+            resolveLinkTarget(candidate.fullPath).pipe(
+              Effect.map((target) => (target?.kind === "directory" ? candidate : null)),
             ),
-          { concurrency: MAX_PENDING_SYMLINK_TARGET_STATS },
+          { concurrency: MAX_PENDING_LINK_TARGET_PROBES },
         );
         for (const candidate of resolvedSymlinks) {
           if (candidate !== null) entries.push(candidate);
@@ -475,14 +368,15 @@ export const make = Effect.gen(function* () {
         ? []
         : [relativeRoot.split(path.sep).join("/")];
     });
-    const matches = yield* Effect.promise(() =>
-      Promise.all(
-        worktreeRoots.map(async (relativeRoot) => {
-          const candidate = `${relativeRoot}/${relativePath}`;
-          const stat = await NodeFSP.stat(path.join(realCwd, candidate)).catch(() => null);
-          return stat?.isFile() ? candidate : null;
-        }),
-      ),
+    const matches = yield* Effect.forEach(
+      worktreeRoots,
+      (relativeRoot) => {
+        const candidate = `${relativeRoot}/${relativePath}`;
+        return resolveLinkTarget(path.join(realCwd, candidate)).pipe(
+          Effect.map((target) => (target?.kind === "file" ? candidate : null)),
+        );
+      },
+      { concurrency: MAX_PENDING_LINK_TARGET_PROBES },
     );
     return matches
       .filter((candidate) => candidate !== null)
@@ -522,7 +416,7 @@ export const make = Effect.gen(function* () {
                   relativePath: directoryPath,
                 })
                 .pipe(Effect.mapError(toError));
-        const { entries, throughSymlink, nestedGitRoots } = yield* Effect.tryPromise({
+        const { root, directory, children, throughSymlink } = yield* Effect.tryPromise({
           try: async () => {
             const root = await NodeFSP.realpath(normalizedCwd);
             const directory = await NodeFSP.realpath(target.absolutePath);
@@ -536,90 +430,89 @@ export const make = Effect.gen(function* () {
             ) {
               throw new Error("Directory must be inside the workspace and outside .git.");
             }
-            const children = await NodeFSP.readdir(directory, { withFileTypes: true });
-            const isSameOrInside = (parent: string, child: string) => {
-              const relativeChild = path.relative(parent, child);
-              return (
-                relativeChild !== ".." &&
-                !relativeChild.startsWith(`..${path.sep}`) &&
-                !path.isAbsolute(relativeChild)
-              );
-            };
-            // Reject canonical ancestors so "Expand all folders" cannot follow a cycle.
-            let visitedFolders: Promise<ReadonlyArray<string>> | undefined;
-            const loadVisitedFolders = () =>
-              (visitedFolders ??= (async () => {
-                const folders = [root];
-                let current = normalizedCwd;
-                for (const segment of target.relativePath.split("/").filter(Boolean)) {
-                  current = path.join(current, segment);
-                  folders.push(await NodeFSP.realpath(current));
-                }
-                return folders;
-              })());
-            const resolveSymlinkKind = async (
-              name: string,
-            ): Promise<ProjectEntry["kind"] | undefined> => {
-              const resolved = await NodeFSP.realpath(path.join(directory, name)).catch(
-                () => undefined,
-              );
-              if (
-                resolved === undefined ||
-                !isSameOrInside(root, resolved) ||
-                path.relative(root, resolved).split(path.sep).includes(".git")
-              ) {
-                return undefined;
-              }
-              const stat = await NodeFSP.stat(resolved).catch(() => undefined);
-              if (stat?.isFile()) return "file";
-              if (!stat?.isDirectory()) return undefined;
-              const folders = await loadVisitedFolders();
-              return folders.some((folder) => isSameOrInside(resolved, folder))
-                ? undefined
-                : "directory";
-            };
-            // Bound filesystem work for directories such as pnpm node_modules.
-            const kinds: Array<ProjectEntry["kind"] | undefined> = [];
-            for (let offset = 0; offset < children.length; offset += SYMLINK_RESOLVE_BATCH_SIZE) {
-              kinds.push(
-                ...(await Promise.all(
-                  children
-                    .slice(offset, offset + SYMLINK_RESOLVE_BATCH_SIZE)
-                    .map(async (child): Promise<ProjectEntry["kind"] | undefined> => {
-                      if (child.name === ".git") return undefined;
-                      if (child.isDirectory()) return "directory";
-                      if (child.isFile()) return "file";
-                      return child.isSymbolicLink() ? resolveSymlinkKind(child.name) : undefined;
-                    }),
-                )),
-              );
-            }
-            const nestedGitRoots: Array<string> = [];
-            const segments = target.relativePath.split("/").filter(Boolean);
-            for (let index = 1; index <= segments.length; index += 1) {
-              const candidate = segments.slice(0, index).join("/");
-              const dotGit = await NodeFSP.lstat(path.join(normalizedCwd, candidate, ".git")).catch(
-                () => null,
-              );
-              if (dotGit) nestedGitRoots.push(candidate);
-            }
             return {
-              nestedGitRoots,
-              entries: children.flatMap((child, index): ProjectEntry[] => {
-                const kind = kinds[index];
-                if (kind === undefined) return [];
-                return [
-                  {
-                    path: target.relativePath ? `${target.relativePath}/${child.name}` : child.name,
-                    kind,
-                  },
-                ];
-              }),
+              root,
+              directory,
+              children: await NodeFSP.readdir(directory, { withFileTypes: true }),
               // Git refuses to classify paths beyond a symbolic link.
               throughSymlink: relative !== target.relativePath.split("/").join(path.sep),
             };
           },
           catch: toError,
+        });
+        const isSameOrInside = (parent: string, child: string) => {
+          const relativeChild = path.relative(parent, child);
+          return (
+            relativeChild !== ".." &&
+            !relativeChild.startsWith(`..${path.sep}`) &&
+            !path.isAbsolute(relativeChild)
+          );
+        };
+        // Reject canonical ancestors so "Expand all folders" cannot follow a cycle.
+        let visitedFolders: Promise<ReadonlyArray<string>> | undefined;
+        const loadVisitedFolders = () =>
+          (visitedFolders ??= (async () => {
+            const folders = [root];
+            let current = normalizedCwd;
+            for (const segment of target.relativePath.split("/").filter(Boolean)) {
+              current = path.join(current, segment);
+              folders.push(await NodeFSP.realpath(current));
+            }
+            return folders;
+          })());
+        const linkKinds = new Map(
+          yield* Effect.forEach(
+            children.filter((child) => child.name !== ".git" && child.isSymbolicLink()),
+            (child) =>
+              Effect.gen(function* () {
+                const linkTarget = yield* resolveLinkTarget(path.join(directory, child.name));
+                const realPath = linkTarget?.realPath;
+                if (
+                  !linkTarget ||
+                  realPath === undefined ||
+                  !isSameOrInside(root, realPath) ||
+                  path.relative(root, realPath).split(path.sep).includes(".git")
+                ) {
+                  return undefined;
+                }
+                if (linkTarget.kind === "file") return "file" as const;
+                const folders = yield* Effect.tryPromise({
+                  try: loadVisitedFolders,
+                  catch: toError,
+                });
+                return folders.some((folder) => isSameOrInside(realPath, folder))
+                  ? undefined
+                  : ("directory" as const);
+              }).pipe(Effect.map((kind) => [child.name, kind] as const)),
+            { concurrency: MAX_PENDING_LINK_TARGET_PROBES },
+          ),
+        );
+        const entries = children.flatMap((child): ProjectEntry[] => {
+          if (child.name === ".git") return [];
+          const kind = child.isDirectory()
+            ? "directory"
+            : child.isFile()
+              ? "file"
+              : linkKinds.get(child.name);
+          if (kind === undefined) return [];
+          return [
+            {
+              path: target.relativePath ? `${target.relativePath}/${child.name}` : child.name,
+              kind,
+            },
+          ];
+        });
+        const nestedGitRoots = yield* Effect.promise(async () => {
+          const roots: Array<string> = [];
+          const segments = target.relativePath.split("/").filter(Boolean);
+          for (let index = 1; index <= segments.length; index += 1) {
+            const candidate = segments.slice(0, index).join("/");
+            const dotGit = await NodeFSP.lstat(path.join(normalizedCwd, candidate, ".git")).catch(
+              () => null,
+            );
+            if (dotGit) roots.push(candidate);
+          }
+          return roots;
         });
         let gitRoot = "";
         let gitPrefix = "";
