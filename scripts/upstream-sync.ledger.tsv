@@ -3333,3 +3333,4 @@ f29c824614	take	fix(server): Full access Codex no longer asks before dangerous c
 29a33f8827	take	fix(antigravity): recognize attachments with MIME parameters
 27ab8d49eb	take	fix(antigravity): keep shortened question text valid Unicode
 b9c3109710	take	fix(cursor): preserve ended turns when connection retries exhaust
+074a0d35be	take	fix(server): startup PR backfill looks up each repository branch once
