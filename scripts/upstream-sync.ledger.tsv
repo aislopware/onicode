@@ -3427,3 +3427,4 @@ fd44bde571	take	taken; conflict was Onicode's OfficeArchive Map in place of JSZi
 2ee7a4f337	take	adopted upstream's cursorless-read-is-newest model over Onicode's fromStartForClient (CLI now sends afterPosition -1, so the peer-side rewrite was dead); kept Onicode's forward paging for linked-scope cursorless reads: wire compat with older linked peers that follow only hasMore
 5b643a4913	take	taken as is
 7d8a145c6c	take	taken; conflict was only placement next to Onicode's dev-home guards (isDevHome, sharesInstallHome), both kept; the leftovers record lives in this home's stateDir, so seeded dev copies never inherit one
+302e94a3f1	take	taken; conflict was only Onicode's reportBugClick beside it, kept
