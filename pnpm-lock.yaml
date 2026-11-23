@@ -333,7 +333,7 @@ packageExtensionsChecksum: sha256-+v8ntounVLrYFu5whiqOiF5wsCM8sIM8cT3HaXVONag=
 pnpmfileChecksum: sha256-V4l4scZuq2tJGzv9CIPYF0cGBGNRBI8wBVBZg42BsCM=
 
 patchedDependencies:
-  '@cursor/sdk@1.4.2': d9747bbf2d8fa7529b74b690087b70b3b2662fcba0d4d3148afc3b956171b54a
+  '@cursor/sdk@1.4.2': caa7fd9ce847cbae996855b9c6035055f7d0acc542234032aa3585c39818d918
   '@e2e-dev/web@0.16.1': d4a718e516e19ad4db63cddd1e97439910bb260100dcde5de6213ecf75bc5b6b
   '@effect/platform-node-shared@4.1.5': 5c85315aa18de2923bf58387cc351322ad3761bc580e467f7a197ba7865268b8
   '@effect/vitest@4.1.5': 78875d7920cfc710feed7e07e016ac9ff899acffcf40cb6342f11c08f28aa2b7
@@ -780,7 +780,7 @@ importers:
         version: 0.3.329(@anthropic-ai/sdk@0.93.0(zod@4.6.7))(@modelcontextprotocol/sdk@1.32.2(supports-color@10.2.2)(zod@4.6.7))(zod@4.6.7)
       '@cursor/sdk':
         specifier: 1.4.2
-        version: 1.4.2(patch_hash=d9747bbf2d8fa7529b74b690087b70b3b2662fcba0d4d3148afc3b956171b54a)(zod@4.6.7)
+        version: 1.4.2(patch_hash=caa7fd9ce847cbae996855b9c6035055f7d0acc542234032aa3585c39818d918)(zod@4.6.7)
       '@effect/platform-node':
         specifier: 4.1.5
         version: 4.1.5(bufferutil@4.1.0)(effect@4.1.5)(redis@6.2.1(@opentelemetry/api@1.10.0))(utf-8-validate@6.0.6)
@@ -1655,7 +1655,7 @@ importers:
     dependencies:
       '@cursor/sdk':
         specifier: 1.4.2
-        version: 1.4.2(patch_hash=d9747bbf2d8fa7529b74b690087b70b3b2662fcba0d4d3148afc3b956171b54a)(zod@4.6.7)
+        version: 1.4.2(patch_hash=caa7fd9ce847cbae996855b9c6035055f7d0acc542234032aa3585c39818d918)(zod@4.6.7)
       '@onicode/contracts':
         specifier: workspace:*
         version: link:../contracts
@@ -13188,7 +13188,7 @@ snapshots:
   '@cursor/sdk-win32-x64@1.4.2':
     optional: true
 
-  '@cursor/sdk@1.4.2(patch_hash=d9747bbf2d8fa7529b74b690087b70b3b2662fcba0d4d3148afc3b956171b54a)(zod@4.6.7)':
+  '@cursor/sdk@1.4.2(patch_hash=caa7fd9ce847cbae996855b9c6035055f7d0acc542234032aa3585c39818d918)(zod@4.6.7)':
     dependencies:
       '@bufbuild/protobuf': 1.10.0
       '@connectrpc/connect': 1.7.0(@bufbuild/protobuf@1.10.0)
