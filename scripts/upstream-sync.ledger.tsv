@@ -3440,3 +3440,4 @@ f274d47150	take	patch rebased onto Onicode's gt-react-native 11.4.24 (applies un
 7e624c0c8d	take	kept Onicode's requestContextMenuOnMenuKey over upstream's openContextMenuFromKeyboard: a PointerEvent keeps button -1 so it needs no module WeakSet or contextMenuSourceOf change, and it skips Alt/Ctrl/Cmd chords; adopted upstream's href && faviconHost guard on chat links so the key is not swallowed where no menu opens
 630de36779	take	taken; upstream's launchBrowser hunk left out (Onicode removed browser launching here); new Finder test sits beside Onicode's editor-only ELECTRON_RUN_AS_NODE test
 7474a284e2	take	taken as is
+5f506c4262	take	taken as is
