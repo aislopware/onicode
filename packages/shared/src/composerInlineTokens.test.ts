@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
   collectComposerInlineTokens as collectWithoutMath,
@@ -242,5 +242,24 @@ describe("composerFileLinksToPlainText", () => {
     );
     const links = "See [docs](https://example.com) and [the config](src/config.ts)";
     expect(composerFileLinksToPlainText(links)).toBe(links);
+  });
+
+  it("composes a macOS NFD file name as its chip shows it", () => {
+    const decomposed = "notes/한글.md".normalize("NFD");
+    expect(composerFileLinksToPlainText(`Read ${serializeComposerFileLink(decomposed)}`)).toBe(
+      "Read 한글.md",
+    );
+  });
+
+  it("leaves a file link written inside a formula as formula source", () => {
+    const formula = `$$\n\\text{see ${serializeComposerFileLink("src/foo.ts")} first}\n$$`;
+    const text = `${formula}\nthen ${serializeComposerFileLink("src/bar.ts")}`;
+    expect(composerFileLinksToPlainText(text, markdownMathRanges)).toBe(`${formula}\nthen bar.ts`);
+    // A label's escaped `_` is no formula delimiter, so plain previews skip the parse.
+    const findMath = vi.fn(markdownMathRanges);
+    expect(
+      composerFileLinksToPlainText(`Fix ${serializeComposerFileLink("src/__init__.py")}`, findMath),
+    ).toBe("Fix __init__.py");
+    expect(findMath).not.toHaveBeenCalled();
   });
 });
