@@ -3350,3 +3350,4 @@ c18f82c4bd	take	kept Onicode's RTF hidden-text fix (d7fb204abe), same logic and 
 e6ae5810a3	take	scenario ported to desktop target (ControlOrMeta+Alt+B for the panel shortcut); kept Onicode's composer node-select test block
 192ef9b7b2	take	taken as is
 b50e769811	skip	only gates workflow MCP Events milestones for outside clients; Onicode has no MilestoneEvents (declined, see fb23f12f1f) and no agent feedback scope
+dc2f73af48	take	taken as is; checked against Onicode's task-folder branch claim, rename path unchanged
