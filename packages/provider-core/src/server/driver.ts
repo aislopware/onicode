@@ -52,7 +52,7 @@ export interface ProviderInstance {
   /** `snapshotForCwd` can return `workspaceModels`: a folder's own config adds models. */
   readonly listsWorkspaceModels?: boolean;
   /**
-   * Cwds whose workspace skills may have changed. The registry rescans only cwds already
+   * Cwds whose workspace skills or models may have changed. The registry rescans only cwds already
    * requested. The stream must end when the instance is torn down.
    */
   readonly workspaceRescans?: Stream.Stream<string>;

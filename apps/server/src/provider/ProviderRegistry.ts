@@ -1204,11 +1204,12 @@ export const layer = Layer.effect(
       const workspaceSnapshotOf = (candidate: ServerProvider | undefined) =>
         candidate?.workspaceSnapshots?.find((s) => s.cwd === input.cwd);
       const changedSince = (
-        held: Pick<ServerProvider, "skills" | "slashCommands"> | undefined,
-        next: Pick<ServerProvider, "skills" | "slashCommands"> | undefined,
+        held: ReturnType<typeof workspaceSnapshotOf>,
+        next: ReturnType<typeof workspaceSnapshotOf>,
       ) =>
         !(
           Equal.equals(next?.skills, held?.skills) &&
+          Equal.equals(next?.models, held?.models) &&
           Equal.equals(next?.slashCommands, held?.slashCommands)
         );
       // What clients saw before the awaited scan, which may already have published the change.
