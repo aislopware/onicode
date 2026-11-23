@@ -3385,3 +3385,4 @@ ba588ef663	take	main.tsx keeps only the layout tracker (no cloud/Clerk imports);
 58e309e75b	take	adapted: appContext commit/rollback moved into Onicode's recordPromptDeliveryFor/Once, so prompts released on assistant.idle commit it too; AcpPromptAppContext interface
 49ce71efa3	take	taken as is
 f00893a512	take	adopted upstream's trimAsciiWhitespace refname read over Onicode's newline-only strip (same result for valid refs, one shared helper); kept Onicode's review mergeBase and annotateEncoded MCP description; dropped agentFeedback import
+135c78a278	take	taken as is
