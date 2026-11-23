@@ -221,6 +221,44 @@ export function createDraft(
   };
 }
 
+/** What an edit loaded, sent so a save is refused once another client changed it. */
+export function savedTaskFields(draft: ScheduledTaskDraft) {
+  return draft.task === null
+    ? undefined
+    : {
+        title: draft.task.title,
+        prompt: draft.task.prompt,
+        enabled: draft.task.enabled,
+        schedule: draft.task.schedule,
+      };
+}
+
+/**
+ * After a save another client's change refused: fields the user left alone take the task's
+ * current values, the user's edits stay, and the next save checks against what is stored now.
+ */
+export function rebaseScheduledTaskDraft(
+  draft: ScheduledTaskDraft,
+  current: ScheduledTask,
+): ScheduledTaskDraft {
+  const loaded = draft.task;
+  if (loaded === null) return draft;
+  const scheduleUntouched =
+    JSON.stringify(draft.schedule) === JSON.stringify(scheduleDraftForTask(loaded));
+  return {
+    ...draft,
+    ...(draft.title === loaded.title ? { title: current.title } : {}),
+    ...(draft.prompt === loaded.prompt ? { prompt: current.prompt } : {}),
+    ...(draft.enabled === loaded.enabled ? { enabled: current.enabled } : {}),
+    ...(scheduleUntouched ? { schedule: scheduleDraftForTask(current) } : {}),
+    ...(draft.threadId === loaded.threadId ? { threadId: current.threadId } : {}),
+    ...(draft.threadMode === scheduledTaskThreadMode(loaded)
+      ? { threadMode: scheduledTaskThreadMode(current) }
+      : {}),
+    task: current,
+  };
+}
+
 export function editDraft(task: ScheduledTask): ScheduledTaskDraft {
   return {
     task,

@@ -1,6 +1,7 @@
 import { msg, T, useGT, useLocale, useMessages, Var } from "gt-react-native";
 import * as Dialog from "../../components/ui/Dialog";
-import { useAtomValue } from "@effect/atom-react";
+import { RegistryContext, useAtomValue } from "@effect/atom-react";
+import { AsyncResult } from "effect/reactivity";
 import {
   AuthOrchestrationOperateScope,
   clampManagedRuntimeMode,
@@ -27,7 +28,7 @@ import { normalizeProjectPathForDispatch, resolvePastedPath } from "@onicode/sha
 import { scheduledTaskWorktreeBaseRef } from "@onicode/client-runtime/scheduled-task-worktree";
 import { scheduleTimeZoneLabel } from "@onicode/client-runtime/scheduled-task-time-zone";
 import type { MessageResolver } from "../../i18n/messages";
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import {
   useFocusEffect,
   useNavigation,
@@ -69,6 +70,8 @@ import {
   changeDraftProject,
   editDraft,
   parseIntervalMinutes,
+  rebaseScheduledTaskDraft,
+  savedTaskFields,
   scheduledTaskDefaultModel,
   scheduleFromDraft,
   unbindDraftFromThread,
@@ -638,9 +641,9 @@ function TaskForm({
   const timeOfDayLabel = formatScheduledTimeOfDay(draft.schedule.timeOfDay, is24Hour);
   const { readEditor } = useScheduledTaskEditor();
   const navigation = useNavigation<NativeStackNavigationProp<ScheduledTaskRoutes>>();
-  const tasks = useEnvironmentQuery(
-    serverEnvironment.scheduledTasksLive({ environmentId, input: {} }),
-  );
+  const tasksAtom = serverEnvironment.scheduledTasksLive({ environmentId, input: {} });
+  const tasks = useEnvironmentQuery(tasksAtom);
+  const registry = useContext(RegistryContext);
   // Pinned first. The chosen project stays listed after it is archived.
   const projects = useProjects()
     .filter(
@@ -774,6 +777,7 @@ function TaskForm({
         clampManagedRuntimeMode(config?.managedPolicy, draft.runtimeMode) ?? draft.runtimeMode,
       interactionMode: draft.task?.interactionMode ?? "default",
       creationSource: draft.task?.creationSource ?? "mobile",
+      ...(draft.task === null ? {} : { expected: savedTaskFields(draft) }),
     };
     submissionPending.current = true;
     setSaving(true);
@@ -781,6 +785,11 @@ function TaskForm({
     setSaving(false);
     if (result._tag === "Failure") {
       submissionPending.current = false;
+      // Another client's change refuses the save; keep the user's edits over what is stored now.
+      const stored = AsyncResult.getOrElse(registry.get(tasksAtom), () => null)?.tasks.find(
+        (task) => task.id === draft.task?.id,
+      );
+      if (stored !== undefined) setDraft((latest) => rebaseScheduledTaskDraft(latest, stored));
       failure(gt("Could not save task"), result);
       return;
     }

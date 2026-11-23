@@ -1437,3 +1437,65 @@ it.effect("a run interrupted right after it reserves the task does not block the
     }).pipe(Effect.provide(layer));
   }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
 );
+
+it.effect("an editor's save is refused once the fields it loaded changed elsewhere", () =>
+  Effect.gen(function* () {
+    const layer = ScheduledTaskService.layer.pipe(
+      Layer.provide(
+        Layer.mergeAll(
+          ManagedPolicy.layerTest(),
+          Layer.mock(ThreadLaunchService.ThreadLaunchService)({}),
+          Layer.mock(ThreadManagementService.ThreadManagementService)({}),
+          Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
+            namedProjectsRoot: "/projects",
+            isScratchProject: () => Effect.succeed(false),
+          }),
+          NodeCrypto.layer,
+          Layer.succeed(Scheduler.Scheduler, { register: () => Effect.void }),
+        ),
+      ),
+    );
+    yield* Effect.gen(function* () {
+      const service = yield* ScheduledTaskService.ScheduledTaskService;
+      const { task } = yield* service.upsert({
+        title: "Triage",
+        prompt: "Triage new issues",
+        enabled: true,
+        schedule: { type: "fixed_time", timeOfDay: "09:00", weekdays: [1, 3, 5] },
+        projectId: ProjectId.make("project:test"),
+        workspaceStrategy: { type: "root" },
+        modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
+        runtimeMode: "full-access",
+        interactionMode: "default",
+      });
+      const loaded = {
+        title: task.title,
+        prompt: task.prompt,
+        enabled: task.enabled,
+        schedule: task.schedule,
+      };
+      const save = { ...task, requireExisting: true, prompt: "Triage and label", expected: loaded };
+
+      // An agent pauses the task while the editor is open: the editor's save must not undo it.
+      yield* service.setEnabled({ id: task.id, enabled: false });
+      const refused = yield* service.upsert(save).pipe(Effect.flip);
+      assert.include(refused.message, "The task changed while saving");
+      const stored = (yield* service.list()).tasks.find((entry) => entry.id === task.id)!;
+      assert.deepInclude(stored, { enabled: false, prompt: "Triage new issues" });
+
+      // Saved against what is stored now, it goes through.
+      yield* service.upsert({ ...save, enabled: false, expected: { ...loaded, enabled: false } });
+      const saved = (yield* service.list()).tasks.find((entry) => entry.id === task.id)!;
+      assert.deepInclude(saved, { enabled: false, prompt: "Triage and label" });
+
+      // A checked save cannot bring back a task deleted meanwhile, even without requireExisting.
+      yield* service.delete({ id: task.id });
+      const { requireExisting: _, ...unchecked } = save;
+      const gone = yield* service
+        .upsert({ ...unchecked, enabled: false, expected: { ...loaded, enabled: false } })
+        .pipe(Effect.flip);
+      assert.include(gone.message, "Schedule task not found");
+      assert.deepEqual((yield* service.list()).tasks, []);
+    }).pipe(Effect.provide(layer));
+  }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
+);

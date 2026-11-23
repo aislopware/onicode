@@ -25,6 +25,7 @@ import {
   matchesScheduledTaskScope,
   scheduleFromDraft,
   scheduleLabel,
+  rebaseDraft,
   taskToDraft,
   unbindDraftFromThread,
 } from "./scheduledTasksSettings.logic";
@@ -177,6 +178,26 @@ describe("editing scheduled task branch settings", () => {
   it("leaves the base automatic when a task without a worktree switches to one", () => {
     const draft = taskToDraft({ ...legacyTask, workspaceStrategy: { type: "root" } });
     expect(draft.baseRef).toBe("");
+  });
+});
+
+describe("a scheduled task save refused by another client's change", () => {
+  it("keeps the user's edits and takes the stored values of the fields left alone", () => {
+    const loaded = { ...legacyTask, schedule: { type: "fixed_time", timeOfDay: "09:00" } } as const;
+    const edited = { ...taskToDraft(loaded), prompt: "Review twice" };
+    // An agent paused the task and moved its time while the form was open.
+    const current = {
+      ...loaded,
+      enabled: false,
+      schedule: { type: "fixed_time", timeOfDay: "10:30" },
+    } as const;
+    const rebased = rebaseDraft(edited, current);
+    expect(rebased).toMatchObject({ prompt: "Review twice", enabled: false, timeOfDay: "10:30" });
+    expect(rebased.saved).toMatchObject({ enabled: false, schedule: current.schedule });
+
+    // A field the user changed keeps their value even when it also changed elsewhere.
+    const retimed = rebaseDraft({ ...taskToDraft(loaded), timeOfDay: "08:00" }, current);
+    expect(retimed.timeOfDay).toBe("08:00");
   });
 });
 

@@ -6,6 +6,7 @@ import {
   type ScheduledTask,
   type ScheduledTaskSchedule,
   type ScheduledTaskThreadMode,
+  type ScheduledTaskUpsertInput,
   type ScheduledTaskUpsertSchedule,
   scheduledTaskThreadMode,
   type ModelSelection,
@@ -132,7 +133,18 @@ export interface DraftState {
   readonly interactionMode: ProviderInteractionMode;
   /** Retain the source selection's provider options when the picker leaves instanceId:model unchanged. */
   readonly baseModelSelection: ModelSelection | null;
+  /** What the form loaded, so a save is refused once another client changed it. */
+  readonly saved: ScheduledTaskSavedFields | null;
 }
+
+type ScheduledTaskSavedFields = NonNullable<ScheduledTaskUpsertInput["expected"]>;
+
+const savedFields = (task: ScheduledTask): ScheduledTaskSavedFields => ({
+  title: task.title,
+  prompt: task.prompt,
+  enabled: task.enabled,
+  schedule: task.schedule,
+});
 
 /** Formats a date as a `datetime-local` input value in the browser's time zone. */
 export function toDateTimeLocalValue(date: Date): string {
@@ -224,12 +236,55 @@ export function taskToDraft(task: ScheduledTask): DraftState {
     runtimeMode: task.runtimeMode,
     interactionMode: task.interactionMode,
     baseModelSelection: task.modelSelection,
+    saved: savedFields(task),
+  };
+}
+
+const SCHEDULE_FIELDS = [
+  "scheduleMode",
+  "intervalMinutes",
+  "timeOfDay",
+  "runAt",
+  "savedRunAt",
+  "weekdays",
+] as const;
+
+const sameValue = (left: unknown, right: unknown) =>
+  left instanceof Set && right instanceof Set
+    ? left.size === right.size && [...left].every((value) => right.has(value))
+    : left === right;
+
+/**
+ * After a save another client's change refused: fields the user left alone take the task's
+ * current values, the user's edits stay, and the next save checks against what is stored now.
+ */
+export function rebaseDraft(draft: DraftState, current: ScheduledTask): DraftState {
+  if (draft.saved === null) return draft;
+  const loaded = taskToDraft({ ...current, ...draft.saved });
+  const now = taskToDraft(current);
+  const untouched = (key: keyof DraftState) => sameValue(draft[key], loaded[key]);
+  return {
+    ...draft,
+    ...(untouched("title") ? { title: now.title } : {}),
+    ...(untouched("prompt") ? { prompt: now.prompt } : {}),
+    ...(untouched("enabled") ? { enabled: now.enabled } : {}),
+    ...(SCHEDULE_FIELDS.every(untouched)
+      ? {
+          scheduleMode: now.scheduleMode,
+          intervalMinutes: now.intervalMinutes,
+          timeOfDay: now.timeOfDay,
+          runAt: now.runAt,
+          savedRunAt: now.savedRunAt,
+          weekdays: now.weekdays,
+        }
+      : {}),
+    saved: now.saved,
   };
 }
 
 // Fields a mode leaves behind when the user switches away and back are not edits.
 function relevantDraftFields(draft: DraftState, defaultModelKey: string) {
-  const { weekdays: _weekdays, ...fields } = draft;
+  const { weekdays: _weekdays, saved: _saved, ...fields } = draft;
   return {
     ...fields,
     modelKey: draft.modelKey || defaultModelKey,

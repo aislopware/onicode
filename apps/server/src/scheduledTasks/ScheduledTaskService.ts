@@ -163,11 +163,12 @@ const UNSUCCESSFUL_RUN_ERRORS = {
 } as const;
 const localNow = DateTime.withCurrentZoneLocal(DateTime.nowInCurrentZone);
 
-type ScheduledTaskExpectation = Pick<
-  ScheduledTask,
-  "projectId" | "runtimeMode" | "interactionMode"
-> &
-  Partial<Pick<ScheduledTask, "title" | "prompt" | "enabled" | "schedule">>;
+type ScheduledTaskExpectation = Partial<
+  Pick<
+    ScheduledTask,
+    "projectId" | "runtimeMode" | "interactionMode" | "title" | "prompt" | "enabled" | "schedule"
+  >
+>;
 
 function nextRunAt(
   task: Pick<ScheduledTask, "enabled" | "schedule">,
@@ -527,15 +528,19 @@ export const layer = Layer.effect(
           AND (
             ${destination.expected === undefined ? 1 : 0} = 1
             OR (
-              scheduled_tasks.project_id = ${destination.expected?.projectId ?? null}
-              AND scheduled_tasks.runtime_mode = ${destination.expected?.runtimeMode ?? null}
-              AND scheduled_tasks.interaction_mode = ${destination.expected?.interactionMode ?? null}
+              (${destination.expected?.projectId === undefined ? 1 : 0} = 1
+                OR scheduled_tasks.project_id = ${destination.expected?.projectId ?? null})
+              AND (${destination.expected?.runtimeMode === undefined ? 1 : 0} = 1
+                OR scheduled_tasks.runtime_mode = ${destination.expected?.runtimeMode ?? null})
+              AND (${destination.expected?.interactionMode === undefined ? 1 : 0} = 1
+                OR scheduled_tasks.interaction_mode = ${destination.expected?.interactionMode ?? null})
               AND (${destination.expected?.title === undefined ? 1 : 0} = 1
                 OR scheduled_tasks.title = ${destination.expected?.title ?? null})
               AND (${destination.expected?.prompt === undefined ? 1 : 0} = 1
                 OR scheduled_tasks.prompt = ${destination.expected?.prompt ?? null})
               AND (${destination.expected?.enabled === undefined ? 1 : 0} = 1
                 OR scheduled_tasks.enabled = ${destination.expected?.enabled ? 1 : 0})
+              -- schedule_json is always JSON.stringify of a decoded schedule, so text equality holds.
               AND (${destination.expected?.schedule === undefined ? 1 : 0} = 1
                 OR scheduled_tasks.schedule_json = ${
                   destination.expected?.schedule === undefined
@@ -1308,6 +1313,7 @@ export const layer = Layer.effect(
         // A save checked against a binding cannot bring back a task deleted meanwhile.
         input.requireExisting === true ||
           expectedThreadId !== undefined ||
+          input.expected !== undefined ||
           options?.expected !== undefined,
         scheduleUnchanged ? existingTask.schedule : null,
         threadId === null && input.unbindThread === true ? (existingTask?.threadId ?? null) : null,
@@ -1319,7 +1325,10 @@ export const layer = Layer.effect(
             NodeUtil.isDeepStrictEqual(workspaceStrategy, existingTask.workspaceStrategy),
           keepsModelSelection,
           expectedThreadId,
-          expected: options?.expected,
+          expected:
+            input.expected === undefined && options?.expected === undefined
+              ? undefined
+              : { ...input.expected, ...options?.expected },
         },
       );
       yield* notifyChanged;
