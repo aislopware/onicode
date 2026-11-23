@@ -1508,7 +1508,9 @@ const CHAT_MARKDOWN_COMPONENTS = {
               void readLocalApi()?.shell.openExternal(href);
             });
           }}
-          onKeyDown={requestContextMenuOnMenuKey}
+          onKeyDown={(event) => {
+            if (href && faviconHost) requestContextMenuOnMenuKey(event);
+          }}
           onContextMenu={(event) => {
             if (!href || !faviconHost) return;
             event.preventDefault();
