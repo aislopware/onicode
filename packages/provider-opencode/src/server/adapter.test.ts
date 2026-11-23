@@ -2630,11 +2630,9 @@ describe("OpenCodeAdapterV2", () => {
           yield* push({ type: "session.idle", properties: { sessionID: root } });
           yield* Fiber.join(foreground!);
           assert.equal(promptIds.length, 2, "the foreground prompt is submitted after the wake");
-          const snapshot = yield* harness.runtime.readThreadSnapshot({
-            providerThread: harness.providerThread,
-          });
+          const turns = yield* harness.awaitTurns((seen) => seen.length >= 2);
           assert.equal(
-            snapshot.providerTurns.at(-1)?.status,
+            turns.at(-1)?.status,
             "running",
             "another background reply cannot complete the foreground before its own response",
           );
