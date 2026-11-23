@@ -111,7 +111,8 @@ function AgentActivity(
     workingCount === 0
       ? null
       : environment.isStale
-        ? `${workingCount} out of date`
+        ? // An expired count cannot say how many agents still work.
+          "Out of date"
         : `${workingCount} working`;
   const pressing = [
     attentionCount > 0 ? `${attentionCount} need${attentionCount === 1 ? "s" : ""} you` : null,
@@ -147,7 +148,7 @@ function AgentActivity(
     "No agent activity";
   // How many agents share the state the island's glyph shows.
   const heroCount =
-    hero === undefined
+    hero === undefined || hero.phase === "stale"
       ? 0
       : needsUser(hero.phase)
         ? attentionCount
