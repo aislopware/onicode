@@ -532,9 +532,11 @@ export const resolveLauncherPath = Effect.gen(function* () {
     return path.resolve(cwd, invokedAs);
   }
   const delimiter = platform === "win32" ? ";" : ":";
-  for (const directory of (environment["PATH"] ?? "").split(delimiter)) {
-    if (directory.length === 0) continue;
-    const candidate = path.resolve(cwd, directory, invokedAs);
+  const searchPath = environment["PATH"] ?? "";
+  for (const directory of searchPath.split(delimiter)) {
+    // POSIX shells search the working directory for an empty entry of a nonempty PATH.
+    if (directory.length === 0 && (platform === "win32" || searchPath.length === 0)) continue;
+    const candidate = path.resolve(cwd, directory || ".", invokedAs);
     const info = yield* fs.stat(candidate).pipe(Effect.option);
     // Like the shell, pass over directories and non-executable files named the same.
     if (
@@ -640,12 +642,13 @@ export const findPosixLauncher = Effect.fn("service.pinned_runtime.find_posix_la
       .readFileString(path.join(path.dirname(input.versionsDir), "launchers"))
       .pipe(Effect.orElseSucceed(() => ""));
     const cwd = yield* HostProcess.WorkingDirectory;
+    const searchPath = environment["PATH"] ?? "";
     const candidates = [
-      // PATH first, resolved like the shell does: it decides which onicode the user runs.
-      ...(environment["PATH"] ?? "")
-        .split(":")
-        .filter((directory) => directory.length > 0)
-        .map((directory) => path.resolve(cwd, directory, "onicode")),
+      // PATH first, resolved like the shell does: it decides which onicode the user runs. An empty
+      // entry of a nonempty PATH is the working directory; an empty PATH searches nothing.
+      ...(searchPath.length === 0 ? [] : searchPath.split(":")).map((directory) =>
+        path.resolve(cwd, directory || ".", "onicode"),
+      ),
       path.join(
         environment["ONICODE_INSTALL_BIN_DIR"] ||
           path.join(yield* HostProcess.HomeDirectory, ".local", "bin"),

@@ -3456,7 +3456,7 @@ d1a6c35f73	take	keep PowerPoint slides with alternate relationship prefixes
 c977a70fd6	take	server metrics machine load and A/A noise floors; comment points at 16_performance-regressions.md
 20419366c3	take	server metrics working scenario
 059d1bdeb9	take	install docs point at ACP Registry agents; kept Onicode's Command Code row
-8f724d6329	take	empty PATH entries in CLI invocation and triage; cloud launcher and relay client hunks dropped (removed surfaces)
+8f724d6329	take	empty PATH entries in CLI invocation, triage and the launcher (upstream cloud/ is Onicode service/); relay client hunk dropped (removed surface)
 962bda2eb7	skip	test-only change to the cross-tab browser history test, which Onicode never took (ffb42a0b77 skipped: desktop has one document)
 f1e390665a	take	server metrics default reconnect is 3 devices; storm behind --stress
 4280147f58	take	CLI --option examples per provider; outside-agents.md hunk dropped (Onicode removed that page with the outside-app MCP wizard)
