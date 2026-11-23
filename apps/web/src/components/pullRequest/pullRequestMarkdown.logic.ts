@@ -1,4 +1,7 @@
-import { changeRequestReferenceAutolinker } from "@onicode/client-runtime/pull-request-references";
+import {
+  changeRequestFileBase,
+  changeRequestReferenceAutolinker,
+} from "@onicode/client-runtime/pull-request-references";
 import { sourceControlClients } from "@onicode/client-runtime/source-control-clients";
 import type { Nodes } from "hast";
 
@@ -22,30 +25,42 @@ export function splitPullRequestBody(body: string): ReadonlyArray<PullRequestBod
 const EMOJI_SHORTCODE_PROVIDERS = new Set(["github", "gitlab"]);
 
 const NO_EXTENSIONS: MarkdownExtensions = {};
+// Least recently used first; each pushed head adds a key, so old ones fall out.
 const markdownExtensions = new Map<string, MarkdownExtensions>();
+const MARKDOWN_EXTENSIONS_LIMIT = 32;
 
 /**
  * One extension object per repository, so every comment of a pull request shares one markdown
  * renderer and its parse cache instead of parsing again on each render.
  */
 export function pullRequestMarkdownExtensions(
-  changeRequest: { readonly provider: string; readonly url: string } | null,
+  changeRequest: {
+    readonly provider: string;
+    readonly url: string;
+    readonly headSha?: string | undefined;
+    /** Path links then open on the forge at `headSha`: the checkout holds none of these files. */
+    readonly borrowedCheckout?: boolean | undefined;
+  } | null,
 ): MarkdownExtensions {
   if (changeRequest === null) return NO_EXTENSIONS;
   const repositoryUrl = sourceControlClients.parseChangeRequestUrl(changeRequest.url)?.link
     .repositoryUrl;
   if (repositoryUrl === undefined) return NO_EXTENSIONS;
-  const key = `${changeRequest.provider}\u0000${repositoryUrl}`;
-  let extensions = markdownExtensions.get(key);
-  if (extensions === undefined) {
-    extensions = {
-      changeRequest: {
-        repositoryUrl,
-        autolinks: changeRequestReferenceAutolinker(changeRequest),
-      },
-      githubEmoji: EMOJI_SHORTCODE_PROVIDERS.has(changeRequest.provider),
-    };
-    markdownExtensions.set(key, extensions);
+  const fileBase = changeRequest.borrowedCheckout ? changeRequestFileBase(changeRequest) : null;
+  const key = `${changeRequest.provider}\u0000${repositoryUrl}\u0000${fileBase ?? ""}`;
+  const extensions = markdownExtensions.get(key) ?? {
+    changeRequest: {
+      repositoryUrl,
+      autolinks: changeRequestReferenceAutolinker(changeRequest),
+      fileBase,
+    },
+    githubEmoji: EMOJI_SHORTCODE_PROVIDERS.has(changeRequest.provider),
+  };
+  markdownExtensions.delete(key);
+  markdownExtensions.set(key, extensions);
+  if (markdownExtensions.size > MARKDOWN_EXTENSIONS_LIMIT) {
+    const oldest = markdownExtensions.keys().next();
+    if (!oldest.done) markdownExtensions.delete(oldest.value);
   }
   return extensions;
 }

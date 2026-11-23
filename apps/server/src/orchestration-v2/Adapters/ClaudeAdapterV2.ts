@@ -45,6 +45,7 @@ import {
   type CanUseTool,
   type ElicitationRequest,
   type ElicitationResult,
+  deleteSession as deleteClaudeSession,
   forkSession as forkClaudeSession,
   type EffortLevel,
   type ForkSessionOptions,
@@ -166,6 +167,7 @@ import * as Path from "effect/Path";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
+import * as Scope from "effect/Scope";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import * as ChildProcess from "effect/process/ChildProcess";
@@ -373,7 +375,13 @@ function measuredClaudeUsageFields(usage: ClaudeUsageCounts): ReadonlyArray<Clau
 export interface ClaudePromptCache {
   readonly ttlMs: number;
   readonly expiresAt: DateTime.Utc;
+  /** Only read, never seen written, so `ttlMs` is the shortest TTL rather than a known one. */
+  readonly guessed?: true;
 }
+
+/** A cache that lapsed before `at` says nothing about the one a later request reads. */
+const liveClaudePromptCache = (known: ClaudePromptCache | undefined, at: DateTime.Utc) =>
+  known !== undefined && DateTime.isLessThan(at, known.expiresAt) ? known : undefined;
 
 /**
  * When the prompt cache lapses after a request started at `requestedAt`. A read refreshes the
@@ -381,18 +389,20 @@ export interface ClaudePromptCache {
  * request writes a shorter suffix.
  */
 export function nextClaudePromptCache(
-  known: ClaudePromptCache | undefined,
+  previous: ClaudePromptCache | undefined,
   usage: {
     readonly cache_read_input_tokens?: number | null | undefined;
     readonly cache_creation?: ClaudeCacheCreation | null | undefined;
   },
   requestedAt: DateTime.Utc,
 ): ClaudePromptCache | undefined {
+  const known = liveClaudePromptCache(previous, requestedAt);
+  const writtenTtlMs = claudePromptCacheTtlMs(usage.cache_creation);
   const ttlMs = Math.max(
-    claudePromptCacheTtlMs(usage.cache_creation) ?? 0,
+    writtenTtlMs ?? 0,
     (claudeTokenCount(usage.cache_read_input_tokens) ?? 0) > 0 ? (known?.ttlMs ?? 5 * 60_000) : 0,
   );
-  if (ttlMs === 0) return known;
+  if (ttlMs === 0) return previous;
   const expiresAt = DateTime.add(requestedAt, { milliseconds: ttlMs });
   return {
     ttlMs: Math.max(ttlMs, known?.ttlMs ?? 0),
@@ -400,6 +410,9 @@ export function nextClaudePromptCache(
       known !== undefined && DateTime.isGreaterThan(known.expiresAt, expiresAt)
         ? known.expiresAt
         : expiresAt,
+    ...(writtenTtlMs === undefined && (known === undefined || known.guessed === true)
+      ? { guessed: true as const }
+      : {}),
   };
 }
 
@@ -414,11 +427,21 @@ export function claudeProviderTurnTokenUsage(
   limits: ClaudeContextLimits,
   updatedAt: string,
   requestedAt?: DateTime.Utc,
+  knownPromptCache?: ClaudePromptCache,
 ) {
   const inputTokens = claudeMessageInputTokens(usage);
   const outputTokens = claudeTokenCount(usage.output_tokens) ?? 0;
   const cachedInputTokens = claudeTokenCount(usage.cache_read_input_tokens) ?? 0;
-  const promptCacheTtlMs = claudePromptCacheTtlMs(usage.cache_creation);
+  // A read reports no TTL; the one this process saw the cache written with holds for the prefix
+  // it read, even while the request writes a shorter suffix.
+  const writtenTtlMs = claudePromptCacheTtlMs(usage.cache_creation);
+  const known =
+    requestedAt === undefined ? undefined : liveClaudePromptCache(knownPromptCache, requestedAt);
+  const readTtlMs = cachedInputTokens > 0 && known?.guessed !== true ? known?.ttlMs : undefined;
+  const promptCacheTtlMs =
+    writtenTtlMs === undefined && readTtlMs === undefined
+      ? undefined
+      : Math.max(writtenTtlMs ?? 0, readTtlMs ?? 0);
   // The cache lifetime starts with the request, not when its response ends.
   const promptCacheExpiresAt =
     promptCacheTtlMs === undefined || requestedAt === undefined
@@ -864,6 +887,7 @@ class ClaudeMcpRegistrationTimeoutError extends Schema.TaggedError<ClaudeMcpRegi
 }
 
 const CLAUDE_SESSION_FORK_DEADLINE = "30 seconds";
+const CLAUDE_LATE_SESSION_FORK_CLEANUP_DEADLINE = "2 minutes";
 
 class ClaudeSessionForkTimeoutError extends Schema.TaggedError<ClaudeSessionForkTimeoutError>()(
   "ClaudeSessionForkTimeoutError",
@@ -1643,10 +1667,11 @@ const claudeEnvironmentIn = (
 // The SDK reads CLAUDE_CONFIG_DIR from process.env. Isolate custom homes in a
 // worker so concurrent providers keep the server's environment.
 const runClaudeWorker = Effect.fn("runClaudeWorker")(function* (input: {
-  readonly method: "forkSession" | "getSessionMessages";
+  readonly method: "forkSession" | "getSessionMessages" | "deleteSession";
   readonly sessionId: string;
   readonly options?: ForkSessionOptions;
   readonly environment: NodeJS.ProcessEnv;
+  readonly timeout?: Duration.Input;
 }) {
   const path = yield* Path.Path;
   const fromSource = import.meta.url.endsWith(".ts");
@@ -1679,7 +1704,7 @@ const runClaudeWorker = Effect.fn("runClaudeWorker")(function* (input: {
     input.method === "getSessionMessages"
       ? { maxStdoutBytes: Number.POSITIVE_INFINITY }
       : undefined,
-  ).pipe(Effect.timeout("30 seconds"));
+  ).pipe(Effect.timeout(input.timeout ?? "30 seconds"));
   if (result.code !== 0) {
     return yield* new ClaudeAgentSdkQueryRunnerError({
       method: input.method,
@@ -1689,11 +1714,46 @@ const runClaudeWorker = Effect.fn("runClaudeWorker")(function* (input: {
   return result.stdout;
 });
 
-const forkClaudeSessionInWorker = Effect.fn("forkClaudeSessionInWorker")(function* (
+const claudeSessionLocation = (options: ForkSessionOptions) =>
+  options.dir === undefined ? {} : { dir: options.dir };
+
+// A fork its caller stops waiting for, past the deadline or interrupted, keeps running in
+// `scope`, so its late transcript is deleted.
+const forkClaudeSessionInWorker = (input: ClaudeAgentSdkSessionForkInput, scope: Scope.Scope) =>
+  Effect.uninterruptibleMask((restore) => forkClaudeSessionInWorkerMasked(input, scope, restore));
+
+const forkClaudeSessionInWorkerMasked = Effect.fn("forkClaudeSessionInWorker")(function* (
   input: ClaudeAgentSdkSessionForkInput,
+  scope: Scope.Scope,
+  restore: <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>,
 ) {
-  return yield* runClaudeWorker({ ...input, method: "forkSession" }).pipe(
-    Effect.catchTags({ TimeoutError: () => Effect.fail(new ClaudeSessionForkTimeoutError()) }),
+  const forking = yield* runClaudeWorker({
+    ...input,
+    method: "forkSession",
+    timeout: CLAUDE_LATE_SESSION_FORK_CLEANUP_DEADLINE,
+  }).pipe(Effect.forkIn(scope));
+  const deleteLateFork = Fiber.join(forking).pipe(
+    Effect.flatMap(decodeClaudeHistoryFork),
+    Effect.flatMap((late) =>
+      runClaudeWorker({
+        method: "deleteSession",
+        sessionId: late.sessionId,
+        options: claudeSessionLocation(input.options),
+        environment: input.environment,
+      }),
+    ),
+    Effect.ignore,
+    Effect.forkIn(scope),
+  );
+  return yield* restore(
+    Fiber.join(forking).pipe(
+      Effect.timeoutOrElse({
+        duration: CLAUDE_SESSION_FORK_DEADLINE,
+        orElse: () => Effect.fail(new ClaudeSessionForkTimeoutError()),
+      }),
+    ),
+  ).pipe(
+    Effect.onError(() => deleteLateFork),
     Effect.flatMap(decodeClaudeHistoryFork),
   );
 });
@@ -1732,6 +1792,7 @@ export const layerQueryRunner: Layer.Layer<
     const random = yield* SecureRandom.SecureRandom;
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
     const path = yield* Path.Path;
+    const layerScope = yield* Effect.scope;
     const { native: nativeEventLogger } = yield* ProviderEventLoggers.ProviderEventLoggers;
     const agentScope = yield* AgentScope;
     const providerProcesses = yield* ProviderProcesses.ProviderProcesses;
@@ -2417,48 +2478,94 @@ export const layerQueryRunner: Layer.Layer<
           ForkSessionResult & { readonly headMessageId?: string },
           unknown
         > = usesHostConfig
-          ? Effect.tryPromise({
-              try: () => forkClaudeSession(input.sessionId, input.options),
-              catch: (cause) => queryRunnerError(cause, "forkSession"),
-            }).pipe(
-              // The SDK's file work cannot be cancelled; a late fork leaves an unreferenced transcript.
-              Effect.timeoutOrElse({
-                duration: CLAUDE_SESSION_FORK_DEADLINE,
-                orElse: () => Effect.fail(new ClaudeSessionForkTimeoutError()),
-              }),
-            )
-          : forkClaudeSessionInWorker(input).pipe(
+          ? Effect.uninterruptibleMask((restore) => {
+              const forking = forkClaudeSession(input.sessionId, input.options);
+              const deleteLateFork = Effect.tryPromise({
+                try: async () => {
+                  const late = await forking;
+                  await deleteClaudeSession(late.sessionId, claudeSessionLocation(input.options));
+                },
+                catch: (cause) => queryRunnerError(cause, "deleteSession"),
+              }).pipe(
+                Effect.timeout(CLAUDE_LATE_SESSION_FORK_CLEANUP_DEADLINE),
+                Effect.ignore,
+                Effect.forkIn(layerScope),
+              );
+              return restore(
+                Effect.tryPromise({
+                  try: () => forking,
+                  catch: (cause) => queryRunnerError(cause, "forkSession"),
+                }).pipe(
+                  Effect.timeoutOrElse({
+                    duration: CLAUDE_SESSION_FORK_DEADLINE,
+                    orElse: () => Effect.fail(new ClaudeSessionForkTimeoutError()),
+                  }),
+                ),
+              ).pipe(
+                // The SDK's file work cannot be cancelled, so a fork the caller stops waiting
+                // for, past the deadline or interrupted, has its late transcript deleted.
+                Effect.onError(() => deleteLateFork),
+              );
+            })
+          : forkClaudeSessionInWorker(input, layerScope).pipe(
               Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
               Effect.provideService(Path.Path, path),
             );
-        const result = yield* fork.pipe(
-          Effect.mapError((cause) => queryRunnerError(cause, "forkSession")),
-        );
-        yield* logProtocolEvent({
-          direction: "incoming",
-          stage: "decoded",
-          payload: {
-            type: "session.forked",
-            sessionId: result.sessionId,
-          },
+        const location = claudeSessionLocation(input.options);
+        const deleteFork = (sessionId: string) =>
+          (usesHostConfig
+            ? Effect.tryPromise({
+                try: () => deleteClaudeSession(sessionId, location),
+                catch: (cause) => queryRunnerError(cause, "deleteSession"),
+              })
+            : runClaudeWorker({
+                method: "deleteSession",
+                sessionId,
+                options: location,
+                environment: input.environment,
+              }).pipe(
+                Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+                Effect.provideService(Path.Path, path),
+              )
+          ).pipe(
+            Effect.timeout(CLAUDE_LATE_SESSION_FORK_CLEANUP_DEADLINE),
+            Effect.ignore,
+            Effect.forkIn(layerScope),
+          );
+        const finishFork = Effect.fnUntraced(function* (
+          result: ForkSessionResult & { readonly headMessageId?: string },
+        ) {
+          yield* logProtocolEvent({
+            direction: "incoming",
+            stage: "decoded",
+            payload: {
+              type: "session.forked",
+              sessionId: result.sessionId,
+            },
+          });
+          // The SDK remaps copied UUIDs. Capture the inherited head before the
+          // fork's first run appends messages.
+          const headMessageId = usesHostConfig
+            ? yield* Effect.tryPromise({
+                try: () => getSessionMessages(result.sessionId, location),
+                catch: (cause) => queryRunnerError(cause, "getSessionMessages"),
+              }).pipe(
+                Effect.timeout(CLAUDE_SESSION_FORK_DEADLINE),
+                Effect.map((messages) => messages.at(-1)?.uuid),
+                Effect.orElseSucceed(() => undefined),
+              )
+            : result.headMessageId;
+          return headMessageId === undefined ? result : { ...result, headMessageId };
         });
-        // The SDK remaps copied UUIDs. Capture the inherited head before the
-        // fork's first run appends messages.
-        const headMessageId = usesHostConfig
-          ? yield* Effect.tryPromise({
-              try: () =>
-                getSessionMessages(
-                  result.sessionId,
-                  input.options.dir === undefined ? {} : { dir: input.options.dir },
-                ),
-              catch: (cause) => queryRunnerError(cause, "getSessionMessages"),
-            }).pipe(
-              Effect.timeout(CLAUDE_SESSION_FORK_DEADLINE),
-              Effect.map((messages) => messages.at(-1)?.uuid),
-              Effect.orElseSucceed(() => undefined),
-            )
-          : result.headMessageId;
-        return headMessageId === undefined ? result : { ...result, headMessageId };
+        // A caller that stops waiting once the fork exists never learns its id, so it is deleted.
+        return yield* Effect.uninterruptibleMask((restore) =>
+          restore(fork).pipe(
+            Effect.mapError((cause) => queryRunnerError(cause, "forkSession")),
+            Effect.flatMap((result) =>
+              restore(finishFork(result)).pipe(Effect.onError(() => deleteFork(result.sessionId))),
+            ),
+          ),
+        );
       }),
       subagentLaunchToolUseId: Effect.fn("ClaudeAgentSdkQueryRunner.subagentLaunchToolUseId")(
         function* (input: ClaudeAgentSdkSubagentLookupInput) {
@@ -7169,6 +7276,10 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             context.input.modelSelection,
             context.autoCompactWindow,
           );
+          const model = promptCacheModel(context.input.modelSelection);
+          const knownPromptCache = promptCacheByNativeThread
+            .get(context.nativeThreadId)
+            ?.get(model);
           const tokenUsage =
             typeof usage === "number"
               ? { usedTokens: usage, ...limits, updatedAt: DateTime.formatIso(now) }
@@ -7177,17 +7288,17 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                   limits,
                   DateTime.formatIso(now),
                   context.streamUsage?.requestedAt,
+                  knownPromptCache,
                 );
           if (typeof usage !== "number") {
             if (claudeMessageInputTokens(usage) <= 0) return;
             context.compactionTokens = undefined;
             const requestedAt = context.streamUsage?.requestedAt;
-            const model = promptCacheModel(context.input.modelSelection);
             if (requestedAt !== undefined) {
               const caches =
                 promptCacheByNativeThread.get(context.nativeThreadId) ??
                 new Map<string, ClaudePromptCache>();
-              const next = nextClaudePromptCache(caches.get(model), usage, requestedAt);
+              const next = nextClaudePromptCache(knownPromptCache, usage, requestedAt);
               if (next !== undefined) {
                 caches.set(model, next);
                 promptCacheByNativeThread.set(context.nativeThreadId, caches);
@@ -12352,6 +12463,20 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             context.appContextOffered = undefined;
             forgetSteerNotes(context);
             if (context.streamUsage !== null) context.streamUsage.usage = null;
+            // The compaction's own request read the cached prefix, but streams no message_start.
+            const cacheModel = promptCacheModel(context.input.modelSelection);
+            const caches =
+              promptCacheByNativeThread.get(context.nativeThreadId) ??
+              new Map<string, ClaudePromptCache>();
+            const compactedCache = nextClaudePromptCache(
+              caches.get(cacheModel),
+              { cache_read_input_tokens: 1 },
+              compaction.startedAt ?? now,
+            );
+            if (compactedCache !== undefined) {
+              caches.set(cacheModel, compactedCache);
+              promptCacheByNativeThread.set(context.nativeThreadId, caches);
+            }
             const postTokens = message.compact_metadata.post_tokens;
             const postTokenCount = claudeTokenCount(postTokens);
             const beforeTokenCount = claudeTokenCount(message.compact_metadata.pre_tokens);
@@ -14534,17 +14659,28 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             .realPath(turnInput.runtimePolicy.cwd ?? ".")
             .pipe(Effect.orElseSucceed(() => turnInput.runtimePolicy.cwd));
           // The file read here, inside the installation gate, is the one this process runs: an
-          // update landing before its first `init` frame must still count as newer.
-          const openQueryRuntime = Effect.zipWith(
-            readInstalledBuild,
-            queryRunner.open({
+          // update landing before its first `init` frame must still count as newer. Resolved per
+          // open, so a Windows `claude.exe` put earlier on PATH runs from the next process.
+          const openQueryRuntime = Effect.gen(function* () {
+            const installedAtOpen = yield* readInstalledBuild;
+            const binaryPath = queryOptions.pathToClaudeCodeExecutable;
+            const session = yield* queryRunner.open({
               threadId: turnInput.threadId,
               providerSessionId: input.providerSessionId,
-              options: queryOptions,
+              options:
+                binaryPath === undefined
+                  ? queryOptions
+                  : {
+                      ...queryOptions,
+                      pathToClaudeCodeExecutable: yield* resolveClaudeSdkExecutablePath(
+                        binaryPath,
+                        adapterOptions.environment,
+                      ),
+                    },
               ...(turnInput.resume ? { resume: true } : {}),
-            }),
-            (installedAtOpen, session) => ({ session, installedAtOpen }),
-          );
+            });
+            return { session, installedAtOpen };
+          });
           // The SDK spawns the CLI per turn, so only the open waits for a provider update.
           const { session: querySession, installedAtOpen } = yield* (
             adapterOptions.installationGate === undefined
@@ -16716,10 +16852,7 @@ export const createClaudeAdapterV2 = Effect.fn("ClaudeAdapterV2Driver.create")(
     const claudeEnvironment = yield* makeClaudeEnvironment(config, baseEnvironment);
     const path = yield* Path.Path;
     const random = yield* SecureRandom.SecureRandom;
-    const binaryPath = yield* resolveClaudeSdkExecutablePath(
-      expandHomePath(config.binaryPath, yield* HostProcess.HomeDirectory),
-      claudeEnvironment,
-    );
+    const binaryPath = expandHomePath(config.binaryPath, yield* HostProcess.HomeDirectory);
     return yield* makeClaudeAdapterV2({
       instanceId,
       settings: { ...config, enabled, binaryPath },

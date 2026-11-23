@@ -35,6 +35,7 @@ import {
   type TerminalSessionStatus,
   type TerminalSummary,
   type TerminalWriteInput,
+  type ProjectId,
   ClaudeSettings,
   CodexSettings,
   ProviderInstanceId,
@@ -245,7 +246,7 @@ export class TerminalManager extends Context.Service<
     readonly hasActiveSubprocess: (input: { readonly threadId: string }) => Effect.Effect<boolean>;
 
     /** Every session the manager holds, exited ones included. */
-    readonly list: Effect.Effect<ReadonlyArray<TerminalSummary>>;
+    readonly list: Effect.Effect<ReadonlyArray<TerminalListEntry>>;
 
     readonly subscribe: (
       listener: (event: TerminalEvent) => Effect.Effect<void>,
@@ -302,11 +303,17 @@ interface TerminalStartInput {
   readonly rows: number;
 }
 
+/** A session as the server sees it; `projectId` stays off the wire summary. */
+export interface TerminalListEntry extends TerminalSummary {
+  readonly projectId: ProjectId | null;
+}
+
 interface TerminalSessionState {
   threadId: string;
   terminalId: string;
   cwd: string;
   worktreePath: string | null;
+  projectId: ProjectId | null;
   status: TerminalSessionStatus;
   pid: number | null;
   history: BoundedTerminalHistory;
@@ -3360,6 +3367,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         terminalId,
         cwd: input.cwd,
         worktreePath: input.worktreePath ?? null,
+        projectId: input.projectId ?? null,
         status: "starting",
         pid: null,
         history,
@@ -3409,6 +3417,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
 
     const liveSession = existing.value;
     if (input.stopOnSettle !== undefined) liveSession.stopOnSettle = input.stopOnSettle;
+    if (input.projectId !== undefined) liveSession.projectId = input.projectId;
     const nextRuntimeEnv = normalizedRuntimeEnv(input.env);
     const currentRuntimeEnv = liveSession.runtimeEnv;
     const targetCols = input.cols ?? liveSession.cols;
@@ -3511,6 +3520,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     }
 
     const session = existing.value;
+    if (input.projectId !== undefined) session.projectId = input.projectId;
     const targetCols = input.cols ?? session.cols;
     const targetRows = input.rows ?? session.rows;
 
@@ -3547,6 +3557,15 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
           ),
       ),
     );
+
+  const list = readManagerState.pipe(
+    Effect.map((state) =>
+      [...state.sessions.values()].map((session): TerminalListEntry => ({
+        ...summary(session),
+        projectId: session.projectId,
+      })),
+    ),
+  );
 
   const readTerminalMetadata = (input: {
     readonly threadId: string;
@@ -4054,7 +4073,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     closeIdle,
     closeOnSettle,
     hasActiveSubprocess,
-    list: readAllTerminalMetadata(),
+    list,
     subscribe,
     subscribeMetadata,
   });

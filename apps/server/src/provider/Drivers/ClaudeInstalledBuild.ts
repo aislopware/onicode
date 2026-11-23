@@ -7,6 +7,8 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 
+import { resolveClaudeSdkExecutablePath } from "./ClaudeExecutable.ts";
+
 // A managed Claude launcher leaves this marker beside itself, and records the build its channel
 // publishes under the user's data directory each time it reads the channel.
 const MANAGED_LAUNCHER_MARKER = ".claude-managed";
@@ -33,14 +35,19 @@ export const readClaudeInstalledBuild = Effect.fn("ClaudeInstalledBuild.read")(f
 ): Effect.fn.Return<ClaudeInstalledBuild, never, FileSystem.FileSystem | Path.Path> {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  // An absolute path is what runs, as the SDK's own `cli.js` past a Windows `claude.cmd` shim,
-  // which PATHEXT would not count as a command. A bare name is looked up uncached, so a `claude`
-  // an installer just put earlier on PATH counts at once.
-  const resolved = path.isAbsolute(binaryPath)
-    ? binaryPath
-    : yield* resolveCommandPath(binaryPath, { env: environment }).pipe(
-        Effect.provideService(CommandResolutionCache, new Map()),
-      );
+  // On Windows this is the file the SDK spawns, past a `claude.cmd` shim, which PATHEXT would not
+  // count as a command. Elsewhere a bare name is looked up uncached. Either way a `claude` an
+  // installer just put earlier on PATH counts at once.
+  const resolved =
+    (yield* HostProcess.Platform) === "win32"
+      ? yield* resolveClaudeSdkExecutablePath(binaryPath, environment).pipe(
+          Effect.map((entry) => (path.isAbsolute(entry) ? entry : null)),
+        )
+      : path.isAbsolute(binaryPath)
+        ? binaryPath
+        : yield* resolveCommandPath(binaryPath, { env: environment }).pipe(
+            Effect.provideService(CommandResolutionCache, new Map()),
+          );
   if (resolved === null) return { executable: undefined, managedPublishedVersion: undefined };
   const [info, managed] = yield* Effect.all(
     [

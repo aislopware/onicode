@@ -37,7 +37,11 @@ import { scoreSubsequenceMatch } from "@onicode/shared/searchRanking";
 
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import { type IgnoreDecision, type IgnoreFile, parseIgnoreFile } from "./IgnorePatterns.ts";
-import { MAX_PENDING_LINK_TARGET_PROBES, resolveLinkTarget } from "./linkTargets.ts";
+import {
+  LINK_PROBE_CROWDED,
+  MAX_PENDING_LINK_TARGET_PROBES,
+  resolveLinkTargetOrCrowded,
+} from "./linkTargets.ts";
 
 // fff-node's native library stays external; single-executables require disk packages instead of importing them.
 const requireForFff = NodeModule.createRequire(import.meta.url);
@@ -406,6 +410,8 @@ interface ScannedDirectory {
   readonly linkPaths: ReadonlyArray<string>;
   /** False when a link's target, such as one on a stalled mount, did not answer in time. */
   readonly linksAnswered: boolean;
+  /** True when a link went unasked because other probes held the pool until its time ran out. */
+  readonly linksCrowded: boolean;
   /** A nested repository (or the workspace's own), whose ignore rules own what is below it. */
   readonly isRepository: boolean;
   readonly ignoreFile: string | undefined;
@@ -445,13 +451,14 @@ const scanDirectory = Effect.fn("WorkspaceSearchIndex.scanDirectory")(function* 
   // Concurrent, so a link on a stalled mount holds up its siblings for one timeout, not each.
   const targets = yield* Effect.forEach(
     linkPaths,
-    (entryPath) => resolveLinkTarget(path.join(cwd, entryPath)),
+    (entryPath) => resolveLinkTargetOrCrowded(path.join(cwd, entryPath), { link: true }),
     { concurrency: MAX_PENDING_LINK_TARGET_PROBES },
   );
   const linksAnswered = targets.every((target) => target !== undefined);
+  const linksCrowded = targets.includes(LINK_PROBE_CROWDED);
   const links = linkPaths.flatMap((entryPath, index): ProjectEntry[] => {
     const target = targets[index];
-    if (!target || target.realPath === undefined) return [];
+    if (!target || target === LINK_PROBE_CROWDED || target.realPath === undefined) return [];
     const relative = path.relative(root, target.realPath);
     return relative === ".." ||
       relative.startsWith(`..${path.sep}`) ||
@@ -465,6 +472,7 @@ const scanDirectory = Effect.fn("WorkspaceSearchIndex.scanDirectory")(function* 
     links,
     linkPaths,
     linksAnswered,
+    linksCrowded,
     isRepository,
     ignoreFile,
   } satisfies ScannedDirectory;
@@ -1027,8 +1035,9 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (
     const candidates = scanned.flatMap((directory) => directory.links);
     const linkPaths = new Set(scanned.flatMap((directory) => directory.linkPaths));
     const linksAnswered = scanned.every((directory) => directory.linksAnswered);
+    const linksCrowded = scanned.some((directory) => directory.linksCrowded);
     if (candidates.length === 0) {
-      return { entries: candidates, linkPaths, indexComplete, linksAnswered };
+      return { entries: candidates, linkPaths, indexComplete, linksAnswered, linksCrowded };
     }
 
     const ignoreFiles = scanned
@@ -1068,6 +1077,7 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (
       linkPaths,
       indexComplete,
       linksAnswered,
+      linksCrowded,
     };
   });
 
@@ -1122,13 +1132,16 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (
       lastSymlinkScan = result;
       knownLinkPaths = result.linkPaths;
       // Without a watcher, before fff has seen every folder, or with a link left unanswered, the
-      // result is kept only for a while.
+      // result is kept only for a while. A link that only waited behind busy probes is retried soon:
+      // a stuck one beside it answers again without taking a slot.
       const settled = watched && result.indexComplete;
       lastSymlinkScanExpiresAt =
-        settled && result.linksAnswered
+        settled && result.linksAnswered && !result.linksCrowded
           ? undefined
           : (yield* Clock.currentTimeMillis) +
-            (settled ? UNANSWERED_LINK_SCAN_TTL_MS : UNWATCHED_SYMLINK_SCAN_TTL_MS);
+            (settled && !result.linksAnswered && !result.linksCrowded
+              ? UNANSWERED_LINK_SCAN_TTL_MS
+              : UNWATCHED_SYMLINK_SCAN_TTL_MS);
       return result;
     }).pipe(
       Effect.onExit((exit) =>

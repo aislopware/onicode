@@ -298,7 +298,10 @@ function resolvePullRequestReference(
 }
 
 function pullRequestMarkdownContext(
-  detail: Pick<PullRequestDetail, "provider" | "url" | "repository" | "borrowedCheckout"> | null,
+  detail: Pick<
+    PullRequestDetail,
+    "provider" | "url" | "repository" | "borrowedCheckout" | "headSha"
+  > | null,
   threadRef: ScopedThreadRef | null,
 ) {
   return {

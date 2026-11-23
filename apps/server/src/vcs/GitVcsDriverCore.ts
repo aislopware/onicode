@@ -6708,6 +6708,10 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
           remoteNames.includes(remoteName) && merge.startsWith("refs/heads/")
             ? { remoteName, branchName: merge.slice("refs/heads/".length) }
             : null;
+      } else if (remoteNames.filter((name) => input.refName.startsWith(`${name}/`)).length > 1) {
+        // `origin/alice/x` with remotes `origin` and `origin/alice` names one tracking ref
+        // for two remotes; git refuses to fetch into it, so keep the ref as written.
+        return null;
       } else {
         target = parseRemoteRefWithRemoteNames(input.refName, remoteNames);
       }

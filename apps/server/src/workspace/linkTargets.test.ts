@@ -100,6 +100,64 @@ describe("makeLinkTargetProbe", () => {
     expect(fake.calls).toEqual(["/links/stalled"]);
   });
 
+  it("keys links into one share by their target, leaving the other slots free", async () => {
+    const fake = fakeProbes();
+    const isDirectory = makeLinkTargetProbe(fake.stat, 2);
+    const timedOut = new AbortController();
+    const first = isDirectory("/links/a", timedOut.signal, "/mnt/share");
+    void isDirectory("/links/b", new AbortController().signal, "/mnt/share");
+    const healthy = isDirectory("/links/healthy", new AbortController().signal, "/local/real");
+    expect(fake.calls).toEqual(["/links/a", "/links/healthy"]);
+    fake.answer("/links/healthy");
+    expect(await healthy).toBe(true);
+
+    timedOut.abort(LINK_PROBE_TIMED_OUT);
+    expect(await first).toBeUndefined();
+    // Below the stuck target, a link answers at once and takes no slot.
+    const signal = new AbortController().signal;
+    expect(await isDirectory("/links/c", signal, "/mnt/share/sub")).toBeUndefined();
+    const next = isDirectory("/links/next", signal, "/local/next");
+    expect(fake.calls).toEqual(["/links/a", "/links/healthy", "/links/next"]);
+    fake.answer("/links/next");
+    expect(await next).toBe(true);
+  });
+
+  it("answers callers queued below a target once its probe outlives a timeout", async () => {
+    const fake = fakeProbes();
+    const isDirectory = makeLinkTargetProbe(fake.stat, 2);
+    const timedOut = new AbortController();
+    const hung = isDirectory("/links/a", timedOut.signal, "/mnt/share");
+    const busy = isDirectory("/links/busy", new AbortController().signal, "/local/busy");
+    const queuedTimedOut = new AbortController();
+    const queued = isDirectory("/links/b", queuedTimedOut.signal, "/mnt/share/sub");
+    const waiting = isDirectory("/links/c", new AbortController().signal, "/mnt/share/other");
+    // Both timeouts fire in one tick: retrying the queued one would only reach the stuck share.
+    queuedTimedOut.abort(LINK_PROBE_TIMED_OUT);
+    timedOut.abort(LINK_PROBE_TIMED_OUT);
+    expect(await hung).toBeUndefined();
+    expect(await queued).toBeUndefined();
+    // Answers before the busy probe frees a slot.
+    expect(await waiting).toBeUndefined();
+
+    fake.answer("/links/busy");
+    expect(await busy).toBe(true);
+    expect(fake.calls).toEqual(["/links/a", "/links/busy"]);
+  });
+
+  it("tells a caller that timed out queued behind answering probes it was crowded", async () => {
+    const fake = fakeProbes();
+    const isDirectory = makeLinkTargetProbe(fake.stat, 1);
+    const busy = isDirectory("/links/busy", new AbortController().signal);
+    const timedOut = new AbortController();
+    const queued = isDirectory("/links/queued", timedOut.signal);
+    timedOut.abort(LINK_PROBE_TIMED_OUT);
+    expect(await queued).toBe("crowded");
+
+    fake.answer("/links/busy");
+    expect(await busy).toBe(true);
+    expect(fake.calls).toEqual(["/links/busy"]);
+  });
+
   it("lets a queued browse of a link join the stat another caller starts for it", async () => {
     const fake = fakeProbes();
     const isDirectory = makeLinkTargetProbe(fake.stat, 1);

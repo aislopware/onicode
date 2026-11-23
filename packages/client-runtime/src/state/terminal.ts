@@ -363,6 +363,7 @@ export function createTerminalSession(
           terminalId,
           cwd: input.cwd,
           worktreePath: input.worktreePath,
+          projectId: input.projectId,
           cols: input.cols,
           rows: input.rows,
           ...(input.env ? { env: input.env } : {}),

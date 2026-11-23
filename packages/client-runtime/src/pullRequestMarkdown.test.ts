@@ -6,7 +6,9 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { splitPullRequestBody, type PullRequestBodySegment } from "./pullRequestMarkdown.ts";
 import {
+  changeRequestFileBase,
   changeRequestReferenceAutolinker,
+  resolveChangeRequestFileHref,
   resolveChangeRequestMediaUrl,
 } from "./pullRequestReferences.ts";
 
@@ -415,5 +417,39 @@ describe("change request media urls", () => {
     expect(
       resolveChangeRequestMediaUrl(url, "https://git.cafe/aislopware/onicode/pulls/31251"),
     ).toBe(expected);
+  });
+});
+
+describe("change request file links", () => {
+  const github = {
+    provider: "github",
+    url: "https://github.com/acme/web/pull/7",
+    headSha: "abc123",
+  };
+  const gitlab = {
+    provider: "gitlab",
+    url: "https://gitlab.com/acme/sub/web/-/merge_requests/7",
+    headSha: "abc123",
+  };
+  // regression: on a borrowed checkout a body's `src/index.ts` link opened nothing
+  it.each([
+    [github, "src/index.ts", "https://github.com/acme/web/blob/abc123/src/index.ts"],
+    [github, "./docs/a.md#usage", "https://github.com/acme/web/blob/abc123/docs/a.md#usage"],
+    [github, "docs/my file.md", "https://github.com/acme/web/blob/abc123/docs/my%20file.md"],
+    [github, "docs/../src/a.ts", "https://github.com/acme/web/blob/abc123/src/a.ts"],
+    [github, "../README.md", null],
+    [github, "../../../../other-org/other-repo", null],
+    [github, "..\\..\\..\\..\\other-org\\other-repo", null],
+    [github, ".", null],
+    [github, "./", null],
+    [gitlab, "src/index.ts", "https://gitlab.com/acme/sub/web/-/blob/abc123/src/index.ts"],
+    [github, "https://example.com/a", null],
+    [github, "mailto:a@example.com", null],
+    [github, "/acme/web/issues/1", null],
+    [github, "#usage", null],
+    [{ ...github, headSha: undefined }, "src/index.ts", null],
+    [{ ...github, provider: "forgejo" }, "src/index.ts", null],
+  ])("%o resolves %s", (changeRequest, href, expected) => {
+    expect(resolveChangeRequestFileHref(href, changeRequestFileBase(changeRequest))).toBe(expected);
   });
 });

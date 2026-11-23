@@ -13,6 +13,7 @@ import { act, fakeTimers, render } from "../../../test/render";
 import type { DraftId } from "~/composerDraftStore";
 import appCss from "~/index.css?inline";
 import { isMacPlatform } from "~/lib/utils";
+import { MAX_SHOWN_LINE_CHARS } from "./shownText";
 import {
   createWorkspaceFocusController,
   startWorkspaceFocus,
@@ -220,6 +221,7 @@ function filePreview(
   relativePath: string,
   workspaceMutationId: string | null = null,
   composerDraftTarget: ScopedThreadRef | DraftId = threadRef,
+  revealLine: number | null = null,
 ) {
   return (
     <FilePreviewPanel
@@ -232,8 +234,8 @@ function filePreview(
       keybindings={[]}
       availableEditors={[]}
       openInShortcutEnabled={false}
-      revealLine={null}
-      revealRequestId={0}
+      revealLine={revealLine}
+      revealRequestId={revealLine === null ? 0 : 1}
       onOpenFile={vi.fn()}
       onNavigateFolder={vi.fn()}
       folderTrail={undefined}
@@ -260,6 +262,111 @@ function deepActiveElement() {
   while (active?.shadowRoot?.activeElement) active = active.shadowRoot.activeElement;
   return active;
 }
+
+// Before the tests that preload Shiki: Shiki can't load the app's Zed-only oni-light theme, and a
+// streamed source preview then never lays out (on main too; the app never preloads Shiki).
+describe("large file previews", () => {
+  it("shows a draft's first megabyte when an older server mints no download for it", async () => {
+    using _settings = setup();
+    state.file = {
+      relativePath: "server.log",
+      contents: "first line\nsecond line\n",
+      byteLength: 2_000_000,
+      truncated: true,
+    };
+    state.assetUrl = { _tag: "Failure", reason: "preview-type" };
+    await using screen = await render(filePreview("server.log", null, "draft-1" as DraftId));
+    await expect.element(screen.getByText("second line")).toBeVisible();
+    await expect.element(screen.getByText(/Preview limited to the first 1 MB/)).toBeVisible();
+    expect(screen.container.textContent).not.toContain("Unable to load file preview");
+    // Both would act on the whole file, which this server cannot send.
+    expect(screen.container.querySelector('[aria-label="Save file"]')).toBeNull();
+    expect(screen.container.querySelector('[aria-label="Copy contents"]')).toBeNull();
+
+    // Any other failure is retryable, not a reason to stop at the first megabyte.
+    state.assetUrl = { _tag: "Failure" };
+    await screen.rerender(filePreview("server.log", null, "draft-1" as DraftId));
+    await expect.element(screen.getByText("Unable to load file preview.")).toBeVisible();
+  });
+
+  // regression: the held line scrolled into view when it arrived, and again in the plain viewer
+  it("leaves a line reveal the reader scrolled away from while its line downloaded", async () => {
+    using _settings = setup();
+    const style = document.createElement("style");
+    style.textContent = appCss;
+    document.head.append(style);
+    using _style = { [Symbol.dispose]: () => style.remove() };
+    const encoder = new TextEncoder();
+    const lines = (from: number, to: number) =>
+      Array.from({ length: to - from }, (_, index) => `const line${from + index} = 0;\n`).join("");
+    let body!: ReadableStreamDefaultController<Uint8Array>;
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        body = controller;
+      },
+    });
+    const realFetch = globalThis.fetch;
+    using fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation((input, init) =>
+        new URL(String(input), location.href).pathname === "/assets/reveal.txt"
+          ? Promise.resolve(new Response(stream))
+          : realFetch(input, init),
+      );
+    state.assetUrl = {
+      _tag: "Success",
+      url: "/assets/reveal.txt",
+      expiresAt: Number.MAX_SAFE_INTEGER,
+    };
+    state.file = {
+      relativePath: "reveal.txt",
+      contents: lines(0, 100),
+      byteLength: 2_000_000,
+      truncated: true,
+    };
+    await using _screen = await render(
+      <div style={{ height: 400, display: "flex", flexDirection: "column" }}>
+        {filePreview("reveal.txt", null, threadRef, 150)}
+      </div>,
+    );
+    await vi.waitFor(() =>
+      expect(
+        fetchSpy.mock.calls.map(([input]) => new URL(String(input), location.href).pathname),
+      ).toContain("/assets/reveal.txt"),
+    );
+    // Downloaded text swaps in at most once a second; layout itself waits on real work, which
+    // outlasts waitFor's 1 s default on a loaded machine.
+    const layout = { timeout: 10_000 };
+    const download = async (text: string, done = false) => {
+      using _timers = fakeTimers();
+      body.enqueue(encoder.encode(text));
+      if (done) body.close();
+      await vi.advanceTimersByTimeAsync(1000);
+    };
+    await download(lines(0, 100));
+    const scroller = () => document.querySelector<HTMLElement>(".file-preview-virtualizer");
+    await vi.waitFor(() => expect(scroller()?.scrollHeight).toBeGreaterThan(1000), layout);
+    const held = scroller()!;
+    held.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: 120 }));
+    held.scrollTop = 600;
+    await vi.waitFor(() => expect(held.scrollTop).toBe(600));
+    const height = held.scrollHeight;
+
+    await download(lines(100, 250));
+    await vi.waitFor(() => expect(scroller()?.scrollHeight).toBeGreaterThan(height), layout);
+    expect(scroller()).toBe(held);
+    expect(held.scrollTop).toBe(600);
+
+    // A line too long to lay out hands the finished text to the plain viewer.
+    await download(`${"x".repeat(MAX_SHOWN_LINE_CHARS + 1)}\n`, true);
+    const row = await vi.waitFor(() => {
+      const row = document.querySelector<HTMLElement>("[data-preview-row]");
+      expect(row).not.toBeNull();
+      return row!;
+    }, layout);
+    expect(row.closest<HTMLElement>(".overflow-auto")?.scrollTop).toBe(0);
+  });
+});
 
 describe("source file focus", () => {
   it("hands panel focus to the file's editor, which owns mod+f", async () => {
@@ -746,6 +853,29 @@ describe("rendered Markdown task saves", () => {
     );
   });
 
+  it("scrolls a heading link to a heading in a piece the list has not mounted", async () => {
+    using _settings = setup();
+    const style = document.createElement("style");
+    style.textContent = appCss;
+    document.head.append(style);
+    using _style = { [Symbol.dispose]: () => style.remove() };
+    const filler = Array.from(
+      { length: 300 },
+      (_, index) => `Paragraph ${index} ${"filler text ".repeat(16)}`,
+    ).join("\n\n");
+    const contents = `[Jump to the end](#late-heading)\n\n${filler}\n\n# Late heading\n\nEnd\n`;
+    await using screen = await render(
+      <div style={{ width: 500, height: 400, display: "flex", flexDirection: "column" }}>
+        {markdownPreview(false, contents, "notes.md")}
+      </div>,
+    );
+    const heading = screen.getByRole("heading", { name: "Late heading" });
+    await expect.element(screen.getByRole("link", { name: "Jump to the end" })).toBeVisible();
+    await expect.element(heading).not.toBeInTheDocument();
+    await screen.getByRole("link", { name: "Jump to the end" }).click();
+    await expect.element(heading).toBeInViewport();
+  });
+
   it("still toggles and saves tasks from a complete read", async () => {
     using _settings = setup();
     await using screen = await render(markdownPreview(false));
@@ -824,31 +954,6 @@ describe("workspace document previews", () => {
     await screen.rerender(documentPreview("mutation-2", "revision-2"));
 
     await expect.element(preview).toHaveTextContent("/assets/report.docx?mint=2");
-  });
-});
-
-describe("large file previews", () => {
-  it("shows a draft's first megabyte when an older server mints no download for it", async () => {
-    using _settings = setup();
-    state.file = {
-      relativePath: "server.log",
-      contents: "first line\nsecond line\n",
-      byteLength: 2_000_000,
-      truncated: true,
-    };
-    state.assetUrl = { _tag: "Failure", reason: "preview-type" };
-    await using screen = await render(filePreview("server.log", null, "draft-1" as DraftId));
-    await expect.element(screen.getByText("second line")).toBeVisible();
-    await expect.element(screen.getByText(/Preview limited to the first 1 MB/)).toBeVisible();
-    expect(screen.container.textContent).not.toContain("Unable to load file preview");
-    // Both would act on the whole file, which this server cannot send.
-    expect(screen.container.querySelector('[aria-label="Save file"]')).toBeNull();
-    expect(screen.container.querySelector('[aria-label="Copy contents"]')).toBeNull();
-
-    // Any other failure is retryable, not a reason to stop at the first megabyte.
-    state.assetUrl = { _tag: "Failure" };
-    await screen.rerender(filePreview("server.log", null, "draft-1" as DraftId));
-    await expect.element(screen.getByText("Unable to load file preview.")).toBeVisible();
   });
 });
 

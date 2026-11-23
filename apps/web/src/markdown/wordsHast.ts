@@ -11,7 +11,10 @@ import { resolveCodexArtifactTemplate } from "@onicode/shared/codexArtifactTempl
 import { resolveCodexFileCitationLink } from "@onicode/shared/codexFileCitations";
 import type { ReferenceAutolink } from "@onicode/client-runtime/source-control-clients";
 import { expandGithubEmojiAliases } from "@onicode/client-runtime/pull-request-markdown";
-import { resolveChangeRequestMediaUrl } from "@onicode/client-runtime/pull-request-references";
+import {
+  resolveChangeRequestFileHref,
+  resolveChangeRequestMediaUrl,
+} from "@onicode/client-runtime/pull-request-references";
 import { GITHUB_ALERT_MARKER } from "@onicode/shared/markdownGithubAlerts";
 import { absoluteFilePathMatches } from "@onicode/shared/markdownLinks";
 import {
@@ -41,6 +44,8 @@ export interface MarkdownExtensions {
   readonly changeRequest?: {
     readonly repositoryUrl: string;
     readonly autolinks: ((text: string) => ReadonlyArray<ReferenceAutolink>) | null;
+    /** Path-relative links resolve under this forge file URL when no checkout can open them. */
+    readonly fileBase?: string | null;
   };
   /** Expand GitHub `:alias:` emoji shortcodes in prose outside code. */
   readonly githubEmoji?: boolean;
@@ -790,9 +795,11 @@ function transform(node: Root | Element, walk: Walk, inLink: boolean, inCode: bo
         children: [{ type: "text", value: "Footnotes" }],
       });
     } else if (tagName === "a" && typeof props.href === "string") {
+      const fileBase = walk.options.extensions.changeRequest?.fileBase;
+      const href = resolveChangeRequestFileHref(props.href, fileBase) ?? props.href;
       // remarkNormalizeLinksAndTagInlineCode: a Windows drive path links as a file URL.
-      const path = windowsPath(props.href);
-      props.href = path ? `file:///${path.replaceAll("\\", "/")}` : normalizeUri(props.href);
+      const path = windowsPath(href);
+      props.href = path ? `file:///${path.replaceAll("\\", "/")}` : normalizeUri(href);
     } else if (tagName === "img" && typeof props.src === "string") {
       const changeRequest = walk.options.extensions.changeRequest;
       const src = changeRequest

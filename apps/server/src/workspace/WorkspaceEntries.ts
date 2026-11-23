@@ -269,7 +269,7 @@ export const make = Effect.gen(function* () {
         const resolvedSymlinks = yield* Effect.forEach(
           symlinkCandidates,
           (candidate) =>
-            resolveLinkTarget(candidate.fullPath).pipe(
+            resolveLinkTarget(candidate.fullPath, { link: true }).pipe(
               Effect.map((target) => (target?.kind === "directory" ? candidate : null)),
             ),
           { concurrency: MAX_PENDING_LINK_TARGET_PROBES },
@@ -465,7 +465,9 @@ export const make = Effect.gen(function* () {
             children.filter((child) => child.name !== ".git" && child.isSymbolicLink()),
             (child) =>
               Effect.gen(function* () {
-                const linkTarget = yield* resolveLinkTarget(path.join(directory, child.name));
+                const linkTarget = yield* resolveLinkTarget(path.join(directory, child.name), {
+                  link: true,
+                });
                 const realPath = linkTarget?.realPath;
                 if (
                   !linkTarget ||

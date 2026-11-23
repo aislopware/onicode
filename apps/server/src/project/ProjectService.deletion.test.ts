@@ -7,7 +7,6 @@ import {
   ProjectId,
   ProviderInstanceId,
   type TerminalCloseInput,
-  type TerminalSummary,
   ThreadId,
 } from "@onicode/contracts";
 import * as DateTime from "effect/DateTime";
@@ -519,12 +518,18 @@ it.effect("closes the terminals of a deleted project's draft threads, and no oth
     yield* seedProject(projectId);
     yield* seedProject(nestedProjectId, `/work/${projectId}/nested`);
     yield* seedProject(otherProjectId);
-    const terminal = (threadId: string, cwd: string, worktreePath: string | null = null) =>
+    const terminal = (
+      threadId: string,
+      cwd: string,
+      worktreePath: string | null = null,
+      owner: ProjectId | null = null,
+    ) =>
       ({
         threadId,
         terminalId: "default",
         cwd,
         worktreePath,
+        projectId: owner,
         status: "running",
         pid: 1,
         exitCode: null,
@@ -532,7 +537,7 @@ it.effect("closes the terminals of a deleted project's draft threads, and no oth
         hasRunningSubprocess: false,
         label: "zsh",
         updatedAt: "2026-01-01T00:00:00.000Z",
-      }) satisfies TerminalSummary;
+      }) satisfies TerminalManager.TerminalListEntry;
     const closed: Array<TerminalCloseInput> = [];
 
     yield* Effect.gen(function* () {
@@ -552,6 +557,19 @@ it.effect("closes the terminals of a deleted project's draft threads, and no oth
                 "thread:draft-terminals:worktree",
                 `/work/${projectId}/.worktrees/feature/src`,
                 `/work/${projectId}/.worktrees/feature`,
+              ),
+              terminal(
+                "thread:draft-terminals:other-worktree",
+                `/work/${projectId}/.worktrees/other`,
+                `/work/${projectId}/.worktrees/other`,
+                otherProjectId,
+              ),
+              // This project's draft on a worktree outside its root.
+              terminal(
+                "thread:draft-terminals:own-worktree",
+                "/worktrees/draft-terminals/feature",
+                "/worktrees/draft-terminals/feature",
+                projectId,
               ),
             ]),
             // The first close failing leaves the sweep going.
@@ -574,6 +592,7 @@ it.effect("closes the terminals of a deleted project's draft threads, and no oth
       assert.deepEqual(closed, [
         { threadId: "thread:draft-terminals:root", deleteHistory: true },
         { threadId: "thread:draft-terminals:subfolder", deleteHistory: true },
+        { threadId: "thread:draft-terminals:own-worktree", deleteHistory: true },
       ]);
     }).pipe(Effect.provide(layerServices));
   }).pipe(Effect.provide(layerDatabase)),

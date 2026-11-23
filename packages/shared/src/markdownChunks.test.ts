@@ -4,6 +4,7 @@ import {
   cutSourceLines,
   extendMarkdownSplit,
   LARGE_MARKDOWN_CHUNK_MAX_CHARS,
+  markdownHeadingPiece,
   splitMarkdown,
 } from "./markdownChunks.ts";
 import { maskMarkdownFrontmatter } from "./markdownFrontmatter.ts";
@@ -335,5 +336,32 @@ describe("cutSourceLines", () => {
     expect(cutSourceLines("a\u{1F600}b", 2)).toEqual(["a", "\u{1F600}", "b"]);
     // A run too short for a surrogate pair still moves on.
     expect(cutSourceLines("\u{1F600}", 1).join("")).toBe("\u{1F600}");
+  });
+});
+
+describe("markdownHeadingPiece", () => {
+  // regression: a link to a heading in a piece the list had not mounted did not scroll
+  it("finds the piece of a linked heading, numbering duplicates across the whole file", () => {
+    const chunks = [
+      "---\ntitle: Intro\n---\n# Intro\n\nSee [setup](#setup-1).",
+      "## Setup\n\n```md\n# Setup\nSetup\n---\n```",
+      "# Intro\n\nSetup\n=====",
+      "## **Bold** [link](https://example.com) `snake_case` _em_\n\nIntro\n---\n\n- Intro\n---",
+    ].map((text) => ({ text, lines: text.split("\n").length }));
+    expect(markdownHeadingPiece(chunks, "intro")).toEqual({ index: 0, id: "intro" });
+    expect(markdownHeadingPiece(chunks, "setup-1")).toEqual({ index: 2, id: "setup" });
+    expect(markdownHeadingPiece(chunks, "bold-link-snake_case-em")).toEqual({
+      index: 3,
+      id: "bold-link-snake_case-em",
+    });
+    // Each piece renders alone, so it numbers its own duplicates from the start.
+    expect(markdownHeadingPiece(chunks, "intro-2")).toEqual({ index: 3, id: "intro" });
+    expect(markdownHeadingPiece(chunks, "intro-3")).toBeNull();
+    // Rendered text decodes character references; code spans keep them literal.
+    const entities = [{ text: "# Caf&eacute; &#x2014; `&amp;`", lines: 1 }];
+    expect(markdownHeadingPiece(entities, "café--amp")).toEqual({ index: 0, id: "café--amp" });
+    // A decoded underscore is text, never emphasis.
+    const underscores = [{ text: "# &#95;init&#x5f;", lines: 1 }];
+    expect(markdownHeadingPiece(underscores, "_init_")).toEqual({ index: 0, id: "_init_" });
   });
 });

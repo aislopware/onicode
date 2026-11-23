@@ -6,7 +6,7 @@ import { lazy, Suspense, useImperativeHandle, useState, type RefObject } from "r
 
 import { ChunkedMarkdown } from "./ChunkedMarkdown";
 import { FileSurfaceLoading } from "./fileSurfaceChrome";
-import { useFullFileMarkdown, useFullFileText } from "./fullFileText";
+import { useFullFileMarkdown, useFullFileRevealWait, useFullFileText } from "./fullFileText";
 import {
   estimatedLines,
   highlightsLargeFile,
@@ -60,39 +60,86 @@ const holdReveal =
   (node, instance, phase) =>
     phase === "unmount" ? onPostRender(node, instance, phase) : undefined;
 
+interface RevealState {
+  readonly held: boolean;
+  readonly releases: number;
+  /** The request the reader scrolled away from while it waited: it never scrolls after that. */
+  readonly abandoned: number | null;
+  /** The request the source viewer took unheld, which the plain viewer then does not repeat. */
+  readonly passed: number | null;
+}
+
 function FullTextPreview(
   props: Parameters<typeof LargeFilePreview>[0] & { readonly estimatedLines: number },
 ) {
   const file = useFullFileText(props.src, props.preview);
   // A changed callback alone may not render again, so the viewer remounts once the line arrives.
-  const [reveal, setReveal] = useState({ held: false, releases: 0 });
-  if (file === "too-large" || file === "failed") return <PlainViewer {...props} />;
-  // The worker takes the finished text, so the file does not download again.
-  if (largeFileEndsPlain(file, props.markdownCwd !== null))
-    return <PlainViewer {...props} text={file.text} />;
+  const [reveal, setReveal] = useState<RevealState>({
+    held: false,
+    releases: 0,
+    abandoned: null,
+    passed: null,
+  });
+  const abandoned = reveal.abandoned === props.revealRequestId;
+  const endsPlain =
+    typeof file !== "string" && largeFileEndsPlain(file, props.markdownCwd !== null);
   const revealHeld =
-    props.onPostRender !== undefined && !largeFileRevealReady(props.revealLine, file);
-  if (reveal.held !== revealHeld) {
-    setReveal({ held: revealHeld, releases: reveal.releases + (revealHeld ? 0 : 1) });
+    typeof file !== "string" &&
+    !endsPlain &&
+    props.onPostRender !== undefined &&
+    !largeFileRevealReady(props.revealLine, file);
+  useFullFileRevealWait(props.src, revealHeld && !abandoned ? props.revealLine : null);
+  const plainRevealLine =
+    abandoned || reveal.passed === props.revealRequestId ? null : props.revealLine;
+  if (typeof file === "string") return <PlainViewer {...props} revealLine={plainRevealLine} />;
+  // The worker takes the finished text, so the file does not download again.
+  if (endsPlain) return <PlainViewer {...props} text={file.text} revealLine={plainRevealLine} />;
+  const reachesSource =
+    !revealHeld &&
+    !abandoned &&
+    props.revealLine !== null &&
+    props.onPostRender !== undefined &&
+    props.markdownCwd === null;
+  if (reveal.held !== revealHeld || (reachesSource && reveal.passed !== props.revealRequestId)) {
+    setReveal({
+      ...reveal,
+      held: revealHeld,
+      releases: reveal.releases + (reveal.held && !revealHeld && !abandoned ? 1 : 0),
+      passed: reachesSource ? props.revealRequestId : reveal.passed,
+    });
   }
   const onPostRender =
-    revealHeld && props.onPostRender ? holdReveal(props.onPostRender) : props.onPostRender;
+    (revealHeld || abandoned) && props.onPostRender
+      ? holdReveal(props.onPostRender)
+      : props.onPostRender;
+  const abandonHeldReveal = () => {
+    const requestId = props.revealRequestId;
+    if (revealHeld && !abandoned) setReveal((current) => ({ ...current, abandoned: requestId }));
+  };
   return (
     <>
       <CopyText copyContents={props.copyContents} text={file.done ? file.text : null} />
       {props.markdownCwd !== null ? (
         <MarkdownText {...props} markdownCwd={props.markdownCwd} file={file} />
       ) : (
-        <SourceFilePreview
-          key={reveal.releases}
-          name={props.name}
-          text={file.text}
-          onPostRender={onPostRender}
-          wordWrap={props.wordWrap}
-          tokenizeMaxLength={
-            highlightsLargeFile(props.estimatedLines, file) ? Number.POSITIVE_INFINITY : 0
-          }
-        />
+        <div
+          className="contents"
+          onWheelCapture={abandonHeldReveal}
+          onTouchStartCapture={abandonHeldReveal}
+          onPointerDownCapture={abandonHeldReveal}
+          onKeyDownCapture={abandonHeldReveal}
+        >
+          <SourceFilePreview
+            key={reveal.releases}
+            name={props.name}
+            text={file.text}
+            onPostRender={onPostRender}
+            wordWrap={props.wordWrap}
+            tokenizeMaxLength={
+              highlightsLargeFile(props.estimatedLines, file) ? Number.POSITIVE_INFINITY : 0
+            }
+          />
+        </div>
       )}
     </>
   );

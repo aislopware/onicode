@@ -1603,6 +1603,7 @@ export default function ChatView(props: ChatViewProps) {
   const sendQueuesBehindSetup =
     isServerThread && (activeRunPreparing || activeActivityRun?.status === "starting");
   const [setupQueueSendThreadKey, setSetupQueueSendThreadKey] = useState<string | null>(null);
+  const [preparingSendThreadKey, setPreparingSendThreadKey] = useState<string | null>(null);
   const downloadFileAttachment = async (attachment: ChatFileAttachment) => {
     const connection = readPreparedConnection(environmentId);
     if (!connection) {
@@ -3224,6 +3225,7 @@ export default function ChatView(props: ChatViewProps) {
     captureDraftHeroComposerRect,
     setDockedDraftHeroThreadKey,
     setSetupQueueSendThreadKey,
+    setPreparingSendThreadKey,
     setOptimisticUserMessages,
     optimisticBlobPreviews: {
       track: (message) => optimisticBlobPreviews.track(threadId, message),
@@ -3881,6 +3883,8 @@ export default function ChatView(props: ChatViewProps) {
                                   (isSendBusy && !sendQueuesBehindSetup) ||
                                   (setupQueueSendThreadKey !== null &&
                                     setupQueueSendThreadKey === activeThreadKey) ||
+                                  (preparingSendThreadKey !== null &&
+                                    preparingSendThreadKey === activeThreadKey) ||
                                   queuedRunEdit.isSaving ||
                                   isResuming
                                 }

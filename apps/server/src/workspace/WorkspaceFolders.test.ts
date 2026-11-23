@@ -275,16 +275,21 @@ it.layer(NodeServices.layer)("WorkspaceFolders", (it) => {
         path.join(workspaceRoot, "src", "stalled"),
       ];
       for (const link of links) yield* fileSystem.symlink(mount, link);
+      // A workspace file can list the mount by path too.
+      yield* fileSystem.writeFileString(
+        path.join(workspaceRoot, "team.code-workspace"),
+        JSON.stringify({ folders: [{ path: "../mount/share" }] }),
+      );
+      const hanging = [...links, mount];
 
-      const bothStalled = yield* Deferred.make<void>();
-      const stalledCalls: string[] = [];
+      // Probes of links into one share are one probe of its target.
+      const stalled = yield* Deferred.make<void>();
       const releases: Array<() => void> = [];
       const stat = vi.mocked(NodeFSP.stat);
       const realStat = stat.getMockImplementation()!;
       stat.mockImplementation(((target: string) => {
-        if (!links.includes(target)) return realStat(target);
-        stalledCalls.push(target);
-        if (stalledCalls.length === links.length) Deferred.doneUnsafe(bothStalled, Effect.void);
+        if (!hanging.includes(target)) return realStat(target);
+        Deferred.doneUnsafe(stalled, Effect.void);
         return new Promise((resolve) => releases.push(() => resolve(realStat(target))));
       }) as typeof NodeFSP.stat);
       yield* Effect.addFinalizer(() =>
@@ -295,10 +300,10 @@ it.layer(NodeServices.layer)("WorkspaceFolders", (it) => {
       );
       // Anything else that reaches the mount fails the test instead of hanging it.
       const onMount = (target: string) =>
-        links.some((link) => target === link || target.startsWith(`${link}${path.sep}`));
+        hanging.some((link) => target === link || target.startsWith(`${link}${path.sep}`));
       const refuse = (target: string) => {
         const probed = Effect.die(new Error(`Probed ${target} on the stalled mount.`));
-        Deferred.doneUnsafe(bothStalled, probed);
+        Deferred.doneUnsafe(stalled, probed);
         return probed;
       };
       const guarded = FileSystem.FileSystem.of({
@@ -316,7 +321,7 @@ it.layer(NodeServices.layer)("WorkspaceFolders", (it) => {
         Effect.provideService(FileSystem.FileSystem, guarded),
         Effect.forkChild,
       );
-      yield* Deferred.await(bothStalled);
+      yield* Deferred.await(stalled);
       yield* TestClock.adjust("1 second");
       assert.deepEqual(yield* Fiber.join(discovery), [
         { path: path.join(workspaceRoot, "api"), name: "api", discovered: true },
@@ -401,6 +406,44 @@ it.layer(NodeServices.layer)("WorkspaceFolders", (it) => {
         recursive: true,
       });
       yield* fileSystem.symlink(path.join(tmp, "elsewhere"), path.join(workspaceRoot, "ext"));
+      // An added folder on a stalled mount counts as missing for a call it does not answer, as
+      // does a link to it inside the project folder, deeper than discovery looks.
+      const stalled = folder("share", "mount", "share");
+      const stalledLink = folder("mounted", "app", "packages", "web", "mounted");
+      yield* fileSystem.makeDirectory(path.join(stalled.path, ".git"), { recursive: true });
+      yield* fileSystem.symlink(stalled.path, stalledLink.path);
+      const hanging = [stalled.path, stalledLink.path];
+      const stalledStarted = yield* Deferred.make<void>();
+      const stalledCalls: string[] = [];
+      const releases: Array<() => void> = [];
+      const stat = vi.mocked(NodeFSP.stat);
+      const realStat = stat.getMockImplementation()!;
+      stat.mockImplementation(((target: string) => {
+        if (!hanging.includes(target)) return realStat(target);
+        stalledCalls.push(target);
+        if (stalledCalls.length === hanging.length)
+          Deferred.doneUnsafe(stalledStarted, Effect.void);
+        return new Promise((resolve) => releases.push(() => resolve(realStat(target))));
+      }) as typeof NodeFSP.stat);
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => {
+          for (const release of releases) release();
+          stat.mockImplementation(realStat);
+        }),
+      );
+      const onMount = (target: string) =>
+        hanging.some((mounted) => target === mounted || target.startsWith(`${mounted}${path.sep}`));
+      const refuse = (target: string) => {
+        const probed = Effect.die(new Error(`Probed ${target} on the stalled mount.`));
+        Deferred.doneUnsafe(stalledStarted, probed);
+        return probed;
+      };
+      const guarded = FileSystem.FileSystem.of({
+        ...fileSystem,
+        exists: (target) => (onMount(target) ? refuse(target) : fileSystem.exists(target)),
+        realPath: (target) => (onMount(target) ? refuse(target) : fileSystem.realPath(target)),
+        stat: (target) => (onMount(target) ? refuse(target) : fileSystem.stat(target)),
+      });
 
       yield* Effect.gen(function* () {
         const workspaceFolders = yield* WorkspaceFolders.WorkspaceFolders;
@@ -459,8 +502,30 @@ it.layer(NodeServices.layer)("WorkspaceFolders", (it) => {
         Effect.provide(
           layerFor({ workspaceRoot, trackedFolders: [inside, repository, missing, linked] }),
         ),
+        Effect.provideService(FileSystem.FileSystem, guarded),
       );
-    }),
+
+      // Only folders on the mount, so moving the clock times out no healthy folder's probe.
+      yield* Effect.gen(function* () {
+        const workspaceFolders = yield* WorkspaceFolders.WorkspaceFolders;
+        const listing = yield* Effect.forkChild(workspaceFolders.list({ projectId }));
+        yield* Deferred.await(stalledStarted);
+        yield* TestClock.adjust("1 second");
+        assert.deepEqual(yield* Fiber.join(listing), {
+          folders: [
+            { ...stalled, state: "missing" },
+            { ...stalledLink, state: "missing" },
+          ],
+        });
+        assert.deepEqual(yield* workspaceFolders.forThread({ projectId, worktreePath: null }), {
+          folders: [],
+          extraRoots: [],
+        });
+      }).pipe(
+        Effect.provide(layerFor({ workspaceRoot, trackedFolders: [stalled, stalledLink] })),
+        Effect.provideService(FileSystem.FileSystem, guarded),
+      );
+    }).pipe(Effect.provide(TestClock.layer())),
   );
   it.effect("gives a task folder thread its worktrees, never the checkouts they came from", () =>
     Effect.gen(function* () {

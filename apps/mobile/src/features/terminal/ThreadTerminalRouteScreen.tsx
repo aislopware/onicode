@@ -528,6 +528,7 @@ function ThreadTerminal(props: {
             terminalId,
             cwd: launchLocation.cwd,
             worktreePath: launchLocation.worktreePath,
+            projectId: selectedThread.projectId,
             cols: initialAttachGridSize.cols,
             rows: initialAttachGridSize.rows,
             ...(pendingLaunch?.env ? { env: pendingLaunch.env } : {}),
@@ -542,6 +543,7 @@ function ThreadTerminal(props: {
       launchLocation,
       pendingLaunch,
       selectedThread.id,
+      selectedThread.projectId,
       terminalId,
     ],
   );

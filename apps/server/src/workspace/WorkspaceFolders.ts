@@ -25,7 +25,7 @@ import * as Schema from "effect/Schema";
 
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import { isWithinRoot } from "./KnownWorkspaces.ts";
-import { MAX_PENDING_LINK_TARGET_PROBES, resolveLinkTarget } from "./linkTargets.ts";
+import { MAX_PENDING_LINK_TARGET_PROBES, probeFolder, resolveLinkTarget } from "./linkTargets.ts";
 import * as TaskFolderStore from "./TaskFolderStore.ts";
 
 /** A tracked folder a thread works in, besides its own cwd. */
@@ -138,7 +138,9 @@ const folderProbes = Effect.gen(function* () {
   // A link to a stalled network mount would hang every probe below it and hold libuv's workers.
   // One that does not answer in time is left out of this scan; a later scan finds it again.
   const linksToFolder = (target: string) =>
-    resolveLinkTarget(target).pipe(Effect.map((linked) => linked?.kind === "directory"));
+    resolveLinkTarget(target, { link: true }).pipe(
+      Effect.map((linked) => linked?.kind === "directory"),
+    );
 
   const childFolders = (folder: string) =>
     fileSystem.readDirectoryEntries(folder).pipe(
@@ -251,28 +253,37 @@ const scanFolders = Effect.fn("WorkspaceFolders.scan")(function* (
       ...(listed ?? []).map((folder) => ({ ...folder, source: "code-workspace" as const })),
       ...children.flat().map((folder) => ({ ...folder, source: "child" as const })),
     ],
-    (folder) => realPath(folder.path).pipe(Effect.map((real) => ({ folder, real }))),
+    (folder) =>
+      Effect.gen(function* () {
+        if (folder.source === "child")
+          return [{ folder, real: yield* realPath(folder.path), state: undefined }];
+        // A workspace file can list a folder on a stalled mount; like a link, one that does not
+        // answer in time is left out of this scan.
+        const probed = yield* probeFolder(folder.path);
+        return probed === undefined ? [] : [{ folder, real: probed.realPath, state: probed.state }];
+      }),
     { concurrency: DETECTION_CONCURRENCY },
   );
   const seen = new Set<string>();
-  const candidates = resolved.flatMap(({ folder, real }) => {
+  const candidates = resolved.flat().flatMap(({ folder, real, state }) => {
     // The scanned folder and its parents are never tracked, however a symlink names them.
     if (seen.has(real) || isWithinRoot(path, realRoot, real)) return [];
     seen.add(real);
     // Submodules follow their parent repository.
     return submodules.has(path.relative(root, folder.path).split(path.sep).join("/"))
       ? []
-      : [folder];
+      : [{ folder, state }];
   });
   // Capped after the missing ones are dropped: dead entries must not hide the folders that exist.
   const folders = yield* Effect.forEach(
     candidates,
-    (folder) =>
-      classify(folder).pipe(
-        Effect.map((classified) =>
-          classified.state === "missing"
-            ? []
-            : [{ ...folder, isGitRepository: classified.state === "git" }],
+    ({ folder, state }) =>
+      (state === undefined
+        ? classify(folder).pipe(Effect.map((classified) => classified.state))
+        : Effect.succeed(state)
+      ).pipe(
+        Effect.map((found) =>
+          found === "missing" ? [] : [{ ...folder, isGitRepository: found === "git" }],
         ),
       ),
     { concurrency: DETECTION_CONCURRENCY },
@@ -391,7 +402,7 @@ const make = Effect.gen(function* () {
   const projects = yield* ProjectStore.ProjectStoreV2;
   const taskFolders = yield* TaskFolderStore.TaskFolderStore;
 
-  const { exists, realPath, classify } = yield* folderProbes;
+  const { exists, realPath } = yield* folderProbes;
 
   const readProject = Effect.fn("WorkspaceFolders.readProject")(function* (projectId: ProjectId) {
     const row = yield* projects
@@ -410,8 +421,20 @@ const make = Effect.gen(function* () {
     return row.value;
   });
 
+  // Any tracked folder, or a link to one inside the project, can sit on a stalled mount, and
+  // counts as missing for a call it does not answer in time. `real` is set for a present folder.
   const classifyAll = (folders: ReadonlyArray<ProjectTrackedFolder>) =>
-    Effect.forEach(folders, classify, { concurrency: DETECTION_CONCURRENCY });
+    Effect.forEach(
+      folders,
+      (folder) =>
+        probeFolder(folder.path).pipe(
+          Effect.map((probed) => ({
+            folder: { ...folder, state: probed?.state ?? "missing" } satisfies WorkspaceFolder,
+            real: probed?.realPath,
+          })),
+        ),
+      { concurrency: MAX_PENDING_LINK_TARGET_PROBES },
+    );
   const foldersOf = (project: {
     readonly workspaceRoot: string;
     readonly trackedFolders: ReadonlyArray<ProjectTrackedFolder>;
@@ -518,20 +541,18 @@ const make = Effect.gen(function* () {
     const project = yield* readProject(input.projectId);
     const tracked = yield* foldersOf(project);
     if (tracked.length === 0) return EMPTY_WORKSPACE;
-    const folders = (yield* classifyAll(tracked)).flatMap((folder) =>
-      folder.state === "missing"
-        ? []
-        : [{ name: folder.name, path: folder.path, isGitRepository: folder.state === "git" }],
+    const present = (yield* classifyAll(tracked)).filter(
+      ({ folder }) => folder.state !== "missing",
     );
+    const folders = present.map(({ folder }) => ({
+      name: folder.name,
+      path: folder.path,
+      isGitRepository: folder.state === "git",
+    }));
     const projectRoot = yield* realPath(project.workspaceRoot);
     // Both spellings are granted: agents are told the stored path, sandboxes check the real one.
-    const outside = yield* Effect.forEach(
-      folders,
-      (folder) =>
-        realPath(folder.path).pipe(
-          Effect.map((real) => (isWithinRoot(path, real, projectRoot) ? [] : [folder.path, real])),
-        ),
-      { concurrency: DETECTION_CONCURRENCY },
+    const outside = present.map(({ folder, real = folder.path }) =>
+      isWithinRoot(path, real, projectRoot) ? [] : [folder.path, real],
     );
     return { folders, extraRoots: [...new Set(outside.flat())] };
   });
@@ -561,7 +582,8 @@ const make = Effect.gen(function* () {
   const list: WorkspaceFolders["Service"]["list"] = Effect.fn("WorkspaceFolders.list")(
     function* (input) {
       const project = yield* readProject(input.projectId);
-      return { folders: yield* classifyAll(yield* foldersOf(project)) };
+      const classified = yield* classifyAll(yield* foldersOf(project));
+      return { folders: classified.map(({ folder }) => folder) };
     },
   );
 
