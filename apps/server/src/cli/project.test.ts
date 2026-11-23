@@ -16,6 +16,7 @@ import {
   type OrchestrationV2AppThread,
   type ProjectId,
 } from "@onicode/contracts";
+import * as HostProcess from "@onicode/shared/HostProcess";
 import * as NetService from "@onicode/shared/Net";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -137,6 +138,7 @@ it.effect(
 
       // Repositories inside the folder are found; `--track` adds one from outside it.
       const shared = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "oni-v2-project-shared-"));
+      const homeShared = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "oni-v2-project-home-"));
       NodeFS.mkdirSync(NodePath.join(workspaceRoot, "api", ".git"), { recursive: true });
       NodeFS.mkdirSync(NodePath.join(workspaceRoot, "notes"));
       yield* runCli([
@@ -145,12 +147,15 @@ it.effect(
         workspaceRoot,
         "--track",
         `${shared}${NodePath.sep}`,
+        "--track",
+        `~/${NodePath.basename(homeShared)}`,
         "--base-dir",
         baseDir,
-      ]);
+      ]).pipe(Effect.provideService(HostProcess.HomeDirectory, NodeOS.tmpdir()));
       assert.deepEqual((yield* readProjects(baseDir)).projects[0]?.trackedFolders, [
         { path: NodePath.join(workspaceRoot, "api"), name: "api", discovered: true },
         { path: shared, name: NodePath.basename(shared) },
+        { path: homeShared, name: NodePath.basename(homeShared) },
       ]);
     }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
