@@ -2109,6 +2109,7 @@ const runForkWithFailingNativeSource = (
       ProviderReplayHarness.layerWithRegistry(
         { name: "fork-missing-native-source" },
         ProviderAdapterRegistry.layerFromAdapters([adapter]),
+        { runEffectWorker: false },
       ),
     ),
   );
