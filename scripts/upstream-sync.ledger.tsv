@@ -3436,3 +3436,4 @@ e54ef0f782	take	taken; test conflict was indentation only, upstream's cases take
 5e570ea56d	take	taken as is
 eeb19512f0	take	kept Onicode's reservation ordering (earlierWork, reservations): a write also waits on earlier writes on its threads, which upstream lacks; upstream's waitingWrites set replaces Onicode's waitingWriters counter so a slow batch is cut only for a write that needs none of the remaining units
 a1839ca6a8	take	taken as is, scenario included (desktop target)
+f274d47150	take	patch rebased onto Onicode's gt-react-native 11.4.24 (applies unchanged; 11.4.24 still has the bug); upstream's overrides (gt pin 11.4.18, older app-builder-lib/electron-updater/expo-modules-core) and unrelated patch entries not taken; i18n keys already in catalogs

@@ -246,6 +246,9 @@ patchedDependencies:
   # A scenario screenshot no longer waits forever on the frame an Electron <webview> leaves in
   # its embedder: Playwright gets no script context for it, so its mask locator never resolves.
   "@e2e-dev/web@0.16.1": patches/@e2e-dev__web@0.16.1.patch
+  # Android: a language change applies at once instead of reading back the old locale
+  # before the async native write lands.
+  gt-react-native@11.4.24: patches/gt-react-native@11.4.24.patch
 
 # Unmet peers fail resolution, so a pin outside a dependency's peer range is
 # caught when the lockfile changes instead of scrolling past as a warning.
