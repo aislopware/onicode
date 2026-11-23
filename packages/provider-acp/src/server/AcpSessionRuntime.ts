@@ -32,6 +32,13 @@ import { resolveSpawnCommand } from "@onicode/shared/shell";
 import { AgentScope, AgentScopeThreadId, RAISE_OOM_SCORE_LINE } from "@onicode/shared/AgentScope";
 import * as HostProcess from "@onicode/shared/HostProcess";
 
+import {
+  PROCESS_TABLE_PS_ARGS,
+  makeSharedProcessDescendantPoll,
+  parseProcessTable,
+  type ProcessTableRow,
+  type SharedProcessDescendantPoll,
+} from "@onicode/provider-core/server/processDescendants";
 import { signalProcessGroup } from "@onicode/provider-core/server/processGroup";
 import { appendAcpStderrTail, sanitizeAcpStderrExcerpt } from "./stderr.ts";
 import {
@@ -123,6 +130,8 @@ export interface AcpSessionRuntimeOptions {
   ) => Effect.Effect<void, AcpProcessGroupTerminationError>;
   readonly posixProcessTreeController?: AcpPosixProcessTreeController;
   readonly linuxCgroupController?: AcpLinuxCgroupController | null;
+  readonly darwinDescendantProcessTableReader?: Effect.Effect<ReadonlyArray<ProcessTableRow>>;
+  readonly darwinDescendantSignal?: (pid: number, signal: NodeJS.Signals) => void;
   readonly cancelBehavior?: "interrupt" | "wait-for-prompt";
   readonly cancelTimeout?: Duration.Input;
   readonly clientCapabilities?: EffectAcpSchema.InitializeRequest["clientCapabilities"];
@@ -1076,6 +1085,67 @@ const terminateWindowsProcessTreeWithTaskkill = (
     ),
   );
 
+const readDarwinProcessTable = (
+  spawner: ChildProcessSpawner.ChildProcessSpawner["Service"],
+): Effect.Effect<ReadonlyArray<ProcessTableRow>> =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const child = yield* spawner.spawn(
+        ChildProcess.make("ps", [...PROCESS_TABLE_PS_ARGS], {
+          stderr: "ignore",
+          forceKillAfter: "1 second",
+        }),
+      );
+      const [stdout, exitCode] = yield* Effect.all(
+        [
+          Stream.decodeText(child.stdout).pipe(Stream.mkString),
+          child.exitCode.pipe(Effect.map(Number)),
+        ],
+        { concurrency: "unbounded" },
+      );
+      return exitCode === 0 ? parseProcessTable(stdout) : [];
+    }),
+  ).pipe(
+    Effect.timeout("5 seconds"),
+    Effect.orElseSucceed(() => []),
+  );
+
+const darwinDescendantPollsByClock = new WeakMap<
+  Clock.Clock,
+  WeakMap<ChildProcessSpawner.ChildProcessSpawner["Service"], SharedProcessDescendantPoll>
+>();
+const darwinDescendantPollsByReader = new WeakMap<
+  Effect.Effect<ReadonlyArray<ProcessTableRow>>,
+  SharedProcessDescendantPoll
+>();
+
+function sharedDarwinDescendantPoll(input: {
+  readonly clock: Clock.Clock;
+  readonly spawner: ChildProcessSpawner.ChildProcessSpawner["Service"];
+  readonly runFork: <A, E>(effect: Effect.Effect<A, E>) => Fiber.Fiber<A, E>;
+  readonly reader?: Effect.Effect<ReadonlyArray<ProcessTableRow>>;
+}): SharedProcessDescendantPoll {
+  if (input.reader !== undefined) {
+    let poll = darwinDescendantPollsByReader.get(input.reader);
+    if (poll === undefined) {
+      poll = makeSharedProcessDescendantPoll(input.reader, input.runFork);
+      darwinDescendantPollsByReader.set(input.reader, poll);
+    }
+    return poll;
+  }
+  let bySpawner = darwinDescendantPollsByClock.get(input.clock);
+  if (bySpawner === undefined) {
+    bySpawner = new WeakMap();
+    darwinDescendantPollsByClock.set(input.clock, bySpawner);
+  }
+  let poll = bySpawner.get(input.spawner);
+  if (poll === undefined) {
+    poll = makeSharedProcessDescendantPoll(readDarwinProcessTable(input.spawner), input.runFork);
+    bySpawner.set(input.spawner, poll);
+  }
+  return poll;
+}
+
 export function selectAcpAgentAuthMethod(
   authMethods: ReadonlyArray<EffectAcpSchema.AuthMethod> | undefined,
   preferredMethodId?: string,
@@ -1305,6 +1375,7 @@ export const make = Effect.fn("AcpSessionRuntime.make")(function* (
   const stderrFailure = yield* Deferred.make<never, EffectAcpErrors.AcpError>();
   const stderrTailRef = yield* Ref.make("");
   const homeDirectory = yield* HostProcess.HomeDirectory;
+  const hostEnvironment = yield* HostProcess.Environment;
   const stderrDrained = yield* Deferred.make<void>();
   const runtimeClosed = yield* Deferred.make<void>();
   const promptSerializationSemaphore = yield* Semaphore.make(1);
@@ -1354,7 +1425,7 @@ export const make = Effect.fn("AcpSessionRuntime.make")(function* (
           Effect.ignore,
           Effect.andThen(Ref.get(stderrTailRef)),
           Effect.map((tail) => {
-            const stderr = sanitizeAcpStderrExcerpt(tail, homeDirectory);
+            const stderr = sanitizeAcpStderrExcerpt(tail, homeDirectory, hostEnvironment);
             return stderr.length === 0
               ? error
               : new EffectAcpErrors.AcpProcessExitedError({
@@ -1494,7 +1565,7 @@ export const make = Effect.fn("AcpSessionRuntime.make")(function* (
           const resolved = resolveLinuxCgroupTargetCommand(
             spawnCommand.command,
             options.spawn.cwd ?? options.cwd,
-            { ...process.env, ...options.spawn.env },
+            { ...hostEnvironment, ...options.spawn.env },
           );
           if (resolved !== undefined) return resolved;
           return yield* new EffectAcpErrors.AcpSpawnError({
@@ -1511,7 +1582,7 @@ export const make = Effect.fn("AcpSessionRuntime.make")(function* (
           args: spawnCommand.args,
           name: "acp",
           threadId: yield* AgentScopeThreadId,
-          env: { ...process.env, ...options.spawn.env },
+          env: { ...hostEnvironment, ...options.spawn.env },
         });
   const scopedSpawnCommand =
     scopedLaunch === undefined ? spawnCommand : { ...scopedLaunch, shell: false };
@@ -1535,6 +1606,20 @@ export const make = Effect.fn("AcpSessionRuntime.make")(function* (
           ELECTRON_RUN_AS_NODE: "1",
           ONICODE_ACP_CGROUP_WRAPPER: "1",
         };
+  const useDarwinDescendantTracking =
+    options.ownDescendantProcessGroups === true &&
+    options.posixProcessTreeController === undefined &&
+    options.processGroupPlatform === "darwin";
+  // Registered before spawning so LIFO finalizers reap detached leftovers after the agent exits.
+  let stopDarwinDescendants: Effect.Effect<void> = Effect.void;
+  if (useDarwinDescendantTracking) {
+    yield* Scope.addFinalizer(
+      runtimeScope,
+      Effect.suspend(() => Effect.uninterruptible(stopDarwinDescendants)).pipe(
+        Effect.ignoreCause({ log: true }),
+      ),
+    );
+  }
   const child = yield* spawner
     .spawn(
       ChildProcess.make(containedSpawnCommand.command, containedSpawnCommand.args, {
@@ -1568,12 +1653,40 @@ export const make = Effect.fn("AcpSessionRuntime.make")(function* (
     );
   }
 
+  const clock = yield* Clock.Clock;
+  // The poll outlives this runtime and is shared, so it keeps only the clock, not this context.
+  const runFork = Effect.runForkWith(Context.make(Clock.Clock, clock));
+  let inFlightDarwinWork = 0;
+  const darwinDescendantTracker = useDarwinDescendantTracking
+    ? sharedDarwinDescendantPoll({
+        clock,
+        spawner,
+        runFork,
+        ...(options.darwinDescendantProcessTableReader === undefined
+          ? {}
+          : { reader: options.darwinDescendantProcessTableReader }),
+      }).track(Number(child.pid), options.darwinDescendantSignal)
+    : undefined;
+  if (darwinDescendantTracker !== undefined) {
+    stopDarwinDescendants = yield* Effect.cached(
+      Effect.uninterruptible(darwinDescendantTracker.stop),
+    );
+    // Detached children can keep stdout open, delaying protocol termination.
+    yield* child.exitCode.pipe(
+      Effect.matchEffect({
+        onFailure: () => stopDarwinDescendants,
+        onSuccess: () => stopDarwinDescendants,
+      }),
+      Effect.forkIn(runtimeScope),
+    );
+  }
+
   const posixOwnershipLedger = new Map<string, AcpOwnedPosixProcess>();
   const posixOwnershipFrontier = new Map<number, AcpOwnedPosixProcess>();
   const posixOwnershipChildQueues = new Map<number, Array<number>>();
   const posixOwnershipRoot: AcpPosixOwnershipRoot = { value: undefined };
   const posixController =
-    options.ownDescendantProcessGroups === true
+    options.ownDescendantProcessGroups === true && !useDarwinDescendantTracking
       ? yield* Effect.try({
           try: () => {
             if (options.posixProcessTreeController !== undefined) {
@@ -1621,7 +1734,11 @@ export const make = Effect.fn("AcpSessionRuntime.make")(function* (
   const signalOwnedProcessGroup = (signal: NodeJS.Signals) =>
     Effect.try({
       try: () => {
-        signalProcessGroup(Number(child.pid), signal);
+        if (options.darwinDescendantSignal !== undefined) {
+          options.darwinDescendantSignal(-Number(child.pid), signal);
+        } else {
+          signalProcessGroup(Number(child.pid), signal);
+        }
         return true;
       },
       catch: (cause) =>
@@ -1692,16 +1809,26 @@ export const make = Effect.fn("AcpSessionRuntime.make")(function* (
       if (grace !== 0) yield* Effect.sleep(grace);
       return yield* terminateLinuxCgroupLease(linuxCgroupLease);
     }
-    if (options.ownDescendantProcessGroups === true) {
+    if (options.ownDescendantProcessGroups === true && !useDarwinDescendantTracking) {
       return yield* terminatePosixProcessTree(options.processGroupTerminationGrace ?? "1 second");
     }
-    const groupExisted = yield* signalOwnedProcessGroup("SIGTERM");
-    if (!groupExisted) return;
-    const grace = options.processGroupTerminationGrace ?? "1 second";
-    if (grace !== 0) {
-      yield* Effect.sleep(grace);
+    if (darwinDescendantTracker !== undefined) {
+      yield* darwinDescendantTracker.refresh;
     }
-    yield* signalOwnedProcessGroup("SIGKILL");
+    const groupExisted = yield* signalOwnedProcessGroup("SIGTERM");
+    if (groupExisted) {
+      const grace = options.processGroupTerminationGrace ?? "1 second";
+      if (grace !== 0) {
+        yield* Effect.sleep(grace);
+      }
+      if (darwinDescendantTracker !== undefined) {
+        yield* darwinDescendantTracker.refresh;
+      }
+      yield* signalOwnedProcessGroup("SIGKILL");
+    }
+    if (darwinDescendantTracker !== undefined) {
+      yield* stopDarwinDescendants;
+    }
   }).pipe(withWallClock);
   const terminateProcessGroup = yield* Effect.cached(
     Effect.uninterruptible(terminateOwnedProcessGroupImpl),
@@ -1714,12 +1841,24 @@ export const make = Effect.fn("AcpSessionRuntime.make")(function* (
           )
         : linuxCgroupLease !== undefined
           ? terminateLinuxCgroupLease(linuxCgroupLease)
-          : options.ownDescendantProcessGroups === true
-            ? terminatePosixProcessTree(0, hostPlatform)
-            : signalOwnedProcessGroup("SIGKILL").pipe(Effect.asVoid);
+          : useDarwinDescendantTracking
+            ? signalOwnedProcessGroup("SIGKILL").pipe(Effect.asVoid)
+            : options.ownDescendantProcessGroups === true
+              ? terminatePosixProcessTree(0, hostPlatform)
+              : signalOwnedProcessGroup("SIGKILL").pipe(Effect.asVoid);
     yield* Scope.addFinalizer(
       runtimeScope,
       Effect.uninterruptible(forceTerminateOwnedProcessGroup).pipe(
+        Effect.ignoreCause({ log: true }),
+      ),
+    );
+  }
+  // Runs before process-group SIGKILL and child teardown (LIFO) so jobs started since the last
+  // poll are recorded while the agent is still alive.
+  if (darwinDescendantTracker !== undefined) {
+    yield* Scope.addFinalizer(
+      runtimeScope,
+      Effect.uninterruptible(darwinDescendantTracker.refresh).pipe(
         Effect.ignoreCause({ log: true }),
       ),
     );
@@ -1804,6 +1943,15 @@ export const make = Effect.fn("AcpSessionRuntime.make")(function* (
       Effect.gen(function* () {
         if (Option.isSome(yield* Ref.get(terminationErrorRef))) {
           return;
+        }
+        // Tools can run with no prompt open, such as after a background job wakes the agent;
+        // the next prompt's end settles the tracker again.
+        if (
+          darwinDescendantTracker !== undefined &&
+          inFlightDarwinWork === 0 &&
+          notification.update.sessionUpdate === "tool_call"
+        ) {
+          darwinDescendantTracker.work();
         }
         const gate = yield* Ref.get(sessionLoadGateRef);
         // A different session can still have an in-flight prompt while this
@@ -2477,9 +2625,11 @@ export const make = Effect.fn("AcpSessionRuntime.make")(function* (
             withStartupTimeout("session/resume", acp.agent.resumeSession(resumePayload)),
           );
         } else {
+          // Named after the request it stands in for, so callers know no prompt went out.
           return yield* new EffectAcpErrors.AcpRequestError({
             code: -32601,
             errorMessage: "ACP agent does not advertise session/load or session/resume support",
+            method: "session/load",
           });
         }
       } else {
@@ -2668,6 +2818,23 @@ export const make = Effect.fn("AcpSessionRuntime.make")(function* (
     }
   });
 
+  // Startup counts too: the agent starts its MCP servers during session setup.
+  const trackDarwinDescendants = <A, E>(effect: Effect.Effect<A, E>): Effect.Effect<A, E> =>
+    darwinDescendantTracker === undefined
+      ? effect
+      : Effect.acquireUseRelease(
+          Effect.sync(() => {
+            inFlightDarwinWork += 1;
+            darwinDescendantTracker.work();
+          }),
+          () => effect,
+          () =>
+            Effect.suspend(() => {
+              inFlightDarwinWork = Math.max(0, inFlightDarwinWork - 1);
+              return inFlightDarwinWork === 0 ? darwinDescendantTracker.settle : Effect.void;
+            }),
+        );
+
   return {
     handleRequestPermission: acp.handleRequestPermission,
     handleElicitation: acp.handleElicitation,
@@ -2696,7 +2863,7 @@ export const make = Effect.fn("AcpSessionRuntime.make")(function* (
         ),
         Effect.asVoid,
       ),
-    start: () => start,
+    start: () => trackDarwinDescendants(start),
     getEvents: () => Stream.fromQueue(eventQueue),
     drainEvents,
     getModeState: Ref.get(modeStateRef),
@@ -2879,15 +3046,17 @@ export const make = Effect.fn("AcpSessionRuntime.make")(function* (
                 } satisfies EffectAcpSchema.PromptRequest;
                 const completed = yield* Deferred.make<void>();
                 const queued = yield* Deferred.make<void>();
-                const fiber = yield* runLoggedRequest(
-                  "session/prompt",
-                  requestPayload,
-                  acp.agent
-                    .prompt(requestPayload)
-                    .pipe(
-                      Effect.provideService(EffectAcpProtocol.AcpOutgoingQueued, queued),
-                      Effect.ensuring(Deferred.succeed(queued, undefined)),
-                    ),
+                const fiber = yield* trackDarwinDescendants(
+                  runLoggedRequest(
+                    "session/prompt",
+                    requestPayload,
+                    acp.agent
+                      .prompt(requestPayload)
+                      .pipe(
+                        Effect.provideService(EffectAcpProtocol.AcpOutgoingQueued, queued),
+                        Effect.ensuring(Deferred.succeed(queued, undefined)),
+                      ),
+                  ),
                 ).pipe(Effect.forkIn(runtimeScope));
                 const active = { fiber, completed, queued } satisfies AcpActivePrompt;
                 yield* Ref.set(activePromptRef, Option.some(active));

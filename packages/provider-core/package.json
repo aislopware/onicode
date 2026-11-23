@@ -103,6 +103,10 @@
       "types": "./src/server/pathExpansion.ts",
       "import": "./src/server/pathExpansion.ts"
     },
+    "./server/processDescendants": {
+      "types": "./src/server/processDescendants.ts",
+      "import": "./src/server/processDescendants.ts"
+    },
     "./server/processGroup": {
       "types": "./src/server/processGroup.ts",
       "import": "./src/server/processGroup.ts"

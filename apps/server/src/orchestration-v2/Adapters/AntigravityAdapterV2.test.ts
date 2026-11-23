@@ -2,6 +2,7 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import {
+  ANTIGRAVITY_DEFAULT_MODEL,
   ChatFileAttachment,
   MessageId,
   NodeId,
@@ -13,7 +14,7 @@ import {
   ThreadId,
 } from "@onicode/contracts";
 import { resolveSelfInvocation } from "@onicode/shared/nodeRuntime";
-import { htmlRenderFromToolItem } from "@onicode/shared/toolOutput";
+import { htmlRenderFromToolItem, sentMessageFromToolItem } from "@onicode/shared/toolOutput";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
@@ -116,6 +117,39 @@ describe("AntigravityAdapterV2 flavor", () => {
     assert.equal(single?.status, "running");
     assert.equal(single?.title, "Codebase Researcher");
     assert.equal(single?.prompt, "Read README.md");
+  });
+
+  it("classifies sign-in and transport prompt failures", () => {
+    const signIn = flavor.promptFailure?.(
+      new EffectAcpErrors.AcpTransportError({
+        detail: ANTIGRAVITY_SIGN_IN_REQUIRED_MESSAGE,
+        cause: "no browser",
+      }),
+    );
+    assert.equal(signIn?.class, "permission_error");
+
+    const noBrowser = flavor.promptFailure?.(
+      EffectAcpErrors.AcpRequestError.internalError("No browser is available here to sign in."),
+    );
+    assert.equal(noBrowser?.class, "permission_error");
+    assert.equal(noBrowser?.code, "-32603");
+
+    const auth = flavor.promptFailure?.(
+      new EffectAcpErrors.AcpRequestError({ code: -32000, errorMessage: "Auth required" }),
+    );
+    assert.equal(auth?.class, "permission_error");
+    assert.equal(auth?.code, "-32000");
+
+    const transport = flavor.promptFailure?.(
+      new EffectAcpErrors.AcpTransportError({ detail: "pipe closed", cause: "EOF" }),
+    );
+    assert.equal(transport?.class, "transport_error");
+
+    const provider = flavor.promptFailure?.(
+      EffectAcpErrors.AcpRequestError.internalError("upstream error"),
+    );
+    assert.equal(provider?.class, "provider_error");
+    assert.equal(provider?.code, "-32603");
   });
 
   it("routes interaction_* permission requests to the question card", () => {
@@ -989,6 +1023,205 @@ describe("AntigravityAdapterV2 html_render pages", () => {
       assert.strictEqual(yield* mcpSessions.takeHtmlRender(threadId, telemetry), undefined);
     }).pipe(Effect.provide(layerSession)),
   );
+
+  it.effect("recovers send_to_user messages and surfaces generated and viewed image paths", () =>
+    Effect.gen(function* () {
+      const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+      const path = yield* Path.Path;
+      const crypto = yield* SecureRandom.SecureRandom;
+      const mockAgentPath = yield* path.fromFileUrl(
+        new URL("../../../scripts/acp-mock-agent.ts", import.meta.url),
+      );
+      type RuntimeService = AcpSessionRuntime.AcpSessionRuntime["Service"];
+      let sessionUpdate: Parameters<RuntimeService["handleSessionUpdate"]>[0] | undefined;
+      const instanceId = ProviderInstanceId.make("antigravity-send-and-images-test");
+      const threadId = ThreadId.make("thread-antigravity-send-and-images");
+      const adapter = yield* makeAntigravityAdapterV2({
+        instanceId,
+        selfInvocation: yield* resolveSelfInvocation(),
+        makeRuntime: (input) =>
+          makeAntigravityAcpRuntime({
+            ...input,
+            childProcessSpawner,
+            spawn: {
+              command: process.execPath,
+              args: [mockAgentPath],
+              cwd: input.cwd,
+              env: { ONICODE_ACP_ANTIGRAVITY: "1" },
+            },
+          }).pipe(
+            Effect.provideService(SecureRandom.SecureRandom, crypto),
+            Effect.map((runtime): RuntimeService => ({
+              ...runtime,
+              handleSessionUpdate: (handler) =>
+                Effect.sync(() => {
+                  sessionUpdate = handler;
+                }).pipe(Effect.andThen(runtime.handleSessionUpdate(handler))),
+              prompt: () =>
+                Effect.gen(function* () {
+                  const send = (update: EffectAcpSchema.SessionUpdate) =>
+                    sessionUpdate === undefined
+                      ? Effect.die("the adapter must handle session updates")
+                      : sessionUpdate(
+                          normalizeAntigravitySessionUpdate({
+                            sessionId: "mock-session-1",
+                            update,
+                          }),
+                        );
+                  for (const [toolCallId, message] of [
+                    ["send-no-output", "Draft:\n\n> Ship it."],
+                    ["send-summary", "Release notes ready."],
+                    ["send-failed", "Should not show."],
+                    ["send-error", "Should not show either."],
+                    ["send-blank", "   "],
+                  ] as const) {
+                    yield* send({
+                      sessionUpdate: "tool_call",
+                      toolCallId,
+                      title: "Run mcp_onicode_send_to_user",
+                      kind: "other",
+                      status: "in_progress",
+                      rawInput: { message, toolSummary: "Send message" },
+                    });
+                  }
+                  yield* send({
+                    sessionUpdate: "tool_call_update",
+                    toolCallId: "send-no-output",
+                    status: "completed",
+                  });
+                  yield* send({
+                    sessionUpdate: "tool_call_update",
+                    toolCallId: "send-summary",
+                    status: "completed",
+                    rawOutput: "Summary of send_to_user",
+                  });
+                  yield* send({
+                    sessionUpdate: "tool_call_update",
+                    toolCallId: "send-summary",
+                    status: "completed",
+                    rawOutput: "Repeated summary of send_to_user",
+                  });
+                  yield* send({
+                    sessionUpdate: "tool_call_update",
+                    toolCallId: "send-failed",
+                    status: "failed",
+                    rawOutput: "Tool failed",
+                  });
+                  yield* send({
+                    sessionUpdate: "tool_call_update",
+                    toolCallId: "send-error",
+                    status: "completed",
+                    rawOutput: { result: { isError: true, content: [] } },
+                  });
+                  yield* send({
+                    sessionUpdate: "tool_call_update",
+                    toolCallId: "send-blank",
+                    status: "completed",
+                  });
+                  yield* send({
+                    sessionUpdate: "tool_call",
+                    toolCallId: "generated-image",
+                    title: "Running generate_image",
+                    kind: "other",
+                    status: "completed",
+                    rawInput: { Prompt: "Draw a scooter" },
+                    rawOutput: {
+                      imageName: "result",
+                      imagePath: "file:///workspace/brain/result%20image.png",
+                    },
+                  });
+                  yield* send({
+                    sessionUpdate: "tool_call",
+                    toolCallId: "read-image-path",
+                    title: "Running read_file",
+                    kind: "read",
+                    status: "completed",
+                    rawInput: { Path: "/workspace/shot-path.png" },
+                  });
+                  yield* send({
+                    sessionUpdate: "tool_call",
+                    toolCallId: "view-image-abs",
+                    title: "Running view_file",
+                    kind: "other",
+                    status: "completed",
+                    rawInput: { AbsolutePath: "/workspace/shot-abs.png" },
+                  });
+                  yield* send({
+                    sessionUpdate: "tool_call",
+                    toolCallId: "view-image-snake",
+                    title: "Running client_view_file",
+                    kind: "read",
+                    status: "completed",
+                    rawInput: { absolute_path: "/workspace/shot-snake.png" },
+                  });
+                  return { stopReason: "end_turn" as const };
+                }),
+            })),
+          ),
+        withProcess: (_stop, task) => task,
+        defaultModel: Effect.undefined,
+      });
+      const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        cwd: process.cwd(),
+      });
+      const modelSelection = { instanceId, model: "gemini-test-low" } as const;
+      const session = yield* adapter.openSession({
+        threadId,
+        providerSessionId: ProviderSessionId.make("provider-session-antigravity-send-images"),
+        modelSelection,
+        runtimePolicy,
+      });
+      const providerThread = yield* session.ensureThread({
+        threadId,
+        modelSelection,
+        runtimePolicy,
+      });
+      const now = yield* DateTime.now;
+      yield* session.startTurn(
+        makeTurnInput({
+          threadId,
+          providerThread,
+          instanceId,
+          runtimePolicy,
+          modelSelection,
+          now,
+          ordinal: 1,
+          messageText: "send draft and draw",
+        }),
+      );
+      const events = Array.from(
+        yield* session.events.pipe(
+          Stream.takeUntil((event) => event.type === "turn.terminal"),
+          Stream.runCollect,
+        ),
+      );
+      const dynamicTool = (nativeId: string) => {
+        const event = events.findLast(
+          (candidate) =>
+            candidate.type === "turn_item.updated" &&
+            candidate.turnItem.nativeItemRef?.nativeId === nativeId,
+        );
+        return event?.type === "turn_item.updated" && event.turnItem.type === "dynamic_tool"
+          ? event.turnItem
+          : undefined;
+      };
+
+      assert.equal(sentMessageFromToolItem(dynamicTool("send-no-output")!), "Draft:\n\n> Ship it.");
+      assert.equal(sentMessageFromToolItem(dynamicTool("send-summary")!), "Release notes ready.");
+      assert.isUndefined(sentMessageFromToolItem(dynamicTool("send-failed")!));
+      assert.isUndefined(sentMessageFromToolItem(dynamicTool("send-error")!));
+      assert.isUndefined(sentMessageFromToolItem(dynamicTool("send-blank")!));
+      assert.equal(
+        dynamicTool("generated-image")?.viewedImagePath,
+        "/workspace/brain/result image.png",
+      );
+      assert.equal(dynamicTool("read-image-path")?.viewedImagePath, "/workspace/shot-path.png");
+      assert.equal(dynamicTool("view-image-abs")?.viewedImagePath, "/workspace/shot-abs.png");
+      assert.equal(dynamicTool("view-image-snake")?.viewedImagePath, "/workspace/shot-snake.png");
+    }).pipe(Effect.provide(layerSession)),
+  );
 });
 
 /**
@@ -1004,6 +1237,8 @@ const openSessionWithRunningCommand = Effect.fn("openSessionWithRunningCommand")
   options?: {
     readonly profileDirectory?: string;
     readonly initialToolCalls?: ReadonlyArray<EffectAcpSchema.SessionUpdate>;
+    readonly isRuntimeOutdated?: AntigravityAdapterV2Options["isRuntimeOutdated"];
+    readonly promptCapabilities?: EffectAcpSchema.AgentCapabilities["promptCapabilities"];
   },
 ) {
   const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
@@ -1015,6 +1250,10 @@ const openSessionWithRunningCommand = Effect.fn("openSessionWithRunningCommand")
   type RuntimeService = AcpSessionRuntime.AcpSessionRuntime["Service"];
   let sessionUpdate: Parameters<RuntimeService["handleSessionUpdate"]>[0] | undefined;
   let requestPermission: Parameters<RuntimeService["handleRequestPermission"]>[0] | undefined;
+  const spawnedRuntimes: Array<{
+    readonly resumeSessionId: string | undefined;
+    readonly runtime: RuntimeService;
+  }> = [];
   const send = (update: EffectAcpSchema.SessionUpdate) =>
     sessionUpdate === undefined
       ? Effect.die("the adapter must handle session updates")
@@ -1060,61 +1299,90 @@ const openSessionWithRunningCommand = Effect.fn("openSessionWithRunningCommand")
         },
       }).pipe(
         Effect.provideService(SecureRandom.SecureRandom, crypto),
-        Effect.map((runtime): RuntimeService => ({
-          ...runtime,
-          cancel: Effect.sync(() => {
-            cancels += 1;
-          }),
-          handleSessionUpdate: (handler) =>
-            Effect.sync(() => {
-              sessionUpdate = handler;
-            }).pipe(Effect.andThen(runtime.handleSessionUpdate(handler))),
-          handleRequestPermission: (handler) =>
-            Effect.sync(() => {
-              requestPermission = handler;
-            }).pipe(Effect.andThen(runtime.handleRequestPermission(handler))),
-          prompt: (payload, promptOptions) =>
-            Effect.gen(function* () {
-              prompts.push({ prompt: payload.prompt, released: promptOptions?.released });
-              if (promptOptions?.dispatched !== undefined) {
-                yield* Deferred.succeed(promptOptions.dispatched, undefined);
-              }
-              if (prompts.length > 1) {
-                yield* Deferred.succeed(steered, undefined);
-                yield* Deferred.await(releaseSteer);
-                return { stopReason: "end_turn" as const };
-              }
-              if (options?.initialToolCalls !== undefined) {
-                for (const toolUpdate of options.initialToolCalls) {
-                  yield* send(toolUpdate);
-                }
-              } else {
-                yield* send(
-                  detachedChildProfile === undefined
-                    ? { sessionUpdate: "tool_call", ...command, status: "in_progress" }
-                    : {
-                        sessionUpdate: "tool_call",
-                        toolCallId: "call_research",
-                        kind: "other",
-                        title: "Run invoke_subagent",
-                        status: "completed",
-                        rawInput: { TypeName: "research", Role: "Researcher", Prompt: "Read it" },
-                      },
-                );
-              }
-              yield* send({
-                sessionUpdate: "agent_message_chunk",
-                content: { type: "text", text: "I'll render once the fetch finishes." },
-              });
-              yield* send(usage);
-              if (steering?.holdsFirstPrompt === true) yield* Deferred.await(steered);
-              return { stopReason: "end_turn" as const };
+        Effect.map((runtime): RuntimeService => {
+          const promptCapabilities = options?.promptCapabilities;
+          const wrapped: RuntimeService = {
+            ...runtime,
+            ...(promptCapabilities === undefined
+              ? {}
+              : {
+                  start: () =>
+                    runtime.start().pipe(
+                      Effect.map((started) => ({
+                        ...started,
+                        initializeResult: {
+                          ...started.initializeResult,
+                          agentCapabilities: {
+                            ...started.initializeResult.agentCapabilities,
+                            promptCapabilities,
+                          },
+                        },
+                      })),
+                    ),
+                }),
+            cancel: Effect.sync(() => {
+              cancels += 1;
             }),
-        })),
+            handleSessionUpdate: (handler) =>
+              Effect.sync(() => {
+                sessionUpdate = handler;
+              }).pipe(Effect.andThen(runtime.handleSessionUpdate(handler))),
+            handleRequestPermission: (handler) =>
+              Effect.sync(() => {
+                requestPermission = handler;
+              }).pipe(Effect.andThen(runtime.handleRequestPermission(handler))),
+            prompt: (payload, promptOptions) =>
+              Effect.gen(function* () {
+                prompts.push({ prompt: payload.prompt, released: promptOptions?.released });
+                if (promptOptions?.dispatched !== undefined) {
+                  yield* Deferred.succeed(promptOptions.dispatched, undefined);
+                }
+                if (prompts.length > 1) {
+                  yield* Deferred.succeed(steered, undefined);
+                  yield* Deferred.await(releaseSteer);
+                  return { stopReason: "end_turn" as const };
+                }
+                if (options?.initialToolCalls !== undefined) {
+                  for (const toolUpdate of options.initialToolCalls) {
+                    yield* send(toolUpdate);
+                  }
+                } else {
+                  yield* send(
+                    detachedChildProfile === undefined
+                      ? { sessionUpdate: "tool_call", ...command, status: "in_progress" }
+                      : {
+                          sessionUpdate: "tool_call",
+                          toolCallId: "call_research",
+                          kind: "other",
+                          title: "Run invoke_subagent",
+                          status: "completed",
+                          rawInput: {
+                            TypeName: "research",
+                            Role: "Researcher",
+                            Prompt: "Read it",
+                          },
+                        },
+                  );
+                }
+                yield* send({
+                  sessionUpdate: "agent_message_chunk",
+                  content: { type: "text", text: "I'll render once the fetch finishes." },
+                });
+                yield* send(usage);
+                if (steering?.holdsFirstPrompt === true) yield* Deferred.await(steered);
+                return { stopReason: "end_turn" as const };
+              }),
+          };
+          spawnedRuntimes.push({ resumeSessionId: input.resumeSessionId, runtime: wrapped });
+          return wrapped;
+        }),
       );
     },
     withProcess: (_stop, task) => task,
     defaultModel: Effect.undefined,
+    ...(options?.isRuntimeOutdated === undefined
+      ? {}
+      : { isRuntimeOutdated: options.isRuntimeOutdated }),
     ...(profileDirectory === undefined ? {} : { profileDirectory }),
   };
   const adapter =
@@ -1237,6 +1505,7 @@ const openSessionWithRunningCommand = Effect.fn("openSessionWithRunningCommand")
         : requestPermission(...args),
     cancels: () => cancels,
     prompts,
+    spawnedRuntimes,
     releaseSteer: Deferred.succeed(releaseSteer, undefined),
     runtimeDies: Effect.suspend(
       () =>
@@ -1255,8 +1524,22 @@ describe("AntigravityAdapterV2 work after the prompt ends", () => {
       const { command, usage, offers, send, startTurn, throughTerminal, requestPermission } =
         yield* openSessionWithRunningCommand({ IsDaemon: true, WaitMsBeforeAsync: 500 });
       yield* startTurn(1, false);
-      const promptTerminal = (yield* throughTerminal).at(-1);
+      const promptEvents = yield* throughTerminal;
+      const promptTerminal = promptEvents.at(-1);
       assert.equal(promptTerminal?.type === "turn.terminal" && promptTerminal.status, "completed");
+      const startedCommand = promptEvents.find(
+        (event) =>
+          event.type === "turn_item.updated" &&
+          event.turnItem.type === "command_execution" &&
+          event.turnItem.nativeItemRef?.nativeId === command.toolCallId,
+      );
+      assert.equal(
+        startedCommand?.type === "turn_item.updated" &&
+          startedCommand.turnItem.type === "command_execution"
+          ? startedCommand.turnItem.completionWake
+          : undefined,
+        "always",
+      );
 
       yield* send({
         sessionUpdate: "tool_call_update",
@@ -1315,6 +1598,12 @@ describe("AntigravityAdapterV2 work after the prompt ends", () => {
           event.turnItem.nativeItemRef?.nativeId === command.toolCallId,
       );
       assert.equal(finished?.type === "turn_item.updated" && finished.turnItem.status, "completed");
+      assert.equal(
+        finished?.type === "turn_item.updated" && finished.turnItem.type === "command_execution"
+          ? finished.turnItem.completionWake
+          : undefined,
+        "always",
+      );
       assert.lengthOf(offers, 1, "one wake is one run");
     }).pipe(Effect.provide(layerSession)),
   );
@@ -1876,6 +2165,69 @@ describe("AntigravityAdapterV2 work after the prompt ends", () => {
     }).pipe(Effect.provide(layerSession)),
   );
 
+  it.effect("closes a streaming reply as interrupted on steer", () =>
+    Effect.gen(function* () {
+      const opened = yield* openSessionWithRunningCommand(
+        {},
+        undefined,
+        { agentVersion: "1.5.11", holdsFirstPrompt: true },
+        { initialToolCalls: [], promptCapabilities: { image: true } },
+      );
+      const { session, providerThread, usage, send, startTurn, until } = opened;
+      yield* startTurn(1, false);
+      const streaming = yield* until(
+        (event) =>
+          event.type === "turn_item.updated" &&
+          event.turnItem.type === "assistant_message" &&
+          event.turnItem.streaming,
+      );
+      const providerTurnId = streaming.flatMap((event) =>
+        event.type === "provider_turn.updated" ? [event.providerTurn.id] : [],
+      )[0]!;
+      const preSteerId = streaming.flatMap((event) =>
+        event.type === "turn_item.updated" && event.turnItem.type === "assistant_message"
+          ? [event.turnItem.id]
+          : [],
+      )[0]!;
+
+      yield* session.steerTurn({
+        threadId: ThreadId.make("thread-antigravity-wake"),
+        runId: RunId.make("run-antigravity-wake-1"),
+        providerThread,
+        providerTurnId,
+        message: {
+          messageId: MessageId.make("message-antigravity-image-steer"),
+          text: "Use the screenshot instead.",
+          attachments: [],
+          createdBy: "user",
+          creationSource: "web",
+        },
+      });
+      assert.lengthOf(opened.prompts, 2);
+
+      yield* send({
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "Updated from screenshot." },
+      });
+      yield* send(usage);
+      yield* opened.releaseSteer;
+      const run = [...streaming, ...(yield* until((event) => event.type === "turn.terminal"))];
+      const assistantUpdates = run.flatMap((event) =>
+        event.type === "turn_item.updated" && event.turnItem.type === "assistant_message"
+          ? [event.turnItem]
+          : [],
+      );
+      const cutOff = assistantUpdates.findLast((item) => item.id === preSteerId);
+      assert.equal(cutOff?.status, "interrupted");
+      assert.isFalse(cutOff?.streaming);
+      assert.equal(cutOff?.text, "I'll render once the fetch finishes.");
+      const reply = assistantUpdates.findLast((item) => item.id !== preSteerId);
+      assert.equal(reply?.status, "completed");
+      assert.isFalse(reply?.streaming);
+      assert.equal(reply?.text, "Updated from screenshot.");
+    }).pipe(Effect.provide(layerSession)),
+  );
+
   // A wake run has no prompt of its own, yet agy can keep working in it for minutes.
   it.effect("steers a continuation run that keeps working after its wake", () =>
     Effect.gen(function* () {
@@ -2135,6 +2487,66 @@ describe("AntigravityAdapterV2 work after the prompt ends", () => {
         const terminal = (yield* opened.throughTerminal).at(-1);
         assert.equal(terminal?.type === "turn.terminal" && terminal.status, status);
         assert.equal(opened.cancels(), cancels);
+      }).pipe(Effect.provide(layerSession)),
+  );
+
+  it.effect(
+    "restarts an outdated runtime on the next user turn once pending wake work finishes",
+    () =>
+      Effect.gen(function* () {
+        let outdatedRuntime: AcpSessionRuntime.AcpSessionRuntime["Service"] | undefined;
+        const {
+          command,
+          usage,
+          offers,
+          send,
+          startTurn,
+          throughTerminal,
+          spawnedRuntimes,
+          releaseSteer,
+        } = yield* openSessionWithRunningCommand(
+          { IsDaemon: true, WaitMsBeforeAsync: 500 },
+          undefined,
+          undefined,
+          {
+            isRuntimeOutdated: (runtime) => Effect.succeed(runtime === outdatedRuntime),
+          },
+        );
+        yield* startTurn(1, false);
+        yield* throughTerminal;
+        outdatedRuntime = spawnedRuntimes[0]?.runtime;
+        assert.isDefined(outdatedRuntime);
+
+        // A finished daemon queues a wake and continuation run; the live process must stay alive for it.
+        yield* send({
+          sessionUpdate: "tool_call_update",
+          ...command,
+          status: "completed",
+          rawOutput: { output: "Command exited with code 0.", exit_code: 0 },
+        });
+        assert.lengthOf(offers, 1);
+        yield* offers[0]!.dispatchIfCurrent!(Effect.void);
+        yield* startTurn(2, true);
+        assert.lengthOf(spawnedRuntimes, 1);
+        yield* send({
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: "Finished daemon report." },
+        });
+        yield* send(usage);
+        yield* TestClock.adjust("3 seconds");
+        yield* throughTerminal;
+
+        // Once no wake or background work remains, the next user turn resumes on a fresh runtime.
+        yield* releaseSteer;
+        yield* startTurn(3, false);
+        yield* throughTerminal;
+        assert.lengthOf(spawnedRuntimes, 2);
+        assert.equal(spawnedRuntimes[1]?.resumeSessionId, "mock-session-1");
+
+        // The fresh runtime is no longer outdated, so later turns keep reusing it.
+        yield* startTurn(4, false);
+        yield* throughTerminal;
+        assert.lengthOf(spawnedRuntimes, 2);
       }).pipe(Effect.provide(layerSession)),
   );
 });
@@ -2629,6 +3041,475 @@ describe("AntigravityAdapterV2 session system prompt", () => {
         assert.include(sent, "through the Antigravity harness, as gemini-test-low");
         assert.notInclude(append, "systemPrompt");
         assert.include(sent, "<pull_request_linking>");
+      }).pipe(Effect.provide(layerSession)),
+  );
+});
+
+describe("AntigravityAdapterV2 extra roots and context window", () => {
+  it.effect(
+    "allows fs/read_text_file inside runtimePolicy.workspace.extraRoots and blocks escapes",
+    () =>
+      Effect.gen(function* () {
+        const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const crypto = yield* SecureRandom.SecureRandom;
+        const mockAgentPath = yield* path.fromFileUrl(
+          new URL("../../../scripts/acp-mock-agent.ts", import.meta.url),
+        );
+        type RuntimeService = AcpSessionRuntime.AcpSessionRuntime["Service"];
+        let readTextFile: Parameters<RuntimeService["handleReadTextFile"]>[0] | undefined;
+        const instanceId = ProviderInstanceId.make("antigravity-extra-roots-test");
+        const adapter = yield* makeAntigravityAdapterV2({
+          instanceId,
+          selfInvocation: yield* resolveSelfInvocation(),
+          makeRuntime: (input) =>
+            makeAntigravityAcpRuntime({
+              ...input,
+              childProcessSpawner,
+              spawn: {
+                command: process.execPath,
+                args: [mockAgentPath],
+                cwd: input.cwd,
+                env: { ONICODE_ACP_ANTIGRAVITY: "1" },
+              },
+            }).pipe(
+              Effect.provideService(SecureRandom.SecureRandom, crypto),
+              Effect.map((runtime): RuntimeService => ({
+                ...runtime,
+                handleReadTextFile: (handler) =>
+                  Effect.sync(() => {
+                    readTextFile = handler;
+                  }).pipe(Effect.andThen(runtime.handleReadTextFile(handler))),
+              })),
+            ),
+          withProcess: (_stop, task) => task,
+          defaultModel: Effect.undefined,
+        });
+        const workspace = yield* fileSystem.makeTempDirectoryScoped({ prefix: "oni-ag-root-" });
+        const extraRoot = yield* fileSystem.makeTempDirectoryScoped({ prefix: "oni-ag-extra-" });
+        const secondExtraRoot = yield* fileSystem.makeTempDirectoryScoped({
+          prefix: "oni-ag-extra2-",
+        });
+        const outside = yield* fileSystem.makeTempDirectoryScoped({ prefix: "oni-ag-outside-" });
+        const extraFile = path.join(extraRoot, "notes.txt");
+        const secondExtraFile = path.join(secondExtraRoot, "added.txt");
+        const outsideFile = path.join(outside, "secret.txt");
+        yield* fileSystem.writeFileString(extraFile, "from extra root");
+        yield* fileSystem.writeFileString(secondExtraFile, "from second extra root");
+        yield* fileSystem.writeFileString(outsideFile, "secret");
+
+        const threadId = ThreadId.make("thread-antigravity-extra-roots");
+        const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          cwd: workspace,
+          workspace: { folders: [], extraRoots: [extraRoot] },
+        });
+        const modelSelection = { instanceId, model: "gemini-test-low" } as const;
+        const session = yield* adapter.openSession({
+          threadId,
+          providerSessionId: ProviderSessionId.make("provider-session-antigravity-extra-roots"),
+          modelSelection,
+          runtimePolicy,
+        });
+        const providerThread = yield* session.ensureThread({
+          threadId,
+          modelSelection,
+          runtimePolicy,
+        });
+        const events = yield* Queue.unbounded<ProviderAdapter.ProviderAdapterV2Event>();
+        yield* session.events.pipe(
+          Stream.runForEach((event) => Queue.offer(events, event)),
+          Effect.forkScoped,
+        );
+        if (readTextFile === undefined) {
+          return yield* Effect.die("Antigravity sessions must serve client file reads");
+        }
+        const context = { requestId: "test-extra-read", method: "fs/read_text_file" };
+        const extraRead = yield* readTextFile(
+          { sessionId: "mock-session-1", path: extraFile },
+          context,
+        );
+        assert.equal(extraRead.content, "from extra root");
+
+        const outsideRead = yield* readTextFile(
+          { sessionId: "mock-session-1", path: outsideFile },
+          context,
+        ).pipe(Effect.exit);
+        assert.isTrue(Exit.isFailure(outsideRead));
+
+        const escapingLink = path.join(extraRoot, "escape.txt");
+        yield* fileSystem.symlink(outsideFile, escapingLink);
+        const linkedRead = yield* readTextFile(
+          { sessionId: "mock-session-1", path: escapingLink },
+          context,
+        ).pipe(Effect.exit);
+        assert.isTrue(Exit.isFailure(linkedRead));
+
+        // Updating workspace extraRoots on a later turn takes effect without restarting the runtime.
+        const updatedPolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          cwd: workspace,
+          workspace: { folders: [], extraRoots: [secondExtraRoot] },
+        });
+        yield* session.startTurn(
+          makeTurnInput({
+            threadId,
+            providerThread,
+            instanceId,
+            runtimePolicy: updatedPolicy,
+            modelSelection,
+            now: yield* DateTime.now,
+            ordinal: 1,
+          }),
+        );
+        yield* Stream.fromQueue(events).pipe(
+          Stream.filter((event) => event.type === "turn.terminal"),
+          Stream.runHead,
+        );
+        const addedRead = yield* readTextFile(
+          { sessionId: "mock-session-1", path: secondExtraFile },
+          context,
+        );
+        assert.equal(addedRead.content, "from second extra root");
+        const removedRead = yield* readTextFile(
+          { sessionId: "mock-session-1", path: extraFile },
+          context,
+        ).pipe(Effect.exit);
+        assert.isTrue(Exit.isFailure(removedRead));
+      }).pipe(Effect.provide(layerSession)),
+  );
+
+  it.effect("reports model context windows observed from usage_update.size", () =>
+    Effect.gen(function* () {
+      const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const crypto = yield* SecureRandom.SecureRandom;
+      const mockAgentPath = yield* path.fromFileUrl(
+        new URL("../../../scripts/acp-mock-agent.ts", import.meta.url),
+      );
+      type RuntimeService = AcpSessionRuntime.AcpSessionRuntime["Service"];
+      let sessionUpdate: Parameters<RuntimeService["handleSessionUpdate"]>[0] | undefined;
+      const instanceId = ProviderInstanceId.make("antigravity-context-window-test");
+      const adapter = yield* makeAntigravityAdapterV2({
+        instanceId,
+        selfInvocation: yield* resolveSelfInvocation(),
+        makeRuntime: (input) =>
+          makeAntigravityAcpRuntime({
+            ...input,
+            childProcessSpawner,
+            spawn: {
+              command: process.execPath,
+              args: [mockAgentPath],
+              cwd: input.cwd,
+              env: { ONICODE_ACP_ANTIGRAVITY: "1" },
+            },
+          }).pipe(
+            Effect.provideService(SecureRandom.SecureRandom, crypto),
+            Effect.map((runtime): RuntimeService => ({
+              ...runtime,
+              handleSessionUpdate: (handler) =>
+                Effect.sync(() => {
+                  sessionUpdate = handler;
+                }).pipe(Effect.andThen(runtime.handleSessionUpdate(handler))),
+            })),
+          ),
+        withProcess: (_stop, task) => task,
+        defaultModel: Effect.undefined,
+      });
+      const workspace = yield* fileSystem.makeTempDirectoryScoped({ prefix: "oni-ag-ctx-" });
+      const threadId = ThreadId.make("thread-antigravity-context-window");
+      const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        cwd: workspace,
+      });
+      const modelSelection = { instanceId, model: "gemini-test-low" } as const;
+      const session = yield* adapter.openSession({
+        threadId,
+        providerSessionId: ProviderSessionId.make("provider-session-antigravity-context-window"),
+        modelSelection,
+        runtimePolicy,
+      });
+      const providerThread = yield* session.ensureThread({
+        threadId,
+        modelSelection,
+        runtimePolicy,
+      });
+      const sessionId = providerThread.nativeThreadRef?.nativeId ?? "mock-session-1";
+      assert.isUndefined(session.getModelContextWindow?.(modelSelection));
+      if (sessionUpdate === undefined) {
+        return yield* Effect.die("Antigravity sessions must install a session update handler");
+      }
+
+      yield* sessionUpdate({
+        sessionId,
+        update: { sessionUpdate: "usage_update", used: 9000, size: 1_048_576 },
+      });
+      assert.equal(session.getModelContextWindow?.(modelSelection), 1_048_576);
+      assert.equal(
+        session.getModelContextWindow?.({ instanceId, model: ANTIGRAVITY_DEFAULT_MODEL }),
+        1_048_576,
+      );
+      assert.isUndefined(
+        session.getModelContextWindow?.({
+          instanceId: ProviderInstanceId.make("other-antigravity"),
+          model: "gemini-test-low",
+        }),
+      );
+      assert.isUndefined(
+        session.getModelContextWindow?.({ instanceId, model: "gemini-test-high" }),
+      );
+
+      yield* sessionUpdate({
+        sessionId,
+        update: {
+          sessionUpdate: "config_option_update",
+          configOptions: [
+            {
+              id: "model",
+              name: "Model",
+              category: "model",
+              type: "select",
+              currentValue: "gemini-test-high",
+              options: [
+                { value: "gemini-test-low", name: "Gemini Test Low" },
+                { value: "gemini-test-high", name: "Gemini Test High" },
+              ],
+            },
+          ],
+        },
+      });
+      yield* sessionUpdate({
+        sessionId,
+        update: { sessionUpdate: "usage_update", used: 4000, size: 200_000 },
+      });
+      assert.equal(
+        session.getModelContextWindow?.({ instanceId, model: "gemini-test-high" }),
+        200_000,
+      );
+      assert.equal(session.getModelContextWindow?.(modelSelection), 1_048_576);
+    }).pipe(Effect.provide(layerSession)),
+  );
+
+  it.effect(
+    "applies live model and thought_level switches mid-turn and on steer, and records providerTurn.model",
+    () =>
+      Effect.gen(function* () {
+        const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const crypto = yield* SecureRandom.SecureRandom;
+        const mockAgentPath = yield* path.fromFileUrl(
+          new URL("../../../scripts/acp-mock-agent.ts", import.meta.url),
+        );
+        type RuntimeService = AcpSessionRuntime.AcpSessionRuntime["Service"];
+        let spawnCount = 0;
+        let currentModel = "gemini-test-low";
+        let currentThoughtLevel = "low";
+        const buildConfigOptions = (): ReadonlyArray<EffectAcpSchema.SessionConfigOption> => [
+          {
+            id: "model",
+            name: "Model",
+            category: "model",
+            type: "select",
+            currentValue: currentModel,
+            options: [
+              { value: "gemini-test-low", name: "Gemini Test Low" },
+              { value: "gemini-test-high", name: "Gemini Test High" },
+            ],
+          },
+          {
+            id: "thought_level",
+            name: "Thought Level",
+            category: "thought_level",
+            type: "select",
+            currentValue: currentThoughtLevel,
+            options: [
+              { value: "low", name: "Low" },
+              { value: "high", name: "High" },
+            ],
+          },
+        ];
+        const modelWrites: Array<string> = [];
+        const optionWrites: Array<{ readonly id: string; readonly value: string | boolean }> = [];
+        const prompt1Started = yield* Deferred.make<void>();
+        const releasePrompt1 = yield* Deferred.make<void>();
+        const prompt2Started = yield* Deferred.make<void>();
+        const releasePrompt2 = yield* Deferred.make<void>();
+        let promptCallCount = 0;
+        const instanceId = ProviderInstanceId.make("antigravity-live-model-switch-test");
+        const adapter = yield* makeAntigravityAdapterV2({
+          instanceId,
+          selfInvocation: yield* resolveSelfInvocation(),
+          makeRuntime: (input) =>
+            makeAntigravityAcpRuntime({
+              ...input,
+              childProcessSpawner,
+              spawn: {
+                command: process.execPath,
+                args: [mockAgentPath],
+                cwd: input.cwd,
+                env: {
+                  ONICODE_ACP_ANTIGRAVITY: "1",
+                  ONICODE_ACP_AGENT_VERSION: "1.5.11",
+                },
+              },
+            }).pipe(
+              Effect.provideService(SecureRandom.SecureRandom, crypto),
+              Effect.map((runtime): RuntimeService => {
+                spawnCount += 1;
+                return {
+                  ...runtime,
+                  getConfigOptions: Effect.sync(buildConfigOptions),
+                  setModel: (model) =>
+                    Effect.sync(() => {
+                      currentModel = model;
+                      modelWrites.push(model);
+                    }),
+                  setConfigOption: (configId, value) =>
+                    Effect.sync(() => {
+                      if (configId === "model" && typeof value === "string") {
+                        currentModel = value;
+                      } else if (configId === "thought_level" && typeof value === "string") {
+                        currentThoughtLevel = value;
+                      }
+                      optionWrites.push({ id: configId, value });
+                      return { configOptions: buildConfigOptions() };
+                    }),
+                  prompt: (_payload, promptOptions) =>
+                    Effect.gen(function* () {
+                      promptCallCount += 1;
+                      const call = promptCallCount;
+                      if (promptOptions?.dispatched !== undefined) {
+                        yield* Deferred.succeed(promptOptions.dispatched, undefined);
+                      }
+                      if (call === 1) {
+                        yield* Deferred.succeed(prompt1Started, undefined);
+                        yield* Deferred.await(releasePrompt1);
+                        return { stopReason: "end_turn" as const };
+                      }
+                      yield* Deferred.succeed(prompt2Started, undefined);
+                      yield* Deferred.await(releasePrompt2);
+                      return { stopReason: "end_turn" as const };
+                    }),
+                };
+              }),
+            ),
+          withProcess: (_stop, task) => task,
+          defaultModel: Effect.undefined,
+        });
+        const workspace = yield* fileSystem.makeTempDirectoryScoped({ prefix: "oni-ag-live-" });
+        const threadId = ThreadId.make("thread-antigravity-live-model");
+        const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          cwd: workspace,
+        });
+        const initialSelection = {
+          instanceId,
+          model: ANTIGRAVITY_DEFAULT_MODEL,
+          options: [{ id: "thought_level", value: "low" }],
+        } as const;
+        const session = yield* adapter.openSession({
+          threadId,
+          providerSessionId: ProviderSessionId.make("provider-session-antigravity-live-model"),
+          modelSelection: initialSelection,
+          runtimePolicy,
+        });
+        const events = yield* Queue.unbounded<ProviderAdapter.ProviderAdapterV2Event>();
+        yield* session.events.pipe(
+          Stream.runForEach((event) => Queue.offer(events, event)),
+          Effect.forkScoped,
+        );
+        const providerThread = yield* session.ensureThread({
+          threadId,
+          modelSelection: initialSelection,
+          runtimePolicy,
+        });
+
+        yield* session.startTurn(
+          makeTurnInput({
+            threadId,
+            providerThread,
+            instanceId,
+            runtimePolicy,
+            modelSelection: initialSelection,
+            now: yield* DateTime.now,
+            ordinal: 1,
+          }),
+        );
+        yield* Deferred.await(prompt1Started);
+
+        const runningTurnEvent = yield* Stream.fromQueue(events).pipe(
+          Stream.filter((event) => event.type === "provider_turn.updated"),
+          Stream.runHead,
+        );
+        if (
+          runningTurnEvent._tag !== "Some" ||
+          runningTurnEvent.value.type !== "provider_turn.updated"
+        ) {
+          return yield* Effect.die("expected running provider_turn.updated event");
+        }
+        assert.equal(runningTurnEvent.value.providerTurn.model, "gemini-test-low");
+
+        // Mid-turn live switch applies model and thought_level without restarting.
+        assert.isDefined(session.applyModelSelection);
+        yield* session.applyModelSelection!({
+          providerThread,
+          modelSelection: {
+            instanceId,
+            model: "gemini-test-high",
+            options: [{ id: "thought_level", value: "high" }],
+          },
+        });
+        assert.deepEqual(modelWrites, ["gemini-test-high"]);
+        assert.deepEqual(optionWrites.at(-1), { id: "thought_level", value: "high" });
+        assert.equal(spawnCount, 1);
+
+        // Steering with a different modelSelection applies before dispatching the steer prompt.
+        yield* session.steerTurn({
+          threadId,
+          runId: RunId.make("run-antigravity-live-1"),
+          providerThread,
+          providerTurnId: runningTurnEvent.value.providerTurn.id,
+          modelSelection: {
+            instanceId,
+            model: "gemini-test-low",
+            options: [{ id: "thought_level", value: "low" }],
+          },
+          message: {
+            messageId: MessageId.make("message-antigravity-live-steer"),
+            text: "Switch back to low",
+            attachments: [],
+            createdBy: "user",
+            creationSource: "web",
+          },
+        });
+        yield* Deferred.succeed(releasePrompt1, undefined);
+        yield* Deferred.await(prompt2Started);
+        assert.deepEqual(modelWrites, ["gemini-test-high", "gemini-test-low"]);
+        assert.deepEqual(optionWrites.at(-1), { id: "thought_level", value: "low" });
+        assert.equal(spawnCount, 1);
+
+        yield* Deferred.succeed(releasePrompt2, undefined);
+        const terminalEvents = Array.from(
+          yield* Stream.fromQueue(events).pipe(
+            Stream.takeUntil((event) => event.type === "turn.terminal"),
+            Stream.runCollect,
+          ),
+        );
+        const completedTurn = terminalEvents.findLast(
+          (event) =>
+            event.type === "provider_turn.updated" && event.providerTurn.status === "completed",
+        );
+        assert.equal(
+          completedTurn?.type === "provider_turn.updated" ? completedTurn.providerTurn.model : null,
+          "gemini-test-low",
+        );
       }).pipe(Effect.provide(layerSession)),
   );
 });

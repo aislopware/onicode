@@ -305,12 +305,21 @@ export type AcpParsedSessionEvent =
       readonly rawPayload: unknown;
     };
 
+// A code-unit slice can split a surrogate pair; drop the lone high half it leaves.
+function withoutTrailingHighSurrogate(text: string): string {
+  const last = text.charCodeAt(text.length - 1);
+  return last >= 0xd800 && last <= 0xdbff ? text.slice(0, -1) : text;
+}
+
 const boundedContentMetadata = (value: string | null | undefined, maximumLength: number): string =>
-  value?.trim().slice(0, maximumLength) ?? "";
+  value === null || value === undefined
+    ? ""
+    : withoutTrailingHighSurrogate(value.trim().slice(0, maximumLength));
 
 const MAX_ACP_CONTENT_TEXT_LENGTH = 65_536;
 
-const boundedContentText = (value: string): string => value.slice(0, MAX_ACP_CONTENT_TEXT_LENGTH);
+const boundedContentText = (value: string): string =>
+  withoutTrailingHighSurrogate(value.slice(0, MAX_ACP_CONTENT_TEXT_LENGTH));
 
 const boundedContentUri = (value: string | null | undefined): string => {
   const uri = boundedContentMetadata(value, 4_096);
@@ -565,7 +574,11 @@ function extractToolCallCommand(
   kind: string | undefined,
 ): string | undefined {
   if (isRecord(rawInput)) {
-    const directCommand = normalizeCommandValue(rawInput.command);
+    const directCommand =
+      normalizeCommandValue(rawInput.command) ??
+      normalizeCommandValue(rawInput.CommandLine) ??
+      normalizeCommandValue(rawInput.command_line) ??
+      normalizeCommandValue(rawInput.commandLine);
     if (directCommand) {
       return directCommand;
     }
@@ -599,7 +612,7 @@ function locationsFromToolCallInput(input: {
   readonly rawInput?: unknown;
   readonly rawOutput?: unknown;
 }): ReadonlyArray<EffectAcpSchema.ToolCallLocation> | undefined {
-  if (input.locations === null || input.locations?.length === 0) {
+  if (input.locations === null) {
     return [];
   }
   const locations: EffectAcpSchema.ToolCallLocation[] = [];
@@ -620,6 +633,21 @@ function locationsFromToolCallInput(input: {
     seen.add(path);
     locations.push({ path });
   };
+  const pushRecordPaths = (record: unknown) => {
+    if (!isRecord(record)) {
+      return;
+    }
+    pushPath(record.path);
+    pushPath(record.Path);
+    pushPath(record.filePath);
+    pushPath(record.file_path);
+    pushPath(record.TargetFile);
+    pushPath(record.target_file);
+    pushPath(record.targetFile);
+    pushPath(record.AbsolutePath);
+    pushPath(record.absolute_path);
+    pushPath(record.absolutePath);
+  };
 
   if (input.locations) {
     for (const location of input.locations) {
@@ -628,23 +656,26 @@ function locationsFromToolCallInput(input: {
   }
   if (input.content) {
     for (const entry of input.content) {
-      if (entry.type === "diff" && "path" in entry) {
-        pushPath(entry.path);
+      if (entry.type === "diff") {
+        if ("path" in entry) {
+          pushPath(entry.path);
+        } else {
+          for (const change of entry.changes) {
+            if ("path" in change) {
+              pushPath(change.path);
+            }
+          }
+        }
       }
     }
   }
-  if (isRecord(input.rawInput)) {
-    pushPath(input.rawInput.path);
-    pushPath(input.rawInput.filePath);
-    pushPath(input.rawInput.file_path);
-  }
-  if (isRecord(input.rawOutput)) {
-    pushPath(input.rawOutput.path);
-    pushPath(input.rawOutput.filePath);
-    pushPath(input.rawOutput.file_path);
-  }
+  pushRecordPaths(input.rawInput);
+  pushRecordPaths(input.rawOutput);
 
-  return locations.length > 0 ? locations : undefined;
+  if (locations.length > 0) {
+    return locations;
+  }
+  return input.locations !== undefined ? [] : undefined;
 }
 
 // Agents resend cumulative output; bound it to avoid flooding event ingestion.
@@ -1267,13 +1298,73 @@ export function embeddedTerminalIdsFromSessionUpdate(
   return terminalIds.length === 0 ? undefined : { toolCallId: update.toolCallId, terminalIds };
 }
 
+function isAcpToolCallLocation(value: unknown): value is EffectAcpSchema.ToolCallLocation {
+  return isRecord(value) && typeof value.path === "string" && value.path.trim().length > 0;
+}
+
+function isAcpToolCallContent(value: unknown): value is EffectAcpSchema.ToolCallContent {
+  if (!isRecord(value)) return false;
+  switch (value.type) {
+    case "diff":
+      return typeof value.path === "string" || Array.isArray(value.changes);
+    case "content":
+      return isRecord(value.content) && typeof value.content.type === "string";
+    case "terminal":
+      return typeof value.terminalId === "string";
+    case "_oni_unknown":
+      return typeof value.originalType === "string";
+    default:
+      return false;
+  }
+}
+
+const MAX_PERMISSION_LOCATION_LINES = 20;
+
+function formatPermissionLocations(toolCall: AcpToolCallState | undefined): string | undefined {
+  const rawLocations = toolCall?.data.locations;
+  if (!Array.isArray(rawLocations) || rawLocations.length === 0) {
+    return undefined;
+  }
+  const paths: Array<string> = [];
+  const seen = new Set<string>();
+  for (const entry of rawLocations) {
+    if (!isRecord(entry)) continue;
+    const path = filePathFromToolValue(entry.path);
+    if (!path || seen.has(path)) continue;
+    seen.add(path);
+    paths.push(path);
+  }
+  if (paths.length === 0) {
+    return undefined;
+  }
+  const shown = paths.slice(0, MAX_PERMISSION_LOCATION_LINES);
+  const remaining = paths.length - shown.length;
+  return remaining > 0 ? `${shown.join("\n")}\n+${remaining} more` : shown.join("\n");
+}
+
 /** ACP lets a permission request name its tool call by ID only; omitted (not null) fields come from the tracked call. */
 export function withTrackedPermissionToolCall(
   params: EffectAcpSchema.RequestPermissionRequest,
   tracked: AcpToolCallState | undefined,
 ): EffectAcpSchema.RequestPermissionRequest {
   if (tracked === undefined) return params;
-  const { title, kind, rawInput } = params.toolCall;
+  const { title, kind, rawInput, locations, content } = params.toolCall;
+  const emptyRawInput = isRecord(rawInput) && Object.keys(rawInput).length === 0;
+  const trackedRawInput =
+    (rawInput === undefined || emptyRawInput) &&
+    tracked.data.rawInput !== undefined &&
+    (!emptyRawInput ||
+      (isRecord(tracked.data.rawInput) && Object.keys(tracked.data.rawInput).length > 0))
+      ? tracked.data.rawInput
+      : undefined;
+  const trackedLocations =
+    locations === undefined && Array.isArray(tracked.data.locations)
+      ? tracked.data.locations.filter(isAcpToolCallLocation)
+      : undefined;
+  const trackedContent =
+    content === undefined && Array.isArray(tracked.data.content)
+      ? tracked.data.content.filter(isAcpToolCallContent)
+      : undefined;
   return {
     ...params,
     toolCall: {
@@ -1283,8 +1374,12 @@ export function withTrackedPermissionToolCall(
         : {}),
       // Unrecognised kinds map to command approvals, so only a tracked execute kind may grant execution.
       ...(kind === undefined && tracked.kind === "execute" ? { kind: "execute" as const } : {}),
-      ...(rawInput === undefined && tracked.data.rawInput !== undefined
-        ? { rawInput: tracked.data.rawInput }
+      ...(trackedRawInput !== undefined ? { rawInput: trackedRawInput } : {}),
+      ...(trackedLocations !== undefined && trackedLocations.length > 0
+        ? { locations: trackedLocations }
+        : {}),
+      ...(trackedContent !== undefined && trackedContent.length > 0
+        ? { content: trackedContent }
         : {}),
     },
   };
@@ -1307,9 +1402,13 @@ export function parsePermissionRequest(
     { fallbackStatus: "pending" },
   );
   const kind = normalizeToolKind(params.toolCall.kind) ?? "unknown";
+  const locationDetail = formatPermissionLocations(toolCall);
+  const isFileChangeKind = kind === "edit" || kind === "delete" || kind === "move";
   const detail =
     toolCall?.command ??
+    (isFileChangeKind ? locationDetail : undefined) ??
     toolCall?.title ??
+    locationDetail ??
     toolCall?.detail ??
     (typeof params.sessionId === "string" ? `Session ${params.sessionId}` : undefined);
   return {
@@ -1433,6 +1532,14 @@ function boundToolCallRawPayload(
       ...(rawOutputBounded ? { rawOutput: boundedRawOutput } : {}),
     },
   };
+}
+
+function safeAcpTokenCount(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    return undefined;
+  }
+  const count = Math.round(value);
+  return Number.isSafeInteger(count) ? count : undefined;
 }
 
 export function parseSessionUpdateEvent(params: EffectAcpSchema.SessionNotification): {
@@ -1649,21 +1756,29 @@ export function parseSessionUpdateEvent(params: EffectAcpSchema.SessionNotificat
       break;
     }
     case "usage_update": {
-      const currency = upd.cost?.currency.trim().slice(0, 32);
+      // Zero-token frames (usage limits, errors) carry no context reading and must not reset it.
+      const usedTokens = safeAcpTokenCount(upd.used);
+      if (usedTokens === undefined || usedTokens <= 0) {
+        break;
+      }
+      const maxTokens = safeAcpTokenCount(upd.size);
+      const currency = boundedContentMetadata(upd.cost?.currency, 32);
       events.push({
         _tag: "UsageUpdated",
         usage: {
-          usedTokens: upd.used,
-          ...(upd.size > 0 ? { maxTokens: upd.size } : {}),
-          ...(upd.cost && currency ? { cost: { amount: upd.cost.amount, currency } } : {}),
+          usedTokens,
+          ...(maxTokens !== undefined && maxTokens > 0 ? { maxTokens } : {}),
+          ...(upd.cost && Number.isFinite(upd.cost.amount) && currency
+            ? { cost: { amount: upd.cost.amount, currency } }
+            : {}),
         },
         rawPayload: params,
       });
       break;
     }
     case "session_info_update": {
-      const title = upd.title?.trim().slice(0, 1_024);
-      const updatedAt = upd.updatedAt?.trim().slice(0, 128);
+      const title = boundedContentMetadata(upd.title, 1_024);
+      const updatedAt = boundedContentMetadata(upd.updatedAt, 128);
       events.push({
         _tag: "SessionInfoUpdated",
         metadata: {
@@ -1675,8 +1790,8 @@ export function parseSessionUpdateEvent(params: EffectAcpSchema.SessionNotificat
       break;
     }
     case "notice": {
-      const title = upd.title.trim().slice(0, 1_024);
-      const description = upd.description?.trim().slice(0, 4_096);
+      const title = boundedContentMetadata(upd.title, 1_024);
+      const description = boundedContentMetadata(upd.description, 4_096);
       if (title.length === 0) break;
       events.push({
         _tag: "NoticeReceived",

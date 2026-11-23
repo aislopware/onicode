@@ -45,6 +45,7 @@ import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
+import * as EffectAcpErrors from "effect-acp/errors";
 
 import * as ServerConfig from "../config.ts";
 import * as McpAppModelContext from "../mcpApps/McpAppModelContext.ts";
@@ -3641,3 +3642,88 @@ effectIt.effect("rejects citation expansion before opening a provider session", 
     expect(harness.projection().messages[0]?.text).toBe(text);
   }),
 );
+
+it("classifies ACP pre-prompt setup failures as refused before the prompt", () => {
+  const wrap = (cause: unknown) =>
+    new ProviderAdapter.ProviderAdapterTurnStartError({
+      driver: ProviderDriverKind.make("antigravity"),
+      threadId: ThreadId.make("thread:acp-refusal"),
+      providerThreadId: ProviderThreadId.make("provider-thread:acp-refusal"),
+      runId: RunId.make("run:acp-refusal"),
+      cause,
+    });
+
+  for (const method of [
+    "initialize",
+    "authenticate",
+    "session/new",
+    "session/load",
+    "session/resume",
+    "session/set_model",
+    "session/set_mode",
+    "session/set_config_option",
+  ]) {
+    expect(
+      ProviderTurnStart.refusedBeforePrompt(
+        wrap(
+          new EffectAcpErrors.AcpRequestError({
+            code: -32603,
+            errorMessage: `${method} failed`,
+            method,
+          }),
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      ProviderTurnStart.refusedBeforePrompt(
+        wrap(new EffectAcpErrors.AcpTransportError({ method, cause: "closed" })),
+      ),
+    ).toBe(true);
+    expect(
+      ProviderTurnStart.refusedBeforePrompt(
+        wrap(
+          new EffectAcpErrors.AcpProtocolParseError({
+            operation: "encode-message",
+            method,
+            cause: "bad payload",
+          }),
+        ),
+      ),
+    ).toBe(true);
+  }
+  expect(
+    ProviderTurnStart.refusedBeforePrompt(wrap({ _tag: "AcpModelSelectionError", model: "bad" })),
+  ).toBe(true);
+  expect(
+    ProviderTurnStart.refusedBeforePrompt(
+      wrap(new EffectAcpErrors.AcpSpawnError({ command: "agy", cause: "ENOENT" })),
+    ),
+  ).toBe(true);
+
+  expect(
+    ProviderTurnStart.refusedBeforePrompt(
+      wrap(
+        new EffectAcpErrors.AcpRequestError({
+          code: -32603,
+          errorMessage: "prompt failed",
+          method: "session/prompt",
+        }),
+      ),
+    ),
+  ).toBe(false);
+  expect(
+    ProviderTurnStart.refusedBeforePrompt(
+      wrap(new EffectAcpErrors.AcpTransportError({ method: "session/prompt", cause: "closed" })),
+    ),
+  ).toBe(false);
+  expect(
+    ProviderTurnStart.refusedBeforePrompt(
+      wrap(new EffectAcpErrors.AcpRequestError({ code: -32603, errorMessage: "no method" })),
+    ),
+  ).toBe(false);
+  expect(
+    ProviderTurnStart.refusedBeforePrompt(
+      wrap(new EffectAcpErrors.AcpProcessExitedError({ code: 1 })),
+    ),
+  ).toBe(false);
+});

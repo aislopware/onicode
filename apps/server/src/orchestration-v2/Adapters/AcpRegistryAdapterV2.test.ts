@@ -4056,7 +4056,10 @@ describe("AcpRegistryAdapterV2", () => {
         ? [
             failedPrompt,
             [
-              ...start("replacement-session"),
+              request("initialize"),
+              respond("initialize", {
+                result: { protocolVersion: 1, agentCapabilities: { loadSession: true } },
+              }),
               request("session/load", {
                 sessionId: "copilot-session",
                 cwd: "<workspace>",

@@ -104,7 +104,7 @@ const readIfPresent = <A, R>(
     }),
   );
 
-function parseSkillFrontmatter(contents: string, fileName: string) {
+function parseSkillFrontmatter(contents: string, fallbackName: string) {
   const start = contents.indexOf("---");
   if (start === -1) return undefined;
   const end = contents.indexOf("---", start + 3);
@@ -113,7 +113,7 @@ function parseSkillFrontmatter(contents: string, fileName: string) {
     const frontmatter = decodeSkillFrontmatter(
       parseYamlDocument(contents.slice(start + 3, end).trim()) ?? {},
     );
-    const name = frontmatter.name || fileName.slice(0, -3);
+    const name = frontmatter.name || fallbackName;
     const description = frontmatter.description?.trim();
     // Native names are not trimmed. Do not rename one to fit the picker contract.
     if (!name || name !== name.trim()) return undefined;
@@ -228,6 +228,7 @@ export const discoverAntigravitySkills = Effect.fn("discoverAntigravitySkills")(
   readonly userHome: string;
   /** The instance's GEMINI_HOME, where agy loads plugins from. */
   readonly profileDirectory: string;
+  readonly extraRoots?: ReadonlyArray<string>;
 }): Effect.fn.Return<
   ReadonlyArray<ServerProviderSkill>,
   AntigravitySkillsProbeError,
@@ -239,12 +240,21 @@ export const discoverAntigravitySkills = Effect.fn("discoverAntigravitySkills")(
     path,
     path.join(input.userHome, ".gemini"),
   );
+  const resolvedCwd = path.resolve(input.cwd);
+  const extraWorkspaceRoots = [
+    ...new Set((input.extraRoots ?? []).map((root) => path.resolve(root))),
+  ].filter((root) => root !== resolvedCwd);
   const roots = [
     { directory: configSkills, scope: "user" },
     { directory: path.resolve(input.cwd, ".gemini", "skills"), scope: "project" },
     { directory: cliSkills, scope: "user" },
     { directory: path.resolve(input.cwd, ".agents", "skills"), scope: "project" },
     { directory: path.resolve(input.cwd, ".agent", "skills"), scope: "project" },
+    ...extraWorkspaceRoots.flatMap((root) => [
+      { directory: path.resolve(root, ".gemini", "skills"), scope: "project" },
+      { directory: path.resolve(root, ".agents", "skills"), scope: "project" },
+      { directory: path.resolve(root, ".agent", "skills"), scope: "project" },
+    ]),
   ];
   const budget: ScanBudget = {
     remainingBytes: MAX_SCAN_BYTES,
@@ -260,7 +270,7 @@ export const discoverAntigravitySkills = Effect.fn("discoverAntigravitySkills")(
     if (fileName.toLowerCase() !== "skill.md" || !fileName.endsWith(".md")) return;
     const contents = yield* readSkillFrontmatter(skillPath, budget);
     if (contents === undefined) return;
-    const skill = parseSkillFrontmatter(contents, fileName);
+    const skill = parseSkillFrontmatter(contents, path.basename(path.dirname(skillPath)));
     if (!skill || skillsByName.has(skill.name)) return;
     skillsByName.set(skill.name, {
       ...skill,
@@ -387,6 +397,18 @@ export const discoverAntigravitySkills = Effect.fn("discoverAntigravitySkills")(
       baseDir: input.cwd,
       scope: "project",
     },
+    ...extraWorkspaceRoots.flatMap((root) => [
+      {
+        configPath: path.resolve(root, ".agents", "skills.json"),
+        baseDir: root,
+        scope: "project",
+      },
+      {
+        configPath: path.resolve(root, ".agent", "skills.json"),
+        baseDir: root,
+        scope: "project",
+      },
+    ]),
     {
       configPath: path.join(input.userHome, ".gemini", "config", "skills.json"),
       baseDir: path.join(input.userHome, ".gemini", "config"),

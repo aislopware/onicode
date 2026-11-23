@@ -16,6 +16,7 @@ import {
 import * as Digest from "effect/crypto/Digest";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Deferred from "effect/Deferred";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
@@ -31,15 +32,14 @@ import { HttpClient } from "effect/http";
 import * as AcpErrors from "effect-acp/errors";
 
 import * as ProviderHost from "@onicode/provider-core/server/ProviderHost";
-import {
-  isAntigravityTextGenerationAvailable,
-  makeAntigravityTextGeneration,
-} from "../../textGeneration/AntigravityTextGeneration.ts";
+import { makeAntigravityTextGeneration } from "../../textGeneration/AntigravityTextGeneration.ts";
 import { makeAntigravityAuth, type AntigravityAuth } from "../AntigravityAuth.ts";
 import * as AntigravityInstallation from "../AntigravityInstallation.ts";
 import { brokenRuntimeError } from "../providerCompatibility.ts";
 import * as AntigravityUsage from "./AntigravityUsage.ts";
 import {
+  ANTIGRAVITY_ACP_DIRECTORY_NAME,
+  ANTIGRAVITY_TOKEN_FILE_NAMES,
   antigravityAuthConfigIssue,
   antigravityAuthLabel,
   antigravityAuthUsesBrowser,
@@ -47,6 +47,7 @@ import {
   isAntigravitySignInRequiredError,
   prepareAntigravityProfile,
   resolveAntigravityInstanceDirectories,
+  stageAntigravityIsolatedProfileDirectory,
   type AntigravityAuthConfig,
 } from "../antigravityAuthSupport.ts";
 import {
@@ -140,6 +141,7 @@ export const AntigravityDriver: ProviderDriver<
     enabled,
     config,
   }) {
+    const driverScope = yield* Effect.scope;
     const digest = yield* Digest.Digest;
     const random = yield* SecureRandom.SecureRandom;
     const fileSystem = yield* FileSystem.FileSystem;
@@ -189,6 +191,8 @@ export const AntigravityDriver: ProviderDriver<
       ),
     );
     const profileDirectory = directories.profile;
+    const acpDirectory = path.join(profileDirectory, ANTIGRAVITY_ACP_DIRECTORY_NAME);
+    let onProfilePrepared: Effect.Effect<void> = Effect.void;
     // Only a session reports whether agy offers Auto, so keep the last answer across restarts.
     const runtimeModesPath = path.join(profileDirectory, "oni-runtime-modes.json");
     const rememberedRuntimeModes = yield* fileSystem.readFileString(runtimeModesPath).pipe(
@@ -230,6 +234,11 @@ export const AntigravityDriver: ProviderDriver<
     const prepareSpawn = Effect.fn("AntigravityDriver.prepareSpawn")(function* (
       cwd: string,
       baseEnv: NodeJS.ProcessEnv,
+      options?: {
+        readonly profileDirectory?: string;
+        readonly isolated?: boolean;
+        readonly includeDefaultCustomizations?: boolean;
+      },
     ): Effect.fn.Return<
       {
         readonly executable: AntigravityInstallation.AntigravityExecutable;
@@ -256,12 +265,14 @@ export const AntigravityDriver: ProviderDriver<
             }),
         ),
       );
+      const targetProfileDirectory = options?.profileDirectory ?? profileDirectory;
       const profile = yield* prepareAntigravityProfile({
-        profileDirectory,
+        profileDirectory: targetProfileDirectory,
         baseEnv: processEnvironment,
         auth,
         userHome,
         tempDirectory: directories.runtimeTemp,
+        ...(options?.isolated === undefined ? {} : { isolated: options.isolated }),
       }).pipe(
         Effect.provideService(FileSystem.FileSystem, fileSystem),
         Effect.provideService(Path.Path, path),
@@ -277,6 +288,9 @@ export const AntigravityDriver: ProviderDriver<
             : cause,
         ),
       );
+      if (!options?.isolated && targetProfileDirectory === profileDirectory) {
+        yield* onProfilePrepared;
+      }
       // Use one directory per process; shared cleanup could delete files another session still reads.
       // Remove after the child dies, best-effort on Windows where handles may outlive the kill;
       // the next driver start sweeps leftovers.
@@ -310,12 +324,24 @@ export const AntigravityDriver: ProviderDriver<
           baseEnv,
           auth,
           runtimeTempDirectory,
+          ...(options?.includeDefaultCustomizations === undefined
+            ? {}
+            : { includeDefaultCustomizations: options.includeDefaultCustomizations }),
         }),
       };
     });
 
+    const runtimeBuilds = new WeakMap<
+      AcpSessionRuntime.AcpSessionRuntime["Service"],
+      AntigravityInstallation.AntigravityInstalledBuild
+    >();
+
     const makeRuntime = Effect.fn("AntigravityDriver.makeRuntime")(function* (
-      input: AntigravityAdapterV2RuntimeInput,
+      input: AntigravityAdapterV2RuntimeInput & {
+        readonly profileDirectory?: string;
+        readonly isolated?: boolean;
+        readonly includeDefaultCustomizations?: boolean;
+      },
     ): Effect.fn.Return<
       AcpSessionRuntime.AcpSessionRuntime["Service"],
       AcpErrors.AcpError | ProviderSetupError,
@@ -323,13 +349,29 @@ export const AntigravityDriver: ProviderDriver<
     > {
       // `buildAntigravityAcpSpawnInput` sets `extendEnv: false`, so thread variables only reach the
       // agent's shell through `baseEnv`.
-      const { processEnvironment: threadEnvironment, ...runtimeInput } = input;
+      const {
+        processEnvironment: threadEnvironment,
+        profileDirectory: profileDirectoryOverride,
+        isolated,
+        includeDefaultCustomizations,
+        ...runtimeInput
+      } = input;
       const { executable, spawn } = yield* prepareSpawn(
         runtimeInput.cwd,
         threadEnvironment === undefined
           ? processEnvironment
           : { ...processEnvironment, ...threadEnvironment },
+        {
+          ...(profileDirectoryOverride === undefined
+            ? {}
+            : { profileDirectory: profileDirectoryOverride }),
+          ...(isolated === undefined ? {} : { isolated }),
+          ...(includeDefaultCustomizations === undefined ? {} : { includeDefaultCustomizations }),
+        },
       );
+      const buildAtSpawn = yield* AntigravityInstallation.readAntigravityExecutableBuild(
+        executable,
+      ).pipe(Effect.provideService(FileSystem.FileSystem, fileSystem));
       const runtime = yield* makeAntigravityAcpRuntime({
         ...runtimeInput,
         runtimeVersion: executable.version,
@@ -358,7 +400,7 @@ export const AntigravityDriver: ProviderDriver<
         }
         return yield* runtime.start();
       });
-      return {
+      const wrapped = {
         ...runtime,
         setMode: (modeId: string) =>
           runtime.getModeState.pipe(
@@ -376,10 +418,35 @@ export const AntigravityDriver: ProviderDriver<
             ),
           ),
       };
+      runtimeBuilds.set(wrapped, buildAtSpawn);
+      return wrapped;
+    });
+
+    const isRuntimeOutdated = Effect.fn("AntigravityDriver.isRuntimeOutdated")(function* (
+      runtime: AcpSessionRuntime.AcpSessionRuntime["Service"],
+    ) {
+      const atSpawn = runtimeBuilds.get(runtime);
+      if (atSpawn === undefined) return false;
+      const currentExecutable = yield* installation
+        .resolve(settings.binaryPath, processEnvironment)
+        .pipe(Effect.option);
+      if (Option.isNone(currentExecutable)) return false;
+      const current = yield* AntigravityInstallation.readAntigravityExecutableBuild(
+        currentExecutable.value,
+      ).pipe(Effect.provideService(FileSystem.FileSystem, fileSystem));
+      const outdated = AntigravityInstallation.antigravityOutdatedBuild({ atSpawn, current });
+      if (outdated === undefined) return false;
+      yield* Effect.logInfo("Replacing an Antigravity runtime that runs an outdated build.", {
+        instanceId,
+        ...outdated,
+      });
+      return true;
     });
 
     const makeDisposableRuntime = Effect.fn("AntigravityDriver.makeDisposableRuntime")(function* (
-      input: Pick<AntigravityAcpRuntimeInput, "onAuthorizationUrl">,
+      input: Pick<AntigravityAcpRuntimeInput, "onAuthorizationUrl"> & {
+        readonly isolated?: boolean;
+      },
     ) {
       const cwd = yield* fileSystem
         .makeTempDirectoryScoped({ prefix: "oni-antigravity-setup-" })
@@ -393,20 +460,43 @@ export const AntigravityDriver: ProviderDriver<
               }),
           ),
         );
+      const isolatedProfileDirectory = input.isolated
+        ? yield* stageAntigravityIsolatedProfileDirectory({
+            profileDirectory,
+            prefix: "oni-antigravity-refresh-profile-",
+          }).pipe(
+            Effect.provideService(FileSystem.FileSystem, fileSystem),
+            Effect.provideService(Path.Path, path),
+            Effect.mapError(
+              (cause) =>
+                new ProviderSetupError({
+                  instanceId,
+                  operation: "start",
+                  detail: "Could not create an isolated Antigravity profile.",
+                  cause,
+                }),
+            ),
+          )
+        : undefined;
       let sessionId: string | undefined;
-      yield* Effect.addFinalizer(() =>
-        removeAntigravitySessionFiles({
-          profileDirectory,
-          sessionId,
-          cwd,
-        }).pipe(
-          Effect.provideService(FileSystem.FileSystem, fileSystem),
-          Effect.provideService(Path.Path, path),
-        ),
-      );
+      if (isolatedProfileDirectory === undefined) {
+        yield* Effect.addFinalizer(() =>
+          removeAntigravitySessionFiles({
+            profileDirectory,
+            sessionId,
+            cwd,
+          }).pipe(
+            Effect.provideService(FileSystem.FileSystem, fileSystem),
+            Effect.provideService(Path.Path, path),
+          ),
+        );
+      }
       const runtime = yield* makeRuntime({
         cwd,
         mcpServers: [],
+        ...(isolatedProfileDirectory === undefined
+          ? {}
+          : { profileDirectory: isolatedProfileDirectory, isolated: true }),
         ...(input.onAuthorizationUrl ? { onAuthorizationUrl: input.onAuthorizationUrl } : {}),
       });
       return {
@@ -567,7 +657,7 @@ export const AntigravityDriver: ProviderDriver<
         protocolVersion: 1,
         agentCapabilities: {
           loadSession: true,
-          promptCapabilities: { image: true, audio: true, embeddedContext: true },
+          promptCapabilities: { image: true, audio: false, embeddedContext: true },
           sessionCapabilities: { list: {}, resume: {} },
         },
         authMethods: [{ id: "oauth-personal", name: "Log in with Google" }],
@@ -605,11 +695,7 @@ export const AntigravityDriver: ProviderDriver<
           Effect.provideService(Path.Path, path),
           Effect.catch(() => Effect.logWarning("Could not save Antigravity permission modes.")),
         ),
-      supportsTextGeneration: isAntigravityTextGenerationAvailable(profileDirectory).pipe(
-        Effect.provideService(FileSystem.FileSystem, fileSystem),
-        Effect.provideService(Path.Path, path),
-        Effect.orElseSucceed(() => false),
-      ),
+      supportsTextGeneration: Effect.succeed(true),
     }).pipe(
       Effect.mapError(
         (cause) =>
@@ -621,11 +707,56 @@ export const AntigravityDriver: ProviderDriver<
           }),
       ),
     );
+    let tokenWatchActive = false;
+    const ensureTokenWatch = Effect.fn("AntigravityDriver.ensureTokenWatch")(function* () {
+      if (!enabled || !antigravityAuthUsesBrowser(auth.authMethod) || tokenWatchActive) return;
+      // Checked inline so a profile prepared later starts the watch instead of racing this one.
+      if (!(yield* fileSystem.exists(acpDirectory).pipe(Effect.orElseSucceed(() => false)))) return;
+      tokenWatchActive = true;
+      // External sign-in or sign-out rewrites or removes the profile's OAuth token file outside Onicode.
+      yield* fileSystem.watch(acpDirectory).pipe(
+        Stream.filter((event) => ANTIGRAVITY_TOKEN_FILE_NAMES.has(path.basename(event.path))),
+        Stream.debounce(Duration.millis(250)),
+        Stream.runForEach(() =>
+          Effect.gen(function* () {
+            if (auth.authMethod === "oauth-personal") {
+              let hasToken = false;
+              for (const tokenFile of ANTIGRAVITY_TOKEN_FILE_NAMES) {
+                if (
+                  yield* fileSystem
+                    .exists(path.join(acpDirectory, tokenFile))
+                    .pipe(Effect.orElseSucceed(() => false))
+                ) {
+                  hasToken = true;
+                  break;
+                }
+              }
+              if (!hasToken) return yield* provider.onSignedOut;
+              // Only a session start proves a sign-in, so one made elsewhere starts one.
+              if ((yield* provider.snapshot.getSnapshot).auth.status === "unauthenticated") {
+                return yield* refreshModels();
+              }
+            }
+            yield* provider.snapshot.refresh;
+          }).pipe(Effect.ignoreCause({ log: true })),
+        ),
+        Effect.ignoreCause({ log: true }),
+        Effect.ensuring(
+          Effect.sync(() => {
+            tokenWatchActive = false;
+          }),
+        ),
+        Effect.forkIn(driverScope),
+      );
+    });
+    onProfilePrepared = ensureTokenWatch();
+    yield* ensureTokenWatch();
     const defaultModel = currentCatalog.pipe(Effect.map((catalog) => catalog?.defaultChatModel));
     const orchestrationAdapter = yield* makeAntigravityAdapterV2({
       instanceId,
       selfInvocation,
       makeRuntime,
+      isRuntimeOutdated,
       withProcess: authFlow.withProcess,
       defaultModel,
       supportsNativeGoals: provider.snapshot.getSnapshot.pipe(
@@ -656,6 +787,14 @@ export const AntigravityDriver: ProviderDriver<
       profileDirectory,
       defaultModel,
       withProcess: authFlow.withProcess,
+      makeIsolatedRuntime: ({ cwd, profileDirectory: isolatedProfileDirectory }) =>
+        makeRuntime({
+          cwd,
+          mcpServers: [],
+          profileDirectory: isolatedProfileDirectory,
+          isolated: true,
+          includeDefaultCustomizations: false,
+        }),
       makeRuntime: (cwd) =>
         makeRuntime({
           cwd,
@@ -671,7 +810,7 @@ export const AntigravityDriver: ProviderDriver<
           .withProcess(
             Scope.close(processScope, Exit.void),
             Effect.gen(function* () {
-              const runtime = yield* makeDisposableRuntime({});
+              const runtime = yield* makeDisposableRuntime({ isolated: true });
               const started = yield* runtime.start();
               yield* publishCatalog(started, runtime);
             }),

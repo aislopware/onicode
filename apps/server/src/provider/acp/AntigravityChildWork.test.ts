@@ -225,7 +225,7 @@ it.layer(NodeServices.layer)("readAntigravityChildWork", (it) => {
         step_index: 0,
         type: "VIEW_FILE",
         status: "DONE",
-        content: "x".repeat(10_000),
+        content: `${"x".repeat(3_999)}🚀${"x".repeat(5_999)}`,
       });
       const { profile } = yield* makeProfile({
         steps: autoApproved,
@@ -235,7 +235,8 @@ it.layer(NodeServices.layer)("readAntigravityChildWork", (it) => {
       expect(child?.truncated).toBe(true);
       expect(child?.steps?.length).toBeLessThan(40);
       expect(child?.steps?.at(-1)?.text).toBe("marker 4242 found");
-      expect(child?.steps?.[0]?.text?.length).toBeLessThanOrEqual(4_001);
+      // The cap falls inside the emoji, so its high surrogate goes too.
+      expect(child?.steps?.[0]?.text).toBe(`${"x".repeat(3_999)}…`);
 
       const lastLine = JSON.stringify(transcriptLines[3]) + "\n";
       const step = { step_index: 2, type: "VIEW_FILE", content: "" };

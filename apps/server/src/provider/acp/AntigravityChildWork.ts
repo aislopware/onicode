@@ -14,7 +14,11 @@ import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
 
 import { antigravityManagedPath, antigravityProfileRoot } from "./AntigravityProfilePaths.ts";
-import { boundAntigravityToolText, isCutAntigravityToolText } from "./AntigravityProtocol.ts";
+import {
+  boundAntigravityToolText,
+  comparableAntigravityToolText,
+  isCutAntigravityToolText,
+} from "./AntigravityProtocol.ts";
 
 // Field numbers from the runtime's trajectory protos (exa.cortex_pb).
 const STEP_METADATA = 5;
@@ -247,7 +251,9 @@ function findInvokeRecord(
   const total = (key: string) =>
     totals !== undefined && key in totals ? Number(totals[key as keyof typeof totals] ?? 0) : 0;
   const sameText = (launch: BatchLaunch) =>
-    launch.title === input.launch.title && launch.prompt === input.launch.prompt;
+    launch.title === input.launch.title &&
+    comparableAntigravityToolText(launch.prompt) ===
+      comparableAntigravityToolText(input.launch.prompt);
   if (
     input.siblings.some(sameText) ||
     total("rows") > MAX_INVOKE_ROWS ||
@@ -331,7 +337,7 @@ const toolArguments = (args: unknown) =>
     : (args ?? {});
 
 const capText = (value: string, limit: number) =>
-  value.length <= limit ? value : `${value.slice(0, limit)}…`;
+  value.length <= limit ? value : `${value.slice(0, limit).replace(/[\uD800-\uDBFF]$/u, "")}…`;
 
 /** Skips the runtime's opening envelope around the launch prompt the view already shows. */
 function transcriptSteps(

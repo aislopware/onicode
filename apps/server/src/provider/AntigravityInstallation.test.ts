@@ -1046,10 +1046,33 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Antigravity inst
           source: "managed",
           version: previousVersion,
         });
-        expect(yield* installation.resolve(externalExecutable)).toMatchObject({
+        const externalResolved = yield* installation.resolve(externalExecutable);
+        expect(externalResolved).toMatchObject({
           executablePath: externalExecutable,
           source: "override",
           managedVersionDirectory: null,
+        });
+        const externalBefore =
+          yield* AntigravityInstallation.readAntigravityExecutableBuild(externalResolved);
+        expect(
+          AntigravityInstallation.antigravityOutdatedBuild({
+            atSpawn: externalBefore,
+            current:
+              yield* AntigravityInstallation.readAntigravityExecutableBuild(externalResolved),
+          }),
+        ).toBeUndefined();
+        const stagedExternal = path.join(externalDirectory, ".agy-staged");
+        yield* fs.writeFileString(stagedExternal, "external cli v2", { mode: 0o755 });
+        yield* fs.rename(stagedExternal, externalExecutable);
+        expect(
+          AntigravityInstallation.antigravityOutdatedBuild({
+            atSpawn: externalBefore,
+            current:
+              yield* AntigravityInstallation.readAntigravityExecutableBuild(externalResolved),
+          }),
+        ).toEqual({
+          reason: "executable_replaced",
+          executablePath: externalExecutable,
         });
         expect(yield* installation.resolve("agy")).toMatchObject({ source: "override" });
         expect(
@@ -1099,10 +1122,17 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Antigravity inst
       });
       const processScope = yield* Scope.make();
       const oldExecutable = yield* installation.acquire().pipe(Scope.provide(processScope));
+      const oldBuild = yield* AntigravityInstallation.readAntigravityExecutableBuild(oldExecutable);
       const starting = yield* installation.start.pipe(Effect.forkScoped);
       yield* Deferred.await(manifestEntered);
       const concurrent = yield* installation.acquire().pipe(Scope.provide(processScope));
       expect(concurrent.executablePath).toBe(oldExecutable.executablePath);
+      expect(
+        AntigravityInstallation.antigravityOutdatedBuild({
+          atSpawn: oldBuild,
+          current: yield* AntigravityInstallation.readAntigravityExecutableBuild(concurrent),
+        }),
+      ).toBeUndefined();
       yield* Deferred.succeed(releaseManifest, undefined);
       yield* Fiber.join(starting);
       expect((yield* terminalState(installation)).phase).toBe("succeeded");
@@ -1110,6 +1140,18 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Antigravity inst
       const current = yield* installation.resolve();
       expect(current.version).toBe("1.5.7");
       expect(current.executablePath).not.toBe(oldExecutable.executablePath);
+      expect(
+        AntigravityInstallation.antigravityOutdatedBuild({
+          atSpawn: oldBuild,
+          current: yield* AntigravityInstallation.readAntigravityExecutableBuild(current),
+        }),
+      ).toEqual({
+        reason: "release_changed",
+        runningVersion: oldExecutable.version,
+        installedVersion: "1.5.7",
+        runningPath: oldExecutable.executablePath,
+        installedPath: current.executablePath,
+      });
       expect(yield* fs.readFileString(oldExecutable.executablePath)).toBe(serverContents);
       expect(yield* installation.remove().pipe(Effect.flip)).toMatchObject({ operation: "remove" });
       yield* Scope.close(processScope, Exit.void);
@@ -1665,6 +1707,56 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Antigravity inst
             ),
           ).toBe(false);
         }
+      }),
+  );
+
+  it.effect(
+    "sweeps stale staging directories on startup while keeping fresh ones and updating canRemove",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "oni-agy-staging-sweep-" });
+        // Anchor TestClock to the filesystem clock so 24h mtime comparisons match wall time.
+        const clockAnchor = path.join(baseDir, "now");
+        yield* fs.writeFileString(clockAnchor, "");
+        const now = Option.getOrThrow((yield* fs.stat(clockAnchor)).mtime).getTime();
+        yield* TestClock.setTime(now);
+
+        const managedDir = path.join(baseDir, "tools", "antigravity-acp", `${hostPlatform}-x64`);
+        const versionsDir = path.join(managedDir, "versions");
+        const stalePointer = path.join(managedDir, "active.json.stale");
+        const staleInstall = path.join(versionsDir, ".install-stale");
+        const freshPointer = path.join(managedDir, "active.json.fresh");
+        const freshInstall = path.join(versionsDir, ".install-fresh");
+        yield* fs.makeDirectory(stalePointer, { recursive: true });
+        yield* fs.makeDirectory(path.join(staleInstall, "runtime"), { recursive: true });
+        yield* fs.writeFileString(path.join(staleInstall, "runtime", executableName), "stale");
+        yield* fs.makeDirectory(freshPointer, { recursive: true });
+        yield* fs.makeDirectory(freshInstall, { recursive: true });
+        if (hostPlatform !== "win32") {
+          yield* fs.chmod(path.join(staleInstall, "runtime", executableName), 0o444);
+          yield* fs.chmod(path.join(staleInstall, "runtime"), 0o500);
+        }
+
+        const dayAndHourAgo = now / 1000 - 25 * 60 * 60;
+        yield* fs.utimes(stalePointer, dayAndHourAgo, dayAndHourAgo);
+        yield* fs.utimes(staleInstall, dayAndHourAgo, dayAndHourAgo);
+
+        const withFresh = yield* makeHarness({ baseDir, native: true });
+        expect(yield* fs.exists(stalePointer)).toBe(false);
+        expect(yield* fs.exists(staleInstall)).toBe(false);
+        expect(yield* fs.exists(freshPointer)).toBe(true);
+        expect(yield* fs.exists(freshInstall)).toBe(true);
+        expect((yield* withFresh.installation.state).canRemove).toBe(true);
+
+        // Once the remaining staging entries age past 24h, startup sweeps them and canRemove clears.
+        yield* fs.utimes(freshPointer, dayAndHourAgo, dayAndHourAgo);
+        yield* fs.utimes(freshInstall, dayAndHourAgo, dayAndHourAgo);
+        const afterSweep = yield* makeHarness({ baseDir, native: true });
+        expect(yield* fs.exists(freshPointer)).toBe(false);
+        expect(yield* fs.exists(freshInstall)).toBe(false);
+        expect((yield* afterSweep.installation.state).canRemove).toBe(false);
       }),
   );
 });

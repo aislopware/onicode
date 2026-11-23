@@ -712,6 +712,24 @@ it.layer(layerTest)("Antigravity provider snapshots", (it) => {
       );
       expect((yield* harness.provider.snapshotForCwd("/workspace")).skills).toEqual(skills);
 
+      // A workspace with no session yet sees agy's commands without another project's skills.
+      yield* harness.provider.snapshotForCwd("/workspace", [{ ...skills[0]!, scope: "project" }]);
+      yield* harness.provider.onAvailableCommands(
+        [...commands, { name: "deploy", description: "Ship it" }],
+        "/workspace",
+      );
+      expect(
+        (yield* harness.provider.snapshotForCwd("/other")).slashCommands.map(
+          (command) => command.name,
+        ),
+      ).toEqual(["plan", "logout"]);
+      yield* harness.provider.onSessionStarted(started, "/other");
+      expect(
+        (yield* harness.provider.snapshot.getSnapshot).workspaceSnapshots
+          ?.find((entry) => entry.cwd === "/other")
+          ?.slashCommands.map((command) => command.name),
+      ).toEqual(["plan", "logout"]);
+
       const rescanned = [
         ...skills,
         { name: "review", path: "/workspace/.agent/skills/review", enabled: true },

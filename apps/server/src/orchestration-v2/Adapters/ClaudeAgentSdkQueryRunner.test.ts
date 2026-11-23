@@ -28,13 +28,13 @@ import * as HostProcess from "@onicode/shared/HostProcess";
 import { AgentScope } from "@onicode/shared/AgentScope";
 import { ProviderEventLoggers } from "@onicode/provider-core/server/ProviderEventLoggers";
 import { makeProviderFailure } from "@onicode/provider-core/server/failure";
+import { makeProcessDescendantPoll } from "@onicode/provider-core/server/processDescendants";
 import { signalProcessGroup } from "@onicode/provider-core/server/processGroup";
 import * as PortScanner from "../../preview/PortScanner.ts";
 import {
   ClaudeAgentSdkQueryRunner,
   type ClaudeAgentSdkQueryOpenInput,
   layerQueryRunner,
-  makeClaudeDescendantPoll,
   spawnClaudeProcessGroup,
 } from "./ClaudeAdapterV2.ts";
 
@@ -822,7 +822,7 @@ describe.skipIf(HostProcess.Platform.defaultValue() === "win32")("Claude CLI pro
     "keeps only the descendants the CLI still has running, however many jobs it ran",
     () => {
       let table: ReadonlyArray<ReturnType<typeof processRow>> = [];
-      const tracker = makeClaudeDescendantPoll(Effect.sync(() => table)).track(1000);
+      const tracker = makeProcessDescendantPoll(Effect.sync(() => table)).track(1000);
       const jobs = (poll: number) => [0, 1, 2, 3].map((job) => 1100 + poll * 4 + job);
       return Effect.gen(function* () {
         for (let poll = 0; poll < 50; poll++) {
@@ -866,7 +866,9 @@ describe.skipIf(HostProcess.Platform.defaultValue() === "win32")("Claude CLI pro
         [processRow(1000, 10, 0), ...unrelated, orphan],
         [...unrelated, orphan],
       ];
-      const tracker = makeClaudeDescendantPoll(Effect.sync(() => tables.shift() ?? [])).track(1000);
+      const tracker = makeProcessDescendantPoll(Effect.sync(() => tables.shift() ?? [])).track(
+        1000,
+      );
       return Effect.gen(function* () {
         yield* tracker.refresh;
         yield* tracker.refresh;
@@ -893,7 +895,7 @@ describe.skipIf(HostProcess.Platform.defaultValue() === "win32")("Claude CLI pro
         processRow(1001, 1000, 0),
         processRow(1100, 1001, 1),
       ]);
-      const tracker = makeClaudeDescendantPoll(Effect.suspend(() => read)).track(1000);
+      const tracker = makeProcessDescendantPoll(Effect.suspend(() => read)).track(1000);
       return Effect.gen(function* () {
         yield* tracker.refresh;
         read = Deferred.succeed(olderReadStarted, undefined).pipe(
@@ -921,7 +923,7 @@ describe.skipIf(HostProcess.Platform.defaultValue() === "win32")("Claude CLI pro
 
   it.effect("reads the process table once per poll for every working CLI", () => {
     let reads = 0;
-    const descendantPoll = makeClaudeDescendantPoll(
+    const descendantPoll = makeProcessDescendantPoll(
       Effect.sync(() => {
         reads++;
         return [
@@ -963,7 +965,7 @@ describe.skipIf(HostProcess.Platform.defaultValue() === "win32")("Claude CLI pro
     () => {
       const readStarted = Deferred.makeUnsafe<void>();
       const table = Deferred.makeUnsafe<ReadonlyArray<ReturnType<typeof processRow>>>();
-      const descendantPoll = makeClaudeDescendantPoll(
+      const descendantPoll = makeProcessDescendantPoll(
         Deferred.succeed(readStarted, undefined).pipe(Effect.andThen(Deferred.await(table))),
       );
       return Effect.gen(function* () {

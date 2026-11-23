@@ -567,16 +567,115 @@ describe("AcpRuntimeModel", () => {
       {
         sessionId: "session-1",
         options: [{ optionId: "allow-once", name: "Allow once", kind: "allow_once" }],
-        toolCall: { toolCallId: "tool-1", kind: null, title: null, rawInput: null },
+        toolCall: {
+          toolCallId: "tool-1",
+          kind: null,
+          title: null,
+          rawInput: null,
+          locations: null,
+          content: null,
+        },
       },
       {
         toolCallId: "tool-1",
         kind: "execute",
-        data: { toolCallId: "tool-1", title: "git status", rawInput: { command: "git status" } },
+        data: {
+          toolCallId: "tool-1",
+          title: "git status",
+          rawInput: { command: "git status" },
+          locations: [{ path: "/workspace/app.ts" }],
+          content: [{ type: "diff", path: "/workspace/app.ts", oldText: "a", newText: "b" }],
+        },
       },
     );
 
     expect(parsePermissionRequest(request).kind).toBe("unknown");
+    expect(request.toolCall.locations).toBeNull();
+    expect(request.toolCall.content).toBeNull();
+  });
+
+  it("extracts native command and file-change details for permission requests", () => {
+    const options = [{ optionId: "allow-once", name: "Allow once", kind: "allow_once" }] as const;
+
+    for (const rawInput of [
+      { CommandLine: "pnpm test" },
+      { command_line: "pnpm test" },
+      { commandLine: "pnpm test" },
+    ]) {
+      expect(
+        parsePermissionRequest({
+          sessionId: "session-1",
+          options,
+          toolCall: {
+            toolCallId: "cmd-1",
+            title: "Run this command?",
+            kind: "execute",
+            status: "pending",
+            rawInput,
+          },
+        }),
+      ).toMatchObject({
+        kind: "execute",
+        detail: "pnpm test",
+        toolCall: { command: "pnpm test" },
+      });
+    }
+
+    expect(
+      parsePermissionRequest({
+        sessionId: "session-1",
+        options,
+        toolCall: {
+          toolCallId: "edit-target-file",
+          title: "Run edit_file?",
+          kind: "edit",
+          status: "pending",
+          rawInput: { TargetFile: "/workspace/src/app.ts" },
+        },
+      }),
+    ).toMatchObject({
+      kind: "edit",
+      detail: "/workspace/src/app.ts",
+    });
+
+    expect(
+      parsePermissionRequest({
+        sessionId: "session-1",
+        options,
+        toolCall: {
+          toolCallId: "edit-absolute-path",
+          title: "Run write_to_file?",
+          kind: "edit",
+          status: "pending",
+          locations: [],
+          rawInput: { AbsolutePath: "/workspace/src/new.ts" },
+        },
+      }),
+    ).toMatchObject({
+      kind: "edit",
+      detail: "/workspace/src/new.ts",
+    });
+
+    const tracked = withTrackedPermissionToolCall(
+      {
+        sessionId: "session-1",
+        options,
+        toolCall: { toolCallId: "edit-tracked", kind: "edit", title: "Run edit_file?" },
+      },
+      {
+        toolCallId: "edit-tracked",
+        kind: "edit",
+        data: {
+          toolCallId: "edit-tracked",
+          locations: [{ path: "/workspace/a.ts" }],
+          content: [{ type: "diff", path: "/workspace/b.ts", oldText: "a", newText: "b" }],
+        },
+      },
+    );
+    expect(parsePermissionRequest(tracked)).toMatchObject({
+      kind: "edit",
+      detail: "/workspace/a.ts\n/workspace/b.ts",
+    });
   });
 
   it("bounds an oversized cumulative tool_call_update content buffer to a tail window", () => {
@@ -947,6 +1046,102 @@ describe("AcpRuntimeModel", () => {
         title: "Native session",
         updatedAt: "2026-08-23T00:00:00Z",
       },
+    });
+  });
+
+  it("ignores zero-token and unsafe-integer usage updates", () => {
+    expect(
+      parseSessionUpdateEvent({
+        sessionId: "session-1",
+        update: { sessionUpdate: "usage_update", used: 0, size: 1_048_576 },
+      } satisfies EffectAcpSchema.SessionNotification).events,
+    ).toEqual([]);
+
+    expect(
+      parseSessionUpdateEvent({
+        sessionId: "session-1",
+        update: {
+          sessionUpdate: "usage_update",
+          used: Number.MAX_SAFE_INTEGER + 100,
+          size: 1_048_576,
+        },
+      } satisfies EffectAcpSchema.SessionNotification).events,
+    ).toEqual([]);
+
+    const unsafeSize = parseSessionUpdateEvent({
+      sessionId: "session-1",
+      update: {
+        sessionUpdate: "usage_update",
+        used: 2_500,
+        size: Number.MAX_SAFE_INTEGER + 100,
+      },
+    } satisfies EffectAcpSchema.SessionNotification);
+    expect(unsafeSize.events).toHaveLength(1);
+    expect(unsafeSize.events[0]).toMatchObject({
+      _tag: "UsageUpdated",
+      usage: { usedTokens: 2_500 },
+    });
+    if (unsafeSize.events[0]?._tag === "UsageUpdated") {
+      expect(unsafeSize.events[0].usage.maxTokens).toBeUndefined();
+    }
+  });
+
+  it("keeps truncated ACP content and update metadata on a code point boundary", () => {
+    expect(acpContentBlockDisplayText({ type: "text", text: `${"a".repeat(65_535)}🚀` })).toBe(
+      "a".repeat(65_535),
+    );
+    expect(acpContentBlockDisplayText({ type: "text", text: `${"a".repeat(65_534)}🚀` })).toBe(
+      `${"a".repeat(65_534)}🚀`,
+    );
+    expect(
+      acpContentBlockDisplayText({
+        type: "resource_link",
+        name: "doc",
+        title: `${"a".repeat(511)}🚀`,
+        uri: "https://example.com",
+      }),
+    ).toBe(`${"a".repeat(511)}\nhttps://example.com`);
+
+    const usage = parseSessionUpdateEvent({
+      sessionId: "session-1",
+      update: {
+        sessionUpdate: "usage_update",
+        used: 1,
+        size: 10,
+        cost: { amount: 1, currency: `${"U".repeat(31)}🚀` },
+      },
+    } satisfies EffectAcpSchema.SessionNotification);
+    const info = parseSessionUpdateEvent({
+      sessionId: "session-1",
+      update: {
+        sessionUpdate: "session_info_update",
+        title: `${"t".repeat(1_023)}🚀`,
+        updatedAt: `${"u".repeat(127)}🚀`,
+      },
+    } satisfies EffectAcpSchema.SessionNotification);
+    const notice = parseSessionUpdateEvent({
+      sessionId: "session-1",
+      update: {
+        sessionUpdate: "notice",
+        severity: `${"s".repeat(63)}🚀`,
+        title: `${"n".repeat(1_023)}🚀`,
+        description: `${"d".repeat(4_095)}🚀`,
+      },
+    } satisfies EffectAcpSchema.SessionNotification);
+
+    expect(usage.events[0]).toMatchObject({
+      _tag: "UsageUpdated",
+      usage: { cost: { amount: 1, currency: "U".repeat(31) } },
+    });
+    expect(info.events[0]).toMatchObject({
+      _tag: "SessionInfoUpdated",
+      metadata: { title: "t".repeat(1_023), updatedAt: "u".repeat(127) },
+    });
+    expect(notice.events[0]).toMatchObject({
+      _tag: "NoticeReceived",
+      severity: "s".repeat(63),
+      title: "n".repeat(1_023),
+      description: "d".repeat(4_095),
     });
   });
 

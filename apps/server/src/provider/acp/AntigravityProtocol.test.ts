@@ -70,6 +70,11 @@ describe("native Antigravity subagent tools", () => {
     });
     expect(result?.length).toBeLessThan(8_100);
     expect(result?.endsWith("The result.")).toBe(true);
+    const splitEmoji = antigravitySubagentOutput({
+      toolCallId: "trajectory:4",
+      data: { rawOutput: `🚀${"y".repeat(7_999)}` },
+    });
+    expect(splitEmoji).toBe(`[Earlier output truncated]\n\n${"y".repeat(7_999)}`);
     expect(
       antigravitySubagentOutput({ toolCallId: "trajectory:4", data: { rawOutput: {} } }),
     ).toBeUndefined();
@@ -171,6 +176,26 @@ describe("Antigravity permissions and questions", () => {
       { decision: "cancel", label: "Cancel" },
     ]);
     expect(antigravityApprovalOptions(permissionRequest)[1]).not.toHaveProperty("warning");
+    const emojiBoundary = {
+      ...permissionRequest,
+      options: [
+        {
+          optionId: "remember-this-command",
+          name: "Allow Always (risky)",
+          kind: "allow_always" as const,
+          _meta: {
+            "agy.security.warning": {
+              message: `${"a".repeat(508)}🚀tail`,
+            },
+          },
+        },
+      ],
+    } satisfies EffectAcpSchema.RequestPermissionRequest;
+    expect(antigravityApprovalOptions(emojiBoundary)[0]).toEqual({
+      decision: "acceptForSession",
+      label: "Allow for this thread",
+      warning: `${"a".repeat(508)}...`,
+    });
   });
 
   it("routes the captured native question to single-choice input, not approval", () => {
@@ -626,6 +651,28 @@ describe("Antigravity tool results", () => {
     });
     expect(toolCall.data.imagePath).toBe(expected);
   });
+
+  it.each([
+    [{ kind: "read", rawInput: { Path: "/workspace/shot.png" } }, "/workspace/shot.png"],
+    [{ kind: "other", rawInput: { AbsolutePath: "/workspace/shot.webp" } }, "/workspace/shot.webp"],
+    [{ kind: "read", rawInput: { absolute_path: "/workspace/shot.jpg" } }, "/workspace/shot.jpg"],
+    [{ kind: "other", rawOutput: { image_path: "/workspace/out.png" } }, "/workspace/out.png"],
+    [{ kind: "read", rawInput: { Path: "/workspace/app.ts" } }, undefined],
+    [{ kind: "edit", rawInput: { AbsolutePath: "/workspace/logo.png" } }, undefined],
+  ] as const)(
+    "promotes image view input keys only for local image reads: %j",
+    (input, expected) => {
+      const toolCall = normalizeAntigravityToolCall({
+        toolCallId: "image-view-1",
+        kind: input.kind,
+        data: {
+          ...("rawInput" in input ? { rawInput: input.rawInput } : {}),
+          ...("rawOutput" in input ? { rawOutput: input.rawOutput } : {}),
+        },
+      });
+      expect(toolCall.data.imagePath).toBe(expected);
+    },
+  );
 
   it("bounds nested tool data and drops image blobs and data URLs", () => {
     const payload = sanitizeAntigravityToolPayload({

@@ -162,10 +162,8 @@ const isProviderAdapterOpenSessionError = Schema.is(
 );
 
 /**
- * Claude refuses these before it reads the prompt: replacing a process running background work,
- * launch arguments whose appended system prompt or settings cannot be read, or MCP registration
- * that never answers while the query opens. A query that ends before the turn attaches (such as a
- * rejected resume point) never received the prompt either, nor did a released session.
+ * Refusals raised before the provider reads the prompt: Claude launch/background/MCP rejections,
+ * a released session, unsupported compaction, or ACP spawn and model-selection failures.
  */
 const PROMPT_REFUSAL_TAGS = [
   "ClaudeBackgroundWorkBlocksQueryReplacementError",
@@ -174,7 +172,33 @@ const PROMPT_REFUSAL_TAGS = [
   "ClaudeSettingsLaunchArgError",
   "ClaudeMcpRegistrationTimeoutError",
   "ProviderSessionReleasedBeforeTurnError",
+  "ProviderCompactionUnsupportedError",
+  "AcpModelSelectionError",
+  "AcpSpawnError",
 ] as const;
+
+// ACP setup RPCs run before session/prompt, so their failures never sent the prompt.
+const ACP_PRE_PROMPT_METHODS: ReadonlySet<unknown> = new Set([
+  "initialize",
+  "authenticate",
+  "session/new",
+  "session/load",
+  "session/resume",
+  "session/set_model",
+  "session/set_mode",
+  "session/set_config_option",
+]);
+
+const ACP_METHOD_ERROR_TAGS = [
+  "AcpRequestError",
+  "AcpTransportError",
+  "AcpProtocolParseError",
+] as const;
+
+const acpFailedBeforePrompt = (error: unknown): boolean =>
+  ACP_METHOD_ERROR_TAGS.some((tag) => Predicate.isTagged(error, tag)) &&
+  Predicate.hasProperty(error, "method") &&
+  ACP_PRE_PROMPT_METHODS.has(error.method);
 
 // Codex requests safe to repeat; any other unanswered request may have acted.
 const CODEX_READ_METHODS: ReadonlySet<unknown> = new Set([
@@ -196,9 +220,10 @@ const appServerGone = (error: unknown): boolean =>
   unansweredCodexRequest(error, true) ||
   (Predicate.hasProperty(error, "cause") && appServerGone(error.cause));
 
-const refusedBeforePrompt = (error: unknown): boolean =>
+export const refusedBeforePrompt = (error: unknown): boolean =>
   PROMPT_REFUSAL_TAGS.some((tag) => Predicate.isTagged(error, tag)) ||
   appServerGone(error) ||
+  acpFailedBeforePrompt(error) ||
   (isProviderAdapterProtocolError(error) &&
     error.driver === CLAUDE_PROVIDER &&
     error.detail === CLAUDE_QUERY_ENDED_BEFORE_TURN_DETAIL) ||
