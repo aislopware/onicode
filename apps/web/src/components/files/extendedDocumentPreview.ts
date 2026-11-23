@@ -532,6 +532,8 @@ const RTF_CHARACTERS = new Map([
 const rtfCodePage = (value: number) =>
   (
     {
+      0: "windows-1252",
+      866: "ibm866",
       65001: "utf-8",
       932: "shift_jis",
       936: "gbk",
