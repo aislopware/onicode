@@ -3444,3 +3444,4 @@ f274d47150	take	patch rebased onto Onicode's gt-react-native 11.4.24 (applies un
 c768764bb6	take	taken as is
 27ecc0fad9	take	fix(cli): reject incomplete workflow signal addresses locally
 6ec46a61e6	take	fix(opencode): Usage → Limits no longer warns when no Console workspace is signed in (#41415)
+0db39e6b7c	take	adopted upstream over Onicode's bf621299b4 (same fix): identical behaviour, upstream adds the pruned-script row
