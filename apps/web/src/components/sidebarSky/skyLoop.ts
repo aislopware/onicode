@@ -3,6 +3,7 @@ import { observeResize } from "~/lib/observeResize";
 import { skyEventsAt, skyWeatherAt } from "./sky";
 import {
   paintSkyBackdrop,
+  paintSkyBehindBody,
   paintSkyLife,
   SKY_HEIGHT,
   skyControlColors,
@@ -21,13 +22,16 @@ export function runSky(canvas: HTMLCanvasElement, controlsHost: HTMLElement): ()
   const painter = canvas.getContext("2d");
   const backdrop = document.createElement("canvas");
   const backdropPainter = backdrop.getContext("2d", { willReadFrequently: true });
-  if (!painter || !backdropPainter) return () => {};
+  const behindBody = document.createElement("canvas");
+  const behindBodyPainter = behindBody.getContext("2d", { willReadFrequently: true });
+  if (!painter || !backdropPainter || !behindBodyPainter) return () => {};
 
   const root = canvas.ownerDocument.documentElement;
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
   let timer: number | undefined;
   let onScreen = true;
   let backdropKey = "";
+  let behindBodyFill: CanvasPattern | string = "transparent";
   let controlColors: Record<string, string> = {};
   let holdingStill = false;
 
@@ -57,12 +61,18 @@ export function runSky(canvas: HTMLCanvasElement, controlsHost: HTMLElement): ()
     }
     if (key !== backdropKey) {
       backdropKey = key;
-      for (const surface of [canvas, backdrop]) {
+      for (const surface of [canvas, backdrop, behindBody]) {
         surface.width = Math.round(width * scale);
         surface.height = Math.round(SKY_HEIGHT * scale);
       }
       backdropPainter.setTransform(scale, 0, 0, scale, 0, 0);
       paintSkyBackdrop(backdropPainter, scene);
+      behindBodyPainter.setTransform(scale, 0, 0, scale, 0, 0);
+      paintSkyBehindBody(behindBodyPainter, scene);
+      const pattern = painter.createPattern(behindBody, "no-repeat");
+      // The painter draws in points; the pattern's pixels are device pixels.
+      pattern?.setTransform(new DOMMatrix().scale(1 / scale));
+      behindBodyFill = pattern ?? "transparent";
       // The host wraps the whole app, so a colour is written only when it changed.
       const colors = skyControlColors(scene);
       for (const [name, color] of Object.entries(colors)) {
@@ -74,7 +84,7 @@ export function runSky(canvas: HTMLCanvasElement, controlsHost: HTMLElement): ()
     painter.setTransform(scale, 0, 0, scale, 0, 0);
     painter.clearRect(0, 0, width, SKY_HEIGHT);
     painter.drawImage(backdrop, 0, 0, width, SKY_HEIGHT);
-    const framesPerSecond = paintSkyLife(painter, scene, events);
+    const framesPerSecond = paintSkyLife(painter, scene, events, behindBodyFill);
     holdingStill = !still && framesPerSecond === 0;
     const wait = still
       ? (minute + 1) * 60_000 - now.getTime()

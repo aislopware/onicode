@@ -26,6 +26,7 @@ export interface SkyScene {
 }
 
 type Painter = CanvasRenderingContext2D;
+type Fill = Painter["fillStyle"];
 
 const oklch = (lightness: number, chroma: number, hue: number, alpha = 1) =>
   `oklch(${lightness} ${chroma} ${hue} / ${alpha})`;
@@ -72,7 +73,22 @@ function glow(
   painter.restore();
 }
 
-function paintSun(painter: Painter, x: number, y: number, elevation: number) {
+const SUN_HALO = BODY_RADIUS * 3.2;
+const MOON_HALO = BODY_RADIUS * 4;
+
+function bodyOf(scene: SkyScene) {
+  const { sun, progress } = skyBodyAt(scene.hour);
+  const elevation = Math.sin(Math.PI * progress);
+  return {
+    sun,
+    elevation,
+    x: 16 + progress * (scene.width - 32),
+    y: HORIZON + 5 - elevation * (SUN_CLIMB + 5),
+    reach: (sun ? SUN_HALO : MOON_HALO) + DOT_PITCH,
+  };
+}
+
+function paintSunGlow(painter: Painter, x: number, elevation: number) {
   const low = 1 - elevation;
   glow(
     painter,
@@ -83,8 +99,10 @@ function paintSun(painter: Painter, x: number, y: number, elevation: number) {
     oklch(0.93, 0.11, 70, 0.3 + 0.5 * low),
     oklch(0.8, 0.16, 40, 0.08 + 0.26 * low),
   );
-  const halo = BODY_RADIUS * 3.2;
-  glow(painter, x, y, halo, halo, oklch(0.98, 0.05, 95, 0.55), oklch(0.95, 0.08, 80, 0.16));
+}
+
+function paintSun(painter: Painter, x: number, y: number, elevation: number) {
+  glow(painter, x, y, SUN_HALO, SUN_HALO, oklch(0.98, 0.05, 95, 0.55), oklch(0.95, 0.08, 80, 0.16));
   painter.fillStyle = oklch(0.82 + 0.16 * elevation, 0.16 - 0.1 * elevation, 50 + 45 * elevation);
   painter.beginPath();
   painter.arc(x, y, BODY_RADIUS, 0, Math.PI * 2);
@@ -92,8 +110,7 @@ function paintSun(painter: Painter, x: number, y: number, elevation: number) {
 }
 
 function paintMoon(painter: Painter, x: number, y: number, phase: number) {
-  const halo = BODY_RADIUS * 4;
-  glow(painter, x, y, halo, halo, oklch(0.9, 0.04, 250, 0.3), oklch(0.8, 0.06, 255, 0.1));
+  glow(painter, x, y, MOON_HALO, MOON_HALO, oklch(0.9, 0.04, 250, 0.3), oklch(0.8, 0.06, 255, 0.1));
   const radius = BODY_RADIUS * 0.9;
   // 1 at new moon, -1 at full: how far the shadow's edge bulges across the disc.
   const terminator = Math.cos(2 * Math.PI * phase);
@@ -165,8 +182,7 @@ export function skyControlColors(scene: SkyScene): Record<string, string> {
   };
 }
 
-/** The part that changes at most once a minute: sky, sun or moon, the far ridge and its haze. */
-export function paintSkyBackdrop(painter: Painter, scene: SkyScene) {
+function paintBackdrop(painter: Painter, scene: SkyScene, withBody: boolean) {
   const palette = skyPaletteAt(scene.hour);
   const sky = painter.createLinearGradient(0, 0, 0, HORIZON + 10);
   const stops = [0, 0.4, 0.68, 0.88, 1];
@@ -174,12 +190,10 @@ export function paintSkyBackdrop(painter: Painter, scene: SkyScene) {
   painter.fillStyle = sky;
   painter.fillRect(0, 0, scene.width, SKY_HEIGHT);
 
-  const body = skyBodyAt(scene.hour);
-  const elevation = Math.sin(Math.PI * body.progress);
-  const bodyX = 16 + body.progress * (scene.width - 32);
-  const bodyY = HORIZON + 5 - elevation * (SUN_CLIMB + 5);
-  if (body.sun) paintSun(painter, bodyX, bodyY, elevation);
-  else paintMoon(painter, bodyX, bodyY, moonPhaseAt(scene.epochMs));
+  const body = bodyOf(scene);
+  if (body.sun) paintSunGlow(painter, body.x, body.elevation);
+  if (withBody && body.sun) paintSun(painter, body.x, body.y, body.elevation);
+  if (withBody && !body.sun) paintMoon(painter, body.x, body.y, moonPhaseAt(scene.epochMs));
 
   const [ridgeLightness, ridgeChroma, ridgeHue] = palette.farRidge;
   traceRidge(painter, scene.width, farRidgeAt);
@@ -204,6 +218,25 @@ export function paintSkyBackdrop(painter: Painter, scene: SkyScene) {
   paintDotScreen(painter, scene.width);
 }
 
+/** The part that changes at most once a minute: sky, sun or moon, the far ridge and its haze. */
+export function paintSkyBackdrop(painter: Painter, scene: SkyScene) {
+  paintBackdrop(painter, scene, true);
+}
+
+/**
+ * The backdrop as it would look without the sun or moon, kept only around the body. Pale shapes
+ * fill their outline with it first, so they cover the body instead of fading into its light.
+ */
+export function paintSkyBehindBody(painter: Painter, scene: SkyScene) {
+  paintBackdrop(painter, scene, false);
+  const body = bodyOf(scene);
+  painter.globalCompositeOperation = "destination-in";
+  painter.beginPath();
+  painter.arc(body.x, body.y, body.reach, 0, Math.PI * 2);
+  painter.fill();
+  painter.globalCompositeOperation = "source-over";
+}
+
 function paintStars(painter: Painter, scene: SkyScene, night: number, seconds: number) {
   if (night <= 0.02) return;
   const random = seededRandom(3);
@@ -220,15 +253,16 @@ function paintStars(painter: Painter, scene: SkyScene, night: number, seconds: n
   }
 }
 
-function paintClouds(painter: Painter, scene: SkyScene, palette: SkyPalette, seconds: number) {
+function paintClouds(
+  painter: Painter,
+  scene: SkyScene,
+  palette: SkyPalette,
+  seconds: number,
+  behindBody: Fill,
+) {
   const random = seededRandom(scene.weather.seed);
   const [lightness, chroma, hue] = palette.sky[4] ?? palette.farRidge;
-  painter.fillStyle = oklch(
-    Math.min(0.97, lifted(scene, lightness) + 0.13),
-    chroma * 0.7,
-    hue,
-    0.2 + 0.4 * (1 - palette.night * 0.6),
-  );
+  const clouds = new Path2D();
   for (let cloud = 0; cloud < scene.weather.clouds; cloud++) {
     const length = 26 + random() * 46;
     const thickness = 2.6 + random() * 2.2;
@@ -238,24 +272,31 @@ function paintClouds(painter: Painter, scene: SkyScene, palette: SkyPalette, sec
     const lap = scene.width + length + 50;
     const x = ((((random() * lap + speed * seconds) % lap) + lap) % lap) - length - 25;
     const rounding = thickness / 2;
-    painter.beginPath();
-    painter.roundRect(x, y, length, thickness, rounding);
-    painter.roundRect(
+    clouds.roundRect(x, y, length, thickness, rounding);
+    clouds.roundRect(
       x + length * (0.12 + random() * 0.2),
       y - thickness * 0.62,
       length * (0.3 + random() * 0.25),
       thickness,
       rounding,
     );
-    painter.roundRect(
+    clouds.roundRect(
       x + length * (0.45 + random() * 0.2),
       y + thickness * 0.62,
       length * (0.2 + random() * 0.25),
       thickness,
       rounding,
     );
-    painter.fill();
   }
+  painter.fillStyle = behindBody;
+  painter.fill(clouds);
+  painter.fillStyle = oklch(
+    Math.min(0.97, lifted(scene, lightness) + 0.13),
+    chroma * 0.7,
+    hue,
+    0.2 + 0.4 * (1 - palette.night * 0.6),
+  );
+  painter.fill(clouds);
 }
 
 interface LiveEvent {
@@ -263,6 +304,7 @@ interface LiveEvent {
   readonly age: number;
   readonly lasts: number;
   readonly random: () => number;
+  readonly behindBody: Fill;
 }
 
 /** Paints one event's current frame and returns the frame rate it needs. */
@@ -379,7 +421,7 @@ const paintFlock: EventPainter = (painter, { scene, age, lasts, random }) => {
 
 const WIND_SEGMENTS = 26;
 
-const paintWind: EventPainter = (painter, { scene, age, random }) => {
+const paintWind: EventPainter = (painter, { scene, age, random, behindBody }) => {
   painter.lineCap = "round";
   for (let streak = 0; streak < 3; streak++) {
     const streakAge = age - streak * 0.4;
@@ -397,6 +439,18 @@ const paintWind: EventPainter = (painter, { scene, age, random }) => {
         startY + 2.5 * Math.sin(along * 5 + wobble) - 4 * (1 - Math.cos(2 * Math.PI * loop)),
       ];
     };
+    const tail = Math.max(0, head - 0.32);
+    const tip = Math.min(1, head);
+    if (tip <= tail) continue;
+    painter.strokeStyle = behindBody;
+    painter.lineWidth = 0.85;
+    painter.beginPath();
+    painter.moveTo(...pointAt(tail));
+    for (let along = tail; along < tip; along += 0.32 / WIND_SEGMENTS) {
+      painter.lineTo(...pointAt(along));
+    }
+    painter.lineTo(...pointAt(tip));
+    painter.stroke();
     for (let segment = 0; segment < WIND_SEGMENTS; segment++) {
       const from = head - 0.32 + (0.32 * segment) / WIND_SEGMENTS;
       const to = from + 0.32 / WIND_SEGMENTS;
@@ -482,7 +536,7 @@ const paintFireflies: EventPainter = (painter, event) => {
 
 const paintDrift =
   (kind: "petals" | "leaves" | "snow"): EventPainter =>
-  (painter, { scene, age, lasts, random }) => {
+  (painter, { scene, age, lasts, random, behindBody }) => {
     const snow = kind === "snow";
     const flakes = snow ? 46 : 16;
     const life = snow ? 9 : 7;
@@ -499,9 +553,11 @@ const paintDrift =
       const y = -3 + (HORIZON + 12) * fallen + (snow ? 0 : 3 * Math.sin(flakeAge * 1.4 + flutter));
       const alpha = Math.min(1, fallen * 6, (1 - fallen) * 4);
       if (snow) {
-        painter.fillStyle = `rgb(255 255 255 / ${0.85 * alpha})`;
         painter.beginPath();
         painter.arc(x, y, size * 0.7, 0, Math.PI * 2);
+        painter.fillStyle = behindBody;
+        painter.fill();
+        painter.fillStyle = `rgb(255 255 255 / ${0.85 * alpha})`;
         painter.fill();
         continue;
       }
@@ -647,6 +703,7 @@ function paintEvents(
   painters: Partial<Record<SkyEvent["kind"], EventPainter>>,
   events: readonly SkyEvent[],
   epochSeconds: number,
+  behindBody: Fill,
 ): number {
   let framesPerSecond = 0;
   for (const event of events) {
@@ -654,7 +711,8 @@ function paintEvents(
     const age = epochSeconds - event.startedAt;
     const lasts = skyEventSeconds(event.kind);
     if (!paintEvent || age < 0 || age > lasts) continue;
-    const wanted = paintEvent(painter, { scene, age, lasts, random: seededRandom(event.seed) });
+    const random = seededRandom(event.seed);
+    const wanted = paintEvent(painter, { scene, age, lasts, random, behindBody });
     framesPerSecond = Math.max(framesPerSecond, wanted);
   }
   return framesPerSecond;
@@ -663,12 +721,14 @@ function paintEvents(
 /**
  * The part that moves, drawn over the backdrop: stars, clouds and the events in the air. It ends
  * by cutting the near ridge out of the picture, so the sidebar itself is the ground. Returns the
- * frame rate the motion needs, 0 when nothing in the picture moves.
+ * frame rate the motion needs, 0 when nothing in the picture moves. `behindBody` is a fill made
+ * from `paintSkyBehindBody`.
  */
 export function paintSkyLife(
   painter: Painter,
   scene: SkyScene,
   events: readonly SkyEvent[],
+  behindBody: Fill,
 ): number {
   const epochSeconds = scene.epochMs / 1000;
   const palette = skyPaletteAt(scene.hour);
@@ -681,11 +741,11 @@ export function paintSkyLife(
   painter.closePath();
   painter.clip();
   paintStars(painter, scene, palette.night, epochSeconds);
-  const skyFrames = paintEvents(painter, scene, SKY_PAINTERS, events, epochSeconds);
-  paintClouds(painter, scene, palette, epochSeconds);
+  const skyFrames = paintEvents(painter, scene, SKY_PAINTERS, events, epochSeconds, behindBody);
+  paintClouds(painter, scene, palette, epochSeconds, behindBody);
   painter.restore();
 
-  const airFrames = paintEvents(painter, scene, AIR_PAINTERS, events, epochSeconds);
+  const airFrames = paintEvents(painter, scene, AIR_PAINTERS, events, epochSeconds, behindBody);
 
   painter.globalCompositeOperation = "destination-out";
   traceRidge(painter, scene.width, nearRidgeAt);
