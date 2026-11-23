@@ -559,6 +559,43 @@ describe("environment theme", () => {
       }),
   );
 
+  it.effect("reports a listed theme file that is gone by the time it is read", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const themesDir = yield* fs.makeTempDirectoryScoped({ prefix: "onicode-read-themes-" });
+      const file = path.join(themesDir, "nightfall.json");
+      yield* fs.writeFileString(file, encodeThemeFile(NIGHTFALL_THEME));
+      let missing = 0;
+      const read = (removeAfterListing: boolean) =>
+        EnvironmentTheme.readPublishedThemes(
+          themesDir,
+          Effect.sync(() => {
+            missing += 1;
+          }),
+        ).pipe(
+          Effect.provideService(
+            FileSystem.FileSystem,
+            FileSystem.FileSystem.of({
+              ...fs,
+              readDirectory: (directory, options) =>
+                fs
+                  .readDirectory(directory, options)
+                  .pipe(Effect.tap(() => (removeAfterListing ? fs.remove(file) : Effect.void))),
+            }),
+          ),
+        );
+
+      assert.deepEqual(
+        (yield* read(false)).map((theme) => theme.name),
+        ["Nightfall"],
+      );
+      assert.equal(missing, 0);
+      assert.deepEqual(yield* read(true), []);
+      assert.equal(missing, 1);
+    }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
+  );
+
   it.live.skipIf(!symlinksSupported)(
     "publishes themes when a linked theme directory's original grandparent is restored between probes",
     () =>
