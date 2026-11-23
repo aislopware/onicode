@@ -3446,3 +3446,4 @@ c768764bb6	take	taken as is
 6ec46a61e6	take	fix(opencode): Usage → Limits no longer warns when no Console workspace is signed in (#41415)
 0db39e6b7c	take	adopted upstream over Onicode's bf621299b4 (same fix): identical behaviour, upstream adds the pruned-script row
 3ab1ee20bd	take	fix(server): long setup scripts complete in macOS zsh (#37836)
+c6fe23dd28	take	fix(server): preview type sends key events to the page (#41432)
