@@ -12,6 +12,7 @@ import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import * as HostProcess from "@onicode/shared/HostProcess";
+import { WindowsRegistry } from "@onicode/shared/managedPolicyFile";
 import { buildRemoteNodeEnvScript } from "@onicode/ssh/tunnel";
 import { satisfiesSemverRange } from "@onicode/shared/semver";
 
@@ -1123,37 +1124,25 @@ const getUserHomeImpl = (
 
 // Store/MSI WSL registers WSLService and inbox WSL registers LxssManager; either key means installed.
 const WSL_SERVICE_KEYS = [
-  "HKLM\\SYSTEM\\CurrentControlSet\\Services\\WSLService",
-  "HKLM\\SYSTEM\\CurrentControlSet\\Services\\LxssManager",
+  "SYSTEM\\CurrentControlSet\\Services\\WSLService",
+  "SYSTEM\\CurrentControlSet\\Services\\LxssManager",
 ] as const;
-const SERVICE_QUERY_TIMEOUT = Duration.seconds(5);
 
-const wslServiceRegistered = Effect.scoped(
-  Effect.gen(function* () {
-    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-    const registered = yield* Effect.forEach(
-      WSL_SERVICE_KEYS,
-      (key) =>
-        spawner
-          .spawn(
-            ChildProcess.make("reg.exe", ["query", key], {
-              stdin: "ignore",
-              stdout: "ignore",
-              stderr: "ignore",
-              killSignal: "SIGTERM",
-              forceKillAfter: PROCESS_TERMINATE_GRACE,
-            }),
-          )
-          .pipe(Effect.flatMap((handle) => handle.exitCode)),
-      { concurrency: "unbounded" },
-    );
-    return registered.some((exitCode) => (exitCode as unknown as number) === 0);
-  }),
-).pipe(
-  Effect.timeoutOption(SERVICE_QUERY_TIMEOUT),
-  Effect.map(Option.getOrElse(() => false)),
-  Effect.orElseSucceed(() => false),
-);
+// A key that cannot be read, say under a policy that blocks registry access, is no evidence
+// against WSL: only both keys being absent rules it out.
+const wslServiceRegistered = Effect.gen(function* () {
+  const registry = yield* WindowsRegistry;
+  const registered = yield* Effect.forEach(
+    WSL_SERVICE_KEYS,
+    (key) =>
+      registry.readMachineKey(key).pipe(
+        Effect.map((found) => found !== undefined),
+        Effect.orElseSucceed(() => true),
+      ),
+    { concurrency: "unbounded" },
+  );
+  return registered.some(Boolean);
+});
 
 export const makeIsAvailable = Effect.fn("DesktopWslEnvironment.makeIsAvailable")(function* (
   platform: NodeJS.Platform,
@@ -1161,12 +1150,15 @@ export const makeIsAvailable = Effect.fn("DesktopWslEnvironment.makeIsAvailable"
 ): Effect.fn.Return<
   boolean,
   never,
-  | FileSystem.FileSystem
-  | Path.Path
-  | DesktopManagedPolicy.DesktopManagedPolicy
-  | ChildProcessSpawner.ChildProcessSpawner
+  FileSystem.FileSystem | Path.Path | DesktopManagedPolicy.DesktopManagedPolicy | WindowsRegistry
 > {
   if (platform !== "win32") return false;
+  // A server in WSL reads Linux's policy, never this machine's, so a managed machine runs none.
+  const managed = yield* (yield* DesktopManagedPolicy.DesktopManagedPolicy).read.pipe(
+    Effect.map((found) => found !== undefined),
+    Effect.orElseSucceed(() => true),
+  );
+  if (managed) return false;
   const path = yield* Path.Path;
   const fileSystem = yield* FileSystem.FileSystem;
   const wslExePath = path.join(windir, "System32", "wsl.exe");
@@ -1174,12 +1166,7 @@ export const makeIsAvailable = Effect.fn("DesktopWslEnvironment.makeIsAvailable"
     return false;
   }
   // System32\wsl.exe is also an install stub on Windows without WSL, so check for its service.
-  if (!(yield* wslServiceRegistered)) return false;
-  // A server in WSL reads Linux's policy, never this machine's, so a managed machine runs none.
-  return yield* (yield* DesktopManagedPolicy.DesktopManagedPolicy).read.pipe(
-    Effect.map((found) => found === undefined),
-    Effect.orElseSucceed(() => false),
-  );
+  return yield* wslServiceRegistered;
 });
 
 export interface DesktopWslEnvironmentTestStub {
@@ -1286,7 +1273,7 @@ export const layer = Layer.effect(
     // Cache availability so synchronous IPC bootstrap can read it without yielding to filesystem I/O.
     const wslAvailable = yield* makeIsAvailable(environment.platform, windir).pipe(
       Effect.provideService(FileSystem.FileSystem, fileSystem),
-      Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+      Effect.provideService(WindowsRegistry, yield* WindowsRegistry),
       Effect.provideService(Path.Path, environment.path),
       Effect.provideService(
         DesktopManagedPolicy.DesktopManagedPolicy,

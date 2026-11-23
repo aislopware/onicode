@@ -1068,6 +1068,32 @@ effectIt.layer(NodeServices.layer)("resolveSpawnCommand", (it) => {
     ),
   );
 
+  it.effect("shares one listing of each PATH directory between concurrent cold lookups", () =>
+    Effect.gen(function* () {
+      const directories = ["C:\\shared-cold-a", "C:\\shared-cold-b"];
+      const directoryStat = { isDirectory: () => true, isFile: () => false, mtimeMs: 1 };
+      using _stat = vi.spyOn(NodeFS.promises, "stat").mockImplementation(async (candidate) => {
+        if (directories.includes(String(candidate))) return directoryStat as NodeFS.Stats;
+        throw Object.assign(new Error("not found"), { code: "ENOENT" });
+      });
+      const listed: Array<string> = [];
+      using _readdir = vi.spyOn(NodeFS.promises, "readdir").mockImplementation((async (
+        directory: NodeFS.PathLike,
+      ) => {
+        listed.push(String(directory));
+        return [];
+      }) as unknown as typeof NodeFS.promises.readdir);
+      const env = { PATH: directories.join(";"), PATHEXT: ".EXE;.CMD" };
+      const resolve = SpawnExecutableResolution.defaultValue();
+      expect(
+        yield* Effect.promise(() =>
+          Promise.all([resolve("git", "win32", env), resolve("claude", "win32", env)]),
+        ),
+      ).toEqual([undefined, undefined]);
+      expect(listed.toSorted()).toEqual(directories);
+    }),
+  );
+
   it.effect("preserves PATH and PATHEXT order and discovers executables after a miss", () =>
     Effect.scoped(
       Effect.gen(function* () {

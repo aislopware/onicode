@@ -6816,6 +6816,8 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
         // mode change; replacing the process cancels it, and that clears this record too.
         const scheduleWakeupCalls = new Set<string>();
         const scheduledWakeupsByNativeThread = new Map<string, number>();
+        // When each conversation's prompt cache lapses, from the last request that reported one.
+        const promptCacheExpiryByNativeThread = new Map<string, DateTime.Utc>();
         // Native threads whose current turn Claude started by itself inside the early-fire margin.
         const possibleEarlyWakeNativeThreads = new Set<string>();
         // Turn starts a due or nearly due ScheduleWakeup may have caused.
@@ -7088,6 +7090,12 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           if (typeof usage !== "number") {
             if (claudeMessageInputTokens(usage) <= 0) return;
             context.compactionTokens = undefined;
+            if ("promptCacheExpiresAt" in tokenUsage && tokenUsage.promptCacheExpiresAt) {
+              promptCacheExpiryByNativeThread.set(
+                context.nativeThreadId,
+                DateTime.makeUnsafe(tokenUsage.promptCacheExpiresAt),
+              );
+            }
           }
           const usageKey = [
             ...Object.entries(tokenUsage)
@@ -13947,11 +13955,16 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
 
         // Nobody asked for this replacement, so unlike a model change it also yields to a
         // scheduled wakeup, which dies with the process, and to a turn Claude started by itself.
+        // It waits for the prompt cache to lapse too: the build is part of the cached prefix, so
+        // moving to a new one rewrites the whole conversation's cache.
         const liveProcessOutdatedBuild = Effect.fnUntraced(function* (
           live: ClaudeLiveQueryContext,
         ) {
+          const promptCacheExpiry = promptCacheExpiryByNativeThread.get(live.nativeThreadId);
           if (
             live.installedAtInit === undefined ||
+            (promptCacheExpiry !== undefined &&
+              DateTime.isLessThan(yield* DateTime.now, promptCacheExpiry)) ||
             scheduledWakeupsByNativeThread.has(live.nativeThreadId) ||
             ((yield* Ref.get(wakeBuffers)).get(live.nativeThreadId)?.messages.length ?? 0) > 0 ||
             (yield* liveProcessRunsBackgroundWork(live))
@@ -14232,14 +14245,20 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           const resolvedTurnCwd = yield* fileSystem
             .realPath(turnInput.runtimePolicy.cwd ?? ".")
             .pipe(Effect.orElseSucceed(() => turnInput.runtimePolicy.cwd));
-          const openQueryRuntime = queryRunner.open({
-            threadId: turnInput.threadId,
-            providerSessionId: input.providerSessionId,
-            options: queryOptions,
-            ...(turnInput.resume ? { resume: true } : {}),
-          });
+          // The file read here, inside the installation gate, is the one this process runs: an
+          // update landing before its first `init` frame must still count as newer.
+          const openQueryRuntime = Effect.zipWith(
+            readInstalledBuild,
+            queryRunner.open({
+              threadId: turnInput.threadId,
+              providerSessionId: input.providerSessionId,
+              options: queryOptions,
+              ...(turnInput.resume ? { resume: true } : {}),
+            }),
+            (installedAtOpen, session) => ({ session, installedAtOpen }),
+          );
           // The SDK spawns the CLI per turn, so only the open waits for a provider update.
-          const querySession = yield* (
+          const { session: querySession, installedAtOpen } = yield* (
             adapterOptions.installationGate === undefined
               ? openQueryRuntime
               : adapterOptions.installationGate.execute(adapterOptions.instanceId, openQueryRuntime)
@@ -14385,7 +14404,12 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                   const onSessionInit = adapterOptions.onSessionInit;
                   return readInstalledBuild.pipe(
                     Effect.flatMap((installed) => {
-                      context.installedAtInit = installed;
+                      // The managed publication stays the one seen at `init`, so a launch that
+                      // fell back to the old build is not replaced again on every turn.
+                      context.installedAtInit = {
+                        executable: installedAtOpen.executable,
+                        managedPublishedVersion: installed.managedPublishedVersion,
+                      };
                       return reportedCwd === null || !onSessionInit
                         ? Effect.void
                         : onSessionInit(reportedCwd);

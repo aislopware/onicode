@@ -691,8 +691,24 @@ const resolverPathDirectoryListings = new Map<
   { readonly modified: number; readonly names: ReadonlySet<string> }
 >();
 
-// The spawn resolver's counterpart of `PathDirectoryListings`, under the same rules.
-async function listResolverPathDirectory(
+const resolverPathDirectoryReads = new Map<string, Promise<ReadonlySet<string> | undefined>>();
+
+// The spawn resolver's counterpart of `PathDirectoryListings`, under the same rules. Concurrent
+// cold lookups share one read, so parallel startup probes do not each list every PATH directory.
+function listResolverPathDirectory(
+  directory: string,
+  isAbsolute: (path: string) => boolean,
+): Promise<ReadonlySet<string> | undefined> {
+  const inFlight = resolverPathDirectoryReads.get(directory);
+  if (inFlight) return inFlight;
+  const read = readResolverPathDirectory(directory, isAbsolute).finally(() => {
+    resolverPathDirectoryReads.delete(directory);
+  });
+  resolverPathDirectoryReads.set(directory, read);
+  return read;
+}
+
+async function readResolverPathDirectory(
   directory: string,
   isAbsolute: (path: string) => boolean,
 ): Promise<ReadonlySet<string> | undefined> {
