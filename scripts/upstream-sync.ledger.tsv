@@ -3455,3 +3455,4 @@ d1a6c35f73	take	keep PowerPoint slides with alternate relationship prefixes
 06f513d50f	take	auto send only waits on its own sender's queued message; kept Onicode's projection-first read
 c977a70fd6	take	server metrics machine load and A/A noise floors; comment points at 16_performance-regressions.md
 20419366c3	take	server metrics working scenario
+059d1bdeb9	take	install docs point at ACP Registry agents; kept Onicode's Command Code row
