@@ -1,9 +1,14 @@
 import { GitCommandError } from "@onicode/contracts";
+import * as Cause from "effect/Cause";
+import * as Schema from "effect/Schema";
 import { mFallback } from "gt-i18n";
 import type { MFunctionType } from "gt-i18n/types";
 import { describe, expect, it } from "vite-plus/test";
 
+import { squashAtomCommandFailure } from "../state/runtime.ts";
 import { errorDisplayMessage, thrownErrorMessage } from "./translatable.ts";
+
+const decodeDefect = Schema.decodeUnknownSync(Schema.Defect());
 
 describe("error display messages", () => {
   it("show a Git failure in the active language, without the operation and cwd", () => {
@@ -30,5 +35,16 @@ describe("error display messages", () => {
     const blank = new GitCommandError({ operation: "push", command: "git", cwd: "/r", detail: "" });
     expect(thrownErrorMessage(blank, resolve)).toBe(blank.message);
     expect(errorDisplayMessage(blank, resolve)).toBeNull();
+  });
+
+  it("show the text of a string defect that came back over RPC", () => {
+    const defect = decodeDefect(
+      "RPC contract is registered but unavailable in the control plane: projectClone.start",
+    );
+    const error = squashAtomCommandFailure({ cause: Cause.die(defect) });
+
+    expect(thrownErrorMessage(error)).toBe(
+      "RPC contract is registered but unavailable in the control plane: projectClone.start",
+    );
   });
 });
