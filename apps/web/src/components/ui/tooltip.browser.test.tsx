@@ -139,3 +139,25 @@ it("narrows a tooltip whose text wraps to its widest line, so both sides keep th
   const end = box.right - Math.max(...lines.map((line) => line.right));
   expect(Math.abs(end - start)).toBeLessThanOrEqual(1);
 });
+
+it("opens a shared tooltip in place the first time", async () => {
+  await using _screen = await render(
+    // Away from the corner the unpositioned popup sits in, so a slide from there is a real move.
+    <div className="p-40">
+      <SharedTooltipProvider>
+        <SharedTooltipTrigger label="Description" render={<button type="button" />}>
+          Target
+        </SharedTooltipTrigger>
+      </SharedTooltipProvider>
+    </div>,
+  );
+  // Focus opens it at once, while a position transition would still be running.
+  await userEvent.keyboard("{Tab}");
+  await expect.element(page.getByText("Description")).toBeVisible();
+  const moving = document
+    .getAnimations()
+    .filter((animation) => animation instanceof CSSTransition)
+    .map((transition) => transition.transitionProperty)
+    .filter((property) => ["top", "left", "right", "bottom", "transform"].includes(property));
+  expect(moving).toEqual([]);
+});

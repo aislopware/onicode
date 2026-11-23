@@ -3343,3 +3343,4 @@ b9c3109710	take	fix(cursor): preserve ended turns when connection retries exhaus
 1d61429c02	take	taken as is
 8708a29a0b	take	taken as is
 a679987c0b	take	taken as is
+9a87dbb99a	take	adopted upstream over Onicode's mount-closed-then-timer path (a9fa523bd5): flushSync mounts closed in one step, so focus opens at once without the special-case timer
