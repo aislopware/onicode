@@ -1591,6 +1591,8 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       "fetch",
       mode,
       "--no-tags",
+      // Git before 2.31 ignores the env config that turns off auto gc; it honours this flag.
+      "--no-auto-gc",
       // FETCH_HEAD is written without a lock; overlapping a user's `git pull` makes that pull fail.
       "--no-write-fetch-head",
       "--",
@@ -6743,6 +6745,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         "fetch",
         "--quiet",
         "--no-tags",
+        "--no-auto-gc",
         "--",
         input.remoteName,
         `+refs/heads/${input.remoteBranch}:refs/remotes/${input.remoteName}/${input.remoteBranch}`,
