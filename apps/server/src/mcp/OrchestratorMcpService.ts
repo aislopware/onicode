@@ -2511,8 +2511,17 @@ const make = Effect.gen(function* () {
             expectedThreadId: existing.threadId,
             keepWorkspace,
             keepModelSelection: true,
-            // The caller's mode ceilings were checked against these.
-            expected: existing,
+            // The caller's mode ceilings were checked against these, and the fields it left alone
+            // were filled from them, so a pause or edit since the read is not undone.
+            expected: {
+              projectId: existing.projectId,
+              runtimeMode: existing.runtimeMode,
+              interactionMode: existing.interactionMode,
+              ...(input.title === undefined ? { title: existing.title } : {}),
+              ...(input.prompt === undefined ? { prompt: existing.prompt } : {}),
+              ...(input.enabled === undefined ? { enabled: existing.enabled } : {}),
+              ...(input.schedule === undefined ? { schedule: existing.schedule } : {}),
+            },
           })
           .pipe(
             Effect.mapError((error) =>
