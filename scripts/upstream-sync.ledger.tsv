@@ -3484,3 +3484,4 @@ ba70b56b14	take	taken as is
 9fae2cc228	take	taken as is
 f58085a1c2	take	adapted: DocumentText sidecar VERSION 9 -> 10 so cached EPUB skip notes are extracted again
 e2e8a49d97	take	adapted: kept Onicode's PDF link jump after the resize scroll in PdfViewer's layout effect
+9904124683	take	adapted: Onicode's Map archive; raw full-path checked before the decoded one, with a collision test row
