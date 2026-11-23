@@ -3403,3 +3403,4 @@ f4c38ca3e7	take	fix(web): remote open uses the environment's saved SSH route; co
 face82e8b9	take	fix(web): caret lands after closing Markdown markers after a paste
 3389253104	skip	launch-video skill (marketing launch videos) is not in Onicode, as with 77a553ab2c
 e688cf1edf	take	perf(server): the full thread snapshot is streamed in bounded chunks; conflict: Onicode has no traceLocalHandlerWork (relay tracing, removed), dropped; bytes identical to the old body so older mobile builds decode it; HttpMiddleware.compression still gzips the stream (no content-length)
+8851fb79fe	take	fix(server): a reconnect burst checks a watched project's branch once; conflict: Onicode's HEAD watch also merges pollUnreportedChanges (macOS unreported checkouts), so the unconfirm tap sits after that merge and before the identity dedup, covering both sources; upstream's tests added beside Onicode's unreported-checkout test
