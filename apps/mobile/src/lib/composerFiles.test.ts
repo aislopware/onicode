@@ -205,6 +205,7 @@ describe("composer file attachments", () => {
           ],
           error: null,
         });
+        expect(mocks.delete).toHaveBeenCalledWith(rendered.uri);
       },
     );
 
@@ -274,6 +275,9 @@ describe("composer file attachments", () => {
       );
       expect(image!.sizeBytes).toBeLessThanOrEqual(PROVIDER_SEND_TURN_MAX_IMAGE_BYTES);
       expect(mocks.delete).toHaveBeenCalledWith("file:///cache/fitted-1397x2000.png");
+      expect(mocks.delete).toHaveBeenCalledWith(
+        `file:///cache/fitted-${last.width}x${last.height}.png`,
+      );
       expect(imageFiles.get(image!.previewUri)).toBe(
         Buffer.alloc(last.width * last.height * 4).toString("base64"),
       );
@@ -322,6 +326,7 @@ describe("composer file attachments", () => {
         images: [],
         error: "'photo.HEIC' exceeds the 10 MB attachment limit.",
       });
+      expect(mocks.delete).toHaveBeenCalledWith(rendered.uri);
     });
 
     it("retains a rendered photo when another original cannot be read", async () => {
@@ -655,6 +660,7 @@ describe("composer file attachments", () => {
         error: null,
       });
       expect(imageFiles.get(`${STORED}-photo.png`)).toBe(oversized ? original : "YWJj");
+      expect(mocks.delete).toHaveBeenCalledWith("file:///cache/fitted.png");
     });
 
     it("releases the owned copy when reading an image fails", async () => {

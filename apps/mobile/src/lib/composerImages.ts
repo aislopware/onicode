@@ -24,7 +24,7 @@ import {
 } from "./composerAttachmentFiles";
 import { imageMimeType } from "@onicode/shared/image";
 import { videoMimeType } from "@onicode/shared/video";
-import { fitComposerImage, renderPhoto } from "./composerImageFit";
+import { discardRenderedImage, fitComposerImage, renderPhoto } from "./composerImageFit";
 import { beginForegroundHandoff } from "./foreground-handoff";
 import { uuidv4 } from "./uuid";
 import { writeFileAtomically } from "./atomic-file";
@@ -376,9 +376,11 @@ export async function pickComposerFiles(input: {
       }
       const { File } = await import("expo-file-system");
       let fileUri = attachment.fileUri;
+      let renderedUri: string | undefined;
       try {
         const original = await new File(fileUri).base64();
         const candidate = await fitComposerImage({ uri: fileUri, mimeType, base64: original });
+        renderedUri = candidate?.uri;
         const fitted =
           candidate !== null &&
           estimateBase64ByteSize(candidate.base64) <= PROVIDER_SEND_TURN_MAX_IMAGE_BYTES
@@ -395,6 +397,8 @@ export async function pickComposerFiles(input: {
       } catch (cause) {
         await removePersistedComposerAttachmentFile(attachment.fileUri);
         throw cause;
+      } finally {
+        if (renderedUri !== undefined) await discardRenderedImage(renderedUri);
       }
       attachments.push(await ownedComposerImageAttachment({ fileUri, name, mimeType }));
     } catch (cause) {
@@ -551,6 +555,7 @@ export async function pickComposerMedia(input: {
         : null;
 
     let image: { base64: string; mimeType: string; name: string; uri: string };
+    let renderedUri: string | undefined;
     try {
       if (originalMimeType !== null) {
         const { File } = await import("expo-file-system");
@@ -560,6 +565,7 @@ export async function pickComposerMedia(input: {
           mimeType: originalMimeType,
           base64,
         });
+        renderedUri = fitted?.uri;
         image = {
           base64: fitted?.base64 ?? base64,
           mimeType: originalMimeType,
@@ -568,6 +574,7 @@ export async function pickComposerMedia(input: {
         };
       } else {
         const rendered = await renderPhoto(asset.uri);
+        renderedUri = rendered.uri;
         image = {
           base64: rendered.base64,
           mimeType: "image/jpeg",
@@ -580,13 +587,12 @@ export async function pickComposerMedia(input: {
       continue;
     }
 
-    const sizeBytes = estimateBase64ByteSize(image.base64);
-    if (sizeBytes <= 0 || sizeBytes > PROVIDER_SEND_TURN_MAX_IMAGE_BYTES) {
-      error = m(msg("''{name}'' exceeds the 10 MB attachment limit.", { name }));
-      continue;
-    }
-
     try {
+      const sizeBytes = estimateBase64ByteSize(image.base64);
+      if (sizeBytes <= 0 || sizeBytes > PROVIDER_SEND_TURN_MAX_IMAGE_BYTES) {
+        error = m(msg("''{name}'' exceeds the 10 MB attachment limit.", { name }));
+        continue;
+      }
       const fileUri = await persistComposerAttachmentFile(
         image.uri,
         image.name,
@@ -597,6 +603,8 @@ export async function pickComposerMedia(input: {
       );
     } catch (cause) {
       error = errorDisplayMessage(cause, m) ?? m(msg("Failed to read ''{name}''.", { name }));
+    } finally {
+      if (renderedUri !== undefined) await discardRenderedImage(renderedUri);
     }
   }
 
