@@ -33,9 +33,11 @@ const WorkflowTool = Tool.make("oni_workflow", {
     channel: Schema.optional(TrimmedNonEmptyString),
     value: Schema.optional(Schema.Json),
     signalId: Schema.optional(
-      TrimmedNonEmptyString.annotate({
-        description: "Reuse it to retry the same signal. A new signal gets a new id.",
-      }),
+      TrimmedNonEmptyString.pipe(
+        Schema.annotateEncoded({
+          description: "Reuse it to retry the same signal. A new signal gets a new id.",
+        }),
+      ),
     ),
     reason: Schema.optional(Schema.String),
   }),
