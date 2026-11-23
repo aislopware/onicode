@@ -162,7 +162,14 @@ it.effect("lists adb-attached physical devices when the hub cannot run avdmanage
 
 const fixture = Effect.fn("fixture")(function* (
   onBoot: Effect.Effect<void> = Effect.void,
-  bootError?: string | { error?: string; errors?: Array<{ message: string; error?: string }> },
+  bootError?:
+    | string
+    | {
+        id?: string;
+        serial?: string;
+        error?: string;
+        errors?: Array<{ message: string; error?: string }>;
+      },
   failListAfterShutdown = false,
   runtimeFailure?:
     | NodeRuntimeUnavailableError
@@ -624,6 +631,37 @@ describe("device setup consent", () => {
       expect(error.message).toContain("was not running");
       expect((yield* service.state).sessions).toEqual([]);
     }),
+  );
+
+  it.effect.each([
+    { comesOnline: true, outcome: "emulator-5554" },
+    { comesOnline: false, outcome: "DeviceBootError" },
+  ])(
+    "waits for an emulator the hub gave up on after another adb device failed: online $comesOnline",
+    ({ comesOnline, outcome }) =>
+      Effect.gen(function* () {
+        const { service, listing } = yield* fixture(Effect.void, {
+          id: "emulator-5554",
+          serial: "emulator-5554",
+          error: "Failed while waiting for Pixel_API_35 to come online",
+          errors: [{ message: "[android-utils] Failed to read AVD name for localhost:25555:" }],
+        });
+        listing.emulatorExited = !comesOnline;
+        yield* service.configure({ enabled: true });
+        const opening = yield* service
+          .open({
+            threadId: ThreadId.make("hub-gave-up"),
+            deviceId: "Pixel_API_35",
+            platform: "android",
+          })
+          .pipe(
+            Effect.map((session) => session.deviceId),
+            Effect.catch((error) => Effect.succeed(error._tag)),
+            Effect.forkScoped,
+          );
+        yield* TestClock.adjust("3 minutes");
+        expect(yield* Fiber.join(opening)).toBe(outcome);
+      }),
   );
 
   it.effect("blocks only emulator video until ffmpeg is usable, then allows retry", () =>

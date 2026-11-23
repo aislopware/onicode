@@ -14,7 +14,7 @@ export class IncomingShareStorageError extends Schema.TaggedError<IncomingShareS
   },
 ) {
   override get message(): string {
-    return `Incoming share storage operation ${this.operation} failed for ${this.shareId ?? "unknown"}.`;
+    return `Incoming share storage operation ${this.operation} failed${this.shareId === null ? "" : ` for ${this.shareId}`}.`;
   }
 }
 

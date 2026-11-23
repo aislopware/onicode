@@ -68,6 +68,7 @@ import {
   threadOutboxRevision,
   updateThreadOutboxMessage,
 } from "./thread-outbox";
+import type { ThreadOutboxLoadOutcome } from "./thread-outbox-manager";
 import { removeThreadOutboxMessage } from "./thread-outbox-removal";
 import {
   isQueuedThreadCreationSendable,
@@ -1590,21 +1591,41 @@ export function createThreadOutboxDelivery(): {
 }
 
 function loadThreadOutbox(isActive: () => boolean): void {
-  void threadOutboxManager.load().then((loaded) => {
-    if (loaded || !isActive()) return;
+  void threadOutboxManager.load().then((outcome) => reportThreadOutboxLoad(outcome, isActive));
+}
+
+function reportThreadOutboxLoad(outcome: ThreadOutboxLoadOutcome, isActive: () => boolean): void {
+  if (outcome.status === "complete" || !isActive()) return;
+  const retry = { text: m(msg("Retry")), onPress: () => loadThreadOutbox(isActive) };
+  if (outcome.status === "unreadable") {
     Dialog.alert(
-      m(msg("Some queued messages could not be loaded")),
-      m(
-        msg(
-          "Unreadable records and attachment files are still saved. Other messages can still be sent.",
-        ),
-      ),
-      [
-        { text: m(msg("Dismiss")), style: "cancel" },
-        { text: m(msg("Retry")), onPress: () => loadThreadOutbox(isActive) },
-      ],
+      m(msg("Queued messages could not be loaded")),
+      m(msg("Messages waiting to be sent could not be read right now. They are still saved.")),
+      [{ text: m(msg("Dismiss")), style: "cancel" }, retry],
     );
-  });
+    return;
+  }
+  const discard = (fileNames: ReadonlyArray<string>) =>
+    void threadOutboxManager
+      .discardDamaged(fileNames)
+      .then((next) => reportThreadOutboxLoad(next, isActive));
+  Dialog.alert(
+    m(msg("Some queued messages are damaged")),
+    m(
+      msg(
+        "{count, plural, one {{count} saved message is damaged and cannot be sent. Discard it to stop this warning.} other {{count} saved messages are damaged and cannot be sent. Discard them to stop this warning.}}",
+        { count: outcome.fileNames.length },
+      ),
+    ),
+    [
+      { text: m(msg("Keep")), style: "cancel" },
+      {
+        text: m(msg("Discard")),
+        style: "destructive",
+        onPress: () => discard(outcome.fileNames),
+      },
+    ],
+  );
 }
 
 /** App-lifetime: loads the persisted outbox and delivers queued messages. */

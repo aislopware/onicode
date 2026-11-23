@@ -14,6 +14,7 @@ export class ThreadOutboxManagerError extends Schema.TaggedError<ThreadOutboxMan
   {
     operation: Schema.Literals([
       "load",
+      "discard-damaged",
       "enqueue",
       "update",
       "remove",
@@ -31,6 +32,15 @@ export class ThreadOutboxManagerError extends Schema.TaggedError<ThreadOutboxMan
   }
 }
 
+/**
+ * `unreadable`: storage could not be read right now, so a retry may succeed.
+ * `damaged`: these records were read but are not queued messages, and only discarding them clears it.
+ */
+export type ThreadOutboxLoadOutcome =
+  | { readonly status: "complete" }
+  | { readonly status: "unreadable" }
+  | { readonly status: "damaged"; readonly fileNames: ReadonlyArray<string> };
+
 export interface ThreadOutboxManagerOptions {
   readonly registry: AtomRegistry.AtomRegistry;
   readonly storage: ThreadOutboxStorage;
@@ -46,7 +56,7 @@ export function createThreadOutboxManager(options: ThreadOutboxManagerOptions) {
     ((message: string, error: unknown) => {
       console.warn(message, error);
     });
-  let loadPromise: Promise<boolean> | null = null;
+  let loadPromise: Promise<ThreadOutboxLoadOutcome> | null = null;
   let mutationQueue: Promise<void> = Promise.resolve();
   const revisions = new Map<MessageId, number>();
   const bumpRevision = (messageId: MessageId): void => {
@@ -69,12 +79,24 @@ export function createThreadOutboxManager(options: ThreadOutboxManagerOptions) {
     options.registry.set(queuedMessagesByThreadKeyAtom, groupQueuedThreadMessages(messages));
   };
 
-  // Partial loads expose readable messages; return true only on complete loads to protect unreadable records' files.
-  const load = (): Promise<boolean> => {
+  const warnLoadFailure = (cause: unknown): void =>
+    warn(
+      "[thread-outbox] failed to load persisted messages",
+      new ThreadOutboxManagerError({
+        operation: "load",
+        environmentId: null,
+        threadId: null,
+        messageId: null,
+        cause,
+      }),
+    );
+
+  // Partial loads expose readable messages; only a complete load lets callers treat unreferenced files as unused.
+  const load = (): Promise<ThreadOutboxLoadOutcome> => {
     if (loadPromise !== null) {
       return loadPromise;
     }
-    loadPromise = serialize(async () => {
+    loadPromise = serialize(async (): Promise<ThreadOutboxLoadOutcome> => {
       const result = await options.storage.load();
       const current = currentMessages();
       const currentIds = new Set(current.map((message) => message.messageId));
@@ -82,25 +104,49 @@ export function createThreadOutboxManager(options: ThreadOutboxManagerOptions) {
         (message) => !currentIds.has(message.messageId) && !revisions.has(message.messageId),
       );
       if (recovered.length > 0) setMessages([...recovered, ...current]);
-      if (result.errors.length > 0) {
-        throw new AggregateError(result.errors, "Some queued messages could not be read.");
-      }
-      return true;
-    }).catch((cause) => {
-      loadPromise = null;
+      if (result.errors.length === 0) return { status: "complete" };
+      warnLoadFailure(new AggregateError(result.errors, "Some queued messages could not be read."));
+      const damagedFileNames = result.errors.flatMap((error) =>
+        error.operation === "decode-message" && error.fileName !== null ? [error.fileName] : [],
+      );
+      return damagedFileNames.length > 0
+        ? { status: "damaged", fileNames: damagedFileNames }
+        : { status: "unreadable" };
+    }).then(
+      (outcome) => {
+        if (outcome.status !== "complete") loadPromise = null;
+        return outcome;
+      },
+      (cause: unknown): ThreadOutboxLoadOutcome => {
+        loadPromise = null;
+        warnLoadFailure(cause);
+        return { status: "unreadable" };
+      },
+    );
+    return loadPromise;
+  };
+
+  /** Deletes records a load reported as damaged, then loads again. */
+  const discardDamaged = async (
+    fileNames: ReadonlyArray<string>,
+  ): Promise<ThreadOutboxLoadOutcome> => {
+    try {
+      await serialize(async () => {
+        for (const fileName of fileNames) await options.storage.discardDamaged(fileName);
+      });
+    } catch (cause) {
       warn(
-        "[thread-outbox] failed to load persisted messages",
+        "[thread-outbox] failed to discard damaged messages",
         new ThreadOutboxManagerError({
-          operation: "load",
+          operation: "discard-damaged",
           environmentId: null,
           threadId: null,
           messageId: null,
           cause,
         }),
       );
-      return false;
-    });
-    return loadPromise;
+    }
+    return load();
   };
 
   const enqueue = (message: QueuedThreadMessage): Promise<void> => {
@@ -383,6 +429,7 @@ export function createThreadOutboxManager(options: ThreadOutboxManagerOptions) {
     queuedMessagesByThreadKeyAtom,
     serialize,
     load,
+    discardDamaged,
     enqueue,
     confirmQueued,
     revisionOf: (messageId: MessageId): number => revisions.get(messageId) ?? 0,

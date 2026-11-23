@@ -1,3 +1,4 @@
+import * as Schema from "effect/Schema";
 import type { SharePayload } from "expo-sharing";
 import { msg } from "gt-react-native";
 
@@ -46,6 +47,12 @@ function sortAndDedupeIncomingShares(
       return true;
     });
 }
+
+/** The shared content cannot become a draft; its message is already in the user's language. */
+export class IncomingShareUnsupportedError extends Schema.TaggedError<IncomingShareUnsupportedError>()(
+  "IncomingShareUnsupportedError",
+  { message: Schema.String },
+) {}
 
 /** Serialization prevents stale loads or refreshes from restoring consumed items. */
 export class IncomingShareInbox {
@@ -105,9 +112,10 @@ export class IncomingShareInbox {
       if (!hasIncomingShareContent(draft)) {
         await this.cleanup(built.cleanup);
         this.clearNativePayloads();
-        throw new Error(
-          draft.warnings[0] ?? m(msg("The shared content is not supported by the composer.")),
-        );
+        throw new IncomingShareUnsupportedError({
+          message:
+            draft.warnings[0] ?? m(msg("The shared content is not supported by the composer.")),
+        });
       }
 
       // Persist before clearing the native handoff so termination always leaves a recoverable copy.
