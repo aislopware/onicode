@@ -130,24 +130,16 @@ it.each([false, true])(
 it.each([false, true])(
   "draws text from cells scrolled out before the frame, frozen: %s",
   async (frozen) => {
-    const archive = new JSZip();
-    archive.file(
-      "xl/workbook.xml",
-      '<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Sample" sheetId="1" r:id="sheet"/></sheets></workbook>',
-    );
-    archive.file(
-      "xl/_rels/workbook.xml.rels",
-      '<Relationships><Relationship Id="sheet" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>',
-    );
-    archive.file(
-      "xl/styles.xml",
-      '<styleSheet><fonts count="1"><font><sz val="11"/><name val="Calibri"/></font></fonts><fills count="1"><fill><patternFill patternType="none"/></fill></fills><borders count="1"><border/></borders><cellXfs count="2"><xf/><xf applyAlignment="1"><alignment vertical="center"/></xf></cellXfs></styleSheet>',
-    );
-    archive.file(
-      "xl/worksheets/sheet1.xml",
-      `<worksheet>${frozen ? '<sheetViews><sheetView workbookViewId="0"><pane xSplit="1" ySplit="1" state="frozen" topLeftCell="B2"/></sheetView></sheetViews>' : ""}<sheetData><row r="2"><c r="B2" t="inlineStr"><is><t>${"M".repeat(60)}</t></is></c></row><row r="4"><c r="C4" t="inlineStr" s="1"><is><t>MMMM</t></is></c></row></sheetData><mergeCells><mergeCell ref="C4:C40"/></mergeCells></worksheet>`,
-    );
-    const bytes = await archive.generateAsync({ type: "arraybuffer" });
+    const archive: Record<string, string> = {};
+    archive["xl/workbook.xml"] =
+      '<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Sample" sheetId="1" r:id="sheet"/></sheets></workbook>';
+    archive["xl/_rels/workbook.xml.rels"] =
+      '<Relationships><Relationship Id="sheet" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>';
+    archive["xl/styles.xml"] =
+      '<styleSheet><fonts count="1"><font><sz val="11"/><name val="Calibri"/></font></fonts><fills count="1"><fill><patternFill patternType="none"/></fill></fills><borders count="1"><border/></borders><cellXfs count="2"><xf/><xf applyAlignment="1"><alignment vertical="center"/></xf></cellXfs></styleSheet>';
+    archive["xl/worksheets/sheet1.xml"] =
+      `<worksheet>${frozen ? '<sheetViews><sheetView workbookViewId="0"><pane xSplit="1" ySplit="1" state="frozen" topLeftCell="B2"/></sheetView></sheetViews>' : ""}<sheetData><row r="2"><c r="B2" t="inlineStr"><is><t>${"M".repeat(60)}</t></is></c></row><row r="4"><c r="C4" t="inlineStr" s="1"><is><t>MMMM</t></is></c></row></sheetData><mergeCells><mergeCell ref="C4:C40"/></mergeCells></worksheet>`;
+    const bytes = zipFixture(archive).buffer;
     const client = createWorkerClient<SheetMethods>(
       new Worker(new URL("./spreadsheet.worker.ts", import.meta.url), { type: "module" }),
     );
