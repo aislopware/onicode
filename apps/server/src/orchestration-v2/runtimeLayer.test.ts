@@ -5491,124 +5491,132 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
       ],
       told: [["lint"], ["test"]],
     },
-  ] as const)(
-    "reports only failures after a watch that starts on $label CI",
-    ({ label, atStart, reads, told }) =>
-      Effect.gen(function* () {
-        const orchestrator = yield* Orchestrator.OrchestratorV2;
-        const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
-        const threadId = ThreadId.make(`runtime-pull-request-watch-start-${label}`);
-        const projectId = ProjectId.make("pr-watch-start-project");
-        yield* seedProject({
-          projectId,
-          title: "Watch start",
-          workspaceRoot: "/workspace/watch-start",
-          defaultModelSelection: null,
-          createdAt: "2026-10-01T00:00:00.000Z",
-        });
-        yield* orchestrator.dispatch({
-          type: "thread.create",
-          createdBy: "user",
-          creationSource: "web",
-          commandId: CommandId.make(`pr-watch-start-create-${label}`),
-          threadId,
-          projectId,
-          title: "Watch start",
-          modelSelection,
-          runtimeMode: "full-access",
-          interactionMode: "default",
-          branch: null,
-          worktreePath: null,
-        });
-        const key = { host: "github.com", repository: "aislopware/onicode", number: 13 };
-        yield* orchestrator.dispatch({
-          type: "thread.pull-request.link",
-          commandId: CommandId.make(`pr-watch-start-link-${label}`),
-          threadId,
-          ...key,
-          url: "https://github.com/aislopware/onicode/pull/13",
-          source: "manual",
-        });
-        yield* orchestrator.dispatch({
-          type: "thread.pull-request-link.sync",
-          commandId: CommandId.make(`pr-watch-start-sync-${label}`),
-          threadId,
-          ...key,
-          snapshot: {
-            state: "open",
-            title: "Watched pull request",
-            headBranch: "feature",
-            baseBranch: "main",
-            isDraft: false,
-            updatedAt: null,
-            syncedAt: "2026-10-02T12:00:00.000Z",
-            checksState: atStart,
-          },
-          stack: null,
-        });
-        // A client start, which carries no CI state of its own.
-        yield* orchestrator.dispatch({
-          type: "thread.pull-request.watch",
-          commandId: CommandId.make(`pr-watch-start-watch-${label}`),
-          threadId,
-          ...key,
-          watching: true,
-        });
+    // A push between the start's read and the watch's first read makes that verdict stale.
+    {
+      label: "stale passing",
+      atStart: "passing",
+      start: { checksPending: false, headSha: "0ld0000000" },
+      reads: [{ lint: "success", test: "failure" }],
+      told: [["test"]],
+    },
+  ] as const)("reports only failures after a watch that starts on $label CI", (row) =>
+    Effect.gen(function* () {
+      const { label, atStart, reads, told } = row;
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+      const threadId = ThreadId.make(`runtime-pull-request-watch-start-${label}`);
+      const projectId = ProjectId.make("pr-watch-start-project");
+      yield* seedProject({
+        projectId,
+        title: "Watch start",
+        workspaceRoot: "/workspace/watch-start",
+        defaultModelSelection: null,
+        createdAt: "2026-10-01T00:00:00.000Z",
+      });
+      yield* orchestrator.dispatch({
+        type: "thread.create",
+        createdBy: "user",
+        creationSource: "web",
+        commandId: CommandId.make(`pr-watch-start-create-${label}`),
+        threadId,
+        projectId,
+        title: "Watch start",
+        modelSelection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: null,
+      });
+      const key = { host: "github.com", repository: "aislopware/onicode", number: 13 };
+      yield* orchestrator.dispatch({
+        type: "thread.pull-request.link",
+        commandId: CommandId.make(`pr-watch-start-link-${label}`),
+        threadId,
+        ...key,
+        url: "https://github.com/aislopware/onicode/pull/13",
+        source: "manual",
+      });
+      yield* orchestrator.dispatch({
+        type: "thread.pull-request-link.sync",
+        commandId: CommandId.make(`pr-watch-start-sync-${label}`),
+        threadId,
+        ...key,
+        snapshot: {
+          state: "open",
+          title: "Watched pull request",
+          headBranch: "feature",
+          baseBranch: "main",
+          isDraft: false,
+          updatedAt: null,
+          syncedAt: "2026-10-02T12:00:00.000Z",
+          checksState: atStart,
+        },
+        stack: null,
+      });
+      // Without `start`, a client start, which carries no CI state of its own.
+      yield* orchestrator.dispatch({
+        type: "thread.pull-request.watch",
+        commandId: CommandId.make(`pr-watch-start-watch-${label}`),
+        threadId,
+        ...key,
+        watching: true,
+        ...("start" in row && row.start),
+      });
 
-        let read = 0;
-        const host = Layer.mergeAll(
-          NodeServices.layer,
-          NodeCrypto.layer,
-          Layer.mock(PullRequestService.PullRequestService)({
-            detail: () =>
-              Effect.sync(() => ({
-                ...watchedPullRequestDetail({
-                  projectId,
-                  number: 13,
-                  at: "2026-10-02T12:00:00.000Z",
-                }),
-                headSha: "ad70160aaa",
-                checks: Object.entries(reads[read]!).map(([name, status]) => ({
-                  name,
-                  status,
-                  description: null,
-                  url: null,
-                })),
-              })),
-            activity: () =>
-              Effect.succeed({
-                comments: [],
-                commentCount: 0,
-                commentsTruncated: false,
-                reviewThreads: [],
-                commits: [],
+      let read = 0;
+      const host = Layer.mergeAll(
+        NodeServices.layer,
+        NodeCrypto.layer,
+        Layer.mock(PullRequestService.PullRequestService)({
+          detail: () =>
+            Effect.sync(() => ({
+              ...watchedPullRequestDetail({
+                projectId,
+                number: 13,
+                at: "2026-10-02T12:00:00.000Z",
               }),
-          }),
-        );
-        const texts = Effect.map(
-          orchestrator.getThreadRecords(threadId, ["messages"]),
-          ({ messages }) => messages.map((message) => message.text),
-        );
-        const reactor = yield* PullRequestWatchReactor.make.pipe(Effect.provide(host));
-        for (const [index, names] of told.entries()) {
-          read = index;
-          const before = (yield* texts).length;
-          if (index > 0) yield* TestClock.adjust("10 minutes");
-          yield* reactor.sweep;
-          yield* worker.drain();
-          const wakes = (yield* texts).slice(before);
-          assert.equal(wakes.length, names.length === 0 ? 0 : 1);
-          // The finished section lists every failing check, so only the failed one counts here.
-          const failedSections = wakes.map((text) => text.split("- Every check has finished")[0]!);
-          for (const name of ["lint", "test"]) {
-            assert.equal(
-              failedSections.some((text) => text.includes(`  - ${name}`)),
-              names.includes(name as never),
-              `read ${index} told ${name}`,
-            );
-          }
+              headSha: "ad70160aaa",
+              checks: Object.entries(reads[read]!).map(([name, status]) => ({
+                name,
+                status,
+                description: null,
+                url: null,
+              })),
+            })),
+          activity: () =>
+            Effect.succeed({
+              comments: [],
+              commentCount: 0,
+              commentsTruncated: false,
+              reviewThreads: [],
+              commits: [],
+            }),
+        }),
+      );
+      const texts = Effect.map(
+        orchestrator.getThreadRecords(threadId, ["messages"]),
+        ({ messages }) => messages.map((message) => message.text),
+      );
+      const reactor = yield* PullRequestWatchReactor.make.pipe(Effect.provide(host));
+      for (const [index, names] of told.entries()) {
+        read = index;
+        const before = (yield* texts).length;
+        if (index > 0) yield* TestClock.adjust("10 minutes");
+        yield* reactor.sweep;
+        yield* worker.drain();
+        const wakes = (yield* texts).slice(before);
+        assert.equal(wakes.length, names.length === 0 ? 0 : 1);
+        // The finished section lists every failing check, so only the failed one counts here.
+        const failedSections = wakes.map((text) => text.split("- Every check has finished")[0]!);
+        for (const name of ["lint", "test"]) {
+          assert.equal(
+            failedSections.some((text) => text.includes(`  - ${name}`)),
+            names.includes(name as never),
+            `read ${index} told ${name}`,
+          );
         }
-      }),
+      }
+    }),
   );
 
   it.effect("baselines a new watch across restarts and reports later changes", () =>

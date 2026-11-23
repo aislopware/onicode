@@ -69,6 +69,7 @@ import { PreviewToolkit } from "../../apps/server/src/mcp/toolkits/preview/tools
 import { PreviewControlsToolkit } from "../../apps/server/src/mcp/toolkits/previewControls/tools.ts";
 import { ProjectToolkit } from "../../apps/server/src/mcp/toolkits/project/tools.ts";
 import {
+  CHECKS_ALREADY_PASSED_WATCH_NEXT,
   CHILD_PULL_REQUEST_REPORT_NEXT,
   PullRequestsToolkit,
 } from "../../apps/server/src/mcp/toolkits/pullRequests/tools.ts";
@@ -1821,9 +1822,28 @@ export const oniDefault = (
         remaining: sample.linked.size,
       };
     }
-    case "watch_pull_request":
+    case "watch_pull_request": {
       sample.linked.add(pr().url);
-      return { ...pr(), watching: true, wasWatching: false };
+      // The start read's CI verdict, rolled up from the world's checks as Onicode does.
+      const world = worldPullRequests(sample).find((entry) => Number(entry.number) === pr().number);
+      const states = (Array.isArray(world?.checks) ? world.checks.filter(isRecord) : []).map(
+        (check) => check.state,
+      );
+      const checksState = states.some((state) => state === "fail" || state === "cancelled")
+        ? "failing"
+        : states.some((state) => state === "pending" || state === "action-required")
+          ? "pending"
+          : states.length > 0
+            ? "passing"
+            : undefined;
+      return {
+        ...pr(),
+        watching: true,
+        wasWatching: false,
+        ...(checksState !== undefined && { checksState }),
+        ...(checksState === "passing" && { next: CHECKS_ALREADY_PASSED_WATCH_NEXT }),
+      };
+    }
     case "unwatch_pull_request":
       return { ...pr(), watching: false, wasWatching: true };
     case "list_thread_pull_requests": {

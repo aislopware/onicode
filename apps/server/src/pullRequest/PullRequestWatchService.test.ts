@@ -1,4 +1,5 @@
 import {
+  CommandId,
   ProjectId,
   ProviderInstanceId,
   ThreadId,
@@ -123,8 +124,10 @@ interface HarnessOptions {
   readonly readFailure?: PullRequestService.PullRequestError;
   readonly readState?: PullRequestSummary["state"];
   readonly readChecksState?: PullRequestSummary["checksState"];
+  readonly readHeadSha?: string;
   readonly detailChecks?: ReadonlyArray<PullRequestCheck>;
   readonly detailState?: PullRequestDetail["state"];
+  readonly detailHeadSha?: string;
 }
 
 const makeHarness = Effect.fn("makePullRequestWatchHarness")(function* (
@@ -159,6 +162,7 @@ const makeHarness = Effect.fn("makePullRequestWatchHarness")(function* (
               ...(options.readChecksState !== undefined && {
                 checksState: options.readChecksState,
               }),
+              ...(options.readHeadSha !== undefined && { headSha: options.readHeadSha }),
               headBranch: "feature",
               baseBranch: "main",
               updatedAt: "2026-08-20T00:00:00.000Z",
@@ -169,6 +173,7 @@ const makeHarness = Effect.fn("makePullRequestWatchHarness")(function* (
           Effect.as({
             state: options.detailState ?? "open",
             checks: options.detailChecks ?? [check("build", "failure")],
+            ...(options.detailHeadSha !== undefined && { headSha: options.detailHeadSha }),
           } as unknown as PullRequestDetail),
         ),
     }),
@@ -182,6 +187,7 @@ const makeHarness = Effect.fn("makePullRequestWatchHarness")(function* (
     reads,
     setWatching: (watching: boolean, target: PullRequestTarget) =>
       service.setWatching({ threadId: THREAD_ID, target, watching }),
+    seedClientWatch: service.seedClientWatch,
   };
 });
 
@@ -194,6 +200,18 @@ describe("PullRequestWatchService", () => {
         // GitHub's summary rollup counts a cancelled check a newer run replaced.
         [{ readChecksState: "failing", detailChecks: [check("test", "pending")] }, true],
         [{ readChecksState: "failing", detailChecks: [check("test", "skipped")] }, undefined],
+        // GitLab's summary reads only the parent pipeline; the detail adds its child pipelines.
+        [{ readChecksState: "passing", detailChecks: [check("child", "pending")] }, true],
+        [
+          {
+            readChecksState: "passing",
+            detailChecks: [
+              check("test", "success"),
+              { ...check("Unlisted", "neutral"), placeholder: true },
+            ],
+          },
+          undefined,
+        ],
         [
           {
             readChecksState: "failing",
@@ -241,11 +259,30 @@ describe("PullRequestWatchService", () => {
 
   it.effect("tells the caller when the checks already passed, since no wake will report it", () =>
     Effect.gen(function* () {
-      const harness = yield* makeHarness({ readChecksState: "passing" });
+      const harness = yield* makeHarness({
+        readChecksState: "passing",
+        readHeadSha: "aaaa111",
+        detailChecks: [check("build", "success")],
+        detailHeadSha: "bbbb222",
+      });
       const result = yield* harness.setWatching(true, {
         url: "https://github.com/onicode/onicode/pull/9",
       });
       expect(result).toMatchObject({ wasWatching: false, checksState: "passing" });
+      // The verdict is the confirming read's head, so a push before the first watch read is news.
+      expect(yield* Ref.get(harness.commands)).toMatchObject([
+        { checksPending: false, headSha: "bbbb222" },
+      ]);
+
+      const childFailing = yield* makeHarness({
+        readChecksState: "passing",
+        detailChecks: [check("parent", "success"), check("child", "failure")],
+      });
+      expect(
+        (yield* childFailing.setWatching(true, {
+          url: "https://github.com/onicode/onicode/pull/9",
+        })).checksState,
+      ).toBe("failing");
 
       const replaced = yield* makeHarness({
         readChecksState: "failing",
@@ -263,6 +300,62 @@ describe("PullRequestWatchService", () => {
         yield* ended.setWatching(true, { url: "https://github.com/onicode/onicode/pull/9" }),
       ).toMatchObject({ watching: false, wasWatching: false, state: "merged" });
       expect(yield* Ref.get(ended.commands)).toEqual([]);
+    }),
+  );
+
+  it.effect("seeds a client's watch start from a confirmed read, as an agent's start is", () =>
+    Effect.gen(function* () {
+      const start = {
+        type: "thread.pull-request.watch" as const,
+        commandId: CommandId.make("client-watch"),
+        threadId: THREAD_ID,
+        host: "github.com",
+        repository: "onicode/onicode",
+        number: 1,
+        watching: true,
+      };
+      // The link snapshot keeps GitHub's rollup, which counts a cancelled check a rerun replaced.
+      const replaced = yield* makeHarness({
+        readChecksState: "failing",
+        readHeadSha: "aaaa111",
+        detailChecks: [check("test", "pending")],
+      });
+      expect(yield* replaced.seedClientWatch(start)).toEqual({
+        ...start,
+        checksPending: true,
+        headSha: "aaaa111",
+      });
+      expect(yield* Ref.get(replaced.reads)).toEqual(["invalidate", "detail"]);
+
+      const watch = {
+        startedAt: "2026-08-20T00:00:00.000Z",
+        headSha: null,
+        failedChecks: [],
+        passed: false,
+        passedChecks: [],
+        remarksThrough: "2026-08-20T00:00:00.000Z",
+        remarkIds: [],
+        conflicting: false,
+        wakes: 0,
+      };
+      const watched = yield* makeHarness({
+        readChecksState: "failing",
+        thread: makeThread([makeLink(1, { headBranch: "feature", watch })]),
+      });
+      const offline = yield* makeHarness({
+        readFailure: new PullRequestUnavailableError({ reason: "cli-missing" }),
+      });
+      const unchanged = [
+        [watched, start],
+        [replaced, { ...start, checksPending: false }],
+        [replaced, { ...start, watching: false }],
+        // A host the server cannot read leaves the seed to the link, as before.
+        [offline, start],
+      ] as const;
+      for (const [harness, command] of unchanged) {
+        expect(yield* harness.seedClientWatch(command)).toBe(command);
+      }
+      expect(yield* Ref.get(watched.reads)).toEqual([]);
     }),
   );
 
