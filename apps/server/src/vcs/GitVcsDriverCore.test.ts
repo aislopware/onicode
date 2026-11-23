@@ -198,9 +198,9 @@ it.effect("runs background Git in its own lane so user commands never queue behi
       concurrency: "unbounded",
     }).pipe(Effect.forkChild);
 
-    yield* TestClock.adjust("2 seconds");
-    const started = yield* Queue.takeAll(starts);
-    assert.deepStrictEqual([...started].toSorted(), [
+    // Each start first resolves git on disk, so wait for the six the lanes admit, not a tick.
+    const started = yield* Effect.replicateEffect(Queue.take(starts), 6);
+    assert.deepStrictEqual(started.toSorted(), [
       "background",
       "background",
       "foreground",
@@ -208,6 +208,7 @@ it.effect("runs background Git in its own lane so user commands never queue behi
       "foreground",
       "foreground",
     ]);
+    assert.equal(yield* Queue.size(starts), 0);
     yield* Deferred.succeed(gate, undefined);
     assert.equal((yield* Fiber.join(background)).length, 12);
     assert.equal((yield* Fiber.join(foreground)).length, 4);
@@ -11012,6 +11013,22 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
             yield* git(origin, ["--git-dir=.", "rev-parse", "refs/heads/alice/fix"]),
             yield* git(cwd, ["rev-parse", "HEAD"]),
           );
+
+          // A remote literally named `origin/alice`, which `git remote add` refuses but a written
+          // config still defines, makes `origin/alice/fix` read as that remote's `fix`.
+          const lookalike = yield* makeTmpDir("git-lookalike-");
+          yield* git(lookalike, ["init", "--bare"]);
+          yield* git(cwd, ["config", "remote.origin/alice.url", lookalike]);
+          yield* writeTextFile(cwd, "fix.txt", "fix again\n");
+          yield* git(cwd, ["add", "-A"]);
+          yield* driver.commit(cwd, "Fix again", "");
+
+          assert.deepInclude(yield* driver.pushCurrentBranch(cwd, null), { status: "pushed" });
+          assert.equal(
+            yield* git(origin, ["--git-dir=.", "rev-parse", "refs/heads/alice/fix"]),
+            yield* git(cwd, ["rev-parse", "HEAD"]),
+          );
+          assert.equal(yield* git(lookalike, ["--git-dir=.", "for-each-ref"]), "");
         }),
     );
 

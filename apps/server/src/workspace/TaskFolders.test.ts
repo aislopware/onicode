@@ -868,6 +868,18 @@ it.live("removes what it created when one repository fails", () =>
         "feature",
         "main",
       ]);
+      // Stopped before Git got to make the branch, the loser does not count the winner's as its own.
+      yield* run(web, "branch", "-D", "feature");
+      state.beforeCreateWorktree = run(web, "branch", "feature").pipe(
+        Effect.ignore,
+        Effect.andThen(Effect.interrupt),
+      );
+      assert.isTrue(Exit.hasInterrupts(yield* create("feature").pipe(Effect.exit)));
+      assert.equal(yield* run(api, "branch", "--format=%(refname:short)"), "main");
+      assert.deepEqual((yield* run(web, "branch", "--format=%(refname:short)")).split("\n"), [
+        "feature",
+        "main",
+      ]);
 
       // Stopped after Git made the branch, as during its submodules, the checkout still made it.
       const ctx = yield* repository("x/ctx");
