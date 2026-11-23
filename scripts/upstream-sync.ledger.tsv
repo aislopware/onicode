@@ -3530,3 +3530,4 @@ cdb0e238ed	take	taken; kept Onicode's open-links option on the PR link menu besi
 1c6d41a9ba	take	taken; also dropped lib/turnDiffTree, which only the removed card used; no T3 theme CSS (one built-in theme)
 e3ac310920	take	adapted: merged with t3code@3f09ad9127 (upstream main broke on stoppedNow, fix t3code#41709 pending): capture settles a completed or waiting run with an unpaired Stop as interrupted; Onicode's attempt-keyed capture effect id kept via checkpointCaptureEffectId for the new outbox lookups; Onicode's requeue, lock and steer-restart paths wait for the capture too
 f158ef16e4	take	taken as is
+b13c74e361	take	taken as is
