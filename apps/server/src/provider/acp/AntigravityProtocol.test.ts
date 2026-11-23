@@ -779,4 +779,38 @@ describe("Antigravity served reads", () => {
       status: "completed",
     });
   });
+
+  it("drops agy's toolSummary from Onicode MCP call arguments only", () => {
+    const oniCall = normalizeAntigravityToolCall(
+      parseToolUpdate(
+        normalizeAntigravitySessionUpdate({
+          sessionId: "session-1",
+          update: {
+            sessionUpdate: "tool_call",
+            toolCallId: "call_oni_send",
+            title: "Run mcp_onicode_send_to_user",
+            kind: "other",
+            status: "in_progress",
+            rawInput: { message: "Hello", toolSummary: "Send greeting" },
+          },
+        }),
+      ).toolCall,
+    );
+    expect(oniCall.data.rawInput).toEqual({ message: "Hello" });
+
+    const foreignCall = normalizeAntigravityToolCall(
+      parseToolUpdate({
+        sessionId: "session-1",
+        update: {
+          sessionUpdate: "tool_call",
+          toolCallId: "call_other",
+          title: "Run mcp_other_send_to_user",
+          kind: "other",
+          status: "in_progress",
+          rawInput: { message: "Hello", toolSummary: "Send greeting" },
+        },
+      }).toolCall,
+    );
+    expect(foreignCall.data.rawInput).toEqual({ message: "Hello", toolSummary: "Send greeting" });
+  });
 });

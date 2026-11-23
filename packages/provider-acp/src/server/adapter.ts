@@ -45,11 +45,9 @@ import { type SelfInvocation, selfInvocationArgs } from "@onicode/shared/nodeRun
 import { resolveOniMcpToolId } from "@onicode/shared/oniMcpToolPresentation";
 import {
   compactDynamicToolOutput,
+  compactOniMcpToolOutput,
   htmlRenderFromToolItem,
   mcpToolResultOutput,
-  SEND_TO_USER_MAX_LENGTH,
-  SEND_TO_USER_TOOL_NAME,
-  sentMessageFromToolItem,
 } from "@onicode/shared/toolOutput";
 import { FILE_HEADERS_ONLY, formatPatch, structuredPatch } from "diff";
 import * as Cause from "effect/Cause";
@@ -1860,6 +1858,14 @@ interface ActiveAcpTurn {
   contextUsage: ThreadTokenUsageSnapshot | null;
   nativeMetadata: OrchestrationV2ProviderThreadNativeMetadata | null;
   readonly tools: Map<string, AcpToolCallState & { readonly backgroundCommandTaskId?: string }>;
+  /** Confirmed Onicode MCP tool outputs keyed by `${toolCallId}\0${tool}\0${inputHash}`. */
+  readonly claimedToolResults: Map<string, unknown>;
+  /** `${toolCallId}\0${tool}\0${inputHash}` keys that already drained a recorded MCP result. */
+  readonly drainedToolResultKeys: Set<string>;
+  /** `${toolCallId}\0${tool}\0${inputHash}` keys that reached terminal failure and must never do input-only recovery. */
+  readonly blockedInputRecoveryKeys: Set<string>;
+  /** `${toolCallId}\0${tool}\0${inputHash}` keys already tried for input-only recovery. */
+  readonly attemptedInputRecoveryKeys: Set<string>;
   /** Tools the agent failed after Stop; later updates keep them interrupted. */
   readonly stoppedToolCallIds: Set<string>;
   readonly toolUpdatesSkipped: Map<string, number>;
@@ -5130,24 +5136,73 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             const input =
               mcpIdentity.input ?? unknownRecord(rawInputRecord?.arguments) ?? rawInputRecord ?? {};
             let output = rawOutput === undefined ? undefined : acpMcpToolCallOutput(rawOutput);
-            const oniMcpToolId = resolveOniMcpToolId(toolName);
-            const isHtmlRender = oniMcpToolId === HTML_RENDER_TOOL_NAME;
-            const isSendToUser = oniMcpToolId === SEND_TO_USER_TOOL_NAME;
+            const resolvedOniTool = resolveOniMcpToolId(toolName);
+            const isHtmlRender = resolvedOniTool === HTML_RENDER_TOOL_NAME;
             const isError =
               compactDynamicToolOutput(output)?.isError === true ||
               compactDynamicToolOutput(rawOutputRecord?.result)?.isError === true;
+            const callInputKey =
+              resolvedOniTool !== null && !isHtmlRender
+                ? `${toolCall.toolCallId}\0${resolvedOniTool}\0${McpProviderSessions.hashToolInput(input)}`
+                : undefined;
             if (
-              isHtmlRender &&
-              (status === "failed" || (status === "completed" && isError)) &&
-              previous?.status !== "failed" &&
-              previous?.status !== "completed"
+              status === "completed" &&
+              resolvedOniTool !== null &&
+              callInputKey !== undefined &&
+              isError
             ) {
-              // A failed call may have published before the provider lost its result.
-              yield* mcpSessions.takeHtmlRender(
-                context.input.threadId,
-                input,
-                htmlRenderFromToolItem({ toolName, output }),
-              );
+              // Unwrapping `{ result: { isError: true, content/structuredContent } }` drops the
+              // error flag (and diagnostic content when structuredContent is also present);
+              // preserve the diagnostic error envelope and remember it across summary replays.
+              const rawResult = unknownRecord(rawOutputRecord?.result);
+              if (compactDynamicToolOutput(output)?.isError !== true) {
+                output =
+                  rawResult !== undefined && compactDynamicToolOutput(rawResult)?.isError === true
+                    ? rawResult
+                    : output === undefined
+                      ? { isError: true }
+                      : Array.isArray(output)
+                        ? { isError: true, content: output }
+                        : typeof output === "object" && output !== null
+                          ? { ...(output as Record<string, unknown>), isError: true }
+                          : { isError: true, content: [{ type: "text", text: String(output) }] };
+              }
+              context.blockedInputRecoveryKeys.add(callInputKey);
+              context.claimedToolResults.set(callInputKey, output);
+            }
+            if (
+              resolvedOniTool !== null &&
+              (status === "failed" || (status === "completed" && isError))
+            ) {
+              // A failed call may have completed on Onicode's MCP server before the provider lost its result.
+              if (isHtmlRender) {
+                if (previous?.status !== "failed" && previous?.status !== "completed") {
+                  yield* mcpSessions.takeHtmlRender(
+                    context.input.threadId,
+                    input,
+                    htmlRenderFromToolItem({ toolName, output }),
+                  );
+                }
+              } else if (callInputKey !== undefined) {
+                const reportedError = compactOniMcpToolOutput(resolvedOniTool, output);
+                context.blockedInputRecoveryKeys.add(callInputKey);
+                // Only drain when the failed call reported an explicit output to match;
+                // a bare failure without output must not consume a sibling's cached record.
+                if (
+                  !context.drainedToolResultKeys.has(callInputKey) &&
+                  reportedError !== undefined
+                ) {
+                  const drained = yield* mcpSessions.takeToolResult(
+                    context.input.threadId,
+                    resolvedOniTool,
+                    input,
+                    reportedError,
+                  );
+                  if (drained !== undefined) {
+                    context.drainedToolResultKeys.add(callInputKey);
+                  }
+                }
+              }
             }
             if (status === "completed" && isHtmlRender && !isError) {
               const reportedPage = htmlRenderFromToolItem({ toolName, output });
@@ -5168,25 +5223,52 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                 });
               }
             }
-            if (status === "completed" && isSendToUser && !isError) {
-              const reportedMessage = sentMessageFromToolItem({ toolName, output });
-              const previousMessage = sentMessageFromToolItem({
-                toolName,
-                output: acpMcpToolCallOutput(previous?.data.rawOutput ?? previous?.data.content),
-              });
-              const inputMessage =
-                typeof input.message === "string" &&
-                input.message.length <= SEND_TO_USER_MAX_LENGTH &&
-                input.message.trim() !== ""
-                  ? input.message
-                  : undefined;
-              const sentMessage = reportedMessage ?? previousMessage ?? inputMessage;
-              if (reportedMessage === undefined && sentMessage !== undefined) {
-                output = { sentMessage };
-                context.tools.set(toolCall.toolCallId, {
-                  ...toolCall,
-                  data: { ...toolCall.data, rawOutput: output },
-                });
+            if (
+              status === "completed" &&
+              resolvedOniTool !== null &&
+              callInputKey !== undefined &&
+              !isError
+            ) {
+              const reportedOutput = compactOniMcpToolOutput(resolvedOniTool, output);
+              // ACP runtimes may omit or summarize MCP results, including across repeated or
+              // interleaved in_progress updates. Claims are keyed by (callId, tool, inputHash).
+              const claimedOutput = context.claimedToolResults.get(callInputKey);
+              if (reportedOutput !== undefined) {
+                context.claimedToolResults.set(callInputKey, reportedOutput);
+                if (!context.drainedToolResultKeys.has(callInputKey)) {
+                  const drained = yield* mcpSessions.takeToolResult(
+                    context.input.threadId,
+                    resolvedOniTool,
+                    input,
+                    reportedOutput,
+                  );
+                  if (drained !== undefined) {
+                    context.drainedToolResultKeys.add(callInputKey);
+                  }
+                }
+              } else {
+                let recoveredOutput = claimedOutput;
+                if (
+                  recoveredOutput === undefined &&
+                  projectedStatus === undefined &&
+                  !context.blockedInputRecoveryKeys.has(callInputKey) &&
+                  !context.attemptedInputRecoveryKeys.has(callInputKey)
+                ) {
+                  context.attemptedInputRecoveryKeys.add(callInputKey);
+                  recoveredOutput = yield* mcpSessions.takeToolResult(
+                    context.input.threadId,
+                    resolvedOniTool,
+                    input,
+                    undefined,
+                  );
+                  if (recoveredOutput !== undefined) {
+                    context.drainedToolResultKeys.add(callInputKey);
+                  }
+                }
+                if (recoveredOutput !== undefined) {
+                  context.claimedToolResults.set(callInputKey, recoveredOutput);
+                  output = recoveredOutput;
+                }
               }
             }
             turnItem = {
@@ -9224,6 +9306,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
               terminalizeSubagents: directStopQuarantine,
             });
           }
+          yield* mcpSessions.clearToolResults(context.input.threadId);
           yield* closeTextStreams(context);
           // Ingestion may stop at turn.terminal, before a delayed flush would run.
           yield* textEmissionPermit.withPermit(
@@ -10331,6 +10414,10 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
               contextUsage: rememberedContextUsage ?? turnInput.providerThread.contextUsage ?? null,
               nativeMetadata: initialNativeMetadata,
               tools: new Map(),
+              claimedToolResults: new Map(),
+              drainedToolResultKeys: new Set(),
+              blockedInputRecoveryKeys: new Set(),
+              attemptedInputRecoveryKeys: new Set(),
               stoppedToolCallIds: new Set(),
               toolUpdatesSkipped: new Map(),
               toolStartedAt: new Map(),
