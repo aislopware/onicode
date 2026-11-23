@@ -573,9 +573,11 @@ export function openRtf(bytes: ArrayBuffer): OfficeWorkerResult {
     uc: 1,
     font: 0,
     fontTable: false,
+    fontFile: false,
     decoder: new TextDecoder("windows-1252"),
   };
-  // A font's \cpg, else its \fcharset, encodes the bytes written in that font.
+  // A font's \cpg, else its \fcharset, encodes the bytes written in that font. A \cpg inside
+  // \fontfile encodes the font's file name instead.
   const fontCodePages = new Map<number, TextDecoder>();
   const fonts = new Map<number, TextDecoder>();
   let defaultFont = 0;
@@ -698,7 +700,7 @@ export function openRtf(bytes: ArrayBuffer): OfficeWorkerResult {
       } else if (word === "fcharset" && state.fontTable) {
         const label = (
           {
-            0: state.decoder.encoding,
+            0: "windows-1252",
             1: state.decoder.encoding,
             77: "macintosh",
             128: "shift_jis",
@@ -718,7 +720,8 @@ export function openRtf(bytes: ArrayBuffer): OfficeWorkerResult {
           } as Record<number, string>
         )[arg];
         if (label) fonts.set(state.font, new TextDecoder(label));
-      } else if (word === "cpg" && state.fontTable && arg !== 0) {
+      } else if (word === "fontfile") state.fontFile = true;
+      else if (word === "cpg" && state.fontTable && !state.fontFile && arg !== 0) {
         try {
           fontCodePages.set(state.font, new TextDecoder(rtfCodePage(arg)));
         } catch {
