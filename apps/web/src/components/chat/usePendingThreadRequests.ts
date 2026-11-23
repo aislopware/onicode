@@ -29,6 +29,7 @@ import {
 } from "../../composerDraftStore";
 import { useStableCallback } from "../../hooks/useStableCallback";
 import {
+  awaitAttachmentUploads,
   getUploadedAttachments,
   refreshExpiredAttachmentUploads,
   useAttachmentUploadStore,
@@ -235,6 +236,45 @@ function readPendingUserInputDraft(scope: PendingUserInputDraftScope) {
     )(useAttachmentUploadStore.getState()),
     selectQuestionPreparations(keys)(useQuestionAttachmentPreparation.getState()),
   );
+}
+
+/** A question's typed answer as the answers store holds it, for dictation off its composer. */
+export function storedPendingAnswerText(input: {
+  readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
+  readonly pendingUserInput: PendingUserInput;
+  readonly questionId: string;
+}) {
+  const { pendingUserInput, questionId } = input;
+  const requestKey = userInputDraftKey(
+    input.environmentId,
+    input.threadId,
+    pendingUserInput.requestId,
+  );
+  const question = pendingUserInput.questions.find((entry) => entry.id === questionId);
+  return {
+    read: (): string | null =>
+      question === undefined || question.allowCustomAnswer === false
+        ? null
+        : (seedUserInputDraftAnswers(
+            pendingUserInput.questions,
+            usePendingUserInputAnswers.getState()[requestKey] ?? EMPTY_PENDING_USER_INPUT_ANSWERS,
+          )[questionId]?.customAnswer ?? ""),
+    commit: (text: string) => {
+      if (question === undefined || question.allowCustomAnswer === false) return;
+      usePendingUserInputAnswers.setState((existing) => ({
+        ...existing,
+        [requestKey]: {
+          ...existing[requestKey],
+          [questionId]: setPendingUserInputCustomAnswer(
+            question,
+            existing[requestKey]?.[questionId],
+            text,
+          ),
+        },
+      }));
+    },
+  };
 }
 
 function makePendingCustomAnswerSetter(input: {
@@ -649,6 +689,20 @@ export function usePendingThreadRequests(input: {
     setActivePendingUserInputQuestionIndex(activePendingProgress.questionIndex + 1);
   };
   const onAdvanceActivePendingUserInputStable = useStableCallback(onAdvanceActivePendingUserInput);
+  // Pins the question open at the press: the chat view outlives a switch to another thread.
+  const captureQuestionAnswer = useStableCallback(() => {
+    const advance = onAdvanceActivePendingUserInput;
+    const { questionKeys } = pendingUserInputDraftKeys(draftScope);
+    return () => {
+      const drafts = useComposerDraftStore.getState();
+      const attachmentIds = questionKeys.flatMap((key) => {
+        const draft = drafts.getComposerDraft(key);
+        return draft ? [...draft.images, ...draft.files].map((attachment) => attachment.id) : [];
+      });
+      // An answer goes only with its attachments uploaded; a live composer waits on that too.
+      void awaitAttachmentUploads(attachmentIds).then(advance);
+    };
+  });
 
   const onPreviousActivePendingUserInputQuestion = () => {
     const { activePendingProgress } = readPendingUserInputDraft(draftScope);
@@ -674,6 +728,7 @@ export function usePendingThreadRequests(input: {
     onChangeActivePendingUserInputCustomAnswer,
     onAdvanceActivePendingUserInput,
     onAdvanceActivePendingUserInputStable,
+    captureQuestionAnswer,
     onPreviousActivePendingUserInputQuestion: onPreviousActivePendingUserInputQuestionStable,
   };
 }

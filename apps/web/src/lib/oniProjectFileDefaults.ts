@@ -45,15 +45,21 @@ export async function readOniProjectFile(
   );
 }
 
-/** The project's onicode.json from an earlier read, or `undefined` when none has loaded yet. */
+/**
+ * The project's onicode.json from an earlier read, or `undefined` when none has loaded yet. A
+ * copy that is refetching, such as after the file changed, is not `current`.
+ */
 export function peekOniProjectFile(
   environmentId: EnvironmentId,
   workspaceRoot: string,
-): OniProjectFile | null | undefined {
+): { readonly projectFile: OniProjectFile | null; readonly current: boolean } | undefined {
   const result = appAtomRegistry.get(
     getProjectFileQueryAtom(environmentId, workspaceRoot, ONICODE_PROJECT_FILE_NAME),
   );
   return AsyncResult.isSuccess(result)
-    ? toOniProjectFile(environmentId, workspaceRoot, result.value)
+    ? {
+        projectFile: toOniProjectFile(environmentId, workspaceRoot, result.value),
+        current: !result.waiting,
+      }
     : undefined;
 }

@@ -273,7 +273,7 @@ import { type AppModelOption, getAppModelOptionsForInstance } from "../../modelS
 import type { UnifiedSettings } from "@onicode/contracts/settings";
 import { isVideoAttachment, type SessionPhase, type Thread } from "../../types";
 import { type ComposerPromptHistoryPosition } from "@onicode/client-runtime/composer-prompt-history";
-import { usePendingUserInputDraft } from "./usePendingThreadRequests";
+import { storedPendingAnswerText, usePendingUserInputDraft } from "./usePendingThreadRequests";
 import type { PendingApproval, PendingUserInput, TimelineEntry } from "../../session-logic";
 import {
   composerRunsDraftLocally,
@@ -303,6 +303,7 @@ import { isQueuedFileAttachment, isQueuedImageAttachment } from "./queuedMessage
 import {
   cancelHeldComposerSend,
   countPreparingComposerImages,
+  sendAfterPreparingImages,
   useComposerSendHeld,
   usePreparingComposerImages,
   useSubmitAfterPreparingImages,
@@ -504,6 +505,8 @@ export interface ChatComposerProps {
   onInterrupt: () => void;
   onSelectActivePendingUserInputOption: (questionId: string, optionValue: string) => void;
   onAdvanceActivePendingUserInput: () => void;
+  /** The open question's Submit as of this render, for a press whose composer then leaves. */
+  captureQuestionAnswer?: () => () => void;
   onDismissActivePendingUserInput: (requestId: RuntimeRequestId) => void;
   onPreviousActivePendingUserInputQuestion: () => void;
   onChangeActivePendingUserInputCustomAnswer: (
@@ -608,6 +611,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     onInterrupt,
     onSelectActivePendingUserInputOption,
     onAdvanceActivePendingUserInput,
+    captureQuestionAnswer,
     onDismissActivePendingUserInput,
     onPreviousActivePendingUserInputQuestion,
     onChangeActivePendingUserInputCustomAnswer,
@@ -1542,6 +1546,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     promptRef,
     addComposerFilesToDraft,
     removedQueuedAttachments: activeRemovedEditingQueuedAttachments,
+    existingAttachmentCount: activeEditingQueuedAttachments?.length ?? 0,
     onRestoreQueuedAttachment: onRestoreEditingQueuedAttachment,
   });
 
@@ -2014,6 +2019,27 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     isComposerApprovalState ||
     activePendingIsResponding ||
     activePendingProgress?.activeQuestion?.allowCustomAnswer === false;
+  // The route, not the draft target: a queued-message edit has a draft id but no route.
+  const openDictationDraft = () =>
+    void (routeKind === "draft" && typeof composerDraftTarget === "string"
+      ? navigate({
+          to: "/draft/$draftId",
+          params: buildDraftThreadRouteParams(composerDraftTarget),
+        })
+      : navigate({
+          to: "/$environmentId/$threadId",
+          params: buildThreadRouteParams(routeThreadRef),
+        }));
+  const activeQuestionId = activePendingProgress?.activeQuestion?.id;
+  const storedAnswer =
+    questionAttachmentTarget && questionRequest && activeThreadId && activeQuestionId !== undefined
+      ? storedPendingAnswerText({
+          environmentId,
+          threadId: activeThreadId,
+          pendingUserInput: questionRequest,
+          questionId: activeQuestionId,
+        })
+      : null;
   const speechInput = useEnvironmentSpeechInput({
     environmentId,
     projectId: activeProjectId,
@@ -2022,9 +2048,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     disabled: dictationDisabled,
     label: activeThread?.title ?? null,
     presented: !hiddenThread,
-    // A question's answer lives only in this composer, so only the thread draft outlives it.
+    // A question's answer is stored with its request, so it outlives this composer too.
     persistentDraft: questionAttachmentTarget
-      ? undefined
+      ? storedAnswer
+        ? {
+            readStoredText: storedAnswer.read,
+            commitStoredText: storedAnswer.commit,
+            retired: () => false,
+            open: openDictationDraft,
+          }
+        : undefined
       : {
           readStoredText: () => {
             const stored = resolveDictationDraftTarget(composerDraftTarget);
@@ -2035,17 +2068,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             if (stored !== null) setComposerDraftPrompt(stored, text);
           },
           retired: () => isComposerDraftPromoted(composerDraftTarget),
-          // The route, not the draft target: a queued-message edit has a draft id but no route.
-          open: () =>
-            void (routeKind === "draft" && typeof composerDraftTarget === "string"
-              ? navigate({
-                  to: "/draft/$draftId",
-                  params: buildDraftThreadRouteParams(composerDraftTarget),
-                })
-              : navigate({
-                  to: "/$environmentId/$threadId",
-                  params: buildThreadRouteParams(routeThreadRef),
-                })),
+          open: openDictationDraft,
         },
     readDraft: () => {
       const snapshot = readComposerSnapshot();
@@ -2377,6 +2400,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       const queuedOwnerKey = attachmentTargetKey;
       const capturedDraftTarget = composerDraftTarget;
       const answeringQuestion = questionAttachmentTarget !== null;
+      const capturedAnswer = answeringQuestion ? (captureQuestionAnswer?.() ?? null) : null;
       const capturedDetachedSend = answeringQuestion ? null : (captureDetachedSend?.() ?? null);
       const capturedSendContext =
         capturedDetachedSend !== null
@@ -2392,6 +2416,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           submitComposerRef.current(modeAtPress, submissionIntent, atPress, {
             afterDictation: true,
           });
+          return;
+        }
+        // The transcript went into the stored answer, which the press submits once images land.
+        if (capturedAnswer) {
+          if (!pendingDraftWork.has(queuedOwnerKey)) {
+            sendAfterPreparingImages(queuedOwnerKey, capturedAnswer);
+          }
           return;
         }
         if (
@@ -2446,8 +2477,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     if (
       activeThreadId &&
       questionAttachmentTarget &&
-      submitAfterPreparingImages(() =>
-        submitComposerRef.current(modeAtPress, submissionIntent, atPress),
+      submitAfterPreparingImages(
+        () => submitComposerRef.current(modeAtPress, submissionIntent, atPress),
+        captureQuestionAnswer?.(),
       )
     ) {
       event?.preventDefault();

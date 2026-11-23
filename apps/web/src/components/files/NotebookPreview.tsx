@@ -10,6 +10,7 @@ import DocumentPages from "./DocumentPages";
 import { FileSurfaceNotice } from "./fileSurfaceChrome";
 import type { OfficeWorkerResult } from "./officePreviewProtocol";
 import { LineCappedText, lineCappedText, useMoreCharactersLabel } from "./shownText";
+import { selectMountedNotebookOutputs } from "./NotebookPreview.logic";
 
 // Saved notebooks must not load URLs or turn authored links into app actions.
 const NOTEBOOK_MARKDOWN: MarkdownExtensions = { inert: true };
@@ -58,12 +59,7 @@ export default function NotebookPreview(props: {
         if (entry.isIntersecting) candidates.add(entry.target);
         else candidates.delete(entry.target);
       }
-      // Mount every visible output. Only preload while the total is below 16.
-      const next = new Set(inView);
-      for (const node of nearby) {
-        if (next.size >= 16) break;
-        next.add(node);
-      }
+      const next = selectMountedNotebookOutputs(inView, nearby, active);
       const departing = [...active].filter((node) => !next.has(node));
       if (active.size === next.size && departing.length === 0) return;
       const measured = departing

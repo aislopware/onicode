@@ -20,7 +20,8 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { AsyncResult, Atom, type AtomRegistry } from "effect/reactivity";
 
-import { registerDraftTerminalCheck } from "../draftTerminalPresence";
+import { registerDraftTerminalCheck, registerDraftTerminalClose } from "../draftTerminalPresence";
+import { closeDraftThreadTerminals } from "../lib/closeDraftThreadTerminals";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { formatEnvironmentQueryError } from "./query";
 import { terminalEnvironment } from "./terminal";
@@ -339,3 +340,4 @@ export function useTerminalLabelsByThreadKey(
 registerDraftTerminalCheck((environmentId, threadId) =>
   threadHasKnownTerminal(environmentId, threadId),
 );
+registerDraftTerminalClose(closeDraftThreadTerminals);

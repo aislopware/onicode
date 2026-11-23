@@ -418,16 +418,21 @@ describe("bounded binary previews", () => {
         asset={{ environmentId: EnvironmentId.make("test-environment"), attachmentId: "image" }}
       />,
     );
-    await vi.waitFor(() =>
-      expect(screen.container.querySelector('[role="alert"]')?.textContent).toContain(
-        "Unable to load image.",
-      ),
+    // Loading the viewer chunk and decoding each image is real browser work; on a busy runner one
+    // step took over a second.
+    await vi.waitFor(
+      () =>
+        expect(screen.container.querySelector('[role="alert"]')?.textContent).toContain(
+          "Unable to load image.",
+        ),
+      { timeout: 10_000 },
     );
     await act(() =>
       screen.container.querySelector<HTMLButtonElement>('[role="alert"] button')!.click(),
     );
-    await vi.waitFor(() =>
-      expect(screen.container.querySelector("img")?.getAttribute("src")).toBe(image),
+    await vi.waitFor(
+      () => expect(screen.container.querySelector("img")?.getAttribute("src")).toBe(image),
+      { timeout: 10_000 },
     );
     expect(refresh).toHaveBeenCalledTimes(2);
   });
@@ -2501,7 +2506,12 @@ it("mounts a bounded set of saved notebook outputs as the reader scrolls", async
   const first = screen.container.querySelector("iframe")!;
   const firstOutput = first.parentElement!;
   expect(first.srcdoc).toContain("saved 0-0");
-  await vi.waitFor(() => expect(first.clientHeight).toBeGreaterThan(0));
+  // The 80 px estimate is already taller than zero; wait for the frame to fit its content.
+  await vi.waitFor(() => {
+    const body = first.contentDocument?.body;
+    expect(body?.textContent).toContain("saved 0-0");
+    expect(first.clientHeight).toBe(Math.ceil(body!.getBoundingClientRect().height));
+  });
   const viewport = screen.container.querySelector<HTMLElement>(".scrollbar-gutter-both")!;
   await act(() => {
     viewport.scrollTop = viewport.scrollHeight;

@@ -245,17 +245,50 @@ export function cancelPreparingComposerImages(targetKey: string): void {
   });
 }
 
+type PendingSubmit = {
+  readonly targetKey: string;
+  readonly cancelGeneration: number;
+  readonly submit: () => void;
+  readonly sendAway: (() => void) | undefined;
+};
+
+/** Runs `send` once the target's images land, unless they are cancelled first. */
+function sendOncePrepared(targetKey: string, cancelGeneration: number, send: () => void) {
+  const cancelled = () => cancelGeneration !== (cancelGenerations.get(targetKey) ?? 0);
+  if (cancelled()) return;
+  let released = false;
+  const release = () => {
+    if (released) return;
+    released = true;
+    stopWatching();
+    // Let joinPreparedImagesToDraft finish inserting compressed images in this tick first.
+    queueMicrotask(() => {
+      if (!cancelled()) send();
+    });
+  };
+  const stopWatching = usePreparingComposerImageStore.subscribe((state) => {
+    if (!state.byTargetKey[targetKey]) release();
+  });
+  if (countPreparingComposerImages(targetKey) === 0) release();
+}
+
+/** For a press whose composer has left: sends once the target's images finish preparing. */
+export function sendAfterPreparingImages(targetKey: string, send: () => void): void {
+  sendOncePrepared(targetKey, cancelGenerations.get(targetKey) ?? 0, send);
+}
+
+function sendAwayAfterPreparing({ targetKey, cancelGeneration, sendAway }: PendingSubmit) {
+  if (sendAway) sendOncePrepared(targetKey, cancelGeneration, sendAway);
+}
+
 /**
  * Holds a send made while the target still has images compressing, and runs it once they finish,
  * so the turn includes them. Returns false when nothing is compressing and the caller should send.
+ * Leaving the target or unmounting hands the hold to `sendAway`, which runs without the composer.
  */
 export function useSubmitAfterPreparingImages(targetKey: string, blocked = false) {
   const preparing = usePreparingComposerImages(targetKey);
-  const pendingRef = useRef<{
-    readonly targetKey: string;
-    readonly cancelGeneration: number;
-    readonly submit: () => void;
-  } | null>(null);
+  const pendingRef = useRef<PendingSubmit | null>(null);
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- sends only after the render where the compressed images joined the draft
   useEffect(() => {
     const pending = pendingRef.current;
@@ -265,6 +298,7 @@ export function useSubmitAfterPreparingImages(targetKey: string, blocked = false
       pending.cancelGeneration !== (cancelGenerations.get(targetKey) ?? 0)
     ) {
       pendingRef.current = null;
+      if (pending.targetKey !== targetKey) sendAwayAfterPreparing(pending);
       return;
     }
     if (preparing.length > 0 || blocked) return;
@@ -272,12 +306,22 @@ export function useSubmitAfterPreparingImages(targetKey: string, blocked = false
     // After the composer's later effects have synced its draft refs to this render.
     queueMicrotask(pending.submit);
   }, [preparing, targetKey, blocked]);
-  return useStableCallback((submit: () => void) => {
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- hands a held submit on at unmount
+  useEffect(
+    () => () => {
+      const pending = pendingRef.current;
+      pendingRef.current = null;
+      if (pending) sendAwayAfterPreparing(pending);
+    },
+    [],
+  );
+  return useStableCallback((submit: () => void, sendAway?: () => void) => {
     if (countPreparingComposerImages(targetKey) === 0) return false;
     pendingRef.current = {
       targetKey,
       cancelGeneration: cancelGenerations.get(targetKey) ?? 0,
       submit,
+      sendAway,
     };
     return true;
   });

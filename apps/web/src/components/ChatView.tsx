@@ -1466,6 +1466,7 @@ export default function ChatView(props: ChatViewProps) {
     onChangeActivePendingUserInputCustomAnswer,
     onAdvanceActivePendingUserInput,
     onAdvanceActivePendingUserInputStable,
+    captureQuestionAnswer,
     onPreviousActivePendingUserInputQuestion: onPreviousActivePendingUserInputQuestionStable,
   } = usePendingThreadRequests({
     environmentId,
@@ -3954,6 +3955,7 @@ export default function ChatView(props: ChatViewProps) {
                                 onAdvanceActivePendingUserInput={
                                   onAdvanceActivePendingUserInputStable
                                 }
+                                captureQuestionAnswer={captureQuestionAnswer}
                                 onDismissActivePendingUserInput={onDismissUserInputStable}
                                 onPreviousActivePendingUserInputQuestion={
                                   onPreviousActivePendingUserInputQuestionStable

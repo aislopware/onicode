@@ -1,6 +1,7 @@
 import { threadContextRecord } from "@onicode/shared/composerContextReferences";
 import { useEffect } from "react";
 import {
+  ChatAttachmentId,
   type ComposerContextRecord,
   ComposerContextId,
   EnvironmentId,
@@ -521,7 +522,7 @@ it("lands two moved question imports that settle together in the thread's last t
     importer.importContextRecords([record("a.txt"), record("b.txt")], sourceEnvironmentId);
     await requested.promise;
   });
-  act(() => {
+  await act(() => {
     makeThreadRequestsResolvedAnnouncer(
       environmentId,
       thread.threadId,
@@ -548,4 +549,91 @@ it("lands two moved question imports that settle together in the thread's last t
 
   const names = store.getComposerDraft(thread)?.files.map(({ name }) => name) ?? [];
   expect(names.slice(-2).toSorted()).toEqual(["a.txt", "b.txt"]);
+});
+
+it("pasting back a removed queued attachment counts against the queued message's limit", async () => {
+  const environmentId = EnvironmentId.make("queued-restore-target");
+  const target = DraftId.make("queued-restore-edit");
+  const store = useComposerDraftStore.getState();
+  using _draft = { [Symbol.dispose]: () => store.clearComposerContent(target) };
+  // The replacement file took the slot the removed attachment left.
+  store.addFiles(
+    target,
+    [
+      {
+        type: "file",
+        id: "replacement",
+        name: "replacement.txt",
+        mimeType: "text/plain",
+        sizeBytes: 1,
+        file: new File(["x"], "replacement.txt"),
+      },
+    ],
+    { appendReference: false },
+  );
+  const removed = {
+    type: "file" as const,
+    id: ChatAttachmentId.make("queued-notes"),
+    name: "notes.txt",
+    mimeType: "text/plain",
+    sizeBytes: 5,
+  };
+  const contextId = ComposerContextId.make("file_queued-notes");
+  const onRestoreQueuedAttachment = vi.fn();
+  let importer!: Importer;
+  await using _screen = await render(
+    <Harness
+      input={{
+        environmentId,
+        linkedEnvironments: new Map(),
+        activeThread: undefined,
+        activeThreadId: null,
+        composerDraftTarget: target,
+        attachmentDraftTarget: target,
+        attachmentTargetKey: target,
+        attachmentTargetKeyRef: { current: target },
+        questionAttachmentTarget: null,
+        pendingUserInputs: [],
+        composerContextRecords: new Map(),
+        composerImages: [],
+        composerFilesRef: { current: [] },
+        promptRef: { current: "" },
+        addComposerFilesToDraft: () => [],
+        existingAttachmentCount: PROVIDER_SEND_TURN_MAX_ATTACHMENTS - 1,
+        removedQueuedAttachments: [{ attachment: removed, contextIds: [contextId] }],
+        onRestoreQueuedAttachment,
+      }}
+      ready={(value) => {
+        importer = value;
+      }}
+    />,
+  );
+
+  using toasts = vi.spyOn(toastManager, "add");
+  let remapped: ReadonlyMap<string, string> = new Map();
+  await act(() => {
+    remapped = importer.importContextRecords(
+      [
+        {
+          version: 1,
+          kind: "file",
+          contextId,
+          label: "notes.txt",
+          attachmentId: removed.id,
+          name: "notes.txt",
+          mimeType: "text/plain",
+          sizeBytes: 5,
+        },
+      ],
+      environmentId,
+    );
+  });
+
+  expect(onRestoreQueuedAttachment).not.toHaveBeenCalled();
+  expect(remapped.has(contextId)).toBe(false);
+  expect(toasts).toHaveBeenCalledWith(
+    expect.objectContaining({
+      description: expect.stringContaining("The attachment limit has been reached."),
+    }),
+  );
 });

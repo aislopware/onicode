@@ -76,7 +76,7 @@ import { recordPromptSent } from "../GitHubStarPrompt";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
 import { newMessageId, newThreadId } from "~/lib/utils";
-import { readPendingWorkspaceDefault, useNewThreadHandler } from "../../hooks/useHandleNewThread";
+import { holdSendForWorkspaceDefault, useNewThreadHandler } from "../../hooks/useHandleNewThread";
 import { buildThreadRouteParams } from "../../threadRoutes";
 import {
   beginBackgroundDraftSubmissionByRef,
@@ -1864,17 +1864,35 @@ export function useComposerSend(input: ComposerSendInput) {
   const sendWithEnvironmentRefreshLatest = useStableCallback(sendWithEnvironmentRefresh);
   const onSendWithRouting = async (...args: Parameters<typeof onSend>) => {
     args[0]?.preventDefault();
+    // The resumed send reads the live draft, so an edit meanwhile cancels it.
     const workspaceDefault =
-      draftId && !sendInFlightRef.current ? readPendingWorkspaceDefault(draftId) : null;
+      draftId && !sendInFlightRef.current
+        ? holdSendForWorkspaceDefault(draftId, { cancelOnEdit: true })
+        : null;
     if (workspaceDefault === null) return sendWithEnvironmentRefresh(...args);
     sendInFlightRef.current = true;
-    await workspaceDefault.finally(() => {
+    const { status } = await workspaceDefault.finally(() => {
       sendInFlightRef.current = false;
     });
-    return sendWithEnvironmentRefreshLatest(...args);
+    if (status === "ready") return sendWithEnvironmentRefreshLatest(...args);
   };
   // No load-balancing refresh: it bails once the draft is no longer displayed, which is the
   // only time a detached send runs, so the draft keeps the environment it was dictated for.
-  const captureDetachedSend = useStableCallback(() => onSend);
+  const captureDetachedSend = useStableCallback(() => {
+    const send = onSend;
+    const envModeAtCapture = draftThread?.envMode;
+    // The transcript carries its own text, which lands in the draft, so edits do not cancel.
+    return async (...args: Parameters<typeof onSend>) => {
+      const workspaceDefault = draftId
+        ? holdSendForWorkspaceDefault(draftId, { cancelOnEdit: false })
+        : null;
+      if (workspaceDefault !== null) await workspaceDefault;
+      // This send starts where its render put the draft; a workspace that changed since leaves
+      // the transcript in the draft to send from there.
+      const draft = draftId ? useComposerDraftStore.getState().getDraftSession(draftId) : null;
+      if (draft && draft.envMode !== envModeAtCapture) return;
+      return send(...args);
+    };
+  });
   return { onSend: onSendWithRouting, captureDetachedSend };
 }

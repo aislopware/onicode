@@ -116,9 +116,11 @@ import { createDeferredStorage } from "./lib/storage";
 import { applyPreviewServerSnapshot, resetPreviewStateForTests } from "./previewStateStore";
 
 const threadsWithTerminals = vi.hoisted(() => new Set<string>());
+const closeLeftDraftThreadTerminals = vi.hoisted(() => vi.fn());
 vi.mock("./draftTerminalPresence", () => ({
   draftThreadHasKnownTerminal: (_environmentId: string, threadId: string) =>
     threadsWithTerminals.has(threadId),
+  closeLeftDraftThreadTerminals,
 }));
 
 function makeImage(input: {
@@ -919,6 +921,20 @@ describe("composerDraftStore project draft thread mapping", () => {
     } finally {
       URL.revokeObjectURL = originalRevokeObjectUrl;
     }
+  });
+
+  it("closes a draft's terminal on the machine it moved off once no draft there reaches it", () => {
+    const store = useComposerDraftStore.getState();
+    store.setProjectDraftThreadId(projectRef, draftId, { threadId });
+    closeLeftDraftThreadTerminals.mockClear();
+
+    store.setDraftThreadContext(draftId, { projectRef: otherProjectRef });
+    expect(closeLeftDraftThreadTerminals).not.toHaveBeenCalled();
+    store.setDraftThreadContext(draftId, { projectRef: remoteProjectRef });
+    expect(closeLeftDraftThreadTerminals).toHaveBeenCalledExactlyOnceWith(
+      TEST_ENVIRONMENT_ID,
+      threadId,
+    );
   });
 
   it("removes a draft's previous project mapping when retargeted in place", () => {
