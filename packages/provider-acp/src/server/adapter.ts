@@ -58,6 +58,7 @@ import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Fiber from "effect/Fiber";
 import * as Option from "effect/Option";
+import * as Predicate from "effect/Predicate";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Result from "effect/Result";
@@ -3058,6 +3059,33 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             ? Effect.void
             : Scope.close(runtimeScope, Exit.void).pipe(Effect.ignore),
         );
+        // Only an answered refusal leaves the agent in a known state; otherwise retire it so the
+        // next use starts a fresh one instead of waiting on the stuck process again.
+        const retireUnlessAnswered = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+          effect.pipe(
+            Effect.onExit((exit) =>
+              Exit.isSuccess(exit) ||
+              exit.cause.reasons.some(
+                (reason) =>
+                  Cause.isFailReason(reason) && Predicate.isTagged(reason.error, "AcpRequestError"),
+              )
+                ? Effect.void
+                : Effect.gen(function* () {
+                    yield* runtimeCallbackPermit.withPermit(
+                      Effect.gen(function* () {
+                        yield* quarantineNativeTransportAtGeneration(
+                          yield* Ref.get(runtimeCallbackGeneration),
+                        );
+                        yield* advanceRuntimeCallbackGeneration;
+                      }),
+                    );
+                    yield* Ref.set(runtimeRestartRequired, true);
+                    if (runtimeScope !== undefined) {
+                      yield* Scope.close(runtimeScope, Exit.void).pipe(Effect.ignore);
+                    }
+                  }),
+            ),
+          );
 
         const resolveItemOrdinal = (context: ActiveAcpTurn, nativeItemId: string) =>
           Effect.sync(() => {
@@ -8184,7 +8212,9 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             return canLoadSession
               ? yield* runtime.loadSession(sessionId, activationOptions)
               : canResumeSession
-                ? yield* runtime.resumeSession(sessionId, activationOptions)
+                ? yield* runtime
+                    .resumeSession(sessionId, activationOptions)
+                    .pipe(retireUnlessAnswered)
                 : yield* new ProviderAdapter.ProviderAdapterProtocolError({
                     driver,
                     detail: `ACP driver cannot load or resume session ${sessionId}`,
@@ -11111,6 +11141,13 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             function* (forkInput) {
               return yield* runtimeTransitionPermit.withPermit(
                 Effect.gen(function* () {
+                  const currentTurn = yield* Ref.get(activeTurn);
+                  if (currentTurn !== null) {
+                    return yield* new ProviderAdapter.ProviderAdapterProtocolError({
+                      driver,
+                      detail: `Cannot fork ACP provider thread ${forkInput.sourceProviderThread.id} while turn ${currentTurn.providerTurnId} is active`,
+                    });
+                  }
                   yield* awaitRuntimeTeardown();
                   useProviderThreadIdentity(forkInput.sourceProviderThread);
                   yield* restartRuntimeAfterTeardownIfRequired(
@@ -11140,11 +11177,9 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                   );
                   const mcpContext = yield* readMcpContext(forkInput.targetThreadId);
                   prepareTerminalEnvironment(mcpContext);
-                  const forked = yield* runtime.forkSession(
-                    sourceSessionId,
-                    acpMcpActivation(mcpContext),
-                    forkMeta,
-                  );
+                  const forked = yield* runtime
+                    .forkSession(sourceSessionId, acpMcpActivation(mcpContext), forkMeta)
+                    .pipe(retireUnlessAnswered);
                   rememberTerminalEnvironment(
                     forked.sessionId,
                     yield* readMcpContext(forkInput.targetThreadId),

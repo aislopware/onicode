@@ -1003,6 +1003,17 @@ class ClaudeMcpRegistrationTimeoutError extends Schema.TaggedError<ClaudeMcpRegi
   }
 }
 
+const CLAUDE_SESSION_FORK_DEADLINE = "30 seconds";
+
+class ClaudeSessionForkTimeoutError extends Schema.TaggedError<ClaudeSessionForkTimeoutError>()(
+  "ClaudeSessionForkTimeoutError",
+  {},
+) {
+  override get message(): string {
+    return `Claude did not finish copying the conversation within ${CLAUDE_SESSION_FORK_DEADLINE}.`;
+  }
+}
+
 export class ClaudeBackgroundWorkBlocksQueryReplacementError extends Schema.TaggedError<ClaudeBackgroundWorkBlocksQueryReplacementError>()(
   "ClaudeBackgroundWorkBlocksQueryReplacementError",
   {},
@@ -1744,6 +1755,7 @@ const forkClaudeSessionInWorker = Effect.fn("forkClaudeSessionInWorker")(functio
   input: ClaudeAgentSdkSessionForkInput,
 ) {
   return yield* runClaudeWorker({ ...input, method: "forkSession" }).pipe(
+    Effect.catchTags({ TimeoutError: () => Effect.fail(new ClaudeSessionForkTimeoutError()) }),
     Effect.flatMap(decodeClaudeHistoryFork),
   );
 });
@@ -2468,7 +2480,13 @@ export const layerQueryRunner: Layer.Layer<
           ? Effect.tryPromise({
               try: () => forkClaudeSession(input.sessionId, input.options),
               catch: (cause) => queryRunnerError(cause, "forkSession"),
-            })
+            }).pipe(
+              // The SDK's file work cannot be cancelled; a late fork leaves an unreferenced transcript.
+              Effect.timeoutOrElse({
+                duration: CLAUDE_SESSION_FORK_DEADLINE,
+                orElse: () => Effect.fail(new ClaudeSessionForkTimeoutError()),
+              }),
+            )
           : forkClaudeSessionInWorker(input).pipe(
               Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
               Effect.provideService(Path.Path, path),
@@ -2495,6 +2513,7 @@ export const layerQueryRunner: Layer.Layer<
                 ),
               catch: (cause) => queryRunnerError(cause, "getSessionMessages"),
             }).pipe(
+              Effect.timeout(CLAUDE_SESSION_FORK_DEADLINE),
               Effect.map((messages) => messages.at(-1)?.uuid),
               Effect.orElseSucceed(() => undefined),
             )

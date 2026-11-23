@@ -17,7 +17,9 @@ import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
+import * as Predicate from "effect/Predicate";
 import * as Stream from "effect/Stream";
+import * as ChildProcess from "effect/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as TestClock from "effect/testing/TestClock";
 import { vi } from "vite-plus/test";
@@ -201,6 +203,91 @@ it.effect("forked Claude sessions keep their compaction chain", () =>
       ].filter((ref) => !forkedUuids.has(ref));
       assert.deepEqual(danglingRefs, [], "compaction refs missing from the forked transcript");
     }).pipe(Effect.provide(forkRunnerLayer)),
+  ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+);
+it.effect.each([
+  { stalled: "forkSession", expected: { failedWith: "ClaudeSessionForkTimeoutError" } },
+  { stalled: "getSessionMessages", expected: { sessionId: FORK_SESSION_ID } },
+] as const)("settles a host-config fork whose $stalled never answers", ({ stalled, expected }) =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const stalledCall = Promise.withResolvers<void>();
+      const never = () => {
+        stalledCall.resolve();
+        return new Promise<never>(() => {});
+      };
+      const forkSpy = vi
+        .spyOn(ClaudeSdk, "forkSession")
+        .mockImplementation(
+          stalled === "forkSession" ? never : async () => ({ sessionId: FORK_SESSION_ID }),
+        );
+      const readSpy = vi.spyOn(ClaudeSdk, "getSessionMessages").mockImplementation(never);
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => {
+          forkSpy.mockRestore();
+          readSpy.mockRestore();
+        }),
+      );
+
+      const runner = yield* ClaudeAgentSdkQueryRunner;
+      const forking = yield* runner
+        .forkSession({
+          sessionId: FORK_SESSION_ID,
+          options: {},
+          environment: yield* HostProcess.Environment,
+          threadId: ThreadId.make("thread-fork-stalled"),
+          providerSessionId: ProviderSessionId.make("session-fork-stalled"),
+        })
+        .pipe(Effect.forkChild);
+      yield* Effect.promise(() => stalledCall.promise);
+      yield* TestClock.adjust("30 seconds");
+      const settled = yield* Fiber.join(forking).pipe(
+        Effect.catch((error) =>
+          Effect.succeed({
+            failedWith: Predicate.hasProperty(error.cause, "_tag") ? error.cause._tag : undefined,
+          }),
+        ),
+      );
+      assert.deepEqual(settled, expected);
+    }).pipe(Effect.provide(forkRunnerLayer)),
+  ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+);
+
+it.effect("settles a fork whose history worker for a custom config home never exits", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const workerStarted = yield* Deferred.make<void>();
+      const stalledWorker = Layer.effect(
+        ChildProcessSpawner.ChildProcessSpawner,
+        Effect.gen(function* () {
+          const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+          return ChildProcessSpawner.make(() =>
+            Deferred.succeed(workerStarted, undefined).pipe(
+              Effect.andThen(spawner.spawn(ChildProcess.make("sleep", ["600"]))),
+            ),
+          );
+        }),
+      ).pipe(Layer.provide(NodeServices.layer));
+      const runner = yield* ClaudeAgentSdkQueryRunner.pipe(
+        Effect.provide(forkRunnerLayer.pipe(Layer.provide(stalledWorker))),
+      );
+      const forking = yield* runner
+        .forkSession({
+          sessionId: FORK_SESSION_ID,
+          options: {},
+          environment: { ...process.env, CLAUDE_CONFIG_DIR: "/nonexistent-claude-home" },
+          threadId: ThreadId.make("thread-fork-worker-stalled"),
+          providerSessionId: ProviderSessionId.make("session-fork-worker-stalled"),
+        })
+        .pipe(Effect.forkChild);
+      yield* Deferred.await(workerStarted);
+      yield* TestClock.adjust("30 seconds");
+      const error = yield* Fiber.join(forking).pipe(Effect.flip);
+      assert.equal(
+        Predicate.hasProperty(error.cause, "_tag") ? error.cause._tag : undefined,
+        "ClaudeSessionForkTimeoutError",
+      );
+    }),
   ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 

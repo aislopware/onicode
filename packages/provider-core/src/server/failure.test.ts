@@ -132,16 +132,23 @@ it("preserves actionable Onicode errors wrapped by turn startup", () => {
     });
     assert.equal(makeProviderFailure({ cause: Cause.fail(cause) }).message, error.message);
   }
-  const unanswered = {
-    _tag: "CodexAppServerUnresponsiveError",
-    message: "Codex app-server did not answer turn/start within 2 minutes.",
-  };
-  assert.equal(
-    makeProviderFailure({
-      cause: Cause.fail({ _tag: "ProviderAdapterEventStreamError", cause: unanswered }),
-    }).message,
-    unanswered.message,
-  );
+  for (const unanswered of [
+    {
+      _tag: "CodexAppServerUnresponsiveError",
+      message: "Codex app-server did not answer turn/start within 2 minutes.",
+    },
+    {
+      _tag: "ClaudeSessionForkTimeoutError",
+      message: "Claude did not finish copying the conversation within 30 seconds.",
+    },
+  ]) {
+    assert.equal(
+      makeProviderFailure({
+        cause: Cause.fail({ _tag: "ProviderAdapterEventStreamError", cause: unanswered }),
+      }).message,
+      unanswered.message,
+    );
+  }
 });
 
 it("names how the provider process exited and the stage it failed in, without its output", () => {

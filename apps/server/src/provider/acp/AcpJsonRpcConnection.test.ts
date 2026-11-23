@@ -1677,6 +1677,29 @@ describe("AcpSessionRuntime", () => {
     }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
+  it.effect("fails a session/resume the agent never answers", () =>
+    Effect.gen(function* () {
+      const resumeSent = yield* Deferred.make<void>();
+      const runtime = yield* AcpSessionRuntime.make({
+        ...mockRuntimeOptions,
+        spawn: {
+          ...mockRuntimeOptions.spawn,
+          env: { ONICODE_ACP_SESSION_LIFECYCLE: "1", ONICODE_ACP_HANG_RESUME_SESSION: "1" },
+        },
+        requestLogger: (event) =>
+          event.method === "session/resume" && event.status === "started"
+            ? Deferred.succeed(resumeSent, undefined)
+            : Effect.void,
+      });
+      const started = yield* runtime.start();
+      const resume = yield* runtime.resumeSession(started.sessionId).pipe(Effect.forkChild);
+      yield* Deferred.await(resumeSent);
+      yield* TestClock.adjust("90 seconds");
+      const error = yield* Fiber.join(resume).pipe(Effect.flip);
+      expect(error).toMatchObject({ _tag: "AcpTransportError", method: "session/resume" });
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+  );
+
   it.effect("sends a cancel after the cancel timeout when its prompt never goes out", () =>
     Effect.gen(function* () {
       const runtime = yield* AcpSessionRuntime.make({
