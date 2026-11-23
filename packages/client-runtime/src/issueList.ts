@@ -170,8 +170,8 @@ export function issueFilterScopes(
 ) {
   const scopes: Array<{ readonly environmentId: EnvironmentId; readonly input: IssueScopeRef }> =
     [];
-  // A repository's scope is the same scope on every server. A bound tracker's scope is not: two
-  // accounts, or two servers, may both have an ENG team, so those are deduplicated per server only.
+  // Two accounts may both have an ENG team, so a bound tracker's scopes are not deduplicated
+  // against each other, only against the server's repository scopes and older servers' rows.
   const fromRepository = new Set<IssueScopeRef>();
   for (const [environmentId, page] of held) {
     for (const project of projects) {
@@ -215,12 +215,14 @@ export function issueFilterScopes(
       );
       if (!tracker?.configured) continue;
       if (!tracker.capabilities?.labels && !tracker.capabilities?.assignees) continue;
-      // An answer names each scope once per account; rows standing in for one repeat.
+      // An answer names each scope once per account; rows standing in for one repeat. Each
+      // environment keeps its own, so one whose read fails does not hide another's.
       if (
         scopes.some(
           (s) =>
-            (fromRepository.has(s.input) ||
-              (page.answer.scopes === undefined && s.environmentId === environmentId)) &&
+            s.environmentId === environmentId &&
+            s.input.tracker === input.tracker &&
+            (fromRepository.has(s.input) || page.answer.scopes === undefined) &&
             s.input.scope.toLowerCase() === input.scope.toLowerCase() &&
             s.input.host?.toLowerCase() === host,
         )

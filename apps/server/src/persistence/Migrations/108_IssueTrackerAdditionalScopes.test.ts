@@ -1,5 +1,5 @@
 import { assert, it } from "@effect/vitest";
-import { IssueTrackerKind, ProjectId } from "@onicode/contracts";
+import { IssueTrackerAccountId, IssueTrackerKind, ProjectId } from "@onicode/contracts";
 import * as NodeSqliteClient from "@onicode/shared/nodeSqliteClient";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
@@ -32,6 +32,11 @@ it.layer(NodeSqliteClient.layer({ filename: ":memory:" }))(
         const switched = { ...binding, scope: "OPS" };
         yield* bindings.set({ projectId, binding: switched, updatedAt: "2026-11-21" });
         assert.deepStrictEqual(yield* read(), { ...switched, additionalScopes: ["DOCS"] });
+        // Another account's teams are not this one's, so moving the binding drops them.
+        const elsewhere = { ...switched, accountId: IssueTrackerAccountId.make("second") };
+        yield* bindings.set({ projectId, binding: elsewhere, updatedAt: "2026-11-21" });
+        assert.deepStrictEqual(yield* read(), elsewhere);
+        yield* bindings.set({ projectId, binding: multi, updatedAt: "2026-11-21" });
         yield* bindings.set({
           projectId,
           binding: { ...binding, additionalScopes: [] },
