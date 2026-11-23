@@ -365,6 +365,39 @@ function measuredClaudeUsageFields(usage: ClaudeUsageCounts): ReadonlyArray<Clau
   return CLAUDE_USAGE_COUNT_FIELDS.filter((field) => (claudeTokenCount(usage[field]) ?? 0) > 0);
 }
 
+export interface ClaudePromptCache {
+  readonly ttlMs: number;
+  readonly expiresAt: DateTime.Utc;
+}
+
+/**
+ * When the prompt cache lapses after a request started at `requestedAt`. A read refreshes the
+ * prefix it hit for at least the shortest TTL, or the longest one written before, even while the
+ * request writes a shorter suffix.
+ */
+export function nextClaudePromptCache(
+  known: ClaudePromptCache | undefined,
+  usage: {
+    readonly cache_read_input_tokens?: number | null | undefined;
+    readonly cache_creation?: ClaudeCacheCreation | null | undefined;
+  },
+  requestedAt: DateTime.Utc,
+): ClaudePromptCache | undefined {
+  const ttlMs = Math.max(
+    claudePromptCacheTtlMs(usage.cache_creation) ?? 0,
+    (claudeTokenCount(usage.cache_read_input_tokens) ?? 0) > 0 ? (known?.ttlMs ?? 5 * 60_000) : 0,
+  );
+  if (ttlMs === 0) return known;
+  const expiresAt = DateTime.add(requestedAt, { milliseconds: ttlMs });
+  return {
+    ttlMs: Math.max(ttlMs, known?.ttlMs ?? 0),
+    expiresAt:
+      known !== undefined && DateTime.isGreaterThan(known.expiresAt, expiresAt)
+        ? known.expiresAt
+        : expiresAt,
+  };
+}
+
 export function claudeProviderTurnTokenUsage(
   usage: {
     readonly input_tokens?: number | null | undefined;
@@ -6816,12 +6849,10 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
         // mode change; replacing the process cancels it, and that clears this record too.
         const scheduleWakeupCalls = new Set<string>();
         const scheduledWakeupsByNativeThread = new Map<string, number>();
-        // When each conversation's prompt cache lapses. A request that reads the cache keeps it for
-        // another lifetime, even one that writes none, so the last lifetime written is kept too.
-        const promptCacheByNativeThread = new Map<
-          string,
-          { readonly ttlMs: number; readonly expiresAt: DateTime.Utc }
-        >();
+        // When each conversation's prompt cache lapses, per model, since each model caches apart.
+        const promptCacheByNativeThread = new Map<string, Map<string, ClaudePromptCache>>();
+        const promptCacheModel = (modelSelection: ModelSelection) =>
+          compileClaudeModelSelection(modelSelection, modelCatalog).apiModelId;
         // Native threads whose current turn Claude started by itself inside the early-fire margin.
         const possibleEarlyWakeNativeThreads = new Set<string>();
         // Turn starts a due or nearly due ScheduleWakeup may have caused.
@@ -7095,23 +7126,16 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             if (claudeMessageInputTokens(usage) <= 0) return;
             context.compactionTokens = undefined;
             const requestedAt = context.streamUsage?.requestedAt;
-            const known = promptCacheByNativeThread.get(context.nativeThreadId);
-            // A read refreshes the entry it hit, which lives at least the shortest TTL; a thread
-            // that once wrote a longer entry may still be reading it.
-            const ttlMs =
-              claudePromptCacheTtlMs(usage.cache_creation) ??
-              ((claudeTokenCount(usage.cache_read_input_tokens) ?? 0) > 0
-                ? (known?.ttlMs ?? 5 * 60_000)
-                : undefined);
-            if (requestedAt !== undefined && ttlMs !== undefined) {
-              const expiresAt = DateTime.add(requestedAt, { milliseconds: ttlMs });
-              promptCacheByNativeThread.set(context.nativeThreadId, {
-                ttlMs: Math.max(ttlMs, known?.ttlMs ?? 0),
-                expiresAt:
-                  known !== undefined && DateTime.isGreaterThan(known.expiresAt, expiresAt)
-                    ? known.expiresAt
-                    : expiresAt,
-              });
+            const model = promptCacheModel(context.input.modelSelection);
+            if (requestedAt !== undefined) {
+              const caches =
+                promptCacheByNativeThread.get(context.nativeThreadId) ??
+                new Map<string, ClaudePromptCache>();
+              const next = nextClaudePromptCache(caches.get(model), usage, requestedAt);
+              if (next !== undefined) {
+                caches.set(model, next);
+                promptCacheByNativeThread.set(context.nativeThreadId, caches);
+              }
             }
           }
           const usageKey = [
@@ -13970,19 +13994,26 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           return false;
         });
 
-        // Nobody asked for this replacement, so unlike a model change it also yields to a
-        // scheduled wakeup, which dies with the process, and to a turn Claude started by itself.
-        // It waits for the prompt cache to lapse too: the build is part of the cached prefix, so
-        // moving to a new one rewrites the whole conversation's cache.
+        // Unasked, so it yields to a scheduled wakeup, a turn Claude started itself (read after the
+        // build, so one arriving meanwhile counts), and a warm prompt cache: the build is part of
+        // the cached prefix, so a new one rewrites the conversation's cache.
         const liveProcessOutdatedBuild = Effect.fnUntraced(function* (
           live: ClaudeLiveQueryContext,
-          options: { readonly changesModel: boolean },
+          nextModelSelection: ModelSelection,
         ) {
-          const promptCache = promptCacheByNativeThread.get(live.nativeThreadId);
+          if (live.installedAtInit === undefined) return undefined;
+          const outdated = claudeOutdatedBuild({
+            atInit: live.installedAtInit,
+            current: yield* readInstalledBuild,
+            runningVersion: live.claudeCodeVersion,
+          });
+          // Only the next turn's model's cache counts; another model's is not read.
+          const promptCache = promptCacheByNativeThread
+            .get(live.nativeThreadId)
+            ?.get(promptCacheModel(nextModelSelection));
           if (
-            live.installedAtInit === undefined ||
-            (!options.changesModel &&
-              promptCache !== undefined &&
+            outdated === undefined ||
+            (promptCache !== undefined &&
               DateTime.isLessThan(yield* DateTime.now, promptCache.expiresAt)) ||
             scheduledWakeupsByNativeThread.has(live.nativeThreadId) ||
             ((yield* Ref.get(wakeBuffers)).get(live.nativeThreadId)?.messages.length ?? 0) > 0 ||
@@ -13990,11 +14021,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           ) {
             return undefined;
           }
-          return claudeOutdatedBuild({
-            atInit: live.installedAtInit,
-            current: yield* readInstalledBuild,
-            runningVersion: live.claudeCodeVersion,
-          });
+          return outdated;
         });
 
         const routedCatalogFor = (live: ClaudeLiveQueryContext) =>
@@ -14089,10 +14116,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             existing.nativeThreadId === nativeThreadId &&
             existing.queryPolicyKey === queryPolicyKey &&
             !existing.stopping
-              ? yield* liveProcessOutdatedBuild(existing, {
-                  // Another model's prompt cache is cold, so its first turn costs nothing extra.
-                  changesModel: existing.selection.apiModelId !== compiledSelection.apiModelId,
-                })
+              ? yield* liveProcessOutdatedBuild(existing, turnInput.modelSelection)
               : undefined;
           if (outdatedBuild !== undefined) {
             yield* Effect.logInfo("Replacing a Claude process that runs an outdated build.", {

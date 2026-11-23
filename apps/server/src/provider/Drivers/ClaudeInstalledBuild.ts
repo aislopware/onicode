@@ -31,14 +31,17 @@ export const readClaudeInstalledBuild = Effect.fn("ClaudeInstalledBuild.read")(f
   binaryPath: string,
   environment: NodeJS.ProcessEnv,
 ): Effect.fn.Return<ClaudeInstalledBuild, never, FileSystem.FileSystem | Path.Path> {
-  // Uncached, so a `claude` an installer just put earlier on PATH counts at once. On Windows the
-  // adapter passes the SDK's own executable, already resolved past the `claude.cmd` shim.
-  const resolved = yield* resolveCommandPath(binaryPath, { env: environment }).pipe(
-    Effect.provideService(CommandResolutionCache, new Map()),
-  );
-  if (resolved === null) return { executable: undefined, managedPublishedVersion: undefined };
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
+  // An absolute path is what runs, as the SDK's own `cli.js` past a Windows `claude.cmd` shim,
+  // which PATHEXT would not count as a command. A bare name is looked up uncached, so a `claude`
+  // an installer just put earlier on PATH counts at once.
+  const resolved = path.isAbsolute(binaryPath)
+    ? binaryPath
+    : yield* resolveCommandPath(binaryPath, { env: environment }).pipe(
+        Effect.provideService(CommandResolutionCache, new Map()),
+      );
+  if (resolved === null) return { executable: undefined, managedPublishedVersion: undefined };
   const [info, managed] = yield* Effect.all(
     [
       fileSystem.stat(resolved).pipe(Effect.option),
