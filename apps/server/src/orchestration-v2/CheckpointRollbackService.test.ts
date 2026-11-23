@@ -421,16 +421,19 @@ it.effect.each([
 );
 
 it.effect.each([
-  { restoreFiles: true, taskFolder: false, siblingBound: false, status: "ready" },
-  { restoreFiles: false, taskFolder: false, siblingBound: false, status: "ready" },
+  { restoreFiles: true, taskFolder: false, siblingBound: false, status: "ready", deleted: false },
+  { restoreFiles: false, taskFolder: false, siblingBound: false, status: "ready", deleted: false },
   // A failed capture still pins the conversation.
-  { restoreFiles: false, taskFolder: false, siblingBound: false, status: "error" },
-  { restoreFiles: true, taskFolder: true, siblingBound: false, status: "ready" },
+  { restoreFiles: false, taskFolder: false, siblingBound: false, status: "error", deleted: false },
+  { restoreFiles: true, taskFolder: true, siblingBound: false, status: "ready", deleted: false },
   // Bound to a repository worktree of its folder, as an existing-worktree launch can be.
-  { restoreFiles: true, taskFolder: true, siblingBound: true, status: "ready" },
+  { restoreFiles: true, taskFolder: true, siblingBound: true, status: "ready", deleted: false },
+  // Storage cleanup of a deleted thread holds its checkout's lease while a rollback is queued.
+  { restoreFiles: true, taskFolder: true, siblingBound: false, status: "ready", deleted: true },
+  { restoreFiles: false, taskFolder: false, siblingBound: false, status: "ready", deleted: true },
 ])(
-  "holds turn starts and Git actions in the thread's checkouts during rollback with restoreFiles $restoreFiles, taskFolder $taskFolder, siblingBound $siblingBound to a $status checkpoint",
-  ({ restoreFiles, taskFolder, siblingBound, status }) =>
+  "holds turn starts and Git actions in the thread's checkouts during rollback with restoreFiles $restoreFiles, taskFolder $taskFolder, siblingBound $siblingBound to a $status checkpoint, deleted $deleted",
+  ({ restoreFiles, taskFolder, siblingBound, status, deleted }) =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
@@ -465,7 +468,7 @@ it.effect.each([
           branch: "feature/rollback-reservation",
           activeProviderThreadId: providerThreadId,
           modelSelection: { instanceId: providerInstanceId, model: "test-model" },
-          deletedAt: null,
+          deletedAt: deleted ? "2026-01-01T00:00:00.000Z" : null,
         },
         providerThread: {
           id: providerThreadId,
@@ -560,6 +563,17 @@ it.effect.each([
       );
       yield* Effect.gen(function* () {
         const service = yield* CheckpointRollbackService.CheckpointRollbackServiceV2;
+        if (deleted) {
+          // The lease is not reentrant, so a rollback that waits for it never returns.
+          yield* withWorkspaceLease(
+            fileSystem,
+            path,
+            worktreePath,
+            service.execute({ threadId, providerThreadId, checkpointId, scopeId, restoreFiles }),
+          );
+          assert.deepEqual(calls, []);
+          return;
+        }
         const rollback = yield* service
           .execute({ threadId, providerThreadId, checkpointId, scopeId, restoreFiles })
           .pipe(Effect.forkChild({ startImmediately: true }));
