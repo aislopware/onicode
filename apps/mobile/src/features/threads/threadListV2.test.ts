@@ -108,7 +108,7 @@ describe("resolveThreadListV2SnoozePresets", () => {
     { locale: "en", is24Hour: true, hourCycle: "h23" },
     { locale: "en", is24Hour: false, hourCycle: "h12" },
   ] as const)(
-    "labels a wake on another day in the app locale $locale with the system clock ($is24Hour)",
+    "names a wake's weekday in the app locale $locale and its time on the system clock ($is24Hour)",
     ({ locale, is24Hour, hourCycle }) => {
       const lateEvening = new Date(2026, 4, 8, 23, 30);
       const wake = new Date(2026, 4, 9, 0, 30);
@@ -121,7 +121,7 @@ describe("resolveThreadListV2SnoozePresets", () => {
         is24Hour,
       });
 
-      const time = wake.toLocaleTimeString(locale, {
+      const time = wake.toLocaleTimeString(undefined, {
         hour: "numeric",
         minute: "2-digit",
         ...(hourCycle ? { hourCycle } : {}),

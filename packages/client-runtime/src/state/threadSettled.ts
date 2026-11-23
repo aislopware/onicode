@@ -217,8 +217,8 @@ export interface SnoozePresetOptions {
   readonly locale?: string | undefined;
 }
 
-function snoozeTimeOfDayLabel(date: Date, locale: string | undefined): string {
-  return date.toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit" });
+function snoozeTimeOfDayLabel(date: Date): string {
+  return date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 }
 
 // Calendar-day advance instead of adding DAY_MS: fixed millisecond offsets
@@ -310,7 +310,7 @@ export function snoozePresetId(setting: SnoozePresetSetting): string {
 export function resolveSnoozePreset(
   setting: SnoozePresetSetting,
   now: Date,
-  formatTime: ((date: Date) => string) | undefined = undefined,
+  formatTime: (date: Date) => string = snoozeTimeOfDayLabel,
   resolve: MFunctionType = mFallback,
   locale?: string,
 ): SnoozePreset | null {
@@ -328,7 +328,7 @@ export function resolveSnoozePreset(
   const label = snoozePresetLabel(setting, daysAhead, resolve);
   // Durations and "Next week" don't name the wake day, so a wake on another day shows it.
   const labelNamesDay = setting.kind === "at" && !(daysAhead > 1 && setting.day === "monday");
-  const time = formatTime ? formatTime(wake) : snoozeTimeOfDayLabel(wake, locale);
+  const time = formatTime(wake);
   return {
     id: snoozePresetId(setting),
     label,
