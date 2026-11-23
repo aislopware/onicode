@@ -425,45 +425,48 @@ it.live.each([
     ),
 );
 
-it.live("adopts a worktree the project's checkout hook made on the thread's branch", () =>
-  withState((state) =>
-    Effect.gen(function* () {
-      const { fileSystem, path, tmp, run, repository } = yield* fixture;
-      const project = yield* repository("p");
-      yield* fileSystem.writeFileString(path.join(project, ".gitignore"), "vendor/\n");
-      yield* run(project, "add", ".");
-      yield* run(project, "commit", "-m", "ignore vendor");
-      const lib = yield* repository("p/vendor/lib");
-      const hooks = path.join(tmp, "hooks");
-      yield* fileSystem.makeDirectory(hooks);
-      yield* fileSystem.writeFileString(
-        path.join(hooks, "post-checkout"),
-        [
-          "#!/bin/sh",
-          "unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE",
-          'branch="$(git symbolic-ref --short HEAD)" && into="$(pwd)/vendor/lib"',
-          "mkdir -p vendor",
-          // Older Git ignores the setting and records absolute paths, which also must adopt.
-          `git -c worktree.useRelativePaths=true -C "${lib}" worktree add -q -b "$branch" "$into"`,
-          "",
-        ].join("\n"),
-        { mode: 0o755 },
-      );
-      yield* run(project, "config", "core.hooksPath", hooks);
-      state.workspaceRoot = project;
-      state.trackedFolders = tracked(lib);
+// Git allows Unicode whitespace at a branch name's edges, and contracts keep it.
+it.live.each(["feature", "feature\u3000"])(
+  "adopts a worktree the project's checkout hook made on the thread's branch %j",
+  (branch) =>
+    withState((state) =>
+      Effect.gen(function* () {
+        const { fileSystem, path, tmp, run, repository } = yield* fixture;
+        const project = yield* repository("p");
+        yield* fileSystem.writeFileString(path.join(project, ".gitignore"), "vendor/\n");
+        yield* run(project, "add", ".");
+        yield* run(project, "commit", "-m", "ignore vendor");
+        const lib = yield* repository("p/vendor/lib");
+        const hooks = path.join(tmp, "hooks");
+        yield* fileSystem.makeDirectory(hooks);
+        yield* fileSystem.writeFileString(
+          path.join(hooks, "post-checkout"),
+          [
+            "#!/bin/sh",
+            "unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE",
+            'branch="$(git symbolic-ref --short HEAD)" && into="$(pwd)/vendor/lib"',
+            "mkdir -p vendor",
+            // Older Git ignores the setting and records absolute paths, which also must adopt.
+            `git -c worktree.useRelativePaths=true -C "${lib}" worktree add -q -b "$branch" "$into"`,
+            "",
+          ].join("\n"),
+          { mode: 0o755 },
+        );
+        yield* run(project, "config", "core.hooksPath", hooks);
+        state.workspaceRoot = project;
+        state.trackedFolders = tracked(lib);
 
-      const { taskFolder } = yield* create("feature");
+        const { taskFolder } = yield* create(branch);
 
-      assert.deepEqual(taskFolder.repositories, [
-        {
-          repositoryPath: lib,
-          worktreePath: path.join(taskFolder.root, "vendor", "lib"),
-          name: "lib",
-        },
-      ]);
-    }),
-  ),
+        assert.deepEqual(taskFolder.repositories, [
+          {
+            repositoryPath: lib,
+            worktreePath: path.join(taskFolder.root, "vendor", "lib"),
+            name: "lib",
+          },
+        ]);
+      }),
+    ),
 );
 
 it.live("checks a repository inside one the project's checkout hook filled on its own", () =>
