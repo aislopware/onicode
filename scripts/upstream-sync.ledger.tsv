@@ -3396,3 +3396,4 @@ fcdaef886a	take	conflict: no NpmRelease in Onicode; the server-wide runner is pr
 e20e769b09	take	taken as is
 37b316ac31	take	conflict: Onicode renders entitlements from the committed apps/desktop/resources/entitlements.mac.plist, so the apple-events key went there; upstream's nightly AppImage test left out (single channel)
 f02a14e065	take	fix(server): settling no longer ends background work the agent is waiting on
+8c5bd6fbb5	take	CI guard only: Build CLI single-executable step (Onicode ships the CLI archive for WSL); McpWebhookTransport.ts is a removed surface (webhooks) and the desktop launch-check context is not in Onicode; build-exe + --version verified locally (6s)
