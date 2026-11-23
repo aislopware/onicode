@@ -168,16 +168,22 @@ describe("isNonRepositoryGitStderr", () => {
 it.effect("runs background Git in its own lane so user commands never queue behind it", () =>
   Effect.gen(function* () {
     const gate = yield* Deferred.make<void>();
-    const starts = yield* Queue.unbounded<string>();
+    const backgroundStarts = yield* Queue.unbounded<void>();
+    let backgroundRunning = 0;
+    let backgroundPeak = 0;
     const spawner = ChildProcessSpawner.make((command) =>
       Effect.gen(function* () {
-        yield* Queue.offer(
-          starts,
-          ChildProcess.isStandardCommand(command) ? String(command.args[0]) : "",
-        );
+        if (!ChildProcess.isStandardCommand(command) || command.args[0] !== "background") {
+          return ChildProcessSpawner.makeHandle(makeSuccessfulHandle("ok"));
+        }
+        backgroundPeak = Math.max(backgroundPeak, ++backgroundRunning);
+        yield* Queue.offer(backgroundStarts, undefined);
         return ChildProcessSpawner.makeHandle({
           ...makeSuccessfulHandle("ok"),
-          exitCode: Deferred.await(gate).pipe(Effect.as(ChildProcessSpawner.ExitCode(0))),
+          exitCode: Deferred.await(gate).pipe(
+            Effect.tap(() => Effect.sync(() => void backgroundRunning--)),
+            Effect.as(ChildProcessSpawner.ExitCode(0)),
+          ),
         });
       }),
     );
@@ -190,28 +196,18 @@ it.effect("runs background Git in its own lane so user commands never queue behi
     const background = yield* Effect.forEach(
       Array.from({ length: 12 }),
       () => run(["background"]),
-      {
-        concurrency: "unbounded",
-      },
+      { concurrency: "unbounded" },
     ).pipe(Effect.provideService(GitVcsDriver.BackgroundGitWork, true), Effect.forkChild);
+    yield* Effect.replicateEffect(Queue.take(backgroundStarts), 2);
+
+    // User commands finish while the background lane is full and stuck.
     const foreground = yield* Effect.forEach(Array.from({ length: 4 }), () => run(["foreground"]), {
       concurrency: "unbounded",
-    }).pipe(Effect.forkChild);
-
-    // Each start first resolves git on disk, so wait for the six the lanes admit, not a tick.
-    const started = yield* Effect.replicateEffect(Queue.take(starts), 6);
-    assert.deepStrictEqual(started.toSorted(), [
-      "background",
-      "background",
-      "foreground",
-      "foreground",
-      "foreground",
-      "foreground",
-    ]);
-    assert.equal(yield* Queue.size(starts), 0);
+    });
+    assert.equal(foreground.length, 4);
     yield* Deferred.succeed(gate, undefined);
     assert.equal((yield* Fiber.join(background)).length, 12);
-    assert.equal((yield* Fiber.join(foreground)).length, 4);
+    assert.equal(backgroundPeak, 2);
   }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
@@ -7919,17 +7915,18 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
         const occupiedPath = yield* makeTmpDir("git-worktrees-");
         yield* writeTextFile(occupiedPath, "existing.txt", "occupied\n");
         const driver = yield* GitVcsDriver.GitVcsDriver;
+        let created = 0;
+        const options = { progress: { onBranchCreated: () => Effect.sync(() => void created++) } };
 
         const failed = yield* driver
-          .createWorktree({
-            cwd,
-            path: occupiedPath,
-            refName: initialBranch,
-            newRefName: "onicode/collide",
-          })
+          .createWorktree(
+            { cwd, path: occupiedPath, refName: initialBranch, newRefName: "onicode/collide" },
+            options,
+          )
           .pipe(Effect.result);
 
         assert.isTrue(Result.isFailure(failed));
+        assert.equal(created, 1);
         assert.equal(yield* git(cwd, ["branch", "--list", "onicode/collide"]), "");
         const worktreePath = path.join(yield* makeTmpDir("git-worktrees-"), "retry");
         yield* driver.createWorktree({
@@ -7939,6 +7936,21 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
           newRefName: "onicode/collide",
         });
         assert.equal(yield* git(worktreePath, ["branch", "--show-current"]), "onicode/collide");
+
+        // A branch someone else already made was not made by this call.
+        const lost = yield* driver
+          .createWorktree(
+            {
+              cwd,
+              path: path.join(yield* makeTmpDir("git-worktrees-"), "loser"),
+              refName: initialBranch,
+              newRefName: "onicode/collide",
+            },
+            options,
+          )
+          .pipe(Effect.result);
+        assert.isTrue(Result.isFailure(lost));
+        assert.equal(created, 1);
       }),
     );
 
