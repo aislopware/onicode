@@ -33,6 +33,7 @@ import {
   getDesktopUpdatePromptVersion,
   getDesktopUpdateRestartNote,
   getRequiredDesktopUpdateView,
+  installDesktopUpdate,
   isDesktopUpdateButtonDisabled,
   resolveDesktopUpdateButtonAction,
   shouldShowArm64IntelBuildWarning,
@@ -183,7 +184,10 @@ async function installLocalUpdate(
   expectedVersion?: string,
 ): Promise<boolean> {
   try {
-    const result = await bridge.installUpdate(expectedVersion);
+    // The app quits on success; mark it restarting once the desktop accepts the install.
+    const result = await installDesktopUpdate(bridge, expectedVersion, (accepted) =>
+      markDesktopUpdateRestarting(accepted.state.downloadedVersion),
+    );
     if (!result.accepted) {
       reportError(
         m(msg("Could not install update")),
@@ -198,6 +202,7 @@ async function installLocalUpdate(
       markDesktopUpdateRestarting(result.state.downloadedVersion);
       return true;
     }
+    markDesktopUpdateRestarting(null);
     reportError(m(msg("Could not install update")), actionError);
     return false;
   } catch (error) {
