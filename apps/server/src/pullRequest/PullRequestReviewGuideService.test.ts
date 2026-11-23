@@ -437,55 +437,62 @@ it.layer(layerBase, { excludeTestServices: true })("PullRequestReviewGuideServic
     }),
   );
 
-  it.effect("measures only the PR change using the renamed verified remote's fetch URL", () =>
-    Effect.gen(function* () {
-      const repositories = yield* makeRepositories;
-      const fork = `${repositories.root}/fork`;
-      yield* git(repositories.root, ["clone", "--quiet", repositories.remote, fork]);
-      yield* git(fork, ["branch", "stack-base", "main~1"]);
-      // The cached identity still names origin, which now belongs to the stale fork.
-      yield* git(repositories.workspace, ["remote", "rename", "origin", "upstream"]);
-      yield* git(repositories.workspace, ["remote", "add", "origin", fork]);
-      yield* git(repositories.workspace, [
-        "config",
-        `url.${repositories.remote}.insteadOf`,
-        "review-upstream:",
-      ]);
-      yield* git(repositories.workspace, ["remote", "set-url", "upstream", "review-upstream:"]);
-      const changed = yield* Deferred.make<string>();
-      const settledReview = yield* Deferred.make<string>();
-      const driver = yield* GitVcsDriver.GitVcsDriver;
-      const stored = yield* Deferred.make<void>();
-      const context = yield* Layer.build(
-        makeLayer({
-          ...repositories,
-          stored,
-          generate: (input) =>
-            Deferred.succeed(settledReview, input.settledReview).pipe(
-              Effect.andThen(git(input.cwd, ["diff", "--name-only", `${input.baseCommit}...HEAD`])),
-              Effect.provideService(GitVcsDriver.GitVcsDriver, driver),
-              Effect.orDie,
-              Effect.flatMap((names) => Deferred.succeed(changed, names)),
-              Effect.as({ stops: [] }),
-            ),
-        }),
-      );
-      const service = Context.get(
-        context,
-        PullRequestReviewGuideService.PullRequestReviewGuideService,
-      );
-      yield* service.generate(reference);
-      assert.strictEqual(yield* Deferred.await(changed), "feature.txt");
-      // Settled threads on the whole PR count, as GitLab overview threads.
-      assert.strictEqual(
-        yield* Deferred.await(settledReview),
-        "- feature.txt (resolved, ana): Rename it.\n- PR overview (resolved, ana): Split the PR.",
-      );
-      yield* Deferred.await(stored);
-      const result = yield* service.get(reference);
-      assert.strictEqual(result.guide?.headSha, repositories.headSha);
-      assert.deepStrictEqual(result.guide?.stops[0]?.files, [{ path: "feature.txt" }]);
-    }),
+  it.effect.each(["rewritten", "configured"] as const)(
+    "measures only the PR change through the renamed remote matched by its %s URL",
+    (locatorUrl) =>
+      Effect.gen(function* () {
+        const repositories = yield* makeRepositories;
+        const fork = `${repositories.root}/fork`;
+        yield* git(repositories.root, ["clone", "--quiet", repositories.remote, fork]);
+        yield* git(fork, ["branch", "stack-base", "main~1"]);
+        // The cached identity still names origin, which now belongs to the stale fork.
+        yield* git(repositories.workspace, ["remote", "rename", "origin", "upstream"]);
+        yield* git(repositories.workspace, ["remote", "add", "origin", fork]);
+        yield* git(repositories.workspace, [
+          "config",
+          `url.${repositories.remote}.insteadOf`,
+          "review-upstream:",
+        ]);
+        yield* git(repositories.workspace, ["remote", "set-url", "upstream", "review-upstream:"]);
+        const changed = yield* Deferred.make<string>();
+        const settledReview = yield* Deferred.make<string>();
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        const stored = yield* Deferred.make<void>();
+        const context = yield* Layer.build(
+          makeLayer({
+            ...repositories,
+            ...(locatorUrl === "configured"
+              ? { locator: { ...ACME_APP.locator, remoteUrl: "review-upstream:" } }
+              : {}),
+            stored,
+            generate: (input) =>
+              Deferred.succeed(settledReview, input.settledReview).pipe(
+                Effect.andThen(
+                  git(input.cwd, ["diff", "--name-only", `${input.baseCommit}...HEAD`]),
+                ),
+                Effect.provideService(GitVcsDriver.GitVcsDriver, driver),
+                Effect.orDie,
+                Effect.flatMap((names) => Deferred.succeed(changed, names)),
+                Effect.as({ stops: [] }),
+              ),
+          }),
+        );
+        const service = Context.get(
+          context,
+          PullRequestReviewGuideService.PullRequestReviewGuideService,
+        );
+        yield* service.generate(reference);
+        assert.strictEqual(yield* Deferred.await(changed), "feature.txt");
+        // Settled threads on the whole PR count, as GitLab overview threads.
+        assert.strictEqual(
+          yield* Deferred.await(settledReview),
+          "- feature.txt (resolved, ana): Rename it.\n- PR overview (resolved, ana): Split the PR.",
+        );
+        yield* Deferred.await(stored);
+        const result = yield* service.get(reference);
+        assert.strictEqual(result.guide?.headSha, repositories.headSha);
+        assert.deepStrictEqual(result.guide?.stops[0]?.files, [{ path: "feature.txt" }]);
+      }),
   );
 
   it.effect("keeps excerpts despite the checkout's diff driver and a failing hook", () =>
