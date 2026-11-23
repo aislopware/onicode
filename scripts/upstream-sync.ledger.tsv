@@ -3424,3 +3424,4 @@ d4976b0e9a	take	feat(scripts): server metrics busy scenario on seeded data; adop
 f17114b2c2	take	fix(server): projects behind a git insteadOf rewrite are recognized as GitHub again; test CONFLICT resolved: upstream's rewritten/configured each-case keeps Onicode's settledReview assertions
 92199680cc	take	hasCompletedRun gate on web + mobile; upstream's guest-share menu item stripped (guest links removed)
 fd44bde571	take	taken; conflict was Onicode's OfficeArchive Map in place of JSZip, test archive adapted to a Map
+2ee7a4f337	take	adopted upstream's cursorless-read-is-newest model over Onicode's fromStartForClient (CLI now sends afterPosition -1, so the peer-side rewrite was dead); kept Onicode's forward paging for linked-scope cursorless reads: wire compat with older linked peers that follow only hasMore
