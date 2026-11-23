@@ -1242,6 +1242,18 @@ function acpMcpContext(
   };
 }
 
+/** One agent process's hold on port discovery, ended by its exit or its runtime closing. */
+interface AcpAgentTracking {
+  ended: boolean;
+  release?: (() => void) | undefined;
+}
+
+function endAcpAgentTracking(tracking: AcpAgentTracking) {
+  tracking.ended = true;
+  tracking.release?.();
+  tracking.release = undefined;
+}
+
 function acpMcpActivation(context: AcpMcpContext) {
   return {
     mcpServers: context.servers,
@@ -3141,6 +3153,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
         const makeRuntimeInput = (
           runtimeGeneration: number,
           agentRequests: Set<string>,
+          agentTracking: AcpAgentTracking,
           mcpContext: AcpMcpContext,
           resumeSessionId?: string,
           onTermination: AcpAdapterV2RuntimeInput["onTermination"] = () =>
@@ -3171,7 +3184,10 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             },
             clientInfo: { name: "onicode", version: "0.0.0" },
             onTermination: (error) =>
-              Effect.sync(() => agentRequests.clear()).pipe(Effect.andThen(onTermination(error))),
+              Effect.sync(() => {
+                agentRequests.clear();
+                endAcpAgentTracking(agentTracking);
+              }).pipe(Effect.andThen(onTermination(error))),
             ...(promptInactivityTimeoutMillis === undefined
               ? {}
               : {
@@ -8194,15 +8210,24 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           yield* Scope.addFinalizer(scope, mcpBridge.dispose);
           return mcpBridge;
         });
-
-        // Its shells carry ONICODE_THREAD_ID, so port discovery must scan while the agent runs.
-        const trackRuntimeAgent = (scope: Scope.Scope) => {
+        // Its tools carry ONICODE_THREAD_ID, so port discovery must scan while the agent runs:
+        // from its spawn until it exits or its runtime closes.
+        const trackAgentProcess = (
+          mcpContext: AcpMcpContext,
+          scope: Scope.Scope,
+          agentTracking: AcpAgentTracking,
+        ) => {
           const trackAgent = host.trackAgent;
-          return trackAgent === undefined
-            ? Effect.void
-            : Effect.acquireRelease(Effect.sync(trackAgent), (release) =>
-                Effect.sync(release),
-              ).pipe(Effect.provideService(Scope.Scope, scope), Effect.asVoid);
+          if (trackAgent === undefined || mcpContext.processEnvironment === undefined) {
+            return Effect.void;
+          }
+          return Effect.acquireRelease(
+            Effect.sync(() => {
+              // It may have exited before its spawn returned.
+              if (!agentTracking.ended) agentTracking.release = trackAgent();
+            }),
+            () => Effect.sync(() => endAcpAgentTracking(agentTracking)),
+          ).pipe(Scope.provide(scope));
         };
 
         const spawnAcpRuntime = Effect.fnUntraced(function* (
@@ -8217,9 +8242,16 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           runtimeMcpBridge = yield* makeRuntimeMcpBridge(mcpContext, runtimeScope);
           const runtimeGeneration = yield* Ref.get(runtimeCallbackGeneration);
           openAgentRequests = new Set();
+          const agentTracking: AcpAgentTracking = { ended: false };
           runtime = yield* flavor
             .makeRuntime(
-              makeRuntimeInput(runtimeGeneration, openAgentRequests, mcpContext, resumeSessionId),
+              makeRuntimeInput(
+                runtimeGeneration,
+                openAgentRequests,
+                agentTracking,
+                mcpContext,
+                resumeSessionId,
+              ),
             )
             .pipe(
               Effect.provideService(Scope.Scope, runtimeScope),
@@ -8228,7 +8260,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
               Effect.provideService(AgentScope, agentScope),
               Effect.provideService(AgentScopeThreadId, threadId ?? undefined),
             );
-          yield* trackRuntimeAgent(runtimeScope);
+          yield* trackAgentProcess(mcpContext, runtimeScope, agentTracking);
         });
 
         const startAcpRuntime = Effect.fnUntraced(function* (
@@ -8268,6 +8300,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           const replacementGeneration = yield* allocateRuntimeCallbackGeneration;
           const replacementScope = yield* Scope.make();
           const replacementAgentRequests = new Set<string>();
+          const replacementAgentTracking: AcpAgentTracking = { ended: false };
           type CandidateLifecycle =
             | { readonly _tag: "Starting" }
             | { readonly _tag: "Terminated"; readonly error: EffectAcpErrors.AcpError }
@@ -8304,6 +8337,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                 makeRuntimeInput(
                   replacementGeneration,
                   replacementAgentRequests,
+                  replacementAgentTracking,
                   mcpContext,
                   undefined,
                   handleCandidateTermination,
@@ -8316,7 +8350,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                 Effect.provideService(AgentScope, agentScope),
                 Effect.provideService(AgentScopeThreadId, threadId ?? undefined),
               );
-            yield* trackRuntimeAgent(replacementScope);
+            yield* trackAgentProcess(mcpContext, replacementScope, replacementAgentTracking);
             yield* replacementRuntime.handleSessionUpdate((notification) =>
               Effect.suspend(() => handleCandidateSessionUpdate(notification)),
             );
@@ -8416,7 +8450,10 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                 Ref.get(candidateLifecycle).pipe(
                   Effect.flatMap((lifecycle) =>
                     lifecycle._tag === "Committed"
-                      ? Effect.void
+                      ? // The replacement is live by then, so only the replaced runtime is left.
+                        previousScope === undefined
+                        ? Effect.void
+                        : Scope.close(previousScope, Exit.void).pipe(Effect.ignore)
                       : Scope.close(replacementScope, Exit.void).pipe(Effect.ignore),
                   ),
                 ),

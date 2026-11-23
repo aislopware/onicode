@@ -2,6 +2,7 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   ProjectId,
+  EnvironmentId,
   MessageId,
   NodeId,
   RunAttemptId,
@@ -247,11 +248,24 @@ describe("Grok launch permission mode", () => {
     layerHost,
   );
 
-  const launchArgs = (runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy) =>
+  const launch = (runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy) =>
     Effect.gen(function* () {
       const launches: Array<ReadonlyArray<string>> = [];
+      const threadIds: Array<unknown> = [];
+      yield* (yield* McpProviderSessions.McpProviderSessions).set({
+        environmentId: EnvironmentId.make("environment-grok-launch-test"),
+        threadId: ThreadId.make("grok-launch-test"),
+        providerSessionId: "mcp-session-grok-launch-test",
+        providerInstanceId: ProviderInstanceId.make("grok-launch-test"),
+        endpoint: "http://127.0.0.1:43126/mcp",
+        authorizationHeader: "Bearer grok-launch-test-token",
+        browserToolsAvailable: false,
+      });
       const childProcessSpawner = ChildProcessSpawner.make((command) => {
-        if (command._tag === "StandardCommand") launches.push(command.args.map(String));
+        if (command._tag === "StandardCommand") {
+          launches.push(command.args.map(String));
+          threadIds.push(command.options.env?.ONICODE_THREAD_ID);
+        }
         return Effect.fail(
           PlatformError.systemError({
             _tag: "NotFound",
@@ -276,8 +290,10 @@ describe("Grok launch permission mode", () => {
           runtimePolicy,
         })
         .pipe(Effect.scoped, Effect.ignore);
-      return launches;
+      return { launches, threadIds };
     }).pipe(Effect.provideService(HostProcess.Platform, "darwin"), Effect.provide(layerTest));
+  const launchArgs = (runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy) =>
+    launch(runtimePolicy).pipe(Effect.map(({ launches }) => launches));
 
   const policy = (
     runtimeMode: RuntimeMode,
@@ -301,6 +317,13 @@ describe("Grok launch permission mode", () => {
   )("launches %s threads with %s", ([runtimeMode, , args]) =>
     Effect.gen(function* () {
       assert.deepEqual(yield* launchArgs(policy(runtimeMode)), [args]);
+    }),
+  );
+
+  it.effect("launches Grok with its thread in the environment its tools inherit", () =>
+    Effect.gen(function* () {
+      const { threadIds } = yield* launch(policy("full-access"));
+      assert.deepEqual(threadIds, ["grok-launch-test"]);
     }),
   );
 

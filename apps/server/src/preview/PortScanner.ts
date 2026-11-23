@@ -558,8 +558,14 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
   const agentCommandStopWatchers = new Set<AgentCommandStopWatcher>();
   let runningAgents = 0;
   // An agent that exited, or a cache cleared with a marked listener, owes one listener read: the
-  // servers it left may still run. So does startup, for agents that ran before a restart.
-  let agentScanPending = true;
+  // servers it left may still run. So do startup, for agents that ran before a restart, a closed
+  // terminal, and each client that starts watching, for servers an untracked process started.
+  // Counted, so a request made while a scan's listener read is in flight outlives that scan.
+  let agentScanRequests = 1;
+  let agentScansDone = 0;
+  const requestAgentScan = () => {
+    agentScanRequests += 1;
+  };
 
   const readAgentThreads = Effect.fn("PortDiscovery.readAgentThreads")(function* (
     pids: ReadonlyArray<number>,
@@ -593,7 +599,7 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
               .pipe(
                 Effect.map((result) => parsePsEnvironmentThreads(result.stdout, process.pid)),
                 Effect.orElseSucceed(() => {
-                  agentScanPending = true;
+                  requestAgentScan();
                   return new Map();
                 }),
               );
@@ -609,9 +615,10 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
   const withAgentOwners = Effect.fn("PortDiscovery.withAgentOwners")(function* (
     terminalOwners: ReadonlyMap<number, ServerOwner>,
     pids: ReadonlyArray<number>,
+    requested: number,
   ) {
     // Runs only once a listener snapshot exists, so a failed read leaves the scan pending.
-    agentScanPending = false;
+    agentScansDone = Math.max(agentScansDone, requested);
     const threads = yield* readAgentThreads(pids.filter((pid) => !terminalOwners.has(pid)));
     const owners = new Map(terminalOwners);
     for (const [pid, listener] of threads) {
@@ -892,16 +899,19 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
     }
     // A server an agent started can outlive the agent, so listeners are read while the last scan
     // still found one.
+    const requested = agentScanRequests;
     const agentsPossible =
       hostPlatform !== "win32" &&
       (runningAgents > 0 ||
-        agentScanPending ||
+        requested > agentScansDone ||
         [...(yield* Ref.get(agentThreadsRef)).values()].some((threadId) => threadId !== null));
     if (terminalOwners.size === 0 && configuredUrls.length === 0 && !agentsPossible) {
       return { discovered: [], configured: new Map() } satisfies WebProbeSnapshot;
     }
     const resolveOwners = (pids: ReadonlyArray<number>) =>
-      agentsPossible ? withAgentOwners(terminalOwners, pids) : Effect.succeed(terminalOwners);
+      agentsPossible
+        ? withAgentOwners(terminalOwners, pids, requested)
+        : Effect.succeed(terminalOwners);
     if (hostPlatform === "win32") {
       const recoverWindowsProbeFailure = recoverProcessProbeFailure("windows-listeners");
       const listeners = yield* WindowsTcpListeners.queryWindowsTcpListeners(
@@ -1004,12 +1014,35 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
   const pollIfRetained = Ref.get(stateRef).pipe(
     Effect.flatMap((state) => (state.retainCount > 0 ? pollTick() : Effect.void)),
   );
-  const scheduledPoll = backgroundPolicy.shouldRunOpportunisticWork.pipe(
-    Effect.flatMap((foreground) => (foreground ? pollIfRetained : Effect.void)),
+  // Cleared a poll after the last client leaves rather than at once, so a client switching views
+  // keeps them. Unread pids can be reused only while nothing reads, as between polls.
+  const clearIdleCaches = scanSemaphore.withPermits(1)(
+    Effect.gen(function* () {
+      if ((yield* Ref.get(stateRef)).retainCount > 0) return;
+      const cached =
+        (yield* Ref.get(socketOwnersRef)).size +
+        (yield* Ref.get(socketOwnerMissesRef)).size +
+        (yield* Ref.get(agentThreadsRef)).size;
+      if (cached === 0) return;
+      yield* Ref.set(socketOwnersRef, new Map());
+      yield* Ref.set(socketOwnerMissesRef, new Map());
+      const threads = yield* Ref.getAndSet(agentThreadsRef, new Map());
+      if ([...threads.values()].some((threadId) => threadId !== null)) requestAgentScan();
+    }),
+  );
+  const scheduledPoll = Ref.get(stateRef).pipe(
+    Effect.flatMap((state) =>
+      state.retainCount === 0
+        ? clearIdleCaches
+        : backgroundPolicy.shouldRunOpportunisticWork.pipe(
+            Effect.flatMap((foreground) => (foreground ? pollIfRetained : Effect.void)),
+          ),
+    ),
   );
   yield* Effect.forkScoped(scheduledPoll.pipe(Effect.repeat(Schedule.spaced(POLL_INTERVAL))));
 
   const acquireRetention = Effect.fn("PortDiscovery.retain")(function* () {
+    requestAgentScan();
     const wasIdle = yield* Ref.modify(stateRef, (state) => [
       state.retainCount === 0,
       { ...state, retainCount: state.retainCount + 1 },
@@ -1019,21 +1052,10 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
     }
   });
 
-  const releaseRetention = Effect.gen(function* () {
-    const idle = yield* Ref.modify(stateRef, (state) => {
-      const retainCount = Math.max(0, state.retainCount - 1);
-      return [retainCount === 0, { ...state, retainCount }];
-    });
-    if (!idle) return;
-    yield* scanSemaphore.withPermits(1)(
-      Effect.gen(function* () {
-        yield* Ref.set(socketOwnersRef, new Map());
-        yield* Ref.set(socketOwnerMissesRef, new Map());
-        const threads = yield* Ref.getAndSet(agentThreadsRef, new Map());
-        if ([...threads.values()].some((threadId) => threadId !== null)) agentScanPending = true;
-      }),
-    );
-  });
+  const releaseRetention = Ref.update(stateRef, (state) => ({
+    ...state,
+    retainCount: Math.max(0, state.retainCount - 1),
+  }));
 
   const retain: PortDiscovery["Service"]["retain"] = Effect.acquireRelease(
     acquireRetention(),
@@ -1089,6 +1111,8 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
       terminalProcesses.delete(terminalOwnerKey(input));
       return { ...state, terminalProcesses };
     });
+    // A server it backgrounded keeps the thread in its environment.
+    requestAgentScan();
   });
 
   const trackAgent: PortDiscovery["Service"]["trackAgent"] = () => {
@@ -1098,7 +1122,7 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
       if (released) return;
       released = true;
       runningAgents -= 1;
-      agentScanPending = true;
+      requestAgentScan();
     };
   };
 
@@ -1196,7 +1220,7 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
       next.delete(input.pid);
       return next;
     });
-    agentScanPending = true;
+    requestAgentScan();
     const listed = (yield* scanOnce()).some(
       (server) => server.pid === input.pid && server.port === input.port && isOwned(server),
     );

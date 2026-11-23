@@ -567,6 +567,8 @@ effectIt.effect(
       procFiles["/proc/net/tcp6"] = PROC_NET_TCP6;
       expect((yield* scanner.scan()).map(({ pid }) => pid)).toEqual([4242, 4242]);
       yield* scanner.retain.pipe(Effect.scoped);
+      // The poll after the last client leaves drops the cached socket owners.
+      yield* TestClock.adjust("3 seconds");
       procFds["77"] = procFds["4242"]!;
       delete procFds["4242"];
       procFiles["/proc/77/comm"] = "python3\n";
@@ -851,6 +853,8 @@ effectIt.effect.each(["linux", "darwin"] as const)(
     let environmentFails = false;
     let lsofCalls = 0;
     let environmentReads = 0;
+    // Runs while the next lsof read is in flight; the read lists what ran when it began.
+    let duringLsof: Effect.Effect<void> | undefined;
     const requests: string[] = [];
     const missing = FileSystem.makeNoop({});
     const procEnviron: Record<string, string> = {
@@ -879,6 +883,11 @@ effectIt.effect.each(["linux", "darwin"] as const)(
             run: (input) => {
               if (input.command === "lsof") {
                 lsofCalls += 1;
+                const during = duringLsof;
+                duringLsof = undefined;
+                if (during !== undefined) {
+                  return during.pipe(Effect.as(processOutput(lsofStdout)));
+                }
                 return lsofFails
                   ? Effect.fail(
                       new ProcessRunner.ProcessTimeoutError({
@@ -965,6 +974,42 @@ effectIt.effect.each(["linux", "darwin"] as const)(
       const lsofCallsAfterExit = lsofCalls;
       expect(yield* scanner.scan()).toEqual([]);
       expect(lsofCalls).toBe(lsofCallsAfterExit);
+
+      // A server an untracked process started is found once another client starts watching.
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          yield* scanner.retain;
+          lsofStdout = `${agentListener}${otherListener}`;
+          expect(yield* scanner.scan()).toEqual([]);
+          yield* scanner.retain;
+          expect(yield* scanner.scan()).toMatchObject([
+            { port: agentPort, pid: 4242, terminal: null, agent: { threadId: "thread-agent" } },
+          ]);
+
+          lsofStdout = otherListener;
+          expect(yield* scanner.scan()).toEqual([]);
+          const idleLsofCalls = lsofCalls;
+          expect(yield* scanner.scan()).toEqual([]);
+          expect(lsofCalls).toBe(idleLsofCalls);
+          // A closed terminal's backgrounded server keeps the thread, so the next scan reads.
+          // Another terminal closes while that read, which predates the server, is in flight.
+          yield* scanner.unregisterTerminal({ threadId: "thread-agent", terminalId: "first" });
+          duringLsof = scanner
+            .unregisterTerminal({ threadId: "thread-agent", terminalId: "second" })
+            .pipe(
+              Effect.andThen(
+                Effect.sync(() => {
+                  lsofStdout = `${agentListener}${otherListener}`;
+                }),
+              ),
+            );
+          expect(yield* scanner.scan()).toEqual([]);
+          expect(lsofCalls).toBe(idleLsofCalls + 1);
+          expect(yield* scanner.scan()).toMatchObject([
+            { port: agentPort, pid: 4242, agent: { threadId: "thread-agent" } },
+          ]);
+        }),
+      );
     }).pipe(Effect.provide(layer));
   },
 );

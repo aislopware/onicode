@@ -67,6 +67,7 @@ import type * as EffectAcpProtocol from "effect-acp/protocol";
 import type * as EffectAcpSchema from "effect-acp/compat";
 
 import { writeFakeCli } from "@onicode/provider-testing/fakeCli";
+import * as ProviderHost from "@onicode/provider-core/server/ProviderHost";
 import * as TestProviderHost from "@onicode/provider-testing/TestProviderHost";
 import * as McpProviderSessions from "@onicode/provider-core/server/McpProviderSessions";
 import * as AcpSessionRuntime from "@onicode/provider-acp/server/AcpSessionRuntime";
@@ -85,7 +86,6 @@ import {
 } from "@onicode/provider-grok/testing";
 import * as IdAllocator from "@onicode/provider-core/server/IdAllocator";
 import * as ProviderAdapter from "@onicode/provider-core/server/ProviderAdapter";
-import * as ProviderHost from "@onicode/provider-core/server/ProviderHost";
 import { makeTurnInput } from "./AcpAdapterV2.testkit.ts";
 import type * as ProviderContinuationRequests from "@onicode/provider-core/server/ProviderContinuationRequests";
 import {
@@ -2157,53 +2157,6 @@ describe("AcpAdapterV2", () => {
           assert.isAbove(terminal.failureItemOrdinal, command!.ordinal);
         }
       }).pipe(Effect.provide(layerTest), Effect.scoped),
-  );
-  it.effect("counts the ACP runtime as a running agent until its session closes", () =>
-    Effect.gen(function* () {
-      let runningAgents = 0;
-      const host = yield* ProviderHost.ProviderHost;
-      const instanceId = ProviderInstanceId.make("acp-test-track-agent");
-      const threadId = ThreadId.make("thread-acp-track-agent");
-      const adapter = yield* makeAcpAdapterV2({
-        instanceId,
-        selfInvocation: yield* resolveSelfInvocation(),
-        flavor: {
-          driver: ACP_TEST_DRIVER,
-          capabilities: AcpProviderCapabilitiesV2,
-          makeRuntime: makeMockRuntime({
-            childProcessSpawner: yield* ChildProcessSpawner.ChildProcessSpawner,
-            mockAgentPath: yield* bundledMockAgentPath,
-          }),
-        },
-      }).pipe(
-        Effect.provideService(ProviderHost.ProviderHost, {
-          ...host,
-          trackAgent: () => {
-            runningAgents += 1;
-            return () => {
-              runningAgents -= 1;
-            };
-          },
-        }),
-      );
-      const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
-        runtimeMode: "full-access",
-        interactionMode: "default",
-        cwd: process.cwd(),
-      });
-      const sessionScope = yield* Scope.make();
-      yield* adapter
-        .openSession({
-          threadId,
-          providerSessionId: ProviderSessionId.make("provider-session-acp-track-agent"),
-          modelSelection: { instanceId, model: "default" },
-          runtimePolicy,
-        })
-        .pipe(Effect.provideService(Scope.Scope, sessionScope));
-      assert.equal(runningAgents, 1);
-      yield* Scope.close(sessionScope, Exit.void);
-      assert.equal(runningAgents, 0);
-    }).pipe(Effect.provide(layerTest), Effect.scoped),
   );
   it.live("retains returned usage when Stop finalizes before the prompt callback", () =>
     Effect.gen(function* () {
@@ -8024,6 +7977,114 @@ describe("AcpAdapterV2", () => {
       });
       yield* Fiber.join(turnFiber);
       assert.deepEqual(outcome, { outcome: "selected", optionId });
+    }).pipe(Effect.provide(layerTest)),
+  );
+
+  it.effect("counts a running ACP agent for port discovery until its session closes", () =>
+    Effect.gen(function* () {
+      const host = yield* ProviderHost.ProviderHost;
+      let running = 0;
+      let tracked = 0;
+      yield* Effect.gen(function* () {
+        const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+        const selfInvocation = yield* resolveSelfInvocation();
+        const mockAgentPath = yield* bundledMockAgentPath;
+        const instanceId = ProviderInstanceId.make("acp-test-port-discovery");
+        const threadId = ThreadId.make("thread-acp-port-discovery");
+        yield* (yield* McpProviderSessions.McpProviderSessions).set({
+          environmentId: EnvironmentId.make("environment-acp-port-discovery"),
+          threadId,
+          providerSessionId: "mcp-session-acp-port-discovery",
+          providerInstanceId: instanceId,
+          endpoint: "http://127.0.0.1:43125/mcp",
+          authorizationHeader: "Bearer port-discovery-token",
+          browserToolsAvailable: false,
+        });
+        const runtimeInputs: Array<AcpAdapterV2RuntimeInput> = [];
+        let failNextSpawn = false;
+        const baseMakeRuntime = makeMockRuntime({ childProcessSpawner, mockAgentPath });
+        const adapter = yield* makeAcpAdapterV2({
+          instanceId,
+          flavor: {
+            driver: ACP_TEST_DRIVER,
+            capabilities: AcpProviderCapabilitiesV2,
+            makeRuntime: (runtimeInput) =>
+              failNextSpawn
+                ? Effect.sync(() => {
+                    failNextSpawn = false;
+                  }).pipe(
+                    Effect.andThen(
+                      Effect.fail(
+                        new EffectAcpErrors.AcpTransportError({
+                          detail: "Injected spawn failure",
+                          cause: "test",
+                        }),
+                      ),
+                    ),
+                  )
+                : Effect.sync(() => runtimeInputs.push(runtimeInput)).pipe(
+                    Effect.andThen(baseMakeRuntime(runtimeInput)),
+                  ),
+          },
+          selfInvocation,
+        });
+        const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          cwd: process.cwd(),
+        });
+        const modelSelection = { instanceId, model: "default" } as const;
+        const runtime = yield* adapter.openSession({
+          threadId,
+          providerSessionId: ProviderSessionId.make("provider-session-acp-port-discovery"),
+          modelSelection,
+          runtimePolicy,
+        });
+        const original = yield* runtime.ensureThread({ threadId, modelSelection, runtimePolicy });
+        assert.equal(running, 1);
+        // A replacement runtime counts while it runs, and the one it replaced stops counting.
+        const replacement = yield* runtime.ensureThread({
+          threadId,
+          modelSelection,
+          runtimePolicy,
+          existingProviderThread: { ...original, nativeThreadRef: null },
+          forceNewNativeThread: true,
+        });
+        assert.deepEqual({ running, tracked }, { running: 1, tracked: 2 });
+        // An agent that exits stops counting before anything restarts it.
+        yield* runtimeInputs[1]!.onTermination!(
+          new EffectAcpErrors.AcpTransportError({ detail: "Injected exit", cause: "test" }),
+        );
+        assert.equal(running, 0);
+        // A restart that cannot spawn leaves no agent counted.
+        failNextSpawn = true;
+        const failedTurn = yield* runtime
+          .startTurn(
+            makeTurnInput({
+              threadId,
+              providerThread: replacement,
+              instanceId,
+              runtimePolicy,
+              now: yield* DateTime.now,
+            }),
+          )
+          .pipe(Effect.result);
+        assert.equal(failedTurn._tag, "Failure");
+        assert.equal(running, 0);
+      }).pipe(
+        Effect.scoped,
+        Effect.provideService(ProviderHost.ProviderHost, {
+          ...host,
+          trackAgent: () => {
+            running += 1;
+            tracked += 1;
+            return () => {
+              running -= 1;
+            };
+          },
+        }),
+      );
+      assert.equal(running, 0);
     }).pipe(Effect.provide(layerTest)),
   );
 
