@@ -128,6 +128,7 @@ describe("incoming native shares", () => {
 
     expect(nativeImage.resize).toHaveBeenCalledWith({ width: 2000, height: 1000 });
     expect(persistFile).toHaveBeenCalledWith("file:///cache/resized.png", "screenshot");
+    expect(removeOwnedFile).toHaveBeenCalledWith("file:///cache/resized.png");
     expect(draft.attachments).toEqual([
       {
         id: "share-resize-image-0",
