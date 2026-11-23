@@ -3418,3 +3418,4 @@ f9f34aab78	take	fix(web): start without WebAssembly by initialising Words in a g
 d4976b0e9a	take	feat(scripts): server metrics busy scenario on seeded data; adopted upstream's full recovery-kind list in migrate-dev-db over Onicode's 4-kind list (missed restart-continuations and unread-steers, so a seed could resume work); ~/.t3 -> ~/.onicode
 87b22265d7	take	feat(scripts): server metrics clients scenario and reconnect storm; adapted: clientKind web -> desktop-renderer (Onicode has no web client kind)
 910ea8aa72	take	feat(scripts): server metrics time the turn pipeline and opening a large thread
+977b7c7932	take	perf(server): SQL transactions stop copying every service twice; adapted: Onicode carries no effect patch (upstream's MCP Events/webhooks parts were skipped, see fb23f12f1f, 8cc8bcbf6b), so a new patches/effect@4.1.5.patch holds only the SqlClient hunks

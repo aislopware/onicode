@@ -229,6 +229,9 @@ patchedDependencies:
   # The spawner takes an injected spawn function (and uses it for taskkill) so Windows launches
   # can run on worker threads: apps/server/src/process/SpawnWorker.ts.
   "@effect/platform-node-shared@4.1.5": patches/@effect__platform-node-shared@4.1.5.patch
+  # A SQL transaction or savepoint provides its context without merging a copy of every service
+  # it already extends.
+  effect@4.1.5: patches/effect@4.1.5.patch
   # Electron net requests never emit "socket", so upstream's idle timeout never fires and a
   # stalled update download hangs forever.
   electron-updater@6.8.12: patches/electron-updater@6.8.12.patch
