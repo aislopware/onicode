@@ -3504,3 +3504,4 @@ e86a9c5169	take	adapted: odfHtml keeps Onicode's OfficeArchive and the test its 
 0fcfc17c81	take	adapted: upstream migration 111 is Onicode 117
 4ab87289ac	take	adopted upstream over Onicode's send_to_user input echo in the ACP adapter: it recovers every MCP tool from what Onicode's server recorded and rejects failed calls; analytics wrapper dropped; stableStringify kept local (no relaySigning)
 0fd87d3c2e	take	taken; kept Onicode's sm:h-7 on the search field
+4328d9c95c	take	taken as is
