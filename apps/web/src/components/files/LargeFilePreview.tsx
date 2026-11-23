@@ -1,15 +1,21 @@
 import type { ScopedThreadRef } from "@onicode/contracts";
-import { DEFAULT_TOKENIZE_MAX_LENGTH } from "@pierre/diffs";
+import { splitMarkdown } from "@onicode/shared/markdownChunks";
 import type { FileOptions } from "@pierre/diffs/react";
 import { useGT } from "gt-react";
-import { lazy, Suspense, useImperativeHandle, type RefObject } from "react";
+import { lazy, Suspense, useImperativeHandle, useState, type RefObject } from "react";
 
 import { ChunkedMarkdown } from "./ChunkedMarkdown";
 import { FileSurfaceLoading } from "./fileSurfaceChrome";
 import { useFullFileMarkdown, useFullFileText } from "./fullFileText";
-import { FULL_TEXT_MAX_BYTES } from "./largeTextProtocol";
+import {
+  estimatedLines,
+  highlightsLargeFile,
+  largeFileEndsPlain,
+  largeFileRevealReady,
+  largeFileStartsPlain,
+  type ShownFileText,
+} from "./largeFilePreviewRoute";
 import SourceFilePreview from "./ReadOnlySourcePreview";
-import { hasLineLongerThan, MAX_SHOWN_LINE_CHARS } from "./shownText";
 
 const LargeTextViewer = lazy(() => import("./LargeTextViewer"));
 
@@ -35,30 +41,42 @@ export default function LargeFilePreview(props: {
   readonly revealRequestId: number;
   readonly wordWrap: boolean;
 }) {
-  const plain =
-    props.delimiter !== null ||
-    props.sizeBytes > FULL_TEXT_MAX_BYTES ||
-    // The source viewer lays out a whole line; the plain viewer cuts it like a source line.
-    (props.markdownCwd === null && hasLineLongerThan(props.preview, MAX_SHOWN_LINE_CHARS));
-  return plain ? <PlainViewer {...props} /> : <FullTextPreview {...props} />;
+  const lines = estimatedLines(props.preview, props.sizeBytes);
+  const plain = largeFileStartsPlain({
+    preview: props.preview,
+    sizeBytes: props.sizeBytes,
+    estimatedLines: lines,
+    table: props.delimiter !== null,
+    markdown: props.markdownCwd !== null,
+  });
+  return plain ? <PlainViewer {...props} /> : <FullTextPreview {...props} estimatedLines={lines} />;
 }
 
-// Pierre keeps every token of a highlighted file in memory: a 320k-line log took about 280 MB.
-const HIGHLIGHT_MAX_LINES = DEFAULT_TOKENIZE_MAX_LENGTH;
+type OnPostRender = NonNullable<FileOptions<unknown, undefined>["onPostRender"]>;
 
-/** Estimates the whole file's lines from the preview, so highlighting is decided once. */
-function estimatedLines(preview: string, sizeBytes: number): number {
-  let lines = 1;
-  for (let index = preview.indexOf("\n"); index !== -1; index = preview.indexOf("\n", index + 1))
-    lines += 1;
-  return (lines / Math.max(1, new TextEncoder().encode(preview).length)) * sizeBytes;
-}
+// Revealed now, a line past the text so far would stop at its last line and count as revealed.
+const holdReveal =
+  (onPostRender: OnPostRender): OnPostRender =>
+  (node, instance, phase) =>
+    phase === "unmount" ? onPostRender(node, instance, phase) : undefined;
 
-function FullTextPreview(props: Parameters<typeof LargeFilePreview>[0]) {
+function FullTextPreview(
+  props: Parameters<typeof LargeFilePreview>[0] & { readonly estimatedLines: number },
+) {
   const file = useFullFileText(props.src, props.preview);
-  // Deciding from the full text would highlight the preview, then drop it once the file arrives.
-  const highlight = estimatedLines(props.preview, props.sizeBytes) <= HIGHLIGHT_MAX_LINES;
+  // A changed callback alone may not render again, so the viewer remounts once the line arrives.
+  const [reveal, setReveal] = useState({ held: false, releases: 0 });
   if (file === "too-large" || file === "failed") return <PlainViewer {...props} />;
+  // The worker takes the finished text, so the file does not download again.
+  if (largeFileEndsPlain(file, props.markdownCwd !== null))
+    return <PlainViewer {...props} text={file.text} />;
+  const revealHeld =
+    props.onPostRender !== undefined && !largeFileRevealReady(props.revealLine, file);
+  if (reveal.held !== revealHeld) {
+    setReveal({ held: revealHeld, releases: reveal.releases + (revealHeld ? 0 : 1) });
+  }
+  const onPostRender =
+    revealHeld && props.onPostRender ? holdReveal(props.onPostRender) : props.onPostRender;
   return (
     <>
       <CopyText copyContents={props.copyContents} text={file.done ? file.text : null} />
@@ -66,11 +84,14 @@ function FullTextPreview(props: Parameters<typeof LargeFilePreview>[0]) {
         <MarkdownText {...props} markdownCwd={props.markdownCwd} file={file} />
       ) : (
         <SourceFilePreview
+          key={reveal.releases}
           name={props.name}
           text={file.text}
-          onPostRender={props.onPostRender}
+          onPostRender={onPostRender}
           wordWrap={props.wordWrap}
-          tokenizeMaxLength={highlight ? Number.POSITIVE_INFINITY : 0}
+          tokenizeMaxLength={
+            highlightsLargeFile(props.estimatedLines, file) ? Number.POSITIVE_INFINITY : 0
+          }
         />
       )}
     </>
@@ -80,12 +101,16 @@ function FullTextPreview(props: Parameters<typeof LargeFilePreview>[0]) {
 function MarkdownText(
   props: Parameters<typeof LargeFilePreview>[0] & {
     readonly markdownCwd: string;
-    readonly file: { readonly text: string; readonly done: boolean };
+    readonly file: ShownFileText;
   },
 ) {
+  // The preview ahead of the download splits once, as its text does not change between swaps.
+  const { chunks, definitions } =
+    useFullFileMarkdown(props.src, props.file.text) ?? splitMarkdown(props.file.text);
   return (
     <ChunkedMarkdown
-      {...useFullFileMarkdown(props.src, props.file.text)}
+      chunks={chunks}
+      definitions={definitions}
       loading={!props.file.done}
       cwd={props.markdownCwd}
       relativePath={props.name}
@@ -112,12 +137,30 @@ function CopyText(props: {
   return null;
 }
 
-function PlainViewer(props: Parameters<typeof LargeFilePreview>[0]) {
+/** The first megabyte alone, for a draft whose server cannot send the whole file. */
+export function PartialFilePreview(props: {
+  readonly name: string;
+  readonly text: string;
+  readonly delimiter: "," | "\t" | null;
+  readonly revealLine: number | null;
+  readonly revealRequestId: number;
+  readonly wordWrap: boolean;
+}) {
+  return (
+    <Suspense fallback={<FileSurfaceLoading />}>
+      <LargeTextViewer {...props} />
+    </Suspense>
+  );
+}
+
+function PlainViewer(
+  props: Parameters<typeof LargeFilePreview>[0] & { readonly text?: string | undefined },
+) {
   return (
     <Suspense fallback={<FileSurfaceLoading />}>
       <LargeTextViewer
         name={props.name}
-        src={props.src}
+        {...(props.text === undefined ? { src: props.src } : { text: props.text })}
         copyContents={props.copyContents}
         onRetry={props.onRetry}
         delimiter={props.delimiter}

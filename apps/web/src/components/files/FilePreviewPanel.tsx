@@ -62,7 +62,7 @@ import {
 } from "react";
 
 import { isBrowserPreviewFile, openFileInPreview } from "~/browser/openFileInPreview";
-import { useAssetUrlRefresh, useAssetUrlState } from "~/assets/assetUrls";
+import { type AssetUrlState, useAssetUrlRefresh, useAssetUrlState } from "~/assets/assetUrls";
 import { OpenInPicker } from "~/components/chat/OpenInPicker";
 import { MediaVideoPlayer } from "~/components/media/MediaVideoPlayer";
 import { MediaActions, type MediaActionSource } from "~/components/media/MediaActions";
@@ -123,7 +123,7 @@ import {
   FileSurfaceLoading,
 } from "./fileSurfaceChrome";
 import SourceFilePreview from "./ReadOnlySourcePreview";
-import LargeFilePreview from "./LargeFilePreview";
+import LargeFilePreview, { PartialFilePreview } from "./LargeFilePreview";
 import { FULL_TEXT_MAX_BYTES } from "./largeTextProtocol";
 import { resolveCenteredFileLineScrollTop } from "./fileLineReveal";
 import { DiffCommentAnnotation } from "../diffs/DiffCommentAnnotation";
@@ -621,7 +621,8 @@ function WorkspaceDocumentPreview(props: {
 
 function clampFileLine(contents: string, requestedLine: number): number {
   let lineCount = 1;
-  for (let index = 0; index < contents.length; index += 1) {
+  // Stops at the requested line, so a reveal near the top of a large file does not scan it all.
+  for (let index = 0; index < contents.length && lineCount < requestedLine; index += 1) {
     const character = contents.charCodeAt(index);
     if (character === 10) {
       lineCount += 1;
@@ -1238,9 +1239,11 @@ function RenderedMarkdownSurface({
         changeFileSaveSession(saveTarget, nextContents);
       };
 
+  const { chunks, definitions } = splitMarkdown(contents);
   return (
     <ChunkedMarkdown
-      {...splitMarkdown(contents)}
+      chunks={chunks}
+      definitions={definitions}
       cwd={cwd}
       relativePath={relativePath}
       threadRef={threadRef}
@@ -1707,6 +1710,7 @@ export default function FilePreviewPanel({
               draftCwd={draft ? cwd : null}
               name={relativePath}
               copyContents={copyLargeText}
+              workspaceMutationId={workspaceMutationId}
             />
           ) : null}
           {canOpenInBrowser ? (
@@ -1739,12 +1743,7 @@ export default function FilePreviewPanel({
       !renderBrowserFile &&
       file.data?.truncated &&
       renderMermaid ? (
-        <div className="shrink-0 border-b border-warning/20 bg-warning-surface px-3 py-1.5 text-2xs text-warning-foreground">
-          {gt(
-            "{count, plural, one {Preview limited to the first 1 MB of a {formatted} byte file.} other {Preview limited to the first 1 MB of a {formatted} byte file.}}",
-            { count: file.data.byteLength, formatted: file.data.byteLength.toLocaleString() },
-          )}
-        </div>
+        <TruncatedPreviewNotice byteLength={file.data.byteLength} />
       ) : null}
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <div
@@ -1982,6 +1981,18 @@ export default function FilePreviewPanel({
   );
 }
 
+function TruncatedPreviewNotice(props: { byteLength: number }) {
+  const gt = useGT();
+  return (
+    <div className="shrink-0 border-b border-warning/20 bg-warning-surface px-3 py-1.5 text-2xs text-warning-foreground">
+      {gt(
+        "{count, plural, one {Preview limited to the first 1 MB of a {formatted} byte file.} other {Preview limited to the first 1 MB of a {formatted} byte file.}}",
+        { count: props.byteLength, formatted: props.byteLength.toLocaleString() },
+      )}
+    </div>
+  );
+}
+
 // A draft has no thread yet, so its download is scoped to the draft's workspace instead.
 function largeFileResource(
   threadRef: ScopedThreadRef,
@@ -2003,6 +2014,10 @@ function largeFileResource(
       };
 }
 
+// A server older than draft downloads mints a draft's URL only for previewable types.
+const previewOnlyLargeFile = (draftCwd: string | null, assetUrl: AssetUrlState) =>
+  draftCwd !== null && assetUrl._tag === "Failure" && assetUrl.reason === "preview-type";
+
 /** Copy and save for a file past the 1 MB preview, which the panel holds only in its viewer. */
 function LargeFileActions(props: {
   environmentId: EnvironmentId;
@@ -2011,16 +2026,21 @@ function LargeFileActions(props: {
   draftCwd: string | null;
   name: string;
   copyContents: RefObject<(() => Promise<string>) | null>;
+  workspaceMutationId: string | null;
 }) {
   const gt = useGT();
   const { copyToClipboard, isCopied } = useCopyToClipboard({
     target: namedClipboardTarget(props.name),
   });
   const [saving, setSaving] = useState(false);
-  const refreshAssetUrl = useAssetUrlRefresh(
+  const resource = largeFileResource(props.threadRef, props.absolutePath, props.draftCwd);
+  // The URL the viewer mints; only a draft's failure falls back to the preview.
+  const assetUrl = useAssetUrlState(
     props.environmentId,
-    largeFileResource(props.threadRef, props.absolutePath, props.draftCwd),
+    props.draftCwd === null ? null : resource,
+    props.workspaceMutationId ?? undefined,
   );
+  const refreshAssetUrl = useAssetUrlRefresh(props.environmentId, resource);
   const showError = (cause: unknown) => {
     toastManager.add({
       type: "error",
@@ -2028,6 +2048,7 @@ function LargeFileActions(props: {
       description: thrownErrorMessage(cause, m) ?? gt("Try again."),
     });
   };
+  if (previewOnlyLargeFile(props.draftCwd, assetUrl)) return null;
   return (
     <>
       <FileSurfaceAction
@@ -2116,6 +2137,20 @@ export function WorkspaceLargeTextPreview(props: {
   if (assetUrl._tag === "Success" && loaded?.revision !== contentRevision) {
     setLoaded({ revision: contentRevision, url: assetUrl.url });
   }
+  if (previewOnlyLargeFile(props.draftCwd, assetUrl))
+    return (
+      <>
+        <TruncatedPreviewNotice byteLength={props.sizeBytes} />
+        <PartialFilePreview
+          name={props.name}
+          text={props.preview}
+          delimiter={props.delimiter}
+          revealLine={props.revealLine}
+          revealRequestId={props.revealRequestId}
+          wordWrap={props.wordWrap}
+        />
+      </>
+    );
   if (assetUrl._tag === "Failure")
     return (
       <FileSurfaceFailure

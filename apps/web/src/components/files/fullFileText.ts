@@ -1,13 +1,21 @@
 import { useAtomValue } from "@effect/atom-react";
-import { splitMarkdown, type SplitMarkdown } from "@onicode/shared/markdownChunks";
+import {
+  extendMarkdownSplit,
+  splitMarkdown,
+  type SplitMarkdown,
+} from "@onicode/shared/markdownChunks";
 import * as Effect from "effect/Effect";
 import { FetchHttpClient, HttpClient, HttpClientResponse } from "effect/http";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { AsyncResult, Atom } from "effect/reactivity";
 
 import { connectionAtomRuntime } from "~/connection/runtime";
 
+import { countNewlines, type ShownFileText } from "./largeFilePreviewRoute";
 import { FULL_TEXT_MAX_BYTES, RENDERED_MAX_LINES } from "./largeTextProtocol";
+import { hasLineLongerThan, MAX_SHOWN_LINE_CHARS } from "./shownText";
 
 // A slow download swaps in what has arrived this often, so the reader is not left at 1 MB.
 const SWAP_INTERVAL = "1 second";
@@ -19,17 +27,33 @@ interface Downloaded {
   readonly lines: number;
 }
 
-function countNewlines(text: string): number {
-  let lines = 0;
-  for (let index = text.indexOf("\n"); index !== -1; index = text.indexOf("\n", index + 1)) {
-    lines += 1;
-  }
-  return lines;
-}
-
 // Past either cap the main thread cannot hold or lay the text out.
 const tooLarge = (file: Downloaded) =>
   file.lines > RENDERED_MAX_LINES || file.text.length > FULL_TEXT_MAX_BYTES;
+
+/** Bytes the 1 MB preview read would also refuse as text. */
+class FullFileTextBinaryError extends Schema.TaggedError<FullFileTextBinaryError>()(
+  "FullFileTextBinaryError",
+  {},
+) {}
+
+/** Fails on invalid UTF-8 or a NUL byte like the 1 MB preview read, instead of showing U+FFFD. */
+const decodeTextFatally = <E, R>(bytes: Stream.Stream<Uint8Array, E, R>) =>
+  Stream.suspend(() => {
+    // Drops a leading BOM, as the preview read does.
+    const decoder = new TextDecoder("utf-8", { fatal: true });
+    const decode = (chunk?: Uint8Array) =>
+      Effect.try({
+        try: () => decoder.decode(chunk, { stream: chunk !== undefined }),
+        catch: () => new FullFileTextBinaryError(),
+      }).pipe(
+        Effect.filterOrFail(
+          (text) => !text.includes("\0"),
+          () => new FullFileTextBinaryError(),
+        ),
+      );
+    return bytes.pipe(Stream.mapEffect(decode), Stream.concat(Stream.fromEffect(decode())));
+  });
 
 /** A file's text so far, at most once per interval, ending at its whole text or past a cap. */
 export const downloadText = (src: string) =>
@@ -38,8 +62,7 @@ export const downloadText = (src: string) =>
     Effect.map((response) => response.stream),
     Effect.provideService(FetchHttpClient.RequestInit, { cache: "no-store" }),
     Stream.unwrap,
-    // Drops a leading BOM, as the 1 MB preview read does.
-    Stream.decodeText,
+    decodeTextFatally,
     Stream.scan(
       (): Downloaded => ({ text: "", lines: 1 }),
       (file, chunk) => ({ text: file.text + chunk, lines: file.lines + countNewlines(chunk) }),
@@ -56,35 +79,86 @@ const fullFileTextAtom = Atom.family((src: string) =>
     .pipe(Atom.setIdleTTL(RECENT_FILE_TTL_MS), Atom.withLabel(`full-file-text:${src}`)),
 );
 
-export type FullFileText =
-  | { readonly text: string; readonly done: boolean }
-  | "too-large"
-  | "failed";
+export type FullFileText = ShownFileText | "too-large" | "failed";
+
+/**
+ * The text a swap shows. A streaming swap ends at a newline, so the last row does not flicker, and
+ * shows only once it doubles the text shown, as each layout redoes the whole text.
+ */
+export function nextShownFileText(
+  previous: FullFileText | null,
+  file: Downloaded,
+  done: boolean,
+): FullFileText {
+  if (done) {
+    return { ...file, done, longLine: hasLineLongerThan(file.text, MAX_SHOWN_LINE_CHARS) };
+  }
+  const text = file.text.slice(0, file.text.lastIndexOf("\n") + 1);
+  if (
+    previous !== null &&
+    typeof previous !== "string" &&
+    text.length < Math.max(1, 2 * previous.text.length)
+  ) {
+    return previous;
+  }
+  return { text, done, lines: file.lines, longLine: false };
+}
+
+/** Each swap's shown text, shared by every reader of the file. */
+const shownFileTextAtom = Atom.family((src: string) =>
+  Atom.make((get): FullFileText | null => {
+    const result = get(fullFileTextAtom(src));
+    if (AsyncResult.isFailure(result)) return "failed";
+    if (!AsyncResult.isSuccess(result)) return null;
+    if (tooLarge(result.value)) return "too-large";
+    const previous = Option.getOrNull(get.self<FullFileText | null>());
+    return nextShownFileText(previous, result.value, !result.waiting);
+  }).pipe(Atom.withLabel(`shown-file-text:${src}`)),
+);
 
 /** A file past the 1 MB read: the preview at once, then the full file as it downloads. */
 export function useFullFileText(src: string, preview: string): FullFileText {
-  const result = useAtomValue(fullFileTextAtom(src));
-  if (AsyncResult.isFailure(result)) return "failed";
-  if (!AsyncResult.isSuccess(result)) return { text: preview, done: false };
-  if (tooLarge(result.value)) return "too-large";
-  if (!result.waiting) return { text: result.value.text, done: true };
-  // Whole lines only, so the last row does not flicker as it fills in; the first swap can still
-  // hold less than the preview already shows.
-  const text = result.value.text.slice(0, result.value.text.lastIndexOf("\n") + 1);
-  return { text: text.length >= preview.length ? text : preview, done: false };
+  const shown = useAtomValue(shownFileTextAtom(src));
+  // The first swaps can hold less than the preview already shows.
+  if (
+    shown === null ||
+    (typeof shown !== "string" && !shown.done && shown.text.length < preview.length)
+  ) {
+    return { text: preview, done: false, lines: null, longLine: false };
+  }
+  return shown;
 }
 
-/** The finished text's Markdown pieces, kept as long as its text; splitting 12 MB takes 0.5 s. */
+interface MarkdownSplitState {
+  readonly text: string;
+  readonly split: SplitMarkdown;
+}
+
+/** Splits a swap's text, cutting only the newly arrived tail when it extends the last swap's. */
+export function nextMarkdownSplit(
+  previous: MarkdownSplitState | null,
+  text: string,
+): MarkdownSplitState {
+  if (previous?.text === text) return previous;
+  // One download only appends, so a longer text starts with the one split before.
+  const split =
+    previous !== null && text.length > previous.text.length
+      ? extendMarkdownSplit(previous.split, text)
+      : splitMarkdown(text);
+  return { text, split };
+}
+
+/** Markdown pieces of each swap, kept as long as the text; splitting 12 MB at once takes 0.5 s. */
 const fullFileMarkdownAtom = Atom.family((src: string) =>
-  Atom.make((get) => {
-    const result = get(fullFileTextAtom(src));
-    return AsyncResult.isSuccess(result) && !result.waiting && !tooLarge(result.value)
-      ? splitMarkdown(result.value.text)
-      : null;
+  Atom.make((get): MarkdownSplitState | null => {
+    const shown = get(shownFileTextAtom(src));
+    if (shown === null || typeof shown === "string") return null;
+    return nextMarkdownSplit(Option.getOrNull(get.self<MarkdownSplitState | null>()), shown.text);
   }).pipe(Atom.setIdleTTL(RECENT_FILE_TTL_MS), Atom.withLabel(`full-file-markdown:${src}`)),
 );
 
-/** Markdown pieces of the text so far; a finished file's are split once and kept. */
-export function useFullFileMarkdown(src: string, text: string): SplitMarkdown {
-  return useAtomValue(fullFileMarkdownAtom(src)) ?? splitMarkdown(text);
+/** Markdown pieces of the shown text, or null while the preview shows ahead of the download. */
+export function useFullFileMarkdown(src: string, text: string): SplitMarkdown | null {
+  const state = useAtomValue(fullFileMarkdownAtom(src));
+  return state?.text === text ? state.split : null;
 }
