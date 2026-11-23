@@ -522,6 +522,7 @@ function* notebook(source: string): Generator<string, void> {
 
 // \fcharset values mapped to the Windows code page that encodes them.
 const FONT_CODE_PAGES = new Map([
+  [0, 1252],
   [77, 10000],
   [128, 932],
   [129, 949],
@@ -538,6 +539,7 @@ const FONT_CODE_PAGES = new Map([
   [238, 1250],
 ]);
 const CODE_PAGES = new Map([
+  [0, "windows-1252"],
   [866, "ibm866"],
   [932, "shift_jis"],
   [936, "gbk"],
@@ -564,10 +566,12 @@ function* rtf(source: string): Generator<string, void> {
     uc: 1,
     font: 0,
     fontTable: false,
+    fontFile: false,
     decoder: new TextDecoder("windows-1252"),
   };
   const stack: Array<typeof state> = [];
-  // A font's \cpg, else its \fcharset, not the document code page, encodes its bytes.
+  // A font's \cpg, else its \fcharset, not the document code page, encodes its bytes. \cpg0 is
+  // the system default, so \fcharset decides; a \cpg inside \fontfile names the font file.
   const fontCodePages = new Map<number, typeof state.decoder>();
   const fontCharsets = new Map<number, typeof state.decoder>();
   let defaultFont = 0;
@@ -675,6 +679,7 @@ function* rtf(source: string): Generator<string, void> {
         )
           state.skip = true;
         if (control === "fonttbl") state.fontTable = true;
+        else if (control === "fontfile") state.fontFile = true;
         else if (control === "deff") state.font = defaultFont = value;
         else if (control === "f") {
           state.font = value;
@@ -683,9 +688,11 @@ function* rtf(source: string): Generator<string, void> {
             fontCharsets.delete(value);
           }
         } else if (control === "fcharset" && state.fontTable) {
-          const label = codePage(FONT_CODE_PAGES.get(value) ?? 0);
+          // An unknown \fcharset keeps the document's code page.
+          const charsetPage = FONT_CODE_PAGES.get(value);
+          const label = charsetPage === undefined ? undefined : codePage(charsetPage);
           if (label) fontCharsets.set(state.font, new TextDecoder(label));
-        } else if (control === "cpg" && state.fontTable) {
+        } else if (control === "cpg" && state.fontTable && !state.fontFile && value !== 0) {
           const label = codePage(value);
           if (label) fontCodePages.set(state.font, new TextDecoder(label));
         }
@@ -698,8 +705,7 @@ function* rtf(source: string): Generator<string, void> {
         }
         if (control === "mac") state.decoder = new TextDecoder("macintosh");
         else if (control === "ansicpg") {
-          // 0 is the ANSI default here only; a font's \cpg0 or unknown \fcharset keeps the document's.
-          const label = value === 0 ? "windows-1252" : codePage(value);
+          const label = codePage(value);
           if (!label) throw new Error("Unsupported RTF code page");
           state.decoder = new TextDecoder(label, { fatal: true });
         } else if (control === "uc") {
