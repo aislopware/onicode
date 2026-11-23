@@ -210,7 +210,14 @@ describe("SidebarUpdatePill restart prompt", () => {
       completed: false,
       state: downloadedUpdate(),
     }));
-    using _bridge = stubGlobal("desktopBridge", { installUpdate, onUpdateState: () => () => {} });
+    const updateListeners = new Set<(state: DesktopUpdateState) => void>();
+    using _bridge = stubGlobal("desktopBridge", {
+      installUpdate,
+      onUpdateState: (listener: (state: DesktopUpdateState) => void) => {
+        updateListeners.add(listener);
+        return () => updateListeners.delete(listener);
+      },
+    });
     setup(downloadedUpdate());
     await using screen = await render(
       <AppAtomRegistryProvider>
@@ -227,6 +234,18 @@ describe("SidebarUpdatePill restart prompt", () => {
     // An accepted install stays pending until the app quits or macOS reports a refusal.
     await expect.element(pill).toHaveAttribute("aria-disabled");
     await expect.element(page.getByText("Onicode 0.0.51 is ready")).not.toBeInTheDocument();
+
+    const refused = {
+      ...downloadedUpdate(),
+      message: "OSStatus error -60006.",
+      errorContext: "install" as const,
+    };
+    for (const listener of updateListeners) listener(refused);
+    await expect.element(page.getByText("OSStatus error -60006.")).toBeInTheDocument();
+    await expect.element(pill).not.toHaveAttribute("aria-disabled");
+    // Refused, so the restart prompt may offer it again.
+    await expect.element(page.getByText("Onicode 0.0.51 is ready")).toBeInTheDocument();
+    expect(updateListeners.size).toBe(0);
     localStorage.removeItem("onicode:update-everything-result:v1");
   });
 
