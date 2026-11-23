@@ -445,7 +445,7 @@ it.effect.each([false, true])(
     }),
 );
 
-it.effect.each(["none", "writer", "snapshots"] as const)(
+it.effect.each(["none", "writer", "snapshots", "earlier write"] as const)(
   "runs another stream's control during a busy commit; splits slow backlogs only for a write waiting on the writer (%s)",
   (waitingOn) =>
     Effect.gen(function* () {
@@ -484,6 +484,13 @@ it.effect.each(["none", "writer", "snapshots"] as const)(
       yield* TestClock.adjust(0);
       // An unrelated write stands in for one waiting on the writer the batch holds.
       const writerFree = yield* Deferred.make<void>();
+      // A write with no snapshots of its own still waits on an earlier write that has some.
+      const earlierWrite =
+        waitingOn === "earlier write"
+          ? yield* recorder
+              .barrier(Effect.void, ["single-thread", "other-thread"])
+              .pipe(Effect.forkScoped({ startImmediately: true }))
+          : undefined;
       const write = yield* recorder
         .barrier(
           waitingOn === "writer" ? Deferred.await(writerFree) : Effect.void,
@@ -495,6 +502,7 @@ it.effect.each(["none", "writer", "snapshots"] as const)(
       yield* Fiber.join(slow);
       yield* Deferred.succeed(writerFree, undefined);
       yield* Fiber.join(write);
+      if (earlierWrite !== undefined) yield* Fiber.join(earlierWrite);
       assert.deepEqual(
         yield* Queue.takeAll(recorder.output),
         // A write still waiting on its own thread's snapshots gains nothing from a shorter batch.

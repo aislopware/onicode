@@ -111,6 +111,8 @@ interface Job {
 }
 interface Reservation {
   readonly threadIds: ReadonlyArray<string> | undefined;
+  /** Snapshots it waits on, directly or through the earlier writes it waits on. */
+  readonly jobs: ReadonlySet<Job>;
   readonly done: Deferred.Deferred<void>;
 }
 const overlaps = (
@@ -187,8 +189,6 @@ export const make = Effect.fn("ProviderCommitBatch.make")(function* (
   const reservations = new Set<Reservation>();
   let closed = false;
   let servings = 0;
-  // The snapshots each unfinished `barrier` write waits on.
-  const waitingWrites = new Set<ReadonlySet<Job>>();
   const shutdown = Effect.gen(function* () {
     closed = true;
     yield* Queue.shutdown(wake);
@@ -380,9 +380,9 @@ export const make = Effect.fn("ProviderCommitBatch.make")(function* (
             // Cutting only helps a write that needs none of the units still to run.
             if (
               taken > 0 &&
-              waitingWrites.size > 0 &&
+              reservations.size > 0 &&
               (yield* Clock.monotonicTimeNanos) - startedAt >= MAX_HOLD_NANOS &&
-              Array.from(waitingWrites).some((jobs) =>
+              Array.from(reservations).some(({ jobs }) =>
                 units
                   .slice(taken)
                   .every(
@@ -467,14 +467,15 @@ export const make = Effect.fn("ProviderCommitBatch.make")(function* (
   ) {
     if (closed) return yield* Effect.interrupt;
     if (!enabled || (yield* CurrentWorker) === (yield* Effect.fiberId)) return yield* effect;
-    const jobs: ReadonlySet<Job> = new Set(
-      Array.from(pending).filter((job) => overlaps(threadIds, [job.threadId])),
-    );
     return yield* Effect.uninterruptibleMask((restore) => {
-      const reservation: Reservation = { threadIds, done: Deferred.makeUnsafe() };
+      const jobs = new Set(
+        Array.from(pending).filter((job) => overlaps(threadIds, [job.threadId])),
+      );
+      for (const earlier of reservations)
+        if (overlaps(threadIds, earlier.threadIds)) for (const job of earlier.jobs) jobs.add(job);
+      const reservation: Reservation = { threadIds, jobs, done: Deferred.makeUnsafe() };
       const earlier = earlierWork(threadIds);
       reservations.add(reservation);
-      waitingWrites.add(jobs);
       return restore(
         Effect.gen(function* () {
           yield* earlier;
@@ -484,7 +485,6 @@ export const make = Effect.fn("ProviderCommitBatch.make")(function* (
       ).pipe(
         Effect.ensuring(
           Effect.suspend(() => {
-            waitingWrites.delete(jobs);
             reservations.delete(reservation);
             return Deferred.done(reservation.done, Exit.void);
           }),
