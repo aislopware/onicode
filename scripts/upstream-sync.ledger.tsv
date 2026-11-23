@@ -3526,3 +3526,4 @@ cdb0e238ed	take	taken; kept Onicode's open-links option on the PR link menu besi
 9f11faf7a6	take	taken as is
 46eb376dda	take	taken as is
 2621031dbc	take	test only, adapted: kept Onicode's Live Activity layout, whose expanded island has no bare count and already says "N out of date"
+3f09ad9127	take	adapted to Onicode's locked capture: the result item uses the run read under the lock, and the test provides ThreadCommandExecutor
