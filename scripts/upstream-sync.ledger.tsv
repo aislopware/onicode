@@ -3536,3 +3536,4 @@ b13c74e361	take	taken as is
 7872c23dd4	take	adapted: test change taken; kept Onicode's CheckpointCaptureService from the e3ac/3f09 port, which already looks up the Stop for waiting or completed runs and keeps the turn-end completedAt instead of the capture time
 d49cf0bab5	take	fix(web): a second Escape in the theme CSS editor closes the theme editor (#41692)
 b718326b88	take	fix(shared): preserve literal ampersands in composer file links (#41342)
+67c442a17e	take	fix(pi): a Pi session is not released as idle while an async pi-subagents run is working (#41649)
