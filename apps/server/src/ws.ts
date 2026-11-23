@@ -1951,12 +1951,12 @@ export const layerWsRpc = (
                     threadLaunch.retryPreparation(command).pipe(Effect.provide(intakeContext)),
                   )
                 : command.type === "thread.pull-request.watch"
-                  ? // CI is read before the startup queue, within a deadline, and a client that
-                    // leaves meanwhile still gets the watch it pressed.
-                    Effect.uninterruptible(
-                      Effect.flatMap(
-                        pullRequestWatches.seedClientWatch(command),
-                        dispatchClientCommand,
+                  ? // Once the server takes commands, CI is read within a deadline and a client
+                    // that leaves meanwhile still gets the watch it pressed.
+                    Effect.uninterruptibleMask((restore) =>
+                      restore(startup.awaitCommandReady).pipe(
+                        Effect.andThen(pullRequestWatches.seedClientWatch(command)),
+                        Effect.flatMap(dispatchClientCommand),
                       ),
                     )
                   : dispatchClientCommand(command)

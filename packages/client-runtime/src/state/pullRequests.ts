@@ -182,6 +182,50 @@ interface EditableReader {
 export const pullRequestPendingEditsAtom = Atom.family((_environmentId: EnvironmentId | null) =>
   Atom.make<ReadonlyArray<PullRequestPendingEdit>>([]).pipe(Atom.keepAlive),
 );
+// A pressed Watch waits on the server's CI read, then on the batched shell stream, so the row
+// shows it watching from the press until the link carries the watch or the start fails.
+const WATCH_START_SETTLE = "3 seconds";
+const pullRequestWatchStartsAtom = Atom.family((_thread: string) =>
+  Atom.make<ReadonlyArray<string>>([]).pipe(Atom.keepAlive),
+);
+
+/** The change request URLs a thread's Watch was pressed on and is still starting. */
+export const pullRequestWatchStartsFor = (environmentId: string, threadId: string) =>
+  pullRequestWatchStartsAtom(`${environmentId}\u0000${threadId}`);
+
+export function pullRequestWatchStarting(
+  starts: ReadonlyArray<string>,
+  link: { readonly url: string; readonly watch?: unknown },
+): boolean {
+  return link.watch === undefined && starts.includes(link.url);
+}
+
+export async function trackPullRequestWatchStart<Result extends { readonly _tag: string }>(
+  registry: AtomRegistry.AtomRegistry,
+  target: {
+    readonly environmentId: EnvironmentId;
+    readonly threadId: string;
+    readonly url: string;
+  },
+  start: Promise<Result>,
+): Promise<Result> {
+  const atom = pullRequestWatchStartsFor(target.environmentId, target.threadId);
+  registry.set(atom, [...registry.get(atom), target.url]);
+  const result = await start;
+  const settle = Effect.sync(() => {
+    const starts = [...registry.get(atom)];
+    const index = starts.indexOf(target.url);
+    if (index < 0) return;
+    starts.splice(index, 1);
+    registry.set(atom, starts);
+  });
+  Effect.runFork(
+    result._tag === "Success"
+      ? Effect.sleep(WATCH_START_SETTLE).pipe(Effect.andThen(settle))
+      : settle,
+  );
+  return result;
+}
 const editableReaders = new WeakMap<object, EditableReader>();
 const editedReaders = new WeakMap<object, object>();
 const uneditedReaders = new WeakMap<object, object>();

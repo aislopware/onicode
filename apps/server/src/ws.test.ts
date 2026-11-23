@@ -1927,6 +1927,7 @@ it.effect("a watch started from a client is seeded from a fresh CI read, not the
       Layer.mock(ServerEnvironment.ServerEnvironment)({}),
       Layer.mock(EnvironmentAuth.EnvironmentAuth)({}),
       Layer.mock(ServerRuntimeStartup.ServerRuntimeStartup)({
+        awaitCommandReady: Effect.void,
         enqueueCommand: (effect) => effect,
       }),
       Layer.mock(ThreadManagement.ThreadManagementService)({

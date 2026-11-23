@@ -53,6 +53,9 @@ import {
   pullRequestHostAnswer,
   pullRequestPendingEditsAtom,
   pullRequestPendingEditsFor,
+  pullRequestWatchStarting,
+  pullRequestWatchStartsFor,
+  trackPullRequestWatchStart,
 } from "./pullRequests.ts";
 import { createIssueEnvironmentAtoms } from "./issues.ts";
 import * as PullRequestDiffLoader from "./pullRequestDiffHttp.ts";
@@ -3127,3 +3130,40 @@ it.effect("loads the diff again for a new guide head without sending the head", 
     expect(inputs).toEqual([reference, reference]);
   }),
 );
+
+it("shows a pressed Watch as starting until the link carries it, and drops a failed start", async () => {
+  vi.useFakeTimers();
+  try {
+    const registry = AtomRegistry.make();
+    const environmentId = EnvironmentId.make("environment-1");
+    const link = { url: "https://github.com/acme/web/pull/9" };
+    const starting = (threadId: string, watch?: unknown) =>
+      pullRequestWatchStarting(registry.get(pullRequestWatchStartsFor(environmentId, threadId)), {
+        ...link,
+        watch,
+      });
+    const resolve: Array<(result: { readonly _tag: string }) => void> = [];
+    const start = () =>
+      trackPullRequestWatchStart(
+        registry,
+        { environmentId, threadId: "thread-1", ...link },
+        new Promise<{ readonly _tag: string }>((settle) => resolve.push(settle)),
+      );
+
+    const succeeded = start();
+    expect([starting("thread-1"), starting("thread-2")]).toEqual([true, false]);
+    resolve[0]?.({ _tag: "Success" });
+    await succeeded;
+    // The command can answer before the shell stream brings the watch.
+    expect([starting("thread-1"), starting("thread-1", {})]).toEqual([true, false]);
+    vi.runAllTimers();
+    expect(starting("thread-1")).toBe(false);
+
+    const failed = start();
+    resolve[1]?.({ _tag: "Failure" });
+    await failed;
+    expect(starting("thread-1")).toBe(false);
+  } finally {
+    vi.useRealTimers();
+  }
+});
