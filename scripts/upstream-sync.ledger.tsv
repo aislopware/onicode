@@ -3525,3 +3525,4 @@ cdb0e238ed	take	taken; kept Onicode's open-links option on the PR link menu besi
 844d9ed354	take	taken as is
 9f11faf7a6	take	taken as is
 46eb376dda	take	taken as is
+2621031dbc	take	test only, adapted: kept Onicode's Live Activity layout, whose expanded island has no bare count and already says "N out of date"
