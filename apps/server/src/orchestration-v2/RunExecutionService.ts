@@ -23,6 +23,7 @@ import {
   type ProviderThreadId,
   type ProviderTurnId,
   type RunAttemptId,
+  type RunId,
   type ThreadId,
   type TurnItemId,
 } from "@onicode/contracts";
@@ -859,20 +860,20 @@ export const layer: Layer.Layer<
                 allocateEventId,
               })
             : [];
-        const persistedStatus =
-          input.terminal.status === "completed" ? "waiting" : input.terminal.status;
+        // The run settles now; turn-end checkpoint capture follows on this thread's effect lane.
+        const persistedStatus = input.terminal.status;
         // Omit delegatedCompletion; the startup snapshot must not overwrite newer acknowledgements, successors, or Stop barriers.
         const { delegatedCompletion: _delegatedCompletion, ...runWithoutDelegatedCompletion } =
           input.run;
         const finalizedRun: OrchestrationV2Run = {
           ...runWithoutDelegatedCompletion,
           status: persistedStatus,
-          completedAt: input.terminal.status === "completed" ? null : completedAt,
+          completedAt,
         };
         const finalizedRootNode: OrchestrationV2ExecutionNode = {
           ...input.rootNode,
           status: persistedStatus,
-          completedAt: input.terminal.status === "completed" ? null : completedAt,
+          completedAt,
           checkpointScopeId: input.checkpointScope.id,
         };
         const finalizedProviderThread: OrchestrationV2ProviderThread = {
@@ -888,7 +889,6 @@ export const layer: Layer.Layer<
           `command:effect:checkpoint.capture:${input.run.id}`,
         );
         // Stopped runs capture rollback points for the next message; enqueue before later starts on this effect lane.
-        // The effect id names the attempt: a steering restart can supersede an attempt whose capture was already enqueued.
         const finalization = {
           effects:
             input.terminal.status === "completed" ||
@@ -896,7 +896,7 @@ export const layer: Layer.Layer<
             input.terminal.status === "cancelled"
               ? [
                   {
-                    id: `effect:checkpoint.capture:${input.run.id}:${input.attempt.id}`,
+                    id: checkpointCaptureEffectId(input.run.id, input.attempt.id),
                     commandId: checkpointCaptureCommandId,
                     threadId: input.run.threadId,
                     request: {
@@ -2379,6 +2379,10 @@ export const layer: Layer.Layer<
     } satisfies RunExecutionServiceV2Shape);
   }),
 );
+
+/** Names the attempt: a steering restart can supersede one whose capture was already enqueued. */
+export const checkpointCaptureEffectId = (runId: RunId, attemptId: RunAttemptId | null) =>
+  `effect:checkpoint.capture:${runId}:${attemptId ?? "none"}`;
 
 /**
  * Clients send Stop without a reason; server callers acting for an agent
