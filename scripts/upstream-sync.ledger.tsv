@@ -3447,3 +3447,4 @@ c768764bb6	take	taken as is
 0db39e6b7c	take	adopted upstream over Onicode's bf621299b4 (same fix): identical behaviour, upstream adds the pruned-script row
 3ab1ee20bd	take	fix(server): long setup scripts complete in macOS zsh (#37836)
 c6fe23dd28	take	fix(server): preview type sends key events to the page (#41432)
+e6e863c045	take	fix(shared): Open in Cursor skips a broken cursor on PATH (#38212)
