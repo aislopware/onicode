@@ -3540,3 +3540,4 @@ b718326b88	take	fix(shared): preserve literal ampersands in composer file links 
 b4345bf904	take	fix(web): terminal copy shortcuts no longer type escape codes when nothing is selected (#41702)
 de6315aea2	take	fix(server): Antigravity models keep their own thinking levels after a restart (#41699)
 238881669a	take	fix(settlement): agent/CLI sends reopen settled threads (#33995)
+44f0a5858e	take	fix(client-runtime): a leading env-setup eval no longer hides the command label (#41731)
