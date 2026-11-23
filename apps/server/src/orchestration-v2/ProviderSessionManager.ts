@@ -2668,13 +2668,13 @@ export const layerWithOptions = (
               modelFamily: normalizeModelMetricLabel(model),
             },
           });
-        // Resumed turns are full agent turns, so they need the same busy tracking as new ones.
-        const trackTurn = (
+        // A start, continuation or compaction keeps the session busy until its turn.terminal.
+        const busyTurn = <E>(
           input: Pick<
             ProviderAdapter.ProviderAdapterV2TurnInput,
-            "threadId" | "runId" | "runOrdinal" | "providerThread" | "modelSelection"
+            "threadId" | "providerThread" | "runOrdinal" | "runId"
           >,
-          send: () => Effect.Effect<void, ProviderAdapter.ProviderAdapterV2Error>,
+          run: () => Effect.Effect<void, E>,
         ) =>
           observeActivity(
             providerSessionId,
@@ -2721,7 +2721,7 @@ export const layerWithOptions = (
                         ),
                   ),
                 ),
-                () => send().pipe(turnMetrics("send", input.modelSelection.model)),
+                run,
                 (_, exit) =>
                   Exit.isFailure(exit)
                     ? observeActivity(
@@ -2872,12 +2872,29 @@ export const layerWithOptions = (
               ),
               Effect.map(({ loaded }) => loaded),
             ),
-          startTurn: (input) => trackTurn(input, () => runtime.startTurn(input)),
+          startTurn: (input) =>
+            busyTurn(input, () =>
+              runtime.startTurn(input).pipe(turnMetrics("send", input.modelSelection.model)),
+            ),
           ...(runtime.resumeTurn === undefined
             ? {}
             : {
                 resumeTurn: (input: ProviderAdapter.ProviderAdapterV2ResumeTurnInput) =>
-                  trackTurn(input, () => runtime.resumeTurn!(input)),
+                  busyTurn(input, () =>
+                    runtime.resumeTurn!(input).pipe(
+                      turnMetrics("resume", input.modelSelection.model),
+                    ),
+                  ),
+              }),
+          ...(runtime.compactThread === undefined
+            ? {}
+            : {
+                compactThread: (input: ProviderAdapter.ProviderAdapterV2TurnInput) =>
+                  busyTurn(input, () =>
+                    runtime.compactThread!(input).pipe(
+                      turnMetrics("compact", input.modelSelection.model),
+                    ),
+                  ),
               }),
           steerTurn: (input) =>
             observeActivity(providerSessionId, touchActivity(providerSessionId)).pipe(
