@@ -3521,3 +3521,4 @@ feee7863ca	take	taken as is
 49d434a36e	take	taken as is; Onicode's xa11y 0.16.1 takes the same tree(depth) argument
 5dc43ec433	take	fix(server): Claude subagent cards stay grouped when they update during a later turn (#41607)
 0514c1d2ff	take	taken as is
+cdb0e238ed	take	taken; kept Onicode's open-links option on the PR link menu beside the new source
