@@ -11,8 +11,8 @@ import { APP_DIR, MOBILE, MOBILE_ONI_HOME } from "../e2e.config.ts";
 import { run, ScenarioError } from "./shell.ts";
 import { makeState, runPromise, type OniState } from "./onicode.ts";
 
-const APP_ID = "dev.aislopware.onicode.dev";
-const SCHEME = "onicode-dev";
+export const APP_ID = "dev.aislopware.onicode.dev";
+export const SCHEME = "onicode-dev";
 
 export interface MobileOni extends OniState {
   /** Installs the dev client if the device lacks it, loads it from Metro, and pairs it. */
