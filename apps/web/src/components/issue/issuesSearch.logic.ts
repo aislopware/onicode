@@ -63,7 +63,8 @@ export const issuesSearchFromUrl = (raw: Record<string, unknown>): IssuesSearch 
 
 /**
  * The host a link into the page reads on: one that left it out reads on its project's. Null
- * while that project is not known yet, so the tab opens once, under the id a row would give it.
+ * while that project may still load, so the tab opens once, under the id a row would give it.
+ * A project the loaded environments do not have opens host-less, as the server reads it.
  */
 export const selectedIssueHost = (
   search: Pick<
@@ -71,6 +72,7 @@ export const selectedIssueHost = (
     "selectedEnvironmentId" | "selectedProjectId" | "selectedHost" | "tracker"
   >,
   projects: ReadonlyArray<EnvironmentProject>,
+  projectsLoaded: boolean,
 ): string | undefined | null => {
   const { selectedHost, tracker } = search;
   if (selectedHost !== undefined || tracker === undefined) return selectedHost;
@@ -80,7 +82,7 @@ export const selectedIssueHost = (
       (search.selectedEnvironmentId === undefined ||
         candidate.environmentId === search.selectedEnvironmentId),
   );
-  if (project === undefined) return null;
+  if (project === undefined) return projectsLoaded ? undefined : null;
   return withProjectIssueHost<{ tracker: string; host?: string }>({ tracker }, project).host;
 };
 

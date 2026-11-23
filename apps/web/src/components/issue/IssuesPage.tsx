@@ -102,7 +102,7 @@ import {
 } from "~/rightPanelStore";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { squashAtomCommandFailure } from "@onicode/client-runtime/state/runtime";
-import { useProjects } from "~/state/entities";
+import { useAllEnvironmentShellsBootstrapped, useProjects } from "~/state/entities";
 import { useEnvironments, useIssuesSupported } from "~/state/environments";
 import { issueEnvironment, useIssueList } from "~/state/issues";
 import { useDebouncedValue } from "~/state/queries";
@@ -441,7 +441,8 @@ export function IssuesPage() {
     selectedIssueUrl,
   } = search;
   // A link that left the host out opens the tab a row or link with the host opens.
-  const selectedHost = selectedIssueHost(search, projects);
+  const projectsLoaded = useAllEnvironmentShellsBootstrapped();
+  const selectedHost = selectedIssueHost(search, projects, projectsLoaded);
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- opens the URL-linked issue in the right panel store
   useEffect(() => {
     if (selectedHost === null) return;
