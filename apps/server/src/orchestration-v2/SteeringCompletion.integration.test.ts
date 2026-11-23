@@ -2900,6 +2900,110 @@ it.effect("queues a delegated completion wake whose steer the provider declined"
   }),
 );
 
+it.effect("steers a notice that missed its turn into the next running turn", () =>
+  Effect.gen(function* () {
+    const { events, started, steered, layer, startFirstTurn } = yield* nextTurnSelectionHarness(
+      "steering-follow-up-next-turn",
+    );
+    yield* Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+      const threadId = yield* startFirstTurn;
+      const first = started[0]!;
+      const messageId = MessageId.make("message:missed-notice");
+      const notice = {
+        type: "message.dispatch" as const,
+        threadId,
+        messageId,
+        text: "Delegated task has a question",
+        notification: {
+          source: {
+            kind: "delegated_task" as const,
+            taskIds: [NodeId.make("task:missed-notice")],
+            childThreadId: ThreadId.make("thread:missed-notice-child"),
+          },
+          outcome: "updated" as const,
+          summary: "Delegated task has a question",
+        },
+        attachments: [],
+        dispatchMode: { type: "queue_after_active" as const },
+        createdBy: "agent" as const,
+        creationSource: "server" as const,
+      };
+      yield* orchestrator.dispatch({ ...notice, commandId: CommandId.make("notice") });
+      yield* worker.drain();
+      assert.deepEqual(steered, [notice.text]);
+
+      // The first turn ends before the provider reads the notice; the next one starts.
+      const turn = (yield* orchestrator.getThreadProjection(threadId)).providerTurns[0]!;
+      const settled = yield* orchestrator.streamDomainEvents.pipe(
+        Stream.filter(
+          (event) =>
+            event.type === "run.updated" &&
+            event.payload.id === first.runId &&
+            event.payload.status === "waiting",
+        ),
+        Stream.take(1),
+        Stream.runDrain,
+        Effect.forkScoped,
+      );
+      yield* Queue.offer(events, {
+        type: "provider_turn.updated",
+        driver,
+        providerTurn: { ...turn, status: "completed", completedAt: yield* DateTime.now },
+      });
+      yield* Queue.offer(events, {
+        type: "turn.terminal",
+        driver,
+        providerThreadId: turn.providerThreadId,
+        providerTurnId: turn.id,
+        runOrdinal: first.runOrdinal,
+        status: "completed",
+        failure: null,
+        threadDisposition: "reusable",
+      });
+      yield* Fiber.join(settled);
+      yield* worker.drain();
+      const running = yield* orchestrator.streamDomainEvents.pipe(
+        Stream.filter(
+          (event) => event.type === "provider-turn.updated" && event.payload.status === "running",
+        ),
+        Stream.take(1),
+        Stream.runDrain,
+        Effect.forkScoped,
+      );
+      yield* orchestrator.dispatch({
+        type: "message.dispatch",
+        commandId: CommandId.make("second"),
+        threadId,
+        messageId: MessageId.make("message:second"),
+        text: "second",
+        attachments: [],
+        modelSelection: runSelection,
+        dispatchMode: { type: "start_immediately" },
+        createdBy: "user",
+        creationSource: "web",
+      });
+      yield* worker.drain();
+      yield* Fiber.join(running);
+      yield* (yield* ThreadCommandExecutor.ThreadCommandExecutor).withLock(threadId, Effect.void);
+      const second = started[1]!;
+
+      // The worker's follow-up for the missed notice names the turn that missed it.
+      yield* orchestrator.dispatch({
+        ...notice,
+        commandId: CommandId.make("notice-follow-up"),
+        steerFollowUpOfRunId: first.runId,
+      });
+      yield* worker.drain();
+      const after = yield* orchestrator.getThreadProjection(threadId);
+      assert.deepEqual(steered, [notice.text, notice.text]);
+      assert.isFalse(after.runs.some((run) => run.status === "queued"));
+      assert.equal(after.messages.find((m) => m.id === messageId)?.runId, second.runId);
+    }).pipe(Effect.provide(layer));
+  }),
+);
+
 // regression: #26695 cancelling a Copilot prompt to steer it kills its background agents
 it.effect("queues a steer until the turn ends when the provider cannot steer it", () =>
   Effect.gen(function* () {
