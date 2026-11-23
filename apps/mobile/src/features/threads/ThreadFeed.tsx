@@ -63,9 +63,6 @@ import {
   resolveUserMessagePresentation,
 } from "@onicode/client-runtime/user-message";
 import { canForkProjectedAssistantItem } from "@onicode/client-runtime/state/thread-workflows";
-import type { ThreadCheckpointSummary } from "@onicode/client-runtime/state/thread-checkpoints";
-import { turnChanges } from "@onicode/client-runtime/state/thread-repositories";
-import { formatDiffCount } from "@onicode/client-runtime/diff-count";
 import type { WorkflowOpening } from "@onicode/client-runtime/state/subagentRuntime";
 import {
   AuthFilesystemReadScope,
@@ -209,8 +206,6 @@ import {
   type MediaVideoPreviewSource,
 } from "../../lib/videoPreviewSource";
 import { CopyTextButton } from "./CopyTextButton";
-import { getReviewSectionIdForCheckpoint } from "../review/reviewModel";
-import { setReviewSelectedSectionId } from "../review/reviewState";
 import { Menu } from "../../components/ui/Menu";
 import { useAndroidControlSizing } from "../../components/ui/useAndroidControlSizing";
 import { useBarInset, useContentTopInset } from "../../components/ui/useBarInset";
@@ -2084,7 +2079,6 @@ function renderFeedEntry(
     readonly onToggleWorkRow: (rowId: string, anchorKey?: string, groupId?: string) => void;
     readonly onToggleUserMessage: (rowId: string, anchorKey: string) => void;
     readonly onToggleTurnFold: (runId: RunId) => void;
-    readonly onOpenTurnDiff: (checkpoint: ThreadCheckpointSummary) => void;
     readonly onPressPreview: (source: FilePreviewSource) => void;
     readonly onPlaybackStart: () => void;
     readonly markdownLinkHandlers: MarkdownLinkHandlers;
@@ -2161,12 +2155,6 @@ function renderFeedEntry(
             {...props.worktreeSetup}
             detailsOpen={props.setupDetailsOpen}
             onOpenDetails={props.onOpenSetupDetails}
-          />
-        ) : null}
-        {entry.checkpointSummary ? (
-          <TurnDiffStat
-            checkpoint={entry.checkpointSummary}
-            onOpenTurnDiff={props.onOpenTurnDiff}
           />
         ) : null}
       </View>
@@ -2260,14 +2248,6 @@ function renderFeedEntry(
         hasFailure={entry.hasFailure}
         shimmer={entry.shimmer}
         thought={entry.thought}
-        trailing={
-          entry.checkpointSummary ? (
-            <TurnDiffStat
-              checkpoint={entry.checkpointSummary}
-              onOpenTurnDiff={props.onOpenTurnDiff}
-            />
-          ) : null
-        }
         onToggle={() => props.onToggleWorkGroup(entry.groupId, entry.id)}
       />
     );
@@ -2790,12 +2770,6 @@ function renderFeedEntry(
           onPressPreview={props.onPressPreview}
           onPlaybackStart={props.onPlaybackStart}
         />
-        {showAssistantMeta && message.checkpointSummary ? (
-          <TurnDiffStat
-            checkpoint={message.checkpointSummary}
-            onOpenTurnDiff={props.onOpenTurnDiff}
-          />
-        ) : null}
         {showAssistantMeta ? (
           <View className="mt-1 flex-row items-center gap-1">
             <CopyTextButton
@@ -2845,60 +2819,6 @@ function renderFeedEntry(
       renderReasoning={props.renderReasoning}
       onPressPreview={props.onPressPreview}
     />
-  );
-}
-
-function TurnDiffStat(props: {
-  readonly checkpoint: ThreadCheckpointSummary;
-  readonly onOpenTurnDiff: (checkpoint: ThreadCheckpointSummary) => void;
-}) {
-  const gt = useGT();
-  const { repositories, rootFiles, totals } = turnChanges(props.checkpoint);
-  const { additions, deletions } = totals;
-  const folderCount = repositories.length + (rootFiles.length > 0 ? 1 : 0);
-  const repositoriesLabel =
-    repositories.length === 0
-      ? null
-      : folderCount === 1
-        ? repositories[0]!.name
-        : gt("{count} repos", { count: folderCount });
-  const changedIn =
-    repositories.length === 0
-      ? null
-      : [
-          ...(rootFiles.length > 0 ? [gt("this folder")] : []),
-          ...repositories.map((repository) => repository.name),
-        ].join(", ");
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={
-        changedIn === null
-          ? gt(
-              "{files, plural, one {Review {files} file changed, {additions} additions, {deletions} deletions} other {Review {files} files changed, {additions} additions, {deletions} deletions}}",
-              { files: totals.count, additions, deletions },
-            )
-          : gt(
-              "{files, plural, one {Review {files} file changed in {folders}, {additions} additions, {deletions} deletions} other {Review {files} files changed in {folders}, {additions} additions, {deletions} deletions}}",
-              { files: totals.count, folders: changedIn, additions, deletions },
-            )
-      }
-      onPress={() => props.onOpenTurnDiff(props.checkpoint)}
-      className="min-h-11 shrink-0 flex-row items-center gap-2 px-2 active:bg-subtle"
-    >
-      {repositoriesLabel ? (
-        <Text className="max-w-28 text-xs text-foreground-muted" numberOfLines={1}>
-          {repositoriesLabel}
-        </Text>
-      ) : null}
-      <Text className="font-oni-medium text-xs tabular-nums text-adaptive-emerald-700-300">
-        +{formatDiffCount(additions)}
-      </Text>
-      <Text className="font-oni-medium text-xs tabular-nums text-adaptive-rose-700-300">
-        −{formatDiffCount(deletions)}
-      </Text>
-      <SymbolView name="chevron.right" size={12} tintColorClassName="accent-foreground-muted" />
-    </Pressable>
   );
 }
 
@@ -3275,19 +3195,6 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   const localPreviewUrl = useLocalPreviewUrl(props.environmentId);
   // Recycling a row disposes its native audio player, so a started clip's row stays rendered.
   const [retainedMediaRowId, setRetainedMediaRowId] = useState<string | null>(null);
-  const onOpenTurnDiff = useCallback(
-    (checkpoint: ThreadCheckpointSummary) => {
-      setReviewSelectedSectionId(
-        scopedThreadKey(props.environmentId, props.threadId),
-        getReviewSectionIdForCheckpoint(checkpoint),
-      );
-      navigation.navigate("ThreadReview", {
-        environmentId: props.environmentId,
-        threadId: props.threadId,
-      });
-    },
-    [navigation, props.environmentId, props.threadId],
-  );
   const { themeAppearance } = useAppearancePreferences();
   const copyFeedbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const headerMaterialVisibleRef = useRef(false);
@@ -4323,7 +4230,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     if (entry.type === "html-render") {
       return htmlRenderRowHeight(htmlRenderFrameHeight(entry.render, contentWidth));
     }
-    if (workRowSizing.fixedRowHeight === undefined || entry.checkpointSummary) {
+    if (workRowSizing.fixedRowHeight === undefined) {
       return undefined;
     }
     switch (entry.type) {
@@ -4433,7 +4340,6 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
             onToggleWorkRow,
             onToggleUserMessage,
             onToggleTurnFold,
-            onOpenTurnDiff,
             onPressPreview,
             onPlaybackStart: onInlinePlaybackStart,
             markdownLinkHandlers,

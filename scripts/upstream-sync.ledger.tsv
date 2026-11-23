@@ -3527,3 +3527,4 @@ cdb0e238ed	take	taken; kept Onicode's open-links option on the PR link menu besi
 46eb376dda	take	taken as is
 2621031dbc	take	test only, adapted: kept Onicode's Live Activity layout, whose expanded island has no bare count and already says "N out of date"
 3f09ad9127	take	adapted to Onicode's locked capture: the result item uses the run read under the lock, and the test provides ThreadCommandExecutor
+1c6d41a9ba	take	taken; also dropped lib/turnDiffTree, which only the removed card used; no T3 theme CSS (one built-in theme)
