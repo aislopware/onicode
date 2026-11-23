@@ -630,15 +630,17 @@ function ThreadDetailBody(
     return () => clearTimeout(timer);
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Re-arm if timer clamping fires before the wake time.
   }, [snoozed, snoozedUntil, lifecycleNow]);
+  // The run whose limit rows client-runtime hides (deriveUsageLimitNoticeRows).
+  const usageLimitRunId =
+    props.selectedThread.runtime?.status === "failed" &&
+    props.selectedThread.runtime.lastErrorClass === "usage_limit"
+      ? (props.selectedThread.latestRun?.runId ?? null)
+      : null;
   // The usage-limit recovery card shows this snooze and its Wake now.
   const lifecycleSnoozed =
     snoozed &&
     !limitRecoveryOwnsSnooze({
-      runId:
-        props.selectedThread.runtime?.status === "failed" &&
-        props.selectedThread.runtime.lastErrorClass === "usage_limit"
-          ? props.selectedThread.latestRun?.runId
-          : null,
+      runId: usageLimitRunId,
       resetAt: props.selectedThread.runtime?.usageLimitResetAt,
       recovery: props.selectedThread.limitRecovery,
       snoozedUntil,
@@ -1581,6 +1583,7 @@ function ThreadDetailBody(
                   contentPresentation={props.contentPresentation}
                   threadTitle={threadTitleText(props.selectedThread.title, messages)}
                   latestRun={props.activityRun}
+                  usageLimitRunId={usageLimitRunId}
                   activeWorkStartedAt={props.activeWorkStartedAt}
                   runlessWorkActive={props.runlessWorkActive ?? false}
                   listRef={listRef}

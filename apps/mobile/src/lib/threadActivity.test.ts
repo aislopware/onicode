@@ -2066,6 +2066,58 @@ it.each(["provider_error", "usage_limit"] as const)(
   },
 );
 
+it.each([
+  { failureClass: "provider_error", noticeHidesFailure: false, grouped: false },
+  { failureClass: "usage_limit", noticeHidesFailure: false, grouped: true },
+  { failureClass: "usage_limit", noticeHidesFailure: true, grouped: true },
+] as const)(
+  "groups the latest run's work after a $failureClass failure only for a usage-limit pause (notice hides failure: $noticeHidesFailure)",
+  ({ failureClass, noticeHidesFailure, grouped }) => {
+    const at = "2026-06-20T00:00:05.000Z";
+    const runId = RunId.make("run-1");
+    const commands = ["pwd", "ls", "false"].map((input, index): OrchestrationV2TurnItem => ({
+      ...base(`command-${index}`, `2026-06-20T00:00:0${index + 1}.000Z`, index + 1),
+      type: "command_execution",
+      input,
+      output: "",
+      exitCode: 0,
+    }));
+    const error: OrchestrationV2TurnItem = {
+      ...base("failure", at, 4),
+      type: "error",
+      status: "failed",
+      failure: { class: failureClass, message: "Limit reached.", code: null, retryable: true },
+    };
+    const items = [userMessage(), ...commands, ...(noticeHidesFailure ? [] : [error])];
+    const feed = deriveThreadFeedPresentation(
+      buildThreadFeed(items.map((item, position) => projected(item, position))),
+      { runId, status: "failed", startedAt: at, completedAt: at },
+      new Set(),
+      new Set(),
+      null,
+      false,
+      undefined,
+      {
+        toolCallVisibility: "showAll",
+        revealedMessageId: null,
+        usageLimitRunId: noticeHidesFailure ? runId : null,
+      },
+    );
+    const commandRows = feed.filter(
+      (entry) =>
+        entry.type === "activity-group" &&
+        entry.activities.some(
+          (activity) => activity.projectedItem.item.type === "command_execution",
+        ),
+    );
+    // Grouped work collapses under one disclosure; itemized work shows each command.
+    expect(commandRows).toHaveLength(grouped ? 0 : 3);
+    expect(feed.filter((entry) => entry.type === "work-toggle")).toEqual(
+      grouped ? [expect.objectContaining({ runId, expanded: false })] : [],
+    );
+  },
+);
+
 describe("streamed feed updates", () => {
   const runs = [RunId.make("run-1"), RunId.make("run-2"), RunId.make("run-3")] as const;
   const at = (second: number) => `2026-06-20T00:00:${String(second).padStart(2, "0")}.000Z`;
