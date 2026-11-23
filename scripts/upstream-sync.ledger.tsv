@@ -3501,3 +3501,4 @@ e86a9c5169	take	adapted: odfHtml keeps Onicode's OfficeArchive and the test its 
 592e4d3687	take	adapted: DocumentText VERSION 11 -> 12, since the old extractor cached a skip note for these workbooks
 9b8ab94b24	take	adapted: Onicode-branded strings keep their own key hashes with upstream's hyphenation
 1002934541	take	adapted to Onicode's resumable splitter: a cut needs no open wrapper, so a resumed scan starts with none; tests end on a blank line since Onicode never cuts at the still-growing last line; streaming-equivalence row added
+0fcfc17c81	take	adapted: upstream migration 111 is Onicode 117
