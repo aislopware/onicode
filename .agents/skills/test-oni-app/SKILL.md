@@ -19,6 +19,11 @@ that starts its own server. In a worktree, state lives in the worktree's ignored
 `serverPort`, `webPort`, and `cdpPort`. Never run against `~/.onicode/userdata`.
 
 The window signs in to its own server by itself; there is no pairing step.
+To pair it with another environment on macOS, start it with
+`ONICODE_DESKTOP_MOCK_KEYCHAIN=1` and a fresh `ONICODE_DESKTOP_APP_DATA_DIR`:
+each checkout's Electron is a new Keychain client, so saving the environment
+otherwise waits on a password prompt, and the mock key cannot read the shared dev
+profile's saved environments.
 
 Test with meaningful project and thread data. Read
 [references/sqlite-fixtures.md](references/sqlite-fixtures.md) only when

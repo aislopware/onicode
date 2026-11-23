@@ -222,7 +222,9 @@ left by a run that was killed is replaced). A
 commit that is your clean `HEAD` runs in place. So a new scenario can prove a fix against a base
 that predates it, as long as the base has the desktop target's two hooks in the dev app
 (`ONICODE_DESKTOP_INSPECT_PORT` and `ONICODE_DESKTOP_APP_DATA_DIR`). A proof refuses an older
-base before starting it.
+base before starting it. On macOS a base whose dev app predates `ONICODE_DESKTOP_MOCK_KEYCHAIN`
+stops at a Keychain prompt the first time it saves a paired environment, so a pairing scenario
+fails on such a base for that reason and proves nothing.
 
 ## iOS
 

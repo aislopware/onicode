@@ -293,6 +293,7 @@ const startApp = Effect.fn("startApp")(function* (input: {
         ONICODE_DESKTOP_APP_DATA_DIR: path.join(input.home, "profile"),
         ONICODE_DESKTOP_INSPECT_PORT: String(inspectPort),
         ONICODE_DISABLE_AUTO_UPDATE: "1",
+        ONICODE_DESKTOP_MOCK_KEYCHAIN: "1",
       },
       onLine: (line) => {
         const match = /\[dev-runner\].* serverPort=(\d+) .*cdpPort=(\d+)/.exec(line);

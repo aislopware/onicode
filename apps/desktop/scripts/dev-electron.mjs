@@ -1,4 +1,5 @@
 import * as NodeChildProcess from "node:child_process";
+import * as NodeCrypto from "node:crypto";
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
@@ -52,6 +53,8 @@ const childTreeGracePeriodMs = 1_200;
 const remoteDebuggingPort = process.env.ONICODE_DESKTOP_REMOTE_DEBUGGING_PORT?.trim();
 // The main process's Node inspector: the e2e suite reaches native menus and windows through it.
 const inspectPort = process.env.ONICODE_DESKTOP_INSPECT_PORT?.trim();
+// Each checkout's Electron binary is a new Keychain client, so macOS holds safeStorage on a prompt.
+const mockKeychain = process.env.ONICODE_DESKTOP_MOCK_KEYCHAIN === "1";
 // oxlint-disable-next-line onicode/no-global-process-runtime -- Standalone dev script has no Effect runtime.
 const hostPlatform = NodeOS.platform();
 const parentPid = process.ppid;
@@ -89,6 +92,36 @@ let currentApp = null;
 let restartQueue = Promise.resolve();
 const expectedExits = new WeakSet();
 const watchers = [];
+// What the running app loaded from each watched file. A watch event can arrive for a write that
+// left a file as it was, or late, for one made before the app started (FSEvents under load).
+let loadedBuild = new Map();
+
+const watchedFiles = () =>
+  watchedDirectories.flatMap(({ directory, files }) =>
+    [...files].map((file) => NodePath.join(desktopDir, directory, file)),
+  );
+
+function readBuild() {
+  return new Map(
+    watchedFiles().map((file) => {
+      try {
+        return [file, NodeCrypto.hash("sha1", NodeFS.readFileSync(file))];
+      } catch {
+        return [file, null];
+      }
+    }),
+  );
+}
+
+const buildComplete = (build) => [...build.values()].every((digest) => digest !== null);
+
+function restartWanted() {
+  const current = readBuild();
+  if (!buildComplete(current)) return false;
+  return (
+    currentApp === null || [...current].some(([file, digest]) => loadedBuild.get(file) !== digest)
+  );
+}
 
 function killChildTreeByPid(pid, signal) {
   if (hostPlatform === "win32" || typeof pid !== "number") {
@@ -117,15 +150,22 @@ function startApp() {
   if (shuttingDown || currentApp !== null) {
     return;
   }
+  // A build being written can be missing a file; the write that completes it starts the app.
+  const build = readBuild();
+  if (!buildComplete(build)) {
+    return;
+  }
 
   const electronArgs = [
     ...(remoteDebuggingPort ? [`--remote-debugging-port=${remoteDebuggingPort}`] : []),
     ...(inspectPort ? [`--inspect=127.0.0.1:${inspectPort}`] : []),
+    ...(mockKeychain ? ["--use-mock-keychain"] : []),
   ];
   const launchArgs = devProtocolClient
     ? electronArgs
     : [...electronArgs, `--onicode-dev-root=${desktopDir}`, "dist-electron/main.cjs"];
   const electronCommand = resolveElectronLaunchCommand(launchArgs);
+  loadedBuild = build;
   const app = NodeChildProcess.spawn(electronCommand.electronPath, electronCommand.args, {
     cwd: desktopDir,
     env: childEnv,
@@ -195,7 +235,7 @@ async function stopApp() {
   });
 }
 
-function scheduleRestart() {
+function scheduleRestart({ onlyIfBuildChanged = false } = {}) {
   if (shuttingDown) {
     return;
   }
@@ -209,6 +249,10 @@ function scheduleRestart() {
     restartQueue = restartQueue
       .catch(() => undefined)
       .then(async () => {
+        // Checked in the queue: an event while the app was stopping must not restart its successor.
+        if (onlyIfBuildChanged && !restartWanted()) {
+          return;
+        }
         await stopApp();
         if (!shuttingDown) {
           startApp();
@@ -227,7 +271,7 @@ function startWatchers() {
           return;
         }
 
-        scheduleRestart();
+        scheduleRestart({ onlyIfBuildChanged: true });
       },
     );
 
