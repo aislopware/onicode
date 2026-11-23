@@ -166,7 +166,7 @@ export const disabled = Workflows.of({
 export const layerDisabled = Layer.succeed(Workflows, disabled);
 
 export const OFF =
-  'Workflows are off on this server. Turn them on in its Settings → Labs → Workflows, or without a desktop, set "workflowsEnabled": true in userdata/settings.json in its Onicode home (~/.onicode by default).';
+  'Workflows are off on this server. Turn them on by setting "workflowsEnabled": true in userdata/settings.json in its Onicode home (~/.onicode by default).';
 
 const refuseOff = Effect.fn("Workflows.off")(function* () {
   return yield* new WorkflowInputError({ problem: OFF });

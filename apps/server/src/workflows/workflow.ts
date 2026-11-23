@@ -13,6 +13,7 @@ import * as SchemaAST from "effect/SchemaAST";
 import * as SqlClient from "effect/sql/SqlClient";
 import { Activity, DurableClock, DurableDeferred, Workflow, WorkflowEngine } from "effect/workflow";
 
+import { engineTag, text } from "./labels.ts";
 import { checkOptions, durationOf } from "./options.ts";
 import {
   EngineLink,
@@ -97,28 +98,6 @@ export const claim = (name: string, cleanup = false) =>
     run.names.add(name);
     return Effect.succeed(run);
   });
-
-/** An error as one line for a person, with what caused it when the error only wraps something. */
-export const text = (error: unknown): string => {
-  if (typeof error === "string") return error.slice(0, 2000);
-  if (typeof error !== "object" || error === null) return String(error);
-  // Also an error that came back from the journal, which is its fields and no longer an Error.
-  const fields = error as {
-    readonly message?: unknown;
-    readonly reason?: unknown;
-    cause?: unknown;
-  };
-  const message =
-    typeof fields.message === "string" && fields.message !== ""
-      ? fields.message
-      : typeof fields.reason === "string"
-        ? fields.reason
-        : "Unknown error";
-  return (fields.cause === undefined ? message : `${message}: ${text(fields.cause)}`).slice(
-    0,
-    2000,
-  );
-};
 
 // What a workflow without `returns` returns: any JSON value, or nothing.
 const ANY_JSON = Schema.UndefinedOr(Schema.Json);
@@ -773,9 +752,6 @@ const definitionOf = <P, PI, A, AI, EndError>(
       : (payload, end) => options.onEnd!(payload, end).pipe(Effect.asVoid, Effect.mapError(text)),
   body,
 });
-
-export const engineTag = (definition: Pick<WorkflowDefinition, "name" | "version">) =>
-  `${definition.name}@${definition.version}`;
 
 const Outcome = Schema.Struct({
   outcome: Schema.Literals(["completed", "stopped", "skipped"]),

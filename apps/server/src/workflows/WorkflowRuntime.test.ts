@@ -18,7 +18,8 @@ import WorkflowsMigration from "../persistence/Migrations/114_Workflows.ts";
 import { WorkflowAgents } from "./WorkflowAgents.ts";
 import * as WorkflowEngine from "./WorkflowEngine.ts";
 import * as WorkflowRuntime from "./WorkflowRuntime.ts";
-import { engineTag, type WorkflowDefinition } from "./workflow.ts";
+import { engineTag } from "./labels.ts";
+import type { WorkflowDefinition } from "./workflow.ts";
 import * as Workflows from "./Workflows.ts";
 
 /** Waits to be let go. */

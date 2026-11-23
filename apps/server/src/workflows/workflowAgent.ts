@@ -9,15 +9,8 @@ import * as Schema from "effect/Schema";
 
 import { checkOptions } from "./options.ts";
 import { stepReferences } from "./runReferences.ts";
-import {
-  claim,
-  type InRun,
-  journaled,
-  jsonSchemaOf,
-  type StepFailed,
-  text,
-  waitAs,
-} from "./workflow.ts";
+import { claim, type InRun, journaled, jsonSchemaOf, type StepFailed, waitAs } from "./workflow.ts";
+import { text } from "./labels.ts";
 import type { IssueAddress } from "./WorkflowForge.ts";
 import {
   type AgentLaunch,

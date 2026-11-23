@@ -69,7 +69,7 @@ import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
 import { DispatchModeLimit, exceededDispatchModeLimit } from "./DispatchModeLimit.ts";
 import { projectTurnItemForDetail } from "./WireProjection.ts";
 import { cancelledBeforeStart } from "./RestartBackgroundNote.ts";
-import { contextBoundaryOrdinal } from "./contextBoundary.ts";
+import { contextBoundaryOrdinal, readFreshRunUserMessages } from "./contextBoundary.ts";
 import * as LegacyV1ThreadImporter from "./legacy/LegacyV1ThreadImporter.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { ThreadWorktreeRestore } from "../workspace/restoreMissingWorktree.ts";
@@ -1117,9 +1117,10 @@ const make = Effect.gen(function* () {
         records.runs.some(
           (later) => later.freshContext === true && later.ordinal > owing.ordinal,
         ) &&
-        contextBoundaryOrdinal(
-          yield* orchestrator.getThreadRecords(input.threadId, ["runs", "turnItems"]),
-        ) > owing.ordinal;
+        contextBoundaryOrdinal({
+          runs: records.runs,
+          turnItems: yield* readFreshRunUserMessages(orchestrator, input.threadId, records.runs),
+        }) > owing.ordinal;
       run = forgotten ? undefined : owing;
     }
     if (active === undefined || run?.outputSchema === undefined) {
