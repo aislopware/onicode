@@ -39,6 +39,10 @@ const NativeToolFields = Schema.Struct({
   exitCode: Schema.optional(Schema.Int),
   exit_code: Schema.optional(Schema.Int),
   imagePath: Schema.optional(Schema.String),
+  image_path: Schema.optional(Schema.String),
+  Path: Schema.optional(Schema.String),
+  AbsolutePath: Schema.optional(Schema.String),
+  absolute_path: Schema.optional(Schema.String),
 });
 const decodeNativeToolFields = Schema.decodeUnknownOption(NativeToolFields);
 const decodeSingleAnswer = Schema.decodeUnknownOption(
@@ -89,9 +93,7 @@ function antigravitySecurityWarning(option: EffectAcpSchema.PermissionOption): s
   const warning = Option.getOrUndefined(decodeSecurityWarning(meta[SECURITY_WARNING_META_KEY]));
   const text = warning?.message?.trim() || warning?.title?.trim();
   if (!text) return undefined;
-  return text.length > WARNING_TEXT_LIMIT
-    ? copyBoundedText(`${text.slice(0, WARNING_TEXT_LIMIT - 3)}...`)
-    : text;
+  return boundQuestionText(text, WARNING_TEXT_LIMIT);
 }
 
 export function antigravityApprovalOptions(
@@ -187,7 +189,9 @@ export function makeAntigravityUserInputResponse(
 function boundText(text: string, limit = TOOL_TEXT_LIMIT): string {
   return text.length <= limit
     ? text
-    : copyBoundedText(`${TOOL_TEXT_TRUNCATED}${text.slice(-limit)}`);
+    : copyBoundedText(
+        `${TOOL_TEXT_TRUNCATED}${text.slice(-limit).replace(/^[\uDC00-\uDFFF]/u, "")}`,
+      );
 }
 
 function boundCommandText(text: string, limit = TOOL_TEXT_LIMIT): string {
@@ -228,6 +232,11 @@ export { boundText as boundAntigravityToolText };
 
 /** True when bounding cut some of this text. */
 export const isCutAntigravityToolText = (text: string) => text.includes(TOOL_TEXT_TRUNCATED);
+// Earlier builds kept the low half of an emoji cut at the boundary; compare cut text without it.
+export const comparableAntigravityToolText = (text: string) =>
+  text.startsWith(TOOL_TEXT_TRUNCATED)
+    ? `${TOOL_TEXT_TRUNCATED}${text.slice(TOOL_TEXT_TRUNCATED.length).replace(/^[\uDC00-\uDFFF]/u, "")}`
+    : text;
 
 interface ToolPayloadBudget {
   nodes: number;
@@ -504,7 +513,11 @@ export function normalizeAntigravityToolCall(
   const nativeOutput = output?.combinedOutput ?? output?.combined_output;
   const aggregatedOutput = nativeOutput === undefined ? undefined : boundCommandText(nativeOutput);
   const exitCode = output?.exitCode ?? output?.exit_code;
-  const imagePath = localImagePath(output?.imagePath);
+  const imagePath =
+    localImagePath(output?.imagePath ?? output?.image_path) ??
+    (toolCall.kind === undefined || toolCall.kind === "read" || toolCall.kind === "other"
+      ? localImagePath(input?.Path ?? input?.AbsolutePath ?? input?.absolute_path)
+      : undefined);
   const sanitizedData = sanitizeAntigravityToolPayload(toolCall.data);
   const data: Record<string, unknown> = Predicate.isObject(sanitizedData) ? sanitizedData : {};
   const kind = toolCall.kind ?? (command !== undefined ? "execute" : undefined);

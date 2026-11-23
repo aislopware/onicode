@@ -15,6 +15,7 @@ import * as Stdio from "effect/Stdio";
 import * as Stream from "effect/Stream";
 import * as Ref from "effect/Ref";
 import * as TestClock from "effect/testing/TestClock";
+import * as Tracer from "effect/Tracer";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import { it, assert, expect } from "@effect/vitest";
@@ -23,6 +24,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as AcpSchema from "./schema.ts";
 import * as AcpProtocol from "./protocol.ts";
 import {
+  callRpc,
   encodeJsonl,
   jsonRpcNotification,
   jsonRpcRequest,
@@ -645,6 +647,95 @@ it.layer(NodeServices.layer)("effect-acp protocol", (it) => {
       });
       assert.notInclude(encodeUnknownJsonString(event), secret);
     }),
+  );
+
+  it.effect.each(["newline-terminated", "unfinished"] as const)(
+    "rejects an oversized %s message using UTF-8 bytes and terminates cleanly",
+    (framing) =>
+      Effect.gen(function* () {
+        const { stdio, input, output } = yield* makeInMemoryStdio();
+        const notifications: Array<string> = [];
+        const events: Array<AcpProtocol.AcpProtocolLogEvent> = [];
+        const termination = yield* Deferred.make<AcpError.AcpError>();
+        let reachedEnd = false;
+        const transport = yield* AcpProtocol.makeAcpPatchedProtocol({
+          stdio: Stdio.make({
+            ...stdio,
+            stdin: stdio.stdin.pipe(
+              Stream.concat(
+                Stream.suspend(() => {
+                  reachedEnd = true;
+                  return Stream.empty;
+                }),
+              ),
+            ),
+          }),
+          serverRequestMethods: new Set(),
+          maxIncomingMessageBytes: 44,
+          logIncoming: true,
+          logger: (event) =>
+            Effect.sync(() => {
+              events.push(event);
+            }),
+          onNotification: (notification) =>
+            Effect.sync(() => {
+              notifications.push(notification.method);
+            }),
+          onTermination: (error) => Deferred.succeed(termination, error).pipe(Effect.asVoid),
+        });
+        const pending = yield* Effect.forEach(["x/first", "x/second"], (method) =>
+          transport.request(method, {}).pipe(Effect.forkScoped),
+        );
+        yield* Effect.forEach(pending, () => Queue.take(output));
+
+        // Two 44-byte lines must survive; the 45-byte line is only 43 UTF-16 code units.
+        const firstLine = '{"jsonrpc":"2.0","method":"xé","params":{}}';
+        const secondLine = '{"jsonrpc":"2.0","method":"x/a","params":{}}';
+        const oversizedLine = '{"jsonrpc":"2.0","method":"éé","params":{}}';
+        const validBytes = encoder.encode(`${firstLine}\n${secondLine}\n`);
+        const firstSplit = validBytes.indexOf(0xc3) + 1;
+        yield* Queue.offer(input, validBytes.subarray(0, firstSplit));
+        yield* Queue.offer(input, validBytes.subarray(firstSplit));
+
+        const oversizedBytes = encoder.encode(
+          `${oversizedLine}${framing === "unfinished" ? "" : "\n"}`,
+        );
+        if (framing === "unfinished") {
+          const lastSplit = oversizedBytes.lastIndexOf(0xc3) + 1;
+          yield* Queue.offer(input, oversizedBytes.subarray(0, lastSplit));
+          yield* Queue.offer(input, oversizedBytes.subarray(lastSplit));
+        } else {
+          yield* Queue.offer(input, oversizedBytes);
+        }
+        yield* Queue.end(input);
+
+        const error = yield* Deferred.await(termination);
+        assert.equal(error._tag, "AcpProtocolParseError");
+        if (error._tag === "AcpProtocolParseError") {
+          assert.equal(error.operation, "decode-wire-message");
+        }
+        assert.isFalse(reachedEnd, "Must reject the oversized line before reading EOF");
+        for (const response of pending) {
+          const failure = yield* Fiber.join(response).pipe(
+            Effect.match({
+              onFailure: (failure) => failure,
+              onSuccess: () => assert.fail("Expected the oversized message to fail the request"),
+            }),
+          );
+          assert.strictEqual(failure, error);
+        }
+        assert.deepEqual(notifications, ["xé", "x/a"]);
+        assert.deepEqual(
+          events.find(({ stage }) => stage === "decode_failed"),
+          {
+            direction: "incoming",
+            stage: "decode_failed",
+            payload: {
+              operation: "decode-wire-message",
+            },
+          },
+        );
+      }),
   );
 
   it.effect("fails notification encoding through the declared ACP error channel", () =>
@@ -1514,5 +1605,166 @@ it.layer(NodeServices.layer)("effect-acp protocol", (it) => {
         assert.strictEqual(failure, error);
         assert.equal(yield* Queue.size(output), 0);
       }),
+  );
+
+  it.effect(
+    "traces JSON-RPC requests with enqueue/await spans and emits no spans for streamed notifications",
+    () => {
+      const spans: Array<Tracer.NativeSpan> = [];
+      const tracer = Tracer.make({
+        span: (options) => {
+          const span = new Tracer.NativeSpan(options);
+          spans.push(span);
+          return span;
+        },
+      });
+      return Effect.gen(function* () {
+        const { stdio, input, output } = yield* makeInMemoryStdio();
+        const handledNotifications = yield* Queue.unbounded<string>();
+        const transport = yield* AcpProtocol.makeAcpPatchedProtocol({
+          stdio,
+          serverRequestMethods: new Set(),
+          onNotification: (notification) =>
+            Queue.offer(handledNotifications, notification.method).pipe(Effect.asVoid),
+        });
+
+        const methods = ["x/first", "x/second", "x/third"];
+        const requests = [];
+        for (const method of methods) {
+          requests.push(
+            yield* transport.request(method, { secret: "private-payload" }).pipe(Effect.forkScoped),
+          );
+          yield* Queue.take(output);
+        }
+
+        // Streamed notifications must not create per-notification spans.
+        const spansBeforeNotifications = spans.length;
+        yield* Queue.offer(
+          input,
+          encoder.encode(
+            `${encodeUnknownJsonString({
+              jsonrpc: "2.0",
+              method: "session/update",
+              params: {
+                sessionId: "session-1",
+                update: {
+                  sessionUpdate: "agent_message_chunk",
+                  content: { type: "text", text: "hello" },
+                },
+              },
+            })}\n`,
+          ),
+        );
+        assert.equal(yield* Queue.take(handledNotifications), "session/update");
+        assert.equal(spans.length, spansBeforeNotifications);
+
+        yield* Queue.offer(
+          input,
+          encoder.encode(
+            `${encodeUnknownJsonString({
+              jsonrpc: "2.0",
+              id: 2,
+              error: { code: -32602, message: "Invalid params" },
+            })}\n`,
+          ),
+        );
+        yield* Fiber.await(requests[1]!);
+        yield* Queue.offer(
+          input,
+          encoder.encode(
+            `${encodeUnknownJsonString({
+              jsonrpc: "2.0",
+              id: 1,
+              result: { secret: "private-result" },
+            })}\n`,
+          ),
+        );
+        yield* Fiber.join(requests[0]!);
+        yield* Fiber.interrupt(requests[2]!);
+
+        for (const [index, method] of methods.entries()) {
+          const request = spans.find(
+            (span) =>
+              span.name === "AcpProtocol.request" &&
+              span.attributes.get("rpc.request_id") === index + 1,
+          );
+          assert.isDefined(request);
+          assert.equal(request!.attributes.get("rpc.method"), method);
+          assert.equal(request!.attributes.get("rpc.system"), "jsonrpc");
+          assert.equal(request!.status._tag, "Ended");
+          if (request!.status._tag === "Ended") {
+            assert.equal(
+              request!.status.exit._tag,
+              index === 1 || index === 2 ? "Failure" : "Success",
+            );
+          }
+          for (const phase of ["enqueue", "awaitResponse"]) {
+            const child: Tracer.NativeSpan | undefined = spans.find(
+              (span) =>
+                span.name === `AcpProtocol.request.${phase}` &&
+                span.parent?._tag === "Some" &&
+                span.parent.value.spanId === request!.spanId,
+            );
+            assert.isDefined(child);
+            assert.equal(child!.traceId, request!.traceId);
+            assert.equal(child!.attributes.get("rpc.method"), method);
+            assert.equal(child!.attributes.get("rpc.request_id"), index + 1);
+            assert.equal(child!.status._tag, "Ended");
+          }
+        }
+
+        const failedSend = yield* transport
+          .request("x/encode-fail", { value: 1n })
+          .pipe(Effect.exit);
+        assert.equal(failedSend._tag, "Failure");
+        const sendSpans = spans.filter((span) => span.attributes.get("rpc.request_id") === 4);
+        assert.deepEqual(
+          sendSpans.map((span) => span.name),
+          ["AcpProtocol.request", "AcpProtocol.request.enqueue"],
+        );
+        for (const span of sendSpans) {
+          assert.equal(span.attributes.get("rpc.method"), "x/encode-fail");
+          assert.equal(span.status._tag, "Ended");
+          if (span.status._tag === "Ended") assert.equal(span.status.exit._tag, "Failure");
+        }
+
+        // Typed Effect RPC calls wrap clientProtocol.send with callRpc and annotate rpc.request_id.
+        const typedRequestId = AcpProtocol.RPC_REQUEST_ID_START;
+        yield* callRpc(
+          "session/new",
+          transport.clientProtocol.send(0, {
+            _tag: "Request",
+            id: typedRequestId,
+            tag: "session/new",
+            payload: { secret: "private-typed-payload" },
+            headers: [],
+          }),
+        );
+        yield* Queue.take(output);
+        const typedRequest = spans.find(
+          (span) =>
+            span.name === "AcpProtocol.request" &&
+            span.attributes.get("rpc.request_id") === typedRequestId,
+        );
+        assert.isDefined(typedRequest);
+        assert.equal(typedRequest!.attributes.get("rpc.system"), "jsonrpc");
+        assert.equal(typedRequest!.attributes.get("rpc.method"), "session/new");
+        const typedEnqueue = spans.find(
+          (span) =>
+            span.name === "AcpProtocol.request.enqueue" &&
+            span.parent?._tag === "Some" &&
+            span.parent.value.spanId === typedRequest!.spanId,
+        );
+        assert.isDefined(typedEnqueue);
+        assert.equal(typedEnqueue!.attributes.get("rpc.request_id"), typedRequestId);
+
+        for (const span of spans) {
+          const attrs = JSON.stringify([...span.attributes]);
+          assert.notInclude(attrs, "private-payload");
+          assert.notInclude(attrs, "private-result");
+          assert.notInclude(attrs, "private-typed-payload");
+        }
+      }).pipe(Effect.withTracer(tracer));
+    },
   );
 });

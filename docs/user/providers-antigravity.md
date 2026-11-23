@@ -73,7 +73,8 @@ using the executable you selected.
 
 The model list comes from your Antigravity account, including Claude and GPT models
 when your plan has them. Pick a thinking level next to the model list in the model picker; it
-shows only the levels the selected model supports. A resumed thread keeps its
+shows only the levels the selected model supports. A model or thinking level you pick while
+Antigravity works applies to the running turn. A resumed thread keeps its
 selected model. If access to that model ends, select another available model
 before continuing.
 
@@ -109,9 +110,9 @@ honoring `inherits`, `include_only`, and `exclude`. Use absolute paths there:
 Antigravity does not expand `~`, so `~/.agents/skills` points inside the config
 file's own folder.
 
-Antigravity receives images and audio directly, and reads PDFs and text files as
-documents. Other attachments, including videos, are passed as a saved file path for
-the agent to inspect with its tools.
+Antigravity receives images directly, and reads PDFs and text files as
+documents. Other attachments, including audio and videos, are passed as a saved
+file path for the agent to inspect with its tools.
 
 ### Subagents
 

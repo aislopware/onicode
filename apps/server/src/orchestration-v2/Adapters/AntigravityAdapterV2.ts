@@ -12,15 +12,19 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Exit from "effect/Exit";
 import * as Semaphore from "effect/Semaphore";
+import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
+import type * as EffectAcpSchema from "effect-acp/compat";
 import * as EffectAcpErrors from "effect-acp/errors";
 
 import * as ProviderHost from "@onicode/provider-core/server/ProviderHost";
+import { makeProviderFailure } from "@onicode/provider-core/server/failure";
 import { PULL_REQUEST_LINKING_INSTRUCTIONS } from "@onicode/provider-core/server/runtimeInstructions";
 import type { AntigravityAuth } from "../../provider/AntigravityAuth.ts";
 import type * as AcpSessionRuntime from "@onicode/provider-acp/server/AcpSessionRuntime";
 import {
   antigravityAppendsSystemPrompt,
+  antigravityModelOptions,
   antigravityPermissionDisposition,
   antigravityPermissionMode,
   antigravityRuntimeModeForSessionMode,
@@ -52,11 +56,13 @@ import {
 import { isAntigravitySignInRequiredError } from "../../provider/antigravityAuthSupport.ts";
 import {
   AcpProviderCapabilitiesV2,
+  acpDefaultPromptFailureClass,
   makeAcpAdapterV2,
   type AcpAdapterV2Flavor,
   type AcpAdapterV2RuntimeInput,
 } from "@onicode/provider-acp/server/adapter";
 
+const isAcpRequestError = Schema.is(EffectAcpErrors.AcpRequestError);
 const ANTIGRAVITY_PROVIDER = ProviderDriverKind.make("antigravity");
 
 const AntigravityProviderCapabilitiesV2 = {
@@ -92,6 +98,9 @@ export interface AntigravityAdapterV2Options {
     EffectAcpErrors.AcpError | ProviderSetupError,
     Scope.Scope
   >;
+  readonly isRuntimeOutdated?: (
+    runtime: AcpSessionRuntime.AcpSessionRuntime["Service"],
+  ) => Effect.Effect<boolean>;
   readonly withProcess: AntigravityAuth["withProcess"];
   readonly defaultModel: Effect.Effect<string | undefined>;
   readonly supportsNativeGoals?: Effect.Effect<boolean>;
@@ -104,6 +113,30 @@ export interface AntigravityAdapterV2Options {
   readonly continuationRequests?: Parameters<typeof makeAcpAdapterV2>[0]["continuationRequests"];
   /** The agent's GEMINI_HOME. Its session logs show turns that ended on an upstream error. */
   readonly profileDirectory?: string;
+}
+
+function currentAntigravityModelId(
+  setup: Pick<
+    AcpSessionRuntime.AcpSessionRuntimeStartResult["sessionSetupResult"],
+    "configOptions" | "models"
+  >,
+): string | undefined {
+  const config = setup.configOptions?.find(
+    (option) => option.id === "model" || option.category === "model",
+  );
+  const current = config?.type === "select" ? config.currentValue : setup.models?.currentModelId;
+  return typeof current === "string" && current.trim().length > 0 ? current : undefined;
+}
+
+function legacyAntigravityFamily(
+  configOptions: ReadonlyArray<EffectAcpSchema.SessionConfigOption> | null | undefined,
+  model: string,
+): string | undefined {
+  if (configOptions == null) return undefined;
+  return antigravityModelOptions(configOptions)
+    .map((option) => option.value)
+    .filter((family) => model.startsWith(`${family}-`))
+    .toSorted((left, right) => right.length - left.length)[0];
 }
 
 /**
@@ -147,8 +180,25 @@ export function makeAntigravityAcpAdapterFlavor(
   options: AntigravityAdapterV2Options & AntigravityFlavorServices,
 ): AcpAdapterV2Flavor {
   const { profileDirectory } = options;
-  const antigravityClientFileRoots = (cwd: string | null) =>
-    cwd === null ? [options.host.paths.attachmentsDir] : [cwd, options.host.paths.attachmentsDir];
+  const rawRuntimes = new WeakMap<
+    AcpSessionRuntime.AcpSessionRuntime["Service"],
+    AcpSessionRuntime.AcpSessionRuntime["Service"]
+  >();
+  const contextWindowsByModel = new Map<string, number>();
+  const activeModels = new WeakMap<AcpSessionRuntime.AcpSessionRuntime["Service"], string>();
+  let rememberedDefaultModel: string | undefined;
+  const recordActiveModel = (
+    target: AcpSessionRuntime.AcpSessionRuntime["Service"],
+    modelId: string | undefined,
+  ) => {
+    if (modelId !== undefined && modelId.trim().length > 0) {
+      activeModels.set(target, modelId);
+    }
+  };
+  const antigravityClientFileRoots = (
+    cwd: string | null,
+    extraRoots: ReadonlyArray<string> = [],
+  ) => [...(cwd === null ? [] : [cwd]), ...extraRoots, options.host.paths.attachmentsDir];
   const makeRuntime = Effect.fn("AntigravityAdapterV2.makeRuntime")(
     function* (input: AcpAdapterV2RuntimeInput) {
       const scope = yield* Scope.fork(yield* Effect.scope);
@@ -167,7 +217,7 @@ export function makeAntigravityAcpAdapterFlavor(
       // Served reads are reported from the read handler, so they take turns with agent updates.
       const updates = yield* Semaphore.make(1);
       let projectUpdate: Parameters<typeof runtime.handleSessionUpdate>[0] | undefined;
-      return {
+      const wrapped: typeof runtime = {
         ...runtime,
         handleReadTextFile: (handler) =>
           runtime.handleReadTextFile((request, context) =>
@@ -194,19 +244,87 @@ export function makeAntigravityAcpAdapterFlavor(
           Effect.sync(reads.reset).pipe(Effect.andThen(runtime.prompt(payload, promptOptions))),
         handleSessionUpdate: (handler) => {
           projectUpdate = handler;
-          return runtime.handleSessionUpdate((notification) =>
-            updates.withPermit(handler(reads.repair(notification))),
-          );
+          return runtime.handleSessionUpdate((notification) => {
+            const repaired = reads.repair(notification);
+            const update = repaired.update;
+            if (update.sessionUpdate === "config_option_update") {
+              recordActiveModel(
+                wrapped,
+                currentAntigravityModelId({ configOptions: update.configOptions }),
+              );
+            } else if (update.sessionUpdate === "usage_update") {
+              const modelId = activeModels.get(wrapped);
+              if (
+                modelId !== undefined &&
+                typeof update.size === "number" &&
+                Number.isSafeInteger(update.size) &&
+                update.size > 0
+              ) {
+                contextWindowsByModel.set(modelId, update.size);
+              }
+            }
+            return updates.withPermit(handler(repaired));
+          });
         },
         start: () =>
+          runtime.start().pipe(
+            Effect.tap((started) => {
+              recordActiveModel(wrapped, currentAntigravityModelId(started.sessionSetupResult));
+              return options.onSessionStarted?.(started, input.cwd) ?? Effect.void;
+            }),
+          ),
+        loadSession: (sessionId, activationOptions) =>
           runtime
-            .start()
+            .loadSession(sessionId, activationOptions)
             .pipe(
-              Effect.tap(
-                (started) => options.onSessionStarted?.(started, input.cwd) ?? Effect.void,
+              Effect.tap((started) =>
+                Effect.sync(() =>
+                  recordActiveModel(wrapped, currentAntigravityModelId(started.sessionSetupResult)),
+                ),
               ),
             ),
-      } satisfies typeof runtime;
+        resumeSession: (sessionId, activationOptions) =>
+          runtime
+            .resumeSession(sessionId, activationOptions)
+            .pipe(
+              Effect.tap((started) =>
+                Effect.sync(() =>
+                  recordActiveModel(wrapped, currentAntigravityModelId(started.sessionSetupResult)),
+                ),
+              ),
+            ),
+        forkSession: (sessionId, activationOptions, meta) =>
+          runtime
+            .forkSession(sessionId, activationOptions, meta)
+            .pipe(
+              Effect.tap((started) =>
+                Effect.sync(() =>
+                  recordActiveModel(wrapped, currentAntigravityModelId(started.sessionSetupResult)),
+                ),
+              ),
+            ),
+        setModel: (model) =>
+          runtime
+            .setModel(model)
+            .pipe(Effect.tap(() => Effect.sync(() => recordActiveModel(wrapped, model)))),
+        setConfigOption: (configId, value, configOptions) =>
+          runtime.setConfigOption(configId, value, configOptions).pipe(
+            Effect.tap((response) =>
+              Effect.sync(() => {
+                const updated = currentAntigravityModelId({
+                  configOptions: response.configOptions,
+                });
+                if (updated !== undefined) {
+                  recordActiveModel(wrapped, updated);
+                } else if (configId === "model" && typeof value === "string") {
+                  recordActiveModel(wrapped, value);
+                }
+              }),
+            ),
+          ),
+      };
+      rawRuntimes.set(wrapped, runtime);
+      return wrapped;
     },
     Effect.provideService(SecureRandom.SecureRandom, options.random),
     Effect.mapError((cause): EffectAcpErrors.AcpError =>
@@ -237,6 +355,17 @@ export function makeAntigravityAcpAdapterFlavor(
         Effect.provideService(Path.Path, options.path),
       ),
     // Loading history replays tool calls; resume avoids replay.
+    preferSessionResume: true,
+    appliesModelSelectionLive: true,
+    ...(options.isRuntimeOutdated === undefined
+      ? {}
+      : {
+          shouldRestartRuntimeBeforeTurn: (
+            runtime: AcpSessionRuntime.AcpSessionRuntime["Service"],
+          ) =>
+            options.isRuntimeOutdated?.(rawRuntimes.get(runtime) ?? runtime) ??
+            Effect.succeed(false),
+        }),
     subagentsIdleOnTurnCompletion: true,
     // A finished background command or timer wakes the agent with no prompt open: it streams a
     // reply and asks for permissions, and no prompt response ever ends that reply.
@@ -257,30 +386,67 @@ export function makeAntigravityAcpAdapterFlavor(
     // `agy acp` reads a prompt sent mid-turn as a steer; cancel-and-restart killed its subagents.
     steersWithPrompt: antigravitySteersWithPrompt,
     ...(options.onSessionEvent === undefined ? {} : { onSessionEvent: options.onSessionEvent }),
+    getModelContextWindow: (selection, session) => {
+      if (selection.instanceId !== options.instanceId) return undefined;
+      const configOptions = session.sessionSetupResult.configOptions;
+      const modelId = (() => {
+        if (selection.model !== ANTIGRAVITY_DEFAULT_MODEL) return selection.model;
+        if (rememberedDefaultModel !== undefined && configOptions != null) {
+          const available = antigravityModelOptions(configOptions);
+          if (
+            available.some((option) => option.value === rememberedDefaultModel) ||
+            legacyAntigravityFamily(configOptions, rememberedDefaultModel) !== undefined
+          ) {
+            return rememberedDefaultModel;
+          }
+        }
+        return currentAntigravityModelId(session.sessionSetupResult);
+      })();
+      if (modelId === undefined) return undefined;
+      const direct = contextWindowsByModel.get(modelId);
+      if (direct !== undefined) return direct;
+      const family = legacyAntigravityFamily(configOptions, modelId);
+      return family === undefined ? undefined : contextWindowsByModel.get(family);
+    },
     applyModelSelection: Effect.fn("AntigravityAdapterV2.applyModelSelection")(function* ({
       runtime,
       modelSelection,
     }) {
       const defaultModel = yield* options.defaultModel;
-      return yield* applyAntigravityAcpModelSelection({
+      if (defaultModel !== undefined && defaultModel.trim().length > 0) {
+        rememberedDefaultModel = defaultModel;
+      }
+      const resolved = yield* applyAntigravityAcpModelSelection({
         runtime,
         model:
           modelSelection.model === ANTIGRAVITY_DEFAULT_MODEL ? undefined : modelSelection.model,
         defaultModel,
         mapError: (cause) => cause,
       });
+      recordActiveModel(runtime, resolved);
+      return resolved;
     }),
     sessionModeForPolicy: (policy) => antigravityPermissionMode(policy.runtimeMode),
     runtimeModeForSessionMode: antigravityRuntimeModeForSessionMode,
     clientFileSystem: {
-      readTextFile: (request, cwd) =>
+      readTextFile: (request, cwd, extraRoots) =>
         readAntigravityClientTextFile({
           fileSystem: options.fileSystem,
           path: options.path,
-          allowedRoots: antigravityClientFileRoots(cwd),
+          allowedRoots: antigravityClientFileRoots(cwd, extraRoots),
           request,
         }),
     },
+    promptFailure: (cause) =>
+      makeProviderFailure({
+        cause,
+        ...(isAcpRequestError(cause)
+          ? { message: cause.errorMessage, code: String(cause.code) }
+          : {}),
+        class: isAntigravitySignInRequiredError(cause)
+          ? "permission_error"
+          : acpDefaultPromptFailureClass(cause),
+      }),
     permissionDisposition: antigravityPermissionDisposition,
     approvalOptions: antigravityApprovalOptions,
     extractPermissionQuestion: (request) => {

@@ -78,6 +78,8 @@ export interface AcpPatchedProtocolOptions {
   readonly serverRequestMethods: ReadonlySet<string>;
   readonly logIncoming?: boolean;
   readonly logOutgoing?: boolean;
+  // Test override; production uses MAX_INCOMING_MESSAGE_BYTES.
+  readonly maxIncomingMessageBytes?: number;
   readonly logger?: (event: AcpProtocolLogEvent) => Effect.Effect<void, never>;
   readonly onIncomingRequest?: (
     requestId: string,
@@ -190,13 +192,22 @@ const decodeSessionUpdate = Schema.decodeUnknownEffect(
 const decodeElicitationComplete = Schema.decodeUnknownEffect(
   AcpSchema.CompleteElicitationNotification,
 );
+// Bound NDJSON lines before joining and parsing; the LF delimiter is excluded.
+const MAX_INCOMING_MESSAGE_BYTES = 128 * 1024 * 1024;
 const parserFactory = RpcSerialization.ndJsonRpc();
 // ndJsonRpc skips lines that are not JSON. A malformed agent line has to end the
 // session, so frames are split here and each nonblank one goes through the strict codec.
-const makeStrictNdJsonRpcParser = () => {
+const makeStrictNdJsonRpcParser = (maxIncomingMessageBytes = MAX_INCOMING_MESSAGE_BYTES) => {
   const codec = RpcSerialization.jsonRpc().makeUnsafe();
   const decoder = new TextDecoder();
-  let buffer = "";
+  const encoder = new TextEncoder();
+  const remainder: Array<string> = [];
+  let remainderBytes = 0;
+  const resetBuffer = () => {
+    remainder.length = 0;
+    remainderBytes = 0;
+    decoder.decode();
+  };
   const decodeLine = (line: string): ReadonlyArray<AcpDecodedWireMessage> =>
     codec.decode(line).map((message) => ({
       message: normalizeAcpJsonRpcError(
@@ -206,22 +217,49 @@ const makeStrictNdJsonRpcParser = () => {
     }));
   return {
     // Every message in a batch line is charged the whole line.
-    decode: (bytes: Uint8Array | string): ReadonlyArray<AcpDecodedWireMessage> => {
-      const chunk = typeof bytes === "string" ? bytes : decoder.decode(bytes, { stream: true });
-      const lastNewline = chunk.lastIndexOf("\n");
-      // Splitting the whole buffer per chunk is quadratic for multi-megabyte lines.
-      if (lastNewline === -1) {
-        buffer += chunk;
-        return [];
+    decode: (input: Uint8Array | string): ReadonlyArray<AcpDecodedWireMessage> => {
+      const bytes = typeof input === "string" ? encoder.encode(input) : input;
+      const messages: Array<AcpDecodedWireMessage> = [];
+      let start = 0;
+      while (start < bytes.byteLength) {
+        const newline = bytes.indexOf(0x0a, start);
+        const end = newline === -1 ? bytes.byteLength : newline;
+        const fragmentBytes = end - start;
+        remainderBytes += fragmentBytes;
+        if (remainderBytes > maxIncomingMessageBytes) {
+          resetBuffer();
+          throw new Error(`Incoming ACP message exceeded ${maxIncomingMessageBytes} bytes.`);
+        }
+        if (fragmentBytes > 0) {
+          const decoded = decoder.decode(bytes.subarray(start, end), { stream: true });
+          if (decoded.length > 0) {
+            remainder.push(decoded);
+          }
+        }
+        if (newline === -1) break;
+        const flushed = decoder.decode();
+        if (flushed.length > 0) {
+          remainder.push(flushed);
+        }
+        const line = remainder.join("");
+        remainder.length = 0;
+        remainderBytes = 0;
+        if (line.trim() !== "") {
+          messages.push(...decodeLine(line));
+        }
+        start = newline + 1;
       }
-      const lines = (buffer + chunk.slice(0, lastNewline)).split("\n");
-      buffer = chunk.slice(lastNewline + 1);
-      return lines.flatMap((line) => (line.trim() === "" ? [] : decodeLine(line)));
+      return messages;
     },
     // A truncated final line is left to the exit status, which explains a crash better.
     end: (): ReadonlyArray<AcpDecodedWireMessage> => {
-      const line = buffer + decoder.decode();
-      buffer = "";
+      const flushed = decoder.decode();
+      if (flushed.length > 0) {
+        remainder.push(flushed);
+      }
+      const line = remainder.join("");
+      remainder.length = 0;
+      remainderBytes = 0;
       try {
         return line.trim() === "" ? [] : decodeLine(line);
       } catch {
@@ -328,7 +366,9 @@ function normalizeAcpJsonRpcError(
 export const makeAcpPatchedProtocol = Effect.fn("makeAcpPatchedProtocol")(function* (
   options: AcpPatchedProtocolOptions,
 ): Effect.fn.Return<AcpPatchedProtocol, never, Scope.Scope> {
-  const parser = makeStrictNdJsonRpcParser();
+  const parser = makeStrictNdJsonRpcParser(
+    options.maxIncomingMessageBytes ?? MAX_INCOMING_MESSAGE_BYTES,
+  );
   const serverQueue = yield* Queue.unbounded<RpcMessage.FromClientEncoded>();
   const clientQueue = yield* Queue.unbounded<RpcMessage.FromServerEncoded>();
   const rawNotifications = yield* Queue.unbounded<AcpBufferedRawNotification, Cause.Done<void>>();
@@ -367,7 +407,7 @@ export const makeAcpPatchedProtocol = Effect.fn("makeAcpPatchedProtocol")(functi
     );
   };
 
-  const offerOutgoing = Effect.fn("offerOutgoing")(function* (
+  const offerOutgoing = Effect.fnUntraced(function* (
     message: RpcMessage.FromClientEncoded | RpcMessage.FromServerEncoded,
   ) {
     // RpcClient emits `@effect/rpc/Interrupt` when a pending request's fiber is interrupted.
@@ -1018,7 +1058,21 @@ export const makeAcpPatchedProtocol = Effect.fn("makeAcpPatchedProtocol")(functi
       );
     }),
     send: Effect.fnUntraced(function* (_clientId, request) {
-      return yield* offerOutgoing(request).pipe(
+      const send =
+        request._tag === "Request" && request.isNotification !== true && request.id !== ""
+          ? Effect.gen(function* () {
+              const attributes = {
+                "rpc.system": "jsonrpc",
+                "rpc.method": request.tag,
+                "rpc.request_id": request.id,
+              };
+              yield* Effect.annotateCurrentSpan(attributes);
+              return yield* offerOutgoing(request).pipe(
+                Effect.withSpan("AcpProtocol.request.enqueue", { attributes }),
+              );
+            })
+          : offerOutgoing(request);
+      return yield* send.pipe(
         Effect.mapError(
           (error) =>
             new RpcClientError.RpcClientError({
@@ -1111,25 +1165,45 @@ export const makeAcpPatchedProtocol = Effect.fn("makeAcpPatchedProtocol")(functi
     );
   });
 
-  const sendRequest = Effect.fn("sendRequest")(function* (method: string, payload: unknown) {
+  const sendRequest = Effect.fn("AcpProtocol.request")(function* (
+    method: string,
+    payload: unknown,
+  ) {
+    yield* Effect.annotateCurrentSpan({
+      "rpc.system": "jsonrpc",
+      "rpc.method": method,
+    });
     yield* ensureActive;
     const requestId = yield* Ref.modify(
       nextRequestId,
       (current) => [current, current + 1] as const,
     );
+    const attributes = {
+      "rpc.system": "jsonrpc",
+      "rpc.method": method,
+      "rpc.request_id": requestId,
+    };
+    yield* Effect.annotateCurrentSpan(attributes);
     const deferred = yield* Deferred.make<unknown, AcpError.AcpError>();
-    yield* Ref.update(extPending, (pending) =>
-      new Map(pending).set(acpRequestIdentity(requestId), { deferred, method }),
-    );
-    yield* offerOutgoing({
-      _tag: "Request",
-      id: requestId,
-      tag: method,
-      payload,
-      headers: [],
-    }).pipe(Effect.tapError(() => removeExtPending(requestId)));
-    return yield* Deferred.await(deferred).pipe(
-      Effect.onInterrupt(() => removeExtPending(requestId)),
+    return yield* Effect.acquireUseRelease(
+      Ref.update(extPending, (pending) =>
+        new Map(pending).set(acpRequestIdentity(requestId), { deferred, method }),
+      ),
+      () =>
+        Effect.gen(function* () {
+          yield* offerOutgoing({
+            _tag: "Request",
+            id: requestId,
+            tag: method,
+            payload,
+            headers: [],
+          }).pipe(Effect.withSpan("AcpProtocol.request.enqueue", { attributes }));
+          // Includes queue/stdin delivery, agent work and response routing, not just Onicode CPU.
+          return yield* Deferred.await(deferred).pipe(
+            Effect.withSpan("AcpProtocol.request.awaitResponse", { attributes }),
+          );
+        }),
+      () => removeExtPending(requestId),
     );
   });
 

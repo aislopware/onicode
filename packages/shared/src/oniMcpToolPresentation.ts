@@ -452,6 +452,28 @@ const ONICODE_MCP_TOOLS: Readonly<Record<string, OniMcpToolDefinition>> = {
 
 export const ONICODE_MCP_TOOL_NAMES: ReadonlySet<string> = new Set(Object.keys(ONICODE_MCP_TOOLS));
 
+// Keep in sync with OrchestratorToolkit Tool.Readonly annotations; ClaudeAdapterV2.test.ts checks this.
+export const ONICODE_READ_ONLY_MCP_TOOL_NAMES: ReadonlyArray<string> = [
+  "orchestrator_capabilities",
+  "list_scheduled_tasks",
+  "oni_background_wait",
+  "oni_thread_list",
+  "oni_thread_wait",
+  "oni_worktree_status",
+  "oni_worktree_list",
+  "oni_project_list",
+  "oni_project_read",
+  "oni_thread_search",
+  "oni_preview_list",
+  "oni_environment_read",
+  "oni_environment_links",
+  "oni_theme_read",
+  "html_preview",
+  "html_render",
+  "send_to_user",
+  "oni_submit_output",
+];
+
 function normalizeOniMcpToolLabel(value: string): string {
   return value.replace(/\s+(?:complete|completed)\s*$/i, "").trim();
 }

@@ -30,6 +30,19 @@ const QUOTA_ERROR = errorPayload(
 const RATE_LIMIT_ERROR = errorPayload(
   "Error 429, Message: Resource has been exhausted (e.g. check quota)., Status: RESOURCE_EXHAUSTED, Details: [map[@type:type.googleapis.com/google.rpc.ErrorInfo domain:cloudcode-pa.googleapis.com reason:RATE_LIMIT_EXCEEDED] map[@type:type.googleapis.com/google.rpc.RetryInfo retryDelay:42s]]",
 );
+const CAPACITY_EXHAUSTED_ERROR = errorPayload(
+  "Error 429, Message: No capacity available for model gemini-test., Status: RESOURCE_EXHAUSTED, Details: [map[@type:type.googleapis.com/google.rpc.ErrorInfo domain:cloudcode-pa.googleapis.com reason:MODEL_CAPACITY_EXHAUSTED]]",
+);
+const PREFILL_OVERLOADED_ERROR = errorPayload(
+  "Error 429, Message: Prefill queue overloaded., Status: RESOURCE_EXHAUSTED, Details: [map[@type:type.googleapis.com/google.rpc.ErrorInfo domain:cloudcode-pa.googleapis.com reason:PREFILL_QUEUE_OVERLOADED]]",
+);
+const UNAVAILABLE_ERROR = errorPayload(
+  "Error 503, Message: The model is overloaded., Status: UNAVAILABLE, Details: []",
+);
+const STATUS_UNAVAILABLE_ERROR = Buffer.concat([
+  Buffer.from([0x12, 0x37]),
+  Buffer.from("UNAVAILABLE (code 503): No capacity available for model gemini-test."),
+]);
 const RETIRED_QUOTA_ERROR = errorPayload(
   "Error 429, Message: Quota exhausted for test model., Status: RESOURCE_EXHAUSTED, Details: [map[@type:type.googleapis.com/google.rpc.ErrorInfo domain:googleapis.com metadata:map[quotaResetDelay:3600s quotaResetTimeStamp:2026-11-09T01:05:00Z] reason:QUOTA_EXHAUSTED]]",
 );
@@ -148,6 +161,34 @@ describe("watchAntigravityPromptOutcome", () => {
           resetAt: "1970-01-01T00:00:42.000Z",
         }),
       );
+      // Capacity and overload errors retry as provider errors rather than usage limits.
+      for (const [error, message, code] of [
+        [
+          CAPACITY_EXHAUSTED_ERROR,
+          "No capacity available for model gemini-test.",
+          "MODEL_CAPACITY_EXHAUSTED",
+        ],
+        [PREFILL_OVERLOADED_ERROR, "Prefill queue overloaded.", "PREFILL_QUEUE_OVERLOADED"],
+        [UNAVAILABLE_ERROR, "The model is overloaded.", "UNAVAILABLE"],
+        [STATUS_UNAVAILABLE_ERROR, "No capacity available for model gemini-test.", "UNAVAILABLE"],
+      ] as const) {
+        assert.deepEqual(
+          yield* turn([
+            [USER_INPUT, input],
+            [ERROR_MESSAGE, error],
+          ]),
+          {
+            ...reusable({
+              class: "provider_error",
+              message,
+              code,
+              retryable: true,
+            }),
+            resumeWith: "continue",
+            maxResumes: 5,
+          },
+        );
+      }
       assert.deepEqual(
         yield* turn([
           [USER_INPUT, input],

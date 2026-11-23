@@ -28,6 +28,12 @@ export const callRpc = <A>(
               }),
         ),
     }),
+    Effect.withSpan("AcpProtocol.request", {
+      attributes: {
+        "rpc.system": "jsonrpc",
+        "rpc.method": method,
+      },
+    }),
   );
 
 export const isolateNotificationHandler = <E, R>(effect: Effect.Effect<void, E, R>) =>

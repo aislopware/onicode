@@ -28,6 +28,7 @@ import {
 import { isWorkspaceImagePreviewPath } from "@onicode/shared/filePreview";
 import { backgroundWorkTextPreview } from "@onicode/shared/orchestrationV2PendingBackgroundWork";
 import { pastedUrl } from "@onicode/shared/oauthCallback";
+import { ONICODE_READ_ONLY_MCP_TOOL_NAMES } from "@onicode/shared/oniMcpToolPresentation";
 import {
   addClaudeLedgerUsage,
   claudeLedgerDelta,
@@ -158,7 +159,6 @@ import * as Effect from "effect/Effect";
 import * as Equal from "effect/Equal";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
-import * as Schedule from "effect/Schedule";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -204,6 +204,11 @@ import * as ServerSettings from "../../serverSettings.ts";
 import { expandHomePath } from "@onicode/provider-core/server/pathExpansion";
 import { spawnAndCollect } from "@onicode/provider-core/server/snapshotProbe";
 import { resolveSpawnCommand } from "@onicode/shared/shell";
+import {
+  PROCESS_TABLE_PS_ARGS,
+  makeSharedProcessDescendantPoll,
+  parseProcessTable,
+} from "@onicode/provider-core/server/processDescendants";
 import { signalProcessGroup } from "@onicode/provider-core/server/processGroup";
 import {
   claudeLocalSettingsDirectory,
@@ -486,8 +491,6 @@ const CLAUDE_QUEUED_NOTICE_START_TIMEOUT_MS = 10_000;
 const CLAUDE_STDERR_TAIL_LENGTH = 2_048;
 // The process group is killed on exit, so its stderr closes promptly.
 const CLAUDE_STDERR_DRAIN_TIMEOUT = Duration.seconds(1);
-// How often a working CLI's process tree is recorded when no agent scope will stop what it leaves.
-const CLAUDE_DESCENDANT_POLL = "1 second";
 // Claude Code's refusal of bypassPermissions as root, which it explains only on stderr.
 const CLAUDE_ROOT_REFUSAL =
   "--dangerously-skip-permissions cannot be used with root/sudo privileges for security reasons";
@@ -563,149 +566,6 @@ export function spawnClaudeProcessGroup(
   }
   // Node's typings make stdin and stdout nullable once stdio has a fourth entry; both are pipes.
   return child as ClaudeSpawnedProcess & Pick<NodeChildProcess.ChildProcess, "pid">;
-}
-
-interface ClaudeProcessRow {
-  readonly pid: number;
-  readonly ppid: number;
-  readonly pgid: number;
-  readonly started: string;
-}
-
-/** Parses `ps -A -o pid=,ppid=,pgid=,lstart=`; pid plus start time tells a process from a reused pid. */
-function parseClaudeProcessTable(table: string): ReadonlyArray<ClaudeProcessRow> {
-  return table.split("\n").flatMap((line) => {
-    const [pid, ppid, pgid, ...started] = line.trim().split(/\s+/);
-    const row = {
-      pid: Number(pid),
-      ppid: Number(ppid),
-      pgid: Number(pgid),
-      started: started.join(" "),
-    };
-    return Number.isSafeInteger(row.pid) &&
-      Number.isSafeInteger(row.ppid) &&
-      Number.isSafeInteger(row.pgid) &&
-      row.started
-      ? [row]
-      : [];
-  });
-}
-
-// A job leading its own group takes the processes it started since with it.
-function killClaudeDescendant(row: ClaudeProcessRow) {
-  try {
-    if (row.pgid === row.pid) signalProcessGroup(row.pid, "SIGKILL");
-    else process.kill(row.pid, "SIGKILL");
-  } catch {}
-}
-
-function claudeDescendants(
-  rows: ReadonlyArray<ClaudeProcessRow>,
-  rootPids: ReadonlyArray<number>,
-): ReadonlyArray<ClaudeProcessRow> {
-  const children = Map.groupBy(rows, (row) => row.ppid);
-  const found: Array<ClaudeProcessRow> = [];
-  const seen = new Set<number>(rootPids);
-  const pending = [...rootPids];
-  for (let parent = pending.pop(); parent !== undefined; parent = pending.pop()) {
-    for (const child of children.get(parent) ?? []) {
-      if (seen.has(child.pid)) continue;
-      seen.add(child.pid);
-      found.push(child);
-      pending.push(child.pid);
-    }
-  }
-  return found;
-}
-
-const processIdentity = (row: ClaudeProcessRow) => `${row.pid} ${row.started}`;
-
-/** What one CLI started, by pid and start time, recorded from each process table read while it runs. */
-function makeClaudeDescendantTracker(cliPid: number) {
-  const tracked = new Map<string, ClaudeProcessRow>();
-  // After exit the CLI's pid may belong to an unrelated process, so only tracked jobs are roots.
-  const record = (rows: ReadonlyArray<ClaudeProcessRow>, cliRunning: boolean) => {
-    const running = new Set(rows.map(processIdentity));
-    // `ps -A` lists itself, so no rows is a failed read.
-    if (rows.length === 0) return running;
-    const roots = cliRunning ? [cliPid] : [];
-    for (const [key, row] of tracked) {
-      if (running.has(key)) roots.push(row.pid);
-      else tracked.delete(key);
-    }
-    for (const row of claudeDescendants(rows, roots)) tracked.set(processIdentity(row), row);
-    return running;
-  };
-  return { tracked: tracked as ReadonlyMap<string, ClaudeProcessRow>, record };
-}
-
-/**
- * Process table reads for every working CLI. A poll reads the table once for all of them, so the
- * `ps` cost does not grow with open sessions. Jobs start only while a CLI works, so an idle CLI is
- * left out of polls; its turn ends with one last read.
- */
-export function makeClaudeDescendantPoll(
-  readProcessTable: Effect.Effect<ReadonlyArray<ClaudeProcessRow>>,
-) {
-  const live = new Set<ReturnType<typeof makeClaudeDescendantTracker>>();
-  // Polls, session closes and exits read one at a time, so each table is newer than all recorded,
-  // and a pid and start time it no longer lists never run again.
-  const reading = Semaphore.makeUnsafe(1);
-  const read = <A>(apply: (rows: ReadonlyArray<ClaudeProcessRow>) => A) =>
-    reading.withPermits(1)(readProcessTable.pipe(Effect.map(apply)));
-  return {
-    // A table read before a CLI started may list an older process under its pid, so a poll records
-    // only into the CLIs working when its read began.
-    poll: Effect.suspend(() =>
-      live.size === 0
-        ? Effect.void
-        : reading
-            .withPermits(1)(
-              Effect.suspend(() => {
-                const working = [...live];
-                return readProcessTable.pipe(
-                  Effect.map((rows) => {
-                    for (const tracker of working)
-                      if (live.has(tracker)) tracker.record(rows, true);
-                  }),
-                );
-              }),
-            )
-            .pipe(Effect.withSpan("ClaudeAgentSdkQueryRunner.trackDescendants")),
-    ),
-    track: (cliPid: number) => {
-      const tracker = makeClaudeDescendantTracker(cliPid);
-      let exited = false;
-      const refresh = read((rows) => void tracker.record(rows, true));
-      return {
-        tracked: tracker.tracked,
-        refresh,
-        /** Polls this CLI from now until its turn settles. */
-        work: () => {
-          if (!exited) live.add(tracker);
-        },
-        settle: Effect.suspend(() => {
-          live.delete(tracker);
-          return exited ? Effect.void : refresh;
-        }),
-        /** Reads the table after the CLI exited: what it left that is still the same process. */
-        leftovers: Effect.sync(() => {
-          exited = true;
-          live.delete(tracker);
-        }).pipe(
-          Effect.andThen(
-            read((rows) => {
-              const running = tracker.record(rows, false);
-              return [...tracker.tracked.values()].filter((row) =>
-                running.has(processIdentity(row)),
-              );
-            }),
-          ),
-        ),
-      };
-    },
-    hasLive: () => live.size > 0,
-  };
 }
 
 export const ClaudeProviderCapabilitiesV2 = {
@@ -1848,45 +1708,19 @@ export const layerQueryRunner: Layer.Layer<
     const portDiscovery = yield* PortScanner.PortDiscovery;
     const processRunner = yield* ProcessRunner.make();
     const readProcessTable = processRunner
-      .run({ command: "ps", args: ["-A", "-o", "pid=,ppid=,pgid=,lstart="], timeout: "5 seconds" })
+      .run({ command: "ps", args: [...PROCESS_TABLE_PS_ARGS], timeout: "5 seconds" })
       .pipe(
-        Effect.map((result) => (result.code === 0 ? parseClaudeProcessTable(result.stdout) : [])),
+        Effect.map((result) => (result.code === 0 ? parseProcessTable(result.stdout) : [])),
         Effect.orElseSucceed(() => []),
       );
     // Without an agent scope, a job that left the CLI's group escapes the group kill and is
     // re-parented once the CLI exits. So the CLI's tree is recorded while it runs, and what is
     // still the same process (pid and start time) is stopped after it exits.
-    const descendantPoll = makeClaudeDescendantPoll(readProcessTable);
-    // One poll serves every CLI. The first tracked CLI starts it; it stops once none is left.
-    let polling: Fiber.Fiber<unknown> | undefined;
-    const startPolling = () => {
-      polling ??= runFork(
-        descendantPoll.poll.pipe(
-          Effect.repeat({
-            schedule: Schedule.spaced(CLAUDE_DESCENDANT_POLL),
-            // Cleared in the same step that ends the poll, so the next tracked CLI starts a new one.
-            while: () => {
-              if (descendantPoll.hasLive()) return true;
-              polling = undefined;
-              return false;
-            },
-          }),
-        ),
-      );
-    };
+    const descendantPoll = makeSharedProcessDescendantPoll(readProcessTable, runFork);
     const trackDescendants = (cliPid: number) => {
       const tracker = descendantPoll.track(cliPid);
-      const work = () => {
-        tracker.work();
-        startPolling();
-      };
-      work();
-      const stop = tracker.leftovers.pipe(
-        Effect.map((rows) => {
-          for (const row of rows) killClaudeDescendant(row);
-        }),
-      );
-      return { refresh: tracker.refresh, work, settle: tracker.settle, stop };
+      tracker.work();
+      return tracker;
     };
 
     // The open span below is the tracing boundary for both attempts.
@@ -3057,27 +2891,8 @@ const CLAUDE_TOOLS_UNUSED_UNDER_ONICODE: ReadonlyArray<string> = [
   "CronList",
 ];
 
-// Keep in sync with OrchestratorToolkit Tool.Readonly annotations; ClaudeAdapterV2.test.ts checks this.
-export const CLAUDE_READ_ONLY_ONI_MCP_ALLOWED_TOOLS: ReadonlyArray<string> = [
-  "mcp__onicode__orchestrator_capabilities",
-  "mcp__onicode__list_scheduled_tasks",
-  "mcp__onicode__oni_background_wait",
-  "mcp__onicode__oni_thread_list",
-  "mcp__onicode__oni_thread_wait",
-  "mcp__onicode__oni_worktree_status",
-  "mcp__onicode__oni_worktree_list",
-  "mcp__onicode__oni_project_list",
-  "mcp__onicode__oni_project_read",
-  "mcp__onicode__oni_thread_search",
-  "mcp__onicode__oni_preview_list",
-  "mcp__onicode__oni_environment_read",
-  "mcp__onicode__oni_environment_links",
-  "mcp__onicode__oni_theme_read",
-  "mcp__onicode__html_preview",
-  "mcp__onicode__html_render",
-  "mcp__onicode__send_to_user",
-  "mcp__onicode__oni_submit_output",
-];
+export const CLAUDE_READ_ONLY_ONI_MCP_ALLOWED_TOOLS: ReadonlyArray<string> =
+  ONICODE_READ_ONLY_MCP_TOOL_NAMES.map((name) => `mcp__onicode__${name}`);
 
 // request_secret can wait an hour; exceed Claude's default 60 s timeout.
 export const CLAUDE_ONI_MCP_TOOL_TIMEOUT_MS = 65 * 60 * 1_000;

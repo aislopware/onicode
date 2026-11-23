@@ -14,6 +14,7 @@ import type * as EffectAcpSchema from "effect-acp/compat";
 
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import {
+  antigravityAcpRuntimeProcessOwnership,
   applyAntigravityAcpModelSelection,
   antigravityClientInfo,
   antigravityPermissionDisposition,
@@ -42,16 +43,17 @@ function makeModelRuntime(
     if (failure) return yield* failure;
     selections.push(model);
   });
-  const setConfigOption = Effect.fn("AntigravityAcpSupportTest.setConfigOption")(function* (
+  const setConfigOption = (
     configId: string,
     value: string | boolean,
     options?: { readonly allowUnlistedValue?: boolean },
-  ) {
-    selections.push(
-      `${configId}=${String(value)}${options?.allowUnlistedValue === true ? " (unlisted)" : ""}`,
-    );
-    return { configOptions };
-  });
+  ) =>
+    Effect.sync(() => {
+      selections.push(
+        `${configId}=${String(value)}${options?.allowUnlistedValue === true ? " (unlisted)" : ""}`,
+      );
+      return { configOptions };
+    });
   return {
     runtime: { getConfigOptions: Effect.succeed(configOptions), setModel, setConfigOption },
     selections,
@@ -85,6 +87,23 @@ describe("Antigravity release gates", () => {
           : undefined,
       );
       expect(antigravityClientInfo(version).name).toBe(ownName ? "onicode" : "zed");
+    },
+  );
+});
+
+describe("antigravityAcpRuntimeProcessOwnership", () => {
+  it.each([
+    { platform: "darwin" as const, ownDescendantProcessGroups: true },
+    { platform: "linux" as const, ownDescendantProcessGroups: true },
+    { platform: "win32" as const, ownDescendantProcessGroups: false },
+  ])(
+    "owns detached process groups on $platform and descendant groups when supported ($ownDescendantProcessGroups)",
+    ({ platform, ownDescendantProcessGroups }) => {
+      expect(antigravityAcpRuntimeProcessOwnership(platform)).toEqual({
+        ownDetachedProcessGroup: true,
+        ownDescendantProcessGroups,
+        processGroupPlatform: platform,
+      });
     },
   );
 });
@@ -146,10 +165,14 @@ describe("Antigravity Auto", () => {
         toolCall: { toolCallId: "call-1", title, kind: "execute", rawInput },
         options: [{ optionId: "allow", name: "Allow", kind: "allow_once" }],
       });
-      for (const oniCall of [
-        request("Run mcp_onicode_oni_thread_list?"),
-        request("MCP Tool delegate_task", { ServerName: "onicode", ToolName: "delegate_task" }),
-      ]) {
+      for (const [oniCall, readOnlySandbox] of [
+        [request("Run mcp_onicode_oni_thread_list?"), "allow"],
+        [request("Run mcp_onicode_send_to_user?"), "allow"],
+        [
+          request("MCP Tool delegate_task", { ServerName: "onicode", ToolName: "delegate_task" }),
+          "deny",
+        ],
+      ] as const) {
         expect(antigravityPermissionDisposition(policy, oniCall)).toBe("allow");
         expect(
           antigravityPermissionDisposition({ ...policy, approvalPolicy: "on-request" }, oniCall),
@@ -159,7 +182,7 @@ describe("Antigravity Auto", () => {
             { ...policy, sandboxPolicy: { type: "readOnly" } },
             oniCall,
           ),
-        ).toBe("deny");
+        ).toBe(readOnlySandbox);
       }
       for (const otherCall of [
         // Names no server, so another MCP server's tool of the same name looks identical.
@@ -232,7 +255,7 @@ describe("applyAntigravityAcpModelSelection", () => {
   );
 
   it.effect.each(["gemini-removed", "Gemini saved", "gemini-saved[reasoning=high]"])(
-    "rejects unavailable or non-native model ID %s without selecting a fallback",
+    "rejects unavailable or non-native model ID %s unless told to fall back to the default",
     (model) =>
       Effect.gen(function* () {
         const { runtime, selections } = makeModelRuntime();
@@ -247,6 +270,15 @@ describe("applyAntigravityAcpModelSelection", () => {
           code: -32602,
           errorMessage: expect.stringContaining(`'${model}' is unavailable`),
         });
+        expect(selections).toEqual([]);
+        expect(
+          yield* applyAntigravityAcpModelSelection({
+            runtime,
+            model,
+            fallbackToDefault: true,
+            mapError: (cause) => cause,
+          }),
+        ).toBe("gemini-default");
         expect(selections).toEqual([]);
       }),
   );

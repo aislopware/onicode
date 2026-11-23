@@ -173,7 +173,7 @@ it.layer(NodeServices.layer)("discoverAntigravitySkills", (it) => {
     }),
   );
 
-  it.effect("uses the filename when valid frontmatter has no name", () =>
+  it.effect("uses the directory name when valid frontmatter has no name", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
@@ -182,15 +182,27 @@ it.layer(NodeServices.layer)("discoverAntigravitySkills", (it) => {
         path.join(input.cwd, ".agents", "skills", "not-the-name"),
         "---\n---\n# Skill body\n",
       );
+      const secondPath = yield* writeSkill(
+        path.join(input.cwd, ".agents", "skills", "second-nameless"),
+        "---\ndescription: Second nameless skill.\n---\n# Skill body\n",
+      );
 
       assert.deepEqual(yield* discoverAntigravitySkills(input), [
-        { name: "SKILL", path: skillPath, scope: "project", enabled: true },
+        { name: "not-the-name", path: skillPath, scope: "project", enabled: true },
+        {
+          name: "second-nameless",
+          description: "Second nameless skill.",
+          path: secondPath,
+          scope: "project",
+          enabled: true,
+        },
       ]);
 
+      yield* fileSystem.remove(path.dirname(secondPath), { recursive: true });
       const lowerCasePath = path.join(path.dirname(skillPath), "skill.md");
       yield* fileSystem.rename(skillPath, lowerCasePath);
       assert.deepEqual(yield* discoverAntigravitySkills(input), [
-        { name: "skill", path: lowerCasePath, scope: "project", enabled: true },
+        { name: "not-the-name", path: lowerCasePath, scope: "project", enabled: true },
       ]);
 
       yield* fileSystem.rename(lowerCasePath, path.join(path.dirname(skillPath), "SKILL.MD"));
@@ -470,5 +482,58 @@ it.layer(NodeServices.layer)("discoverAntigravitySkills", (it) => {
           },
         ]);
       }),
+  );
+
+  it.effect("reads project skills and skills.json from extraRoots after cwd", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const input = yield* makeWorkspace();
+      const extraRoot = path.join(path.dirname(input.cwd), "extra-workspace");
+      const cwdShared = yield* writeSkill(
+        path.join(input.cwd, ".agents", "skills", "shared"),
+        "---\nname: shared\ndescription: From cwd.\n---\n",
+      );
+      yield* writeSkill(
+        path.join(extraRoot, ".agents", "skills", "shared"),
+        "---\nname: shared\ndescription: From extra root.\n---\n",
+      );
+      const extraAgents = yield* writeSkill(
+        path.join(extraRoot, ".agents", "skills", "extra-only"),
+        "---\nname: extra-only\n---\n",
+      );
+      const extraGemini = yield* writeSkill(
+        path.join(extraRoot, ".gemini", "skills", "extra-gemini"),
+        "---\nname: extra-gemini\n---\n",
+      );
+      const fromConfig = yield* writeSkill(
+        path.join(extraRoot, "tools", "skills", "from-config"),
+        "---\nname: from-config\n---\n",
+      );
+      yield* fileSystem.makeDirectory(path.join(extraRoot, ".agents"), { recursive: true });
+      yield* fileSystem.writeFileString(
+        path.join(extraRoot, ".agents", "skills.json"),
+        JSON.stringify({ entries: [{ path: "tools/skills/from-config/SKILL.md" }] }),
+      );
+
+      assert.deepEqual(
+        yield* discoverAntigravitySkills({
+          ...input,
+          extraRoots: [extraRoot, input.cwd, extraRoot],
+        }),
+        [
+          { name: "extra-gemini", path: extraGemini, scope: "project", enabled: true },
+          { name: "extra-only", path: extraAgents, scope: "project", enabled: true },
+          { name: "from-config", path: fromConfig, scope: "project", enabled: true },
+          {
+            name: "shared",
+            description: "From cwd.",
+            path: cwdShared,
+            scope: "project",
+            enabled: true,
+          },
+        ],
+      );
+    }),
   );
 });

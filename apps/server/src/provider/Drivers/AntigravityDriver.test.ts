@@ -11,13 +11,21 @@ import {
   type AntigravitySettings,
 } from "@onicode/contracts";
 import * as HostProcess from "@onicode/shared/HostProcess";
+import * as Clock from "effect/Clock";
+import * as DateTime from "effect/DateTime";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import * as Queue from "effect/Queue";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
+import * as TestClock from "effect/testing/TestClock";
 import { HttpClient } from "effect/http";
 
 import * as BackgroundPolicy from "../../background/BackgroundPolicy.ts";
@@ -34,6 +42,7 @@ import * as ModelManifest from "../ModelManifest.ts";
 import * as IdAllocator from "@onicode/provider-core/server/IdAllocator";
 import * as ProviderAdapter from "@onicode/provider-core/server/ProviderAdapter";
 import { knownProviderFailureMessage } from "@onicode/provider-core/server/failure";
+import { makeTurnInput } from "../../orchestration-v2/Adapters/AcpAdapterV2.testkit.ts";
 import { resolveProviderCompatibility } from "../providerCompatibility.ts";
 import { AntigravityDriver } from "./AntigravityDriver.ts";
 import * as ProviderHostLive from "../ProviderHostLive.ts";
@@ -66,6 +75,11 @@ const makeHarness = Effect.fn("makeAntigravityDriverHarness")(function* (
     readonly enabled?: boolean;
     /** Extra instance variables, such as ones a parent Onicode turn already exported. */
     readonly environment?: ReadonlyArray<{ readonly name: string; readonly value: string }>;
+    readonly onLaunch?: (launch: {
+      readonly command: string;
+      readonly args: ReadonlyArray<string>;
+      readonly profileDirectory: string | undefined;
+    }) => Effect.Effect<void>;
   } = {},
 ) {
   const fs = yield* FileSystem.FileSystem;
@@ -197,19 +211,28 @@ const makeHarness = Effect.fn("makeAntigravityDriverHarness")(function* (
     Effect.gen(function* () {
       if (command._tag !== "StandardCommand")
         return yield* Effect.die("Unexpected process pipeline.");
-      const handle = yield* spawner.spawn(command);
       const environment = command.options.env ?? {};
       const env = (name: string) => {
         const value = environment[name];
         return Redacted.isRedacted(value) ? Redacted.value(value) : value;
       };
+      const args = command.args.map(String);
+      const profileDir = env("GEMINI_HOME");
+      if (options.onLaunch) {
+        yield* options.onLaunch({
+          command: command.command,
+          args,
+          profileDirectory: profileDir,
+        });
+      }
+      const handle = yield* spawner.spawn(command);
       launches.push({
         command: command.command,
-        args: command.args.map(String),
+        args,
         cwd: command.options.cwd,
         extendEnv: command.options.extendEnv,
         environment: Object.fromEntries(Object.keys(environment).map((name) => [name, env(name)])),
-        profileDirectory: env("GEMINI_HOME"),
+        profileDirectory: profileDir,
         forceFileStorage: env("AGY_ACP_FORCE_FILE_STORAGE"),
         credentialKeys: Object.keys(environment).filter((key) =>
           blockedCredentialKeys.has(key.toUpperCase()),
@@ -342,14 +365,15 @@ it.layer(layerTest)("AntigravityDriver", (it) => {
           h.second.executablePath,
         ]);
         for (const launch of agentLaunches) {
+          expect(launch.profileDirectory).toBeDefined();
+          expect(launch.profileDirectory).not.toBe(h.profileDirectory);
           expect(launch.args).toEqual([
             "acp",
             "--gemini-dir",
-            h.profileDirectory,
+            launch.profileDirectory,
             "--app-data-dir",
             "antigravity-acp",
           ]);
-          expect(launch.profileDirectory).toBe(h.profileDirectory);
           expect(launch.forceFileStorage).toBe("1");
           expect(launch.extendEnv).toBe(false);
         }
@@ -375,6 +399,9 @@ it.layer(layerTest)("AntigravityDriver", (it) => {
             .map((request) => request.params?.mcpServers),
         ).toEqual([[], []]);
         yield* h.assertClosed;
+        for (const launch of agentLaunches) {
+          expect(yield* h.fs.exists(launch.profileDirectory!)).toBe(false);
+        }
         yield* h.instance.textGeneration
           .generateThreadTitle({
             cwd: h.profileDirectory,
@@ -382,6 +409,18 @@ it.layer(layerTest)("AntigravityDriver", (it) => {
             modelSelection: { instanceId: h.instance.instanceId, model: "gemini-test-low" },
           })
           .pipe(Effect.ignore);
+        const textLaunch = h.launches.filter((launch) => launch.tempDirectory !== undefined).at(2);
+        expect(textLaunch?.profileDirectory).toBeDefined();
+        expect(textLaunch?.profileDirectory).not.toBe(h.profileDirectory);
+        expect(textLaunch?.args).toEqual([
+          "acp",
+          "--gemini-dir",
+          textLaunch?.profileDirectory,
+          "--app-data-dir",
+          "antigravity-acp",
+          "--include-default-customizations=false",
+        ]);
+        expect(yield* h.fs.exists(textLaunch!.profileDirectory!)).toBe(false);
         const workspace = yield* h.fs.makeTempDirectoryScoped({ prefix: "oni-ag-chat-" });
         const threadId = ThreadId.make("thread-antigravity-capabilities");
         const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
@@ -441,7 +480,9 @@ it.layer(layerTest)("AntigravityDriver", (it) => {
             modelSelection,
             runtimePolicy: cliPolicy,
           });
-          expect(h.launches.at(-1)?.args).toEqual([
+          expect(
+            h.launches.filter((launch) => launch.tempDirectory !== undefined).at(-1)?.args,
+          ).toEqual([
             "acp",
             "--gemini-dir",
             h.profileDirectory,
@@ -705,6 +746,350 @@ it.layer(layerTest)("AntigravityDriver", (it) => {
         );
         expect(yield* fs.exists(directories.runtimeTemp)).toBe(false);
         expect(yield* fs.exists(legacyRoot)).toBe(false);
+      }),
+  );
+
+  it.effect.skipIf(windowsHost)(
+    "restarts an idle session on a newly installed build and resumes the native session",
+    () =>
+      Effect.gen(function* () {
+        const h = yield* makeHarness();
+        const threadId = ThreadId.make("thread-antigravity-build-refresh");
+        const modelSelection = { instanceId: h.instance.instanceId, model: "gemini-test-low" };
+        let nativeSessionId: string | null = null;
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            const workspace = yield* h.fs.makeTempDirectoryScoped({
+              prefix: "oni-ag-build-refresh-",
+            });
+            const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+              runtimeMode: "full-access",
+              interactionMode: "default",
+              cwd: workspace,
+            });
+            const session = yield* h.instance.orchestrationAdapter.openSession({
+              threadId,
+              providerSessionId: ProviderSessionId.make("provider-session-ag-build-refresh"),
+              modelSelection,
+              runtimePolicy,
+            });
+            const events = yield* Queue.unbounded<ProviderAdapter.ProviderAdapterV2Event>();
+            yield* session.events.pipe(
+              Stream.runForEach((event) => Queue.offer(events, event)),
+              Effect.forkScoped,
+            );
+            const providerThread = yield* session.ensureThread({
+              threadId,
+              modelSelection,
+              runtimePolicy,
+            });
+            nativeSessionId = providerThread.nativeThreadRef?.nativeId ?? null;
+            const runTurn = Effect.fnUntraced(function* (ordinal: number) {
+              yield* session.startTurn(
+                makeTurnInput({
+                  threadId,
+                  providerThread,
+                  instanceId: h.instance.instanceId,
+                  runtimePolicy,
+                  modelSelection,
+                  now: yield* DateTime.now,
+                  ordinal,
+                  messageText: `Turn ${ordinal}`,
+                }),
+              );
+              while (true) {
+                const event = yield* Queue.take(events);
+                if (event.type === "turn.terminal") {
+                  expect(event.status).toBe("completed");
+                  return;
+                }
+              }
+            });
+
+            yield* runTurn(1);
+            yield* runTurn(2);
+            const agentLaunches = () =>
+              h.launches.filter((launch) => launch.tempDirectory !== undefined);
+            expect(agentLaunches().map((launch) => launch.command)).toEqual([
+              h.first.executablePath,
+            ]);
+            expect(h.releases).toEqual([]);
+
+            h.controls.selected = h.second;
+            yield* runTurn(3);
+            expect(agentLaunches().map((launch) => launch.command)).toEqual([
+              h.first.executablePath,
+              h.second.executablePath,
+            ]);
+            expect(h.releases).toEqual([h.first.version]);
+
+            h.controls.failResolution = true;
+            yield* runTurn(4);
+            expect(agentLaunches().map((launch) => launch.command)).toEqual([
+              h.first.executablePath,
+              h.second.executablePath,
+            ]);
+          }),
+        );
+
+        const requests = yield* h.readRequests;
+        expect(requests.filter((request) => request.method === "session/new")).toHaveLength(1);
+        expect(requests.filter((request) => request.method === "session/load")).toHaveLength(0);
+        expect(
+          requests
+            .filter((request) => request.method === "session/resume")
+            .map((request) => request.params?.sessionId),
+        ).toEqual([nativeSessionId]);
+        expect(h.releases).toEqual([h.first.version, h.second.version]);
+        yield* h.assertClosed;
+      }),
+  );
+
+  it.effect("follows sign-in and sign-out through the OAuth token file in the profile", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const config = yield* ServerConfig.ServerConfig;
+      const instanceId = ProviderInstanceId.make("antigravity-token-watch");
+      const directories = yield* resolveAntigravityInstanceDirectories(config.stateDir, instanceId);
+      const acpDirectory = path.join(directories.profile, "antigravity-acp");
+      const tokenPath = path.join(acpDirectory, "antigravity-oauth-token");
+      yield* fs.makeDirectory(acpDirectory, { recursive: true });
+      yield* fs.writeFileString(tokenPath, "{}");
+
+      const watchedPath = yield* Deferred.make<string>();
+      const watchEvents = yield* Queue.unbounded<FileSystem.WatchEvent>();
+      const initialProbe = yield* Deferred.make<void>();
+      const tokenUpdateProbe = yield* Deferred.make<void>();
+      const sessionStartAttempt = yield* Deferred.make<void>();
+      const probeTimes: Array<number> = [];
+      const instance = yield* AntigravityDriver.create({
+        instanceId,
+        displayName: "Antigravity token watch",
+        enabled: true,
+        config: AntigravityDriver.defaultConfig(),
+        environment: [],
+      }).pipe(
+        Effect.provide(
+          Layer.mock(AntigravityInstallation.AntigravityInstallation)({
+            managedDirectory: config.stateDir,
+            resolve: () =>
+              Effect.gen(function* () {
+                const now = yield* Clock.currentTimeMillis;
+                probeTimes.push(now);
+                yield* Deferred.succeed(initialProbe, undefined);
+                if (now >= 500) yield* Deferred.succeed(tokenUpdateProbe, undefined);
+                return {
+                  executablePath: "/fake/agy",
+                  source: "managed",
+                  version: "1.5.15",
+                  managedVersionDirectory: null,
+                } satisfies AntigravityInstallation.AntigravityExecutable;
+              }),
+            acquire: () =>
+              Deferred.succeed(sessionStartAttempt, undefined).pipe(
+                Effect.andThen(Effect.die("no agent in this test")),
+              ),
+          }),
+        ),
+        // OS watchers can miss events written right after they start, so the test supplies them.
+        Effect.provideService(FileSystem.FileSystem, {
+          ...fs,
+          watch: (target) =>
+            Stream.unwrap(
+              Deferred.succeed(watchedPath, target).pipe(Effect.as(Stream.fromQueue(watchEvents))),
+            ),
+        }),
+      );
+
+      expect(yield* Deferred.await(watchedPath)).toBe(acpDirectory);
+      yield* Deferred.await(initialProbe);
+
+      yield* Queue.offer(watchEvents, { _tag: "Update", path: "settings.json" });
+      yield* TestClock.adjust("250 millis");
+      expect(probeTimes.some((time) => time >= 250)).toBe(false);
+
+      yield* Queue.offer(watchEvents, { _tag: "Update", path: "antigravity-oauth-token" });
+      yield* TestClock.adjust("250 millis");
+      yield* Deferred.await(tokenUpdateProbe);
+
+      // Another probe can land at the same tick, so wait for the sign-out itself.
+      const signedOut = yield* instance.snapshot.streamChanges.pipe(
+        Stream.filter((provider) => provider.auth.status === "unauthenticated"),
+        Stream.runHead,
+        Effect.forkScoped,
+      );
+      yield* fs.remove(tokenPath);
+      yield* Queue.offer(watchEvents, { _tag: "Remove", path: "antigravity-oauth-token" });
+      yield* TestClock.adjust("250 millis");
+      expect(Option.isSome(yield* Fiber.join(signedOut))).toBe(true);
+      expect((yield* instance.snapshot.getSnapshot).auth.status).toBe("unauthenticated");
+
+      // A sign-in made outside Onicode is confirmed by starting a session.
+      yield* fs.writeFileString(tokenPath, "{}");
+      yield* Queue.offer(watchEvents, { _tag: "Update", path: "antigravity-oauth-token" });
+      yield* TestClock.adjust("250 millis");
+      yield* Deferred.await(sessionStartAttempt);
+    }),
+  );
+
+  it.effect.skipIf(windowsHost)(
+    "isolates refreshModels and text generation from profile hooks, MCP, and user config while keeping sign-in on the real profile",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const fakeHome = yield* fs.makeTempDirectoryScoped({ prefix: "oni-ag-isolated-home-" });
+        yield* fs.makeDirectory(path.join(fakeHome, ".gemini", "config", "skills", "review"), {
+          recursive: true,
+        });
+        yield* fs.writeFileString(path.join(fakeHome, ".gemini", "AGENTS.md"), "user rule");
+        yield* fs.writeFileString(
+          path.join(fakeHome, ".gemini", "config", "skills", "review", "SKILL.md"),
+          "user skill",
+        );
+
+        const observed: Array<{
+          readonly args: ReadonlyArray<string>;
+          readonly profileDirectory: string;
+          readonly hasToken: boolean;
+          readonly hasSettings: boolean;
+          readonly hasHooks: boolean;
+          readonly hasMcp: boolean;
+          readonly hasPlugins: boolean;
+          readonly hasUserSession: boolean;
+          readonly hasAgentsMd: boolean;
+          readonly hasSkills: boolean;
+        }> = [];
+        const h = yield* makeHarness({
+          config: { authMethod: "gemini-api-key", apiKey: "test-key" },
+          environment: [{ name: "HOME", value: fakeHome }],
+          onLaunch: (launch) =>
+            Effect.gen(function* () {
+              if (launch.args[0] !== "acp" || launch.profileDirectory === undefined) return;
+              const dir = launch.profileDirectory;
+              const exists = (segments: ReadonlyArray<string>) =>
+                fs.exists(path.join(dir, ...segments)).pipe(Effect.orDie);
+              observed.push({
+                args: launch.args,
+                profileDirectory: dir,
+                hasToken: yield* exists(["antigravity-acp", "antigravity-oauth-token"]),
+                hasSettings: yield* exists(["antigravity-acp", "settings.json"]),
+                hasHooks: yield* exists(["config", "hooks.json"]),
+                hasMcp: yield* exists(["config", "mcp_config.json"]),
+                hasPlugins: yield* exists(["config", "plugins"]),
+                hasUserSession: yield* exists([
+                  "antigravity-acp",
+                  "conversations",
+                  "user-session.db",
+                ]),
+                hasAgentsMd: yield* exists(["AGENTS.md"]),
+                hasSkills: yield* exists(["config", "skills"]),
+              });
+            }),
+        });
+
+        const acpDir = path.join(h.profileDirectory, "antigravity-acp");
+        const configDir = path.join(h.profileDirectory, "config");
+        yield* fs.makeDirectory(path.join(acpDir, "conversations"), { recursive: true });
+        yield* fs.makeDirectory(path.join(configDir, "plugins", "evil"), { recursive: true });
+        yield* fs.writeFileString(path.join(acpDir, "antigravity-oauth-token"), '{"token":"ok"}');
+        yield* fs.writeFileString(path.join(acpDir, "conversations", "user-session.db"), "keep");
+        yield* fs.writeFileString(
+          path.join(configDir, "hooks.json"),
+          '{"PreToolUse":[{"command":"do-not-run"}]}',
+        );
+        yield* fs.writeFileString(
+          path.join(configDir, "mcp_config.json"),
+          '{"mcpServers":{"evil":{"command":"do-not-run"}}}',
+        );
+        yield* fs.writeFileString(
+          path.join(configDir, "plugins", "evil", "hooks.json"),
+          '{"PreToolUse":[{"command":"do-not-run"}]}',
+        );
+
+        yield* h.refresh();
+        expect((yield* h.instance.snapshot.getSnapshot).supportsTextGeneration).toBe(true);
+
+        const textError = yield* h.instance.textGeneration
+          .generateThreadTitle({
+            cwd: h.profileDirectory,
+            message: "Name this thread",
+            modelSelection: { instanceId: h.instance.instanceId, model: "gemini-test-low" },
+          })
+          .pipe(Effect.flip);
+        expect(textError.detail).toBe("Antigravity returned an invalid text helper session ID.");
+
+        const auth = h.instance.auth;
+        if (!auth) return yield* Effect.die("Antigravity does not expose auth.");
+        const authSubscribed = yield* Deferred.make<void>();
+        const authDone = yield* auth.subscribe("auth-session").pipe(
+          Stream.tap(() => Deferred.succeed(authSubscribed, undefined)),
+          Stream.filter((state) => state.phase === "succeeded" || state.phase === "failed"),
+          Stream.runHead,
+          Effect.forkScoped,
+        );
+        yield* Deferred.await(authSubscribed);
+        yield* auth.start("auth-session");
+        const finalAuth = yield* Fiber.join(authDone);
+        expect(Option.isSome(finalAuth) && finalAuth.value.phase).toBe("succeeded");
+
+        expect(observed).toHaveLength(3);
+        const [refreshLaunch, textLaunch, authLaunch] = observed;
+        expect(refreshLaunch).toMatchObject({
+          args: [
+            "acp",
+            "--gemini-dir",
+            refreshLaunch?.profileDirectory,
+            "--app-data-dir",
+            "antigravity-acp",
+          ],
+          hasToken: true,
+          hasSettings: true,
+          hasHooks: false,
+          hasMcp: false,
+          hasPlugins: false,
+          hasUserSession: false,
+          hasAgentsMd: false,
+          hasSkills: false,
+        });
+        expect(refreshLaunch?.profileDirectory).not.toBe(h.profileDirectory);
+        expect(yield* fs.exists(refreshLaunch!.profileDirectory)).toBe(false);
+
+        expect(textLaunch).toMatchObject({
+          args: [
+            "acp",
+            "--gemini-dir",
+            textLaunch?.profileDirectory,
+            "--app-data-dir",
+            "antigravity-acp",
+            "--include-default-customizations=false",
+          ],
+          hasToken: true,
+          hasSettings: true,
+          hasHooks: false,
+          hasMcp: false,
+          hasPlugins: false,
+          hasUserSession: false,
+          hasAgentsMd: false,
+          hasSkills: false,
+        });
+        expect(textLaunch?.profileDirectory).not.toBe(h.profileDirectory);
+        expect(yield* fs.exists(textLaunch!.profileDirectory)).toBe(false);
+
+        expect(authLaunch).toMatchObject({
+          profileDirectory: h.profileDirectory,
+          args: ["acp", "--gemini-dir", h.profileDirectory, "--app-data-dir", "antigravity-acp"],
+        });
+        expect(
+          (yield* h.readRequests)
+            .filter((request) => request.method === "session/new")
+            .map((request) => request.params?.mcpServers),
+        ).toEqual([[], [], []]);
+        expect(
+          yield* fs.readFileString(path.join(acpDir, "conversations", "user-session.db")),
+        ).toBe("keep");
+        yield* h.assertClosed;
       }),
   );
 });

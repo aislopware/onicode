@@ -9,7 +9,6 @@ import * as SchemaAST from "effect/SchemaAST";
 import { Tool } from "effect/ai";
 
 import { advertisedJsonSchema } from "./advertisedJsonSchema.ts";
-import { ThemeToolkit } from "./toolkits/theme/tools.ts";
 
 it("drops JSON noise, merges tagged unions, and keeps null where it is required", () => {
   const Every = Schema.Struct({ ms: Schema.Int });
@@ -51,19 +50,27 @@ it("drops JSON noise, merges tagged unions, and keeps null where it is required"
   });
 });
 
-it("advertises only string enum values, which Gemini requires", () => {
-  const enumValues: Array<unknown> = [];
-  const collect = (node: unknown): void => {
-    if (Array.isArray(node)) return node.forEach(collect);
-    if (typeof node !== "object" || node === null) return;
+// Gemini rejects the whole turn's function declarations when any one breaks these rules.
+it("advertises schemas Gemini accepts: string enums, and items on every array", async () => {
+  const problems: Array<string> = [];
+  const collect = (node: unknown, path: string): void => {
+    if (Array.isArray(node))
+      return node.forEach((member, index) => collect(member, `${path}[${index}]`));
+    if (!Predicate.isObject(node)) return;
+    if (node.type === "array" && !("items" in node)) problems.push(`${path}: array without items`);
     for (const [key, value] of Object.entries(node)) {
-      if (key === "enum" && Array.isArray(value)) enumValues.push(...value);
-      else collect(value);
+      if (
+        key === "enum" &&
+        Array.isArray(value) &&
+        value.some((item) => typeof item !== "string")
+      ) {
+        problems.push(`${path}: non-string enum`);
+      } else collect(value, `${path}.${key}`);
     }
   };
-  collect(advertisedJsonSchema(ThemeToolkit.tools.oni_theme_set));
+  for (const tool of await registeredTools()) collect(advertisedJsonSchema(tool), tool.name);
 
-  expect(enumValues.filter((value) => typeof value !== "string")).toEqual([]);
+  expect(problems).toEqual([]);
 });
 
 const ownDescription = (ast: SchemaAST.AST): string | undefined =>

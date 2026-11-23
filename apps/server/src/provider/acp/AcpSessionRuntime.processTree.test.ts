@@ -4,10 +4,21 @@ import * as NodeFS from "node:fs";
 import * as NodeModule from "node:module";
 import * as NodePath from "node:path";
 
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { describe, expect, it, vi } from "@effect/vitest";
+import type { ProcessTableRow } from "@onicode/provider-core/server/processDescendants";
 import * as HostProcess from "@onicode/shared/HostProcess";
+import type * as Cause from "effect/Cause";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
+import * as Queue from "effect/Queue";
+import * as Scope from "effect/Scope";
+import * as Sink from "effect/Sink";
+import * as Stream from "effect/Stream";
+import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
+import * as TestClock from "effect/testing/TestClock";
 
 import * as AcpSessionRuntime from "@onicode/provider-acp/server/AcpSessionRuntime";
 
@@ -853,4 +864,326 @@ describe("terminatePosixOwnedProcessTree", () => {
       });
     }
   });
+});
+
+const makeFakeDarwinAcpChild = Effect.fn("AcpSessionRuntimeProcessTreeTest.makeFakeDarwinAcpChild")(
+  function* (input: {
+    readonly pid: number;
+    readonly onPrompt?: () => Effect.Effect<void>;
+    readonly notifier?: { notify?: (update: unknown) => Effect.Effect<void> };
+  }) {
+    const encoder = new TextEncoder();
+    const decoder = new TextDecoder();
+    const stdoutQueue = yield* Queue.unbounded<Uint8Array, Cause.Done>();
+    const exitCode = yield* Deferred.make<ChildProcessSpawner.ExitCode>();
+    let running = true;
+    let stdinBuffer = "";
+
+    const reply = (id: unknown, result: unknown) =>
+      Queue.offer(
+        stdoutQueue,
+        encoder.encode(`${JSON.stringify({ jsonrpc: "2.0", id, result })}\n`),
+      ).pipe(Effect.asVoid);
+
+    if (input.notifier !== undefined) {
+      input.notifier.notify = (update) =>
+        Queue.offer(
+          stdoutQueue,
+          encoder.encode(
+            `${JSON.stringify({
+              jsonrpc: "2.0",
+              method: "session/update",
+              params: { sessionId: `session-${input.pid}`, update },
+            })}\n`,
+          ),
+        ).pipe(Effect.asVoid);
+    }
+
+    const handleLine = (line: string) =>
+      Effect.gen(function* () {
+        if (line.trim().length === 0) return;
+        const message = JSON.parse(line) as { readonly id?: unknown; readonly method?: string };
+        if (message.id === undefined) return;
+        if (message.method === "initialize") {
+          yield* reply(message.id, { protocolVersion: 1, agentCapabilities: {} });
+        } else if (message.method === "session/new") {
+          yield* reply(message.id, { sessionId: `session-${input.pid}` });
+        } else if (message.method === "session/prompt") {
+          if (input.onPrompt !== undefined) {
+            yield* input.onPrompt();
+          }
+          yield* reply(message.id, { stopReason: "end_turn" });
+        }
+      });
+
+    const stdin = Sink.forEach<Uint8Array, void, never, never>((chunk) =>
+      Effect.gen(function* () {
+        stdinBuffer += decoder.decode(chunk, { stream: true });
+        for (;;) {
+          const newline = stdinBuffer.indexOf("\n");
+          if (newline < 0) break;
+          const line = stdinBuffer.slice(0, newline);
+          stdinBuffer = stdinBuffer.slice(newline + 1);
+          yield* handleLine(line);
+        }
+      }),
+    );
+
+    const stopChild = Effect.suspend(() => {
+      running = false;
+      return Queue.end(stdoutQueue).pipe(
+        Effect.andThen(Deferred.succeed(exitCode, ChildProcessSpawner.ExitCode(0))),
+        Effect.asVoid,
+      );
+    });
+
+    return ChildProcessSpawner.makeHandle({
+      pid: ChildProcessSpawner.ProcessId(input.pid),
+      exitCode: Deferred.await(exitCode),
+      isRunning: Effect.sync(() => running),
+      kill: () => stopChild,
+      stdin,
+      stdout: Stream.fromQueue(stdoutQueue),
+      stderr: Stream.empty,
+      all: Stream.empty,
+      getInputFd: () => Sink.drain,
+      getOutputFd: () => Stream.empty,
+      unref: Effect.succeed(Effect.void),
+    });
+  },
+);
+
+describe("AcpSessionRuntime session activation", () => {
+  it.effect("names session/load when the agent can neither load nor resume a session", () =>
+    Effect.gen(function* () {
+      const fakeChild = yield* makeFakeDarwinAcpChild({ pid: 78700 });
+      const runtime = yield* AcpSessionRuntime.make({
+        spawn: { command: "agent", args: ["acp"], shell: false },
+        cwd: process.cwd(),
+        clientInfo: { name: "oni-test", version: "0.0.0" },
+        resumeSessionId: "session-before-restart",
+      }).pipe(
+        Effect.provideService(
+          ChildProcessSpawner.ChildProcessSpawner,
+          ChildProcessSpawner.make(() => Effect.succeed(fakeChild)),
+        ),
+      );
+      const error = yield* runtime.start().pipe(Effect.flip);
+      expect(error._tag === "AcpRequestError" ? error.method : undefined).toBe("session/load");
+    }).pipe(Effect.provide(NodeCrypto.layer), Effect.scoped),
+  );
+});
+
+describe("AcpSessionRuntime darwin descendant ownership", () => {
+  it.effect(
+    "kills a recorded job that left its process group when the runtime closes and polls only while the agent works",
+    () =>
+      Effect.gen(function* () {
+        const promptStarted = yield* Deferred.make<void>();
+        const finishPrompt = yield* Deferred.make<void>();
+        const reparentedSleep: ProcessTableRow = {
+          pid: 81100,
+          ppid: 1,
+          pgid: 81100,
+          started: "Mon Nov 23 17:00:05 2026",
+        };
+        const reusedUnrelated: ProcessTableRow = {
+          pid: 81105,
+          ppid: 1,
+          pgid: 81105,
+          started: "Mon Nov 23 17:00:09 2026",
+        };
+        let table: ReadonlyArray<ProcessTableRow> = [
+          { pid: 78661, ppid: process.pid, pgid: 78661, started: "Mon Nov 23 17:00:00 2026" },
+          { pid: 78662, ppid: 78661, pgid: 78661, started: "Mon Nov 23 17:00:01 2026" },
+          { pid: 81100, ppid: 78661, pgid: 81100, started: "Mon Nov 23 17:00:05 2026" },
+          { pid: 81105, ppid: 78661, pgid: 81105, started: "Mon Nov 23 17:00:06 2026" },
+        ];
+        let reads = 0;
+        const reader = Effect.sync(() => {
+          reads += 1;
+          return table;
+        });
+        const signals: Array<readonly [number, NodeJS.Signals]> = [];
+        const signal = (pid: number, sig: NodeJS.Signals) => {
+          signals.push([pid, sig]);
+          if (pid === -78661 && sig === "SIGKILL") {
+            table = [reparentedSleep, reusedUnrelated];
+          }
+        };
+        const notifier: { notify?: (update: unknown) => Effect.Effect<void> } = {};
+        const fakeChild = yield* makeFakeDarwinAcpChild({
+          pid: 78661,
+          notifier,
+          onPrompt: () =>
+            Deferred.succeed(promptStarted, undefined).pipe(
+              Effect.andThen(Deferred.await(finishPrompt)),
+            ),
+        });
+        const runtimeScope = yield* Scope.make();
+        const runtime = yield* AcpSessionRuntime.make({
+          spawn: { command: "agy", args: ["acp"], shell: false },
+          cwd: process.cwd(),
+          clientInfo: { name: "oni-test", version: "0.0.0" },
+          ownDetachedProcessGroup: true,
+          ownDescendantProcessGroups: true,
+          processGroupPlatform: "darwin",
+          processGroupTerminationGrace: 0,
+          darwinDescendantProcessTableReader: reader,
+          darwinDescendantSignal: signal,
+        }).pipe(
+          Effect.provideService(Scope.Scope, runtimeScope),
+          Effect.provideService(
+            ChildProcessSpawner.ChildProcessSpawner,
+            ChildProcessSpawner.make(() => Effect.succeed(fakeChild)),
+          ),
+        );
+
+        // Session setup starts the agent's MCP servers, so it reads the tree once and then idles.
+        yield* runtime.start();
+        const readsAfterStart = reads;
+        expect(readsAfterStart).toBeGreaterThan(0);
+        yield* TestClock.adjust("1 minute");
+        expect(reads).toBe(readsAfterStart);
+
+        const promptFiber = yield* runtime
+          .prompt({ prompt: [{ type: "text", text: "sleep 417 &" }] })
+          .pipe(Effect.forkChild);
+        yield* Deferred.await(promptStarted);
+        yield* TestClock.adjust("1 second");
+        expect(reads).toBeGreaterThan(0);
+
+        yield* Deferred.succeed(finishPrompt, undefined);
+        yield* Fiber.join(promptFiber);
+        const readsAfterSettle = reads;
+        yield* TestClock.adjust("1 minute");
+        expect(reads).toBe(readsAfterSettle);
+
+        // A tool the agent runs with no prompt open, such as after a job wakes it, polls again.
+        const toolSeen = yield* runtime.getEvents().pipe(
+          Stream.filter((event) => event._tag === "ToolCallUpdated"),
+          Stream.runHead,
+          Effect.forkChild,
+        );
+        yield* notifier.notify!({
+          sessionUpdate: "tool_call",
+          toolCallId: "wake-tool",
+          title: "sleep 5",
+          kind: "execute",
+          status: "in_progress",
+        });
+        yield* Fiber.join(toolSeen);
+        yield* TestClock.adjust("1 second");
+        expect(reads).toBeGreaterThan(readsAfterSettle);
+
+        yield* Scope.close(runtimeScope, Exit.void);
+        expect(signals).toEqual([
+          [-78661, "SIGKILL"],
+          [-81100, "SIGKILL"],
+        ]);
+      }).pipe(
+        Effect.provide(NodeCrypto.layer),
+        Effect.provideService(HostProcess.Platform, "darwin"),
+      ),
+  );
+
+  it.effect("shares one process-table read per poll across concurrent darwin ACP runtimes", () =>
+    Effect.gen(function* () {
+      const startedFirst = yield* Deferred.make<void>();
+      const startedSecond = yield* Deferred.make<void>();
+      const finishFirst = yield* Deferred.make<void>();
+      const finishSecond = yield* Deferred.make<void>();
+      let table: ReadonlyArray<ProcessTableRow> = [
+        { pid: 78661, ppid: process.pid, pgid: 78661, started: "Mon Nov 23 17:00:00 2026" },
+        { pid: 81100, ppid: 78661, pgid: 81100, started: "Mon Nov 23 17:00:05 2026" },
+        { pid: 78662, ppid: process.pid, pgid: 78662, started: "Mon Nov 23 17:00:00 2026" },
+        { pid: 82100, ppid: 78662, pgid: 82100, started: "Mon Nov 23 17:00:06 2026" },
+      ];
+      let reads = 0;
+      const reader = Effect.sync(() => {
+        reads += 1;
+        return table;
+      });
+      const signals: Array<readonly [number, NodeJS.Signals]> = [];
+      const signal = (pid: number, sig: NodeJS.Signals) => {
+        signals.push([pid, sig]);
+        if (pid === -78661 && sig === "SIGKILL") {
+          table = table
+            .filter((row) => row.pid !== 78661)
+            .map((row) => (row.pid === 81100 ? { ...row, ppid: 1 } : row));
+        } else if (pid === -78662 && sig === "SIGKILL") {
+          table = table
+            .filter((row) => row.pid !== 78662)
+            .map((row) => (row.pid === 82100 ? { ...row, ppid: 1 } : row));
+        }
+      };
+
+      const makeRuntime = (
+        pid: number,
+        started: Deferred.Deferred<void>,
+        finish: Deferred.Deferred<void>,
+      ) =>
+        Effect.gen(function* () {
+          const fakeChild = yield* makeFakeDarwinAcpChild({
+            pid,
+            onPrompt: () =>
+              Deferred.succeed(started, undefined).pipe(Effect.andThen(Deferred.await(finish))),
+          });
+          const runtimeScope = yield* Scope.make();
+          const runtime = yield* AcpSessionRuntime.make({
+            spawn: { command: "agy", args: ["acp"], shell: false },
+            cwd: process.cwd(),
+            clientInfo: { name: "oni-test", version: "0.0.0" },
+            ownDetachedProcessGroup: true,
+            ownDescendantProcessGroups: true,
+            processGroupPlatform: "darwin",
+            processGroupTerminationGrace: 0,
+            darwinDescendantProcessTableReader: reader,
+            darwinDescendantSignal: signal,
+          }).pipe(
+            Effect.provideService(Scope.Scope, runtimeScope),
+            Effect.provideService(
+              ChildProcessSpawner.ChildProcessSpawner,
+              ChildProcessSpawner.make(() => Effect.succeed(fakeChild)),
+            ),
+          );
+          yield* runtime.start();
+          return { runtime, runtimeScope };
+        });
+
+      const first = yield* makeRuntime(78661, startedFirst, finishFirst);
+      const second = yield* makeRuntime(78662, startedSecond, finishSecond);
+
+      const promptFirst = yield* first.runtime
+        .prompt({ prompt: [{ type: "text", text: "job 1" }] })
+        .pipe(Effect.forkChild);
+      const promptSecond = yield* second.runtime
+        .prompt({ prompt: [{ type: "text", text: "job 2" }] })
+        .pipe(Effect.forkChild);
+      yield* Deferred.await(startedFirst);
+      yield* Deferred.await(startedSecond);
+
+      yield* TestClock.adjust("1 second");
+      const readsBefore = reads;
+      yield* TestClock.adjust("1 second");
+      expect(reads).toBe(readsBefore + 1);
+
+      yield* Deferred.succeed(finishFirst, undefined);
+      yield* Deferred.succeed(finishSecond, undefined);
+      yield* Fiber.join(promptFirst);
+      yield* Fiber.join(promptSecond);
+      yield* Scope.close(first.runtimeScope, Exit.void);
+      yield* Scope.close(second.runtimeScope, Exit.void);
+
+      expect(signals).toEqual([
+        [-78661, "SIGKILL"],
+        [-81100, "SIGKILL"],
+        [-78662, "SIGKILL"],
+        [-82100, "SIGKILL"],
+      ]);
+    }).pipe(
+      Effect.provide(NodeCrypto.layer),
+      Effect.provideService(HostProcess.Platform, "darwin"),
+    ),
+  );
 });

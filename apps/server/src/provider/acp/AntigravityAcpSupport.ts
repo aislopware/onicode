@@ -17,6 +17,7 @@ import * as Stream from "effect/Stream";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as EffectAcpErrors from "effect-acp/errors";
 import type * as EffectAcpSchema from "effect-acp/compat";
+import * as HostProcess from "@onicode/shared/HostProcess";
 
 import {
   makeAntigravityStderrHandler,
@@ -29,7 +30,10 @@ import {
   type AcpRuntimePolicy,
 } from "@onicode/provider-acp/server/clientPolicy";
 import type { AcpSessionModeState } from "@onicode/provider-acp/server/runtimeModel";
-import { ONICODE_MCP_TOOL_NAMES } from "@onicode/shared/oniMcpToolPresentation";
+import {
+  ONICODE_MCP_TOOL_NAMES,
+  ONICODE_READ_ONLY_MCP_TOOL_NAMES,
+} from "@onicode/shared/oniMcpToolPresentation";
 import packageJson from "../../../package.json" with { type: "json" };
 import { normalizeAntigravitySessionUpdate } from "./AntigravityProtocol.ts";
 
@@ -111,6 +115,20 @@ export function antigravityClientInfo(version: string | null | undefined) {
     : { name: "zed", version: "0.0.0" };
 }
 
+export function antigravityAcpRuntimeProcessOwnership(
+  processGroupPlatform: NodeJS.Platform,
+): Pick<
+  AcpSessionRuntime.AcpSessionRuntimeOptions,
+  "ownDescendantProcessGroups" | "ownDetachedProcessGroup" | "processGroupPlatform"
+> {
+  return {
+    ownDescendantProcessGroups:
+      processGroupPlatform === "linux" || processGroupPlatform === "darwin",
+    ownDetachedProcessGroup: true,
+    processGroupPlatform,
+  };
+}
+
 export const makeAntigravityAcpRuntime = Effect.fn("makeAntigravityAcpRuntime")(function* (
   input: AntigravityAcpRuntimeInput,
 ): Effect.fn.Return<
@@ -118,6 +136,7 @@ export const makeAntigravityAcpRuntime = Effect.fn("makeAntigravityAcpRuntime")(
   EffectAcpErrors.AcpError,
   SecureRandom.SecureRandom | Scope.Scope
 > {
+  const processGroupPlatform = input.processGroupPlatform ?? (yield* HostProcess.Platform);
   const context = yield* Layer.build(
     AcpSessionRuntime.layer({
       ...input,
@@ -144,6 +163,7 @@ export const makeAntigravityAcpRuntime = Effect.fn("makeAntigravityAcpRuntime")(
         input.onAuthorizationUrl ? { onAuthorizationUrl: input.onAuthorizationUrl } : {},
       ),
       transformSessionUpdate: normalizeAntigravitySessionUpdate,
+      ...antigravityAcpRuntimeProcessOwnership(processGroupPlatform),
     }).pipe(
       Layer.provide(
         Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, input.childProcessSpawner),
@@ -187,31 +207,42 @@ export function antigravitySessionMode(
 // MCP server's tool of the same name would pass.
 const ANTIGRAVITY_ONI_MCP_TITLE = /^Run mcp_onicode_(?<tool>[A-Za-z0-9_]+)\??$/;
 
-function isAntigravityOniMcpRequest(request: EffectAcpSchema.RequestPermissionRequest): boolean {
+function antigravityOniMcpTool(
+  request: EffectAcpSchema.RequestPermissionRequest,
+): string | undefined {
   const rawInput = unknownRecord(request.toolCall.rawInput);
   if (rawInput?.ServerName !== undefined) {
-    return (
-      rawInput.ServerName === "onicode" &&
+    return rawInput.ServerName === "onicode" &&
       typeof rawInput.ToolName === "string" &&
       ONICODE_MCP_TOOL_NAMES.has(rawInput.ToolName)
-    );
+      ? rawInput.ToolName
+      : undefined;
   }
-  if (typeof rawInput?.CommandLine === "string") return false;
+  if (typeof rawInput?.CommandLine === "string") return undefined;
   const tool = ANTIGRAVITY_ONI_MCP_TITLE.exec(request.toolCall.title?.trim() ?? "")?.groups?.tool;
-  return tool !== undefined && ONICODE_MCP_TOOL_NAMES.has(tool);
+  return tool !== undefined && ONICODE_MCP_TOOL_NAMES.has(tool) ? tool : undefined;
 }
 
 export function antigravityPermissionDisposition(
   policy: AcpRuntimePolicy,
   request: EffectAcpSchema.RequestPermissionRequest,
 ) {
+  const oniTool = antigravityOniMcpTool(request);
+  // Read-only sandboxes such as Plan mode still run Onicode's read-only tools, as Claude does.
+  if (
+    oniTool !== undefined &&
+    ONICODE_READ_ONLY_MCP_TOOL_NAMES.includes(oniTool) &&
+    unknownRecord(policy.sandboxPolicy)?.type === "readOnly"
+  ) {
+    return "allow";
+  }
   const disposition = acpPermissionDisposition(policy, request);
   if (disposition === "deny") return "deny";
   // Onicode authorizes its own MCP server, so Auto and Auto-accept edits run it unasked, as Claude does.
   if (
     (policy.runtimeMode === "auto" || policy.runtimeMode === "auto-accept-edits") &&
     (policy.approvalPolicy === undefined || policy.approvalPolicy === "never") &&
-    isAntigravityOniMcpRequest(request)
+    oniTool !== undefined
   ) {
     return "allow";
   }
@@ -290,6 +321,8 @@ export const applyAntigravityAcpModelSelection = Effect.fn("applyAntigravityAcpM
     >;
     readonly model: string | null | undefined;
     readonly defaultModel?: string | undefined;
+    // Background work such as titles uses the account default instead of failing.
+    readonly fallbackToDefault?: boolean;
     readonly mapError: (cause: EffectAcpErrors.AcpError) => E;
   }): Effect.fn.Return<string | undefined, E> {
     const configOptions = yield* input.runtime.getConfigOptions;
@@ -313,6 +346,9 @@ export const applyAntigravityAcpModelSelection = Effect.fn("applyAntigravityAcpM
       return legacyFamily;
     }
     if (!options.some((option) => option.value === resolved)) {
+      if (input.fallbackToDefault === true && input.model) {
+        return yield* applyAntigravityAcpModelSelection({ ...input, model: undefined });
+      }
       return yield* Effect.fail(
         input.mapError(
           EffectAcpErrors.AcpRequestError.invalidParams(

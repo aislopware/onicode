@@ -79,6 +79,10 @@ describe("Antigravity process environment", () => {
       ELECTRON_RUN_AS_NODE: "0",
       CHROME_CRASHPAD_PIPE_NAME: "\\\\.\\pipe\\crashpad_50144_ZUJNJELFHHXPBIRT",
       chrome_crashpad_pipe_name: "\\\\.\\pipe\\crashpad_stale_alias",
+      ANTIGRAVITY_CONVERSATION_ID: "parent-conversation",
+      ANTIGRAVITY_LS_ADDRESS: "127.0.0.1:41234",
+      ANTIGRAVITY_CSRF_TOKEN: "parent-csrf",
+      antigravity_trajectory_id: "parent-trajectory-alias",
       CUSTOM_SETTING: "keep-this",
     };
     const original = { ...baseEnv };
@@ -105,10 +109,34 @@ describe("Antigravity process environment", () => {
         AGY_CLI_DISABLE_AUTO_UPDATE: "1",
         BROWSER: profile.browserCommand,
         PYTHONUNBUFFERED: "1",
-        ELECTRON_RUN_AS_NODE: "1",
         TMPDIR: profile.tempDirectory,
       },
     });
+    expect(
+      buildAntigravityAcpSpawnInput({
+        installation: { executablePath: "/usr/bin/agy" },
+        profile,
+        cwd: "/project",
+        baseEnv,
+        includeDefaultCustomizations: false,
+      }).args,
+    ).toEqual([
+      "acp",
+      "--gemini-dir",
+      profile.geminiHome,
+      "--app-data-dir",
+      "antigravity-acp",
+      "--include-default-customizations=false",
+    ]);
+    expect(
+      buildAntigravityAcpSpawnInput({
+        installation: { executablePath: "/usr/bin/agy" },
+        profile,
+        cwd: "/project",
+        baseEnv,
+        includeDefaultCustomizations: true,
+      }).args,
+    ).toEqual(["acp", "--gemini-dir", profile.geminiHome, "--app-data-dir", "antigravity-acp"]);
   });
 
   it("passes only the configured method's credential and keeps the GCP pair out of the environment", () => {
@@ -176,6 +204,7 @@ describe("Antigravity process environment", () => {
     const shared = buildAntigravityAcpSpawnInput(input);
     expect(shared.env?.TEMP).toBe(windowsProfile.tempDirectory);
     expect(shared.env?.TMP).toBe(windowsProfile.tempDirectory);
+    expect(shared.env?.ELECTRON_RUN_AS_NODE).toBe("1");
     const perRun = buildAntigravityAcpSpawnInput({
       ...input,
       runtimeTempDirectory: `${windowsProfile.tempDirectory}\\run-1`,
@@ -558,6 +587,23 @@ it.layer(NodeServices.layer)("Antigravity profile preparation", (it) => {
           }))?.SSL_CERT_FILE,
         ).toBe(systemBundles[0]);
         expect((yield* prepareSpawn([]))?.SSL_CERT_FILE).toBeUndefined();
+
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const envDir = yield* fs.makeTempDirectoryScoped();
+        const envProfile = yield* prepareAntigravityProfile({
+          profileDirectory: path.join(envDir, "profile"),
+          userHome: path.join(envDir, "home"),
+          runtimeExecutablePath: process.execPath,
+          platform: "linux",
+        }).pipe(
+          Effect.provideService(HostProcess.Environment, { NIX_SSL_CERT_FILE: nixBundle }),
+          Effect.provideService(FileSystem.FileSystem, {
+            ...fs,
+            exists: (candidate) => Effect.succeed(candidate === nixBundle),
+          }),
+        );
+        expect(envProfile.caBundlePath).toBe(nixBundle);
       }),
   );
 
@@ -631,9 +677,23 @@ it.layer(NodeServices.layer)("Antigravity profile preparation", (it) => {
         expect((yield* fs.stat(profile.acpDirectory)).mode & 0o777).toBe(0o700);
       }
 
+      const projectPath = path.join(
+        profile.geminiHome,
+        "config",
+        "projects",
+        "default-cli-project.json",
+      );
+      expect(JSON.parse(yield* fs.readFileString(projectPath))).toEqual({
+        id: "default-cli-project",
+        name: "CLI Project",
+        projectResources: {},
+      });
+
       yield* fs.writeFileString(profile.tokenPath, "synthetic-token-fixture");
+      yield* fs.writeFileString(projectPath, "runtime-owned-project");
       yield* prepareAntigravityProfile({ profileDirectory: profile.geminiHome });
       expect(yield* fs.readFileString(profile.tokenPath)).toBe("synthetic-token-fixture");
+      expect(yield* fs.readFileString(projectPath)).toBe("runtime-owned-project");
     }),
   );
 
@@ -768,6 +828,62 @@ it.layer(NodeServices.layer)("Antigravity profile preparation", (it) => {
       yield* prepare;
       expect(yield* fs.readFileString(profileGemini)).toBe("profile's own rule");
       expect(yield* fs.exists(profileSkillsJson)).toBe(false);
+
+      const envProfileDirectory = path.join(temporaryDirectory, "env-profile");
+      yield* prepareAntigravityProfile({
+        profileDirectory: envProfileDirectory,
+        platform: "win32",
+      }).pipe(Effect.provideService(HostProcess.Environment, { USERPROFILE: userHome }));
+      expect(yield* fs.readFileString(path.join(envProfileDirectory, "AGENTS.md"))).toBe(
+        "edited agents rule",
+      );
+    }),
+  );
+
+  it.effect("skips linking and copying user config when preparing an isolated profile", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const hostPlatform = yield* HostProcess.Platform;
+      const temporaryDirectory = yield* fs.makeTempDirectoryScoped();
+      const userHome = path.join(temporaryDirectory, "home");
+      const userGemini = path.join(userHome, ".gemini");
+      yield* fs.makeDirectory(path.join(userGemini, "config", "skills", "review"), {
+        recursive: true,
+      });
+      yield* fs.makeDirectory(path.join(userGemini, "antigravity-cli", "skills", "review"), {
+        recursive: true,
+      });
+      yield* fs.writeFileString(path.join(userGemini, "AGENTS.md"), "global agents rule");
+      yield* fs.writeFileString(path.join(userGemini, "GEMINI.md"), "global gemini rule");
+      yield* fs.writeFileString(path.join(userGemini, "config", "skills.json"), '{"entries":[]}');
+
+      const platforms =
+        hostPlatform === "win32" ? ([hostPlatform] as const) : ([hostPlatform, "win32"] as const);
+      for (const platform of platforms) {
+        const profileDirectory = path.join(temporaryDirectory, `isolated-${platform}`);
+        const profile = yield* prepareAntigravityProfile({
+          profileDirectory,
+          userHome,
+          platform,
+          isolated: true,
+        });
+        expect(yield* fs.exists(path.join(profile.acpDirectory, "settings.json"))).toBe(true);
+        expect(
+          yield* fs.exists(
+            path.join(profileDirectory, "config", "projects", "default-cli-project.json"),
+          ),
+        ).toBe(true);
+        for (const segments of [
+          ["AGENTS.md"],
+          ["GEMINI.md"],
+          ["config", "skills.json"],
+          ["config", "skills"],
+          ["antigravity-cli", "skills"],
+        ] as const) {
+          expect(yield* fs.exists(path.join(profileDirectory, ...segments))).toBe(false);
+        }
+      }
     }),
   );
 
@@ -884,6 +1000,18 @@ it.layer(NodeServices.layer)("Antigravity profile preparation", (it) => {
       const recovered = preflightHelper(Effect.void);
       yield* prepareWithHelper("/fake/hung-node", recovered.spawner);
       expect(recovered.spawns.count).toBe(1);
+    }),
+  );
+
+  it.effect("memoizes a verified browser preflight per spawner and helper command", () =>
+    Effect.gen(function* () {
+      const helper = preflightHelper(Effect.void);
+      yield* prepareWithHelper("/fake/memoized-node", helper.spawner);
+      yield* prepareWithHelper("/fake/memoized-node", helper.spawner);
+      expect(helper.spawns.count).toBe(1);
+
+      yield* prepareWithHelper("/fake/other-memoized-node", helper.spawner);
+      expect(helper.spawns.count).toBe(2);
     }),
   );
 

@@ -75,6 +75,7 @@ import {
   ACP_SESSION_MODE_OPTION_ID,
   acpProviderOptionDescriptors,
 } from "@onicode/provider-acp/server/sessionConfig";
+import { MAX_AGENT_TERMINAL_OUTPUT_CHARS } from "@onicode/provider-acp/server/runtimeModel";
 import {
   extractXAiAcpSubagentUpdate,
   makeGrokAdapterV2,
@@ -84,11 +85,14 @@ import {
 } from "@onicode/provider-grok/testing";
 import * as IdAllocator from "@onicode/provider-core/server/IdAllocator";
 import * as ProviderAdapter from "@onicode/provider-core/server/ProviderAdapter";
+import * as ProviderHost from "@onicode/provider-core/server/ProviderHost";
 import { makeTurnInput } from "./AcpAdapterV2.testkit.ts";
 import type * as ProviderContinuationRequests from "@onicode/provider-core/server/ProviderContinuationRequests";
 import {
   AcpProviderCapabilitiesV2,
+  acpDefaultPromptFailureClass,
   acpPerTurnPromptUsage,
+  addAcpUsage,
   acpScopedNativeId,
   acpPostSettleContinuationOfferEvidence,
   acpPostSettleWakeEvidence,
@@ -279,6 +283,53 @@ describe("acpPerTurnPromptUsage", () => {
         outputTokens: 10,
       },
     );
+    assert.deepEqual(
+      acpPerTurnPromptUsage(
+        {
+          inputTokens: Number.MAX_SAFE_INTEGER - 10,
+          outputTokens: -5,
+          totalTokens: Number.POSITIVE_INFINITY,
+          cachedReadTokens: 100,
+          cachedWriteTokens: 42.6,
+          thoughtTokens: Number.NaN,
+        },
+        false,
+        "completed",
+        true,
+      ),
+      {
+        usageScope: "main_agent",
+        usageStatus: "complete",
+        hasSubagents: false,
+        inputTokens: Number.MAX_SAFE_INTEGER,
+        outputTokens: 0,
+        cachedInputTokens: 100,
+        cacheCreationTokens: 43,
+        reasoningTokens: 0,
+      },
+    );
+    assert.deepEqual(
+      addAcpUsage(
+        {
+          totalTokens: Number.MAX_SAFE_INTEGER - 5,
+          inputTokens: Number.MAX_SAFE_INTEGER - 5,
+          outputTokens: 10,
+          cachedReadTokens: Number.MAX_SAFE_INTEGER - 1,
+        },
+        {
+          totalTokens: 50,
+          inputTokens: 50,
+          outputTokens: 10.4,
+          cachedReadTokens: 50,
+        },
+      ),
+      {
+        totalTokens: Number.MAX_SAFE_INTEGER,
+        inputTokens: Number.MAX_SAFE_INTEGER,
+        outputTokens: 20,
+        cachedReadTokens: Number.MAX_SAFE_INTEGER,
+      },
+    );
   });
 
   it("caps cache writes at the input left over after cache reads", () => {
@@ -327,6 +378,43 @@ describe("acpPerTurnPromptUsage", () => {
       usageStatus: "unavailable",
       hasSubagents: false,
     });
+  });
+});
+
+describe("acpDefaultPromptFailureClass", () => {
+  it("classifies ACP transport and authentication failures", () => {
+    assert.equal(
+      acpDefaultPromptFailureClass(
+        new EffectAcpErrors.AcpTransportError({ detail: "pipe closed", cause: "EOF" }),
+      ),
+      "transport_error",
+    );
+    assert.equal(
+      acpDefaultPromptFailureClass(new EffectAcpErrors.AcpProcessExitedError({ code: 1 })),
+      "transport_error",
+    );
+    assert.equal(
+      acpDefaultPromptFailureClass(
+        new EffectAcpErrors.AcpSpawnError({ command: "agy", cause: "ENOENT" }),
+      ),
+      "transport_error",
+    );
+    assert.equal(
+      acpDefaultPromptFailureClass(new EffectAcpErrors.AcpInputStreamEndedError({})),
+      "transport_error",
+    );
+    assert.equal(
+      acpDefaultPromptFailureClass(
+        new EffectAcpErrors.AcpRequestError({ code: -32000, errorMessage: "Auth required" }),
+      ),
+      "permission_error",
+    );
+    assert.equal(
+      acpDefaultPromptFailureClass(
+        new EffectAcpErrors.AcpRequestError({ code: -32603, errorMessage: "Internal error" }),
+      ),
+      "provider_error",
+    );
   });
 });
 
@@ -1242,6 +1330,118 @@ describe("AcpAdapterV2", () => {
     }).pipe(Effect.provide(layerTest)),
   );
 
+  it.live(
+    "ignores unknown ACP session updates instead of emitting Unsupported ACP update tool rows and truncates terminal output surrogate-safely",
+    () =>
+      Effect.gen(function* () {
+        const instanceId = ProviderInstanceId.make("acp-test-unknown-and-terminal-surrogate");
+        const threadId = ThreadId.make("thread-acp-unknown-and-terminal-surrogate");
+        let notify: Parameters<
+          AcpSessionRuntime.AcpSessionRuntime["Service"]["handleSessionUpdate"]
+        >[0];
+        const expectedTail = "y".repeat(MAX_AGENT_TERMINAL_OUTPUT_CHARS - 1);
+        const adapter = yield* makeAcpAdapterV2({
+          instanceId,
+          selfInvocation: yield* resolveSelfInvocation(),
+          flavor: {
+            driver: ACP_TEST_DRIVER,
+            capabilities: AcpProviderCapabilitiesV2,
+            makeRuntime: makeMockRuntime({
+              childProcessSpawner: yield* ChildProcessSpawner.ChildProcessSpawner,
+              mockAgentPath: yield* bundledMockAgentPath,
+              wrapRuntime: (runtime) => ({
+                ...runtime,
+                handleSessionUpdate: (handler) =>
+                  Effect.sync(() => {
+                    notify = handler;
+                  }).pipe(Effect.andThen(runtime.handleSessionUpdate(handler))),
+                prompt: () =>
+                  Effect.gen(function* () {
+                    const send = (update: EffectAcpSchema.SessionUpdate) =>
+                      notify({ sessionId: "mock-session-1", update });
+                    yield* send({ sessionUpdate: "state_update", state: "running" });
+                    yield* send({
+                      sessionUpdate: "_oni_unknown",
+                      updateType: "future_feature",
+                      payload: { hello: "world" },
+                    } as unknown as EffectAcpSchema.SessionUpdate);
+                    yield* send({
+                      sessionUpdate: "terminal_update",
+                      terminalId: "term-emoji",
+                      command: "echo emoji",
+                    });
+                    yield* send({
+                      sessionUpdate: "terminal_output_chunk",
+                      terminalId: "term-emoji",
+                      data: Buffer.from(`${"x".repeat(10)}🚀${expectedTail}`).toString("base64"),
+                    });
+                    yield* send({
+                      sessionUpdate: "state_update",
+                      state: "idle",
+                      stopReason: "end_turn",
+                    });
+                    return { stopReason: "end_turn" as const };
+                  }),
+              }),
+            }),
+          },
+        });
+        const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          cwd: process.cwd(),
+        });
+        const modelSelection = { instanceId, model: "default" } as const;
+        const runtime = yield* adapter.openSession({
+          threadId,
+          providerSessionId: ProviderSessionId.make("provider-session-acp-unknown-surrogate"),
+          modelSelection,
+          runtimePolicy,
+        });
+        const providerThread = yield* runtime.ensureThread({
+          threadId,
+          modelSelection,
+          runtimePolicy,
+        });
+        yield* runtime.startTurn(
+          makeTurnInput({
+            threadId,
+            providerThread,
+            instanceId,
+            runtimePolicy,
+            now: yield* DateTime.now,
+            ordinal: 1,
+          }),
+        );
+        const collected = Array.from(
+          yield* runtime.events.pipe(
+            Stream.takeUntil((event) => event.type === "turn.terminal"),
+            Stream.runCollect,
+          ),
+        );
+        const turnItems = collected.flatMap((event) =>
+          event.type === "turn_item.updated" ? [event.turnItem] : [],
+        );
+        assert.isFalse(
+          turnItems.some(
+            (item) =>
+              item.type === "dynamic_tool" &&
+              (item.title?.includes("Unsupported ACP update") ?? false),
+          ),
+          "UnknownUpdate must be logged rather than projected as a dynamic_tool_call row",
+        );
+        const terminalItem = turnItems.findLast(
+          (item) =>
+            item.type === "command_execution" &&
+            item.nativeItemRef?.nativeId === "acp-agent-terminal:term-emoji",
+        );
+        assert.equal(
+          terminalItem?.type === "command_execution" ? terminalItem.output : null,
+          expectedTail,
+        );
+      }).pipe(Effect.provide(layerTest)),
+  );
+
   it.live("reports per-turn usage unavailable on a continuation turn that never prompts", () =>
     Effect.gen(function* () {
       const instanceId = ProviderInstanceId.make("acp-test-usage-continuation");
@@ -1648,6 +1848,363 @@ describe("AcpAdapterV2", () => {
       assert.deepEqual(promptTexts.slice(3), ["continue"], "a turn resumes only once");
     }).pipe(Effect.provide(layerTest)),
   );
+  it.effect("retries capacity outcome failures up to maxResumes with backoff before failing", () =>
+    Effect.gen(function* () {
+      const instanceId = ProviderInstanceId.make("acp-test-capacity-resume");
+      const threadId = ThreadId.make("thread-acp-capacity-resume");
+      const capacityError = {
+        class: "provider_error",
+        message: "No capacity available for model gemini-test.",
+        code: "MODEL_CAPACITY_EXHAUSTED",
+        retryable: true,
+      } as const;
+      const promptTexts: Array<string> = [];
+      const promptCallbacks = yield* Queue.unbounded<void>();
+      // Turn 1 fails twice then recovers on check 3; turn 2 exhausts all 5 resumes (checks 4..9);
+      // the agent exits while turn 3 waits out its first retry delay.
+      let checks = 0;
+      let terminate: AcpAdapterV2RuntimeInput["onTermination"];
+      const makeRuntime = makeMockRuntime({
+        childProcessSpawner: yield* ChildProcessSpawner.ChildProcessSpawner,
+        mockAgentPath: yield* bundledMockAgentPath,
+        wrapRuntime: (runtime) => ({
+          ...runtime,
+          prompt: (payload) =>
+            Effect.sync(() => {
+              promptTexts.push(
+                payload.prompt
+                  .flatMap((block) => (block.type === "text" ? [block.text] : []))
+                  .join("\n"),
+              );
+              return { stopReason: "end_turn" as const };
+            }),
+        }),
+      });
+      const adapter = yield* makeAcpAdapterV2({
+        instanceId,
+        selfInvocation: yield* resolveSelfInvocation(),
+        testHooks: {
+          afterPromptCallback: () => Queue.offer(promptCallbacks, undefined).pipe(Effect.asVoid),
+        },
+        flavor: {
+          driver: ACP_TEST_DRIVER,
+          capabilities: AcpProviderCapabilitiesV2,
+          steersWithPrompt: () => true,
+          watchPromptOutcome: () =>
+            Effect.sync(() => {
+              checks += 1;
+              const outcome =
+                checks === 3
+                  ? undefined
+                  : {
+                      failure: capacityError,
+                      threadDisposition: "reusable" as const,
+                      resumeWith: "continue",
+                      maxResumes: 5,
+                    };
+              return () => Effect.succeed(outcome);
+            }),
+          makeRuntime: (runtimeInput) => {
+            terminate = runtimeInput.onTermination;
+            return makeRuntime(runtimeInput);
+          },
+        },
+      });
+      const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        cwd: process.cwd(),
+      });
+      const modelSelection = { instanceId, model: "default" } as const;
+      const runtime = yield* adapter.openSession({
+        threadId,
+        providerSessionId: ProviderSessionId.make("provider-session-acp-capacity-resume"),
+        modelSelection,
+        runtimePolicy,
+      });
+      const events = yield* Queue.unbounded<ProviderAdapter.ProviderAdapterV2Event>();
+      yield* runtime.events.pipe(
+        Stream.runForEach((event) => Queue.offer(events, event)),
+        Effect.forkScoped,
+      );
+      const providerThread = yield* runtime.ensureThread({
+        threadId,
+        modelSelection,
+        runtimePolicy,
+      });
+      const takeUntilTerminal = Effect.gen(function* () {
+        const collected: Array<ProviderAdapter.ProviderAdapterV2Event> = [];
+        while (true) {
+          const event = yield* Queue.take(events);
+          collected.push(event);
+          if (event.type === "turn.terminal") return collected;
+        }
+      });
+
+      yield* runtime.startTurn(
+        makeTurnInput({
+          threadId,
+          providerThread,
+          instanceId,
+          runtimePolicy,
+          now: yield* DateTime.now,
+          ordinal: 1,
+        }),
+      );
+      for (const delayMs of [2_000, 4_000]) {
+        yield* Queue.take(promptCallbacks);
+        yield* TestClock.adjust(Duration.millis(delayMs));
+      }
+      yield* Queue.take(promptCallbacks);
+      const recovered = yield* takeUntilTerminal;
+      const completed = recovered.at(-1);
+      assert.equal(completed?.type === "turn.terminal" ? completed.status : null, "completed");
+      assert.deepEqual(promptTexts.slice(1), ["continue", "continue"]);
+      assert.deepEqual(
+        recovered.flatMap((event) =>
+          event.type === "turn_item.updated" &&
+          event.turnItem.type === "error" &&
+          event.turnItem.retry !== undefined
+            ? [
+                {
+                  status: event.turnItem.status,
+                  attempt: event.turnItem.retry.attempt,
+                  maxAttempts: event.turnItem.retry.maxAttempts,
+                  retryDelayMs: event.turnItem.retry.retryDelayMs,
+                },
+              ]
+            : [],
+        ),
+        [
+          { status: "running", attempt: 1, maxAttempts: 5, retryDelayMs: 2_000 },
+          { status: "running", attempt: 2, maxAttempts: 5, retryDelayMs: 4_000 },
+          { status: "completed", attempt: 2, maxAttempts: 5, retryDelayMs: 4_000 },
+        ],
+      );
+
+      yield* runtime.startTurn(
+        makeTurnInput({
+          threadId,
+          providerThread,
+          instanceId,
+          runtimePolicy,
+          now: yield* DateTime.now,
+          ordinal: 2,
+        }),
+      );
+      for (const delayMs of [2_000, 4_000, 8_000, 16_000, 30_000]) {
+        yield* Queue.take(promptCallbacks);
+        yield* TestClock.adjust(Duration.millis(delayMs));
+      }
+      yield* Queue.take(promptCallbacks);
+      const exhausted = yield* takeUntilTerminal;
+      const failed = exhausted.at(-1);
+      if (failed?.type !== "turn.terminal" || failed.status !== "failed") {
+        return assert.fail("expected a failed terminal after exhausting capacity retries");
+      }
+      assert.deepEqual(failed.failure, capacityError);
+      assert.deepEqual(promptTexts.slice(4), [
+        "continue",
+        "continue",
+        "continue",
+        "continue",
+        "continue",
+      ]);
+
+      yield* runtime.startTurn(
+        makeTurnInput({
+          threadId,
+          providerThread,
+          instanceId,
+          runtimePolicy,
+          now: yield* DateTime.now,
+          ordinal: 3,
+        }),
+      );
+      yield* Queue.take(promptCallbacks);
+      yield* terminate!(
+        new EffectAcpErrors.AcpTransportError({ detail: "agent exited", cause: "exit" }),
+      );
+      const exited = (yield* takeUntilTerminal).at(-1);
+      assert.equal(exited?.type === "turn.terminal" ? exited.status : null, "failed");
+    }).pipe(Effect.provide(layerTest), Effect.scoped),
+  );
+  it.effect.each(["retry", "failure"] as const)(
+    "orders a later provider %s after progress from the same turn",
+    (tail) =>
+      Effect.gen(function* () {
+        const instanceId = ProviderInstanceId.make(`acp-test-later-${tail}`);
+        const threadId = ThreadId.make(`thread-acp-later-${tail}`);
+        type RuntimeService = AcpSessionRuntime.AcpSessionRuntime["Service"];
+        let sessionUpdateHandler: Parameters<RuntimeService["handleSessionUpdate"]>[0] | undefined;
+        let reportRetry: AcpAdapterV2ExtensionContext["reportProviderRetry"] | undefined;
+        const promptStarted = yield* Deferred.make<void>();
+        const promptGate = yield* Deferred.make<EffectAcpSchema.PromptResponse>();
+        const transientFailure = {
+          class: "provider_error",
+          message: "The response stream disconnected.",
+          code: "529",
+          retryable: true,
+        } as const;
+        const adapter = yield* makeAcpAdapterV2({
+          instanceId,
+          selfInvocation: yield* resolveSelfInvocation(),
+          flavor: {
+            driver: ACP_TEST_DRIVER,
+            capabilities: AcpProviderCapabilitiesV2,
+            registerExtensions: (context) =>
+              Effect.sync(() => {
+                reportRetry = context.reportProviderRetry;
+              }),
+            makeRuntime: makeMockRuntime({
+              childProcessSpawner: yield* ChildProcessSpawner.ChildProcessSpawner,
+              mockAgentPath: yield* bundledMockAgentPath,
+              wrapRuntime: (runtime) => ({
+                ...runtime,
+                handleSessionUpdate: (handler) =>
+                  Effect.sync(() => {
+                    sessionUpdateHandler = handler;
+                  }).pipe(Effect.andThen(runtime.handleSessionUpdate(handler))),
+                prompt: () =>
+                  Deferred.succeed(promptStarted, undefined).pipe(
+                    Effect.andThen(Deferred.await(promptGate)),
+                  ),
+              }),
+            }),
+          },
+        });
+        const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          cwd: process.cwd(),
+        });
+        const modelSelection = { instanceId, model: "default" } as const;
+        const runtime = yield* adapter.openSession({
+          threadId,
+          providerSessionId: ProviderSessionId.make(`provider-session-acp-later-${tail}`),
+          modelSelection,
+          runtimePolicy,
+        });
+        const events = yield* Queue.unbounded<ProviderAdapter.ProviderAdapterV2Event>();
+        yield* runtime.events.pipe(
+          Stream.runForEach((event) => Queue.offer(events, event)),
+          Effect.forkScoped,
+        );
+        const providerThread = yield* runtime.ensureThread({
+          threadId,
+          modelSelection,
+          runtimePolicy,
+        });
+        yield* runtime.startTurn(
+          makeTurnInput({
+            threadId,
+            providerThread,
+            instanceId,
+            runtimePolicy,
+            now: yield* DateTime.now,
+          }),
+        );
+        yield* Deferred.await(promptStarted);
+
+        const sessionId = "mock-session-1";
+        yield* reportRetry!({ sessionId, failure: transientFailure });
+        yield* sessionUpdateHandler!({
+          sessionId,
+          update: {
+            sessionUpdate: "tool_call",
+            toolCallId: "command-between-retries",
+            title: "pwd",
+            kind: "execute",
+            status: "completed",
+            rawInput: { command: "pwd" },
+            rawOutput: { output: "/workspace\n", exitCode: 0 },
+          },
+        });
+        if (tail === "retry") {
+          yield* reportRetry!({ sessionId, failure: transientFailure });
+        }
+        yield* Deferred.succeed(promptGate, {
+          stopReason: tail === "retry" ? "end_turn" : "error",
+        });
+
+        const collected: Array<ProviderAdapter.ProviderAdapterV2Event> = [];
+        while (true) {
+          const event = yield* Queue.take(events);
+          collected.push(event);
+          if (event.type === "turn.terminal") break;
+        }
+        const items = collected.flatMap((event) =>
+          event.type === "turn_item.updated" ? [event.turnItem] : [],
+        );
+        const command = items.find((item) => item.type === "command_execution");
+        assert.isDefined(command);
+        const retries = items.filter((item) => item.type === "error");
+        const firstRetry = retries.find((item) => item.status === "completed");
+        assert.isDefined(firstRetry);
+        assert.isAbove(command!.ordinal, firstRetry!.ordinal);
+
+        if (tail === "retry") {
+          const secondRetry = retries.findLast((item) => item.id !== firstRetry!.id);
+          assert.isDefined(secondRetry);
+          assert.isAbove(secondRetry!.ordinal, command!.ordinal);
+        } else {
+          const terminal = collected.at(-1);
+          if (terminal?.type !== "turn.terminal" || terminal.status !== "failed") {
+            return assert.fail("expected a failed terminal");
+          }
+          assert.isDefined(terminal.failureItemId);
+          assert.notEqual(terminal.failureItemId, firstRetry!.id);
+          assert.isAbove(terminal.failureItemOrdinal, command!.ordinal);
+        }
+      }).pipe(Effect.provide(layerTest), Effect.scoped),
+  );
+  it.effect("counts the ACP runtime as a running agent until its session closes", () =>
+    Effect.gen(function* () {
+      let runningAgents = 0;
+      const host = yield* ProviderHost.ProviderHost;
+      const instanceId = ProviderInstanceId.make("acp-test-track-agent");
+      const threadId = ThreadId.make("thread-acp-track-agent");
+      const adapter = yield* makeAcpAdapterV2({
+        instanceId,
+        selfInvocation: yield* resolveSelfInvocation(),
+        flavor: {
+          driver: ACP_TEST_DRIVER,
+          capabilities: AcpProviderCapabilitiesV2,
+          makeRuntime: makeMockRuntime({
+            childProcessSpawner: yield* ChildProcessSpawner.ChildProcessSpawner,
+            mockAgentPath: yield* bundledMockAgentPath,
+          }),
+        },
+      }).pipe(
+        Effect.provideService(ProviderHost.ProviderHost, {
+          ...host,
+          trackAgent: () => {
+            runningAgents += 1;
+            return () => {
+              runningAgents -= 1;
+            };
+          },
+        }),
+      );
+      const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        cwd: process.cwd(),
+      });
+      const sessionScope = yield* Scope.make();
+      yield* adapter
+        .openSession({
+          threadId,
+          providerSessionId: ProviderSessionId.make("provider-session-acp-track-agent"),
+          modelSelection: { instanceId, model: "default" },
+          runtimePolicy,
+        })
+        .pipe(Effect.provideService(Scope.Scope, sessionScope));
+      assert.equal(runningAgents, 1);
+      yield* Scope.close(sessionScope, Exit.void);
+      assert.equal(runningAgents, 0);
+    }).pipe(Effect.provide(layerTest), Effect.scoped),
+  );
   it.live("retains returned usage when Stop finalizes before the prompt callback", () =>
     Effect.gen(function* () {
       const instanceId = ProviderInstanceId.make("acp-test-prompt-usage-stop");
@@ -2029,7 +2586,7 @@ describe("AcpAdapterV2", () => {
           failed.failure,
           details === "details"
             ? {
-                class: "provider_error",
+                class: "permission_error",
                 message: "Missing Authentication header",
                 code: "-32000",
                 retryable: null,
@@ -2930,6 +3487,161 @@ describe("AcpAdapterV2", () => {
       }).pipe(Effect.provide(layerTest)),
   );
 
+  it.effect(
+    "settles in-progress compaction items with failure and stop titles when a turn ends",
+    () =>
+      Effect.gen(function* () {
+        const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+        const idAllocator = yield* IdAllocator.IdAllocatorV2;
+        const selfInvocation = yield* resolveSelfInvocation();
+        const mockAgentPath = yield* bundledMockAgentPath;
+        const instanceId = ProviderInstanceId.make("acp-compaction-settlement");
+        const threadId = ThreadId.make("thread-acp-compaction-settlement");
+        type RuntimeService = AcpSessionRuntime.AcpSessionRuntime["Service"];
+        let notify: Parameters<RuntimeService["handleSessionUpdate"]>[0] | undefined;
+        let turnOrdinal = 0;
+        const stopCompactionStarted = yield* Deferred.make<void>();
+        const stopPromptGate = yield* Deferred.make<EffectAcpSchema.PromptResponse>();
+        const adapter = yield* makeAcpAdapterV2({
+          instanceId,
+          selfInvocation,
+          flavor: {
+            driver: ACP_TEST_DRIVER,
+            capabilities: AcpProviderCapabilitiesV2,
+            makeRuntime: makeMockRuntime({
+              childProcessSpawner,
+              mockAgentPath,
+              wrapRuntime: (runtime) => ({
+                ...runtime,
+                handleSessionUpdate: (handler) =>
+                  Effect.sync(() => {
+                    notify = handler;
+                  }).pipe(Effect.andThen(runtime.handleSessionUpdate(handler))),
+                cancel: Deferred.succeed(stopPromptGate, { stopReason: "cancelled" }).pipe(
+                  Effect.asVoid,
+                ),
+                prompt: () =>
+                  Effect.gen(function* () {
+                    turnOrdinal += 1;
+                    if (turnOrdinal === 1) {
+                      yield* notify!({
+                        sessionId: "mock-session-1",
+                        update: {
+                          sessionUpdate: "compaction_update",
+                          compactionId: "c-fail",
+                          status: "in_progress",
+                        },
+                      });
+                      return yield* new EffectAcpErrors.AcpRequestError({
+                        method: "session/prompt",
+                        code: -32603,
+                        errorMessage: "compaction failed",
+                      });
+                    }
+                    yield* notify!({
+                      sessionId: "mock-session-1",
+                      update: {
+                        sessionUpdate: "compaction_update",
+                        compactionId: "c-stop",
+                        status: "in_progress",
+                      },
+                    });
+                    yield* Deferred.succeed(stopCompactionStarted, undefined);
+                    return yield* Deferred.await(stopPromptGate);
+                  }),
+              }),
+            }),
+          },
+        });
+        const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          cwd: process.cwd(),
+        });
+        const modelSelection = { instanceId, model: "default" } as const;
+        const runtime = yield* adapter.openSession({
+          threadId,
+          providerSessionId: ProviderSessionId.make("provider-session-acp-compaction-settlement"),
+          modelSelection,
+          runtimePolicy,
+        });
+        const providerThread = yield* runtime.ensureThread({
+          threadId,
+          modelSelection,
+          runtimePolicy,
+        });
+        const now = yield* DateTime.now;
+
+        yield* runtime.startTurn(
+          makeTurnInput({ threadId, providerThread, instanceId, runtimePolicy, now, ordinal: 1 }),
+        );
+        const failedEvents = Array.from(
+          yield* runtime.events.pipe(
+            Stream.takeUntil((event) => event.type === "turn.terminal"),
+            Stream.runCollect,
+          ),
+        );
+        const failedCompaction = failedEvents.findLast(
+          (event) =>
+            event.type === "turn_item.updated" &&
+            event.turnItem.type === "compaction" &&
+            event.turnItem.nativeItemRef?.nativeId === "acp-compaction:c-fail",
+        );
+        assert.equal(
+          failedCompaction?.type === "turn_item.updated" ? failedCompaction.turnItem.status : null,
+          "failed",
+        );
+        assert.equal(
+          failedCompaction?.type === "turn_item.updated" ? failedCompaction.turnItem.title : null,
+          "Context compaction failed",
+        );
+        assert.isNotNull(
+          failedCompaction?.type === "turn_item.updated"
+            ? failedCompaction.turnItem.completedAt
+            : null,
+        );
+
+        yield* runtime.startTurn(
+          makeTurnInput({ threadId, providerThread, instanceId, runtimePolicy, now, ordinal: 2 }),
+        );
+        yield* Deferred.await(stopCompactionStarted);
+        yield* runtime.interruptTurn({
+          providerThread,
+          providerTurnId: idAllocator.derive.providerTurn({
+            driver: ACP_TEST_DRIVER,
+            nativeTurnId: acpScopedNativeId(instanceId, "mock-session-1:turn:2"),
+          }),
+        });
+        const stoppedEvents = Array.from(
+          yield* runtime.events.pipe(
+            Stream.takeUntil((event) => event.type === "turn.terminal"),
+            Stream.runCollect,
+          ),
+        );
+        const stoppedCompaction = stoppedEvents.findLast(
+          (event) =>
+            event.type === "turn_item.updated" &&
+            event.turnItem.type === "compaction" &&
+            event.turnItem.nativeItemRef?.nativeId === "acp-compaction:c-stop",
+        );
+        assert.equal(
+          stoppedCompaction?.type === "turn_item.updated"
+            ? stoppedCompaction.turnItem.status
+            : null,
+          "interrupted",
+        );
+        assert.equal(
+          stoppedCompaction?.type === "turn_item.updated" ? stoppedCompaction.turnItem.title : null,
+          "Context compaction stopped",
+        );
+        assert.isNotNull(
+          stoppedCompaction?.type === "turn_item.updated"
+            ? stoppedCompaction.turnItem.completedAt
+            : null,
+        );
+      }).pipe(Effect.provide(layerTest), Effect.scoped),
+  );
+
   it.live("runs as a command only what the active session advertises", () =>
     Effect.gen(function* () {
       const { runtime } = yield* makeAdvertisedCompactionHarness({
@@ -3643,12 +4355,32 @@ describe("AcpAdapterV2", () => {
           yield* runtime.startTurn(
             makeTurnInput({ threadId, providerThread, instanceId, runtimePolicy, now, ordinal }),
           );
-          return Array.from(
+          const turnEvents = Array.from(
             yield* runtime.events.pipe(
               Stream.takeUntil((event) => event.type === "turn.terminal"),
               Stream.runCollect,
             ),
-          ).flatMap((event) => (event.type === "plan.updated" ? [event.plan] : []));
+          );
+          for (const event of turnEvents) {
+            if (
+              event.type === "turn_item.updated" &&
+              (event.turnItem.type === "todo_list" || event.turnItem.type === "proposed_plan")
+            ) {
+              assert.equal(event.turnItem.status, "completed");
+              assert.isNotNull(event.turnItem.completedAt);
+              if (event.turnItem.type === "proposed_plan") {
+                assert.isFalse(event.turnItem.streaming);
+              }
+            }
+            if (
+              event.type === "node.updated" &&
+              (event.node.kind === "todo_list" || event.node.kind === "plan")
+            ) {
+              assert.equal(event.node.status, "completed");
+              assert.isNotNull(event.node.completedAt);
+            }
+          }
+          return turnEvents.flatMap((event) => (event.type === "plan.updated" ? [event.plan] : []));
         });
       const first = yield* run(1);
       assert.equal(first.length, 6);
@@ -4959,6 +5691,13 @@ describe("AcpAdapterV2", () => {
       const items = events.flatMap((event) =>
         event.type === "turn_item.updated" ? [event.turnItem] : [],
       );
+      for (const item of items) {
+        if (item.type === "todo_list" || item.type === "proposed_plan") {
+          assert.equal(item.status, "completed");
+          assert.isNotNull(item.completedAt);
+          if (item.type === "proposed_plan") assert.isFalse(item.streaming);
+        }
+      }
       assert.isFalse(
         items.some((item) => item.type === "user_message" && item.text === "stale user text"),
         "the active ACP prompt echo must not create a second user message",
@@ -8914,7 +9653,7 @@ describe("AcpAdapterV2", () => {
     }).pipe(Effect.provide(layerTest)),
   );
 
-  it.live("declines a form whose selection counts the client cannot answer, without asking", () =>
+  it.live("cancels a form whose selection counts the client cannot answer, without asking", () =>
     Effect.gen(function* () {
       const items = { type: "string", enum: ["a", "b"] };
       for (const [name, bounds] of [
@@ -8931,7 +9670,7 @@ describe("AcpAdapterV2", () => {
           answer: () => assert.fail("an impossible form must not reach the user"),
         });
         assert.isUndefined(questions);
-        assert.deepStrictEqual(response, { action: "decline" });
+        assert.deepStrictEqual(response, { action: "cancel" });
       }
     }).pipe(Effect.provide(layerTest)),
   );
@@ -8958,7 +9697,7 @@ describe("AcpAdapterV2", () => {
     }).pipe(Effect.provide(layerTest)),
   );
 
-  it.live("declines a form with a field it cannot ask for, without asking", () =>
+  it.live("cancels a form with a field it cannot ask for, without asking", () =>
     Effect.gen(function* () {
       const { questions, response } = yield* runFormElicitation({
         name: "unsupported",
@@ -8972,8 +9711,68 @@ describe("AcpAdapterV2", () => {
         answer: () => assert.fail("an unsupported form must not reach the user"),
       });
       assert.isUndefined(questions);
-      assert.deepStrictEqual(response, { action: "decline" });
+      assert.deepStrictEqual(response, { action: "cancel" });
     }).pipe(Effect.provide(layerTest)),
+  );
+
+  it.effect("cancels URL and non-form elicitations without a handler", () =>
+    Effect.gen(function* () {
+      type RuntimeService = AcpSessionRuntime.AcpSessionRuntime["Service"];
+      let elicit: Parameters<RuntimeService["handleElicitation"]>[0] | undefined;
+      const instanceId = ProviderInstanceId.make("acp-test-unhandled-elicitation");
+      const threadId = ThreadId.make("thread-acp-unhandled-elicitation");
+      const adapter = yield* makeAcpAdapterV2({
+        instanceId,
+        selfInvocation: yield* resolveSelfInvocation(),
+        flavor: {
+          driver: ACP_TEST_DRIVER,
+          capabilities: AcpProviderCapabilitiesV2,
+          makeRuntime: makeMockRuntime({
+            childProcessSpawner: yield* ChildProcessSpawner.ChildProcessSpawner,
+            mockAgentPath: yield* bundledMockAgentPath,
+            wrapRuntime: (runtime) => ({
+              ...runtime,
+              handleElicitation: (handler) =>
+                Effect.sync(() => {
+                  elicit = handler;
+                }).pipe(Effect.andThen(runtime.handleElicitation(handler))),
+            }),
+          }),
+        },
+      });
+      const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+        runtimeMode: "approval-required",
+        interactionMode: "default",
+        cwd: process.cwd(),
+      });
+      yield* adapter.openSession({
+        threadId,
+        providerSessionId: ProviderSessionId.make("provider-session-acp-unhandled-elicitation"),
+        modelSelection: { instanceId, model: "default" },
+        runtimePolicy,
+      });
+      const urlResponse = yield* elicit!(
+        {
+          mode: "url",
+          sessionId: "mock-session-1",
+          elicitationId: "elicit-url-1",
+          url: "https://example.com/auth",
+          message: "Sign in to continue.",
+        },
+        { requestId: "req-url-1", method: "elicitation/create" },
+      );
+      assert.deepStrictEqual(urlResponse, { action: "cancel" });
+
+      const nonFormResponse = yield* elicit!(
+        {
+          mode: "url",
+          sessionId: "mock-session-1",
+          message: "Unsupported mode without URL.",
+        } as unknown as EffectAcpSchema.CreateElicitationRequest,
+        { requestId: "req-non-form-1", method: "elicitation/create" },
+      );
+      assert.deepStrictEqual(nonFormResponse, { action: "cancel" });
+    }).pipe(Effect.provide(layerTest), Effect.scoped),
   );
 
   it.live("auto-approves tagged MCP elicitations under full-access policy", () =>
@@ -9892,6 +10691,146 @@ describe("AcpAdapterV2", () => {
       );
       assert.isFalse(yield* hasPendingBackgroundWork);
     }).pipe(Effect.provide(layerTest)),
+  );
+
+  it.effect(
+    "settles carryover subagents and emits background_work.lost when the runtime exits between turns",
+    () =>
+      Effect.gen(function* () {
+        const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+        const selfInvocation = yield* resolveSelfInvocation();
+        const mockAgentPath = yield* bundledMockAgentPath;
+        const instanceId = ProviderInstanceId.make("acp-carryover-exit");
+        const threadId = ThreadId.make("thread-acp-carryover-exit");
+        const childSessionId = "019f44a6-4820-7402-925d-bc862ee711ee";
+        type RuntimeService = AcpSessionRuntime.AcpSessionRuntime["Service"];
+        let sessionUpdateHandler: Parameters<RuntimeService["handleSessionUpdate"]>[0] | undefined;
+        let onTermination: AcpAdapterV2RuntimeInput["onTermination"] | undefined;
+        const baseMakeRuntime = makeMockRuntime({
+          childProcessSpawner,
+          mockAgentPath,
+          wrapRuntime: (runtime) => ({
+            ...runtime,
+            handleSessionUpdate: (handler) =>
+              Effect.sync(() => {
+                sessionUpdateHandler = handler;
+              }).pipe(Effect.andThen(runtime.handleSessionUpdate(handler))),
+            prompt: () =>
+              sessionUpdateHandler!({
+                sessionId: "mock-session-1",
+                update: {
+                  sessionUpdate: "tool_call",
+                  toolCallId: "tool-call-carryover-1",
+                  title: "spawn_subagent",
+                  kind: "other",
+                  status: "completed",
+                  rawInput: { prompt: "background subagent" },
+                },
+              }).pipe(Effect.as({ stopReason: "end_turn" as const })),
+          }),
+        });
+        const adapter = yield* makeAcpAdapterV2({
+          instanceId,
+          selfInvocation,
+          continuationRequests: { offer: () => Effect.void },
+          flavor: {
+            driver: ACP_TEST_DRIVER,
+            capabilities: AcpProviderCapabilitiesV2,
+            enablePostSettleContinuation: true,
+            extractSubagentUpdate: (toolCall) =>
+              toolCall.toolCallId !== "tool-call-carryover-1"
+                ? undefined
+                : {
+                    nativeTaskId: "task-carryover-1",
+                    prompt: "background subagent",
+                    title: "Researcher",
+                    model: null,
+                    status: "running",
+                    childSessionId,
+                    result: null,
+                  },
+            makeRuntime: (runtimeInput) => {
+              onTermination = runtimeInput.onTermination;
+              return baseMakeRuntime(runtimeInput);
+            },
+          },
+        });
+        const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          cwd: process.cwd(),
+        });
+        const modelSelection = { instanceId, model: "default" } as const;
+        const runtime = yield* adapter.openSession({
+          threadId,
+          providerSessionId: ProviderSessionId.make("provider-session-acp-carryover-exit"),
+          modelSelection,
+          runtimePolicy,
+        });
+        const events = yield* Queue.unbounded<ProviderAdapter.ProviderAdapterV2Event>();
+        yield* runtime.events.pipe(
+          Stream.runForEach((event) => Queue.offer(events, event)),
+          Effect.forkScoped,
+        );
+        const providerThread = yield* runtime.ensureThread({
+          threadId,
+          modelSelection,
+          runtimePolicy,
+        });
+        yield* runtime.startTurn(
+          makeTurnInput({
+            threadId,
+            providerThread,
+            instanceId,
+            runtimePolicy,
+            now: yield* DateTime.now,
+          }),
+        );
+        let firstStatus: string | undefined;
+        while (firstStatus === undefined) {
+          const event = yield* Queue.take(events);
+          if (event.type === "turn.terminal") firstStatus = event.status;
+        }
+        assert.equal(firstStatus, "completed");
+        assert.isTrue(yield* runtime.hasPendingBackgroundWork!);
+
+        yield* onTermination!(
+          new EffectAcpErrors.AcpTransportError({ detail: "agent exited", cause: "exit" }),
+        );
+        const exitEvents: Array<ProviderAdapter.ProviderAdapterV2Event> = [];
+        while (true) {
+          const event = yield* Queue.take(events);
+          exitEvents.push(event);
+          if (event.type === "background_work.lost") break;
+        }
+        const settledSubagent = exitEvents.findLast((event) => event.type === "subagent.updated");
+        const settledItem = exitEvents.findLast(
+          (event) => event.type === "turn_item.updated" && event.turnItem.type === "subagent",
+        );
+        const lost = exitEvents.at(-1);
+        assert.equal(
+          settledSubagent?.type === "subagent.updated" ? settledSubagent.subagent.status : null,
+          "failed",
+        );
+        assert.equal(
+          settledItem?.type === "turn_item.updated" ? settledItem.turnItem.status : null,
+          "failed",
+        );
+        assert.isTrue(lost?.type === "background_work.lost");
+        if (lost?.type === "background_work.lost") {
+          assert.equal(lost.threadId, threadId);
+          assert.equal(lost.providerThreadId, providerThread.id);
+          assert.deepEqual(
+            lost.tasks.map((task) => ({
+              taskId: task.taskId,
+              kind: task.kind,
+              description: task.description,
+            })),
+            [{ taskId: "task-carryover-1", kind: "subagent", description: "Researcher" }],
+          );
+        }
+        assert.isFalse(yield* runtime.hasPendingBackgroundWork!);
+      }).pipe(Effect.provide(layerTest), Effect.scoped),
   );
 
   it.effect(
@@ -11961,11 +12900,15 @@ describe("AcpAdapterV2", () => {
     );
     type RuntimeService = AcpSessionRuntime.AcpSessionRuntime["Service"];
     let sessionUpdateHandler: Parameters<RuntimeService["handleSessionUpdate"]>[0] | undefined;
+    let onTermination: AcpAdapterV2RuntimeInput["onTermination"] | undefined;
     let taskCompleted:
       | ((payload: unknown) => Effect.Effect<void, EffectAcpErrors.AcpError>)
       | undefined;
     const promptStarted = yield* Deferred.make<void>();
-    const promptGate = yield* Deferred.make<EffectAcpSchema.PromptResponse>();
+    const promptGate = yield* Deferred.make<
+      EffectAcpSchema.PromptResponse,
+      EffectAcpErrors.AcpError
+    >();
     const promptHeld = yield* Deferred.make<void>();
     const finalizeScheduled = yield* Deferred.make<Duration.Input>();
     const instanceId = ProviderInstanceId.make("acp-test");
@@ -11979,6 +12922,27 @@ describe("AcpAdapterV2", () => {
       },
       yield* HostProcess.HomeDirectory,
     );
+    const baseMakeRuntime = makeMockRuntime({
+      childProcessSpawner,
+      mockAgentPath,
+      wrapRuntime: (runtime) => ({
+        ...runtime,
+        handleSessionUpdate: (handler) =>
+          Effect.sync(() => {
+            sessionUpdateHandler = handler;
+          }).pipe(Effect.andThen(runtime.handleSessionUpdate(handler))),
+        handleExtNotification: (method, schema, handler) =>
+          Effect.sync(() => {
+            if (method === "x.ai/task_completed") {
+              taskCompleted = (payload) => handler(Schema.decodeUnknownSync(schema)(payload));
+            }
+          }).pipe(Effect.andThen(runtime.handleExtNotification(method, schema, handler))),
+        prompt: () =>
+          Deferred.succeed(promptStarted, undefined).pipe(
+            Effect.andThen(Deferred.await(promptGate)),
+          ),
+      }),
+    });
     const adapter = yield* makeAcpAdapterV2({
       instanceId,
       selfInvocation,
@@ -11999,27 +12963,10 @@ describe("AcpAdapterV2", () => {
         isPersistentBackgroundTool: grokFlavor.isPersistentBackgroundTool!,
         registerExtensions: ({ runtime, applyBackgroundTaskMutation }) =>
           registerXAiBackgroundTaskTracking(runtime, applyBackgroundTaskMutation),
-        makeRuntime: makeMockRuntime({
-          childProcessSpawner,
-          mockAgentPath,
-          wrapRuntime: (runtime) => ({
-            ...runtime,
-            handleSessionUpdate: (handler) =>
-              Effect.sync(() => {
-                sessionUpdateHandler = handler;
-              }).pipe(Effect.andThen(runtime.handleSessionUpdate(handler))),
-            handleExtNotification: (method, schema, handler) =>
-              Effect.sync(() => {
-                if (method === "x.ai/task_completed") {
-                  taskCompleted = (payload) => handler(Schema.decodeUnknownSync(schema)(payload));
-                }
-              }).pipe(Effect.andThen(runtime.handleExtNotification(method, schema, handler))),
-            prompt: () =>
-              Deferred.succeed(promptStarted, undefined).pipe(
-                Effect.andThen(Deferred.await(promptGate)),
-              ),
-          }),
-        }),
+        makeRuntime: (runtimeInput) => {
+          onTermination = runtimeInput.onTermination;
+          return baseMakeRuntime(runtimeInput);
+        },
       },
     });
     const threadId = ThreadId.make(`thread-acp-${name}`);
@@ -12086,31 +13033,45 @@ describe("AcpAdapterV2", () => {
       });
     });
     /** Settles the prompt and returns the dev server rows emitted up to the turn terminal. */
-    const settle = Effect.gen(function* () {
-      const rows: Array<OrchestrationV2TurnItem> = [];
-      const takeTerminal = Effect.gen(function* () {
-        while (true) {
-          const event = yield* Queue.take(events);
-          if (
-            event.type === "turn_item.updated" &&
-            event.turnItem.nativeItemRef?.nativeId === "call-dev-server"
-          )
-            rows.push(event.turnItem);
-          if (event.type === "turn.terminal") return event.status;
+    const settleWith = (
+      outcome:
+        | { readonly _tag: "succeed"; readonly response: EffectAcpSchema.PromptResponse }
+        | { readonly _tag: "fail"; readonly error: EffectAcpErrors.AcpError },
+    ) =>
+      Effect.gen(function* () {
+        const rows: Array<OrchestrationV2TurnItem> = [];
+        const takeTerminal = Effect.gen(function* () {
+          while (true) {
+            const event = yield* Queue.take(events);
+            if (
+              event.type === "turn_item.updated" &&
+              event.turnItem.nativeItemRef?.nativeId === "call-dev-server"
+            )
+              rows.push(event.turnItem);
+            if (event.type === "turn.terminal") return event;
+          }
+        });
+        if (outcome._tag === "succeed") {
+          yield* Deferred.succeed(promptGate, outcome.response);
+        } else {
+          yield* Deferred.fail(promptGate, outcome.error);
         }
+        const terminal = yield* Effect.raceAll([
+          takeTerminal,
+          Deferred.await(finalizeScheduled).pipe(
+            Effect.flatMap(TestClock.adjust),
+            Effect.andThen(takeTerminal),
+          ),
+          // The hold never ends on its own, so report it instead of waiting forever.
+          Deferred.await(promptHeld).pipe(Effect.as(undefined)),
+        ]);
+        return {
+          status: terminal === undefined ? "held open by the background shell" : terminal.status,
+          terminal,
+          rows,
+        };
       });
-      yield* Deferred.succeed(promptGate, { stopReason: "end_turn" });
-      const status = yield* Effect.raceAll([
-        takeTerminal,
-        Deferred.await(finalizeScheduled).pipe(
-          Effect.flatMap(TestClock.adjust),
-          Effect.andThen(takeTerminal),
-        ),
-        // The hold never ends on its own, so report it instead of waiting forever.
-        Deferred.await(promptHeld).pipe(Effect.as("held open by the background shell")),
-      ]);
-      return { status, rows };
-    });
+    const settle = settleWith({ _tag: "succeed", response: { stopReason: "end_turn" } });
     /** Dev server rows emitted before a usage update fences them. */
     const takeRows = Effect.gen(function* () {
       yield* update({ sessionUpdate: "usage_update", used: 10, size: 100 });
@@ -12125,7 +13086,24 @@ describe("AcpAdapterV2", () => {
           rows.push(event.turnItem);
       }
     });
-    return { update, complete, startDevServer, settle, takeRows, runId: turnInput.runId };
+    const runtimeDies = Effect.suspend(() =>
+      onTermination!(
+        new EffectAcpErrors.AcpTransportError({ detail: "agent exited", cause: "exit" }),
+      ),
+    );
+    return {
+      update,
+      complete,
+      startDevServer,
+      settle,
+      settleWith,
+      takeRows,
+      runtimeDies,
+      events,
+      threadId,
+      providerThreadId: providerThread.id,
+      runId: turnInput.runId,
+    };
   });
 
   it.effect("completes a settled Grok turn while a background shell keeps running", () =>
@@ -12186,6 +13164,81 @@ describe("AcpAdapterV2", () => {
       assert.equal(row?.runId, harness.runId);
       assert.equal(row?.type === "command_execution" ? row.output : undefined, "EADDRINUSE\n");
     }).pipe(Effect.provide(layerTest), Effect.scoped),
+  );
+
+  it.effect.each(["stopReason", "rpcError"] as const)(
+    "detaches a background shell when a turn fails on a live process (%s)",
+    (failureKind) =>
+      Effect.gen(function* () {
+        const harness = yield* startGrokBackgroundShellTurn(`grok-dev-server-fail-${failureKind}`);
+        yield* harness.startDevServer;
+        const settled = yield* harness.settleWith(
+          failureKind === "stopReason"
+            ? { _tag: "succeed", response: { stopReason: "error" } }
+            : {
+                _tag: "fail",
+                error: new EffectAcpErrors.AcpRequestError({
+                  method: "session/prompt",
+                  code: -32603,
+                  errorMessage: "rate limited",
+                }),
+              },
+        );
+        assert.equal(settled.status, "failed");
+        assert.isTrue(
+          settled.terminal?.status === "failed" && settled.terminal.childTurnsContinue === true,
+        );
+
+        yield* harness.complete("call-dev-server", { exit_code: 0, output: "DEV_SERVER_DONE\n" });
+        const row = (yield* harness.takeRows).at(-1);
+        assert.equal(row?.status, "completed");
+        assert.equal(row?.runId, harness.runId);
+        assert.equal(
+          row?.type === "command_execution" ? row.output : undefined,
+          "DEV_SERVER_DONE\n",
+        );
+      }).pipe(Effect.provide(layerTest), Effect.scoped),
+  );
+
+  it.effect(
+    "fails a detached background shell and emits background_work.lost when the runtime exits between turns",
+    () =>
+      Effect.gen(function* () {
+        const harness = yield* startGrokBackgroundShellTurn("grok-dev-server-exit-between-turns");
+        yield* harness.startDevServer;
+        assert.equal((yield* harness.settle).status, "completed");
+
+        yield* harness.runtimeDies;
+        const exitEvents: Array<ProviderAdapter.ProviderAdapterV2Event> = [];
+        while (true) {
+          const event = yield* Queue.take(harness.events);
+          exitEvents.push(event);
+          if (event.type === "background_work.lost") break;
+        }
+        const failedRow = exitEvents.findLast(
+          (event) =>
+            event.type === "turn_item.updated" &&
+            event.turnItem.nativeItemRef?.nativeId === "call-dev-server",
+        );
+        assert.equal(
+          failedRow?.type === "turn_item.updated" ? failedRow.turnItem.status : null,
+          "failed",
+        );
+        assert.equal(
+          failedRow?.type === "turn_item.updated" ? failedRow.turnItem.runId : null,
+          harness.runId,
+        );
+        const lost = exitEvents.at(-1);
+        assert.isTrue(lost?.type === "background_work.lost");
+        if (lost?.type === "background_work.lost") {
+          assert.equal(lost.threadId, harness.threadId);
+          assert.equal(lost.providerThreadId, harness.providerThreadId);
+          assert.deepEqual(
+            lost.tasks.map((task) => ({ taskId: task.taskId, kind: task.kind })),
+            [{ taskId: "call-dev-server", kind: "command" }],
+          );
+        }
+      }).pipe(Effect.provide(layerTest), Effect.scoped),
   );
 
   it.effect("persists context usage the agent reports after its prompt settles", () =>
@@ -12789,6 +13842,7 @@ describe("AcpAdapterV2", () => {
         readonly nativeId: string | null | undefined;
         readonly status: string;
         readonly input: string;
+        readonly completionWake: "always" | undefined;
       }> = [];
       let terminal = false;
       while (!terminal) {
@@ -12798,6 +13852,7 @@ describe("AcpAdapterV2", () => {
             nativeId: event.turnItem.nativeItemRef?.nativeId,
             status: event.turnItem.status,
             input: event.turnItem.input,
+            completionWake: event.turnItem.completionWake,
           });
         }
         if (event.type === "turn.terminal") {
@@ -12806,10 +13861,20 @@ describe("AcpAdapterV2", () => {
       }
 
       assert.deepEqual(commandItems, [
-        { nativeId: "call-exec-no-cmd", status: "running", input: "" },
-        { nativeId: "call-monitor-no-cmd", status: "running", input: "" },
-        { nativeId: "call-exec-no-cmd", status: "completed", input: "" },
-        { nativeId: "call-monitor-no-cmd", status: "completed", input: "" },
+        { nativeId: "call-exec-no-cmd", status: "running", input: "", completionWake: undefined },
+        {
+          nativeId: "call-monitor-no-cmd",
+          status: "running",
+          input: "",
+          completionWake: undefined,
+        },
+        { nativeId: "call-exec-no-cmd", status: "completed", input: "", completionWake: undefined },
+        {
+          nativeId: "call-monitor-no-cmd",
+          status: "completed",
+          input: "",
+          completionWake: undefined,
+        },
       ]);
     }).pipe(Effect.provide(layerTest)),
   );

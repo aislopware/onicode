@@ -57,6 +57,7 @@ const VALIDATION_TIMEOUT = "90 seconds";
 const MAX_DOWNLOAD_BYTES = 512 * 1024 * 1024;
 const MAX_EXECUTABLE_BYTES = 512 * 1024 * 1024;
 const UPDATE_CHECK_INTERVAL = 60 * 60 * 1000;
+const STAGING_STALE_AFTER_MS = 24 * 60 * 60_000;
 const FREE_SPACE_MARGIN = 256 * 1024 * 1024;
 const RECORD_MAX_BYTES = 8 * 1024;
 const RELEASE_RECORD = ".install-complete.json";
@@ -95,6 +96,105 @@ export interface AntigravityExecutable {
   readonly source: "override" | "managed" | "path";
   readonly version: string | null;
   readonly managedVersionDirectory: string | null;
+}
+
+export interface AntigravityInstalledBuild {
+  readonly source: AntigravityExecutable["source"];
+  readonly executablePath: string;
+  readonly version: string | null;
+  readonly managedVersionDirectory: string | null;
+  readonly fileIdentity: string | undefined;
+}
+
+export type AntigravityOutdatedBuild =
+  | {
+      readonly reason: "release_changed";
+      readonly runningVersion: string | null;
+      readonly installedVersion: string | null;
+      readonly runningPath: string;
+      readonly installedPath: string;
+    }
+  | {
+      readonly reason: "executable_replaced";
+      readonly executablePath: string;
+    };
+
+/**
+ * Snapshot what `executable` points at on disk. Managed releases live in immutable
+ * SHA-512 directories; external binaries need stat/realPath to detect in-place upgrades.
+ */
+export const readAntigravityExecutableBuild = Effect.fn(
+  "AntigravityInstallation.readExecutableBuild",
+)(function* (
+  executable: AntigravityExecutable,
+): Effect.fn.Return<AntigravityInstalledBuild, never, FileSystem.FileSystem> {
+  if (executable.managedVersionDirectory !== null) {
+    return {
+      source: executable.source,
+      executablePath: executable.executablePath,
+      version: executable.version,
+      managedVersionDirectory: executable.managedVersionDirectory,
+      fileIdentity: undefined,
+    };
+  }
+  const fileSystem = yield* FileSystem.FileSystem;
+  const [info, realPath] = yield* Effect.all(
+    [
+      fileSystem.stat(executable.executablePath).pipe(Effect.option),
+      fileSystem.realPath(executable.executablePath).pipe(Effect.option),
+    ],
+    { concurrency: "unbounded" },
+  );
+  const fileIdentity = Option.match(info, {
+    onNone: () => undefined,
+    onSome: ({ dev, ino, mtime, size }) =>
+      [
+        Option.getOrElse(realPath, () => executable.executablePath),
+        dev,
+        Option.getOrElse(ino, () => ""),
+        Option.match(mtime, { onNone: () => "", onSome: (date) => date.getTime() }),
+        size,
+      ].join("\u0000"),
+  });
+  return {
+    source: executable.source,
+    executablePath: executable.executablePath,
+    version: executable.version,
+    managedVersionDirectory: null,
+    fileIdentity,
+  };
+});
+
+export function antigravityOutdatedBuild(input: {
+  readonly atSpawn: AntigravityInstalledBuild;
+  readonly current: AntigravityInstalledBuild;
+}): AntigravityOutdatedBuild | undefined {
+  const { atSpawn, current } = input;
+  if (
+    atSpawn.source !== current.source ||
+    atSpawn.managedVersionDirectory !== current.managedVersionDirectory ||
+    atSpawn.executablePath !== current.executablePath ||
+    atSpawn.version !== current.version
+  ) {
+    return {
+      reason: "release_changed",
+      runningVersion: atSpawn.version,
+      installedVersion: current.version,
+      runningPath: atSpawn.executablePath,
+      installedPath: current.executablePath,
+    };
+  }
+  if (
+    atSpawn.fileIdentity !== undefined &&
+    current.fileIdentity !== undefined &&
+    atSpawn.fileIdentity !== current.fileIdentity
+  ) {
+    return {
+      reason: "executable_replaced",
+      executablePath: current.executablePath,
+    };
+  }
+  return undefined;
 }
 
 interface AntigravityInstallationService {
@@ -758,6 +858,7 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
           baseEnv: environment,
           // A shallow scoped profile cleans up unpacked files within Windows' path limit.
           tempDirectory: profileDirectory,
+          isolated: true,
         });
         const runtime = yield* makeAntigravityAcpRuntime({
           runtimeVersion: expectedVersion,
@@ -766,6 +867,7 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
             profile,
             cwd: profileDirectory,
             baseEnv: environment,
+            includeDefaultCustomizations: false,
           }),
           cwd: profileDirectory,
           childProcessSpawner:
@@ -1452,8 +1554,54 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
     ),
   );
 
+  const sweepStaleStaging = Effect.fn("AntigravityInstallation.sweepStaleStaging")(function* () {
+    // Shared-home installs do not refresh parent mtimes; remove only staging directories far older than the 45-minute download cap.
+    if ((yield* isSymlink(managedDirectory)) || !(yield* fs.exists(managedDirectory))) return;
+    const now = yield* Clock.currentTimeMillis;
+    const sweepDirectory = Effect.fn("AntigravityInstallation.sweepStagingDirectory")(function* (
+      directory: string,
+      prefix: string,
+    ) {
+      if ((yield* isSymlink(directory)) || !(yield* fs.exists(directory))) return;
+      const entries = yield* fs
+        .readDirectory(directory)
+        .pipe(Effect.orElseSucceed((): ReadonlyArray<string> => []));
+      for (const entry of entries) {
+        if (!entry.startsWith(prefix)) continue;
+        const target = path.join(directory, entry);
+        if (leases.has(target) || (yield* isSymlink(target))) continue;
+        const info = yield* fs.stat(target).pipe(Effect.option);
+        if (Option.isNone(info)) continue;
+        const modifiedAt = Option.match(info.value.mtime, {
+          onNone: () => now,
+          onSome: (date) => date.getTime(),
+        });
+        if (now - modifiedAt < STAGING_STALE_AFTER_MS) continue;
+        yield* removeReleaseDirectory(target).pipe(Effect.ignore);
+      }
+    });
+    yield* sweepDirectory(managedDirectory, "active.json.");
+    yield* sweepDirectory(versionsDirectory, ".install-");
+  });
+
+  // Keep the empty root to avoid racing new staging directories; unreadable roots remain removable.
+  const hasManagedContent = Effect.fn("AntigravityInstallation.hasManagedContent")(function* () {
+    if (yield* isSymlink(managedDirectory)) return true;
+    if (!(yield* fs.exists(managedDirectory))) return false;
+    const remaining = yield* fs.readDirectory(managedDirectory).pipe(Effect.option);
+    if (Option.isNone(remaining)) return true;
+    for (const entry of remaining.value) {
+      if (entry !== "versions") return true;
+      if (yield* isSymlink(versionsDirectory)) return true;
+      const versionEntries = yield* fs.readDirectory(versionsDirectory).pipe(Effect.option);
+      if (Option.isNone(versionEntries) || versionEntries.value.length > 0) return true;
+    }
+    return false;
+  });
+
   yield* Effect.gen(function* () {
-    const canRemove = (yield* fs.exists(managedDirectory)) || (yield* isSymlink(managedDirectory));
+    yield* sweepStaleStaging();
+    const canRemove = yield* hasManagedContent();
     yield* SubscriptionRef.update(state, (current) => ({ ...current, canRemove }));
     if (!(yield* fs.exists(activePath))) return;
     yield* gate.withPermit(
@@ -1461,8 +1609,7 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
         "activate",
         Effect.gen(function* () {
           if (!(yield* fs.exists(activePath))) {
-            const exists =
-              (yield* fs.exists(managedDirectory)) || (yield* isSymlink(managedDirectory));
+            const exists = yield* hasManagedContent();
             yield* SubscriptionRef.update(state, (current) => ({
               ...current,
               canRemove: exists,

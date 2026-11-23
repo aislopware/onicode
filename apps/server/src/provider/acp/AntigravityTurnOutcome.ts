@@ -27,6 +27,8 @@ const API_ERROR =
 // Antigravity 1.5 with a Google account writes "STATUS (code NNN): message".
 const STATUS_ERROR = /(?<![A-Z_])([A-Z_]+) \(code (\d{3})\): (\P{Cc}+)/u;
 const QUOTA_EXHAUSTED = /\breason:QUOTA_EXHAUSTED\b/;
+const CAPACITY_REASON = /\b(MODEL_CAPACITY_EXHAUSTED|PREFILL_QUEUE_OVERLOADED)\b/;
+const ANTIGRAVITY_CAPACITY_MAX_RETRIES = 5;
 // Claude rejects a saved thinking block without a valid signature. It sits in the native
 // history, so every later prompt to that session fails the same way.
 const INVALID_THINKING_SIGNATURE =
@@ -137,6 +139,7 @@ function turnFailure(
       readonly failure: OrchestrationV2ProviderFailure;
       readonly threadDisposition: "reusable" | "broken";
       readonly resumeWith?: string;
+      readonly maxResumes?: number;
     }
   | undefined {
   const errorText =
@@ -172,25 +175,44 @@ function turnFailure(
       threadDisposition: "broken",
     };
   }
+  const capacityReason = CAPACITY_REASON.exec(text)?.[1];
   if (apiError === null) {
-    return reusable(
-      makeProviderFailure({
-        class: "provider_error",
-        message: "Antigravity stopped this turn because of an error.",
-      }),
-    );
+    const failure = makeProviderFailure({
+      class: "provider_error",
+      message: "Antigravity stopped this turn because of an error.",
+      ...(capacityReason === undefined ? {} : { code: capacityReason, retryable: true }),
+    });
+    return capacityReason === undefined
+      ? reusable(failure)
+      : {
+          failure,
+          threadDisposition: "reusable",
+          resumeWith: "continue",
+          maxResumes: ANTIGRAVITY_CAPACITY_MAX_RETRIES,
+        };
   }
   const [, httpStatus, message, status] = apiError;
-  const rateLimited = httpStatus === "429" || status === "RESOURCE_EXHAUSTED";
+  const capacityOverloaded =
+    capacityReason !== undefined || httpStatus === "503" || status === "UNAVAILABLE";
+  const rateLimited =
+    !capacityOverloaded && (httpStatus === "429" || status === "RESOURCE_EXHAUSTED");
   // A 404 before the model answered is an unknown or unentitled model; after, a transient edge error.
   const transientNotFound = httpStatus === "404" && step?.reachedModel === true;
   const failure = makeProviderFailure({
     class: rateLimited ? "usage_limit" : "provider_error",
     message: message!.trim(),
-    code: status ?? null,
-    retryable: rateLimited || transientNotFound || Number(httpStatus) >= 500,
+    code: capacityReason ?? status ?? null,
+    retryable: rateLimited || capacityOverloaded || transientNotFound || Number(httpStatus) >= 500,
     resetAt: resetAtFrom(text, now) ?? null,
   });
+  if (capacityOverloaded) {
+    return {
+      failure,
+      threadDisposition: "reusable",
+      resumeWith: "continue",
+      maxResumes: ANTIGRAVITY_CAPACITY_MAX_RETRIES,
+    };
+  }
   return transientNotFound
     ? { failure, threadDisposition: "reusable", resumeWith: "continue" }
     : reusable(failure);

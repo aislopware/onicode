@@ -122,6 +122,23 @@ export function buildAntigravityModelsFromSession(
   });
 }
 
+// agy lists project skills as commands; another workspace's must not show before this one reports.
+function commandsForUnvisitedWorkspace(
+  commands: ReadonlyArray<ServerProviderSlashCommand>,
+  cwd: string,
+  skillsByCwd: ReadonlyMap<string, ServerProvider["skills"]>,
+): ReadonlyArray<ServerProviderSlashCommand> {
+  const own = new Set((skillsByCwd.get(cwd) ?? []).map((skill) => skill.name));
+  const foreign = new Set<string>();
+  for (const [otherCwd, skills] of skillsByCwd) {
+    if (otherCwd === cwd) continue;
+    for (const skill of skills) {
+      if (skill.scope === "project" && !own.has(skill.name)) foreign.add(skill.name);
+    }
+  }
+  return foreign.size === 0 ? commands : commands.filter((command) => !foreign.has(command.name));
+}
+
 function nativeCommands(
   commands: ReadonlyArray<EffectAcpSchema.AvailableCommand>,
 ): ReadonlyArray<ServerProviderSlashCommand> {
@@ -445,7 +462,9 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
                   {
                     cwd,
                     checkedAt: updatedAt,
-                    slashCommands: workspace?.slashCommands ?? draft.slashCommands,
+                    slashCommands:
+                      workspace?.slashCommands ??
+                      commandsForUnvisitedWorkspace(draft.slashCommands, cwd, discoveredSkills),
                     skills: workspace?.skills ?? discoveredSkills.get(cwd) ?? [],
                   },
                 ].slice(-MAX_WORKSPACE_SNAPSHOTS),
@@ -562,7 +581,15 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
     const resolvedSkills = skills ?? workspace?.skills ?? discoveredSkills.get(cwd) ?? [];
     return workspace
       ? { ...snapshot, slashCommands: workspace.slashCommands, skills: resolvedSkills }
-      : { ...snapshot, skills: resolvedSkills };
+      : {
+          ...snapshot,
+          slashCommands: commandsForUnvisitedWorkspace(
+            snapshot.slashCommands,
+            cwd,
+            discoveredSkills,
+          ),
+          skills: resolvedSkills,
+        };
   });
 
   return {
