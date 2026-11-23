@@ -463,6 +463,8 @@ it("readThread does not attribute the /compact Onicode sends before a stale send
   const sendRunId = RunId.make("run-mcp-held-send");
   const compactMessageId = MessageId.make("message-mcp-compact-on-return");
   const sendMessageId = MessageId.make("message-mcp-held-send");
+  const typedRunId = RunId.make("run-mcp-typed-compact");
+  const typedMessageId = MessageId.make("message-mcp-typed-compact");
   const projection = {
     thread: baseThread({
       threadId: parentThreadId,
@@ -473,6 +475,7 @@ it("readThread does not attribute the /compact Onicode sends before a stale send
     runs: [
       makeRun({ id: compactRunId, ordinal: 1, status: "completed" }),
       makeRun({ id: sendRunId, ordinal: 2, status: "completed" }),
+      makeRun({ id: typedRunId, ordinal: 3, status: "completed" }),
     ],
     visibleTurnItems: [],
     providerTurns: [],
@@ -499,6 +502,16 @@ it("readThread does not attribute the /compact Onicode sends before a stale send
         createdBy: "user",
         creationSource: "web",
       },
+      {
+        id: typedMessageId,
+        threadId: parentThreadId,
+        runId: typedRunId,
+        role: "user",
+        text: "/compact",
+        attachments: [],
+        createdBy: "user",
+        creationSource: "web",
+      },
     ],
     contextTransfers: [],
     subagents: [],
@@ -506,7 +519,7 @@ it("readThread does not attribute the /compact Onicode sends before a stale send
   } as unknown as OrchestrationV2ThreadProjection;
   const userRow = (position: number, runId: RunId, messageId: MessageId, text: string) => ({
     position,
-    visibility: "visible",
+    visibility: "local",
     sourceThreadId: parentThreadId,
     sourceItemId: TurnItemId.make(`turn-item-mcp-user-${position}`),
     item: {
@@ -524,7 +537,7 @@ it("readThread does not attribute the /compact Onicode sends before a stale send
     userRow(0, compactRunId, compactMessageId, "/compact"),
     {
       position: 1,
-      visibility: "visible",
+      visibility: "local",
       sourceThreadId: parentThreadId,
       sourceItemId: TurnItemId.make("turn-item-mcp-compaction"),
       item: {
@@ -537,6 +550,7 @@ it("readThread does not attribute the /compact Onicode sends before a stale send
       },
     },
     userRow(2, sendRunId, sendMessageId, "use webgpu"),
+    userRow(3, typedRunId, typedMessageId, "/compact"),
   ];
 
   const layer = layerOrchestratorService.pipe(
@@ -578,10 +592,17 @@ it("readThread does not attribute the /compact Onicode sends before a stale send
     const service = yield* OrchestratorMcpService.OrchestratorMcpService;
     for (const view of ["activity", "messages"] as const) {
       const result = yield* service.readThread(makeScope(), { threadId: parentThreadId, view });
-      const fromUser = result.items.filter(
-        (item) => item.type === "user_message" && item.createdBy === "user",
-      );
-      expect(fromUser.map((item) => item.text)).toEqual(["use webgpu"]);
+      // Onicode's own /compact reads as the system's; one the user typed stays theirs.
+      expect(
+        result.items.flatMap((item) =>
+          item.type === "user_message" ? [[item.text, item.createdBy]] : [],
+        ),
+        view,
+      ).toEqual([
+        ["/compact", "system"],
+        ["use webgpu", "user"],
+        ["/compact", "user"],
+      ]);
     }
   }).pipe(Effect.provide(layer), Effect.runPromise);
 });
