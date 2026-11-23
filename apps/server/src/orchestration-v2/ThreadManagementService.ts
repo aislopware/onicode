@@ -45,6 +45,10 @@ import {
 import { delegatedTaskProgress } from "@onicode/provider-core/server/subagentProjection";
 import { threadTranscriptHeader } from "@onicode/shared/threadTranscript";
 import { AgentScope } from "@onicode/shared/AgentScope";
+import {
+  backgroundWorkHoldsCompletion,
+  turnItemUpdateCanEndBackgroundWork,
+} from "@onicode/shared/orchestrationV2PendingBackgroundWork";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -1485,16 +1489,31 @@ const make = Effect.gen(function* () {
         }),
       );
     });
-    yield* Stream.fromEffect(trySettle).pipe(
-      Stream.concat(
-        orchestrator
-          .streamStoredEventsFrom({
-            threadId: input.threadId,
-            afterSequence,
-            eventType: "run.updated",
-          })
-          .pipe(Stream.mapEffect(() => trySettle)),
+    // Settling refuses while awaited background work runs or a request waits, and either can
+    // end with no run update.
+    const retries = Stream.mergeAll(
+      (
+        [
+          "run.updated",
+          "provider-thread.updated",
+          "turn-item.updated",
+          "runtime-request.updated",
+        ] as const
+      ).map((eventType) =>
+        orchestrator.streamStoredEventsFrom({ threadId: input.threadId, afterSequence, eventType }),
       ),
+      { concurrency: "unbounded" },
+    ).pipe(
+      Stream.filter(({ event }) =>
+        event.type === "provider-thread.updated"
+          ? !backgroundWorkHoldsCompletion(event.payload.pendingBackgroundTasks ?? [])
+          : event.type === "turn-item.updated"
+            ? turnItemUpdateCanEndBackgroundWork(event.payload)
+            : event.type !== "runtime-request.updated" || event.payload.status !== "pending",
+      ),
+    );
+    yield* Stream.fromEffect(trySettle).pipe(
+      Stream.concat(retries.pipe(Stream.mapEffect(() => trySettle))),
       Stream.filter((done) => done),
       Stream.runHead,
       Effect.timeoutOption(Duration.millis(SETTLE_AFTER_RUN_WAIT_MS)),

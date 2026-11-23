@@ -360,6 +360,13 @@ describe("ClaudeAdapterV2 native resume history", () => {
       message: { content: "API Error: Request rejected (429)", model: "<synthetic>" },
     };
     assert.isTrue(ClaudeAdapterV2.claudeHistoryEndsOnFailedRequest([prompt, failed]));
+    assert.isTrue(
+      ClaudeAdapterV2.claudeHistoryEndsOnFailedRequest([
+        prompt,
+        failed,
+        entry("stop", "user", "[Request interrupted by user]"),
+      ]),
+    );
     assert.isFalse(
       ClaudeAdapterV2.claudeHistoryEndsOnFailedRequest([
         prompt,
@@ -3358,250 +3365,264 @@ describe("ClaudeAdapterV2 attachments", () => {
 });
 
 describe("ClaudeAdapterV2 native fork", () => {
-  it.effect("forks a session from its original directory after the workspace root changes", () =>
-    Effect.gen(function* () {
-      const fileSystem = yield* FileSystem.FileSystem;
-      const idAllocator = yield* IdAllocator.IdAllocatorV2;
-      const attachmentsDir = yield* fileSystem.makeTempDirectoryScoped({
-        prefix: "oni-claude-v2-fork-attachments-",
-      });
-      const configDir = yield* fileSystem.makeTempDirectoryScoped({
-        prefix: "oni-claude-root-change-",
-      });
-      const sourceSessionId = "11111111-1111-4111-8111-111111111111";
-      const sourceCursor = "aaaaaaaa-0000-4000-8000-000000000002";
-      const projectDir = NodePath.join(configDir, "projects", "-old-workspace");
-      yield* fileSystem.makeDirectory(projectDir, { recursive: true });
-      const entry = (uuid: string, parentUuid: string | null, message: unknown) => ({
-        type: parentUuid === null ? "user" : "assistant",
-        uuid,
-        parentUuid,
-        sessionId: sourceSessionId,
-        cwd: "/old-workspace",
-        isSidechain: false,
-        timestamp: "2026-10-01T00:00:00.000Z",
-        message,
-      });
-      yield* fileSystem.writeFileString(
-        NodePath.join(projectDir, `${sourceSessionId}.jsonl`),
-        [
-          entry("aaaaaaaa-0000-4000-8000-000000000001", null, { role: "user", content: "hello" }),
-          entry(sourceCursor, "aaaaaaaa-0000-4000-8000-000000000001", {
-            role: "assistant",
-            content: [{ type: "text", text: "inherited answer" }],
-          }),
-        ]
-          .map((line) => JSON.stringify(line))
-          .join("\n"),
-      );
-      const realRunner = yield* ClaudeAdapterV2.ClaudeAgentSdkQueryRunner.pipe(
-        Effect.provide(
-          ClaudeAdapterV2.layerQueryRunner.pipe(
-            Layer.provide(PortScanner.layerTest),
-            Layer.provide(
-              Layer.succeed(ProviderEventLoggers.ProviderEventLoggers, {
-                native: undefined,
-                canonical: undefined,
-              }),
+  it.effect.each([{ configDir: "an absolute" }, { configDir: "a relative" }])(
+    "forks a session from its original directory after the workspace root changes, with $configDir config dir",
+    (row) =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const idAllocator = yield* IdAllocator.IdAllocatorV2;
+        const attachmentsDir = yield* fileSystem.makeTempDirectoryScoped({
+          prefix: "oni-claude-v2-fork-attachments-",
+        });
+        const root = yield* fileSystem.makeTempDirectoryScoped({
+          prefix: "oni-claude-root-change-",
+        });
+        // The CLI reads a relative one in its cwd, which the fork's runtime policy names.
+        const relativeConfigDir = row.configDir === "a relative";
+        const configDir = relativeConfigDir ? NodePath.join(root, "config") : root;
+        const sourceSessionId = "11111111-1111-4111-8111-111111111111";
+        const sourceCursor = "aaaaaaaa-0000-4000-8000-000000000002";
+        const projectDir = NodePath.join(configDir, "projects", "-old-workspace");
+        yield* fileSystem.makeDirectory(projectDir, { recursive: true });
+        const entry = (uuid: string, parentUuid: string | null, message: unknown) => ({
+          type: parentUuid === null ? "user" : "assistant",
+          uuid,
+          parentUuid,
+          sessionId: sourceSessionId,
+          cwd: "/old-workspace",
+          isSidechain: false,
+          timestamp: "2026-10-01T00:00:00.000Z",
+          message,
+        });
+        yield* fileSystem.writeFileString(
+          NodePath.join(projectDir, `${sourceSessionId}.jsonl`),
+          [
+            entry("aaaaaaaa-0000-4000-8000-000000000001", null, { role: "user", content: "hello" }),
+            entry(sourceCursor, "aaaaaaaa-0000-4000-8000-000000000001", {
+              role: "assistant",
+              content: [{ type: "text", text: "inherited answer" }],
+            }),
+          ]
+            .map((line) => JSON.stringify(line))
+            .join("\n"),
+        );
+        const realRunner = yield* ClaudeAdapterV2.ClaudeAgentSdkQueryRunner.pipe(
+          Effect.provide(
+            ClaudeAdapterV2.layerQueryRunner.pipe(
+              Layer.provide(PortScanner.layerTest),
+              Layer.provide(
+                Layer.succeed(ProviderEventLoggers.ProviderEventLoggers, {
+                  native: undefined,
+                  canonical: undefined,
+                }),
+              ),
             ),
           ),
-        ),
-      );
-      const openedQueries: Array<ClaudeAdapterV2.ClaudeAgentSdkQueryOpenInput> = [];
-      const forkCalls: Array<ClaudeAdapterV2.ClaudeAgentSdkSessionForkInput> = [];
-      const adapter = yield* ClaudeAdapterV2.makeClaudeAdapterV2({
-        instanceId: ClaudeAdapterV2.CLAUDE_DEFAULT_INSTANCE_ID,
-        settings: DEFAULT_CLAUDE_SETTINGS,
-        environment: { CLAUDE_CONFIG_DIR: configDir },
-        attachmentsDir,
-        fileSystem,
-        path: yield* Path.Path,
-        random: yield* SecureRandom.SecureRandom,
-        idAllocator,
-        queryRunner: {
-          allocateSessionId: Effect.succeed(sourceSessionId),
-          open: (input) =>
-            Effect.sync(() => {
-              openedQueries.push(input);
-              return {
-                messages: Stream.never,
-                offer: () => Effect.void,
-                setModel: () => Effect.void,
-                applyFlagSettings: () => Effect.void,
-                setPermissionMode: () => Effect.void,
-                renameSession: () => Effect.void,
-                backgroundTasks: () => Effect.succeed(false),
-                mcpServerStatus: Effect.succeed([]),
-                readMcpResource: () => Effect.die("unexpected MCP resource read"),
-                callMcpTool: () => Effect.die("unexpected MCP tool call"),
-                mcpAuthenticate: () => Effect.die("unexpected MCP sign-in"),
-                mcpSubmitOAuthCallbackUrl: () => Effect.die("unexpected MCP sign-in"),
-                reconnectMcpServer: () => Effect.die("unexpected MCP reconnect"),
-                listPermissionRules: Effect.die("unexpected permission rules read"),
-                getContextUsage: Effect.die("unexpected context usage read"),
-                sessionDialog: (subtype) => Effect.die(`unexpected ${subtype}`),
-                initializationResult: Effect.die("unexpected initialization result read"),
-                reloadOutputStyles: Effect.die("unexpected output style reload"),
-                toggleMcpServer: () => Effect.die("unexpected MCP toggle"),
-                clearMcpServerAuth: () => Effect.die("unexpected MCP clear auth"),
-                stopTask: () => Effect.void,
-                interrupt: Effect.void,
-                close: Effect.void,
-              };
-            }),
-          forkSession: (input) =>
-            Effect.gen(function* () {
-              forkCalls.push(input);
-              return yield* realRunner.forkSession(input);
-            }),
-          subagentLaunchToolUseId: () => Effect.succeed(null),
-          subagentModel: () => Effect.succeed(null),
-          assertComplete: Effect.void,
-        },
-      });
-      const providerSessionId = ProviderSessionId.make("provider-session-claude-fork");
-      const sourceThreadId = ThreadId.make("thread-claude-fork-source");
-      const targetThreadId = ThreadId.make("thread-claude-fork-target");
-      const runtime = yield* adapter.openSession({
-        threadId: sourceThreadId,
-        providerSessionId,
-        modelSelection: {
-          instanceId: ProviderInstanceId.make(ClaudeAdapterV2.CLAUDE_PROVIDER),
-          model: "claude-sonnet-4-6",
-        },
-        runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
-          runtimeMode: "full-access",
-          interactionMode: "default",
-          cwd: "/workspace",
-        }),
-      });
-      const sourceProviderThread = yield* runtime.ensureThread({
-        threadId: sourceThreadId,
-        modelSelection: {
-          instanceId: ProviderInstanceId.make(ClaudeAdapterV2.CLAUDE_PROVIDER),
-          model: "claude-sonnet-4-6",
-        },
-        runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
-          runtimeMode: "full-access",
-          interactionMode: "default",
-          cwd: "/workspace",
-        }),
-      });
-      const now = yield* DateTime.now;
-      const providerTurnId = ProviderTurnId.make("provider-turn-claude-source");
-      const forkedProviderThread = yield* runtime.forkThread({
-        sourceProviderThread,
-        sourceProviderTurns: [
-          {
-            id: providerTurnId,
-            providerThreadId: sourceProviderThread.id,
-            nodeId: NodeId.make("node-claude-source"),
-            runAttemptId: RunAttemptId.make("run-attempt-claude-source"),
-            nativeTurnRef: {
-              driver: ClaudeAdapterV2.CLAUDE_PROVIDER,
-              nativeId: sourceCursor,
-              strength: "weak",
-            },
-            ordinal: 1,
-            status: "completed",
-            startedAt: now,
-            completedAt: now,
+        );
+        const openedQueries: Array<ClaudeAdapterV2.ClaudeAgentSdkQueryOpenInput> = [];
+        const forkCalls: Array<ClaudeAdapterV2.ClaudeAgentSdkSessionForkInput> = [];
+        const adapter = yield* ClaudeAdapterV2.makeClaudeAdapterV2({
+          instanceId: ClaudeAdapterV2.CLAUDE_DEFAULT_INSTANCE_ID,
+          settings: DEFAULT_CLAUDE_SETTINGS,
+          environment: { CLAUDE_CONFIG_DIR: relativeConfigDir ? "config" : configDir },
+          attachmentsDir,
+          fileSystem,
+          path: yield* Path.Path,
+          random: yield* SecureRandom.SecureRandom,
+          idAllocator,
+          queryRunner: {
+            allocateSessionId: Effect.succeed(sourceSessionId),
+            open: (input) =>
+              Effect.sync(() => {
+                openedQueries.push(input);
+                return {
+                  messages: Stream.never,
+                  offer: () => Effect.void,
+                  setModel: () => Effect.void,
+                  applyFlagSettings: () => Effect.void,
+                  setPermissionMode: () => Effect.void,
+                  renameSession: () => Effect.void,
+                  backgroundTasks: () => Effect.succeed(false),
+                  mcpServerStatus: Effect.succeed([]),
+                  readMcpResource: () => Effect.die("unexpected MCP resource read"),
+                  callMcpTool: () => Effect.die("unexpected MCP tool call"),
+                  mcpAuthenticate: () => Effect.die("unexpected MCP sign-in"),
+                  mcpSubmitOAuthCallbackUrl: () => Effect.die("unexpected MCP sign-in"),
+                  reconnectMcpServer: () => Effect.die("unexpected MCP reconnect"),
+                  listPermissionRules: Effect.die("unexpected permission rules read"),
+                  getContextUsage: Effect.die("unexpected context usage read"),
+                  sessionDialog: (subtype) => Effect.die(`unexpected ${subtype}`),
+                  initializationResult: Effect.die("unexpected initialization result read"),
+                  reloadOutputStyles: Effect.die("unexpected output style reload"),
+                  toggleMcpServer: () => Effect.die("unexpected MCP toggle"),
+                  clearMcpServerAuth: () => Effect.die("unexpected MCP clear auth"),
+                  stopTask: () => Effect.void,
+                  interrupt: Effect.void,
+                  close: Effect.void,
+                };
+              }),
+            forkSession: (input) =>
+              Effect.gen(function* () {
+                forkCalls.push(input);
+                return yield* realRunner.forkSession(input);
+              }),
+            subagentLaunchToolUseId: () => Effect.succeed(null),
+            subagentModel: () => Effect.succeed(null),
+            assertComplete: Effect.void,
           },
-        ],
-        providerTurnId,
-        targetThreadId,
-      });
-
-      assert.deepEqual(forkCalls, [
-        {
-          sessionId: sourceSessionId,
-          options: {
-            upToMessageId: sourceCursor,
-          },
-          environment: { CLAUDE_CONFIG_DIR: configDir },
-          threadId: targetThreadId,
+        });
+        const providerSessionId = ProviderSessionId.make("provider-session-claude-fork");
+        const sourceThreadId = ThreadId.make("thread-claude-fork-source");
+        const targetThreadId = ThreadId.make("thread-claude-fork-target");
+        const runtime = yield* adapter.openSession({
+          threadId: sourceThreadId,
           providerSessionId,
-        },
-      ]);
-      const forkedSessionId = forkedProviderThread.nativeThreadRef?.nativeId;
-      assert.isString(forkedSessionId);
-      assert.notEqual(forkedSessionId, sourceSessionId);
-      const forkedTranscript = yield* fileSystem.readFileString(
-        NodePath.join(projectDir, `${forkedSessionId}.jsonl`),
-      );
-      assert.include(forkedTranscript, "inherited answer");
-      assert.equal(forkedProviderThread.forkedFrom?.providerThreadId, sourceProviderThread.id);
-      assert.equal(forkedProviderThread.forkedFrom?.providerTurnId, providerTurnId);
-
-      yield* runtime.startTurn({
-        appThread: {
-          createdBy: "user",
-          creationSource: "web",
-          id: targetThreadId,
-          projectId: ProjectId.make("project-claude-fork-target"),
-          title: "Claude fork target",
-          providerInstanceId: ProviderInstanceId.make(ClaudeAdapterV2.CLAUDE_PROVIDER),
           modelSelection: {
             instanceId: ProviderInstanceId.make(ClaudeAdapterV2.CLAUDE_PROVIDER),
             model: "claude-sonnet-4-6",
           },
-          runtimeMode: "full-access",
-          interactionMode: "default",
-          branch: null,
-          worktreePath: null,
-          activeProviderThreadId: forkedProviderThread.id,
-          lineage: {
-            parentThreadId: sourceThreadId,
-            relationshipToParent: "fork",
-            rootThreadId: sourceThreadId,
+          runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            cwd: "/workspace",
+          }),
+        });
+        const sourceProviderThread = yield* runtime.ensureThread({
+          threadId: sourceThreadId,
+          modelSelection: {
+            instanceId: ProviderInstanceId.make(ClaudeAdapterV2.CLAUDE_PROVIDER),
+            model: "claude-sonnet-4-6",
           },
-          forkedFrom: null,
-          createdAt: now,
-          updatedAt: now,
-          archivedAt: null,
-          settledOverride: null,
-          settledAt: null,
-          lastVisitedAt: null,
-          deletedAt: null,
-        },
-        threadId: targetThreadId,
-        runId: RunId.make("run-claude-fork-target"),
-        runOrdinal: 1,
-        providerTurnOrdinal: 1,
-        attemptId: RunAttemptId.make("run-attempt-claude-fork-target"),
-        rootNodeId: NodeId.make("node-claude-fork-target-root"),
-        providerThread: forkedProviderThread,
-        message: {
-          createdBy: "user",
-          creationSource: "web",
-          messageId: MessageId.make("message-claude-fork-target"),
-          text: "Respond with fork ok",
-          attachments: [],
-        },
-        modelSelection: {
-          instanceId: ProviderInstanceId.make(ClaudeAdapterV2.CLAUDE_PROVIDER),
-          model: "claude-sonnet-4-6",
-        },
-        runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
-          runtimeMode: "full-access",
-          interactionMode: "default",
-          cwd: "/workspace",
-        }),
-      });
+          runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            cwd: "/workspace",
+          }),
+        });
+        const now = yield* DateTime.now;
+        const providerTurnId = ProviderTurnId.make("provider-turn-claude-source");
+        const forkedProviderThread = yield* runtime.forkThread({
+          sourceProviderThread,
+          sourceProviderTurns: [
+            {
+              id: providerTurnId,
+              providerThreadId: sourceProviderThread.id,
+              nodeId: NodeId.make("node-claude-source"),
+              runAttemptId: RunAttemptId.make("run-attempt-claude-source"),
+              nativeTurnRef: {
+                driver: ClaudeAdapterV2.CLAUDE_PROVIDER,
+                nativeId: sourceCursor,
+                strength: "weak",
+              },
+              ordinal: 1,
+              status: "completed",
+              startedAt: now,
+              completedAt: now,
+            },
+          ],
+          providerTurnId,
+          targetThreadId,
+          ...(relativeConfigDir
+            ? {
+                runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+                  runtimeMode: "full-access",
+                  interactionMode: "default",
+                  cwd: root,
+                }),
+              }
+            : {}),
+        });
 
-      assert.equal(openedQueries[0]?.options.resume, forkedSessionId);
-      assert.equal(openedQueries[0]?.options.sessionId, undefined);
-      assert.equal(openedQueries[0]?.options.cwd, NodePath.resolve("/workspace"));
-    }).pipe(
-      Effect.provide(
-        Layer.mergeAll(
-          IdAllocator.layer,
-          McpProviderSessions.layer,
-          NodeServices.layer,
-          NodeCrypto.layer,
+        assert.deepEqual(forkCalls, [
+          {
+            sessionId: sourceSessionId,
+            options: {
+              upToMessageId: sourceCursor,
+            },
+            environment: { CLAUDE_CONFIG_DIR: configDir },
+            threadId: targetThreadId,
+            providerSessionId,
+          },
+        ]);
+        const forkedSessionId = forkedProviderThread.nativeThreadRef?.nativeId;
+        assert.isString(forkedSessionId);
+        assert.notEqual(forkedSessionId, sourceSessionId);
+        const forkedTranscript = yield* fileSystem.readFileString(
+          NodePath.join(projectDir, `${forkedSessionId}.jsonl`),
+        );
+        assert.include(forkedTranscript, "inherited answer");
+        assert.equal(forkedProviderThread.forkedFrom?.providerThreadId, sourceProviderThread.id);
+        assert.equal(forkedProviderThread.forkedFrom?.providerTurnId, providerTurnId);
+
+        yield* runtime.startTurn({
+          appThread: {
+            createdBy: "user",
+            creationSource: "web",
+            id: targetThreadId,
+            projectId: ProjectId.make("project-claude-fork-target"),
+            title: "Claude fork target",
+            providerInstanceId: ProviderInstanceId.make(ClaudeAdapterV2.CLAUDE_PROVIDER),
+            modelSelection: {
+              instanceId: ProviderInstanceId.make(ClaudeAdapterV2.CLAUDE_PROVIDER),
+              model: "claude-sonnet-4-6",
+            },
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            branch: null,
+            worktreePath: null,
+            activeProviderThreadId: forkedProviderThread.id,
+            lineage: {
+              parentThreadId: sourceThreadId,
+              relationshipToParent: "fork",
+              rootThreadId: sourceThreadId,
+            },
+            forkedFrom: null,
+            createdAt: now,
+            updatedAt: now,
+            archivedAt: null,
+            settledOverride: null,
+            settledAt: null,
+            lastVisitedAt: null,
+            deletedAt: null,
+          },
+          threadId: targetThreadId,
+          runId: RunId.make("run-claude-fork-target"),
+          runOrdinal: 1,
+          providerTurnOrdinal: 1,
+          attemptId: RunAttemptId.make("run-attempt-claude-fork-target"),
+          rootNodeId: NodeId.make("node-claude-fork-target-root"),
+          providerThread: forkedProviderThread,
+          message: {
+            createdBy: "user",
+            creationSource: "web",
+            messageId: MessageId.make("message-claude-fork-target"),
+            text: "Respond with fork ok",
+            attachments: [],
+          },
+          modelSelection: {
+            instanceId: ProviderInstanceId.make(ClaudeAdapterV2.CLAUDE_PROVIDER),
+            model: "claude-sonnet-4-6",
+          },
+          runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            cwd: "/workspace",
+          }),
+        });
+
+        assert.equal(openedQueries[0]?.options.resume, forkedSessionId);
+        assert.equal(openedQueries[0]?.options.sessionId, undefined);
+        assert.equal(openedQueries[0]?.options.cwd, NodePath.resolve("/workspace"));
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            IdAllocator.layer,
+            McpProviderSessions.layer,
+            NodeServices.layer,
+            NodeCrypto.layer,
+          ),
         ),
       ),
-    ),
   );
 });
 
@@ -9465,6 +9486,72 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       ),
   );
 
+  it.effect("refuses a restart once a background task starts while it is prepared", () =>
+    Effect.gen(function* () {
+      // The third route reads the restart's launch settings again, after the earlier checks.
+      let routes = 0;
+      const routed = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      const harness = yield* makeWakeHarnessWithOptions({
+        routeModelCatalog: (catalog) =>
+          Effect.suspend(() => {
+            routes += 1;
+            if (routes !== 3) return Effect.succeed(catalog);
+            return Deferred.succeed(routed, undefined).pipe(
+              Effect.andThen(Deferred.await(release)),
+              Effect.as(catalog),
+            );
+          }),
+      });
+      const now = yield* DateTime.now;
+      const turn = (ordinal: number, modelSelection: ModelSelection) =>
+        makeClaudeTestTurnInput({
+          threadId: harness.threadId,
+          providerThread: harness.providerThread,
+          now,
+          attemptId: RunAttemptId.make(`attempt-restart-background:${ordinal}`),
+          text: `Request ${ordinal}`,
+          attachments: [],
+          providerTurnOrdinal: ordinal,
+          modelSelection,
+        });
+      yield* harness.runtime.startTurn(turn(1, CLAUDE_TEST_MODEL_SELECTION));
+      yield* harness.offerAndWait(turnOneResult);
+      yield* Queue.take(harness.terminalReceipts);
+      const restart = yield* Effect.forkChild(
+        harness.runtime.startTurn(turn(2, CLAUDE_TEST_RESTART_MODEL_SELECTION)).pipe(Effect.result),
+      );
+      yield* Deferred.await(routed);
+      yield* harness.offerAndWait(
+        claudeSdkFrame({
+          type: "system",
+          subtype: "background_tasks_changed",
+          tasks: [{ task_id: "bg-serve", task_type: "local_bash", description: "Serve" }],
+          session_id: WAKE_NATIVE_SESSION,
+        }),
+      );
+      yield* Deferred.succeed(release, undefined);
+      const refused = yield* Fiber.join(restart);
+      assert.equal(refused._tag, "Failure");
+      if (refused._tag === "Failure") {
+        assert.instanceOf(
+          refused.failure.cause,
+          ClaudeAdapterV2.ClaudeBackgroundWorkBlocksQueryReplacementError,
+        );
+      }
+      assert.lengthOf(harness.processQueues, 1);
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          IdAllocator.layer,
+          McpProviderSessions.layer,
+          NodeServices.layer,
+          NodeCrypto.layer,
+        ),
+      ),
+    ),
+  );
+
   // regression: #34549 a model change sent with a steer was shown but never applied to the turn.
   it.effect("applies a model change sent with a steer to the running turn", () =>
     Effect.gen(function* () {
@@ -13083,6 +13170,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     const secondReply = "00000000-0000-4000-8000-000000000c02";
     const terminalPrompt = "00000000-0000-4000-8000-000000000c03";
     const terminalReply = "00000000-0000-4000-8000-000000000c04";
+    const followUpReply = "00000000-0000-4000-8000-000000000c07";
     const line = (entry: object) =>
       `${JSON.stringify({ isSidechain: false, sessionId: WAKE_NATIVE_SESSION, ...entry })}\n`;
     const entry = (
@@ -13100,21 +13188,42 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       entry("user", terminalPrompt, secondReply, "Typed in the terminal") +
       entry("assistant", terminalReply, terminalPrompt, [{ type: "text", text: "Answered." }]);
 
-    // Streams one Onicode turn of two reply blocks, writes the transcript, then starts the next turn.
+    // Streams one Onicode turn of two reply blocks, and the follow-up turn when asked, writes the
+    // transcript, then starts the next turn.
     const nextTurnAfter = Effect.fnUntraced(function* (input: {
-      readonly transcript: ((promptUuid: string) => string) | null;
+      readonly transcript: ((promptUuid: string, followUpUuid: string) => string) | null;
+      readonly followUp?: "streams nothing" | "replies";
       readonly backgroundShell?: boolean;
       readonly scheduledWakeup?: boolean;
-      readonly wakeFiresDuringRead?: boolean;
+      readonly wakeDuringRead?: "scheduled" | "unannounced" | "unannounced after the read";
       readonly pinnedHead?: string;
+      readonly relativeConfigDir?: boolean;
+      readonly steer?: "cancelled" | "read after the reply";
+      // Claude hashes a project folder name past 200 characters; the file appears only after a
+      // turn already looked for it.
+      readonly hashedFolder?: boolean;
+      // A frame that starts no turn, buffered while the process is idle.
+      readonly idleFrame?: boolean;
     }) {
       const fileSystem = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const configDir = yield* fileSystem.makeTempDirectoryScoped({ prefix: "oni-claude-stale-" });
-      const projectDir = path.join(configDir, "projects", "-workspace");
+      const root = yield* fileSystem.makeTempDirectoryScoped({ prefix: "oni-claude-stale-" });
+      const configDir = path.join(root, "config");
+      const longCwd = path.join(root, "w".repeat(220));
+      const projectDir = path.join(
+        configDir,
+        "projects",
+        input.hashedFolder === true
+          ? `${longCwd.replace(/[^a-zA-Z0-9]/g, "-").slice(0, 200)}-1k2j3h`
+          : "-workspace",
+      );
       yield* fileSystem.makeDirectory(projectDir, { recursive: true });
       const transcriptOpened = yield* Deferred.make<void>();
       const releaseTranscript = yield* Deferred.make<void>();
+      // Held once the transcript is read: the replacement's launch reads come after it.
+      let holdCatalog = false;
+      const catalogRouted = yield* Deferred.make<void>();
+      const releaseCatalog = yield* Deferred.make<void>();
       const heldFileSystem: FileSystem.FileSystem = {
         ...fileSystem,
         open: (filePath, options) =>
@@ -13126,10 +13235,19 @@ describe("ClaudeAdapterV2 background wake turns", () => {
             : fileSystem.open(filePath, options),
       };
       const harness = yield* makeWakeHarnessWithOptions({
-        environment: { CLAUDE_CONFIG_DIR: configDir },
+        environment: { CLAUDE_CONFIG_DIR: input.relativeConfigDir === true ? "config" : configDir },
         freshQueueOnReopen: true,
+        routeModelCatalog: (catalog) =>
+          Effect.suspend(() => {
+            if (!holdCatalog) return Effect.succeed(catalog);
+            holdCatalog = false;
+            return Deferred.succeed(catalogRouted, undefined).pipe(
+              Effect.andThen(Deferred.await(releaseCatalog)),
+              Effect.as(catalog),
+            );
+          }),
       }).pipe(
-        input.wakeFiresDuringRead === true
+        input.wakeDuringRead !== undefined
           ? Effect.provideService(FileSystem.FileSystem, heldFileSystem)
           : (effect) => effect,
       );
@@ -13154,10 +13272,18 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           text: `Request ${ordinal}`,
           attachments: [],
           providerTurnOrdinal: ordinal,
+          ...(input.relativeConfigDir === true || input.hashedFolder === true
+            ? {
+                runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+                  ...CLAUDE_TEST_RUNTIME_POLICY,
+                  cwd: input.hashedFolder === true ? longCwd : root,
+                }),
+              }
+            : {}),
         });
       yield* harness.runtime.startTurn(turn(1));
       if (input.backgroundShell === true) yield* harness.offerAndWait(wakeTaskStarted);
-      if (input.scheduledWakeup === true || input.wakeFiresDuringRead === true) {
+      if (input.scheduledWakeup === true || input.wakeDuringRead === "scheduled") {
         for (const frame of scheduleWakeupFrames({
           toolUseId: "toolu_stale_process_wakeup",
           uuids: ["00000000-0000-4000-8000-000000000c05", "00000000-0000-4000-8000-000000000c06"],
@@ -13168,24 +13294,88 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         }
       }
       yield* harness.offerAndWait(makeAssistantTextFrame({ uuid: firstReply, text: "Working." }));
+      const steerLifecycle = (state: string) =>
+        harness.offerAndWait(
+          claudeSdkFrame({
+            type: "command_lifecycle",
+            command_uuid: harness.promptUuid(1),
+            state,
+            uuid: `00000000-0000-4000-8000-000000000c1${state === "started" ? 1 : 2}`,
+            session_id: WAKE_NATIVE_SESSION,
+          }),
+        );
+      const idAllocator = yield* IdAllocator.IdAllocatorV2;
+      const steer = harness.runtime.steerTurn({
+        threadId: harness.threadId,
+        runId: turn(1).runId,
+        providerThread,
+        providerTurnId: idAllocator.derive.providerTurn({
+          driver: ClaudeAdapterV2.CLAUDE_PROVIDER,
+          nativeTurnId: "turn:attempt-stale-process:1",
+        }),
+        message: {
+          createdBy: "user",
+          creationSource: "web",
+          messageId: MessageId.make("message-stale-process-steer"),
+          text: "Steer",
+          attachments: [],
+        },
+      });
+      if (input.steer === "read after the reply") yield* steer;
       yield* harness.offerAndWait(makeAssistantTextFrame({ uuid: secondReply, text: "Done." }));
+      if (input.steer === "read after the reply") yield* steerLifecycle("started");
+      if (input.steer === "cancelled") {
+        yield* steer;
+        yield* steerLifecycle("cancelled");
+      }
       yield* harness.offerAndWait(turnOneResult);
       assert.equal((yield* Queue.take(harness.terminalReceipts)).status, "completed");
+      if (input.idleFrame === true) {
+        yield* harness.offerAndWait(
+          claudeSdkFrame({
+            type: "rate_limit_event",
+            rate_limit_info: { status: "allowed_warning", rateLimitType: "five_hour" },
+            uuid: "00000000-0000-4000-8000-000000000c13",
+            session_id: WAKE_NATIVE_SESSION,
+          }),
+        );
+      }
+      if (input.followUp !== undefined) {
+        yield* harness.runtime.startTurn(turn(2));
+        if (input.followUp === "replies") {
+          yield* harness.offerAndWait(
+            makeAssistantTextFrame({ uuid: followUpReply, text: "Again." }),
+          );
+        }
+        yield* harness.offerAndWait(
+          makeResultFrame({ uuid: "00000000-0000-4000-8000-000000000c08", result: "Again." }),
+        );
+        yield* Queue.take(harness.terminalReceipts);
+      }
       if (input.transcript !== null) {
         yield* fileSystem.writeFileString(
           path.join(projectDir, `${WAKE_NATIVE_SESSION}.jsonl`),
-          input.transcript(harness.promptUuid(0)),
+          input.transcript(harness.promptUuid(0), harness.offeredMessages[1]?.uuid ?? ""),
         );
       }
-      if (input.wakeFiresDuringRead !== true) {
-        yield* harness.runtime.startTurn(turn(2));
+      const nextOrdinal = input.followUp === undefined ? 2 : 3;
+      if (input.wakeDuringRead === undefined) {
+        yield* harness.runtime.startTurn(turn(nextOrdinal));
         return harness;
       }
-      yield* TestClock.adjust("1 hour");
-      const nextTurn = yield* Effect.forkChild(harness.runtime.startTurn(turn(2)));
+      if (input.wakeDuringRead === "scheduled") yield* TestClock.adjust("1 hour");
+      const nextTurn = yield* Effect.forkChild(harness.runtime.startTurn(turn(nextOrdinal)));
       yield* Deferred.await(transcriptOpened);
-      yield* harness.offerAndWait(wakeTurnInit);
-      yield* Deferred.succeed(releaseTranscript, undefined);
+      if (input.wakeDuringRead === "unannounced after the read") {
+        holdCatalog = true;
+        yield* Deferred.succeed(releaseTranscript, undefined);
+        yield* Deferred.await(catalogRouted);
+        yield* harness.offerAndWait(wakeTurnInit);
+        yield* Deferred.succeed(releaseCatalog, undefined);
+      } else {
+        yield* harness.offerAndWait(wakeTurnInit);
+        yield* Deferred.succeed(releaseTranscript, undefined);
+      }
       yield* Fiber.join(nextTurn);
       return harness;
     });
@@ -13210,6 +13400,46 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           entry("assistant", terminalReply, terminalPrompt, [
             { type: "text", text: "y".repeat(1_200_000) },
           ]),
+      },
+      {
+        name: "its relative config dir resolves in the cwd the process runs in",
+        transcript: (promptUuid: string) => oniTurn(promptUuid) + terminalExchange,
+        relativeConfigDir: true,
+      },
+      {
+        name: "Claude cancelled a steer that never reached the file",
+        transcript: (promptUuid: string) => oniTurn(promptUuid) + terminalExchange,
+        steer: "cancelled" as const,
+      },
+      {
+        // The steer is in the first tail Onicode reads, its last reply is not.
+        name: "Claude read a steer after a long reply",
+        transcript: (promptUuid: string, steerUuid: string) =>
+          entry("user", promptUuid, null, "Request 1") +
+          entry("assistant", firstReply, promptUuid, [{ type: "text", text: "Working." }]) +
+          entry("assistant", secondReply, firstReply, [
+            { type: "text", text: "x".repeat(300_000) },
+          ]) +
+          entry("user", steerUuid, secondReply, "Steer") +
+          entry("user", terminalPrompt, steerUuid, "Typed in the terminal") +
+          entry("assistant", terminalReply, terminalPrompt, [{ type: "text", text: "Answered." }]),
+        steer: "read after the reply" as const,
+      },
+      {
+        name: "Claude hashed its project folder name and wrote the file after a turn looked",
+        transcript: (promptUuid: string, followUpUuid: string) =>
+          oniTurn(promptUuid) +
+          entry("user", followUpUuid, secondReply, "Request 2") +
+          entry("assistant", followUpReply, followUpUuid, [{ type: "text", text: "Again." }]) +
+          entry("user", terminalPrompt, followUpReply, "Typed in the terminal") +
+          entry("assistant", terminalReply, terminalPrompt, [{ type: "text", text: "Answered." }]),
+        followUp: "replies" as const,
+        hashedFolder: true,
+      },
+      {
+        name: "only a frame that starts no turn arrived while it was idle",
+        transcript: (promptUuid: string) => oniTurn(promptUuid) + terminalExchange,
+        idleFrame: true,
       },
     ])("replaces a warm process when $name", (row) =>
       Effect.gen(function* () {
@@ -13242,7 +13472,29 @@ describe("ClaudeAdapterV2 background wake turns", () => {
             isSidechain: true,
           }) +
           entry("user", "meta-1", secondReply, "Caveat", { isMeta: true }) +
-          entry("user", "stop-1", secondReply, "[Request interrupted by user]") +
+          line({
+            type: "assistant",
+            uuid: "failed-1",
+            parentUuid: secondReply,
+            message: {
+              role: "assistant",
+              model: "<synthetic>",
+              content: [{ type: "text", text: "API Error: Connection error." }],
+            },
+          }) +
+          entry(
+            "user",
+            "model-1",
+            "failed-1",
+            "<command-name>/model</command-name>\n<command-message>model</command-message>\n<command-args>opus</command-args>",
+          ) +
+          entry("user", "model-2", "model-1", [
+            {
+              type: "text",
+              text: "<local-command-stdout>Set model to Opus</local-command-stdout>",
+            },
+          ]) +
+          entry("user", "stop-1", "model-2", "[Request interrupted by user]") +
           JSON.stringify({ type: "user", uuid: "half-written", parentUuid: secondReply }).slice(
             0,
             30,
@@ -13267,7 +13519,31 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       {
         name: "its scheduled wakeup fires while the transcript is read",
         transcript: (promptUuid: string) => oniTurn(promptUuid) + terminalExchange,
-        wakeFiresDuringRead: true,
+        wakeDuringRead: "scheduled" as const,
+      },
+      {
+        name: "Claude starts a turn of its own while the transcript is read",
+        transcript: (promptUuid: string) => oniTurn(promptUuid) + terminalExchange,
+        wakeDuringRead: "unannounced" as const,
+      },
+      {
+        name: "Claude starts a turn of its own while the replacement is prepared",
+        transcript: (promptUuid: string) => oniTurn(promptUuid) + terminalExchange,
+        wakeDuringRead: "unannounced after the read" as const,
+      },
+      {
+        name: "a follow-up was stopped before Claude streamed anything",
+        transcript: (promptUuid: string, followUpUuid: string) =>
+          oniTurn(promptUuid) +
+          entry("user", followUpUuid, secondReply, "Request 2") +
+          entry("user", "stop-2", followUpUuid, "[Request interrupted by user]"),
+        followUp: "streams nothing" as const,
+      },
+      {
+        name: "the file has not caught up with a follow-up's reply",
+        transcript: (promptUuid: string, followUpUuid: string) =>
+          oniTurn(promptUuid) + entry("user", followUpUuid, secondReply, "Request 2"),
+        followUp: "replies" as const,
       },
       {
         // Longer than the tail Onicode reads, and the process's own messages are not written yet.
@@ -13280,7 +13556,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       Effect.gen(function* () {
         const harness = yield* nextTurnAfter(row);
         assert.lengthOf(harness.processQueues, 1);
-        assert.lengthOf(harness.offeredMessages, 2);
+        assert.lengthOf(harness.offeredMessages, "followUp" in row ? 3 : 2);
       }).pipe(Effect.provide(layer)),
     );
   });
@@ -19036,6 +19312,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       // Counts pending sleeps of the silence budget: each one holds the whole turn context.
       const clock = yield* Clock.Clock;
       let pendingWatches = 0;
+      let watchStarted: Deferred.Deferred<void> | undefined;
       const countingClock: Clock.Clock = {
         currentTimeMillisUnsafe: () => clock.currentTimeMillisUnsafe(),
         currentTimeMillis: clock.currentTimeMillis,
@@ -19047,6 +19324,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           Duration.toMillis(duration) === PROVIDER_RETRY_BUDGET_MS
             ? Effect.suspend(() => {
                 pendingWatches += 1;
+                if (watchStarted !== undefined) Deferred.doneUnsafe(watchStarted, Effect.void);
                 return clock.sleep(duration);
               }).pipe(Effect.ensuring(Effect.sync(() => (pendingWatches -= 1))))
             : clock.sleep(duration),
@@ -19093,6 +19371,31 @@ describe("ClaudeAdapterV2 background wake turns", () => {
             }),
           );
         }
+        // The retry budget runs on the same 10-minute clock; recovery must release its watch too.
+        watchStarted = yield* Deferred.make<void>();
+        yield* harness.offerAndWait(
+          claudeSdkFrame({
+            type: "system",
+            subtype: "api_retry",
+            attempt: 1,
+            max_retries: 10,
+            retry_delay_ms: 1_000,
+            error_status: 529,
+            error: "overloaded",
+            uuid: "00000000-0000-4000-8000-0000000007c1",
+            session_id: WAKE_NATIVE_SESSION,
+          }),
+        );
+        yield* Deferred.await(watchStarted);
+        yield* harness.offerAndWait(
+          claudeSdkFrame({
+            type: "stream_event",
+            event: { type: "message_start", message: { id: "msg_watch_retry_recovered" } },
+            parent_tool_use_id: null,
+            session_id: WAKE_NATIVE_SESSION,
+            uuid: "00000000-0000-4000-8000-0000000007c2",
+          }),
+        );
         assert.strictEqual(pendingWatches, 0, "answered requests left silence watches running");
       }).pipe(Effect.provideService(Clock.Clock, countingClock));
     }).pipe(
@@ -26429,6 +26732,61 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         "cancelled",
       );
       assert.isNull(stoppedRoot?.type === "node.updated" ? stoppedRoot.node.startedAt : undefined);
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          IdAllocator.layer,
+          McpProviderSessions.layer,
+          NodeServices.layer,
+          NodeCrypto.layer,
+        ),
+      ),
+    ),
+  );
+
+  it.effect("reads workflow member transcripts under a config dir relative to the turn's cwd", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const cwd = yield* fileSystem.makeTempDirectoryScoped({ prefix: "oni-claude-wf-cwd-" });
+      const transcriptDir = NodePath.join(cwd, "config", "projects", "workflow");
+      yield* fileSystem.makeDirectory(transcriptDir, { recursive: true });
+      yield* fileSystem.writeFileString(
+        NodePath.join(transcriptDir, "agent-a1.jsonl"),
+        `{"type":"assistant","uuid":"wf-line-relative","message":{"role":"assistant","stop_reason":"end_turn","id":"msg_a1","content":[{"type":"text","text":"A1 from the transcript"}]}}\n`,
+      );
+      // The session opens in another directory than the turn's.
+      const harness = yield* makeWakeHarnessWithOptions({
+        environment: { CLAUDE_CONFIG_DIR: "config" },
+      });
+      yield* harness.runtime.startTurn(
+        makeClaudeTestTurnInput({
+          threadId: harness.threadId,
+          providerThread: harness.providerThread,
+          now: yield* DateTime.now,
+          attemptId: RunAttemptId.make("attempt-claude-workflow-relative-config"),
+          text: "Run the alpha workflow in the background.",
+          attachments: [],
+          runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+            ...CLAUDE_TEST_RUNTIME_POLICY,
+            cwd,
+          }),
+        }),
+      );
+      yield* harness.offerAndWait(workflowToolUse);
+      yield* harness.offerAndWait(workflowTaskStarted);
+      yield* harness.offerAndWait(workflowLaunchAck(transcriptDir));
+      yield* harness.offerAndWait(
+        workflowSnapshot({ uuid: "00000000-0000-4000-8000-00000000105a", state: "start" }),
+      );
+      yield* harness.offerAndWait(
+        makeResultFrame({ uuid: "00000000-0000-4000-8000-00000000105b", result: "Launched." }),
+      );
+      yield* Queue.take(harness.terminalReceipts);
+      const member = workflowMemberEvents(harness.events, 1).at(-1)?.subagent;
+      assert.deepEqual(
+        threadMessages(harness.events, member?.childThreadId).map((event) => event.message.text),
+        ["Reply with exactly: A1", "A1 from the transcript"],
+      );
     }).pipe(
       Effect.provide(
         Layer.mergeAll(

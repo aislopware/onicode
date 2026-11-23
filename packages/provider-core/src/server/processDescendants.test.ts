@@ -1,9 +1,14 @@
 import { describe, expect, it } from "@effect/vitest";
+import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
+import * as FiberSet from "effect/FiberSet";
+import * as Queue from "effect/Queue";
+import * as TestClock from "effect/testing/TestClock";
 
 import {
   killProcessDescendant,
   makeProcessDescendantPoll,
+  makeSharedProcessDescendantPoll,
   parseProcessTable,
   type ProcessTableRow,
 } from "./processDescendants.ts";
@@ -89,4 +94,41 @@ describe("processDescendants", () => {
       expect([...tracker.tracked.values()].map((row) => row.pid)).toEqual([1100]);
     });
   });
+
+  it.effect("polls a watched process slowly and a working one at once and often", () =>
+    Effect.gen(function* () {
+      const readAt = yield* Queue.unbounded<number>();
+      const poll = makeSharedProcessDescendantPoll(
+        Clock.currentTimeMillis.pipe(
+          Effect.tap((now) => Queue.offer(readAt, now)),
+          Effect.as([{ pid: 1000, ppid: 10, pgid: 1000, started: "Mon Nov 23 17:00:00 2026" }]),
+        ),
+        yield* FiberSet.makeRuntime(),
+      );
+      const first = poll.track(1000);
+      first.watch();
+      expect(yield* Queue.take(readAt)).toBe(0);
+      yield* TestClock.adjust("10 seconds");
+      expect(yield* Queue.take(readAt)).toBe(10_000);
+      yield* TestClock.adjust("4 seconds");
+      first.work();
+      expect(yield* Queue.take(readAt)).toBe(14_000);
+      yield* TestClock.adjust("1 second");
+      expect(yield* Queue.take(readAt)).toBe(15_000);
+      yield* first.stop;
+      expect(yield* Queue.take(readAt)).toBe(15_000);
+      // A frame after the exit does not hold the working cadence for the processes still watched.
+      first.work();
+      const second = poll.track(2000);
+      second.watch();
+      expect(yield* Queue.take(readAt)).toBe(15_000);
+      yield* TestClock.adjust("10 seconds");
+      expect(yield* Queue.take(readAt)).toBe(25_000);
+      yield* second.settle;
+      expect(yield* Queue.take(readAt)).toBe(25_000);
+      yield* TestClock.adjust("20 seconds");
+      expect(poll.hasLive()).toBe(false);
+      expect(yield* Queue.size(readAt)).toBe(0);
+    }),
+  );
 });

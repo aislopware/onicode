@@ -1,7 +1,7 @@
+import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
-import * as Schedule from "effect/Schedule";
 import * as Semaphore from "effect/Semaphore";
 
 import { signalProcessGroup } from "./processGroup.ts";
@@ -33,6 +33,8 @@ export interface SharedProcessDescendantTracker {
   readonly tracked: ReadonlyMap<string, ProcessTableRow>;
   readonly refresh: Effect.Effect<void>;
   readonly work: () => void;
+  /** Polls this root process at the slower cadence until it works or settles. */
+  readonly watch: () => void;
   readonly settle: Effect.Effect<void>;
   readonly stop: Effect.Effect<void>;
 }
@@ -48,6 +50,9 @@ export interface SharedProcessDescendantPoll {
 
 // How often a working process's tree is recorded when no OS scope stops what it leaves behind.
 const DEFAULT_POLL_INTERVAL = "1 second";
+// Long-lived background work such as a dev server rarely starts jobs, and its jobs stay its
+// children, so any read before the root exits records them.
+const DEFAULT_WATCH_INTERVAL = "10 seconds";
 
 export const PROCESS_TABLE_PS_ARGS = ["-A", "-o", "pid=,ppid=,pgid=,lstart="] as const;
 
@@ -202,40 +207,64 @@ export function makeProcessDescendantPoll(
 
 /**
  * Shares one periodic process-table poll fiber across every tracked root process. The first
- * working tracker starts it; it stops once no tracker is live.
+ * working tracker starts it; it stops once no tracker is live. It reads at the working cadence
+ * while any tracker works, and at the watch cadence while all of them only watch.
  */
 export function makeSharedProcessDescendantPoll(
   readProcessTable: Effect.Effect<ReadonlyArray<ProcessTableRow>>,
   runFork: <A, E>(effect: Effect.Effect<A, E>) => Fiber.Fiber<A, E>,
-  interval: Duration.Input = DEFAULT_POLL_INTERVAL,
+  intervals?: { readonly work: Duration.Input; readonly watch: Duration.Input },
 ): SharedProcessDescendantPoll {
+  const interval = intervals?.work ?? DEFAULT_POLL_INTERVAL;
+  const watchInterval = intervals?.watch ?? DEFAULT_WATCH_INTERVAL;
   const descendantPoll = makeProcessDescendantPoll(readProcessTable);
+  const working = new Set<object>();
   let polling: Fiber.Fiber<unknown> | undefined;
+  // Ends a wait early when a tracker starts working or goes live, so its tree is read at once.
+  let waiting: Deferred.Deferred<void> | undefined;
+  const wake = () => {
+    if (waiting !== undefined) Deferred.doneUnsafe(waiting, Effect.void);
+  };
+  // Cleared in the same step that ends the poll, so the next tracked process starts a new one.
+  const ended = () => {
+    if (descendantPoll.hasLive()) return false;
+    polling = undefined;
+    return true;
+  };
+  const pollLoop: Effect.Effect<void> = Effect.suspend(() =>
+    ended()
+      ? Effect.void
+      : descendantPoll.poll.pipe(
+          Effect.andThen(
+            Effect.suspend(() => {
+              if (ended()) return Effect.void;
+              const wait = Deferred.makeUnsafe<void>();
+              waiting = wait;
+              return Deferred.await(wait).pipe(
+                Effect.timeoutOrElse({
+                  duration: working.size > 0 ? interval : watchInterval,
+                  orElse: () => Effect.void,
+                }),
+                Effect.andThen(pollLoop),
+              );
+            }),
+          ),
+        ),
+  );
   const startPolling = () => {
-    polling ??= runFork(
-      descendantPoll.poll.pipe(
-        Effect.repeat({
-          schedule: Schedule.spaced(interval),
-          // Cleared in the same step that ends the poll, so the next tracked process starts a new one.
-          while: () => {
-            if (descendantPoll.hasLive()) return true;
-            polling = undefined;
-            return false;
-          },
-        }),
-      ),
-    );
+    polling ??= runFork(pollLoop);
   };
   return {
     poll: descendantPoll.poll,
     hasLive: descendantPoll.hasLive,
     track: (rootPid, signal) => {
       const tracker = descendantPoll.track(rootPid);
-      const work = () => {
-        tracker.work();
-        startPolling();
-      };
-      const stop = tracker.leftovers.pipe(
+      let mode: "idle" | "watch" | "work" | "stopped" = "idle";
+      const stop = Effect.suspend(() => {
+        mode = "stopped";
+        working.delete(tracker);
+        return tracker.leftovers;
+      }).pipe(
         Effect.map((rows) => {
           for (const row of rows) killProcessDescendant(row, signal);
         }),
@@ -243,8 +272,28 @@ export function makeSharedProcessDescendantPoll(
       return {
         tracked: tracker.tracked,
         refresh: tracker.refresh,
-        work,
-        settle: tracker.settle,
+        work: () => {
+          if (mode === "stopped" || mode === "work") return;
+          mode = "work";
+          working.add(tracker);
+          tracker.work();
+          wake();
+          startPolling();
+        },
+        watch: () => {
+          if (mode === "stopped" || mode === "watch") return;
+          const wasIdle = mode === "idle";
+          mode = "watch";
+          working.delete(tracker);
+          tracker.work();
+          if (wasIdle) wake();
+          startPolling();
+        },
+        settle: Effect.suspend(() => {
+          if (mode !== "stopped") mode = "idle";
+          working.delete(tracker);
+          return tracker.settle;
+        }),
         stop,
       };
     },

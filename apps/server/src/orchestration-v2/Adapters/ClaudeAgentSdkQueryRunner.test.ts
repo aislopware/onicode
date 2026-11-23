@@ -11,6 +11,8 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import { ProviderSessionId, ThreadId } from "@onicode/contracts";
 import * as Effect from "effect/Effect";
+import * as Clock from "effect/Clock";
+import * as Duration from "effect/Duration";
 import * as Exit from "effect/Exit";
 import * as Deferred from "effect/Deferred";
 import * as Fiber from "effect/Fiber";
@@ -62,10 +64,11 @@ const writeClaudeSession = Effect.fnUntraced(function* (
       content: [{ type: "text", text: "hi" }],
     }),
   ],
+  projectFolder = "-repo",
 ) {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const projectDir = path.join(configDir, "projects", "-repo");
+  const projectDir = path.join(configDir, "projects", projectFolder);
   yield* fileSystem.makeDirectory(projectDir, { recursive: true });
   yield* fileSystem.writeFileString(
     path.join(projectDir, `${FORK_SESSION_ID}.jsonl`),
@@ -346,6 +349,74 @@ it.effect("resumes a session whose history exceeds the status-probe output limit
     yield* Effect.addFinalizer(() => session.close.pipe(Effect.orDie));
     assert.equal(querySpy.mock.calls.length, 1);
     assert.equal(querySpy.mock.calls[0]?.[0].options?.resume, FORK_SESSION_ID);
+  }).pipe(Effect.provide(Layer.merge(realQueryRunner, NodeServices.layer))),
+);
+
+it.effect.each([
+  { case: "an answered request", failed: false, rerun: "1" },
+  { case: "a failed request the user then stopped", failed: true, rerun: "0" },
+  {
+    case: "a failed request under a config dir relative to the turn's cwd",
+    failed: true,
+    rerun: "0",
+    relativeConfigDir: true,
+  },
+])("re-runs an interrupted turn on resume only after $case", ({ failed, rerun, ...row }) =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const root = yield* fileSystem.makeTempDirectoryScoped({ prefix: "oni-claude-rerun-" });
+    const relativeConfigDir = "relativeConfigDir" in row;
+    const configDir = relativeConfigDir ? path.join(root, "config") : root;
+    const cwd = relativeConfigDir ? yield* fileSystem.realPath(root) : "/repo";
+    const promptUuid = "aaaaaaaa-0000-4000-8000-000000000001";
+    const replyUuid = "aaaaaaaa-0000-4000-8000-000000000002";
+    yield* writeClaudeSession(
+      configDir,
+      [
+        sessionEntry(promptUuid, null, { role: "user", content: "hello" }),
+        sessionEntry(replyUuid, promptUuid, {
+          role: "assistant",
+          content: [{ type: "text", text: failed ? "API Error: Request rejected (429)" : "hi" }],
+          ...(failed ? { model: "<synthetic>" } : {}),
+        }),
+        ...(failed
+          ? [
+              {
+                ...sessionEntry("aaaaaaaa-0000-4000-8000-000000000003", replyUuid, {
+                  role: "user",
+                  content: [{ type: "text", text: "[Request interrupted by user]" }],
+                }),
+                type: "user",
+              },
+            ]
+          : []),
+      ],
+      cwd.replace(/[^a-zA-Z0-9]/g, "-"),
+    );
+    const querySpy = vi
+      .spyOn(ClaudeSdk, "query")
+      .mockImplementation(() => ({ close: vi.fn() }) as unknown as ClaudeSdk.Query);
+    yield* Effect.addFinalizer(() => Effect.sync(() => querySpy.mockRestore()));
+    const runner = yield* ClaudeAgentSdkQueryRunner;
+    const { mcpServers: _mcpServers, ...options } = resumedMcpQueryInput.options;
+    const session = yield* runner.open({
+      ...resumedMcpQueryInput,
+      resume: true,
+      options: {
+        ...options,
+        cwd,
+        env: {
+          ...process.env,
+          CLAUDE_CONFIG_DIR: relativeConfigDir ? "config" : configDir,
+          CLAUDE_CODE_RESUME_INTERRUPTED_TURN: "1",
+        },
+      },
+    });
+    yield* Effect.addFinalizer(() => session.close.pipe(Effect.orDie));
+    const sent = querySpy.mock.calls[0]?.[0].options;
+    assert.equal(sent?.env?.CLAUDE_CODE_RESUME_INTERRUPTED_TURN, rerun);
+    assert.equal(sent?.resumeSessionAt, failed ? replyUuid : undefined);
   }).pipe(Effect.provide(Layer.merge(realQueryRunner, NodeServices.layer))),
 );
 
@@ -992,21 +1063,112 @@ describe.skipIf(HostProcess.Platform.defaultValue() === "win32")("Claude CLI pro
     },
   );
 
-  it.effect("reads the CLI's process tree once when its turn ends and not while it is idle", () =>
+  it.effect.each([{ running: "nothing" }, { running: "a background task" }])(
+    "reads the CLI's process tree once when its turn ends with $running running",
+    ({ running }) =>
+      Effect.gen(function* () {
+        const background = running === "a background task";
+        const cli = fakeClaudeCli(
+          [
+            'dir=$(dirname "$0")',
+            `while read -r line; do case "$line" in *'"type":"user"'*) break;; esac; done`,
+            ...(background
+              ? [
+                  `echo '{"type":"system","subtype":"background_tasks_changed","tasks":[{"task_id":"bg-1","task_type":"local_bash","description":"Serve"}],"session_id":"native-session-fake-cli"}'`,
+                ]
+              : []),
+            `perl -e 'setpgrp(0, 0); exec @ARGV' sleep 600 > "$dir/alive" &`,
+            'echo $! > "$dir/leftover.pid"',
+            `echo '{"type":"result","subtype":"success","is_error":false,"result":"done","session_id":"native-session-fake-cli"}'`,
+            'read -r _ < "$dir/exit"',
+          ].join("\n"),
+        );
+        const dir = NodePath.dirname(cli);
+        NodeChildProcess.execFileSync("mkfifo", [NodePath.join(dir, "alive")]);
+        NodeChildProcess.execFileSync("mkfifo", [NodePath.join(dir, "exit")]);
+        yield* Effect.addFinalizer(() =>
+          Effect.sync(() => {
+            try {
+              process.kill(Number(NodeFS.readFileSync(NodePath.join(dir, "leftover.pid"), "utf8")));
+            } catch {}
+            NodeFS.rmSync(dir, { recursive: true, force: true });
+          }),
+        );
+        const alive = NodeFS.createReadStream(NodePath.join(dir, "alive"));
+        const leftoverStopped = new Promise<void>((resolve) =>
+          alive.once("close", () => resolve()),
+        );
+        alive.resume();
+        let listings = 0;
+        const countingSpawner = Layer.effect(
+          ChildProcessSpawner.ChildProcessSpawner,
+          Effect.gen(function* () {
+            const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+            return ChildProcessSpawner.make((command) => {
+              if (command._tag === "StandardCommand" && command.command === "ps") listings += 1;
+              return spawner.spawn(command);
+            });
+          }),
+        ).pipe(Layer.provide(NodeServices.layer));
+
+        const session = yield* openFakeCli(cli).pipe(
+          Effect.provide(
+            layerQueryRunner.pipe(
+              Layer.provide(countingSpawner),
+              Layer.provide(PortScanner.layerTest),
+              Layer.provide(
+                Layer.succeed(ProviderEventLoggers, { native: undefined, canonical: undefined }),
+              ),
+              Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+            ),
+          ),
+        );
+        const turnEnded = yield* Deferred.make<void>();
+        yield* session.messages.pipe(
+          Stream.tap((message) =>
+            message.type === "result" ? Deferred.succeed(turnEnded, undefined) : Effect.void,
+          ),
+          Stream.runDrain,
+          Effect.ignore,
+          Effect.forkScoped,
+        );
+        yield* session.offer({
+          type: "user",
+          message: { role: "user", content: "Start a job." },
+          parent_tool_use_id: null,
+          session_id: "native-session-fake-cli",
+        });
+        yield* Deferred.await(turnEnded);
+        const listingsAtTurnEnd = listings;
+        // Idle, nothing reads the tree; background work keeps reading it, at the watch cadence.
+        if (!background) yield* TestClock.adjust("1 minute");
+        // The CLI exits on its own, so only the turn-end read can have recorded the job.
+        yield* Effect.promise(() => NodeFS.promises.writeFile(NodePath.join(dir, "exit"), "\n"));
+        yield* Effect.promise(() => leftoverStopped);
+        assert.equal(listings, listingsAtTurnEnd + 1);
+      }),
+  );
+
+  // Background agents and workflows report only through system messages after the turn's result.
+  it.effect("stops a job a background task started after the turn ended when the CLI exits", () =>
     Effect.gen(function* () {
       const cli = fakeClaudeCli(
         [
           'dir=$(dirname "$0")',
           `while read -r line; do case "$line" in *'"type":"user"'*) break;; esac; done`,
+          `echo '{"type":"result","subtype":"success","is_error":false,"result":"done","session_id":"native-session-fake-cli"}'`,
+          'read -r _ < "$dir/background"',
+          `echo '{"type":"system","subtype":"background_tasks_changed","tasks":[{"task_id":"bg-1","task_type":"local_agent","description":"Watch"}],"session_id":"native-session-fake-cli"}'`,
+          // Without a roster the frame says nothing about the task above.
+          `echo '{"type":"system","subtype":"background_tasks_changed","session_id":"native-session-fake-cli"}'`,
           `perl -e 'setpgrp(0, 0); exec @ARGV' sleep 600 > "$dir/alive" &`,
           'echo $! > "$dir/leftover.pid"',
-          `echo '{"type":"result","subtype":"success","is_error":false,"result":"done","session_id":"native-session-fake-cli"}'`,
           'read -r _ < "$dir/exit"',
         ].join("\n"),
       );
       const dir = NodePath.dirname(cli);
-      NodeChildProcess.execFileSync("mkfifo", [NodePath.join(dir, "alive")]);
-      NodeChildProcess.execFileSync("mkfifo", [NodePath.join(dir, "exit")]);
+      for (const fifo of ["alive", "background", "exit"])
+        NodeChildProcess.execFileSync("mkfifo", [NodePath.join(dir, fifo)]);
       yield* Effect.addFinalizer(() =>
         Effect.sync(() => {
           try {
@@ -1016,24 +1178,58 @@ describe.skipIf(HostProcess.Platform.defaultValue() === "win32")("Claude CLI pro
         }),
       );
       const alive = NodeFS.createReadStream(NodePath.join(dir, "alive"));
+      const leftoverStarted = new Promise<void>((resolve) => alive.once("open", () => resolve()));
       const leftoverStopped = new Promise<void>((resolve) => alive.once("close", () => resolve()));
       alive.resume();
-      let listings = 0;
-      const countingSpawner = Layer.effect(
+      // Set once the job runs, so only a table that lists it resolves the read below.
+      let jobRunning = false;
+      const tableReadWithJob = yield* Deferred.make<void>();
+      const observingSpawner = Layer.effect(
         ChildProcessSpawner.ChildProcessSpawner,
         Effect.gen(function* () {
           const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-          return ChildProcessSpawner.make((command) => {
-            if (command._tag === "StandardCommand" && command.command === "ps") listings += 1;
-            return spawner.spawn(command);
-          });
+          return ChildProcessSpawner.make((command) =>
+            spawner
+              .spawn(command)
+              .pipe(
+                Effect.tap(() =>
+                  jobRunning && command._tag === "StandardCommand" && command.command === "ps"
+                    ? Effect.addFinalizer(() =>
+                        Deferred.succeed(tableReadWithJob, undefined).pipe(Effect.asVoid),
+                      )
+                    : Effect.void,
+                ),
+              ),
+          );
         }),
       ).pipe(Layer.provide(NodeServices.layer));
+
+      // The poll's ticks run on the test clock, so the clock is moved only while a tick waits on it.
+      const clock = yield* Clock.Clock;
+      let pollWaiting = false;
+      let pollWaits: Deferred.Deferred<void> | undefined;
+      const pollClock: Clock.Clock = {
+        currentTimeMillisUnsafe: () => clock.currentTimeMillisUnsafe(),
+        currentTimeMillis: clock.currentTimeMillis,
+        currentTimeNanosUnsafe: () => clock.currentTimeNanosUnsafe(),
+        currentTimeNanos: clock.currentTimeNanos,
+        monotonicTimeNanosUnsafe: () => clock.monotonicTimeNanosUnsafe(),
+        monotonicTimeNanos: clock.monotonicTimeNanos,
+        // Only background work keeps the poll after the result, at the slower watch cadence.
+        sleep: (duration) =>
+          Duration.toMillis(duration) === 10_000
+            ? Effect.suspend(() => {
+                pollWaiting = true;
+                if (pollWaits !== undefined) Deferred.doneUnsafe(pollWaits, Effect.void);
+                return clock.sleep(duration);
+              }).pipe(Effect.ensuring(Effect.sync(() => (pollWaiting = false))))
+            : clock.sleep(duration),
+      };
 
       const session = yield* openFakeCli(cli).pipe(
         Effect.provide(
           layerQueryRunner.pipe(
-            Layer.provide(countingSpawner),
+            Layer.provide(observingSpawner),
             Layer.provide(PortScanner.layerTest),
             Layer.provide(
               Layer.succeed(ProviderEventLoggers, { native: undefined, canonical: undefined }),
@@ -1041,11 +1237,17 @@ describe.skipIf(HostProcess.Platform.defaultValue() === "win32")("Claude CLI pro
             Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
           ),
         ),
+        Effect.provideService(Clock.Clock, pollClock),
       );
       const turnEnded = yield* Deferred.make<void>();
+      const backgroundStarted = yield* Deferred.make<void>();
       yield* session.messages.pipe(
         Stream.tap((message) =>
-          message.type === "result" ? Deferred.succeed(turnEnded, undefined) : Effect.void,
+          message.type === "result"
+            ? Deferred.succeed(turnEnded, undefined)
+            : message.type === "system" && !("tasks" in message)
+              ? Deferred.succeed(backgroundStarted, undefined)
+              : Effect.void,
         ),
         Stream.runDrain,
         Effect.ignore,
@@ -1053,17 +1255,25 @@ describe.skipIf(HostProcess.Platform.defaultValue() === "win32")("Claude CLI pro
       );
       yield* session.offer({
         type: "user",
-        message: { role: "user", content: "Start a job." },
+        message: { role: "user", content: "Start a background agent." },
         parent_tool_use_id: null,
         session_id: "native-session-fake-cli",
       });
       yield* Deferred.await(turnEnded);
-      const listingsAtTurnEnd = listings;
-      yield* TestClock.adjust("1 minute");
-      // The CLI exits on its own, so only the turn-end read can have recorded the job.
+      yield* Effect.promise(() =>
+        NodeFS.promises.writeFile(NodePath.join(dir, "background"), "\n"),
+      );
+      yield* Deferred.await(backgroundStarted);
+      yield* Effect.promise(() => leftoverStarted);
+      jobRunning = true;
+      pollWaits = yield* Deferred.make<void>();
+      if (pollWaiting) yield* Deferred.succeed(pollWaits, undefined);
+      yield* Deferred.await(pollWaits);
+      yield* TestClock.adjust("10 seconds");
+      yield* Deferred.await(tableReadWithJob);
+      // The CLI exits on its own, so only a poll after the result can have recorded the job.
       yield* Effect.promise(() => NodeFS.promises.writeFile(NodePath.join(dir, "exit"), "\n"));
       yield* Effect.promise(() => leftoverStopped);
-      assert.equal(listings, listingsAtTurnEnd + 1);
     }),
   );
 

@@ -1,5 +1,8 @@
 import { historyResponseItems } from "@onicode/provider-core/server/handoffBudget";
-import { makeProviderFailure } from "@onicode/provider-core/server/failure";
+import {
+  makeProviderFailure,
+  PROVIDER_RETRY_BUDGET_MS,
+} from "@onicode/provider-core/server/failure";
 import {
   makeProviderTextDeltaCoalescer,
   type ProviderTextDeltaUpdate,
@@ -38,7 +41,9 @@ import * as CodexClient from "effect-codex-app-server/client";
 import * as CodexReplay from "effect-codex-app-server/replay";
 import * as CodexError from "effect-codex-app-server/errors";
 import type * as CodexSchema from "effect-codex-app-server/schema";
+import * as Clock from "effect/Clock";
 import * as DateTime from "effect/DateTime";
+import * as Duration from "effect/Duration";
 import * as Deferred from "effect/Deferred";
 import * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
@@ -1891,6 +1896,33 @@ describe("CodexAdapterV2 session initialize", () => {
       ),
   );
 });
+
+// Counts pending provider-retry budget sleeps: each one pins its whole turn context.
+const withProviderRetryWatchCount = <A, E, R>(
+  body: (pendingWatches: () => number) => Effect.Effect<A, E, R>,
+) =>
+  Effect.gen(function* () {
+    const clock = yield* Clock.Clock;
+    let pendingWatches = 0;
+    const countingClock: Clock.Clock = {
+      currentTimeMillisUnsafe: () => clock.currentTimeMillisUnsafe(),
+      currentTimeMillis: clock.currentTimeMillis,
+      currentTimeNanosUnsafe: () => clock.currentTimeNanosUnsafe(),
+      currentTimeNanos: clock.currentTimeNanos,
+      monotonicTimeNanosUnsafe: () => clock.monotonicTimeNanosUnsafe(),
+      monotonicTimeNanos: clock.monotonicTimeNanos,
+      sleep: (duration) =>
+        Duration.toMillis(duration) === PROVIDER_RETRY_BUDGET_MS
+          ? Effect.suspend(() => {
+              pendingWatches += 1;
+              return clock.sleep(duration);
+            }).pipe(Effect.ensuring(Effect.sync(() => (pendingWatches -= 1))))
+          : clock.sleep(duration),
+    };
+    return yield* body(() => pendingWatches).pipe(
+      Effect.provideService(Clock.Clock, countingClock),
+    );
+  });
 
 describe("CodexAdapterV2 post-settle continuation", () => {
   // The harness notifies after every recorded event or continuation, so a wait
@@ -3859,14 +3891,20 @@ describe("CodexAdapterV2 post-settle continuation", () => {
     Effect.gen(function* () {
       const nativeThreadId = "async-alert-thread";
       const nativeTurnId = "async-alert-turn";
-      const agentMessage = (id: string, text: string, delivery: "async" | null) => ({
+      const agentMessage = (
+        id: string,
+        text: string,
+        delivery: "async" | null,
+        method: "item/started" | "item/completed" = "item/completed",
+      ) => ({
         type: "emit_inbound" as const,
-        label: id,
+        label: `${method} ${id}`,
         frame: {
-          method: "item/completed",
+          method,
           params: {
             threadId: nativeThreadId,
             turnId: nativeTurnId,
+            ...(method === "item/started" ? { startedAtMs: 1782622440500 } : {}),
             item: {
               type: "agentMessage",
               id,
@@ -3886,8 +3924,12 @@ describe("CodexAdapterV2 post-settle continuation", () => {
             nativeTurnId,
             prompt: "Alert me, then finish.",
           }),
-          agentMessage("call_alert_1", "I found an important detail.", "async"),
-          agentMessage("msg_final", "Here is the ordinary final answer.", null),
+          agentMessage("call_alert_1", "Tests pass.", "async"),
+          agentMessage("call_alert_2", "", "async", "item/started"),
+          agentMessage("call_alert_2", "Tests pass.", null),
+          agentMessage("call_alert_3", "", null, "item/started"),
+          agentMessage("call_alert_3", "Tests pass.", "async"),
+          agentMessage("msg_final", "Tests pass.", null),
           {
             type: "emit_inbound",
             label: "complete",
@@ -3936,6 +3978,10 @@ describe("CodexAdapterV2 post-settle continuation", () => {
         return rest;
       };
       assert.notDeepEqual(classification("call_alert_1"), classification("msg_final"));
+      assert.deepEqual(
+        assistantMessages(harness.events).map((event) => event.message.text),
+        ["Tests pass.", "Tests pass.", "Tests pass.", "Tests pass."],
+      );
     }).pipe(
       Effect.provide(
         Layer.mergeAll(
@@ -6152,173 +6198,186 @@ describe("CodexAdapterV2 post-settle continuation", () => {
   );
 
   it.effect("resolves retryable app-server errors on resumed provider activity", () =>
-    Effect.gen(function* () {
-      const scenario = "codex-provider-api-retry";
-      const nativeThreadId = `native-${scenario}-thread`;
-      const nativeTurnId = `native-${scenario}-turn`;
-      const transcript = makeCodexReplayTranscript({
-        scenario,
-        entries: [
-          ...codexReplayPreamble({
-            nativeThreadId,
-            nativeTurnId,
-            prompt: "Open github.com.",
+    withProviderRetryWatchCount((pendingWatches) =>
+      Effect.gen(function* () {
+        const scenario = "codex-provider-api-retry";
+        const nativeThreadId = `native-${scenario}-thread`;
+        const nativeTurnId = `native-${scenario}-turn`;
+        const transcript = makeCodexReplayTranscript({
+          scenario,
+          entries: [
+            ...codexReplayPreamble({
+              nativeThreadId,
+              nativeTurnId,
+              prompt: "Open github.com.",
+            }),
+            {
+              type: "emit_inbound",
+              label: "error/retry",
+              frame: {
+                method: "error",
+                params: {
+                  threadId: nativeThreadId,
+                  turnId: nativeTurnId,
+                  willRetry: true,
+                  error: {
+                    message: "Reconnecting... 2/5",
+                    additionalDetails: "The response stream disconnected.",
+                    codexErrorInfo: {
+                      responseStreamDisconnected: { httpStatusCode: 529 },
+                    },
+                  },
+                },
+              },
+            },
+            {
+              type: "emit_inbound",
+              label: "error/retry/waiting-for-network",
+              frame: {
+                method: "error",
+                params: {
+                  threadId: nativeThreadId,
+                  turnId: nativeTurnId,
+                  willRetry: true,
+                  error: {
+                    message: "Reconnecting... waiting for network",
+                    additionalDetails: "Connection failed: error sending request",
+                    codexErrorInfo: {
+                      responseStreamDisconnected: { httpStatusCode: null },
+                    },
+                  },
+                },
+              },
+            },
+            {
+              type: "emit_inbound",
+              label: "item/started/after-retry",
+              frame: {
+                method: "item/started",
+                params: {
+                  threadId: nativeThreadId,
+                  turnId: nativeTurnId,
+                  startedAtMs: 1782622445000,
+                  item: {
+                    type: "commandExecution",
+                    id: "command-after-provider-retry",
+                    command: "pwd",
+                    cwd: "/workspace",
+                    processId: "42",
+                    source: "unifiedExecStartup",
+                    status: "inProgress",
+                    commandActions: [{ type: "unknown", command: "pwd" }],
+                    aggregatedOutput: null,
+                    exitCode: null,
+                    durationMs: null,
+                  },
+                },
+              },
+            },
+            {
+              type: "emit_inbound",
+              label: "item/completed/after-retry",
+              frame: {
+                method: "item/completed",
+                params: {
+                  threadId: nativeThreadId,
+                  turnId: nativeTurnId,
+                  completedAtMs: 1782622445010,
+                  item: {
+                    type: "commandExecution",
+                    id: "command-after-provider-retry",
+                    command: "pwd",
+                    cwd: "/workspace",
+                    processId: "42",
+                    source: "unifiedExecStartup",
+                    status: "completed",
+                    commandActions: [{ type: "unknown", command: "pwd" }],
+                    aggregatedOutput: "/workspace\n",
+                    exitCode: 0,
+                    durationMs: 10,
+                  },
+                },
+              },
+            },
+            {
+              type: "emit_inbound",
+              label: "turn/completed",
+              frame: {
+                method: "turn/completed",
+                params: {
+                  threadId: nativeThreadId,
+                  turn: makeCodexReplayTurn({ id: nativeTurnId, status: "completed" }),
+                },
+              },
+            },
+          ],
+        });
+        let watchesAtRecovery: number | undefined;
+        const harness = yield* makeCodexReplayHarness(transcript, (event) =>
+          Effect.sync(() => {
+            if (
+              event.type === "turn_item.updated" &&
+              event.turnItem.type === "error" &&
+              event.turnItem.status === "completed"
+            )
+              watchesAtRecovery = pendingWatches();
           }),
-          {
-            type: "emit_inbound",
-            label: "error/retry",
-            frame: {
-              method: "error",
-              params: {
-                threadId: nativeThreadId,
-                turnId: nativeTurnId,
-                willRetry: true,
-                error: {
-                  message: "Reconnecting... 2/5",
-                  additionalDetails: "The response stream disconnected.",
-                  codexErrorInfo: {
-                    responseStreamDisconnected: { httpStatusCode: 529 },
-                  },
-                },
-              },
-            },
-          },
-          {
-            type: "emit_inbound",
-            label: "error/retry/waiting-for-network",
-            frame: {
-              method: "error",
-              params: {
-                threadId: nativeThreadId,
-                turnId: nativeTurnId,
-                willRetry: true,
-                error: {
-                  message: "Reconnecting... waiting for network",
-                  additionalDetails: "Connection failed: error sending request",
-                  codexErrorInfo: {
-                    responseStreamDisconnected: { httpStatusCode: null },
-                  },
-                },
-              },
-            },
-          },
-          {
-            type: "emit_inbound",
-            label: "item/started/after-retry",
-            frame: {
-              method: "item/started",
-              params: {
-                threadId: nativeThreadId,
-                turnId: nativeTurnId,
-                startedAtMs: 1782622445000,
-                item: {
-                  type: "commandExecution",
-                  id: "command-after-provider-retry",
-                  command: "pwd",
-                  cwd: "/workspace",
-                  processId: "42",
-                  source: "unifiedExecStartup",
-                  status: "inProgress",
-                  commandActions: [{ type: "unknown", command: "pwd" }],
-                  aggregatedOutput: null,
-                  exitCode: null,
-                  durationMs: null,
-                },
-              },
-            },
-          },
-          {
-            type: "emit_inbound",
-            label: "item/completed/after-retry",
-            frame: {
-              method: "item/completed",
-              params: {
-                threadId: nativeThreadId,
-                turnId: nativeTurnId,
-                completedAtMs: 1782622445010,
-                item: {
-                  type: "commandExecution",
-                  id: "command-after-provider-retry",
-                  command: "pwd",
-                  cwd: "/workspace",
-                  processId: "42",
-                  source: "unifiedExecStartup",
-                  status: "completed",
-                  commandActions: [{ type: "unknown", command: "pwd" }],
-                  aggregatedOutput: "/workspace\n",
-                  exitCode: 0,
-                  durationMs: 10,
-                },
-              },
-            },
-          },
-          {
-            type: "emit_inbound",
-            label: "turn/completed",
-            frame: {
-              method: "turn/completed",
-              params: {
-                threadId: nativeThreadId,
-                turn: makeCodexReplayTurn({ id: nativeTurnId, status: "completed" }),
-              },
-            },
-          },
-        ],
-      });
-      const harness = yield* makeCodexReplayHarness(transcript);
-      const now = yield* DateTime.now;
-      yield* harness.runtime.startTurn(
-        makeCodexTestTurnInput({
-          threadId: harness.threadId,
-          providerThread: harness.providerThread,
-          now,
-          attemptId: RunAttemptId.make("attempt-codex-provider-api-retry"),
-          text: "Open github.com.",
-        }),
-      );
-      yield* harness.awaitTerminal(1);
+        );
+        const now = yield* DateTime.now;
+        yield* harness.runtime.startTurn(
+          makeCodexTestTurnInput({
+            threadId: harness.threadId,
+            providerThread: harness.providerThread,
+            now,
+            attemptId: RunAttemptId.make("attempt-codex-provider-api-retry"),
+            text: "Open github.com.",
+          }),
+        );
+        yield* harness.awaitTerminal(1);
 
-      const retryItems = harness.events.flatMap((event) =>
-        event.type === "turn_item.updated" &&
-        event.turnItem.type === "error" &&
-        event.turnItem.retry !== undefined
-          ? [event.turnItem]
-          : [],
-      );
-      assert.lengthOf(retryItems, 3);
-      assert.equal(retryItems[0]?.status, "running");
-      assert.equal(retryItems[0]?.failure.code, "responseStreamDisconnected");
-      assert.deepEqual(retryItems[0]?.retry, {
-        attempt: 2,
-        maxAttempts: 5,
-        retryDelayMs: null,
-      });
-      assert.deepEqual(retryItems[1]?.retry, {
-        attempt: 3,
-        maxAttempts: null,
-        retryDelayMs: null,
-      });
-      assert.equal(retryItems[2]?.id, retryItems[0]?.id);
-      assert.equal(retryItems[2]?.status, "completed");
-      assert.equal(retryItems[2]?.title, "Provider recovered");
-
-      const recoveredIndex = harness.events.findIndex(
-        (event) =>
+        const retryItems = harness.events.flatMap((event) =>
           event.type === "turn_item.updated" &&
           event.turnItem.type === "error" &&
-          event.turnItem.status === "completed",
-      );
-      const resumedCommandIndex = harness.events.findIndex(
-        (event) =>
-          event.type === "turn_item.updated" &&
-          event.turnItem.type === "command_execution" &&
-          event.turnItem.input === "pwd",
-      );
-      const terminalIndex = harness.events.findIndex((event) => event.type === "turn.terminal");
-      assert.isAtLeast(recoveredIndex, 0);
-      assert.isAbove(resumedCommandIndex, recoveredIndex);
-      assert.isAbove(terminalIndex, resumedCommandIndex);
-    }).pipe(
+          event.turnItem.retry !== undefined
+            ? [event.turnItem]
+            : [],
+        );
+        assert.lengthOf(retryItems, 3);
+        assert.equal(retryItems[0]?.status, "running");
+        assert.equal(retryItems[0]?.failure.code, "responseStreamDisconnected");
+        assert.deepEqual(retryItems[0]?.retry, {
+          attempt: 2,
+          maxAttempts: 5,
+          retryDelayMs: null,
+        });
+        assert.deepEqual(retryItems[1]?.retry, {
+          attempt: 3,
+          maxAttempts: null,
+          retryDelayMs: null,
+        });
+        assert.equal(retryItems[2]?.id, retryItems[0]?.id);
+        assert.equal(retryItems[2]?.status, "completed");
+        assert.equal(retryItems[2]?.title, "Provider recovered");
+
+        const recoveredIndex = harness.events.findIndex(
+          (event) =>
+            event.type === "turn_item.updated" &&
+            event.turnItem.type === "error" &&
+            event.turnItem.status === "completed",
+        );
+        const resumedCommandIndex = harness.events.findIndex(
+          (event) =>
+            event.type === "turn_item.updated" &&
+            event.turnItem.type === "command_execution" &&
+            event.turnItem.input === "pwd",
+        );
+        const terminalIndex = harness.events.findIndex((event) => event.type === "turn.terminal");
+        assert.isAtLeast(recoveredIndex, 0);
+        assert.isAbove(resumedCommandIndex, recoveredIndex);
+        assert.isAbove(terminalIndex, resumedCommandIndex);
+        assert.strictEqual(watchesAtRecovery, 0);
+      }),
+    ).pipe(
       Effect.provide(
         Layer.mergeAll(
           IdAllocator.layer,
@@ -6333,118 +6392,122 @@ describe("CodexAdapterV2 post-settle continuation", () => {
   it.effect.each(["retry", "failure"] as const)(
     "orders a later provider %s after progress from the same turn",
     (tail) =>
-      Effect.gen(function* () {
-        const scenario = `codex-provider-later-${tail}`;
-        const nativeThreadId = `native-${scenario}-thread`;
-        const nativeTurnId = `native-${scenario}-turn`;
-        const retryNotice = (message: string) => ({
-          type: "emit_inbound" as const,
-          label: `error/retry/${message}`,
-          frame: {
-            method: "error",
-            params: {
-              threadId: nativeThreadId,
-              turnId: nativeTurnId,
-              willRetry: true,
-              error: {
-                message,
-                additionalDetails: "The response stream disconnected.",
-                codexErrorInfo: { responseStreamDisconnected: { httpStatusCode: 529 } },
-              },
-            },
-          },
-        });
-        const commandItem = (status: "inProgress" | "completed") => ({
-          type: "commandExecution",
-          id: "command-between-retries",
-          command: "pwd",
-          cwd: "/workspace",
-          processId: "42",
-          source: "unifiedExecStartup",
-          status,
-          commandActions: [{ type: "unknown", command: "pwd" }],
-          aggregatedOutput: status === "completed" ? "/workspace\n" : null,
-          exitCode: status === "completed" ? 0 : null,
-          durationMs: status === "completed" ? 10 : null,
-        });
-        const transcript = makeCodexReplayTranscript({
-          scenario,
-          entries: [
-            ...codexReplayPreamble({ nativeThreadId, nativeTurnId, prompt: "Run pwd." }),
-            retryNotice("Reconnecting... 1/5"),
-            {
-              type: "emit_inbound",
-              label: "item/started",
-              frame: {
-                method: "item/started",
-                params: {
-                  threadId: nativeThreadId,
-                  turnId: nativeTurnId,
-                  startedAtMs: 1782622445000,
-                  item: commandItem("inProgress"),
+      withProviderRetryWatchCount((pendingWatches) =>
+        Effect.gen(function* () {
+          const scenario = `codex-provider-later-${tail}`;
+          const nativeThreadId = `native-${scenario}-thread`;
+          const nativeTurnId = `native-${scenario}-turn`;
+          const retryNotice = (message: string) => ({
+            type: "emit_inbound" as const,
+            label: `error/retry/${message}`,
+            frame: {
+              method: "error",
+              params: {
+                threadId: nativeThreadId,
+                turnId: nativeTurnId,
+                willRetry: true,
+                error: {
+                  message,
+                  additionalDetails: "The response stream disconnected.",
+                  codexErrorInfo: { responseStreamDisconnected: { httpStatusCode: 529 } },
                 },
               },
             },
-            {
-              type: "emit_inbound",
-              label: "item/completed",
-              frame: {
-                method: "item/completed",
-                params: {
-                  threadId: nativeThreadId,
-                  turnId: nativeTurnId,
-                  completedAtMs: 1782622445010,
-                  item: commandItem("completed"),
+          });
+          const commandItem = (status: "inProgress" | "completed") => ({
+            type: "commandExecution",
+            id: "command-between-retries",
+            command: "pwd",
+            cwd: "/workspace",
+            processId: "42",
+            source: "unifiedExecStartup",
+            status,
+            commandActions: [{ type: "unknown", command: "pwd" }],
+            aggregatedOutput: status === "completed" ? "/workspace\n" : null,
+            exitCode: status === "completed" ? 0 : null,
+            durationMs: status === "completed" ? 10 : null,
+          });
+          const transcript = makeCodexReplayTranscript({
+            scenario,
+            entries: [
+              ...codexReplayPreamble({ nativeThreadId, nativeTurnId, prompt: "Run pwd." }),
+              retryNotice("Reconnecting... 1/5"),
+              {
+                type: "emit_inbound",
+                label: "item/started",
+                frame: {
+                  method: "item/started",
+                  params: {
+                    threadId: nativeThreadId,
+                    turnId: nativeTurnId,
+                    startedAtMs: 1782622445000,
+                    item: commandItem("inProgress"),
+                  },
                 },
               },
-            },
-            ...(tail === "retry" ? [retryNotice("Reconnecting... 1/5")] : []),
-            {
-              type: "emit_inbound",
-              label: "turn/completed",
-              frame: {
-                method: "turn/completed",
-                params: {
-                  threadId: nativeThreadId,
-                  turn: makeCodexReplayTurn({
-                    id: nativeTurnId,
-                    status: tail === "retry" ? "completed" : "failed",
-                  }),
+              {
+                type: "emit_inbound",
+                label: "item/completed",
+                frame: {
+                  method: "item/completed",
+                  params: {
+                    threadId: nativeThreadId,
+                    turnId: nativeTurnId,
+                    completedAtMs: 1782622445010,
+                    item: commandItem("completed"),
+                  },
                 },
               },
-            },
-          ],
-        });
-        const harness = yield* makeCodexReplayHarness(transcript);
-        yield* harness.runtime.startTurn(
-          makeCodexTestTurnInput({
-            threadId: harness.threadId,
-            providerThread: harness.providerThread,
-            now: yield* DateTime.now,
-            attemptId: RunAttemptId.make(`attempt-${scenario}`),
-            text: "Run pwd.",
-          }),
-        );
-        yield* harness.awaitTerminal(1);
+              ...(tail === "retry" ? [retryNotice("Reconnecting... 1/5")] : []),
+              {
+                type: "emit_inbound",
+                label: "turn/completed",
+                frame: {
+                  method: "turn/completed",
+                  params: {
+                    threadId: nativeThreadId,
+                    turn: makeCodexReplayTurn({
+                      id: nativeTurnId,
+                      status: tail === "retry" ? "completed" : "failed",
+                    }),
+                  },
+                },
+              },
+            ],
+          });
+          const harness = yield* makeCodexReplayHarness(transcript);
+          yield* harness.runtime.startTurn(
+            makeCodexTestTurnInput({
+              threadId: harness.threadId,
+              providerThread: harness.providerThread,
+              now: yield* DateTime.now,
+              attemptId: RunAttemptId.make(`attempt-${scenario}`),
+              text: "Run pwd.",
+            }),
+          );
+          yield* harness.awaitTerminal(1);
 
-        const items = harness.events.flatMap((event) =>
-          event.type === "turn_item.updated" ? [event.turnItem] : [],
-        );
-        const command = items.find((item) => item.type === "command_execution");
-        assert.isDefined(command);
-        const terminal = harness.terminalEvents()[0];
-        const firstRetry = items.find((item) => item.type === "error");
-        const latest =
-          tail === "retry"
-            ? items.findLast((item) => item.type === "error")
-            : terminal?.status === "failed"
-              ? { id: terminal.failureItemId, ordinal: terminal.failureItemOrdinal }
-              : undefined;
-        assert.isAbove(latest?.ordinal ?? 0, command?.ordinal ?? Infinity);
-        // Stored positions are per row, so the later notice needs its own row to sort after.
-        assert.isDefined(latest?.id);
-        assert.notStrictEqual(latest?.id, firstRetry?.id);
-      }).pipe(
+          const items = harness.events.flatMap((event) =>
+            event.type === "turn_item.updated" ? [event.turnItem] : [],
+          );
+          const command = items.find((item) => item.type === "command_execution");
+          assert.isDefined(command);
+          const terminal = harness.terminalEvents()[0];
+          const firstRetry = items.find((item) => item.type === "error");
+          const latest =
+            tail === "retry"
+              ? items.findLast((item) => item.type === "error")
+              : terminal?.status === "failed"
+                ? { id: terminal.failureItemId, ordinal: terminal.failureItemOrdinal }
+                : undefined;
+          assert.isAbove(latest?.ordinal ?? 0, command?.ordinal ?? Infinity);
+          // Stored positions are per row, so the later notice needs its own row to sort after.
+          assert.isDefined(latest?.id);
+          assert.notStrictEqual(latest?.id, firstRetry?.id);
+          // Recovery and turn end must each release the retry budget watch.
+          assert.strictEqual(pendingWatches(), 0);
+        }),
+      ).pipe(
         Effect.provide(
           Layer.mergeAll(
             IdAllocator.layer,

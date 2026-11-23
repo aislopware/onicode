@@ -1876,12 +1876,14 @@ describe("deriveMessagesTimelineRows", () => {
         itemType: "notification" as const,
       },
     };
-    for (const [phase, steered, runId, thinking] of [
-      ["final_answer", null, "turn-1", false],
-      ["commentary", null, "turn-1", true],
-      ["final_answer", steer, "turn-1", true],
-      ["final_answer", notice, "turn-1", true],
-      ["final_answer", null, "turn-0", true],
+    // An asynchronous alert is mid-turn news, not the answer.
+    for (const [phase, steered, runId, thinking, delivery] of [
+      ["final_answer", null, "turn-1", false, undefined],
+      ["commentary", null, "turn-1", true, undefined],
+      ["final_answer", steer, "turn-1", true, undefined],
+      ["final_answer", notice, "turn-1", true, undefined],
+      ["final_answer", null, "turn-0", true, undefined],
+      ["final_answer", null, "turn-1", true, "async"],
     ] as const) {
       const completedReply = deriveMessagesTimelineRows({
         ...input,
@@ -1892,7 +1894,7 @@ describe("deriveMessagesTimelineRows", () => {
             id: "assistant-entry",
             kind: "message" as const,
             createdAt: "2026-01-01T00:00:05Z",
-            projectedItem: { item: { type: "assistant_message", phase } } as never,
+            projectedItem: { item: { type: "assistant_message", phase, delivery } } as never,
             message: {
               id: "assistant" as never,
               role: "assistant" as const,
@@ -1907,7 +1909,7 @@ describe("deriveMessagesTimelineRows", () => {
       });
       expect(
         completedReply.some((row) => row.kind === "thinking"),
-        `${phase} steered=${steered?.kind} ${runId}`,
+        `${phase} ${delivery} steered=${steered?.kind} ${runId}`,
       ).toBe(thinking);
     }
   });
@@ -3499,6 +3501,7 @@ describe("v2 run and attempt history", () => {
       attempt: typeof supersededAttempt | typeof nextAttempt,
       completedSecond: number,
       phase?: "commentary" | "partial_answer" | "final_answer",
+      delivery?: "async",
     ): TimelineEntry => ({
       id,
       kind: "message",
@@ -3517,6 +3520,7 @@ describe("v2 run and attempt history", () => {
         item: {
           type: "assistant_message",
           ...(phase === undefined ? {} : { phase }),
+          ...(delivery === undefined ? {} : { delivery }),
           status: "completed",
           completedAt: DateTime.makeUnsafe(at(completedSecond)),
         },
@@ -3528,6 +3532,7 @@ describe("v2 run and attempt history", () => {
       toolCallVisibility: "showAll" | "zen" = "showAll",
       phase?: "commentary" | "partial_answer" | "final_answer",
       nativeSteer = false,
+      delivery?: "async",
     ) =>
       deriveMessagesTimelineRows({
         toolCallVisibility,
@@ -3557,7 +3562,13 @@ describe("v2 run and attempt history", () => {
               entry: { id: "old-work", createdAt: at(1), runId, label: "Read", tone: "tool" },
             },
             assistantEntry("status-entry", supersededAttempt, 1, "commentary"),
-            assistantEntry("old-reply-entry", supersededAttempt, replyCompletedSecond, phase),
+            assistantEntry(
+              "old-reply-entry",
+              supersededAttempt,
+              replyCompletedSecond,
+              phase,
+              delivery,
+            ),
             {
               id: "steer-user-entry",
               kind: "message",
@@ -3603,6 +3614,11 @@ describe("v2 run and attempt history", () => {
           for (const visibility of ["showAll", "zen"] as const) {
             const rows = rowsFor(completedSecond, runStatus, visibility, phase);
             expect(rows.some((row) => row.id === "old-reply-entry")).toBe(retained);
+            if (phase === "final_answer") {
+              // An asynchronous alert is mid-turn news, not the answer.
+              const alert = rowsFor(completedSecond, runStatus, visibility, phase, false, "async");
+              expect(alert.some((row) => row.id === "old-reply-entry")).toBe(false);
+            }
             if (phase !== undefined && runStatus === "completed") {
               const nativeRows = rowsFor(completedSecond, runStatus, visibility, phase, true);
               expect(nativeRows.some((row) => row.id === "old-reply-entry")).toBe(retained);

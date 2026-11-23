@@ -1502,11 +1502,11 @@ interface ClaudeHistoryMessage {
   readonly message: { readonly content: unknown; readonly model?: unknown };
 }
 
-// The placeholder reply the CLI records for a failed request.
+// The placeholder reply the CLI records for a failed request, judged on the history the resume keeps.
 export function claudeHistoryEndsOnFailedRequest(
   messages: ReadonlyArray<ClaudeHistoryMessage>,
 ): boolean {
-  const last = messages.at(-1);
+  const last = messages[claudeMessagesBeforeTrailingAborts(messages) - 1];
   return last?.type === "assistant" && last.message.model === "<synthetic>";
 }
 
@@ -1560,22 +1560,40 @@ export function claudeResumeSessionAt(
   return end === messages.length ? undefined : messages[end - 1]?.uuid;
 }
 
-// Transcript lines can exceed 100 KB; the tail only has to reach this process's last message.
-const CLAUDE_TRANSCRIPT_TAIL_BYTES = 2 * 1024 * 1024;
-// A long terminal exchange pushes that message out of the tail; one wider read looks for it.
-const CLAUDE_TRANSCRIPT_WIDE_TAIL_BYTES = 32 * 1024 * 1024;
+// Each read widens until it reaches one of this process's messages; one transcript line can
+// exceed 100 KB, and a long terminal exchange can push them out of the narrower tails.
+const CLAUDE_TRANSCRIPT_TAIL_BYTES = [256 * 1024, 2 * 1024 * 1024, 32 * 1024 * 1024] as const;
+
+// Slash command rows such as a terminal's /model; a prompt command's reply still counts.
+const CLAUDE_LOCAL_COMMAND_ROW = /^<(?:command-name|command-message|local-command-[a-z]+)>/u;
+
+function isClaudeTranscriptBookkeeping(entry: SDKAssistantMessage | SDKUserMessage): boolean {
+  const content: unknown = entry.message.content;
+  const opening = typeof content === "string" ? content : field(field(content, "0"), "text");
+  return (
+    field(entry, "isSidechain") === true ||
+    field(entry, "isMeta") === true ||
+    field(entry, "isCompactSummary") === true ||
+    // The placeholder a failed request leaves; Claude never sends it to the model.
+    field(entry.message, "model") === "<synthetic>" ||
+    (typeof opening === "string" && CLAUDE_LOCAL_COMMAND_ROW.test(opening))
+  );
+}
 
 /** Whether a live process missed messages a terminal `claude --resume` appended to its session.
- * Anchors on the last message the process emitted; Claude flushes the file after streaming, so
- * an emitted message can be missing from it. Lines with no anchor before them prove nothing:
- * they can all predate the process, so the answer is undefined. */
+ * Only rows after the process's own messages count. Claude flushes the file after streaming, so
+ * until the latest one is in the whole file it is behind, not ahead: false. Undefined when a cut
+ * tail cannot tell: none of the process's messages, or not its latest. */
 function claudeTranscriptHasUnseenMessages(
   lines: ReadonlyArray<string>,
-  emittedUuids: ReadonlySet<string>,
+  known: { readonly uuids: ReadonlySet<string>; readonly latest: string; readonly whole: boolean },
 ): boolean | undefined {
+  const unseen: Array<ClaudeHistoryMessage> = [];
   let anchored = false;
-  let unseen: Array<ClaudeHistoryMessage> = [];
-  for (const line of lines) {
+  for (let index = lines.length - 1; index >= 0; index--) {
+    const line = lines[index]!;
+    // Behind the newest anchor only the latest message is looked for.
+    if (anchored && !line.includes(known.latest)) continue;
     let entry: unknown;
     try {
       entry = JSON.parse(line);
@@ -1584,21 +1602,17 @@ function claudeTranscriptHasUnseenMessages(
     }
     const uuid = field(entry, "uuid");
     if (typeof uuid !== "string" || !isClaudeTranscriptConversationLine(entry)) continue;
-    if (emittedUuids.has(uuid)) {
+    if (uuid === known.latest) {
+      return claudeMessagesBeforeTrailingAborts(unseen.toReversed()) > 0;
+    }
+    if (known.uuids.has(uuid)) {
       anchored = true;
-      unseen = [];
       continue;
     }
-    if (
-      field(entry, "isSidechain") === true ||
-      field(entry, "isMeta") === true ||
-      field(entry, "isCompactSummary") === true
-    ) {
-      continue;
-    }
+    if (anchored || isClaudeTranscriptBookkeeping(entry)) continue;
     unseen.push({ type: entry.type, uuid, message: { content: entry.message.content } });
   }
-  return anchored ? claudeMessagesBeforeTrailingAborts(unseen) > 0 : undefined;
+  return anchored && known.whole ? false : undefined;
 }
 
 const claudeConfigDirOf = (
@@ -1606,6 +1620,25 @@ const claudeConfigDirOf = (
   environment: NodeJS.ProcessEnv,
   homeDirectory: string,
 ) => path.resolve(environment.CLAUDE_CONFIG_DIR ?? path.join(homeDirectory, ".claude"));
+
+// The CLI resolves a relative CLAUDE_CONFIG_DIR in its own cwd, the server's when it has none.
+const claudeConfiguredDirIn = (
+  path: Path.Path,
+  environment: NodeJS.ProcessEnv,
+  cwd: string | null | undefined,
+) => {
+  const configured = environment.CLAUDE_CONFIG_DIR?.trim() ?? "";
+  return configured.length === 0 ? undefined : path.resolve(cwd ?? ".", configured);
+};
+
+const claudeEnvironmentIn = (
+  path: Path.Path,
+  environment: NodeJS.ProcessEnv,
+  cwd: string | null | undefined,
+): NodeJS.ProcessEnv => {
+  const configDir = claudeConfiguredDirIn(path, environment, cwd);
+  return configDir === undefined ? environment : { ...environment, CLAUDE_CONFIG_DIR: configDir };
+};
 
 // The SDK reads CLAUDE_CONFIG_DIR from process.env. Isolate custom homes in a
 // worker so concurrent providers keep the server's environment.
@@ -1637,7 +1670,7 @@ const runClaudeWorker = Effect.fn("runClaudeWorker")(function* (input: {
       [...workerArguments, input.method, input.sessionId, encodeClaudeJson(input.options ?? {})],
       {
         env: {
-          ...input.environment,
+          ...claudeEnvironmentIn(path, input.environment, input.options?.dir),
           ELECTRON_RUN_AS_NODE: "1",
         },
       },
@@ -1719,8 +1752,33 @@ export const layerQueryRunner: Layer.Layer<
     const descendantPoll = makeSharedProcessDescendantPoll(readProcessTable, runFork);
     const trackDescendants = (cliPid: number) => {
       const tracker = descendantPoll.track(cliPid);
-      tracker.work();
-      return tracker;
+      let turnRunning = false;
+      // Background agents, shells and workflows keep starting jobs after the turn's result.
+      let backgroundRunning = false;
+      const work = () => {
+        turnRunning = true;
+        tracker.work();
+      };
+      work();
+      return {
+        ...tracker,
+        work,
+        settle: Effect.suspend(() => {
+          turnRunning = false;
+          return backgroundRunning
+            ? tracker.refresh.pipe(Effect.andThen(Effect.sync(tracker.watch)))
+            : tracker.settle;
+        }),
+        background: (running: boolean | undefined) =>
+          Effect.suspend(() => {
+            if (running === undefined) return Effect.void;
+            const wasRunning = backgroundRunning;
+            backgroundRunning = running;
+            if (turnRunning) return Effect.void;
+            if (running) return Effect.sync(tracker.watch);
+            return wasRunning ? tracker.settle : Effect.void;
+          }),
+      };
     };
 
     // The open span below is the tracing boundary for both attempts.
@@ -1771,12 +1829,13 @@ export const layerQueryRunner: Layer.Layer<
         env: {
           ...(sdkOptions.env ?? hostEnvironment),
           // The CLI would re-run a failed request by itself, then run the resume prompt as a second turn.
+          // "0" also overrides a value inherited from the host or instance environment.
           ...(input.resume && !endsOnFailedRequest
             ? {
                 CLAUDE_CODE_RESUME_INTERRUPTED_TURN: "1",
                 CLAUDE_CODE_RESUME_REASON: "user_resume",
               }
-            : {}),
+            : { CLAUDE_CODE_RESUME_INTERRUPTED_TURN: "0" }),
           [PortScanner.AGENT_THREAD_ENV]: input.threadId,
         },
       };
@@ -2020,7 +2079,9 @@ export const layerQueryRunner: Layer.Layer<
                 ? descendants.settle
                 : message.type === "assistant"
                   ? Effect.sync(descendants.work)
-                  : Effect.void,
+                  : isClaudeBackgroundTasksChangedMessage(message)
+                    ? descendants.background(claudeBackgroundTaskRosterIsLive(message))
+                    : Effect.void,
           ),
           Stream.tap((message) =>
             logProtocolEvent({
@@ -4216,6 +4277,12 @@ function isClaudeBackgroundTasksChangedMessage(message: SDKMessage): boolean {
   return message.type === "system" && (message.subtype as string) === "background_tasks_changed";
 }
 
+// The roster is a level: each message lists every live background task. Undefined without one.
+function claudeBackgroundTaskRosterIsLive(message: SDKMessage): boolean | undefined {
+  const tasks: unknown = Reflect.get(message, "tasks");
+  return Array.isArray(tasks) ? tasks.length > 0 : undefined;
+}
+
 function isClaudeTurnStartMessage(message: SDKMessage): boolean {
   return message.type === "system" && message.subtype === "init";
 }
@@ -5554,6 +5621,10 @@ interface ActiveClaudeTurnContext {
   unansweredRequestSince?: DateTime.Utc | undefined;
   // Interrupted once the silence clears, so the session scope stops holding this context.
   unansweredRequestWatch?: Fiber.Fiber<unknown> | undefined;
+  // Interrupted once the retry recovers or the turn settles, for the same reason.
+  providerRetryWatch?: Fiber.Fiber<unknown> | undefined;
+  // Interrupted once the turn settles, for the same reason.
+  wakeStartWatch?: Fiber.Fiber<unknown> | undefined;
   readonly queryPolicy: ClaudeRuntimeQueryPolicy;
   readonly input: ProviderAdapter.ProviderAdapterV2TurnInput;
   readonly autoCompactWindow: string;
@@ -5760,10 +5831,20 @@ interface ClaudeLiveQueryContext {
   // Per process, not per session: a relative temp dir follows the cwd this CLI
   // was launched in, and a later turn's cwd can differ.
   readonly taskOutputRoot: string | undefined;
-  // Root messages this process streamed; what it holds beyond the history it resumed.
+  // Root messages this process streamed or was sent; what it holds beyond the history it resumed.
   readonly emittedMessageUuids: Set<string>;
-  transcriptPath: string | undefined;
+  // Not a steer: Claude writes one only once it reads it, and may never.
+  latestMessageUuid: string | undefined;
+  // null: no transcript outside the cwd's project folder, which is probed again.
+  transcriptPath: string | null | undefined;
+  // The file as last read when it proved no miss; an unchanged file proves none again.
+  transcriptChecked: { readonly size: number; readonly mtime: number | undefined } | undefined;
 }
+
+const rememberClaudeMessageUuid = (live: ClaudeLiveQueryContext, uuid: string) => {
+  live.emittedMessageUuids.add(uuid);
+  live.latestMessageUuid = uuid;
+};
 
 interface ActiveClaudeToolCall {
   readonly nativeItemId: string;
@@ -7143,6 +7224,15 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           });
         });
 
+        const clearTurnWatch = (
+          context: ActiveClaudeTurnContext,
+          watch: "unansweredRequestWatch" | "providerRetryWatch" | "wakeStartWatch",
+        ) => {
+          const fiber = context[watch];
+          context[watch] = undefined;
+          return fiber === undefined ? Effect.void : Fiber.interrupt(fiber);
+        };
+
         // Claude has no recovered frame; the next assistant message proves recovery.
         // Runs on every model output frame and is almost always a no-op; only a pending retry gets a span.
         const completeProviderRetry = Effect.fnUntraced(function* (
@@ -7161,6 +7251,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           if (providerRetry === undefined) {
             return;
           }
+          yield* clearTurnWatch(context, "providerRetryWatch");
           yield* emitProviderEvent({
             type: "turn_item.updated",
             driver: CLAUDE_PROVIDER,
@@ -7224,12 +7315,6 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             Effect.map(Ref.get(activeTurn), (active) => active === context),
           );
         });
-
-        const clearUnansweredRequestWatch = (context: ActiveClaudeTurnContext) => {
-          const watch = context.unansweredRequestWatch;
-          context.unansweredRequestWatch = undefined;
-          return watch === undefined ? Effect.void : Fiber.interrupt(watch);
-        };
 
         const failStalledTurn = Effect.fn("ClaudeAdapterV2.failStalledTurn")(function* (
           context: ActiveClaudeTurnContext,
@@ -8466,19 +8551,18 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               transcriptDir !== undefined &&
               agentId !== undefined
             ) {
+              const live = yield* Ref.get(queryContext);
+              const configDir = claudeConfiguredDirIn(
+                path,
+                adapterOptions.environment,
+                live === null ? session.cwd : live.settingsCwd,
+              );
               const readNext = (cursor: WorkflowAgentTranscriptCursor) =>
                 readWorkflowAgentTranscript({
                   transcriptDir,
                   agentId,
                   cursor,
-                  ...(adapterOptions.environment.CLAUDE_CONFIG_DIR === undefined
-                    ? {}
-                    : {
-                        configDir: path.resolve(
-                          session.cwd,
-                          adapterOptions.environment.CLAUDE_CONFIG_DIR,
-                        ),
-                      }),
+                  ...(configDir === undefined ? {} : { configDir }),
                 }).pipe(Effect.option);
               const drain = Effect.fnUntraced(function* () {
                 lastReadAt = yield* DateTime.now;
@@ -10696,7 +10780,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           yield* Ref.update(activeTurn, (current) =>
             current?.providerTurnId === input.context.providerTurnId ? null : current,
           );
-          yield* clearUnansweredRequestWatch(input.context);
+          yield* clearTurnWatch(input.context, "unansweredRequestWatch");
+          yield* clearTurnWatch(input.context, "providerRetryWatch");
+          yield* clearTurnWatch(input.context, "wakeStartWatch");
           if (input.status === "completed") {
             settledTurnByNativeThread.set(input.context.nativeThreadId, input.context);
           } else {
@@ -11771,7 +11857,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               if (previousWatch !== undefined) yield* Fiber.interrupt(previousWatch);
               // A turn that settled meanwhile already cleared its watch, so drop the new one too.
               if ((yield* Ref.get(activeTurn)) !== context) {
-                yield* clearUnansweredRequestWatch(context);
+                yield* clearTurnWatch(context, "unansweredRequestWatch");
               }
             } else if (
               // Background tasks from earlier turns keep streaming while the root request hangs.
@@ -11784,7 +11870,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               )
             ) {
               context.unansweredRequestSince = undefined;
-              yield* clearUnansweredRequestWatch(context);
+              yield* clearTurnWatch(context, "unansweredRequestWatch");
             }
           }
           const focusedPlugin = claudeFocusRequestedPanePlugin(message);
@@ -12377,10 +12463,19 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               }),
             });
             if (previous === undefined) {
-              yield* failExpiredProviderRetry(context, state.startedAt).pipe(
-                Effect.delay(PROVIDER_RETRY_BUDGET_MS),
+              // Only the wait is interruptible: a fired failure runs on its own fiber.
+              context.providerRetryWatch = yield* Effect.sleep(PROVIDER_RETRY_BUDGET_MS).pipe(
+                Effect.andThen(
+                  failExpiredProviderRetry(context, state.startedAt).pipe(
+                    Effect.forkIn(sessionScope),
+                  ),
+                ),
                 Effect.forkIn(sessionScope),
               );
+              // A turn that settled meanwhile already cleared its watch, so drop the new one too.
+              if ((yield* Ref.get(activeTurn)) !== context) {
+                yield* clearTurnWatch(context, "providerRetryWatch");
+              }
             }
             return;
           }
@@ -13977,27 +14072,51 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           return false;
         });
 
-        const claudeProjectsDir = Effect.gen(function* () {
-          const configuredDir = adapterOptions.environment.CLAUDE_CONFIG_DIR?.trim() ?? "";
+        const claudeProjectsDir = Effect.fnUntraced(function* (cwd: string | null) {
           return path.join(
-            configuredDir.length > 0
-              ? path.resolve(session.cwd, configuredDir)
-              : path.join(yield* HostProcess.HomeDirectory, ".claude"),
+            claudeConfiguredDirIn(path, adapterOptions.environment, cwd) ??
+              path.join(yield* HostProcess.HomeDirectory, ".claude"),
             "projects",
           );
         });
 
-        const locateClaudeTranscript = Effect.fnUntraced(function* (nativeThreadId: string) {
-          const projectsDir = yield* claudeProjectsDir;
+        const locateClaudeTranscript = Effect.fnUntraced(function* (live: ClaudeLiveQueryContext) {
+          const projectsDir = yield* claudeProjectsDir(live.settingsCwd);
+          const fileName = `${live.nativeThreadId}.jsonl`;
+          const fileTime = (candidate: string) =>
+            fileSystem.stat(candidate).pipe(
+              Effect.map((info) =>
+                info.type === "File"
+                  ? (Option.getOrUndefined(info.mtime)?.getTime() ?? 0)
+                  : undefined,
+              ),
+              Effect.orElseSucceed(() => undefined),
+            );
+          // The process writes under its resolved cwd's folder; Claude cuts names past 200
+          // characters and appends a hash of the path.
+          const cwd = live.settingsCwd ?? ".";
+          const folder = (yield* fileSystem
+            .realPath(cwd)
+            .pipe(Effect.orElseSucceed(() => path.resolve(cwd)))).replace(/[^a-zA-Z0-9]/g, "-");
+          const ownFolders =
+            folder.length <= 200
+              ? [folder]
+              : (yield* fileSystem.readDirectory(projectsDir)).filter((project) =>
+                  project.startsWith(`${folder.slice(0, 200)}-`),
+                );
+          for (const ownFolder of ownFolders) {
+            const own = path.join(projectsDir, ownFolder, fileName);
+            if ((yield* fileTime(own)) !== undefined) return own;
+          }
+          if (live.transcriptPath === null) return null;
           let newest: { readonly path: string; readonly mtime: number } | undefined;
           for (const project of yield* fileSystem.readDirectory(projectsDir)) {
-            const candidate = path.join(projectsDir, project, `${nativeThreadId}.jsonl`);
-            const info = yield* fileSystem.stat(candidate).pipe(Effect.option);
-            if (Option.isNone(info) || info.value.type !== "File") continue;
-            const mtime = Option.getOrUndefined(info.value.mtime)?.getTime() ?? 0;
+            const candidate = path.join(projectsDir, project, fileName);
+            const mtime = yield* fileTime(candidate);
+            if (mtime === undefined) continue;
             if (newest === undefined || mtime > newest.mtime) newest = { path: candidate, mtime };
           }
-          return newest?.path;
+          return newest?.path ?? null;
         });
 
         // A failed read keeps the process: replacing it is only right when the file proves a miss.
@@ -14005,18 +14124,28 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           "ClaudeAdapterV2.liveProcessMissedTranscriptMessages",
         )(
           function* (live: ClaudeLiveQueryContext) {
-            if (live.emittedMessageUuids.size === 0) return false;
-            live.transcriptPath ??= yield* locateClaudeTranscript(live.nativeThreadId);
+            const latest = live.latestMessageUuid;
+            if (latest === undefined) return false;
+            if (typeof live.transcriptPath !== "string") {
+              live.transcriptPath = yield* locateClaudeTranscript(live);
+            }
             const transcriptPath = live.transcriptPath;
-            if (transcriptPath === undefined) return false;
-            const readTail = (maxBytes: number) =>
-              Effect.scoped(
-                Effect.gen(function* () {
-                  const handle = yield* fileSystem.open(transcriptPath, { flag: "r" });
-                  const size = Number((yield* handle.stat).size);
-                  const start = Math.max(0, size - maxBytes);
+            if (transcriptPath === null) return false;
+            return yield* Effect.scoped(
+              Effect.gen(function* () {
+                const handle = yield* fileSystem.open(transcriptPath, { flag: "r" });
+                const info = yield* handle.stat;
+                const file = {
+                  size: Number(info.size),
+                  mtime: Option.getOrUndefined(info.mtime)?.getTime(),
+                };
+                const checked = live.transcriptChecked;
+                if (checked?.size === file.size && checked.mtime === file.mtime) return false;
+                let missed: boolean | undefined;
+                for (const maxBytes of CLAUDE_TRANSCRIPT_TAIL_BYTES) {
+                  const start = Math.max(0, file.size - maxBytes);
                   yield* handle.seek(BigInt(start), "start");
-                  const bytes = yield* handle.readAlloc(size - start);
+                  const bytes = yield* handle.readAlloc(file.size - start);
                   const lines = (
                     Option.isSome(bytes) ? new TextDecoder().decode(bytes.value) : ""
                   ).split("\n");
@@ -14024,25 +14153,35 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                   // mid-line.
                   lines.pop();
                   if (start > 0) lines.shift();
-                  return { lines, wholeFile: start === 0 };
-                }),
-              );
-            for (const maxBytes of [
-              CLAUDE_TRANSCRIPT_TAIL_BYTES,
-              CLAUDE_TRANSCRIPT_WIDE_TAIL_BYTES,
-            ]) {
-              const tail = yield* readTail(maxBytes);
-              const missed = claudeTranscriptHasUnseenMessages(
-                tail.lines,
-                live.emittedMessageUuids,
-              );
-              if (missed !== undefined) return missed;
-              if (tail.wholeFile) break;
-            }
-            return false;
+                  missed = claudeTranscriptHasUnseenMessages(lines, {
+                    uuids: live.emittedMessageUuids,
+                    latest,
+                    whole: start === 0 || maxBytes === CLAUDE_TRANSCRIPT_TAIL_BYTES.at(-1),
+                  });
+                  if (missed !== undefined || start === 0) break;
+                }
+                if (missed !== true) live.transcriptChecked = file;
+                return missed === true;
+              }),
+            );
           },
           Effect.orElseSucceed(() => false),
         );
+
+        // What an unasked replacement would end: background work, a scheduled wakeup, or a turn
+        // Claude started itself, whose frames are buffered whatever kind of task woke it.
+        const liveProcessHoldsUnaskedWork = Effect.fnUntraced(function* (
+          live: ClaudeLiveQueryContext,
+        ) {
+          return (
+            scheduledWakeupsByNativeThread.has(live.nativeThreadId) ||
+            (yield* holdsBufferedWake(
+              live.nativeThreadId,
+              (yield* Ref.get(wakeBuffers)).get(live.nativeThreadId)?.messages ?? [],
+            )) ||
+            (yield* liveProcessRunsBackgroundWork(live))
+          );
+        });
 
         // Unasked, so it yields to a scheduled wakeup, a turn Claude started itself (read after the
         // build, so one arriving meanwhile counts), and a warm prompt cache: the build is part of
@@ -14065,9 +14204,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             outdated === undefined ||
             (promptCache !== undefined &&
               DateTime.isLessThan(yield* DateTime.now, promptCache.expiresAt)) ||
-            scheduledWakeupsByNativeThread.has(live.nativeThreadId) ||
-            ((yield* Ref.get(wakeBuffers)).get(live.nativeThreadId)?.messages.length ?? 0) > 0 ||
-            (yield* liveProcessRunsBackgroundWork(live))
+            (yield* liveProcessHoldsUnaskedWork(live))
           ) {
             return undefined;
           }
@@ -14159,40 +14296,46 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           ) {
             return existing;
           }
-          let replaceStaleProcess = false;
-          if (
-            !turnInput.resume &&
-            existing !== null &&
-            existing.nativeThreadId === nativeThreadId &&
-            existing.queryPolicyKey === queryPolicyKey &&
-            !existing.stopping &&
-            // A pinned head already decides where a fresh process resumes.
-            resumeSessionAt === undefined
-          ) {
-            // Decided before the transcript read: with no pending wakeup then, none can fire during it.
-            const keepsWork =
-              (yield* liveProcessRunsBackgroundWork(existing)) ||
-              scheduledWakeupsByNativeThread.has(nativeThreadId) ||
-              (yield* holdsBufferedWake(
-                nativeThreadId,
-                (yield* Ref.get(wakeBuffers)).get(nativeThreadId)?.messages ?? [],
-              ));
-            if (yield* liveProcessMissedTranscriptMessages(existing)) {
-              if (keepsWork) {
-                yield* Effect.logWarning(
-                  "orchestration-v2.claude-stale-process-kept-for-background-work",
-                  { threadId: turnInput.threadId, nativeThreadId },
-                );
-              } else {
-                replaceStaleProcess = true;
-              }
-            }
-          }
           const reuseLaunchSettings =
             existing !== null &&
             existing.nativeThreadId === nativeThreadId &&
             existing.queryPolicyKey === queryPolicyKey &&
             !existing.stopping;
+          // A newer installed build replaces an idle process, resuming the conversation on it.
+          const outdatedBuild = reuseLaunchSettings
+            ? yield* liveProcessOutdatedBuild(existing, turnInput.modelSelection)
+            : undefined;
+          if (outdatedBuild !== undefined) {
+            yield* Effect.logInfo("Replacing a Claude process that runs an outdated build.", {
+              threadId: turnInput.threadId,
+              ...outdatedBuild,
+            });
+          }
+          let replaceStaleProcess = false;
+          if (
+            reuseLaunchSettings &&
+            outdatedBuild === undefined &&
+            !turnInput.resume &&
+            // A pinned head already decides where a fresh process resumes.
+            resumeSessionAt === undefined
+          ) {
+            const keptBeforeRead = yield* liveProcessHoldsUnaskedWork(existing);
+            if (yield* liveProcessMissedTranscriptMessages(existing)) {
+              // A wake that began during the read is buffered by now.
+              if (keptBeforeRead || (yield* liveProcessHoldsUnaskedWork(existing))) {
+                yield* Effect.logWarning(
+                  "orchestration-v2.claude-stale-process-kept-for-background-work",
+                  { threadId: turnInput.threadId, nativeThreadId },
+                );
+              } else {
+                yield* Effect.logInfo(
+                  "Replacing a Claude process that missed messages added to its session elsewhere.",
+                  { threadId: turnInput.threadId, nativeThreadId },
+                );
+                replaceStaleProcess = true;
+              }
+            }
+          }
           const readLaunchSettings = readClaudeLaunchArgSettings({
             settings: adapterOptions.settings,
             cwd: turnInput.runtimePolicy.cwd,
@@ -14208,74 +14351,47 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             launchArgSettings,
           );
           let compiledSelection = compileClaudeModelSelection(turnInput.modelSelection, catalog);
-          // A newer installed build replaces an idle process, resuming the conversation on it.
-          const outdatedBuild =
-            existing !== null &&
-            existing.nativeThreadId === nativeThreadId &&
-            existing.queryPolicyKey === queryPolicyKey &&
-            !existing.stopping
-              ? yield* liveProcessOutdatedBuild(existing, turnInput.modelSelection)
-              : undefined;
-          if (outdatedBuild !== undefined) {
-            yield* Effect.logInfo("Replacing a Claude process that runs an outdated build.", {
-              threadId: turnInput.threadId,
-              ...outdatedBuild,
-            });
-          }
-          if (
-            outdatedBuild === undefined &&
-            !turnInput.resume &&
-            existing !== null &&
-            existing.nativeThreadId === nativeThreadId &&
-            existing.queryPolicyKey === queryPolicyKey &&
-            !existing.stopping &&
-            !replaceStaleProcess &&
-            existing.selection.queryIdentity !== compiledSelection.queryIdentity &&
-            canApplyClaudeSelectionLive(existing.selection, compiledSelection) &&
-            (existing.selection.apiModelId === compiledSelection.apiModelId ||
-              existing.openedPermissionMode === queryPolicy.permissionMode)
-          ) {
-            yield* applySelectionLive(existing, compiledSelection);
-          }
-          if (
-            outdatedBuild === undefined &&
-            !turnInput.resume &&
-            existing !== null &&
-            existing.nativeThreadId === nativeThreadId &&
-            existing.queryPolicyKey === queryPolicyKey &&
-            !existing.stopping &&
-            !replaceStaleProcess &&
-            existing.selection.queryIdentity === compiledSelection.queryIdentity
-          ) {
+          // The live process when this turn can run on it, after applying its selection.
+          const reuseLive = Effect.fnUntraced(function* (live: ClaudeLiveQueryContext) {
+            if (
+              turnInput.resume ||
+              live.nativeThreadId !== nativeThreadId ||
+              live.queryPolicyKey !== queryPolicyKey ||
+              live.stopping
+            ) {
+              return undefined;
+            }
+            if (
+              live.selection.queryIdentity !== compiledSelection.queryIdentity &&
+              canApplyClaudeSelectionLive(live.selection, compiledSelection) &&
+              (live.selection.apiModelId === compiledSelection.apiModelId ||
+                live.openedPermissionMode === queryPolicy.permissionMode)
+            ) {
+              yield* applySelectionLive(live, compiledSelection);
+            }
+            if (live.selection.queryIdentity !== compiledSelection.queryIdentity) return undefined;
             // A denied ExitPlanMode leaves Claude in plan mode. Restore only from plan:
             // Auto/default may reflect a policy restriction that forbids restoring bypass.
-            if (existing.permissionMode === "plan" && existing.openedPermissionMode !== "plan") {
-              existing.permissionMode = yield* existing.query
-                .setPermissionMode(existing.openedPermissionMode)
+            if (live.permissionMode === "plan" && live.openedPermissionMode !== "plan") {
+              live.permissionMode = yield* live.query
+                .setPermissionMode(live.openedPermissionMode)
                 .pipe(
-                  Effect.as(existing.openedPermissionMode),
+                  Effect.as(live.openedPermissionMode),
                   Effect.catchTags({
                     ClaudeAgentSdkQueryRunnerError: (error) =>
-                      existing.openedPermissionMode === "bypassPermissions"
-                        ? existing.query
+                      live.openedPermissionMode === "bypassPermissions"
+                        ? live.query
                             .setPermissionMode("default")
                             .pipe(Effect.as("default" as const))
                         : Effect.fail(error),
                   }),
                 );
             }
-            return existing;
-          }
-
-          // Replacing this thread's process kills its background work, even with a new native identity.
-          if (
-            existing !== null &&
-            (existing.nativeThreadId === nativeThreadId ||
-              existing.lastTurn?.input.threadId === turnInput.threadId) &&
-            !existing.stopping &&
-            (yield* liveProcessRunsBackgroundWork(existing))
-          ) {
-            return yield* new ClaudeBackgroundWorkBlocksQueryReplacementError();
+            return live;
+          });
+          if (outdatedBuild === undefined && existing !== null && !replaceStaleProcess) {
+            const reused = yield* reuseLive(existing);
+            if (reused !== undefined) return reused;
           }
 
           if (reuseLaunchSettings) {
@@ -14301,6 +14417,26 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             ],
             { concurrency: "unbounded" },
           );
+          // Checked after the reads above, so work that began during them counts.
+          if (existing !== null && !existing.stopping) {
+            // An unasked replacement yields to a wake.
+            if (
+              (replaceStaleProcess || outdatedBuild !== undefined) &&
+              (yield* liveProcessHoldsUnaskedWork(existing))
+            ) {
+              const reused = yield* reuseLive(existing);
+              if (reused !== undefined) return reused;
+            }
+            // Replacing this thread's process kills its background work, even with a new native
+            // identity.
+            if (
+              (existing.nativeThreadId === nativeThreadId ||
+                existing.lastTurn?.input.threadId === turnInput.threadId) &&
+              (yield* liveProcessRunsBackgroundWork(existing))
+            ) {
+              return yield* new ClaudeBackgroundWorkBlocksQueryReplacementError();
+            }
+          }
           const closedExistingNativeThreadId = existing !== null ? existing.nativeThreadId : null;
           clearedNativeSessions.delete(nativeThreadId);
           // A resume fallback moves the provider thread to a new native session. Output buffered on a
@@ -14475,7 +14611,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               hostPlatform,
             ),
             emittedMessageUuids: new Set(),
+            latestMessageUuid: undefined,
             transcriptPath: undefined,
+            transcriptChecked: undefined,
           };
           // One step, so the replaced process cannot exit between the install and the handoff.
           yield* Ref.update(queryContext, (replaced) => {
@@ -14497,7 +14635,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                     message.parent_tool_use_id === null &&
                     message.uuid !== undefined
                   ) {
-                    context.emittedMessageUuids.add(message.uuid);
+                    rememberClaudeMessageUuid(context, message.uuid);
                   }
                   const firstInit =
                     message.type === "system" &&
@@ -14847,7 +14985,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 if (
                   querySession.createdSession &&
                   // A scan that fails keeps the id, as before.
-                  (yield* claudeTranscriptState(nativeThreadId).pipe(
+                  (yield* claudeTranscriptState(nativeThreadId, querySession.settingsCwd).pipe(
                     Effect.orElseSucceed(() => "conversation" as const),
                   )) !== "conversation"
                 ) {
@@ -14945,6 +15083,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                   );
             if (userMessage !== null && !turnInput.resume) {
               yield* attachTurn;
+              if (promptUuid !== null) rememberClaudeMessageUuid(querySession, promptUuid);
               yield* offerUserMessage;
               return;
             }
@@ -15044,32 +15183,32 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                   yield* finalizeActiveTurn({ context, status: "completed", completedAt });
                   if (leavesLaterWake) yield* offerBufferedWake(nativeThreadId);
                 } else if (!context.nativeWakeStarted && !turnInput.resume) {
-                  yield* Effect.sleep(CLAUDE_WAKE_TURN_START_DEADLINE).pipe(
-                    Effect.andThen(
-                      sdkMessageLock.withPermits(1)(
-                        Effect.gen(function* () {
-                          if (
-                            (yield* Ref.get(activeTurn)) !== context ||
-                            (yield* Ref.get(queryContext)) !== querySession ||
-                            querySession.stopping ||
-                            context.nativeWakeStarted ||
-                            (yield* Ref.get(interruptedTurns)).has(context.providerTurnId)
-                          )
-                            return;
-                          yield* Effect.logWarning(
-                            "orchestration-v2.claude-wake-turn-never-opened",
-                            {
-                              providerTurnId: context.providerTurnId,
-                              nativeThreadId,
-                            },
-                          );
-                          const completedAt = yield* DateTime.now;
-                          yield* finalizeActiveTurn({ context, status: "completed", completedAt });
-                        }),
-                      ),
-                    ),
-                    Effect.forkIn(sessionScope),
+                  const neverOpened = sdkMessageLock.withPermits(1)(
+                    Effect.gen(function* () {
+                      if (
+                        (yield* Ref.get(activeTurn)) !== context ||
+                        (yield* Ref.get(queryContext)) !== querySession ||
+                        querySession.stopping ||
+                        context.nativeWakeStarted ||
+                        (yield* Ref.get(interruptedTurns)).has(context.providerTurnId)
+                      )
+                        return;
+                      yield* Effect.logWarning("orchestration-v2.claude-wake-turn-never-opened", {
+                        providerTurnId: context.providerTurnId,
+                        nativeThreadId,
+                      });
+                      const completedAt = yield* DateTime.now;
+                      yield* finalizeActiveTurn({ context, status: "completed", completedAt });
+                    }),
                   );
+                  // Only the wait is interruptible: the settle it fires interrupts this watch.
+                  const watch = Effect.sleep(CLAUDE_WAKE_TURN_START_DEADLINE).pipe(
+                    Effect.andThen(neverOpened.pipe(Effect.forkIn(sessionScope))),
+                  );
+                  context.wakeStartWatch = yield* watch.pipe(Effect.forkIn(sessionScope));
+                  if ((yield* Ref.get(activeTurn)) !== context) {
+                    yield* clearTurnWatch(context, "wakeStartWatch");
+                  }
                 }
               }),
             );
@@ -15360,6 +15499,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 recordAppContextOffer(currentTurn, unsentAppContext);
               }
             };
+            existing.emittedMessageUuids.add(steerUuid);
             yield* Effect.uninterruptibleMask((restore) =>
               restore(existing.query.offer(userMessage, commitOffer)).pipe(
                 Effect.tap(() => Effect.sync(commitOffer)),
@@ -15469,6 +15609,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                   );
                 }
                 steer.resending = false;
+                existing.emittedMessageUuids.add(nowUuid);
                 yield* existing.query.offer(resent);
               }),
             );
@@ -15545,8 +15686,10 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
         // Metadata-only transcripts cannot be resumed or recreated; fail resumeThread to trigger a fresh session and handoff.
         const claudeTranscriptState = Effect.fn("ClaudeAdapterV2.claudeTranscriptState")(function* (
           nativeThreadId: string,
+          // The cwd of the CLI that resumes it; with none running, the session's.
+          cwd: string | null,
         ) {
-          const projectsDir = yield* claudeProjectsDir;
+          const projectsDir = yield* claudeProjectsDir(cwd);
           // Any message in any transcript copy means Claude may still resume it.
           let found = false;
           let unreadable = false;
@@ -15698,7 +15841,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                   });
                 }
                 // An unreadable transcript leaves the resume to the CLI.
-                const transcript = yield* claudeTranscriptState(nativeThreadId).pipe(
+                const transcript = yield* claudeTranscriptState(nativeThreadId, session.cwd).pipe(
                   Effect.orElseSucceed(() => "missing" as const),
                 );
                 // Opening a missing imported session would start an empty one under its id.
@@ -16458,7 +16601,11 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               const forked = yield* queryRunner.forkSession({
                 sessionId: sourceNativeThreadId,
                 options: forkOptions,
-                environment: adapterOptions.environment,
+                environment: claudeEnvironmentIn(
+                  path,
+                  adapterOptions.environment,
+                  forkInput.runtimePolicy?.cwd,
+                ),
                 threadId: forkInput.targetThreadId,
                 providerSessionId: input.providerSessionId,
               });
