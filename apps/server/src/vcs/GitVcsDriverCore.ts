@@ -1495,6 +1495,31 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     return upstreamRef;
   });
 
+  // Git's own split of the tracked ref: `origin/alice/fix` is ambiguous when a remote is
+  // literally named `origin/alice`, and splitting by the longest remote name picks that one.
+  const readTrackedUpstream = Effect.fn("readTrackedUpstream")(function* (
+    cwd: string,
+    branch: string,
+    upstreamRef: string,
+  ) {
+    const [remoteName = "", remoteRef = ""] = (yield* runGitStdout(
+      "GitVcsDriver.readTrackedUpstream",
+      cwd,
+      [
+        "for-each-ref",
+        "--format=%(upstream:remotename)%09%(upstream:remoteref)",
+        `refs/heads/${branch}`,
+      ],
+      true,
+    ).pipe(Effect.orElseSucceed(() => "")))
+      .trim()
+      .split("\t");
+    if (remoteName.length === 0 || remoteName === "." || !remoteRef.startsWith("refs/heads/")) {
+      return null;
+    }
+    return { upstreamRef, remoteName, branchName: remoteRef.slice("refs/heads/".length) };
+  });
+
   const resolveCurrentUpstream = Effect.fn("resolveCurrentUpstream")(function* (
     cwd: string,
     knownUpstreamRef?: string,
@@ -3810,7 +3835,8 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     const upstream =
       upstreamRef === null
         ? null
-        : yield* resolveCurrentUpstream(cwd, upstreamRef).pipe(Effect.orElseSucceed(() => null));
+        : ((yield* readTrackedUpstream(cwd, branch, upstreamRef)) ??
+          (yield* resolveCurrentUpstream(cwd, upstreamRef).pipe(Effect.orElseSucceed(() => null))));
     if (!upstream) return null;
     if (isAliasOfUpstreamHead(branch, upstream.branchName, upstream.upstreamRef)) {
       // A fork workflow pushes to the configured push remote and keeps the upstream for pulls, as plain `git push` does.
@@ -6064,6 +6090,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         : undefined;
 
     if (newRefName) {
+      if (options?.progress?.onCreatingBranch) yield* options.progress.onCreatingBranch();
       // Kept apart from the checkout so the shared-config lock only covers the tracking write.
       yield* createBranchAt(
         "GitVcsDriver.createWorktree.createBranch",

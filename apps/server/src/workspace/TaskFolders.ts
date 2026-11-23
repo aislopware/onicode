@@ -886,18 +886,19 @@ const make = Effect.gen(function* () {
     withWorkspaceLease(fileSystem, path, taskFolder.projectPath, effect);
 
   // A checkout that makes the branch can stop after making it, so the branch is counted as made
-  // before it starts, unless it was there before: when listed, or when Git refuses to make it.
-  // A concurrent creation's loser often fails on the ref lock, not "already exists".
+  // once Git is about to make it, unless it was there before: when listed, or when Git refuses
+  // to make it. A concurrent creation's loser often fails on the ref lock, not "already exists".
   const makingBranch = <A, E>(
     madeIn: Set<string>,
     listed: boolean,
     repositoryPath: string,
-    checkout: Effect.Effect<A, E>,
+    checkout: (onCreatingBranch: () => Effect.Effect<void>) => Effect.Effect<A, E>,
   ) =>
-    Effect.sync(() => {
-      if (!listed) madeIn.add(repositoryPath);
-    }).pipe(
-      Effect.andThen(checkout),
+    checkout(() =>
+      Effect.sync(() => {
+        if (!listed) madeIn.add(repositoryPath);
+      }),
+    ).pipe(
       Effect.tapError((error) =>
         Effect.sync(() => {
           if (
@@ -940,17 +941,17 @@ const make = Effect.gen(function* () {
     }
     yield* fileSystem.makeDirectory(path.dirname(worktreePath), { recursive: true });
     const start = yield* repositoryStart(repository.path, startFromOrigin, baseBranch);
-    yield* makingBranch(
-      madeIn,
-      listed,
-      repository.path,
-      git.createWorktree({
-        cwd: repository.path,
-        refName: start.refName,
-        newRefName: branch,
-        baseRefName: start.baseRefName,
-        path: worktreePath,
-      }),
+    yield* makingBranch(madeIn, listed, repository.path, (onCreatingBranch) =>
+      git.createWorktree(
+        {
+          cwd: repository.path,
+          refName: start.refName,
+          newRefName: branch,
+          baseRefName: start.baseRefName,
+          path: worktreePath,
+        },
+        { progress: { onCreatingBranch } },
+      ),
     );
     return {
       repository: {
@@ -1078,16 +1079,17 @@ const make = Effect.gen(function* () {
             madeIn,
             projectNames.includes(branch),
             taskPlan.projectRoot,
-            git.createWorktree(
-              {
-                cwd: taskPlan.projectRoot,
-                refName: input.projectStart.refName,
-                newRefName: branch,
-                baseRefName: input.projectStart.baseRefName,
-                path: empty.projectPath,
-              },
-              input.projectProgress === undefined ? {} : { progress: input.projectProgress },
-            ),
+            (onCreatingBranch) =>
+              git.createWorktree(
+                {
+                  cwd: taskPlan.projectRoot,
+                  refName: input.projectStart.refName,
+                  newRefName: branch,
+                  baseRefName: input.projectStart.baseRefName,
+                  path: empty.projectPath,
+                },
+                { progress: { ...input.projectProgress, onCreatingBranch } },
+              ),
           );
         } else {
           yield* linkFolder(taskPlan.projectRoot, empty.projectPath, taskPlan.trackedRepositories);
