@@ -180,6 +180,40 @@ describe("issueFilterScopes", () => {
     expect([count(older), count(older, second), count(second, older)]).toEqual([1, 3, 3]);
   });
 
+  it("keeps each environment's own scope when another reaches the same repository", () => {
+    const github = tracker({ tracker: "github" as IssueTrackerKind, host: "github.com" });
+    const repositoryScope = {
+      projectId: api,
+      tracker: "github" as IssueTrackerKind,
+      host: "github.com",
+      scope: "acme/api",
+    };
+    const other = "env-2" as EnvironmentId;
+    // env-2 names the scope only in its answer, as when its client has no repository identity
+    // yet; its labels must still be offered if env-1's read fails.
+    const held = new Map([
+      [environmentId, hold(answer({ trackers: [github] }))],
+      [other, hold(answer({ trackers: [github], scopes: [repositoryScope] }))],
+    ]);
+    const projects = [
+      {
+        id: api,
+        environmentId,
+        repositoryIdentity: {
+          canonicalKey: "github.com/acme/api",
+          provider: "github",
+          displayName: "acme/api",
+          owner: "acme",
+          name: "api",
+        },
+      },
+    ] as never;
+    expect(issueFilterScopes(held, projects).map((scope) => scope.environmentId)).toEqual([
+      environmentId,
+      other,
+    ]);
+  });
+
   it("skips a tracker that cannot be read", () => {
     const held = new Map([
       [
