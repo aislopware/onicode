@@ -1,4 +1,4 @@
-import type { ContextMenuItem } from "@onicode/contracts";
+import type { ContextMenuItem, ContextMenuSource } from "@onicode/contracts";
 import {
   type SourceControlDefinition,
   UNKNOWN_SOURCE_CONTROL_CLIENT,
@@ -35,11 +35,13 @@ export async function showPullRequestLinkContextMenu({
   url,
   openLabel,
   position,
+  source,
   open,
 }: {
   readonly url: string;
   readonly openLabel: string;
   readonly position: { readonly x: number; readonly y: number };
+  readonly source: ContextMenuSource;
   /** Opens as Settings → "Open links in" says, where a thread is known. */
   readonly open?: (url: string) => Promise<void>;
 }): Promise<void> {
@@ -47,7 +49,11 @@ export async function showPullRequestLinkContextMenu({
   if (!api) return;
   let action: PullRequestLinkContextMenuAction | null = null;
   try {
-    action = await api.contextMenu.show(pullRequestLinkContextMenuItems(openLabel), position);
+    action = await api.contextMenu.show(
+      pullRequestLinkContextMenuItems(openLabel),
+      position,
+      source,
+    );
   } catch {
     return;
   }

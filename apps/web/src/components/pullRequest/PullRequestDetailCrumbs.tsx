@@ -1,4 +1,5 @@
 import type { ScopedThreadRef } from "@onicode/contracts";
+import { contextMenuSourceOf } from "../../contextMenuSource";
 import { sourceControlClients } from "@onicode/client-runtime/source-control-clients";
 import { T, useGT } from "gt-react";
 import { ArrowLeftIcon, ExternalLinkIcon } from "lucide-react";
@@ -31,6 +32,7 @@ const openNumberContextMenu = (
     url: detail.url,
     openLabel: openOnHostLabel(sourceControlClients.get(detail.provider)),
     position: { x: event.clientX, y: event.clientY },
+    source: contextMenuSourceOf(event),
     open,
   });
 };
