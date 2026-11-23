@@ -730,16 +730,7 @@ export async function convertPastedImagesToAttachments(input: {
       console.warn("Failed to read pasted image", uri, cause);
       error = m(msg("Could not read a pasted image."));
     } finally {
-      for (const temporaryUri of temporaryUris) {
-        try {
-          const file = new File(temporaryUri);
-          if (file.exists) {
-            file.delete();
-          }
-        } catch (error) {
-          console.warn("Failed to remove temporary pasted image", temporaryUri, error);
-        }
-      }
+      for (const temporaryUri of temporaryUris) await discardRenderedImage(temporaryUri);
     }
   }
 

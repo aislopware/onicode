@@ -46,6 +46,7 @@ export async function renderPhoto(
         base64: true,
       });
       if (!saved.base64) {
+        await discardRenderedImage(saved.uri);
         throw new Error("The rendered photo has no bytes.");
       }
       // PNG ignores compress, so a resampled PNG can encode larger than its original.

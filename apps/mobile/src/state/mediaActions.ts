@@ -232,7 +232,7 @@ export function useMediaActions(
                   ? gt("Share", { $context: "verb, opens the system share sheet" })
                   : gt("Save or share"),
             run: share,
-            disabled: busy !== null || !canReadMedia,
+            disabled: busy !== null || savingImage || !canReadMedia,
           },
         ]
       : [];

@@ -2350,6 +2350,40 @@ describe("streamed feed updates", () => {
     }
   });
 
+  it("rebuilds a runless group's rows once runless work stops", () => {
+    const at = "2026-06-20T00:00:02.000Z";
+    const items = [
+      { ...userMessage(), runId: null },
+      { ...command(at), runId: null, status: "running" as const, completedAt: null },
+      { ...assistantMessage(), runId: null },
+    ];
+    const feed = () => buildThreadFeed(items.map((item, position) => projected(item, position)));
+    const present = (
+      entries: ReadonlyArray<ThreadFeedEntry>,
+      working: boolean,
+      expanded: ReadonlySet<RunId>,
+    ) =>
+      deriveThreadFeedPresentation(
+        entries,
+        null,
+        expanded,
+        new Set(),
+        working ? at : null,
+        working,
+      );
+    const fold = present(feed(), false, new Set()).find((row) => row.type === "run-fold");
+    if (fold?.type !== "run-fold") throw new Error("Expected a runless fold");
+    const expanded = new Set([fold.runId]);
+    const values = (rows: ReadonlyArray<ThreadFeedEntry>) => JSON.parse(JSON.stringify(rows));
+    const reused = feed();
+
+    present(reused, true, expanded);
+
+    expect(values(present(reused, false, expanded))).toEqual(
+      values(present(feed(), false, expanded)),
+    );
+  });
+
   it("hides a delegation once its child reaches back into the earlier run", () => {
     const showsDelegation = (step: (typeof steps)[number]) =>
       buildThreadFeed(step.items.map(row)).some(

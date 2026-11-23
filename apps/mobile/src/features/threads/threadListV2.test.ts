@@ -103,21 +103,34 @@ describe("resolveThreadListV2SnoozePresets", () => {
     expect(presets.map((preset) => preset.id)).not.toContain("at:today:18:00");
   });
 
-  it("labels a wake on another day in the app's formatting locale", () => {
-    const lateEvening = new Date(2026, 4, 8, 23, 30);
-    const wake = new Date(2026, 4, 9, 0, 30);
+  it.each([
+    { locale: "de-DE", is24Hour: undefined, hourCycle: undefined },
+    { locale: "en", is24Hour: true, hourCycle: "h23" },
+    { locale: "en", is24Hour: false, hourCycle: "h12" },
+  ] as const)(
+    "labels a wake on another day in the app locale $locale with the system clock ($is24Hour)",
+    ({ locale, is24Hour, hourCycle }) => {
+      const lateEvening = new Date(2026, 4, 8, 23, 30);
+      const wake = new Date(2026, 4, 9, 0, 30);
 
-    const presets = resolveThreadListV2SnoozePresets({
-      secondary: "snooze",
-      now: lateEvening.toISOString(),
-      presets: [{ kind: "after", minutes: 60 }],
-      locale: "de-DE",
-    });
+      const presets = resolveThreadListV2SnoozePresets({
+        secondary: "snooze",
+        now: lateEvening.toISOString(),
+        presets: [{ kind: "after", minutes: 60 }],
+        locale,
+        is24Hour,
+      });
 
-    expect(presets[0]?.whenLabel).toBe(
-      `${wake.toLocaleDateString("de-DE", { weekday: "short" })} ${wake.toLocaleTimeString("de-DE", { hour: "numeric", minute: "2-digit" })}`,
-    );
-  });
+      const time = wake.toLocaleTimeString(locale, {
+        hour: "numeric",
+        minute: "2-digit",
+        ...(hourCycle ? { hourCycle } : {}),
+      });
+      expect(presets[0]?.whenLabel).toBe(
+        `${wake.toLocaleDateString(locale, { weekday: "short" })} ${time}`,
+      );
+    },
+  );
 });
 
 describe("layoutThreadListV2RowMenuActions", () => {
