@@ -3503,7 +3503,7 @@ const make = Effect.gen(function* () {
       const limit = input.limit ?? DEFAULT_THREAD_READ_LIMIT;
       const maxChars = input.maxCharsPerItem ?? DEFAULT_THREAD_ITEM_MAX_CHARS;
       // Older linked environments page a cursorless read forward and stop when hasMore is false;
-      // newer ones always send a cursor.
+      // newer ones send a cursor whenever the direction matters.
       const newestFirst =
         input.beforePosition !== undefined ||
         (input.afterPosition === undefined && scope.client?.linked !== true);
