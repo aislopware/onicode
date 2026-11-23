@@ -3422,3 +3422,4 @@ d4976b0e9a	take	feat(scripts): server metrics busy scenario on seeded data; adop
 1e088be4b5	take	fix(cli): environment link --from no longer ignores --url
 350b05ac3c	take	fix(server): a Claude turn no longer ignores messages added to its session in a terminal; CONFLICT resolved: upstream's transcript check placed beside Onicode's liveProcessOutdatedBuild, emitted-uuid tracking kept before Onicode's const firstInit; both replacement paths (stale transcript, outdated build) coexist
 f17114b2c2	take	fix(server): projects behind a git insteadOf rewrite are recognized as GitHub again; test CONFLICT resolved: upstream's rewritten/configured each-case keeps Onicode's settledReview assertions
+92199680cc	take	hasCompletedRun gate on web + mobile; upstream's guest-share menu item stripped (guest links removed)
