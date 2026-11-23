@@ -911,6 +911,10 @@ export const OrchestrationV2RunAttempt = Schema.Struct({
   completedAt: Schema.NullOr(Schema.DateTimeUtc),
   /** Set when a steering restart superseded it, since the run then takes the steer's message. */
   userMessageId: Schema.optional(MessageId),
+  /** The thread's modes when this attempt's turn started. A later change reaches only the next turn. */
+  startedModes: Schema.optional(
+    Schema.Struct({ runtimeMode: RuntimeMode, interactionMode: ProviderInteractionMode }),
+  ),
 });
 export type OrchestrationV2RunAttempt = typeof OrchestrationV2RunAttempt.Type;
 
