@@ -1,7 +1,9 @@
 import { assert, it } from "@effect/vitest";
+import { MessageId, RunId } from "@onicode/contracts";
 
 import {
   isNativeCommandMessage,
+  lastImagePromptOrdinal,
   leavesNotesForNextPrompt,
   notesWaitingMessageIds,
 } from "./ContextHandoffDelivery.ts";
@@ -67,4 +69,32 @@ it.each([
     messages: [{ id: source.userMessageId, ...user("/review") }],
   } as unknown as Parameters<typeof notesWaitingMessageIds>[1];
   assert.equal(notesWaitingMessageIds(runsNothing, projection).has(resume.userMessageId), held);
+});
+
+// A forced restart into /compact gives the run the compaction's message; the prompt its earlier
+// attempt sent still carried the missed images. Attempts stored before the field read the run's.
+it.each([
+  { sent: "message:prompt", lastPrompt: 3 },
+  { sent: undefined, lastPrompt: 1 },
+])("judges an accepted attempt by the message it sent ($sent)", ({ sent, lastPrompt }) => {
+  const runs = [1, 2, 3].map((ordinal) => ({
+    id: RunId.make(`run:${ordinal}`),
+    ordinal,
+    userMessageId: MessageId.make(ordinal === 3 ? "message:compact" : `message:${ordinal}`),
+  }));
+  assert.equal(
+    lastImagePromptOrdinal({
+      acceptedAttempts: [
+        { runId: RunId.make("run:1") },
+        {
+          runId: RunId.make("run:3"),
+          ...(sent === undefined ? {} : { userMessageId: MessageId.make(sent) }),
+        },
+      ],
+      runs,
+      missedRunIds: new Set(["run:2"]),
+      compactionMessageIds: new Set(["message:compact"]),
+    }),
+    lastPrompt,
+  );
 });

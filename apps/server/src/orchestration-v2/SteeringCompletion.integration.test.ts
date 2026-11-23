@@ -1817,6 +1817,8 @@ it.effect("restarts the turn for an image when native steering takes text only",
       assert.equal(after.runs[0]?.id, before.runs[0]?.id);
       assert.deepEqual(after.runs[0]?.startedAt, originalStart);
       assert.equal(after.attempts[0]?.status, "superseded");
+      assert.equal(after.attempts[0]?.userMessageId, before.runs[0]?.userMessageId);
+      assert.equal(after.runs[0]?.userMessageId, "message:steer-image");
       const restartedAt = yield* DateTime.now;
       assert.deepEqual(after.attempts[1]?.startedAt, restartedAt);
       assert.deepEqual(

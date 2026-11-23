@@ -70,6 +70,7 @@ import {
 import {
   deliverContextHandoffs,
   isNativeCommandMessage,
+  lastImagePromptOrdinal,
   leavesNotesForNextPrompt,
   mayBeNativeCommandMessage,
   notesWaitingMessageIds,
@@ -1393,14 +1394,12 @@ export const layer: Layer.Layer<
           // until a later run's is accepted. Slash command starts carry none. A missed run's
           // own accepted attempt predates its unsent steering input, so it does not count.
           const runsById = new Map(projection.runs.map((source) => [source.id, source]));
-          let lastPromptOrdinal = 0;
-          for (const attempt of acceptedAttempts) {
-            if (missedRunIds.has(attempt.runId)) continue;
-            const source = runsById.get(attempt.runId);
-            if (source === undefined) continue;
-            if (compactionMessageIds().has(source.userMessageId)) continue;
-            lastPromptOrdinal = Math.max(lastPromptOrdinal, source.ordinal);
-          }
+          const lastPromptOrdinal = lastImagePromptOrdinal({
+            acceptedAttempts,
+            runs: projection.runs,
+            missedRunIds,
+            compactionMessageIds: compactionMessageIds(),
+          });
           const attachments = missedHistory.flatMap((item) =>
             item.type === "user_message" &&
             item.runId !== null &&
