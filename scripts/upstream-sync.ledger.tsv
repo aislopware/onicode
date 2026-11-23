@@ -3442,3 +3442,4 @@ f274d47150	take	patch rebased onto Onicode's gt-react-native 11.4.24 (applies un
 7474a284e2	take	taken as is
 5f506c4262	take	taken as is
 c768764bb6	take	taken as is
+27ecc0fad9	take	fix(cli): reject incomplete workflow signal addresses locally
