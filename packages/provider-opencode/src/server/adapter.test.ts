@@ -2630,7 +2630,12 @@ describe("OpenCodeAdapterV2", () => {
           yield* push({ type: "session.idle", properties: { sessionID: root } });
           yield* Fiber.join(foreground!);
           assert.equal(promptIds.length, 2, "the foreground prompt is submitted after the wake");
-          const turns = yield* harness.awaitTurns((seen) => seen.length >= 2);
+          // Drain everything emitted so far: a wrongful completion would already be in it.
+          const drain = yield* harness.awaitTurns(() => false).pipe(Effect.forkScoped);
+          yield* TestClock.adjust(0);
+          yield* Fiber.interrupt(drain);
+          const turns = yield* harness.awaitTurns(() => true);
+          assert.equal(turns.length, 2);
           assert.equal(
             turns.at(-1)?.status,
             "running",
