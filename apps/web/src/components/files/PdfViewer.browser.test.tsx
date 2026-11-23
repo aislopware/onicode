@@ -273,6 +273,46 @@ it("keeps the page in view, with its painted canvas, when the pane narrows", asy
   }
 });
 
+it("keeps a followed link's target at the top when the pane narrows", async () => {
+  const url = URL.createObjectURL(
+    testPdf([
+      {
+        box: "0 0 612 792",
+        rotate: 0,
+        text: "BT /F1 24 Tf 30 700 Td (Top) Tj ET",
+        // Page 1's object; y 792 is its top edge.
+        annots:
+          "<< /Type /Annot /Subtype /Link /Rect [30 690 200 730] /Border [0 0 0] /Dest [3 0 R /XYZ 0 792 0] >>",
+      },
+      { box: "0 0 612 792", rotate: 0, text: "BT /F1 24 Tf 30 700 Td (Two) Tj ET" },
+    ]),
+  );
+  try {
+    const container = document.createElement("div");
+    container.style.cssText = "display:flex;width:500px;height:300px";
+    await using screen = await render(<PdfViewer src={url} title="Linked PDF" />, { container });
+    const region = screen.container.querySelector<HTMLElement>('[role="region"]')!;
+    const link = await vi.waitFor(() => {
+      const found = region.querySelector<HTMLAnchorElement>('a[aria-label="Page 1"]');
+      expect(found).not.toBeNull();
+      return found!;
+    });
+    const canvas = region.querySelector<HTMLCanvasElement>('canvas[aria-label="Page 1"]')!;
+    link.click();
+    await vi.waitFor(() => expect(region.scrollTop).toBe(16));
+
+    container.style.width = "300px";
+    await vi.waitFor(() => {
+      expect(canvas.getBoundingClientRect().width).toBe(region.clientWidth - 32);
+      expect(
+        Math.abs(canvas.getBoundingClientRect().top - region.getBoundingClientRect().top),
+      ).toBeLessThanOrEqual(1);
+    });
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+});
+
 it("jumps to the first hit while still counting and keeps later manual navigation", async () => {
   setup(4);
   const page = (text: string) => ({

@@ -493,7 +493,7 @@ export default function PdfViewer(props: {
       node.scrollTo({
         top: offsets[anchor.page]! - 16 + (anchor.offset * width) / anchor.width,
       });
-    } else if (resized) node.scrollTo({ top: scrollTop });
+    } else if (resized && !jump) node.scrollTo({ top: scrollTop });
     if (jump) {
       // `top` is a point within the page, in page widths below its top edge.
       const target =
