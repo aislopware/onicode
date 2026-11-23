@@ -8179,8 +8179,6 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     const commandNotice = noticeKind === "command" && command.creationSource === "server";
     if (
       !freshContext &&
-      // A steer follow-up was declined by the active turn; steering it again loses it.
-      command.steerFollowUpOfRunId === undefined &&
       // Steering refuses a command, so a notice that reads like one stays queued.
       !isSlashCommand(command) &&
       (delegatedCompletion !== undefined
@@ -8203,8 +8201,12 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       if (
         active !== undefined &&
         activeTurn !== undefined &&
-        // A run that still holds this notice unread declined it; it waits for the next turn.
+        // The turn that declined this notice, or still holds it unread, would lose it again.
+        command.steerFollowUpOfRunId !== active.id &&
         unreadNotice?.runId !== active.id &&
+        // A follow-up whose turn a restart cancelled stays held for a person.
+        projection.runs.find((run) => run.id === command.steerFollowUpOfRunId)?.status !==
+          "cancelled" &&
         providerThread?.providerSessionId != null &&
         (!commandNotice || providerThread.goal?.status === "active") &&
         (activeMessage === undefined || !isNativeMaintenanceCommand(activeMessage))
