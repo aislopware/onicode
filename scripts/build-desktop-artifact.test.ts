@@ -547,7 +547,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     }),
   );
 
-  it.effect("declares Calendar access for hosted commands in macOS builds", () =>
+  it.effect("declares Calendar and Apple Events access for hosted commands in macOS builds", () =>
     Effect.gen(function* () {
       for (const signed of [false, true]) {
         const config = yield* createBuildConfig(
@@ -564,6 +564,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
           "NSCalendarsUsageDescription",
           "NSCalendarsFullAccessUsageDescription",
           "NSCalendarsWriteOnlyAccessUsageDescription",
+          "NSAppleEventsUsageDescription",
         ]) {
           assert.isString(mac.extendInfo[key], `signed=${signed}: ${key}`);
           assert.isNotEmpty(mac.extendInfo[key]);
@@ -1495,6 +1496,10 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     assert.include(entitlements, "<string>ABC1234567.dev.aislopware.onicode</string>");
     assert.notInclude(entitlements, "associated-domains");
     assert.include(entitlements, "<key>com.apple.security.cs.allow-jit</key>");
+    assert.match(
+      entitlements,
+      /<key>com\.apple\.security\.automation\.apple-events<\/key>\s*<true\/>/u,
+    );
     assert.match(entitlements, /<key>com\.apple\.security\.device\.camera<\/key>\s*<true\/>/u);
     assert.match(entitlements, /<key>com\.apple\.security\.device\.audio-input<\/key>\s*<true\/>/u);
     assert.notInclude(entitlements, "keychain-access-groups");

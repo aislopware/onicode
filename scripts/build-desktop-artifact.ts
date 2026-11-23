@@ -2624,6 +2624,8 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
           "Onicode lets commands run by terminals and coding agents use the camera.",
         NSMicrophoneUsageDescription:
           "Onicode lets commands run by terminals and coding agents use the microphone.",
+        NSAppleEventsUsageDescription:
+          "Onicode lets commands run by terminals and coding agents control other apps.",
         NSSpeechRecognitionUsageDescription:
           "Onicode transcribes your dictation on this Mac when you choose Apple Speech.",
         // macOS lists an app under Default web browser only when it opens web
