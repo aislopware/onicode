@@ -3336,3 +3336,4 @@ b9c3109710	take	fix(cursor): preserve ended turns when connection retries exhaus
 074a0d35be	take	fix(server): startup PR backfill looks up each repository branch once
 8a17857870	take	perf(mobile): avoid re-rendering on shell updates in useSidebarRowThreadKey
 1a4932efd0	take	perf(client): skip child indexing when no child needs input
+86349553c5	take	fix(server): app links no longer leave the preview stuck loading; scenario ported to the desktop target (webview in place of the server browser canvas)
