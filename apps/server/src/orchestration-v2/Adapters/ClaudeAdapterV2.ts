@@ -3615,7 +3615,10 @@ const withClaudeAppContext = (
   reservation: Effect.Success<ReturnType<typeof reserveClaudePdfBudget>>,
 ): SDKUserMessage => {
   const content = message.message.content;
-  if (appContext.length === 0 || (typeof content === "string" && content.startsWith("/"))) {
+  if (
+    appContext.length === 0 ||
+    (typeof content === "string" && ProviderAdapter.opensWithSlashCommand(content))
+  ) {
     return message;
   }
   const contextBlocks = appContext.map((entry) => ({
