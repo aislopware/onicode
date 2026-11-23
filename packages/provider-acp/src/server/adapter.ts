@@ -411,6 +411,18 @@ export interface AcpAdapterV2Flavor {
     text: string,
     turnInput: ProviderAdapter.ProviderAdapterV2TurnInput,
   ) => Effect.Effect<string, never, ChildProcessSpawner.ChildProcessSpawner>;
+  /**
+   * Whether a message runs as the agent's own command, given the turn's directory and the active
+   * session's advertised command names once it has sent them. Classifying history gets
+   * `undefined`, since the catalog may have changed since that message ran. Absent: a leading
+   * `/name` it advertises.
+   */
+  readonly runsAsNativeCommand?: (
+    message: { readonly text: string; readonly attachments: ReadonlyArray<unknown> },
+    turn:
+      | { readonly cwd: string; readonly advertisedCommands: ReadonlySet<string> | undefined }
+      | undefined,
+  ) => boolean;
   readonly driver: ProviderDriverKind;
   readonly capabilities: OrchestrationV2ProviderCapabilities;
   readonly supportsNativeGoals?: Effect.Effect<boolean>;
@@ -967,8 +979,21 @@ function isCompactionMessage(message: ProviderAdapter.ProviderAdapterV2TurnMessa
 }
 
 /** `/compact`, optionally followed by preservation instructions that some agents accept. */
-function isCompactCommand(message: ProviderAdapter.ProviderAdapterV2TurnMessage): boolean {
+function isCompactCommand(message: {
+  readonly text: string;
+  readonly attachments: ReadonlyArray<unknown>;
+}): boolean {
   return /^\/compact(?:\s|$)/.test(message.text.trim()) && message.attachments.length === 0;
+}
+
+/** A leading `/name` the session advertises; before it advertises any, every one may run. */
+function runsAsAdvertisedCommand(
+  text: string,
+  advertisedCommands: ReadonlySet<string> | undefined,
+): boolean {
+  if (advertisedCommands === undefined) return ProviderAdapter.opensWithSlashCommand(text);
+  const name = /^\/(\S+)/u.exec(text.trim())?.[1];
+  return name !== undefined && advertisedCommands.has(name.toLowerCase());
 }
 
 function negotiatedCapabilities(
@@ -10013,6 +10038,27 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           },
           canResumeAfterRestart: canLoadSession || canResumeSession,
           events: Stream.fromEffectRepeat(Queue.take(events)),
+          runsAsNativeCommand: (message, context) => {
+            // The adapter compacts the session itself, whatever the agent advertises.
+            if (compactsContext && isCompactCommand(message)) return true;
+            const sessionId = Ref.getUnsafe(activeSessionId);
+            // History met an earlier catalog, so only a turn reads the current one.
+            const advertisedCommands =
+              sessionId === null || context === undefined
+                ? undefined
+                : SubscriptionRef.getUnsafe(advertisedCommandNames).get(sessionId);
+            return flavor.runsAsNativeCommand === undefined
+              ? runsAsAdvertisedCommand(message.text, advertisedCommands)
+              : flavor.runsAsNativeCommand(
+                  message,
+                  context === undefined
+                    ? undefined
+                    : {
+                        cwd: context.cwd ?? input.runtimePolicy.cwd ?? process.cwd(),
+                        advertisedCommands,
+                      },
+                );
+          },
           ...(flavor.getModelContextWindow === undefined
             ? {}
             : {

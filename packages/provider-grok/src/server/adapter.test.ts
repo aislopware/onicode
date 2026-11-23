@@ -23,7 +23,9 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
+import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
+import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
 import * as AcpSessionRuntime from "@onicode/provider-acp/server/AcpSessionRuntime";
 import * as IdAllocator from "@onicode/provider-core/server/IdAllocator";
@@ -298,5 +300,70 @@ it.effect("a steer reaches Grok as an interjection that carries its images", () 
     reply = { result: { status: "rejected" } };
     const refused = yield* steering.send(runtime, "session-1", "Late", []).pipe(Effect.flip);
     assert.strictEqual(refused._tag, "AcpRequestError");
+  }),
+);
+
+it.effect("a $skill defers context only while it may name an enabled skill in its directory", () =>
+  Effect.gen(function* () {
+    const flavor = makeGrokAcpAdapterFlavor(
+      { settings: DEFAULT_GROK_SETTINGS, environment: {} } as unknown as Parameters<
+        typeof makeGrokAcpAdapterFlavor
+      >[0],
+      "/home/ada",
+    );
+    const runs = (text: string, cwd = "/repo") =>
+      flavor.runsAsNativeCommand!(
+        { text, attachments: [] },
+        { cwd, advertisedCommands: new Set(["plan"]) },
+      );
+    const inspect = ChildProcessSpawner.make(() =>
+      Effect.succeed(
+        ChildProcessSpawner.makeHandle({
+          pid: ChildProcessSpawner.ProcessId(1),
+          exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(0)),
+          isRunning: Effect.succeed(false),
+          kill: () => Effect.void,
+          unref: Effect.succeed(Effect.void),
+          stdin: Sink.drain,
+          stdout: Stream.encodeText(
+            Stream.make(
+              JSON.stringify({
+                skills: [
+                  { name: "deploy", source: { path: "/repo/.grok/skills/deploy/SKILL.md" } },
+                  {
+                    name: "draft",
+                    userInvocable: false,
+                    source: { path: "/repo/.grok/skills/draft/SKILL.md" },
+                  },
+                ],
+              }),
+            ),
+          ),
+          stderr: Stream.empty,
+          all: Stream.empty,
+          getInputFd: () => Sink.drain,
+          getOutputFd: () => Stream.empty,
+        }),
+      ),
+    );
+
+    assert.isTrue(runs("$other ship it"));
+    assert.isTrue(runs("/review now"), "skills Grok does not advertise still expand from `/`");
+    assert.isFalse(runs("$25 off"));
+
+    const rewritten = yield* flavor.rewriteUserText!("$deploy ship it", {
+      runtimePolicy: { cwd: "/repo" },
+    } as unknown as ProviderAdapter.ProviderAdapterV2TurnInput).pipe(
+      Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, inspect),
+    );
+    assert.equal(rewritten, "/deploy ship it");
+    assert.isTrue(runs("$deploy ship it"));
+    assert.isFalse(runs("$draft it"));
+    assert.isFalse(runs("$other ship it"));
+    assert.isTrue(runs("$other ship it", "/elsewhere"));
+    // History met an earlier catalog: a past `$other` turn stays one that held its context.
+    assert.isTrue(
+      flavor.runsAsNativeCommand!({ text: "$other ship it", attachments: [] }, undefined),
+    );
   }),
 );

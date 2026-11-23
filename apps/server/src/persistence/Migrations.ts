@@ -123,6 +123,7 @@ import Migration0112 from "./Migrations/112_DeferredSlashCommandIndex.ts";
 import Migration0113 from "./Migrations/113_IssueTrackerAccounts.ts";
 import Migration0114 from "./Migrations/114_Workflows.ts";
 import Migration0115 from "./Migrations/115_ReadableEscapedLinkLabels.ts";
+import Migration0116 from "./Migrations/116_DeferredSkillCommandIndex.ts";
 
 const migrationEntries = [
   [1, "OrchestrationEvents", Migration0001],
@@ -241,6 +242,7 @@ const migrationEntries = [
   [113, "IssueTrackerAccounts", Migration0113],
   [114, "Workflows", Migration0114],
   [115, "ReadableEscapedLinkLabels", Migration0115],
+  [116, "DeferredSkillCommandIndex", Migration0116],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

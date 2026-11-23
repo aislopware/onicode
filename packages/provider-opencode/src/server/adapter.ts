@@ -1163,6 +1163,8 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
         let nativeStreamFailure: OrchestrationV2ProviderFailure | null = null;
         const threads = new Map<string, OpenCodeThreadState>();
         const variantCache: OpenCodeRuntime.OpenCodeVariantCache = new Map();
+        // The last command list read; none yet means any leading `/name` may be listed.
+        let listedCommands: ReadonlySet<string> | undefined;
         const commandReceipts = new Map<string, Deferred.Deferred<void>>();
         const commandControllers = new Map<string, Set<AbortController>>();
         const pendingRequests = new Map<string, PendingOpenCodeRequest>();
@@ -3596,6 +3598,11 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
           const command = match
             ? (yield* OpenCodeRuntime.loadOpenCodeCommands(client).pipe(
                 Effect.timeout("10 seconds"),
+                Effect.tap((commands) =>
+                  Effect.sync(() => {
+                    listedCommands = new Set(commands.map((entry) => entry.name));
+                  }),
+                ),
                 Effect.orElseSucceed(() => []),
               )).find((entry) => entry.name === match[1])
             : undefined;
@@ -3763,7 +3770,13 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
               ),
           ),
           // A listed command runs through session.command, also with files; others are prompts.
-          runsAsNativeCommand: (message) => /^\/\S+/.test(message.text.trim()),
+          // History met an earlier list, so only a turn reads the current one.
+          runsAsNativeCommand: (message, context) => {
+            const name = /^\/(\S+)/.exec(message.text.trim())?.[1];
+            return (
+              name !== undefined && (context === undefined || (listedCommands?.has(name) ?? true))
+            );
+          },
           compactThread: (turnInput) =>
             runtimeSession.startTurn({
               ...turnInput,

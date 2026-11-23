@@ -7632,6 +7632,7 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
         yield* message("message:turn-start-commands:plain", "user", "Plain prompt", 3);
         yield* message("message:turn-start-commands:later", "user", "/compact later", 4);
         yield* message("message:turn-start-commands:assistant", "assistant", "/compact", 6);
+        yield* message("message:turn-start-commands:skill", "user", " $deploy ship", 7);
 
         const otherThreadId = ThreadId.make("thread:other");
         const transfer = (id: string, type: "fork" | "merge_back") =>
@@ -7748,6 +7749,7 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
             "message:turn-start-commands:goal",
             "message:turn-start-commands:later",
             "message:turn-start-commands:rolled-back",
+            "message:turn-start-commands:skill",
           ],
         );
         assert.deepEqual(

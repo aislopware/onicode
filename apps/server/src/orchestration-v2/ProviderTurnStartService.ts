@@ -1078,7 +1078,9 @@ export const layer: Layer.Layer<
               records: providerMessage.context?.records ?? [],
             }),
           );
-      const slashCommand = isNativeCommandMessage(session, providerMessage);
+      const slashCommand = isNativeCommandMessage(session, providerMessage, {
+        cwd: resolvedRuntimePolicy.cwd,
+      });
       const notesWait = (message: Parameters<typeof leavesNotesForNextPrompt>[1]) =>
         leavesNotesForNextPrompt(session, message);
       const goalDriver =

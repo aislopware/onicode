@@ -22,14 +22,23 @@ type CommandMessage = {
 
 type CommandSession = Pick<ProviderAdapter.ProviderAdapterV2SessionRuntime, "runsAsNativeCommand">;
 
-/** Every message a provider could run as a command opens with `/`, as the projection index reads them. */
-export const mayBeNativeCommandMessage = (message: CommandMessage): boolean =>
-  message.role === "user" && message.text.trim().startsWith("/");
+/** Messages a provider could run as commands open with `/` or `$`, as the projection index reads them. */
+export const mayBeNativeCommandMessage = (message: CommandMessage): boolean => {
+  const head = message.text.trim()[0];
+  return message.role === "user" && (head === "/" || head === "$");
+};
 
 /** Providers only run a native command that opens the prompt, so its turn defers inline context to the next one. */
-export const isNativeCommandMessage = (session: CommandSession, message: CommandMessage): boolean =>
+export const isNativeCommandMessage = (
+  session: CommandSession,
+  message: CommandMessage,
+  context?: ProviderAdapter.ProviderAdapterV2NativeCommandContext,
+): boolean =>
   mayBeNativeCommandMessage(message) &&
-  (session.runsAsNativeCommand?.({ text: message.text, attachments: message.attachments ?? [] }) ??
+  (session.runsAsNativeCommand?.(
+    { text: message.text, attachments: message.attachments ?? [] },
+    context,
+  ) ??
     ProviderAdapter.opensWithSlashCommand(message.text));
 
 /**

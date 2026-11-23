@@ -30,14 +30,15 @@ it.each([
     native: true,
     wait: true,
   },
-  // Only `/` text is found again by the turn-start read, so nothing else may defer.
+  // The turn-start read finds `$` text again, so a provider that runs a skill may defer.
   {
     name: "a skill mention",
     session: runsEverything,
     text: "$deploy now",
-    native: false,
-    wait: false,
+    native: true,
+    wait: true,
   },
+  { name: "a default skill mention", session: {}, text: "$deploy now", native: false, wait: false },
 ])("classifies $name", ({ session, text, native, wait }) => {
   assert.equal(isNativeCommandMessage(session, user(text)), native);
   assert.equal(leavesNotesForNextPrompt(session, user(text)), wait);

@@ -355,6 +355,7 @@ export function makeGrokAcpAdapterFlavor(
   options: GrokAdapterV2Options,
   homeDirectory: string,
 ): AcpAdapterV2Flavor {
+  const enabledSkillsByCwd = new Map<string, ReadonlySet<string>>();
   return {
     driver: GROK_PROVIDER,
     runtimeHarness: "Grok",
@@ -379,13 +380,22 @@ export function makeGrokAcpAdapterFlavor(
         options.environment,
         turnInput.runtimePolicy.cwd ?? undefined,
       ).pipe(
-        Effect.map((skills) =>
-          skills.some((skill) => skill.enabled && skill.name === mention.name)
-            ? `/${mention.name}${mention.rest}`
-            : text,
-        ),
+        Effect.map((skills) => {
+          const enabled = new Set(skills.flatMap((skill) => (skill.enabled ? [skill.name] : [])));
+          enabledSkillsByCwd.set(turnInput.runtimePolicy.cwd ?? process.cwd(), enabled);
+          return enabled.has(mention.name) ? `/${mention.name}${mention.rest}` : text;
+        }),
         Effect.orElseSucceed(() => text),
       );
+    },
+    // Grok expands a leading `/skill` its advertised commands may not list, so `/name` keeps the
+    // default rule. Until the catalog is read for this directory, and in history, which met an
+    // earlier catalog, any `$name` may be a skill.
+    runsAsNativeCommand: (message, turn) => {
+      const mention = leadingGrokSkillMention(message.text);
+      return mention === undefined
+        ? ProviderAdapter.opensWithSlashCommand(message.text)
+        : turn === undefined || (enabledSkillsByCwd.get(turn.cwd)?.has(mention.name) ?? true);
     },
     resolveModelId: (selection) => resolveGrokAcpBaseModelId(selection.model),
     getModelContextWindow: (selection, session) => {

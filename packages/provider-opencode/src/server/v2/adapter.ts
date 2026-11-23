@@ -897,6 +897,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
     // Project config changes model limits; key by directory because this runtime serves all instance threads.
     const contextWindows = new Map<string, Map<string, number>>();
     const modelVariants = new Map<string, Map<string, ReadonlySet<string>>>();
+    const listedCommands = new Map<string, ReadonlySet<string>>();
     const directoryOf = (cwd: string | null | undefined) => cwd ?? host.paths.cwd;
     const windowOf = (cwd: string | null | undefined, model: string) =>
       contextWindows.get(directoryOf(cwd))?.get(model);
@@ -4817,6 +4818,11 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
         const commands = yield* client.command.list({ location }).pipe(
           Effect.timeout(INVENTORY_TIMEOUT),
           Effect.map((list) => list.data),
+          Effect.tap((data) =>
+            Effect.sync(() => {
+              listedCommands.set(location.directory, new Set(data.map((entry) => entry.name)));
+            }),
+          ),
           Effect.orElseSucceed(() => []),
         );
         if (commands.some((entry) => entry.name === command.name)) {
@@ -4910,9 +4916,15 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
           const state = nativeId == null ? undefined : threads.get(nativeId);
           return state !== undefined && hasBackground(state);
         }),
-      // A listed command runs through session.command, which takes no attachments.
-      runsAsNativeCommand: (message) =>
-        message.attachments.length === 0 && commandOf(message.text) !== undefined,
+      // A listed command runs through session.command, which takes no attachments. Until a turn
+      // reads the directory's list, any `/name` may be listed.
+      runsAsNativeCommand: (message, context) => {
+        const command = message.attachments.length === 0 ? commandOf(message.text) : undefined;
+        if (command === undefined) return false;
+        const listed =
+          context === undefined ? undefined : listedCommands.get(directoryOf(context.cwd));
+        return listed?.has(command.name) ?? true;
+      },
       getModelContextWindow: (selection, cwd) =>
         selection.instanceId === instanceId
           ? windowOf(cwd === undefined ? session.cwd : cwd, selection.model)
