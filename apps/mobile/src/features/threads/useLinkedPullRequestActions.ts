@@ -20,7 +20,13 @@ import { sourceControlClients } from "@onicode/client-runtime/source-control-cli
 import { changeRequestTermKind } from "../../lib/changeRequestTerm";
 import { AuthOrchestrationOperateScope, type ThreadPullRequestLink } from "@onicode/contracts";
 import * as Clipboard from "expo-clipboard";
-import { useState } from "react";
+import { RegistryContext, useAtomValue } from "@effect/atom-react";
+import {
+  pullRequestWatchStarting,
+  pullRequestWatchStartsFor,
+  trackPullRequestWatchStart,
+} from "@onicode/client-runtime/state/pull-requests";
+import { useContext } from "react";
 import { useGT } from "gt-react-native";
 
 import * as Dialog from "../../components/ui/Dialog";
@@ -53,9 +59,12 @@ export function useLinkedPullRequestActions(input: {
   const link = useAtomCommand(threadEnvironment.linkPullRequest, { reportFailure: false });
   const unlink = useAtomCommand(threadEnvironment.unlinkPullRequest, { reportFailure: false });
   const watch = useAtomCommand(threadEnvironment.watchPullRequest, { reportFailure: false });
-  // The server reads CI before it starts a watch; the row shows it watching meanwhile.
-  const [startingWatches, setStartingWatches] = useState<ReadonlySet<string>>(() => new Set());
-  const watchStarting = (link: ThreadPullRequestLink) => startingWatches.has(link.url);
+  const registry = useContext(RegistryContext);
+  const startingWatches = useAtomValue(
+    pullRequestWatchStartsFor(thread?.environmentId ?? "", thread?.id ?? ""),
+  );
+  const watchStarting = (link: ThreadPullRequestLink) =>
+    pullRequestWatchStarting(startingWatches, link);
 
   const run = async (
     failureTitle: string,
@@ -204,27 +213,26 @@ export function useLinkedPullRequestActions(input: {
       });
     else if (action === "watch" && thread !== null) {
       const starting = link.watch === undefined;
-      if (starting) setStartingWatches((current) => new Set(current).add(link.url));
+      const pending = watch({
+        environmentId: thread.environmentId,
+        input: {
+          threadId: thread.id,
+          host: link.host,
+          repository: link.repository,
+          number: link.number,
+          watching: starting,
+        },
+      });
       void run(
         gt("Couldn't change watching"),
-        watch({
-          environmentId: thread.environmentId,
-          input: {
-            threadId: thread.id,
-            host: link.host,
-            repository: link.repository,
-            number: link.number,
-            watching: starting,
-          },
-        }),
-      ).finally(() => {
-        if (!starting) return;
-        setStartingWatches((current) => {
-          const next = new Set(current);
-          next.delete(link.url);
-          return next;
-        });
-      });
+        starting
+          ? trackPullRequestWatchStart(
+              registry,
+              { environmentId: thread.environmentId, threadId: thread.id, url: link.url },
+              pending,
+            )
+          : pending,
+      );
     } else if (action === "unlink") setLinked(link, false);
   };
 

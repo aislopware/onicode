@@ -26,7 +26,13 @@ import {
 } from "lucide-react";
 import { LegendList } from "@legendapp/list/react";
 import { msg, T, useGT, useMessages, Var } from "gt-react";
-import { memo, useState } from "react";
+import { RegistryContext, useAtomValue } from "@effect/atom-react";
+import {
+  pullRequestWatchStarting,
+  pullRequestWatchStartsFor,
+  trackPullRequestWatchStart,
+} from "@onicode/client-runtime/state/pull-requests";
+import { memo, useContext, useState } from "react";
 
 import {
   COMPOSER_PULL_REQUEST_DRAG_TYPE,
@@ -522,10 +528,12 @@ function EnabledThreadPullRequestsPanel({ threadRef }: { threadRef: ScopedThread
       },
     });
   };
-  const [startingWatches, setStartingWatches] = useState<ReadonlySet<string>>(() => new Set());
+  const registry = useContext(RegistryContext);
+  const startingWatches = useAtomValue(
+    pullRequestWatchStartsFor(threadRef.environmentId, threadRef.threadId),
+  );
   const handleSetWatching = (link: ThreadPullRequestLink, watching: boolean) => {
-    if (watching) setStartingWatches((current) => new Set(current).add(link.url));
-    void watch({
+    const pending = watch({
       environmentId: threadRef.environmentId,
       input: {
         threadId: threadRef.threadId,
@@ -534,14 +542,14 @@ function EnabledThreadPullRequestsPanel({ threadRef }: { threadRef: ScopedThread
         number: link.number,
         watching,
       },
-    }).finally(() => {
-      if (!watching) return;
-      setStartingWatches((current) => {
-        const next = new Set(current);
-        next.delete(link.url);
-        return next;
-      });
     });
+    if (watching) {
+      void trackPullRequestWatchStart(
+        registry,
+        { environmentId: threadRef.environmentId, threadId: threadRef.threadId, url: link.url },
+        pending,
+      );
+    }
   };
 
   // Legend rows update only for data/extraData changes; include all external inputs.
@@ -620,7 +628,7 @@ function EnabledThreadPullRequestsPanel({ threadRef }: { threadRef: ScopedThread
                 onSetWatching={supportsWatch ? handleSetWatching : null}
                 onIntent={intendLink}
                 canStartWatch={canStartWatch}
-                watchStarting={startingWatches.has(item.line.link.url)}
+                watchStarting={pullRequestWatchStarting(startingWatches, item.line.link)}
               />
             )
           }
