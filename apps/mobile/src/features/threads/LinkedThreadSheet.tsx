@@ -19,7 +19,7 @@ import { EnvironmentId, ThreadId } from "@onicode/contracts";
 import { T, useGT, useLocale, useMessages } from "gt-react-native";
 import { memo, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type * as React from "react";
-import { AppState, Pressable, ScrollView, View } from "react-native";
+import { AccessibilityInfo, AppState, Platform, Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
@@ -178,6 +178,15 @@ const LinkedThreadEntry = memo(function LinkedThreadEntry(props: {
   );
 });
 
+// Live regions reach TalkBack; VoiceOver needs an explicit announcement when a notice appears.
+function AnnounceOnIOS(props: { readonly message: string }) {
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- announces the notice to VoiceOver through AccessibilityInfo
+  useEffect(() => {
+    if (Platform.OS === "ios") AccessibilityInfo.announceForAccessibility(props.message);
+  }, [props.message]);
+  return null;
+}
+
 function FailureCard(props: {
   readonly failure: LinkedThreadFailure;
   readonly stale: boolean;
@@ -289,7 +298,11 @@ export function LinkedThreadView(props: {
   const atEnd = useRef(true);
   const showHistoryError =
     view !== null && view.thread.historyCursor !== null && view.history.failed;
-  const lastLayoutHadHistoryError = useRef(false);
+  const lastLayout = useRef<{ historyError: boolean; tail: unknown; ending: string | null }>({
+    historyError: false,
+    tail: undefined,
+    ending: null,
+  });
   const working = projection !== null && isLinkedThreadWorking(projection);
   const connection = useConnectLinkedEnvironment(target);
   const connectState = connection.state;
@@ -324,6 +337,9 @@ export function LinkedThreadView(props: {
         title={projection?.thread.title || target.title || gt("Thread on {label}", { label })}
       />
       <ScreenContent>
+        {/* Here, not in the card, so a card that moves from the loading state to the feed is
+            announced once. */}
+        {failure === null ? null : <AnnounceOnIOS message={`${failure.title} ${failure.detail}`} />}
         <ScrollView
           ref={scroll}
           nestedScrollEnabled
@@ -338,10 +354,16 @@ export function LinkedThreadView(props: {
             atEnd.current = contentSize.height - layoutMeasurement.height - contentOffset.y < 80;
           }}
           onContentSizeChange={() => {
-            // A page error can resize the top of a short feed whose reader is also near the end.
-            const historyErrorChanged = lastLayoutHadHistoryError.current !== showHistoryError;
-            lastLayoutHadHistoryError.current = showHistoryError;
-            if (atEnd.current && !historyErrorChanged) {
+            // A page error can resize the top of a short feed whose reader is also near the end;
+            // only that resize stays put, not one that also changes what ends the feed.
+            const tail = feed.at(-1);
+            const ending = failure === null ? null : `${failure.title} ${failure.detail}`;
+            const onlyHistoryErrorChanged =
+              lastLayout.current.historyError !== showHistoryError &&
+              lastLayout.current.tail === tail &&
+              lastLayout.current.ending === ending;
+            lastLayout.current = { historyError: showHistoryError, tail, ending };
+            if (atEnd.current && !onlyHistoryErrorChanged) {
               scroll.current?.scrollToEnd({ animated: false });
             }
           }}
@@ -375,6 +397,7 @@ export function LinkedThreadView(props: {
                       accessibilityRole="alert"
                       className="w-full text-center text-xs text-danger-foreground"
                     >
+                      <AnnounceOnIOS message={gt("Could not load earlier turns. Try again.")} />
                       {gt("Could not load earlier turns. Try again.")}
                     </Text>
                   ) : null}
@@ -414,6 +437,9 @@ export function LinkedThreadView(props: {
                   accessibilityLiveRegion="polite"
                   className="px-2 text-xs text-foreground-muted"
                 >
+                  <AnnounceOnIOS
+                    message={gt("Connecting to {environment}…", { environment: label })}
+                  />
                   {gt("Connecting to {environment}…", { environment: label })}
                 </Text>
               ) : connectState.phase === "unreachable" ? (
@@ -421,6 +447,11 @@ export function LinkedThreadView(props: {
                   accessibilityLiveRegion="polite"
                   className="gap-1 rounded-2xl border border-danger-border bg-danger px-3.5 py-3"
                 >
+                  <AnnounceOnIOS
+                    message={gt("{label} is not reachable from this device", {
+                      label: connectState.label,
+                    })}
+                  />
                   <Text className="font-oni-medium text-sm text-danger-foreground">
                     {gt("{label} is not reachable from this device", {
                       label: connectState.label,

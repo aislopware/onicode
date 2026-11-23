@@ -3,6 +3,7 @@ import { scopedThreadKey, scopeThreadRef } from "@onicode/client-runtime/environ
 import type { SideThreadOpenIntent } from "@onicode/client-runtime/side-thread";
 import {
   connectLinkedEnvironment,
+  linkedPairingOutcome,
   type LinkedThreadOpen,
   resolveLinkedThreadOpen,
 } from "@onicode/client-runtime/linked-thread";
@@ -239,7 +240,7 @@ export function useConnectLinkedEnvironment(
           pairingCode,
           expectedEnvironmentId: surface.environmentId,
         });
-        return result._tag === "Success";
+        return linkedPairingOutcome(result);
       },
       signIn: async (host) => {
         const result = await tailnetSignIn({

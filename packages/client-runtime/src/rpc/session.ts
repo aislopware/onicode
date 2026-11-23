@@ -365,8 +365,9 @@ export const make = Effect.fn("RpcSessionFactory.make")(function* (
           }
         }),
       ),
-      // An unreadable first snapshot means the versions are incompatible. A later
-      // unreadable update ends the session, and the reconnect's snapshot decides.
+      // Unreadable config means the versions are incompatible. That holds for a later update too:
+      // the server replays its themes and usage sources on every subscription, so reconnecting
+      // would read the same update again, forever, and never show why.
       Effect.catchDefect((defect) =>
         Schema.isSchemaError(defect)
           ? Effect.logWarning("Server configuration failed to decode.", {
@@ -375,27 +376,21 @@ export const make = Effect.fn("RpcSessionFactory.make")(function* (
             }).pipe(
               Effect.andThen(
                 Effect.fail(
-                  Deferred.isDoneUnsafe(initialConfigDeferred)
-                    ? new ConnectionTransientErrorClass({
-                        reason: "remote-unavailable",
-                        ...translatableDetail(
-                          msg(
+                  new ConnectionBlockedError({
+                    reason: "unsupported",
+                    ...translatableDetail(
+                      Deferred.isDoneUnsafe(initialConfigDeferred)
+                        ? msg(
                             "{host} sent a server configuration update this client could not read.",
                             { host: connection.label },
-                          ),
-                        ),
-                        hop: "server",
-                      })
-                    : new ConnectionBlockedError({
-                        reason: "unsupported",
-                        ...translatableDetail(
-                          msg("{host} sent an incompatible server configuration.", {
+                          )
+                        : msg("{host} sent an incompatible server configuration.", {
                             host: connection.label,
                           }),
-                          msg("Update the client and server to compatible versions."),
-                        ),
-                        hop: "server",
-                      }),
+                      msg("Update the client and server to compatible versions."),
+                    ),
+                    hop: "server",
+                  }),
                 ),
               ),
             )

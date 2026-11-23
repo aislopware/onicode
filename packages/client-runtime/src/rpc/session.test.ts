@@ -291,10 +291,7 @@ const publishConfigEvents = Effect.fn("TestRpcSessionFactory.publishConfigEvents
 describe("RpcSessionFactory", () => {
   it.effect.each([
     { established: false, closedWith: { _tag: "ConnectionBlockedError", reason: "unsupported" } },
-    {
-      established: true,
-      closedWith: { _tag: "ConnectionTransientError", reason: "remote-unavailable" },
-    },
+    { established: true, closedWith: { _tag: "ConnectionBlockedError", reason: "unsupported" } },
   ])(
     "ends the session when config fails to decode, after readiness=$established",
     ({ established, closedWith }) =>

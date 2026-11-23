@@ -1,6 +1,7 @@
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import {
   connectLinkedEnvironment,
+  linkedPairingOutcome,
   type LinkedThreadTarget,
 } from "@onicode/client-runtime/linked-thread";
 import type { EnvironmentId, OrchestrationV2Subagent } from "@onicode/contracts";
@@ -82,7 +83,7 @@ export function useConnectLinkedEnvironment(target: LinkedThreadTarget) {
           pairingUrl: buildPairingUrl(host, pairingCode),
           expectedEnvironmentId: target.environmentId,
         });
-        return result._tag === "Success";
+        return linkedPairingOutcome(result);
       },
       signIn: async (host) => {
         const result = await tailnetSignIn({

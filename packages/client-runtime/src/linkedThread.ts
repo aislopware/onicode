@@ -8,7 +8,10 @@ import type {
   PeerLinkClientPairingResult,
   ThreadId,
 } from "@onicode/contracts";
+import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
+import * as Predicate from "effect/Predicate";
 import * as Queue from "effect/Queue";
 import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
@@ -69,6 +72,22 @@ export type LinkedEnvironmentConnection =
   /** The user pairs with a code of their own, in the add-environment flow, with this filled in. */
   | { readonly type: "manual"; readonly label: string; readonly host: string | null };
 
+export type LinkedPairingOutcome = "paired" | "refused" | "unsaved";
+
+/** Reads a pairing command's result; a failed save means the code is already spent. */
+export const linkedPairingOutcome = (
+  result:
+    | { readonly _tag: "Success" }
+    | { readonly _tag: "Failure"; readonly cause: Cause.Cause<unknown> },
+): LinkedPairingOutcome =>
+  result._tag === "Success"
+    ? "paired"
+    : Option.exists(Cause.findErrorOption(result.cause), (error) =>
+          Predicate.isTagged(error, "ConnectionPersistenceError"),
+        )
+      ? "unsaved"
+      : "refused";
+
 /**
  * Connects this client to a linked environment. The linking environment asks it for a one-time
  * pairing over a full-access link, and the client redeems that at an address it can reach itself.
@@ -85,7 +104,7 @@ export async function connectLinkedEnvironment(options: {
   readonly pair: (input: {
     readonly host: string;
     readonly pairingCode: string;
-  }) => Promise<boolean>;
+  }) => Promise<LinkedPairingOutcome>;
   /** Signs in at `host` by this device's tailnet identity and saves the environment. */
   readonly signIn: (host: string) => Promise<boolean>;
 }): Promise<LinkedEnvironmentConnection> {
@@ -115,11 +134,27 @@ export async function connectLinkedEnvironment(options: {
     }
     return { type: "manual", label, host: (await preferredHost()) ?? urls[0] ?? null };
   }
-  const host = await preferredHost();
-  if (host === null) return { type: "unreachable", label };
-  return (await options.pair({ host, pairingCode: pairing.credential }))
-    ? { type: "connected" }
-    : { type: "manual", label, host };
+  // A refused redemption may have spent its code, so the next address that answers gets a fresh one.
+  let firstHost: string | null = null;
+  let credential: string | null = pairing.credential;
+  for (const probe of probes) {
+    const host = await probe;
+    if (host === null) continue;
+    firstHost ??= host;
+    if (credential === null) {
+      const fresh = await options.requestPairing();
+      if (fresh?.type !== "credential") break;
+      credential = fresh.credential;
+    }
+    const paired = await options.pair({ host, pairingCode: credential });
+    if (paired === "paired") return { type: "connected" };
+    // The code was redeemed there and only saving it here failed; another address repeats that.
+    if (paired === "unsaved") return { type: "manual", label, host };
+    credential = null;
+  }
+  return firstHost === null
+    ? { type: "unreachable", label }
+    : { type: "manual", label, host: firstHost };
 }
 
 // Tailscale's IPv4 addresses are in 100.64.0.0/10, which `isTailnetHost` leaves out.
@@ -315,6 +350,20 @@ export const keepLinkedThreadView = (
         ...next,
         thread: { ...kept.thread, historyCursor: null },
         loadedHistory: kept.loadedHistory,
+      };
+
+/**
+ * What a view keeps once its stream ended with an error. Nothing reads page requests any more,
+ * so it offers no earlier turns and no page retry; reopening the stream continues from
+ * `loadedHistory`.
+ */
+export const endLinkedThreadView = (kept: LinkedThreadView): LinkedThreadView =>
+  kept.thread.historyCursor === null && !kept.history.loading && !kept.history.failed
+    ? kept
+    : {
+        ...kept,
+        thread: { ...kept.thread, historyCursor: null },
+        history: { loading: false, failed: false },
       };
 
 /**
