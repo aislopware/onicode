@@ -1738,7 +1738,6 @@ function SendSteerNowButton(props: {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
   readonly messageId: MessageId;
-  readonly sent: boolean;
 }) {
   const sendSteerNow = useAtomCommand(threadEnvironment.sendSteerNow, "send steer now");
   const [sending, setSending] = useState(false);
@@ -1762,7 +1761,6 @@ function SendSteerNowButton(props: {
       );
     }
   };
-  const disabled = sending || props.sent;
   return (
     <Pressable
       accessibilityRole="button"
@@ -1772,8 +1770,8 @@ function SendSteerNowButton(props: {
           "Moves running commands and subagents to the background, or stops the current step, so the agent reads this now.",
         ),
       )}
-      accessibilityState={{ disabled }}
-      disabled={disabled}
+      accessibilityState={{ disabled: sending }}
+      disabled={sending}
       hitSlop={10}
       className="h-6 flex-row items-center gap-1 rounded-full bg-primary px-2.5 active:opacity-70 disabled:opacity-40"
       onPress={() => void send()}
@@ -2670,18 +2668,30 @@ function renderFeedEntry(
                   <Text className="font-oni-medium text-xs text-foreground-secondary">
                     {intentBadge.label}
                   </Text>
-                  {intentBadge.state === "read" ? null : (
-                    <SymbolView name="hourglass" size={12} tintColor={iconSubtleColor} />
-                  )}
                 </View>
               ) : null}
-              {intentBadge && intentBadge.state !== "read" ? (
+              {/* Like a queued row: Send now while it can act, otherwise the wait it is in. */}
+              {intentBadge?.state === "waiting" ? (
                 <SendSteerNowButton
                   environmentId={props.environmentId}
                   threadId={props.threadId}
                   messageId={message.id}
-                  sent={intentBadge.state === "sending"}
                 />
+              ) : intentBadge?.state === "sending" ? (
+                <View
+                  accessibilityElementsHidden
+                  importantForAccessibility="no-hide-descendants"
+                  className="flex-row items-center gap-1"
+                >
+                  <SymbolView name="hourglass" size={12} tintColor={iconSubtleColor} />
+                  <Text className="font-oni-medium text-xs text-foreground-secondary">
+                    {m(
+                      msg("Sending now", {
+                        $context: "status of a steer the user pushed to the agent",
+                      }),
+                    )}
+                  </Text>
+                </View>
               ) : null}
               {intentBadge ? (
                 <Text
