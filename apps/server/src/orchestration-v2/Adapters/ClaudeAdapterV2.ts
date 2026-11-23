@@ -14112,6 +14112,25 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           return outdated;
         });
 
+        // An idle release would restart on the new build and rewrite the warm cache that the
+        // outdated-build check above keeps the old process for.
+        const liveProcessKeepsWarmCacheOnOldBuild = Effect.gen(function* () {
+          const live = yield* Ref.get(queryContext);
+          if (live === null || live.stopping || live.installedAtInit === undefined) return false;
+          const caches = promptCacheByNativeThread.get(live.nativeThreadId);
+          if (caches === undefined) return false;
+          const now = yield* DateTime.now;
+          if (![...caches.values()].some((cache) => DateTime.isLessThan(now, cache.expiresAt))) {
+            return false;
+          }
+          const outdated = claudeOutdatedBuild({
+            atInit: live.installedAtInit,
+            current: yield* readInstalledBuild,
+            runningVersion: live.claudeCodeVersion,
+          });
+          return outdated !== undefined;
+        });
+
         const routedCatalogFor = (live: ClaudeLiveQueryContext) =>
           routeModelCatalog(modelCatalog, live.settingsCwd, live.launchArgSettings);
 
@@ -15601,6 +15620,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             }
             return false;
           }),
+          holdsIdleRelease: liveProcessKeepsWarmCacheOnOldBuild,
           // Untraced: the run's event stream calls this once per provider event.
           hasPendingBackgroundWorkForThread: Effect.fnUntraced(function* (providerThread, options) {
             const nativeThreadId = providerThread.nativeThreadRef?.nativeId;
