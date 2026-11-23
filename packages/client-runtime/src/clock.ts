@@ -75,6 +75,9 @@ export const minuteTick: ClockStore<string> = makeTickStore(
 // How far each environment's clock runs ahead of this one. Timers read it on
 // every tick, so a reconnect's new reading lands without a re-render.
 const serverClockOffsets = new Map<EnvironmentId, number>();
+const serverClockRechecks = new Map<EnvironmentId, () => void>();
+// Latency jitter raises the offset by milliseconds; clock steps are whole seconds.
+const RECHECK_MIN_RAISE_MS = 1_000;
 
 /**
  * The host stamped `serverTimeMs` between the request and its reply, so the
@@ -105,10 +108,9 @@ export function recordServerClock(
 }
 
 /**
- * A timestamp stamped by the host is never in its own future, so it gives a
- * lower bound on the host's clock. Raises a stale negative offset (for example
- * when a VM or WSL clock catches up after host sleep) without shifting a clock
- * that already agrees.
+ * A host stamp bounds the host's clock from below, which raises a stale negative
+ * offset (a VM or WSL clock catching up after sleep). A stamp from before a
+ * backward host step reads ahead too, so each raise asks the host again.
  */
 export function observeServerTime(
   environmentId: EnvironmentId,
@@ -123,8 +125,19 @@ export function observeServerTime(
   ) {
     return;
   }
-  if (receivedAtMs + currentOffset >= serverTimeMs) return;
-  serverClockOffsets.set(environmentId, serverTimeMs - receivedAtMs);
+  const offset = serverTimeMs - receivedAtMs;
+  if (offset <= currentOffset) return;
+  serverClockOffsets.set(environmentId, offset);
+  if (offset - currentOffset >= RECHECK_MIN_RAISE_MS) serverClockRechecks.get(environmentId)?.();
+}
+
+/** Registers how to re-read the environment's clock after an observation raised it. */
+export function onServerClockRaised(environmentId: EnvironmentId, recheck: () => void): () => void {
+  serverClockRechecks.set(environmentId, recheck);
+  return () => {
+    if (serverClockRechecks.get(environmentId) === recheck)
+      serverClockRechecks.delete(environmentId);
+  };
 }
 
 /** Converts client epoch milliseconds to the environment's clock. */

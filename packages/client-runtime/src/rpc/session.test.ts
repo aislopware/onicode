@@ -35,7 +35,7 @@ import {
 import * as EnvironmentSupervisor from "../connection/supervisor.ts";
 import * as Persistence from "../platform/persistence.ts";
 import * as RpcSession from "./session.ts";
-import { toServerClock } from "../clock.ts";
+import { observeServerTime, toServerClock } from "../clock.ts";
 import { makeEnvironmentServerConfigState } from "../state/server.ts";
 import { applyServerConfigProjection } from "../state/serverConfigProjection.ts";
 
@@ -1203,6 +1203,13 @@ describe("RpcSessionFactory", () => {
       );
       yield* Fiber.join(probe);
       expect(toServerClock(PREPARED.environmentId, 0)).toBe(0);
+
+      // An event stamped before a backward host step reads ahead of the corrected
+      // clock; the host is asked again instead of trusting it until the next probe.
+      observeServerTime(PREPARED.environmentId, 3_600_000, 0);
+      expect(toServerClock(PREPARED.environmentId, 0)).toBe(3_600_000);
+      const recheckRequest = yield* awaitRequest(socket, 3);
+      expect(recheckRequest).toMatchObject({ tag: WS_METHODS.serverProbe });
     }),
   );
 
