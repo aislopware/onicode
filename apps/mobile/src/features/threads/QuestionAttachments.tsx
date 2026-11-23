@@ -97,7 +97,7 @@ export function QuestionAttachments(props: {
       maxAttachments: Math.max(0, PROVIDER_SEND_TURN_MAX_ATTACHMENTS - otherCount),
     });
   };
-  const paste = useNativePaste(() => {
+  const paste = useNativePaste((images) => {
     const scope = pickerScope.current;
     if (!selectedThread || props.disabled || !configs.get(selectedThread.environmentId)) return;
     const key = questionAttachmentDraftKey(
@@ -106,7 +106,7 @@ export function QuestionAttachments(props: {
       props.requestId,
       props.question.id,
     );
-    const preparation = startQuestionImagePreparation(key);
+    const preparation = startQuestionImagePreparation(key, images);
     return (uris) => {
       if (uris.length === 0) {
         preparation.finish();

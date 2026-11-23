@@ -22,6 +22,7 @@ import { useClosedViewStore } from "../closedViewStore";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { environmentCatalog } from "../connection/catalog";
 import { effectiveShortcutsForCommand, resolveShortcutCommand } from "../keybindings";
+import { useKeyboardLayoutLetters } from "../keyboardLayout";
 import { isEditableFocused } from "../lib/editableFocus";
 import { isPreviewFocused } from "../lib/previewFocus";
 import { isTerminalFocused } from "../lib/terminalFocus";
@@ -112,6 +113,7 @@ export function ReopenClosedViewShortcut() {
   );
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const hasHistory = useClosedViewStore((state) => state.entries.length > 0);
+  const keyboardLayout = useKeyboardLayoutLetters();
   const openPreview = useAtomCommand(previewEnvironment.open);
   const pending = useRef(Promise.resolve());
   type ReopenNavigation = { location: typeof router.history.location };
@@ -285,12 +287,13 @@ export function ReopenClosedViewShortcut() {
             shortcut,
           })),
         ),
+        keyboardLayout,
       )
       .catch(() => undefined);
     return () => {
       void preview.setForwardedShortcuts([]).catch(() => undefined);
     };
-  }, [hasHistory, keybindings, rightPanelOpen, terminalOpen]);
+  }, [hasHistory, keybindings, keyboardLayout, rightPanelOpen, terminalOpen]);
 
   return null;
 }

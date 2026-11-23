@@ -312,6 +312,9 @@ const make = Effect.gen(function* () {
     return thread.value;
   });
 
+  // The tool's own project lookup and the service methods it calls share one project read.
+  const oneProjectRead = pullRequests.withSharedProjectReads;
+
   const projectOf = (
     thread: OrchestrationV2ThreadShell,
     Failure:
@@ -953,7 +956,7 @@ const make = Effect.gen(function* () {
           { concurrency: 4 },
         );
         return { guides };
-      }),
+      }).pipe(oneProjectRead),
     ),
     read_pull_request_guide: McpToolAccess.reads((input) =>
       Effect.gen(function* () {
@@ -995,7 +998,7 @@ const make = Effect.gen(function* () {
             result.currentHeadSha !== null &&
             result.guide.headSha !== result.currentHeadSha,
         };
-      }),
+      }).pipe(oneProjectRead),
     ),
     pull_request_read: McpToolAccess.reads((input) =>
       Effect.gen(function* () {
@@ -1020,7 +1023,7 @@ const make = Effect.gen(function* () {
           ...identityOf(target),
           ...(yield* readSections(ref, sections, includeResolved, cursor)),
         };
-      }),
+      }).pipe(oneProjectRead),
     ),
     pull_request_list: McpToolAccess.reads((input) =>
       Effect.gen(function* () {
@@ -1096,7 +1099,7 @@ const make = Effect.gen(function* () {
             ? { next: CHILD_PULL_REQUEST_REPORT_NEXT }
             : {}),
         };
-      }),
+      }).pipe(oneProjectRead),
     ),
     pull_request_update: McpToolAccess.writesWithCapability((input) =>
       Effect.gen(function* () {
@@ -1152,7 +1155,7 @@ const make = Effect.gen(function* () {
             .pipe(Effect.mapError(forgeFailure));
         }
         return identityOf(target);
-      }),
+      }).pipe(oneProjectRead),
     ),
     pull_request_respond: McpToolAccess.writesWithCapability((input) =>
       Effect.gen(function* () {
@@ -1198,7 +1201,7 @@ const make = Effect.gen(function* () {
           replied: input.body !== undefined,
           resolved: input.resolved ?? null,
         };
-      }),
+      }).pipe(oneProjectRead),
     ),
     pull_request_review: McpToolAccess.writesWithCapability((input) =>
       Effect.gen(function* () {
@@ -1208,7 +1211,7 @@ const make = Effect.gen(function* () {
           .submitReview({ ...ref, verdict: input.verdict, body: input.body ?? "", comments })
           .pipe(Effect.mapError(forgeFailure));
         return identityOf(target);
-      }),
+      }).pipe(oneProjectRead),
     ),
     pull_request_merge: McpToolAccess.writesWithCapability((input) =>
       Effect.gen(function* () {
@@ -1227,7 +1230,7 @@ const make = Effect.gen(function* () {
           .summary({ ...ref, allowStale: false })
           .pipe(Effect.mapError(forgeFailure));
         return { ...identityOf(target), state: after.state };
-      }),
+      }).pipe(oneProjectRead),
     ),
     ci_logs: McpToolAccess.reads((input) =>
       Effect.gen(function* () {
@@ -1240,7 +1243,7 @@ const make = Effect.gen(function* () {
           })
           .pipe(Effect.mapError(forgeFailure));
         return { ...identityOf(target), checks };
-      }),
+      }).pipe(oneProjectRead),
     ),
     ci_rerun: McpToolAccess.writesWithCapability((input) =>
       Effect.gen(function* () {
@@ -1267,7 +1270,7 @@ const make = Effect.gen(function* () {
             );
         }
         return { ...identityOf(target), checks };
-      }),
+      }).pipe(oneProjectRead),
     ),
   } satisfies McpToolAccess.Handlers<typeof PullRequestsToolkit.tools>;
 });

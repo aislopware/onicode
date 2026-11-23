@@ -291,6 +291,38 @@ describe("resource monitor retry", () => {
     await expect.element(refreshButton).toBeEnabled();
   });
 
+  it("shows a manual refresh as pending until the resubscribed stream yields a snapshot", async () => {
+    using fixture = setup();
+    let releaseReplacement = () => {};
+    const replacement = new Promise<void>((resolve) => {
+      releaseReplacement = resolve;
+    });
+    let subscriptions = 0;
+    const liveTelemetry = Atom.make(
+      Effect.suspend(() => {
+        subscriptions += 1;
+        return subscriptions === 1
+          ? Effect.succeed(fixture.snapshot)
+          : Effect.promise(() => replacement).pipe(Effect.as({ ...fixture.snapshot }));
+      }),
+    ).pipe(Atom.keepAlive);
+    monitor.telemetry.mockImplementation(() => liveTelemetry);
+
+    await using screen = await render(
+      <RegistryContext.Provider value={fixture.registry}>
+        <ResourceTelemetryDiagnostics environmentId={environmentId} />
+      </RegistryContext.Provider>,
+    );
+    const refreshButton = screen.getByRole("button", { name: "Refresh resource telemetry" });
+    await expect.element(refreshButton).toBeEnabled();
+
+    await refreshButton.click();
+    await expect.element(refreshButton).toBeDisabled();
+
+    await act(() => releaseReplacement());
+    await expect.element(refreshButton).toBeEnabled();
+  });
+
   it("stops showing refresh as pending after a live subscription error", async () => {
     using fixture = setup();
     const liveTelemetry = Atom.make<

@@ -308,11 +308,40 @@ describe("sidebar render isolation", () => {
     );
     await using screen = await render(sidebar());
     await expect.element(screen.getByText("Thread 4").first()).toBeInTheDocument();
-    const rowRenders = () => vi.mocked(SortableThreadRow).mock.calls.length;
+    const rowRenders = () => vi.mocked(SortableThreadRow.type).mock.calls.length;
 
     const beforeRender = rowRenders();
     await screen.rerender(sidebar());
     expect(rowRenders() - beforeRender).toBe(0);
+  });
+
+  it("re-renders only the two affected rows when the open thread changes", async () => {
+    const routeThreadRef = mockSidebarThreads();
+    const routeReveal = { observedKey: null, pendingKey: null };
+    const sidebar = () => (
+      <I18nProvider>
+        <SidebarProvider>
+          <Sidebar routeReveal={routeReveal} />
+        </SidebarProvider>
+      </I18nProvider>
+    );
+    await using screen = await render(sidebar());
+    await expect.element(screen.getByText("Thread 4").first()).toBeInTheDocument();
+    const rowRenders = () => vi.mocked(SortableThreadRow.type).mock.calls;
+
+    const beforeSwitch = rowRenders().length;
+    vi.mocked(useThreadRouteTarget).mockReturnValue({
+      kind: "server",
+      threadRef: { ...routeThreadRef, threadId: ThreadId.make("thread-1") },
+    });
+    await screen.rerender(sidebar());
+    expect(
+      new Set(
+        rowRenders()
+          .slice(beforeSwitch)
+          .map(([props]) => props.thread.id),
+      ),
+    ).toEqual(new Set(["thread-0", "thread-1"]));
   });
 
   // regression: #33100 Cmd+J re-rendered every sidebar row, which took hundreds of ms with many threads
@@ -332,7 +361,7 @@ describe("sidebar render isolation", () => {
       </SidebarProvider>,
     );
     await expect.element(screen.getByText("Thread 4").first()).toBeInTheDocument();
-    const rowRenders = () => vi.mocked(SortableThreadRow).mock.calls.length;
+    const rowRenders = () => vi.mocked(SortableThreadRow.type).mock.calls.length;
 
     using _timers = fakeTimers();
     const modifier = isMacPlatform(navigator.platform) ? "Meta" : "Control";
@@ -355,7 +384,7 @@ describe("sidebar render isolation", () => {
     // The label each row last rendered with, which a render from anything else leaves as it is.
     const jumpLabels = () => {
       const labelByThread = new Map<string, string | null>();
-      for (const [props] of vi.mocked(SortableThreadRow).mock.calls) {
+      for (const [props] of vi.mocked(SortableThreadRow.type).mock.calls) {
         labelByThread.set(props.thread.id, props.jumpLabel);
       }
       return [...labelByThread.values()].filter((label) => label !== null);

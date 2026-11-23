@@ -28,7 +28,7 @@ import { SegmentedControl } from "../../components/ui/SegmentedControl";
 import { cn } from "../../lib/cn";
 import { useEnvironments } from "../../state/environments";
 import { formatEnvironmentQueryError } from "../../state/query";
-import { serverEnvironment } from "../../state/server";
+import { environmentServerConfigsAtom, serverEnvironment } from "../../state/server";
 
 const TABS = [
   {
@@ -167,9 +167,13 @@ function EnvironmentRuns(props: {
 
 const TAB_ORDER: ReadonlyArray<WorkflowListTab> = ["needs-you", "running", "all"];
 
-/** The Workflows tab: what waits on you first, in every environment this device is connected to. */
+/** The Workflows tab: what waits on you first, in every environment with workflows on in Labs. */
 export function WorkflowsScreen() {
-  const { environments, isReady } = useEnvironments();
+  const { environments: all, isReady } = useEnvironments();
+  const configs = useAtomValue(environmentServerConfigsAtom);
+  const environments = all.filter(
+    (environment) => configs.get(environment.environmentId)?.settings.workflowsEnabled === true,
+  );
   const [tab, setTab] = useState<WorkflowListTab | null>(null);
   const insets = useSafeAreaInsets();
   const gt = useGT();

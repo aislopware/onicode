@@ -413,7 +413,7 @@ describe("DesktopBackendManager", () => {
     }),
   );
 
-  it.effect("finishes a run stopped while its ownership record is being written", () =>
+  it.effect("finishes and forgets a run stopped while its ownership record is being written", () =>
     Effect.gen(function* () {
       const recording = yield* Deferred.make<void>();
       const finishRecording = yield* Deferred.make<void>();
@@ -444,20 +444,18 @@ describe("DesktopBackendManager", () => {
       );
 
       yield* Deferred.await(recording);
-      // The stop reaches the recording before it finishes.
-      const stop = yield* Scope.close(runScope, Exit.void).pipe(
-        Effect.forkChild({ startImmediately: true }),
-      );
+      // The stop reaches the child without waiting for the recording.
+      yield* Scope.close(runScope, Exit.void);
+      assert.isFalse(yield* Ref.get(forgotten));
       yield* Deferred.succeed(finishRecording, undefined);
-      yield* Fiber.join(stop);
       const exit = yield* Fiber.await(run);
       assert.deepEqual(
         Exit.isSuccess(exit) ? exit.value : exit.cause,
         { code: Option.some(ChildProcessSpawner.ExitCode(143)), reason: "code=143" },
         "the stop re-raised the recording's interrupt",
       );
-      // The interrupted recording has nothing to forget; recovery handles any record it left.
-      assert.isFalse(yield* Ref.get(forgotten));
+      // The child is gone, so the record must not outlive the run.
+      assert.isTrue(yield* Ref.get(forgotten));
     }),
   );
 

@@ -420,6 +420,7 @@ describe("root reopen shortcut", () => {
           "rightPanel.close",
         ].map((command) => expect.objectContaining({ command })),
       ),
+      undefined,
     );
   });
 

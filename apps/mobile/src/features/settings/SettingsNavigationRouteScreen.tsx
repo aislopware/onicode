@@ -5,7 +5,6 @@ import { useAdaptiveWorkspaceLayout } from "../layout/adaptive-workspace-context
 import { Platform, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
-  moveNavigationTab,
   navigationCustomizationAvailable,
   toggleNavigationTabVisibility,
 } from "../layout/workspace/navigation-tab-order";
@@ -15,6 +14,7 @@ import { Button } from "../../components/ui/Button";
 import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { mobilePreferencesAtom, saveMobilePreferences } from "../../state/preferences";
+import { workflowsEnabledAtom } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import {
   NAVIGATION_TAB_ICONS,
@@ -25,13 +25,18 @@ import {
 } from "../layout/workspace/navigation-tabs";
 import { SettingsScreen } from "./components/SettingsScreen";
 import { SettingsSection } from "./components/SettingsSection";
-import { resolveWorkspaceTabOrder } from "../layout/workspace/workspace-tabs-state";
+import {
+  moveListedTab,
+  resolveWorkspaceTabOrder,
+  unlistedWorkspaceTabs,
+} from "../layout/workspace/workspace-tabs-state";
 
 export function SettingsNavigationRouteScreen() {
   const gt = useGT();
   const m = useMessages();
   const insets = useSafeAreaInsets();
-  const order = useNavigationTabOrder();
+  const unlisted = unlistedWorkspaceTabs(useAtomValue(workflowsEnabledAtom));
+  const order = useNavigationTabOrder().filter((tab) => !unlisted.includes(tab));
   const { layout } = useAdaptiveWorkspaceLayout();
   const capacity = Platform.OS === "android" && layout.usesSplitView ? 5 : 4;
   const hidden = useHiddenNavigationTabs();
@@ -100,10 +105,11 @@ export function SettingsNavigationRouteScreen() {
                 onPress={() => {
                   void save({
                     transform: (current) => ({
-                      navigationTabOrder: moveNavigationTab(
+                      navigationTabOrder: moveListedTab(
                         resolveWorkspaceTabOrder(current.navigationTabOrder),
+                        unlisted,
                         tab,
-                        index - 1,
+                        -1,
                       ),
                     }),
                   });
@@ -116,10 +122,11 @@ export function SettingsNavigationRouteScreen() {
                 onPress={() => {
                   void save({
                     transform: (current) => ({
-                      navigationTabOrder: moveNavigationTab(
+                      navigationTabOrder: moveListedTab(
                         resolveWorkspaceTabOrder(current.navigationTabOrder),
+                        unlisted,
                         tab,
-                        index + 1,
+                        1,
                       ),
                     }),
                   });

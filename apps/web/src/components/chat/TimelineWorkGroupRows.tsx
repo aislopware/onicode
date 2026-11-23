@@ -450,7 +450,8 @@ export function ThinkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind:
     isPreparingWorktree,
     liveAnswerPreview,
     providerStartingLabel,
-    providerStarting,
+    providerStartingInstanceId,
+    providerStartingDriver,
   } = use(TimelineRowActivityCtx);
   if (isPreparingWorktree || isCompacting) return <WorkLogRow label="" />;
   // A failed group keeps this disclosure while an approval waits, but nothing is thinking then.
@@ -465,11 +466,11 @@ export function ThinkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind:
       }
       iconName="brain"
       iconNode={
-        providerStarting === null ? undefined : (
+        providerStartingInstanceId === null || providerStartingDriver === null ? undefined : (
           <ProviderStartingIcon
             environmentId={ctx.activeThreadEnvironmentId ?? null}
-            instanceId={providerStarting.instanceId}
-            driver={providerStarting.driver}
+            instanceId={providerStartingInstanceId}
+            driver={providerStartingDriver}
           />
         )
       }

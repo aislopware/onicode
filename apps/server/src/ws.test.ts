@@ -1961,6 +1961,7 @@ it.effect("a watch started from a client is seeded from a fresh CI read, not the
           } as unknown as OrchestrationV2ThreadShell),
       }),
       Layer.mock(PullRequestService.PullRequestService)({
+        withSharedProjectReads: (effect) => effect,
         summary: () =>
           Effect.succeed({
             state: "open",

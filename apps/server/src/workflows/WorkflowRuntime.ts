@@ -815,11 +815,14 @@ export const gate = Effect.fn("WorkflowRuntime.gate")(function* <E, R>(
   let ready = Deferred.makeUnsafe<Context.Context<Workflows.Workflows | WorkflowDefinitions>>();
   Deferred.doneUnsafe(ready, Exit.succeed(offContext));
   let scope: Scope.Closeable | undefined;
+  let wanted = false;
   const turns = yield* SubscriptionRef.make(0);
 
   const turn = Effect.fn("WorkflowRuntime.turn")(
     function* (on: boolean) {
-      if (on === (scope !== undefined)) return;
+      // Every settings write repeats the switch; a start that failed waits for it to be flipped.
+      if (on === wanted) return;
+      wanted = on;
       const next =
         Deferred.makeUnsafe<Context.Context<Workflows.Workflows | WorkflowDefinitions>>();
       ready = next;

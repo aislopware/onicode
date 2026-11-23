@@ -191,9 +191,18 @@ export function paintFrame(
           bottom: Math.round(origin.y + row.end * ratio),
         };
 
+        // The part's visible area in the tile's own pixels, a pixel wider for the clip's rounding.
+        const shows = {
+          left: left + column.shift - tile.x - 1,
+          top: top + row.shift - tile.y - 1,
+          right: Math.min(column.end, frame.viewport.width) + column.shift - tile.x + 1,
+          bottom: Math.min(row.end, frame.viewport.height) + row.shift - tile.y + 1,
+        };
+
         return [
           {
             tile,
+            commands: tile.list.commands.filter((command) => reaches(command, shows)),
             at: {
               x: origin.x + (tile.x - column.shift) * ratio,
               y: origin.y + (tile.y - row.shift) * ratio,
@@ -224,16 +233,17 @@ export function paintFrame(
     context.restore();
   };
 
-  parts.forEach(({ tile, at, clip }) => {
-    const list = tiled
-      ? { ...tile.list, commands: tile.list.commands.filter((command) => command.op !== "text") }
-      : tile.list;
+  parts.forEach(({ tile, commands, at, clip }) => {
+    const list = {
+      ...tile.list,
+      commands: tiled ? commands.filter((command) => command.op !== "text") : commands,
+    };
 
     clipped(clip, () => paintDisplayList(painter, list, ratio, at));
   });
   // Text clips can span a merged range beyond its tile. Composite it after all tile clears and backgrounds.
   if (text && textContext)
-    parts.forEach(({ tile, at, clip }) => {
+    parts.forEach(({ tile, commands, at, clip }) => {
       textContext.reset();
       paintDisplayList(
         textContext as unknown as CanvasRenderingContext2D,
@@ -241,13 +251,50 @@ export function paintFrame(
           ...tile.list,
           width: frame.viewport.width + frame.behind.x - tile.x,
           height: frame.viewport.height + frame.behind.y - tile.y,
-          commands: tile.list.commands.filter((command) => command.op === "text"),
+          commands: commands.filter((command) => command.op === "text"),
         },
         ratio,
         at,
       );
       clipped(clip, () => context.drawImage(text, 0, 0));
     });
+}
+
+/**
+ * Whether a command can paint inside `area`. Each part paints its tile's whole list, and most of a list lies `behind`
+ * the frame or in another band, so skipping what cannot show keeps a frame's paint near its visible cells.
+ */
+function reaches(
+  command: DisplayList["commands"][number],
+  area: {
+    readonly left: number;
+    readonly top: number;
+    readonly right: number;
+    readonly bottom: number;
+  },
+) {
+  const box =
+    command.clip ??
+    (command.op === "fillRect" || command.op === "patternFill"
+      ? command
+      : command.op === "line"
+        ? {
+            x: Math.min(command.x1, command.x2) - command.width,
+            y: Math.min(command.y1, command.y2) - command.width,
+            w: Math.abs(command.x2 - command.x1) + command.width * 2,
+            h: Math.abs(command.y2 - command.y1) + command.width * 2,
+          }
+        : undefined);
+
+  // Unclipped text and paths can paint anywhere.
+  if (!box) return true;
+
+  return (
+    box.x < area.right &&
+    box.x + box.w > area.left &&
+    box.y < area.bottom &&
+    box.y + box.h > area.top
+  );
 }
 
 /** A side's frozen pane, drawn where it is, and the cells past it, drawn `behind` further on. */

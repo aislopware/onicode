@@ -170,6 +170,21 @@ export const KeybindingShortcut = Schema.Struct({
 });
 export type KeybindingShortcut = typeof KeybindingShortcut.Type;
 
+/**
+ * The letter the active keyboard layout prints on each letter or punctuation key code (AZERTY
+ * prints M on `Semicolon`). Desktop processes without `navigator.keyboard` use it to match macOS
+ * Option shortcuts on non-US layouts.
+ */
+export const KeyboardLayoutLetters = Schema.Record(
+  Schema.String.check(
+    Schema.isPattern(
+      /^(?:Key[A-Z]|Digit[0-9]|Backquote|Backslash|BracketLeft|BracketRight|Comma|Equal|Minus|Period|Quote|Semicolon|Slash)$/,
+    ),
+  ),
+  Schema.String.check(Schema.isPattern(/^[a-z]$/)),
+);
+export type KeyboardLayoutLetters = typeof KeyboardLayoutLetters.Type;
+
 export const PreviewForwardedShortcut = Schema.Struct({
   command: KeybindingCommand,
   shortcut: KeybindingShortcut,

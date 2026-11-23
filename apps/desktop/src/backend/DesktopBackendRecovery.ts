@@ -179,6 +179,33 @@ async function canonicalHome(path: string): Promise<string> {
   }
 }
 
+// Use Application Support even when the Onicode home or the app lives on removable storage.
+const recordDirectory = (appDataDirectory: string) =>
+  NodePath.join(appDataDirectory, directoryName);
+
+async function recordScope(stateDir: string) {
+  const [home, executable] = await Promise.all([
+    canonicalHome(stateDir),
+    NodeFSP.realpath(NodeProcess.execPath),
+  ]);
+  const prefix = NodeCrypto.createHash("sha256")
+    .update(JSON.stringify([home, executable]))
+    .digest("hex");
+  return { prefix, executable };
+}
+
+/** Names this home and executable's records, so main can skip the helper when there are none. */
+export async function listRecords(appDataDirectory: string, stateDir: string) {
+  const [{ prefix }, names] = await Promise.all([
+    recordScope(stateDir),
+    NodeFSP.readdir(recordDirectory(appDataDirectory)),
+  ]);
+  return {
+    prefix,
+    names: names.filter((name) => name.startsWith(`${prefix}.`) && observedFileName.test(name)),
+  };
+}
+
 export function make(input: {
   readonly appDataDirectory: string;
   readonly stateDir: string;
@@ -187,18 +214,8 @@ export function make(input: {
   readonly onRecovery: (pid: number) => void;
   readonly onError: (operation: string, error: unknown) => void;
 }) {
-  // Use Application Support even when the Onicode home or the app lives on removable storage.
-  const directory = NodePath.join(input.appDataDirectory, directoryName);
-  const scope = async () => {
-    const [home, executable] = await Promise.all([
-      canonicalHome(input.stateDir),
-      NodeFSP.realpath(NodeProcess.execPath),
-    ]);
-    const prefix = NodeCrypto.createHash("sha256")
-      .update(JSON.stringify([home, executable]))
-      .digest("hex");
-    return { prefix, executable };
-  };
+  const directory = recordDirectory(input.appDataDirectory);
+  const scope = () => recordScope(input.stateDir);
   const privateDirectory = async () => {
     const info = await NodeFSP.lstat(directory);
     if (!info.isDirectory() || !ownsPrivateFile(info)) {
@@ -255,9 +272,9 @@ export function make(input: {
     async recover(signal: AbortSignal = new AbortController().signal): Promise<void> {
       try {
         await privateDirectory();
-        const { prefix } = await scope();
-        const records = (await NodeFSP.readdir(directory)).filter(
-          (name) => name.startsWith(`${prefix}.`) && observedFileName.test(name),
+        const { prefix, names: records } = await listRecords(
+          input.appDataDirectory,
+          input.stateDir,
         );
         if (records.length === 0) return;
 

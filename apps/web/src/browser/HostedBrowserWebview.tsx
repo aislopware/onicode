@@ -13,7 +13,7 @@ import {
 } from "~/components/preview/thumbButtons";
 import { usePreviewBridge } from "~/components/preview/usePreviewBridge";
 import { useClientSettingsHydrated } from "~/hooks/useSettings";
-import { useViewportSize } from "~/hooks/useViewportSize";
+import { useViewportValue } from "~/hooks/useViewportSize";
 import { noteUserInput } from "~/lib/userPresence";
 import { cn, isMacPlatform } from "~/lib/utils";
 
@@ -254,14 +254,20 @@ export function HostedBrowserWebview(props: {
     setAspectRatioLocked(aspectRatio !== null);
   };
   const content = presentation.content;
-  const windowSize = useViewportSize();
-  const { width: hiddenWidth, height: hiddenHeight } = resolveHiddenBrowserViewportSize({
-    setting: viewport,
-    zoomFactor: layoutZoomFactor,
-    content,
-    lastRect,
-    windowSize,
-  });
+  const hiddenSizeIn = (windowSize: { width: number; height: number }) =>
+    resolveHiddenBrowserViewportSize({
+      setting: viewport,
+      zoomFactor: layoutZoomFactor,
+      content,
+      lastRect,
+      windowSize,
+    });
+  // Clamped values, so a window resize re-renders only the webviews whose clamp moves.
+  const hiddenWidth = useViewportValue((windowSize) => hiddenSizeIn(windowSize).width);
+  const hiddenHeight = useViewportValue((windowSize) => hiddenSizeIn(windowSize).height);
+  const hiddenFitScale = useViewportValue((windowSize) =>
+    resolveHiddenBrowserViewportFitScale(hiddenSizeIn(windowSize), windowSize),
+  );
   // Build from primitives on each side of the resize hook to keep both objects cached.
   const containerSize =
     active && lastRect ? lastRect : { width: hiddenWidth, height: hiddenHeight };
@@ -356,13 +362,7 @@ export function HostedBrowserWebview(props: {
 
   const renderingActive = active || backgroundActivity || pictureInPicture || recordingActive;
   // Electron clips a guest's native surface at the window edge, so a hidden guest draws scaled to fit.
-  const fitScale =
-    active && lastRect
-      ? 1
-      : resolveHiddenBrowserViewportFitScale(
-          { width: hiddenWidth, height: hiddenHeight },
-          windowSize,
-        );
+  const fitScale = active && lastRect ? 1 : hiddenFitScale;
   const viewportScale = layout.viewportScale * fitScale;
   const viewportTransform = resolveBrowserViewportTransform(viewportScale, fullDetail);
   const wrapperStyle = resolveHostedBrowserWebviewWrapperStyle({

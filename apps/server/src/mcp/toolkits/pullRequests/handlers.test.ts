@@ -18,6 +18,7 @@ import {
   SourceControlProviderKind,
 } from "@onicode/contracts";
 import { describe, expect, it } from "@effect/vitest";
+import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
@@ -213,6 +214,7 @@ const makeHarness = Effect.fn("makePullRequestsToolkitHarness")(function* (
           options.projects?.find((candidate) => candidate.id === projectId) ?? project ?? undefined,
         ),
       addressedProjects: Effect.succeed(options.projects ?? (project ? [project] : [])),
+      withSharedProjectReads: (effect) => effect,
       ...options.pullRequests,
     }),
     Layer.mock(GitManager.GitManager)(options.git ?? {}),
@@ -1112,6 +1114,33 @@ describe("source control tools", () => {
       expect(asked).toMatchObject([
         { host: "dev.azure.com", repository: "contoso/project/_git/repo", number: 123 },
       ]);
+    }),
+  );
+
+  it.effect("reads the project once for the tool's own lookup and the PR reads it makes", () =>
+    Effect.gen(function* () {
+      // Stands in for PullRequestService's shared reads: one project read per shared scope.
+      const SharedReads = Context.Reference<{ read: boolean } | null>("test/SharedReads", {
+        defaultValue: () => null,
+      });
+      let reads = 0;
+      const readProject = Effect.gen(function* () {
+        const shared = yield* SharedReads;
+        if (shared?.read === true) return;
+        reads += 1;
+        if (shared !== null) shared.read = true;
+      });
+      const harness = yield* makeHarness({
+        pullRequests: {
+          withSharedProjectReads: (effect) =>
+            Effect.provideService(effect, SharedReads, { read: false }),
+          addressedProject: () => readProject.pipe(Effect.as(makeProject())),
+          detail: () => readProject.pipe(Effect.as(detail)),
+          activity: () => readProject.pipe(Effect.as(activity)),
+        },
+      });
+      yield* harness.call("pull_request_read", { number: 123 });
+      expect(reads).toBe(1);
     }),
   );
 

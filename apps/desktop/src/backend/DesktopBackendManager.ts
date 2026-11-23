@@ -509,8 +509,9 @@ export const runBackendProcess = Effect.fn("runBackendProcess")(function* (
     ),
   );
   // The child has a deadline for reading fd 3. Keep recovery bookkeeping off its startup path.
+  // Outside the run scope, so a stop during recording still lets its record be forgotten.
   const tracking = options.trackProcess
-    ? yield* options.trackProcess(handle.pid).pipe(Effect.forkScoped)
+    ? yield* options.trackProcess(handle.pid).pipe(Effect.forkChild)
     : undefined;
   const outputFibers: Array<Fiber.Fiber<void, never>> = [];
   const serverReady = yield* Deferred.make<void>();
@@ -655,8 +656,7 @@ export const runBackendProcess = Effect.fn("runBackendProcess")(function* (
     Effect.exit,
   );
   yield* options.onExitObserved?.() ?? Effect.void;
-  // A cancelled run may leave a survivor. Only forget after observing a real exit. A stop that
-  // interrupted the recording leaves its record to the next launch's recovery.
+  // A cancelled run may leave a survivor. Only forget after observing a real exit.
   if (tracking && Exit.isSuccess(exit)) {
     const recorded = yield* Fiber.await(tracking);
     if (Exit.isSuccess(recorded)) yield* recorded.value;

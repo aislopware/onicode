@@ -151,6 +151,7 @@ const makeHarness = Effect.fn("makePullRequestWatchHarness")(function* (
         ),
     }),
     Layer.mock(PullRequestService.PullRequestService)({
+      withSharedProjectReads: (effect) => effect,
       addressedProject: () => Effect.succeed(project ?? undefined),
       summary: (input) =>
         options.readHangs !== undefined

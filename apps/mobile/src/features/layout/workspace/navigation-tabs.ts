@@ -4,17 +4,15 @@ import { AsyncResult } from "effect/reactivity";
 import { Platform } from "react-native";
 import {
   NAVIGATION_TAB_LABELS,
-  navigationCustomizationAvailable,
-  resolveHiddenNavigationTabs,
   enabledNavigationTabs,
-  sharedSlotAbsentee,
   type NavigationTab,
 } from "./navigation-tab-order";
 import type { AppSymbolName } from "../../../components/ui/AppSymbol";
 import { mobilePreferencesAtom } from "../../../state/preferences";
+import { workflowsEnabledAtom } from "../../../state/server";
 import { PullRequestGlyph } from "../../pull-requests/pullRequestGlyphs";
 import { useWorkspaceTabs } from "./WorkspaceTabsContext";
-import { resolveWorkspaceTabOrder } from "./workspace-tabs-state";
+import { resolveWorkspaceHiddenTabs, resolveWorkspaceTabOrder } from "./workspace-tabs-state";
 
 export const WORKSPACE_TAB_LABELS = {
   ...NAVIGATION_TAB_LABELS,
@@ -44,14 +42,10 @@ export function useNavigationTabOrder() {
 
 export function useHiddenNavigationTabs() {
   const preferences = useAtomValue(mobilePreferencesAtom);
+  const workflowsEnabled = useAtomValue(workflowsEnabledAtom);
   const selected = useWorkspaceTabs()?.state.selectedTab ?? "threads";
   const saved = AsyncResult.isSuccess(preferences) ? preferences.value : undefined;
-  return [
-    ...(navigationCustomizationAvailable()
-      ? resolveHiddenNavigationTabs(saved?.hiddenNavigationTabs)
-      : []),
-    sharedSlotAbsentee(selected, saved?.sharedSlotTab),
-  ];
+  return resolveWorkspaceHiddenTabs(saved, selected, workflowsEnabled);
 }
 
 export function useEnabledNavigationTabs() {

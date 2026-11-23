@@ -358,22 +358,37 @@ export function ComposerAttachmentStrip(props: ComposerAttachmentStripProps) {
             </View>
           ))}
           {Array.from({ length: pendingImageCount }, (_, index) => (
-            <View
+            <ComposerPendingImageTile
               key={`pending-${index}`}
-              accessibilityLabel={gt("Preparing pasted image")}
-              className="items-center justify-center bg-subtle"
-              style={{
-                width: size,
-                height: size,
-                borderRadius: radius,
-                marginTop: removeButtonGutter,
-              }}
-            >
-              <AppActivityIndicator />
-            </View>
+              size={size}
+              borderRadius={radius}
+              marginTop={removeButtonGutter}
+            />
           ))}
         </View>
       </ScrollView>
     </FilePreviewGallery>
+  );
+}
+
+export function ComposerPendingImageTile(props: {
+  readonly size: number;
+  readonly borderRadius: number;
+  readonly marginTop?: number;
+}) {
+  const gt = useGT();
+  return (
+    <View
+      accessibilityLabel={gt("Preparing pasted image")}
+      className="items-center justify-center bg-subtle"
+      style={{
+        width: props.size,
+        height: props.size,
+        borderRadius: props.borderRadius,
+        marginTop: props.marginTop,
+      }}
+    >
+      <AppActivityIndicator />
+    </View>
   );
 }

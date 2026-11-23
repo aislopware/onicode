@@ -4,6 +4,8 @@ import * as NodeChildProcess from "node:child_process";
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 
+import { listRecords } from "./DesktopBackendRecovery.ts";
+
 export type RecoveryWorkerMessage =
   | { readonly type: "recovering"; readonly pid: number }
   | { readonly type: "error"; readonly operation: string }
@@ -93,7 +95,13 @@ export function make(input: {
           if (error.code !== "ENOENT") input.onError("forget backend");
         });
     },
-    recover: (signal: AbortSignal) =>
-      run("recover", recoverDeadlineMs, { signal }).then(() => undefined),
+    recover: async (signal: AbortSignal) => {
+      // A normal quit leaves no record, so most launches skip the helper and its native setup.
+      const pending = await listRecords(input.appDataDirectory, input.stateDir).then(
+        ({ names }) => names.length > 0,
+        (error: NodeJS.ErrnoException) => error.code !== "ENOENT",
+      );
+      if (pending) await run("recover", recoverDeadlineMs, { signal });
+    },
   };
 }

@@ -32,6 +32,7 @@ import {
   DEFAULT_BROWSER_PROFILE_ID,
   INCOGNITO_BROWSER_PROFILE_ID,
   PreviewForwardedShortcut,
+  KeyboardLayoutLetters,
   MAX_KEYBINDINGS_COUNT,
 } from "@onicode/contracts";
 import * as Effect from "effect/Effect";
@@ -78,11 +79,19 @@ export const installPreviewEventForwarding = Effect.fn(
 
 const setForwardedShortcuts = DesktopIpc.makeIpcMethod({
   channel: IpcChannels.PREVIEW_SET_FORWARDED_SHORTCUTS_CHANNEL,
-  payload: Schema.Array(PreviewForwardedShortcut).check(Schema.isMaxLength(MAX_KEYBINDINGS_COUNT)),
+  payload: Schema.Struct({
+    shortcuts: Schema.Array(PreviewForwardedShortcut).check(
+      Schema.isMaxLength(MAX_KEYBINDINGS_COUNT),
+    ),
+    keyboardLayout: Schema.optional(KeyboardLayoutLetters),
+  }),
   result: Schema.Void,
-  handler: Effect.fn("desktop.ipc.preview.setForwardedShortcuts")(function* (shortcuts) {
+  handler: Effect.fn("desktop.ipc.preview.setForwardedShortcuts")(function* ({
+    shortcuts,
+    keyboardLayout,
+  }) {
     const manager = yield* PreviewManager.PreviewManager;
-    yield* manager.setForwardedShortcuts(shortcuts);
+    yield* manager.setForwardedShortcuts(shortcuts, keyboardLayout);
   }),
 });
 

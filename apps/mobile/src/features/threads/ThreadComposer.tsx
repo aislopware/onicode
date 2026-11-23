@@ -81,6 +81,7 @@ import { ComposerAttachmentButton } from "./ComposerAttachmentButton";
 import {
   ComposerAttachmentStrip,
   ComposerAttachmentThumbnail,
+  ComposerPendingImageTile,
 } from "../../components/ComposerAttachmentStrip";
 import { VideoPreviewModal, type VideoPreviewSource } from "../../components/ui/VideoPreviewModal";
 import { ComposerEditor, type ComposerEditorHandle } from "../../components/ComposerEditor";
@@ -755,10 +756,9 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
     draftAttachments,
     (attachment) => uploadStates[composerAttachmentUploadKey(props.environmentId, attachment.id)],
   );
+  const attachmentTileCount = stripAttachments.length + pendingNativeImageCount;
   const hasEditingAttachments =
-    (queuedEdit !== null && queuedEdit.existingAttachments.length > 0) ||
-    stripAttachments.length > 0 ||
-    pendingNativeImageCount > 0;
+    (queuedEdit !== null && queuedEdit.existingAttachments.length > 0) || attachmentTileCount > 0;
   // Removable attachments: inside the card, or above the focused one-row composer.
   const editingAttachments = hasEditingAttachments ? (
     <>
@@ -987,9 +987,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
                 style={[
                   {
                     minWidth:
-                      compactEditor.isExpanded ||
-                      stripAttachments.length > 0 ||
-                      compactControl !== null
+                      compactEditor.isExpanded || attachmentTileCount > 0 || compactControl !== null
                         ? 0
                         : INLINE_EDITOR_MIN_WIDTH,
                   },
@@ -1147,7 +1145,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
                   }}
                 />
               </Animated.View>
-              {!isExpanded && stripAttachments.length > 0 ? (
+              {!isExpanded && attachmentTileCount > 0 ? (
                 <View className="h-[44px] shrink-0 flex-row items-center gap-1 pl-1">
                   {stripAttachments.slice(0, compactAttachmentLimit).map((attachment) => (
                     <ComposerAttachmentThumbnail
@@ -1161,10 +1159,25 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
                       onPressVideo={isSubmissionLocked ? undefined : onPressVideo}
                     />
                   ))}
-                  {stripAttachments.length > compactAttachmentLimit ? (
+                  {Array.from(
+                    {
+                      length: Math.min(
+                        pendingNativeImageCount,
+                        Math.max(0, compactAttachmentLimit - stripAttachments.length),
+                      ),
+                    },
+                    (_, index) => (
+                      <ComposerPendingImageTile
+                        key={`pending-${index}`}
+                        size={30}
+                        borderRadius={8}
+                      />
+                    ),
+                  )}
+                  {attachmentTileCount > compactAttachmentLimit ? (
                     <View className="size-[30px] items-center justify-center rounded-lg bg-subtle-strong">
                       <Text className="text-foreground-muted text-2xs font-oni-bold">
-                        +{stripAttachments.length - compactAttachmentLimit}
+                        +{attachmentTileCount - compactAttachmentLimit}
                       </Text>
                     </View>
                   ) : null}

@@ -1,7 +1,10 @@
 import {
   NAVIGATION_TAB_ORDER,
+  moveNavigationTab,
   navigationCustomizationAvailable,
+  resolveHiddenNavigationTabs,
   resolveNavigationTabOrder,
+  sharedSlotAbsentee,
   type NavigationTab,
 } from "./navigation-tab-order";
 
@@ -9,6 +12,43 @@ export function resolveWorkspaceTabOrder(saved: readonly unknown[] | undefined) 
   return navigationCustomizationAvailable()
     ? resolveNavigationTabOrder(saved)
     : NAVIGATION_TAB_ORDER;
+}
+
+/** Workflows is listed only while a server has them on in Labs, as on desktop. */
+export function unlistedWorkspaceTabs(workflowsEnabled: boolean): readonly NavigationTab[] {
+  return workflowsEnabled ? [] : ["workflows"];
+}
+
+/**
+ * Moves `tab` past its listed neighbour in `direction`; unlisted tabs keep their saved places.
+ * Reads the neighbour from `saved`, so a second tap before a re-render moves it again.
+ */
+export function moveListedTab(
+  saved: readonly NavigationTab[],
+  unlisted: readonly NavigationTab[],
+  tab: NavigationTab,
+  direction: -1 | 1,
+): readonly NavigationTab[] {
+  const listed = saved.filter((candidate) => !unlisted.includes(candidate));
+  const neighbour = listed[listed.indexOf(tab) + direction];
+  return neighbour === undefined ? saved : moveNavigationTab(saved, tab, saved.indexOf(neighbour));
+}
+
+/** Tabs navigation leaves out; the saved order keeps their places. */
+export function resolveWorkspaceHiddenTabs(
+  saved:
+    | { readonly hiddenNavigationTabs?: readonly unknown[]; readonly sharedSlotTab?: unknown }
+    | undefined,
+  selected: NavigationTab,
+  workflowsEnabled: boolean,
+): readonly NavigationTab[] {
+  return [
+    ...(navigationCustomizationAvailable()
+      ? resolveHiddenNavigationTabs(saved?.hiddenNavigationTabs)
+      : []),
+    sharedSlotAbsentee(selected, saved?.sharedSlotTab),
+    ...unlistedWorkspaceTabs(workflowsEnabled),
+  ];
 }
 
 export type WorkspaceTab = NavigationTab;

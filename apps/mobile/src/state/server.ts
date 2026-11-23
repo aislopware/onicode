@@ -4,6 +4,7 @@ import {
   createOutdatedServerUpdateCommand,
 } from "@onicode/client-runtime/state/outdatedServerUpdate";
 import { createEnvironmentServerConfigsAtom } from "@onicode/client-runtime/state/shell";
+import { Atom } from "effect/reactivity";
 
 import { environmentCatalog } from "../connection/catalog";
 import { connectionAtomRuntime } from "../connection/runtime";
@@ -24,3 +25,9 @@ export const environmentServerConfigsAtom = createEnvironmentServerConfigsAtom({
   catalogValueAtom: environmentCatalog.catalogValueAtom,
   serverConfigValueAtom: serverEnvironment.configValueAtom,
 });
+/** Whether any server has workflows on in Labs, which lists the Workflows tab. */
+export const workflowsEnabledAtom = Atom.make((get) =>
+  [...get(environmentServerConfigsAtom).values()].some(
+    (config) => config.settings.workflowsEnabled,
+  ),
+).pipe(Atom.withLabel("workflows-enabled"));

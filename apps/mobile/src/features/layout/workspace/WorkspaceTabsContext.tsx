@@ -3,16 +3,12 @@ import { AsyncResult, Atom } from "effect/reactivity";
 import { createContext, use, useState, type Dispatch, type ReactNode } from "react";
 
 import { mobilePreferencesAtom, saveMobilePreferences } from "../../../state/preferences";
+import { workflowsEnabledAtom } from "../../../state/server";
 import { useAtomCommand } from "../../../state/use-atom-command";
-import {
-  isSharedSlotTab,
-  sharedSlotAbsentee,
-  navigationCustomizationAvailable,
-  resolveHiddenNavigationTabs,
-  resolveSelectedNavigationTab,
-} from "./navigation-tab-order";
+import { isSharedSlotTab, resolveSelectedNavigationTab } from "./navigation-tab-order";
 import {
   initialWorkspaceTabsState,
+  resolveWorkspaceHiddenTabs,
   resolveWorkspaceTabOrder,
   workspaceTabsReducer,
   type WorkspaceSearchTab,
@@ -43,15 +39,11 @@ type MobilePreferencesResult = Atom.Type<typeof mobilePreferencesAtom>;
 function resolveWorkspaceTabsSelection(
   state: WorkspaceTabsState,
   preferences: MobilePreferencesResult,
+  workflowsEnabled: boolean,
 ): WorkspaceTabsState {
   const saved = AsyncResult.isSuccess(preferences) ? preferences.value : undefined;
   const order = resolveWorkspaceTabOrder(saved?.navigationTabOrder);
-  const hidden = [
-    ...(navigationCustomizationAvailable()
-      ? resolveHiddenNavigationTabs(saved?.hiddenNavigationTabs)
-      : []),
-    sharedSlotAbsentee(state.selectedTab, saved?.sharedSlotTab),
-  ];
+  const hidden = resolveWorkspaceHiddenTabs(saved, state.selectedTab, workflowsEnabled);
   const selected = resolveSelectedNavigationTab(order, hidden, state.selectedTab);
   return selected && selected !== state.selectedTab
     ? workspaceTabsReducer(state, { type: "select", tab: selected })
@@ -73,7 +65,11 @@ function createWorkspaceTabsModel(selectedTab?: WorkspaceTab) {
   return {
     stored,
     resolved: Atom.make((get) =>
-      resolveWorkspaceTabsSelection(get(stored), get(mobilePreferencesAtom)),
+      resolveWorkspaceTabsSelection(
+        get(stored),
+        get(mobilePreferencesAtom),
+        get(workflowsEnabledAtom),
+      ),
     ),
     getScrollOffset: (tab: WorkspaceSearchTab) => scrollOffsets[tab],
     recordScrollOffset: (tab: WorkspaceSearchTab, offset: number) => {

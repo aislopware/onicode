@@ -184,6 +184,73 @@ export function parsePsCpuTime(text: string) {
 }
 
 /**
+ * The environment a bench server inherits. Inherited `ONICODE_*` would send its traces to the
+ * user's collector or turn on Tailscale Serve, so the bench sets each one it wants itself.
+ */
+export function inheritedServerEnvironment(
+  host: Readonly<Record<string, string | undefined>>,
+  options: { readonly noAgentScope: boolean },
+): Record<string, string> {
+  const dropped = new Set([
+    "ANTHROPIC_AUTH_TOKEN",
+    "CLAUDE_CONFIG_DIR",
+    ...(options.noAgentScope ? ["XDG_RUNTIME_DIR"] : []),
+  ]);
+  return Object.fromEntries(
+    Object.entries(host).filter(
+      (entry): entry is [string, string] =>
+        entry[1] !== undefined &&
+        !dropped.has(entry[0]) &&
+        !entry[0].toUpperCase().startsWith("ONICODE_"),
+    ),
+  );
+}
+
+/** A process and the start time that tells it apart from a later process given its PID. */
+export interface ProcessEntry {
+  readonly pid: number;
+  readonly parent: number;
+  readonly started: string;
+}
+
+/** `ps -A -o pid=,ppid=,lstart=` lines. */
+export function parsePsProcessTable(text: string): ProcessEntry[] {
+  return text.split("\n").flatMap((line) => {
+    const [pid, parent, ...started] = line.trim().split(/\s+/);
+    return Number(pid) > 0 && Number(parent) > 0 && started.length > 0
+      ? [{ pid: Number(pid), parent: Number(parent), started: started.join(" ") }]
+      : [];
+  });
+}
+
+export function descendantProcesses(
+  table: ReadonlyArray<ProcessEntry>,
+  pid: number,
+): ProcessEntry[] {
+  const children = new Map<number, ProcessEntry[]>();
+  for (const entry of table)
+    children.set(entry.parent, [...(children.get(entry.parent) ?? []), entry]);
+  const found: ProcessEntry[] = [];
+  const pending = [pid];
+  for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
+    for (const child of children.get(next) ?? []) {
+      found.push(child);
+      pending.push(child.pid);
+    }
+  }
+  return found;
+}
+
+/** The listed processes still running as themselves, not a PID reused since the listing. */
+export function unchangedProcesses(
+  listed: ReadonlyArray<ProcessEntry>,
+  table: ReadonlyArray<ProcessEntry>,
+): number[] {
+  const started = new Map(table.map((entry) => [entry.pid, entry.started]));
+  return listed.filter((entry) => started.get(entry.pid) === entry.started).map(({ pid }) => pid);
+}
+
+/**
  * `--only`, `--threads` and `--soak` as run options. Thread counts must ascend because threads stay
  * open, so a lower count after a higher one would mislabel its window. A soak alone runs nothing else.
  */

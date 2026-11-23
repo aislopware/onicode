@@ -438,16 +438,17 @@ it.effect("resumes a session whose history exceeds the status-probe output limit
   }).pipe(Effect.provide(Layer.merge(realQueryRunner, NodeServices.layer))),
 );
 
+// The CLI's own re-run plus the empty resume message ran two turns for most tails (CLI 2.1.330).
 it.effect.each([
-  { case: "an answered request", failed: false, rerun: "1" },
-  { case: "a failed request the user then stopped", failed: true, rerun: "0" },
+  { case: "an answered request", failed: false },
+  { case: "a tool result with no reply", failed: false, toolResult: true },
+  { case: "a failed request the user then stopped", failed: true },
   {
     case: "a failed request under a config dir relative to the turn's cwd",
     failed: true,
-    rerun: "0",
     relativeConfigDir: true,
   },
-])("re-runs an interrupted turn on resume only after $case", ({ failed, rerun, ...row }) =>
+])("resumes after $case without the CLI re-running the turn", ({ failed, ...row }) =>
   Effect.gen(function* () {
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
@@ -463,9 +464,23 @@ it.effect.each([
         sessionEntry(promptUuid, null, { role: "user", content: "hello" }),
         sessionEntry(replyUuid, promptUuid, {
           role: "assistant",
-          content: [{ type: "text", text: failed ? "API Error: Request rejected (429)" : "hi" }],
+          content:
+            "toolResult" in row
+              ? [{ type: "tool_use", id: "toolu_1", name: "Bash", input: { command: "ls" } }]
+              : [{ type: "text", text: failed ? "API Error: Request rejected (429)" : "hi" }],
           ...(failed ? { model: "<synthetic>" } : {}),
         }),
+        ...("toolResult" in row
+          ? [
+              {
+                ...sessionEntry("aaaaaaaa-0000-4000-8000-000000000004", replyUuid, {
+                  role: "user",
+                  content: [{ type: "tool_result", tool_use_id: "toolu_1", content: "a.txt" }],
+                }),
+                type: "user",
+              },
+            ]
+          : []),
         ...(failed
           ? [
               {
@@ -501,7 +516,7 @@ it.effect.each([
     });
     yield* Effect.addFinalizer(() => session.close.pipe(Effect.orDie));
     const sent = querySpy.mock.calls[0]?.[0].options;
-    assert.equal(sent?.env?.CLAUDE_CODE_RESUME_INTERRUPTED_TURN, rerun);
+    assert.equal(sent?.env?.CLAUDE_CODE_RESUME_INTERRUPTED_TURN, "0");
     assert.equal(sent?.resumeSessionAt, failed ? replyUuid : undefined);
   }).pipe(Effect.provide(Layer.merge(realQueryRunner, NodeServices.layer))),
 );

@@ -23,6 +23,7 @@ import type {
   DesktopPreviewRecordingInputEvent,
   DesktopPreviewScreenshotArtifact,
   DesktopPreviewTabDefaults,
+  KeyboardLayoutLetters,
   PreviewForwardedShortcut,
   PreviewAutomationLoadError,
 } from "@onicode/contracts";
@@ -579,6 +580,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
   const resolvedArtifactDirectory = path.resolve(artifactDirectory);
 
   let forwardedShortcuts: ReadonlyArray<PreviewForwardedShortcut> = [];
+  let forwardedKeyboardLayout: ReadonlyMap<string, string> | undefined;
   const annotationThemeRef = yield* Ref.make(DEFAULT_ANNOTATION_THEME);
   const annotationSendEnabled = new Map<string, boolean>();
   const mainWindowRef = yield* Ref.make<Option.Option<BrowserWindow>>(Option.none());
@@ -1579,6 +1581,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
           keys,
           shortcut,
           hostPlatform === "darwin" ? "MacIntel" : hostPlatform,
+          forwardedKeyboardLayout,
         ),
       );
     const beforeInput = (event: Electron.Event, input: Electron.Input): void => {
@@ -3773,9 +3776,13 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     setCaptureDrawn,
     setColorScheme,
     setMainWindow,
-    setForwardedShortcuts: (shortcuts: ReadonlyArray<PreviewForwardedShortcut>) =>
+    setForwardedShortcuts: (
+      shortcuts: ReadonlyArray<PreviewForwardedShortcut>,
+      keyboardLayout?: KeyboardLayoutLetters,
+    ) =>
       Effect.sync(() => {
         forwardedShortcuts = shortcuts;
+        forwardedKeyboardLayout = keyboardLayout && new Map(Object.entries(keyboardLayout));
       }),
     startRecording,
     closePictureInPicture,
@@ -3941,6 +3948,7 @@ export class PreviewManager extends Context.Service<
     readonly setMainWindow: (window: BrowserWindow) => Effect.Effect<void, PreviewManagerError>;
     readonly setForwardedShortcuts: (
       shortcuts: ReadonlyArray<PreviewForwardedShortcut>,
+      keyboardLayout?: KeyboardLayoutLetters,
     ) => Effect.Effect<void>;
     readonly getBrowserSession: (
       scope?: string,

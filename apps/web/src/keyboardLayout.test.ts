@@ -1,5 +1,9 @@
 import { afterEach, assert, it } from "vite-plus/test";
-import { getKeyboardLayoutMap, trackKeyboardLayout } from "./keyboardLayout";
+import {
+  getKeyboardLayoutLetters,
+  getKeyboardLayoutMap,
+  trackKeyboardLayout,
+} from "./keyboardLayout";
 import { keybindingFromKeyboardEvent } from "./components/settings/KeybindingsSettings.logic";
 
 let stop: (() => void) | undefined;
@@ -78,4 +82,28 @@ it("does not publish a pending result after disposal", async () => {
   pending.resolve(new Map([["KeyQ", "a"]]));
   await pending.promise;
   assert.strictEqual(getKeyboardLayoutMap(), undefined);
+});
+
+it("publishes layout letters only when they change", async () => {
+  const keyboard = {
+    getLayoutMap: () =>
+      Promise.resolve(
+        new Map([
+          ["KeyQ", "A"],
+          ["Digit1", "&"],
+          ["KeyM", ","],
+          ["Semicolon", "m"],
+        ]),
+      ),
+  };
+  const focusTarget = new EventTarget();
+  stop = trackKeyboardLayout(keyboard, focusTarget);
+  await keyboard.getLayoutMap();
+  const letters = getKeyboardLayoutLetters();
+  assert.deepStrictEqual(letters, { KeyQ: "a", Semicolon: "m" });
+  focusTarget.dispatchEvent(new Event("focus"));
+  await keyboard.getLayoutMap();
+  assert.strictEqual(getKeyboardLayoutLetters(), letters);
+  stop();
+  assert.strictEqual(getKeyboardLayoutLetters(), undefined);
 });

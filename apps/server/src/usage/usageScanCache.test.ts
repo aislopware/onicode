@@ -351,6 +351,37 @@ describe("scan cache round trip", () => {
     expect(decodeScanCache(current, TEST_FORMAT_MAP).get("/codex.jsonl")).toEqual(entry);
   });
 
+  it("saves the skipped-record dates a Codex scan state holds once", () => {
+    const entry: CachedFile = {
+      size: 10,
+      mtimeMs: 100,
+      provider: "codex",
+      records: [record({ provider: "codex", model: "gpt-6-astra", dedupeKey: null })],
+      tailRecords: [],
+      // The last date is the unterminated tail's, which the saved state does not hold.
+      malformedRecords: [5, 6, 7],
+      position: position({
+        state: {
+          ...initialCodexScanState(),
+          model: "gpt-6-astra",
+          malformedRecords: 2,
+          malformedRecordTimestamps: [5, 6],
+        },
+      }),
+    };
+    const document = parse(
+      makeScanCacheWriter(TEST_FORMAT_MAP)(new Map([["/codex.jsonl", entry]]), {}),
+    );
+
+    const saved = document.files["/codex.jsonl"]!;
+    expect([saved.mt, saved.mx, saved.cs.malformedRecordTimestamps]).toEqual([
+      undefined,
+      [7],
+      [5, 6],
+    ]);
+    expect(decodeScanCache(document, TEST_FORMAT_MAP).get("/codex.jsonl")).toEqual(entry);
+  });
+
   it("re-parses a Claude transcript cached before 1-hour cache writes were counted", () => {
     const original = cacheWith([["/claude.jsonl", 100, [record()]]]);
     const v12 = { ...parse(makeScanCacheWriter()(original, {})), version: 12 };

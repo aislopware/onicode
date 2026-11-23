@@ -14,10 +14,11 @@ import {
 
 const imagePreparations = new Map<string, Set<(threadKey: string | null) => void>>();
 
-/** A paste or accepted picker selection can finish in the thread draft. */
-export function startQuestionImagePreparation(key: string, waitingForSelection = false) {
+/** A paste of `images` images, or an accepted picker selection, can finish in the thread draft. */
+export function startQuestionImagePreparation(key: string, source: number | "selection") {
+  let waitingForSelection = source === "selection";
   // A pick may hold files, and how many is unknown, so the thread's held send counts no images.
-  const images = waitingForSelection ? 0 : 1;
+  const images = source === "selection" ? 0 : source;
   let destination: string | null = key;
   let threadOperation: ReturnType<typeof startComposerDraftOperation> | undefined;
   let finishThreadPaste: ((success: boolean) => void) | undefined;
@@ -99,7 +100,7 @@ export async function pickQuestionAttachments(
     readonly maxUploadBytes?: number | undefined;
   },
 ): Promise<{ error: string | null; rejected: number }> {
-  const preparation = startQuestionImagePreparation(input.key, true);
+  const preparation = startQuestionImagePreparation(input.key, "selection");
   try {
     const existingCount = getComposerDraftSnapshot(input.key).attachments.length;
     const acceptSelection = () => input.isActive() && preparation.acceptSelection();

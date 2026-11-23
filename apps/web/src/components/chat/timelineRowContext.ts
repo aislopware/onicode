@@ -109,6 +109,8 @@ export interface TimelineRowSharedState {
   workGroupViewState: WorkGroupViewState;
 }
 
+type ProviderStarting = NonNullable<ThreadRunSummary["providerStarting"]>;
+
 export interface TimelineRowActivityState {
   isWorking: boolean;
   isCompacting: boolean;
@@ -116,7 +118,9 @@ export interface TimelineRowActivityState {
   awaitingUser: boolean;
   isPreparingWorktree: boolean;
   providerStartingLabel: string | null;
-  providerStarting: NonNullable<ThreadRunSummary["providerStarting"]> | null;
+  // Primitives: the run summary rebuilds its starting provider on every projection event.
+  providerStartingInstanceId: ProviderStarting["instanceId"] | null;
+  providerStartingDriver: ProviderStarting["driver"] | null;
   latestRunId: RunId | null;
   backgroundWorktreeSetup: WorktreeSetupSnapshot | null;
   liveAnswerPreview: string | null;

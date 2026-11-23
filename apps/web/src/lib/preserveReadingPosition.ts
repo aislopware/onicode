@@ -8,11 +8,19 @@ export function preserveReadingPosition(
   let width = scroller.clientWidth;
   let anchor: { range: Range; top: number } | null = null;
   let frame: number | null = null;
+  let captureFrame: number | null = null;
 
   const capture = () => {
-    if (frame !== null || scroller.clientWidth !== width) return;
+    if (frame !== null) return;
+    if (captureFrame !== null) cancelAnimationFrame(captureFrame);
+    captureFrame = null;
+    if (!enabled()) {
+      anchor = null;
+      return;
+    }
+    if (scroller.clientWidth !== width) return;
     anchor = null;
-    if (!enabled() || scroller.scrollTop === 0) return;
+    if (scroller.scrollTop === 0) return;
     const box = scroller.getBoundingClientRect();
     const selection =
       scroller.isContentEditable && document.activeElement === scroller
@@ -57,6 +65,18 @@ export function preserveReadingPosition(
       }
     }
   };
+  // Input reads layout at most once per frame; the caret's own selectionchange captures at once.
+  const scheduleCapture = () => {
+    if (frame !== null || captureFrame !== null) return;
+    if (!enabled()) {
+      anchor = null;
+      return;
+    }
+    captureFrame = requestAnimationFrame(() => {
+      captureFrame = null;
+      capture();
+    });
+  };
   const restore = () => {
     if (
       !enabled() ||
@@ -78,21 +98,27 @@ export function preserveReadingPosition(
     width = nextWidth;
     restore();
     if (frame !== null) cancelAnimationFrame(frame);
-    // Virtualized rows can finish measuring in the next frame. Keep the same text anchor then.
+    if (captureFrame !== null) cancelAnimationFrame(captureFrame);
+    captureFrame = null;
+    // Virtualized rows can finish measuring in the next frame. The anchor stays the reader's
+    // text until the width settles; capturing again per frame of a panel animation would drift.
     frame = requestAnimationFrame(() => {
       restore();
       frame = null;
-      capture();
     });
   });
+  // Synchronous: scroll events already come once per frame, and a resize can follow in the same one.
   scroller.addEventListener("scroll", capture, { passive: true });
-  scroller.addEventListener("input", capture);
+  scroller.addEventListener("input", scheduleCapture);
+  // Synchronous: a panel shortcut pressed right after moving the caret can land before the next frame.
   const captureSelection = () => {
-    if (document.activeElement === scroller) capture();
+    if (document.activeElement === scroller && scroller.isContentEditable) capture();
   };
-  if (scroller.isContentEditable) document.addEventListener("selectionchange", captureSelection);
+  document.addEventListener("selectionchange", captureSelection);
   const interrupt = () => {
     if (frame !== null) cancelAnimationFrame(frame);
+    if (captureFrame !== null) cancelAnimationFrame(captureFrame);
+    captureFrame = null;
     anchor = null;
     // Scrolling wins over a pending resize correction; the next frame captures the reader's new place.
     frame = requestAnimationFrame(() => {
@@ -106,8 +132,9 @@ export function preserveReadingPosition(
   return () => {
     stop();
     if (frame !== null) cancelAnimationFrame(frame);
+    if (captureFrame !== null) cancelAnimationFrame(captureFrame);
     scroller.removeEventListener("scroll", capture);
-    scroller.removeEventListener("input", capture);
+    scroller.removeEventListener("input", scheduleCapture);
     document.removeEventListener("selectionchange", captureSelection);
     scroller.removeEventListener("wheel", interrupt);
     scroller.removeEventListener("touchmove", interrupt);

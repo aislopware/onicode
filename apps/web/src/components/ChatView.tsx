@@ -3681,9 +3681,14 @@ export default function ChatView(props: ChatViewProps) {
                       ? messages(activeActivityRun.providerStartingLabelMsg)
                       : null
                   }
-                  providerStarting={
+                  providerStartingInstanceId={
                     activeActivityRun?.providerStartingLabelMsg
-                      ? (activeActivityRun.providerStarting ?? null)
+                      ? (activeActivityRun.providerStarting?.instanceId ?? null)
+                      : null
+                  }
+                  providerStartingDriver={
+                    activeActivityRun?.providerStartingLabelMsg
+                      ? (activeActivityRun.providerStarting?.driver ?? null)
                       : null
                   }
                   worktreeSetup={worktreeSetup}

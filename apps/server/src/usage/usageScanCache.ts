@@ -77,6 +77,11 @@ interface SerializedFile {
   readonly t: readonly SerializedRecord[];
   readonly mr: number;
   readonly mt?: readonly number[];
+  /**
+   * In place of `mt`: the dates after those the scan state `cs` holds. An older server reads such
+   * an entry as undated and re-parses the file, keeping its records.
+   */
+  readonly mx?: readonly number[];
   readonly o: number;
   readonly gl: number;
   readonly gh: number;
@@ -110,7 +115,50 @@ function intern(table: string[], index: Map<string, number>, value: string): num
   return next;
 }
 
-function serializeFile(entry: CachedFile, tables: InternTables): SerializedFile {
+type StateMalformedReaders = ReadonlyMap<
+  UsageProviderKind,
+  (state: unknown) => readonly number[] | undefined
+>;
+
+/** Dates a valid saved scan state holds, for formats that keep them there. */
+function makeStateMalformedReaders(
+  formats: ReadonlyMap<UsageProviderKind, TranscriptUsageFormat<unknown>>,
+): StateMalformedReaders {
+  const isValidState = makeStateValidators(formats);
+  return new Map(
+    [...formats].map(([provider, format]) => {
+      const isValid = isValidState.get(provider)!;
+      return [
+        provider,
+        (state: unknown) =>
+          state === null || format.readMalformedRecords === undefined || !isValid(state)
+            ? undefined
+            : format.readMalformedRecords(state),
+      ] as const;
+    }),
+  );
+}
+
+// The dates the scan state holds are left out of `mt`, so a long rollout's are saved once.
+function serializeMalformedRecords(
+  entry: CachedFile,
+  inState: StateMalformedReaders,
+): Pick<SerializedFile, "mt" | "mx"> {
+  const dates = entry.malformedRecords;
+  if (dates.length === 0) return {};
+  const held = inState.get(entry.provider)?.(entry.position.state) ?? [];
+  const prefix =
+    held.length > 0 &&
+    held.length <= dates.length &&
+    held.every((date, index) => dates[index] === date);
+  return prefix ? { mx: dates.slice(held.length) } : { mt: dates };
+}
+
+function serializeFile(
+  entry: CachedFile,
+  tables: InternTables,
+  inState: StateMalformedReaders,
+): SerializedFile {
   const serializeRecord = (record: UsageRecord): SerializedRecord => [
     record.timestampMs,
     intern(tables.models, tables.modelIndex, record.model),
@@ -139,7 +187,7 @@ function serializeFile(entry: CachedFile, tables: InternTables): SerializedFile 
     r: entry.records.map(serializeRecord),
     t: entry.tailRecords.map(serializeRecord),
     mr: entry.malformedRecords.length,
-    ...(entry.malformedRecords.length === 0 ? {} : { mt: entry.malformedRecords }),
+    ...serializeMalformedRecords(entry, inState),
     o: entry.position.resumeOffset,
     gl: entry.position.guardLength,
     gh: entry.position.guardHash,
@@ -148,15 +196,15 @@ function serializeFile(entry: CachedFile, tables: InternTables): SerializedFile 
 }
 
 /** Yields the document in pieces so large caches never become one string; growing intern tables preserve indexes, retaining unused strings until restart. */
-export function makeScanCacheWriter(): (
-  cache: ScanCache,
-  extra: Readonly<Record<string, unknown>>,
-) => Iterable<string> {
+export function makeScanCacheWriter(
+  formats: ReadonlyMap<UsageProviderKind, TranscriptUsageFormat<unknown>> = new Map(),
+): (cache: ScanCache, extra: Readonly<Record<string, unknown>>) => Iterable<string> {
   const tables = makeInternTables();
+  const inState = makeStateMalformedReaders(formats);
   function* encode(entries: readonly (readonly [string, CachedFile])[], extra: object) {
     yield '{"files":{';
     for (const [index, [path, entry]] of entries.entries()) {
-      yield `${index === 0 ? "" : ","}${JSON.stringify(path)}:${JSON.stringify(serializeFile(entry, tables))}`;
+      yield `${index === 0 ? "" : ","}${JSON.stringify(path)}:${JSON.stringify(serializeFile(entry, tables, inState))}`;
     }
     // Encoded after the files, which may have added to the intern tables.
     const tail = JSON.stringify({
@@ -181,6 +229,7 @@ export function decodeScanCache(
 ): ScanCache {
   const cache: ScanCache = new Map();
   const isValidState = makeStateValidators(formats);
+  const inState = makeStateMalformedReaders(formats);
   if (typeof document !== "object" || document === null) return cache;
 
   const root = document as Partial<SerializedCache>;
@@ -293,7 +342,12 @@ export function decodeScanCache(
     if (!isRecordArray(entry.r) || !isRecordArray(entry.t)) continue;
     const malformedCount = entry.mr === undefined ? 0 : entry.mr;
     if (!Number.isSafeInteger(malformedCount) || malformedCount < 0) continue;
-    const malformedRecords = entry.mt ?? (malformedCount === 0 ? [] : undefined);
+    const after = entry.mt === undefined && Array.isArray(entry.mx) ? entry.mx : undefined;
+    const held = after === undefined ? undefined : inState.get(entry.p)?.(entry.cs);
+    const malformedRecords =
+      entry.mt ??
+      (held === undefined || after === undefined ? undefined : [...held, ...after]) ??
+      (malformedCount === 0 ? [] : undefined);
     if (
       malformedRecords !== undefined &&
       (!Array.isArray(malformedRecords) ||
