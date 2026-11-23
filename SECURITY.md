@@ -6,8 +6,8 @@ describes.
 The rest of this file is for agents and maintainers auditing Onicode or triaging
 a report. It says who is trusted with what, which boundaries a real finding
 crosses, and what is intended. The reasoning behind each boundary lives in
-[environment auth](docs/internals/environment-auth.md) and
-[remote environments](docs/internals/remote.md). Read those before you report a
+[environment auth](docs/internals/04_environment-auth.md) and
+[remote environments](docs/internals/05_remote.md). Read those before you report a
 finding in their area.
 
 ## The model in one paragraph

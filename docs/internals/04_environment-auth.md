@@ -1,0 +1,81 @@
+# Environment authentication
+
+The environment issues its own sessions and enforces their capabilities. See
+[SECURITY.md](../../SECURITY.md) for the overall threat model.
+
+## Scoped sessions and delegation
+
+- **Narrowing only.** Pairing delegates a set of scopes. Exchanging a bootstrap credential can
+  narrow a grant, never widen it. Creating another pairing link requires both `access:write` and
+  every scope being delegated. Client labels and device metadata have no authorization role.
+- **Why the default grant includes access management.** `terminal:operate` and
+  `orchestration:operate` already grant OS-user execution (which can invoke `onicode auth session issue`),
+  so withholding access management from the default grant would not be a real boundary. Narrower
+  clients receive explicit scopes.
+- **No recoverable secrets in read models.** Only the creation response returns a raw pairing
+  credential; access listings expose metadata only.
+- **Bearer sessions.** Every session is a bearer token. A [peer link](./05_remote.md#peer-links)'s
+  session renews on use: its token is never reissued, so the session row alone holds the deadline,
+  moved 30 days out at most once a day. Only an unexpired, unrevoked row moves, so an idle link
+  still ends and a revoke is final. Thread CLI sessions never renew.
+- **Desktop bootstrap replaces earlier sessions.** Desktop restarts forget the previous local
+  token, so its reusable bootstrap grant revokes earlier sessions for the same subject in the same
+  [transaction](../../apps/server/src/persistence/AuthSessions.ts) that inserts the new one; a failed
+  replacement leaves the old credential usable. Pairing sessions do not follow this rule.
+- **WebSocket tickets and per-RPC authorization.** Clients mint short-lived tickets over
+  authenticated HTTP so long-lived tokens never appear in socket URLs. A ticket names the route it
+  opens: the RPC socket, or the media routes (device hub, preview stream), which share one ticket.
+  A successful handshake grants no extra authority: every RPC declares and checks its required
+  scope in [`RpcAuthorization.ts`](../../apps/server/src/auth/RpcAuthorization.ts).
+- **Backward-compatible scope evolution.** Token exchange intersects requested scopes with the
+  pairing grant, dropping retired/unknown names and failing before consuming a link if none remain.
+  Stored grants are never expanded when scopes split. Auth responses preserve legacy `scopes`
+  alongside exact `permissions`, and permission errors keep a legacy `requiredScope` beside the
+  exact `requiredPermission`, so older clients and servers stay compatible.
+
+## Non-standard principals
+
+- **`/mcp` admits only peer links and `onicode thread`.** A link signs in through a narrow OAuth
+  authorization-code flow ([McpOAuth](../../apps/server/src/auth/McpOAuth.ts)) that registers only
+  clients carrying the peer-link software ID, and approval spends a one-time pairing code from the
+  peer. Registration is stateless so unauthenticated callers cannot grow server state. `onicode
+  thread` gets a short-lived `thread-cli` session from the running server. An `mcp-client` session
+  without the signed peer-link claim is refused.
+- **Grants are read-only or a runtime-mode ceiling, not raw scopes.** Every MCP tool must statically
+  declare its access level in [`McpToolAccess.ts`](../../apps/server/src/mcp/McpToolAccess.ts).
+  Every other HTTP and WebSocket route rejects both subjects, except the read-only thread routes in
+  [linkThreadHttp](../../apps/server/src/peer/linkThreadHttp.ts) and client pairing, both restricted
+  to peer links. Inside MCP the credential sets the limits and tool parameters only pick targets
+  ([threadAccess](../../apps/server/src/mcp/threadAccess.ts)).
+- **Thread-only tools refuse outside callers in handlers.** Tools that act as a calling thread
+  (`request_secret`, `delegate_task`) are hidden from these callers, but hiding is only discovery:
+  handlers still refuse with `thread_credential_required`.
+- **Peer-link client pairing.** Only a full-access peer link may mint a one-time client pairing on
+  the linked environment (its agents can already run `onicode auth pairing create`). The linked side
+  enforces this itself, and the operation stays a human-triggered RPC/HTTP route rather than an MCP
+  tool.
+- **The issuer comes from the request.** The issuer URL uses Host and `X-Forwarded-Proto`, so one
+  server answers links over loopback, the LAN, and Tailscale Serve. A proxy that rewrites Host or
+  drops the protocol header breaks linking.
+- **Tailnet identity counts only on a direct tailnet socket.**
+  [TailnetAccess](../../apps/server/src/tailnet/TailnetAccess.ts) signs a device in by asking
+  `tailscale whois` about the socket peer, trusted only when both ends are tailnet addresses.
+  Loopback (`tailscale serve`, userspace tailscaled, local processes) is refused. Never take the
+  peer from `X-Forwarded-For` or another header. A tagged host admits only devices an ACL grant
+  gives `onicode.com/cap/environment`; sessions use subject `tailnet:<nodeId>`.
+
+## The environment is the filesystem boundary
+
+Projects are organizational boundaries, not filesystem sandboxes. `filesystem:read` permits reading
+any file the server's OS user can read (for example, artifacts an agent writes in a temp directory);
+relative paths and writes remain constrained by
+[`WorkspaceFileSystem.ts`](../../apps/server/src/workspace/WorkspaceFileSystem.ts).
+
+Signed asset URLs are bearer credentials for a single canonical file, rechecked by device/inode
+identity on serve ([`AssetAccess.ts`](../../apps/server/src/assets/AssetAccess.ts)). They never
+grant access to sibling files, and because `filesystem:read` is checked only at mint time, an issued
+URL remains valid until it expires even if the session or grant is revoked.
+
+Host videos can change in place, so their [HTTP responses](../../apps/server/src/http.ts) omit cache
+validators: file metadata cannot prove byte identity for `If-Range`, and weak validators would turn
+native-player seeks into full downloads.

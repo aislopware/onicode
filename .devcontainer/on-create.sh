@@ -33,8 +33,8 @@ sudo mkdir -p /usr/local/etc/vscode-dev-containers
 sudo tee /usr/local/etc/vscode-dev-containers/first-run-notice.txt >/dev/null <<'EOF'
 Onicode devcontainer
 
-  vp run dev            start server + web, then open the pairing URL it
-                        prints (the bare forwarded port will not authenticate)
+  vp run dev:server     start the server, then pair a client with
+                        node apps/server/src/bin.ts pair --base-dir .onicode
 
-Details: docs/internals/devcontainer.md
+Details: docs/operations/01_devcontainer.md
 EOF

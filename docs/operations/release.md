@@ -30,7 +30,7 @@ builds are told about them. Without these a release still ships, with push notif
   removing it makes the next Android release a store build.
 
 Error reports go to our Sentry, which is also left out of the repository. Without these a release
-ships with error reporting off ([Error reports](./observability.md#error-reports-sentry)):
+ships with error reporting off ([Error reports](./04_observability.md#error-reports-sentry)):
 
 - `ONICODE_SENTRY_DESKTOP_DSN`, `ONICODE_SENTRY_SERVER_DSN` and `ONICODE_SENTRY_MOBILE_DSN`,
   repository secrets: the projects each build reports to.

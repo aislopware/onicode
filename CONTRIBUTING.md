@@ -2,7 +2,7 @@
 
 ## Developer setup
 
-See the [development runbook](docs/operations/development.md#first-checkout) for the initial checkout,
+See the [development runbook](docs/operations/00_development.md#first-checkout) for the initial checkout,
 development commands, tests, and platform-specific desktop packaging prerequisites.
 
 ## Before you start

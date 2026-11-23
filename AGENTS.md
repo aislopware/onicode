@@ -58,6 +58,8 @@ We need to be on the same page with terminology. When communicating, use this la
 - **turn** means one user-to-agent cycle, including follow-up work such as checkpointing.
 - **Onicode home** means the base data directory. Runtime state normally lives below its userdata directory.
 
+The full domain vocabulary is in [00_glossary.md](docs/internals/00_glossary.md).
+
 ## The two ways to hurt yourself
 
 1. **Killing by pattern.** Never `pkill -f`, `pgrep | kill`, or `kill` a PID you found by matching a name, path, or worktree string. Your own agent process has this worktree's path in its argv, and this machine runs several other dev servers at once. Kill only a PID you captured at spawn, or the owner of your port from `ss -H -ltnp` after confirming `/proc/<pid>/cwd` is your worktree.
@@ -108,7 +110,7 @@ An empty database is a bad test. Seed your worktree's `.onicode` with a copy of 
 - Extend before you add. When an existing test or table covers the behavior, add a row or an assertion there. Write a new `it` only when no case fits.
 - Test at one layer: the lowest one that fails on `main`. Do not repeat the case in a wrapper test, at each call site, or in web and mobile copies of the same logic.
 - Write a browser test only for behavior that needs a real browser: layout and scrolling, focus and pointer input, real workers, or a component wired to its hooks. Logic a component calls gets a unit test beside it (`*.logic.test.ts`). A browser test file spends seconds in CI loading its module graph before its first test runs; a unit test takes milliseconds.
-- [Testing](docs/internals/testing.md) carries these same test rules, plus review guidance, for review bots. Change both together.
+- [Testing](docs/internals/15_testing.md) carries these same test rules, plus review guidance, for review bots. Change both together.
 - **Do not run repo-wide checks.** No `vp check`, no `vp run -r test`, no `vp run -r typecheck` unless I ask. CI owns the full suite.
 - Backend behavior changes ship with focused tests for that behavior.
 - Proof for a bug fix depends on the bug. Logic, data, state, and protocol bugs get a failing test first (the fewest that fail on `main` for that reason, in an existing case of the module's test file where one fits), then the fix. Purely visual bugs (spacing, colour, alignment, a layout shift) get before/after captures as their proof and no test: do not add UI tests for nitpicks, and do not ask for one in review when a capture already shows it. A server-only fix with no visible surface ships the test plus a short runtime transcript. For a bug a user can reproduce in the desktop app, `vp run scenarios:prove` shows it failing on base and passing on the fix in the real app; see [Scenarios](docs/operations/scenarios.md).
@@ -138,7 +140,7 @@ An empty database is a bad test. Seed your worktree's `.onicode` with a copy of 
   });
   ```
 
-- User-visible frontend changes should get one integrated pass in a real client: `test-oni-app` for desktop, `test-oni-mobile` for mobile. The primary agent does this once after integrating. Subagents do not launch their own dev servers.
+- User-visible frontend changes should get one integrated pass in a real client: `test-oni-app` for desktop, `test-oni-mobile` for mobile. The primary agent does this once after integrating. Subagents do not launch their own dev servers. Inspect the rendered result and walk the flow as a user would, checking layout, visual hierarchy, and ergonomics, and fix anything rough before handing back.
 
 - Real agent turns cost money. To watch a turn stream through the pipeline and UI, use the free `Replay (dev)` provider that `vp run dev` registers; [test-oni-app](.agents/skills/test-oni-app/SKILL.md) shows how to start one. Use a real provider only when the change depends on that provider's behavior, and then pick its cheapest model, such as Haiku for Claude or Luna for Codex.
 
@@ -146,7 +148,7 @@ For mobile verification, a missing or outdated native client is an install step,
 
 ## Evals
 
-`evals/` checks how real models behave with Onicode's model-facing text: agent instructions, MCP tool descriptions and schemas, and generated titles. Before you change that text, read [evals/README.md](evals/README.md) and run the evals it names. When you fix a model behavior bug, add a case that fails before the fix.
+`evals/` checks how real models behave with Onicode's model-facing text: agent instructions, MCP tool descriptions and schemas, and generated titles. Before changing that text, read [evals/README.md](evals/README.md) and run the evals it names. When fixing a model behavior bug, add a case that fails before the fix.
 
 ## Pull requests
 
@@ -163,12 +165,11 @@ For mobile verification, a missing or outdated native client is an install step,
 Most code changes do not need an internal documentation change. Agents can read the code.
 
 - `docs/internals/` is for architectural decisions and their reasons, constraints that span components, and implementation traps that are hard to discover from the source. Before adding a paragraph, ask what a maintainer would get wrong without it. If reading the relevant code answers the question, leave it out.
-- Do not document every feature, enumerate fields or methods, narrate control flow, maintain file catalogs, or append PR summaries. Types, tests, and code already record the implementation. The glossary defines shared vocabulary; it is not a feature index.
+- Do not document every feature, enumerate fields, methods, constants, timeouts, or migration numbers, narrate control flow, maintain file catalogs, or append PR summaries. Anything that can drift will drift; types, tests, and code already record the implementation. The glossary defines shared vocabulary; it is not a feature index.
 - A local reason the code can't show goes in a short nearby code comment. Use an internal doc when the reasoning crosses boundaries or needs context the code cannot carry well. Link to the relevant source instead of copying it.
 - When a documented decision or constraint changes, rewrite or remove the affected text. Do not append another account of the new behavior. A new internal page needs a distinct, durable reason to exist.
-- `docs/user/` helps users accomplish tasks. Give each major feature a concise section explaining what it does, how to start, and anything unintuitive. A settings path is useful; descriptions of visible buttons, icons, layouts, animations, or every UI state are not. Before adding text, ask what task or decision it helps the user with.
-- Keep user docs in the shipped product's voice, without implementation details or contributor tooling. Update the relevant feature section when how to use it changes. A UI tweak does not need a documentation entry, and a new control does not need its own page.
-- `docs/operations/` holds maintainer setup, release, and debugging procedures. Keep instructions for operating an installed Onicode server in the user guides.
+- `docs/user/` helps users accomplish tasks in the shipped product's voice, without implementation details or contributor tooling. Focus on what a feature does, how to start, and anything unintuitive—not descriptions of buttons, layouts, or UI tweaks.
+- `docs/operations/` holds maintainer setup, release, and debugging runbooks. Keep end-user server instructions in `docs/user/`.
 
 ## Plans and work artifacts
 
@@ -180,23 +181,46 @@ Most code changes do not need an internal documentation change. Agents can read 
 
 Clients send typed WebSocket requests. The server turns them into _commands_. The _orchestrator_ (`apps/server/src/orchestration-v2/Orchestrator.ts`) serializes commands and decides _events_ without doing any I/O. The _event sink_ commits those events, the _projections_ the UI reads, the _command receipt_, and _outbox_ effects in one transaction. The _effect worker_ then runs the effects, such as starting a provider turn or capturing a checkpoint, and feeds results back as commands. Provider CLIs run as subprocesses; per-provider _adapters_ translate their native protocols into orchestration events. Each turn ends with a _checkpoint_, a hidden git ref, so the app can diff and restore.
 
-Architecture and its constraints: `docs/internals/overview.md`. Glossary: `docs/internals/glossary.md`
+Architecture and its constraints: [01_architecture.md](docs/internals/01_architecture.md). Glossary: [00_glossary.md](docs/internals/00_glossary.md).
 
 ## Where code lives
 
-- `apps/server` - WebSocket, orchestration, providers, checkpointing. Effect-heavy: read [Effect services](docs/internals/effect-services.md) before adding server code, and `.repos/effect/LLMS.md` for the Effect library itself.
-- `apps/web` - React/Vite renderer for the desktop app. `apps/desktop` wraps it, `apps/mobile` is React Native, `apps/marketing` is the site.
+- `apps/server` - WebSocket, orchestration, providers, checkpointing. Effect-heavy: read [Effect services](docs/internals/02_effect-services.md) before adding server code, and `.repos/effect/LLMS.md` for the Effect library itself.
+- `apps/web` - React/Vite renderer for the desktop app. `apps/desktop` wraps it; `apps/mobile` is React Native.
 - `packages/contracts` - Effect/Schema contracts plus small derived helpers. No heavy runtime logic.
 - `packages/shared` - shared runtime utils, subpath exports, no barrel.
 - `packages/client-runtime` - client code shared by desktop and mobile.
 - `.repos/` - vendored read-only references. Prefer their patterns over invented ones. Never edit or import from them. Sync with `vpr sync:repos` when bumping the matching dependency. If it is missing (sparse checkout), read a file with `git show origin/main:.repos/<path>`.
 
+### Internal docs by area
+
+Read the matching doc before changing code in that area; code review enforces them.
+
+| Area                                                | Read first                                                                                                                                                                                        |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Architecture & orchestration                        | [00_glossary.md](docs/internals/00_glossary.md), [01_architecture.md](docs/internals/01_architecture.md)                                                                                          |
+| Server Effect services & errors                     | [02_effect-services.md](docs/internals/02_effect-services.md)                                                                                                                                     |
+| Providers & ACP                                     | [03_providers.md](docs/internals/03_providers.md)                                                                                                                                                 |
+| Auth, MCP, tailnet identity, assets, security       | [04_environment-auth.md](docs/internals/04_environment-auth.md), [SECURITY.md](SECURITY.md)                                                                                                       |
+| Remote routes, peer links, previews, remote desktop | [05_remote.md](docs/internals/05_remote.md)                                                                                                                                                       |
+| Server updates & crash recovery                     | [07_server-updates.md](docs/internals/07_server-updates.md)                                                                                                                                       |
+| Client connection & sync runtime                    | [09_connection-runtime.md](docs/internals/09_connection-runtime.md)                                                                                                                               |
+| Web UI primitives, styles & React Compiler          | [10_web-ui.md](docs/internals/10_web-ui.md)                                                                                                                                                       |
+| Mobile layout, navigation & dev lifecycle           | [11_mobile-layout.md](docs/internals/11_mobile-layout.md), [12_mobile-navigation.md](docs/internals/12_mobile-navigation.md), [13_mobile-development.md](docs/internals/13_mobile-development.md) |
+| Translations & UI copy                              | [14_i18n.md](docs/internals/14_i18n.md)                                                                                                                                                           |
+| Writing & reviewing tests                           | [15_testing.md](docs/internals/15_testing.md), [scenarios.md](docs/operations/scenarios.md)                                                                                                       |
+| Wire budgets, server metrics & perf                 | [16_performance-regressions.md](docs/internals/16_performance-regressions.md)                                                                                                                     |
+| Repo & package scripts                              | [17_scripts.md](docs/internals/17_scripts.md)                                                                                                                                                     |
+| Push notifications                                  | [push-notifications.md](docs/internals/push-notifications.md), [push-gateway.md](docs/operations/push-gateway.md)                                                                                 |
+| Browser use                                         | [browser-use.md](docs/internals/browser-use.md)                                                                                                                                                   |
+| Computer use                                        | [computer-use.md](docs/internals/computer-use.md)                                                                                                                                                 |
+
 ## Taste
 
 - Complexity belongs at the adapter boundary. Orchestration stays pure, UI stays dumb.
 - Client mutations use `createEnvironmentRpcCommand`. Add protected methods to `CLIENT_GUARDED_RPC_SCOPES` in contracts and use the command's `permissionAtom` for UI availability. Grants are checked at execution against the destination environment; the server remains authoritative. Keep raw RPC clients inside `rpc/`, and extend the permission behavior tests when adding a protected method.
-- Server features are services; transports stay thin. A `ws.ts` RPC handler, HTTP route, or MCP tool decodes input, calls one service method, and maps errors. See [Effect services](docs/internals/effect-services.md).
-- `apps/web/src/components/ui` exports own their look. Pick a `variant` or `size`; do not restyle one with `className`. If none fits and the look is a generic concept, add a variant to the component; a look that belongs to one feature stays in that feature's own component, not in `components/ui`. Layout classes (width, flex, margin, position) belong on the parent. `shadcn/no-restyle` fails lint on violations. See [Web UI](docs/internals/web-ui.md).
+- Server features are services; transports stay thin. A `ws.ts` RPC handler, HTTP route, or MCP tool decodes input, calls one service method, and maps errors. See [Effect services](docs/internals/02_effect-services.md).
+- `apps/web/src/components/ui` exports own their look. Pick a `variant` or `size`; do not restyle one with `className`. If none fits and the look is a generic concept, add a variant to the component; a look that belongs to one feature stays in that feature's own component, not in `components/ui`. Layout classes (width, flex, margin, position) belong on the parent. `shadcn/no-restyle` fails lint on violations. See [Web UI](docs/internals/10_web-ui.md).
 - Reusable Effect functions use `Effect.fn("Service.operation")` with a stable span name, not a
   function wrapping `Effect.gen`. Keep `Effect.gen` for inline programs and layer construction.
   Use `Effect.fnUntraced` only when spans would be too frequent (stream chunks, per-event
