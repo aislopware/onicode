@@ -29,6 +29,8 @@ export interface TaskFoldersTestState {
   beforeCreateWorktree?: Effect.Effect<void>;
   /** Runs after each worktree is created, so a test can stop a creation after Git's part. */
   afterCreateWorktree?: Effect.Effect<void>;
+  /** Runs after a worktree creation fails, once the driver cleaned up after itself. */
+  afterCreateWorktreeFailure?: Effect.Effect<void>;
   /** Runs after each read of a task folder's record. */
   afterFindContaining?: Effect.Effect<void>;
 }
@@ -50,6 +52,9 @@ export const layerTaskFoldersWithGit = (state: TaskFoldersTestState) => {
           Effect.suspend(() => state.beforeCreateWorktree ?? Effect.void).pipe(
             Effect.andThen(git.createWorktree(input, options)),
             Effect.tap(() => Effect.suspend(() => state.afterCreateWorktree ?? Effect.void)),
+            Effect.tapError(() =>
+              Effect.suspend(() => state.afterCreateWorktreeFailure ?? Effect.void),
+            ),
           ),
         removeWorktree: git.removeWorktree,
         deleteLocalBranch: git.deleteLocalBranch,

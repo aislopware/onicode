@@ -1487,7 +1487,12 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       cwd,
       ["rev-parse", "--symbolic-full-name", spec],
       true,
-    ).pipe(Effect.map((stdout) => stdout.trim().replace(/^refs\/(?:remotes|heads)\//, "")));
+    ).pipe(
+      // Refnames may end in Unicode whitespace, so only Git's newline goes.
+      Effect.map((stdout) =>
+        stdout.replace(/\r?\n$/, "").replace(/^refs\/(?:remotes|heads)\//, ""),
+      ),
+    );
 
     if (upstreamRef.length === 0 || upstreamRef === spec) {
       return null;
@@ -1497,6 +1502,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
 
   // Git's own split of the tracked ref: `origin/alice/fix` is ambiguous when a remote is
   // literally named `origin/alice`, and splitting by the longest remote name picks that one.
+  // Null when the branch tracks nothing; undefined when Git could not split it (older Git).
   const readTrackedUpstream = Effect.fn("readTrackedUpstream")(function* (
     cwd: string,
     branch: string,
@@ -1504,29 +1510,27 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     const localRef = `refs/heads/${branch}`;
     // One row carries the upstream and its split. for-each-ref also lists refs below a prefix,
     // and refnames may end in Unicode whitespace.
-    const [, upstream = "", remoteName = "", remoteRef = ""] =
-      (yield* runGitStdout(
-        "GitVcsDriver.readTrackedUpstream",
-        cwd,
-        [
-          "for-each-ref",
-          "--format=%(refname)%09%(upstream)%09%(upstream:remotename)%09%(upstream:remoteref)",
-          localRef,
-        ],
-        true,
-      ).pipe(Effect.orElseSucceed(() => "")))
-        .split(/\r?\n/)
-        .map((line) => line.split("\t"))
-        .find(([refname]) => refname === localRef) ?? [];
-    if (
-      !upstream.startsWith("refs/remotes/") ||
-      remoteName.length === 0 ||
-      !remoteRef.startsWith("refs/heads/")
-    ) {
-      return null;
+    const row = (yield* runGitStdout(
+      "GitVcsDriver.readTrackedUpstream",
+      cwd,
+      [
+        "for-each-ref",
+        "--format=%(refname)%09%(upstream)%09%(upstream:remotename)%09%(upstream:remoteref)",
+        localRef,
+      ],
+      true,
+    ).pipe(Effect.orElseSucceed(() => "")))
+      .split(/\r?\n/)
+      .map((line) => line.split("\t"))
+      .find(([refname]) => refname === localRef);
+    if (row === undefined) return undefined;
+    const [, upstream = "", remoteName = "", remoteRef = ""] = row;
+    if (upstream.length === 0) return null;
+    if (remoteName.length === 0 || remoteName === "." || !remoteRef.startsWith("refs/heads/")) {
+      return undefined;
     }
     return {
-      upstreamRef: upstream.slice("refs/remotes/".length),
+      upstreamRef: upstream.replace(/^refs\/(?:remotes|heads)\//, ""),
       remoteName,
       branchName: remoteRef.slice("refs/heads/".length),
     };
@@ -3844,11 +3848,11 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     const upstreamRef = yield* readCurrentUpstreamRef(cwd, branch).pipe(
       Effect.orElseSucceed(() => null),
     );
+    const tracked = upstreamRef === null ? null : yield* readTrackedUpstream(cwd, branch);
     const upstream =
-      upstreamRef === null
-        ? null
-        : ((yield* readTrackedUpstream(cwd, branch)) ??
-          (yield* resolveCurrentUpstream(cwd, upstreamRef).pipe(Effect.orElseSucceed(() => null))));
+      upstreamRef === null || tracked !== undefined
+        ? tracked
+        : yield* resolveCurrentUpstream(cwd, upstreamRef).pipe(Effect.orElseSucceed(() => null));
     if (!upstream) return null;
     if (isAliasOfUpstreamHead(branch, upstream.branchName, upstream.upstreamRef)) {
       // A fork workflow pushes to the configured push remote and keeps the upstream for pulls, as plain `git push` does.
@@ -5475,7 +5479,6 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     operation: string,
     input: GitVcsDriver.GitCreateBranchInput,
     fallbackErrorDetail: string,
-    onCreated?: () => Effect.Effect<void>,
   ) {
     // `git branch` does not read a lone - as the previous checkout.
     const startPoint = input.startPoint === "-" ? "@{-1}" : input.startPoint;
@@ -5485,7 +5488,6 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       ["branch", "--no-track", "--", input.branch, startPoint],
       { fallbackErrorDetail },
     );
-    if (onCreated) yield* onCreated();
     const startRef = yield* executeGit(
       `${operation}.resolveStartPoint`,
       input.cwd,
@@ -6103,13 +6105,28 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         ? `oni-create-${yield* random.uuidV4()}`
         : undefined;
 
+    // Read before the branch exists: from its creation on, only the checkout's own cleanup runs.
+    // Both reads leave the repository alone, so they share one round trip.
+    const [configuredCheckoutWorkers, base] = yield* Effect.all(
+      [
+        readConfigValue(input.cwd, "checkout.workers"),
+        input.newRefName && input.baseRefName
+          ? resolveBranchBase(input.cwd, input.baseRefName)
+          : Effect.succeed(null),
+      ],
+      { concurrency: "unbounded" },
+    );
+    const checkoutWorkers = configuredCheckoutWorkers ?? "0";
+    // The cache clones a full checkout, so a sparse worktree uses Git's own checkout.
+    const fastCheckout =
+      checkoutCache !== undefined && options?.fastCheckout === true && sparsePatterns === null;
+    const cacheGeneration = fastCheckout ? yield* checkoutCache.currentGeneration : 0;
     if (newRefName) {
       // Kept apart from the checkout so the shared-config lock only covers the tracking write.
       yield* createBranchAt(
         "GitVcsDriver.createWorktree.createBranch",
         { cwd: input.cwd, branch: newRefName, startPoint: input.refName },
         "git branch failed",
-        options?.progress?.onBranchCreated,
       );
     }
     const checkoutRef = newRefName ?? input.refName;
@@ -6129,21 +6146,6 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         }
       : {};
 
-    // Both reads leave the repository alone, so they share one round trip before the checkout.
-    const [configuredCheckoutWorkers, base] = yield* Effect.all(
-      [
-        readConfigValue(input.cwd, "checkout.workers"),
-        input.newRefName && input.baseRefName
-          ? resolveBranchBase(input.cwd, input.baseRefName)
-          : Effect.succeed(null),
-      ],
-      { concurrency: "unbounded" },
-    );
-    const checkoutWorkers = configuredCheckoutWorkers ?? "0";
-    // The cache clones a full checkout, so a sparse worktree uses Git's own checkout.
-    const fastCheckout =
-      checkoutCache !== undefined && options?.fastCheckout === true && sparsePatterns === null;
-    const cacheGeneration = fastCheckout ? yield* checkoutCache.currentGeneration : 0;
     const stockCheckout = executeGitWithStableDiagnostics(
       "GitVcsDriver.createWorktree",
       input.cwd,
