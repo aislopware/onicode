@@ -3,6 +3,10 @@ import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import * as Dialog from "../../components/ui/Dialog";
 import { useIsFocused, useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { EnvironmentId, ThreadId } from "@onicode/contracts";
+import {
+  previewStreamControlLabel,
+  type PreviewStreamControl,
+} from "@onicode/client-runtime/preview/server-browser-stream";
 import { normalizePreviewUrl, previewPdfAssetUrl } from "@onicode/shared/preview";
 import * as Option from "effect/Option";
 import { msg, useGT, useMessages } from "gt-react-native";
@@ -92,7 +96,7 @@ function BrowserPreviewScreen({
   const [selectedTabId, setSelectedTabId] = useState(initialTabId);
   const [pictureInPicture, setPictureInPicture] = useState(NO_PICTURE_IN_PICTURE);
   const [streaming, setStreaming] = useState(false);
-  const [canControl, setCanControl] = useState(false);
+  const [control, setControl] = useState<PreviewStreamControl | null>(null);
   const streamRef = useRef<PreviewStreamRef>(null);
   const { tabs, loaded } = useThreadServerBrowserTabs({ environmentId, threadId, enabled: true });
   const tab = tabs.find((entry) => entry.tabId === selectedTabId) ?? latestBrowserTab(tabs);
@@ -117,7 +121,7 @@ function BrowserPreviewScreen({
   };
   const live = (focused && foreground) || pictureInPicture.active;
 
-  const ready = streaming && canControl;
+  const ready = streaming && control?.controller === "you";
   const command: PreviewStreamRef["command"] = (input) => streamRef.current?.command(input);
   const showPictureInPicture =
     // Android WebView cannot play video in picture in picture.
@@ -152,6 +156,16 @@ function BrowserPreviewScreen({
           },
           trailing: (
             <>
+              {control ? (
+                <StreamControlToggle
+                  control={control}
+                  onToggle={() =>
+                    command({
+                      type: control.controller === "you" ? "releaseControl" : "takeControl",
+                    })
+                  }
+                />
+              ) : null}
               {showPictureInPicture ? (
                 <ControlPill
                   icon={{
@@ -196,7 +210,6 @@ function BrowserPreviewScreen({
                       : undefined
                   }
                   onPaste={ready ? () => streamRef.current?.paste() : undefined}
-                  onReleaseControl={ready ? () => command({ type: "releaseControl" }) : undefined}
                 />
               ) : null}
             </>
@@ -218,7 +231,7 @@ function BrowserPreviewScreen({
                 onPictureInPicture={onPictureInPicture}
                 onStreamingChange={setStreaming}
                 onScrollDirection={onScrollDirection}
-                onControl={(control) => setCanControl(control?.controller === "you")}
+                onControl={setControl}
               />
             ) : (
               <View className="flex-1" />
@@ -233,6 +246,41 @@ function BrowserPreviewScreen({
         }
       </BrowserChrome>
     </SafeAreaView>
+  );
+}
+
+/**
+ * Who drives the page as one icon, like the desktop's toggle: pressing it takes or gives back
+ * control. Read-only, or while another viewer drives, it only shows who does.
+ */
+function StreamControlToggle(props: {
+  readonly control: PreviewStreamControl;
+  readonly onToggle: () => void;
+}) {
+  const gt = useGT();
+  const resolveMessage = useMessages();
+  const { control } = props;
+  const you = control.controller === "you";
+  const locked = !control.canOperate || control.controller === "another-viewer";
+  const label = previewStreamControlLabel(control, resolveMessage);
+  return (
+    <ControlPill
+      icon={
+        control.controller === "another-viewer"
+          ? "person.2"
+          : !control.canOperate
+            ? "eye"
+            : control.controller === "agent"
+              ? "robot"
+              : "cursorarrow"
+      }
+      variant={you ? "primary" : "circle"}
+      disabled={locked}
+      accessibilityLabel={
+        locked ? label : `${label}. ${you ? gt("Release control") : gt("Take control")}`
+      }
+      onPress={props.onToggle}
+    />
   );
 }
 

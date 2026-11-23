@@ -63,6 +63,7 @@ import IconEdit from "@tabler/icons-react-native/IconEdit";
 import IconExternalLink from "@tabler/icons-react-native/IconExternalLink";
 import IconEyeOff from "@tabler/icons-react-native/IconEyeOff";
 import IconEye from "@tabler/icons-react-native/IconEye";
+import IconPointer from "@tabler/icons-react-native/IconPointer";
 import IconFileText from "@tabler/icons-react-native/IconFileText";
 import IconFileDiff from "@tabler/icons-react-native/IconFileDiff";
 import IconFilter from "@tabler/icons-react-native/IconFilter";
@@ -207,6 +208,7 @@ const ANDROID_ICON_BY_SF_SYMBOL = {
   ticket: IconTicket,
   cloud: IconCloud,
   cpu: IconCpu,
+  cursorarrow: IconPointer,
   cube: IconBox,
   "chevron.down": IconChevronDown,
   "chevron.left": IconChevronLeft,
