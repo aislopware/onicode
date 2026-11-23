@@ -210,6 +210,44 @@ it("does not repeat the note when a steer restarts the run on a new attempt", ()
 
   assert.deepEqual(pending([firstAttempt, RunAttemptId.make("attempt:2b")], true), []);
   assert.deepEqual(pending([firstAttempt, RunAttemptId.make("attempt:2b")], false), lost);
+
+  // A forced restart into /compact replaced the run's message after its first attempt told the note.
+  const later = run(3, claudeThread);
+  const promptAttempt = {
+    id: firstAttempt,
+    runId: steered.id,
+    userMessageId: MessageId.make("message:2a"),
+  };
+  const compactAttempt = { id: steered.activeAttemptId!, runId: steered.id };
+  const history = {
+    runs: [root, steered, later].map((source) => ({
+      ...source,
+      requestedAt: DateTime.makeUnsafe(source.ordinal * 1_000),
+    })),
+    providerTurns: [
+      turnFor(root),
+      { runAttemptId: firstAttempt, providerThreadId: claudeThread, status: "completed" as const },
+      turnFor(steered),
+    ],
+    attempts: [promptAttempt, compactAttempt, { id: later.activeAttemptId!, runId: later.id }],
+  };
+  const compacting = new Set([steered.userMessageId]);
+  assert.deepEqual(
+    pendingRestartCancelledBackgroundWork({
+      ...history,
+      compactionMessageIds: () => compacting,
+      run: later,
+    }),
+    [],
+  );
+  assert.deepEqual(
+    stoppedNoteToldAt({
+      ...history,
+      providerThreadId: claudeThread,
+      compactionMessageIds: compacting,
+    }),
+    DateTime.makeUnsafe(2_000),
+  );
 });
 
 it("counts a prompted mid-turn or chained continuation as delivering the note", () => {

@@ -7281,7 +7281,12 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         nodeId: rootNodeId,
         providerInstanceId: targetRun.providerInstanceId,
         occurredAt: now,
-        payload: { ...currentAttempt, status: "superseded", completedAt: now },
+        payload: {
+          ...currentAttempt,
+          status: "superseded",
+          completedAt: now,
+          userMessageId: targetRun.userMessageId,
+        },
       });
     }
     if (currentRootNode !== undefined) {

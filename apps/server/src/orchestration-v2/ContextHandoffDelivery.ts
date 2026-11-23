@@ -1,7 +1,10 @@
-import type {
-  OrchestrationV2ContextHandoff,
-  OrchestrationV2ProviderThread,
-  OrchestrationV2ThreadProjection,
+import {
+  orchestrationV2AttemptMessageId,
+  type OrchestrationV2ContextHandoff,
+  type OrchestrationV2ProviderThread,
+  type OrchestrationV2Run,
+  type OrchestrationV2RunAttempt,
+  type OrchestrationV2ThreadProjection,
 } from "@onicode/contracts";
 import * as ProviderAdapter from "@onicode/provider-core/server/ProviderAdapter";
 import { ContextHandoffBudgetError } from "@onicode/provider-core/server/failure";
@@ -56,6 +59,29 @@ export const leavesNotesForNextPrompt = (
  * Messages of turns that left notes and missed images for the next prompt. A resume replays its
  * unsent source's prompt under an empty message of its own, so that prompt classifies it.
  */
+/**
+ * The ordinal of the latest run whose accepted prompt could carry missed images: history delivery
+ * is text only, and a compaction carries none. Each attempt counts by the message it sent.
+ */
+export const lastImagePromptOrdinal = (input: {
+  readonly acceptedAttempts: ReadonlyArray<
+    Pick<OrchestrationV2RunAttempt, "runId" | "userMessageId">
+  >;
+  readonly runs: ReadonlyArray<Pick<OrchestrationV2Run, "id" | "ordinal" | "userMessageId">>;
+  readonly missedRunIds: ReadonlySet<string>;
+  readonly compactionMessageIds: ReadonlySet<string>;
+}): number => {
+  const runsById = new Map(input.runs.map((run) => [run.id, run]));
+  let ordinal = 0;
+  for (const attempt of input.acceptedAttempts) {
+    const run = runsById.get(attempt.runId);
+    if (run === undefined || input.missedRunIds.has(attempt.runId)) continue;
+    if (input.compactionMessageIds.has(orchestrationV2AttemptMessageId(attempt, run))) continue;
+    ordinal = Math.max(ordinal, run.ordinal);
+  }
+  return ordinal;
+};
+
 export const notesWaitingMessageIds = (
   session: CommandSession,
   projection: Pick<

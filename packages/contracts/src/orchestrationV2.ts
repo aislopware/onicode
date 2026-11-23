@@ -909,8 +909,18 @@ export const OrchestrationV2RunAttempt = Schema.Struct({
   ]),
   startedAt: Schema.NullOr(Schema.DateTimeUtc),
   completedAt: Schema.NullOr(Schema.DateTimeUtc),
+  /** Set when a steering restart superseded it, since the run then takes the steer's message. */
+  userMessageId: Schema.optional(MessageId),
 });
 export type OrchestrationV2RunAttempt = typeof OrchestrationV2RunAttempt.Type;
+
+/** The message an attempt sent. Attempts superseded before the field existed read the run's. */
+export function orchestrationV2AttemptMessageId(
+  attempt: Pick<OrchestrationV2RunAttempt, "userMessageId">,
+  run: Pick<OrchestrationV2Run, "userMessageId">,
+): OrchestrationV2Run["userMessageId"] {
+  return attempt.userMessageId ?? run.userMessageId;
+}
 
 export const OrchestrationV2ExecutionNode = Schema.Struct({
   id: NodeId,

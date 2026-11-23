@@ -1,5 +1,6 @@
 import {
   isDeliveredProviderTurn,
+  orchestrationV2AttemptMessageId,
   type NodeId,
   type OrchestrationV2ConversationMessage,
   type OrchestrationV2PendingBackgroundTask,
@@ -17,7 +18,28 @@ import * as DateTime from "effect/DateTime";
 import { latestRootProviderFailure, runRanAfter } from "@onicode/shared/orchestrationV2ThreadError";
 
 type Work = OrchestrationV2RestartCancelledBackgroundWork;
-type Attempt = Pick<OrchestrationV2RunAttempt, "id" | "runId">;
+type Attempt = Pick<OrchestrationV2RunAttempt, "id" | "runId" | "userMessageId">;
+
+/** Runs with an attempt that passes `test` and sent a message other than a compaction's. */
+function promptedRunIds(
+  runs: ReadonlyArray<Pick<OrchestrationV2Run, "id" | "userMessageId">>,
+  attempts: ReadonlyArray<Attempt>,
+  compactionMessageIds: ReadonlySet<string>,
+  test: (attempt: Attempt) => boolean,
+): ReadonlySet<string> {
+  const runsById = new Map(runs.map((run) => [run.id, run]));
+  const ids = new Set<string>();
+  for (const attempt of attempts) {
+    const run = runsById.get(attempt.runId);
+    if (
+      run !== undefined &&
+      test(attempt) &&
+      !compactionMessageIds.has(orchestrationV2AttemptMessageId(attempt, run))
+    )
+      ids.add(run.id);
+  }
+  return ids;
+}
 
 const MAX_LABEL_LENGTH = 160;
 
@@ -169,17 +191,17 @@ export function stoppedNoteToldAt(input: StoppedNoteHistory): DateTime.Utc | und
       .filter((turn) => turn.status === "completed")
       .map((turn) => turn.runAttemptId),
   );
-  const completedRunIds = new Set(
-    input.attempts
-      .filter((attempt) => completedAttemptIds.has(attempt.id))
-      .map((attempt) => attempt.runId),
+  const toldRunIds = promptedRunIds(
+    input.runs,
+    input.attempts,
+    input.compactionMessageIds,
+    (attempt) => completedAttemptIds.has(attempt.id),
   );
   let toldAt: DateTime.Utc | undefined;
   for (const run of input.runs) {
     if (
       run.providerThreadId === input.providerThreadId &&
-      completedRunIds.has(run.id) &&
-      !input.compactionMessageIds.has(run.userMessageId) &&
+      toldRunIds.has(run.id) &&
       (toldAt === undefined || DateTime.isGreaterThan(run.requestedAt, toldAt))
     ) {
       toldAt = run.requestedAt;
@@ -574,9 +596,12 @@ export function pendingRestartCancelledBackgroundWork(input: {
       deliveredAttemptIds.has(attempt.id),
   );
   if (alreadyDelivered) return [];
-  const deliveredRunIds = new Set<string>();
-  for (const attempt of input.attempts)
-    if (deliveredAttemptIds.has(attempt.id)) deliveredRunIds.add(attempt.runId);
+  const deliveredPromptRunIds = promptedRunIds(
+    sameThread,
+    input.attempts,
+    compactionMessageIds,
+    (attempt) => deliveredAttemptIds.has(attempt.id),
+  );
   let lookup: ContinuationLookup | undefined;
   // runRanAfter is a total order, so a source precedes some prompted run iff it precedes the latest one.
   let latestPrompted: OrchestrationV2Run | undefined;
@@ -585,8 +610,8 @@ export function pendingRestartCancelledBackgroundWork(input: {
       candidate.id !== input.run.id &&
       candidate.activeAttemptId !== null &&
       candidate.status !== "rolled_back" &&
-      (deliveredAttemptIds.has(candidate.activeAttemptId) || deliveredRunIds.has(candidate.id)) &&
-      !isCompaction(candidate) &&
+      ((deliveredAttemptIds.has(candidate.activeAttemptId) && !isCompaction(candidate)) ||
+        deliveredPromptRunIds.has(candidate.id)) &&
       (candidate.restartContinuationOfRunId === undefined ||
         isNoteContinuation(
           candidate,
