@@ -3472,3 +3472,4 @@ f0d901502a	take	taken as is (Azure DevOps only; GitHub/GitLab repositories alway
 0359b044e9	take	kept Onicode's focus-emulated painting over upstream's frameStalled painting: every nudged wait (held command or capture) already paints in Onicode, so frameStalled was redundant and also kept painting up to 2s after a new document freed the capture (Onicode's 'stops painting for a screenshot Chromium never answers' test caught it); took the capturePage nudge
 555512fbe1	take	kept Onicode's refresh-on-refusal in runActionAndInvalidate: same fix already on main, sharing one refresh helper with the success path; took upstream's reader-notify test
 593885bd5d	take	taken; upstream's cloud/bootService.ts hunks applied to Onicode's service/bootService.ts (moved file)
+37a70fa041	take	taken as is
