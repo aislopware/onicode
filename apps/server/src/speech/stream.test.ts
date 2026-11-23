@@ -228,30 +228,151 @@ it.live("answers a failed session lookup as a server error, not a rejected crede
   }).pipe(Effect.scoped, Effect.provide(NodeHttpServer.layerTest)),
 );
 
-it.effect("releases the stream when a started client goes silent", () =>
+const audioFrame = new Uint8Array(new Float32Array([0.25]).buffer);
+const finishFrame = JSON.stringify({ type: "finish" });
+const answered = Effect.succeed({ revision: 1, text: null });
+
+interface SocketCase {
+  readonly name: string;
+  readonly frames: ReadonlyArray<string | Uint8Array>;
+  /** Runs after the stream's resources are taken, before it is handed out. */
+  readonly opening?: Effect.Effect<void>;
+  readonly feed: ReturnType<SpeechStream["feed"]>;
+  readonly unwritable?: boolean;
+  readonly silence: Parameters<typeof TestClock.adjust>[0];
+  readonly sent: ReadonlyArray<string>;
+  readonly released: boolean;
+}
+
+it.effect.each<SocketCase>([
+  {
+    name: "keeps a started client that is still waiting on the microphone",
+    frames: [],
+    feed: answered,
+    silence: "1 minute",
+    sent: ["ready"],
+    released: false,
+  },
+  {
+    name: "releases a started client that never sends audio",
+    frames: [],
+    feed: answered,
+    silence: "3 minutes",
+    sent: ["ready"],
+    released: true,
+  },
+  {
+    name: "releases the stream when a client goes silent after audio",
+    frames: [audioFrame],
+    feed: answered,
+    silence: "1 minute",
+    sent: ["ready", "update"],
+    released: true,
+  },
+  {
+    name: "waits on a slow engine that answers within its bound",
+    frames: [audioFrame],
+    feed: Effect.sleep("90 seconds").pipe(Effect.andThen(answered)),
+    silence: "100 seconds",
+    sent: ["ready", "update"],
+    released: false,
+  },
+  {
+    name: "ends the stream when a feed never answers",
+    frames: [audioFrame],
+    feed: Effect.never,
+    silence: "3 minutes",
+    sent: ["ready", "error"],
+    released: true,
+  },
+  {
+    name: "ends the stream when finishing never answers",
+    frames: [audioFrame, finishFrame],
+    feed: answered,
+    silence: "3 minutes",
+    sent: ["ready", "update", "error"],
+    released: true,
+  },
+  {
+    name: "ends the stream when a feed dies",
+    frames: [audioFrame],
+    feed: Effect.die("engine crashed"),
+    silence: "1 minute",
+    sent: ["ready", "error"],
+    released: true,
+  },
+  {
+    name: "ends the stream when starting never answers",
+    frames: [],
+    opening: Effect.never,
+    feed: answered,
+    silence: "5 minutes",
+    sent: ["error"],
+    released: true,
+  },
+  {
+    name: "releases an ended stream whose client keeps the socket open",
+    frames: [audioFrame],
+    feed: Effect.die("engine crashed"),
+    silence: "10 seconds",
+    sent: ["ready", "error"],
+    released: true,
+  },
+  {
+    name: "releases a stream whose socket cannot be written",
+    frames: [],
+    feed: answered,
+    unwritable: true,
+    silence: "1 minute",
+    sent: [],
+    released: true,
+  },
+])("$name", ({ frames, opening = Effect.void, feed, unwritable, silence, sent, released }) =>
   Effect.gen(function* () {
-    const released = yield* Deferred.make<void>();
+    const releasedStream = yield* Deferred.make<void>();
+    const events: string[] = [];
     let pulls = 0;
+    const start = JSON.stringify({ type: "start", options: DEFAULT_SPEECH_TRANSCRIPTION_OPTIONS });
     const socket = Socket.make({
       reader: Effect.succeed({
         pull: Effect.suspend(() =>
-          pulls++ === 0
-            ? Effect.succeed([
-                JSON.stringify({ type: "start", options: DEFAULT_SPEECH_TRANSCRIPTION_OPTIONS }),
-              ] as const)
-            : Effect.never,
+          pulls++ === 0 ? Effect.succeed([start, ...frames] as const) : Effect.never,
         ),
         upgrade: () => Effect.void,
       }),
-      writer: Effect.succeed({ write: () => Effect.void, writeAll: () => Effect.void }),
+      writer: Effect.succeed({
+        write: (chunk: Uint8Array | string | Socket.CloseEvent) =>
+          unwritable
+            ? Effect.fail(
+                new Socket.SocketError({ reason: new Socket.SocketWriteError({ cause: "gone" }) }),
+              )
+            : Effect.sync(() => {
+                if (typeof chunk === "string") events.push(decodeEvent(chunk).type);
+              }),
+        writeAll: () => Effect.void,
+      }),
     });
-    const stream: SpeechStream = { feed: () => Effect.never, finish: Effect.never };
+    // The clock moves only once the socket reached the call that the last frame makes.
+    const reached = yield* Deferred.make<void>();
+    const last = frames.at(-1);
+    const signal = (kind: "start" | "feed" | "finish") =>
+      (last === undefined ? "start" : last === finishFrame ? "finish" : "feed") === kind
+        ? Deferred.succeed(reached, undefined)
+        : Effect.void;
+    const stream: SpeechStream = {
+      feed: () => signal("feed").pipe(Effect.andThen(feed)),
+      finish: signal("finish").pipe(Effect.andThen(Effect.never)),
+    };
     yield* runSpeechSocket(socket, {
       startStream: () =>
-        Effect.acquireRelease(Effect.succeed(stream), () => Deferred.succeed(released, undefined)),
+        Effect.acquireRelease(signal("start"), () =>
+          Deferred.succeed(releasedStream, undefined),
+        ).pipe(Effect.andThen(opening), Effect.as(stream)),
     }).pipe(Effect.scoped, Effect.forkChild);
 
-    yield* TestClock.adjust("1 minute");
-    expect(yield* Deferred.isDone(released)).toBe(true);
+    yield* Deferred.await(reached);
+    yield* TestClock.adjust(silence);
+    expect(events).toEqual(sent);
+    expect(yield* Deferred.isDone(releasedStream)).toBe(released);
   }),
 );
