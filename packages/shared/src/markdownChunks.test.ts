@@ -83,10 +83,51 @@ describe("splitMarkdown", () => {
       "# literal",
       "</div>",
       "",
+      "<details>",
+      "<summary>Answer</summary>",
+      "",
+      "Inside details",
+      "",
+      "</details>",
+      "",
+      "<table><tr><td>",
+      "",
+      "```ts",
+      "inside a cell",
+      "```",
+      "",
+      "</td></tr></table>",
+      "",
+      '<ol start="10">',
+      "",
+      "<li>one</li>",
+      "",
+      "<li>two</li>",
+      "",
+      "</ol>",
+      "",
+      "```html",
+      "<details>",
+      "```",
+      "",
       "after",
       "",
     ].join("\n");
-    expect(starts(text)).toEqual(["<!--", "after"]);
+    expect(starts(text)).toEqual(["<!--", "```html", "after"]);
+    const multiline = [
+      "<details",
+      '  class="faq"><!-- </details> -->',
+      "",
+      "Inside details",
+      "",
+      "</details>",
+      "",
+      "after",
+      "",
+    ].join("\n");
+    expect(starts(multiline)).toEqual(["<details", "after"]);
+    const unclosed = ["<details>", "", "x".repeat(32 * 1024), "", "after", ""].join("\n");
+    expect(starts(unclosed)).toEqual(["<details>", "after"]);
   });
 
   it("treats an autolink line as a paragraph, so a following fence still opens", () => {
@@ -232,6 +273,10 @@ describe("extendMarkdownSplit", () => {
       text: "# A\n\nintro\n\n```md\n# not\n\nnot a paragraph\n```\n\nafter\n\n# B\n",
     },
     { name: "comments and math", text: "<!--\n\n# hidden\n-->\n\n$$\n\nx\n$$\n\n# After\n\nend" },
+    {
+      name: "a details block spanning blank lines",
+      text: "# A\n\nintro\n\n<details>\n<summary>S</summary>\n\nInside\n\n# kept\n\n</details>\n\nafter\n\n# B\n",
+    },
     {
       name: "definitions in the last piece",
       text: "# A\n\n[a]: /one\n\nuse [a] and [b]\n\n# B\n\ntext\n\n[b]: /two 'Two'\n[c]: /three\n",
