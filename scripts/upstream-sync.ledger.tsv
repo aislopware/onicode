@@ -3546,3 +3546,4 @@ de6315aea2	take	fix(server): Antigravity models keep their own thinking levels a
 832e359558	skip	already on main: the same one-line rename landed with the port of t3code@238881669a (ThreadSettlementService.test.ts)
 17dd10ebc9	take	fix(server): a desktop backend whose launcher died exits even if shutdown hangs (#41687)
 d4d08aed56	take	taken; http.ts import conflict kept Onicode's refreshMcpAppCsp/htmlRender imports; two Onicode-only tests adapted (CSP-refresh snapshot expects the document bootstrap; favicon link test matches Onicode's opened-file result)
+ae3352e051	take	fix(server): checkpoints work when a Git path ends in a space (#41725)
