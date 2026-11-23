@@ -4,6 +4,7 @@ import { contextMenuSourceOf } from "../../contextMenuSource";
 import { assistantCitationsToPlainText } from "@onicode/shared/assistantCitations";
 import { replaceComposerContextReferences } from "@onicode/shared/composerContextReferences";
 import { composerFileLinksToPlainText } from "@onicode/shared/composerInlineTokens";
+import { markdownMathRanges } from "~/markdown/wordsHast";
 import { T, useGT } from "gt-react";
 import { SquarePenIcon, XIcon } from "lucide-react";
 import {
@@ -88,6 +89,7 @@ const SidebarDraftRow = memo(function SidebarDraftRow(props: {
     assistantCitationsToPlainText(
       composerFileLinksToPlainText(
         replaceComposerContextReferences(composer.prompt, (occurrence) => occurrence.label),
+        markdownMathRanges,
       ),
     )
       .trim()

@@ -6,6 +6,7 @@ import {
   replaceComposerContextReferences,
 } from "@onicode/shared/composerContextReferences";
 import { composerFileLinksToPlainText } from "@onicode/shared/composerInlineTokens";
+import { markdownMathRanges } from "@onicode/shared/markdownMath";
 
 export const REMOVE_QUEUED_MESSAGE_ACCESSIBILITY_LABEL = msg("Remove queued message");
 
@@ -52,6 +53,7 @@ export function resolveThreadQueueRowControls(input: {
       : assistantCitationsToPlainText(
           composerFileLinksToPlainText(
             replaceComposerContextReferences(input.text, (reference) => reference.label),
+            markdownMathRanges,
           ),
         ).trim(),
     isEditing,

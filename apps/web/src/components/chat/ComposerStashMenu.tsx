@@ -4,6 +4,7 @@ import { memo, useEffect, useEffectEvent, useRef, useState, type RefObject } fro
 import { assistantCitationsToPlainText } from "@onicode/shared/assistantCitations";
 import { replaceComposerContextReferences } from "@onicode/shared/composerContextReferences";
 import { composerFileLinksToPlainText } from "@onicode/shared/composerInlineTokens";
+import { markdownMathRanges } from "~/markdown/wordsHast";
 
 import { RelativeTime } from "../RelativeTime";
 import { m, type MessageResolver } from "~/i18n/messages";
@@ -21,6 +22,7 @@ export function stashEntrySnippet(entry: PromptStashEntry, resolve: MessageResol
   const trimmed = assistantCitationsToPlainText(
     composerFileLinksToPlainText(
       replaceComposerContextReferences(entry.prompt, (reference) => reference.label),
+      markdownMathRanges,
     ),
   )
     .trim()

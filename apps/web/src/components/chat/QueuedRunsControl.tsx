@@ -15,6 +15,7 @@ import {
   replaceComposerContextReferences,
 } from "@onicode/shared/composerContextReferences";
 import { composerFileLinksToPlainText } from "@onicode/shared/composerInlineTokens";
+import { markdownMathRanges } from "~/markdown/wordsHast";
 import {
   type ChatAttachment as ContractChatAttachment,
   type EnvironmentId,
@@ -290,6 +291,7 @@ export function QueuedRunsControl({
             : assistantCitationsToPlainText(
                 composerFileLinksToPlainText(
                   replaceComposerContextReferences(item.text, (reference) => reference.label),
+                  markdownMathRanges,
                 ),
               ).trim();
           const isEditing = item.runId !== null && item.runId === props.editingRunId;

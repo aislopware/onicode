@@ -99,9 +99,11 @@ export function markdownPlainText(markdown: string): string {
 // The tooltip shows a few lines; bound parsing work for long messages and streaming responses.
 function markdownMinimapPreview(markdown: string | null) {
   if (markdown === null) return null;
+  // NFC, as file chips show names that macOS writes decomposed.
   const compact = markdownNodeText(markdownTree(markdown.slice(0, 1_500)))
     .replace(/\s+/g, " ")
-    .trim();
+    .trim()
+    .normalize("NFC");
   return compact.length > 0 ? compact : null;
 }
 

@@ -1,4 +1,4 @@
-import { fileBasename } from "./path.ts";
+import { fileDisplayName } from "./path.ts";
 
 /** The formulas a Markdown parser finds in text, as source offsets. */
 export type FindMathRanges = (
@@ -176,14 +176,29 @@ export function collectComposerInlineTokens(
     .sort((left, right) => left.start - right.start);
 }
 
-/** Shows each `@`-file link by its file name, as its composer chip does, for one-line previews. */
-export function composerFileLinksToPlainText(text: string): string {
+/**
+ * Shows each `@`-file link by its file name, as its composer chip does, for one-line previews.
+ * With `findMath`, a link inside a formula stays formula source, as the composer reads it.
+ */
+export function composerFileLinksToPlainText(text: string, findMath?: FindMathRanges): string {
+  // The composer reads a link as a mention only before whitespace, so one may end the text.
+  const links = collectMentionTokens(`${text} `).filter((token) => token.source.startsWith("["));
+  if (links.length === 0) return text;
+  // Formulas need a `$` or backslash delimiter or a math fence outside the links (whose
+  // labels escape `_`); skipping the parse keeps plain previews cheap.
+  const outsideLinks = links
+    .map((token, index) => text.slice(links[index - 1]?.end ?? 0, token.start))
+    .join(" ");
+  const math =
+    findMath &&
+    /[$\\]|(?:`{3,}|~{3,})[ \t]*math\b/.test(`${outsideLinks} ${text.slice(links.at(-1)!.end)}`)
+      ? composerMathRanges(text, findMath, links)
+      : [];
   let result = "";
   let cursor = 0;
-  // The composer reads a link as a mention only before whitespace, so one may end the text.
-  for (const token of collectMentionTokens(`${text} `)) {
-    if (!token.source.startsWith("[")) continue;
-    result += text.slice(cursor, token.start) + fileBasename(token.value);
+  for (const token of links) {
+    if (math.some((formula) => token.start < formula.end && token.end > formula.start)) continue;
+    result += text.slice(cursor, token.start) + fileDisplayName(token.value);
     cursor = token.end;
   }
   return result + text.slice(cursor);
