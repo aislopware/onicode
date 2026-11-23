@@ -1903,6 +1903,11 @@ const make = Effect.gen(function* () {
           // Squash and rebase merges leave a subagent's commits off the default branch, so
           // its work counts as shipped when a parent's merged pull request head contains it.
           if (!eligible && subagentFinished && remote !== null) {
+            if (!localChangesChecked) {
+              const changes = yield* localChangesReason(worktreePath, settings);
+              if (changes !== null) return keep(changes);
+              localChangesChecked = true;
+            }
             const seen = new Set<string>([thread.id]);
             let child: Pick<OrchestrationV2ThreadShell, "lineage"> = thread;
             while (!eligible && child.lineage.relationshipToParent === "subagent") {

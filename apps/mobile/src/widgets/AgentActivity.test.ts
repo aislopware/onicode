@@ -58,7 +58,7 @@ function row(overrides: Partial<AgentActivityRowProps>): AgentActivityRowProps {
 }
 
 describe("AgentActivity", () => {
-  it("says the agents are out of date in the expanded Dynamic Island once the activity is stale", () => {
+  it("drops the expired agent count from the Dynamic Island once the activity is stale", () => {
     const layout = render(
       {
         environmentId: "env-1",
@@ -77,7 +77,9 @@ describe("AgentActivity", () => {
       },
     );
     expect(JSON.stringify(layout.expandedLeading)).not.toContain('"children":"2"');
-    expect(JSON.stringify(layout.expandedTrailing)).toContain('"children":"2 out of date"');
+    expect(JSON.stringify(layout.compactTrailing)).not.toContain('"children":"2"');
+    expect(JSON.stringify(layout)).not.toContain("2 out of date");
+    expect(JSON.stringify(layout.expandedTrailing)).toContain('"children":"Out of date"');
     expect(JSON.stringify(layout)).not.toContain("working");
   });
 });
