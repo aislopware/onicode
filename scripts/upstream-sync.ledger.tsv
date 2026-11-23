@@ -3489,3 +3489,4 @@ e2e8a49d97	take	adapted: kept Onicode's PDF link jump after the resize scroll in
 1c9ccc7127	take	taken as is; Sidebar hook order untouched (change sits inside a stable callback), row-render test green; mobile already prefers the selected environment's copy
 a9bec41729	take	taken; test CONFLICT: upstream's JSZip tests adapted to Onicode's fflate zipFixture/zipEntries helpers; code merged cleanly
 fa2ee196b5	take	taken with adaptation; CONFLICT: kept Onicode's threadTitleText row title; row estimate 67->75px and chunk dividers border-border to match Onicode's taller settings rows and SettingsGroup divider colour
+6aad800ecf	take	adapted: DocumentText sidecar VERSION 10 -> 11 so EPUB text cached with a skipped query-href chapter is extracted again
