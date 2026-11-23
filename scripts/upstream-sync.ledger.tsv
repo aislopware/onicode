@@ -3487,3 +3487,4 @@ e2e8a49d97	take	adapted: kept Onicode's PDF link jump after the resize scroll in
 9904124683	take	adapted: Onicode's Map archive; raw full-path checked before the decoded one, with a collision test row
 7182abeeaa	take	taken; test CONFLICT: upstream's new test file merged as a case in Onicode's existing translatable.test.ts
 1c9ccc7127	take	taken as is; Sidebar hook order untouched (change sits inside a stable callback), row-render test green; mobile already prefers the selected environment's copy
+a9bec41729	take	taken; test CONFLICT: upstream's JSZip tests adapted to Onicode's fflate zipFixture/zipEntries helpers; code merged cleanly
