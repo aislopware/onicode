@@ -1240,15 +1240,17 @@ function SendSteerNowButton({
         render={
           <Button
             type="button"
-            size="icon-tiny"
-            variant="default"
+            size="xs"
+            variant="ghost-muted"
+            // The marker row stays h-4 so the timeline doesn't shift when the steer is read.
+            className="-my-1"
             disabled={sending || sent}
             onClick={() => void send()}
-            aria-label={gt("Send now")}
           />
         }
       >
         <ArrowUpIcon />
+        {gt("Send now")}
       </TooltipTrigger>
       <TooltipPopup side="top">
         <div>
