@@ -461,7 +461,7 @@ it.effect.each(deliveries)(
           (event) =>
             event.type === "run.updated" &&
             event.payload.id === parent.id &&
-            event.payload.status === "waiting",
+            event.payload.status === "completed",
         );
         yield* Queue.offer(sdkMessages, toolResult("build", false));
         for (const id of statusIds)
@@ -486,7 +486,7 @@ it.effect.each(deliveries)(
             (event) =>
               event.type === "run.updated" &&
               event.payload.id === queued.id &&
-              event.payload.status === "waiting",
+              event.payload.status === "completed",
           );
           yield* Queue.offer(sdkMessages, result("notice-completed", false));
           yield* Fiber.join(noticeFinished);
@@ -993,7 +993,7 @@ it.effect("offers a continuation for a later wake after a queued continuation is
         });
         yield* worker.drain();
         yield* Fiber.join(running);
-        const waiting = yield* runUpdated(id, "waiting");
+        const waiting = yield* runUpdated(id, "completed");
         yield* Queue.offer(sdkMessages, backgroundTaskStarted(taskId));
         yield* Queue.offer(sdkMessages, result(`result-${id}`, false));
         yield* Fiber.join(waiting);
@@ -1073,7 +1073,7 @@ it.effect("offers a continuation for a later wake after a queued continuation is
         (event) =>
           event.type === "run.updated" &&
           event.payload.id === secondContinuation.id &&
-          event.payload.status === "waiting",
+          event.payload.status === "completed",
       );
       yield* offerAndWait(result("wake-2-result", false));
       yield* Fiber.join(secondWaiting);
@@ -1246,7 +1246,7 @@ it.effect.each([
           Stream.runDrain,
           Effect.forkScoped,
         );
-      const settled = (runId: RunId, status: "waiting") =>
+      const settled = (runId: RunId, status: "completed") =>
         watch(
           (event) =>
             event.type === "run.updated" &&
@@ -1533,7 +1533,7 @@ it.effect.each([
         );
 
         if (outcome.startsWith("Claude cancels")) {
-          const ended = yield* settled(parent.id, "waiting");
+          const ended = yield* settled(parent.id, "completed");
           const restarted = yield* noticeRun("run.updated", (run) => run.status === "starting");
           const rerunning = yield* watch(
             (event) =>
@@ -1580,7 +1580,7 @@ it.effect.each([
               event.type === "subagent.updated" &&
               event.payload.completionDelivery?.state === "delivered",
           );
-          const reran = yield* noticeRun("run.updated", (run) => run.status === "waiting");
+          const reran = yield* noticeRun("run.updated", (run) => run.status === "completed");
           yield* answer(offers[2]!);
           yield* Fiber.join(reran);
           yield* worker.drain();
@@ -1598,7 +1598,7 @@ it.effect.each([
               (event.payload.status === "cancelled" || event.payload.status === "completed"),
           );
           const requeued = yield* noticeRun("run.created", () => true);
-          const ended = yield* settled(parent.id, "waiting");
+          const ended = yield* settled(parent.id, "completed");
           yield* Queue.offer(sdkMessages, toolResult("build", false));
           for (const id of statusIds) yield* Queue.offer(sdkMessages, toolResult(id, false));
           yield* Queue.offer(sdkMessages, result("result-without-echo", false));
@@ -1683,7 +1683,7 @@ it.effect.each([
             });
           } else {
             // A run's end starts the queue last, so the next run starts after the accept.
-            const ended = yield* settled(parent.id, "waiting");
+            const ended = yield* settled(parent.id, "completed");
             const next = yield* watch(
               (event) =>
                 event.type === "run.updated" &&
@@ -1796,7 +1796,7 @@ it.effect.each([
               event.payload.userMessageId === MessageId.make(messageId) &&
               event.payload.status === "starting",
           );
-        const ended = yield* settled(parent.id, "waiting");
+        const ended = yield* settled(parent.id, "completed");
         const beforeStarting = yield* starting("before");
         const nextRunning = yield* watch(
           (event) =>
@@ -1832,7 +1832,7 @@ it.effect.each([
         });
         yield* worker.drain();
         assert.equal(offers[3]?.priority, "next");
-        const beforeEnded = yield* settled(before.id, "waiting");
+        const beforeEnded = yield* settled(before.id, "completed");
         const steerStarting = yield* starting("steer");
         yield* answer(offers[2]!);
         yield* cancel(offers[3]!);
@@ -2304,9 +2304,7 @@ const exitWhileIdle = (options: {
           yield* Fiber.join(awaitedRoster);
         }
         const settled = yield* watch(
-          (event) =>
-            event.type === "run.updated" &&
-            (event.payload.status === "waiting" || event.payload.status === "completed"),
+          (event) => event.type === "run.updated" && event.payload.status === "completed",
         );
         yield* Queue.offer(firstProcess, result("waiting-on-sleep", false));
         yield* Fiber.join(settled);

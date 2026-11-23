@@ -1311,6 +1311,15 @@ function queuedRunCancellationEvents(
   return events;
 }
 
+function latestStartedRun(runs: ReadonlyArray<OrchestrationV2Run>): OrchestrationV2Run | undefined {
+  return runs
+    .filter((run) => run.status !== "queued")
+    .reduce<OrchestrationV2Run | undefined>(
+      (latest, run) => (latest === undefined || run.ordinal > latest.ordinal ? run : latest),
+      undefined,
+    );
+}
+
 function latestStableRun(
   projection: Pick<OrchestrationV2ThreadProjection, "runs">,
 ): OrchestrationV2Run | null {
@@ -1963,8 +1972,24 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           visibleTurnItems: [],
           updatedAt: records.thread.updatedAt,
         })),
+        Effect.flatMap(holdRunAwaitingCapture),
         Effect.mapError((cause) => new OrchestratorProjectionError({ threadId, cause })),
       );
+
+  // Commands decide as if the latest run were still `waiting` until its turn-end capture commits:
+  // the capture keeps the thread's effect lane, and steers and queued turns must line up behind it.
+  const holdRunAwaitingCapture = Effect.fn("Orchestrator.holdRunAwaitingCapture")(function* (
+    projection: OrchestrationV2ThreadProjection,
+  ) {
+    const latest = latestStartedRun(projection.runs);
+    if (latest === undefined || !(yield* awaitsCheckpointCapture(latest))) return projection;
+    return {
+      ...projection,
+      runs: projection.runs.map((run) =>
+        run.id === latest.id ? { ...run, status: "waiting" as const, completedAt: null } : run,
+      ),
+    };
+  });
 
   // Command reads omit settled tasks, but a completion notice counts its whole cohort.
   const notificationTasks = (
@@ -3775,6 +3800,32 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     return accepted;
   });
 
+  // A run completes before its turn-end checkpoint capture. Steers and queued turns advance when
+  // the capture commits and repeats the update, after the deliveries ahead of it on the lane.
+  const awaitsCheckpointCapture = (run: OrchestrationV2Run) =>
+    run.status !== "completed" || run.checkpointId !== null
+      ? Effect.succeed(false)
+      : effectOutbox
+          .get(RunExecutionService.checkpointCaptureEffectId(run.id, run.activeAttemptId))
+          .pipe(
+            Effect.map(
+              Option.exists((effect) => effect.status === "pending" || effect.status === "running"),
+            ),
+            Effect.orElseSucceed(() => false),
+          );
+
+  const awaitLatestRunCapture = Effect.fn("Orchestrator.awaitLatestRunCapture")(
+    function* (threadId: ThreadId) {
+      const { runs } = yield* projectionStore.getThreadRecords(threadId, ["runs"]);
+      const latest = latestStartedRun(runs);
+      if (latest === undefined || !(yield* awaitsCheckpointCapture(latest))) return;
+      yield* effectOutbox.awaitSettled(
+        RunExecutionService.checkpointCaptureEffectId(latest.id, latest.activeAttemptId),
+      );
+    },
+    (effect) => Effect.ignore(effect),
+  );
+
   // A steer still pending after its run ended was never read: the provider marks one it read
   // completed. It runs next, in its place among waiting messages. After Stop a person's steer
   // still runs next and a notice waits held.
@@ -3816,7 +3867,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     const placed = [];
     for (const item of unread) {
       const run = projection.runs.find((candidate) => candidate.id === item.runId);
-      if (run === undefined || isActiveRun(run)) continue;
+      if (run === undefined || isActiveRun(run) || (yield* awaitsCheckpointCapture(run))) continue;
       const message = (item.type === "user_message" ? projection.messages : notices).find(
         (candidate) =>
           candidate.runId === item.runId &&
@@ -14023,8 +14074,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       yield* Ref.update(input.effects, (effects) => [
         ...effects,
         {
-          // Matches the attempt-keyed id run finalization enqueues for the same attempt.
-          id: `effect:checkpoint.capture:${run.id}:${run.activeAttemptId ?? "none"}`,
+          // The id run finalization enqueues for the same attempt.
+          id: RunExecutionService.checkpointCaptureEffectId(run.id, run.activeAttemptId),
           commandId: CommandId.make(`command:effect:checkpoint.capture:${run.id}`),
           threadId: input.command.threadId,
           request: {
@@ -17433,6 +17484,14 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
 
   // dispatchWithReceiptEffect owns the dispatch span; this wrapper selects the thread locks.
   const dispatchWithReceipt = Effect.fnUntraced(function* (command: OrchestrationV2ServerCommand) {
+    // The latest stable run is the one with a checkpoint. Wait for a just-completed run's capture,
+    // outside the locks its commit takes, so a fork right after a turn starts from that turn.
+    if (
+      (command.type === "thread.fork" || command.type === "thread.merge_back") &&
+      command.sourcePoint.type === "latest_stable"
+    ) {
+      yield* awaitLatestRunCapture(command.sourceThreadId);
+    }
     const dispatch = threadDispatch.withLock(
       commandThreadId(command),
       dispatchWithReceiptEffect(command),
@@ -17546,7 +17605,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       // Take parent and child locks sequentially, never nested: delegation holds the parent
       // while writing child events, so nesting parent inside child would invert the order.
       // The keyed semaphores are neither reentrant nor deadlock-aware.
-      if (delegatedTaskTerminalStatus(run.status) !== null) {
+      if (
+        delegatedTaskTerminalStatus(run.status) !== null &&
+        !(yield* awaitsCheckpointCapture(run))
+      ) {
         // Before the parent hears of the failure: a pending continuation keeps the task open.
         if (run.status === "failed" && run.restartContinuationOfRunId !== undefined) {
           yield* threadDispatch.withLock(threadId, retryContinuationStart(threadId, run.id)).pipe(
