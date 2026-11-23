@@ -6555,6 +6555,81 @@ describe("AcpAdapterV2", () => {
     }).pipe(Effect.provide(layerTest)),
   );
 
+  it.effect("fails and retires an ACP agent that never answers session/fork", () =>
+    Effect.gen(function* () {
+      const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+      const selfInvocation = yield* resolveSelfInvocation();
+      const mockAgentPath = yield* bundledMockAgentPath;
+      const protocolEvents = yield* Queue.bounded<EffectAcpProtocol.AcpProtocolLogEvent>(256);
+      const makeRuntime = makeMockRuntime({
+        childProcessSpawner,
+        mockAgentPath,
+        protocolEvents,
+        environment: (runtimeOrdinal) =>
+          runtimeOrdinal <= 2 ? { ONICODE_ACP_HANG_FORK_SESSION: "1" } : {},
+      });
+      let runtimesClosed = 0;
+      const instanceId = ProviderInstanceId.make("acp-test");
+      const adapter = yield* makeAcpAdapterV2({
+        instanceId,
+        flavor: {
+          driver: ACP_TEST_DRIVER,
+          capabilities: AcpProviderCapabilitiesV2,
+          makeRuntime: (runtimeInput) =>
+            Effect.addFinalizer(() =>
+              Effect.sync(() => {
+                runtimesClosed += 1;
+              }),
+            ).pipe(Effect.andThen(makeRuntime(runtimeInput))),
+        },
+        selfInvocation,
+      });
+      const threadId = ThreadId.make("thread-acp-unanswered-fork");
+      const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        cwd: process.cwd(),
+      });
+      const modelSelection = { instanceId, model: "default" } as const;
+      const runtime = yield* adapter.openSession({
+        threadId,
+        providerSessionId: ProviderSessionId.make("provider-session-acp-unanswered-fork"),
+        modelSelection,
+        runtimePolicy,
+      });
+      const sourceProviderThread = yield* runtime.ensureThread({
+        threadId,
+        modelSelection,
+        runtimePolicy,
+      });
+      const forkInput = {
+        sourceProviderThread,
+        targetThreadId: ThreadId.make("thread-acp-unanswered-fork-target"),
+      };
+
+      const forkSent = Stream.fromQueue(protocolEvents).pipe(
+        Stream.filter(
+          (event) => event.direction === "outgoing" && rawProtocolMethod(event) === "session/fork",
+        ),
+        Stream.runHead,
+      );
+      const fork = yield* runtime.forkThread(forkInput).pipe(Effect.forkChild);
+      yield* forkSent;
+      yield* TestClock.adjust("90 seconds");
+      assert.isTrue(Exit.isFailure(yield* Fiber.await(fork)));
+      assert.equal(runtimesClosed, 1);
+
+      // Stopping a fork the agent has not answered retires it too.
+      const stopped = yield* runtime.forkThread(forkInput).pipe(Effect.forkChild);
+      yield* forkSent;
+      yield* Fiber.interrupt(stopped);
+      assert.equal(runtimesClosed, 2);
+
+      const forked = yield* runtime.forkThread(forkInput);
+      assert.equal(forked.nativeThreadRef?.nativeId, "mock-session-1-fork");
+    }).pipe(Effect.provide(layerTest)),
+  );
+
   it.effect(
     "answers fs requests method-not-found when the flavor does not opt into client fs",
     () =>
@@ -7308,6 +7383,16 @@ describe("AcpAdapterV2", () => {
       assert.equal(activeRollback._tag, "Failure");
       if (activeRollback._tag === "Failure") {
         assert.include(String(activeRollback.failure.cause), "while turn");
+      }
+      const activeFork = yield* runtime
+        .forkThread({
+          sourceProviderThread: providerThread,
+          targetThreadId: ThreadId.make("thread-acp-active-fork-target"),
+        })
+        .pipe(Effect.result);
+      assert.equal(activeFork._tag, "Failure");
+      if (activeFork._tag === "Failure") {
+        assert.include(String(activeFork.failure.cause ?? activeFork.failure), "while turn");
       }
       const firstProviderTurnId = idAllocator.derive.providerTurn({
         driver: ACP_TEST_DRIVER,

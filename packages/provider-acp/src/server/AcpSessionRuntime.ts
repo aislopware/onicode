@@ -2729,7 +2729,7 @@ export const make = Effect.fn("AcpSessionRuntime.make")(function* (
           return runLoggedRequest(
             "session/resume",
             requestPayload,
-            acp.agent.resumeSession(requestPayload),
+            withStartupTimeout("session/resume", acp.agent.resumeSession(requestPayload)),
           );
         }),
         Effect.flatMap((response) => adoptSession(sessionId, response)),
@@ -2748,7 +2748,7 @@ export const make = Effect.fn("AcpSessionRuntime.make")(function* (
           return runLoggedRequest(
             "session/fork",
             requestPayload,
-            acp.agent.forkSession(requestPayload),
+            withStartupTimeout("session/fork", acp.agent.forkSession(requestPayload)),
           );
         }),
         Effect.flatMap((response) => adoptSession(response.sessionId, response)),
