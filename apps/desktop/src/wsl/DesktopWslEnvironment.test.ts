@@ -607,7 +607,13 @@ const isAvailable = (
         DesktopManagedPolicy.layerTest(policy),
       ),
     ),
-    Effect.provideService(WindowsRegistry, registry(serviceKeys, unreadable)),
+    Effect.provideService(
+      WindowsRegistry,
+      // A managed machine runs no WSL server, so it never needs the registry read.
+      policy === undefined
+        ? registry(serviceKeys, unreadable)
+        : WindowsRegistry.of({ readMachineKey: () => Effect.die("read on a managed machine") }),
+    ),
   );
 
 describe("makeIsAvailable", () => {

@@ -6816,8 +6816,12 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
         // mode change; replacing the process cancels it, and that clears this record too.
         const scheduleWakeupCalls = new Set<string>();
         const scheduledWakeupsByNativeThread = new Map<string, number>();
-        // When each conversation's prompt cache lapses, from the last request that reported one.
-        const promptCacheExpiryByNativeThread = new Map<string, DateTime.Utc>();
+        // When each conversation's prompt cache lapses. A request that reads the cache keeps it for
+        // another lifetime, even one that writes none, so the last lifetime written is kept too.
+        const promptCacheByNativeThread = new Map<
+          string,
+          { readonly ttlMs: number; readonly expiresAt: DateTime.Utc }
+        >();
         // Native threads whose current turn Claude started by itself inside the early-fire margin.
         const possibleEarlyWakeNativeThreads = new Set<string>();
         // Turn starts a due or nearly due ScheduleWakeup may have caused.
@@ -7090,11 +7094,22 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           if (typeof usage !== "number") {
             if (claudeMessageInputTokens(usage) <= 0) return;
             context.compactionTokens = undefined;
-            if ("promptCacheExpiresAt" in tokenUsage && tokenUsage.promptCacheExpiresAt) {
-              promptCacheExpiryByNativeThread.set(
-                context.nativeThreadId,
-                DateTime.makeUnsafe(tokenUsage.promptCacheExpiresAt),
-              );
+            const requestedAt = context.streamUsage?.requestedAt;
+            const known = promptCacheByNativeThread.get(context.nativeThreadId);
+            const ttlMs =
+              claudePromptCacheTtlMs(usage.cache_creation) ??
+              ((claudeTokenCount(usage.cache_read_input_tokens) ?? 0) > 0
+                ? known?.ttlMs
+                : undefined);
+            if (requestedAt !== undefined && ttlMs !== undefined) {
+              const expiresAt = DateTime.add(requestedAt, { milliseconds: ttlMs });
+              promptCacheByNativeThread.set(context.nativeThreadId, {
+                ttlMs,
+                expiresAt:
+                  known !== undefined && DateTime.isGreaterThan(known.expiresAt, expiresAt)
+                    ? known.expiresAt
+                    : expiresAt,
+              });
             }
           }
           const usageKey = [
@@ -13959,12 +13974,14 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
         // moving to a new one rewrites the whole conversation's cache.
         const liveProcessOutdatedBuild = Effect.fnUntraced(function* (
           live: ClaudeLiveQueryContext,
+          options: { readonly changesModel: boolean },
         ) {
-          const promptCacheExpiry = promptCacheExpiryByNativeThread.get(live.nativeThreadId);
+          const promptCache = promptCacheByNativeThread.get(live.nativeThreadId);
           if (
             live.installedAtInit === undefined ||
-            (promptCacheExpiry !== undefined &&
-              DateTime.isLessThan(yield* DateTime.now, promptCacheExpiry)) ||
+            (!options.changesModel &&
+              promptCache !== undefined &&
+              DateTime.isLessThan(yield* DateTime.now, promptCache.expiresAt)) ||
             scheduledWakeupsByNativeThread.has(live.nativeThreadId) ||
             ((yield* Ref.get(wakeBuffers)).get(live.nativeThreadId)?.messages.length ?? 0) > 0 ||
             (yield* liveProcessRunsBackgroundWork(live))
@@ -14044,20 +14061,6 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           ) {
             return existing;
           }
-          // A newer installed build replaces an idle process, resuming the conversation on it.
-          const outdatedBuild =
-            existing !== null &&
-            existing.nativeThreadId === nativeThreadId &&
-            existing.queryPolicyKey === queryPolicyKey &&
-            !existing.stopping
-              ? yield* liveProcessOutdatedBuild(existing)
-              : undefined;
-          if (outdatedBuild !== undefined) {
-            yield* Effect.logInfo("Replacing a Claude process that runs an outdated build.", {
-              threadId: turnInput.threadId,
-              ...outdatedBuild,
-            });
-          }
           const reuseLaunchSettings =
             existing !== null &&
             existing.nativeThreadId === nativeThreadId &&
@@ -14078,6 +14081,23 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             launchArgSettings,
           );
           let compiledSelection = compileClaudeModelSelection(turnInput.modelSelection, catalog);
+          // A newer installed build replaces an idle process, resuming the conversation on it.
+          const outdatedBuild =
+            existing !== null &&
+            existing.nativeThreadId === nativeThreadId &&
+            existing.queryPolicyKey === queryPolicyKey &&
+            !existing.stopping
+              ? yield* liveProcessOutdatedBuild(existing, {
+                  // Another model's prompt cache is cold, so its first turn costs nothing extra.
+                  changesModel: existing.selection.apiModelId !== compiledSelection.apiModelId,
+                })
+              : undefined;
+          if (outdatedBuild !== undefined) {
+            yield* Effect.logInfo("Replacing a Claude process that runs an outdated build.", {
+              threadId: turnInput.threadId,
+              ...outdatedBuild,
+            });
+          }
           if (
             outdatedBuild === undefined &&
             !turnInput.resume &&
@@ -14170,6 +14190,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             yield* clearWakeStateForNativeThread(abandoned);
             yield* clearPendingBackgroundTasksForNativeThread(abandoned);
             scheduledWakeupsByNativeThread.delete(abandoned);
+            promptCacheByNativeThread.delete(abandoned);
             yield* Ref.update(lastProviderThreadByNativeThread, (current) => {
               const updated = new Map(current);
               updated.delete(abandoned);

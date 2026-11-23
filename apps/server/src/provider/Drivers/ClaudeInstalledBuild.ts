@@ -1,5 +1,4 @@
 import * as HostProcess from "@onicode/shared/HostProcess";
-import { isWindowsAbsolutePath } from "@onicode/shared/path";
 import { fromLenientJson } from "@onicode/shared/schemaJson";
 import { CommandResolutionCache, resolveCommandPath } from "@onicode/shared/shell";
 import * as Effect from "effect/Effect";
@@ -7,8 +6,6 @@ import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
-
-import { resolveClaudeSdkExecutablePath } from "./ClaudeExecutable.ts";
 
 // A managed Claude launcher leaves this marker beside itself, and records the build its channel
 // publishes under the user's data directory each time it reads the channel.
@@ -34,19 +31,14 @@ export const readClaudeInstalledBuild = Effect.fn("ClaudeInstalledBuild.read")(f
   binaryPath: string,
   environment: NodeJS.ProcessEnv,
 ): Effect.fn.Return<ClaudeInstalledBuild, never, FileSystem.FileSystem | Path.Path> {
-  const path = yield* Path.Path;
-  // Windows: the file the SDK spawns, not the `claude.cmd` shim an upgrade leaves untouched.
-  // Elsewhere: uncached, so a `claude` an installer just put earlier on PATH counts at once.
-  const resolved =
-    (yield* HostProcess.Platform) === "win32"
-      ? yield* resolveClaudeSdkExecutablePath(binaryPath, environment).pipe(
-          Effect.map((file) => (isWindowsAbsolutePath(file) ? file : null)),
-        )
-      : yield* resolveCommandPath(binaryPath, { env: environment }).pipe(
-          Effect.provideService(CommandResolutionCache, new Map()),
-        );
+  // Uncached, so a `claude` an installer just put earlier on PATH counts at once. On Windows the
+  // adapter passes the SDK's own executable, already resolved past the `claude.cmd` shim.
+  const resolved = yield* resolveCommandPath(binaryPath, { env: environment }).pipe(
+    Effect.provideService(CommandResolutionCache, new Map()),
+  );
   if (resolved === null) return { executable: undefined, managedPublishedVersion: undefined };
   const fileSystem = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
   const [info, managed] = yield* Effect.all(
     [
       fileSystem.stat(resolved).pipe(Effect.option),
