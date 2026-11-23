@@ -244,6 +244,9 @@ export class TerminalManager extends Context.Service<
 
     readonly hasActiveSubprocess: (input: { readonly threadId: string }) => Effect.Effect<boolean>;
 
+    /** Every session the manager holds, exited ones included. */
+    readonly list: Effect.Effect<ReadonlyArray<TerminalSummary>>;
+
     readonly subscribe: (
       listener: (event: TerminalEvent) => Effect.Effect<void>,
       registerCleanup?: (stop: () => void) => void,
@@ -4001,6 +4004,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     closeIdle,
     closeOnSettle,
     hasActiveSubprocess,
+    list: readAllTerminalMetadata(),
     subscribe,
     subscribeMetadata,
   });
