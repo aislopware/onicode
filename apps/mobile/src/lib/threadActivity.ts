@@ -375,8 +375,7 @@ const failedActivityGroupsCache = new WeakMap<
 const presentedActivityGroupsCache = new WeakMap<
   ThreadFeedActivityGroup,
   {
-    readonly activeRunId: RunId | null;
-    readonly isWorking: boolean;
+    readonly liveRunId: RunId | null;
     readonly activeTail: boolean;
     readonly locale: string | undefined;
     readonly rows: ReadonlyArray<ThreadFeedEntry>;
@@ -1138,6 +1137,33 @@ export function failedFeedRunIds(
   return failed;
 }
 
+/** Usage-limit pauses keep their tool groups; any other failure itemizes the run's work. */
+function itemizedFeedRunIds(
+  feed: ReadonlyArray<ThreadFeedEntry>,
+  failedRunIds: ReadonlySet<RunId>,
+  usageLimitRunId: RunId | null,
+) {
+  const usageLimited = new Set<RunId>(usageLimitRunId ? [usageLimitRunId] : []);
+  const otherFailures = new Set<RunId>();
+  for (const entry of feed) {
+    if (entry.type !== "activity-group") continue;
+    for (const activity of entry.activities) {
+      const item = activity.projectedItem.item;
+      if (
+        item.type === "error" &&
+        item.status === "failed" &&
+        item.parentItemId === null &&
+        item.runId !== null
+      ) {
+        (item.failure.class === "usage_limit" ? usageLimited : otherFailures).add(item.runId);
+      }
+    }
+  }
+  return new Set(
+    [...failedRunIds].filter((runId) => !usageLimited.has(runId) || otherFailures.has(runId)),
+  );
+}
+
 /**
  * The key a run fold uses for the message `entryId`: its run, or for an
  * imported message with no run, the runless key of the user message before
@@ -1542,6 +1568,7 @@ function presentationRestart(
     previous.runlessWorkActive !== runlessWorkActive ||
     previous.display.toolCallVisibility !== display.toolCallVisibility ||
     previous.display.revealedMessageId !== display.revealedMessageId ||
+    (previous.display.usageLimitRunId ?? null) !== (display.usageLimitRunId ?? null) ||
     !setsEqual(previous.expandedRunIds, expandedRunIds) ||
     !setsEqual(previous.expandedWorkGroupIds, expandedWorkGroupIds)
   ) {
@@ -1690,6 +1717,8 @@ function liveAnswerPreview(feed: ReadonlyArray<ThreadFeedEntry>): string | null 
 export interface ThreadFeedDisplay {
   readonly toolCallVisibility: ToolCallVisibility;
   readonly revealedMessageId: MessageId | null;
+  /** The usage-limited run whose failure row the recovery notice replaces. */
+  readonly usageLimitRunId?: RunId | null;
 }
 
 const DEFAULT_THREAD_FEED_DISPLAY: ThreadFeedDisplay = {
@@ -1783,6 +1812,11 @@ export function deriveThreadFeedPresentation(
     settleSupersededReasoning(entry, index === retainedFeed.length - 1),
   );
   const failedRunIds = failedFeedRunIds(sourceFeed, latestRun);
+  const itemizedRunIds = itemizedFeedRunIds(
+    sourceFeed,
+    failedRunIds,
+    display.usageLimitRunId ?? null,
+  );
   const activeTailGroup = sourceFeed.at(-1);
   // A bare `/compact` turn is the compaction itself: its compaction row stands in for the prompt
   // and the live activity row. An answered "compact before continuing?" question folds into the
@@ -1913,7 +1947,7 @@ export function deriveThreadFeedPresentation(
       if (
         entry.type === "activity-group" &&
         entry.runId !== null &&
-        failedRunIds.has(entry.runId)
+        itemizedRunIds.has(entry.runId)
       ) {
         let rows = failedActivityGroupsCache.get(entry);
         if (!rows) {
@@ -2170,11 +2204,16 @@ function appendPresentedFeedEntry(
     return;
   }
 
+  // Rows read the working run only through their own activities, so other runs starting or
+  // stopping keep this group's rows.
+  const liveRunId =
+    isWorking && entry.activities.some((activity) => activity.runId === activeRunId)
+      ? activeRunId
+      : null;
   let cached = presentedActivityGroupsCache.get(entry);
   if (
     !cached ||
-    cached.activeRunId !== activeRunId ||
-    cached.isWorking !== isWorking ||
+    cached.liveRunId !== liveRunId ||
     cached.activeTail !== activeTail ||
     cached.locale !== locale ||
     cached.rows.some(
@@ -2191,7 +2230,7 @@ function appendPresentedFeedEntry(
       activeTail,
       resolve,
     );
-    cached = { activeRunId, isWorking, activeTail, locale, rows };
+    cached = { liveRunId, activeTail, locale, rows };
     presentedActivityGroupsCache.set(entry, cached);
   }
   for (const row of cached.rows) {

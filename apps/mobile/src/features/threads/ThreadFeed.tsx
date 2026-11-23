@@ -385,6 +385,8 @@ export interface ThreadFeedProps {
   readonly statusLines?: ReadonlyArray<ThreadStatusLineModel>;
   readonly contentPresentation: ThreadContentPresentation;
   readonly latestRun: ThreadFeedLatestRun | null;
+  /** The usage-limited run whose failure row the recovery notice replaces. */
+  readonly usageLimitRunId?: RunId | null;
   readonly activeWorkStartedAt: string | null;
   readonly runlessWorkActive?: boolean;
   readonly listRef: RefObject<LegendListRef | null>;
@@ -3141,7 +3143,11 @@ function useThreadFeedPresentation(
       props.activeWorkStartedAt,
       props.runlessWorkActive ?? false,
       feedCache,
-      { toolCallVisibility: props.toolCallVisibility ?? "showAll", revealedMessageId },
+      {
+        toolCallVisibility: props.toolCallVisibility ?? "showAll",
+        revealedMessageId,
+        usageLimitRunId: props.usageLimitRunId ?? null,
+      },
       messages,
       locale,
     ),
