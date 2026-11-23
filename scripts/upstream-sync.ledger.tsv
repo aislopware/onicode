@@ -3379,3 +3379,4 @@ cbf4ea7ddc	take	taken as is
 597c8de32b	take	import conflict only (kept Onicode's userPresence import beside upstream's useViewportSize)
 5812320a6a	take	taken as is; Sidebar row-render test passes
 ba588ef663	take	main.tsx keeps only the layout tracker (no cloud/Clerk imports); resolveShortcutCommand keeps Onicode's binding return
+52b9b77e3f	take	taken as is
