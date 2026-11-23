@@ -517,6 +517,7 @@ const FONT_CODE_PAGES = new Map([
   [238, 1250],
 ]);
 const CODE_PAGES = new Map([
+  [866, "ibm866"],
   [932, "shift_jis"],
   [936, "gbk"],
   [949, "euc-kr"],
@@ -676,7 +677,8 @@ function* rtf(source: string): Generator<string, void> {
         }
         if (control === "mac") state.decoder = new TextDecoder("macintosh");
         else if (control === "ansicpg") {
-          const label = codePage(value);
+          // 0 is the ANSI default here only; a font's \cpg0 or unknown \fcharset keeps the document's.
+          const label = value === 0 ? "windows-1252" : codePage(value);
           if (!label) throw new Error("Unsupported RTF code page");
           state.decoder = new TextDecoder(label, { fatal: true });
         } else if (control === "uc") {
