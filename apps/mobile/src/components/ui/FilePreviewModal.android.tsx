@@ -2,7 +2,7 @@ import { T, useGT } from "gt-react-native";
 
 import { Button } from "./Button";
 import * as Dialog from "./Dialog";
-import { createContext, useContext, useEffect, useEffectEvent, useRef } from "react";
+import { createContext, useContext, useEffect, useEffectEvent, useRef, useState } from "react";
 import { Modal, View } from "react-native";
 import ImageViewing from "react-native-image-viewing";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -134,7 +134,12 @@ type ImagePreviewProps = {
 };
 
 const ImagePreviewContext = createContext<
-  (ImagePreviewProps & { readonly getSaveImageSignal: () => AbortSignal }) | null
+  | (ImagePreviewProps & {
+      readonly getSaveImageSignal: () => AbortSignal;
+      readonly savingIndexes: ReadonlySet<number>;
+      readonly beginSaveImage: (imageIndex: number) => () => void;
+    })
+  | null
 >(null);
 
 // Keyed by page so swiping away clears the busy state and aborts pending share preparation.
@@ -149,6 +154,8 @@ function ImagePreviewPageHeader(header: { readonly imageIndex: number }) {
   const insets = useSafeAreaInsets();
   const mediaActions = useMediaActions(source?.actionsSource, props.onRequestClose, {
     getSaveImageSignal: props.getSaveImageSignal,
+    savingImage: props.savingIndexes.has(header.imageIndex),
+    beginSaveImage: () => props.beginSaveImage(header.imageIndex),
   });
   return (
     <View className="bg-black/70" style={{ paddingTop: insets.top }}>
@@ -180,6 +187,16 @@ function ImagePreview(props: ImagePreviewProps) {
     }
     return saveController.current.signal;
   };
+  const [savingIndexes, setSavingIndexes] = useState<ReadonlySet<number>>(new Set());
+  const beginSaveImage = (imageIndex: number) => {
+    setSavingIndexes((current) => new Set(current).add(imageIndex));
+    return () =>
+      setSavingIndexes((current) => {
+        const next = new Set(current);
+        next.delete(imageIndex);
+        return next;
+      });
+  };
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- saves survive a page change but stop when the gallery unmounts
   useEffect(
     () => () => {
@@ -189,7 +206,7 @@ function ImagePreview(props: ImagePreviewProps) {
     [],
   );
   return (
-    <ImagePreviewContext value={{ ...props, getSaveImageSignal }}>
+    <ImagePreviewContext value={{ ...props, getSaveImageSignal, savingIndexes, beginSaveImage }}>
       <ImageViewing
         {...imageViewingProps(props.source)}
         visible

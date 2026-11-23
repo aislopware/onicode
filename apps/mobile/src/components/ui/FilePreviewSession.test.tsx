@@ -216,7 +216,7 @@ it.each(["completes", "fails"] as const)(
   },
 );
 
-it("hands the previous Android gallery image to the photo library after a swipe", async () => {
+it("hands the previous Android gallery image to the photo library once after a swipe", async () => {
   const remoteImage = (name: string): FilePreviewItem => {
     const uri = `https://assets.test/${name}`;
     return { ...image(uri), name, actionsSource: { uri, name, mimeType: "image/png" } };
@@ -242,11 +242,22 @@ it("hands the previous Android gallery image to the photo library after a swipe"
   expect(preview.container.querySelector<HTMLButtonElement>("[data-action=share]")!.disabled).toBe(
     false,
   );
+  await act(async () =>
+    preview.container.querySelector<HTMLButtonElement>("[data-page='0']")!.click(),
+  );
+  const saveImage = () =>
+    preview.container.querySelector<HTMLButtonElement>("[data-action=save-image]")!;
+  expect(saveImage().textContent).toBe("Saving image…");
+  expect(saveImage().disabled).toBe(true);
+  await act(async () => saveImage().click());
+  expect(harness.download).toHaveBeenCalledOnce();
   const uri = "file:///cache/first.png";
   await act(async () => pending.resolve({ uri, share: vi.fn(), dispose: vi.fn() }));
 
+  expect(saveImageToLibrary).toHaveBeenCalledOnce();
   expect(saveImageToLibrary).toHaveBeenCalledWith(uri, "image/png", "first.png");
   expect(harness.alert).toHaveBeenCalledWith("Could not save image", "Library full");
+  expect(saveImage().disabled).toBe(false);
 });
 
 it.each([true, false])(

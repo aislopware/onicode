@@ -46,7 +46,12 @@ function canReadHostMedia(environmentId: EnvironmentId | null): boolean {
 export function useMediaActions(
   source: MediaActionsSource | undefined,
   onOpenFile?: () => void,
-  options?: { readonly getSaveImageSignal: () => AbortSignal },
+  // A gallery owns image saves so they outlive its per-page headers and stay pending when revisited.
+  options?: {
+    readonly getSaveImageSignal: () => AbortSignal;
+    readonly savingImage: boolean;
+    readonly beginSaveImage: () => () => void;
+  },
 ) {
   const navigation = useNavigation();
   const gt = useGT();
@@ -76,10 +81,12 @@ export function useMediaActions(
     task: (source: MediaActionsSource, signal: AbortSignal) => Promise<void>,
   ) => {
     if (!source || controller.current || !canReadHostMedia(hostEnvironmentId)) return;
+    if (kind === "save-image" && options?.savingImage) return;
     const request = new AbortController();
     controller.current = request;
     setBusy(kind);
     const signal = kind === "save-image" && options ? options.getSaveImageSignal() : request.signal;
+    const endGallerySave = kind === "save-image" ? options?.beginSaveImage() : undefined;
     return task(source, signal)
       .catch((error: unknown) => {
         if (!signal.aborted) {
@@ -90,6 +97,7 @@ export function useMediaActions(
         }
       })
       .finally(() => {
+        endGallerySave?.();
         if (controller.current === request) {
           controller.current = null;
           if (!request.signal.aborted) setBusy(null);
@@ -152,6 +160,7 @@ export function useMediaActions(
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     });
 
+  const savingImage = busy === "save-image" || options?.savingImage === true;
   const reference = source?.reference;
   const relativePath = reference?.kind === "file" ? reference.relativePath : undefined;
   const threadId = source && "threadId" in source ? source.threadId : undefined;
@@ -208,9 +217,9 @@ export function useMediaActions(
             ? [
                 {
                   id: "save-image" as const,
-                  title: busy === "save-image" ? gt("Saving image…") : gt("Save image"),
+                  title: savingImage ? gt("Saving image…") : gt("Save image"),
                   run: saveImage,
-                  disabled: busy !== null || !canReadMedia,
+                  disabled: busy !== null || savingImage || !canReadMedia,
                 },
               ]
             : []),
