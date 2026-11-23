@@ -701,7 +701,8 @@ it.layer(NodeServices.layer)("effect-codex-app-server protocol", (it) => {
         }),
       );
       const notificationFailure = yield* transport.notify("initialized").pipe(Effect.flip);
-      assert.strictEqual(requestFailure, failure);
+      assert.instanceOf(requestFailure, CodexError.CodexAppServerRequestNotSentError);
+      assert.strictEqual(requestFailure.cause, failure);
       assert.strictEqual(notificationFailure, failure);
       yield* Deferred.await(readerStopped);
 
@@ -975,8 +976,11 @@ it.layer(NodeServices.layer)("effect-codex-app-server protocol", (it) => {
       });
       const failure = yield* Fiber.join(pending).pipe(failureOf);
       assert.instanceOf(failure, CodexError.CodexAppServerInputStreamEndedError);
+      // Codex may have acted on the pending request, but never saw the refused one.
       const later = yield* transport.request("thread/read", {}).pipe(failureOf);
-      assert.instanceOf(later, CodexError.CodexAppServerInputStreamEndedError);
+      assert.instanceOf(later, CodexError.CodexAppServerRequestNotSentError);
+      assert.equal(later.method, "thread/read");
+      assert.strictEqual(later.cause, failure);
     }),
   );
 
@@ -1005,15 +1009,14 @@ it.layer(NodeServices.layer)("effect-codex-app-server protocol", (it) => {
       assert.instanceOf(failure, CodexError.CodexAppServerTransportError);
       assert.equal(failure.operation, "write-output-stream");
       assert.strictEqual(failure.cause, writeFailure);
-      for (const request of [Fiber.join(pending), transport.request("thread/read", {})]) {
-        const requestFailure = yield* request.pipe(
-          Effect.match({
-            onFailure: (error) => error,
-            onSuccess: () => assert.fail("Expected the broken transport to reject the request"),
-          }),
-        );
-        assert.strictEqual(requestFailure, failure);
-      }
+      const failureOf = Effect.match({
+        onFailure: (error: CodexError.CodexAppServerError) => error,
+        onSuccess: () => assert.fail("Expected the broken transport to reject the request"),
+      });
+      assert.strictEqual(yield* Fiber.join(pending).pipe(failureOf), failure);
+      const later = yield* transport.request("thread/read", {}).pipe(failureOf);
+      assert.instanceOf(later, CodexError.CodexAppServerRequestNotSentError);
+      assert.strictEqual(later.cause, failure);
     }),
   );
 

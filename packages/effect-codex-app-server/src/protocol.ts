@@ -262,9 +262,14 @@ export const makeCodexAppServerPatchedProtocol = Effect.fn("makeCodexAppServerPa
 
     const offerOutgoing =
       /* Every protocol write reaches this helper; request spans cover the operation. */
-      Effect.fnUntraced(function* (message: Record<string, unknown>) {
+      Effect.fnUntraced(function* (
+        message: Record<string, unknown>,
+        refused: (closed: CodexError.CodexAppServerError) => CodexError.CodexAppServerError = (
+          closed,
+        ) => closed,
+      ) {
         const failure = yield* Ref.get(terminationFailure);
-        if (Option.isSome(failure)) return yield* failure.value;
+        if (Option.isSome(failure)) return yield* refused(failure.value);
 
         yield* logProtocol({
           direction: "outgoing",
@@ -280,9 +285,8 @@ export const makeCodexAppServerPatchedProtocol = Effect.fn("makeCodexAppServerPa
         const accepted = yield* Queue.offer(outgoing, encoded);
         if (!accepted) {
           const closed = yield* Ref.get(terminationFailure);
-          return yield* Option.getOrElse(
-            closed,
-            () => new CodexError.CodexAppServerInputStreamEndedError({}),
+          return yield* refused(
+            Option.getOrElse(closed, () => new CodexError.CodexAppServerInputStreamEndedError({})),
           );
         }
       });
@@ -566,11 +570,15 @@ export const makeCodexAppServerPatchedProtocol = Effect.fn("makeCodexAppServerPa
         ),
         () =>
           Effect.gen(function* () {
-            yield* offerOutgoing({
-              id: requestId,
-              method,
-              ...(payload !== undefined ? { params: payload } : {}),
-            }).pipe(Effect.withSpan("CodexAppServerProtocol.request.enqueue", { attributes }));
+            yield* offerOutgoing(
+              {
+                id: requestId,
+                method,
+                ...(payload !== undefined ? { params: payload } : {}),
+              },
+              // Unlike a request pending when the transport closes, a refused one is safe to retry.
+              (cause) => new CodexError.CodexAppServerRequestNotSentError({ method, cause }),
+            ).pipe(Effect.withSpan("CodexAppServerProtocol.request.enqueue", { attributes }));
             // Includes queue/stdin delivery, Codex work and response routing, not just Onicode CPU.
             return yield* Deferred.await(deferred).pipe(
               Effect.withSpan("CodexAppServerProtocol.request.awaitResponse", { attributes }),

@@ -247,6 +247,22 @@ export class CodexAppServerInputStreamEndedError extends Schema.TaggedError<Code
   }
 }
 
+// The transport had already closed, so Codex never saw the request. `cause` is that closure.
+export class CodexAppServerRequestNotSentError extends Schema.TaggedError<CodexAppServerRequestNotSentError>()(
+  "CodexAppServerRequestNotSentError",
+  {
+    method: Schema.String,
+    cause: Schema.Defect(),
+  },
+) {
+  override get message() {
+    // The closure's own text carries the exit status and stderr.
+    return this.cause instanceof Error
+      ? this.cause.message
+      : `Codex App Server closed before request '${this.method}' was sent.`;
+  }
+}
+
 export class CodexAppServerRequestError extends Schema.TaggedError<CodexAppServerRequestError>()(
   "CodexAppServerRequestError",
   {
@@ -375,6 +391,7 @@ export const CodexAppServerError = Schema.Union([
   CodexAppServerProtocolParseError,
   CodexAppServerTransportError,
   CodexAppServerInputStreamEndedError,
+  CodexAppServerRequestNotSentError,
 ]);
 
 export type CodexAppServerError = typeof CodexAppServerError.Type;

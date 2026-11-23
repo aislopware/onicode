@@ -247,6 +247,17 @@ describe("codexRateLimitsFailureMessage", () => {
       ),
     ).toBe("Codex could not read usage (JSON-RPC -32603).");
   });
+
+  it("names an exit that refused the request before it was sent", () => {
+    expect(
+      codexRateLimitsFailureMessage(
+        new CodexErrors.CodexAppServerRequestNotSentError({
+          method: "account/rateLimits/read",
+          cause: new CodexErrors.CodexAppServerProcessExitedError({ code: 1 }),
+        }),
+      ),
+    ).toBe("Codex exited before it could report usage.");
+  });
 });
 
 describe("mergeCodexRateLimits", () => {

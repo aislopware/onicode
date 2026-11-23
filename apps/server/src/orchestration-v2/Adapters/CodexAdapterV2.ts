@@ -584,7 +584,9 @@ class CodexAppServerUnresponsiveError extends Schema.TaggedError<CodexAppServerU
   { method: Schema.String },
 ) {
   override get message() {
-    return `Codex app-server did not answer ${this.method} within ${CODEX_APP_SERVER_REQUEST_DEADLINE}.`;
+    const deadline =
+      this.method === "initialize" ? CODEX_INITIALIZE_TIMEOUT : CODEX_APP_SERVER_REQUEST_DEADLINE;
+    return `Codex app-server did not answer ${this.method} within ${deadline}.`;
   }
 }
 
@@ -878,6 +880,16 @@ const isCodexRequestError = Schema.is(CodexErrors.CodexAppServerRequestError);
 const codexRefusedRequest = (error: unknown) =>
   isCodexRequestError(error) &&
   (error.operation === "receive-response" || error.operation === "encode-payload");
+
+const isCodexRequestNotSent = Schema.is(CodexErrors.CodexAppServerRequestNotSentError);
+const isCodexAppServerError = Schema.is(CodexErrors.CodexAppServerError);
+// After Codex accepted the prompt, a later request refused unsent must not read as a refused turn.
+export const afterAcceptedPrompt = <A, E, R>(
+  effect: Effect.Effect<A, E | CodexErrors.CodexAppServerError, R>,
+) =>
+  Effect.mapError(effect, (error) =>
+    isCodexRequestNotSent(error) && isCodexAppServerError(error.cause) ? error.cause : error,
+  );
 
 export const buildCodexTurnStartParams = Effect.fn("CodexAdapterV2.buildCodexTurnStartParams")(
   function* (input: {
@@ -2254,7 +2266,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                     const error = new ProviderAdapter.ProviderAdapterEventStreamError({
                       driver: CODEX_PROVIDER,
                       providerSessionId: input.providerSessionId,
-                      cause: `Codex app-server did not answer initialize within ${CODEX_INITIALIZE_TIMEOUT}.`,
+                      cause: new CodexAppServerUnresponsiveError({ method: "initialize" }),
                     });
                     return Ref.set(initializeTimeout, error).pipe(
                       Effect.andThen(Queue.fail(events, error)),
@@ -3073,6 +3085,12 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
           }
         });
 
+        // A closed app-server took its background terminals with it.
+        const appServerClosed = <A>(value: A) => ({
+          CodexAppServerProcessExitedError: () => Effect.succeed(value),
+          CodexAppServerInputStreamEndedError: () => Effect.succeed(value),
+          CodexAppServerRequestNotSentError: () => Effect.succeed(value),
+        });
         const terminateBackgroundTerminal = Effect.fn("CodexAdapterV2.terminateBackgroundTerminal")(
           function* (nativeThreadId: string, processId: string) {
             const response = yield* client.raw
@@ -3082,8 +3100,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               })
               .pipe(
                 Effect.catchTags({
-                  CodexAppServerProcessExitedError: () => Effect.succeed({ terminated: true }),
-                  CodexAppServerInputStreamEndedError: () => Effect.succeed({ terminated: true }),
+                  ...appServerClosed({ terminated: true }),
                   // Unloading kills terminals, so "thread not found" means nothing remains to stop.
                   CodexAppServerRequestError: (error) =>
                     isCodexThreadNotFoundError(error)
@@ -3095,13 +3112,13 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             if (result.terminated) return;
             let cursor: string | null = null;
             while (true) {
-              const response: unknown = yield* client.raw.request(
-                "thread/backgroundTerminals/list",
-                {
+              const response: unknown = yield* client.raw
+                .request("thread/backgroundTerminals/list", {
                   threadId: nativeThreadId,
                   ...(cursor === null ? {} : { cursor }),
-                },
-              );
+                })
+                .pipe(Effect.catchTags(appServerClosed(null)));
+              if (response === null) return;
               const page: CodexBackgroundTerminalsListPage =
                 yield* decodeCodexBackgroundTerminalsListResponse(response);
               if (page.data.some((terminal) => terminal.processId === processId)) {
@@ -7985,12 +8002,12 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             if (activation.stopped) return;
             const { goal } = yield* client
               .request("thread/goal/set", { threadId, status: "active" })
-              .pipe(withAppServerDeadline("thread/goal/set"));
+              .pipe(withAppServerDeadline("thread/goal/set"), afterAcceptedPrompt);
             goalsByNativeThread.set(threadId, providerGoalFromCodex(goal));
             if (activation.stopped) {
               const paused = yield* client
                 .request("thread/goal/set", { threadId, status: "paused" })
-                .pipe(withAppServerDeadline("thread/goal/set"));
+                .pipe(withAppServerDeadline("thread/goal/set"), afterAcceptedPrompt);
               goalsByNativeThread.set(threadId, providerGoalFromCodex(paused.goal));
             }
           }).pipe(

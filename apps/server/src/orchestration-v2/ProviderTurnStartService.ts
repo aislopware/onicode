@@ -178,6 +178,7 @@ const PROMPT_REFUSAL_TAGS = [
 
 // Codex requests safe to repeat; any other unanswered request may have acted.
 const CODEX_READ_METHODS: ReadonlySet<unknown> = new Set([
+  "initialize",
   "config/read",
   "thread/goal/get",
   // Repeating it is harmless, and the request it precedes was not sent.
@@ -191,6 +192,7 @@ const unansweredCodexRequest = (error: unknown, read: boolean): boolean =>
 // The shared app-server is going away without having acted on this request: retry on a new one.
 const appServerGone = (error: unknown): boolean =>
   Predicate.isTagged(error, "CodexAppServerRetiredError") ||
+  Predicate.isTagged(error, "CodexAppServerRequestNotSentError") ||
   unansweredCodexRequest(error, true) ||
   (Predicate.hasProperty(error, "cause") && appServerGone(error.cause));
 
