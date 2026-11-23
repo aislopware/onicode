@@ -111,8 +111,10 @@ interface Job {
 }
 interface Reservation {
   readonly threadIds: ReadonlyArray<string> | undefined;
-  /** Snapshots it waits on, directly or through the earlier writes it waits on. */
+  /** Snapshots it waits on directly. */
   readonly jobs: ReadonlySet<Job>;
+  /** Earlier writes it waits on; an interrupted one no longer holds it up. */
+  readonly earlier: ReadonlyArray<Reservation>;
   readonly done: Deferred.Deferred<void>;
 }
 const overlaps = (
@@ -198,6 +200,9 @@ export const make = Effect.fn("ProviderCommitBatch.make")(function* (
   yield* Effect.addFinalizer(() => shutdown);
   // Waits for snapshots and writes registered so far on `threadIds`; omitted, on every thread.
   // Streams holding those snapshots rank first meanwhile, so a busier stream cannot starve them.
+  const needs = (reservation: Reservation, job: Job): boolean =>
+    reservation.jobs.has(job) ||
+    reservation.earlier.some((earlier) => reservations.has(earlier) && needs(earlier, job));
   const earlierWork = (threadIds?: ReadonlyArray<string>) => {
     const jobs = Array.from(pending).filter((job) => overlaps(threadIds, [job.threadId]));
     const writes = Array.from(reservations)
@@ -382,11 +387,13 @@ export const make = Effect.fn("ProviderCommitBatch.make")(function* (
               taken > 0 &&
               reservations.size > 0 &&
               (yield* Clock.monotonicTimeNanos) - startedAt >= MAX_HOLD_NANOS &&
-              Array.from(reservations).some(({ jobs }) =>
+              Array.from(reservations).some((reservation) =>
                 units
                   .slice(taken)
                   .every(
-                    (unit) => !jobs.has(unit.job) && !unit.superseded.some((j) => jobs.has(j)),
+                    (unit) =>
+                      !needs(reservation, unit.job) &&
+                      !unit.superseded.some((job) => needs(reservation, job)),
                   ),
               )
             )
@@ -471,9 +478,14 @@ export const make = Effect.fn("ProviderCommitBatch.make")(function* (
       const jobs = new Set(
         Array.from(pending).filter((job) => overlaps(threadIds, [job.threadId])),
       );
-      for (const earlier of reservations)
-        if (overlaps(threadIds, earlier.threadIds)) for (const job of earlier.jobs) jobs.add(job);
-      const reservation: Reservation = { threadIds, jobs, done: Deferred.makeUnsafe() };
+      const reservation: Reservation = {
+        threadIds,
+        jobs,
+        earlier: Array.from(reservations).filter((earlier) =>
+          overlaps(threadIds, earlier.threadIds),
+        ),
+        done: Deferred.makeUnsafe(),
+      };
       const earlier = earlierWork(threadIds);
       reservations.add(reservation);
       return restore(
