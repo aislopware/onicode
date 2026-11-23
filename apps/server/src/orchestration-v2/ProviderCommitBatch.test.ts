@@ -445,7 +445,13 @@ it.effect.each([false, true])(
     }),
 );
 
-it.effect.each(["none", "writer", "snapshots", "earlier write"] as const)(
+it.effect.each([
+  "none",
+  "writer",
+  "snapshots",
+  "earlier write",
+  "interrupted earlier write",
+] as const)(
   "runs another stream's control during a busy commit; splits slow backlogs only for a write waiting on the writer (%s)",
   (waitingOn) =>
     Effect.gen(function* () {
@@ -486,29 +492,31 @@ it.effect.each(["none", "writer", "snapshots", "earlier write"] as const)(
       const writerFree = yield* Deferred.make<void>();
       // A write with no snapshots of its own still waits on an earlier write that has some.
       const earlierWrite =
-        waitingOn === "earlier write"
+        waitingOn === "earlier write" || waitingOn === "interrupted earlier write"
           ? yield* recorder
               .barrier(Effect.void, ["single-thread", "other-thread"])
               .pipe(Effect.forkScoped({ startImmediately: true }))
           : undefined;
+      const splits = waitingOn === "writer" || waitingOn === "interrupted earlier write";
       const write = yield* recorder
         .barrier(
-          waitingOn === "writer" ? Deferred.await(writerFree) : Effect.void,
+          splits ? Deferred.await(writerFree) : Effect.void,
           waitingOn === "snapshots" ? ["single-thread"] : ["other-thread"],
         )
         .pipe(Effect.forkScoped({ startImmediately: true }));
+      if (waitingOn === "interrupted earlier write" && earlierWrite !== undefined)
+        yield* Fiber.interrupt(earlierWrite);
       yield* Deferred.succeed(release, undefined);
       yield* Fiber.join(leading);
       yield* Fiber.join(slow);
       yield* Deferred.succeed(writerFree, undefined);
       yield* Fiber.join(write);
-      if (earlierWrite !== undefined) yield* Fiber.join(earlierWrite);
+      if (waitingOn === "earlier write" && earlierWrite !== undefined)
+        yield* Fiber.join(earlierWrite);
       assert.deepEqual(
         yield* Queue.takeAll(recorder.output),
         // A write still waiting on its own thread's snapshots gains nothing from a shorter batch.
-        waitingOn !== "writer"
-          ? [[event(-1)], backlog]
-          : [[event(-1)], ...backlog.map((raw) => [raw])],
+        !splits ? [[event(-1)], backlog] : [[event(-1)], ...backlog.map((raw) => [raw])],
       );
     }),
 );
