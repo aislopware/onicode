@@ -3470,3 +3470,4 @@ fab237d626	take	systemd-oomd watch restored after user daemon-reload; upstream c
 0948100035	take	adopted upstream's busyTurn over Onicode's trackTurn (203e09cc38): same resume busy fix, plus compaction and per-operation metrics; kept Onicode's ProviderSessionReleasedBeforeTurnError and no agentFeedback
 f0d901502a	take	taken as is (Azure DevOps only; GitHub/GitLab repositories always carry a slash)
 0359b044e9	take	kept Onicode's focus-emulated painting over upstream's frameStalled painting: every nudged wait (held command or capture) already paints in Onicode, so frameStalled was redundant and also kept painting up to 2s after a new document freed the capture (Onicode's 'stops painting for a screenshot Chromium never answers' test caught it); took the capturePage nudge
+555512fbe1	take	kept Onicode's refresh-on-refusal in runActionAndInvalidate: same fix already on main, sharing one refresh helper with the success path; took upstream's reader-notify test
