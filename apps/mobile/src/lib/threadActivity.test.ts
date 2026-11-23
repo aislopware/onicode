@@ -1514,6 +1514,42 @@ describe("buildThreadFeed", () => {
         (row) => row.type,
       ),
     ).toEqual(["message", "run-fold", "message"]);
+    // Codex completes its answer before the provider turn ends. Commentary, a run steered by
+    // a message or a notice (Claude's held reply, Codex reading the steer) and an earlier
+    // run's answer still wait.
+    const steer = {
+      ...userMessage("2026-06-20T00:00:02.000Z"),
+      id: TurnItemId.make("item-steer"),
+      messageId: MessageId.make("message-steer"),
+      inputIntent: "steer" as const,
+      ordinal: 1,
+    };
+    const notice: OrchestrationV2TurnItem = {
+      ...base("item-notice", "2026-06-20T00:00:02.000Z", 1),
+      type: "notification",
+      source: { kind: "background_task" },
+      outcome: "completed",
+      summary: "Task finished",
+    };
+    for (const [phase, steered, replyRunId, thinking] of [
+      ["final_answer", null, runId, false],
+      ["commentary", null, runId, true],
+      ["final_answer", steer, runId, true],
+      ["final_answer", notice, runId, true],
+      ["final_answer", null, RunId.make("run-0"), true],
+    ] as const) {
+      const completedReply = buildThreadFeed([
+        projected(userMessage(), 0),
+        ...(steered ? [projected(steered, 1)] : []),
+        projected({ ...assistantMessage(), phase, runId: replyRunId }, 2),
+      ]);
+      expect(
+        deriveThreadFeedPresentation(completedReply, run, new Set(), new Set(), startedAt).some(
+          (row) => row.type === "thinking",
+        ),
+        `${phase} steered=${steered?.type} ${replyRunId}`,
+      ).toBe(thinking);
+    }
   });
   it("hides tool calls or everything but the final answer", () => {
     const at = (second: number) => `2026-06-20T00:00:${String(second).padStart(2, "0")}.000Z`;

@@ -2384,10 +2384,23 @@ export function deriveMessagesTimelineRows(
   }
 
   const latestTimelineEntry = timelineEntries.at(-1);
-  const replyIsStreaming =
+  // Codex completes its final answer before the provider turn ends. After a steer or a
+  // notice, which steers too, a final answer can be followed by more work (Claude's held
+  // reply, Codex reading the steer).
+  const replyHolds =
     latestTimelineEntry?.kind === "message" &&
     latestTimelineEntry.message.role === "assistant" &&
-    latestTimelineEntry.message.streaming;
+    (latestTimelineEntry.message.streaming ||
+      (latestTimelineEntry.message.runId === input.latestRun?.runId &&
+        latestTimelineEntry.projectedItem?.item.type === "assistant_message" &&
+        latestTimelineEntry.projectedItem.item.phase === "final_answer" &&
+        !timelineEntries.some((entry) =>
+          entry.kind === "message"
+            ? timelineEntryIsSteer(entry) && entry.message.runId === input.latestRun?.runId
+            : entry.kind === "work" &&
+              entry.entry.itemType === "notification" &&
+              entry.entry.runId === input.latestRun?.runId,
+        )));
   const hasWorkingRow = nextRows.some((row) => row.kind === "working");
   if (input.isWorking && !hasWorkingRow && activeTurnHeaderIndex === timelineEntries.length) {
     appendWorkingRow();
@@ -2395,7 +2408,7 @@ export function deriveMessagesTimelineRows(
   if (
     input.isWorking &&
     input.latestRun?.turnEnded !== true &&
-    !replyIsStreaming &&
+    !replyHolds &&
     !setupOwnsWorkingSlot &&
     !hasActiveCompaction &&
     !compactionOnlyRunFinished &&

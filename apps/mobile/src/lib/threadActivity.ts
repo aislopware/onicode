@@ -1985,15 +1985,30 @@ export function deriveThreadFeedPresentation(
   }
   if (liveFold !== null && !liveFoldPlaced) result.push(liveFold);
   const latestRow = result.at(-1);
-  const replyIsStreaming =
+  // Codex completes its final answer before the provider turn ends. After a steer or a
+  // notice, which steers too, a final answer can be followed by more work (Claude's held
+  // reply, Codex reading the steer).
+  const replyHolds =
     latestRow?.type === "message" &&
     latestRow.message.role === "assistant" &&
-    latestRow.message.streaming;
+    (latestRow.message.streaming ||
+      (latestRow.message.runId === activeRunId &&
+        latestRow.message.projectedItem?.item.type === "assistant_message" &&
+        latestRow.message.projectedItem.item.phase === "final_answer" &&
+        !feed.some((entry) =>
+          entry.type === "message"
+            ? isSteerMessage(entry.message) && entry.message.runId === activeRunId
+            : entry.type === "activity-group" &&
+              entry.runId === activeRunId &&
+              entry.activities.some(
+                (activity) => activity.projectedItem.item.type === "notification",
+              ),
+        )));
   if (
     isWorking &&
     activeWorkStartedAt !== null &&
     latestRun?.turnEnded !== true &&
-    !replyIsStreaming &&
+    !replyHolds &&
     (activeRunId === null || !compactionCommandRunIds.has(activeRunId)) &&
     !result.some(
       (row) =>
