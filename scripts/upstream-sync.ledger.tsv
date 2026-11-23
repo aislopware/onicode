@@ -3458,3 +3458,4 @@ c977a70fd6	take	server metrics machine load and A/A noise floors; comment points
 059d1bdeb9	take	install docs point at ACP Registry agents; kept Onicode's Command Code row
 8f724d6329	take	empty PATH entries in CLI invocation and triage; cloud launcher and relay client hunks dropped (removed surfaces)
 962bda2eb7	skip	test-only change to the cross-tab browser history test, which Onicode never took (ffb42a0b77 skipped: desktop has one document)
+f1e390665a	take	server metrics default reconnect is 3 devices; storm behind --stress
