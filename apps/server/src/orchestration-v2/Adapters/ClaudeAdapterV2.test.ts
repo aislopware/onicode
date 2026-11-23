@@ -16493,6 +16493,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
             settings: { ...DEFAULT_CLAUDE_SETTINGS, binaryPath },
           });
           let ordinal = 0;
+          let modelSelection: ModelSelection = CLAUDE_TEST_MODEL_SELECTION;
           const runTurn = Effect.fnUntraced(function* (
             frames: ReadonlyArray<SDKMessage> = [],
             reportsVersion?: string,
@@ -16508,6 +16509,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                 text: `Request ${ordinal}`,
                 attachments: [],
                 providerTurnOrdinal: ordinal,
+                modelSelection,
               }),
             );
             yield* beforeInit;
@@ -16528,39 +16530,55 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           });
 
           yield* runTurn([], "2.1.322");
-          // A request that keeps the conversation's prompt cache warm for five minutes.
-          yield* runTurn([
+          const cacheRequest = (
+            uuid: string,
+            usage: { readonly written: number; readonly read: number },
+          ) =>
             claudeSdkFrame({
               type: "stream_event",
               event: {
                 type: "message_start",
                 message: {
-                  id: "msg_build_refresh_cache",
+                  id: `msg_build_refresh_${uuid}`,
                   usage: {
                     input_tokens: 3,
-                    cache_creation_input_tokens: 10,
-                    cache_read_input_tokens: 0,
+                    cache_creation_input_tokens: usage.written,
+                    cache_read_input_tokens: usage.read,
                     output_tokens: 1,
-                    cache_creation: { ephemeral_1h_input_tokens: 0, ephemeral_5m_input_tokens: 10 },
+                    cache_creation: {
+                      ephemeral_1h_input_tokens: 0,
+                      ephemeral_5m_input_tokens: usage.written,
+                    },
                   },
                 },
               },
               parent_tool_use_id: null,
               session_id: WAKE_NATIVE_SESSION,
-              uuid: "00000000-0000-4000-8000-00000000b0f0",
-            }),
+              uuid,
+            });
+          // A request that keeps the conversation's prompt cache warm for five minutes, then one
+          // four minutes later that only reads it, which keeps it five more.
+          yield* runTurn([
+            cacheRequest("00000000-0000-4000-8000-00000000b0f0", { written: 10, read: 0 }),
           ]);
+          yield* TestClock.adjust("4 minutes");
+          yield* runTurn([
+            cacheRequest("00000000-0000-4000-8000-00000000b0f1", { written: 0, read: 10 }),
+          ]);
+          yield* TestClock.adjust("2 minutes");
           assert.equal(harness.processQueues.length, 1);
 
           yield* install("second");
-          // The build is part of the cached prefix: a new one waits for that cache to lapse.
+          // The build is part of the cached prefix: a new one waits for that cache to lapse,
+          // unless the turn changes model, whose own cache is cold anyway.
           yield* runTurn();
           assert.equal(harness.processQueues.length, 1);
-          yield* TestClock.adjust("5 minutes");
+          modelSelection = { ...CLAUDE_TEST_MODEL_SELECTION, model: "claude-opus-4-6" };
           // An update landing after the spawn, before its first `init`, is still newer.
           yield* runTurn([], "2.1.322", install("second-b"));
           assert.equal(harness.processQueues.length, 2);
           assert.equal(harness.getOpenedOptions()?.resume, WAKE_NATIVE_SESSION);
+          yield* TestClock.adjust("3 minutes");
           yield* runTurn([], "2.1.322");
           assert.equal(harness.processQueues.length, 3);
 

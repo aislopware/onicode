@@ -1071,7 +1071,12 @@ effectIt.layer(NodeServices.layer)("resolveSpawnCommand", (it) => {
   it.effect("shares one listing of each PATH directory between concurrent cold lookups", () =>
     Effect.gen(function* () {
       const directories = ["C:\\shared-cold-a", "C:\\shared-cold-b"];
-      const directoryStat = { isDirectory: () => true, isFile: () => false, mtimeMs: 1 };
+      // Changed "just now", so no listing is kept past this test and a rerun reads cold again.
+      const directoryStat = {
+        isDirectory: () => true,
+        isFile: () => false,
+        mtimeMs: Number.MAX_SAFE_INTEGER,
+      };
       using _stat = vi.spyOn(NodeFS.promises, "stat").mockImplementation(async (candidate) => {
         if (directories.includes(String(candidate))) return directoryStat as NodeFS.Stats;
         throw Object.assign(new Error("not found"), { code: "ENOENT" });
