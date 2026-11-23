@@ -3380,3 +3380,4 @@ cbf4ea7ddc	take	taken as is
 5812320a6a	take	taken as is; Sidebar row-render test passes
 ba588ef663	take	main.tsx keeps only the layout tracker (no cloud/Clerk imports); resolveShortcutCommand keeps Onicode's binding return
 52b9b77e3f	take	taken as is
+10765a4e47	take	adapted: Onicode installs through installLocalUpdateWithNotice; installDesktopUpdate gets onAccepted so the restarting mark still shows on accept and clears on a refused install; nightly-track test and imports left out
