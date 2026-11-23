@@ -48,7 +48,7 @@ export const Measured = Schema.Struct({
   scaling: Schema.optional(Scaling),
   streaming: Schema.optional(Window),
   soak: Schema.optional(Soak),
-  /** One web-like client attached over the WebSocket RPC, with N threads subscribed. */
+  /** One desktop-like client attached over the WebSocket RPC, with N threads subscribed. */
   clients: Schema.optional(
     Schema.Struct({
       /** The quiet window by subscribed thread count. */
