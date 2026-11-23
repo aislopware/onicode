@@ -88,16 +88,20 @@ export function resolveThreadListV2SnoozePresets(
     readonly secondary: "snooze" | null;
     readonly now: string;
     readonly presets: ReadonlyArray<SnoozePresetSetting> | undefined;
+    readonly locale?: string;
   },
   resolve: MessageResolver = m,
 ): ReadonlyArray<SnoozePreset> {
   return input.secondary === "snooze"
-    ? resolveSnoozePresets(new Date(input.now), presetOptions(input.presets), resolve)
+    ? resolveSnoozePresets(new Date(input.now), presetOptions(input.presets, input.locale), resolve)
     : [];
 }
 
-function presetOptions(presets: ReadonlyArray<SnoozePresetSetting> | undefined) {
-  return presets ? { presets } : {};
+function presetOptions(
+  presets: ReadonlyArray<SnoozePresetSetting> | undefined,
+  locale: string | undefined,
+) {
+  return { ...(presets ? { presets } : {}), locale };
 }
 
 export function resolveThreadListV2SnoozeMenuSelection(input: {
@@ -105,6 +109,7 @@ export function resolveThreadListV2SnoozeMenuSelection(input: {
   readonly displayedPresets: ReadonlyArray<SnoozePreset>;
   readonly now: Date;
   readonly presets: ReadonlyArray<SnoozePresetSetting> | undefined;
+  readonly locale?: string;
 }):
   | { readonly _tag: "selected"; readonly preset: SnoozePreset }
   | { readonly _tag: "expired" }
@@ -114,7 +119,7 @@ export function resolveThreadListV2SnoozeMenuSelection(input: {
     shown: input.displayedPresets,
     id: input.event.slice("snooze:".length),
     now: input.now,
-    ...presetOptions(input.presets),
+    ...presetOptions(input.presets, input.locale),
     resolve: m,
   });
   return preset ? { _tag: "selected", preset } : { _tag: "expired" };
