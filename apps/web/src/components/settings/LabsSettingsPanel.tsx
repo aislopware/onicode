@@ -16,6 +16,7 @@ export function LabsSettingsPanel() {
       <SettingsSection id="beta" title={gt("Beta")}>
         <BoringSidebarRow />
         <LinkedEnvironmentsRow />
+        <WorkflowsRow />
         <PromptSuggestionsRow />
         <SimlockHostsRow />
         <FastWorktreeCheckoutRow />
@@ -105,6 +106,31 @@ function LinkedEnvironmentsRow() {
             updateSettings({ linkedEnvironmentsEnabled: Boolean(checked) })
           }
           aria-label={gt("Linked environments")}
+        />
+      }
+    />
+  );
+}
+
+function WorkflowsRow() {
+  const searchableSetting = useSearchableSetting();
+  const settings = useScopedSettings();
+  const updateSettings = useUpdateScopedSettings();
+  const gt = useGT();
+  return (
+    <SettingsRow
+      serverScoped
+      {...searchableSetting("workflows-beta")}
+      settingKeys={["workflowsEnabled"]}
+      description={gt(
+        "Run multi-step workflows from files in the workflows folder of this server's Onicode home. Open them from the command palette. While off, nothing in that folder runs; runs wait until it is on again.",
+      )}
+      control={
+        <ScopedSwitch
+          settingKeys={["workflowsEnabled"]}
+          checked={settings.workflowsEnabled}
+          onCheckedChange={(checked) => updateSettings({ workflowsEnabled: Boolean(checked) })}
+          aria-label={gt("Workflows")}
         />
       }
     />
