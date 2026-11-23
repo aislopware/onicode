@@ -272,9 +272,13 @@ function sendOncePrepared(targetKey: string, cancelGeneration: number, send: () 
   if (countPreparingComposerImages(targetKey) === 0) release();
 }
 
-/** For a press whose composer has left: sends once the target's images finish preparing. */
-export function sendAfterPreparingImages(targetKey: string, send: () => void): void {
-  sendOncePrepared(targetKey, cancelGenerations.get(targetKey) ?? 0, send);
+/**
+ * For a press whose composer may leave before it sends: the returned function sends once the
+ * target's images finish preparing, unless one was cancelled after the press.
+ */
+export function sendAfterPreparingImages(targetKey: string): (send: () => void) => void {
+  const cancelGeneration = cancelGenerations.get(targetKey) ?? 0;
+  return (send) => sendOncePrepared(targetKey, cancelGeneration, send);
 }
 
 function sendAwayAfterPreparing({ targetKey, cancelGeneration, sendAway }: PendingSubmit) {

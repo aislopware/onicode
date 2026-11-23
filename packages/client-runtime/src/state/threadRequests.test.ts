@@ -207,9 +207,27 @@ describe("announcing resolved thread requests", () => {
     ]);
 
     expect(recorder.events).toEqual([
-      { environmentId, threadId, pendingRequestIds: [first], unansweredRequestIds: [] },
-      { environmentId, threadId, pendingRequestIds: [second], unansweredRequestIds: [first] },
-      { environmentId, threadId, pendingRequestIds: [], unansweredRequestIds: [first] },
+      {
+        environmentId,
+        threadId,
+        pendingRequestIds: [first],
+        unansweredRequestIds: [],
+        settledRequestIds: [],
+      },
+      {
+        environmentId,
+        threadId,
+        pendingRequestIds: [second],
+        unansweredRequestIds: [first],
+        settledRequestIds: [first],
+      },
+      {
+        environmentId,
+        threadId,
+        pendingRequestIds: [],
+        unansweredRequestIds: [first],
+        settledRequestIds: [first, second],
+      },
     ]);
   });
 });

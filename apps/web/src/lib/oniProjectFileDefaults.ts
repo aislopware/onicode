@@ -5,6 +5,7 @@ import {
   type OniProjectFile,
 } from "@onicode/contracts";
 import { parseOniProjectFile } from "@onicode/shared/oniProjectFile";
+import { PROJECT_READ_FILE_STALE_TIME_MS } from "@onicode/client-runtime/state/projects";
 import { executeAtomQuery } from "@onicode/client-runtime/state/runtime";
 import { AsyncResult } from "effect/reactivity";
 
@@ -29,14 +30,16 @@ function toOniProjectFile(
   return parseOniProjectFile(data.contents);
 }
 
+/** With `refresh`, a cached copy does not answer: the read waits for the file again. */
 export async function readOniProjectFile(
   environmentId: EnvironmentId,
   workspaceRoot: string,
+  options: { readonly refresh?: boolean } = {},
 ): Promise<OniProjectFile | null> {
   const result = await executeAtomQuery(
     appAtomRegistry,
     getProjectFileQueryAtom(environmentId, workspaceRoot, ONICODE_PROJECT_FILE_NAME),
-    { reportDefect: false, reportFailure: false },
+    { reportDefect: false, reportFailure: false, refresh: options.refresh ?? false },
   );
   return toOniProjectFile(
     environmentId,
@@ -47,7 +50,8 @@ export async function readOniProjectFile(
 
 /**
  * The project's onicode.json from an earlier read, or `undefined` when none has loaded yet. A
- * copy that is refetching, such as after the file changed, is not `current`.
+ * copy that is refetching or past the query's stale time, so the file may have changed, is not
+ * `current`.
  */
 export function peekOniProjectFile(
   environmentId: EnvironmentId,
@@ -59,7 +63,7 @@ export function peekOniProjectFile(
   return AsyncResult.isSuccess(result)
     ? {
         projectFile: toOniProjectFile(environmentId, workspaceRoot, result.value),
-        current: !result.waiting,
+        current: !result.waiting && Date.now() - result.timestamp < PROJECT_READ_FILE_STALE_TIME_MS,
       }
     : undefined;
 }

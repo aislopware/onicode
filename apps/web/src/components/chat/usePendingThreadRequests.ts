@@ -51,6 +51,8 @@ import {
 } from "../../pendingUserInput";
 import {
   questionAttachmentDraftId,
+  isUserInputRequestSettled,
+  returnLateAnswerToThreadDraft,
   usePendingUserInputAnswers,
   usePendingUserInputQuestionIndex,
   useQuestionAttachmentPreparation,
@@ -252,7 +254,10 @@ export function storedPendingAnswerText(input: {
     pendingUserInput.requestId,
   );
   const question = pendingUserInput.questions.find((entry) => entry.id === questionId);
+  const settled = () =>
+    isUserInputRequestSettled(input.environmentId, input.threadId, pendingUserInput.requestId);
   return {
+    settled,
     read: (): string | null =>
       question === undefined || question.allowCustomAnswer === false
         ? null
@@ -262,6 +267,10 @@ export function storedPendingAnswerText(input: {
           )[questionId]?.customAnswer ?? ""),
     commit: (text: string) => {
       if (question === undefined || question.allowCustomAnswer === false) return;
+      if (settled()) {
+        returnLateAnswerToThreadDraft(input.environmentId, input.threadId, text);
+        return;
+      }
       usePendingUserInputAnswers.setState((existing) => ({
         ...existing,
         [requestKey]: {
@@ -692,7 +701,11 @@ export function usePendingThreadRequests(input: {
   // Pins the question open at the press: the chat view outlives a switch to another thread.
   const captureQuestionAnswer = useStableCallback(() => {
     const advance = onAdvanceActivePendingUserInput;
-    const { questionKeys } = pendingUserInputDraftKeys(draftScope);
+    const scope = draftScope;
+    const { questionKeys } = pendingUserInputDraftKeys(scope);
+    const questionIndex = () =>
+      readPendingUserInputDraft(scope).activePendingProgress?.questionIndex;
+    const indexAtPress = questionIndex();
     return () => {
       const drafts = useComposerDraftStore.getState();
       const attachmentIds = questionKeys.flatMap((key) => {
@@ -700,7 +713,10 @@ export function usePendingThreadRequests(input: {
         return draft ? [...draft.images, ...draft.files].map((attachment) => attachment.id) : [];
       });
       // An answer goes only with its attachments uploaded; a live composer waits on that too.
-      void awaitAttachmentUploads(attachmentIds).then(advance);
+      // A move to another question since the press, or a live press that advanced first, wins.
+      void awaitAttachmentUploads(attachmentIds).then(() => {
+        if (questionIndex() === indexAtPress) advance();
+      });
     };
   });
 

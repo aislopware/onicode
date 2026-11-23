@@ -76,7 +76,11 @@ import { recordPromptSent } from "../GitHubStarPrompt";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
 import { newMessageId, newThreadId } from "~/lib/utils";
-import { holdSendForWorkspaceDefault, useNewThreadHandler } from "../../hooks/useHandleNewThread";
+import {
+  detachedDraftSendState,
+  holdSendForWorkspaceDefault,
+  useNewThreadHandler,
+} from "../../hooks/useHandleNewThread";
 import { buildThreadRouteParams } from "../../threadRoutes";
 import {
   beginBackgroundDraftSubmissionByRef,
@@ -1875,6 +1879,12 @@ export function useComposerSend(input: ComposerSendInput) {
       sendInFlightRef.current = false;
     });
     if (status === "ready") return sendWithEnvironmentRefreshLatest(...args);
+    toastManager.add(
+      stackedThreadToast({
+        type: "info",
+        title: m(msg("Draft changed while preparing this message. Review it and send again.")),
+      }),
+    );
   };
   // No load-balancing refresh: it bails once the draft is no longer displayed, which is the
   // only time a detached send runs, so the draft keeps the environment it was dictated for.
@@ -1887,10 +1897,25 @@ export function useComposerSend(input: ComposerSendInput) {
         ? holdSendForWorkspaceDefault(draftId, { cancelOnEdit: false })
         : null;
       if (workspaceDefault !== null) await workspaceDefault;
+      const state = draftId ? detachedDraftSendState(draftId, envModeAtCapture) : "send";
+      if (state === "gone") return;
       // This send starts where its render put the draft; a workspace that changed since leaves
       // the transcript in the draft to send from there.
-      const draft = draftId ? useComposerDraftStore.getState().getDraftSession(draftId) : null;
-      if (draft && draft.envMode !== envModeAtCapture) return;
+      if (state === "moved" && draftId) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "warning",
+            title: m(msg("Draft changed while preparing this message. Review it and send again.")),
+            actionProps: {
+              children: m(msg("Open draft")),
+              onClick: () => {
+                void navigate({ to: "/draft/$draftId", params: { draftId } });
+              },
+            },
+          }),
+        );
+        return;
+      }
       return send(...args);
     };
   });

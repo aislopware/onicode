@@ -2054,7 +2054,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         ? {
             readStoredText: storedAnswer.read,
             commitStoredText: storedAnswer.commit,
-            retired: () => false,
+            retired: storedAnswer.settled,
             open: openDictationDraft,
           }
         : undefined
@@ -2401,6 +2401,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       const capturedDraftTarget = composerDraftTarget;
       const answeringQuestion = questionAttachmentTarget !== null;
       const capturedAnswer = answeringQuestion ? (captureQuestionAnswer?.() ?? null) : null;
+      const sendAnswerWhenPrepared = capturedAnswer
+        ? sendAfterPreparingImages(queuedOwnerKey)
+        : null;
       const capturedDetachedSend = answeringQuestion ? null : (captureDetachedSend?.() ?? null);
       const capturedSendContext =
         capturedDetachedSend !== null
@@ -2419,10 +2422,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           return;
         }
         // The transcript went into the stored answer, which the press submits once images land.
-        if (capturedAnswer) {
-          if (!pendingDraftWork.has(queuedOwnerKey)) {
-            sendAfterPreparingImages(queuedOwnerKey, capturedAnswer);
-          }
+        if (capturedAnswer && sendAnswerWhenPrepared) {
+          if (!pendingDraftWork.has(queuedOwnerKey)) sendAnswerWhenPrepared(capturedAnswer);
           return;
         }
         if (

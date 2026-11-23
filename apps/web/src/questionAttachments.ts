@@ -285,23 +285,54 @@ export function onUnrestoredQuestionAttachments(
 // Resolution can come from anywhere: another device, an interrupt, the turn
 // ending, or a reload over drafts for requests resolved meanwhile. One listener,
 // so unsent answers and their chips are read before their drafts are pruned.
-onThreadRequestsResolved(({ environmentId, threadId, pendingRequestIds, unansweredRequestIds }) => {
-  const unrestored = returnUnsentAnswersToThreadDraft(
-    environmentId,
-    threadId,
-    unansweredRequestIds,
-  );
-  usePendingUserInputAnswers.setState(
-    (existing) =>
-      pruneResolvedUserInputDrafts(existing, environmentId, threadId, pendingRequestIds),
-    true,
-  );
-  usePendingUserInputQuestionIndex.setState(
-    (existing) =>
-      pruneResolvedUserInputDrafts(existing, environmentId, threadId, pendingRequestIds),
-    true,
-  );
-  pruneResolvedQuestionAttachmentDrafts(environmentId, threadId, pendingRequestIds);
-  if (unrestored.length === 0) return;
-  for (const listener of unrestoredAttachmentListeners) listener(unrestored);
-});
+const settledRequestsByThread = new Map<string, ReadonlySet<string>>();
+
+/** Whether the thread's last synchronized requests show this one as no longer waiting. */
+export function isUserInputRequestSettled(
+  environmentId: EnvironmentId,
+  threadId: ThreadId,
+  requestId: string,
+): boolean {
+  const key = scopedThreadKey(scopeThreadRef(environmentId, threadId));
+  return settledRequestsByThread.get(key)?.has(requestId) ?? false;
+}
+
+/** Text meant for a question that has since closed goes to the thread's draft, as a stopped answer does. */
+export function returnLateAnswerToThreadDraft(
+  environmentId: EnvironmentId,
+  threadId: ThreadId,
+  text: string,
+): void {
+  const store = useComposerDraftStore.getState();
+  const target = scopeThreadRef(environmentId, threadId);
+  const currentPrompt = store.getComposerDraft(target)?.prompt ?? "";
+  const nextPrompt = carryDisplacedCustomAnswerIntoPrompt(currentPrompt, text);
+  if (nextPrompt !== currentPrompt) store.setPrompt(target, nextPrompt);
+}
+
+onThreadRequestsResolved(
+  ({ environmentId, threadId, pendingRequestIds, unansweredRequestIds, settledRequestIds }) => {
+    settledRequestsByThread.set(
+      scopedThreadKey(scopeThreadRef(environmentId, threadId)),
+      new Set(settledRequestIds),
+    );
+    const unrestored = returnUnsentAnswersToThreadDraft(
+      environmentId,
+      threadId,
+      unansweredRequestIds,
+    );
+    usePendingUserInputAnswers.setState(
+      (existing) =>
+        pruneResolvedUserInputDrafts(existing, environmentId, threadId, pendingRequestIds),
+      true,
+    );
+    usePendingUserInputQuestionIndex.setState(
+      (existing) =>
+        pruneResolvedUserInputDrafts(existing, environmentId, threadId, pendingRequestIds),
+      true,
+    );
+    pruneResolvedQuestionAttachmentDrafts(environmentId, threadId, pendingRequestIds);
+    if (unrestored.length === 0) return;
+    for (const listener of unrestoredAttachmentListeners) listener(unrestored);
+  },
+);

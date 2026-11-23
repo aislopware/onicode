@@ -111,6 +111,7 @@ const testState = vi.hoisted(() => {
     get projectFileRead() {
       return projectFileRead;
     },
+    projectFileReadRefreshes: [] as boolean[],
     get connectedEnvironmentIds() {
       return connectedEnvironmentIds;
     },
@@ -161,6 +162,7 @@ const testState = vi.hoisted(() => {
       projectFileRead = new Promise<ProjectFile>((resolve) => {
         completeProjectFileRead = resolve;
       });
+      this.projectFileReadRefreshes.length = 0;
     },
     router,
   };
@@ -258,7 +260,14 @@ vi.mock("../lib/chatThreadActions", async (importOriginal) => ({
 }));
 vi.mock("../providerInstances", () => ({ resolveDefaultProviderModelSelection: () => null }));
 vi.mock("../lib/oniProjectFileDefaults", () => ({
-  readOniProjectFile: () => testState.projectFileRead,
+  readOniProjectFile: (
+    _environmentId: unknown,
+    _root: unknown,
+    options?: { refresh?: boolean },
+  ) => {
+    testState.projectFileReadRefreshes.push(options?.refresh ?? false);
+    return testState.projectFileRead;
+  },
   peekOniProjectFile: () => testState.cachedProjectFile,
 }));
 vi.mock("../lib/utils", () => ({
@@ -305,6 +314,7 @@ vi.mock("../uiStateStore", () => ({
 vi.mock("./useSettings", () => ({ getClientSettings: () => ({}) }));
 
 import {
+  detachedDraftSendState,
   holdSendForWorkspaceDefault,
   resolveDefaultProjectRef,
   useNewThreadHandler,
@@ -508,7 +518,7 @@ describe("useNewThreadHandler", () => {
     expect(await dictated).toEqual({ status: "ready" });
   });
 
-  it("takes a fresh read over a cached onicode.json that is refetching", async () => {
+  it("takes a fresh read over a cached onicode.json that is refetching or stale", async () => {
     testState.reset(null, { envMode: null, startFromOrigin: false });
     testState.cacheProjectFile({
       projectFile: { defaultThreadEnvMode: "worktree" },
@@ -521,6 +531,8 @@ describe("useNewThreadHandler", () => {
       opened?.draftId,
       expect.objectContaining({ envMode: "worktree" }),
     );
+    // A copy that is not current does not answer the read, so the read reaches the file.
+    expect(testState.projectFileReadRefreshes).toEqual([true]);
     testState.setDraftEnvMode("worktree");
     testState.draftStore.setDraftThreadContext.mockClear();
 
@@ -532,6 +544,23 @@ describe("useNewThreadHandler", () => {
       envMode: "local",
       startFromOrigin: false,
     });
+  });
+
+  it("lets a held dictated send go only from the draft and workspace it was captured for", () => {
+    testState.reset(null, { envMode: null, startFromOrigin: false });
+    const draftId = "draft-dictated" as never;
+    expect(detachedDraftSendState(draftId, "local")).toBe("send");
+    testState.setDraftEnvMode("worktree");
+    expect(detachedDraftSendState(draftId, "local")).toBe("moved");
+    // Sent from the draft, or discarded, while the send waited.
+    const session = testState.draftStore.getDraftSession();
+    testState.draftStore.getDraftSession.mockReturnValueOnce({
+      ...session,
+      promotedTo: { environmentId: "environment-ssh", threadId: "thread-open" },
+    } as never);
+    expect(detachedDraftSendState(draftId, "worktree")).toBe("gone");
+    testState.draftStore.getDraftSession.mockReturnValueOnce(null as never);
+    expect(detachedDraftSendState(draftId, "worktree")).toBe("gone");
   });
 
   it("opens the draft without waiting on a project file from an offline machine", async () => {
