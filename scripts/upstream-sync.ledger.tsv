@@ -3549,3 +3549,4 @@ d4d08aed56	take	taken; http.ts import conflict kept Onicode's refreshMcpAppCsp/h
 ae3352e051	take	fix(server): checkpoints work when a Git path ends in a space (#41725)
 b654fc27ba	take	fix(server): automatic port selection checks the address the server binds (#41730)
 8217726c10	take	taken; conflict: Onicode moved fanout publication into publishPrivateObjects, which skips the private lfs directory; publishLfsObjects runs before it
+5ab8dc4bfc	take	fix(mobile): show every image when Markdown puts one per line (#30280)
