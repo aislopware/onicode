@@ -15,6 +15,7 @@ import {
   findStoredHtmlRenderBootstrap,
 } from "@onicode/shared/htmlRender";
 import { decodeOtlpTraceRecords } from "@onicode/shared/observability";
+import * as ByteSize from "effect/ByteSize";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -33,6 +34,7 @@ import {
   HttpServerRequest,
   HttpServerRespondable,
 } from "effect/http";
+import * as HttpIncomingMessage from "effect/http/HttpIncomingMessage";
 import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 import { OtlpTracer, OtlpSerialization } from "effect/observability";
 
@@ -309,6 +311,12 @@ export const assetFileResponse = Effect.fn("assetFileResponse")(function* (
   }
   return yield* HttpServerResponse.file(asset.path, { status, offset, bytesToRead, headers });
 });
+
+// The default body limit for API routes. Routes that take more set their own limit.
+export const API_MAX_BODY_BYTES = 1024 * 1024;
+export const layerApiBodyLimit = HttpRouter.middleware(
+  Effect.provideService(HttpIncomingMessage.MaxBodySize, ByteSize.bytes(API_MAX_BODY_BYTES)),
+).layer;
 
 export const layerHttpCompression = HttpRouter.middleware(HttpMiddleware.compression(), {
   global: true,
