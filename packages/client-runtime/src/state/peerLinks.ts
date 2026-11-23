@@ -15,6 +15,7 @@ import type { EnvironmentRegistry } from "../connection/registry.ts";
 import { offersLinkedEnvironments } from "../linkRequest.ts";
 import {
   followLinkedThread,
+  endLinkedThreadView,
   keepLinkedThreadView,
   type LinkedThreadView,
 } from "../linkedThread.ts";
@@ -94,6 +95,10 @@ export function createPeerLinkEnvironmentAtoms<R, E>(
         const live = get(stream);
         if (AsyncResult.isSuccess(live)) {
           get.set(kept, keepLinkedThreadView(get.once(kept), live.value));
+        } else if (AsyncResult.isFailure(live)) {
+          const last = get.once(kept);
+          const ended = last === null ? null : endLinkedThreadView(last);
+          if (ended !== last) get.set(kept, ended);
         }
         return live;
       },

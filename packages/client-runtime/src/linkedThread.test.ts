@@ -13,17 +13,23 @@ import {
 } from "@onicode/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as DateTime from "effect/DateTime";
+import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 import { TestClock } from "effect/testing";
 
+import { ConnectionBlockedError } from "./connection/model.ts";
+import { ConnectionPersistenceError } from "./platform/persistence.ts";
+
 import {
   connectLinkedEnvironment,
   followLinkedThread,
   keepLinkedThreadView,
   LINKED_THREAD_RETRY_MS,
+  type LinkedPairingOutcome,
+  linkedPairingOutcome,
   type LinkedThreadView,
 } from "./linkedThread.ts";
 import { v2MessageRow, v2Now, v2Projection } from "./state/orchestrationV2TestFixtures.ts";
@@ -381,21 +387,43 @@ describe("connectLinkedEnvironment", () => {
   const connect = (
     pairing: PeerLinkClientPairingResult | null,
     reachable: ReadonlyArray<string> | ((host: string) => Promise<boolean>),
-    paired = true,
+    paired: LinkedPairingOutcome | ((host: string) => LinkedPairingOutcome) = "paired",
   ) => {
     const pairs: Array<{ host: string; pairingCode: string }> = [];
+    let requests = 0;
     return connectLinkedEnvironment({
       label: "vm (saved name)",
-      requestPairing: async () => pairing,
+      requestPairing: async () =>
+        pairing?.type === "credential" && requests++ > 0
+          ? { ...pairing, credential: `${pairing.credential}-${requests}` }
+          : pairing,
       reaches:
         typeof reachable === "function" ? reachable : async (host) => reachable.includes(host),
       pair: async (input) => {
         pairs.push(input);
-        return paired;
+        return typeof paired === "function" ? paired(input.host) : paired;
       },
       signIn: async () => false,
     }).then((outcome) => ({ outcome, pairs }));
   };
+
+  it("reads a failed save as a code already spent, any other failure as refused", () => {
+    const failed = (error: unknown) => ({ _tag: "Failure" as const, cause: Cause.fail(error) });
+    expect(linkedPairingOutcome({ _tag: "Success" })).toBe("paired");
+    expect(
+      linkedPairingOutcome(
+        failed(
+          new ConnectionPersistenceError({ operation: "register-connection", message: "denied" }),
+        ),
+      ),
+    ).toBe("unsaved");
+    expect(
+      linkedPairingOutcome(
+        failed(new ConnectionBlockedError({ reason: "authentication", detail: "refused" })),
+      ),
+    ).toBe("refused");
+    expect(linkedPairingOutcome({ _tag: "Failure", cause: Cause.interrupt() })).toBe("refused");
+  });
 
   it("redeems the pairing at the first address this device reaches", async () => {
     expect(await connect(credential, [tailnet])).toEqual({
@@ -403,6 +431,30 @@ describe("connectLinkedEnvironment", () => {
       pairs: [{ host: tailnet, pairingCode: "ONE-TIME" }],
     });
     expect((await connect(credential, [tailnet, lan])).pairs[0]?.host).toBe(lan);
+    // A proxy that answers as the machine but refuses the code; the next address gets a fresh one.
+    expect(
+      await connect(credential, [lan, tailnet], (host) =>
+        host === tailnet ? "paired" : "refused",
+      ),
+    ).toEqual({
+      outcome: { type: "connected" },
+      pairs: [
+        { host: lan, pairingCode: "ONE-TIME" },
+        { host: tailnet, pairingCode: "ONE-TIME-2" },
+      ],
+    });
+    expect(await connect(credential, [lan, tailnet], "refused")).toEqual({
+      outcome: { type: "manual", label: "VM", host: lan },
+      pairs: [
+        { host: lan, pairingCode: "ONE-TIME" },
+        { host: tailnet, pairingCode: "ONE-TIME-2" },
+      ],
+    });
+    // Saving failed on this device after the code was redeemed; no second session elsewhere.
+    expect(await connect(credential, [lan, tailnet], "unsaved")).toEqual({
+      outcome: { type: "manual", label: "VM", host: lan },
+      pairs: [{ host: lan, pairingCode: "ONE-TIME" }],
+    });
   });
 
   it.each([
@@ -464,7 +516,7 @@ describe("connectLinkedEnvironment", () => {
       host: null,
     });
     // The one-time pairing was refused where it was redeemed.
-    expect((await connect(credential, [lan], false)).outcome).toEqual({
+    expect((await connect(credential, [lan], "refused")).outcome).toEqual({
       type: "manual",
       label: "VM",
       host: lan,
@@ -485,7 +537,7 @@ describe("connectLinkedEnvironment", () => {
       }),
       // A LAN address that never answers, as away from home, must not hold up the tailnet.
       reaches: (host) => (host === lan ? silentLan.promise : Promise.resolve(true)),
-      pair: async () => true,
+      pair: async () => "paired",
       signIn: async (host) => {
         signIns.push(host);
         return host === tailnet;

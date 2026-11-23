@@ -92,9 +92,11 @@ it.effect(
         (registry) => Effect.sync(() => registry.dispose()),
       );
       const views = yield* Queue.unbounded<LinkedThreadView>();
+      const failures = yield* Queue.unbounded<void>();
       const open = () =>
         registry.subscribe(links.threadView(target), (result) => {
           if (AsyncResult.isSuccess(result)) Queue.offerUnsafe(views, result.value);
+          if (AsyncResult.isFailure(result)) Queue.offerUnsafe(failures, undefined);
         });
       const visibleMessages = (view: LinkedThreadView) =>
         view.thread.projection?.visibleTurnItems.map((row) => row.sourceItemId);
@@ -143,6 +145,21 @@ it.effect(
       const refreshed = yield* Queue.take(views);
       expect(visibleMessages(refreshed)).toEqual([recent.sourceItemId]);
       expect(refreshed.thread.historyCursor).toBe("new-window");
+
+      // Once the stream ends for good, nothing reads page requests, so no Load earlier is offered.
+      yield* Queue.fail(
+        reopened.items,
+        new PeerLinkThreadReadError({
+          reason: "unknown_link",
+          label: "Linked",
+          message: "This environment is no longer linked.",
+        }),
+      );
+      yield* Queue.take(failures);
+      const ended = registry.get(links.lastThreadView(target));
+      expect(ended?.thread.historyCursor).toBeNull();
+      expect(ended?.history).toEqual({ loading: false, failed: false });
+      expect(visibleMessages(ended!)).toEqual([recent.sourceItemId]);
     }).pipe(Effect.scoped),
 );
 

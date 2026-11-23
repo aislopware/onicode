@@ -11,7 +11,10 @@ import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { vi } from "vite-plus/test";
 
-import { v2Projection } from "../../../../../packages/client-runtime/src/state/orchestrationV2TestFixtures";
+import {
+  v2MessageRow,
+  v2Projection,
+} from "../../../../../packages/client-runtime/src/state/orchestrationV2TestFixtures";
 import { useLinkedThreadView } from "../../state/linkedThread";
 import { LinkedThreadView } from "./LinkedThreadSheet";
 
@@ -20,13 +23,28 @@ vi.mock("@react-navigation/native", () => ({
   useIsFocused: () => true,
   useNavigation: () => ({}),
 }));
-vi.mock("react-native", () => {
+const scrollView = vi.hoisted(() => ({
+  layout: (): void => undefined,
+  scrollToEnd: vi.fn(),
+}));
+vi.mock("react-native", async () => {
+  const { useImperativeHandle } = await import("react");
   const Container = ({ children }: { children: ReactNode }) => <div>{children}</div>;
+  const ScrollView = (props: {
+    children: ReactNode;
+    ref: React.Ref<unknown>;
+    onContentSizeChange: () => void;
+  }) => {
+    useImperativeHandle(props.ref, () => ({ scrollToEnd: scrollView.scrollToEnd }));
+    scrollView.layout = props.onContentSizeChange;
+    return <div>{props.children}</div>;
+  };
   return {
+    AccessibilityInfo: { announceForAccessibility() {} },
     AppState: { currentState: "active", addEventListener: () => ({ remove() {} }) },
     Platform: { OS: "android" },
     Pressable: Container,
-    ScrollView: Container,
+    ScrollView,
     Text: Container,
     View: Container,
   };
@@ -63,6 +81,7 @@ it.effect(
   () =>
     Effect.gen(function* () {
       vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+      scrollView.scrollToEnd.mockClear();
       const container = document.createElement("div");
       const root = createRoot(container);
       const target = {
@@ -100,20 +119,22 @@ it.effect(
           Effect.forkScoped,
         );
 
-        const renderNext = Effect.gen(function* () {
-          const view = yield* Queue.take(views);
+        const show = (view: LinkedThreadState) => {
           vi.mocked(useLinkedThreadView).mockReturnValue({
             view,
             error: view.error ?? null,
             retry() {},
           });
           act(() => root.render(<LinkedThreadView target={target} />));
-        });
+        };
+        const renderNext = Queue.take(views).pipe(Effect.map(show));
 
         yield* renderNext; // Initial snapshot.
         yield* renderNext; // Connection warning.
         expect(container.textContent).toContain(warning);
         expect(container.textContent).not.toContain(pageError);
+        scrollView.layout();
+        expect(scrollView.scrollToEnd).toHaveBeenCalledTimes(1);
 
         act(() => loadEarlier().click());
         yield* renderNext;
@@ -121,11 +142,41 @@ it.effect(
         yield* renderNext;
         expect(loadEarlier().parentElement?.textContent).toContain(pageError);
         expect(container.textContent).toContain(warning);
+        // The page error alone resizes the top of the feed, so the reader stays where they were.
+        scrollView.layout();
+        expect(scrollView.scrollToEnd).toHaveBeenCalledTimes(1);
 
         act(() => loadEarlier().click());
         yield* renderNext;
         expect(container.textContent).not.toContain(pageError);
         expect(loadEarlier().disabled).toBe(true);
+        scrollView.layout();
+
+        // A live item that lands in the same layout as the page error is still followed.
+        yield* Queue.offer(pages, Effect.fail(unavailable));
+        const failedAgain = yield* Queue.take(views);
+        const live = {
+          ...failedAgain,
+          thread: {
+            ...failedAgain.thread,
+            projection: { ...v2Projection, visibleTurnItems: [v2MessageRow("live", 1)] },
+          },
+        };
+        show(live);
+        expect(loadEarlier().parentElement?.textContent).toContain(pageError);
+        scrollView.layout();
+        expect(scrollView.scrollToEnd).toHaveBeenCalledTimes(2);
+
+        // A stream that ends for good drops the page error and changes the card at the end, followed.
+        show({
+          ...live,
+          error: { _tag: "PeerLinkThreadReadError", reason: "unknown_link" },
+          thread: { ...live.thread, historyCursor: null },
+        });
+        expect(container.textContent).not.toContain(pageError);
+        expect(container.textContent).not.toContain(warning);
+        scrollView.layout();
+        expect(scrollView.scrollToEnd).toHaveBeenCalledTimes(3);
       } finally {
         act(() => root.unmount());
         vi.unstubAllGlobals();
