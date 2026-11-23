@@ -155,6 +155,9 @@ const TASK_WAKE_EVENTS = [
 ] as const;
 const SECRET_REQUEST_POLL_INTERVAL_MS = 500;
 const MAX_LISTED_TASKS = 10;
+const TERMINAL_TASK_STATUSES = new Set(["completed", "failed", "cancelled", "interrupted"]);
+// As ProjectionStore's settled check: a parent read or disposed the result.
+const READ_RESULT_STATES = new Set(["acknowledged", "delivered", "disposed"]);
 const DEFAULT_THREAD_LIST_LIMIT = 10;
 const DEFAULT_THREAD_READ_LIMIT = 10;
 const DEFAULT_THREAD_RUN_LIMIT = 10;
@@ -1804,23 +1807,32 @@ const make = Effect.gen(function* () {
     const { subagents } = yield* loadThreadRecords(scope.thread.threadId, ["subagents"], {
       omitSettledSubagents: true,
     });
-    const open = subagents.filter(
+    const tasks = subagents.filter(
       (task) =>
         task.origin === "app_owned" &&
         (task.childThreadId !== null || task.remoteChild !== undefined),
     );
-    const listed = open
-      .slice(0, MAX_LISTED_TASKS)
-      .map((task) => (task.title ? `${task.id} (${task.title})` : task.id))
-      .join(", ");
-    const more =
-      open.length > MAX_LISTED_TASKS ? `, and ${open.length - MAX_LISTED_TASKS} more` : "";
+    const finished = (task: (typeof tasks)[number]) => TERMINAL_TASK_STATUSES.has(task.status);
+    const read = (task: (typeof tasks)[number]) =>
+      READ_RESULT_STATES.has(task.completionDelivery?.state ?? "");
+    const groups = [
+      ["Unfinished delegated tasks on this thread", tasks.filter((task) => !finished(task))],
+      ["Finished, result not read yet", tasks.filter((task) => finished(task) && !read(task))],
+      ["Finished", tasks.filter((task) => finished(task) && read(task))],
+    ] as const;
+    let budget = MAX_LISTED_TASKS;
+    const listed = groups.flatMap(([label, group]) => {
+      if (group.length === 0) return [];
+      const shown = group.slice(0, Math.max(budget, 0));
+      budget -= group.length;
+      const more = group.length - shown.length;
+      const names = shown.map((task) => (task.title ? `${task.id} (${task.title})` : task.id));
+      return [`${label}: ${[...names, ...(more > 0 ? [`${more} more`] : [])].join(", ")}.`];
+    });
     return yield* failure(
       "task_not_found",
       `No delegated task with id ${taskId} exists on thread ${scope.thread.threadId}. ` +
-        (open.length === 0
-          ? "This thread has no open delegated tasks."
-          : `Open delegated tasks on this thread: ${listed}${more}.`),
+        (listed.length === 0 ? "This thread has no open delegated tasks." : listed.join(" ")),
     );
   });
 
