@@ -3357,7 +3357,7 @@ d775f66a15	skip	upstream repo governance (VOUCHED.td vouch list); Onicode has no
 7e5a4398f5	take	taken as is
 71d1830e52	skip	token analytics telemetry only (ProviderDimensions, ProviderUsageAnalytics, FeedbackService test); Onicode removed telemetry, as with 46b626263f
 887e3a569f	take	taken as is
-58aa80dcdf	take	taken as is
+58aa80dcdf	take	adapted: kept `--no-auto-gc` on the status and storage-cleanup fetches, since Git before 2.31 ignores GIT_CONFIG_COUNT and Onicode still supports it
 73bb8ece1f	take	taken as is
 6cfc3bf0d5	take	taken as is
 12f19b83c0	take	taken as is; GitLab's host parsing already guards with try/catch
