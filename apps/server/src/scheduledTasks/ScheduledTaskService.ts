@@ -110,8 +110,11 @@ export class ScheduledTaskService extends Context.Service<
         readonly keepWorkspace?: boolean;
         /** The input's model is one the caller read earlier: keep the stored one. */
         readonly keepModelSelection?: boolean;
-        /** Refuse the save unless the task still has the project and modes the caller checked. */
-        readonly expected?: Pick<ScheduledTask, "projectId" | "runtimeMode" | "interactionMode">;
+        /**
+         * Refuse the save unless the task still has the project and modes the caller checked,
+         * and the given title, prompt, enabled state and schedule it left alone.
+         */
+        readonly expected?: ScheduledTaskExpectation;
       },
     ) => Effect.Effect<ScheduledTaskMutationResult, ScheduledTaskError>;
     readonly setEnabled: (
@@ -159,6 +162,12 @@ const UNSUCCESSFUL_RUN_ERRORS = {
   rolled_back: "The run was rolled back.",
 } as const;
 const localNow = DateTime.withCurrentZoneLocal(DateTime.nowInCurrentZone);
+
+type ScheduledTaskExpectation = Pick<
+  ScheduledTask,
+  "projectId" | "runtimeMode" | "interactionMode"
+> &
+  Partial<Pick<ScheduledTask, "title" | "prompt" | "enabled" | "schedule">>;
 
 function nextRunAt(
   task: Pick<ScheduledTask, "enabled" | "schedule">,
@@ -409,9 +418,7 @@ export const layer = Layer.effect(
         readonly keepsWorkspace: boolean;
         readonly keepsModelSelection: boolean;
         readonly expectedThreadId: ThreadId | null | undefined;
-        readonly expected:
-          | Pick<ScheduledTask, "projectId" | "runtimeMode" | "interactionMode">
-          | undefined;
+        readonly expected: ScheduledTaskExpectation | undefined;
       },
     ) =>
       sql<{ task_id: string }>`
@@ -523,6 +530,18 @@ export const layer = Layer.effect(
               scheduled_tasks.project_id = ${destination.expected?.projectId ?? null}
               AND scheduled_tasks.runtime_mode = ${destination.expected?.runtimeMode ?? null}
               AND scheduled_tasks.interaction_mode = ${destination.expected?.interactionMode ?? null}
+              AND (${destination.expected?.title === undefined ? 1 : 0} = 1
+                OR scheduled_tasks.title = ${destination.expected?.title ?? null})
+              AND (${destination.expected?.prompt === undefined ? 1 : 0} = 1
+                OR scheduled_tasks.prompt = ${destination.expected?.prompt ?? null})
+              AND (${destination.expected?.enabled === undefined ? 1 : 0} = 1
+                OR scheduled_tasks.enabled = ${destination.expected?.enabled ? 1 : 0})
+              AND (${destination.expected?.schedule === undefined ? 1 : 0} = 1
+                OR scheduled_tasks.schedule_json = ${
+                  destination.expected?.schedule === undefined
+                    ? null
+                    : JSON.stringify(destination.expected.schedule)
+                })
             )
           )
         RETURNING task_id
