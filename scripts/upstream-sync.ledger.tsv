@@ -3416,3 +3416,4 @@ d63b9c4c76	take	taken as is
 f9f34aab78	take	fix(web): start without WebAssembly by initialising Words in a guard (#41361)
 2936aa4341	take	feat(scripts): server metrics read event-loop delay and GC in every window
 d4976b0e9a	take	feat(scripts): server metrics busy scenario on seeded data; adopted upstream's full recovery-kind list in migrate-dev-db over Onicode's 4-kind list (missed restart-continuations and unread-steers, so a seed could resume work); ~/.t3 -> ~/.onicode
+87b22265d7	take	feat(scripts): server metrics clients scenario and reconnect storm; adapted: clientKind web -> desktop-renderer (Onicode has no web client kind)
