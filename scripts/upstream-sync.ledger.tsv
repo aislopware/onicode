@@ -3477,3 +3477,4 @@ f0d901502a	take	taken as is (Azure DevOps only; GitHub/GitLab repositories alway
 a2d6416043	take	adapted into Onicode's multibyte RTF decoder: fcharset0 reads as 1252 under any document code page, cpg inside fontfile ignored; dropped upstream's singleByteCodePage (Onicode's codePage also covers DBCS); kept Onicode's cpg-over-fcharset maps and cpg0-is-system-default rule (matches the web preview; upstream reads cpg0 as 1252)
 14c697c4f1	take	adapted into Onicode's web RTF decoder: fcharset0 is 1252, cpg inside fontfile ignored; kept Onicode's rtfCodePage name and its cpg0-is-system-default rule (fcharset decides), which upstream's version drops
 77c230e456	take	taken as is
+e6ba483403	take	taken; conflict kept Onicode's unreadNotice condition beside upstream's steerFollowUpOfRunId one (both exempt a known message from the not-dispatchable check)
