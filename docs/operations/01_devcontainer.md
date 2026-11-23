@@ -5,7 +5,7 @@
 ## What works
 
 - The server: `vp run dev:server`, then pair a mobile app or a desktop app on the host through the forwarded server port with `node apps/server/src/bin.ts pair --base-dir .onicode`.
-- Linux CI checks: focused `vp test run <files>`, `vp lint <files>`, package typechecks, `vp run build:desktop`, and the resource-monitor Cargo build and tests.
+- Linux CI checks: focused `vp test run <files>`, `vp lint <files>`, package typechecks, `vp run build:desktop`, and the resource-monitor Cargo build and tests. `vpr` is not on PATH here (the installer only shims `vp`); use `vp run <script>`.
 
 ## State and caching
 

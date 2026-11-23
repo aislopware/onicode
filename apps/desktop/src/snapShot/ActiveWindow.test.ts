@@ -121,7 +121,7 @@ it.each([
     ],
     content: {
       id: 92,
-      title: "Onicode (Nightly)",
+      title: "Onicode (Dev)",
       bounds: { x: 0, y: 33, width: 1_512, height: 949 },
     },
   },
