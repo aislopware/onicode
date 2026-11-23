@@ -28,6 +28,7 @@ import {
 import {
   latestRunError,
   launchModelSelection,
+  messageRole,
   readLatestMessages,
   resolveProject,
   threadCommand,
@@ -676,6 +677,16 @@ it.effect("start rejects a repeated --option before reaching the server", () =>
     ),
   ),
 );
+
+it.each([
+  [{ type: "assistant_message" }, "assistant"],
+  [{ type: "user_message", createdBy: "user" }, "user"],
+  [{ type: "user_message", createdBy: "agent" }, "agent"],
+  [{ type: "user_message", createdBy: "system" }, "system"],
+  [{ type: "user_message" }, "user"],
+] as const)("show labels %j as %s", (item, role) => {
+  assert.strictEqual(messageRole(item), role);
+});
 
 /** Serves oni_thread_read pages the way the server does: positions count every item. */
 const timelineTools = (types: ReadonlyArray<string>) => {

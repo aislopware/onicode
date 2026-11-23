@@ -768,6 +768,17 @@ const finishRun = Effect.fn("cli.thread.finishRun")(function* (
   }
 });
 
+/** Who wrote a message, as `thread show` labels it. Agents send messages to other threads. */
+export const messageRole = (item: {
+  readonly type: string;
+  readonly createdBy?: string | null | undefined;
+}) =>
+  item.type === "assistant_message"
+    ? "assistant"
+    : item.createdBy === "system" || item.createdBy === "agent"
+      ? item.createdBy
+      : "user";
+
 export const titleFromMessage = (message: string) => {
   const firstLine = message.trim().split("\n")[0]?.trim() ?? "";
   if (firstLine.length <= TITLE_MAX_CHARS) return firstLine;
@@ -1098,12 +1109,7 @@ const threadShowCommand = Command.make("show", {
           const messages = yield* Effect.forEach(latest, (item) =>
             readFullText(tools, threadId, item).pipe(
               Effect.map((text) => ({
-                role:
-                  item.type === "assistant_message"
-                    ? "assistant"
-                    : item.createdBy === "system"
-                      ? "system"
-                      : "user",
+                role: messageRole(item),
                 runId: item.runId,
                 text,
               })),
