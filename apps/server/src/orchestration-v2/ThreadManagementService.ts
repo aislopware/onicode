@@ -69,6 +69,7 @@ import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
 import { DispatchModeLimit, exceededDispatchModeLimit } from "./DispatchModeLimit.ts";
 import { projectTurnItemForDetail } from "./WireProjection.ts";
 import { cancelledBeforeStart } from "./RestartBackgroundNote.ts";
+import { contextBoundaryOrdinal } from "./contextBoundary.ts";
 import * as LegacyV1ThreadImporter from "./legacy/LegacyV1ThreadImporter.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { ThreadWorktreeRestore } from "../workspace/restoreMissingWorktree.ts";
@@ -92,6 +93,7 @@ export function withCreationProvenance(
         linkOrigin: _linkOrigin,
         delegatedFrom: _delegatedFrom,
         initialMessage: _initialMessage,
+        workflowRun: _workflowRun,
         ...rest
       } = command;
       return { ...rest, ...provenance };
@@ -1051,6 +1053,27 @@ const make = Effect.gen(function* () {
   const submitRunOutput: ThreadManagementServiceShape["submitRunOutput"] = Effect.fn(
     "ThreadManagementService.submitRunOutput",
   )(function* (input) {
+    // A retry of a submission already taken answers for the run it went to, which a run asked for
+    // a result since may have followed. Replaying the receipt ignores the command's run and value.
+    const receipt = yield* receipts
+      .getByCommandId(input.commandId)
+      .pipe(Effect.orElseSucceed(() => Option.none()));
+    if (Option.isSome(receipt) && receipt.value.status === "accepted") {
+      const anyRun = (yield* orchestrator.getThreadRecords(input.threadId, ["runs"])).runs[0];
+      if (anyRun !== undefined) {
+        const replayed = yield* orchestrator.dispatch({
+          type: "run.output.submit",
+          commandId: input.commandId,
+          threadId: input.threadId,
+          runId: anyRun.id,
+          value: null,
+        });
+        const runId = replayed.storedEvents.find(
+          ({ event }) => event.type === "run.output-submitted",
+        )?.event.runId;
+        if (runId !== undefined) return { runId };
+      }
+    }
     const active = latestActiveRun(
       yield* orchestrator.getThreadRecords(input.threadId, ["runs"], {
         runStatuses: ACTIVE_RUN_STATUSES,
@@ -1075,17 +1098,29 @@ const make = Effect.gen(function* () {
       })).runs[0];
       if (wake?.outputSchema !== undefined) run = wake;
     }
-    // A turn the provider woke names no run, so it answers for the newest one still owed.
-    // Only an ended turn can owe one; a queued or running turn asked for one answers for itself.
+    // A turn the provider woke names no run, so it answers for the newest one still owed. Only the
+    // newest started run asked for one can owe it, and only while the agent's conversation still
+    // reaches it; a queued or running turn asked for one answers for itself.
     if (active !== undefined && run === undefined) {
-      run = (yield* orchestrator.getThreadRecords(input.threadId, ["runs"])).runs
+      const records = yield* orchestrator.getThreadRecords(input.threadId, ["runs"]);
+      const asked = records.runs
         .filter(
           (candidate) =>
             candidate.outputSchema !== undefined &&
-            candidate.output === undefined &&
-            candidate.status === "completed",
+            candidate.status !== "queued" &&
+            !cancelledBeforeStart(candidate),
         )
         .toSorted((left, right) => right.ordinal - left.ordinal)[0];
+      const owing = asked?.status === "completed" && asked.output === undefined ? asked : undefined;
+      const forgotten =
+        owing !== undefined &&
+        records.runs.some(
+          (later) => later.freshContext === true && later.ordinal > owing.ordinal,
+        ) &&
+        contextBoundaryOrdinal(
+          yield* orchestrator.getThreadRecords(input.threadId, ["runs", "turnItems"]),
+        ) > owing.ordinal;
+      run = forgotten ? undefined : owing;
     }
     if (active === undefined || run?.outputSchema === undefined) {
       return yield* new ThreadManagementRunOutputRejectedError({
@@ -1506,6 +1541,15 @@ const make = Effect.gen(function* () {
           readonly status: ThreadManagementTerminalRunStatus;
         },
       } as const;
+    }
+    if (explicitRun?.status === "queued") {
+      const dispatch = yield* orchestrator.dispatch({
+        type: "queued-run.cancel",
+        commandId: input.commandId,
+        threadId: input.threadId,
+        runId: explicitRun.id,
+      });
+      return { type: "interrupt_requested", run: explicitRun, dispatch } as const;
     }
     const interruptibleRun = latestActiveRun(target);
     if (interruptibleRun === undefined) {

@@ -3323,3 +3323,4 @@ fb23f12f1f	skip	MCP Events milestones only serve outside bots (SEP-3415); Onicod
 def64e3a54	take	fix(web): clicking the selected file in a Files folder view opens it
 6b38ec931a	take	desktop Origin/Sec-Fetch stripping taken with Clerk preserve-host removed; server CORS split dropped: kept Onicode's wildcard layerApiCors, which already answers originless and any-origin requests without credentialed dev CORS
 83119ae8bd	take	fix(server): stopping a delegated child with a queued message no longer ends its task
+e414cfd4be	take	feat(server): durable workflows; adapted: webhook triggers/hooks, workflow milestones (MCP Events) and feedback-report parts dropped (removed surfaces); migration 110 -> 114; kept Onicode's wake-hop submitRunOutput and added upstream's receipt replay and newest-asked/fresh-context owed-run rule; rpcError on AcpMcpBridgeError and hiddenFromThreads ported as prerequisites; agentContextBudget re-measured (63533)

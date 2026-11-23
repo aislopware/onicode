@@ -508,7 +508,7 @@ it.effect(
   },
 );
 
-it.effect("leaves a task delegated from a linked environment out of the top-level list", () => {
+it.effect("leaves delegated tasks and workflow agent steps out of the top-level list", () => {
   const harness = makeHarness();
   return Effect.gen(function* () {
     const launches = yield* ThreadLaunch.ThreadLaunchService;
@@ -527,6 +527,17 @@ it.effect("leaves a task delegated from a linked environment out of the top-leve
         title: "Remote parent",
       },
     });
+    const workflowStep = yield* launches.launch({
+      ...launchInput({ command: "command:workflow-step", thread: "thread:workflow-step" }),
+      createdBy: "system",
+      creationSource: "server",
+      workflowRun: {
+        environmentId: EnvironmentId.make("environment:local"),
+        runId: "run:1",
+        workflow: "review",
+        step: "agent",
+      },
+    });
     const listed = yield* threads.listProjectThreads({ projectId, includeSubagents: false });
     assert.deepEqual(
       listed.map((thread) => thread.id),
@@ -542,9 +553,9 @@ it.effect("leaves a task delegated from a linked environment out of the top-leve
       [ThreadId.make("thread:top-level"), delegated.threadId],
     );
     const all = yield* threads.listProjectThreads({ projectId, includeSubagents: true });
-    assert.include(
+    assert.includeMembers(
       all.map((thread) => thread.id),
-      delegated.threadId,
+      [delegated.threadId, workflowStep.threadId],
     );
   }).pipe(Effect.provide(harness.layer));
 });

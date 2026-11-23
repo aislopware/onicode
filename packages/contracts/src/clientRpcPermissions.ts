@@ -81,6 +81,13 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
   [WS_METHODS.scheduledTasksDelete]: AuthOrchestrationOperateScope,
   [WS_METHODS.scheduledTasksRunNow]: AuthOrchestrationOperateScope,
   [ORCHESTRATION_V2_WS_METHODS.stopWorkflow]: AuthOrchestrationOperateScope,
+  // An answer, a resume and a cancel each decide what a run's agents do next.
+  [WS_METHODS.workflowsAnswer]: AuthOrchestrationOperateScope,
+  [WS_METHODS.workflowsResume]: AuthOrchestrationOperateScope,
+  [WS_METHODS.workflowsCancel]: AuthOrchestrationOperateScope,
+  // The server runs this file: saving it is running code there, as a terminal does.
+  [WS_METHODS.workflowsSaveDefinition]: AuthTerminalOperateScope,
+  [WS_METHODS.workflowsDeleteDefinition]: AuthTerminalOperateScope,
   // Force stop kills agent processes, as Stop on a terminal does.
   [ORCHESTRATION_V2_WS_METHODS.forceStopThread]: AuthOrchestrationOperateScope,
   [WS_METHODS.providerSessionMcpServerAction]: AuthOrchestrationOperateScope,
