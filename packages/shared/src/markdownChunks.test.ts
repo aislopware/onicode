@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { splitMarkdown } from "./markdownChunks.ts";
+import {
+  cutSourceLines,
+  extendMarkdownSplit,
+  LARGE_MARKDOWN_CHUNK_MAX_CHARS,
+  splitMarkdown,
+} from "./markdownChunks.ts";
+import { maskMarkdownFrontmatter } from "./markdownFrontmatter.ts";
 
 const splitLargeMarkdown = (text: string, targetChars?: number) =>
   splitMarkdown(text, targetChars).chunks;
@@ -34,6 +40,7 @@ describe("splitMarkdown", () => {
       "---",
       "",
       "| a | b |",
+      "",
     ].join("\n");
     const chunks = splitLargeMarkdown(text, 1);
     expect(chunks.map((chunk) => chunk.text).join("\n")).toBe(text);
@@ -49,7 +56,7 @@ describe("splitMarkdown", () => {
   });
 
   it("keeps a fence open until a matching closer", () => {
-    const text = ["````", "```", "", "# inside", "````", "", "after"].join("\n");
+    const text = ["````", "```", "", "# inside", "````", "", "after", ""].join("\n");
     expect(starts(text)).toEqual(["````", "after"]);
   });
 
@@ -77,12 +84,15 @@ describe("splitMarkdown", () => {
       "</div>",
       "",
       "after",
+      "",
     ].join("\n");
     expect(starts(text)).toEqual(["<!--", "after"]);
   });
 
   it("treats an autolink line as a paragraph, so a following fence still opens", () => {
-    const text = ["<https://example.com>", "```md", "", "# literal", "```", "", "after"].join("\n");
+    const text = ["<https://example.com>", "```md", "", "# literal", "```", "", "after", ""].join(
+      "\n",
+    );
     expect(starts(text)).toEqual(["<https://example.com>", "after"]);
   });
 
@@ -94,9 +104,55 @@ describe("splitMarkdown", () => {
     ]);
   });
 
+  it("never cuts at the last line, which may still be growing", () => {
+    expect(starts("# a\n# b")).toEqual(["# a"]);
+    expect(starts("# a\n# b\n")).toEqual(["# a", "# b"]);
+  });
+
   it("keeps leading frontmatter in the first piece", () => {
-    const text = ["---", "title: x", "", "# not a heading", "---", "", "# Heading"].join("\n");
+    const text = ["---", "title: x", "", "# not a heading", "---", "", "# Heading", ""].join("\n");
     expect(starts(text)).toEqual(["---", "# Heading"]);
+  });
+
+  it("agrees with the frontmatter mask on where frontmatter ends", () => {
+    const withCloserAfter = (lines: number) =>
+      [
+        "---",
+        "# inside",
+        ...Array.from({ length: lines - 2 }, () => "a: 1"),
+        "---",
+        "# after",
+        "",
+      ].join("\n");
+    for (const [closerLine, expected] of [
+      [1000, ["---", "# after"]],
+      [1001, ["---", "# inside", "# after"]],
+    ] as const) {
+      const text = withCloserAfter(closerLine);
+      expect(starts(text)).toEqual(expected);
+      // Desktop masks each piece, mobile the whole file.
+      const [first] = splitLargeMarkdown(text, 1);
+      expect(maskMarkdownFrontmatter(first!.text)).toBe(
+        maskMarkdownFrontmatter(text).slice(0, first!.text.length),
+      );
+    }
+  });
+
+  it("keeps a file that defines a footnote whole until it is too large to parse at once", () => {
+    const text = [
+      "# One",
+      "",
+      "See [^note].",
+      "",
+      "# Two",
+      "",
+      "[^note]: In another piece.",
+      "",
+    ].join("\n");
+    expect(splitMarkdown(text, 1)).toEqual({ chunks: [{ text, lines: 8 }], definitions: "" });
+    const filler = "# Filler\n\nparagraph\n\n";
+    const large = text + filler.repeat(LARGE_MARKDOWN_CHUNK_MAX_CHARS / filler.length);
+    expect(splitLargeMarkdown(large, 1).length).toBeGreaterThan(1);
   });
 
   it("collects link definitions outside code so every piece can resolve them", () => {
@@ -124,9 +180,115 @@ describe("splitMarkdown", () => {
       "",
       "===",
       "[p]: /paragraph-text",
+      "",
+      // Past the whole-file limit, so the footnote does not keep the file one piece.
+      "filler ".repeat(LARGE_MARKDOWN_CHUNK_MAX_CHARS / 7 + 1),
     ].join("\n");
     expect(splitMarkdown(text).definitions).toBe(
       "[site]: https://example.com\n[b]: https://example.com/badge.svg 'Badge'\n[h]: /after-heading\n[t]: /after-break",
     );
+  });
+});
+
+const footnoteFiller = "# Section\n\nparagraph text\n\n";
+const largeFootnoteText =
+  "[^n]: note\n\n" +
+  footnoteFiller.repeat(Math.ceil(LARGE_MARKDOWN_CHUNK_MAX_CHARS / footnoteFiller.length) + 2);
+
+describe("extendMarkdownSplit", () => {
+  it("splits again for a shorter text, another piece size, or no line break at the resume point", () => {
+    const previous = splitMarkdown("# A\n\nfirst text\n\n# B\n\nmore\n", 8);
+    for (const text of ["# A\n\nfirst", "# Other\n\nsecond text\n\n# B\n\nmore and more\n"]) {
+      expect(extendMarkdownSplit(previous, text, 8)).toEqual(splitMarkdown(text, 8));
+    }
+    // At 4 the text is cut before `# B`; at 16 it is not, so the earlier piece cannot be reused.
+    const small = splitMarkdown("# A\n\nab\n\n# B\n\ncd\n", 4);
+    expect(small.chunks.length).toBeGreaterThan(1);
+    const longer = "# A\n\nab\n\n# B\n\ncd\n\n# C\n";
+    expect(extendMarkdownSplit(small, longer, 16)).toEqual(splitMarkdown(longer, 16));
+  });
+
+  // Cuts before `reusesFrom` change earlier pieces: the tail closes the frontmatter or makes the
+  // text one piece.
+  const frontmatter = "---\ntitle: x\n\n# not\n---\n\n# Heading\n\nbody\n\n# Next\n";
+  const footnote = "# A\n\nsee [^n]\n\n# B\n\ntext\n\n[^n]: note\n";
+  const lines = (count: number) => "x\n".repeat(count);
+  // The heading inside is cut before the closer arrives. A closer on the 1,000th line after the
+  // opener makes the block frontmatter; one line later it is a thematic break.
+  const lateFrontmatter = `---\na: 12345\n# inside\n${lines(997)}---\n\n# H\n\npara\n\n# I\n`;
+  const noFrontmatter = `---\na: 12345\n# inside\n${lines(997)}# late\n---\n\n# H\n\npara\n\n# I\n`;
+  // The first definition fits under the shared cap, so the cap is nearly spent past the cut: the
+  // longer one after it no longer fits, the short one does.
+  const cappedDefinitions = `# A\n\n[a]: /${"a".repeat(16_000)}\n\n# B\n\n[b]: /${"b".repeat(400)}\n\n[c]: /c\n\n# C\n`;
+  const near = (text: string, marker: string, offsets: readonly number[]) =>
+    offsets.map((offset) => text.indexOf(marker) + offset);
+  it.each([
+    {
+      name: "headings",
+      text: "# A\n\npara one\n\n# B\n\npara two\n\n## C\ntext\n\n- list\n\n# D\n",
+    },
+    {
+      name: "a fence spanning the cut",
+      text: "# A\n\nintro\n\n```md\n# not\n\nnot a paragraph\n```\n\nafter\n\n# B\n",
+    },
+    { name: "comments and math", text: "<!--\n\n# hidden\n-->\n\n$$\n\nx\n$$\n\n# After\n\nend" },
+    {
+      name: "definitions in the last piece",
+      text: "# A\n\n[a]: /one\n\nuse [a] and [b]\n\n# B\n\ntext\n\n[b]: /two 'Two'\n[c]: /three\n",
+    },
+    { name: "frontmatter", text: frontmatter, reusesFrom: frontmatter.indexOf("\n\n# Heading") },
+    { name: "CRLF line ends", text: "# A\r\n\r\ntext\r\n\r\n# B\r\n\r\nmore\r\n" },
+    { name: "a footnote in the last piece", text: footnote, reusesFrom: footnote.length + 1 },
+    {
+      name: "a frontmatter closer at its last allowed line",
+      text: lateFrontmatter,
+      reusesFrom: lateFrontmatter.indexOf("\n\n# H"),
+    },
+    { name: "a frontmatter closer past its last allowed line", text: noFrontmatter },
+    {
+      name: "definitions past the shared cap",
+      text: cappedDefinitions,
+      cuts: [
+        ...near(cappedDefinitions, "# B", [0, 2]),
+        ...near(cappedDefinitions, "[b]", [10, 410]),
+        ...near(cappedDefinitions, "[c]", [3, 9]),
+        ...near(cappedDefinitions, "# C", [0, 3]),
+      ],
+    },
+    {
+      name: "a footnote file crossing the whole-file limit",
+      text: largeFootnoteText,
+      cuts: [
+        LARGE_MARKDOWN_CHUNK_MAX_CHARS - 7,
+        LARGE_MARKDOWN_CHUNK_MAX_CHARS,
+        LARGE_MARKDOWN_CHUNK_MAX_CHARS + 5,
+        largeFootnoteText.length - 3,
+      ],
+    },
+  ])("splits $name as if split whole", ({ text, cuts, reusesFrom = 0 }) => {
+    const whole = splitMarkdown(text, 8);
+    let streamed = splitMarkdown("", 8);
+    for (const cut of cuts ?? Array.from({ length: text.length + 1 }, (_, index) => index)) {
+      const previous = splitMarkdown(text.slice(0, cut), 8);
+      const extended = extendMarkdownSplit(previous, text, 8);
+      expect(extended).toEqual(whole);
+      if (cut >= reusesFrom) {
+        for (const [index, chunk] of previous.chunks.slice(0, -1).entries()) {
+          expect(extended.chunks[index]).toBe(chunk);
+        }
+      }
+      streamed = extendMarkdownSplit(streamed, text.slice(0, cut), 8);
+      expect(streamed).toEqual(previous);
+    }
+  });
+});
+
+describe("cutSourceLines", () => {
+  it("cuts at line breaks, and inside a line only when it is too long", () => {
+    expect(cutSourceLines("ab\ncd\nef", 5)).toEqual(["ab\ncd", "ef"]);
+    expect(cutSourceLines("abcdefg\nh", 3)).toEqual(["abc", "def", "g\nh"]);
+    expect(cutSourceLines("a\u{1F600}b", 2)).toEqual(["a", "\u{1F600}", "b"]);
+    // A run too short for a surrogate pair still moves on.
+    expect(cutSourceLines("\u{1F600}", 1).join("")).toBe("\u{1F600}");
   });
 });

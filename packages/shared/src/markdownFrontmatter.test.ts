@@ -22,4 +22,10 @@ describe("maskMarkdownFrontmatter", () => {
     expect(maskMarkdownFrontmatter("# A\n---\nb\n---\n")).toBe("# A\n---\nb\n---\n");
     expect(maskMarkdownFrontmatter("---\na: 1\n----\n")).toBe("---\na: 1\n----\n");
   });
+
+  it("stops waiting for a closer after 1,000 lines, where the Markdown splitter does", () => {
+    const closedAt = (line: number) => `---\n${"a: 1\n".repeat(line - 1)}---\n# Body`;
+    expect(maskMarkdownFrontmatter(closedAt(1000))).toMatch(/^\s+# Body$/);
+    expect(maskMarkdownFrontmatter(closedAt(1001))).toBe(closedAt(1001));
+  });
 });

@@ -9,6 +9,7 @@ import { StackActions, useNavigation } from "@react-navigation/native";
 import { View } from "react-native";
 import { LegendList } from "@legendapp/list/react-native";
 import {
+  cutSourceLines,
   LARGE_MARKDOWN_CHUNK_MAX_CHARS,
   splitMarkdown,
   withMarkdownDefinitions,
@@ -42,7 +43,17 @@ import {
   type NativeMarkdownTextStyle,
 } from "../../native/SelectableMarkdownText";
 import { fileRoutePathSegments, resolveWorkspaceFilePath } from "./filePath";
-import { SourceFileSurface } from "./SourceFileSurface";
+
+interface PreviewPiece {
+  readonly text: string;
+  readonly source: boolean;
+  readonly gapAfter: boolean;
+  /** Rows it takes, for the list's size estimate; a long source line wraps into several. */
+  readonly rows: number;
+}
+
+// About how many monospace characters one phone row holds before a source line wraps.
+const SOURCE_ROW_CHARS = 48;
 
 interface MarkdownPreviewStyles {
   readonly nativeTextStyle: NativeMarkdownTextStyle;
@@ -266,34 +277,45 @@ export function FileMarkdownPreview(props: {
 
   // Only chunks near the viewport mount, so only they pay for the JS rewrites and native parse.
   const { chunks, definitions } = splitMarkdown(markdown);
-  if (chunks.some((chunk) => chunk.text.length > LARGE_MARKDOWN_CHUNK_MAX_CHARS)) {
-    return (
-      <SourceFileSurface
-        contents={props.markdown}
-        path={props.relativePath}
-        onRefresh={props.onRefresh}
-      />
-    );
-  }
+  // A piece this long (one huge fence or HTML block) is too slow to parse, so it shows as source,
+  // in runs so no one text view lays out all of it.
+  const pieces = chunks.flatMap((chunk): PreviewPiece[] => {
+    if (chunk.text.length <= LARGE_MARKDOWN_CHUNK_MAX_CHARS) {
+      return [{ text: chunk.text, source: false, gapAfter: true, rows: chunk.lines }];
+    }
+    const runs = cutSourceLines(chunk.text);
+    return runs.map((text, index) => ({
+      text,
+      source: true,
+      gapAfter: index === runs.length - 1,
+      rows: Math.max(text.split("\n").length, Math.ceil(text.length / SOURCE_ROW_CHARS)),
+    }));
+  });
   return (
     <View className="flex-1 bg-sheet">
       <LegendList
         renderScrollComponent={NativeScrollView}
         contentInsetAdjustmentBehavior="automatic"
         refreshControl={refreshControl}
-        data={chunks}
-        keyExtractor={(_chunk, index) => String(index)}
+        data={pieces}
+        keyExtractor={(_piece, index) => String(index)}
         estimatedItemSize={
           (styles.nativeTextStyle.lineHeight *
-            chunks.reduce((lines, chunk) => lines + chunk.lines, 0)) /
-          chunks.length
+            pieces.reduce((rows, piece) => rows + piece.rows, 0)) /
+          pieces.length
         }
         recycleItems={false}
         contentContainerStyle={{ paddingHorizontal: 18, paddingVertical: 18 }}
         ItemSeparatorComponent={ChunkSeparator}
         renderItem={({ item }) => (
           <View className="mx-auto w-full max-w-[760px]">
-            {renderMarkdown(withMarkdownDefinitions(item.text, definitions))}
+            {item.source ? (
+              <Text selectable className="font-mono text-xs leading-5 text-foreground">
+                {item.text}
+              </Text>
+            ) : (
+              renderMarkdown(withMarkdownDefinitions(item.text, definitions))
+            )}
           </View>
         )}
       />
@@ -302,6 +324,6 @@ export function FileMarkdownPreview(props: {
   );
 }
 
-function ChunkSeparator() {
-  return <View className="h-5" />;
+function ChunkSeparator(props: { readonly leadingItem: PreviewPiece }) {
+  return props.leadingItem.gapAfter ? <View className="h-5" /> : null;
 }
