@@ -1844,6 +1844,72 @@ describe("deriveMessagesTimelineRows", () => {
     });
     expect(streamingReply.at(-1)?.id).toBe("assistant-entry");
     expect(streamingReply.some((row) => row.kind === "thinking")).toBe(false);
+
+    // Codex completes its answer before the provider turn ends. Commentary, a run steered by
+    // a message or a notice (Claude's held reply, Codex reading the steer) and an earlier
+    // run's answer still wait.
+    const steer = {
+      id: "steer-entry",
+      kind: "message" as const,
+      createdAt: "2026-01-01T00:00:03Z",
+      message: {
+        id: "steer" as never,
+        role: "user" as const,
+        text: "Also check the docs",
+        runId: "turn-1" as never,
+        inputIntent: "steer" as const,
+        createdAt: "2026-01-01T00:00:03Z",
+        updatedAt: "2026-01-01T00:00:03Z",
+        streaming: false,
+      },
+    };
+    const notice = {
+      id: "notice-entry",
+      kind: "work" as const,
+      createdAt: "2026-01-01T00:00:03Z",
+      entry: {
+        id: "notice",
+        createdAt: "2026-01-01T00:00:03Z",
+        runId: "turn-1" as never,
+        label: "Task finished",
+        tone: "info" as const,
+        itemType: "notification" as const,
+      },
+    };
+    for (const [phase, steered, runId, thinking] of [
+      ["final_answer", null, "turn-1", false],
+      ["commentary", null, "turn-1", true],
+      ["final_answer", steer, "turn-1", true],
+      ["final_answer", notice, "turn-1", true],
+      ["final_answer", null, "turn-0", true],
+    ] as const) {
+      const completedReply = deriveMessagesTimelineRows({
+        ...input,
+        timelineEntries: [
+          ...input.timelineEntries,
+          ...(steered ? [steered] : []),
+          {
+            id: "assistant-entry",
+            kind: "message" as const,
+            createdAt: "2026-01-01T00:00:05Z",
+            projectedItem: { item: { type: "assistant_message", phase } } as never,
+            message: {
+              id: "assistant" as never,
+              role: "assistant" as const,
+              text: "Here is the answer",
+              runId: runId as never,
+              createdAt: "2026-01-01T00:00:05Z",
+              updatedAt: "2026-01-01T00:00:06Z",
+              streaming: false,
+            },
+          },
+        ],
+      });
+      expect(
+        completedReply.some((row) => row.kind === "thinking"),
+        `${phase} steered=${steered?.kind} ${runId}`,
+      ).toBe(thinking);
+    }
   });
 
   it("keeps a promptless restart in one active visual response", () => {
