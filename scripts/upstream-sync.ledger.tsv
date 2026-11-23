@@ -3352,3 +3352,4 @@ e6ae5810a3	take	scenario ported to desktop target (ControlOrMeta+Alt+B for the p
 b50e769811	skip	only gates workflow MCP Events milestones for outside clients; Onicode has no MilestoneEvents (declined, see fb23f12f1f) and no agent feedback scope
 dc2f73af48	take	taken as is; checked against Onicode's task-folder branch claim, rename path unchanged
 9d3054a7bb	take	taken as is
+4aed1194fe	take	taken as is
