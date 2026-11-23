@@ -987,9 +987,8 @@ it.effect("linking a picked machine that answers nowhere names it and links noth
 it.live("linking an address with nothing listening says so, unlike one that is not Onicode", () =>
   Effect.scoped(
     Effect.gen(function* () {
-      const closed = yield* Effect.scoped(
-        serveRaw(() => Effect.succeed(HttpServerResponse.empty({ status: 404 }))),
-      );
+      // Any test worker can reuse a closed ephemeral port; port 2 is privileged and outside that range.
+      const closed = "http://127.0.0.1:2";
       const notOni = yield* serveRaw(() =>
         Effect.succeed(
           HttpServerResponse.text("<h1>Not Found</h1>", { status: 404, contentType: "text/html" }),
