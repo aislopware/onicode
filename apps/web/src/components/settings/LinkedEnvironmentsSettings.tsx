@@ -695,7 +695,8 @@ export function useForgetPeerLink(environmentId: EnvironmentId, link: PeerLinkSu
       if (result.value.removed && result.value.endedThere !== true) {
         toastManager.add({
           type: "warning",
-          title: gt("{label} did not answer", { label: link.label }),
+          // An older or unreachable peer, or one still answering after the short wait.
+          title: gt("Could not confirm the session on {label} ended", { label: link.label }),
           description: gt(
             "Revoke \"Onicode · …\" in {label}''s Sharing & access to end the session there too.",
             { label: link.label },

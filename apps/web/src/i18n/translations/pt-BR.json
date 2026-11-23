@@ -8174,7 +8174,7 @@
   "1e3fee7084791773": "Vincular também {target} de volta a {source}",
   "ea34a190b0bd804c": "Os agentes de {target} poderão trabalhar também em {source}.",
   "974f8c65e8b5f492": "Esquecer {label}? Os agentes daqui param de trabalhar lá, e a sessão deles em {label} também termina se ele responder.",
-  "6cf9e3083b15614f": "{label} não respondeu",
+  "8da431d6af22fa98": "Não foi possível confirmar que a sessão em {label} terminou",
   "e90acb900641b9f1": "Revogue \"Onicode · …\" em Compartilhamento e acesso de {label} para encerrar a sessão lá também.",
   "81c9796bf61b306a": "Não foi possível esquecer o vínculo",
   "8e3378b526d615f4": "Vincular vários…",

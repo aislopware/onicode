@@ -93,6 +93,8 @@ export const servePeer = <E, R, E2 = never, R2 = never>(
     const asleep = yield* Ref.make(false);
     const unanswered = yield* Queue.unbounded<void>();
     const wake = yield* Deferred.make<void>();
+    const requested = yield* Ref.make<ReadonlyArray<string>>([]);
+    const served = yield* Queue.unbounded<string>();
     const layerEnvironment = Layer.succeed(ServerEnvironment.ServerEnvironment, {
       getEnvironmentId: Ref.get(descriptor).pipe(Effect.map((current) => current.environmentId)),
       getDescriptor: Ref.get(descriptor),
@@ -102,19 +104,23 @@ export const servePeer = <E, R, E2 = never, R2 = never>(
       (httpEffect) =>
         Effect.gen(function* () {
           const request = yield* HttpServerRequest.HttpServerRequest;
+          yield* Ref.update(requested, (seen) => [...seen, request.url]);
           if (request.url.startsWith("/.well-known/onicode/environment")) {
             yield* Ref.update(probes, (count) => count + 1);
             if (yield* Ref.get(asleep)) {
               yield* Queue.offer(unanswered, undefined);
               yield* Deferred.await(wake);
-              return yield* Effect.die("the peer was closed while asleep");
+              if (yield* Ref.get(asleep))
+                return yield* Effect.die("the peer was closed while asleep");
             }
           }
           const authorization = request.headers.authorization;
           if (authorization !== undefined) {
             yield* Ref.update(bearers, (seen) => [...seen, authorization]);
           }
-          return yield* httpEffect;
+          const response = yield* httpEffect;
+          yield* Queue.offer(served, request.url);
+          return response;
         }),
       { global: true },
     );
@@ -166,6 +172,12 @@ export const servePeer = <E, R, E2 = never, R2 = never>(
       asleep,
       /** One entry per descriptor request it left unanswered while asleep. */
       unanswered,
+      /** Wakes it once: the descriptor requests it left unanswered are answered after all. */
+      wakeUp: Ref.set(asleep, false).pipe(Effect.andThen(Deferred.succeed(wake, undefined))),
+      /** The path of every request it received, as it arrived. */
+      requested,
+      /** The path of each request once its handler finished. */
+      served,
       /** The sessions linking created there, which its Connections lists. */
       linkedSessions: auth
         .listSessions()

@@ -20,6 +20,7 @@ import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Base64Url from "effect/encoding/Base64Url";
 import * as Hex from "effect/encoding/Hex";
 import * as Layer from "effect/Layer";
@@ -54,6 +55,8 @@ const LINK_REDIRECT_URI = "http://127.0.0.1/onicode-peer-link";
  */
 export const probeTimeout = (origin: string) =>
   isLocalLoopbackHost(new URL(origin).hostname) ? Duration.seconds(3) : Duration.seconds(10);
+/** How long forgetting a link waits to hear the peer ended its session; the revocation goes on after. */
+const UNLINK_REVOKE_WAIT = Duration.seconds(2);
 /** How long a listing waits on a link's addresses; a real call still gives a waking peer `probeTimeout`. */
 const LIST_PROBE_TIMEOUT = Duration.seconds(3);
 /** How often a run of successful calls moves a link's reach time. */
@@ -118,9 +121,13 @@ export class PeerLinks extends Context.Service<
     readonly get: (
       environmentId: EnvironmentId,
     ) => Effect.Effect<Option.Option<PeerLink>, PeerLinkError>;
-    /** Forgets the link here, then asks the peer to end the link's session. */
+    /**
+     * Forgets the link here, then asks the peer to end the link's session. That request outlives
+     * the call, which returns once the peer confirms or a short wait ends, unless `waitForPeer`.
+     */
     readonly unlink: (
       environmentId: EnvironmentId,
+      options?: { readonly waitForPeer?: boolean },
     ) => Effect.Effect<{ readonly removed: boolean; readonly endedThere: boolean }, PeerLinkError>;
     /** An address that answers as the linked peer, with its token, ready to call. */
     readonly resolve: (
@@ -253,6 +260,7 @@ const make = Effect.gen(function* () {
   const environment = yield* ServerEnvironment.ServerEnvironment;
   const serverSettings = yield* ServerSettings.ServerSettingsService;
   const isOwnLoopback = yield* LoopbackHost;
+  const serviceScope = yield* Effect.scope;
   const enabled = serverSettings.getSettings.pipe(
     Effect.map((settings) => settings.linkedEnvironmentsEnabled),
     Effect.orElseSucceed(() => false),
@@ -682,24 +690,34 @@ const make = Effect.gen(function* () {
   /** Best effort: a peer that is gone or too old to revoke lets its session expire instead. */
   const revokeAtPeer = Effect.fn("PeerLinks.revokeAtPeer")(
     function* (environmentId: EnvironmentId, urlsJson: string, token: string) {
-      const urls = yield* decodeUrls(urlsJson);
-      // A race over no addresses never settles.
-      if (urls.length === 0) return false;
-      yield* Effect.raceAll(
-        urls.map((url) =>
-          // An address can change hands after linking; only the linked peer may see the token.
-          answersAs(url, environmentId).pipe(
-            Effect.flatMap(Effect.fromOption),
-            Effect.andThen(clientFor(url)),
-            Effect.flatMap((client) =>
-              client.mcpOAuth
-                .revoke({ payload: { token: Redacted.make(token) } })
-                .pipe(Effect.timeout(probeTimeout(url))),
+      let remaining = yield* decodeUrls(urlsJson);
+      // The token goes to one address at a time, the first to answer as the linked peer; an
+      // address can change hands after linking, and only that peer may see it.
+      while (remaining.length > 0) {
+        const answered = yield* Effect.raceAll(
+          remaining.map((url) =>
+            answersAs(url, environmentId).pipe(Effect.flatMap(Effect.fromOption), Effect.as(url)),
+          ),
+        ).pipe(Effect.option);
+        if (Option.isNone(answered)) return false;
+        const url = answered.value;
+        const revoked = yield* clientFor(url).pipe(
+          Effect.flatMap((client) =>
+            client.mcpOAuth
+              .revoke({ payload: { token: Redacted.make(token) } })
+              .pipe(Effect.timeout(probeTimeout(url))),
+          ),
+          Effect.as(true),
+          Effect.catchCause((cause) =>
+            Effect.logDebug("A linked peer's address did not revoke the session", { cause }).pipe(
+              Effect.as(false),
             ),
           ),
-        ),
-      );
-      return true;
+        );
+        if (revoked) return true;
+        remaining = remaining.filter((other) => other !== url);
+      }
+      return false;
     },
     Effect.catchCause((cause) =>
       Effect.logDebug("The unlinked peer did not revoke the link's session", { cause }).pipe(
@@ -709,33 +727,53 @@ const make = Effect.gen(function* () {
   );
 
   const unlink: PeerLinks["Service"]["unlink"] = Effect.fn("PeerLinks.unlink")(
-    function* (environmentId) {
-      const deleted = yield* sql<{ secret_name: string; urls_json: string }>`
-        DELETE FROM peer_environment_links WHERE environment_id = ${environmentId}
-        RETURNING secret_name, urls_json
-      `.pipe(Effect.catch(failStorage));
-      forgetRecorded(environmentId);
-      let endedThere = false;
-      for (const row of deleted) {
-        // Unreadable only skips the revocation; the secret is still removed below.
-        const token = yield* secrets
-          .get(row.secret_name)
-          .pipe(
-            Effect.catch((cause) =>
-              Effect.logWarning("Could not read the unlinked peer's token", { cause }).pipe(
-                Effect.as(Option.none()),
-              ),
-            ),
+    function* (environmentId, options) {
+      // Once the row is gone nothing else can revoke its token, so the caller cannot stop
+      // waiting before the revocation is on its way.
+      const { deleted, revocations } = yield* Effect.uninterruptible(
+        Effect.gen(function* () {
+          const deleted = yield* sql<{ secret_name: string; urls_json: string }>`
+            DELETE FROM peer_environment_links WHERE environment_id = ${environmentId}
+            RETURNING secret_name, urls_json
+          `.pipe(Effect.catch(failStorage));
+          forgetRecorded(environmentId);
+          const revocations: Array<Effect.Effect<boolean>> = [];
+          for (const row of deleted) {
+            // Unreadable only skips the revocation; the secret is still removed.
+            const token = yield* secrets
+              .get(row.secret_name)
+              .pipe(
+                Effect.catch((cause) =>
+                  Effect.logWarning("Could not read the unlinked peer's token", { cause }).pipe(
+                    Effect.as(Option.none()),
+                  ),
+                ),
+              );
+            // Removed before the fork, so the wait below starts with it; a failed removal still revokes.
+            const removed = yield* Effect.exit(secrets.remove(row.secret_name));
+            if (Option.isSome(token)) {
+              // In the service's scope, so a slow peer or a caller that stops waiting leaves it running.
+              const revoking = yield* revokeAtPeer(
+                environmentId,
+                row.urls_json,
+                new TextDecoder().decode(token.value),
+              ).pipe(Effect.forkIn(serviceScope));
+              revocations.push(Fiber.join(revoking));
+            }
+            yield* removed.pipe(Effect.catch(failStorage));
+          }
+          return { deleted, revocations };
+        }),
+      );
+      const ended = Effect.all(revocations).pipe(
+        Effect.map((results) => results.length > 0 && results.every(Boolean)),
+      );
+      const endedThere = options?.waitForPeer
+        ? yield* ended
+        : yield* ended.pipe(
+            Effect.timeoutOption(UNLINK_REVOKE_WAIT),
+            Effect.map(Option.getOrElse(() => false)),
           );
-        yield* secrets.remove(row.secret_name).pipe(Effect.catch(failStorage));
-        if (Option.isSome(token)) {
-          endedThere = yield* revokeAtPeer(
-            environmentId,
-            row.urls_json,
-            new TextDecoder().decode(token.value),
-          );
-        }
-      }
       return { removed: deleted.length > 0, endedThere };
     },
   );

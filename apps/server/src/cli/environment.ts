@@ -301,13 +301,15 @@ const environmentUnlinkCommand = Command.make("unlink", {
       Effect.gen(function* () {
         const { removed, endedThere } = yield* links.unlink(
           EnvironmentId.make(flags.environmentId),
+          // This process exits after the command, which would cut a revocation still under way.
+          { waitForPeer: true },
         );
         yield* Console.log(
           !removed
             ? `No linked environment ${flags.environmentId}.\n`
             : endedThere
               ? `Forgot ${flags.environmentId} and ended its session there.\n`
-              : `Forgot ${flags.environmentId}. It did not answer, so revoke it in that environment's Sharing & access to end its session there.\n`,
+              : `Forgot ${flags.environmentId}. Could not confirm its session there ended, so revoke it in that environment's Sharing & access.\n`,
         );
       }),
     ),

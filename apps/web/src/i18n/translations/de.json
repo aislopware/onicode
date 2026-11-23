@@ -8176,7 +8176,7 @@
   "1e3fee7084791773": "Auch {target} zurück mit {source} verknüpfen",
   "ea34a190b0bd804c": "Agenten auf {target} können dann auch auf {source} arbeiten.",
   "974f8c65e8b5f492": "{label} vergessen? Agenten hier arbeiten dort nicht mehr, und ihre Sitzung auf {label} endet ebenfalls, wenn es antwortet.",
-  "6cf9e3083b15614f": "{label} hat nicht geantwortet",
+  "8da431d6af22fa98": "Ende der Sitzung auf {label} konnte nicht bestätigt werden",
   "e90acb900641b9f1": "Widerrufe „Onicode · …“ unter „Freigabe & Zugriff“ auf {label}, um die Sitzung auch dort zu beenden.",
   "81c9796bf61b306a": "Verknüpfung konnte nicht vergessen werden",
   "8e3378b526d615f4": "Mehrere verknüpfen…",
