@@ -3533,3 +3533,4 @@ f158ef16e4	take	taken as is
 b13c74e361	take	taken as is
 830c11ccc2	take	taken as is
 42c9107983	take	taken as is
+7872c23dd4	take	adapted: test change taken; kept Onicode's CheckpointCaptureService from the e3ac/3f09 port, which already looks up the Stop for waiting or completed runs and keeps the turn-end completedAt instead of the capture time
