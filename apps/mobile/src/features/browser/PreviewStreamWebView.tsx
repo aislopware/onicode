@@ -4,7 +4,6 @@ import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import * as Dialog from "../../components/ui/Dialog";
 import previewStreamScript from "@onicode/mobile-preview-stream";
 import {
-  previewStreamControlLabel,
   previewStreamHostSetupMessage,
   type PreviewStreamControl,
   type PreviewStreamDownload,
@@ -20,7 +19,7 @@ import {
   useState,
   type Ref,
 } from "react";
-import { msg, useGT, useMessages } from "gt-react-native";
+import { msg, useGT } from "gt-react-native";
 import { Platform, Pressable, TextInput, View } from "react-native";
 import { WebView } from "react-native-webview";
 import * as Clipboard from "expo-clipboard";
@@ -250,7 +249,6 @@ function PreviewStreamDocumentView({
 }) {
   const webView = useRef<WebView<object>>(null);
   const gt = useGT();
-  const messages = useMessages();
   const active = useRef(false);
   const failed = useRef(false);
   const bootstrapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -346,22 +344,6 @@ function PreviewStreamDocumentView({
   };
   return (
     <View className="flex-1" style={{ backgroundColor: background }}>
-      {/* With control, the bar's menu offers releasing it, so the row would only take space. */}
-      {!compact && control?.controller !== "you" ? (
-        <View className="flex-row items-center justify-between gap-2 border-b border-secondary-border px-3 py-2">
-          <AppText className="text-xs text-foreground-muted">
-            {previewStreamControlLabel(control, messages)}
-          </AppText>
-          {control?.canOperate ? (
-            <Button
-              label={gt("Take control")}
-              tone="secondary"
-              disabled={control.controller === "another-viewer"}
-              onPress={() => command({ type: "takeControl" })}
-            />
-          ) : null}
-        </View>
-      ) : null}
       <View className="relative flex-1">
         <WebView<object>
           ref={webView}

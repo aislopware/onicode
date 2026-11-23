@@ -57,7 +57,6 @@ export function BrowserTabMenu({
   streaming,
   onForward,
   onPaste,
-  onReleaseControl,
 }: {
   readonly environmentId: EnvironmentId;
   readonly tab: PreviewSessionSnapshot;
@@ -65,7 +64,6 @@ export function BrowserTabMenu({
   /** The bar has Back only, like Safari's, so Forward lives here. */
   readonly onForward?: () => void;
   readonly onPaste?: () => void;
-  readonly onReleaseControl?: () => void;
 }) {
   const openLocalPreview = useOpenLocalPreview();
   const localPreviewUrl = useLocalPreviewUrl(environmentId);
@@ -114,9 +112,6 @@ export function BrowserTabMenu({
       : []),
     ...(onPaste
       ? [{ id: "paste", title: gt("Paste", { $context: "verb" }), image: "doc.on.clipboard" }]
-      : []),
-    ...(onReleaseControl
-      ? [{ id: "release-control", title: gt("Release control"), image: "hand.raised" }]
       : []),
     { id: "hard-reload", title: gt("Hard reload"), image: "arrow.clockwise.circle" },
     {
@@ -178,7 +173,6 @@ export function BrowserTabMenu({
     }
     if (id === "forward") return onForward?.();
     if (id === "paste") return onPaste?.();
-    if (id === "release-control") return onReleaseControl?.();
     if (id === "hard-reload") return void run({ hardReload: true });
     if (id === "zoom:in") return void run({ zoomFactor: zoomTo(1) });
     if (id === "zoom:out") return void run({ zoomFactor: zoomTo(-1) });
