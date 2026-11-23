@@ -3448,3 +3448,4 @@ c768764bb6	take	taken as is
 3ab1ee20bd	take	fix(server): long setup scripts complete in macOS zsh (#37836)
 c6fe23dd28	take	fix(server): preview type sends key events to the page (#41432)
 e6e863c045	take	fix(shared): Open in Cursor skips a broken cursor on PATH (#38212)
+5e128576b5	take	fix(cli): expand ~ in onicode policy templates --policy (#41438)
