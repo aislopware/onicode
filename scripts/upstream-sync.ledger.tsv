@@ -3465,3 +3465,4 @@ f1e390665a	take	server metrics default reconnect is 3 devices; storm behind --st
 5793cadee4	take	workflows find a project named by its Windows folder
 fd0331ca9b	take	workflow reply with no space before the limit is cut at the limit
 9d6c750a75	skip	empty upstream commit (no file changes); its subject is the cross-tab browser history test Onicode does not have
+28c58b19b5	take	unfinished control sequence no longer delays terminal output
