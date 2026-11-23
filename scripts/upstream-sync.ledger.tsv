@@ -3550,3 +3550,4 @@ ae3352e051	take	fix(server): checkpoints work when a Git path ends in a space (#
 b654fc27ba	take	fix(server): automatic port selection checks the address the server binds (#41730)
 8217726c10	take	taken; conflict: Onicode moved fanout publication into publishPrivateObjects, which skips the private lfs directory; publishLfsObjects runs before it
 5ab8dc4bfc	take	fix(mobile): show every image when Markdown puts one per line (#30280)
+0d6fe2141a	take	taken; contracts keep Onicode's attempt userMessageId beside the new optional startedModes (old mobile ignores it); upstream's webhook-only parts (WEBHOOK_ROUTE_PREFIX, summarizeScheduledTask webhook URL) dropped; replay test uses an interval schedule and mocks Onicode's base-branch lookup
