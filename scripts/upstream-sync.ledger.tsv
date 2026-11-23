@@ -3449,3 +3449,4 @@ c768764bb6	take	taken as is
 c6fe23dd28	take	fix(server): preview type sends key events to the page (#41432)
 e6e863c045	take	fix(shared): Open in Cursor skips a broken cursor on PATH (#38212)
 5e128576b5	take	fix(cli): expand ~ in onicode policy templates --policy (#41438)
+4311566654	take	fix(server): read relocated shared strings in XLSX attachments (#41441)
