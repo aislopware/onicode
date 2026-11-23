@@ -1,15 +1,26 @@
+// @effect-diagnostics nodeBuiltinImport:off
+import * as NodeFSP from "node:fs/promises";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import { ProjectId, type ProjectTrackedFolder } from "@onicode/contracts";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
+import * as TestClock from "effect/testing/TestClock";
+import { vi } from "vite-plus/test";
 
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as TaskFolderStore from "./TaskFolderStore.ts";
 import * as WorkspaceFolders from "./WorkspaceFolders.ts";
+
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs/promises")>();
+  return { ...actual, stat: vi.fn(actual.stat) };
+});
 
 const projectId = ProjectId.make("project:workspace-folders");
 
@@ -226,6 +237,10 @@ it.layer(NodeServices.layer)("WorkspaceFolders", (it) => {
           probed.push(target);
           return fileSystem.readDirectory(target, options);
         },
+        readDirectoryEntries: (target) => {
+          probed.push(target);
+          return fileSystem.readDirectoryEntries(target);
+        },
         stat: (target) => {
           probed.push(target);
           return fileSystem.stat(target);
@@ -242,6 +257,72 @@ it.layer(NodeServices.layer)("WorkspaceFolders", (it) => {
         [],
       );
     }),
+  );
+
+  it.effect("finds the repositories beside links whose targets hang on a stalled mount", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const tmp = yield* makeTempDir;
+      const workspaceRoot = path.join(tmp, "wrapper");
+      const mount = path.join(tmp, "mount", "share");
+      for (const folder of ["api/.git", "src/web/.git", "../mount/share/.git"]) {
+        yield* fileSystem.makeDirectory(path.join(workspaceRoot, folder), { recursive: true });
+      }
+      // One link at the top and one inside a plain folder, which the scan looks into.
+      const links = [
+        path.join(workspaceRoot, "stalled"),
+        path.join(workspaceRoot, "src", "stalled"),
+      ];
+      for (const link of links) yield* fileSystem.symlink(mount, link);
+
+      const bothStalled = yield* Deferred.make<void>();
+      const stalledCalls: string[] = [];
+      const releases: Array<() => void> = [];
+      const stat = vi.mocked(NodeFSP.stat);
+      const realStat = stat.getMockImplementation()!;
+      stat.mockImplementation(((target: string) => {
+        if (!links.includes(target)) return realStat(target);
+        stalledCalls.push(target);
+        if (stalledCalls.length === links.length) Deferred.doneUnsafe(bothStalled, Effect.void);
+        return new Promise((resolve) => releases.push(() => resolve(realStat(target))));
+      }) as typeof NodeFSP.stat);
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => {
+          for (const release of releases) release();
+          stat.mockImplementation(realStat);
+        }),
+      );
+      // Anything else that reaches the mount fails the test instead of hanging it.
+      const onMount = (target: string) =>
+        links.some((link) => target === link || target.startsWith(`${link}${path.sep}`));
+      const refuse = (target: string) => {
+        const probed = Effect.die(new Error(`Probed ${target} on the stalled mount.`));
+        Deferred.doneUnsafe(bothStalled, probed);
+        return probed;
+      };
+      const guarded = FileSystem.FileSystem.of({
+        ...fileSystem,
+        exists: (target) => (onMount(target) ? refuse(target) : fileSystem.exists(target)),
+        readDirectory: (target, options) =>
+          onMount(target) ? refuse(target) : fileSystem.readDirectory(target, options),
+        readDirectoryEntries: (target) =>
+          onMount(target) ? refuse(target) : fileSystem.readDirectoryEntries(target),
+        realPath: (target) => (onMount(target) ? refuse(target) : fileSystem.realPath(target)),
+        stat: (target) => (onMount(target) ? refuse(target) : fileSystem.stat(target)),
+      });
+
+      const discovery = yield* WorkspaceFolders.discoverFolders(workspaceRoot).pipe(
+        Effect.provideService(FileSystem.FileSystem, guarded),
+        Effect.forkChild,
+      );
+      yield* Deferred.await(bothStalled);
+      yield* TestClock.adjust("1 second");
+      assert.deepEqual(yield* Fiber.join(discovery), [
+        { path: path.join(workspaceRoot, "api"), name: "api", discovered: true },
+        { path: path.join(workspaceRoot, "src", "web"), name: "web", discovered: true },
+      ]);
+    }).pipe(Effect.provide(TestClock.layer())),
   );
 
   it.effect("keeps the folders someone added when a project holds more than fit", () =>

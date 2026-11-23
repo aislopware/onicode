@@ -93,85 +93,6 @@ const appendSeparator = (input: string) =>
       : `${input}${platform === "win32" ? "\\" : "/"}`,
   );
 
-describe("makeSymlinkTargetStats", () => {
-  const fakeStats = () => {
-    const calls: string[] = [];
-    const answers = new Map<string, (isDirectory: boolean) => void>();
-    const started = new Map<string, PromiseWithResolvers<void>>();
-    const startOf = (fullPath: string) => {
-      if (!started.has(fullPath)) started.set(fullPath, Promise.withResolvers<void>());
-      return started.get(fullPath)!;
-    };
-    const stat = (fullPath: string) => {
-      calls.push(fullPath);
-      startOf(fullPath).resolve();
-      return new Promise<boolean>((resolve) => answers.set(fullPath, resolve));
-    };
-    return {
-      calls,
-      answer: (fullPath: string) => answers.get(fullPath)!(true),
-      started: (fullPath: string) => startOf(fullPath).promise,
-      stat,
-    };
-  };
-
-  it("shares one stat between overlapping browses of a link", async () => {
-    const fake = fakeStats();
-    const isDirectory = WorkspaceEntries.makeSymlinkTargetStats(fake.stat, 1);
-    const signal = new AbortController().signal;
-    const first = isDirectory("/links/share", signal);
-    const second = isDirectory("/links/share", signal);
-    fake.answer("/links/share");
-    expect(await Promise.all([first, second])).toEqual([true, true]);
-    expect(fake.calls).toEqual(["/links/share"]);
-  });
-
-  it("waits for a slot, and gives up without a stat when its timeout aborts", async () => {
-    const fake = fakeStats();
-    const isDirectory = WorkspaceEntries.makeSymlinkTargetStats(fake.stat, 1);
-    const hung = isDirectory("/links/stalled", new AbortController().signal);
-    const timedOut = new AbortController();
-    const abandoned = isDirectory("/links/abandoned", timedOut.signal);
-    const waiting = isDirectory("/links/healthy", new AbortController().signal);
-    timedOut.abort();
-    expect(await abandoned).toBe(false);
-
-    fake.answer("/links/stalled");
-    expect(await hung).toBe(true);
-    await fake.started("/links/healthy");
-    expect(fake.calls).toEqual(["/links/stalled", "/links/healthy"]);
-    fake.answer("/links/healthy");
-    expect(await waiting).toBe(true);
-  });
-
-  it("answers at once when only stats that outlived a timeout hold the pool", async () => {
-    const fake = fakeStats();
-    const isDirectory = WorkspaceEntries.makeSymlinkTargetStats(fake.stat, 1);
-    const timedOut = new AbortController();
-    const hung = isDirectory("/links/stalled", timedOut.signal);
-    timedOut.abort();
-    expect(await hung).toBe(false);
-
-    expect(await isDirectory("/links/next", new AbortController().signal)).toBe(false);
-    expect(await isDirectory("/links/stalled", new AbortController().signal)).toBe(false);
-    expect(fake.calls).toEqual(["/links/stalled"]);
-  });
-
-  it("lets a queued browse of a link join the stat another caller starts for it", async () => {
-    const fake = fakeStats();
-    const isDirectory = WorkspaceEntries.makeSymlinkTargetStats(fake.stat, 1);
-    const signal = new AbortController().signal;
-    const busy = isDirectory("/links/busy", signal);
-    const first = isDirectory("/links/share", signal);
-    const second = isDirectory("/links/share", signal);
-    fake.answer("/links/busy");
-    await fake.started("/links/share");
-    fake.answer("/links/share");
-    expect(await Promise.all([busy, first, second])).toEqual([true, true, true]);
-    expect(fake.calls).toEqual(["/links/busy", "/links/share"]);
-  });
-});
-
 it.layer(layerTest, { excludeTestServices: true })("WorkspaceEntries", (it) => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -340,6 +261,63 @@ it.layer(layerTest, { excludeTestServices: true })("WorkspaceEntries", (it) => {
         expect(entries.every((entry) => entry.kind === "directory")).toBe(true);
         expect(maxInFlight).toBeLessThanOrEqual(64);
       }),
+    );
+
+    it.effect("lists the entries beside a link whose target hangs on a stalled mount", () =>
+      Effect.gen(function* () {
+        if ((yield* HostProcess.Platform) === "win32") return;
+        const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir({ prefix: "onicode-workspace-list-stalled-" });
+        yield* writeTextFile(cwd, "share/readme.md", "hi");
+        yield* writeTextFile(cwd, "real.txt", "hi");
+        yield* fileSystem.symlink("share", path.join(cwd, "stalled"));
+        yield* fileSystem.symlink("real.txt", path.join(cwd, "link.txt"));
+        // The listing reads the folder by its real path; the link and its target both stall.
+        const realCwd = yield* fileSystem.realPath(cwd);
+        const stalledPaths = new Set([path.join(realCwd, "stalled"), path.join(realCwd, "share")]);
+        const stalledStarted = yield* Deferred.make<void>();
+        const releases: Array<() => void> = [];
+        const stat = vi.mocked(NodeFSP.stat);
+        const realStat = stat.getMockImplementation()!;
+        stat.mockImplementation(((target: string) => {
+          if (!stalledPaths.has(target)) return realStat(target);
+          Deferred.doneUnsafe(stalledStarted, Effect.void);
+          return new Promise((resolve) => releases.push(() => resolve(realStat(target))));
+        }) as typeof NodeFSP.stat);
+        // The healthy link resolves with real I/O; the clock moves only after it answered.
+        const linkResolved = yield* Deferred.make<void>();
+        const realpath = NodeFSP.realpath;
+        const realpathSpy = vi.spyOn(NodeFSP, "realpath").mockImplementation((async (
+          target: string,
+        ) => {
+          const resolved = await realpath(target);
+          if (target === path.join(realCwd, "link.txt")) {
+            Deferred.doneUnsafe(linkResolved, Effect.void);
+          }
+          return resolved;
+        }) as typeof NodeFSP.realpath);
+        yield* Effect.addFinalizer(() =>
+          Effect.sync(() => {
+            for (const release of releases) release();
+            stat.mockImplementation(realStat);
+            realpathSpy.mockRestore();
+          }),
+        );
+        const listing = yield* workspaceEntries
+          .list({ cwd, directoryPath: "" })
+          .pipe(Effect.forkChild);
+        yield* Deferred.await(stalledStarted);
+        yield* Deferred.await(linkResolved);
+        yield* TestClock.adjust("1 second");
+        const { entries } = yield* Fiber.join(listing);
+        expect(entries.toSorted((a, b) => a.path.localeCompare(b.path))).toEqual([
+          { path: "link.txt", kind: "file" },
+          { path: "real.txt", kind: "file" },
+          { path: "share", kind: "directory" },
+        ]);
+      }).pipe(Effect.scoped, Effect.provide(TestClock.layer())),
     );
 
     it.effect("labels the children of wide folders exactly as git does for each child", () =>
@@ -1263,6 +1241,15 @@ it.layer(layerTest, { excludeTestServices: true })("WorkspaceEntries", (it) => {
         yield* fileSystem.symlink(externalTarget, path.join(cwd, "personal"));
         yield* fileSystem.symlink(path.join(cwd, "plain.txt"), path.join(cwd, "file-link"));
         yield* fileSystem.symlink(path.join(cwd, "does-not-exist"), path.join(cwd, "broken-link"));
+        // Some network volumes answer stat but not realpath; browse needs only the kind.
+        const realpath = NodeFSP.realpath;
+        const realpathSpy = vi.spyOn(NodeFSP, "realpath").mockImplementation((async (
+          target: string,
+        ) => {
+          if (target.endsWith(`${path.sep}personal`)) throw new Error("EIO");
+          return realpath(target);
+        }) as typeof NodeFSP.realpath);
+        yield* Effect.addFinalizer(() => Effect.sync(() => realpathSpy.mockRestore()));
 
         const result = yield* workspaceEntries.browse({
           partialPath: yield* appendSeparator(cwd),

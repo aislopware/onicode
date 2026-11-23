@@ -37,6 +37,7 @@ import { scoreSubsequenceMatch } from "@onicode/shared/searchRanking";
 
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import { type IgnoreDecision, type IgnoreFile, parseIgnoreFile } from "./IgnorePatterns.ts";
+import { MAX_PENDING_LINK_TARGET_PROBES, resolveLinkTarget } from "./linkTargets.ts";
 
 // fff-node's native library stays external; single-executables require disk packages instead of importing them.
 const requireForFff = NodeModule.createRequire(import.meta.url);
@@ -63,6 +64,9 @@ const CONTENT_LINE_MAX_LENGTH = 512;
 const SYMLINK_SCAN_CONCURRENCY = 16;
 // A scan no watcher can invalidate is reused this long, so typing does not rescan every folder.
 const UNWATCHED_SYMLINK_SCAN_TTL_MS = 2_000;
+// A watched scan whose only gap is a link on a stalled mount waits longer, so each rescan does
+// not tie up link probes on the same unanswered target.
+const UNANSWERED_LINK_SCAN_TTL_MS = 30_000;
 // A rescan that outlasts this leaves the read on the previous scan.
 const SYMLINK_RESCAN_WAIT = "5 millis";
 // Each page is a synchronous native call; small pages let searches run between them.
@@ -400,6 +404,8 @@ interface ScannedDirectory {
   readonly links: ReadonlyArray<ProjectEntry>;
   /** Every symlink in the folder, including ones dropped for leaving the workspace. */
   readonly linkPaths: ReadonlyArray<string>;
+  /** False when a link's target, such as one on a stalled mount, did not answer in time. */
+  readonly linksAnswered: boolean;
   /** A nested repository (or the workspace's own), whose ignore rules own what is below it. */
   readonly isRepository: boolean;
   readonly ignoreFile: string | undefined;
@@ -424,7 +430,6 @@ const scanDirectory = Effect.fn("WorkspaceSearchIndex.scanDirectory")(function* 
   const children = yield* Effect.promise(() =>
     NodeFSP.readdir(path.join(cwd, directory), { withFileTypes: true }).catch(() => []),
   );
-  const links: ProjectEntry[] = [];
   const linkPaths: string[] = [];
   let isRepository = false;
   let ignoreFile: string | undefined;
@@ -435,28 +440,34 @@ const scanDirectory = Effect.fn("WorkspaceSearchIndex.scanDirectory")(function* 
         .readFileString(path.join(cwd, directory, child.name))
         .pipe(Effect.orElseSucceed(() => undefined));
     }
-    if (!child.isSymbolicLink()) continue;
-    const entryPath = joinEntryPath(directory, child.name);
-    linkPaths.push(entryPath);
-    const absolutePath = path.join(cwd, entryPath);
-    const target = yield* Effect.all([
-      fileSystem.realPath(absolutePath),
-      fileSystem.stat(absolutePath),
-    ]).pipe(Effect.orElseSucceed(() => undefined));
-    if (!target) continue;
-    const relative = path.relative(root, target[0]);
-    if (
-      relative === ".." ||
+    if (child.isSymbolicLink()) linkPaths.push(joinEntryPath(directory, child.name));
+  }
+  // Concurrent, so a link on a stalled mount holds up its siblings for one timeout, not each.
+  const targets = yield* Effect.forEach(
+    linkPaths,
+    (entryPath) => resolveLinkTarget(path.join(cwd, entryPath)),
+    { concurrency: MAX_PENDING_LINK_TARGET_PROBES },
+  );
+  const linksAnswered = targets.every((target) => target !== undefined);
+  const links = linkPaths.flatMap((entryPath, index): ProjectEntry[] => {
+    const target = targets[index];
+    if (!target || target.realPath === undefined) return [];
+    const relative = path.relative(root, target.realPath);
+    return relative === ".." ||
       relative.startsWith(`..${path.sep}`) ||
       path.isAbsolute(relative) ||
-      relative.split(path.sep).includes(".git") ||
-      (target[1].type !== "Directory" && target[1].type !== "File")
-    ) {
-      continue;
-    }
-    links.push({ path: entryPath, kind: target[1].type === "Directory" ? "directory" : "file" });
-  }
-  return { directory, links, linkPaths, isRepository, ignoreFile } satisfies ScannedDirectory;
+      relative.split(path.sep).includes(".git")
+      ? []
+      : [{ path: entryPath, kind: target.kind }];
+  });
+  return {
+    directory,
+    links,
+    linkPaths,
+    linksAnswered,
+    isRepository,
+    ignoreFile,
+  } satisfies ScannedDirectory;
 });
 
 /** Whether `entryPath` is `directory` itself or below it. */
@@ -1015,7 +1026,10 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (
     );
     const candidates = scanned.flatMap((directory) => directory.links);
     const linkPaths = new Set(scanned.flatMap((directory) => directory.linkPaths));
-    if (candidates.length === 0) return { entries: candidates, linkPaths, indexComplete };
+    const linksAnswered = scanned.every((directory) => directory.linksAnswered);
+    if (candidates.length === 0) {
+      return { entries: candidates, linkPaths, indexComplete, linksAnswered };
+    }
 
     const ignoreFiles = scanned
       .flatMap(({ directory, ignoreFile }) =>
@@ -1053,6 +1067,7 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (
       ),
       linkPaths,
       indexComplete,
+      linksAnswered,
     };
   });
 
@@ -1106,11 +1121,14 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (
       const result = yield* scanSymlinkEntries();
       lastSymlinkScan = result;
       knownLinkPaths = result.linkPaths;
-      // Without a watcher, or before fff has seen every folder, the result is kept only briefly.
+      // Without a watcher, before fff has seen every folder, or with a link left unanswered, the
+      // result is kept only for a while.
+      const settled = watched && result.indexComplete;
       lastSymlinkScanExpiresAt =
-        watched && result.indexComplete
+        settled && result.linksAnswered
           ? undefined
-          : (yield* Clock.currentTimeMillis) + UNWATCHED_SYMLINK_SCAN_TTL_MS;
+          : (yield* Clock.currentTimeMillis) +
+            (settled ? UNANSWERED_LINK_SCAN_TTL_MS : UNWATCHED_SYMLINK_SCAN_TTL_MS);
       return result;
     }).pipe(
       Effect.onExit((exit) =>
