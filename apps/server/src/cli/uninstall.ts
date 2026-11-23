@@ -75,9 +75,9 @@ const ownsLauncher = Effect.fn("cli.uninstall.owns_launcher")(function* (
   const realVersionsDir = yield* fs
     .realPath(versionsDir)
     .pipe(Effect.orElseSucceed(() => versionsDir));
-  // The link's own text keeps a pruned (dangling) target; the real path sees through a
-  // symlinked Onicode home.
   const scriptTarget = platform === "win32" ? undefined : yield* readPosixLauncherTarget(launcher);
+  // The link or script text keeps a pruned (dangling) target; the real path sees through a
+  // symlinked Onicode home.
   const targets =
     platform === "win32"
       ? [
@@ -93,9 +93,9 @@ const ownsLauncher = Effect.fn("cli.uninstall.owns_launcher")(function* (
           ),
           yield* fs.realPath(launcher).pipe(Effect.orElseSucceed(() => undefined)),
           scriptTarget,
-          scriptTarget === undefined
-            ? undefined
-            : yield* fs.realPath(scriptTarget).pipe(Effect.orElseSucceed(() => undefined)),
+          scriptTarget !== undefined
+            ? yield* fs.realPath(scriptTarget).pipe(Effect.orElseSucceed(() => undefined))
+            : undefined,
         ];
   return targets.some(
     (target) =>
