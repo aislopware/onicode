@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import {
   deadlineStore,
   observeServerTime,
+  onServerClockRaised,
   recordServerClock,
   secondTick,
   toServerClock,
@@ -197,5 +198,29 @@ describe("server clock", () => {
     const unrecorded = EnvironmentId.make("unrecorded");
     observeServerTime(unrecorded, HOUR, 1_000);
     expect(toServerClock(unrecorded, 1_000)).toBe(1_000);
+  });
+
+  it("asks the host again only when an observation raises its offset", () => {
+    const environmentId = EnvironmentId.make("rechecked");
+    const recheck = vi.fn();
+    const stop = onServerClockRaised(environmentId, recheck);
+    recordServerClock(environmentId, {
+      serverTimeMs: 1_000,
+      requestedAtMs: 900,
+      receivedAtMs: 1_050,
+    });
+
+    observeServerTime(environmentId, 1_500, 2_000);
+    expect(recheck).not.toHaveBeenCalled();
+    observeServerTime(environmentId, HOUR, 2_000);
+    expect(recheck).toHaveBeenCalledTimes(1);
+    // A reply faster than the last one raises the offset by its latency alone.
+    observeServerTime(environmentId, HOUR + 1_200, 3_000);
+    expect(toServerClock(environmentId, 3_000)).toBe(HOUR + 1_200);
+    expect(recheck).toHaveBeenCalledTimes(1);
+
+    stop();
+    observeServerTime(environmentId, 2 * HOUR, 2_000);
+    expect(recheck).toHaveBeenCalledTimes(1);
   });
 });

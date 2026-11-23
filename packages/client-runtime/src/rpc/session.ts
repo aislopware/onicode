@@ -22,6 +22,7 @@ import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
+import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
@@ -50,7 +51,7 @@ import {
   withoutEnvironmentThemes,
 } from "../state/serverConfigProjection.ts";
 import { environmentMismatchError } from "../connection/errors.ts";
-import { recordServerClock } from "../clock.ts";
+import { onServerClockRaised, recordServerClock } from "../clock.ts";
 
 const SOCKET_OPEN_TIMEOUT = "15 seconds";
 
@@ -518,6 +519,19 @@ export const make = Effect.fn("RpcSessionFactory.make")(function* (
         }),
       ),
       Effect.withSpan("clientRuntime.connection.rpcSession.probe"),
+    );
+    const clockRechecks = yield* Queue.sliding<void>(1);
+    yield* Effect.acquireRelease(
+      Effect.sync(() =>
+        onServerClockRaised(connection.environmentId, () => {
+          Queue.offerUnsafe(clockRechecks, undefined);
+        }),
+      ),
+      (stop) => Effect.sync(stop),
+    );
+    yield* Stream.fromQueue(clockRechecks).pipe(
+      Stream.runForEach(() => Effect.ignore(probe)),
+      Effect.forkScoped,
     );
 
     return {
