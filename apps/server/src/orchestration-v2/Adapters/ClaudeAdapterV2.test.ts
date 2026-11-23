@@ -1043,6 +1043,37 @@ describe("ClaudeAdapterV2 device instructions", () => {
 const decodeProviderTurnTokenUsage = Schema.decodeSync(OrchestrationV2ProviderTurnTokenUsage);
 
 describe("ClaudeAdapterV2 context usage", () => {
+  const minute = 60_000;
+  const at = (minutes: number) => DateTime.makeUnsafe(minutes * minute);
+  const written = (fiveMinute: number, oneHour: number) => ({
+    ephemeral_5m_input_tokens: fiveMinute,
+    ephemeral_1h_input_tokens: oneHour,
+  });
+  it.each([
+    ["a five-minute write", undefined, { cache_creation: written(10, 0) }, 0, [5, 5]],
+    ["a read of a cache never seen", undefined, { cache_read_input_tokens: 10 }, 0, [5, 5]],
+    [
+      "a one-hour prefix read while a five-minute suffix is written",
+      { ttlMs: 60 * minute, expiresAt: at(60) },
+      { cache_read_input_tokens: 10, cache_creation: written(10, 0) },
+      50,
+      [60, 110],
+    ],
+    [
+      "a five-minute write that reads nothing of a one-hour cache",
+      { ttlMs: 60 * minute, expiresAt: at(60) },
+      { cache_creation: written(10, 0) },
+      10,
+      [60, 60],
+    ],
+  ] as const)("keeps the prompt cache warm after %s", (_, known, usage, startedAt, expected) => {
+    const next = ClaudeAdapterV2.nextClaudePromptCache(known, usage, at(startedAt));
+    assert.deepEqual(
+      next && [next.ttlMs / minute, DateTime.toEpochMillis(next.expiresAt) / minute],
+      [...expected],
+    );
+  });
+
   it("dates cache expiry from the request start, not the response end", () => {
     const usage = ClaudeAdapterV2.claudeProviderTurnTokenUsage(
       {
@@ -16578,6 +16609,10 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           yield* runTurn([], "2.1.322", install("second-b"));
           assert.equal(harness.processQueues.length, 2);
           assert.equal(harness.getOpenedOptions()?.resume, WAKE_NATIVE_SESSION);
+          // Back on the first model, whose cache is still warm, the outdated build waits again.
+          modelSelection = CLAUDE_TEST_MODEL_SELECTION;
+          yield* runTurn([], "2.1.322");
+          assert.equal(harness.processQueues.length, 2);
           yield* TestClock.adjust("3 minutes");
           yield* runTurn([], "2.1.322");
           assert.equal(harness.processQueues.length, 3);

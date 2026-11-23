@@ -48,3 +48,21 @@ it.effect.skipIf(HostProcess.Platform.defaultValue() === "win32")(
       assert.deepEqual(yield* outdated(afterUpdate), { reason: "executable_replaced" });
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
+
+it.effect("an absolute script entry, as the SDK runs through Node, is fingerprinted as it is", () =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const root = yield* fileSystem.makeTempDirectoryScoped({ prefix: "oni-claude-entry-" });
+    const entry = path.join(root, "cli.js");
+    yield* fileSystem.writeFileString(entry, "// 1.0.0\n");
+    const read = readClaudeInstalledBuild(entry, { PATH: "", PATHEXT: ".EXE;.CMD" });
+    const atInit = yield* read;
+    assert.isDefined(atInit.executable);
+    yield* fileSystem.writeFileString(entry, "// 1.0.1, longer\n");
+    assert.deepEqual(
+      claudeOutdatedBuild({ atInit, current: yield* read, runningVersion: "1.0.0" }),
+      { reason: "executable_replaced" },
+    );
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
