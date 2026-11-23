@@ -1500,17 +1500,17 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
   const readTrackedUpstream = Effect.fn("readTrackedUpstream")(function* (
     cwd: string,
     branch: string,
-    upstreamRef: string,
   ) {
     const localRef = `refs/heads/${branch}`;
-    // for-each-ref also lists refs below a prefix, and refnames may end in Unicode whitespace.
-    const [, remoteName = "", remoteRef = ""] =
+    // One row carries the upstream and its split. for-each-ref also lists refs below a prefix,
+    // and refnames may end in Unicode whitespace.
+    const [, upstream = "", remoteName = "", remoteRef = ""] =
       (yield* runGitStdout(
         "GitVcsDriver.readTrackedUpstream",
         cwd,
         [
           "for-each-ref",
-          "--format=%(refname)%09%(upstream:remotename)%09%(upstream:remoteref)",
+          "--format=%(refname)%09%(upstream)%09%(upstream:remotename)%09%(upstream:remoteref)",
           localRef,
         ],
         true,
@@ -1518,10 +1518,18 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         .split(/\r?\n/)
         .map((line) => line.split("\t"))
         .find(([refname]) => refname === localRef) ?? [];
-    if (remoteName.length === 0 || remoteName === "." || !remoteRef.startsWith("refs/heads/")) {
+    if (
+      !upstream.startsWith("refs/remotes/") ||
+      remoteName.length === 0 ||
+      !remoteRef.startsWith("refs/heads/")
+    ) {
       return null;
     }
-    return { upstreamRef, remoteName, branchName: remoteRef.slice("refs/heads/".length) };
+    return {
+      upstreamRef: upstream.slice("refs/remotes/".length),
+      remoteName,
+      branchName: remoteRef.slice("refs/heads/".length),
+    };
   });
 
   const resolveCurrentUpstream = Effect.fn("resolveCurrentUpstream")(function* (
@@ -3839,7 +3847,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     const upstream =
       upstreamRef === null
         ? null
-        : ((yield* readTrackedUpstream(cwd, branch, upstreamRef)) ??
+        : ((yield* readTrackedUpstream(cwd, branch)) ??
           (yield* resolveCurrentUpstream(cwd, upstreamRef).pipe(Effect.orElseSucceed(() => null))));
     if (!upstream) return null;
     if (isAliasOfUpstreamHead(branch, upstream.branchName, upstream.upstreamRef)) {
