@@ -7096,15 +7096,17 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             context.compactionTokens = undefined;
             const requestedAt = context.streamUsage?.requestedAt;
             const known = promptCacheByNativeThread.get(context.nativeThreadId);
+            // A read refreshes the entry it hit, which lives at least the shortest TTL; a thread
+            // that once wrote a longer entry may still be reading it.
             const ttlMs =
               claudePromptCacheTtlMs(usage.cache_creation) ??
               ((claudeTokenCount(usage.cache_read_input_tokens) ?? 0) > 0
-                ? known?.ttlMs
+                ? (known?.ttlMs ?? 5 * 60_000)
                 : undefined);
             if (requestedAt !== undefined && ttlMs !== undefined) {
               const expiresAt = DateTime.add(requestedAt, { milliseconds: ttlMs });
               promptCacheByNativeThread.set(context.nativeThreadId, {
-                ttlMs,
+                ttlMs: Math.max(ttlMs, known?.ttlMs ?? 0),
                 expiresAt:
                   known !== undefined && DateTime.isGreaterThan(known.expiresAt, expiresAt)
                     ? known.expiresAt

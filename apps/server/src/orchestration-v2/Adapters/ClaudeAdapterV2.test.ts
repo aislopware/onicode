@@ -16556,10 +16556,10 @@ describe("ClaudeAdapterV2 background wake turns", () => {
               session_id: WAKE_NATIVE_SESSION,
               uuid,
             });
-          // A request that keeps the conversation's prompt cache warm for five minutes, then one
-          // four minutes later that only reads it, which keeps it five more.
+          // A read of a cache this process never wrote, such as one from before a server restart,
+          // keeps it warm for at least five minutes; one four minutes later keeps it five more.
           yield* runTurn([
-            cacheRequest("00000000-0000-4000-8000-00000000b0f0", { written: 10, read: 0 }),
+            cacheRequest("00000000-0000-4000-8000-00000000b0f0", { written: 0, read: 10 }),
           ]);
           yield* TestClock.adjust("4 minutes");
           yield* runTurn([
