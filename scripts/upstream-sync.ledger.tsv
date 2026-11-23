@@ -3434,3 +3434,4 @@ e0267fe880	take	taken as is; packaged macOS only, kills only an orphan whose aud
 e54ef0f782	take	taken; test conflict was indentation only, upstream's cases taken
 5aa8fa0351	take	taken; kept the Option import upstream dropped, as Onicode's seedClientWatch still uses it
 5e570ea56d	take	taken as is
+eeb19512f0	take	kept Onicode's reservation ordering (earlierWork, reservations): a write also waits on earlier writes on its threads, which upstream lacks; upstream's waitingWrites set replaces Onicode's waitingWriters counter so a slow batch is cut only for a write that needs none of the remaining units

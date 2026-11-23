@@ -187,8 +187,8 @@ export const make = Effect.fn("ProviderCommitBatch.make")(function* (
   const reservations = new Set<Reservation>();
   let closed = false;
   let servings = 0;
-  // Writes in `barrier` that have not finished; they wait on the batch or the writer it holds.
-  let waitingWriters = 0;
+  // The snapshots each unfinished `barrier` write waits on.
+  const waitingWrites = new Set<ReadonlySet<Job>>();
   const shutdown = Effect.gen(function* () {
     closed = true;
     yield* Queue.shutdown(wake);
@@ -377,10 +377,18 @@ export const make = Effect.fn("ProviderCommitBatch.make")(function* (
           const startedAt = yield* Clock.monotonicTimeNanos;
           for (const unit of units) {
             const { job } = unit;
+            // Cutting only helps a write that needs none of the units still to run.
             if (
               taken > 0 &&
-              waitingWriters > 0 &&
-              (yield* Clock.monotonicTimeNanos) - startedAt >= MAX_HOLD_NANOS
+              waitingWrites.size > 0 &&
+              (yield* Clock.monotonicTimeNanos) - startedAt >= MAX_HOLD_NANOS &&
+              Array.from(waitingWrites).some((jobs) =>
+                units
+                  .slice(taken)
+                  .every(
+                    (unit) => !jobs.has(unit.job) && !unit.superseded.some((j) => jobs.has(j)),
+                  ),
+              )
             )
               return;
             taken++;
@@ -459,11 +467,14 @@ export const make = Effect.fn("ProviderCommitBatch.make")(function* (
   ) {
     if (closed) return yield* Effect.interrupt;
     if (!enabled || (yield* CurrentWorker) === (yield* Effect.fiberId)) return yield* effect;
+    const jobs: ReadonlySet<Job> = new Set(
+      Array.from(pending).filter((job) => overlaps(threadIds, [job.threadId])),
+    );
     return yield* Effect.uninterruptibleMask((restore) => {
       const reservation: Reservation = { threadIds, done: Deferred.makeUnsafe() };
       const earlier = earlierWork(threadIds);
       reservations.add(reservation);
-      waitingWriters++;
+      waitingWrites.add(jobs);
       return restore(
         Effect.gen(function* () {
           yield* earlier;
@@ -473,7 +484,7 @@ export const make = Effect.fn("ProviderCommitBatch.make")(function* (
       ).pipe(
         Effect.ensuring(
           Effect.suspend(() => {
-            waitingWriters--;
+            waitingWrites.delete(jobs);
             reservations.delete(reservation);
             return Deferred.done(reservation.done, Exit.void);
           }),
