@@ -55,6 +55,9 @@ const MAX_THEME_FILES = 32;
  */
 export const MAX_THEME_FILE_BYTES = 6 * THEME_CSS_MAX_LENGTH + 16 * 1024;
 const MAX_THEME_TOTAL_BYTES = 6 * MAX_THEME_FILE_BYTES;
+// Directory identities the poll compares; no listing produces either.
+const MISSING_DIRECTORY = "missing";
+const STALE_READ = "\u0000stale";
 
 /** The CSS limit desktop 0.15.0 and older decode; longer CSS fails their whole config stream. */
 const LEGACY_CLIENT_THEME_CSS_MAX_LENGTH = 20_000;
@@ -167,7 +170,11 @@ const pathIsTaken = (filePath: string): boolean => {
 
 /** Validates and reads one handle; rejects symlinked files, allows symlinked directories.
  * Uses non-blocking opens against FIFOs; Windows lacks these flags and checks symlinks with lstat. */
-export const readThemeFileGuarded = (filePath: string, maxBytes: number): string | null => {
+export const readThemeFileGuarded = (
+  filePath: string,
+  maxBytes: number,
+  onMissing?: () => void,
+): string | null => {
   let fd: number;
   try {
     if (NodeFS.constants.O_NOFOLLOW === undefined && NodeFS.lstatSync(filePath).isSymbolicLink()) {
@@ -179,7 +186,8 @@ export const readThemeFileGuarded = (filePath: string, maxBytes: number): string
         (NodeFS.constants.O_NOFOLLOW ?? 0) |
         (NodeFS.constants.O_NONBLOCK ?? 0),
     );
-  } catch {
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") onMissing?.();
     return null;
   }
   try {
@@ -230,11 +238,19 @@ export function findThemeBackground(
   return null;
 }
 
-export const readPublishedThemes = Effect.fn(function* (themesDir: string) {
+export const readPublishedThemes = Effect.fn(function* (
+  themesDir: string,
+  /** Runs when the directory or a file it listed is gone, as when an ancestor moves mid-read. */
+  onPathMissing: Effect.Effect<void> = Effect.void,
+) {
   const fs = yield* FileSystem.FileSystem;
-  const entries = yield* fs
-    .readDirectory(themesDir)
-    .pipe(Effect.orElseSucceed((): Array<string> => []));
+  const entries = yield* Effect.catch(fs.readDirectory(themesDir), (error) =>
+    Effect.as(error.reason._tag === "NotFound" ? onPathMissing : Effect.void, []),
+  );
+  let listedFileMissing = false;
+  const markListedFileMissing = () => {
+    listedFileMissing = true;
+  };
 
   const themes: Array<EnvironmentTheme> = [];
   const entryNames = new Set(entries);
@@ -257,7 +273,7 @@ export const readPublishedThemes = Effect.fn(function* (themesDir: string) {
     }
 
     const filePath = `${themesDir}/${entry}`;
-    const raw = readThemeFileGuarded(filePath, MAX_THEME_FILE_BYTES);
+    const raw = readThemeFileGuarded(filePath, MAX_THEME_FILE_BYTES, markListedFileMissing);
     if (raw === null) {
       yield* Effect.logWarning("ignoring unusable environment theme file", {
         path: filePath,
@@ -293,6 +309,7 @@ export const readPublishedThemes = Effect.fn(function* (themesDir: string) {
     const background = findThemeBackground(themesDir, id, entryNames);
     themes.push({ id, ...file, ...(background ? { background: background.revision } : {}) });
   }
+  if (listedFileMissing) yield* onPathMissing;
   return themes;
 });
 
@@ -325,16 +342,22 @@ const make = Effect.gen(function* () {
       ),
     ),
     Effect.map((entries) => entries.join("\n")),
-    Effect.orElseSucceed(() => "missing"),
+    Effect.orElseSucceed(() => MISSING_DIRECTORY),
   );
   const readIdentity = yield* SubscriptionRef.make("");
 
   const refresh = refreshSemaphore.withPermits(1)(
     Effect.gen(function* () {
-      yield* SubscriptionRef.set(readIdentity, yield* directoryIdentity);
-      const themes = yield* readPublishedThemes(environmentThemesDir).pipe(
-        Effect.provideService(FileSystem.FileSystem, fs),
-      );
+      const identity = yield* directoryIdentity;
+      yield* SubscriptionRef.set(readIdentity, identity);
+      // A tree that moves away mid-read and returns unchanged keeps this identity, so mark the
+      // read stale for the poll instead.
+      const themes = yield* readPublishedThemes(
+        environmentThemesDir,
+        identity === MISSING_DIRECTORY
+          ? Effect.void
+          : SubscriptionRef.set(readIdentity, STALE_READ),
+      ).pipe(Effect.provideService(FileSystem.FileSystem, fs));
       // Compare the whole value so new fields cannot silently miss republishes.
       const [changed, next] = yield* Ref.modify(
         published,
