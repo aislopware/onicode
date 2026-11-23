@@ -696,4 +696,38 @@ Third}`;
     expect(result.pages[1]!.html).toContain('src="data:image/png;base64,');
     expect(result.pages[1]!.html).not.toMatch(/https:|script|alert/);
   });
+
+  it.each([
+    ["percent-encoded", "My%20Book/book%201.opf", "My Book/book 1.opf", "My Book/one.xhtml"],
+    ["literal percent", "My%20Book/book.opf", "My%20Book/book.opf", "My%20Book/one.xhtml"],
+    ["malformed percent", "Book%ZZ/book.opf", "Book%ZZ/book.opf", "Book%ZZ/one.xhtml"],
+    // A decoded twin of the named package does not replace it.
+    ["literal and decoded", "My%20Book/book.opf", "My%20Book/book.opf", "My%20Book/one.xhtml"],
+  ])(
+    "reads EPUB packages with %s rootfile paths",
+    async (label, fullPath, packagePath, chapterPath) => {
+      const pkg = (href: string) =>
+        `<package><manifest><item id="a" href="${href}" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="a"/></spine></package>`;
+      const archive = new Map<string, string>([
+        [
+          "META-INF/container.xml",
+          `<container><rootfiles><rootfile full-path="${fullPath}"/></rootfiles></container>`,
+        ],
+        [packagePath, pkg("one.xhtml")],
+        [chapterPath, "<html><head><title>First</title></head><body><p>Hello</p></body></html>"],
+        ...(label === "literal and decoded"
+          ? ([
+              ["My Book/book.opf", pkg("other.xhtml")],
+              [
+                "My Book/other.xhtml",
+                "<html><head><title>Other</title></head><body></body></html>",
+              ],
+            ] as const)
+          : []),
+      ]);
+      const result = await openEpub(archive);
+      if (result.type !== "document") throw new Error("Expected document");
+      expect(result.pages).toEqual([{ title: "First", html: "<p>Hello</p>" }]);
+    },
+  );
 });

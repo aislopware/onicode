@@ -425,8 +425,10 @@ export async function openDocument(
 export async function openEpub(archive: OfficeArchive): Promise<OfficeWorkerResult> {
   markupBytes = 0;
   const container = parseXml(archiveText(archive, "META-INF/container.xml") ?? "");
-  const rootfile = find(container, "rootfile")[0]?.attrs["full-path"];
-  if (!rootfile || !archive.has(rootfile)) throw new PreviewError({ code: "epub-no-package" });
+  const fullPath = find(container, "rootfile")[0]?.attrs["full-path"] ?? "";
+  // OCF names the package by its raw path; some writers percent-encode it anyway.
+  const rootfile = [fullPath, archivePath("", fullPath)].find((path) => path && archive.has(path));
+  if (!rootfile) throw new PreviewError({ code: "epub-no-package" });
   const packageRoot = parseXml(archiveText(archive, rootfile)!);
   const manifest = new Map(find(packageRoot, "item").map((item) => [item.attrs.id, item]));
   const spine = find(packageRoot, "itemref");
