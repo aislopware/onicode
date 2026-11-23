@@ -163,8 +163,17 @@ describe("thread outbox", () => {
 
       await expect(expoThreadOutboxStorage.load()).resolves.toMatchObject({
         messages: [first],
-        errors: [{ operation: "read-message", fileName: "message-2.json" }],
+        errors: [
+          {
+            operation: failure === "read" ? "read-message" : "decode-message",
+            fileName: "message-2.json",
+          },
+        ],
       });
+      const incomplete =
+        failure === "read"
+          ? { status: "unreadable" }
+          : { status: "damaged", fileNames: ["message-2.json"] };
 
       const registry = AtomRegistry.make();
       onTestFinished(() => registry.dispose());
@@ -173,7 +182,7 @@ describe("thread outbox", () => {
         storage: expoThreadOutboxStorage,
         warn: () => {},
       });
-      await expect(manager.load()).resolves.toBe(false);
+      await expect(manager.load()).resolves.toEqual(incomplete);
       const recovered = registry.get(manager.queuedMessagesByThreadKeyAtom)[
         "environment-1:thread-1"
       ]![0]!;
@@ -182,7 +191,7 @@ describe("thread outbox", () => {
       const edited = { ...recovered, text: "Edited after recovery" };
       await expect(manager.update(edited)).resolves.toBe(true);
       const beforeRetry = registry.get(manager.queuedMessagesByThreadKeyAtom);
-      await expect(manager.load()).resolves.toBe(false);
+      await expect(manager.load()).resolves.toEqual(incomplete);
       expect(registry.get(manager.queuedMessagesByThreadKeyAtom)).toBe(beforeRetry);
       await expect(manager.clearEnvironment(first.environmentId)).rejects.toMatchObject({
         operation: "clear-environment-load",
@@ -194,7 +203,7 @@ describe("thread outbox", () => {
       expect(outboxFiles.has("message-1.json")).toBe(false);
 
       outboxFiles.set("message-2.json", JSON.stringify(encodeQueuedThreadMessage(second)));
-      await expect(manager.load()).resolves.toBe(true);
+      await expect(manager.load()).resolves.toEqual({ status: "complete" });
       expect(registry.get(manager.queuedMessagesByThreadKeyAtom)).toEqual({
         "environment-2:thread-1": [second],
       });
@@ -204,6 +213,35 @@ describe("thread outbox", () => {
       });
     },
   );
+
+  it("discards damaged records only while they still fail to decode", async () => {
+    onTestFinished(() => outboxFiles.clear());
+    const repaired = queuedMessage({
+      messageId: "repaired",
+      createdAt: "2026-06-08T10:00:02.000Z",
+    });
+    outboxFiles.set("damaged.json", "{");
+    outboxFiles.set("repaired.json", JSON.stringify({ schemaVersion: 999 }));
+    outboxFiles.set("unreadable.json", new Error("storage unavailable"));
+    const registry = AtomRegistry.make();
+    onTestFinished(() => registry.dispose());
+    const manager = createThreadOutboxManager({
+      registry,
+      storage: expoThreadOutboxStorage,
+      warn: () => {},
+    });
+
+    const loaded = await manager.load();
+    expect(loaded).toEqual({ status: "damaged", fileNames: ["damaged.json", "repaired.json"] });
+    outboxFiles.set("repaired.json", JSON.stringify(encodeQueuedThreadMessage(repaired)));
+    await expect(
+      manager.discardDamaged(loaded.status === "damaged" ? loaded.fileNames : []),
+    ).resolves.toEqual({ status: "unreadable" });
+    expect([...outboxFiles.keys()]).toEqual(["repaired.json", "unreadable.json"]);
+    expect(registry.get(manager.queuedMessagesByThreadKeyAtom)).toEqual({
+      "environment-1:thread-1": [repaired],
+    });
+  });
 
   it("preserves queued messages when environment cleanup cannot read the outbox", async () => {
     const registry = AtomRegistry.make();
@@ -223,6 +261,7 @@ describe("thread outbox", () => {
         write: async (entry) => {
           stored.set(entry.messageId, entry);
         },
+        discardDamaged: async () => undefined,
         remove: async (entry) => {
           stored.delete(entry.messageId);
         },
@@ -258,7 +297,12 @@ describe("thread outbox", () => {
     });
     const manager = createThreadOutboxManager({
       registry,
-      storage: { load, write: async () => {}, remove: async () => {} },
+      storage: {
+        load,
+        write: async () => {},
+        remove: async () => {},
+        discardDamaged: async () => undefined,
+      },
       warn: () => {},
     });
     const loading = manager.load();
@@ -278,7 +322,7 @@ describe("thread outbox", () => {
         }),
       ],
     });
-    await expect(loading).resolves.toBe(false);
+    await expect(loading).resolves.toEqual({ status: "unreadable" });
     await writing;
     expect(registry.get(manager.queuedMessagesByThreadKeyAtom)).toEqual({
       "environment-1:thread-1": [edited],
@@ -286,7 +330,7 @@ describe("thread outbox", () => {
     await expect(manager.confirmQueued(edited)).resolves.toBe(true);
 
     await manager.remove(edited);
-    await expect(manager.load()).resolves.toBe(true);
+    await expect(manager.load()).resolves.toEqual({ status: "complete" });
     expect(registry.get(manager.queuedMessagesByThreadKeyAtom)).toEqual({});
     expect(load).toHaveBeenCalledTimes(2);
   });
@@ -449,6 +493,7 @@ describe("thread outbox", () => {
         return { messages: [...stored.values()], errors: [] };
       },
       write: async () => undefined,
+      discardDamaged: async () => undefined,
       remove: async (candidate) => {
         removeCalls += 1;
         stored.delete(candidate.messageId);
@@ -485,6 +530,7 @@ describe("thread outbox", () => {
           return { messages: [], errors: [] };
         },
         write: async () => undefined,
+        discardDamaged: async () => undefined,
         remove: async () => undefined,
       },
       warn: (message, error) => warnings.push({ message, error }),
@@ -519,6 +565,7 @@ describe("thread outbox", () => {
       write: async (message) => {
         stored.set(message.messageId, message);
       },
+      discardDamaged: async () => undefined,
       remove: async (message) => {
         if (failRemoval) {
           throw removalCause;
@@ -567,6 +614,7 @@ describe("thread outbox", () => {
       storage: {
         load: async () => ({ messages: [], errors: [] }),
         write: async () => writeBlocked,
+        discardDamaged: async () => undefined,
         remove: async () => undefined,
       },
     });
@@ -598,6 +646,7 @@ describe("thread outbox", () => {
         write: async () => {
           throw writeCause;
         },
+        discardDamaged: async () => undefined,
         remove: async () => undefined,
       },
     });
@@ -629,6 +678,7 @@ describe("thread outbox", () => {
         write: async () => {
           throw new Error("disk full");
         },
+        discardDamaged: async () => undefined,
         remove: async (message) => {
           removed.push(message.messageId);
         },
@@ -662,6 +712,7 @@ describe("thread outbox", () => {
             throw new Error("disk full");
           }
         },
+        discardDamaged: async () => undefined,
         remove: async () => undefined,
       },
     });
@@ -693,6 +744,7 @@ describe("thread outbox", () => {
       write: async (message) => {
         stored.set(message.messageId, message);
       },
+      discardDamaged: async () => undefined,
       remove: async (message) => {
         stored.delete(message.messageId);
       },
@@ -728,6 +780,7 @@ describe("thread outbox", () => {
         write: async (message) => {
           stored.set(message.messageId, message);
         },
+        discardDamaged: async () => undefined,
         remove: async () => undefined,
       },
     });
@@ -764,6 +817,7 @@ describe("thread outbox", () => {
         write: async (message) => {
           writes.push(message.text);
         },
+        discardDamaged: async () => undefined,
         remove: async () => undefined,
       },
     });
@@ -809,6 +863,7 @@ describe("thread outbox", () => {
             await writeBarrier;
           }
         },
+        discardDamaged: async () => undefined,
         remove: async () => undefined,
       },
     });
@@ -846,6 +901,7 @@ describe("thread outbox", () => {
         write: async (message) => {
           stored.set(message.messageId, message);
         },
+        discardDamaged: async () => undefined,
         remove: async (message) => {
           stored.delete(message.messageId);
         },
@@ -897,6 +953,7 @@ describe("thread outbox", () => {
           }
           stored.set(message.messageId, message);
         },
+        discardDamaged: async () => undefined,
         remove: async (message) => {
           removeStarted.resolve();
           await removeBarrier.promise;
@@ -940,6 +997,7 @@ describe("thread outbox", () => {
         write: async (message) => {
           stored.set(message.messageId, message);
         },
+        discardDamaged: async () => undefined,
         remove: async (message) => {
           removeStarted.resolve();
           await removeBarrier.promise;
@@ -975,6 +1033,7 @@ describe("thread outbox", () => {
     const manager = createThreadOutboxManager({
       registry,
       storage: {
+        discardDamaged: async () => undefined,
         load: async () => ({ messages: [...stored.values()], errors: [] }),
         write: async (message) => {
           stored.set(message.messageId, message);
@@ -1039,6 +1098,7 @@ describe("thread outbox", () => {
     const manager = createThreadOutboxManager({
       registry,
       storage: {
+        discardDamaged: async () => undefined,
         load: async () => ({ messages: [...stored.values()], errors: [] }),
         write: async (message) => {
           stored.set(message.messageId, message);
@@ -1082,6 +1142,7 @@ describe("thread outbox", () => {
     const manager = createThreadOutboxManager({
       registry,
       storage: {
+        discardDamaged: async () => undefined,
         load: async () => ({ messages: [...stored.values()], errors: [] }),
         write: async (message) => {
           stored.set(message.messageId, message);

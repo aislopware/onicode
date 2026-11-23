@@ -103,6 +103,7 @@ import { NativeLayoutMetricsProvider } from "./native/native-layout-metrics";
 import {
   markCrashReportingAppLoaded,
   registerCrashReportingNavigation,
+  replayScrollPauseTouchHandlers,
 } from "./lib/crash-reporting";
 import {
   attachRootNavigation,
@@ -304,7 +305,7 @@ function AppContent() {
       <SplashScreenCoordinator />
       <QuickActionsLanguage />
       <SubscriptionUsageCoordinator />
-      <GestureHandlerRootView className="flex-1">
+      <GestureHandlerRootView className="flex-1" {...replayScrollPauseTouchHandlers}>
         <KeyboardProvider statusBarTranslucent>
           <SafeAreaProvider>
             <StatusBar barStyle={themeAppearance === "dark" ? "light-content" : "dark-content"} />

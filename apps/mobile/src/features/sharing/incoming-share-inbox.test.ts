@@ -2,7 +2,11 @@ import { describe, expect, it, vi } from "@effect/vitest";
 import type { SharePayload } from "expo-sharing";
 
 import type { IncomingShareDraft } from "./incoming-share-model";
-import { IncomingShareInbox, type IncomingShareInboxDependencies } from "./incoming-share-inbox";
+import {
+  IncomingShareInbox,
+  IncomingShareUnsupportedError,
+  type IncomingShareInboxDependencies,
+} from "./incoming-share-inbox";
 
 const PAYLOAD: SharePayload = {
   shareType: "text",
@@ -142,6 +146,23 @@ describe("IncomingShareInbox", () => {
     expect(clearPayloads).not.toHaveBeenCalled();
     expect(cleanup).not.toHaveBeenCalled();
     expect(rollback).toHaveBeenCalledOnce();
+  });
+
+  it("rejects content the composer cannot use with its user-facing reason, and acknowledges it", async () => {
+    const clearPayloads = vi.fn();
+    const { inbox, persisted } = createHarness({
+      clearPayloads,
+      buildDraft: async ({ id, createdAt }) => ({
+        draft: { ...draft(id, createdAt), text: "", warnings: ["''clip.mov'' is too large."] },
+        cleanup: async () => undefined,
+      }),
+    });
+
+    await expect(inbox.refresh({ ingestNative: true })).rejects.toEqual(
+      new IncomingShareUnsupportedError({ message: "''clip.mov'' is too large." }),
+    );
+    expect(clearPayloads).toHaveBeenCalledOnce();
+    expect(persisted.size).toBe(0);
   });
 
   it("durably reserves a share for one project before draft import", async () => {

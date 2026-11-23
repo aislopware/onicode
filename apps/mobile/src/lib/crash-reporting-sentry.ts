@@ -6,6 +6,8 @@ import {
 } from "@sentry/react-native/dist/js/feedback/ShakeToReportBug";
 import { NATIVE } from "@sentry/react-native/dist/js/wrapper";
 
+import { createReplayScrollPause, type ReplayScrollPause } from "./replayScrollPause";
+
 export interface BugReport {
   readonly message: string;
   readonly email: string | undefined;
@@ -32,6 +34,7 @@ export interface SentryReporter {
   readonly captureScreenshot: () => Promise<BugReportScreenshot | undefined>;
   /** Native shake detection, which needs no permission. `undefined` stops it. */
   readonly onShake: (handler: (() => void) | undefined) => void;
+  readonly scrollPause: ReplayScrollPause;
 }
 
 /** Share of traces sent to Sentry. Errors are always sent. Matches desktop and server. */
@@ -51,6 +54,7 @@ export function startSentry(options: {
     maskAllImages: true,
     maskAllVectors: true,
   });
+  const scrollPause = createReplayScrollPause(replay);
   Sentry.init({
     dsn: options.dsn,
     release: options.release,
@@ -85,6 +89,8 @@ export function startSentry(options: {
     // One at a time: each sends the buffer, which the next one must not read before it restarts.
     beginBugReport: () => {
       const run = replayTasks.then(async () => {
+        // A paused iOS replay is not running, and captures nothing.
+        scrollPause.resumeNow();
         try {
           // The native capture answers with the replay it uploaded; the integration's cached id
           // can name an earlier one.
@@ -147,6 +153,7 @@ export function startSentry(options: {
       stopShakeListener();
       if (handler) startShakeListener(handler);
     },
+    scrollPause,
   };
 }
 

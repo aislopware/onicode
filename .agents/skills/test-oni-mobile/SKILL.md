@@ -59,6 +59,10 @@ The device must be able to reach both Metro and the isolated backend.
 Append `&disableAutoLaunch=1&disableFab=1` to the development-client URL query
 when developer chrome would obscure screenshots or taps; the SDK 58 dev client
 applies these preferences before the app loads.
+To run production JavaScript instead, for example to measure frame cost, add
+`--no-dev --minify` and set `EXPO_NO_METRO_LAZY=1`. Without it every dynamic
+`import()` fails: the app shows false share and queued-message alerts and never
+starts crash reporting.
 
 ## Pair and verify
 

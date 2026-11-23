@@ -950,7 +950,7 @@ export async function releaseUnusedComposerAttachmentFiles(
   // Hydrate before scanning references; cold-start atoms would otherwise mark owned files unused.
   await waitForComposerDraftsLoaded();
   await flushComposerDrafts();
-  if (!(await threadOutboxManager.load())) {
+  if ((await threadOutboxManager.load()).status !== "complete") {
     // Unreadable outbox stores may still own files; do not treat them as empty.
     return;
   }

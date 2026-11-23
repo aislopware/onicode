@@ -1,5 +1,6 @@
 import * as Application from "expo-application";
 import Constants from "expo-constants";
+import type { GestureResponderEvent } from "react-native";
 
 import type { BugReport, BugReportScreenshot, SentryReporter } from "./crash-reporting-sentry";
 
@@ -103,3 +104,21 @@ export function setShakeToReportHandler(handler: (() => void) | undefined): void
   shakeHandler = handler;
   reporter?.onShake(handler);
 }
+
+const firstTouch = (event: GestureResponderEvent) =>
+  event.nativeEvent.touches[0] ?? event.nativeEvent;
+
+/** Root view touch handlers that pause the error replay while the user drags or scrolls. */
+export const replayScrollPauseTouchHandlers = {
+  onTouchStart: (event: GestureResponderEvent) => {
+    const touch = firstTouch(event);
+    reporter?.scrollPause.touchStart(touch.pageX, touch.pageY);
+  },
+  onTouchMove: (event: GestureResponderEvent) => {
+    const touch = firstTouch(event);
+    reporter?.scrollPause.touchMove(touch.pageX, touch.pageY);
+  },
+  onTouchEnd: (event: GestureResponderEvent) =>
+    reporter?.scrollPause.touchEnd(event.nativeEvent.touches.length),
+  onTouchCancel: () => reporter?.scrollPause.touchCancel(),
+};

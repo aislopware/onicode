@@ -2,6 +2,7 @@ import { errorDisplayMessage } from "@onicode/client-runtime/errors";
 import * as Dialog from "../../components/ui/Dialog";
 import { m } from "../../i18n/messages";
 import Constants from "expo-constants";
+import * as Schema from "effect/Schema";
 import * as Crypto from "expo-crypto";
 import { EnvironmentId, PROVIDER_SEND_TURN_MAX_FILE_BYTES } from "@onicode/contracts";
 import {
@@ -24,7 +25,7 @@ import {
   type IncomingShareDraft,
 } from "./incoming-share-model";
 import { createIncomingSharePayloadReader } from "./incoming-share-native";
-import { IncomingShareInbox } from "./incoming-share-inbox";
+import { IncomingShareInbox, IncomingShareUnsupportedError } from "./incoming-share-inbox";
 import { persistComposerAttachmentFile } from "../../lib/composerImages";
 import { subscribeAppActive } from "../../lib/appState";
 import { coalescedRun } from "../../lib/coalescedRun";
@@ -231,18 +232,35 @@ function getIncomingShareSnapshot() {
   return snapshot;
 }
 
+const isIncomingShareUnsupported = Schema.is(IncomingShareUnsupportedError);
+// A failure that persists would otherwise alert again on every resume.
+let refreshFailureReported = false;
+
 function reportRefreshFailure(cause: unknown) {
   console.warn(
     "[incoming-share] refresh failed",
     cause,
     cause instanceof Error ? cause.cause : null,
   );
-  const error =
-    cause instanceof Error ? cause : new Error(m(msg("Could not import shared content.")));
-  Dialog.alert(m(msg("Could not import shared content")), error.message, [
-    { text: m(msg("Dismiss")), style: "cancel" },
-    { text: m(msg("Retry")), onPress: () => void refreshIncomingShares() },
-  ]);
+  const unsupported = isIncomingShareUnsupported(cause);
+  if (refreshFailureReported && !unsupported) return;
+  refreshFailureReported = true;
+  Dialog.alert(
+    m(msg("Could not import shared content")),
+    unsupported
+      ? cause.message
+      : m(msg("The shared content could not be read. Try again, or share it again.")),
+    [
+      { text: m(msg("Dismiss")), style: "cancel" },
+      {
+        text: m(msg("Retry")),
+        onPress: () => {
+          refreshFailureReported = false;
+          void refreshIncomingShares();
+        },
+      },
+    ],
+  );
 }
 
 // A resume while a refresh runs may carry a native handoff that refresh already
@@ -251,6 +269,7 @@ const refreshIncomingShares = coalescedRun(async () => {
   const enabled = receiveSharingEnabled();
   try {
     publish(await incomingShareInbox.refresh({ ingestNative: enabled }));
+    refreshFailureReported = false;
   } catch (cause) {
     const persisted = await incomingShareInbox.refresh({ ingestNative: false }).catch(() => null);
     publish(persisted ?? snapshot.drafts);

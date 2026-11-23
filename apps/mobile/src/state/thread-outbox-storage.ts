@@ -28,7 +28,8 @@ export async function flushThreadOutboxWrites(): Promise<void> {
 export class ThreadOutboxStorageError extends Schema.TaggedError<ThreadOutboxStorageError>()(
   "ThreadOutboxStorageError",
   {
-    operation: Schema.Literals(["load", "read-message", "write", "remove"]),
+    // `decode-message` is a record that was read but is not a queued message: damaged for good.
+    operation: Schema.Literals(["load", "read-message", "decode-message", "write", "remove"]),
     environmentId: Schema.NullOr(EnvironmentId),
     threadId: Schema.NullOr(ThreadId),
     messageId: Schema.NullOr(MessageId),
@@ -50,6 +51,8 @@ export interface ThreadOutboxStorage {
   readonly load: () => Promise<ThreadOutboxLoadResult>;
   readonly write: (message: QueuedThreadMessage) => Promise<void>;
   readonly remove: (message: QueuedThreadMessage) => Promise<void>;
+  /** Deletes a record that still fails to decode; a record that now reads fine is kept. */
+  readonly discardDamaged: (fileName: string) => Promise<void>;
 }
 
 function messageFileName(messageId: MessageId): string {
@@ -68,6 +71,33 @@ async function getMessageFile(messageId: MessageId) {
   return new File(await getOutboxDirectory(), messageFileName(messageId));
 }
 
+function decodeRecord(
+  text: string,
+):
+  | { readonly ok: true; readonly message: QueuedThreadMessage }
+  | { readonly ok: false; readonly cause: unknown } {
+  try {
+    return { ok: true, message: decodeQueuedThreadMessage(JSON.parse(text) as unknown) };
+  } catch (cause) {
+    return { ok: false, cause };
+  }
+}
+
+function recordError(
+  operation: "read-message" | "decode-message" | "remove",
+  fileName: string,
+  cause: unknown,
+): ThreadOutboxStorageError {
+  return new ThreadOutboxStorageError({
+    operation,
+    environmentId: null,
+    threadId: null,
+    messageId: null,
+    fileName,
+    cause,
+  });
+}
+
 export const expoThreadOutboxStorage: ThreadOutboxStorage = {
   load: async () => {
     const messages: QueuedThreadMessage[] = [];
@@ -80,20 +110,16 @@ export const expoThreadOutboxStorage: ThreadOutboxStorage = {
         if (!(entry instanceof File) || !entry.name.endsWith(".json")) {
           continue;
         }
+        let text: string;
         try {
-          messages.push(decodeQueuedThreadMessage(JSON.parse(await entry.text()) as unknown));
+          text = await entry.text();
         } catch (cause) {
-          errors.push(
-            new ThreadOutboxStorageError({
-              operation: "read-message",
-              environmentId: null,
-              threadId: null,
-              messageId: null,
-              fileName: entry.name,
-              cause,
-            }),
-          );
+          errors.push(recordError("read-message", entry.name, cause));
+          continue;
         }
+        const decoded = decodeRecord(text);
+        if (decoded.ok) messages.push(decoded.message);
+        else errors.push(recordError("decode-message", entry.name, decoded.cause));
       }
     } catch (cause) {
       throw new ThreadOutboxStorageError({
@@ -143,6 +169,16 @@ export const expoThreadOutboxStorage: ThreadOutboxStorage = {
         fileName,
         cause,
       });
+    }
+  },
+  discardDamaged: async (fileName) => {
+    try {
+      const { File } = await import("expo-file-system");
+      const file = new File(await getOutboxDirectory(), fileName);
+      if (!file.exists || decodeRecord(await file.text()).ok) return;
+      file.delete();
+    } catch (cause) {
+      throw recordError("remove", fileName, cause);
     }
   },
 };

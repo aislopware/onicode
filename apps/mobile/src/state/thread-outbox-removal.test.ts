@@ -21,6 +21,7 @@ vi.mock("./thread-outbox", async () => {
     storage: {
       load: async () => ({ messages: [], errors: [] }),
       write: async () => undefined,
+      discardDamaged: async () => undefined,
       remove: async () => undefined,
     },
   });

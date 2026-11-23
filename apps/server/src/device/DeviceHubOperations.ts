@@ -12,7 +12,13 @@ import { HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse } fr
 
 import type { DeviceHostReady, DeviceOperations, HostDevice } from "./DeviceHost.ts";
 
-const BOOT_TIMEOUT = Duration.minutes(3);
+// Longer than the hub's own 180 s wait for an emulator, so the hub reports why it failed.
+const BOOT_TIMEOUT = Duration.minutes(4);
+// expo-device-hub 0.26.1 ends its emulator wait on the first error from any adb device, such as a
+// tunnelled `localhost:NNNN` that refuses `emu avd name`, while the emulator keeps booting.
+const HUB_EMULATOR_WAIT_FAILED = /^Failed while waiting for .+ to come online$/;
+const EMULATOR_WAIT = Duration.minutes(3);
+const EMULATOR_POLL_INTERVAL = Duration.seconds(2);
 const SCREENSHOT_TIMEOUT = Duration.seconds(20);
 // Let the hub's 30 s simctl timeout report its cause first.
 const LIST_TIMEOUT_SECONDS = 40;
@@ -253,12 +259,37 @@ export const makeDeviceHubOperations = (options: {
     };
   }).pipe(Effect.withSpan("DeviceHubOperations.list"));
 
+  const awaitEmulatorOnline = Effect.fn("DeviceHubOperations.awaitEmulatorOnline")(function* (
+    serial: string,
+  ) {
+    const online = yield* Effect.gen(function* () {
+      for (;;) {
+        const { devices } = yield* list.pipe(Effect.orElseSucceed(() => ({ devices: [] })));
+        if (devices.some((candidate) => candidate.id === serial && candidate.booted)) return;
+        yield* Effect.sleep(EMULATOR_POLL_INTERVAL);
+      }
+    }).pipe(Effect.timeoutOption(EMULATOR_WAIT));
+    return Option.isSome(online);
+  });
+
   const boot: DeviceOperations["boot"] = Effect.fn("DeviceHubOperations.boot")(function* (device) {
     const result = yield* postJson(
       "/api/devices/boot",
       { platform: device.platform, id: device.id, name: device.name },
       "boot",
     ).pipe(Effect.flatMap((request) => hubJson(request, HubActionResult, "boot", BOOT_TIMEOUT)));
+    if (
+      !result.ok &&
+      device.platform === "android" &&
+      result.serial !== undefined &&
+      HUB_EMULATOR_WAIT_FAILED.test(result.error ?? "")
+    ) {
+      yield* Effect.logInfo("device hub gave up on a booting emulator; waiting for it", {
+        serial: result.serial,
+        error: result.errors?.[0]?.message,
+      });
+      if (yield* awaitEmulatorOnline(result.serial)) return result.serial;
+    }
     if (!result.ok) {
       // Keep the hub's launch command and nested failure available to agents for recovery.
       const diagnostics = [
