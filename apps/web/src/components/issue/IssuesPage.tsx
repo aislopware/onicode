@@ -62,6 +62,7 @@ import {
   issueProjectKeys,
   issueRowHidden,
   issueSurfaceTargetFromSearch,
+  selectedIssueHost,
 } from "./issuesSearch.logic";
 import { ISSUE_SAVED_VIEWS } from "./issueSavedViews";
 import { SavedViewsMenu } from "~/components/SavedViewsMenu";
@@ -434,14 +435,16 @@ export function IssuesPage() {
   const {
     selectedEnvironmentId,
     selectedProjectId,
-    selectedHost,
     tracker,
     scope,
     key: issueKey,
     selectedIssueUrl,
   } = search;
+  // A link that left the host out opens the tab a row or link with the host opens.
+  const selectedHost = selectedIssueHost(search, projects);
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- opens the URL-linked issue in the right panel store
   useEffect(() => {
+    if (selectedHost === null) return;
     const target = issueSurfaceTargetFromSearch({
       selectedEnvironmentId,
       selectedProjectId,

@@ -260,10 +260,10 @@ interface ChatMarkdownProps {
   /** Keep one object per configuration (a module constant): it keys the shared parse cache. */
   extensions?: MarkdownExtensions | undefined;
   renderContextReference?: ((reference: ChatMarkdownContextReference) => ReactNode) | undefined;
-  /** Loads media a source control host keeps behind a credential through the server, which holds
-      `cwd`'s; without it a private repository's uploads load unauthenticated and 404. */
-  sourceControlMedia?: boolean | undefined;
-  /** The change request's repository, when it can differ from the checkout at `cwd`. */
+  /** The checkout whose credentials load media a source control host keeps behind one, through
+      the server; without it a private repository's uploads load unauthenticated and 404. */
+  sourceControlMedia?: string | undefined;
+  /** The change request's repository, when it can differ from the `sourceControlMedia` checkout. */
   sourceControlMediaRepository?: string | undefined;
   headingLevelOffset?: number | undefined;
 }
@@ -593,7 +593,7 @@ function useChatMarkdownState(
     onImageExpand,
     renderContextReference,
     headingLevelOffset = 0,
-    sourceControlMedia = false,
+    sourceControlMedia,
     sourceControlMediaRepository,
   }: ChatMarkdownProps,
   streamingBlocks: ReadonlyArray<string> | null,
@@ -1751,8 +1751,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
         : (sourceControlClients.mediaUrl(resolveProtocolRelativeMediaUrl(directUri))?.fetchUrl ??
           null);
     if (
-      sourceControlMedia &&
-      cwd !== undefined &&
+      sourceControlMedia !== undefined &&
       environmentId !== null &&
       directUri !== null &&
       hostMediaUrl !== null
@@ -1762,7 +1761,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
           environmentId={environmentId}
           resource={{
             _tag: SOURCE_CONTROL_MEDIA_ASSET,
-            cwd,
+            cwd: sourceControlMedia,
             url: hostMediaUrl,
             ...(sourceControlMediaRepository ? { repository: sourceControlMediaRepository } : {}),
           }}

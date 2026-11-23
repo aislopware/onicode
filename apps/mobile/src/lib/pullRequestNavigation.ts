@@ -4,6 +4,39 @@ import { sourceControlClients } from "@onicode/client-runtime/source-control-cli
 import type { EnvironmentProject } from "@onicode/client-runtime/state/shell";
 import { EnvironmentId, ProjectId, type IssueRef } from "@onicode/contracts";
 
+import {
+  fileRoutePathSegments,
+  resolveFileLinkPath,
+  resolveWorkspaceFilePath,
+} from "../features/files/filePath";
+import { resolveMarkdownLinkPresentation } from "./markdownLinks";
+
+/**
+ * The file route for a path a change request's markdown links, in the checkout the server read
+ * it through. Null for any other link, and for a checkout of another repository that only lent
+ * its credentials: its paths name none of the change request's files.
+ */
+export function pullRequestFileLinkRoute(
+  href: string,
+  checkout: {
+    readonly environmentId: string;
+    readonly workspaceRoot: string;
+    readonly borrowedCheckout?: boolean | undefined;
+  } | null,
+) {
+  if (checkout === null || checkout.borrowedCheckout === true) return null;
+  const link = resolveMarkdownLinkPresentation(href);
+  if (link.kind !== "file") return null;
+  const path = resolveFileLinkPath(checkout.workspaceRoot, link.path);
+  if (path === null) return null;
+  return {
+    environmentId: checkout.environmentId,
+    path: fileRoutePathSegments(resolveWorkspaceFilePath(checkout.workspaceRoot, path)),
+    cwd: checkout.workspaceRoot,
+    ...(link.line ? { line: String(link.line) } : {}),
+  };
+}
+
 /** The PullRequest route for a change request link from a project, or null for the browser. */
 export function nativePullRequestDestination(
   url: string,

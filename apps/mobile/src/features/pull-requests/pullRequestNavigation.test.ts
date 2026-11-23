@@ -1,6 +1,9 @@
 import { EnvironmentId, ProjectId, SourceControlProviderKind } from "@onicode/contracts";
 import { describe, expect, it } from "vite-plus/test";
-import { nativePullRequestDestination as destination } from "../../lib/pullRequestNavigation";
+import {
+  nativePullRequestDestination as destination,
+  pullRequestFileLinkRoute,
+} from "../../lib/pullRequestNavigation";
 
 const context = { environmentId: "remote", projectId: "project" };
 const project = (id: string, canonicalKey: string, provider: string, remoteUrl: string) => ({
@@ -75,5 +78,26 @@ describe("native PR entry points", () => {
     expect(
       nativePullRequestDestination("https://github.com/org/repo/pull/12", null, projects),
     ).toBeNull();
+  });
+});
+
+describe("pullRequestFileLinkRoute", () => {
+  const checkout = { environmentId: "remote", workspaceRoot: "/work/api" };
+
+  it("opens a path the description links in the change request's checkout", () => {
+    expect(pullRequestFileLinkRoute("src/index.ts:12", checkout)).toEqual({
+      environmentId: "remote",
+      path: ["", "work", "api", "src", "index.ts"],
+      cwd: "/work/api",
+      line: "12",
+    });
+    expect(pullRequestFileLinkRoute("https://github.com/org/repo/pull/12", checkout)).toBeNull();
+  });
+
+  it("leaves a path alone when the checkout is another repository's", () => {
+    expect(
+      pullRequestFileLinkRoute("src/index.ts", { ...checkout, borrowedCheckout: true }),
+    ).toBeNull();
+    expect(pullRequestFileLinkRoute("src/index.ts", null)).toBeNull();
   });
 });

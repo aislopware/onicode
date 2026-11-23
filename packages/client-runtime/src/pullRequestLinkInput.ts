@@ -61,6 +61,20 @@ export function pullRequestLinkProject(identity: RepositoryIdentity | null | und
   };
 }
 
+/**
+ * Names the host a host-less reference to the project's own repository reads on, as the server's
+ * `PullRequestService.requireProject` does, so one change request keys the same either way.
+ */
+export function withProjectChangeRequestHost<
+  Ref extends { readonly repository: string; readonly host?: string | undefined },
+>(ref: Ref, identity: RepositoryIdentity | null | undefined): Ref {
+  if (ref.host !== undefined) return ref;
+  const own = pullRequestLinkProject(identity);
+  return own !== null && own.repository.toLowerCase() === ref.repository.toLowerCase()
+    ? { ...ref, host: own.host }
+    : ref;
+}
+
 interface ResolvedLink {
   readonly host: string;
   readonly repository: string;
