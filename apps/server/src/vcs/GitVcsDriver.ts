@@ -144,8 +144,6 @@ export interface ExecuteGitProgress {
 }
 
 export interface CreateWorktreeProgress {
-  /** Runs once Git made the new branch; a call stopped before then leaves no branch of its own. */
-  readonly onBranchCreated?: () => Effect.Effect<void, never>;
   /**
    * Runs uninterruptibly once the worktree exists; from then on the caller owns its cleanup.
    * For new-branch calls on Git supporting add --reason, cancellation before the claim removes what it made.

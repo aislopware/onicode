@@ -883,20 +883,23 @@ const make = Effect.gen(function* () {
   const locked = <A, E>(taskFolder: Pick<TaskFolder, "projectPath">, effect: Effect.Effect<A, E>) =>
     withWorkspaceLease(fileSystem, path, taskFolder.projectPath, effect);
 
-  // A checkout that makes the branch can stop after making it, so the branch is counted as made
-  // once Git made it, unless it was there before. A creation stopped before then, or one that lost
-  // a race to make it, leaves the winner's branch alone.
+  // Until it claims the worktree, the driver removes a branch it made itself when anything fails,
+  // so the branch counts as made only from the claim. Counting it earlier would delete it again,
+  // by name, after a concurrent creation took that name.
   const makingBranch = <A, E>(
     madeIn: Set<string>,
     listed: boolean,
     repositoryPath: string,
-    checkout: (onBranchCreated: () => Effect.Effect<void>) => Effect.Effect<A, E>,
+    checkout: (progress: GitVcsDriver.CreateWorktreeProgress) => Effect.Effect<A, E>,
+    progress: GitVcsDriver.CreateWorktreeProgress = {},
   ) =>
-    checkout(() =>
-      Effect.sync(() => {
-        if (!listed) madeIn.add(repositoryPath);
-      }),
-    );
+    checkout({
+      ...progress,
+      onWorktreeClaimed: (worktreePath) =>
+        Effect.sync(() => {
+          if (!listed) madeIn.add(repositoryPath);
+        }).pipe(Effect.andThen(progress.onWorktreeClaimed?.(worktreePath) ?? Effect.void)),
+    });
 
   const createRepositoryWorktree = Effect.fnUntraced(function* (
     taskFolder: TaskFolder,
@@ -929,7 +932,7 @@ const make = Effect.gen(function* () {
     }
     yield* fileSystem.makeDirectory(path.dirname(worktreePath), { recursive: true });
     const start = yield* repositoryStart(repository.path, startFromOrigin, baseBranch);
-    yield* makingBranch(madeIn, listed, repository.path, (onBranchCreated) =>
+    yield* makingBranch(madeIn, listed, repository.path, (progress) =>
       git.createWorktree(
         {
           cwd: repository.path,
@@ -938,7 +941,7 @@ const make = Effect.gen(function* () {
           baseRefName: start.baseRefName,
           path: worktreePath,
         },
-        { progress: { onBranchCreated } },
+        { progress },
       ),
     );
     return {
@@ -1067,7 +1070,7 @@ const make = Effect.gen(function* () {
             madeIn,
             projectNames.includes(branch),
             taskPlan.projectRoot,
-            (onBranchCreated) =>
+            (progress) =>
               git.createWorktree(
                 {
                   cwd: taskPlan.projectRoot,
@@ -1076,8 +1079,9 @@ const make = Effect.gen(function* () {
                   baseRefName: input.projectStart.baseRefName,
                   path: empty.projectPath,
                 },
-                { progress: { ...input.projectProgress, onBranchCreated } },
+                { progress },
               ),
+            input.projectProgress,
           );
         } else {
           yield* linkFolder(taskPlan.projectRoot, empty.projectPath, taskPlan.trackedRepositories);

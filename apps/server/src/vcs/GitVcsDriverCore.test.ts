@@ -7915,18 +7915,17 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
         const occupiedPath = yield* makeTmpDir("git-worktrees-");
         yield* writeTextFile(occupiedPath, "existing.txt", "occupied\n");
         const driver = yield* GitVcsDriver.GitVcsDriver;
-        let created = 0;
-        const options = { progress: { onBranchCreated: () => Effect.sync(() => void created++) } };
 
         const failed = yield* driver
-          .createWorktree(
-            { cwd, path: occupiedPath, refName: initialBranch, newRefName: "onicode/collide" },
-            options,
-          )
+          .createWorktree({
+            cwd,
+            path: occupiedPath,
+            refName: initialBranch,
+            newRefName: "onicode/collide",
+          })
           .pipe(Effect.result);
 
         assert.isTrue(Result.isFailure(failed));
-        assert.equal(created, 1);
         assert.equal(yield* git(cwd, ["branch", "--list", "onicode/collide"]), "");
         const worktreePath = path.join(yield* makeTmpDir("git-worktrees-"), "retry");
         yield* driver.createWorktree({
@@ -7936,21 +7935,6 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
           newRefName: "onicode/collide",
         });
         assert.equal(yield* git(worktreePath, ["branch", "--show-current"]), "onicode/collide");
-
-        // A branch someone else already made was not made by this call.
-        const lost = yield* driver
-          .createWorktree(
-            {
-              cwd,
-              path: path.join(yield* makeTmpDir("git-worktrees-"), "loser"),
-              refName: initialBranch,
-              newRefName: "onicode/collide",
-            },
-            options,
-          )
-          .pipe(Effect.result);
-        assert.isTrue(Result.isFailure(lost));
-        assert.equal(created, 1);
       }),
     );
 
@@ -11041,6 +11025,26 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
             yield* git(cwd, ["rev-parse", "HEAD"]),
           );
           assert.equal(yield* git(lookalike, ["--git-dir=.", "for-each-ref"]), "");
+
+          // A remote that fetches outside refs/remotes still gets its branch's pushes.
+          const backup = yield* makeTmpDir("git-backup-");
+          yield* git(backup, ["init", "--bare"]);
+          yield* git(cwd, ["remote", "add", "backup", backup]);
+          yield* git(cwd, ["config", "remote.backup.fetch", "+refs/heads/*:refs/cache/backup/*"]);
+          yield* git(cwd, ["checkout", "-b", "topic"]);
+          yield* git(cwd, ["push", "backup", "topic"]);
+          yield* git(cwd, ["fetch", "backup"]);
+          yield* git(cwd, ["config", "branch.topic.remote", "backup"]);
+          yield* git(cwd, ["config", "branch.topic.merge", "refs/heads/topic"]);
+          yield* writeTextFile(cwd, "fix.txt", "topic\n");
+          yield* git(cwd, ["add", "-A"]);
+          yield* driver.commit(cwd, "Topic", "");
+          assert.deepInclude(yield* driver.pushCurrentBranch(cwd, null), { status: "pushed" });
+          assert.equal(
+            yield* git(backup, ["--git-dir=.", "rev-parse", "refs/heads/topic"]),
+            yield* git(cwd, ["rev-parse", "HEAD"]),
+          );
+          assert.equal(yield* git(origin, ["--git-dir=.", "for-each-ref", "refs/heads/topic"]), "");
         }),
     );
 

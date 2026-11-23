@@ -858,6 +858,15 @@ it.live("removes what it created when one repository fails", () =>
       assert.deepEqual(yield* (yield* TaskFolderStore.TaskFolderStore).list, []);
       assert.isTrue(yield* fileSystem.exists(path.join(tmp, "shop", "AGENTS.md")));
 
+      // The failed checkout removed the branch it made; a writer that takes the name next keeps it.
+      state.afterCreateWorktreeFailure = run(broken, "branch", "feature").pipe(Effect.ignore);
+      yield* create("feature").pipe(Effect.flip);
+      delete state.afterCreateWorktreeFailure;
+      assert.deepEqual((yield* run(broken, "branch", "--format=%(refname:short)")).split("\n"), [
+        "feature",
+        "main",
+      ]);
+
       // Another writer makes the branch after it was found free: that branch is theirs to keep.
       const web = yield* repository("shop/web");
       state.trackedFolders = tracked(api, web);
