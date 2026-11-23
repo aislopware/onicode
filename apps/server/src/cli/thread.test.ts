@@ -30,6 +30,7 @@ import {
   launchModelSelection,
   messageRole,
   readLatestMessages,
+  readOutputSchema,
   resolveProject,
   threadCommand,
   type ThreadTools,
@@ -687,6 +688,21 @@ it.each([
 ] as const)("show labels %j as %s", (item, role) => {
   assert.strictEqual(messageRole(item), role);
 });
+
+it.effect("--output-schema reads a ~/ path from the home directory", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const home = yield* fs.makeTempDirectoryScoped({ prefix: "oni-thread-schema-" });
+    yield* fs.writeFileString(path.join(home, "schema.json"), '{"type":"object"}');
+
+    const output = yield* readOutputSchema(Option.some("~/schema.json")).pipe(
+      Effect.provideService(HostProcess.HomeDirectory, home),
+    );
+
+    assert.deepStrictEqual(output, { outputSchema: { type: "object" } });
+  }).pipe(Effect.provide(NodeServices.layer)),
+);
 
 /** Serves oni_thread_read pages the way the server does: positions count every item. */
 const timelineTools = (types: ReadonlyArray<string>) => {
