@@ -58,7 +58,10 @@ import type {
 import { waitForDraftHeroTransition } from "./components/chat/draftHeroTransition";
 import { getLocalStorageItem } from "./hooks/useLocalStorage";
 import { readThreadPreviewState } from "./previewStateStore";
-import { draftThreadHasKnownTerminal } from "./draftTerminalPresence";
+import {
+  closeLeftDraftThreadTerminals,
+  draftThreadHasKnownTerminal,
+} from "./draftTerminalPresence";
 import {
   readInstanceCustomModels,
   resolveAppModelSelection,
@@ -4599,6 +4602,27 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
 composerDraftLoadedState = partializeComposerDraftStoreState(composerDraftStore.getState());
 
 export const useComposerDraftStore = composerDraftStore;
+
+// A draft that moves to another machine keeps its thread id, so a terminal it opened on the
+// machine it left would keep running there with nothing to reach it.
+composerDraftStore.subscribe((state, previous) => {
+  if (state.draftThreadsByThreadKey === previous.draftThreadsByThreadKey) return;
+  const sessions = Object.values(state.draftThreadsByThreadKey);
+  for (const [key, before] of Object.entries(previous.draftThreadsByThreadKey)) {
+    const after = state.draftThreadsByThreadKey[key];
+    if (!after || after.threadId !== before.threadId) continue;
+    if (after.environmentId === before.environmentId) continue;
+    if (
+      sessions.some(
+        (session) =>
+          session.environmentId === before.environmentId && session.threadId === before.threadId,
+      )
+    ) {
+      continue;
+    }
+    closeLeftDraftThreadTerminals(before.environmentId, before.threadId);
+  }
+});
 
 export function subscribeComposerDraftModelReconciliation(input: {
   readonly registry: AtomRegistry.AtomRegistry;

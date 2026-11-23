@@ -5,6 +5,8 @@ import {
 } from "@onicode/client-runtime/environment";
 import {
   DEFAULT_SERVER_SETTINGS,
+  type EnvironmentId,
+  type ProjectId,
   type ScopedProjectRef,
   type OniProjectFile,
   type ThreadId,
@@ -46,6 +48,7 @@ import {
 } from "../lib/chatThreadActions";
 import type { EnvironmentProject } from "@onicode/client-runtime/state/shell";
 import { peekOniProjectFile, readOniProjectFile } from "../lib/oniProjectFileDefaults";
+import { composerDraftContentChanged } from "../components/chat/composerSend.logic";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentSummaries } from "../state/presentation";
 import { environmentServerConfigsAtom } from "../state/server";
@@ -75,6 +78,8 @@ export function readLastUsedProjectKey(): string | null {
 // Drafts that opened before their project's onicode.json was read. A send waits for the file's
 // workspace default unless the user has already chosen a workspace.
 interface ProvisionalWorkspace {
+  readonly environmentId: EnvironmentId;
+  readonly projectId: ProjectId;
   readonly envMode: DraftThreadEnvMode;
   // A reused draft keeps an earlier "manual" marker; only a switch to manual after opening is a choice.
   readonly openedManual: boolean;
@@ -85,6 +90,9 @@ const pendingWorkspaceDefaults = new Map<
   ProvisionalWorkspace & { readonly settled: Promise<void> }
 >();
 
+// Covers a warm read. A reconnecting machine's read never fails, so Send must not wait it out.
+export const WORKSPACE_DEFAULT_SEND_WAIT_MS = 3_000;
+
 function keepsProvisionalWorkspace(
   draft: DraftSessionState | null,
   provisional: ProvisionalWorkspace,
@@ -92,17 +100,64 @@ function keepsProvisionalWorkspace(
   return (
     draft !== null &&
     draft.promotedTo == null &&
+    draft.environmentId === provisional.environmentId &&
+    draft.projectId === provisional.projectId &&
     draft.envMode === provisional.envMode &&
     draft.worktreePath === null &&
     (provisional.openedManual || draft.environmentSelection !== "manual")
   );
 }
 
-export function readPendingWorkspaceDefault(draftId: DraftId): Promise<void> | null {
+export type WorkspaceDefaultHold = { readonly status: "ready" | "cancelled" };
+
+/**
+ * Holds a send from a draft whose onicode.json default has not landed. Ready once it lands or
+ * after a short bound, which gives up on the default so it can no longer move the draft. With
+ * `cancelOnEdit`, an edit to the draft's content cancels it. Null when nothing needs to wait.
+ */
+export function holdSendForWorkspaceDefault(
+  draftId: DraftId,
+  options: { readonly cancelOnEdit: boolean },
+): Promise<WorkspaceDefaultHold> | null {
   const pending = pendingWorkspaceDefaults.get(draftId);
   if (pending === undefined) return null;
-  const draft = useComposerDraftStore.getState().getDraftSession(draftId);
-  return keepsProvisionalWorkspace(draft, pending) ? pending.settled : null;
+  const store = useComposerDraftStore;
+  if (!keepsProvisionalWorkspace(store.getState().getDraftSession(draftId), pending)) return null;
+  const giveUp = () => {
+    if (pendingWorkspaceDefaults.get(draftId) === pending) pendingWorkspaceDefaults.delete(draftId);
+  };
+  if (
+    !appAtomRegistry
+      .get(environmentSummaries.connectedEnvironmentIdsAtom)
+      .includes(pending.environmentId)
+  ) {
+    giveUp();
+    return null;
+  }
+  return new Promise((resolve) => {
+    const draftAtPress = store.getState().getComposerDraft(draftId);
+    let done = false;
+    const settle = (status: WorkspaceDefaultHold["status"]) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      stopWatching();
+      resolve({ status });
+    };
+    const timer = setTimeout(() => {
+      giveUp();
+      settle("ready");
+    }, WORKSPACE_DEFAULT_SEND_WAIT_MS);
+    const stopWatching = options.cancelOnEdit
+      ? store.subscribe((state) => {
+          if (composerDraftContentChanged(draftAtPress, state.getComposerDraft(draftId))) {
+            settle("cancelled");
+          }
+        })
+      : () => {};
+    const ready = () => settle("ready");
+    void pending.settled.then(ready, ready);
+  });
 }
 
 interface NewThreadWorkspaceOptions {
@@ -273,17 +328,22 @@ export function createNewThreadHandler(router: AnyRouter) {
       if (!consultProjectFile) return { envMode: envModeFor(null), applyProjectFile: () => {} };
       const projectFileRead = readOniProjectFile(project.environmentId, project.workspaceRoot);
       const cachedProjectFile = peekOniProjectFile(project.environmentId, project.workspaceRoot);
-      if (cachedProjectFile !== undefined) {
-        return { envMode: envModeFor(cachedProjectFile), applyProjectFile: () => {} };
+      if (cachedProjectFile?.current) {
+        return { envMode: envModeFor(cachedProjectFile.projectFile), applyProjectFile: () => {} };
       }
-      const envMode = envModeFor(null);
+      // A copy that is refetching opens the draft, and the fresh read still lands.
+      const envMode = envModeFor(cachedProjectFile?.projectFile ?? null);
       const applyProjectFile = (draftId: DraftId) => {
         const provisional: ProvisionalWorkspace = {
+          environmentId: project.environmentId,
+          projectId: project.id,
           envMode,
           openedManual: getDraftSession(draftId)?.environmentSelection === "manual",
         };
-        const settled = projectFileRead
+        const settled: Promise<void> = projectFileRead
           .then((projectFile) => {
+            // A send that stopped waiting took the provisional workspace.
+            if (pendingWorkspaceDefaults.get(draftId)?.settled !== settled) return;
             const fileEnvMode = envModeFor(projectFile);
             const draft = getDraftSession(draftId);
             if (fileEnvMode === envMode || !keepsProvisionalWorkspace(draft, provisional)) return;
@@ -342,13 +402,18 @@ export function createNewThreadHandler(router: AnyRouter) {
         const isDraftAlreadyOpen =
           currentRouteTarget?.kind === "draft" &&
           currentRouteTarget.draftId === emptyStoredDraftThread.draftId;
+        // An open draft that moves to another machine or checkout takes that project's defaults.
+        const resetsWorkspace =
+          !isDraftAlreadyOpen ||
+          emptyStoredDraftThread.environmentId !== projectRef.environmentId ||
+          emptyStoredDraftThread.projectId !== projectRef.projectId;
         const hasExplicitWorkspaceOption =
           hasBranchOption || hasWorktreePathOption || hasEnvModeOption || hasStartFromOriginOption;
         let workspaceContext: NewThreadWorkspaceOptions | null = null;
         let applyProjectFile: ((draftId: DraftId) => void) | null = null;
         if (hasExplicitWorkspaceOption) {
           workspaceContext = pickExplicitWorkspaceOptions(options);
-        } else if (!isDraftAlreadyOpen) {
+        } else if (resetsWorkspace) {
           const defaultEnvMode = resolveDefaultEnvMode();
           applyProjectFile = defaultEnvMode.applyProjectFile;
           workspaceContext = {
@@ -361,7 +426,7 @@ export function createNewThreadHandler(router: AnyRouter) {
         if (workspaceContext) {
           setDraftThreadContext(emptyStoredDraftThread.draftId, {
             ...workspaceContext,
-            ...(!isDraftAlreadyOpen ? { runtimeMode: defaultRuntimeMode } : {}),
+            ...(resetsWorkspace ? { runtimeMode: defaultRuntimeMode } : {}),
             ...(carryInteractionMode ? { interactionMode: carryInteractionMode } : {}),
           });
         }
@@ -386,7 +451,7 @@ export function createNewThreadHandler(router: AnyRouter) {
           {
             threadId: emptyStoredDraftThread.threadId,
             ...workspaceContext,
-            ...(!isDraftAlreadyOpen ? { runtimeMode: defaultRuntimeMode } : {}),
+            ...(resetsWorkspace ? { runtimeMode: defaultRuntimeMode } : {}),
             ...(carryInteractionMode ? { interactionMode: carryInteractionMode } : {}),
           },
         );

@@ -173,3 +173,55 @@ it("keeps the draft unsent when image preparation fails", async () => {
   );
   expect(submit).not.toHaveBeenCalled();
 });
+
+it("hands a held answer to its away send when the composer leaves before the images land", async () => {
+  const target = "submit-after-preparing-away";
+  const otherTarget = "submit-after-preparing-away-other";
+  using _store = {
+    [Symbol.dispose]: () => {
+      cancelPreparingComposerImages(target);
+      cancelPreparingComposerImages(otherTarget);
+    },
+  };
+  const draftImagesStore = createDraftImagesStore();
+  let queueSubmit: QueueSubmit | undefined;
+  const onReady = (queue: QueueSubmit) => {
+    queueSubmit = queue;
+  };
+  await using screen = await render(
+    <Probe targetKey={target} draftImagesStore={draftImagesStore} onReady={onReady} />,
+    // A bare hook probe; nothing here navigates.
+    { router: false },
+  );
+  const submit = vi.fn();
+  const sendAway = vi.fn();
+
+  // The composer moves on to another thread's question.
+  addPreparingComposerImages(target, [preparingImage("switched")]);
+  expect(queueSubmit?.(submit, sendAway)).toBe(true);
+  await screen.rerender(
+    <Probe targetKey={otherTarget} draftImagesStore={draftImagesStore} onReady={onReady} />,
+  );
+  expect(sendAway).not.toHaveBeenCalled();
+  await act(() => removePreparingComposerImages(target, new Set(["switched"])));
+  expect(sendAway).toHaveBeenCalledOnce();
+
+  // A failed image still drops the hold its composer left behind.
+  await act(() => addPreparingComposerImages(otherTarget, [preparingImage("failed")]));
+  expect(queueSubmit?.(submit, sendAway)).toBe(true);
+  await screen.rerender(
+    <Probe targetKey={target} draftImagesStore={draftImagesStore} onReady={onReady} />,
+  );
+  await act(() =>
+    removePreparingComposerImages(otherTarget, new Set(["failed"]), { cancelSubmission: true }),
+  );
+  expect(sendAway).toHaveBeenCalledOnce();
+
+  // The thread view closes.
+  await act(() => addPreparingComposerImages(target, [preparingImage("unmounted")]));
+  expect(queueSubmit?.(submit, sendAway)).toBe(true);
+  await screen.unmount();
+  await act(() => removePreparingComposerImages(target, new Set(["unmounted"])));
+  expect(sendAway).toHaveBeenCalledTimes(2);
+  expect(submit).not.toHaveBeenCalled();
+});

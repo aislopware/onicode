@@ -81,6 +81,17 @@ async function downloadAttachmentBlob(url: string): Promise<Blob | null> {
   }
 }
 
+function reportAttachmentImportFailure(name: string, reason: string, forQuestion: boolean) {
+  toastManager.add({
+    type: "error",
+    title: m(msg("Couldn't bring {name} into this message", { name })),
+    // A question's attachment has no chip, before or after it moves to the thread.
+    description: forQuestion
+      ? reason
+      : m(msg("{reason} Remove the chip or attach the file again.", { reason })),
+  });
+}
+
 /**
  * Imports copied composer context (terminal output, review comments, annotations, threads,
  * images and files) into the open draft, and counts the attachment slots already spoken for.
@@ -102,6 +113,8 @@ export function useComposerContextImport(input: {
   readonly promptRef: RefObject<string>;
   readonly addComposerFilesToDraft: (files: ComposerFileAttachment[]) => string[];
   readonly removedQueuedAttachments?: ReadonlyArray<QueuedAttachmentContextBinding> | undefined;
+  /** Attachments a queued message being edited keeps; they share its limit. */
+  readonly existingAttachmentCount?: number | undefined;
   readonly onRestoreQueuedAttachment?: ((attachment: ChatAttachment) => void) | undefined;
 }) {
   const {
@@ -121,6 +134,7 @@ export function useComposerContextImport(input: {
     promptRef,
     addComposerFilesToDraft,
     removedQueuedAttachments,
+    existingAttachmentCount = 0,
     onRestoreQueuedAttachment,
   } = input;
   const getComposerDraft = useComposerDraftStore((store) => store.getComposerDraft);
@@ -157,6 +171,7 @@ export function useComposerContextImport(input: {
         : [];
     const draft = getComposerDraft(attachmentDraftTarget);
     return (
+      existingAttachmentCount +
       (draft?.images.length ?? 0) +
       (draft?.files.length ?? 0) +
       countReservedComposerSlots(attachmentTargetKey) +
@@ -174,14 +189,7 @@ export function useComposerContextImport(input: {
     const fail = (reason: string) => {
       // The question was answered elsewhere, so nothing waits for this attachment.
       if (questionWork?.discarded()) return;
-      toastManager.add({
-        type: "error",
-        title: m(msg("Couldn't bring {name} into this message", { name: record.name })),
-        // A question's attachment has no chip, before or after it moves to the thread.
-        description: questionWork
-          ? reason
-          : m(msg("{reason} Remove the chip or attach the file again.", { reason })),
-      });
+      reportAttachmentImportFailure(record.name, reason, questionWork !== null);
     };
     let file = copiedComposerAttachmentFile(sourceEnvironmentId, record.attachmentId);
     if (!file) {
@@ -338,6 +346,8 @@ export function useComposerContextImport(input: {
     threadDraftTarget = attachmentDraftTarget,
   ): ReadonlyMap<string, string> => {
     const rewritten = new Map<string, string>();
+    // Restores in this paste are not in the queued message's attachments until it re-renders.
+    let restoredAttachments = 0;
     const dependentAttachmentLocalIds = new Map<string, string>();
     const skippedDependentAttachmentIds = new Set<string>();
     // Resolve annotations before their dependent screenshot records even if a foreign
@@ -484,6 +494,18 @@ export function useComposerContextImport(input: {
               removedQueuedAttachments: removedQueuedAttachments ?? [],
             });
             if (restored) {
+              if (
+                countReservedAttachments() + restoredAttachments >=
+                PROVIDER_SEND_TURN_MAX_ATTACHMENTS
+              ) {
+                reportAttachmentImportFailure(
+                  record.name,
+                  m(msg("The attachment limit has been reached.")),
+                  false,
+                );
+                break;
+              }
+              restoredAttachments += 1;
               onRestoreQueuedAttachment?.(restored.attachment);
               rewritten.set(record.contextId, restored.contextId);
               break;
