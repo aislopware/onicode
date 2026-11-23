@@ -108,6 +108,7 @@ describe("OrchestratorMcpService", () => {
             driver: "codex",
             model: "gpt-5.6-terra",
             result: "terminal result",
+            status: "completed",
             completionDelivery: { state: "pending" },
           },
         ],
@@ -157,6 +158,7 @@ describe("OrchestratorMcpService", () => {
       } as unknown as OrchestrationV2ThreadProjection;
       let hasNestedWork = true;
       let settleAfterTaskRead = false;
+      let laterTasks: OrchestrationV2ThreadProjection["subagents"] = [];
       const layerDependencies = Layer.mergeAll(
         NodeServices.layer,
         NodeCrypto.layer,
@@ -183,7 +185,10 @@ describe("OrchestratorMcpService", () => {
                       status: "running" as const,
                     })),
                   }
-                : parentProjection;
+                : {
+                    ...parentProjection,
+                    subagents: [...parentProjection.subagents, ...laterTasks],
+                  };
               if (settleAfterTaskRead) {
                 settleAfterTaskRead = false;
                 hasNestedWork = false;
@@ -252,12 +257,52 @@ describe("OrchestratorMcpService", () => {
         assert.equal(commandIds.length, 2);
         assert.notEqual(commandIds[0], commandIds[1]);
 
+        // Unfinished work comes first; finished tasks are labelled by whether their result was read.
+        const later = (id: string, title: string, fields: object) => ({
+          ...parentProjection.subagents[0]!,
+          id: NodeId.make(id),
+          title,
+          ...fields,
+        });
+        laterTasks = [
+          later("node:mcp-ack-docs", "Docs", {
+            status: "completed",
+            completionDelivery: { state: "delivered", observedByRunId: null },
+          }),
+          later("node:mcp-ack-lint", "Lint", { status: "running", completionDelivery: undefined }),
+        ] as unknown as OrchestrationV2ThreadProjection["subagents"];
         const missing = yield* service
           .taskStatus(scope, NodeId.make("node:mcp-ack-missing"))
           .pipe(Effect.flip);
         assert.equal(missing.code, "task_not_found");
-        assert.include(missing.message, "No delegated task with id node:mcp-ack-missing");
-        assert.include(missing.message, `${taskId} (Merge)`);
+        assert.equal(
+          missing.message,
+          `No delegated task with id node:mcp-ack-missing exists on thread ${parentThreadId}. ` +
+            "Unfinished delegated tasks on this thread: node:mcp-ack-lint (Lint). " +
+            `Finished, result not read yet: ${taskId} (Merge). ` +
+            "Finished: node:mcp-ack-docs (Docs).",
+        );
+
+        // Ten names at most across the groups; the rest are counted.
+        laterTasks = Array.from({ length: 11 }, (_, index) =>
+          later(`node:mcp-ack-run-${index}`, `Run ${index}`, {
+            status: "running",
+            completionDelivery: undefined,
+          }),
+        ) as unknown as OrchestrationV2ThreadProjection["subagents"];
+        const crowded = yield* service
+          .taskStatus(scope, NodeId.make("node:mcp-ack-missing"))
+          .pipe(Effect.flip);
+        assert.equal(
+          crowded.message,
+          `No delegated task with id node:mcp-ack-missing exists on thread ${parentThreadId}. ` +
+            "Unfinished delegated tasks on this thread: " +
+            Array.from(
+              { length: 10 },
+              (_, index) => `node:mcp-ack-run-${index} (Run ${index})`,
+            ).join(", ") +
+            ", 1 more. Finished, result not read yet: 1 more.",
+        );
       }).pipe(Effect.provide(layerOrchestratorService.pipe(Layer.provide(layerDependencies))));
     }),
   );
