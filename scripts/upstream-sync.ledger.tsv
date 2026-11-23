@@ -3430,3 +3430,4 @@ fd44bde571	take	taken; conflict was Onicode's OfficeArchive Map in place of JSZi
 302e94a3f1	take	taken; conflict was only Onicode's reportBugClick beside it, kept
 9292b03dc8	take	taken as is
 0a0389e517	take	taken as is; new contract field is optional, so older mobile builds still decode
+e0267fe880	take	taken as is; packaged macOS only, kills only an orphan whose audit token, parent (launchd) and boot match its record
