@@ -1163,12 +1163,9 @@ function UserMessageIntentMarker({
             {gt("Steer", { $context: "noun, a message that steers the running turn" })}
           </span>
           {unread ? (
-            <>
-              <HourglassIcon aria-hidden="true" className="size-3" />
-              <span className="sr-only">
-                {sentNow ? gt("Steer · sending now") : gt("Steer · waiting to be read")}
-              </span>
-            </>
+            <span className="sr-only">
+              {sentNow ? gt("Steer · sending now") : gt("Steer · waiting to be read")}
+            </span>
           ) : null}
         </TooltipTrigger>
         <TooltipPopup side="top">
@@ -1183,9 +1180,17 @@ function UserMessageIntentMarker({
               : gt("Steered the active turn")}
         </TooltipPopup>
       </Tooltip>
-      {unread && ctx.canOperateThread && ctx.threadRef !== null ? (
-        <SendSteerNowButton threadRef={ctx.threadRef} messageId={messageId} sent={sentNow} />
-      ) : null}
+      {/* Like a queued row: Send now while it can act, otherwise the wait it is in. */}
+      {!unread ? null : !sentNow && ctx.canOperateThread && ctx.threadRef !== null ? (
+        <SendSteerNowButton threadRef={ctx.threadRef} messageId={messageId} />
+      ) : (
+        <span aria-hidden="true" className="flex items-center gap-1 px-1">
+          <HourglassIcon className="size-3" />
+          {sentNow
+            ? gt("Sending now", { $context: "status of a steer the user pushed to the agent" })
+            : gt("Waiting", { $context: "status of a steer the agent has not read yet" })}
+        </span>
+      )}
     </div>
   );
 }
@@ -1193,11 +1198,9 @@ function UserMessageIntentMarker({
 function SendSteerNowButton({
   threadRef,
   messageId,
-  sent,
 }: {
   readonly threadRef: ScopedThreadRef;
   readonly messageId: MessageId;
-  readonly sent: boolean;
 }) {
   const gt = useGT();
   const sendSteerNow = useAtomCommand(threadEnvironment.sendSteerNow);
@@ -1244,7 +1247,7 @@ function SendSteerNowButton({
             variant="ghost-muted"
             // The marker row stays h-4 so the timeline doesn't shift when the steer is read.
             className="-my-1"
-            disabled={sending || sent}
+            disabled={sending}
             onClick={() => void send()}
           />
         }

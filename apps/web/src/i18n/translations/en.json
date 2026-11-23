@@ -4095,6 +4095,8 @@
   "1ccc41732907ca74": "Waiting for the agent to read this. It reads steers between steps, after a running command finishes.",
   "ae3f487ebde9db74": "Originally queued, then promoted to steer the active turn",
   "4f2ec8c81b4efb22": "Steered the active turn",
+  "8765fa49f0929a40": "Sending now",
+  "369d63856fdb556b": "Waiting",
   "08037b18bd65a4fa": "Send now",
   "a58ff5dc1427fd57": "Moves running commands and subagents to the background, or stops the current step, so the agent reads this now.",
   "d201a2c11fc08817": "Edit from here",
