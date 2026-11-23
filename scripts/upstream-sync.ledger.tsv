@@ -3486,3 +3486,4 @@ f58085a1c2	take	adapted: DocumentText sidecar VERSION 9 -> 10 so cached EPUB ski
 e2e8a49d97	take	adapted: kept Onicode's PDF link jump after the resize scroll in PdfViewer's layout effect
 9904124683	take	adapted: Onicode's Map archive; raw full-path checked before the decoded one, with a collision test row
 7182abeeaa	take	taken; test CONFLICT: upstream's new test file merged as a case in Onicode's existing translatable.test.ts
+1c9ccc7127	take	taken as is; Sidebar hook order untouched (change sits inside a stable callback), row-render test green; mobile already prefers the selected environment's copy
