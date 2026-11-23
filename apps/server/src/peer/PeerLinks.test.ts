@@ -37,6 +37,7 @@ import * as ServerSettings from "../serverSettings.ts";
 import {
   descriptorOf,
   layerLinkingEnvironment,
+  linkTo,
   servePeer,
   type ServedPeer,
 } from "./PeerLinks.testkit.ts";
@@ -431,6 +432,128 @@ it.effect("lists a peer asleep at every address as unreachable within one probe 
       yield* TestClock.adjust(Duration.seconds(3));
       const listed = yield* Fiber.join(listing);
       expect(listed.map((link) => link.status)).toEqual(["unreachable"]);
+    }),
+  ).pipe(Effect.provide(NodeHttpServer.layerTest)),
+);
+
+it.effect(
+  "forgets a link without waiting out a sleeping peer, which ends the session once it answers",
+  () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const b = yield* serveB(box);
+        const a = yield* makeA(laptop);
+        yield* linkTo(a.links, b);
+
+        yield* Ref.set(b.asleep, true);
+        const forgetting = yield* a.links.unlink(box.environmentId).pipe(Effect.forkScoped);
+        yield* Queue.take(b.unanswered);
+        yield* TestClock.adjust(Duration.seconds(2));
+        expect(yield* Fiber.join(forgetting)).toEqual({ removed: true, endedThere: false });
+        expect(yield* a.links.list).toEqual([]);
+        expect(yield* linkedSessions(b)).toHaveLength(1);
+
+        yield* b.wakeUp;
+        while ((yield* Queue.take(b.served)) !== "/oauth/mcp/revoke");
+        expect(yield* linkedSessions(b)).toEqual([]);
+      }),
+    ).pipe(Effect.provide(NodeHttpServer.layerTest)),
+);
+
+it.effect(
+  "still ends the session there when the caller stops waiting while the link is forgotten",
+  () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const b = yield* serveB(box);
+        const holdReads = yield* Ref.make(false);
+        const reading = yield* Deferred.make<void>();
+        const read = yield* Deferred.make<void>();
+        const held = Layer.effect(
+          ServerSecretStore.ServerSecretStore,
+          Effect.map(ServerSecretStore.make, (store) =>
+            ServerSecretStore.ServerSecretStore.of({
+              ...store,
+              get: (name) =>
+                Effect.when(
+                  Deferred.succeed(reading, undefined).pipe(Effect.andThen(Deferred.await(read))),
+                  Ref.get(holdReads),
+                ).pipe(Effect.andThen(store.get(name))),
+            }),
+          ),
+        );
+        const a = yield* makeA(laptop, held);
+        yield* linkTo(a.links, b);
+
+        yield* Ref.set(holdReads, true);
+        const forgetting = yield* a.links.unlink(box.environmentId).pipe(Effect.forkScoped);
+        yield* Deferred.await(reading);
+        // Started at once, so the interrupt is sent before the read is let through.
+        const stopped = yield* Effect.forkScoped(Fiber.interrupt(forgetting), {
+          startImmediately: true,
+        });
+        yield* Deferred.succeed(read, undefined);
+        yield* Fiber.join(stopped);
+        expect(yield* a.links.list).toEqual([]);
+        while ((yield* Queue.take(b.served)) !== "/oauth/mcp/revoke");
+        expect(yield* linkedSessions(b)).toEqual([]);
+      }),
+    ).pipe(Effect.provide(NodeHttpServer.layerTest)),
+);
+
+it.effect("sends the revocation to one address at a time, the next only after one refuses", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const b = yield* serveB(box);
+      const described = yield* HttpClient.get(`${b.url}/.well-known/onicode/environment`).pipe(
+        Effect.flatMap((response) => response.text),
+        Effect.provide(FetchHttpClient.layer),
+      );
+      // Other addresses of the same machine, each holding its revocation until the test answers.
+      const firstAnswered = yield* Ref.make(false);
+      const revokes = yield* Queue.unbounded<{
+        readonly at: string;
+        readonly afterFirstAnswered: boolean;
+        readonly answer: Deferred.Deferred<number>;
+      }>();
+      const holding = (at: string) =>
+        serveRaw((request) =>
+          request.url === "/oauth/mcp/revoke"
+            ? Effect.gen(function* () {
+                const answer = yield* Deferred.make<number>();
+                const afterFirstAnswered = yield* Ref.get(firstAnswered);
+                yield* Queue.offer(revokes, { at, afterFirstAnswered, answer });
+                return HttpServerResponse.empty({ status: yield* Deferred.await(answer) });
+              })
+            : Effect.succeed(
+                HttpServerResponse.text(described, { contentType: "application/json" }),
+              ),
+        );
+      const one = yield* holding("one");
+      const two = yield* holding("two");
+      const a = yield* makeA(laptop);
+      const pairing = yield* b.auth.issuePairingCredential();
+      yield* a.links.link({
+        url: b.url,
+        alternateUrls: [one, two],
+        pairingCode: pairing.credential,
+        access: "auto",
+      });
+      yield* Ref.set(b.asleep, true);
+
+      const forgetting = yield* a.links.unlink(box.environmentId).pipe(Effect.forkScoped);
+      const first = yield* Queue.take(revokes);
+      yield* Ref.set(firstAnswered, true);
+      yield* Deferred.succeed(first.answer, 500);
+      const second = yield* Queue.take(revokes);
+      expect(second).toMatchObject({ afterFirstAnswered: true });
+      expect(second.at).not.toBe(first.at);
+      yield* Deferred.succeed(second.answer, 200);
+      expect(yield* Fiber.join(forgetting)).toEqual({ removed: true, endedThere: true });
+      expect((yield* Ref.get(b.requested)).filter((url) => url === "/oauth/mcp/revoke")).toEqual(
+        [],
+      );
+      yield* b.wakeUp;
     }),
   ).pipe(Effect.provide(NodeHttpServer.layerTest)),
 );

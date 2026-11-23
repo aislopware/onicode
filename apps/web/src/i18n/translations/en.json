@@ -8183,7 +8183,7 @@
   "1e3fee7084791773": "Also link {target} back to {source}",
   "ea34a190b0bd804c": "Agents on {target} can then work on {source} too.",
   "974f8c65e8b5f492": "Forget {label}? Agents here stop working there, and their session on {label} ends too if it answers.",
-  "6cf9e3083b15614f": "{label} did not answer",
+  "8da431d6af22fa98": "Could not confirm the session on {label} ended",
   "e90acb900641b9f1": "Revoke \"Onicode · …\" in {label}''s Sharing & access to end the session there too.",
   "81c9796bf61b306a": "Could not forget the link",
   "8e3378b526d615f4": "Link several…",
