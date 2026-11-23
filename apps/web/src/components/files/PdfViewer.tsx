@@ -27,6 +27,7 @@ import {
   pdfPageScrollTop,
   pdfPageText,
   pdfPageWidth,
+  pdfResizedScrollTop,
   pdfRestoredScrollTop,
   PDF_MAX_ZOOM,
   PDF_MIN_ZOOM,
@@ -319,7 +320,7 @@ export default function PdfViewer(props: {
   const [zoom, setZoom] = useState(initialView.zoom);
   const [pageWidth, setPageWidth] = useState(612);
   const [viewport, setViewport] = useState({ width: 600, height: 800 });
-  const [scrollTop, setScrollTop] = useState(0);
+  const [scrolled, setScrolled] = useState({ top: 0, width: 0, pdf });
   const [query, setQuery] = useState("");
   const [matches, setMatches] = useState<number[]>([]);
   const [finding, setFinding] = useState(false);
@@ -406,6 +407,9 @@ export default function PdfViewer(props: {
   }, []);
   const { scale, width } = pdfPageWidth(viewport.width, pageWidth, zoom);
   const offsets = pdfPageOffsets(ratios, width);
+  // A new page width moves every page, so the place in view has a new offset before the DOM scrolls.
+  const resized = pdf !== null && scrolled.pdf === pdf && scrolled.width !== width;
+  const scrollTop = resized ? pdfResizedScrollTop(ratios, scrolled, width) : scrolled.top;
   const current = currentPdfPage(offsets, ratios.length, scrollTop);
   const visible = visiblePdfPages(ratios, offsets, scrollTop, viewport.height);
   // Stable callbacks let page canvases survive scroll and find updates.
@@ -443,7 +447,7 @@ export default function PdfViewer(props: {
       top: pdfRestoredScrollTop(ratios, width, initialView, savedPosition?.width),
       left: initialView.left,
     });
-    setScrollTop(node.scrollTop);
+    setScrolled({ top: node.scrollTop, width, pdf });
     saveView(node);
   });
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- Restore the saved PDF scroll position after the loaded document's page layout commits.
@@ -478,7 +482,7 @@ export default function PdfViewer(props: {
     };
     setZoom(value);
   };
-  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- Restore the zoom anchor or follow a link once the new width or page size has committed to page layout.
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- Restore the place in view after a zoom or resize, or follow a link, once the new width or page size has committed to page layout.
   useLayoutEffect(() => {
     const anchor = zoomAnchor.current;
     const jump = linkJump.current;
@@ -489,7 +493,7 @@ export default function PdfViewer(props: {
       node.scrollTo({
         top: offsets[anchor.page]! - 16 + (anchor.offset * width) / anchor.width,
       });
-    }
+    } else if (resized) node.scrollTo({ top: scrollTop });
     if (jump) {
       // `top` is a point within the page, in page widths below its top edge.
       const target =
@@ -665,8 +669,7 @@ export default function PdfViewer(props: {
         tabIndex={0}
         className="relative min-h-0 min-w-0 w-full flex-1 overflow-auto scrollbar-gutter-stable bg-muted"
         onScroll={(event) => {
-          const top = event.currentTarget.scrollTop;
-          setScrollTop(top);
+          setScrolled({ top: event.currentTarget.scrollTop, width, pdf });
           saveView(event.currentTarget);
         }}
         onKeyDown={(event) => {
