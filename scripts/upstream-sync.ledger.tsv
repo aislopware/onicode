@@ -3400,3 +3400,4 @@ f02a14e065	take	fix(server): settling no longer ends background work the agent i
 f0d160ff1e	take	fix(server): preserve spaces in workflow store keys and prefixes
 f4c38ca3e7	take	fix(web): remote open uses the environment's saved SSH route; conflicts: Onicode has no parseHostname/isDesktopRenderer or Relay targets, so only firstSshTarget came in and the new test case uses a paired (Bearer) target
 43d9d67140	take	fix(web): an IME Escape no longer clears a typed font family
+face82e8b9	take	fix(web): caret lands after closing Markdown markers after a paste
