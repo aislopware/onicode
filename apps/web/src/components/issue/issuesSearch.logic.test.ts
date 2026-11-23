@@ -111,7 +111,7 @@ describe("issueListTargets", () => {
     expect(issueSurfaceTargetFromSearch({ ...search, key: undefined })).toBeNull();
   });
 
-  it("names the project's host on a link that left it out, and waits for the project", () => {
+  it("names the project's host on a link that left it out, and waits only while projects load", () => {
     const search = issuesSearchFromUrl({
       selectedEnvironmentId: "server",
       selectedProjectId: "web",
@@ -130,8 +130,10 @@ describe("issueListTargets", () => {
         name: "web",
       },
     } as unknown as EnvironmentProject;
-    expect(selectedIssueHost(search, [web])).toBe("code.acme.test");
-    expect(selectedIssueHost(search, [])).toBeNull();
+    expect(selectedIssueHost(search, [web], false)).toBe("code.acme.test");
+    expect(selectedIssueHost(search, [], false)).toBeNull();
+    // A link to a project no loaded environment has still opens, without a host.
+    expect(selectedIssueHost(search, [], true)).toBeUndefined();
   });
 });
 
