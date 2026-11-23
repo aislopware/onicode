@@ -3387,3 +3387,4 @@ ba588ef663	take	main.tsx keeps only the layout tracker (no cloud/Clerk imports);
 f00893a512	take	adopted upstream's trimAsciiWhitespace refname read over Onicode's newline-only strip (same result for valid refs, one shared helper); kept Onicode's review mergeBase and annotateEncoded MCP description; dropped agentFeedback import
 135c78a278	take	taken as is
 c8f8ad17ac	take	conflict: Onicode shares rtfCodePage between \ansicpg and \cpg; added 0 and 866 there instead of upstream's inline map
+0d2d6a0233	take	conflict: kept Onicode's composerContextReferences import beside upstream's; scenario ported on the desktop (WEB) target
