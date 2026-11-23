@@ -324,6 +324,8 @@ Third}`;
     for (const [rtf, expected] of [
       [String.raw`{\rtf1\ansi\ansicpg0 Caf\'e9}`, "<p>Café</p>"],
       [String.raw`{\rtf1\ansi\ansicpg866 \'8f\'e0\'a8\'a2\'a5\'e2}`, "<p>Привет</p>"],
+      // A font's \cpg0 is the system default, so its \fcharset still decides.
+      [String.raw`{\rtf1\ansi{\fonttbl{\f0\fcharset204\cpg0 A;}}\f0 \'cf\'f0\'e8}`, "<p>При</p>"],
     ] as const) {
       const decoded = openRtf(bytes(rtf));
       if (decoded.type !== "document") throw new Error("Expected document");

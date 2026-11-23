@@ -707,7 +707,7 @@ export function openRtf(bytes: ArrayBuffer): OfficeWorkerResult {
           } as Record<number, string>
         )[arg];
         if (label) fonts.set(state.font, new TextDecoder(label));
-      } else if (word === "cpg" && state.fontTable) {
+      } else if (word === "cpg" && state.fontTable && arg !== 0) {
         try {
           fontCodePages.set(state.font, new TextDecoder(rtfCodePage(arg)));
         } catch {
