@@ -308,6 +308,11 @@ it("keeps a followed link's target at the top when the pane narrows", async () =
         Math.abs(canvas.getBoundingClientRect().top - region.getBoundingClientRect().top),
       ).toBeLessThanOrEqual(1);
     });
+    // Releasing the link and rendering again leaves the view where it is.
+    region.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    await screen.getByRole("searchbox", { name: "Find in PDF" }).fill("zz");
+    await expect.element(screen.getByRole("searchbox", { name: "Find in PDF" })).toHaveValue("zz");
+    expect(region.scrollTop).toBe(16);
   } finally {
     URL.revokeObjectURL(url);
   }
