@@ -192,7 +192,7 @@ function codexMultiFilePatch(
       if (kind.type === "update" && diff.startsWith("--- ")) return `${git}${diff}`;
       let hunks = diff;
       // Codex records added and deleted files as their raw contents.
-      if (kind.type !== "update") {
+      if (kind.type !== "update" && diff !== "") {
         const lines = diff.split("\n");
         const hasFinalNewline = diff.endsWith("\n");
         if (hasFinalNewline) lines.pop();

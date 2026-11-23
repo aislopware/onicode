@@ -10,7 +10,9 @@ function toolCallPatch(item: Pick<FileChange, "diffStr" | "fileName" | "changes"
   let patch = item.diffStr;
   if (!patch) return patch;
   const change = item.changes?.[0];
-  const rawFileOperation = change?.operation === "add" || change?.operation === "delete";
+  // Raw contents are one file's; a multi-file change is a complete patch or provider text.
+  const rawFileOperation =
+    item.changes?.length === 1 && (change?.operation === "add" || change?.operation === "delete");
   if (patch.startsWith("diff --git ") || patch.startsWith("--- ")) {
     if (!rawFileOperation) return patch;
     const parsed = getRenderablePatch(patch, "tool-call-format");

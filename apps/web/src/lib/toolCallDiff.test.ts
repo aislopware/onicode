@@ -179,6 +179,35 @@ describe("toolCallDiff", () => {
       expect(
         toolCallDiff({ fileName: "a.ts", diffStr, changes: [{ operation, path: "a.ts" }] }).patch,
       ).toBe(diffStr);
+      // A multi-file patch whose first file is added or deleted, with a hunkless rename after it.
+      const withRename = `${diffStr}diff --git "a/c.ts" "b/d.ts"\n--- "a/c.ts"\n+++ "b/d.ts"\n`;
+      const patch = toolCallDiff({
+        fileName: "a.ts",
+        diffStr: withRename,
+        changes: [
+          { operation, path: "a.ts" },
+          { operation: "update", oldPath: "c.ts", path: "d.ts" },
+        ],
+      }).patch;
+      expect(patch).toBe(withRename);
+      const rendered = getRenderablePatch(patch);
+      if (rendered?.kind !== "files") throw new Error("Expected a file diff");
+      expect(rendered.files.map((file) => resolveFileDiffPath(file))).toEqual(["a.ts", "d.ts"]);
+      expect(rendered.files.map((file) => file.additionLines.length)).toEqual([
+        operation === "add" ? 1 : 0,
+        0,
+      ]);
+      // A multi-file change recorded as provider text is not one file's contents.
+      expect(
+        toolCallDiff({
+          fileName: "a.ts",
+          diffStr: "Updated 2 files",
+          changes: [
+            { operation, path: "a.ts" },
+            { operation: "update", path: "b.ts" },
+          ],
+        }).patch,
+      ).toBe("Updated 2 files");
     }
     for (const diffStr of [
       undefined,
