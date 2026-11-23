@@ -5,6 +5,7 @@ import {
 import { markdownTaskMarkerOffset } from "@onicode/shared/markdownTaskList";
 import type { ReactNode } from "react";
 import { View } from "react-native";
+import { StackActions, useNavigation } from "@react-navigation/native";
 import { useProject } from "../../state/entities";
 import { pullRequestTarget, type PullRequestParams } from "./usePullRequestDiff";
 import {
@@ -25,6 +26,7 @@ import {
 import { nativePullRequestMarkdown } from "./pullRequestAutolinks";
 
 import { useOpenPullRequest } from "../../native/useOpenPullRequest";
+import { pullRequestFileLinkRoute } from "../../lib/pullRequestNavigation";
 import { SelectableMarkdownText } from "../../native/SelectableMarkdownText";
 import { useMarkdownPreviewStyles } from "../files/FileMarkdownPreview";
 import { markdownImageSources } from "../../lib/markdownImageSources";
@@ -46,10 +48,20 @@ const AutolinksContext = createContext<((text: string) => ReadonlyArray<Referenc
 const LineBreaksContext = createContext(false);
 const GithubEmojiContext = createContext(false);
 const ChangeRequestUrlContext = createContext<string | null>(null);
+const FileLinkCheckoutContext = createContext<Parameters<typeof pullRequestFileLinkRoute>[1]>(null);
 
 export function PullRequestMarkdownRepository(props: {
   /** The change request the markdown belongs to, whose host decides what its text links. */
-  readonly changeRequest: { readonly provider: string; readonly url: string } | null | undefined;
+  readonly changeRequest:
+    | {
+        readonly provider: string;
+        readonly url: string;
+        /** The checkout the server read it through, where its file links open. */
+        readonly workspaceRoot?: string | undefined;
+        readonly borrowedCheckout?: boolean | undefined;
+      }
+    | null
+    | undefined;
   readonly params: PullRequestParams;
   readonly children: ReactNode;
 }) {
@@ -69,12 +81,23 @@ export function PullRequestMarkdownRepository(props: {
   const media = cwd
     ? { environmentId: target.environmentId, cwd, repository: target.input.repository }
     : null;
+  const workspaceRoot = props.changeRequest?.workspaceRoot;
+  const fileLinkCheckout =
+    workspaceRoot === undefined
+      ? null
+      : {
+          environmentId: props.params.environmentId,
+          workspaceRoot,
+          borrowedCheckout: props.changeRequest?.borrowedCheckout,
+        };
   return (
     <AutolinksContext value={autolinks}>
       <GithubEmojiContext value={provider === "github" || provider === "gitlab"}>
         <LineBreaksContext value={lineBreaks}>
           <ChangeRequestUrlContext value={url ?? null}>
-            <PullRequestMediaContext value={media}>{props.children}</PullRequestMediaContext>
+            <FileLinkCheckoutContext value={fileLinkCheckout}>
+              <PullRequestMediaContext value={media}>{props.children}</PullRequestMediaContext>
+            </FileLinkCheckoutContext>
           </ChangeRequestUrlContext>
         </LineBreaksContext>
       </GithubEmojiContext>
@@ -233,8 +256,12 @@ function PullRequestMarkdownContent(props: {
   const resolveMediaUrl = (href: string) =>
     changeRequestUrl ? resolveChangeRequestMediaUrl(href, changeRequestUrl) : href;
   const openPullRequest = useOpenPullRequest();
+  const fileLinkCheckout = useContext(FileLinkCheckoutContext);
+  const navigation = useNavigation();
   const openLink = (href: string) => {
-    void openPullRequest(href);
+    const file = pullRequestFileLinkRoute(href, fileLinkCheckout);
+    if (file === null) void openPullRequest(href);
+    else navigation.dispatch(StackActions.push("NewTaskFile", file));
   };
   const [preview, setPreview] = useState<FilePreviewSource | null>(null);
   const renderImage: MarkdownImageRenderer = (image) => (

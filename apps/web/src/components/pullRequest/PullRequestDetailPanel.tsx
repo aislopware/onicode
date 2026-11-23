@@ -298,7 +298,7 @@ function resolvePullRequestReference(
 }
 
 function pullRequestMarkdownContext(
-  detail: Pick<PullRequestDetail, "provider" | "url" | "repository"> | null,
+  detail: Pick<PullRequestDetail, "provider" | "url" | "repository" | "borrowedCheckout"> | null,
   threadRef: ScopedThreadRef | null,
 ) {
   return {
@@ -306,6 +306,7 @@ function pullRequestMarkdownContext(
     lineBreaks: sourceControlClients.find(detail?.provider ?? "")?.hardLineBreaks ?? false,
     threadRef,
     repository: detail?.repository ?? null,
+    borrowedCheckout: detail?.borrowedCheckout === true,
   };
 }
 

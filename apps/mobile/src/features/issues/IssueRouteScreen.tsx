@@ -1,20 +1,29 @@
 import { RegistryContext, useAtomValue } from "@effect/atom-react";
-import { StackActions, useNavigation, type StaticScreenProps } from "@react-navigation/native";
+import {
+  StackActions,
+  useFocusEffect,
+  useNavigation,
+  type StaticScreenProps,
+} from "@react-navigation/native";
 import {
   issueEventSentence,
   linksChangeRequestsOnItsHost,
 } from "@onicode/client-runtime/issue-presentation";
+import { scopeProjectRef } from "@onicode/client-runtime/environment";
+import { withProjectIssueHost } from "@onicode/client-runtime/issue-links";
 import { createIssueCommentPager } from "@onicode/client-runtime/state/issues";
 import { threadTitleText } from "@onicode/client-runtime/operations";
-import type {
-  IssueComment,
-  IssueDetail,
-  IssueEvent,
-  IssueEventReference,
-  IssueLinkedPullRequest,
-  IssueReaction,
-  IssueState,
-  IssueSummary,
+import {
+  EnvironmentId,
+  ProjectId,
+  type IssueComment,
+  type IssueDetail,
+  type IssueEvent,
+  type IssueEventReference,
+  type IssueLinkedPullRequest,
+  type IssueReaction,
+  type IssueState,
+  type IssueSummary,
 } from "@onicode/contracts";
 import { AsyncResult } from "effect/reactivity";
 import { T, useGT, useMessages, Var } from "gt-react-native";
@@ -44,7 +53,7 @@ import { NativeLayoutObserver } from "../../native/NativeLayoutObserver";
 import { useNativeWorkspaceColumnsSupported } from "../../native/NativeWorkspaceColumns";
 import { useDeviceType, useNativeColumnLayoutMetrics } from "../../native/native-layout-metrics";
 import { NativeScrollView } from "../../native/NativeScrollViewMarker";
-import { useEnvironmentServerConfig } from "../../state/entities";
+import { useEnvironmentServerConfig, useProject } from "../../state/entities";
 import { issueEnvironment, refreshIssueLists } from "../../state/issues";
 import { useEnvironmentQuery } from "../../state/query";
 import { useLinkedThreads } from "../../state/use-linked-threads";
@@ -526,9 +535,26 @@ function IssueLoadingBody() {
 
 // Selecting another issue reuses this route, so the draft, older comments and errors are keyed.
 export function IssueRouteScreen({ route }: StaticScreenProps<IssueParams>) {
+  const navigation = useNavigation();
+  const project = useProject(
+    scopeProjectRef(
+      EnvironmentId.make(route.params.environmentId),
+      ProjectId.make(route.params.projectId),
+    ),
+  );
+  // A link that left the host out is the issue a row or a link with the host opens.
+  const params = withProjectIssueHost(route.params, project);
+  const resolvedHost = params.host;
+  const routeHost = route.params.host;
+  // The Issues list marks its row from the route. Only while focused: a placeholder screen
+  // throws on any navigation action.
+  useFocusEffect(() => {
+    if (resolvedHost !== undefined && routeHost === undefined)
+      navigation.setParams({ host: resolvedHost });
+  });
   // Another workspace's issue under the same key is another issue, with its own comments.
-  const key = `${issueParamsKey(route.params)}\u0000${route.params.workspace ?? ""}`;
-  return <IssueRoute key={key} params={route.params} />;
+  const key = `${issueParamsKey(params)}\u0000${params.workspace ?? ""}`;
+  return <IssueRoute key={key} params={params} />;
 }
 
 function IssueRoute({ params }: { readonly params: IssueParams }) {

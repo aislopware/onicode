@@ -7,7 +7,11 @@ import {
 } from "@onicode/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 
-import { createIssueLinkResolver, resolveIssueLinkTarget } from "./issueLinks.ts";
+import {
+  createIssueLinkResolver,
+  resolveIssueLinkTarget,
+  withProjectIssueHost,
+} from "./issueLinks.ts";
 import { sourceControlClients } from "./sourceControlClients.ts";
 
 const project = (id: string, repository: string, origin?: string) =>
@@ -185,6 +189,45 @@ describe("resolveIssueLinkTarget", () => {
         projects,
       }),
     ).toMatchObject({ ref: { scope: "acme/web", key: "7" }, namesPlace: true });
+  });
+});
+
+describe("withProjectIssueHost", () => {
+  it("names the host a link would, so a host-less reference keys as the same issue", () => {
+    const enterprise = {
+      id: ProjectId.make("ghe"),
+      environmentId: EnvironmentId.make("env"),
+      repositoryIdentity: {
+        canonicalKey: "code.acme.test/acme/web",
+        provider: SourceControlProviderKind.make("github"),
+        displayName: "acme/web",
+        owner: "acme",
+        name: "web",
+      },
+    } as never;
+    const ref: { tracker: string; host?: string; scope: string; key: string } = {
+      tracker: "github",
+      scope: "acme/web",
+      key: "7",
+    };
+    const linked = resolveIssueLinkTarget({
+      url: "https://code.acme.test/acme/web/issues/7",
+      projects: [enterprise],
+    });
+    expect(withProjectIssueHost(ref, enterprise).host).toBe(linked?.ref.host);
+    expect(withProjectIssueHost(ref, project("p1", "acme/web"))).toEqual({
+      ...ref,
+      host: "github.com",
+    });
+    // A named host stays: a fork's upstream can be on another server.
+    expect(withProjectIssueHost({ ...ref, host: "github.com" }, enterprise).host).toBe(
+      "github.com",
+    );
+    expect(withProjectIssueHost({ ...ref, tracker: "linear" }, enterprise)).toEqual({
+      ...ref,
+      tracker: "linear",
+    });
+    expect(withProjectIssueHost(ref, null)).toEqual(ref);
   });
 });
 

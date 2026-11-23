@@ -34,6 +34,21 @@ function projectIssueBindings(project: LinkProject) {
   return bindings;
 }
 
+/**
+ * Names the host a host-less git-host reference is read on, the project's own as the server's
+ * `IssueService.requireProject` picks it, so one issue keys the same whether its link named the
+ * host or not. A named host is kept: a fork's upstream can live elsewhere.
+ */
+export function withProjectIssueHost<
+  Ref extends { readonly tracker: string; readonly host?: string | undefined },
+>(ref: Ref, project: LinkProject | null | undefined): Ref {
+  if (ref.host !== undefined || project == null) return ref;
+  const host = projectIssueBindings(project).find(
+    (binding) => binding.tracker === ref.tracker,
+  )?.host;
+  return host === undefined ? ref : { ...ref, host };
+}
+
 function linkAuthority(url: string): string | null {
   try {
     return new URL(url).host.toLowerCase();

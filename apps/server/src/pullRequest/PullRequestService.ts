@@ -363,6 +363,8 @@ export interface SupportedProject {
   /** Unlike Azure repository names, remotes are unique across an organization. */
   readonly remote: string;
   readonly repositoryKey: string | null;
+  /** The checkout reads another repository's change request; its files are not that one's. */
+  readonly borrowedCheckout?: true;
 }
 
 interface WorkspaceProjects {
@@ -1119,6 +1121,7 @@ export const make = Effect.gen(function* () {
                         `https://${host}/${repository}`,
                       ),
                       repositoryKey: null,
+                      borrowedCheckout: true,
                     };
                   }
                 }
@@ -1151,6 +1154,7 @@ export const make = Effect.gen(function* () {
                     remote: sourceControlDefinitions.repositoryKeyFromRemote(
                       `https://${host}/${repository}`,
                     ),
+                    borrowedCheckout: true,
                   },
             );
           }),
@@ -1950,6 +1954,7 @@ export const make = Effect.gen(function* () {
             projectId: project.project.id,
             projectTitle: project.project.title,
             workspaceRoot: project.project.workspaceRoot,
+            ...(project.borrowedCheckout ? { borrowedCheckout: true as const } : {}),
             repository: project.repository,
             number: changeRequest.number,
             title: changeRequest.title,

@@ -652,6 +652,8 @@ export const PullRequestDetail = Schema.Struct({
   projectId: ProjectId,
   projectTitle: TrimmedNonEmptyString,
   workspaceRoot: TrimmedNonEmptyString,
+  /** `workspaceRoot` is a checkout of another repository that only lends its credentials. */
+  borrowedCheckout: Schema.optional(Schema.Boolean),
   repository: TrimmedNonEmptyString,
   number: PositiveInt,
   title: TrimmedNonEmptyString,

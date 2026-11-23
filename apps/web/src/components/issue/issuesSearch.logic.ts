@@ -1,3 +1,4 @@
+import { withProjectIssueHost } from "@onicode/client-runtime/issue-links";
 import { pullRequestFilterProjects } from "@onicode/client-runtime/pull-request-project-filter";
 import type { EnvironmentProject } from "@onicode/client-runtime/state/models";
 import {
@@ -59,6 +60,29 @@ export const issuesSearchFromUrl = (raw: Record<string, unknown>): IssuesSearch 
   key: text(raw.key),
   selectedIssueUrl: text(raw.selectedIssueUrl),
 });
+
+/**
+ * The host a link into the page reads on: one that left it out reads on its project's. Null
+ * while that project is not known yet, so the tab opens once, under the id a row would give it.
+ */
+export const selectedIssueHost = (
+  search: Pick<
+    IssuesSearch,
+    "selectedEnvironmentId" | "selectedProjectId" | "selectedHost" | "tracker"
+  >,
+  projects: ReadonlyArray<EnvironmentProject>,
+): string | undefined | null => {
+  const { selectedHost, tracker } = search;
+  if (selectedHost !== undefined || tracker === undefined) return selectedHost;
+  const project = projects.find(
+    (candidate) =>
+      candidate.id === search.selectedProjectId &&
+      (search.selectedEnvironmentId === undefined ||
+        candidate.environmentId === search.selectedEnvironmentId),
+  );
+  if (project === undefined) return null;
+  return withProjectIssueHost<{ tracker: string; host?: string }>({ tracker }, project).host;
+};
 
 /** The panel tab a link into the page names, before any row was pressed. */
 export const issueSurfaceTargetFromSearch = (

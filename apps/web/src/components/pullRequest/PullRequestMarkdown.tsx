@@ -26,6 +26,8 @@ export const PullRequestMarkdownContext = createContext<{
   threadRef: ScopedThreadRef | null;
   /** The change request's `owner/name`, which can differ from the checkout the body renders in. */
   repository: string | null;
+  /** The checkout holds another repository's files, so paths in the body name none of them. */
+  borrowedCheckout?: boolean;
 } | null>(null);
 
 /** The list page panel that links in thread-less markdown open in; the Issues page provides its own. */
@@ -125,13 +127,13 @@ function PullRequestBodySegmentView({
     return (
       <ChatMarkdown
         text={segment.kind === "markdown" ? segment.text : `![](<${segment.url}>)`}
-        cwd={cwd}
+        cwd={context?.borrowedCheckout === true ? undefined : cwd}
         threadRef={threadRef}
         pullRequestPanelRef={threadRef ?? listPanelRef}
         environmentId={environmentId}
         {...(context ? { extensions: context.extensions } : {})}
         lineBreaks={lineBreaks}
-        sourceControlMedia
+        sourceControlMedia={cwd}
         sourceControlMediaRepository={repository}
         onTaskListChange={
           onTaskListChange && segment.kind === "markdown"

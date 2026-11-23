@@ -2496,6 +2496,35 @@ it.effect("routes a hosted reference to another repository through a project on 
   }),
 );
 
+it.effect("marks a detail read through another repository's checkout as borrowed", () =>
+  Effect.gen(function* () {
+    const service = yield* makeService({
+      projects: [
+        project({ id: "frontend", title: "web", workspaceRoot: "/web", repository: "acme/web" }),
+      ],
+      providers: [
+        fakePullRequestProvider(SourceControlProviderKind.make("github"), {
+          getChangeRequest: () => Effect.succeed(hostedChangeRequest("See src/index.ts")),
+        }),
+      ],
+    });
+    const own = yield* service.detail({
+      projectId: "frontend" as ProjectId,
+      repository: "acme/web",
+      number: 1,
+    });
+    assert.strictEqual(own.borrowedCheckout, undefined);
+    const other = yield* service.detail({
+      projectId: "frontend" as ProjectId,
+      host: "github.com",
+      repository: "acme/api",
+      number: 1,
+    });
+    assert.strictEqual(other.workspaceRoot, "/web");
+    assert.strictEqual(other.borrowedCheckout, true);
+  }),
+);
+
 it.effect("an uncached summary reaches the host despite a cached read in another project", () =>
   Effect.gen(function* () {
     const caller = project({

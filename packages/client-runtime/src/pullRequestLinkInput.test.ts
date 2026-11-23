@@ -1,8 +1,13 @@
+import { SourceControlProviderKind } from "@onicode/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { sourceControlClients } from "./sourceControlClients.ts";
 
-import { parsePullRequestReference, resolveLinkPullRequestInput } from "./pullRequestLinkInput.ts";
+import {
+  parsePullRequestReference,
+  resolveLinkPullRequestInput,
+  withProjectChangeRequestHost,
+} from "./pullRequestLinkInput.ts";
 
 const changeRequestWebUrl = (kind: string, host: string, repository: string, number: number) =>
   sourceControlClients.get(kind).changeRequestUrl({ host, repository, number });
@@ -203,5 +208,30 @@ describe("parsePullRequestReference", () => {
 
   it("rejects non-pull-request input", () => {
     expect(parsePullRequestReference("feature/my-branch")).toBeNull();
+  });
+});
+
+describe("withProjectChangeRequestHost", () => {
+  it("names the project's host on a reference to its own repository only", () => {
+    const identity = {
+      canonicalKey: "code.acme.test/acme/web",
+      provider: SourceControlProviderKind.make("github"),
+      displayName: "acme/web",
+      owner: "acme",
+      name: "web",
+    } as never;
+    const ref: { repository: string; number: number; host?: string } = {
+      repository: "Acme/Web",
+      number: 7,
+    };
+    expect(withProjectChangeRequestHost(ref, identity)).toEqual({ ...ref, host: "code.acme.test" });
+    // The server refuses a host-less reference to another repository; naming a host would lend it.
+    expect(withProjectChangeRequestHost({ ...ref, repository: "acme/api" }, identity)).toEqual({
+      ...ref,
+      repository: "acme/api",
+    });
+    expect(withProjectChangeRequestHost({ ...ref, host: "github.com" }, identity).host).toBe(
+      "github.com",
+    );
   });
 });

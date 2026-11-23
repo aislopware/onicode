@@ -10,6 +10,7 @@ import {
   issueRowHidden,
   issueSurfaceTargetFromSearch,
   issuesSearchFromUrl,
+  selectedIssueHost,
 } from "./issuesSearch.logic";
 
 describe("issuesSearchFromUrl", () => {
@@ -108,6 +109,29 @@ describe("issueListTargets", () => {
       url,
     });
     expect(issueSurfaceTargetFromSearch({ ...search, key: undefined })).toBeNull();
+  });
+
+  it("names the project's host on a link that left it out, and waits for the project", () => {
+    const search = issuesSearchFromUrl({
+      selectedEnvironmentId: "server",
+      selectedProjectId: "web",
+      tracker: "github",
+      scope: "acme/web",
+      key: "7",
+    });
+    const web = {
+      id: ProjectId.make("web"),
+      environmentId: EnvironmentId.make("server"),
+      repositoryIdentity: {
+        canonicalKey: "code.acme.test/acme/web",
+        provider: SourceControlProviderKind.make("github"),
+        displayName: "acme/web",
+        owner: "acme",
+        name: "web",
+      },
+    } as unknown as EnvironmentProject;
+    expect(selectedIssueHost(search, [web])).toBe("code.acme.test");
+    expect(selectedIssueHost(search, [])).toBeNull();
   });
 });
 

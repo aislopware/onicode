@@ -1,5 +1,6 @@
 import type { EnvironmentConnectionPhase } from "@onicode/client-runtime/connection";
 import { sourceControlClients } from "@onicode/client-runtime/source-control-clients";
+import { withProjectChangeRequestHost } from "@onicode/client-runtime/pull-request-link-input";
 import { parsePullRequestQuery } from "@onicode/client-runtime/pull-request-query";
 import {
   type EnvironmentId,
@@ -159,16 +160,20 @@ export function usePullRequestScope(
     selectedLink.repository.toLowerCase() === search.repository?.toLowerCase()
       ? search.selectedUrl
       : undefined;
+  // A link that left the host out opens the tab a row or a link with the host opens.
   const linkedSelection =
     search.repository && search.number && selectedProject
-      ? {
-          environmentId: selectedProject.environmentId,
-          repository: search.repository,
-          number: search.number,
-          projectId: selectedProject.id,
-          ...(selectedUrl ? { url: selectedUrl, revealUrl: selectedUrl } : {}),
-          ...(selectedHost ? { host: selectedHost } : {}),
-        }
+      ? withProjectChangeRequestHost(
+          {
+            environmentId: selectedProject.environmentId,
+            repository: search.repository,
+            number: search.number,
+            projectId: selectedProject.id,
+            ...(selectedUrl ? { url: selectedUrl, revealUrl: selectedUrl } : {}),
+            ...(selectedHost ? { host: selectedHost } : {}),
+          },
+          selectedProject.repositoryIdentity,
+        )
       : null;
   const expectedHosts = (() => {
     const byHost = new Map<string, PullRequestExpectedHost>();
