@@ -624,15 +624,17 @@ export function openRtf(bytes: ArrayBuffer): OfficeWorkerResult {
   const hidden = () => state.skip || state.deleted || state.hiddenText;
   const encoded = new Uint8Array(bytes.byteLength);
   let encodedLength = 0;
+  const decodeBytes = () => {
+    if (!encodedLength) return;
+    run += escape(
+      (fontCodePages.get(state.font) ?? fonts.get(state.font) ?? state.decoder).decode(
+        encoded.subarray(0, encodedLength),
+      ),
+    );
+    encodedLength = 0;
+  };
   const flush = () => {
-    if (encodedLength) {
-      run += escape(
-        (fontCodePages.get(state.font) ?? fonts.get(state.font) ?? state.decoder).decode(
-          encoded.subarray(0, encodedLength),
-        ),
-      );
-      encodedLength = 0;
-    }
+    decodeBytes();
     if (completedLength + html.length + run.length > 8 * 1024 * 1024)
       throw new PreviewError({ code: "rtf-too-much-content" });
     if (!run) return;
@@ -649,6 +651,7 @@ export function openRtf(bytes: ArrayBuffer): OfficeWorkerResult {
       return;
     }
     if (skip) return;
+    decodeBytes();
     run += escape(value);
     if (completedLength + html.length + run.length > 8 * 1024 * 1024)
       throw new PreviewError({ code: "rtf-too-much-content" });
@@ -685,7 +688,9 @@ export function openRtf(bytes: ArrayBuffer): OfficeWorkerResult {
         emitByte(next.charCodeAt(0));
         continue;
       }
-      flush();
+      // \u, \uc and skipped fallbacks change no formatting, so a character written as two \u
+      // words stays in one run.
+      if (fallback === 0 && !/^uc?-?\d/.test(source.slice(i, i + 4))) flush();
       if (next === "*") {
         i++;
         if (fallback > 0) fallback--;
@@ -805,7 +810,10 @@ export function openRtf(bytes: ArrayBuffer): OfficeWorkerResult {
         fallback = 0;
         // TextEdit writes a soft line break as U+2028, where Chromium does not break the line.
         if (arg !== 0x2028) emit(String.fromCharCode(arg < 0 ? arg + 65536 : arg));
-        else if (!hidden()) html += "<br>";
+        else if (!hidden()) {
+          flush();
+          html += "<br>";
+        }
         fallback = state.uc;
       } else if (!hidden() && word === "page") finishPage();
       else if (word === "cell") emit("\t", state.skip);

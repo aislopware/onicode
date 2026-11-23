@@ -3496,3 +3496,4 @@ a369642c1c	take	taken as is; test conflict kept both tests
 da7d298fae	take	taken as is
 e166aa1db1	take	taken as is
 e86a9c5169	take	adapted: odfHtml keeps Onicode's OfficeArchive and the test its Map archive
+732c7126c1	take	kept Onicode's escaped-character bytes, control-symbol fallback and \cpg decoder order: they cover upstream's fallback line break and keep double-byte trail bytes
