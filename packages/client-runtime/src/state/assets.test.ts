@@ -1,6 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
 import {
   type AssetCreateUrlResult,
+  AssetPreviewTypeValidationError,
   type AssetResource,
   AssetWorkspaceAssetNotFoundError,
   EnvironmentId,
@@ -28,6 +29,7 @@ import { resolveMediaSource } from "../mediaSource.ts";
 import type * as RpcSession from "../rpc/session.ts";
 import {
   ASSET_URL_MAX_IN_FLIGHT,
+  assetUrlStateFromResult,
   createAssetEnvironmentAtoms,
   createProjectFaviconUrlAtomFamily,
   makeRevisionedAssetUrlFamily,
@@ -183,6 +185,28 @@ const makeAssetUrlHarness = Effect.fn("TestAssetUrl.makeHarness")(function* (
 describe("asset URL requests", () => {
   const remote = EnvironmentId.make("asset-remote");
   const other = EnvironmentId.make("asset-other");
+
+  it("tells a type the server will not serve apart from other failures", () => {
+    const resource: AssetResource = {
+      _tag: "draft-workspace-file",
+      cwd: "/repo",
+      path: "/repo/a.log",
+    };
+    expect(
+      assetUrlStateFromResult(
+        AsyncResult.failure(Cause.fail(new AssetPreviewTypeValidationError({ resource }))),
+        "http://127.0.0.1",
+      ),
+    ).toEqual({ _tag: "Failure", reason: "preview-type" });
+    for (const cause of [
+      Cause.die("offline"),
+      Cause.fail(new AssetWorkspaceAssetNotFoundError({ resource })),
+    ]) {
+      expect(assetUrlStateFromResult(AsyncResult.failure(cause), "http://127.0.0.1")).toEqual({
+        _tag: "Failure",
+      });
+    }
+  });
 
   it.effect("keeps a thread of images from flooding one environment with requests", () =>
     Effect.gen(function* () {

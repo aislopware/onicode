@@ -40,7 +40,13 @@ async function read(start: number, end: number) {
     if (part.start >= end) break;
     parts.push(part.blob.slice(Math.max(0, start - part.start), end - part.start));
   }
-  return new TextDecoder("utf-8", { fatal: true }).decode(await new Blob(parts).arrayBuffer());
+  const bytes = await new Blob(parts).arrayBuffer();
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    // Invalid UTF-8 past the indexed prefix; the decoder's own message is untranslated.
+    throw new PreviewError({ code: "text-binary" });
+  }
 }
 async function page(index: number) {
   const start = index * PREVIEW_PAGE_ROWS;

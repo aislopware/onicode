@@ -33,7 +33,11 @@ export function deriveAssetUrlState(input: {
       return { _tag: "Loading" };
     case "connected":
       return input.shared._tag === "Failure"
-        ? { _tag: "Failure", reason: input.shared.reason ?? "failed" }
+        ? {
+            _tag: "Failure",
+            reason:
+              input.shared.reason === "missing-file-access" ? "missing-file-access" : "failed",
+          }
         : { _tag: "Loading" };
   }
 }

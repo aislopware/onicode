@@ -16,6 +16,7 @@ import {
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
+import * as Predicate from "effect/Predicate";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
@@ -73,7 +74,8 @@ export type AssetUrlState =
   | { readonly _tag: "Loading" }
   | {
       readonly _tag: "Failure";
-      readonly reason?: "missing-file-access";
+      /** `preview-type`: the server will not serve this file's type at this resource. */
+      readonly reason?: "missing-file-access" | "preview-type";
     }
   | {
       readonly _tag: "Success";
@@ -115,7 +117,15 @@ export function assetUrlStateFromResult(
   result: AsyncResult.AsyncResult<AssetCreateUrlResult, unknown>,
   httpBaseUrl: string | null,
 ): AssetUrlState {
-  if (result._tag === "Failure") return { _tag: "Failure" };
+  if (result._tag === "Failure") {
+    return result.cause.reasons.some(
+      (reason) =>
+        Cause.isFailReason(reason) &&
+        Predicate.isTagged(reason.error, "AssetPreviewTypeValidationError"),
+    )
+      ? { _tag: "Failure", reason: "preview-type" }
+      : { _tag: "Failure" };
+  }
   if (httpBaseUrl === null || result._tag !== "Success") return { _tag: "Loading" };
   const url = resolveAssetUrl(httpBaseUrl, result.value.relativeUrl);
   if (url === null) return { _tag: "Failure" };

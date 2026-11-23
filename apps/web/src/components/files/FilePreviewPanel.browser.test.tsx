@@ -1,10 +1,16 @@
 import { DEFAULT_THEMES, preloadHighlighter, Virtualizer } from "@pierre/diffs";
-import { EnvironmentId, ThreadId, type ProjectReadFileResult } from "@onicode/contracts";
+import {
+  EnvironmentId,
+  ThreadId,
+  type ProjectReadFileResult,
+  type ScopedThreadRef,
+} from "@onicode/contracts";
 import { AsyncResult } from "effect/reactivity";
 import { StrictMode, type ReactNode } from "react";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { cdp, userEvent } from "vite-plus/test/browser";
 import { act, fakeTimers, render } from "../../../test/render";
+import type { DraftId } from "~/composerDraftStore";
 import appCss from "~/index.css?inline";
 import { isMacPlatform } from "~/lib/utils";
 import {
@@ -198,7 +204,11 @@ function markdownPreview(truncated: boolean, contents = "- [ ] Keep the rest of 
   return filePreview("tasks.md");
 }
 
-function filePreview(relativePath: string, workspaceMutationId: string | null = null) {
+function filePreview(
+  relativePath: string,
+  workspaceMutationId: string | null = null,
+  composerDraftTarget: ScopedThreadRef | DraftId = threadRef,
+) {
   return (
     <FilePreviewPanel
       environmentId={environmentId}
@@ -206,7 +216,7 @@ function filePreview(relativePath: string, workspaceMutationId: string | null = 
       projectName="Project"
       relativePath={relativePath}
       threadRef={threadRef}
-      composerDraftTarget={threadRef}
+      composerDraftTarget={composerDraftTarget}
       keybindings={[]}
       availableEditors={[]}
       openInShortcutEnabled={false}
@@ -802,6 +812,31 @@ describe("workspace document previews", () => {
     await screen.rerender(documentPreview("mutation-2", "revision-2"));
 
     await expect.element(preview).toHaveTextContent("/assets/report.docx?mint=2");
+  });
+});
+
+describe("large file previews", () => {
+  it("shows a draft's first megabyte when an older server mints no download for it", async () => {
+    using _settings = setup();
+    state.file = {
+      relativePath: "server.log",
+      contents: "first line\nsecond line\n",
+      byteLength: 2_000_000,
+      truncated: true,
+    };
+    state.assetUrl = { _tag: "Failure", reason: "preview-type" };
+    await using screen = await render(filePreview("server.log", null, "draft-1" as DraftId));
+    await expect.element(screen.getByText("second line")).toBeVisible();
+    await expect.element(screen.getByText(/Preview limited to the first 1 MB/)).toBeVisible();
+    expect(screen.container.textContent).not.toContain("Unable to load file preview");
+    // Both would act on the whole file, which this server cannot send.
+    expect(screen.container.querySelector('[aria-label="Save file"]')).toBeNull();
+    expect(screen.container.querySelector('[aria-label="Copy contents"]')).toBeNull();
+
+    // Any other failure is retryable, not a reason to stop at the first megabyte.
+    state.assetUrl = { _tag: "Failure" };
+    await screen.rerender(filePreview("server.log", null, "draft-1" as DraftId));
+    await expect.element(screen.getByText("Unable to load file preview.")).toBeVisible();
   });
 });
 
