@@ -3317,3 +3317,4 @@ fb23f12f1f	skip	MCP Events milestones only serve outside bots (SEP-3415); Onicod
 7b47a2173d	take	taken as is
 0591d32888	take	migration 109_IssueTrackerAccounts renumbered 113; resolveUrl keeps Onicode's workspace-scoped getIssue and canonical-workspace return inside upstream's per-account loop (no equality check, so renamed workspace keys still resolve), test fake enforces workspaces; binding upsert keeps stored extras only for the same account; issueTrackerBindingFor still sends an empty additionalScopes list; asIssueTrackerAccount wraps Onicode's getIssueSummary; issueFilterScopes keeps Onicode's environment+tracker match and takes upstream's account-aware rule inside it (follow-up commit)
 43af49bab0	take	conflict: kept Onicode's effectful ownedByAnotherThread (explicit PR links) inside upstream's deferred-retention branches
+1b59af0792	take	fix(mobile): enlarge PR file Viewed tap target
