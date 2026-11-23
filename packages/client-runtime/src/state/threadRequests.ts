@@ -181,6 +181,8 @@ export interface ThreadRequestsResolved {
   readonly pendingRequestIds: ReadonlyArray<RuntimeRequestId>;
   /** Requests that closed without an answer (cancelled or expired), so typed drafts were never sent. */
   readonly unansweredRequestIds: ReadonlyArray<RuntimeRequestId>;
+  /** Every request that no longer waits, answered or not. */
+  readonly settledRequestIds: ReadonlyArray<RuntimeRequestId>;
 }
 
 const threadRequestsResolvedListeners = new Set<(event: ThreadRequestsResolved) => void>();
@@ -240,6 +242,9 @@ export function makeThreadRequestsResolvedAnnouncer(
       threadId,
       pendingRequestIds,
       unansweredRequestIds,
+      settledRequestIds: runtimeRequests.flatMap((request) =>
+        request.status === "pending" ? [] : [request.id],
+      ),
     });
   };
 }

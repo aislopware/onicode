@@ -160,6 +160,19 @@ export function holdSendForWorkspaceDefault(
   });
 }
 
+/**
+ * Whether a send captured for a draft can still go once its hold ends: `gone` when the draft was
+ * sent or discarded meanwhile, `moved` when its workspace mode changed from the captured one.
+ */
+export function detachedDraftSendState(
+  draftId: DraftId,
+  envModeAtCapture: DraftThreadEnvMode | undefined,
+): "send" | "gone" | "moved" {
+  const draft = useComposerDraftStore.getState().getDraftSession(draftId);
+  if (!draft || draft.promotedTo != null) return "gone";
+  return draft.envMode === envModeAtCapture ? "send" : "moved";
+}
+
 interface NewThreadWorkspaceOptions {
   branch?: string | null;
   worktreePath?: string | null;
@@ -326,12 +339,14 @@ export function createNewThreadHandler(router: AnyRouter) {
           .get(environmentSummaries.connectedEnvironmentIdsAtom)
           .includes(project.environmentId);
       if (!consultProjectFile) return { envMode: envModeFor(null), applyProjectFile: () => {} };
-      const projectFileRead = readOniProjectFile(project.environmentId, project.workspaceRoot);
       const cachedProjectFile = peekOniProjectFile(project.environmentId, project.workspaceRoot);
+      const projectFileRead = readOniProjectFile(project.environmentId, project.workspaceRoot, {
+        refresh: cachedProjectFile !== undefined && !cachedProjectFile.current,
+      });
       if (cachedProjectFile?.current) {
         return { envMode: envModeFor(cachedProjectFile.projectFile), applyProjectFile: () => {} };
       }
-      // A copy that is refetching opens the draft, and the fresh read still lands.
+      // A copy that is refetching or stale opens the draft, and the fresh read still lands.
       const envMode = envModeFor(cachedProjectFile?.projectFile ?? null);
       const applyProjectFile = (draftId: DraftId) => {
         const provisional: ProvisionalWorkspace = {

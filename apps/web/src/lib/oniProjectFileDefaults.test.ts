@@ -33,7 +33,7 @@ const worktreeFile: ProjectReadFileResult = {
   truncated: false,
 };
 
-it("peeks a loaded onicode.json as current only while it is not refetching", () => {
+it("peeks a loaded onicode.json as current only while it is fresh and not refetching", () => {
   expect(peekOniProjectFile(environmentId, "/repo")).toBeUndefined();
 
   testState.registry.set(testState.projectFile, AsyncResult.success(worktreeFile));
@@ -51,4 +51,11 @@ it("peeks a loaded onicode.json as current only while it is not refetching", () 
     projectFile: { defaultThreadEnvMode: "worktree" },
     current: false,
   });
+
+  // A copy past the query's stale time may predate an edit made outside the app.
+  testState.registry.set(
+    testState.projectFile,
+    AsyncResult.success(worktreeFile, { timestamp: 0 }),
+  );
+  expect(peekOniProjectFile(environmentId, "/repo")?.current).toBe(false);
 });

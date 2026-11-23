@@ -7,6 +7,7 @@ import {
   addPreparingComposerImages,
   cancelPreparingComposerImages,
   removePreparingComposerImages,
+  sendAfterPreparingImages,
   useSubmitAfterPreparingImages,
 } from "./preparingComposerImages";
 
@@ -224,4 +225,21 @@ it("hands a held answer to its away send when the composer leaves before the ima
   await act(() => removePreparingComposerImages(target, new Set(["unmounted"])));
   expect(sendAway).toHaveBeenCalledTimes(2);
   expect(submit).not.toHaveBeenCalled();
+});
+
+it("keeps an away send dropped when an image fails after the press", async () => {
+  const target = "send-after-preparing-pinned";
+  using _store = { [Symbol.dispose]: () => cancelPreparingComposerImages(target) };
+  addPreparingComposerImages(target, [preparingImage("failed")]);
+  // Pressed while the image prepared; the transcript that sends arrives after it failed.
+  const sendWhenPrepared = sendAfterPreparingImages(target);
+  removePreparingComposerImages(target, new Set(["failed"]), { cancelSubmission: true });
+  const send = vi.fn();
+  sendWhenPrepared(send);
+  await act(() => Promise.resolve());
+  expect(send).not.toHaveBeenCalled();
+
+  const sendLater = sendAfterPreparingImages(target);
+  sendLater(send);
+  await vi.waitFor(() => expect(send).toHaveBeenCalledOnce());
 });

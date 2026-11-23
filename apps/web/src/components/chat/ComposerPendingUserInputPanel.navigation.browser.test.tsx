@@ -20,7 +20,11 @@ import { act, fakeTimers, render } from "../../../test/render";
 import { DraftId, useComposerDraftStore } from "../../composerDraftStore";
 import { makeThreadProjectionFixture } from "../../test-fixtures";
 import { toastManager } from "../ui/toast";
-import { usePendingThreadRequests, usePendingUserInputDraft } from "./usePendingThreadRequests";
+import {
+  storedPendingAnswerText,
+  usePendingThreadRequests,
+  usePendingUserInputDraft,
+} from "./usePendingThreadRequests";
 
 const threadRef = { environmentId: EnvironmentId.make("env"), threadId: ThreadId.make("thread") };
 
@@ -244,6 +248,62 @@ it("stays on an unanswered question when the composer submits", async () => {
   await userEvent.click(screen.getByRole("button", { name: "Choose Incremental" }));
   await userEvent.click(submit);
   await expect.element(screen.getByRole("status")).toHaveTextContent("Question 2");
+});
+
+it("drops an answer sent after leaving once the user moved to another question", async () => {
+  const environmentId = EnvironmentId.make("away-answer-environment");
+  await using _screen = await render(
+    <PendingRequestsProbe
+      environmentId={environmentId}
+      projection={questionProjection(threadRef.threadId)}
+    />,
+  );
+  await act(() => requests.onSelectActivePendingUserInputOption("question-0", "Incremental"));
+  await act(() => requests.onSelectActivePendingUserInputOption("question-1", "Incremental"));
+  await act(() => requests.onAdvanceActivePendingUserInput());
+  // Pressed on question 2, then the user went back to question 1 before it sent.
+  const pressedOnSecond = requests.captureQuestionAnswer();
+  await act(() => requests.onPreviousActivePendingUserInputQuestion());
+  const pressedOnFirst = requests.captureQuestionAnswer();
+  await act(() => {
+    pressedOnSecond();
+    pressedOnFirst();
+  });
+  // Sends settle in press order, so the later one landing means the earlier one ran.
+  await vi.waitFor(() => expect(requests.activePendingQuestionIndex).toBe(1));
+  await act(() => Promise.resolve());
+  expect(requests.activePendingQuestionIndex).toBe(1);
+});
+
+it("puts dictation for a question that closed meanwhile into the thread draft", async () => {
+  const environmentId = EnvironmentId.make("late-dictation-environment");
+  const projection = questionProjection(threadRef.threadId, ["first"]);
+  const pendingUserInput = { ...prompt, requestId: RuntimeRequestId.make("first") };
+  const answer = storedPendingAnswerText({
+    environmentId,
+    threadId: threadRef.threadId,
+    pendingUserInput,
+    questionId: "question-0",
+  });
+  answer.commit("While it was open");
+  expect(answer.read()).toBe("While it was open");
+
+  makeThreadRequestsResolvedAnnouncer(
+    environmentId,
+    threadRef.threadId,
+  )(projection.runtimeRequests);
+  makeThreadRequestsResolvedAnnouncer(
+    environmentId,
+    threadRef.threadId,
+  )([{ id: RuntimeRequestId.make("first"), status: "resolved" }]);
+  expect(answer.settled()).toBe(true);
+  answer.commit("After it closed");
+  expect(
+    useComposerDraftStore
+      .getState()
+      .getComposerDraft({ environmentId, threadId: threadRef.threadId })?.prompt,
+  ).toBe("After it closed");
+  expect(answer.read()).toBe("");
 });
 
 it("isolates drafts by environment, thread and request and discards only resolved requests", async () => {

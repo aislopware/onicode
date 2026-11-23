@@ -2506,12 +2506,16 @@ it("mounts a bounded set of saved notebook outputs as the reader scrolls", async
   const first = screen.container.querySelector("iframe")!;
   const firstOutput = first.parentElement!;
   expect(first.srcdoc).toContain("saved 0-0");
-  // The 80 px estimate is already taller than zero; wait for the frame to fit its content.
-  await vi.waitFor(() => {
-    const body = first.contentDocument?.body;
-    expect(body?.textContent).toContain("saved 0-0");
-    expect(first.clientHeight).toBe(Math.ceil(body!.getBoundingClientRect().height));
-  });
+  // The 80 px estimate is already taller than zero; wait for the frame to fit its content. The
+  // sandboxed frame loads and measures itself, which took over a second on a busy runner.
+  await vi.waitFor(
+    () => {
+      const body = first.contentDocument?.body;
+      expect(body?.textContent).toContain("saved 0-0");
+      expect(first.clientHeight).toBe(Math.ceil(body!.getBoundingClientRect().height));
+    },
+    { timeout: 10_000 },
+  );
   const viewport = screen.container.querySelector<HTMLElement>(".scrollbar-gutter-both")!;
   await act(() => {
     viewport.scrollTop = viewport.scrollHeight;
