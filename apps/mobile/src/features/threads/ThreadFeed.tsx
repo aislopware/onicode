@@ -1775,7 +1775,7 @@ function SendSteerNowButton(props: {
       accessibilityState={{ disabled }}
       disabled={disabled}
       hitSlop={10}
-      className="size-6 items-center justify-center rounded-full bg-primary active:opacity-70 disabled:opacity-40"
+      className="h-6 flex-row items-center gap-1 rounded-full bg-primary px-2.5 active:opacity-70 disabled:opacity-40"
       onPress={() => void send()}
     >
       <SymbolView
@@ -1784,6 +1784,9 @@ function SendSteerNowButton(props: {
         weight="semibold"
         tintColorClassName="accent-primary-foreground"
       />
+      <Text className="font-oni-medium text-xs text-primary-foreground">
+        <T>Send now</T>
+      </Text>
     </Pressable>
   );
 }
