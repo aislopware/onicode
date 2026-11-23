@@ -729,6 +729,7 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
   const fullText = useFullFileText({
     environmentId,
     threadId,
+    draftCwd: threadId === null ? cwd : null,
     absolutePath:
       fileData?.truncated === true && fileData.byteLength <= MOBILE_FULL_FILE_MAX_BYTES
         ? targetPath
