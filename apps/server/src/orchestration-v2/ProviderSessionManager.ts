@@ -3086,6 +3086,7 @@ export const layerWithOptions = (
               providerTurnId: event.providerTurnId,
               runOrdinal: event.runOrdinal,
               failureItemOrdinal: stalled.ordinal,
+              failureItemId: stalled.id,
               status: "failed",
               failure: { ...stalled.failure, retryable: false },
               retry: stalled.retry,
