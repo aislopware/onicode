@@ -559,7 +559,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: msg("Workflows"),
     to: "/settings/labs",
     scope: "environment",
-    searchTerms: [msg("beta workflow durable runs automation steps schedule webhook folder")],
+    searchTerms: [msg("beta workflow durable runs automation steps schedule folder")],
   },
   {
     id: "prompt-suggestions-beta",
