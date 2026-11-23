@@ -3467,3 +3467,4 @@ fd0331ca9b	take	workflow reply with no space before the limit is cut at the limi
 9d6c750a75	skip	empty upstream commit (no file changes); its subject is the cross-tab browser history test Onicode does not have
 28c58b19b5	take	unfinished control sequence no longer delays terminal output
 fab237d626	take	systemd-oomd watch restored after user daemon-reload; upstream cloud/ is Onicode service/
+0948100035	take	adopted upstream's busyTurn over Onicode's trackTurn (203e09cc38): same resume busy fix, plus compaction and per-operation metrics; kept Onicode's ProviderSessionReleasedBeforeTurnError and no agentFeedback
