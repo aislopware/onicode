@@ -15,6 +15,7 @@ import {
   closeNonPrivateNetworkConnections,
   loopbackUrlHostForAddress,
   resolveHeadlessConnectionString,
+  resolveLocalOrigin,
 } from "./startupAccess.ts";
 
 const ipv4 = (address: string, internal = false): NodeOS.NetworkInterfaceInfo => ({
@@ -59,7 +60,17 @@ it("skips public and container addresses for a private-network listener", () => 
       privateNetworkOnly: true,
       platform: "linux",
     }),
-  ).toBe("http://localhost:3773");
+  ).toBe("http://127.0.0.1:3773");
+});
+
+it("names the bound loopback address instead of localhost", () => {
+  const options = { interfaces: {}, platform: "linux" as const };
+  expect(resolveHeadlessConnectionString(undefined, 3773, options)).toBe("http://127.0.0.1:3773");
+  expect(resolveHeadlessConnectionString("::", 3773, options)).toBe("http://[::1]:3773");
+  expect(resolveLocalOrigin(undefined, 3773)).toBe("http://127.0.0.1:3773");
+  expect(resolveLocalOrigin("0.0.0.0", 3773)).toBe("http://127.0.0.1:3773");
+  expect(resolveLocalOrigin("[::]", 3773)).toBe("http://[::1]:3773");
+  expect(resolveLocalOrigin("192.168.1.42", 3773)).toBe("http://192.168.1.42:3773");
 });
 
 it("advertises IPv6 only on an IPv6 wildcard bind, after real IPv4 and before container IPv4", () => {
@@ -81,8 +92,8 @@ it("advertises IPv6 only on an IPv6 wildcard bind, after real IPv4 and before co
     "http://192.168.1.20:3773",
   );
   expect(pair("0.0.0.0", interfaces)).toBe("http://172.17.0.1:3773");
-  expect(pair("0.0.0.0", { eth0: [ipv6("2001:db8::5")] })).toBe("http://localhost:3773");
-  expect(pair("::", { eth0: [ipv6("fe80::1")] })).toBe("http://localhost:3773");
+  expect(pair("0.0.0.0", { eth0: [ipv6("2001:db8::5")] })).toBe("http://127.0.0.1:3773");
+  expect(pair("::", { eth0: [ipv6("fe80::1")] })).toBe("http://[::1]:3773");
 });
 
 it("prefers a LAN address over a tailnet one for a private-network pairing URL", () => {
@@ -113,7 +124,7 @@ it.each([true, false])(
     ).toBe("http://192.168.1.20:3773");
     // Only a wildcard listener open to every network falls back to a host-only adapter.
     expect(pair(hostOnly)).toBe(
-      privateNetworkOnly ? "http://localhost:3773" : "http://192.168.56.1:3773",
+      privateNetworkOnly ? "http://127.0.0.1:3773" : "http://192.168.56.1:3773",
     );
   },
 );
