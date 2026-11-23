@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   isReady: true,
   projects: [] as ReadonlyArray<EnvironmentProject>,
   navigation: { setParams: vi.fn<(params: Partial<PullRequestEnvironmentTarget>) => void>() },
+  readHosts: [] as Array<string | undefined>,
 }));
 
 vi.mock("@react-navigation/native", async () => {
@@ -47,7 +48,7 @@ function environment(
   };
 }
 
-function setup() {
+function setup(initial: { readonly host?: string } = { host: "github.com" }) {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   mocks.isReady = true;
   mocks.environments = [environment("requested", "connecting"), environment("copy", "connected")];
@@ -58,25 +59,30 @@ function setup() {
     (project) =>
       ({
         ...project,
-        repositoryIdentity: { canonicalKey: "github.com/owner/repo" },
+        repositoryIdentity: {
+          canonicalKey: "github.com/owner/repo",
+          provider: "github",
+          displayName: "owner/repo",
+        },
       }) as unknown as EnvironmentProject,
   );
   const container = document.createElement("div");
   const root = createRoot(container);
   mocks.navigation.setParams = vi.fn();
+  mocks.readHosts = [];
   function Probe() {
-    const [params, updateParams] = useState({
+    const [params, updateParams] = useState<PullRequestEnvironmentTarget>({
       environmentId: "requested",
       projectId: "original",
       repository: "owner/repo",
-      host: "github.com",
+      ...initial,
     });
     useEffect(() => {
       mocks.navigation.setParams.mockImplementation((next) =>
         updateParams((previous) => ({ ...previous, ...next })),
       );
     }, []);
-    usePullRequestEnvironmentFallback(params);
+    mocks.readHosts.push(usePullRequestEnvironmentFallback(params).host);
     return <span>{`${params.environmentId}/${params.projectId}`}</span>;
   }
   return {
@@ -146,4 +152,12 @@ it("does not replace a connecting target with a connected repository copy before
   screen.render();
   expect(screen.target).toBe("requested/original");
   expect(mocks.navigation.setParams).not.toHaveBeenCalled();
+});
+
+it("reads a host-less link on the project's host from the first render", () => {
+  using screen = setup({});
+  mocks.environments = [environment("requested", "connected")];
+  screen.render();
+  expect(mocks.readHosts[0]).toBe("github.com");
+  expect(mocks.navigation.setParams).toHaveBeenCalledExactlyOnceWith({ host: "github.com" });
 });

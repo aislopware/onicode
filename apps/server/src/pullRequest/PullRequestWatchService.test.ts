@@ -15,10 +15,13 @@ import {
 } from "@onicode/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as SecureRandom from "effect/crypto/SecureRandom";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
+import * as TestClock from "effect/testing/TestClock";
 
 import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
 import {
@@ -122,12 +125,15 @@ interface HarnessOptions {
   readonly thread?: PullRequestTestThread | null;
   readonly project?: OrchestrationProjectShell | null;
   readonly readFailure?: PullRequestService.PullRequestError;
+  /** Completed when the summary read starts, which then never answers. */
+  readonly readHangs?: Deferred.Deferred<void>;
   readonly readState?: PullRequestSummary["state"];
   readonly readChecksState?: PullRequestSummary["checksState"];
   readonly readHeadSha?: string;
   readonly detailChecks?: ReadonlyArray<PullRequestCheck>;
   readonly detailState?: PullRequestDetail["state"];
   readonly detailHeadSha?: string;
+  readonly detailFailure?: PullRequestService.PullRequestError;
 }
 
 const makeHarness = Effect.fn("makePullRequestWatchHarness")(function* (
@@ -151,25 +157,30 @@ const makeHarness = Effect.fn("makePullRequestWatchHarness")(function* (
     }),
     Layer.mock(PullRequestService.PullRequestService)({
       summary: (input) =>
-        options.readFailure !== undefined
-          ? Effect.fail(options.readFailure)
-          : Effect.succeed({
-              ...input,
-              provider: SourceControlProviderKind.make("github"),
-              title: "Pull request",
-              url: `https://github.com/${input.repository}/pull/${input.number}`,
-              state: options.readState ?? "open",
-              ...(options.readChecksState !== undefined && {
-                checksState: options.readChecksState,
+        options.readHangs !== undefined
+          ? Deferred.succeed(options.readHangs, undefined).pipe(Effect.andThen(Effect.never))
+          : options.readFailure !== undefined
+            ? Effect.fail(options.readFailure)
+            : Effect.succeed({
+                ...input,
+                provider: SourceControlProviderKind.make("github"),
+                title: "Pull request",
+                url: `https://github.com/${input.repository}/pull/${input.number}`,
+                state: options.readState ?? "open",
+                ...(options.readChecksState !== undefined && {
+                  checksState: options.readChecksState,
+                }),
+                ...(options.readHeadSha !== undefined && { headSha: options.readHeadSha }),
+                headBranch: "feature",
+                baseBranch: "main",
+                updatedAt: "2026-08-20T00:00:00.000Z",
               }),
-              ...(options.readHeadSha !== undefined && { headSha: options.readHeadSha }),
-              headBranch: "feature",
-              baseBranch: "main",
-              updatedAt: "2026-08-20T00:00:00.000Z",
-            }),
       invalidate: () => Ref.update(reads, (calls) => [...calls, "invalidate"]),
       detail: () =>
         Ref.update(reads, (calls) => [...calls, "detail"]).pipe(
+          Effect.andThen(
+            options.detailFailure === undefined ? Effect.void : Effect.fail(options.detailFailure),
+          ),
           Effect.as({
             state: options.detailState ?? "open",
             checks: options.detailChecks ?? [check("build", "failure")],
@@ -219,6 +230,27 @@ describe("PullRequestWatchService", () => {
               check("test", "success"),
               { ...check("Unlisted", "neutral"), placeholder: true },
             ],
+          },
+          false,
+        ],
+        // Only the detail sees GitLab's child pipelines, so an unconfirmed pass is no verdict.
+        [
+          {
+            readChecksState: "passing",
+            detailFailure: new PullRequestOperationError({
+              operation: "detail",
+              detail: "The host is temporarily unavailable.",
+            }),
+          },
+          undefined,
+        ],
+        [
+          {
+            readChecksState: "failing",
+            detailFailure: new PullRequestOperationError({
+              operation: "detail",
+              detail: "The host is temporarily unavailable.",
+            }),
           },
           false,
         ],
@@ -356,6 +388,14 @@ describe("PullRequestWatchService", () => {
         expect(yield* harness.seedClientWatch(command)).toBe(command);
       }
       expect(yield* Ref.get(watched.reads)).toEqual([]);
+
+      // The press waits on this read, so a host that never answers falls back in time.
+      const reading = yield* Deferred.make<void>();
+      const slow = yield* makeHarness({ readHangs: reading });
+      const seeding = yield* slow.seedClientWatch(start).pipe(Effect.forkChild);
+      yield* Deferred.await(reading);
+      yield* TestClock.adjust(PullRequestWatchService.CLIENT_WATCH_READ_DEADLINE);
+      expect(yield* Fiber.join(seeding)).toBe(start);
     }),
   );
 

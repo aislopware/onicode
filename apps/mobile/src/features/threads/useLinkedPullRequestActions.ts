@@ -20,6 +20,7 @@ import { sourceControlClients } from "@onicode/client-runtime/source-control-cli
 import { changeRequestTermKind } from "../../lib/changeRequestTerm";
 import { AuthOrchestrationOperateScope, type ThreadPullRequestLink } from "@onicode/contracts";
 import * as Clipboard from "expo-clipboard";
+import { useState } from "react";
 import { useGT } from "gt-react-native";
 
 import * as Dialog from "../../components/ui/Dialog";
@@ -52,6 +53,9 @@ export function useLinkedPullRequestActions(input: {
   const link = useAtomCommand(threadEnvironment.linkPullRequest, { reportFailure: false });
   const unlink = useAtomCommand(threadEnvironment.unlinkPullRequest, { reportFailure: false });
   const watch = useAtomCommand(threadEnvironment.watchPullRequest, { reportFailure: false });
+  // The server reads CI before it starts a watch; the row shows it watching meanwhile.
+  const [startingWatches, setStartingWatches] = useState<ReadonlySet<string>>(() => new Set());
+  const watchStarting = (link: ThreadPullRequestLink) => startingWatches.has(link.url);
 
   const run = async (
     failureTitle: string,
@@ -149,10 +153,11 @@ export function useLinkedPullRequestActions(input: {
   const menuActions = (link: ThreadPullRequestLink): MenuAction[] => {
     const open = link.snapshot === null || link.snapshot.state === "open";
     const watching = link.watch !== undefined;
+    const starting = watchStarting(link);
     return [
       { id: "copy", title: gt("Copy link"), image: "link" },
       { id: "browser", title: gt("Open in browser"), image: "safari" },
-      ...((watching ? canWatch : canStartWatch) && open
+      ...((watching ? canWatch : canStartWatch) && open && !starting
         ? [
             {
               id: "watch",
@@ -197,7 +202,9 @@ export function useLinkedPullRequestActions(input: {
           );
         }
       });
-    else if (action === "watch" && thread !== null)
+    else if (action === "watch" && thread !== null) {
+      const starting = link.watch === undefined;
+      if (starting) setStartingWatches((current) => new Set(current).add(link.url));
       void run(
         gt("Couldn't change watching"),
         watch({
@@ -207,14 +214,21 @@ export function useLinkedPullRequestActions(input: {
             host: link.host,
             repository: link.repository,
             number: link.number,
-            watching: link.watch === undefined,
+            watching: starting,
           },
         }),
-      );
-    else if (action === "unlink") setLinked(link, false);
+      ).finally(() => {
+        if (!starting) return;
+        setStartingWatches((current) => {
+          const next = new Set(current);
+          next.delete(link.url);
+          return next;
+        });
+      });
+    } else if (action === "unlink") setLinked(link, false);
   };
 
-  return { canLink: canEdit, terminology, promptLink, menuActions, onMenuAction };
+  return { canLink: canEdit, terminology, promptLink, menuActions, onMenuAction, watchStarting };
 }
 
 export type LinkedPullRequestActions = ReturnType<typeof useLinkedPullRequestActions>;

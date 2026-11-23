@@ -1901,13 +1901,6 @@ export const layerWsRpc = (
         return yield* mutateProjectWithClone(projectService, projectCloneTracker, mutation);
       });
 
-      const seedClientCommand = (
-        command: OrchestrationV2Command,
-      ): Effect.Effect<OrchestrationV2Command> =>
-        command.type === "thread.pull-request.watch"
-          ? pullRequestWatches.seedClientWatch(command)
-          : Effect.succeed(command);
-
       const handlers = ServerWsRpcGroup.of({
         [WS_METHODS.issuesList]: (input) => issues.list(input),
         [WS_METHODS.issuesDetail]: (input) => issues.detail(input),
@@ -1924,8 +1917,18 @@ export const layerWsRpc = (
         [WS_METHODS.issueTrackersList]: () => issueTrackers.list,
         [WS_METHODS.issueTrackersConnect]: (input) => issueTrackers.connect(input),
         [WS_METHODS.issueTrackersBindProject]: (input) => issueTrackers.bindProject(input),
-        [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: (command) =>
-          Effect.annotateCurrentSpan({
+        [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: (command) => {
+          const dispatchClientCommand = (client: OrchestrationV2Command) =>
+            startup.enqueueCommand(
+              ThreadMessageIntake.dispatchCommand(
+                ThreadManagementService.withCreationProvenance(client, {
+                  createdBy: "user",
+                  creationSource: "creationSource" in client ? client.creationSource : "web",
+                }),
+                { managesProviders: currentSession.scopes.includes(AuthProvidersManageScope) },
+              ).pipe(Effect.provide(intakeContext)),
+            );
+          return Effect.annotateCurrentSpan({
             "orchestration_v2.command_id": command.commandId,
             "orchestration_v2.command_type": command.type,
             "orchestration_v2.thread_id":
@@ -1943,41 +1946,37 @@ export const layerWsRpc = (
               : {}),
           }).pipe(
             Effect.andThen(
-              startup
-                .enqueueCommand(
-                  (command.type === "prepared-run.retry"
-                    ? threadLaunch.retryPreparation(command)
-                    : Effect.flatMap(seedClientCommand(command), (seeded) =>
-                        ThreadMessageIntake.dispatchCommand(
-                          ThreadManagementService.withCreationProvenance(seeded, {
-                            createdBy: "user",
-                            creationSource:
-                              "creationSource" in seeded ? seeded.creationSource : "web",
-                          }),
-                          {
-                            managesProviders:
-                              currentSession.scopes.includes(AuthProvidersManageScope),
-                          },
-                        ),
-                      )
-                  ).pipe(Effect.provide(intakeContext)),
-                )
-                .pipe(
-                  Effect.map((result) => ({ sequence: result.sequence })),
-                  Effect.mapError((cause) => {
-                    if (cause._tag === "EnvironmentAuthorizationError") return cause;
-                    const detail = userFacingDispatchErrorMessage(cause);
-                    return new OrchestrationV2DispatchCommandError({
-                      commandId: command.commandId,
-                      commandType: command.type,
-                      message: detail ?? "Failed to dispatch orchestration V2 command",
-                      ...(detail === undefined ? {} : { detail }),
-                      cause,
-                    });
-                  }),
-                ),
+              (command.type === "prepared-run.retry"
+                ? startup.enqueueCommand(
+                    threadLaunch.retryPreparation(command).pipe(Effect.provide(intakeContext)),
+                  )
+                : command.type === "thread.pull-request.watch"
+                  ? // CI is read before the startup queue, within a deadline, and a client that
+                    // leaves meanwhile still gets the watch it pressed.
+                    Effect.uninterruptible(
+                      Effect.flatMap(
+                        pullRequestWatches.seedClientWatch(command),
+                        dispatchClientCommand,
+                      ),
+                    )
+                  : dispatchClientCommand(command)
+              ).pipe(
+                Effect.map((result) => ({ sequence: result.sequence })),
+                Effect.mapError((cause) => {
+                  if (cause._tag === "EnvironmentAuthorizationError") return cause;
+                  const detail = userFacingDispatchErrorMessage(cause);
+                  return new OrchestrationV2DispatchCommandError({
+                    commandId: command.commandId,
+                    commandType: command.type,
+                    message: detail ?? "Failed to dispatch orchestration V2 command",
+                    ...(detail === undefined ? {} : { detail }),
+                    cause,
+                  });
+                }),
+              ),
             ),
-          ),
+          );
+        },
         [ORCHESTRATION_V2_WS_METHODS.stopWorkflow]: (input) => threadManagement.stopWorkflow(input),
         [ORCHESTRATION_V2_WS_METHODS.forceStopThread]: (input) =>
           threadManagement.forceStopThread(input),

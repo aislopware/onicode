@@ -408,8 +408,7 @@ export function PullRequestRouteScreen({ route }: StaticScreenProps<PullRequestP
   const contentTopInset = useContentTopInset();
   // Only iOS lists run under the bottom safe area; Android's floating toolbar pads its own.
   const contentBottomInset = Platform.OS === "ios" ? insets.bottom : 0;
-  const params = route.params;
-  usePullRequestEnvironmentFallback(params);
+  const params = usePullRequestEnvironmentFallback(route.params);
   const connected = usePullRequestConnected(params.environmentId);
   const [chosenSection, setSection] = useState<"overview" | "activity" | "guide">(() => {
     const kind = parsePullRequestAnchor(params.navigationUrl)?.kind;

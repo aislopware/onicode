@@ -109,6 +109,7 @@ function LinkRowImpl({
   onSetWatching,
   onIntent,
   canStartWatch,
+  watchStarting,
 }: {
   line: PullRequestListLine;
   threadRef: ScopedThreadRef;
@@ -118,6 +119,8 @@ function LinkRowImpl({
   onSetWatching: ((link: ThreadPullRequestLink, watching: boolean) => void) | null;
   onIntent: (link: ThreadPullRequestLink | null) => void;
   canStartWatch: boolean;
+  /** The server reads CI before it starts the watch; show it watching meanwhile. */
+  watchStarting: boolean;
 }) {
   const gt = useGT();
   const resolve = useMessages();
@@ -130,7 +133,7 @@ function LinkRowImpl({
   const { link, depth, stack } = line;
   const snapshot = link.snapshot;
   const open = snapshot === null || snapshot.state === "open";
-  const watching = link.watch !== undefined;
+  const watching = link.watch !== undefined || watchStarting;
   const linkHost =
     sourceControlClients.findByChangeRequestUrl(link.url) ?? UNKNOWN_SOURCE_CONTROL_CLIENT;
   const linkHostActions = linkHost.changeRequestActions;
@@ -379,7 +382,7 @@ function LinkRowImpl({
               <ArrowUpRightIcon className="size-3.5" />
               <T context="verb, open a link">Open</T>
             </MenuItem>
-            {onSetWatching !== null && open && (watching || canStartWatch) ? (
+            {onSetWatching !== null && open && !watchStarting && (watching || canStartWatch) ? (
               <MenuItem onClick={() => onSetWatching(link, !watching)}>
                 {watching ? <EyeOffIcon className="size-3.5" /> : <EyeIcon className="size-3.5" />}
                 {watching ? gt("Stop watching") : gt("Watch for changes")}
@@ -519,7 +522,9 @@ function EnabledThreadPullRequestsPanel({ threadRef }: { threadRef: ScopedThread
       },
     });
   };
+  const [startingWatches, setStartingWatches] = useState<ReadonlySet<string>>(() => new Set());
   const handleSetWatching = (link: ThreadPullRequestLink, watching: boolean) => {
+    if (watching) setStartingWatches((current) => new Set(current).add(link.url));
     void watch({
       environmentId: threadRef.environmentId,
       input: {
@@ -529,6 +534,13 @@ function EnabledThreadPullRequestsPanel({ threadRef }: { threadRef: ScopedThread
         number: link.number,
         watching,
       },
+    }).finally(() => {
+      if (!watching) return;
+      setStartingWatches((current) => {
+        const next = new Set(current);
+        next.delete(link.url);
+        return next;
+      });
     });
   };
 
@@ -541,6 +553,7 @@ function EnabledThreadPullRequestsPanel({ threadRef }: { threadRef: ScopedThread
     thread,
     opensInApp,
     primaryEnvironmentId,
+    startingWatches,
   };
 
   if (linkCount === 0 && issues.length === 0) {
@@ -607,6 +620,7 @@ function EnabledThreadPullRequestsPanel({ threadRef }: { threadRef: ScopedThread
                 onSetWatching={supportsWatch ? handleSetWatching : null}
                 onIntent={intendLink}
                 canStartWatch={canStartWatch}
+                watchStarting={startingWatches.has(item.line.link.url)}
               />
             )
           }

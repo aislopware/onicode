@@ -12,7 +12,9 @@ import {
   AuthOrchestrationReadScope,
   AuthSessionId,
   AuthSourceControlWriteScope,
+  CommandId,
   ORCHESTRATION_PROTOCOL_VERSION,
+  ORCHESTRATION_V2_WS_METHODS,
   ORCHESTRATION_PROTOCOL_QUERY_PARAM,
   EnvironmentId,
   EventId,
@@ -36,6 +38,8 @@ import {
   type OrchestrationV2DomainEvent,
   type OrchestrationV2StoredEvent,
   type OrchestrationV2ThreadShell,
+  type PullRequestDetail,
+  type PullRequestSummary,
   type OrchestrationProjectShell,
   type ServerConfig,
   type ServerConfigStreamEvent,
@@ -1895,6 +1899,118 @@ it.effect("a missing thread worktree gets its project's skills in the cwd snapsh
       ["finalize"],
       "the thread's removed worktree should list the project's skills",
     );
+  }).pipe(
+    Effect.provide(
+      Layer.mergeAll(
+        Layer.fresh(layerConfigSources),
+        Layer.mock(PreviewAutomationBroker.PreviewAutomationBroker)({}),
+        Layer.mock(ServerBrowser.ServerBrowser)({}),
+      ),
+    ),
+  ),
+);
+
+it.effect("a watch started from a client is seeded from a fresh CI read, not the link", () =>
+  Effect.gen(function* () {
+    const threadId = ThreadId.make("thread:client-watch");
+    const dispatched = yield* Queue.unbounded<unknown>();
+    const exits = yield* Queue.unbounded<Exit.Exit<unknown, unknown>>();
+    const services = Layer.mergeAll(
+      layerUnusedConfigRpcServices,
+      Layer.mock(ExternalLauncher.ExternalLauncher)({}),
+      Layer.mock(ProviderRegistry.ProviderRegistry)({}),
+      Layer.mock(UsageLimitSources.UsageLimitSources)({}),
+      Layer.mock(RemoteOpenTargets.RemoteOpenTargets)({}),
+      Layer.mock(DirectEndpoints.DirectEndpoints)({}),
+      Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({ namedProjectsRoot: "/unused" }),
+      Layer.mock(ScratchThreadPromotion.ScratchThreadPromotion)({}),
+      Layer.mock(ServerEnvironment.ServerEnvironment)({}),
+      Layer.mock(EnvironmentAuth.EnvironmentAuth)({}),
+      Layer.mock(ServerRuntimeStartup.ServerRuntimeStartup)({
+        enqueueCommand: (effect) => effect,
+      }),
+      Layer.mock(ThreadManagement.ThreadManagementService)({
+        dispatch: (command) =>
+          Queue.offer(dispatched, command).pipe(Effect.as({ sequence: 1, storedEvents: [] })),
+      }),
+      // The link's snapshot keeps GitHub's rollup, which counts a check a rerun replaced.
+      Layer.mock(Orchestrator.OrchestratorV2)({
+        getThreadShell: () =>
+          Effect.succeed({
+            id: threadId,
+            projectId: ProjectId.make("project:client-watch"),
+            deletedAt: null,
+            pullRequests: [
+              {
+                host: "github.com",
+                repository: "onicode/onicode",
+                number: 9,
+                url: "https://github.com/onicode/onicode/pull/9",
+                source: "manual",
+                snapshot: { state: "open", checksState: "failing" },
+              },
+            ],
+          } as unknown as OrchestrationV2ThreadShell),
+      }),
+      Layer.mock(PullRequestService.PullRequestService)({
+        summary: () =>
+          Effect.succeed({
+            state: "open",
+            checksState: "failing",
+            headSha: "aaaa111",
+          } as unknown as PullRequestSummary),
+        invalidate: () => Effect.void,
+        detail: () =>
+          Effect.succeed({
+            state: "open",
+            headSha: "aaaa111",
+            checks: [{ name: "test", status: "pending" }],
+          } as unknown as PullRequestDetail),
+      }),
+    );
+    const server = yield* RpcServer.makeNoSerialization(WsRpcGroup, {
+      ...WS_RPC_SERVER_OPTIONS,
+      onFromServer: (response) =>
+        response._tag === "Exit" ? Queue.offer(exits, response.exit) : Effect.void,
+    }).pipe(
+      Effect.provide(
+        layerWsRpc(
+          {
+            sessionId: AuthSessionId.make("watch-test"),
+            subject: "watch-test",
+            scopes: [AuthOrchestrationOperateScope],
+          },
+          yield* ServerBrowser.ServerBrowser,
+          () => Effect.void,
+          { secretReferences: true },
+        ).pipe(
+          Layer.provide(services),
+          Layer.merge(RpcAuthorization.layer([AuthOrchestrationOperateScope])),
+        ),
+      ),
+    );
+    const command = {
+      type: "thread.pull-request.watch" as const,
+      commandId: CommandId.make("client-watch"),
+      threadId,
+      host: "github.com",
+      repository: "onicode/onicode",
+      number: 9,
+      watching: true,
+    };
+    yield* server.write(0, {
+      _tag: "Request",
+      id: RpcMessage.RequestId("watch"),
+      tag: ORCHESTRATION_V2_WS_METHODS.dispatchCommand,
+      payload: command,
+      headers: Headers.empty,
+    });
+    assert.isTrue(Exit.isSuccess(yield* Queue.take(exits)));
+    assert.deepInclude(yield* Queue.take(dispatched), {
+      ...command,
+      checksPending: true,
+      headSha: "aaaa111",
+    });
   }).pipe(
     Effect.provide(
       Layer.mergeAll(

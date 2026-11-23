@@ -81,7 +81,8 @@ export const LinkedPullRequestRow = memo(function LinkedPullRequestRow(props: {
           messages,
         )
       : null;
-  const watching = open && link.watch !== undefined;
+  const watching =
+    open && (link.watch !== undefined || props.actions?.watchStarting(link) === true);
   const additions = snapshot?.additions ?? 0;
   const deletions = snapshot?.deletions ?? 0;
   const term = changeRequestTermKind(
