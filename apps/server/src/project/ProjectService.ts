@@ -9,7 +9,7 @@ import {
   type ProjectTrackedFolder,
   type ProjectUpdatePayload,
   type ProjectSnapshot,
-  type ThreadId,
+  ThreadId,
 } from "@onicode/contracts";
 import * as HostProcess from "@onicode/shared/HostProcess";
 import * as KeyedLock from "@onicode/shared/KeyedLock";
@@ -46,6 +46,7 @@ import * as ServerSettings from "../serverSettings.ts";
 import { deletedProjectOverridePatch } from "../provider/ProjectSettingsOverrideSweep.ts";
 import { makeIsManagedWorktreePath } from "../worktreesDirectory.ts";
 import * as ProcessRunner from "../processRunner.ts";
+import * as TerminalManager from "../terminal/Manager.ts";
 import * as ProjectEnrichmentService from "./ProjectEnrichmentService.ts";
 import { makeIsWorktreeContainer } from "./worktreeContainer.ts";
 import { isWithinRoot } from "../workspace/KnownWorkspaces.ts";
@@ -208,6 +209,8 @@ export const make = Effect.gen(function* () {
   const legacyImporter = yield* LegacyV1ThreadImporter.LegacyV1ThreadImporter;
   const threadCommands = yield* ThreadCommandExecutor.ThreadCommandExecutor;
   const serverSettings = yield* ServerSettings.ServerSettingsService;
+  // Terminals live in the server process; the CLI builds this service without them.
+  const terminals = yield* Effect.serviceOption(TerminalManager.TerminalManager);
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const isManagedWorktreePath = yield* makeIsManagedWorktreePath;
@@ -927,6 +930,50 @@ export const make = Effect.gen(function* () {
       ),
     );
 
+  // Draft threads have no row, so a deletion another client makes leaves their terminals open.
+  const closeDraftThreadTerminals = Effect.fn("ProjectService.closeDraftThreadTerminals")(
+    function* (workspaceRoot: string) {
+      if (Option.isNone(terminals)) return;
+      const manager = terminals.value;
+      // A live project nested inside the deleted one keeps its own drafts.
+      const nestedRoots = (yield* listRows).flatMap((row) =>
+        row.deletedAt === null && isWithinRoot(path, row.workspaceRoot, workspaceRoot)
+          ? [row.workspaceRoot]
+          : [],
+      );
+      const threadIds = new Set(
+        (yield* manager.list)
+          .filter(
+            // A draft on a worktree may belong to another project even when its folder is inside.
+            ({ cwd, worktreePath }) =>
+              worktreePath === null &&
+              isWithinRoot(path, cwd, workspaceRoot) &&
+              !nestedRoots.some((root) => isWithinRoot(path, cwd, root)),
+          )
+          .map((terminal) => terminal.threadId),
+      );
+      yield* Effect.forEach(
+        threadIds,
+        (threadId) =>
+          Effect.suspend(() => threadProjections.findThread(ThreadId.make(threadId))).pipe(
+            Effect.flatMap((thread) =>
+              thread === null ? manager.close({ threadId, deleteHistory: true }) : Effect.void,
+            ),
+            Effect.catchCause((cause) =>
+              Effect.logWarning(
+                `Failed to close the terminals of draft thread ${threadId}.`,
+                cause,
+              ),
+            ),
+          ),
+        { discard: true },
+      );
+    },
+    Effect.catchCause((cause) =>
+      Effect.logWarning("Failed to close draft thread terminals of a deleted project.", cause),
+    ),
+  );
+
   const deleteProject: ProjectService["Service"]["delete"] = Effect.fn("ProjectService.delete")(
     function* (input) {
       const { projectId } = input;
@@ -944,6 +991,7 @@ export const make = Effect.gen(function* () {
       if (isFirstDelete) {
         yield* clearProjectSettingsOverrides(projectId);
       }
+      yield* closeDraftThreadTerminals(existing.value.workspaceRoot);
       yield* projectEnrichment.invalidate([existing.value.workspaceRoot]);
       return yield* readCommitted(projectId);
     },

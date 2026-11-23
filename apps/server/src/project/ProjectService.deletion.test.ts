@@ -6,6 +6,8 @@ import {
   type OrchestrationV2AppThread,
   ProjectId,
   ProviderInstanceId,
+  type TerminalCloseInput,
+  type TerminalSummary,
   ThreadId,
 } from "@onicode/contracts";
 import * as DateTime from "effect/DateTime";
@@ -30,6 +32,7 @@ import { planThreadDeletion } from "../orchestration-v2/ThreadDeletion.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ProjectSettingsOverrideSweep from "../provider/ProjectSettingsOverrideSweep.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import * as TerminalManager from "../terminal/Manager.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import * as ProjectEnrichmentService from "./ProjectEnrichmentService.ts";
 import * as ProjectFaviconResolver from "./ProjectFaviconResolver.ts";
@@ -45,6 +48,7 @@ const layerServices = Layer.mergeAll(
   ProjectStore.layer,
   IdAllocator.layer,
   ThreadCommandExecutor.layer,
+  Layer.mock(TerminalManager.TerminalManager)({ list: Effect.succeed([]) }),
   Layer.succeed(WorkspacePaths.WorkspacePaths, {
     normalizeWorkspaceRoot: (workspaceRoot) => Effect.succeed(workspaceRoot),
     resolveRelativePathWithinRoot: ({ workspaceRoot, relativePath }) =>
@@ -76,14 +80,17 @@ const decodeEffectRequest = Schema.decodeUnknownEffect(
   Schema.fromJsonString(OrchestrationEffectRequestV2),
 );
 
-const seedProject = Effect.fn("ProjectDeletionTest.seedProject")(function* (projectId: ProjectId) {
+const seedProject = Effect.fn("ProjectDeletionTest.seedProject")(function* (
+  projectId: ProjectId,
+  workspaceRoot = `/work/${projectId}`,
+) {
   const sql = yield* SqlClient.SqlClient;
   yield* sql`
     INSERT INTO projection_projects (
       project_id, title, workspace_root, default_model_selection_json,
       scripts_json, created_at, updated_at, deleted_at
     ) VALUES (
-      ${projectId}, 'Deletion test', ${`/work/${projectId}`}, NULL,
+      ${projectId}, 'Deletion test', ${workspaceRoot}, NULL,
       '[]', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z', NULL
     )
   `;
@@ -498,6 +505,95 @@ it.effect("deletes a project without force once its imported threads were delete
       });
       assert.isNotNull(deleted.deletedAt);
       assert.isTrue(Option.isNone(yield* service.getById(projectId)));
+    }).pipe(Effect.provide(layerServices));
+  }).pipe(Effect.provide(layerDatabase)),
+);
+
+it.effect("closes the terminals of a deleted project's draft threads, and no others", () =>
+  Effect.gen(function* () {
+    const projectId = ProjectId.make("project:draft-terminals");
+    const nestedProjectId = ProjectId.make("project:draft-terminals:nested");
+    // Its root starts with the deleted project's root without being inside it.
+    const otherProjectId = ProjectId.make("project:draft-terminals-other");
+    const liveThreadId = ThreadId.make("thread:draft-terminals:live");
+    yield* seedProject(projectId);
+    yield* seedProject(nestedProjectId, `/work/${projectId}/nested`);
+    yield* seedProject(otherProjectId);
+    const terminal = (threadId: string, cwd: string, worktreePath: string | null = null) =>
+      ({
+        threadId,
+        terminalId: "default",
+        cwd,
+        worktreePath,
+        status: "running",
+        pid: 1,
+        exitCode: null,
+        exitSignal: null,
+        hasRunningSubprocess: false,
+        label: "zsh",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      }) satisfies TerminalSummary;
+    const closed: Array<TerminalCloseInput> = [];
+
+    yield* Effect.gen(function* () {
+      const eventSink = yield* EventSink.EventSinkV2;
+      yield* eventSink.write({ events: [nativeThreadCreated(otherProjectId, liveThreadId)] });
+      const service = yield* ProjectService.make.pipe(
+        Effect.provide(
+          Layer.mock(TerminalManager.TerminalManager)({
+            list: Effect.succeed([
+              terminal("thread:draft-terminals:root", `/work/${projectId}`),
+              terminal("thread:draft-terminals:subfolder", `/work/${projectId}/packages/app`),
+              terminal(liveThreadId, `/work/${projectId}/packages/app`),
+              terminal("thread:draft-terminals:nested", `/work/${projectId}/nested/src`),
+              terminal("thread:draft-terminals:other", `/work/${otherProjectId}`),
+              // Another project's draft on a worktree whose folder sits inside the deleted root.
+              terminal(
+                "thread:draft-terminals:worktree",
+                `/work/${projectId}/.worktrees/feature/src`,
+                `/work/${projectId}/.worktrees/feature`,
+              ),
+            ]),
+            // The first close failing leaves the sweep going.
+            close: (input) =>
+              Effect.sync(() => {
+                closed.push(input);
+              }).pipe(
+                Effect.andThen(
+                  input.threadId === "thread:draft-terminals:root"
+                    ? Effect.die("close failed")
+                    : Effect.void,
+                ),
+              ),
+          }),
+        ),
+      );
+
+      yield* service.delete({ commandId: CommandId.make("command:draft-terminals"), projectId });
+
+      assert.deepEqual(closed, [
+        { threadId: "thread:draft-terminals:root", deleteHistory: true },
+        { threadId: "thread:draft-terminals:subfolder", deleteHistory: true },
+      ]);
+    }).pipe(Effect.provide(layerServices));
+  }).pipe(Effect.provide(layerDatabase)),
+);
+
+it.effect("deletes a project when its terminals cannot be listed", () =>
+  Effect.gen(function* () {
+    const projectId = ProjectId.make("project:draft-terminals-unlisted");
+    yield* seedProject(projectId);
+    yield* Effect.gen(function* () {
+      const service = yield* ProjectService.make.pipe(
+        Effect.provide(
+          Layer.mock(TerminalManager.TerminalManager)({ list: Effect.die("terminals gone") }),
+        ),
+      );
+      const deleted = yield* service.delete({
+        commandId: CommandId.make("command:draft-terminals-unlisted"),
+        projectId,
+      });
+      assert.isNotNull(deleted.deletedAt);
     }).pipe(Effect.provide(layerServices));
   }).pipe(Effect.provide(layerDatabase)),
 );
