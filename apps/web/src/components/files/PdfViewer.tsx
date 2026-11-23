@@ -506,6 +506,8 @@ export default function PdfViewer(props: {
         node.scrollTo({ top: at });
       }
     }
+    // A scroll that moves nothing fires no `scroll` event, so record the handled width here.
+    if (resized) setScrolled({ top: node.scrollTop, width, pdf });
     saveView(node, anchor !== null);
   });
   const firstMatch = matches[0];
