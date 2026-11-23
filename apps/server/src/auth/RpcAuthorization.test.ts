@@ -334,6 +334,63 @@ it.effect("pairs a client with a linked environment only for one that may hand o
   }).pipe(Effect.scoped),
 );
 
+it.effect("hands out a link code only within what the session itself holds", () =>
+  Effect.gen(function* () {
+    const group = WsRpcGroup.omit(
+      ...[...WsRpcGroup.requests.keys()].filter(
+        (
+          tag,
+        ): tag is Exclude<keyof typeof RPC_REQUIRED_SCOPES, typeof WS_METHODS.peerLinksPairLink> =>
+          tag !== WS_METHODS.peerLinksPairLink,
+      ),
+    );
+    let handled = 0;
+    const environmentId = EnvironmentId.make("environment-box");
+    const handlers = group.toLayerHandler(WS_METHODS.peerLinksPairLink, () =>
+      Effect.sync(() => {
+        handled++;
+        return {
+          type: "unsupported" as const,
+          reason: "link_access" as const,
+          environmentId,
+          label: "Box",
+          urls: [],
+        };
+      }),
+    );
+    const clientWith = (scopes: Parameters<typeof RpcAuthorization.layer>[0]) =>
+      RpcTest.makeClient(group).pipe(
+        Effect.provide(Layer.merge(handlers, RpcAuthorization.layer(scopes))),
+      );
+
+    // Managing access alone is not running agents.
+    const manager = yield* clientWith([AuthAccessWriteScope]);
+    expect(
+      yield* manager[WS_METHODS.peerLinksPairLink]({ environmentId, access: "read-only" }).pipe(
+        Effect.flip,
+      ),
+    ).toMatchObject({ requiredPermission: AuthOrchestrationReadScope });
+
+    const supervisor = yield* clientWith([
+      AuthAccessWriteScope,
+      AuthOrchestrationReadScope,
+      AuthOrchestrationOperateScope,
+    ]);
+    expect(
+      yield* supervisor[WS_METHODS.peerLinksPairLink]({
+        environmentId,
+        access: "full-access",
+      }).pipe(Effect.flip),
+    ).toMatchObject({ requiredPermission: AuthSettingsWriteScope });
+    expect(handled).toBe(0);
+
+    expect(
+      (yield* supervisor[WS_METHODS.peerLinksPairLink]({ environmentId, access: "auto" })).type,
+    ).toBe("unsupported");
+    expect(handled).toBe(1);
+  }).pipe(Effect.scoped),
+);
+
 it.effect.each([WS_METHODS.subscribeVcsBranch, WS_METHODS.subscribeVcsStatus] as const)(
   "enforces read permission on stream %s",
   (method) =>
