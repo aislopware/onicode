@@ -544,6 +544,8 @@ export const layer: Layer.Layer<
         function* (input) {
           // Storage cleanup removes worktrees under the same lease.
           const thread = yield* projections.getThread(input.threadId);
+          // A deleted thread's cleanup holds these leases; waiting on them would only stall it.
+          if (thread.deletedAt !== null) return;
           if (thread.worktreePath === null) return yield* execute(input);
           const worktreePath = path.resolve(thread.worktreePath);
           // Shared-workspace restores are rejected and conversation-only rewinds
