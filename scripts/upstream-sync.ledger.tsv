@@ -3335,3 +3335,4 @@ f29c824614	take	fix(server): Full access Codex no longer asks before dangerous c
 b9c3109710	take	fix(cursor): preserve ended turns when connection retries exhaust
 074a0d35be	take	fix(server): startup PR backfill looks up each repository branch once
 8a17857870	take	perf(mobile): avoid re-rendering on shell updates in useSidebarRowThreadKey
+1a4932efd0	take	perf(client): skip child indexing when no child needs input
