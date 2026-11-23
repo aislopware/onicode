@@ -416,6 +416,7 @@ class OniWorkspaceNavigationView(
     "threads" -> "Chats"
     "pullRequests" -> "Pulls"
     "issues" -> "Issues"
+    "workflows" -> "Workflows"
     "usage" -> "Usage"
     else -> "Settings"
   }
@@ -429,6 +430,7 @@ class OniWorkspaceNavigationView(
       "threads" -> R.drawable.oni_chats
       "pullRequests" -> R.drawable.oni_pull_requests
       "issues" -> R.drawable.oni_issues
+      "workflows" -> R.drawable.oni_workflows
       "usage" -> R.drawable.oni_usage
       else -> R.drawable.oni_settings
     }

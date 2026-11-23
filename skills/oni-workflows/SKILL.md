@@ -11,7 +11,7 @@ Use a workflow for multi-stage work that must not be lost or repeated (triage �
 
 ## Quick start
 
-Workflows are a Labs feature, off by default. If `onicode workflow` says workflows are off, ask the user to turn them on by setting `"workflowsEnabled": true` in `userdata/settings.json` in their Onicode home; do not edit their settings yourself.
+Workflows are a Labs feature, off by default. If `onicode workflow` says workflows are off, ask the user to turn them on in Settings → Labs → Workflows; do not edit their settings yourself.
 
 Put a `.ts` file in `~/.onicode/workflows/` (the `workflows` folder of Onicode home, or the path in `ONICODE_WORKFLOWS`). Once workflows are on, the server watches the folder and reloads files automatically—nothing to restart. A file name with a space or other unusual character (`fix issue.ts`) is skipped with a warning in the server log: use letters, digits, `-`, `_` and `.`. Files run with Node's type stripping, so only erasable TypeScript works: no `enum`, `namespace` or parameter properties.
 
