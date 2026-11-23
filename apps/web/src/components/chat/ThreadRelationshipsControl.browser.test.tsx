@@ -405,9 +405,33 @@ it("shows a remote subagent's full title in its tooltip even when its environmen
   expect(screen.router?.state.location.pathname).toBe("/environment/fork");
 });
 
-it("explains why Merge back is unavailable before the fork completes a run", async () => {
+it.each([
+  {
+    when: "before the fork completes a run",
+    button: "Merge back to source conversation",
+    tooltip: "Complete a run in this fork before merging it back",
+  },
+  {
+    when: "while its source is archived",
+    button: "Merge back to Source",
+    tooltip: "Unarchive Source to merge this conversation back into it",
+  },
+])("explains why Merge back is unavailable $when", async ({ when, button, tooltip }) => {
   setup();
-  state.projection = { ...(state.projection as Record<string, unknown>), runs: [] };
+  if (when === "before the fork completes a run") {
+    state.projection = { ...(state.projection as Record<string, unknown>), runs: [] };
+  } else {
+    const projection = makeThreadProjectionFixture();
+    state.archivedThreads = [
+      {
+        ...projection.thread,
+        id: ThreadId.make("source"),
+        title: "Source",
+        archivedAt: projection.thread.updatedAt,
+        lineage: { rootThreadId: "source", parentThreadId: null, relationshipToParent: null },
+      },
+    ];
+  }
   await using screen = await render(
     <ThreadRelationshipsPanel
       environmentId={environmentId}
@@ -418,12 +442,10 @@ it("explains why Merge back is unavailable before the fork completes a run", asy
     { router: "/environment/fork" },
   );
 
-  const mergeBack = screen.getByRole("button", { name: "Merge back to source conversation" });
+  const mergeBack = screen.getByRole("button", { name: button });
   await userEvent.hover(mergeBack);
   await vi.waitFor(() =>
-    expect(document.querySelector('[data-slot="tooltip-popup"]')?.textContent).toBe(
-      "Complete a run in this fork before merging it back",
-    ),
+    expect(document.querySelector('[data-slot="tooltip-popup"]')?.textContent).toBe(tooltip),
   );
 
   state.commandSucceeds = true;

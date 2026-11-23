@@ -3,6 +3,7 @@ import {
   WorkflowQuestion,
   type WorkflowRunReference,
   type WorkflowRunsSnapshot,
+  type WorkflowRunsUpdate,
 } from "@onicode/contracts";
 import * as Context from "effect/Context";
 import type * as Duration from "effect/Duration";
@@ -119,6 +120,8 @@ export class Workflows extends Context.Service<
     readonly storeDelete: (key: string) => Effect.Effect<void, WorkflowInputError>;
     /** Recent runs and open questions, now and again after every change. */
     readonly watch: Stream.Stream<WorkflowRunsSnapshot>;
+    /** The same snapshot first, then only the runs each change wrote. */
+    readonly watchChanges: Stream.Stream<WorkflowRunsUpdate>;
     /** How much is going on, now and again whenever a count changes. */
     readonly counts: Stream.Stream<WorkflowCounts>;
     /**
@@ -160,6 +163,10 @@ export const disabled = Workflows.of({
   storeSet: refuse,
   storeDelete: refuse,
   watch: Stream.concat(Stream.make({ workflows: [], runs: [], questions: [] }), Stream.never),
+  watchChanges: Stream.concat(
+    Stream.make({ workflows: [], runs: [], questions: [] }),
+    Stream.never,
+  ),
   counts: Stream.concat(Stream.make({ needsYou: 0, active: 0, total: 0 }), Stream.never),
   sweep: Effect.void,
 });

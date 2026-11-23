@@ -803,6 +803,34 @@ describe("GitHubSourceControlProvider.checkoutChangeRequest", () => {
     }).pipe(Effect.provide(layer));
   });
 
+  it.effect("reads and fetches the base through a remote an insteadOf rewrite hides", () => {
+    // `git remote -v` shows upstream's rewrite to a proxy; config holds its github.com URL.
+    const { layer, git, graphqlCalls } = harness({
+      remotes: remotesOutput(
+        ["origin", "git@github.com:me/web.git"],
+        ["upstream", "https://proxy.example/acme/web.git"],
+      ),
+      resolved: [
+        "remote.origin.url git@github.com:me/web.git",
+        "remote.upstream.url https://github.com/acme/web.git",
+      ].join("\n"),
+      graphql: () => ({ pullRequest: node(8, "feature") }),
+    });
+    return Effect.gen(function* () {
+      const gh = yield* GitHubSourceControlProvider.make;
+      yield* gh.checkoutChangeRequest({ cwd: "/repo", reference: "8" });
+      assert.deepStrictEqual(
+        graphqlCalls.flatMap((call) => call.lookups.map(({ owner, name }) => `${owner}/${name}`)),
+        ["acme/web"],
+      );
+      assert.deepStrictEqual(git.find(([name]) => name === "fetchRemoteTrackingBranch")?.[1], {
+        cwd: "/repo",
+        remoteName: "upstream",
+        remoteBranch: "feature",
+      });
+    }).pipe(Effect.provide(layer), Effect.provideService(HostProcess.Environment, {}));
+  });
+
   it.effect("keeps git's own output out of what a failed checkout reports", () => {
     const { layer } = harness({
       remotes: remotesOutput(["origin", "git@github.com:acme/web.git"]),

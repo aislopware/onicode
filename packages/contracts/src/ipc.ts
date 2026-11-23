@@ -349,12 +349,15 @@ export type DesktopCliCommandState = typeof DesktopCliCommandStateSchema.Type;
 export interface DesktopUpdateActionResult {
   accepted: boolean;
   completed: boolean;
+  /** An accepted install that stopped short of restarting, whether or not `state` says why. */
+  failed?: boolean;
   state: DesktopUpdateState;
 }
 
 export const DesktopUpdateActionResultSchema = Schema.Struct({
   accepted: Schema.Boolean,
   completed: Schema.Boolean,
+  failed: Schema.optionalKey(Schema.Boolean),
   state: DesktopUpdateStateSchema,
 });
 

@@ -474,20 +474,29 @@ private final class ComposerTextView: UITextView {
   }
 
   private static let passthroughImageTypes: [(type: UTType, fileExtension: String)] = [
-    (.gif, "gif"), (.jpeg, "jpg"), (.heic, "heic"), (.png, "png"), (.webP, "webp"),
+    (.jpeg, "jpg"), (.png, "png"), (.webP, "webp"),
   ]
 
-  /// Providers list representations best first, so the first supported one is the original.
+  /// A GIF keeps its frames only as GIF; otherwise providers list representations best first.
+  /// HEIC is not a send type and JS re-encodes it as JPEG, so it is the last resort.
   private static func passthroughImageType(
     of provider: NSItemProvider
   ) -> (type: UTType, fileExtension: String)? {
-    for identifier in provider.registeredTypeIdentifiers {
-      guard let registered = UTType(identifier) else { continue }
-      if let match = passthroughImageTypes.first(where: { registered.conforms(to: $0.type) }) {
+    let identifiers = provider.registeredTypeIdentifiers
+    let registered = identifiers.compactMap { UTType($0) }
+    if registered.contains(where: { $0.conforms(to: .gif) }) {
+      return (.gif, "gif")
+    }
+    // A provider holding only a UIImage lists exactly the types it synthesizes from decoded pixels.
+    if Set(identifiers) == Set(UIImage.writableTypeIdentifiersForItemProvider) {
+      return nil
+    }
+    for type in registered {
+      if let match = passthroughImageTypes.first(where: { type.conforms(to: $0.type) }) {
         return match
       }
     }
-    return nil
+    return registered.contains(where: { $0.conforms(to: .heic) }) ? (.heic, "heic") : nil
   }
 
   private static func writeTemporaryImage(_ image: UIImage) -> String? {

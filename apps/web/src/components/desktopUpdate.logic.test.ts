@@ -122,6 +122,40 @@ describe("desktop update button state", () => {
     expect(listeners.size).toBe(0);
   });
 
+  it("reports an install that failed before restarting without a message", async () => {
+    const downloaded: DesktopUpdateState = {
+      ...baseState,
+      status: "downloaded",
+      availableVersion: "1.1.0",
+      downloadedVersion: "1.1.0",
+    };
+    const listeners = new Set<(state: DesktopUpdateState) => void>();
+    let markWaitingForRestart: (waiting: "waiting for restart") => void = () => {};
+    const waitingForRestart = new Promise<"waiting for restart">((resolve) => {
+      markWaitingForRestart = resolve;
+    });
+    const install = installDesktopUpdate(
+      {
+        onUpdateState: (listener) => {
+          listeners.add(listener);
+          return () => listeners.delete(listener);
+        },
+        installUpdate: async () => ({
+          accepted: true,
+          completed: false,
+          failed: true,
+          state: downloaded,
+        }),
+      },
+      undefined,
+      () => markWaitingForRestart("waiting for restart"),
+    );
+    const result = await Promise.race([install, waitingForRestart]);
+    expect(result).not.toBe("waiting for restart");
+    expect(getDesktopUpdateActionError(await install)).toBe("An unexpected error occurred.");
+    expect(listeners.size).toBe(0);
+  });
+
   it("prefers a newly available release over a stale downloaded version", () => {
     const state: DesktopUpdateState = {
       ...baseState,

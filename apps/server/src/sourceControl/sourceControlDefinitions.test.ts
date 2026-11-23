@@ -3,6 +3,8 @@ import { expect, it } from "@effect/vitest";
 import {
   BUILT_IN_SOURCE_CONTROL_DRIVER_LIST,
   changeRequestsClosedBy,
+  configuredRemoteUrlMayWin,
+  preferredRemoteUrl,
   sourceControlDefinitions,
 } from "./sourceControlDefinitions.ts";
 
@@ -76,4 +78,32 @@ it.each([
 ] as const)("%s closes %j", (command, expected) => {
   const closed = changeRequestsClosedBy(command);
   expect(closed === "any" ? closed : [...closed]).toEqual(expected);
+});
+
+it.each([
+  ["a rewrite to a proxy", "https://github.com/a/b.git", "https://proxy.example/a/b.git", true],
+  ["a shorthand", "gh:a/b.git", "https://github.com/a/b.git", false],
+  [
+    "a dotted alias rewritten to github.com",
+    "git@github.personal:a/b.git",
+    "git@github.com:a/b.git",
+    false,
+  ],
+  [
+    "an SSH alias a rewrite points github.com at",
+    "git@github.com:a/b.git",
+    "git@github.work:a/b.git",
+    true,
+  ],
+  [
+    "a self-hosted rewrite of an alias",
+    "git@github.work:a/b.git",
+    "https://github.corp.example/a/b.git",
+    false,
+  ],
+  ["a rewrite of an unnamed remote", "corp:a/b.git", "https://code.corp.internal/a/b.git", false],
+])("weighs a configured URL against %s", (_, configuredUrl, fetchUrl, configuredWins) => {
+  expect(
+    configuredRemoteUrlMayWin(fetchUrl) ? preferredRemoteUrl(configuredUrl, fetchUrl) : fetchUrl,
+  ).toBe(configuredWins ? configuredUrl : fetchUrl);
 });

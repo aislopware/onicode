@@ -14,7 +14,11 @@ import type { IssueAddress } from "./WorkflowForge.ts";
 
 export class WorkflowAgentError extends Schema.TaggedError<WorkflowAgentError>()(
   "WorkflowAgentError",
-  { reason: Schema.String },
+  {
+    reason: Schema.String,
+    /** The thread or the link to its environment is gone, so asking again cannot help. */
+    final: Schema.optional(Schema.Boolean),
+  },
 ) {
   override get message(): string {
     return this.reason;
@@ -115,5 +119,10 @@ export class WorkflowAgents extends Context.Service<
       /** The step's own turn. With it, a turn of someone else's on the same thread is left alone. */
       readonly turnId?: string | undefined;
     }) => Effect.Effect<"stopped" | "ended", WorkflowAgentError>;
+    /** The model a thread runs, when it is in this environment and still there. */
+    readonly model: (thread: {
+      readonly threadId: string;
+      readonly environment?: string | undefined;
+    }) => Effect.Effect<AgentModel | undefined>;
   }
 >()("onicode/workflows/WorkflowAgents") {}

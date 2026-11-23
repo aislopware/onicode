@@ -14,7 +14,11 @@ import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 
 import * as ProcessRunner from "../processRunner.ts";
-import { sourceControlDefinitions } from "../sourceControl/sourceControlDefinitions.ts";
+import {
+  parseConfiguredRemoteUrls,
+  preferredRemoteUrl,
+  sourceControlDefinitions,
+} from "../sourceControl/sourceControlDefinitions.ts";
 import { explicitBareRepositoryEnv, unsetInheritedRepositoryEnv } from "../vcs/VcsProcess.ts";
 import * as HostProcess from "@onicode/shared/HostProcess";
 
@@ -51,18 +55,6 @@ function isLocalRemoteUrl(url: string): boolean {
   return colonIndex === -1 || (slashIndex !== -1 && slashIndex < colonIndex);
 }
 
-// `git remote -v` applies url.*.insteadOf, which can point a GitHub remote at a proxy or mirror.
-// A configured URL that names a forge wins; a shorthand like `gh:` is known only once rewritten.
-function parseConfiguredRemoteUrls(config: string): Map<string, string> {
-  const urls = new Map<string, string>();
-  for (const line of config.split("\n")) {
-    const match = /^remote\.(\S+)\.url (.+)$/u.exec(line);
-    // Git fetches from the first of several configured URLs.
-    if (match?.[1] && match[2] && !urls.has(match[1])) urls.set(match[1], match[2]);
-  }
-  return urls;
-}
-
 function parseRemoteFetchUrls(
   stdout: string,
   configuredUrls: ReadonlyMap<string, string>,
@@ -76,10 +68,7 @@ function parseRemoteFetchUrls(
     const [, remoteName = "", fetchUrl = "", direction = ""] = match;
     const configuredUrl = configuredUrls.get(remoteName);
     const remoteUrl =
-      configuredUrl !== undefined &&
-      (sourceControlDefinitions.recognizeRemote(configuredUrl)?.kind ?? "unknown") !== "unknown"
-        ? configuredUrl
-        : fetchUrl;
+      configuredUrl === undefined ? fetchUrl : preferredRemoteUrl(configuredUrl, fetchUrl);
     if (
       direction !== "fetch" ||
       remoteName.length === 0 ||

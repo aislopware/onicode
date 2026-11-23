@@ -23,6 +23,7 @@ import {
   OrchestrationV2ProviderThreadJson,
   OrchestrationV2RpcSchemas,
   OrchestrationV2Subagent,
+  OrchestrationV2ThreadShell,
   OrchestrationV2ThreadShellJson,
   OrchestrationV2SubagentJson,
   OrchestrationV2ThreadHistoryPage,
@@ -469,6 +470,16 @@ describe("orchestration V2 contracts", () => {
     expect(runtimeThread.pendingBackgroundTasks).toEqual([]);
     expect(runtimeThread.contextUsage).toBeNull();
     expect(runtimeThread.nativeMetadata).toBeNull();
+  });
+});
+
+describe("thread shell branches", () => {
+  it("sends a branch clients from before Git ref names cannot decode as no branch", () => {
+    const encode = Schema.encodeSync(OrchestrationV2ThreadShell.fields.branch);
+    const sent = ["\u3000", "feat\u3000", null].map((branch) => encode(branch));
+    expect(sent).toEqual([null, "feat\u3000", null]);
+    const decodeOld = Schema.decodeUnknownSync(Schema.NullOr(TrimmedNonEmptyString));
+    expect(sent.map((branch) => decodeOld(branch))).toEqual([null, "feat", null]);
   });
 });
 

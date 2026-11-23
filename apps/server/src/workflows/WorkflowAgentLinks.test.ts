@@ -220,7 +220,62 @@ it.effect("waits in pieces, rides out a dropped route, and returns the output an
       reply: "Done, pushed.",
       output: { branch: "fix/1" },
     });
-    assert.equal(there.calls.filter((call) => call.tool === "oni_thread_wait").length, 3);
+    const waits = there.calls.filter((call) => call.tool === "oni_thread_wait");
+    assert.equal(waits.length, 3);
+    // A peer waits 45 s at most, so a longer piece would come back early.
+    assert.isTrue(waits.every((call) => Number(call.arguments.timeoutMs) <= 45_000));
+    // The reply is read from the start, not by how a peer pages a read without a cursor.
+    const reads = there.calls.filter((call) => call.tool === "oni_thread_read");
+    assert.equal(reads[1]?.arguments.afterPosition, -1);
+  }),
+);
+
+it.effect("a turn a restart continued there is followed to its continuation's reply", () =>
+  Effect.gen(function* () {
+    const there = peer({
+      oni_thread_wait: [{ ...waited, runId: "turn-2", timedOut: false, output: { head: "abc" } }],
+      oni_thread_read: [
+        {
+          recentRuns: [
+            { runId: "turn-2", status: "completed" },
+            { runId: "turn-1", status: "interrupted" },
+          ],
+          items: [],
+        },
+        // An older peer refuses a read from -1, and reads from the start without a cursor.
+        new OrchestratorMcpFailure({
+          code: "invalid_request",
+          message:
+            "Invalid parameters for tool 'oni_thread_read': Expected a value >= 0, got -1\n  at [\"afterPosition\"]",
+        }),
+        {
+          recentRuns: [],
+          hasMore: false,
+          nextPosition: null,
+          items: [
+            { type: "assistant_message", runId: "turn-1", text: "cut off", textTruncated: false },
+            { type: "assistant_message", runId: "turn-2", text: "finished", textTruncated: false },
+          ],
+        },
+      ],
+    });
+    const result = yield* Effect.provide(
+      Effect.flatMap(WorkflowAgentLinks.make, (links) =>
+        links.result({ threadId: "thread-1", turnId: "turn-1" }, "env-b"),
+      ),
+      there.layer,
+    );
+    assert.deepStrictEqual(result, {
+      ending: "completed",
+      detail: "",
+      reply: "finished",
+      output: { head: "abc" },
+    });
+    const reads = there.calls.filter((call) => call.tool === "oni_thread_read");
+    assert.deepStrictEqual(
+      reads.slice(1).map((call) => call.arguments.afterPosition),
+      [-1, undefined],
+    );
   }),
 );
 
@@ -259,7 +314,23 @@ it.effect("a turn someone stopped there is stopped, and a refused link fails at 
       revoked.layer,
     ).pipe(Effect.flip);
     assert.match(error.reason, /link revoked/);
+    // A cancelled run's sweep counts it as stopped instead of asking forever.
+    assert.isTrue(error.final);
     assert.equal(revoked.calls.length, 1);
+
+    // A turn that is no longer the thread's running one has nothing left to stop.
+    const notRunning = peer({
+      oni_thread_interrupt: [
+        new OrchestratorMcpFailure({ code: "thread_not_interruptible", message: "not running" }),
+      ],
+    });
+    const refusal = yield* Effect.provide(
+      Effect.flatMap(WorkflowAgentLinks.make, (links) =>
+        links.interrupt("thread-1", "env-b", "turn-1"),
+      ),
+      notRunning.layer,
+    ).pipe(Effect.flip);
+    assert.isTrue(refusal.final);
   }),
 );
 
@@ -270,7 +341,7 @@ it.effect("a turn that ended without its result is waited past until a later tur
         // The turn ended. The agent is waiting to be woken, and has submitted nothing.
         { ...waited, timedOut: false },
         // Quiet for five minutes, in pieces. A turn that woke in between is under way...
-        ...Array.from({ length: 6 }, () => ({ ...waited, timedOut: true })),
+        ...Array.from({ length: 7 }, () => ({ ...waited, timedOut: true })),
         // ...so the wait starts over, and that turn submits.
         { ...waited, timedOut: false, output: { head: "abc" } },
       ],
@@ -299,7 +370,7 @@ it.effect("a thread that stays quiet gives the turn back without a result", () =
     const there = peer({
       oni_thread_wait: [
         { ...waited, timedOut: false },
-        ...Array.from({ length: 6 }, () => ({ ...waited, timedOut: true })),
+        ...Array.from({ length: 7 }, () => ({ ...waited, timedOut: true })),
       ],
       oni_thread_read: [
         run("completed"),

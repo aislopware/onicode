@@ -38,6 +38,13 @@ describe("HistorySwipeNavigation", () => {
     ["scrolling over a desktop preview keeps the thread", "preview-viewport", 0, 130, false],
     ["scrolling over a streamed preview keeps the thread", "server-browser", 0, -130, false],
     ["swiping back over a panel without overflow navigates", "none", 0, -130, true],
+    [
+      "swiping back over a vertical scroller with 1px of horizontal overflow navigates",
+      "vertical",
+      0,
+      -130,
+      true,
+    ],
     ["a swipe that started in a closed dialog keeps the thread", "closed-dialog", 0, -130, false],
     ["swiping back over an open alert dialog keeps the thread", "alertdialog", 0, -130, false],
   ] as const)("%s", async (_name, scroller, scrollLeft, deltaX, navigates) => {
@@ -52,9 +59,12 @@ describe("HistorySwipeNavigation", () => {
     if (scroller === "preview-viewport") panel.setAttribute("data-preview-viewport", "tab");
     if (scroller === "server-browser") panel.setAttribute("data-server-browser-surface", "tab");
     if (scroller === "alertdialog") panel.setAttribute("role", "alertdialog");
-    viewport.style.cssText = `width: 200px; overflow-x: ${noOverflow ? "visible" : "auto"}`;
+    viewport.style.cssText =
+      scroller === "vertical"
+        ? "width: 200px; height: 40px; overflow-y: auto"
+        : `width: 200px; overflow-x: ${noOverflow ? "visible" : "auto"}`;
     const content = viewport.appendChild(document.createElement("div"));
-    content.style.cssText = `height: 20px; width: ${noOverflow ? 100 : 1000}px`;
+    content.style.cssText = `height: 20px; width: ${scroller === "vertical" ? 201 : noOverflow ? 100 : 1000}px`;
     viewport.scrollLeft = scrollLeft;
 
     if (scroller === "closed-dialog") {

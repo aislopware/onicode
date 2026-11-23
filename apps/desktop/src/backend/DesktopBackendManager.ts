@@ -655,10 +655,11 @@ export const runBackendProcess = Effect.fn("runBackendProcess")(function* (
     Effect.exit,
   );
   yield* options.onExitObserved?.() ?? Effect.void;
-  // A cancelled run may leave a survivor. Only forget after observing a real exit.
+  // A cancelled run may leave a survivor. Only forget after observing a real exit. A stop that
+  // interrupted the recording leaves its record to the next launch's recovery.
   if (tracking && Exit.isSuccess(exit)) {
-    const forgetProcess = yield* Fiber.join(tracking);
-    yield* forgetProcess;
+    const recorded = yield* Fiber.await(tracking);
+    if (Exit.isSuccess(recorded)) yield* recorded.value;
   }
   yield* Effect.forEach(outputFibers, Fiber.await, {
     concurrency: "unbounded",

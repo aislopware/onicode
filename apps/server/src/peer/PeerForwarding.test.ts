@@ -871,6 +871,23 @@ it.effect("launches with the given title when the peer refuses generateTitle", (
   }),
 );
 
+it("asks a peer for the newest page only on a cursorless timeline read", () => {
+  const read = { threadId: "thread:box-auto", limit: 35 };
+  expect(
+    [
+      {},
+      { afterPosition: -1 },
+      { beforePosition: 3 },
+      { itemId: "item-1", textOffset: 20_000 },
+    ].map((cursor) => PeerForwarding.newestPage("oni_thread_read", { ...read, ...cursor })),
+  ).toEqual([
+    { ...read, beforePosition: Number.MAX_SAFE_INTEGER },
+    undefined,
+    undefined,
+    undefined,
+  ]);
+});
+
 it.effect("retries a newest-page read without its cursor when the peer refuses the cursor", () =>
   Effect.gen(function* () {
     const sent: Array<unknown> = [];

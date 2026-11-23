@@ -397,6 +397,28 @@ export const resolveProject = Effect.fn("cli.thread.resolveProject")(function* (
   return match;
 });
 
+// Servers before 0.12 accept only afterPosition >= 0, and read from the start without one.
+const START_POSITION_REFUSAL =
+  /Invalid parameters for tool 'oni_thread_read': [\s\S]*\["afterPosition"\]/;
+
+/** One page of oni_thread_read, read from the start the older way when the server refuses -1. */
+const readPage = Effect.fn("cli.thread.readPage")(function* (
+  tools: ThreadTools,
+  args: Readonly<Record<string, unknown>>,
+) {
+  const read = (input: Readonly<Record<string, unknown>>) =>
+    tools.call("oni_thread_read", input, OrchestratorMcpThreadReadResult);
+  if (args.afterPosition !== -1) return yield* read(args);
+  const { afterPosition: _fromStart, ...fromStart } = args;
+  return yield* read(args).pipe(
+    Effect.catchIf(
+      (error) =>
+        error._tag === "ThreadToolFailedError" && START_POSITION_REFUSAL.test(error.detail),
+      () => read(fromStart),
+    ),
+  );
+});
+
 /** Every item on a timeline view, oldest first. */
 const readTimeline = Effect.fn("cli.thread.readTimeline")(function* (
   tools: ThreadTools,
@@ -407,18 +429,14 @@ const readTimeline = Effect.fn("cli.thread.readTimeline")(function* (
   let afterPosition: number | null = -1;
   let page: OrchestratorMcpThreadReadResult;
   do {
-    page = yield* tools.call(
-      "oni_thread_read",
-      {
-        threadId,
-        view,
-        limit: READ_PAGE_LIMIT,
-        maxCharsPerItem: READ_ITEM_MAX_CHARS,
-        runLimit: 1,
-        afterPosition,
-      },
-      OrchestratorMcpThreadReadResult,
-    );
+    page = yield* readPage(tools, {
+      threadId,
+      view,
+      limit: READ_PAGE_LIMIT,
+      maxCharsPerItem: READ_ITEM_MAX_CHARS,
+      runLimit: 1,
+      afterPosition,
+    });
     items.push(...page.items);
     afterPosition = page.nextPosition;
   } while (page.hasMore && afterPosition !== null);
@@ -453,18 +471,14 @@ export const readLatestMessages = Effect.fn("cli.thread.readLatestMessages")(fun
     let afterPosition = start - 1;
     let page: OrchestratorMcpThreadReadResult;
     do {
-      page = yield* tools.call(
-        "oni_thread_read",
-        {
-          threadId,
-          view: "messages",
-          limit: READ_PAGE_LIMIT,
-          maxCharsPerItem: READ_ITEM_MAX_CHARS,
-          runLimit: 1,
-          afterPosition,
-        },
-        OrchestratorMcpThreadReadResult,
-      );
+      page = yield* readPage(tools, {
+        threadId,
+        view: "messages",
+        limit: READ_PAGE_LIMIT,
+        maxCharsPerItem: READ_ITEM_MAX_CHARS,
+        runLimit: 1,
+        afterPosition,
+      });
       window.push(
         ...page.items.filter(
           (item) =>

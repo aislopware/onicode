@@ -471,6 +471,11 @@ it.effect("derives a legacy repository host after refining its provider", () =>
 
     assert.strictEqual(result.providers[0]?.host, "gitlab");
     assert.strictEqual(result.providers[0]?.kind, "gitlab");
+    // The forge tools read every project, so one stored before keys existed must not fail them.
+    assert.deepStrictEqual(
+      (yield* service.addressedProjects).map((shell) => shell.repositoryIdentity?.provider),
+      [SourceControlProviderKind.make("gitlab")],
+    );
   }),
 );
 
@@ -2396,6 +2401,17 @@ it.effect("names an SSH remote's web host from a later checkout when the first c
     yield* service.list({ state: "open" });
 
     assert.deepStrictEqual(hosts, ["code.example:3000"]);
+    // The forge tools build PR URLs on that host too, not on the SSH alias.
+    const target = yield* resolveTarget(
+      { repository: "team/repo", number: 42 },
+      yield* service.addressedProject("p1" as ProjectId),
+    );
+    assert.strictEqual(target.host, "code.example:3000");
+    assert.strictEqual(target.url, "https://code.example:3000/team/repo/pulls/42");
+    assert.deepStrictEqual(
+      (yield* service.addressedProjects).map((shell) => shell.repositoryIdentity?.canonicalKey),
+      ["code.example:3000/team/repo", "code.example:3000/team/repo"],
+    );
   }),
 );
 

@@ -128,6 +128,18 @@ export const readNewestOrRetry = Effect.fn("PeerForwarding.readNewestOrRetry")(f
   return yield* read(newest).pipe(Effect.catchIf(refusesBeforePosition, () => read(params)));
 });
 
+// Older peers page some cursorless reads forward; ask for the newest page, as a read here gets.
+// An item's text read has no page, so it goes as it is.
+export const newestPage = (toolName: string, params: unknown) => {
+  if (toolName !== "oni_thread_read") return undefined;
+  const input = params as OrchestratorMcpThreadReadInput;
+  return input.afterPosition === undefined &&
+    input.beforePosition === undefined &&
+    input.itemId === undefined
+    ? { ...input, beforePosition: Number.MAX_SAFE_INTEGER }
+    : undefined;
+};
+
 // Older peers accept only afterPosition >= 0, and read from the start without one.
 const START_POSITION_REFUSAL =
   /^Invalid parameters for tool 'oni_thread_read': [\s\S]*\["afterPosition"\]/;
@@ -289,15 +301,6 @@ const make = Effect.gen(function* () {
   const requireEnabled = links.enabled.pipe(
     Effect.flatMap((enabled) => (enabled ? Effect.void : Effect.fail(linkedEnvironmentsOff))),
   );
-
-  // Older peers page some cursorless reads forward; ask for the newest page, as a read here gets.
-  const newestPage = (toolName: string, params: unknown) => {
-    if (toolName !== "oni_thread_read") return undefined;
-    const input = params as OrchestratorMcpThreadReadInput;
-    return input.afterPosition === undefined && input.beforePosition === undefined
-      ? { ...input, beforePosition: Number.MAX_SAFE_INTEGER }
-      : undefined;
-  };
 
   const call: PeerForwarding["Service"]["call"] = (scope, tool, environmentId, params) => {
     const forwardTool = (

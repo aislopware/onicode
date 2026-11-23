@@ -2407,6 +2407,7 @@ export default function ChatView(props: ChatViewProps) {
     requestedEnvMode: envMode,
     isGitRepo,
     tracksGitRepositories: worktreeRepositoryChoices.tracksGitRepositories,
+    isScratchProject: activeProjectIsScratch,
   });
   // Only a new thread's draft holds a choice; anything else leaves it to the server's default.
   const worktreeRepositories = resolveWorktreeRepositorySelection({

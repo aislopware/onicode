@@ -3991,6 +3991,8 @@
   "7af596fd1e3ac2a2": "合并回 {parentTitle}",
   "566239c645ce0fff": "合并回原对话",
   "1cfeabb8818f121f": "请先在这个分叉中完成一次运行，再合并回去",
+  "ea371763a3afff56": "取消归档 {parentTitle} 后才能把这段对话合并回去",
+  "d8b65e5e9c5fbe26": "取消归档原对话后才能把这段对话合并回去",
   "36cf99230450eeaf": "将此对话合并回 {parentTitle}",
   "bda1cc7b91e07680": "把这段对话合并回原对话",
   "de93e39b51ae5ebf": "停止子智能体 {threadTitle}",

@@ -210,7 +210,7 @@ const checkForUpdatesFromMacMenu = (state: Partial<DesktopUpdateState>) =>
 
 const pressPasteAsText = (
   template: readonly Electron.MenuItemConstructorOptions[],
-): ((focused: object) => void) => {
+): ((focused: object | undefined) => void) => {
   const editMenu = template.find((item) => item.label === "Edit");
   if (!Array.isArray(editMenu?.submenu)) {
     throw new Error("Expected Edit menu submenu to be an array.");
@@ -272,6 +272,10 @@ describe("DesktopApplicationMenu", () => {
       assert.equal(host.pasteAndMatchStyle.mock.calls.length, 2);
       assert.equal(guest.pasteAndMatchStyle.mock.calls.length, 0);
       assert.isFalse(yield* Deferred.isDone(selectedAction));
+
+      // An accessibility press reports the accelerator with nothing focused: the renderer pastes.
+      press(undefined);
+      assert.equal(yield* Deferred.await(selectedAction), "paste-as-text");
     }),
   );
 

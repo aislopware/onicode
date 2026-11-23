@@ -3984,6 +3984,8 @@
   "7af596fd1e3ac2a2": "Fusionar de vuelta en {parentTitle}",
   "566239c645ce0fff": "Fusionar de vuelta en la conversación original",
   "1cfeabb8818f121f": "Completa una ejecución en esta bifurcación antes de fusionarla de vuelta",
+  "ea371763a3afff56": "Desarchiva {parentTitle} para fusionar esta conversación de vuelta en ella",
+  "d8b65e5e9c5fbe26": "Desarchiva la conversación original para fusionar esta de vuelta",
   "36cf99230450eeaf": "Fusionar esta conversación de vuelta en {parentTitle}",
   "bda1cc7b91e07680": "Fusionar esta conversación de vuelta en su original",
   "de93e39b51ae5ebf": "Detener el subagente {threadTitle}",

@@ -1196,9 +1196,7 @@ export const make = Effect.gen(function* () {
         state: yield* Ref.get(updateStateRef),
       };
     }).pipe(Effect.withSpan("desktop.updates.download")),
-    install: installWithExpectedVersion().pipe(
-      Effect.map(({ accepted, completed, state }) => ({ accepted, completed, state })),
-    ),
+    install: installWithExpectedVersion(),
     installPrepared: Effect.fn("DesktopUpdates.installPrepared")(
       function (expectedVersion, options) {
         return installWithExpectedVersion(expectedVersion, options?.pinned ?? false);

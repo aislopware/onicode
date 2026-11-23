@@ -176,6 +176,19 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
       expect(shorthandIdentity?.canonicalKey).toBe("github.com/onicode/onicode");
       expect(shorthandIdentity?.provider).toBe("github");
       expect(shorthandIdentity?.locator.remoteUrl).toBe("https://github.com/Onicode/onicode.git");
+
+      // `github.personal` carries GitHub's label, but the rewrite names the real host.
+      const aliasCwd = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "oni-repository-identity-instead-of-alias-test-",
+      });
+      yield* git(aliasCwd, ["init"]);
+      yield* git(aliasCwd, ["remote", "add", "origin", "git@github.personal:Onicode/onicode.git"]);
+      yield* git(aliasCwd, ["config", "url.git@github.com:.insteadOf", "git@github.personal:"]);
+
+      const aliasIdentity = yield* resolver.resolve(aliasCwd);
+
+      expect(aliasIdentity?.canonicalKey).toBe("github.com/onicode/onicode");
+      expect(aliasIdentity?.locator.remoteUrl).toBe("git@github.com:Onicode/onicode.git");
     }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
   );
 

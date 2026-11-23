@@ -213,7 +213,10 @@ export function resolveSendEnvMode(input: {
   readonly requestedEnvMode: ThreadEnvMode;
   readonly isGitRepo: boolean;
   readonly tracksGitRepositories?: boolean;
+  /** No project never has git, even while its status loads and isGitRepo still assumes it does. */
+  readonly isScratchProject?: boolean;
 }): ThreadEnvMode {
+  if (input.isScratchProject === true) return "local";
   return input.isGitRepo || input.tracksGitRepositories === true ? input.requestedEnvMode : "local";
 }
 

@@ -946,10 +946,12 @@ export const make = Effect.gen(function* () {
           },
         });
       }
-      for (const session of projection.providerSessions.filter(
+      // A startup phase saved when the server died would show until a new session attaches.
+      for (const { startupPhase: _startupPhase, ...session } of projection.providerSessions.filter(
         (candidate) =>
           (candidate.status !== "stopped" && candidate.status !== "error") ||
-          (candidate.status === "error" && (candidate.extensionStatuses?.length ?? 0) > 0),
+          (candidate.status === "error" && (candidate.extensionStatuses?.length ?? 0) > 0) ||
+          candidate.startupPhase !== undefined,
       )) {
         events.push({
           id: yield* allocateEventId(),

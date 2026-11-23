@@ -2401,6 +2401,18 @@ export const OrchestrationV2LatestVisibleMessageSummary = Schema.Struct({
 export type OrchestrationV2LatestVisibleMessageSummary =
   typeof OrchestrationV2LatestVisibleMessageSummary.Type;
 
+// Clients that predate GitRefName decode a shell's branch as TrimmedNonEmptyString: one made only
+// of Unicode whitespace would fail their whole thread list, so the shell sends it as no branch.
+const ThreadShellBranch = Schema.NullOr(GitRefName).pipe(
+  Schema.decodeTo(
+    Schema.NullOr(GitRefName),
+    SchemaTransformation.transform({
+      decode: (branch) => branch,
+      encode: (branch) => (branch !== null && branch.trim().length === 0 ? null : branch),
+    }),
+  ),
+);
+
 export const OrchestrationV2ThreadShell = Schema.Struct({
   ...OrchestrationV2CreationFields,
   id: ThreadId,
@@ -2410,7 +2422,7 @@ export const OrchestrationV2ThreadShell = Schema.Struct({
   modelSelection: ModelSelection,
   runtimeMode: RuntimeMode,
   interactionMode: ProviderInteractionMode,
-  branch: Schema.NullOr(GitRefName),
+  branch: ThreadShellBranch,
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
   linkedPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
   pullRequests: Schema.optional(Schema.Array(ThreadPullRequestLink)),

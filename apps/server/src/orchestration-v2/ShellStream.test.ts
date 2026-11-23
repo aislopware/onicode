@@ -85,6 +85,18 @@ describe("subagent shell events", () => {
       shouldPublishShellApplicationEvent(stored("new-child", "thread.deleted"), subagents),
     ).toBe(true);
     expect(subagents.has("new-child")).toBe(true);
+    // A workflow run's agent step shows inside the run, so its transcript is the run's too.
+    const step = {
+      event: {
+        threadId: "new-step",
+        type: "thread.created",
+        payload: { lineage: { relationshipToParent: null, workflowStep: true } },
+      },
+    } as ApplicationStoredEvent;
+    expect(shouldPublishShellApplicationEvent(step, subagents)).toBe(true);
+    expect(
+      shouldPublishShellApplicationEvent(stored("new-step", "message.updated"), subagents),
+    ).toBe(false);
   });
 });
 
@@ -187,6 +199,24 @@ describe("omitIdleSubagentShells", () => {
       // Idle, but a woken grandchild walks through it to reach the root's badge.
       row("middle", "root"),
       row("grandchild", "middle"),
+      // A workflow run's agent steps show inside the run, as children do inside their parent.
+      row("step", null, {
+        lineage: {
+          parentThreadId: null,
+          relationshipToParent: null,
+          rootThreadId: ThreadId.make("step"),
+          workflowStep: true,
+        },
+      }),
+      row("working-step", null, {
+        lineage: {
+          parentThreadId: null,
+          relationshipToParent: null,
+          rootThreadId: ThreadId.make("working-step"),
+          workflowStep: true,
+        },
+        activityRunStatus: "running",
+      }),
     ];
     expect(omitIdleSubagentShells(threads).map((thread) => thread.id)).toEqual([
       "root",
@@ -195,25 +225,34 @@ describe("omitIdleSubagentShells", () => {
       "asking",
       "background",
       "middle",
+      "working-step",
     ]);
   });
 
   it("still filters the transcript events of omitted children for a subscriber that opts in", () => {
-    const threads = [row("root", null), row("idle", "root")];
+    const step = row("step", null, {
+      lineage: {
+        parentThreadId: null,
+        relationshipToParent: null,
+        rootThreadId: ThreadId.make("step"),
+        workflowStep: true,
+      },
+      activityRunStatus: "running",
+    });
+    const threads = [row("root", null), row("idle", "root"), step];
     const omitted = activeShellRowsForSubscriber(threads, true);
-    expect(omitted.threads.map((thread) => thread.id)).toEqual(["root"]);
-    expect(
-      shouldPublishShellApplicationEvent(
-        {
-          event: {
-            threadId: "idle",
-            type: "turn-item.updated",
-            payload: { type: "command_execution" },
-          },
-        } as ApplicationStoredEvent,
-        omitted.subagentThreadIds,
-      ),
-    ).toBe(false);
+    expect(omitted.threads.map((thread) => thread.id)).toEqual(["root", "step"]);
+    // A working step stays in the shell, and its transcript still reaches only its own view.
+    for (const threadId of ["idle", "step"]) {
+      expect(
+        shouldPublishShellApplicationEvent(
+          {
+            event: { threadId, type: "turn-item.updated", payload: { type: "command_execution" } },
+          } as ApplicationStoredEvent,
+          omitted.subagentThreadIds,
+        ),
+      ).toBe(false);
+    }
   });
 });
 

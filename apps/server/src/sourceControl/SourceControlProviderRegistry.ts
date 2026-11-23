@@ -15,7 +15,12 @@ import {
 } from "@onicode/contracts";
 
 import * as BuiltInDrivers from "./builtInDrivers.ts";
-import { sourceControlDefinitions } from "./sourceControlDefinitions.ts";
+import {
+  configuredRemoteUrlMayWin,
+  parseConfiguredRemoteUrls,
+  preferredRemoteUrl,
+  sourceControlDefinitions,
+} from "./sourceControlDefinitions.ts";
 import * as SourceControlProvider from "@onicode/source-control-core/server/SourceControlProvider";
 import {
   probeSourceControlProvider,
@@ -314,7 +319,7 @@ export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWit
               }),
           ),
         );
-        const remotes = yield* handle.driver.listRemotes(cwd).pipe(
+        const listed = handle.driver.listRemotes(cwd).pipe(
           Effect.mapError(
             (error) =>
               new SourceControlProviderError({
@@ -326,7 +331,38 @@ export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWit
               }),
           ),
         );
-        return yield* refineContext(cwd, selectProviderContext(remotes.remotes));
+        const { remotes } = yield* listed;
+        // `git remote -v` applies url.*.insteadOf; `preferredRemoteUrl` weighs the configured URL.
+        const configuredUrls =
+          handle.kind === "git" && remotes.some((remote) => configuredRemoteUrlMayWin(remote.url))
+            ? yield* handle.driver
+                .execute({
+                  operation: "SourceControlProviderRegistry.readConfiguredRemoteUrls",
+                  cwd,
+                  args: ["config", "--get-regexp", "^remote\\..*\\.url$"],
+                  allowNonZeroExit: true,
+                  timeoutMs: 5_000,
+                })
+                .pipe(
+                  Effect.map((result) =>
+                    result.exitCode === 0
+                      ? parseConfiguredRemoteUrls(result.stdout)
+                      : new Map<string, string>(),
+                  ),
+                  Effect.orElseSucceed(() => new Map<string, string>()),
+                )
+            : new Map<string, string>();
+        return yield* refineContext(
+          cwd,
+          selectProviderContext(
+            remotes.map((remote) => {
+              const configuredUrl = configuredUrls.get(remote.name);
+              return configuredUrl === undefined
+                ? remote
+                : { ...remote, url: preferredRemoteUrl(configuredUrl, remote.url) };
+            }),
+          ),
+        );
       },
     );
 

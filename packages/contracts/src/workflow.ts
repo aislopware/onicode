@@ -51,6 +51,8 @@ export const WorkflowStep = Schema.Struct({
   threadId: Schema.NullOr(Schema.String),
   /** The linked environment that thread is in; null when it is this one. */
   environmentId: Schema.NullOr(Schema.String),
+  /** The model that thread runs, when it is in this environment. Older servers leave it out. */
+  model: Schema.optional(Schema.Struct({ instanceId: Schema.String, model: Schema.String })),
   /** What it produced: a step's value, an agent's data or reply, the answer to a question. */
   result: Schema.NullOr(Schema.Json),
   /** What an agent said in closing, when its result is data and not that reply. */
@@ -157,7 +159,25 @@ export const WorkflowCounts = Schema.Struct({
 export type WorkflowCounts = typeof WorkflowCounts.Type;
 export type WorkflowRunsSnapshot = typeof WorkflowRunsSnapshot.Type;
 
-export const WorkflowRunsSubscribeInput = Schema.Struct({});
+/**
+ * What a subscription with `changes` sends after its first snapshot: each run written since the
+ * last message, whole, and the questions as they are now. A client upserts the runs by id.
+ */
+export const WorkflowRunsChange = Schema.Struct({
+  changedRuns: Schema.Array(WorkflowRun),
+  questions: Schema.Array(WorkflowQuestion),
+  definition: Schema.optional(WorkflowDefinitionState),
+});
+export type WorkflowRunsChange = typeof WorkflowRunsChange.Type;
+
+/** A snapshot replaces what a client holds; a change is applied to it. */
+export const WorkflowRunsUpdate = Schema.Union([WorkflowRunsSnapshot, WorkflowRunsChange]);
+export type WorkflowRunsUpdate = typeof WorkflowRunsUpdate.Type;
+
+export const WorkflowRunsSubscribeInput = Schema.Struct({
+  /** Changes after the first snapshot instead of a snapshot each time. Servers before it ignore it. */
+  changes: Schema.optional(Schema.Boolean),
+});
 
 export const WorkflowRunGetInput = Schema.Struct({ runId: Schema.String });
 

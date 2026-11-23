@@ -15,19 +15,32 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
+import * as Scope from "effect/Scope";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 
 import { daily, every, Tick } from "./triggers.ts";
 import { issues, pullRequests } from "./forgeApi.ts";
-import { cancel, runs, signalAll, start } from "./stepServices.ts";
-import { type InRun, invoke, skip, sleep, step, stop, title, wait, workflow } from "./workflow.ts";
+import { cancel, runs, signal, signalAll, start, store } from "./stepServices.ts";
+import {
+  type InRun,
+  invoke,
+  skip,
+  sleep,
+  step,
+  stop,
+  title,
+  wait,
+  workflow,
+  type WorkflowDefinition,
+} from "./workflow.ts";
 import { type AgentResult, WorkflowAgentError, WorkflowAgents } from "./WorkflowAgents.ts";
 import WorkflowsMigration from "../persistence/Migrations/114_Workflows.ts";
 import * as WorkflowEngine from "./WorkflowEngine.ts";
 import {
   Issue,
+  PullRequest,
   pullRequestReferenceOf,
   unavailable,
   WorkflowForge,
@@ -37,7 +50,7 @@ import { issueReference, noteReference } from "./runReferences.ts";
 import { agent, ask } from "./workflowAgent.ts";
 import * as Workflows from "./Workflows.ts";
 import * as WorkflowStore from "./WorkflowStore.ts";
-import type { WorkflowRun, WorkflowRunStatus } from "./WorkflowStore.ts";
+import type { WorkflowRun, WorkflowRunStatus, WorkflowStep } from "./WorkflowStore.ts";
 
 const once = { retry: { times: 0 } } as const;
 
@@ -101,6 +114,19 @@ const definitions = (
           if (payload.mode === "stop") return yield* stop("no need");
           if (payload.mode === "hold") yield* wait("go", { returns: Schema.String });
         }),
+    ),
+    // Two agents side by side, and a cleanup that counts when it runs.
+    workflow(
+      "tended",
+      { version: 1, payload: Schema.Struct({}), onEnd: () => Effect.asVoid(count("end:tended")) },
+      () =>
+        Effect.all(
+          [
+            agent("north", { brief: "North.", project: "p1" }),
+            agent("south", { brief: "South.", project: "p1" }),
+          ],
+          { concurrency: 2 },
+        ),
     ),
     workflow(
       "flaky",
@@ -243,6 +269,92 @@ const definitions = (
     ),
   ];
 };
+
+// A run these leave paused stays paused: one the sweep resumed while the test went on would
+// write the same keys and send the same signals as the runs after it.
+const pausedForGood = { resumeAfter: [] };
+const tally = store.entry("tally", Schema.Number);
+const stored = [
+  /** Counts itself in the store. Reading the count as text is a step that cannot work. */
+  workflow(
+    "tally",
+    {
+      version: 1,
+      payload: Schema.Struct({ wrong: Schema.optional(Schema.Boolean) }),
+      returns: Schema.Number,
+      ...pausedForGood,
+    },
+    (payload) =>
+      payload.wrong === true
+        ? step(
+            "read",
+            { returns: Schema.Number, ...once },
+            Effect.as(store.entry("tally", Schema.String).get, 0),
+          )
+        : step(
+            "count",
+            { returns: Schema.Number, ...once },
+            tally
+              .update((current) => Option.getOrElse(current, () => 0) + 1)
+              .pipe(Effect.map(Option.getOrElse(() => 0))),
+          ),
+  ),
+  /** Waits in line for a door that `opener` or `relay` opens. */
+  workflow(
+    "door",
+    { version: 1, payload: Schema.Struct({ door: Schema.String }), returns: Schema.String },
+    (payload) =>
+      Effect.map(
+        wait("open", { returns: Schema.String, channel: payload.door }),
+        Option.getOrElse(() => "never"),
+      ),
+  ),
+  /** Opens a door in a transaction, which with `fail` fails on its first count. */
+  workflow(
+    "opener",
+    {
+      version: 1,
+      payload: Schema.Struct({ door: Schema.String, fail: Schema.Boolean }),
+      ...pausedForGood,
+    },
+    (payload) =>
+      step(
+        "open",
+        { returns: Schema.Void, retry: { times: 1 } },
+        Effect.gen(function* () {
+          yield* store.transaction(
+            Effect.gen(function* () {
+              yield* store.entry(`doors/${payload.door}`, Schema.String).set("open");
+              const tries = yield* store
+                .entry(`tries/${payload.door}`, Schema.Number)
+                .update((current) => Option.getOrElse(current, () => 0) + 1);
+              if (payload.fail && Option.contains(tries, 1)) return yield* Effect.fail("slipped");
+            }),
+          );
+          yield* signal({ workflow: "door", channel: payload.door }, "came in");
+        }),
+      ),
+  ),
+  /** Opens two doors and fails; its second try opens the second again and a third. */
+  workflow(
+    "relay",
+    { version: 1, payload: Schema.Struct({ doors: Schema.Array(Schema.String) }) },
+    (payload) =>
+      step(
+        "pass",
+        { returns: Schema.Void, retry: { times: 1 } },
+        Effect.gen(function* () {
+          const tries = yield* store
+            .entry("relay-tries", Schema.Number)
+            .update((current) => Option.getOrElse(current, () => 0) + 1);
+          const [a, b, c] = payload.doors;
+          const doors = Option.contains(tries, 1) ? [a!, b!] : [b!, c!];
+          for (const door of doors) yield* signal({ workflow: "door", channel: door }, "came in");
+          if (Option.contains(tries, 1)) return yield* Effect.fail("slipped");
+        }),
+      ),
+  ),
+];
 
 const kid = workflow(
   "kid",
@@ -443,6 +555,7 @@ const fakeAgents = () => {
   }> = [];
   let threads = 0;
   let refusals = 0;
+  const gone = new Set<string>();
   const unreadable = new Set<string>();
   const unanswered = new Set<string>();
   const unstartable = new Set<string>();
@@ -497,6 +610,9 @@ const fakeAgents = () => {
           if (yield* SqlClient.SafeIntegers) {
             return yield* new WorkflowAgentError({ reason: "SafeIntegers leaked into a stop" });
           }
+          if (gone.has(thread.threadId)) {
+            return yield* new WorkflowAgentError({ reason: "no such thread", final: true });
+          }
           if (refusals-- > 0) return yield* new WorkflowAgentError({ reason: "the link is down" });
           interrupted.push(thread);
           const ended =
@@ -505,6 +621,11 @@ const fakeAgents = () => {
               : false;
           return ended ? ("ended" as const) : ("stopped" as const);
         }),
+      // Only a thread here can be read; one in a linked environment is that one's to tell.
+      model: (thread) =>
+        Effect.succeed(
+          thread.environment === undefined ? { instanceId: "codex", model: "gpt-5" } : undefined,
+        ),
     }),
     interrupted,
     /** The next read of a turn with this key fails. */
@@ -522,6 +643,10 @@ const fakeAgents = () => {
     /** Turns down the next `count` stops. */
     refuseStops: (count: number) => {
       refusals = count;
+    },
+    /** Stops of this thread are refused for good, as for one deleted there. */
+    gone: (threadId: string) => {
+      gone.add(threadId);
     },
     /** The turn of `runId` with this key, once it has been started. */
     started: (runId: string, key: string) => Deferred.await(turn(`${runId}/${key}`).started),
@@ -609,6 +734,40 @@ const issueAt = (key: string, createdAt: string) =>
     labels: [],
     commentCount: 0,
   });
+const decodePullRequest = Schema.decodeSync(PullRequest);
+const pullRequestAt = (number: number, createdAt: string, updatedAt = createdAt) =>
+  decodePullRequest({
+    provider: "github",
+    host: "github.com",
+    projectId: "project-1",
+    projectTitle: "app",
+    repository: "me/app",
+    number,
+    title: `Change ${number}`,
+    url: `https://github.com/me/app/pull/${number}`,
+    author: null,
+    headBranch: `change-${number}`,
+    baseBranch: "main",
+    state: "open",
+    isDraft: false,
+    mergeability: "mergeable",
+    additions: 0,
+    deletions: 0,
+    createdAt,
+    updatedAt,
+    viewerReviewRequested: false,
+    labels: [],
+  });
+const greet = workflow(
+  "greet",
+  {
+    version: 1,
+    payload: PullRequest,
+    returns: Schema.Number,
+    triggers: [pullRequests.opened({ project: PROJECT })],
+  },
+  (pullRequest) => Effect.succeed(pullRequest.number),
+);
 /** A tracker that lists what the test put in it and remembers what was said. */
 // The real trackers read the server's own tables, which do not decode under the engine's BigInts.
 const asTheServerReads = <A>(answer: () => A) =>
@@ -621,6 +780,9 @@ const asTheServerReads = <A>(answer: () => A) =>
 const fakeForge = () => {
   const open: Array<Issue> = [];
   const asked: Array<Parameters<WorkflowForge["Service"]["issues"]["list"]>[0]> = [];
+  /** Pull requests a page at a time, newest updated first, as the hosts list them. */
+  const pages: Array<ReadonlyArray<PullRequest>> = [];
+  const pagesRead: Array<number> = [];
   const comments: Array<string> = [];
   const pullRequest = {
     state: "open",
@@ -633,10 +795,22 @@ const fakeForge = () => {
     asked,
     comments,
     pullRequest,
+    pages,
+    pagesRead,
     service: WorkflowForge.of({
       ...unavailable,
       pullRequests: {
         ...unavailable.pullRequests,
+        list: () => asTheServerReads(() => pages[0] ?? []),
+        listPage: (_query, cursors) =>
+          asTheServerReads(() => {
+            const at = Number(cursors?.page ?? 0);
+            pagesRead.push(at);
+            return {
+              entries: pages[at] ?? [],
+              next: at + 1 < pages.length ? { page: String(at + 1) } : undefined,
+            };
+          }),
         // Only what a wait looks at; the rest of a pull request is the host's business.
         read: () =>
           asTheServerReads(() => structuredClone(pullRequest)).pipe(
@@ -697,10 +871,11 @@ const harness = Effect.fnUntraced(function* (store?: typeof WorkflowStore.layer)
     ...definitions(counts, failures, latch),
     fix,
     ...triggered,
+    ...stored,
     ...family,
     ...control,
   ];
-  const engineOf = (registered: typeof all) =>
+  const engineOf = (registered: ReadonlyArray<WorkflowDefinition>) =>
     WorkflowEngine.layer(registered, store).pipe(
       Layer.provide(Layer.succeed(WorkflowAgents, agents.service)),
       Layer.provide(Layer.succeed(WorkflowForge, forge.service)),
@@ -712,7 +887,10 @@ const harness = Effect.fnUntraced(function* (store?: typeof WorkflowStore.layer)
   // `clock` to hold time still until it has seen what it waits for.
   const clock = yield* Latch.make(true);
   /** With `registered`, a server whose files define only those. */
-  const boot = <A, E>(use: Effect.Effect<A, E, Workflows.Workflows>, registered = all) =>
+  const boot = <A, E>(
+    use: Effect.Effect<A, E, Workflows.Workflows | Scope.Scope>,
+    registered: ReadonlyArray<WorkflowDefinition> = all,
+  ) =>
     Effect.raceFirst(
       Effect.scoped(Effect.provide(use, engineOf(registered))),
       Effect.forever(Effect.andThen(clock.await, TestClock.adjust("1 second"))),
@@ -839,10 +1017,24 @@ it.effect("a signal to a paused run is kept for the resume and does not run the 
         yield* workflows.waitFor(runId, (run) => run.status === "waiting" && run.detail === "sib");
         yield* Deferred.succeed(latch.bad, undefined);
         yield* workflows.waitFor(runId, status("paused"));
+        const changes = yield* Stream.toPull(workflows.watchChanges);
+        yield* changes;
         assert.equal(
           yield* workflows.signal({ runId, wait: "sib" }, "x", { id: "sib-x" }),
           "delivered",
         );
+        // Nothing wakes the paused run, so its watchers hear of the claim from the store, before
+        // they hear of a run started after it.
+        const after = yield* workflows.start("inbound", "hello", { idempotencyKey: "after" });
+        const written = new Set<string>();
+        while (!written.has(after.runId)) {
+          for (const update of yield* changes) {
+            for (const run of "changedRuns" in update ? update.changedRuns : []) {
+              written.add(run.runId);
+            }
+          }
+        }
+        assert.isTrue(written.has(runId));
         yield* workflows.resume(runId);
         const again = yield* workflows.waitFor(runId, (run) => run.pauses === 2);
         assert.equal(again.status, "paused");
@@ -1546,6 +1738,102 @@ it.effect(
     }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
 );
 
+it.effect("the store is shared by runs, outlives a restart, and names a key it cannot read", () =>
+  Effect.gen(function* () {
+    const { boot } = yield* harness();
+    yield* boot(
+      Effect.gen(function* () {
+        const workflows = yield* Workflows.Workflows;
+        const counting = yield* Effect.forEach(["a", "b", "c"], (key) =>
+          workflows.start("tally", {}, { idempotencyKey: key }),
+        );
+        const counted = yield* Effect.forEach(counting, (run) =>
+          workflows.waitFor(run.runId, status("completed")),
+        );
+        // Counted together, and no count lost: each update read and wrote as one.
+        assert.sameMembers(
+          counted.map((run) => run.result),
+          [1, 2, 3],
+        );
+      }),
+    );
+    yield* boot(
+      Effect.gen(function* () {
+        const workflows = yield* Workflows.Workflows;
+        const next = yield* workflows.start("tally", {}, { idempotencyKey: "d" });
+        assert.equal((yield* workflows.waitFor(next.runId, status("completed"))).result, 4);
+        const wrong = yield* workflows.start("tally", { wrong: true }, { idempotencyKey: "w" });
+        const paused = yield* workflows.waitFor(wrong.runId, status("paused"));
+        assert.include(paused.detail ?? "", "The stored value at tally does not fit its schema");
+        assert.deepStrictEqual(yield* workflows.stored("tally"), [{ key: "tally", value: 4 }]);
+      }),
+    );
+  }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
+);
+
+it.effect("a failed transaction writes nothing, and a retry sends again what it sent", () =>
+  Effect.gen(function* () {
+    const { boot } = yield* harness();
+    yield* boot(
+      Effect.gen(function* () {
+        const workflows = yield* Workflows.Workflows;
+        const waiting = yield* workflows.start("door", { door: "east" }, { idempotencyKey: "e" });
+        yield* workflows.waitFor(waiting.runId, status("waiting"));
+        // Each try fails inside the transaction, which takes back the door and the count, so the
+        // second try counts 1 again and fails too.
+        const opener = yield* workflows.start(
+          "opener",
+          { door: "east", fail: true },
+          { idempotencyKey: "o" },
+        );
+        yield* workflows.waitFor(opener.runId, status("paused"));
+        assert.equal((yield* workflows.get(opener.runId)).steps[0]?.attempts, 2);
+        assert.deepStrictEqual(yield* workflows.stored("doors/"), []);
+        assert.deepStrictEqual(yield* workflows.stored("tries/"), []);
+        assert.equal((yield* workflows.get(waiting.runId)).run.status, "waiting");
+        const clean = yield* workflows.start(
+          "opener",
+          { door: "east", fail: false },
+          { idempotencyKey: "o2" },
+        );
+        yield* workflows.waitFor(clean.runId, status("completed"));
+        assert.deepStrictEqual(yield* workflows.stored("doors/"), [
+          { key: "doors/east", value: "open" },
+        ]);
+        assert.deepStrictEqual(yield* workflows.stored("tries/"), [
+          { key: "tries/east", value: 1 },
+        ]);
+        assert.equal(
+          (yield* workflows.waitFor(waiting.runId, status("completed"))).result,
+          "came in",
+        );
+
+        const doors = ["ra", "rb", "rc"];
+        const held = yield* Effect.forEach(doors, (door) =>
+          workflows.start("door", { door }, { idempotencyKey: door }),
+        );
+        yield* Effect.forEach(held, (run) => workflows.waitFor(run.runId, status("waiting")));
+        const relay = yield* workflows.start("relay", { doors }, { idempotencyKey: "relay" });
+        yield* workflows.waitFor(relay.runId, status("completed"));
+        // Each try is an attempt, though both were one run of the step.
+        assert.equal((yield* workflows.get(relay.runId)).steps[0]?.attempts, 2);
+        // The second try opened rc, so a later signal to it waits as mail.
+        assert.equal(
+          yield* workflows.signal({ workflow: "door", channel: "rc" }, "late", { id: "rc-late" }),
+          "buffered",
+        );
+        const opened = yield* Effect.forEach(held, (run) =>
+          workflows.waitFor(run.runId, status("completed")),
+        );
+        assert.deepStrictEqual(
+          opened.map((run) => run.result),
+          ["came in", "came in", "came in"],
+        );
+      }),
+    );
+  }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
+);
+
 it.effect("an invoked run reports how it ended, and cancelling the parent cancels it", () =>
   Effect.gen(function* () {
     const { boot } = yield* harness();
@@ -1629,8 +1917,8 @@ it.effect("a cancel cut off midway still tells the run that invoked it", () =>
       Effect.map(WorkflowStore.make, (real) =>
         WorkflowStore.WorkflowStore.of({
           ...real,
-          stepsCancelled: (runId, except) => {
-            if (!first) return real.stepsCancelled(runId, except);
+          stepsCancelled: (runId, except, stopped) => {
+            if (!first) return real.stepsCancelled(runId, except, stopped);
             first = false;
             return Effect.andThen(Deferred.succeed(reached, undefined), Effect.never);
           },
@@ -1747,6 +2035,10 @@ it.effect("an agent step in a linked environment keeps its thread there", () =>
           steps.filter((step) => step.kind === "agent").map((step) => step.environmentId),
           ["env-b", "env-b"],
         );
+        assert.notProperty(
+          steps.find((step) => step.kind === "agent"),
+          "model",
+        );
         yield* workflows.cancel(run.runId, "not needed");
         // Only the step's own turn: someone else's turn on that thread is left alone.
         assert.deepStrictEqual(agents.interrupted, [
@@ -1771,6 +2063,8 @@ it.effect("cancelling a run stops its agent, and a turn a person stopped is not 
         yield* agents.started(cancelled.runId, "write/0");
         yield* workflows.waitFor(cancelled.runId, (run) => run.detail === "agent write");
         const { steps } = yield* workflows.get(cancelled.runId);
+        // The run says which model its agent runs, so a client need not read the thread for it.
+        assert.deepStrictEqual(steps[0]?.model, { instanceId: "codex", model: "gpt-5" });
         yield* workflows.cancel(cancelled.runId, "not needed");
         assert.deepStrictEqual(agents.interrupted, [
           { threadId: steps[0]?.threadId ?? "no thread", turnId: `${cancelled.runId}/write/0` },
@@ -1784,6 +2078,112 @@ it.effect("cancelling a run stops its agent, and a turn a person stopped is not 
         // Resuming is the person saying go on: the next round starts.
         yield* workflows.resume(stopped.runId);
         yield* agents.started(stopped.runId, "write/1");
+
+        // A stop turned down leaves the step running, and the sweep stops its agent again.
+        agents.refuseStops(Number.MAX_SAFE_INTEGER);
+        const refused = yield* workflows.start("fix", { project: "p1" }, { idempotencyKey: "x3" });
+        yield* agents.started(refused.runId, "write/0");
+        yield* workflows.waitFor(refused.runId, (run) => run.detail === "agent write");
+        const stopsBefore = agents.interrupted.length;
+        yield* workflows.cancel(refused.runId, "not needed");
+        assert.equal(agents.interrupted.length, stopsBefore);
+        const [held] = (yield* workflows.get(refused.runId)).steps;
+        assert.equal(held?.status, "running");
+        agents.refuseStops(0);
+        // The sweep tries it again once the stop's rest is over.
+        yield* workflows.watch.pipe(
+          Stream.mapEffect(() => workflows.get(refused.runId)),
+          Stream.filter((run) => run.steps[0]?.status === "failed"),
+          Stream.runHead,
+        );
+        assert.deepInclude(agents.interrupted.slice(stopsBefore), {
+          threadId: held?.threadId ?? "no thread",
+          turnId: `${refused.runId}/write/0`,
+        });
+      }),
+    );
+  }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
+);
+
+it.effect("a cancelled run is cleaned up only once every agent it had is stopped or gone", () =>
+  Effect.gen(function* () {
+    const { boot, agents, counts } = yield* harness();
+    const cleanups = Effect.map(Ref.get(counts), (all) => all["end:tended"] ?? 0);
+    const agentSteps = (run: { readonly steps: ReadonlyArray<WorkflowStep> }) =>
+      run.steps.filter((step) => step.kind === "agent");
+    const runId = yield* boot(
+      Effect.gen(function* () {
+        const workflows = yield* Workflows.Workflows;
+        const { runId } = yield* workflows.start("tended", {}, { idempotencyKey: "t" });
+        const started = Option.getOrThrow(
+          yield* workflows.watch.pipe(
+            Stream.mapEffect(() => workflows.get(runId)),
+            Stream.filter((run) => {
+              const steps = agentSteps(run);
+              return steps.length === 2 && steps.every((step) => step.threadId !== null);
+            }),
+            Stream.runHead,
+          ),
+        );
+        const threadOf = (name: string) =>
+          agentSteps(started).find((step) => step.name === name)?.threadId ?? "";
+        const [north, south] = [threadOf("north"), threadOf("south")];
+        // North's thread was deleted there; south's link is down.
+        agents.gone(north);
+        agents.refuseStops(Number.MAX_SAFE_INTEGER);
+        yield* workflows.cancel(runId, "not needed");
+        // North counts as stopped and is over; south stays running for the sweep to stop.
+        const cancelled = agentSteps(yield* workflows.get(runId));
+        assert.deepStrictEqual(
+          [north, south].map((id) => cancelled.find((step) => step.threadId === id)?.status),
+          ["failed", "running"],
+        );
+        return runId;
+      }),
+    );
+    // Right after a restart, before the engine replays the run's steps, nothing is in flight and
+    // only the store knows south's agent still works.
+    yield* boot(
+      Effect.gen(function* () {
+        const workflows = yield* Workflows.Workflows;
+        yield* workflows.sweep;
+        assert.equal(yield* cleanups, 0);
+      }),
+    );
+    // A day after the cancel, a stop that still fails is let go, and the sweep stops asking.
+    yield* TestClock.adjust("2 days");
+    yield* boot(
+      Effect.gen(function* () {
+        const workflows = yield* Workflows.Workflows;
+        yield* workflows.sweep;
+        const letGo = agentSteps(yield* workflows.get(runId));
+        assert.deepStrictEqual(
+          ["north", "south"].map((name) => {
+            const step = letGo.find((candidate) => candidate.name === name);
+            return [step?.status, step?.detail];
+          }),
+          [
+            ["failed", "cancelled"],
+            ["failed", "cancelled"],
+          ],
+        );
+        // Once the replayed turns end, the cleanup has run, and only once.
+        yield* agents.end(runId, "north/0", { ending: "stopped", detail: "interrupted" });
+        yield* agents.end(runId, "south/0", { ending: "stopped", detail: "interrupted" });
+        const ended = Option.getOrThrow(
+          yield* workflows.watch.pipe(
+            Stream.mapEffect(() => workflows.get(runId)),
+            Stream.filter((run) =>
+              run.steps.some((step) => step.name === "onEnd" && step.status === "completed"),
+            ),
+            Stream.runHead,
+          ),
+        );
+        assert.notInclude(
+          agentSteps(ended).map((step) => step.status),
+          "running",
+        );
+        assert.equal(yield* cleanups, 1);
       }),
     );
   }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
@@ -1816,6 +2216,23 @@ it.effect("a watcher is sent the runs again when one changes", () =>
           Option.getOrThrow(seen).runs.map((run) => run.runId),
           [runId],
         );
+
+        // Asked for changes, a watcher gets the list once and then only the runs a change wrote.
+        const changes = yield* Stream.toPull(workflows.watchChanges);
+        const [listed] = yield* changes;
+        assert.deepStrictEqual(
+          listed !== undefined && "runs" in listed ? listed.runs.map((run) => run.runId) : [],
+          [runId],
+        );
+        const other = yield* workflows.start("inbound", "hello", { idempotencyKey: "w1" });
+        let done = false;
+        while (!done) {
+          for (const update of yield* changes) {
+            assert.notProperty(update, "runs");
+            const written = "changedRuns" in update ? update.changedRuns : [];
+            done ||= written.some((run) => run.runId === other.runId && run.status === "completed");
+          }
+        }
       }),
     );
   }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
@@ -1995,8 +2412,29 @@ it.effect("a step or sleep with an option it cannot read says which and what it 
 
 it.effect("a start under a key is one run, and a run that skips ends as skipped", () =>
   Effect.gen(function* () {
-    const { boot } = yield* harness();
-    yield* boot(
+    // A start cut off after its row and before the engine heard of it, as a server exit would.
+    const reached = yield* Deferred.make<string>();
+    let cut = true;
+    const store = Layer.effect(
+      WorkflowStore.WorkflowStore,
+      Effect.map(WorkflowStore.make, (real) =>
+        WorkflowStore.WorkflowStore.of({
+          ...real,
+          runStarted: (run) => {
+            if (run.idempotencyKey !== "d3" || !cut) return real.runStarted(run);
+            cut = false;
+            return real
+              .runStarted(run)
+              .pipe(
+                Effect.andThen(Deferred.succeed(reached, run.runId)),
+                Effect.andThen(Effect.never),
+              );
+          },
+        }),
+      ),
+    );
+    const { boot, database } = yield* harness(store);
+    const stranded = yield* boot(
       Effect.gen(function* () {
         const workflows = yield* Workflows.Workflows;
         const first = yield* workflows.start("inbound", "hello", { idempotencyKey: "d1" });
@@ -2010,7 +2448,73 @@ it.effect("a start under a key is one run, and a run that skips ends as skipped"
         const ping = yield* workflows.start("inbound", "ping", { idempotencyKey: "d2" });
         const skipped = yield* workflows.waitFor(ping.runId, status("skipped"));
         assert.equal(skipped.detail, "only a ping");
+
+        const starting = yield* Effect.forkChild(
+          workflows.start("inbound", "stranded", { idempotencyKey: "d3" }),
+        );
+        const runId = yield* Deferred.await(reached);
+        yield* Fiber.interrupt(starting);
+        return runId;
       }),
+    );
+    // After the restart the sweep hands the engine the run nothing executes.
+    yield* boot(
+      Effect.gen(function* () {
+        const workflows = yield* Workflows.Workflows;
+        yield* workflows.sweep;
+        const submitted = yield* Effect.flatMap(
+          SqlClient.SqlClient,
+          (sql) => sql<{ readonly n: number | bigint }>`
+            SELECT COUNT(*) AS n FROM cluster_messages WHERE entity_id = ${stranded}
+          `,
+        ).pipe(Effect.provide(database));
+        assert.isAbove(Number(submitted[0]?.n ?? 0), 0);
+        const done = yield* workflows.waitFor(stranded, status("completed"));
+        assert.equal(done.result, "stranded");
+      }),
+    );
+  }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
+);
+
+it.effect("pull requests opened across several pages each start a run", () =>
+  Effect.gen(function* () {
+    const { boot, forge } = yield* harness();
+    yield* boot(
+      Effect.gen(function* () {
+        const workflows = yield* Workflows.Workflows;
+        // The first look only notes the time.
+        yield* workflows.sweep;
+        yield* TestClock.adjust("2 minutes");
+        forge.pages.push(
+          [
+            pullRequestAt(4, "1970-01-01T00:01:40.000Z"),
+            pullRequestAt(3, "1970-01-01T00:01:30.000Z"),
+          ],
+          [
+            pullRequestAt(2, "1970-01-01T00:01:00.000Z"),
+            // Opened before the mark and changed since: no run.
+            pullRequestAt(9, "1969-12-31T23:00:00.000Z", "1970-01-01T00:00:50.000Z"),
+            // Last changed before the mark, so nothing after it on later pages is new.
+            pullRequestAt(8, "1969-12-31T22:00:00.000Z", "1969-12-31T23:30:00.000Z"),
+          ],
+          [pullRequestAt(7, "1969-12-31T21:00:00.000Z")],
+        );
+        // Runs start oldest first, so the newest one done means every one before it has started.
+        yield* workflows.watch.pipe(
+          Stream.filter((snapshot) =>
+            snapshot.runs.some((run) => run.workflow === "greet" && run.result === 4),
+          ),
+          Stream.runHead,
+        );
+        const started = (yield* workflows.list()).filter((run) => run.workflow === "greet");
+        const done = yield* Effect.forEach(started, (run) =>
+          workflows.waitFor(run.runId, status("completed")),
+        );
+        assert.deepStrictEqual(done.map((run) => run.result).toSorted(), [2, 3, 4]);
+        // Pages past the one that reaches the mark hold nothing new and are not read.
+        assert.notInclude(forge.pagesRead, 2);
+      }),
+      [greet],
     );
   }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
 );

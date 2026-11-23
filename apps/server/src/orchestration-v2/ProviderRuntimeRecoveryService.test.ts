@@ -840,6 +840,15 @@ it.effect(
           providerInstanceId: ProviderInstanceId.make("codex"),
           status: "ready",
           extensionStatuses: [{ key: "watch", text: "Watching" }],
+          startupPhase: "mcp",
+        },
+        // Stopped mid-startup, its phase still saved.
+        {
+          id: ProviderSessionId.make("provider_session_recovery_stopped"),
+          driver: ProviderDriverKind.make("cursor"),
+          providerInstanceId: ProviderInstanceId.make("cursor"),
+          status: "stopped",
+          startupPhase: "plugins",
         },
       ],
       providerThreads: [
@@ -955,16 +964,21 @@ it.effect(
           ["turn-item.updated", "completed"],
           ["provider-thread.updated", "idle"],
           ["provider-session.updated", "stopped"],
+          ["provider-session.updated", "stopped"],
         ],
       );
       const messageEvent = events.find((event) => event.type === "message.updated");
       assert.isFalse(messageEvent?.type === "message.updated" && messageEvent.payload.streaming);
-      const stoppedSession = events.find((event) => event.type === "provider-session.updated");
       assert.deepEqual(
-        stoppedSession?.type === "provider-session.updated"
-          ? stoppedSession.payload.extensionStatuses
-          : undefined,
-        [],
+        events.flatMap((event) =>
+          event.type === "provider-session.updated"
+            ? [[event.payload.extensionStatuses, "startupPhase" in event.payload]]
+            : [],
+        ),
+        [
+          [[], false],
+          [undefined, false],
+        ],
       );
       assert.deepEqual(
         events.flatMap((event) =>

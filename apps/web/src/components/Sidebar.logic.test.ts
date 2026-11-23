@@ -23,6 +23,7 @@ import {
   resolveWindowTitleThreadStatus,
   resolveWorkingStartedAt,
   searchSidebarThreads,
+  selectMarkUnreadThreads,
   shouldRecedeSidebarThread,
   sortInboxThreadsByReturn,
   resolveSidebarDropTarget,
@@ -156,6 +157,30 @@ function makeLatestRun(overrides?: {
       overrides?.completedAt !== undefined ? overrides.completedAt : "2026-03-09T10:05:00.000Z",
   };
 }
+
+describe("selectMarkUnreadThreads", () => {
+  it("leaves out running threads and threads with no completed run", () => {
+    const runtime = {
+      status: "completed" as const,
+      activeRunId: null,
+      providerInstanceId: ProviderInstanceId.make("codex"),
+      providerName: "Codex",
+      lastError: null,
+      updatedAt: "2026-03-09T10:05:00.000Z",
+    };
+    const threads = [
+      { id: "done", latestRun: makeLatestRun(), runtime },
+      {
+        id: "running",
+        latestRun: makeLatestRun(),
+        runtime: { ...runtime, status: "running" as const },
+      },
+      { id: "never-completed", latestRun: makeLatestRun({ completedAt: null }), runtime: null },
+      { id: "no-run", latestRun: null, runtime: null },
+    ];
+    expect(selectMarkUnreadThreads(threads).map((thread) => thread.id)).toEqual(["done"]);
+  });
+});
 
 describe("withoutRemovedCheckout", () => {
   const worktree = { branch: "onicode/task", worktreePath: "/worktrees/task" };

@@ -305,32 +305,50 @@ it.each([
   expect(harness.createWorktree).toHaveBeenCalledTimes(input.recreated ? 1 : 0);
 });
 
-const restoreLeaseExists = vi.fn(() => Effect.succeed(false));
-const restoreLeaseCreateWorktree = vi.fn(() => Effect.succeed({} as never));
-const layerRestoreLeaseTest = layerThreadWorktreeRestore.pipe(
-  Layer.provide(
-    Layer.mergeAll(
-      layerNoTaskFolders,
-      Layer.succeed(FileSystem.FileSystem, {
-        exists: restoreLeaseExists,
-        realPath: (target: string) => Effect.succeed(normalize(target)),
-      } as never),
-      layerWorktreeLocation(),
-      Layer.mock(GitWorkflow.GitWorkflowService)({
-        pruneWorktrees: () => Effect.void,
-        createWorktree: restoreLeaseCreateWorktree,
-        listLocalBranchNames: () => Effect.succeed(["feature/restore"]),
-      }),
-      Layer.mock(ProjectService.ProjectService)({
-        getById: () =>
-          Effect.succeedSome({ workspaceRoot: "/tmp/provider-turn-start-project" } as never),
-      }),
-    ),
-  ),
-);
+const layerThreadShell = (deleted: () => boolean = () => false) =>
+  Layer.mock(ProjectionStore.ProjectionStoreV2)({
+    getThreadShell: () => Effect.sync(() => (deleted() ? null : ({} as never))),
+  });
 
-effectIt.effect("restores a missing worktree before a send only under the workspace lease", () =>
-  Effect.gen(function* () {
+const layerRestoreLeaseTest = (input: {
+  readonly exists: () => Effect.Effect<boolean>;
+  readonly createWorktree: () => Effect.Effect<never>;
+  readonly deleted: () => boolean;
+}) =>
+  layerThreadWorktreeRestore.pipe(
+    Layer.provide(
+      Layer.mergeAll(
+        layerNoTaskFolders,
+        Layer.succeed(FileSystem.FileSystem, {
+          exists: input.exists,
+          realPath: (target: string) => Effect.succeed(normalize(target)),
+        } as never),
+        layerWorktreeLocation(),
+        Layer.mock(GitWorkflow.GitWorkflowService)({
+          pruneWorktrees: () => Effect.void,
+          createWorktree: input.createWorktree,
+          listLocalBranchNames: () => Effect.succeed(["feature/restore"]),
+        }),
+        Layer.mock(ProjectService.ProjectService)({
+          getById: () =>
+            Effect.succeedSome({ workspaceRoot: "/tmp/provider-turn-start-project" } as never),
+        }),
+        layerThreadShell(input.deleted),
+      ),
+    ),
+  );
+
+effectIt.effect.each([
+  {
+    label: "restores a missing worktree before a send only under the workspace lease",
+    deletes: false,
+  },
+  { label: "recreates no worktree for a thread deleted while the send waited", deletes: true },
+])("$label", ({ deletes }) => {
+  const exists = vi.fn(() => Effect.succeed(false));
+  const createWorktree = vi.fn(() => Effect.succeed({} as never));
+  let deleted = false;
+  return Effect.gen(function* () {
     const worktreePath = `${managedWorktreesDir}/project/feature-restore`;
     const { restore } = yield* ThreadWorktreeRestore;
     yield* withWorkspaceLease(
@@ -344,13 +362,17 @@ effectIt.effect("restores a missing worktree before a send only under the worksp
           worktreePath,
           branch: "feature/restore",
         }).pipe(Effect.forkChild({ startImmediately: true }));
-        expect(restoreLeaseExists).not.toHaveBeenCalled();
+        expect(exists).not.toHaveBeenCalled();
+        // Storage cleanup removes a deleted thread's worktree while holding this lease.
+        deleted = deletes;
         return restoring;
       }),
     ).pipe(Effect.flatMap(Fiber.join));
-    expect(restoreLeaseCreateWorktree).toHaveBeenCalledTimes(1);
-  }).pipe(Effect.provide(layerRestoreLeaseTest)),
-);
+    expect(createWorktree).toHaveBeenCalledTimes(deletes ? 0 : 1);
+  }).pipe(
+    Effect.provide(layerRestoreLeaseTest({ exists, createWorktree, deleted: () => deleted })),
+  );
+});
 
 effectIt.effect("restores into a leftover worktree folder that cannot itself be removed", () => {
   const worktreePath = `${managedWorktreesDir}/project/feature-restore`;
@@ -401,6 +423,7 @@ effectIt.effect("restores into a leftover worktree folder that cannot itself be 
               getById: () =>
                 Effect.succeedSome({ workspaceRoot: "/tmp/provider-turn-start-project" } as never),
             }),
+            layerThreadShell(),
           ),
         ),
       ),
@@ -451,6 +474,7 @@ it.each([
                   workspaceRoot: input.workspaceRoot ?? "/tmp/oni-home/scratch",
                 } as never),
             }),
+            layerThreadShell(),
           ),
         ),
       ),

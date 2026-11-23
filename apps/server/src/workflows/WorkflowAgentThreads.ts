@@ -19,6 +19,7 @@ import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 
 import * as ThreadIssueService from "../orchestration-v2/ThreadIssueService.ts";
 import * as ThreadLaunch from "../orchestration-v2/ThreadLaunchService.ts";
@@ -43,6 +44,21 @@ const WAIT_SLICE = Duration.minutes(10);
 const failed = (reason: string) => (cause: unknown) =>
   new WorkflowAgentError({
     reason: `${reason}: ${cause instanceof Error ? cause.message : String(cause)}`,
+  });
+
+const isGoneRun = Schema.is(
+  Schema.Union([
+    ThreadManagement.ThreadManagementThreadNotFoundError,
+    ThreadManagement.ThreadManagementRunNotFoundError,
+    ThreadManagement.ThreadManagementThreadNotInterruptibleError,
+  ]),
+);
+
+/** A stop refused because the turn has no run left to stop counts as stopped, not as down. */
+export const interruptFailure = (cause: unknown) =>
+  new WorkflowAgentError({
+    reason: failed("Could not stop the thread")(cause).reason,
+    ...(isGoneRun(cause) ? { final: true } : {}),
   });
 
 const make = Effect.gen(function* () {
@@ -326,8 +342,16 @@ const make = Effect.gen(function* () {
           reason: "Its workflow run was cancelled",
           ...(target.turnId === undefined ? {} : { runId: target.turnId as RunId }),
         })
-        .pipe(Effect.mapError(failed("Could not stop the thread")));
+        .pipe(Effect.mapError(interruptFailure));
       return stopped.type === "interrupt_requested" ? ("stopped" as const) : ("ended" as const);
+    }),
+    model: Effect.fn("WorkflowAgentThreads.model")(function* (target) {
+      if (elsewhere(target.environment) !== undefined) return undefined;
+      const shell = yield* threads
+        .getThreadShell(ThreadId.make(target.threadId))
+        .pipe(Effect.orElseSucceed(() => null));
+      if (shell === null) return undefined;
+      return { instanceId: shell.modelSelection.instanceId, model: shell.modelSelection.model };
     }),
   });
 });

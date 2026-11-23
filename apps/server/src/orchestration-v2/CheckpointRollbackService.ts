@@ -429,6 +429,9 @@ export const layer: Layer.Layer<
               target: rollbackTarget,
               providerThreadTurns,
             });
+      // Deletion does not wait on the slow provider rewind; a thread deleted meanwhile keeps
+      // its files, refs and history as deletion left them.
+      if ((yield* projections.getThread(input.threadId)).deletedAt !== null) return;
       if (restoreFiles) {
         yield* checkpoints.restore({ targets: restoreTargets, scopes: [scope, ...repositories] });
       }
@@ -446,6 +449,9 @@ export const layer: Layer.Layer<
       yield* threadCommands.withLock(
         input.threadId,
         Effect.gen(function* () {
+          // Deletion commits under this lock, so a thread still alive here stays so until the write.
+          const thread = yield* projections.getThread(input.threadId);
+          if (thread.deletedAt !== null) return;
           const now = yield* DateTime.now;
           const makeEvent = <Event extends OrchestrationV2DomainEvent>(event: Omit<Event, "id">) =>
             Effect.map(
@@ -459,7 +465,6 @@ export const layer: Layer.Layer<
           const events: Array<OrchestrationV2DomainEvent> = [];
           // First, so a client that sees the runs rolled back already knows what was left.
           if (input.requestId !== undefined && unrestorable.length > 0) {
-            const thread = yield* projections.getThread(input.threadId);
             events.push(
               yield* makeEvent({
                 type: "thread.metadata-updated",

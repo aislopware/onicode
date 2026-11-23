@@ -1,6 +1,9 @@
 import type { EnvironmentServerConfig } from "@onicode/client-runtime/connection";
 import { scopeThreadRef, scopedThreadKey } from "@onicode/client-runtime/environment";
-import { resolveThreadWorkingStartedAt } from "@onicode/client-runtime/state/models";
+import {
+  resolveThreadWorkingStartedAt,
+  threadRuntimeCanArchive,
+} from "@onicode/client-runtime/state/models";
 import { isShownUnderParent } from "@onicode/client-runtime/state/threads";
 import { backgroundWorkHoldsCompletion } from "@onicode/shared/orchestrationV2PendingBackgroundWork";
 import { threadPullRequestSearchTerms } from "@onicode/shared/threadPullRequests";
@@ -630,6 +633,25 @@ export function buildBulkTitleRegenerationContextMenuItem(input: {
   return {
     id: "regenerate-title",
     label: m(msg("Regenerate titles ({count})", { count: input.actionableCount })),
+  };
+}
+
+/** The server refuses a thread with no completed run, and a running one is not offered either. */
+export function selectMarkUnreadThreads<
+  T extends Pick<SidebarThreadSummary, "latestRun" | "runtime">,
+>(threads: readonly T[]): T[] {
+  return threads.filter(
+    (thread) => thread.latestRun?.completedAt != null && threadRuntimeCanArchive(thread.runtime),
+  );
+}
+
+export function buildBulkMarkUnreadContextMenuItem(input: {
+  markableCount: number;
+}): ContextMenuItem<"mark-unread"> | null {
+  if (input.markableCount === 0) return null;
+  return {
+    id: "mark-unread",
+    label: m(msg("Mark unread ({count})", { count: input.markableCount })),
   };
 }
 

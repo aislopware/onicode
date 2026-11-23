@@ -3984,6 +3984,8 @@
   "7af596fd1e3ac2a2": "Mesclar de volta em {parentTitle}",
   "566239c645ce0fff": "Mesclar de volta na conversa de origem",
   "1cfeabb8818f121f": "Conclua uma execução neste fork antes de mesclá-lo de volta",
+  "ea371763a3afff56": "Desarquive {parentTitle} para mesclar esta conversa de volta nela",
+  "d8b65e5e9c5fbe26": "Desarquive a conversa de origem para mesclar esta de volta",
   "36cf99230450eeaf": "Mesclar esta conversa de volta em {parentTitle}",
   "bda1cc7b91e07680": "Mesclar esta conversa de volta na origem",
   "de93e39b51ae5ebf": "Parar o subagente {threadTitle}",

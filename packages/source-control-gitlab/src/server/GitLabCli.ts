@@ -26,8 +26,10 @@ import {
   withSourceProjectPath,
 } from "./gitLabMergeRequests.ts";
 import * as SourceControlProvider from "@onicode/source-control-core/server/SourceControlProvider";
+import { parseGitLabAuthStatusHosts } from "./gitLabAuthStatus.ts";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
+const AUTH_STATUS_TIMEOUT_MS = 10_000;
 const isVcsProcessExitError = Schema.is(VcsProcessExitError);
 // GitLab allows ~1M-character descriptions; glab's JSON escaping (`\u003c`) can grow one sixfold.
 const MERGE_REQUEST_LIST_MAX_BYTES = 8_000_000;
@@ -473,6 +475,11 @@ function parseRepositoryPath(repository: string): {
   return { namespacePath, projectPath };
 }
 
+function signedOutRepositoryDetail(repository: string, host: string): string {
+  const name = SourceControlProvider.transportSafeSourceControlErrorValue(repository);
+  return `Repository ${name} was not found, or ${host} hides it because glab is not signed in there. Run \`glab auth login --hostname ${host}\` and try again.`;
+}
+
 function parseRepositoryLookup(repository: string): {
   readonly host: string | null;
   readonly projectPath: string;
@@ -551,6 +558,34 @@ export const make = Effect.gen(function* () {
     apiScheme,
   );
 
+  const environmentTokenFor = (callerNamedHost: string | undefined) =>
+    callerNamedHost !== undefined &&
+    (defaultHost === undefined || hostOf(callerNamedHost, apiScheme) !== defaultHost)
+      ? WITHOUT_ENVIRONMENT_TOKEN
+      : {};
+
+  // GitLab answers a signed-out read of a private project with the 404 of a missing one.
+  const signedIn = (cwd: string, host: string) =>
+    process
+      .run({
+        operation: "GitLabCli.authStatus",
+        command: "glab",
+        args: ["auth", "status", "--hostname", host],
+        cwd,
+        env: environmentTokenFor(host),
+        allowNonZeroExit: true,
+        timeoutMs: AUTH_STATUS_TIMEOUT_MS,
+      })
+      .pipe(
+        Effect.map((result) =>
+          parseGitLabAuthStatusHosts(`${result.stdout}\n${result.stderr}`).some(
+            (entry) =>
+              entry.account !== null && hostOf(entry.host, apiScheme) === hostOf(host, apiScheme),
+          ),
+        ),
+        Effect.orElseSucceed(() => true),
+      );
+
   const run = (
     input: Parameters<GitLabCli["Service"]["execute"]>[0],
     mapError: (error: VcsError) => GitLabCliError,
@@ -567,10 +602,7 @@ export const make = Effect.gen(function* () {
           env: {
             // glab may otherwise prefer a different checkout remote.
             ...(input.host === undefined ? {} : { GITLAB_HOST: input.host }),
-            ...(input.callerNamedHost !== undefined &&
-            (defaultHost === undefined || hostOf(input.callerNamedHost, apiScheme) !== defaultHost)
-              ? WITHOUT_ENVIRONMENT_TOKEN
-              : {}),
+            ...environmentTokenFor(input.callerNamedHost),
           },
           classifyFailure: (stderr) => {
             const failureKind = classifyGlabFailure(stderr);
@@ -757,18 +789,31 @@ export const make = Effect.gen(function* () {
           `projects/${encodeURIComponent(projectPath)}`,
         ],
       }).pipe(
-        Effect.mapError((error) => {
+        Effect.catch((error) => {
           if (
             error._tag !== "GitLabCliCommandError" ||
             !isVcsProcessExitError(error.cause) ||
             error.cause.failureKind !== "not-found"
           )
-            return error;
-          return new GitLabCliCommandError({
-            ...error,
-            cause: error.cause,
-            userFacingDetail: SourceControlProvider.repositoryNotFoundDetail(input.repository),
-          });
+            return Effect.fail(error);
+          const cause = error.cause;
+          const checkedHost = host ?? defaultHost;
+          return (
+            checkedHost === undefined ? Effect.succeed(true) : signedIn(input.cwd, checkedHost)
+          ).pipe(
+            Effect.flatMap((isSignedIn) =>
+              Effect.fail(
+                new GitLabCliCommandError({
+                  ...error,
+                  cause,
+                  userFacingDetail:
+                    isSignedIn || checkedHost === undefined
+                      ? SourceControlProvider.repositoryNotFoundDetail(input.repository)
+                      : signedOutRepositoryDetail(input.repository, checkedHost),
+                }),
+              ),
+            ),
+          );
         }),
         Effect.map((result) => result.stdout.trim()),
         Effect.flatMap((raw) =>

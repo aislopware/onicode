@@ -10,6 +10,7 @@ import {
   type WorkflowRun,
   type WorkflowRunReference,
   type WorkflowRunsSnapshot,
+  type WorkflowRunsUpdate,
   type WorkflowStep,
   type WorkflowSummary,
 } from "@onicode/contracts";
@@ -95,6 +96,38 @@ const needsPerson = (node: WorkflowRunNode): boolean =>
  * has not run yet is still listed, since the list is also how one learns what exists. `runs` is
  * newest first and that order is kept.
  */
+// The server lists this many of each, newest first: runs that did something, and skipped ones.
+const LISTED_RUNS = 500;
+
+/**
+ * What a client holds after `update`: a snapshot replaces it, and a change puts its runs in place
+ * of the ones with their ids. Undefined until the first snapshot.
+ */
+export function applyWorkflowRunsUpdate(
+  held: WorkflowRunsSnapshot | undefined,
+  update: WorkflowRunsUpdate,
+): WorkflowRunsSnapshot | undefined {
+  if ("workflows" in update) return update;
+  if (held === undefined) return undefined;
+  const byId = new Map(held.runs.map((run) => [run.runId, run]));
+  for (const run of update.changedRuns) byId.set(run.runId, run);
+  let listed = 0;
+  let skipped = 0;
+  const runs = [...byId.values()]
+    .sort((left, right) => right.startedAt.localeCompare(left.startedAt))
+    .filter((run) =>
+      run.status === "skipped" && run.parentRunId === null
+        ? skipped++ < LISTED_RUNS
+        : listed++ < LISTED_RUNS,
+    );
+  return {
+    ...held,
+    runs,
+    questions: update.questions,
+    ...(update.definition === undefined ? {} : { definition: update.definition }),
+  };
+}
+
 /**
  * The runs a list shows: without those a workflow skipped as not its to do, unless asked for
  * them. A skipped run that another run invoked stays, as a step of that one.
@@ -406,6 +439,8 @@ export interface WorkflowBeat {
   /** When it ended, or `nowMs` while it is under way. */
   readonly endMs: number;
   readonly thread: { readonly threadId: string; readonly environmentId: string | null } | null;
+  /** The model an agent's thread runs, when the server says. */
+  readonly model: NonNullable<WorkflowStep["model"]> | null;
   /** The run this step invoked and waited for. */
   readonly childRun: WorkflowRun | null;
   /** Another beat was under way at the same time. */
@@ -496,6 +531,7 @@ export function buildWorkflowTimeline(input: {
         step.threadId === null
           ? null
           : { threadId: step.threadId, environmentId: step.environmentId },
+      model: step.model ?? null,
       childRun,
       parallel: false,
     };

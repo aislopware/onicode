@@ -299,20 +299,29 @@ const make = Effect.gen(function* () {
   const bindProject: IssueTrackerConnections["Service"]["bindProject"] = Effect.fn(
     "IssueTrackerConnections.bindProject",
   )(function* (input) {
+    // Older clients cannot see a project bound with an added account and offer it as unbound; a
+    // request that does not name the binding's account leaves it alone.
+    const current = (yield* bindings
+      .list(input.projectId)
+      .pipe(
+        Effect.mapError(secretFailure(anyTracker, "The project bindings could not be read.")),
+      )).get(input.projectId);
     if (input.binding === null) {
-      // Older clients cannot see a project bound with an added account and offer it as unbound;
-      // an unbind that does not name the binding's account leaves it alone.
-      const current = (yield* bindings
-        .list(input.projectId)
-        .pipe(
-          Effect.mapError(secretFailure(anyTracker, "The project bindings could not be read.")),
-        )).get(input.projectId);
       if (current !== undefined && current.accountId !== input.accountId) return;
     } else {
-      yield* requireAccount(
-        (yield* requireTracker(input.binding.tracker)).kind,
-        input.binding.accountId,
-      );
+      const api = yield* requireTracker(input.binding.tracker);
+      if (
+        input.binding.accountId === undefined &&
+        current?.accountId !== undefined &&
+        current.accountId !== input.accountId
+      ) {
+        return yield* new IssueTrackerConnectionError({
+          tracker: api.kind,
+          reason: "failed",
+          detail: "This project is bound with another account. Update Onicode to change it.",
+        });
+      }
+      yield* requireAccount(api.kind, input.binding.accountId);
     }
     // Unbinding names no tracker; the first registered one carries any report.
     const tracker = input.binding?.tracker ?? anyTracker;

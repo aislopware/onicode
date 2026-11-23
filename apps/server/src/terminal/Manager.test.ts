@@ -595,6 +595,8 @@ it.layer(
     { method: "open", location: "subdirectory" },
     { method: "open", location: "unmanaged" },
     { method: "open", location: "no-worktree" },
+    // Deleted after the launch was prepared, and its worktree removed by cleanup.
+    { method: "open", location: "deleted" },
   ] as const)(
     "recovers $method with a $location cwd without a cleanup gap",
     ({ method, location }) =>
@@ -610,13 +612,18 @@ it.layer(
         const cwd = location === "subdirectory" ? path.join(worktreePath, "src") : worktreePath;
         const cleanupQueued = yield* Deferred.make<Fiber.Fiber<void>>();
         let creations = 0;
+        let reads = 0;
         const prepareLaunch = yield* makePrepareTerminalLaunch(() =>
-          Effect.succeed({
-            id: ThreadId.make("thread-1"),
-            projectId: ProjectId.make("project-1"),
-            worktreePath: location === "no-worktree" ? null : worktreePath,
-            branch: "feature",
-          }),
+          Effect.sync(() =>
+            location === "deleted" && reads++ > 0
+              ? null
+              : {
+                  id: ThreadId.make("thread-1"),
+                  projectId: ProjectId.make("project-1"),
+                  worktreePath: location === "no-worktree" ? null : worktreePath,
+                  branch: "feature",
+                },
+          ),
         ).pipe(
           Effect.provide(
             Layer.mergeAll(
@@ -662,7 +669,7 @@ it.layer(
             ).pipe(Effect.provideService(TerminalManager.TerminalCwdRecovery, recover)),
           ),
         );
-        if (location === "unmanaged" || location === "no-worktree") {
+        if (location === "unmanaged" || location === "no-worktree" || location === "deleted") {
           const error = yield* launch.pipe(Effect.flip);
           assert.deepEqual(error, new TerminalCwdNotFoundError({ cwd }));
           assert.equal(creations, 0);

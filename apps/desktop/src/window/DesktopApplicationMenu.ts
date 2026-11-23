@@ -194,10 +194,9 @@ export const make = Effect.gen(function* () {
       if (event.triggeredByAccelerator === true) {
         // Chromium pastes this chord itself except on macOS. Paste synchronously there:
         // a renderer round trip can land after the terminal's own clipboard read.
-        if (environment.platform === "darwin") {
-          runSync(electronMenu.pasteAndMatchStyle);
-        }
-        return;
+        if (environment.platform !== "darwin") return;
+        // With no focused web contents (an accessibility press), the renderer pastes.
+        if (runSync(electronMenu.pasteAndMatchStyle)) return;
       }
       runMenuEffect("paste-as-text", dispatchMenuAction("paste-as-text"));
     };

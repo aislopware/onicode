@@ -834,12 +834,20 @@ it.layer(
     { name: "a launcher outside the prefix's bin", npm: false, alias: true, owner: "claude-code" },
     { name: "an unreadable registry", npm: true, alias: false, owner: null },
     { name: "files MacPorts does not own", npm: true, alias: false, owner: "" },
+    // A personal `port` script that fails on `provides`, in a folder above the install.
+    { name: "a port script outside MacPorts", npm: true, alias: false, owner: null, ports: false },
   ]) {
     it.effect.skipIf(windowsHost)(`checks MacPorts ownership for ${fixture.name}`, () =>
       Effect.gen(function* () {
         const prefix = yield* makeTempDir("oni-macports-owner");
         const port = NodePath.join(prefix, "bin", "port");
         writeExecutable(port);
+        const isMacPorts = fixture.ports !== false;
+        if (isMacPorts) {
+          NodeFS.mkdirSync(NodePath.join(prefix, "var", "macports", "registry"), {
+            recursive: true,
+          });
+        }
         const real = fixture.npm
           ? NodePath.join(prefix, "lib", "node_modules", "@anthropic-ai", "claude-code", "cli.js")
           : NodePath.join(prefix, "share", "claude-code", "claude");
@@ -874,7 +882,7 @@ it.layer(
             ),
           ),
         );
-        if (fixture.owner === "") {
+        if (fixture.owner === "" || !isMacPorts) {
           expect(capabilities.update?.lockKey).toBe(`npm-global:${normalizeCommandPath(prefix)}`);
         } else {
           expect(capabilities.update).toBeNull();
@@ -1904,6 +1912,9 @@ it.layer(
         Effect.gen(function* () {
           const prefix = yield* makeTempDir("oni-macports");
           writeExecutable(NodePath.join(prefix, "bin", "port"));
+          NodeFS.mkdirSync(NodePath.join(prefix, "var", "macports", "registry"), {
+            recursive: true,
+          });
           const target = NodePath.join(prefix, ...fixture.target);
           writeExecutable(target);
           const launcher = NodePath.join(prefix, "bin", NodePath.basename(target, ".exe"));

@@ -39,6 +39,7 @@ import {
   PullRequestHostRequiredError,
   PullRequestUrlUnavailableError,
   PullRequestRepositoryInvalidError,
+  PullRequestHostInvalidError,
 } from "../../../pullRequest/pullRequestTarget.ts";
 import * as PullRequestService from "../../../pullRequest/PullRequestService.ts";
 import * as PullRequestReviewGuideService from "../../../pullRequest/PullRequestReviewGuideService.ts";
@@ -181,6 +182,7 @@ export const PullRequestToolError = Schema.Union([
   PullRequestHostRequiredError,
   PullRequestUrlUnavailableError,
   PullRequestRepositoryInvalidError,
+  PullRequestHostInvalidError,
   PullRequestThreadRequiredError,
   PullRequestLinkFailedError,
   PullRequestUnlinkFailedError,

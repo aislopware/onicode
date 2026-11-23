@@ -35,18 +35,26 @@ import {
 // only ceiling on what it starts there is the access the link was paired with.
 const LIMITS = { runtimeMode: "full-access", interactionMode: "default" } as const;
 
-// A proxy on the route may drop a request idle for about 100 s, so a wait goes out in pieces.
-const WAIT_PIECE = Duration.seconds(50);
+// A proxy on the route may drop a request idle for about 100 s, so a wait goes out in pieces,
+// no longer than the 45 s a peer waits at most.
+const WAIT_PIECE = Duration.seconds(45);
 
-/** The link is gone or the thread is: asking again cannot help. */
+/** The link, the thread or its turn's run is gone: asking again cannot help. */
 const isFinal = (error: OrchestratorMcpFailure) =>
   error.code === "capability_denied" ||
   error.code === "thread_not_found" ||
   error.code === "run_not_found" ||
+  error.code === "thread_not_interruptible" ||
   error.code === "invalid_request";
 
 // The other machine asleep or a dropped route is worth a few more tries before the run pauses.
 const retried = { schedule: Schedule.exponential("2 seconds"), times: 5 };
+
+// Older peers accept only afterPosition >= 0, and read from the start without one.
+const START_POSITION_REFUSAL =
+  /^Invalid parameters for tool 'oni_thread_read': [\s\S]*\["afterPosition"\]/;
+const refusesStartPosition = (error: OrchestratorMcpFailure) =>
+  error.code === "invalid_request" && START_POSITION_REFUSAL.test(error.message);
 
 type Service = WorkflowAgents["Service"];
 
@@ -54,7 +62,7 @@ export const make = Effect.gen(function* () {
   const peers = yield* PeerMcpClient.PeerMcpClient;
   const links = yield* PeerLinks.PeerLinks;
 
-  const call = <S extends Schema.Decoder<unknown>>(
+  const ask = <S extends Schema.Decoder<unknown>>(
     environment: string,
     tool: string,
     success: S,
@@ -68,15 +76,23 @@ export const make = Effect.gen(function* () {
         limits: LIMITS,
         success,
       })
-      .pipe(
-        Effect.retry({ ...retried, while: (error) => !isFinal(error) }),
-        Effect.mapError(
-          (error) =>
-            new WorkflowAgentError({
-              reason: `Environment ${environment} refused ${tool}: ${error.message}`,
-            }),
-        ),
-      );
+      .pipe(Effect.retry({ ...retried, while: (error) => !isFinal(error) }));
+
+  const refused = (environment: string, tool: string) =>
+    Effect.mapError(
+      (error: OrchestratorMcpFailure) =>
+        new WorkflowAgentError({
+          reason: `Environment ${environment} refused ${tool}: ${error.message}`,
+          ...(isFinal(error) ? { final: true } : {}),
+        }),
+    );
+
+  const call = <S extends Schema.Decoder<unknown>>(
+    environment: string,
+    tool: string,
+    success: S,
+    args: Record<string, unknown>,
+  ) => ask(environment, tool, success, args).pipe(refused(environment, tool));
 
   const listed = Effect.fn("WorkflowAgentLinks.listed")(function* (
     environment: string,
@@ -131,14 +147,19 @@ export const make = Effect.gen(function* () {
     environment: string,
   ) {
     let last: OrchestratorMcpThreadReadResult["items"][number] | undefined;
-    let afterPosition: number | undefined;
+    let afterPosition = -1;
     while (true) {
-      const read = yield* call(environment, "oni_thread_read", OrchestratorMcpThreadReadResult, {
-        threadId: turn.threadId,
-        view: "messages",
-        limit: 100,
-        ...(afterPosition === undefined ? {} : { afterPosition }),
-      });
+      const page = { threadId: turn.threadId, view: "messages", limit: 100 };
+      const read = yield* ask(environment, "oni_thread_read", OrchestratorMcpThreadReadResult, {
+        ...page,
+        afterPosition,
+      }).pipe(
+        Effect.catchIf(
+          (error) => afterPosition === -1 && refusesStartPosition(error),
+          () => ask(environment, "oni_thread_read", OrchestratorMcpThreadReadResult, page),
+        ),
+        refused(environment, "oni_thread_read"),
+      );
       last =
         read.items.findLast(
           (item) => item.type === "assistant_message" && item.runId === turn.turnId,
@@ -235,11 +256,13 @@ export const make = Effect.gen(function* () {
     options?: { readonly quiet?: Duration.Duration | undefined },
   ): Effect.fn.Return<AgentResult, WorkflowAgentError> {
     const ended = new Set(["completed", "failed", "interrupted", "cancelled", "rolled_back"]);
+    // A restart there continues the turn as a new run, which the wait answers for.
+    let runId = turn.turnId;
     /** The result a later turn submits, or nothing once the thread has been quiet. */
     const owed = Effect.fn("WorkflowAgentLinks.owed")(function* (quiet: Duration.Duration) {
       let left = Duration.toMillis(quiet);
       // The newest turn already seen to end without the result, so quiet is not restarted by it.
-      let counted = turn.turnId;
+      let counted = runId;
       while (true) {
         const piece = Math.min(left, Duration.toMillis(WAIT_PIECE));
         const waited = yield* call(
@@ -248,7 +271,7 @@ export const make = Effect.gen(function* () {
           OrchestratorMcpThreadWaitResult,
           {
             threadId: turn.threadId,
-            runId: turn.turnId,
+            runId,
             untilOutput: true,
             timeoutMs: piece,
           },
@@ -273,19 +296,20 @@ export const make = Effect.gen(function* () {
     while (true) {
       const waited = yield* call(environment, "oni_thread_wait", OrchestratorMcpThreadWaitResult, {
         threadId: turn.threadId,
-        runId: turn.turnId,
+        runId,
         timeoutMs: Duration.toMillis(WAIT_PIECE),
       });
+      if (waited.runId !== null) runId = waited.runId;
       if (waited.timedOut) continue;
       const read = yield* call(environment, "oni_thread_read", OrchestratorMcpThreadReadResult, {
         threadId: turn.threadId,
         limit: 1,
         runLimit: 50,
       });
-      const status = read.recentRuns.find((run) => run.runId === turn.turnId)?.status;
+      const status = read.recentRuns.find((run) => run.runId === runId)?.status;
       if (status === undefined) {
         return yield* new WorkflowAgentError({
-          reason: `Thread ${turn.threadId} in ${environment} no longer lists turn ${turn.turnId}.`,
+          reason: `Thread ${turn.threadId} in ${environment} no longer lists turn ${runId}.`,
         });
       }
       if (status === "completed") {
@@ -296,7 +320,7 @@ export const make = Effect.gen(function* () {
         return {
           ending: "completed",
           detail: "",
-          reply: yield* reply(turn, environment),
+          reply: yield* reply({ ...turn, turnId: runId }, environment),
           ...(Option.isNone(output) ? {} : { output: output.value }),
         };
       }
