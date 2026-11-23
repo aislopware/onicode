@@ -49,8 +49,9 @@ const readableText = (row: string) =>
   `COALESCE(${row}.search_text, json_extract(${row}.payload_json, '$.text'))`;
 
 // A file mention stores `__init__.py` as `[\_\_init\_\_.py](...)`; the index
-// holds the label as it reads, so search can find the name as typed.
-const LINK_LABEL = /(!?\[)([^\]\n]*)(\]\([^)\s]*\))/g;
+// holds the label as it reads, so search can find the name as typed. Escaped
+// brackets stay escaped so the label still ends at its own `](`.
+const LINK_LABEL = /(!?\[)((?:\\.|[^\\\]\n])*)(\]\([^)\s]*\))/g;
 
 /**
  * What search_text holds for a message: its text as it reads, a quote's

@@ -203,3 +203,13 @@ export function composerFileLinksToPlainText(text: string, findMath?: FindMathRa
   }
   return result + text.slice(cursor);
 }
+
+/** A message's first non-empty line with file links shown by name, for a folded message's header. */
+export function composerFoldSummary(text: string, findMath?: FindMathRanges): string {
+  return (
+    composerFileLinksToPlainText(text, findMath)
+      .split(/\r?\n/)
+      .find((line) => line.trim().length > 0)
+      ?.trim() ?? ""
+  );
+}

@@ -4,6 +4,7 @@ import {
   collectComposerInlineTokens as collectWithoutMath,
   type CollectComposerInlineTokensOptions,
   composerFileLinksToPlainText,
+  composerFoldSummary,
   composerMathRanges,
 } from "./composerInlineTokens.ts";
 import { markdownMathRanges } from "./markdownMath.ts";
@@ -248,6 +249,13 @@ describe("composerFileLinksToPlainText", () => {
     const decomposed = "notes/한글.md".normalize("NFD");
     expect(composerFileLinksToPlainText(`Read ${serializeComposerFileLink(decomposed)}`)).toBe(
       "Read 한글.md",
+    );
+  });
+
+  it("summarizes a folded message by its first line, with file links by name", () => {
+    const link = serializeComposerFileLink("app/routes/[id].tsx");
+    expect(composerFoldSummary(`\n\n  Fix ${link} first\nthen the rest`)).toBe(
+      "Fix [id].tsx first",
     );
   });
 
