@@ -3438,3 +3438,4 @@ eeb19512f0	take	kept Onicode's reservation ordering (earlierWork, reservations):
 a1839ca6a8	take	taken as is, scenario included (desktop target)
 f274d47150	take	patch rebased onto Onicode's gt-react-native 11.4.24 (applies unchanged; 11.4.24 still has the bug); upstream's overrides (gt pin 11.4.18, older app-builder-lib/electron-updater/expo-modules-core) and unrelated patch entries not taken; i18n keys already in catalogs
 7e624c0c8d	take	kept Onicode's requestContextMenuOnMenuKey over upstream's openContextMenuFromKeyboard: a PointerEvent keeps button -1 so it needs no module WeakSet or contextMenuSourceOf change, and it skips Alt/Ctrl/Cmd chords; adopted upstream's href && faviconHost guard on chat links so the key is not swallowed where no menu opens
+630de36779	take	taken; upstream's launchBrowser hunk left out (Onicode removed browser launching here); new Finder test sits beside Onicode's editor-only ELECTRON_RUN_AS_NODE test
