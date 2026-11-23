@@ -30,14 +30,13 @@ import { isMissedFixedTimeRun, nextScheduledRunAt } from "../scheduledTasks/Sche
 import {
   END_STEP,
   type EngineWorkflow,
-  engineTag,
   engineWorkflow,
   layerDefinition,
-  text,
   wakeOf,
   type Woke,
   type WorkflowDefinition,
 } from "./workflow.ts";
+import { engineTag, text } from "./labels.ts";
 import { issueReference, noteFor, stepReferences } from "./runReferences.ts";
 import { forStep, KeyValues, layerKeyValues, EngineLink, layerEngineLink } from "./stepServices.ts";
 import { WorkflowAgents } from "./WorkflowAgents.ts";
