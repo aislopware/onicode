@@ -3513,3 +3513,4 @@ d08986ab55	take	taken; kept Onicode's driven-guest painting test beside the two 
 9ad5e2ce66	take	taken; kept Onicode's vite pack config, which has no build-version plugin
 6233f5d114	take	taken
 221bc8a606	take	taken
+b5e1f91cba	take	taken; PR number in the sidebar takes its status colour (upstream look, Onicode had none of its own)
