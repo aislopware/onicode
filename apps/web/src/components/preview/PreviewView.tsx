@@ -71,6 +71,7 @@ import { readEnvironmentScope, useEnvironmentScope } from "~/state/session";
 import { useRightPanelStore } from "~/rightPanelStore";
 
 import { effectiveShortcutsForCommand, shortcutLabelForCommand } from "~/keybindings";
+import { getKeyboardLayoutLetters } from "~/keyboardLayout";
 import { randomUUID } from "~/lib/utils";
 import { primaryServerKeybindingsAtom } from "~/state/server";
 import { PreviewAnnotationSpeech } from "./PreviewAnnotationSpeech";
@@ -835,6 +836,7 @@ export function PreviewView({
       shortcuts: effectiveShortcutsForCommand(keybindings, "composer.dictation", {
         context: { previewFocus: true, previewOpen: true, editableFocus: true },
       }),
+      keyboardLayout: getKeyboardLayoutLetters(),
     };
     setAnnotationVoice(voice);
     const finishPick = () => {

@@ -15,7 +15,7 @@ diff --git a/build/TextInputWrapper.types.d.ts b/build/TextInputWrapper.types.d.
 index 4c430a2..18fc2f4 100644
 --- a/build/TextInputWrapper.types.d.ts
 +++ b/build/TextInputWrapper.types.d.ts
-@@ -1,12 +1,18 @@
+@@ -1,12 +1,19 @@
  import type { ViewProps } from "react-native";
 +/** iOS: `readId` names the image read an `onImageReadStart` announced. */
  export type PasteEventPayload = {
@@ -31,16 +31,17 @@ index 4c430a2..18fc2f4 100644
 +};
 +export type ImageReadStartPayload = {
 +    readId: number;
++    images?: number;
  };
  export interface TextInputWrapperViewProps extends ViewProps {
      /**
-@@ -14,6 +20,11 @@ export interface TextInputWrapperViewProps extends ViewProps {
+@@ -14,6 +21,11 @@ export interface TextInputWrapperViewProps extends ViewProps {
       * @param payload - The paste event payload containing type and content
       */
      onPaste?: (payload: PasteEventPayload) => void;
 +    /**
-+     * iOS: a pasted image started loading off the main thread. One `onPaste` with the same
-+     * `readId`, images or unsupported, follows while the view stays mounted.
++     * iOS: `images` pasted images started loading off the main thread (builds before the count
++     * send none). One `onPaste` with the same `readId`, images or unsupported, follows.
 +     */
 +    onImageReadStart?: (payload: ImageReadStartPayload) => void;
      /**
@@ -119,7 +120,7 @@ index 39b2302..489b2cd 100644
 +    // lets JS hold it; exactly one onPaste (images or unsupported) with this readId follows.
 +    Self.lastImageReadId += 1
 +    let readId = Self.lastImageReadId
-+    onImageReadStart(["readId": readId])
++    onImageReadStart(["readId": readId, "images": payloads.count])
 +
      mediaProcessingQueue.async { [weak self] in
        guard let self else {
@@ -183,7 +184,7 @@ index a0e8b1b..78410d0 100644
 +  | { type: "images"; uris: string[]; readId?: number }
 +  | { type: "unsupported"; readId?: number };
 +
-+export type ImageReadStartPayload = { readId: number };
++export type ImageReadStartPayload = { readId: number; images?: number };
  
  export interface TextInputWrapperViewProps extends ViewProps {
    /**
@@ -192,8 +193,8 @@ index a0e8b1b..78410d0 100644
    onPaste?: (payload: PasteEventPayload) => void;
  
 +  /**
-+   * iOS: a pasted image started loading off the main thread. One `onPaste` with the same
-+   * `readId`, images or unsupported, follows while the view stays mounted.
++   * iOS: `images` pasted images started loading off the main thread (builds before the count
++   * send none). One `onPaste` with the same `readId`, images or unsupported, follows.
 +   */
 +  onImageReadStart?: (payload: ImageReadStartPayload) => void;
 +

@@ -146,6 +146,7 @@ export function IssueTrackerCredentialForm(props: {
   readonly disabled: boolean;
   /** Saves the credential as a new account instead of replacing this one's. */
   readonly addAccount?: boolean;
+  readonly onDisconnected?: () => void;
 }) {
   const gt = useGT();
   const { environmentId, tracker } = props;
@@ -165,6 +166,7 @@ export function IssueTrackerCredentialForm(props: {
     setBusy(false);
     if (!AsyncResult.isFailure(result)) {
       setDraft("");
+      if (token === null) props.onDisconnected?.();
       return;
     }
     const error = squashAtomCommandFailure(result);

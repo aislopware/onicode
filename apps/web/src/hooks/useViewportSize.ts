@@ -13,3 +13,10 @@ export function useViewportSize() {
   const height = useSyncExternalStore(subscribeToViewport, readViewportHeight);
   return { width, height };
 }
+
+/** A value derived from the viewport. Return a primitive: a resize re-renders only when it changes. */
+export function useViewportValue<T>(select: (viewport: { width: number; height: number }) => T): T {
+  return useSyncExternalStore(subscribeToViewport, () =>
+    select({ width: window.innerWidth, height: window.innerHeight }),
+  );
+}

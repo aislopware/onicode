@@ -357,6 +357,8 @@ export function ComposerToolbarButton(props: {
   readonly label?: string;
   readonly accessibilityLabel?: string;
   readonly active?: boolean;
+  /** Announced as selected without the active look; defaults to `active`. */
+  readonly selected?: boolean;
   readonly disabled?: boolean;
   readonly maxWidth?: number;
   readonly minWidth?: number;
@@ -368,6 +370,7 @@ export function ComposerToolbarButton(props: {
   readonly style?: StyleProp<ViewStyle>;
 }) {
   const variant = props.variant ?? "default";
+  const selected = props.selected ?? props.active;
   const isCircle = !props.label && props.showChevron === false;
   const iconTintClassName =
     variant === "primary"
@@ -382,7 +385,7 @@ export function ComposerToolbarButton(props: {
     <Pressable
       accessibilityLabel={props.accessibilityLabel ?? props.label}
       accessibilityRole="button"
-      accessibilityState={props.active === undefined ? undefined : { selected: props.active }}
+      accessibilityState={selected === undefined ? undefined : { selected }}
       disabled={props.disabled}
       onPress={props.onPress}
       className={cn(

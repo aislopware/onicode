@@ -487,7 +487,7 @@ export const make = Effect.gen(function* () {
     }),
   );
 
-  const writeScanCache = makeScanCacheWriter();
+  const writeScanCache = makeScanCacheWriter(transcriptFormats);
   // Serialize writes so concurrently finished window scans cannot overwrite newer snapshots.
   const persistLock = yield* Semaphore.make(1);
 

@@ -28,7 +28,7 @@ import {
   type StrokeGeometry,
 } from "./AnnotationStroke.ts";
 import { previewAnnotationStyles } from "./AnnotationStyles.generated.ts";
-import { pickElementAtPoint } from "./PickTarget.ts";
+import { deepElements, pickElementAtPoint, visibleElementRect } from "./PickTarget.ts";
 import { installRecordingCursor } from "./RecordingCursor.ts";
 import { DEFAULT_RECORDING_INPUT_OPTIONS } from "./RecordingInput.ts";
 import {
@@ -403,32 +403,6 @@ function positionBox(node: HTMLElement, rect: PreviewAnnotationRect): void {
   node.style.height = `${rect.height}px`;
 }
 
-function visibleElementRect(element: Element): PreviewAnnotationRect {
-  const rect = element.getBoundingClientRect();
-  let left = Math.max(0, rect.left);
-  let top = Math.max(0, rect.top);
-  let right = Math.min(document.documentElement.clientWidth, rect.right);
-  let bottom = Math.min(document.documentElement.clientHeight, rect.bottom);
-  if (getComputedStyle(element).position !== "fixed") {
-    for (let ancestor = element.parentElement; ancestor; ancestor = ancestor.parentElement) {
-      if (ancestor === document.body || ancestor === document.documentElement) break;
-      const style = getComputedStyle(ancestor);
-      const bounds = ancestor.getBoundingClientRect();
-      const clipLeft = bounds.left + ancestor.clientLeft;
-      const clipTop = bounds.top + ancestor.clientTop;
-      if (style.overflowX !== "visible") {
-        left = Math.max(left, clipLeft);
-        right = Math.min(right, clipLeft + ancestor.clientWidth);
-      }
-      if (style.overflowY !== "visible") {
-        top = Math.max(top, clipTop);
-        bottom = Math.min(bottom, clipTop + ancestor.clientHeight);
-      }
-    }
-  }
-  return { x: left, y: top, width: Math.max(0, right - left), height: Math.max(0, bottom - top) };
-}
-
 function createLabel(): HTMLDivElement {
   const label = document.createElement("div");
   label.setAttribute(OVERLAY_ATTRIBUTE, "");
@@ -753,10 +727,12 @@ function startAnnotation(
     };
     ipcRenderer.send(ANNOTATION_VOICE_EVENT_CHANNEL, event);
   };
+  const voiceKeyboardLayout =
+    voice?.keyboardLayout && new Map(Object.entries(voice.keyboardLayout));
   const isDictationChord = (event: KeyboardEvent) =>
     voice !== undefined &&
     voice.shortcuts.some((shortcut) =>
-      matchesKeybindingShortcut(event, shortcut, navigator.platform),
+      matchesKeybindingShortcut(event, shortcut, navigator.platform, voiceKeyboardLayout),
     );
   for (const button of [voiceButton, voiceFinish, voiceCancel, voiceSkip]) {
     button.addEventListener("pointerdown", (event) => event.preventDefault());
@@ -1478,7 +1454,7 @@ function startAnnotation(
   };
 
   const selectElementsInRect = (rect: PreviewAnnotationRect): number => {
-    const candidates = Array.from(document.querySelectorAll("body *"))
+    const candidates = deepElements(document.body)
       .filter((element) => !isAnnotationNode(element))
       .map((element) => ({ element, rect: element.getBoundingClientRect() }))
       .filter(({ rect: candidate }) => {
@@ -1498,7 +1474,7 @@ function startAnnotation(
           centerX <= rect.x + rect.width &&
           centerY >= rect.y &&
           centerY <= rect.y + rect.height &&
-          (element.children.length === 0 ||
+          ((element.children.length === 0 && !element.shadowRoot?.childElementCount) ||
             element instanceof HTMLButtonElement ||
             element instanceof HTMLAnchorElement ||
             element.getAttribute("role") === "button")

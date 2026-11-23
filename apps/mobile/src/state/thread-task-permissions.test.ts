@@ -768,9 +768,10 @@ it.each(["cancelled", "expired"] as const)(
     const unanswered = RuntimeRequestId.make("input");
     const answered = RuntimeRequestId.make("input-other");
     const questionKey = questionAttachmentDraftKey(environmentId, threadId, unanswered, "language");
-    const preparing = startQuestionImagePreparation(questionKey);
+    const preparing = startQuestionImagePreparation(questionKey, 1);
     const preparingAnswered = startQuestionImagePreparation(
       questionAttachmentDraftKey(environmentId, threadId, answered, "language"),
+      1,
     );
     using _preparations = {
       [Symbol.dispose]: () => {

@@ -463,3 +463,26 @@ it.effect(
       }).pipe(Effect.scoped, Effect.raceFirst(Effect.forever(TestClock.adjust("1 second"))));
     }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
 );
+
+it.effect("a start that failed is tried again only once workflows are turned off and on", () =>
+  Effect.gen(function* () {
+    let attempts = 0;
+    const broken: Effect.Effect<
+      Context.Context<Workflows.Workflows | WorkflowRuntime.WorkflowDefinitions>,
+      string
+    > = Effect.suspend(() => {
+      attempts += 1;
+      return Effect.fail("broken");
+    });
+    const { turn } = yield* WorkflowRuntime.gate(broken, "workflows");
+
+    yield* turn(true);
+    // Each settings write turns it to the current value again.
+    yield* turn(true);
+    assert.equal(attempts, 1);
+
+    yield* turn(false);
+    yield* turn(true);
+    assert.equal(attempts, 2);
+  }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
+);

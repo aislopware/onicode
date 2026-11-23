@@ -89,6 +89,8 @@ export function createSidebarCollisionDetection(
   };
 }
 
+export const IDLE_SIDEBAR_SORTING_STRATEGY: SortingStrategy = () => stationary;
+
 export function createSidebarSortingStrategy(input: {
   items: readonly SidebarListItem[];
   enabled?: boolean;

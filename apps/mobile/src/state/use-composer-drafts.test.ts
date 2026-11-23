@@ -186,6 +186,7 @@ import {
 } from "@onicode/shared/composerContextReferences";
 import { appAtomRegistry } from "./atom-registry";
 import {
+  nativeImagePasteCount,
   nativeImagePasteKey,
   nativeImagePastePending,
   startComposerDraftOperation,
@@ -195,6 +196,7 @@ import {
   appendUnsentQuestionAttachments,
   pickQuestionAttachments,
   resolveQuestionImagePreparations,
+  startQuestionImagePreparation,
 } from "./question-attachment-preparation";
 import { threadOutboxManager } from "./thread-outbox";
 import {
@@ -316,6 +318,21 @@ it.each(["picker open", "reading image"] as const)(
     );
   },
 );
+
+it("holds a thread placeholder per image of a question paste that moves to the thread draft", () => {
+  const questionKey = questionAttachmentDraftKey(
+    EnvironmentId.make("environment"),
+    ThreadId.make("thread"),
+    RuntimeRequestId.make("input"),
+    "language",
+  );
+  const threadPaste = nativeImagePasteKey("environment:thread");
+  const preparation = startQuestionImagePreparation(questionKey, 3);
+  resolveQuestionImagePreparations(questionKey, "environment:thread");
+  expect(nativeImagePasteCount(threadPaste)).toBe(3);
+  preparation.finish();
+  expect(nativeImagePasteCount(threadPaste)).toBe(0);
+});
 
 afterEach(() => {
   vi.useRealTimers();

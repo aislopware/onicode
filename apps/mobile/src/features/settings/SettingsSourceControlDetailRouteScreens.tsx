@@ -1,5 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
-import type { StaticScreenProps } from "@react-navigation/native";
+import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import {
   hasIssueTrackerTeams,
   issueTrackerBindings,
@@ -37,6 +37,8 @@ import {
 } from "./components/SourceControlProvidersSection";
 import { AppSignInRow } from "./components/SourceControlSignInSection";
 import type { SettingsTarget } from "./settings-environment-filter";
+import { leaveSettingsPage } from "./settings-navigation";
+import { workspaceHasColumns } from "../layout/workspace/workspace-selection-store";
 
 /** The environment a detail page edits, once it is connected, and whether this session may. */
 function useDetailEnvironment(environmentId: EnvironmentId) {
@@ -172,6 +174,7 @@ export function SettingsIssueTrackerRouteScreen({
 }>) {
   const gt = useGT();
   const messages = useMessages();
+  const navigation = useNavigation();
   const { environmentId } = route.params;
   const { environment, canWrite } = useDetailEnvironment(environmentId);
   const query = useEnvironmentQuery(
@@ -203,6 +206,19 @@ export function SettingsIssueTrackerRouteScreen({
               environmentId={environmentId}
               tracker={tracker}
               disabled={disabled}
+              // Disconnecting an added account removes it, as its row goes on desktop.
+              onDisconnected={
+                route.params.accountId === undefined
+                  ? undefined
+                  : () => {
+                      if (navigation.isFocused())
+                        leaveSettingsPage(
+                          navigation,
+                          workspaceHasColumns(),
+                          "SettingsEnvironmentSourceControl",
+                        );
+                    }
+              }
             />
           </SettingsSection>
           {usable && hasIssueTrackerTeams(tracker, issueTrackerBindings(query.data)) ? (

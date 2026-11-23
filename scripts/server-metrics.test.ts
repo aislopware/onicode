@@ -12,6 +12,10 @@ import {
   noiseReport,
   noisePairProblem,
   parsePsCpuTime,
+  parsePsProcessTable,
+  descendantProcesses,
+  inheritedServerEnvironment,
+  unchangedProcesses,
   profileMismatch,
   parseRunSelection,
   pathRewrites,
@@ -428,6 +432,50 @@ describe("parsePsCpuTime", () => {
     ["1:2:3:4", Number.NaN],
   ])("%s", (text, seconds) => {
     expect(parsePsCpuTime(text)).toBe(seconds);
+  });
+});
+
+describe("inheritedServerEnvironment", () => {
+  it("drops every inherited ONICODE_ variable and the user's Claude credentials", () => {
+    const host = {
+      PATH: "/usr/bin",
+      ONICODE_HOME: "/home/me/.onicode",
+      ONICODE_OTLP_TRACES_URL: "http://collector:4318",
+      ONICODE_TAILSCALE_SERVE: "1",
+      ANTHROPIC_AUTH_TOKEN: "token",
+      CLAUDE_CONFIG_DIR: "/home/me/.claude",
+      XDG_RUNTIME_DIR: "/run/user/1000",
+      UNSET: undefined,
+    };
+    expect(inheritedServerEnvironment(host, { noAgentScope: false })).toEqual({
+      PATH: "/usr/bin",
+      XDG_RUNTIME_DIR: "/run/user/1000",
+    });
+    expect(inheritedServerEnvironment(host, { noAgentScope: true })).toEqual({ PATH: "/usr/bin" });
+  });
+});
+
+describe("server process cleanup", () => {
+  const table = parsePsProcessTable(
+    [
+      "  100     1 Mon Nov 24 10:00:00 2026",
+      "  200   100 Mon Nov 24 10:00:01 2026",
+      "  300   200 Mon Nov 24 10:00:02 2026",
+      "  400     1 Mon Nov 24 10:00:03 2026",
+      "",
+    ].join("\n"),
+  );
+
+  it("lists the server's whole tree", () => {
+    expect(descendantProcesses(table, 100).map(({ pid }) => pid)).toEqual([200, 300]);
+  });
+
+  it("kills only descendants still running as themselves", () => {
+    const later = parsePsProcessTable(
+      // 200 kept running after its parent exited; 300 exited and its PID went to a new process.
+      ["  200     1 Mon Nov 24 10:00:01 2026", "  300   400 Mon Nov 24 10:05:00 2026"].join("\n"),
+    );
+    expect(unchangedProcesses(descendantProcesses(table, 100), later)).toEqual([200]);
   });
 });
 

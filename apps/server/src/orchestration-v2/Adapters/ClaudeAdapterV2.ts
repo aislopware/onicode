@@ -1526,14 +1526,6 @@ interface ClaudeHistoryMessage {
   readonly message: { readonly content: unknown; readonly model?: unknown };
 }
 
-// The placeholder reply the CLI records for a failed request, judged on the history the resume keeps.
-export function claudeHistoryEndsOnFailedRequest(
-  messages: ReadonlyArray<ClaudeHistoryMessage>,
-): boolean {
-  const last = messages[claudeMessagesBeforeTrailingAborts(messages) - 1];
-  return last?.type === "assistant" && last.message.model === "<synthetic>";
-}
-
 // Claude's interactive reply-on-resume removes native abort rows before querying the saved history.
 function claudeMessagesBeforeTrailingAborts(messages: ReadonlyArray<ClaudeHistoryMessage>): number {
   let end = messages.length;
@@ -1863,7 +1855,6 @@ export const layerQueryRunner: Layer.Layer<
       const { mcpServers, ...sdkOptions } = input.options;
       // Jobs the agent starts inherit the thread, so port discovery can attribute their servers.
       let resumeSessionAt = sdkOptions.resumeSessionAt;
-      let endsOnFailedRequest = false;
       if (input.resume && sdkOptions.resume !== undefined) {
         const messages = yield* runClaudeWorker({
           method: "getSessionMessages",
@@ -1880,23 +1871,17 @@ export const layerQueryRunner: Layer.Layer<
           resumeSessionAt === undefined
             ? messages.length
             : messages.findIndex((message) => message.uuid === resumeSessionAt) + 1;
-        const history = messages.slice(0, boundary);
-        endsOnFailedRequest = claudeHistoryEndsOnFailedRequest(history);
-        resumeSessionAt = claudeResumeSessionAt(history) ?? resumeSessionAt;
+        resumeSessionAt = claudeResumeSessionAt(messages.slice(0, boundary)) ?? resumeSessionAt;
       }
       const queryOptions = {
         ...sdkOptions,
         ...(resumeSessionAt === undefined ? {} : { resumeSessionAt }),
         env: {
           ...(sdkOptions.env ?? hostEnvironment),
-          // The CLI would re-run a failed request by itself, then run the resume prompt as a second turn.
-          // "0" also overrides a value inherited from the host or instance environment.
-          ...(input.resume && !endsOnFailedRequest
-            ? {
-                CLAUDE_CODE_RESUME_INTERRUPTED_TURN: "1",
-                CLAUDE_CODE_RESUME_REASON: "user_resume",
-              }
-            : { CLAUDE_CODE_RESUME_INTERRUPTED_TURN: "0" }),
+          // The empty resume message continues an interrupted turn by itself; a CLI re-run of it
+          // ran first as a turn of its own for most tails (2.1.330). "0" also overrides a value
+          // inherited from the host or instance environment.
+          CLAUDE_CODE_RESUME_INTERRUPTED_TURN: "0",
           [PortScanner.AGENT_THREAD_ENV]: input.threadId,
         },
       };

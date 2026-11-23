@@ -743,16 +743,20 @@ describe("PreviewManager", () => {
       }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
+  const azerty = { KeyQ: "a", KeyA: "q" };
   effectIt.effect.each([
-    ["linux", "ctrl+alt+[", "[", "BracketLeft", false],
-    ["win32", "ctrl+alt+8", "[", "Digit8", false],
-    ["win32", "ctrl+alt+k", "K", "KeyK", false],
-    ["linux", "ctrl+alt+`", "Dead", "Backquote", false],
-    ["darwin", "ctrl+alt+[", "[", "BracketLeft", true],
-    ["linux", "ctrl+alt+f7", "F7", "F7", true],
+    ["linux", "ctrl+alt+[", "[", "BracketLeft", false, undefined],
+    ["win32", "ctrl+alt+8", "[", "Digit8", false, undefined],
+    ["win32", "ctrl+alt+k", "K", "KeyK", false, undefined],
+    ["linux", "ctrl+alt+`", "Dead", "Backquote", false, undefined],
+    ["darwin", "ctrl+alt+[", "[", "BracketLeft", true, undefined],
+    ["linux", "ctrl+alt+f7", "F7", "F7", true, undefined],
+    ["darwin", "ctrl+alt+a", "æ", "KeyQ", true, azerty],
+    ["darwin", "ctrl+alt+q", "æ", "KeyQ", false, azerty],
+    ["linux", "ctrl+alt+a", "æ", "KeyQ", false, azerty],
   ] as const)(
     "handles ambiguous preview chords on %s: %s",
-    ([platform, chord, key, code, expected]) =>
+    ([platform, chord, key, code, expected, keyboardLayout]) =>
       withManager(
         (manager) =>
           Effect.gen(function* () {
@@ -764,9 +768,10 @@ describe("PreviewManager", () => {
             fromId.mockReturnValue(preview.webContents);
             yield* manager.createTab("tab_alt_graph");
             yield* manager.registerWebview("tab_alt_graph", 42);
-            yield* manager.setForwardedShortcuts([
-              { command: "view.reopenClosed", shortcut: parseKeybindingShortcut(chord)! },
-            ]);
+            yield* manager.setForwardedShortcuts(
+              [{ command: "view.reopenClosed", shortcut: parseKeybindingShortcut(chord)! }],
+              keyboardLayout,
+            );
             const preventDefault = vi.fn();
             preview.listeners.get("before-input-event")!(
               { preventDefault } as never,

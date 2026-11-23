@@ -7,9 +7,10 @@ type LandPastedImages = (uris: ReadonlyArray<string>) => void;
  * Props for `TextInputWrapper`. iOS reads a pasted image off the main thread, so a tap can come
  * before its files: `startPaste` runs when the read starts, to hold that tap, and the callback it
  * returns gets the files, none when nothing loaded. Without a read start it runs on the files.
+ * `images` is how many images the paste carries.
  */
 export function useNativePaste(
-  startPaste: () => LandPastedImages | undefined,
+  startPaste: (images: number) => LandPastedImages | undefined,
 ): Pick<TextInputWrapperViewProps, "onPaste" | "onImageReadStart"> {
   const reads = useRef(new Map<number, LandPastedImages>());
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- an unmounted input gets no paste event, so its started reads release their holds here
@@ -22,8 +23,9 @@ export function useNativePaste(
     };
   }, []);
   return {
-    onImageReadStart: ({ readId }) => {
-      const land = startPaste();
+    // Native builds before the count was added announce no `images`.
+    onImageReadStart: ({ readId, images = 1 }) => {
+      const land = startPaste(images);
       if (land) reads.current.set(readId, land);
     },
     onPaste: (payload) => {
@@ -32,7 +34,7 @@ export function useNativePaste(
       if (payload.readId !== undefined) reads.current.delete(payload.readId);
       const uris = payload.type === "images" ? payload.uris : [];
       if (land) land(uris);
-      else if (uris.length > 0) startPaste()?.(uris);
+      else if (uris.length > 0) startPaste(uris.length)?.(uris);
     },
   };
 }

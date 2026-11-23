@@ -251,7 +251,7 @@ const make = Effect.gen(function* () {
       wasWatching,
       ...(start?.checksState !== undefined && { checksState: start.checksState }),
     };
-  });
+  }, pullRequests.withSharedProjectReads);
 
   const seedClientWatch = Effect.fn("PullRequestWatchService.seedClientWatch")(function* (
     command: PullRequestWatchCommand,
@@ -285,7 +285,7 @@ const make = Effect.gen(function* () {
       ...(start.checksPending !== undefined && { checksPending: start.checksPending }),
       ...(start.headSha !== undefined && { headSha: start.headSha }),
     };
-  });
+  }, pullRequests.withSharedProjectReads);
 
   return PullRequestWatchService.of({ setWatching, seedClientWatch });
 });

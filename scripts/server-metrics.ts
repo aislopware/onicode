@@ -77,6 +77,11 @@ import {
   activityRenewalMissed,
   nextActivityReport,
   parsePsCpuTime,
+  parsePsProcessTable,
+  descendantProcesses,
+  inheritedServerEnvironment,
+  unchangedProcesses,
+  type ProcessEntry,
   pathRewrites,
   pathSpellings,
   parseRunSelection,
@@ -563,38 +568,28 @@ const sample = Effect.fn("serverMetrics.sample")(function* (pid: number) {
   return yield* checked(parsePsCpuTime(time), rss ? Number(rss) * 1024 : Number.NaN, "ps");
 });
 
-/** Every process below `pid`. Windows needs none: taskkill /T stops the tree. */
-const descendantsOf = Effect.fn("serverMetrics.descendantsOf")(function* (pid: number) {
+/** Every process with its parent and start time. Windows needs none: taskkill /T stops the tree. */
+const processTable = Effect.fn("serverMetrics.processTable")(function* () {
   const platform = yield* HostProcess.Platform;
-  const children = new Map<number, number[]>();
-  const add = (child: number, parent: number) =>
-    children.set(parent, [...(children.get(parent) ?? []), child]);
-  if (platform === "linux") {
-    const fs = yield* FileSystem.FileSystem;
-    for (const entry of yield* fs.readDirectory("/proc")) {
-      if (!/^\d+$/.test(entry)) continue;
-      const stat = yield* fs
-        .readFileString(`/proc/${entry}/stat`)
-        .pipe(Effect.orElseSucceed(() => ""));
-      const parent = Number(stat.split(") ")[1]?.split(" ")[1]);
-      if (parent) add(Number(entry), parent);
-    }
-  } else if (platform === "darwin") {
-    const table = yield* output("ps", ["-A", "-o", "pid=,ppid="]);
-    for (const line of Option.getOrElse(table, () => "").split("\n")) {
-      const [child, parent] = line.trim().split(/\s+/).map(Number);
-      if (child && parent) add(child, parent);
-    }
-  } else return [];
-  const found: number[] = [];
-  const pending = [pid];
-  for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
-    for (const child of children.get(next) ?? []) {
-      found.push(child);
-      pending.push(child);
-    }
+  if (platform === "darwin") {
+    const table = yield* output("ps", ["-A", "-o", "pid=,ppid=,lstart="]);
+    return parsePsProcessTable(Option.getOrElse(table, () => ""));
   }
-  return found;
+  if (platform !== "linux") return [];
+  const fs = yield* FileSystem.FileSystem;
+  const entries: ProcessEntry[] = [];
+  for (const entry of yield* fs.readDirectory("/proc")) {
+    if (!/^\d+$/.test(entry)) continue;
+    const stat = yield* fs
+      .readFileString(`/proc/${entry}/stat`)
+      .pipe(Effect.orElseSucceed(() => ""));
+    // Fields after the command: state, ppid, ..., starttime (field 22 of stat).
+    const fields = stat.split(") ")[1]?.split(" ") ?? [];
+    const parent = Number(fields[1]);
+    const started = fields[19];
+    if (parent && started) entries.push({ pid: Number(entry), parent, started });
+  }
+  return entries;
 });
 
 interface Environment {
@@ -835,7 +830,17 @@ const startServer = Effect.fn("serverMetrics.startServer")(function* (
   for (const args of [
     ["init", "-q", "-b", "main"],
     ["add", "."],
-    ["-c", "user.email=bench@onicode.dev", "-c", "user.name=bench", "commit", "-qm", "init"],
+    [
+      "-c",
+      "user.email=bench@onicode.dev",
+      "-c",
+      "user.name=bench",
+      "-c",
+      "commit.gpgsign=false",
+      "commit",
+      "-qm",
+      "init",
+    ],
   ]) {
     yield* run("git", args, { cwd: project });
   }
@@ -852,18 +857,8 @@ const startServer = Effect.fn("serverMetrics.startServer")(function* (
     path.join(baseDir, "userdata/settings.json"),
     encodeJson({ textGenerationModelSelection: { instanceId: "claudeAgent", model: MODEL } }),
   );
-  const dropped = new Set([
-    "ANTHROPIC_AUTH_TOKEN",
-    "ONICODE_HOME",
-    "CLAUDE_CONFIG_DIR",
-    ...(environment.noAgentScope ? ["XDG_RUNTIME_DIR"] : []),
-  ]);
   const env: Record<string, string> = {
-    ...Object.fromEntries(
-      Object.entries(hostEnvironment).filter(
-        (entry): entry is [string, string] => entry[1] !== undefined && !dropped.has(entry[0]),
-      ),
-    ),
+    ...inheritedServerEnvironment(hostEnvironment, { noAgentScope: environment.noAgentScope }),
     HOME: environment.home,
     USERPROFILE: environment.home,
     ANTHROPIC_BASE_URL: `http://127.0.0.1:${environment.apiPort}`,
@@ -912,14 +907,22 @@ const startServer = Effect.fn("serverMetrics.startServer")(function* (
 
   yield* Effect.addFinalizer(() =>
     Effect.gen(function* () {
-      const spawned = yield* descendantsOf(pid).pipe(Effect.orElseSucceed(() => []));
+      const spawned = yield* processTable().pipe(
+        Effect.map((table) => descendantProcesses(table, pid)),
+        Effect.orElseSucceed(() => []),
+      );
       if (platform === "win32") yield* output("taskkill", ["/PID", `${pid}`, "/T", "/F"]);
       else
         yield* child
           .kill({ killSignal: "SIGTERM", forceKillAfter: Duration.seconds(10) })
           .pipe(Effect.timeout(Duration.seconds(15)), Effect.ignore);
       yield* child.exitCode.pipe(Effect.timeout(Duration.seconds(10)), Effect.ignore);
-      if (spawned.length > 0) yield* output("kill", ["-9", ...spawned.map(String)]);
+      // A PID freed while the server stopped may already belong to another process.
+      const survivors =
+        spawned.length === 0
+          ? []
+          : unchangedProcesses(spawned, yield* processTable().pipe(Effect.orElseSucceed(() => [])));
+      if (survivors.length > 0) yield* output("kill", ["-9", ...survivors.map(String)]);
       // Windows keeps a file locked for a moment after its process exits.
       yield* fs
         .remove(directory, { recursive: true })

@@ -3,10 +3,17 @@ import { act, createElement, createContext, useState, type ReactNode } from "rea
 import { createRoot } from "react-dom/client";
 import { WorkspaceRootScreen } from "./WorkspaceRootScreen.android";
 import {
+  overflowNavigationTabs,
+  resolveSelectedNavigationTab,
+  visibleNavigationTabs,
+} from "./navigation-tab-order";
+import {
   initialWorkspaceTabsState,
   workspaceTabsReducer,
   shouldRestoreNativeSearch,
   workspaceTabForNativeSlot,
+  moveListedTab,
+  resolveWorkspaceHiddenTabs,
   resolveWorkspaceTabOrder,
   workspaceSearchBottomClearance,
   workspaceDockBottomClearance,
@@ -68,11 +75,43 @@ describe("workspace root navigation", () => {
       "threads",
       "pullRequests",
       "issues",
+      "workflows",
       "usage",
     ]);
     expect(resolveWorkspaceTabOrder(["home", "usage", "issues", "threads"])).toEqual(
       resolveWorkspaceTabOrder(undefined),
     );
+  });
+
+  it("lists Workflows only while a server has them on, and leaves the tab when they turn off", () => {
+    const order = resolveWorkspaceTabOrder(undefined);
+    const hidden = (workflowsEnabled: boolean) =>
+      resolveWorkspaceHiddenTabs(undefined, "workflows", workflowsEnabled);
+    expect(visibleNavigationTabs(order, hidden(true))).toEqual([
+      "threads",
+      "pullRequests",
+      "workflows",
+      "usage",
+    ]);
+    expect(visibleNavigationTabs(order, hidden(false))).toEqual([
+      "threads",
+      "pullRequests",
+      "usage",
+    ]);
+    expect(overflowNavigationTabs(order, hidden(false))).toEqual([]);
+    expect(resolveSelectedNavigationTab(order, hidden(true), "workflows")).toBe("workflows");
+    expect(resolveSelectedNavigationTab(order, hidden(false), "workflows")).toBe("threads");
+    // Settings moves a tab past its listed neighbour, so unlisted Workflows keeps its place.
+    const moved = moveListedTab(order, ["workflows"], "usage", -1);
+    expect(moved).toEqual(["threads", "pullRequests", "usage", "issues", "workflows"]);
+    expect(moveListedTab(moved, ["workflows"], "usage", -1)).toEqual([
+      "threads",
+      "usage",
+      "pullRequests",
+      "issues",
+      "workflows",
+    ]);
+    expect(moveListedTab(order, ["workflows"], "usage", 1)).toEqual(order);
   });
 
   it("retains separate queries and positions across tabs, and cancels only the current search", () => {

@@ -15,7 +15,11 @@ import { AdvertisedEndpoint } from "./remoteAccess.ts";
 import { ExecutionEnvironmentDescriptor } from "./environment.ts";
 import { type ClientSettings, type QuitConfirmationMode, SnapShotShortcut } from "./settings.ts";
 import type { EditorId } from "./editor.ts";
-import { KeybindingShortcut, type PreviewForwardedShortcut } from "./keybindings.ts";
+import {
+  KeybindingShortcut,
+  KeyboardLayoutLetters,
+  type PreviewForwardedShortcut,
+} from "./keybindings.ts";
 
 import type {
   DesktopAppActivationRequest,
@@ -1277,6 +1281,7 @@ export const DESKTOP_PREVIEW_RECORDING_CAPTURE_TRIGGER = "__oniDesktopPreviewRec
 export const DesktopPreviewAnnotationVoiceConfigSchema = Schema.Struct({
   sessionId: Schema.String.check(Schema.isMaxLength(64)),
   shortcuts: Schema.Array(KeybindingShortcut).check(Schema.isMaxLength(16)),
+  keyboardLayout: Schema.optional(KeyboardLayoutLetters),
 });
 export type DesktopPreviewAnnotationVoiceConfig =
   typeof DesktopPreviewAnnotationVoiceConfigSchema.Type;
@@ -1343,7 +1348,10 @@ export const DesktopPreviewPickElementInputSchema = Schema.Struct({
 });
 
 export interface DesktopPreviewBridge {
-  setForwardedShortcuts: (shortcuts: ReadonlyArray<PreviewForwardedShortcut>) => Promise<void>;
+  setForwardedShortcuts: (
+    shortcuts: ReadonlyArray<PreviewForwardedShortcut>,
+    keyboardLayout?: KeyboardLayoutLetters,
+  ) => Promise<void>;
   createTab: (tabId: string, defaults?: DesktopPreviewTabDefaults) => Promise<void>;
   closeTab: (tabId: string) => Promise<void>;
   registerWebview: (tabId: string, webContentsId: number) => Promise<void>;

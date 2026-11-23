@@ -410,8 +410,11 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     },
   },
   preview: {
-    setForwardedShortcuts: (shortcuts) =>
-      ipcRenderer.invoke(IpcChannels.PREVIEW_SET_FORWARDED_SHORTCUTS_CHANNEL, shortcuts),
+    setForwardedShortcuts: (shortcuts, keyboardLayout) =>
+      ipcRenderer.invoke(IpcChannels.PREVIEW_SET_FORWARDED_SHORTCUTS_CHANNEL, {
+        shortcuts,
+        keyboardLayout,
+      }),
     createTab: (tabId, defaults) =>
       ipcRenderer.invoke(IpcChannels.PREVIEW_CREATE_TAB_CHANNEL, {
         tabId,

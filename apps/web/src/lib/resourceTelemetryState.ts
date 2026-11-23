@@ -7,6 +7,7 @@ import type {
 } from "@onicode/contracts";
 import * as Cause from "effect/Cause";
 import { msg, useMessages } from "gt-react";
+import { useState } from "react";
 
 import { m } from "../i18n/messages";
 import { usePrimaryEnvironment } from "../state/environments";
@@ -60,9 +61,27 @@ export function useResourceTelemetry(
     return result.value.snapshot;
   };
 
+  // A refresh keeps the old snapshot while it resubscribes; it ends with a new snapshot or error.
+  const [refreshFrom, setRefreshFrom] = useState<{
+    readonly environmentId: EnvironmentId | null;
+    readonly data: ResourceTelemetrySnapshot | null;
+    readonly failure: unknown;
+  } | null>(null);
+  const refreshing =
+    refreshFrom !== null &&
+    refreshFrom.environmentId === environmentId &&
+    query.isPending &&
+    query.data === refreshFrom.data &&
+    query.failure === refreshFrom.failure;
+  if (refreshFrom !== null && !refreshing) setRefreshFrom(null);
+  const refresh = () => {
+    setRefreshFrom({ environmentId, data: query.data, failure: query.failure });
+    query.refresh();
+  };
+
   // The live subscription keeps waiting for updates after its first snapshot.
-  const isPending = query.isPending && query.data === null && query.error === null;
-  return { ...query, isPending, retry };
+  const isPending = refreshing || (query.isPending && query.data === null && query.error === null);
+  return { ...query, isPending, refresh, retry };
 }
 
 export function useResourceTelemetryHistory(

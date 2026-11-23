@@ -45,6 +45,7 @@ import { ExpandedImageDialog } from "~/components/chat/ExpandedImageDialog";
 import type { ExpandedImagePreview } from "~/components/chat/ExpandedImagePreview";
 import { useHtmlRenderTheme } from "~/hooks/useHtmlRenderTheme";
 import { shortcutConflictKey } from "~/keybindings";
+import { getKeyboardLayoutMap, useKeyboardLayoutLetters } from "~/keyboardLayout";
 import { useOpenChangeRequestLink } from "~/lib/openPullRequestLink";
 import { readLocalApi } from "~/localApi";
 import { cn } from "~/lib/utils";
@@ -335,20 +336,27 @@ export function HtmlRenderDocument(props: {
     }
   }
   const shortcuts = [...shortcutsByKey.values()];
+  const layoutLetters = useKeyboardLayoutLetters();
+  const keyboardLayout = mac ? layoutLetters : undefined;
   const postShortcuts = () => {
     frameRef.current?.contentWindow?.postMessage(
-      htmlRenderShortcutsMessage(shortcuts, blocked),
+      htmlRenderShortcutsMessage(shortcuts, blocked, keyboardLayout),
       "*",
     );
   };
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- posts allowed and blocked shortcuts to the sandboxed iframe's window
-  useEffect(postShortcuts, [blocked, shortcuts]);
+  useEffect(postShortcuts, [blocked, keyboardLayout, shortcuts]);
   // Pages can forge key/code pairs; reject pairs matching other bindings and require named keys to match the
   // shortcut.
   const isShortcut = useEffectEvent(
     (key: NonNullable<ReturnType<typeof readHtmlRenderKeyDown>>) => {
       const matches = (shortcut: HtmlRenderShortcut) =>
-        matchesKeybindingShortcut(key, { ...shortcut, modKey: false }, navigator.platform);
+        matchesKeybindingShortcut(
+          key,
+          { ...shortcut, modKey: false },
+          navigator.platform,
+          getKeyboardLayoutMap(),
+        );
       const allowed = shortcuts.filter(matches);
       return (
         allowed.length > 0 &&

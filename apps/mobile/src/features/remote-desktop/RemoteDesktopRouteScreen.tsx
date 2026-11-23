@@ -457,6 +457,8 @@ function RemoteDesktopScreen({
             : key.accessibilityLabel
         }
         variant={locked ? "primary" : "default"}
+        // Screen readers hear armed and locked keys as selected; the label adds "locked".
+        selected={key.modifier ? modifiers.includes(key.code) : undefined}
         // Held for one use: tinted, so it reads as armed but lighter than locked.
         className={
           key.modifier && !locked && modifiers.includes(key.code)

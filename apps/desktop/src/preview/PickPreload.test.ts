@@ -2,6 +2,7 @@ import { expect, it, vi } from "vite-plus/test";
 
 import { ELEMENT_PICKED_CHANNEL, START_PICK_CHANNEL } from "./GuestProtocol.ts";
 import "./PickPreload.ts";
+import { deepElements, visibleElementRect } from "./PickTarget.ts";
 
 const ipcListeners = vi.hoisted(() => new Map<string, Array<(...args: unknown[]) => void>>());
 const ipcSend = vi.hoisted(() => ({ calls: [] as unknown[][] }));
@@ -182,3 +183,37 @@ it.each([
     expect((annotation as { elements: Array<{ rect: unknown }> }).elements[0]?.rect).toEqual(rect);
   },
 );
+
+it("clips Select outlines and finds Marquee candidates across open shadow roots", () => {
+  using stack = new DisposableStack();
+  const page = document.body.appendChild(document.createElement("div"));
+  stack.defer(() => page.remove());
+  page.style.cssText = "overflow-x:hidden;overflow-y:hidden";
+  const host = page.appendChild(document.createElement("div"));
+  host.style.cssText = "overflow-x:visible;overflow-y:visible";
+  const inner = host.attachShadow({ mode: "open" }).appendChild(document.createElement("span"));
+  const sealed = page
+    .appendChild(document.createElement("div"))
+    .attachShadow({ mode: "closed" })
+    .appendChild(document.createElement("span"));
+  const size = (element: Element, width: number, height: number) => {
+    Object.defineProperty(element, "clientWidth", { configurable: true, value: width });
+    Object.defineProperty(element, "clientHeight", { configurable: true, value: height });
+    stack.defer(() => {
+      Reflect.deleteProperty(element, "clientWidth");
+      Reflect.deleteProperty(element, "clientHeight");
+    });
+  };
+  size(document.documentElement, 1000, 1000);
+  size(page, 100, 100);
+  stack.use(vi.spyOn(page, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 100, 100)));
+  stack.use(
+    vi.spyOn(inner, "getBoundingClientRect").mockReturnValue(new DOMRect(50, 50, 200, 200)),
+  );
+
+  // The scroll container outside the host still clips the shadow content.
+  expect(visibleElementRect(inner)).toEqual({ x: 50, y: 50, width: 50, height: 50 });
+  const elements = deepElements(document.body);
+  expect(elements).toContain(inner);
+  expect(elements).not.toContain(sealed);
+});
