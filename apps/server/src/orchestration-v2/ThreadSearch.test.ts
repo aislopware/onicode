@@ -891,6 +891,28 @@ it.layer(layerTest)("ThreadSearch filters before it ranks", (it) => {
           [[mention, "Fix __init__.py and _café_.py"]],
         );
       }
+      // A route file's brackets are escaped in its label too.
+      const route = ThreadId.make("thread:heron-route");
+      yield* Effect.forEach(
+        [
+          thread(route, project),
+          message(
+            route,
+            "heron-route",
+            "user",
+            String.raw`Open [\[id\]\_edit.tsx](app/routes/%5Bid%5D_edit.tsx) for wrenfinch`,
+          ),
+        ],
+        projections.apply,
+        { discard: true },
+      );
+      for (const query of ["wrenfinch", "_edit.tsx"]) {
+        const routes = yield* search.search({ query });
+        assert.deepEqual(
+          routes.matches.map((match) => [match.threadId, match.snippet]),
+          [[route, "Open [id]_edit.tsx for wrenfinch"]],
+        );
+      }
     }),
   );
 

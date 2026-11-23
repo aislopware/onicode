@@ -1,7 +1,8 @@
 import { copySnapshot as copySnapshotToClipboard } from "./copySnapshot";
 import { InlineAudioPreview } from "../files/InlineAudioPreview";
 import { filePreviewKind } from "@onicode/shared/filePreview";
-import type { MarkdownExtensions } from "~/markdown/wordsHast";
+import { markdownMathRanges, type MarkdownExtensions } from "~/markdown/wordsHast";
+import { composerFoldSummary } from "@onicode/shared/composerInlineTokens";
 import { T, useGT, useMessages, Var } from "gt-react";
 import { findRevealRef } from "./markdownFindContext";
 import {
@@ -317,8 +318,7 @@ function AutomationMessageRow({ row }: { row: Extract<TimelineRow, { kind: "mess
   const { text, scheduledTaskId } = resolveUserMessagePresentation(row.message);
   const summary =
     useScheduledTaskTitle(ctx.activeThreadEnvironmentId, scheduledTaskId) ??
-    text.trim().split(/\r?\n/, 1)[0] ??
-    "";
+    composerFoldSummary(text, markdownMathRanges);
 
   const revertTurnCount = row.revertTurnCount;
   const promptLink = promptLinkFor(text);
@@ -606,11 +606,6 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
     (reference) => reference.label,
   );
   const promptLink = promptLinkFor(plainText);
-  const foldSummary =
-    plainText
-      .split(/\r?\n/)
-      .find((line) => line.trim().length > 0)
-      ?.trim() ?? "";
   const mediaCopyRecords = mediaOnly
     ? resolvedContext.records.flatMap((record) => {
         const known = asKnownContextRecord(record);
@@ -965,7 +960,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
             icon={MessagesSquareIcon}
             label={senderLabel}
             fitLabel={!senderTitle}
-            summary={foldSummary}
+            summary={composerFoldSummary(plainText, markdownMathRanges)}
             expanded={expanded}
             onToggle={() => setExpanded((value) => !value)}
           />

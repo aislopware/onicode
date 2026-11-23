@@ -4,6 +4,8 @@ import { m } from "../../i18n/messages";
 import { errorDisplayMessage } from "@onicode/client-runtime/errors";
 import { toServerClock } from "@onicode/client-runtime/clock";
 import { formatDuration } from "@onicode/shared/orchestrationTimingCopy";
+import { composerFoldSummary } from "@onicode/shared/composerInlineTokens";
+import { markdownMathRanges } from "@onicode/shared/markdownMath";
 import { Sheet } from "../../components/ui/Sheet";
 import { ListActionRow } from "../../components/ui/ListActionRow";
 import { ListSection } from "../../components/ui/ListSection";
@@ -1816,7 +1818,7 @@ function ThreadAutomationMessageRow(props: {
       : null,
   );
   const taskTitle = tasks.data?.tasks.find((task) => task.id === props.scheduledTaskId)?.title;
-  const summary = taskTitle ?? props.text.trim().split(/\r?\n/, 1)[0] ?? "";
+  const summary = taskTitle ?? composerFoldSummary(props.text, markdownMathRanges);
 
   return (
     <View className="mb-2 items-end">
@@ -2536,12 +2538,10 @@ function renderFeedEntry(
                   environmentId={senderRef?.environmentId ?? props.environmentId}
                   senderThreadId={senderRef?.threadId}
                   {...(message.linkedSender ? { senderTitle: message.linkedSender.title } : {})}
-                  summary={
-                    replaceComposerContextReferences(presentation.text, (ref) => ref.label)
-                      .split(/\r?\n/)
-                      .find((line) => line.trim().length > 0)
-                      ?.trim() ?? ""
-                  }
+                  summary={composerFoldSummary(
+                    replaceComposerContextReferences(presentation.text, (ref) => ref.label),
+                    markdownMathRanges,
+                  )}
                   expanded={foldExpanded}
                   onToggle={() => props.onToggleWorkRow(foldRowId, entry.id)}
                   iconSubtleColor={iconSubtleColor}

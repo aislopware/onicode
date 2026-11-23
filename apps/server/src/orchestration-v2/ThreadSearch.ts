@@ -181,7 +181,8 @@ function buildMessageSearch(
 
 // A thread shows a link as its text, so in-thread find cannot reach a match
 // in the address; messages are matched as they read.
-const MARKDOWN_LINK = /!?\[([^\]\n]*)\]\([^)\s]*\)/g;
+const MARKDOWN_LINK = /!?\[((?:\\.|[^\\\]\n])*)\]\([^)\s]*\)/g;
+const linkText = (_link: string, label: string) => label.replace(/\\([!-/:-@[-`{-~])/g, "$1");
 
 // Result rows show one line, so the match must sit near the start to be seen.
 const SNIPPET_LEAD = 24;
@@ -548,7 +549,7 @@ export const make = Effect.gen(function* () {
     const hitCount = (threadId: ThreadId) => hitCounts.get(threadId) ?? 1;
     const matchMessage = messageMatcher(input.query);
     for (const row of rows) {
-      const text = row.text.replace(MARKDOWN_LINK, "$1");
+      const text = row.text.replace(MARKDOWN_LINK, linkText);
       const match = matchMessage(text);
       if (match === null) continue;
       const hit = { row, text, ...match };
