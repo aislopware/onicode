@@ -429,10 +429,12 @@ const BOOTSTRAP = (() => {
   return `<style id="oni-theme">${defaultCss}</style><script>${BOOTSTRAP_SCRIPT}</script>`;
 })();
 
+// The tag patterns below stop at the next `<` outside a quoted value, so matching stays linear in
+// the length of the document.
 function bootstrapMarkup(markup: string): string {
   return [
-    /<meta\s[^>]*charset/i.test(markup.slice(0, 4096)) ? "" : '<meta charset="utf-8">',
-    /<meta\s[^>]*name\s*=\s*["']?viewport/i.test(markup)
+    /<meta\s[^<>]*charset/i.test(markup.slice(0, 4096)) ? "" : '<meta charset="utf-8">',
+    /<meta\s(?:[^"'<>]|"[^"]*"|'[^']*')*name\s*=\s*["']?viewport/i.test(markup)
       ? ""
       : '<meta name="viewport" content="width=device-width, initial-scale=1">',
     BOOTSTRAP,
@@ -449,7 +451,7 @@ const blankNonMarkup = (html: string) => {
   let depth = 0;
   let start = 0;
   let at = 0;
-  for (const match of scan.matchAll(/<(\/?)template(?:\s[^>]*)?\/?>/gi)) {
+  for (const match of scan.matchAll(/<(\/?)template(?:\s(?:[^"'<>]|"[^"]*"|'[^']*')*)?\/?>/gi)) {
     if (!match[1]) {
       if (depth++ === 0) start = match.index;
     } else if (depth > 0 && --depth === 0) {
@@ -466,7 +468,7 @@ const blankNonMarkup = (html: string) => {
   return parts.join("");
 };
 
-const HEAD_OPEN = /<head(?:\s(?:[^"'>]|"[^"]*"|'[^']*')*)?>/i;
+const HEAD_OPEN = /<head(?:\s(?:[^"'<>]|"[^"]*"|'[^']*')*)?>/i;
 // Every bootstrap since the first (t3-theme before the rebrand) has this shape, after the same optional metas;
 // none contains `</script>`.
 const STORED_BOOTSTRAP =
@@ -494,7 +496,7 @@ export function injectHtmlRenderBootstrap(html: string): string {
     const at = headOpen.index + headOpen[0].length;
     return html.slice(0, at) + markup + html.slice(at);
   }
-  const htmlOpen = /<html(?:\s(?:[^"'>]|"[^"]*"|'[^']*')*)?>/i.exec(scan);
+  const htmlOpen = /<html(?:\s(?:[^"'<>]|"[^"]*"|'[^']*')*)?>/i.exec(scan);
   if (htmlOpen) {
     const at = htmlOpen.index + htmlOpen[0].length;
     return `${html.slice(0, at)}<head>${markup}</head>${html.slice(at)}`;
