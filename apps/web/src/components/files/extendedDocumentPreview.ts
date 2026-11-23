@@ -269,7 +269,12 @@ async function epubHtml(node: XmlNode, archive: OfficeArchive, base: string): Pr
   reserveMarkup(tag.length * 2 + spans.length + 5);
   return `<${tag}${spans}>${children}</${tag}>`;
 }
-async function odfHtml(node: XmlNode, archive: OfficeArchive, imageAlt = ""): Promise<string> {
+async function odfHtml(
+  node: XmlNode,
+  archive: OfficeArchive,
+  imageAlt = "",
+  inRepeatedRow = false,
+): Promise<string> {
   if (node.name === "#text") return pipe(text(node), escape, boundedMarkup);
   if (node.name === "text:s" || node.name === "text:tab")
     return boundedMarkup(
@@ -300,6 +305,7 @@ async function odfHtml(node: XmlNode, archive: OfficeArchive, imageAlt = ""): Pr
       "text:user-index-source",
       "text:alphabetical-index-source",
       "text:bibliography-source",
+      "table:covered-table-cell",
     ].includes(node.name)
   )
     return "";
@@ -312,7 +318,12 @@ async function odfHtml(node: XmlNode, archive: OfficeArchive, imageAlt = ""): Pr
           .join(" ")
       : "";
   let children = "";
-  for (const child of node.children) children += await odfHtml(child, archive, childImageAlt);
+  const repeatedRow =
+    node.name === "table:table-row"
+      ? Number(node.attrs["table:number-rows-repeated"]) > 1
+      : inRepeatedRow;
+  for (const child of node.children)
+    children += await odfHtml(child, archive, childImageAlt, repeatedRow);
   const tags: Record<string, string> = {
     "text:p": "p",
     "text:h": "h2",
@@ -331,7 +342,18 @@ async function odfHtml(node: XmlNode, archive: OfficeArchive, imageAlt = ""): Pr
       : tag === "td"
         ? repeat(node.attrs["table:number-columns-repeated"], TABLE_PREVIEW_MAX_COLUMNS)
         : 1;
-  const markup = `<${tag}>${children}</${tag}>`;
+  let spans = "";
+  // Spans on repeated cells or rows would multiply past the preview's table limits.
+  if (tag === "td" && count === 1)
+    for (const [name, attr, max] of [
+      ["colspan", "table:number-columns-spanned", TABLE_PREVIEW_MAX_COLUMNS],
+      ["rowspan", "table:number-rows-spanned", repeatedRow ? 1 : TABLE_PREVIEW_MAX_ROWS],
+    ] as const) {
+      const span = Number(node.attrs[attr]);
+      if (max > 1 && Number.isSafeInteger(span) && span > 1)
+        spans += ` ${name}="${Math.min(span, max)}"`;
+    }
+  const markup = `<${tag}${spans}>${children}</${tag}>`;
   reserveMarkup(count * markup.length - children.length);
   return markup.repeat(count);
 }
