@@ -168,7 +168,7 @@ Most code changes do not need an internal documentation change. Agents can read 
 - Do not document every feature, enumerate fields, methods, constants, timeouts, or migration numbers, narrate control flow, maintain file catalogs, or append PR summaries. Anything that can drift will drift; types, tests, and code already record the implementation. The glossary defines shared vocabulary; it is not a feature index.
 - A local reason the code can't show goes in a short nearby code comment. Use an internal doc when the reasoning crosses boundaries or needs context the code cannot carry well. Link to the relevant source instead of copying it.
 - When a documented decision or constraint changes, rewrite or remove the affected text. Do not append another account of the new behavior. A new internal page needs a distinct, durable reason to exist.
-- `docs/user/` helps users accomplish tasks in the shipped product's voice, without implementation details or contributor tooling. Focus on what a feature does, how to start, and anything unintuitive—not descriptions of buttons, layouts, or UI tweaks.
+- `docs/user/` helps users accomplish tasks in the shipped product's voice, without implementation details or contributor tooling. Focus on what a feature does, how to start, and anything unintuitive—not descriptions of buttons, layouts, or UI tweaks. Update the feature's section when how to use it changes.
 - `docs/operations/` holds maintainer setup, release, and debugging runbooks. Keep end-user server instructions in `docs/user/`.
 
 ## Plans and work artifacts
@@ -194,26 +194,13 @@ Architecture and its constraints: [01_architecture.md](docs/internals/01_archite
 
 ### Internal docs by area
 
-Read the matching doc before changing code in that area; code review enforces them.
+Read the matching doc before changing code in that area; code review enforces them. All under `docs/internals/` unless noted.
 
-| Area                                                | Read first                                                                                                                                                                                        |
-| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Architecture & orchestration                        | [00_glossary.md](docs/internals/00_glossary.md), [01_architecture.md](docs/internals/01_architecture.md)                                                                                          |
-| Server Effect services & errors                     | [02_effect-services.md](docs/internals/02_effect-services.md)                                                                                                                                     |
-| Providers & ACP                                     | [03_providers.md](docs/internals/03_providers.md)                                                                                                                                                 |
-| Auth, MCP, tailnet identity, assets, security       | [04_environment-auth.md](docs/internals/04_environment-auth.md), [SECURITY.md](SECURITY.md)                                                                                                       |
-| Remote routes, peer links, previews, remote desktop | [05_remote.md](docs/internals/05_remote.md)                                                                                                                                                       |
-| Server updates & crash recovery                     | [07_server-updates.md](docs/internals/07_server-updates.md)                                                                                                                                       |
-| Client connection & sync runtime                    | [09_connection-runtime.md](docs/internals/09_connection-runtime.md)                                                                                                                               |
-| Web UI primitives, styles & React Compiler          | [10_web-ui.md](docs/internals/10_web-ui.md)                                                                                                                                                       |
-| Mobile layout, navigation & dev lifecycle           | [11_mobile-layout.md](docs/internals/11_mobile-layout.md), [12_mobile-navigation.md](docs/internals/12_mobile-navigation.md), [13_mobile-development.md](docs/internals/13_mobile-development.md) |
-| Translations & UI copy                              | [14_i18n.md](docs/internals/14_i18n.md)                                                                                                                                                           |
-| Writing & reviewing tests                           | [15_testing.md](docs/internals/15_testing.md), [scenarios.md](docs/operations/scenarios.md)                                                                                                       |
-| Wire budgets, server metrics & perf                 | [16_performance-regressions.md](docs/internals/16_performance-regressions.md)                                                                                                                     |
-| Repo & package scripts                              | [17_scripts.md](docs/internals/17_scripts.md)                                                                                                                                                     |
-| Push notifications                                  | [push-notifications.md](docs/internals/push-notifications.md), [push-gateway.md](docs/operations/push-gateway.md)                                                                                 |
-| Browser use                                         | [browser-use.md](docs/internals/browser-use.md)                                                                                                                                                   |
-| Computer use                                        | [computer-use.md](docs/internals/computer-use.md)                                                                                                                                                 |
+- Architecture, orchestration: `00_glossary.md`, `01_architecture.md`. Effect services: `02_effect-services.md`. Providers, ACP: `03_providers.md`.
+- Auth, MCP, tailnet identity, assets: `04_environment-auth.md`, `SECURITY.md`. Remote routes, peer links, previews, remote desktop: `05_remote.md`. Server updates: `07_server-updates.md`. Client connection runtime: `09_connection-runtime.md`.
+- Web UI and React Compiler: `10_web-ui.md`. Mobile: `11_mobile-layout.md`, `12_mobile-navigation.md`, `13_mobile-development.md`. Translations: `14_i18n.md`.
+- Tests: `15_testing.md`, `docs/operations/scenarios.md`. Performance: `16_performance-regressions.md`. Scripts: `17_scripts.md`.
+- Push notifications: `push-notifications.md`, `docs/operations/push-gateway.md`. Browser use: `browser-use.md`. Computer use: `computer-use.md`.
 
 ## Taste
 

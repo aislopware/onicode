@@ -25,13 +25,16 @@ The environment issues its own sessions and enforces their capabilities. See
 - **WebSocket tickets and per-RPC authorization.** Clients mint short-lived tickets over
   authenticated HTTP so long-lived tokens never appear in socket URLs. A ticket names the route it
   opens: the RPC socket, or the media routes (device hub, preview stream), which share one ticket.
+  Clients that predate route-named tickets mint ones that open either route, so the server keeps
+  accepting those.
   A successful handshake grants no extra authority: every RPC declares and checks its required
   scope in [`RpcAuthorization.ts`](../../apps/server/src/auth/RpcAuthorization.ts).
 - **Backward-compatible scope evolution.** Token exchange intersects requested scopes with the
   pairing grant, dropping retired/unknown names and failing before consuming a link if none remain.
   Stored grants are never expanded when scopes split. Auth responses preserve legacy `scopes`
   alongside exact `permissions`, and permission errors keep a legacy `requiredScope` beside the
-  exact `requiredPermission`, so older clients and servers stay compatible.
+  exact `requiredPermission`, so older clients and servers stay compatible. Unknown response
+  permissions are ignored; grant inputs stay strict.
 
 ## Non-standard principals
 
@@ -62,7 +65,8 @@ The environment issues its own sessions and enforces their capabilities. See
   `tailscale whois` about the socket peer, trusted only when both ends are tailnet addresses.
   Loopback (`tailscale serve`, userspace tailscaled, local processes) is refused. Never take the
   peer from `X-Forwarded-For` or another header. A tagged host admits only devices an ACL grant
-  gives `onicode.com/cap/environment`; sessions use subject `tailnet:<nodeId>`.
+  gives `onicode.com/cap/environment`; sessions use subject `tailnet:<nodeId>` and are revoked with
+  the other remote sessions when a managed policy keeps clients local.
 
 ## The environment is the filesystem boundary
 

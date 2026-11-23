@@ -35,7 +35,8 @@ picture and input travel over WebRTC between the viewer and the desktop app on t
 
 - **WebRTC, not the socket.** A late frame is worthless and TCP would hold later frames behind a lost
   packet; WebRTC brings UDP, congestion control, and hardware codecs in every client without native
-  modules.
+  modules. A custom QUIC transport was rejected: no client runtime speaks it without native code, and
+  inside a tailnet `ws://` already rides WireGuard.
 - **The host is the desktop renderer**, the only process with Screen Recording/Accessibility grants
   and `getDisplayMedia`. A headless `onicode up` host cannot share a screen.
 - **No STUN or TURN.** Host candidates only, so the connection needs a direct LAN or tailnet route
@@ -51,7 +52,8 @@ picture and input travel over WebRTC between the viewer and the desktop app on t
 A [peer link](../../apps/server/src/peer/PeerLinks.ts) lets one environment's agents work in another
 by signing in to the target's `/mcp` as an ordinary OAuth client (`onicode-peer-link`). The receiving
 side lists and revokes it in Sharing & access like any other session, and owns its expiry/renewal
-(answering each call with `oni-link-expires-at`; the linking side never extends a link itself).
+(answering each call with `oni-link-expires-at`; the linking side never extends a link itself, and a
+receiving side that predates renewal sends no header, so the link keeps its original 30 days).
 Unlinking sends the token to `/oauth/mcp/revoke` only at an address that still answers as that
 environment.
 
@@ -69,6 +71,14 @@ environment.
   moves an unexpired link.
 - **Namespace idempotency keys.** All callers on the linking side share one session on the receiving
   side, so idempotency keys must be hashed with the caller's namespace before forwarding.
+- **The Linked environments beta (`linkedEnvironmentsEnabled`) gates both sides.** Off on the linking
+  side, new links and forwarded calls refuse, but `readThread`, `waitForThread`, and `interruptThread`
+  still work so running remote tasks complete and stay cancellable. Off on the receiving side, link
+  sessions get a 403, which the linking side reports as retryable.
+- **A delegated task can run in a linked environment.** The parent records `remoteChild` instead of
+  `childThreadId`, and a [`RemoteDelegation`](../../apps/server/src/peer/RemoteDelegation.ts)
+  follower completes it; open remote tasks are followed again at startup, which also keeps restart
+  recovery from treating them as abandoned provider work.
 - **Clients read linked threads as standard thread streams.**
   [`PeerThreadRelay`](../../apps/server/src/peer/PeerThreadRelay.ts) proxies the same stream format
   read-only so there is no second transcript schema to maintain.
@@ -96,6 +106,8 @@ through `/api/preview/tunnel` on the environment's own origin:
   [`OniHttpRewriter`](../../apps/mobile/modules/oni-preview-tunnel/ios/OniHttpRewriter.swift) swaps
   loopback names for a stand-in host in plain HTTP heads and text bodies, since iOS never proxies
   loopback hosts.
+- **Off stays routed.** With `allowsPreviewTunnel` off, the partition keeps its tunnel proxy, so a
+  desktop tab left open fails instead of loading the reviewer's own localhost.
 
 ## Access and process ownership are separate
 
