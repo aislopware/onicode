@@ -13330,6 +13330,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
     };
 
     const deleteE: FileUpdateChange = { path: "/w/e.ts", kind: { type: "delete" }, diff: "gone" };
+    const addEmptyF: FileUpdateChange = { path: "/w/f.ts", kind: { type: "add" }, diff: "" };
 
     const fileChange = (
       phase: "started" | "completed",
@@ -13534,8 +13535,8 @@ describe("CodexAdapterV2 post-settle continuation", () => {
     it.effect("keeps every path of a completed multi-file patch", () =>
       Effect.gen(function* () {
         const { harness } = yield* startApprovalTurn("file-change-multi-path", [
-          fileChange("started", nativeTurnId, "patch-a", [renameC, deleteE, addA]),
-          fileChange("completed", nativeTurnId, "patch-a", [renameC, deleteE, addA]),
+          fileChange("started", nativeTurnId, "patch-a", [renameC, deleteE, addA, addEmptyF]),
+          fileChange("completed", nativeTurnId, "patch-a", [renameC, deleteE, addA, addEmptyF]),
           turnCompleted(nativeTurnId),
         ]);
         yield* harness.firstTerminal;
@@ -13551,6 +13552,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
           { operation: "update", path: "/w/d.ts", oldPath: "/w/c.ts" },
           { operation: "delete", path: "/w/e.ts" },
           { operation: "add", path: "/w/a.ts" },
+          { operation: "add", path: "/w/f.ts" },
         ]);
         assert.equal(
           fileChanges[0]?.diffStr,
@@ -13571,6 +13573,9 @@ describe("CodexAdapterV2 post-settle continuation", () => {
             "@@ -0,0 +1,1 @@",
             "+export {};",
             "\\ No newline at end of file",
+            'diff --git "a//w/f.ts" "b//w/f.ts"',
+            "--- /dev/null",
+            '+++ "b//w/f.ts"',
             "",
           ].join("\n"),
         );
