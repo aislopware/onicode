@@ -3453,3 +3453,4 @@ e6e863c045	take	fix(shared): Open in Cursor skips a broken cursor on PATH (#3821
 2bc7878fff	take	fix(server): import Claude sessions whose first prompt carries a large image (#41446); test uses a UUID session id (Onicode imports only resumable UUID ids)
 d1a6c35f73	take	keep PowerPoint slides with alternate relationship prefixes
 06f513d50f	take	auto send only waits on its own sender's queued message; kept Onicode's projection-first read
+c977a70fd6	take	server metrics machine load and A/A noise floors; comment points at 16_performance-regressions.md
