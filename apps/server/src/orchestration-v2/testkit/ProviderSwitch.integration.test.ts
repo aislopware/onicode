@@ -3451,6 +3451,12 @@ describe("orchestration v2 provider switching", () => {
       verbatim: true,
       runsAsNativeCommand: (message) => message.text.startsWith("/team/"),
     },
+    {
+      name: "a skill it runs",
+      text: "$deploy ship it",
+      verbatim: true,
+      runsAsNativeCommand: (message) => message.text.startsWith("$deploy"),
+    },
   ])(
     "a switched ACP provider gets $name with the handoff where the command allows it",
     ({ text: firstMessage, verbatim, runsAsNativeCommand }) =>

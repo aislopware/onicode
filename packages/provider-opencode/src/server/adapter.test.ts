@@ -426,6 +426,10 @@ describe("OpenCodeAdapterV2", () => {
           ],
         },
       );
+      const runsAsCommand = (text: string) =>
+        harness.runtime.runsAsNativeCommand!({ text, attachments: [] }, { cwd: null });
+      // Before a turn reads the command list, any `/name` may be listed.
+      assert.isTrue(runsAsCommand("/unlisted"));
       yield* harness.startTurn(
         request === "command" ? "/review staged changes" : request === "resume" ? "" : "hello",
         harness.providerThread,
@@ -433,6 +437,12 @@ describe("OpenCodeAdapterV2", () => {
         request === "resume",
       );
       assert.equal(inputs.length, 1);
+      if (request === "command") {
+        assert.isTrue(runsAsCommand("/review the diff"));
+        assert.isFalse(runsAsCommand("/unlisted"));
+        // History met an earlier list: a past `/unlisted` turn stays one that held its context.
+        assert.isTrue(harness.runtime.runsAsNativeCommand!({ text: "/unlisted", attachments: [] }));
+      }
       const payload = inputs[0]!;
       assert.equal(payload.agent, "plan");
       if (request === "resume") assert.deepEqual(payload.parts, []);

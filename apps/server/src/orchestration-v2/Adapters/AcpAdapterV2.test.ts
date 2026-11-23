@@ -2930,6 +2930,21 @@ describe("AcpAdapterV2", () => {
       }).pipe(Effect.provide(layerTest)),
   );
 
+  it.live("runs as a command only what the active session advertises", () =>
+    Effect.gen(function* () {
+      const { runtime } = yield* makeAdvertisedCompactionHarness({
+        ONICODE_ACP_AVAILABLE_COMMANDS: "plan",
+      });
+      const runs = (text: string) =>
+        runtime.runsAsNativeCommand!({ text, attachments: [] }, { cwd: null });
+      assert.isTrue(runs("/Plan the release"));
+      assert.isFalse(runs("/review the diff"));
+      assert.isTrue(runs("/compact"), "the adapter compacts the session itself");
+      // History met an earlier list: a past `/review` turn stays one that held its context.
+      assert.isTrue(runtime.runsAsNativeCommand!({ text: "/review the diff", attachments: [] }));
+    }).pipe(Effect.provide(layerTest)),
+  );
+
   it.live.each([
     { active: "plan", target: "compact", allowed: true },
     // regression: #39880 omp advertises a loaded session's commands ~50 ms after session/load.

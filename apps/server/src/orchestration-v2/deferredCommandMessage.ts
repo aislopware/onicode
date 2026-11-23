@@ -6,7 +6,7 @@ const text = `json_extract(payload_json, '$.text')`;
 const whitespace = `'${JAVASCRIPT_TRIM_WHITESPACE}'`;
 
 /**
- * A user message that may be a slash command, whose turns defer context to the next one. The
- * partial index on it is only used when the read spells this text the same way.
+ * A user message that may be a `/` command or a `$` skill, whose turns defer context to the next
+ * one. The partial index on it is only used when the read spells this text the same way.
  */
-export const DEFERRED_COMMAND_MESSAGE_CONDITION = `role = 'user' AND trim(${text}, ${whitespace}) GLOB '/*'`;
+export const DEFERRED_COMMAND_MESSAGE_CONDITION = `role = 'user' AND trim(${text}, ${whitespace}) GLOB '[/$]*'`;

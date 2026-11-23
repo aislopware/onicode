@@ -3728,12 +3728,19 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
           cursor: {},
         }),
       ]);
+      const runsAsCommand = (text: string, cwd: string | null = WORK) =>
+        runtime.runsAsNativeCommand!({ text, attachments: [] }, { cwd });
+      // Before a turn reads the directory's command list, any `/name` may be listed.
+      assert.isTrue(runsAsCommand("/unlisted"));
       const terminal = yield* terminalOf(runtime).pipe(Effect.forkScoped);
       yield* runtime.startTurn({
         ...turnInput(thread),
         message: { ...turnInput(thread).message, text: "/noop" },
       });
       assert.equal((yield* Fiber.join(terminal))?.status, "completed");
+      assert.isTrue(runsAsCommand("/noop"));
+      assert.isFalse(runsAsCommand("/unlisted"));
+      assert.isTrue(runsAsCommand("/unlisted", "/work/other"));
     }).pipe(Effect.scoped),
   );
 
