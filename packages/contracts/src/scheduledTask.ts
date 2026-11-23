@@ -170,6 +170,15 @@ export const ScheduledTaskUpsertInput = Schema.Struct({
   interactionMode: ProviderInteractionMode,
   createdBy: Schema.optional(OrchestrationV2Actor),
   creationSource: Schema.optional(OrchestrationV2CreationSource),
+  /** What an editor loaded. The save is refused when another client changed any of it since. */
+  expected: Schema.optional(
+    Schema.Struct({
+      title: Schema.String,
+      prompt: Schema.String,
+      enabled: Schema.Boolean,
+      schedule: ScheduledTaskSchedule,
+    }),
+  ),
 });
 export type ScheduledTaskUpsertInput = typeof ScheduledTaskUpsertInput.Type;
 

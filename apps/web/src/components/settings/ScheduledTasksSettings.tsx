@@ -1,5 +1,5 @@
 import { thrownErrorMessage } from "@onicode/client-runtime/errors";
-import { useAtomValue } from "@effect/atom-react";
+import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import { connectionStatusTitle } from "@onicode/client-runtime/connection";
 import { AsyncResult } from "effect/reactivity";
 import {
@@ -12,7 +12,7 @@ import {
   PlusIcon,
   Trash2Icon,
 } from "lucide-react";
-import { type ReactNode, type Ref, useImperativeHandle, useRef, useState } from "react";
+import { type ReactNode, type Ref, useContext, useImperativeHandle, useRef, useState } from "react";
 import type {
   EnvironmentId,
   ModelSelection,
@@ -86,6 +86,7 @@ import {
   scheduleLabel,
   scheduledTaskDefaultModel,
   weekdayShortLabel,
+  rebaseDraft,
   taskToDraft,
   unbindDraftFromThread,
   type DraftState,
@@ -182,6 +183,7 @@ const EMPTY_DRAFT: DraftState = {
   runtimeMode: "full-access",
   interactionMode: "default",
   baseModelSelection: null,
+  saved: null,
 };
 
 function Field({
@@ -1068,10 +1070,11 @@ function ScheduledTaskEditorForm({
     environment?.serverConfig?.environment.capabilities.scheduledTaskThreadModes === true;
   const connected =
     environment?.connection.phase === "connected" && environment.serverConfig !== null;
-  const tasksQuery = useEnvironmentQuery(
-    connected ? serverEnvironment.scheduledTasksLive({ environmentId, input: {} }) : null,
-    messages,
-  );
+  const tasksAtom = connected
+    ? serverEnvironment.scheduledTasksLive({ environmentId, input: {} })
+    : null;
+  const tasksQuery = useEnvironmentQuery(tasksAtom, messages);
+  const registry = useContext(RegistryContext);
   const allProjects = useProjects();
   const projectsOn = (id: EnvironmentId) =>
     allProjects.filter(
@@ -1274,6 +1277,7 @@ function ScheduledTaskEditorForm({
         draft.runtimeMode,
       interactionMode: draft.interactionMode,
       creationSource: "web",
+      ...(draft.saved === null ? {} : { expected: draft.saved }),
     };
     // Lock before React renders, and keep successful creates locked until the form closes.
     submissionPending.current = true;
@@ -1282,6 +1286,10 @@ function ScheduledTaskEditorForm({
     setSaving(false);
     if (result._tag === "Failure") {
       submissionPending.current = false;
+      // Another client's change refuses the save; keep the user's edits over what is stored now.
+      const latest = tasksAtom && AsyncResult.getOrElse(registry.get(tasksAtom), () => null);
+      const current = latest?.tasks.find((task) => task.id === draft.editingId);
+      if (current !== undefined) setDraft((latest) => rebaseDraft(latest, current));
       if (!isAtomCommandInterrupted(result)) {
         reportFailure(gt("Could not save scheduled task"), squashAtomCommandFailure(result));
       }

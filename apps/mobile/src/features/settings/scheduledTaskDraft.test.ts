@@ -6,12 +6,14 @@ import {
   ProviderInstanceId,
   ProjectId,
   ScheduledTaskId,
+  ThreadId,
   type ScheduledTask,
 } from "@onicode/contracts";
 import {
   createDraft,
   editDraft,
   hasScheduledTaskDraftChanges,
+  rebaseScheduledTaskDraft,
   scheduledTaskDefaultModel,
   DEFAULT_SCHEDULE,
   scheduleDraftForTask,
@@ -166,6 +168,36 @@ describe("scheduled task worktree base", () => {
     lastRunError: null,
     runCount: 0,
   } satisfies ScheduledTask;
+
+  it("keeps the user's edits over another client's change and takes it for fields left alone", () => {
+    const edited = { ...editDraft(rootTask), prompt: "Review twice" };
+    // An agent paused the task and slowed it while the editor was open.
+    const current = {
+      ...rootTask,
+      enabled: false,
+      schedule: { type: "interval", everyMs: 120_000 },
+    } satisfies ScheduledTask;
+    expect(rebaseScheduledTaskDraft(edited, current)).toMatchObject({
+      prompt: "Review twice",
+      enabled: false,
+      schedule: { mode: "interval", intervalMinutes: "2" },
+      task: current,
+    });
+    const repaused = rebaseScheduledTaskDraft(
+      { ...editDraft(rootTask), enabled: false },
+      {
+        ...current,
+        enabled: true,
+      },
+    );
+    expect(repaused.enabled).toBe(false);
+    // A first run bound a thread meanwhile; the next save must not unbind it.
+    const bound = { ...current, threadId: ThreadId.make("thread:bound") } satisfies ScheduledTask;
+    expect(rebaseScheduledTaskDraft(edited, bound)).toMatchObject({
+      threadId: "thread:bound",
+      threadMode: "continue",
+    });
+  });
 
   it("counts only edits the saved task would carry", () => {
     const draft = editDraft(rootTask);
