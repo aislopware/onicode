@@ -19,7 +19,6 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as TestClock from "effect/testing/TestClock";
 
@@ -28,7 +27,6 @@ import {
   type PullRequestTestThread,
   v2PullRequestThread,
 } from "../orchestration-v2/testkit/pullRequestFixtures.ts";
-import * as ProjectService from "../project/ProjectService.ts";
 import * as PullRequestService from "./PullRequestService.ts";
 import * as PullRequestWatchService from "./PullRequestWatchService.ts";
 import type { PullRequestTarget } from "./pullRequestTarget.ts";
@@ -144,9 +142,6 @@ const makeHarness = Effect.fn("makePullRequestWatchHarness")(function* (
   const thread = options.thread === undefined ? makeThread([]) : options.thread;
   const project = options.project === undefined ? makeProject() : options.project;
   const dependencies = Layer.mergeAll(
-    Layer.mock(ProjectService.ProjectService)({
-      getShell: () => Effect.succeed(Option.fromNullishOr(project)),
-    }),
     Layer.mock(Orchestrator.OrchestratorV2)({
       getThreadShell: (id) =>
         Effect.succeed(id === thread?.id ? v2PullRequestThread(thread) : null),
@@ -156,6 +151,7 @@ const makeHarness = Effect.fn("makePullRequestWatchHarness")(function* (
         ),
     }),
     Layer.mock(PullRequestService.PullRequestService)({
+      addressedProject: () => Effect.succeed(project ?? undefined),
       summary: (input) =>
         options.readHangs !== undefined
           ? Deferred.succeed(options.readHangs, undefined).pipe(Effect.andThen(Effect.never))
