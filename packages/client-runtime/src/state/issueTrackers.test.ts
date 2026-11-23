@@ -1,7 +1,15 @@
-import { IssueTrackerKind, MAX_ISSUE_TRACKER_ADDITIONAL_SCOPES } from "@onicode/contracts";
+import {
+  IssueTrackerAccountId,
+  IssueTrackerKind,
+  MAX_ISSUE_TRACKER_ADDITIONAL_SCOPES,
+} from "@onicode/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { issueTrackerBindingFor, issueTrackerScopeOptions } from "./issueTrackers.ts";
+import {
+  boundIssueTrackerScopes,
+  issueTrackerBindingFor,
+  issueTrackerScopeOptions,
+} from "./issueTrackers.ts";
 
 describe("issueTrackerScopeOptions", () => {
   it("offers no new team once the binding is full, and keeps bound ones removable", () => {
@@ -38,10 +46,21 @@ describe("issueTrackerScopeOptions", () => {
 describe("issueTrackerBindingFor", () => {
   it("sends an empty team list, since the server keeps stored teams when the list is absent", () => {
     const linear = IssueTrackerKind.make("linear");
-    expect(issueTrackerBindingFor(linear, ["ENG", "OPS"], ["ENG"])).toEqual({
+    expect(issueTrackerBindingFor({ tracker: linear }, ["ENG", "OPS"], ["ENG"])).toEqual({
       tracker: linear,
       scope: "ENG",
       additionalScopes: [],
     });
+  });
+});
+
+describe("boundIssueTrackerScopes", () => {
+  it("keeps each account's teams apart, and binds new picks with that account", () => {
+    const tracker = IssueTrackerKind.make("linear");
+    const second = { tracker, accountId: IssueTrackerAccountId.make("second") };
+    const binding = issueTrackerBindingFor(second, [], ["ENG", "OPS"]) ?? undefined;
+    expect(binding).toEqual({ ...second, scope: "ENG", additionalScopes: ["OPS"] });
+    expect(boundIssueTrackerScopes(second, binding)).toEqual(["ENG", "OPS"]);
+    expect(boundIssueTrackerScopes({ tracker }, binding)).toEqual([]);
   });
 });
