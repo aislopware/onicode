@@ -4,6 +4,7 @@ import { expect, it, vi } from "vite-plus/test";
 
 import { render } from "../../../test/render";
 import { PullRequestMarkdown, PullRequestMarkdownContext } from "./PullRequestMarkdown";
+import { pullRequestMarkdownExtensions } from "./pullRequestMarkdown.logic";
 
 const requested = vi.hoisted(() => [] as Array<AssetResource | null>);
 vi.mock(import("~/assets/assetUrls"), async (original) => ({
@@ -34,7 +35,12 @@ async function renderBody(
     ...props
   } = options;
   const context = {
-    extensions: {},
+    extensions: pullRequestMarkdownExtensions({
+      provider: host,
+      url: "https://github.com/enterprise/private/pull/7",
+      headSha: "abc123",
+      borrowedCheckout,
+    }),
     lineBreaks: sourceControlClients.get(host).hardLineBreaks ?? false,
     threadRef: null,
     repository,
@@ -100,10 +106,12 @@ it.each([false, true])(
         ]),
       ),
     );
-    // A borrowed checkout holds another repository's files, so a path names none of them.
+    // A borrowed checkout holds another repository's files, so a path opens on the forge instead.
     await expect.element(screen.getByText("Entry")).toBeInTheDocument();
     const fileLink = screen.container.querySelector(".chat-markdown-file-link");
-    const plainLink = screen.container.querySelector('a[href="src/index.ts"]');
-    expect([fileLink !== null, plainLink !== null]).toEqual([!borrowedCheckout, borrowedCheckout]);
+    const forgeLink = screen.container.querySelector(
+      'a[href="https://github.com/enterprise/private/blob/abc123/src/index.ts"]',
+    );
+    expect([fileLink !== null, forgeLink !== null]).toEqual([!borrowedCheckout, borrowedCheckout]);
   },
 );

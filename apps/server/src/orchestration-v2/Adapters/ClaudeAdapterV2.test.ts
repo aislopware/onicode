@@ -1061,44 +1061,119 @@ describe("ClaudeAdapterV2 context usage", () => {
     ephemeral_5m_input_tokens: fiveMinute,
     ephemeral_1h_input_tokens: oneHour,
   });
+  // The last column: the TTL is a guess, as for a cache this process never saw written.
   it.each([
-    ["a five-minute write", undefined, { cache_creation: written(10, 0) }, 0, [5, 5]],
-    ["a read of a cache never seen", undefined, { cache_read_input_tokens: 10 }, 0, [5, 5]],
+    ["a five-minute write", undefined, { cache_creation: written(10, 0) }, 0, [5, 5, false]],
+    ["a read of a cache never seen", undefined, { cache_read_input_tokens: 10 }, 0, [5, 5, true]],
+    [
+      "a read of a cache only seen read",
+      { ttlMs: 5 * minute, expiresAt: at(5), guessed: true },
+      { cache_read_input_tokens: 10 },
+      4,
+      [5, 9, true],
+    ],
     [
       "a one-hour prefix read while a five-minute suffix is written",
       { ttlMs: 60 * minute, expiresAt: at(60) },
       { cache_read_input_tokens: 10, cache_creation: written(10, 0) },
       50,
-      [60, 110],
+      [60, 110, false],
     ],
     [
       "a five-minute write that reads nothing of a one-hour cache",
       { ttlMs: 60 * minute, expiresAt: at(60) },
       { cache_creation: written(10, 0) },
       10,
-      [60, 60],
+      [60, 60, false],
+    ],
+    [
+      "a five-minute write once a one-hour cache lapsed",
+      { ttlMs: 60 * minute, expiresAt: at(60) },
+      { cache_creation: written(10, 0) },
+      180,
+      [5, 185, false],
+    ],
+    // A compaction's read reports no TTL.
+    [
+      "a read once a one-hour cache lapsed",
+      { ttlMs: 60 * minute, expiresAt: at(60) },
+      { cache_read_input_tokens: 1 },
+      180,
+      [5, 185, true],
     ],
   ] as const)("keeps the prompt cache warm after %s", (_, known, usage, startedAt, expected) => {
     const next = ClaudeAdapterV2.nextClaudePromptCache(known, usage, at(startedAt));
     assert.deepEqual(
-      next && [next.ttlMs / minute, DateTime.toEpochMillis(next.expiresAt) / minute],
+      next && [
+        next.ttlMs / minute,
+        DateTime.toEpochMillis(next.expiresAt) / minute,
+        next.guessed === true,
+      ],
       [...expected],
     );
   });
 
-  it("dates cache expiry from the request start, not the response end", () => {
-    const usage = ClaudeAdapterV2.claudeProviderTurnTokenUsage(
+  const oneHourUntil = (expiresAt: string) => ({
+    ttlMs: 60 * minute,
+    expiresAt: DateTime.makeUnsafe(expiresAt),
+  });
+  it.each([
+    [
+      "a write",
+      { cache_creation: { ephemeral_1h_input_tokens: 0, ephemeral_5m_input_tokens: 300 } },
+      undefined,
+      "2026-08-29T00:05:00.000Z",
+    ],
+    // The TTL comes from earlier writes; one never seen written is not guessed.
+    [
+      "a read of a one-hour cache",
+      { cache_read_input_tokens: 300 },
+      oneHourUntil("2026-08-29T00:30:00.000Z"),
+      "2026-08-29T01:00:00.000Z",
+    ],
+    [
+      "a read of a cache never seen written",
+      { cache_read_input_tokens: 300 },
+      undefined,
+      undefined,
+    ],
+    [
+      "a read of a cache only seen read",
+      { cache_read_input_tokens: 300 },
+      { ...oneHourUntil("2026-08-29T00:30:00.000Z"), guessed: true as const },
+      undefined,
+    ],
+    [
+      "a one-hour prefix read while a five-minute suffix is written",
       {
-        input_tokens: 1,
-        output_tokens: 1,
+        cache_read_input_tokens: 300,
         cache_creation: { ephemeral_1h_input_tokens: 0, ephemeral_5m_input_tokens: 300 },
       },
-      { maxTokens: null },
-      "2026-08-29T00:03:00.000Z",
-      DateTime.makeUnsafe("2026-08-29T00:00:00.000Z"),
-    );
-    assert.strictEqual(usage.promptCacheExpiresAt, "2026-08-29T00:05:00.000Z");
-  });
+      oneHourUntil("2026-08-29T00:30:00.000Z"),
+      "2026-08-29T01:00:00.000Z",
+    ],
+    [
+      "a five-minute cache read once a one-hour cache lapsed",
+      {
+        cache_read_input_tokens: 300,
+        cache_creation: { ephemeral_1h_input_tokens: 0, ephemeral_5m_input_tokens: 300 },
+      },
+      oneHourUntil("2026-08-28T22:00:00.000Z"),
+      "2026-08-29T00:05:00.000Z",
+    ],
+  ] as const)(
+    "dates cache expiry after %s from the request start, not the response end",
+    (_, cache, known, expiresAt) => {
+      const usage = ClaudeAdapterV2.claudeProviderTurnTokenUsage(
+        { input_tokens: 1, output_tokens: 1, ...cache },
+        { maxTokens: null },
+        "2026-08-29T00:03:00.000Z",
+        DateTime.makeUnsafe("2026-08-29T00:00:00.000Z"),
+        known,
+      );
+      assert.strictEqual(usage.promptCacheExpiresAt, expiresAt);
+    },
+  );
 
   it("translates Claude's /context breakdown and marks deferred tools", () => {
     const usage = ClaudeAdapterV2.claudeContextUsage({
@@ -3406,8 +3481,9 @@ describe("ClaudeAdapterV2 native fork", () => {
             .map((line) => JSON.stringify(line))
             .join("\n"),
         );
-        const realRunner = yield* ClaudeAdapterV2.ClaudeAgentSdkQueryRunner.pipe(
-          Effect.provide(
+        // Built in the test's scope: a worker fork runs in the runner layer's scope.
+        const realRunner = Context.get(
+          yield* Layer.build(
             ClaudeAdapterV2.layerQueryRunner.pipe(
               Layer.provide(PortScanner.layerTest),
               Layer.provide(
@@ -3418,6 +3494,7 @@ describe("ClaudeAdapterV2 native fork", () => {
               ),
             ),
           ),
+          ClaudeAdapterV2.ClaudeAgentSdkQueryRunner,
         );
         const openedQueries: Array<ClaudeAdapterV2.ClaudeAgentSdkQueryOpenInput> = [];
         const forkCalls: Array<ClaudeAdapterV2.ClaudeAgentSdkSessionForkInput> = [];
@@ -12218,14 +12295,14 @@ describe("ClaudeAdapterV2 background wake turns", () => {
             inputTokens: 51_000,
             outputTokens: 20,
             cachedInputTokens: 50_000,
-            ttl: 300_000,
+            ttl: 3_600_000,
           },
           {
             usedTokens: 50_005,
             inputTokens: 50_000,
             outputTokens: 5,
             cachedInputTokens: 50_000,
-            ttl: 300_000,
+            ttl: 3_600_000,
           },
           { usedTokens: 12_640, inputTokens: 12_600, outputTokens: 40, cachedInputTokens: 0 },
         ],
@@ -17105,6 +17182,19 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           yield* TestClock.adjust("2 minutes");
           assert.equal(harness.processQueues.length, 1);
           assert.isFalse(yield* harness.runtime.holdsIdleRelease!);
+          // A compaction a minute before the cache lapses, as idle compaction runs, reads the
+          // cached prefix and keeps it warm, though its request streams no message_start.
+          yield* TestClock.adjust("2 minutes");
+          yield* runTurn([
+            claudeSdkFrame({
+              type: "system",
+              subtype: "compact_boundary",
+              compact_metadata: { trigger: "manual", pre_tokens: 1500, post_tokens: 400 },
+              uuid: "00000000-0000-4000-8000-00000000b0f2",
+              session_id: WAKE_NATIVE_SESSION,
+            }),
+          ]);
+          yield* TestClock.adjust("2 minutes");
 
           yield* install("second");
           // The build is part of the cached prefix: a new one waits for that cache to lapse,
@@ -17114,8 +17204,21 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           // An idle release would relaunch on the new build just the same.
           assert.isTrue(yield* harness.runtime.holdsIdleRelease!);
           modelSelection = { ...CLAUDE_TEST_MODEL_SELECTION, model: "claude-opus-4-6" };
-          // An update landing after the spawn, before its first `init`, is still newer.
-          yield* runTurn([], "2.1.322", install("second-b"));
+          // An update landing after the spawn, before its first `init`, is still newer. A
+          // compaction with no cache seen for its model, as after a restart, keeps it warm too.
+          yield* runTurn(
+            [
+              claudeSdkFrame({
+                type: "system",
+                subtype: "compact_boundary",
+                compact_metadata: { trigger: "manual", pre_tokens: 1500, post_tokens: 400 },
+                uuid: "00000000-0000-4000-8000-00000000b0f3",
+                session_id: WAKE_NATIVE_SESSION,
+              }),
+            ],
+            "2.1.322",
+            install("second-b"),
+          );
           assert.equal(harness.processQueues.length, 2);
           assert.equal(harness.getOpenedOptions()?.resume, WAKE_NATIVE_SESSION);
           // Back on the first model, whose cache is still warm, the outdated build waits again.
@@ -17123,6 +17226,9 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           yield* runTurn([], "2.1.322");
           assert.equal(harness.processQueues.length, 2);
           yield* TestClock.adjust("3 minutes");
+          // The other model's compaction guessed its cache five minutes from then.
+          assert.isTrue(yield* harness.runtime.holdsIdleRelease!);
+          yield* TestClock.adjust("2 minutes");
           assert.isFalse(yield* harness.runtime.holdsIdleRelease!);
           yield* runTurn([], "2.1.322");
           assert.equal(harness.processQueues.length, 3);
@@ -17198,6 +17304,75 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           ),
         ),
       ),
+  );
+
+  it.effect("opens each Windows Claude process on the claude.exe that wins PATH at the time", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const root = yield* fileSystem.makeTempDirectoryScoped({ prefix: "oni-claude-path-winner-" });
+      const npmBuild = path.join(root, "npm", "claude.exe");
+      const nativeBuild = path.join(root, "native", "claude.exe");
+      for (const build of [npmBuild, nativeBuild]) {
+        yield* fileSystem.makeDirectory(path.dirname(build), { recursive: true });
+        yield* fileSystem.writeFileString(build, "");
+      }
+      let pathWinner = npmBuild;
+
+      yield* Effect.gen(function* () {
+        const harness = yield* makeWakeHarnessWithOptions({
+          freshQueueOnReopen: true,
+          close: (queue) => Queue.shutdown(queue),
+          settings: { ...DEFAULT_CLAUDE_SETTINGS, binaryPath: "claude" },
+        });
+        const runTurn = Effect.fnUntraced(function* (ordinal: number) {
+          yield* harness.runtime.startTurn(
+            makeClaudeTestTurnInput({
+              threadId: harness.threadId,
+              providerThread: harness.providerThread,
+              now: yield* DateTime.now,
+              attemptId: RunAttemptId.make(`path-winner-${ordinal}`),
+              text: `Request ${ordinal}`,
+              attachments: [],
+              providerTurnOrdinal: ordinal,
+            }),
+          );
+          if (ordinal === 1) {
+            yield* harness.offerAndWait(
+              claudeSdkFrame({
+                type: "system",
+                subtype: "init",
+                uuid: "00000000-0000-4000-8000-00000000b201",
+                session_id: WAKE_NATIVE_SESSION,
+                claude_code_version: "2.1.322",
+              }),
+            );
+          }
+          yield* harness.offerAndWait(turnOneResult);
+          yield* Queue.take(harness.terminalReceipts);
+        });
+
+        yield* runTurn(1);
+        // A native installer puts its claude.exe on PATH ahead of npm's.
+        pathWinner = nativeBuild;
+        yield* runTurn(2);
+        assert.equal(harness.processQueues.length, 2);
+        assert.equal(harness.getOpenedOptions()?.pathToClaudeCodeExecutable, nativeBuild);
+      }).pipe(
+        Effect.provideService(HostProcess.Platform, "win32"),
+        Effect.provideService(SpawnExecutableResolution, () => pathWinner),
+        Effect.provideService(HostProcess.HomeDirectory, root),
+      );
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          IdAllocator.layer,
+          McpProviderSessions.layer,
+          NodeServices.layer,
+          NodeCrypto.layer,
+        ),
+      ),
+    ),
   );
 
   it.effect.skipIf(process.getuid === undefined)(

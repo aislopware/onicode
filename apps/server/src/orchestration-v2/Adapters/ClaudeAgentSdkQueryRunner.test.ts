@@ -43,6 +43,7 @@ import {
 vi.mock("@anthropic-ai/claude-agent-sdk", { spy: true });
 
 const FORK_SESSION_ID = "11111111-1111-4111-8111-111111111111";
+const LATE_FORK_SESSION_ID = "22222222-2222-4222-8222-222222222222";
 
 const sessionEntry = (uuid: string, parentUuid: string | null, message: unknown) => ({
   type: parentUuid === null ? "user" : "assistant",
@@ -209,87 +210,172 @@ it.effect("forked Claude sessions keep their compaction chain", () =>
   ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 it.effect.each([
-  { stalled: "forkSession", expected: { failedWith: "ClaudeSessionForkTimeoutError" } },
-  { stalled: "getSessionMessages", expected: { sessionId: FORK_SESSION_ID } },
-] as const)("settles a host-config fork whose $stalled never answers", ({ stalled, expected }) =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      const stalledCall = Promise.withResolvers<void>();
-      const never = () => {
-        stalledCall.resolve();
-        return new Promise<never>(() => {});
-      };
-      const forkSpy = vi
-        .spyOn(ClaudeSdk, "forkSession")
-        .mockImplementation(
-          stalled === "forkSession" ? never : async () => ({ sessionId: FORK_SESSION_ID }),
+  {
+    stalled: "forkSession",
+    answers: "never",
+    expected: { failedWith: "ClaudeSessionForkTimeoutError" },
+  },
+  {
+    stalled: "forkSession",
+    answers: "after the deadline",
+    expected: { failedWith: "ClaudeSessionForkTimeoutError" },
+  },
+  { stalled: "forkSession", answers: "after its caller is interrupted", expected: "interrupted" },
+  {
+    stalled: "getSessionMessages",
+    answers: "never",
+    expected: { sessionId: LATE_FORK_SESSION_ID },
+  },
+  {
+    stalled: "getSessionMessages",
+    answers: "after its caller is interrupted",
+    expected: "interrupted",
+  },
+] as const)(
+  "settles a host-config fork whose $stalled answers $answers",
+  ({ stalled, answers, expected }) =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const stalledCall = Promise.withResolvers<void>();
+        const never = () => {
+          stalledCall.resolve();
+          return new Promise<never>(() => {});
+        };
+        const lateFork = Promise.withResolvers<ClaudeSdk.ForkSessionResult>();
+        const forkSpy = vi.spyOn(ClaudeSdk, "forkSession").mockImplementation(
+          stalled === "getSessionMessages"
+            ? async () => ({ sessionId: LATE_FORK_SESSION_ID })
+            : answers === "never"
+              ? never
+              : () => {
+                  stalledCall.resolve();
+                  return lateFork.promise;
+                },
         );
-      const readSpy = vi.spyOn(ClaudeSdk, "getSessionMessages").mockImplementation(never);
-      yield* Effect.addFinalizer(() =>
-        Effect.sync(() => {
-          forkSpy.mockRestore();
-          readSpy.mockRestore();
-        }),
-      );
-
-      const runner = yield* ClaudeAgentSdkQueryRunner;
-      const forking = yield* runner
-        .forkSession({
-          sessionId: FORK_SESSION_ID,
-          options: {},
-          environment: yield* HostProcess.Environment,
-          threadId: ThreadId.make("thread-fork-stalled"),
-          providerSessionId: ProviderSessionId.make("session-fork-stalled"),
-        })
-        .pipe(Effect.forkChild);
-      yield* Effect.promise(() => stalledCall.promise);
-      yield* TestClock.adjust("30 seconds");
-      const settled = yield* Fiber.join(forking).pipe(
-        Effect.catch((error) =>
-          Effect.succeed({
-            failedWith: Predicate.hasProperty(error.cause, "_tag") ? error.cause._tag : undefined,
+        const readSpy = vi.spyOn(ClaudeSdk, "getSessionMessages").mockImplementation(never);
+        const deleted = Promise.withResolvers<void>();
+        const deleteSpy = vi
+          .spyOn(ClaudeSdk, "deleteSession")
+          .mockImplementation(async () => deleted.resolve());
+        yield* Effect.addFinalizer(() =>
+          Effect.sync(() => {
+            forkSpy.mockRestore();
+            readSpy.mockRestore();
+            deleteSpy.mockRestore();
           }),
-        ),
-      );
-      assert.deepEqual(settled, expected);
-    }).pipe(Effect.provide(forkRunnerLayer)),
-  ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+        );
+
+        const runner = yield* ClaudeAgentSdkQueryRunner;
+        const forking = yield* runner
+          .forkSession({
+            sessionId: FORK_SESSION_ID,
+            options: { dir: "/repo" },
+            environment: yield* HostProcess.Environment,
+            threadId: ThreadId.make("thread-fork-stalled"),
+            providerSessionId: ProviderSessionId.make("session-fork-stalled"),
+          })
+          .pipe(Effect.forkChild);
+        yield* Effect.promise(() => stalledCall.promise);
+        if (expected === "interrupted") yield* Fiber.interrupt(forking);
+        else {
+          yield* TestClock.adjust("30 seconds");
+          const settled = yield* Fiber.join(forking).pipe(
+            Effect.catch((error) =>
+              Effect.succeed({
+                failedWith: Predicate.hasProperty(error.cause, "_tag")
+                  ? error.cause._tag
+                  : undefined,
+              }),
+            ),
+          );
+          assert.deepEqual(settled, expected);
+        }
+        // The copy the caller gave up on would otherwise stay among the user's sessions.
+        const late = answers !== "never";
+        if (late) {
+          lateFork.resolve({ sessionId: LATE_FORK_SESSION_ID });
+          yield* Effect.promise(() => deleted.promise);
+        }
+        assert.deepEqual(
+          deleteSpy.mock.calls,
+          late ? [[LATE_FORK_SESSION_ID, { dir: "/repo" }]] : [],
+        );
+      }).pipe(Effect.provide(forkRunnerLayer)),
+    ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
-it.effect("settles a fork whose history worker for a custom config home never exits", () =>
+it.effect.each([
+  { worker: "never exits" },
+  { worker: "exits after the deadline" },
+  { worker: "exits after its caller is interrupted" },
+] as const)("settles a fork whose history worker for a custom config home $worker", ({ worker }) =>
   Effect.scoped(
     Effect.gen(function* () {
       const workerStarted = yield* Deferred.make<void>();
-      const stalledWorker = Layer.effect(
+      const releaseWorker = yield* Deferred.make<void>();
+      const deleteSpawned = yield* Deferred.make<void>();
+      const workerArgs: Array<ReadonlyArray<string>> = [];
+      const stubWorker = Layer.effect(
         ChildProcessSpawner.ChildProcessSpawner,
         Effect.gen(function* () {
           const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-          return ChildProcessSpawner.make(() =>
-            Deferred.succeed(workerStarted, undefined).pipe(
-              Effect.andThen(spawner.spawn(ChildProcess.make("sleep", ["600"]))),
-            ),
-          );
+          return ChildProcessSpawner.make((command) => {
+            workerArgs.push(command._tag === "StandardCommand" ? command.args.map(String) : []);
+            if (workerArgs.length > 1) {
+              return Deferred.succeed(deleteSpawned, undefined).pipe(
+                Effect.andThen(spawner.spawn(ChildProcess.make("true", []))),
+              );
+            }
+            return Deferred.succeed(workerStarted, undefined).pipe(
+              Effect.andThen(
+                worker === "never exits"
+                  ? spawner.spawn(ChildProcess.make("sleep", ["600"]))
+                  : Deferred.await(releaseWorker).pipe(
+                      Effect.andThen(
+                        spawner.spawn(
+                          ChildProcess.make("printf", [
+                            JSON.stringify({ sessionId: LATE_FORK_SESSION_ID }),
+                          ]),
+                        ),
+                      ),
+                    ),
+              ),
+            );
+          });
         }),
       ).pipe(Layer.provide(NodeServices.layer));
-      const runner = yield* ClaudeAgentSdkQueryRunner.pipe(
-        Effect.provide(forkRunnerLayer.pipe(Layer.provide(stalledWorker))),
-      );
-      const forking = yield* runner
-        .forkSession({
-          sessionId: FORK_SESSION_ID,
-          options: {},
-          environment: { ...process.env, CLAUDE_CONFIG_DIR: "/nonexistent-claude-home" },
-          threadId: ThreadId.make("thread-fork-worker-stalled"),
-          providerSessionId: ProviderSessionId.make("session-fork-worker-stalled"),
-        })
-        .pipe(Effect.forkChild);
-      yield* Deferred.await(workerStarted);
-      yield* TestClock.adjust("30 seconds");
-      const error = yield* Fiber.join(forking).pipe(Effect.flip);
-      assert.equal(
-        Predicate.hasProperty(error.cause, "_tag") ? error.cause._tag : undefined,
-        "ClaudeSessionForkTimeoutError",
-      );
+
+      yield* Effect.gen(function* () {
+        const runner = yield* ClaudeAgentSdkQueryRunner;
+        const forking = yield* runner
+          .forkSession({
+            sessionId: FORK_SESSION_ID,
+            options: { dir: "/repo" },
+            environment: { ...process.env, CLAUDE_CONFIG_DIR: "/nonexistent-claude-home" },
+            threadId: ThreadId.make("thread-fork-worker-stalled"),
+            providerSessionId: ProviderSessionId.make("session-fork-worker-stalled"),
+          })
+          .pipe(Effect.forkChild);
+        yield* Deferred.await(workerStarted);
+        if (worker === "exits after its caller is interrupted") yield* Fiber.interrupt(forking);
+        else {
+          yield* TestClock.adjust("30 seconds");
+          const error = yield* Fiber.join(forking).pipe(Effect.flip);
+          assert.equal(
+            Predicate.hasProperty(error.cause, "_tag") ? error.cause._tag : undefined,
+            "ClaudeSessionForkTimeoutError",
+          );
+          if (worker === "never exits") return;
+        }
+        // The fork worker finishes the copy, then a second worker deletes it.
+        yield* Deferred.succeed(releaseWorker, undefined);
+        yield* Deferred.await(deleteSpawned);
+        assert.deepEqual(workerArgs[1]?.slice(-3), [
+          "deleteSession",
+          LATE_FORK_SESSION_ID,
+          JSON.stringify({ dir: "/repo" }),
+        ]);
+      }).pipe(Effect.provide(forkRunnerLayer.pipe(Layer.provide(stubWorker))));
     }),
   ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );

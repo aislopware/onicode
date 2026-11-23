@@ -545,6 +545,7 @@ export const make = Effect.gen(function* () {
           stopOnSettle: script.stopOnSettle ?? false,
           cwd,
           worktreePath: input.worktreePath,
+          projectId: project.id,
           env: { ...env, NO_COLOR: "1", FORCE_COLOR: "0" },
         })
         .pipe(

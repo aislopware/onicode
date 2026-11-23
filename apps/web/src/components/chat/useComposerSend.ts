@@ -284,6 +284,8 @@ interface ComposerSendInput {
   readonly captureDraftHeroComposerRect: () => void;
   readonly setDockedDraftHeroThreadKey: Dispatch<SetStateAction<string | null>>;
   readonly setSetupQueueSendThreadKey: Dispatch<SetStateAction<string | null>>;
+  /** The thread whose send waits on onicode.json or a load-balancing refresh before it starts. */
+  readonly setPreparingSendThreadKey: Dispatch<SetStateAction<string | null>>;
   readonly setOptimisticUserMessages: Dispatch<SetStateAction<ChatMessage[]>>;
   /** Takes ownership of, and later releases, an optimistic message's blob previews. */
   readonly optimisticBlobPreviews: {
@@ -389,6 +391,7 @@ export function useComposerSend(input: ComposerSendInput) {
     captureDraftHeroComposerRect,
     setDockedDraftHeroThreadKey,
     setSetupQueueSendThreadKey,
+    setPreparingSendThreadKey,
     setOptimisticUserMessages,
     optimisticBlobPreviews,
     setFeedbackSubmissionsByThreadKey,
@@ -1853,6 +1856,12 @@ export function useComposerSend(input: ComposerSendInput) {
   };
 
   const onSendLatest = useStableCallback(onSend);
+  // Held until the send it waited for settles, by which time local dispatch shows the send.
+  const markSendPreparing = () => {
+    const threadKey = activeThreadKey;
+    if (threadKey !== null) setPreparingSendThreadKey(threadKey);
+    return () => setPreparingSendThreadKey((current) => (current === threadKey ? null : current));
+  };
   const sendWithEnvironmentRefresh = async (...args: Parameters<typeof onSend>) => {
     const refresh =
       args[4] || sendInFlightRef.current || readPendingEnvironmentChange() !== null
@@ -1860,10 +1869,13 @@ export function useComposerSend(input: ComposerSendInput) {
         : refreshBeforeSend();
     if (refresh === null) return onSend(...args);
     sendInFlightRef.current = true;
-    const ready = await refresh.finally(() => {
-      sendInFlightRef.current = false;
-    });
-    if (ready) return onSendLatest(...args);
+    const donePreparing = markSendPreparing();
+    return refresh
+      .finally(() => {
+        sendInFlightRef.current = false;
+      })
+      .then((ready) => (ready ? onSendLatest(...args) : undefined))
+      .finally(donePreparing);
   };
   const sendWithEnvironmentRefreshLatest = useStableCallback(sendWithEnvironmentRefresh);
   const onSendWithRouting = async (...args: Parameters<typeof onSend>) => {
@@ -1875,10 +1887,17 @@ export function useComposerSend(input: ComposerSendInput) {
         : null;
     if (workspaceDefault === null) return sendWithEnvironmentRefresh(...args);
     sendInFlightRef.current = true;
-    const { status } = await workspaceDefault.finally(() => {
-      sendInFlightRef.current = false;
-    });
-    if (status === "ready") return sendWithEnvironmentRefreshLatest(...args);
+    const donePreparing = markSendPreparing();
+    const { status } = await workspaceDefault
+      .finally(() => {
+        sendInFlightRef.current = false;
+      })
+      .catch((error: unknown) => {
+        donePreparing();
+        throw error;
+      });
+    if (status === "ready") return sendWithEnvironmentRefreshLatest(...args).finally(donePreparing);
+    donePreparing();
     // A draft sent or discarded meanwhile was the user's own doing.
     if (draftId && detachedDraftSendState(draftId, undefined) === "gone") return;
     toastManager.add(

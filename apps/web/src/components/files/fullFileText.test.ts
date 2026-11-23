@@ -61,10 +61,15 @@ describe("downloadText", () => {
     }),
   );
 
-  it.effect("stops at the first text past the lines the main thread can lay out", () =>
+  // regression: it stopped there, and the plain viewer downloaded the whole file again
+  it.effect("downloads the whole of a text past the lines the main thread can lay out", () =>
     Effect.gen(function* () {
-      const file = yield* download(encoder.encode("\n".repeat(RENDERED_MAX_LINES + 10)));
-      expect(file.lines).toBeGreaterThan(RENDERED_MAX_LINES);
+      const file = yield* download(
+        encoder.encode("\n".repeat(RENDERED_MAX_LINES + 5)),
+        encoder.encode("\n".repeat(5)),
+      );
+      expect(file.text).toBe("\n".repeat(RENDERED_MAX_LINES + 10));
+      expect(file.lines).toBe(RENDERED_MAX_LINES + 11);
     }),
   );
 });
@@ -110,6 +115,25 @@ describe("nextShownFileText", () => {
     const empty = nextShownFileText(null, { text: "no line yet", lines: 1 }, false);
     expect(nextShownFileText(empty, { text: "no line yet, still", lines: 1 }, false)).toBe(empty);
   });
+
+  // regression: a held line reveal waited for the next doubling
+  it("shows a swap that brings the line a reveal waits for before it doubles", () => {
+    const swap = { text: "a\nb\nc\n", lines: 4 };
+    expect(nextShownFileText(streamed, swap, false, 4)).toBe(streamed);
+    expect(nextShownFileText(streamed, swap, false, 3)).toEqual({
+      text: "a\nb\nc\n",
+      done: false,
+      lines: 4,
+      longLine: false,
+    });
+  });
+
+  // regression: the text went on laying out until the download stopped and started over plain
+  it("keeps the shown text once a streaming swap passes the lines it can lay out", () => {
+    const past = { text: "\n".repeat(RENDERED_MAX_LINES + 1), lines: RENDERED_MAX_LINES + 2 };
+    expect(nextShownFileText(streamed, past, false)).toBe(streamed);
+    expect(nextShownFileText(null, past, false)).toBeNull();
+  });
 });
 
 describe("nextMarkdownSplit", () => {
@@ -118,17 +142,30 @@ describe("nextMarkdownSplit", () => {
       { length: to - from },
       (_, index) => `# Section ${from + index}\n\n${"Some words. ".repeat(500)}\n\n`,
     ).join("");
+  const swap = (text: string, lines: number | null = null, done = false) => ({
+    text,
+    done,
+    lines,
+    longLine: false,
+  });
 
   it("cuts only the tail a swap adds, keeping the earlier pieces", () => {
-    const first = nextMarkdownSplit(null, sections(0, 4));
+    const first = nextMarkdownSplit(null, swap(sections(0, 4)))!;
     const text = sections(0, 4) + sections(4, 8);
-    const second = nextMarkdownSplit(first, text);
+    const second = nextMarkdownSplit(first, swap(text))!;
     expect(second.split).toEqual(splitMarkdown(text));
     const kept = first.split.chunks.length - 1;
     expect(kept).toBeGreaterThan(1);
     for (let index = 0; index < kept; index += 1) {
       expect(second.split.chunks[index]).toBe(first.split.chunks[index]);
     }
-    expect(nextMarkdownSplit(second, text)).toBe(second);
+    expect(nextMarkdownSplit(second, swap(text))).toBe(second);
+  });
+
+  // regression: a finished file past the line cap was split on the main thread for the plain viewer
+  it("does not split a finished text past the lines the main thread can lay out", () => {
+    const first = nextMarkdownSplit(null, swap(sections(0, 4)));
+    const past = swap("\n".repeat(RENDERED_MAX_LINES), RENDERED_MAX_LINES + 1, true);
+    expect(nextMarkdownSplit(first, past)).toBeNull();
   });
 });

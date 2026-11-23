@@ -11056,6 +11056,10 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
             yield* git(cwd, ["rev-parse", "HEAD"]),
           );
           assert.equal(yield* git(lookalike, ["--git-dir=.", "for-each-ref"]), "");
+          // Both remotes would fetch into refs/remotes/origin/alice/x, which git refuses.
+          assert.isNull(
+            yield* driver.resolveWorktreeBaseRemote({ cwd, refName: "origin/alice/x" }),
+          );
 
           // A remote that fetches outside refs/remotes still gets its branch's pushes.
           const backup = yield* makeTmpDir("git-backup-");

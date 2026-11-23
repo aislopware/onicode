@@ -350,7 +350,7 @@ const EnvironmentLinkTool = Tool.make("oni_environment_link", {
 
 const EnvironmentUnlinkTool = Tool.make("oni_environment_unlink", {
   description:
-    "Forget a linked environment. Its session on that machine ends too when the machine answers.",
+    "Forget a linked environment and ask that machine to end its session. `endedThere` says whether it did; if not, the session expires on its own.",
   parameters: OrchestratorMcpEnvironmentUnlinkInput,
   success: OrchestratorMcpEnvironmentUnlinkResult,
   failure: OrchestratorMcpFailure,

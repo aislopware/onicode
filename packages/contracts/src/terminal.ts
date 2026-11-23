@@ -1,5 +1,5 @@
 import * as Schema from "effect/Schema";
-import { TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { ProjectId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
 
 export const DEFAULT_TERMINAL_ID = "term-1";
@@ -162,6 +162,8 @@ export const TerminalOpenInput = Schema.Struct({
   ...TerminalSessionInput.fields,
   cwd: TrimmedNonEmptyStringSchema,
   worktreePath: Schema.optional(Schema.NullOr(TrimmedNonEmptyStringSchema)),
+  // Lets a project deletion find a worktree draft's terminals; drafts have no thread row.
+  projectId: Schema.optional(ProjectId),
   cols: Schema.optional(TerminalColsSchema),
   rows: Schema.optional(TerminalRowsSchema),
   env: Schema.optional(TerminalEnvSchema),
@@ -174,6 +176,7 @@ export const TerminalAttachInput = Schema.Struct({
   ...TerminalSessionInput.fields,
   cwd: Schema.optional(TrimmedNonEmptyStringSchema),
   worktreePath: Schema.optional(Schema.NullOr(TrimmedNonEmptyStringSchema)),
+  projectId: Schema.optional(ProjectId),
   cols: Schema.optional(TerminalColsSchema),
   rows: Schema.optional(TerminalRowsSchema),
   env: Schema.optional(TerminalEnvSchema),

@@ -23,6 +23,7 @@ import * as TestClock from "effect/testing/TestClock";
 import { vi } from "vite-plus/test";
 
 import * as VcsProcess from "../vcs/VcsProcess.ts";
+import { resolveLinkTarget } from "./linkTargets.ts";
 import * as WorkspaceSearchIndex from "./WorkspaceSearchIndex.ts";
 
 vi.mock("node:fs/promises", async (importOriginal) => {
@@ -698,6 +699,74 @@ it.effect("lists the links beside one whose target hangs, and asks it again late
       expect(yield* listedPaths(searchIndex)).toEqual(["link.ts"]);
       expect(directorySearch).toHaveBeenCalledTimes(1);
       yield* TestClock.adjust("30 seconds");
+      expect(yield* listedPaths(searchIndex)).toEqual(["link.ts"]);
+      expect(directorySearch).toHaveBeenCalledTimes(2);
+    }),
+  ).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("asks a link again soon when it only waited behind busy probes", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      if ((yield* HostProcess.Platform) === "win32") return;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const cwd = yield* fileSystem.makeTempDirectoryScoped({ prefix: "onicode-symlink-crowded-" });
+      const busy = yield* fileSystem.makeTempDirectoryScoped({ prefix: "onicode-symlink-busy-" });
+      yield* fileSystem.writeFileString(path.join(cwd, "a.ts"), "");
+      yield* fileSystem.symlink("a.ts", path.join(cwd, "link.ts"));
+      const busyLinks = ["a", "b", "c"].map((name) => path.join(busy, name));
+      for (const link of busyLinks) {
+        yield* fileSystem.makeDirectory(`${link}-target`);
+        yield* fileSystem.symlink(`${link}-target`, link);
+      }
+      // Leads into a probe left stuck, so it answers nothing at once beside the crowded one.
+      yield* fileSystem.symlink(busyLinks[0]!, path.join(cwd, "stalled"));
+      const busyStarted = yield* Deferred.make<void>();
+      const busyCalls: string[] = [];
+      const releases: Array<() => void> = [];
+      const stat = vi.mocked(NodeFSP.stat);
+      const realStat = stat.getMockImplementation()!;
+      stat.mockImplementation(((target: string) => {
+        if (!busyLinks.includes(target)) return realStat(target);
+        busyCalls.push(target);
+        if (busyCalls.length === busyLinks.length) Deferred.doneUnsafe(busyStarted, Effect.void);
+        return new Promise((resolve) => releases.push(() => resolve(realStat(target))));
+      }) as typeof NodeFSP.stat);
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => {
+          for (const release of releases) release();
+          stat.mockImplementation(realStat);
+        }),
+      );
+      // Probes hold every slot: one outlived its caller's timeout, the others' callers moved on,
+      // as typing does.
+      const holders = yield* Effect.forEach(busyLinks, (link) =>
+        Effect.forkChild(resolveLinkTarget(link)),
+      );
+      yield* Deferred.await(busyStarted);
+      const [timedOut, ...movedOn] = holders;
+      yield* Fiber.interruptAll(movedOn);
+      yield* TestClock.adjust("1 second");
+      expect(yield* Fiber.join(timedOut!)).toBeUndefined();
+      // The pool queues a caller with a fresh `Promise.withResolvers`; nothing else here makes one.
+      const linkQueued = yield* Deferred.make<void>();
+      const withResolvers = Promise.withResolvers;
+      const queueSpy = vi.spyOn(Promise, "withResolvers").mockImplementation((() => {
+        Deferred.doneUnsafe(linkQueued, Effect.void);
+        return withResolvers.call(Promise);
+      }) as typeof Promise.withResolvers);
+      yield* Effect.addFinalizer(() => Effect.sync(() => queueSpy.mockRestore()));
+      const { directorySearch } = fakeSymlinkFinder([]);
+
+      const searchIndex = yield* WorkspaceSearchIndex.make(cwd);
+      const listing = yield* Effect.forkChild(listedPaths(searchIndex));
+      yield* Deferred.await(linkQueued);
+      yield* TestClock.adjust("1 second");
+      expect(yield* Fiber.join(listing)).toEqual([]);
+
+      for (const release of releases) release();
+      yield* TestClock.adjust("2 seconds");
       expect(yield* listedPaths(searchIndex)).toEqual(["link.ts"]);
       expect(directorySearch).toHaveBeenCalledTimes(2);
     }),

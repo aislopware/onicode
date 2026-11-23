@@ -33,7 +33,7 @@ describe("largeFileStartsPlain", () => {
       input: { ...file, sizeBytes: FULL_TEXT_MAX_BYTES + 1 },
       plain: true,
     },
-    // Its full text would stop at the cap and download again in the plain viewer.
+    // Its full text would end in the plain viewer anyway.
     {
       name: "an estimate past the lines it can lay out",
       input: { ...file, estimatedLines: RENDERED_MAX_LINES + 1 },
@@ -110,12 +110,17 @@ describe("highlightsLargeFile", () => {
 });
 
 describe("largeFileEndsPlain", () => {
+  const over = RENDERED_MAX_LINES + 1;
   it.each([
     { name: "finished source with a long line", longLine: true, markdown: false, plain: true },
     { name: "finished Markdown with a long line", longLine: true, markdown: true, plain: false },
     { name: "finished source", longLine: false, markdown: false, plain: false },
-  ])("$name: plain $plain", ({ longLine, markdown, plain }) => {
-    expect(largeFileEndsPlain({ text: "", done: true, lines: 3, longLine }, markdown)).toBe(plain);
+    // regression: the estimate missed a dense tail, and the plain viewer downloaded it again
+    { name: "finished source past the lines", lines: over, markdown: false, plain: true },
+    { name: "finished Markdown past the lines", lines: over, markdown: true, plain: true },
+    { name: "streaming past the lines", lines: over, done: false, markdown: true, plain: false },
+  ])("$name: plain $plain", ({ longLine = false, lines = 3, done = true, markdown, plain }) => {
+    expect(largeFileEndsPlain({ text: "", done, lines, longLine }, markdown)).toBe(plain);
   });
 });
 

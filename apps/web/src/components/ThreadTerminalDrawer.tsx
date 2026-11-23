@@ -29,6 +29,7 @@ import {
   AuthOrchestrationOperateScope,
   AuthTerminalOperateScope,
   type ContextMenuItem,
+  type ProjectId,
   type ProviderInstanceId,
   type ResolvedKeybindingsConfig,
   type ScopedThreadRef,
@@ -477,6 +478,7 @@ interface TerminalViewportProps {
   terminalLabel: string;
   cwd: string;
   worktreePath?: string | null;
+  projectId?: ProjectId;
   runtimeEnv?: Record<string, string>;
   providerInstanceId?: ProviderInstanceId;
   onSessionExited: () => void;
@@ -490,6 +492,7 @@ interface TerminalViewportProps {
 interface TerminalLaunchLocation {
   readonly cwd: string;
   readonly worktreePath?: string | null;
+  readonly projectId?: ProjectId;
   readonly runtimeEnv?: Record<string, string>;
 }
 
@@ -500,6 +503,7 @@ export function TerminalViewport(props: TerminalViewportProps) {
     props.terminalId,
     props.cwd,
     props.worktreePath ?? null,
+    props.projectId ?? null,
     runtimeEnvSignature(props.runtimeEnv),
   ]);
   return <TerminalSessionViewport key={sessionKey} {...props} />;
@@ -513,6 +517,7 @@ function TerminalSessionViewport({
   terminalLabel,
   cwd,
   worktreePath,
+  projectId,
   runtimeEnv,
   providerInstanceId,
   onSessionExited,
@@ -623,6 +628,7 @@ function TerminalSessionViewport({
     terminalId,
     cwd,
     ...(worktreePath !== undefined ? { worktreePath } : {}),
+    ...(projectId !== undefined ? { projectId } : {}),
     ...(runtimeEnv ? { env: runtimeEnv } : {}),
     ...(providerInstanceId ? { providerInstanceId } : {}),
   });
@@ -1231,6 +1237,8 @@ interface ThreadTerminalDrawerProps {
   threadId: ThreadId;
   cwd: string;
   worktreePath?: string | null;
+  /** The thread's or draft's project, so deleting it can close a draft's terminals. */
+  projectId?: ProjectId;
   runtimeEnv?: Record<string, string>;
   visible?: boolean;
   height: number;
@@ -1365,6 +1373,9 @@ function TerminalSplitPanes({
                 {...(terminalLaunchLocation.worktreePath !== undefined
                   ? { worktreePath: terminalLaunchLocation.worktreePath }
                   : {})}
+                {...(terminalLaunchLocation.projectId !== undefined
+                  ? { projectId: terminalLaunchLocation.projectId }
+                  : {})}
                 {...(terminalLaunchLocation.runtimeEnv
                   ? { runtimeEnv: terminalLaunchLocation.runtimeEnv }
                   : {})}
@@ -1484,6 +1495,7 @@ export default function ThreadTerminalDrawer({
   threadId,
   cwd,
   worktreePath,
+  projectId,
   runtimeEnv,
   visible = true,
   height,
@@ -1658,12 +1670,14 @@ export default function ThreadTerminalDrawer({
     resolvedTerminalGroups.length > 1 ||
     resolvedTerminalGroups.some((terminalGroup) => terminalGroup.terminalIds.length > 1);
   const hasReachedSplitLimit = visibleTerminalIds.length >= MAX_TERMINALS_PER_GROUP;
-  const resolveTerminalLaunchLocation = (terminalId: string): TerminalLaunchLocation =>
-    terminalLaunchLocationsById?.get(terminalId) ?? {
+  const resolveTerminalLaunchLocation = (terminalId: string): TerminalLaunchLocation => ({
+    ...(terminalLaunchLocationsById?.get(terminalId) ?? {
       cwd,
       ...(worktreePath !== undefined ? { worktreePath } : {}),
       ...(runtimeEnv ? { runtimeEnv } : {}),
-    };
+    }),
+    ...(projectId !== undefined ? { projectId } : {}),
+  });
   const splitTerminalActionLabel = hasReachedSplitLimit
     ? gt("Split Terminal Horizontally (max {max} per group)", { max: MAX_TERMINALS_PER_GROUP })
     : gt("Split Terminal Horizontally");

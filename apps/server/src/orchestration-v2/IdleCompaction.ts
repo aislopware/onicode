@@ -106,8 +106,8 @@ export function idleCompactionWindow(
       : compactionSinceUsage(turnItems, providerThread.id, usages[0].updatedAt);
   const usedTokens = compaction === undefined ? usages[0]?.usedTokens : compaction.afterTokenCount;
   if ((usedTokens ?? 0) < MIN_CONTEXT_TOKENS) return null;
-  // A request served fully from cache creates no cache entry and reports no
-  // TTL, but it still refreshes the cache. Treat it as unknown and skip.
+  // A request served fully from cache reports no TTL of its own. The adapter dates it with the TTL
+  // it saw the cache written with; one it never saw written stays unknown, and is skipped.
   const expiresAt = usages[0]?.promptCacheExpiresAt;
   const endMs = expiresAt === undefined ? Number.NaN : Date.parse(expiresAt);
   if (!Number.isFinite(endMs) || nowMs >= endMs) return null;

@@ -31,7 +31,7 @@ export function largeFileStartsPlain(file: {
   return (
     file.table ||
     file.sizeBytes > FULL_TEXT_MAX_BYTES ||
-    // The full text would stop at the cap and hand over to the plain viewer, downloading twice.
+    // The full text would end in the plain viewer anyway, after laying out its first part.
     file.estimatedLines > RENDERED_MAX_LINES ||
     // The source viewer lays out a whole line; the plain viewer cuts it like a source line.
     (!file.markdown && hasLineLongerThan(file.preview, MAX_SHOWN_LINE_CHARS))
@@ -47,9 +47,13 @@ export interface ShownFileText {
   readonly longLine: boolean;
 }
 
-/** A line too long to lay out can sit past the preview; the finished source then goes plain. */
+/**
+ * A line too long to lay out, or more lines than the main thread can lay out, can sit past the
+ * preview; the finished text then goes plain.
+ */
 export function largeFileEndsPlain(file: ShownFileText, markdown: boolean): boolean {
-  return !markdown && file.done && file.longLine;
+  if (!file.done) return false;
+  return (!markdown && file.longLine) || (file.lines ?? 0) > RENDERED_MAX_LINES;
 }
 
 /**

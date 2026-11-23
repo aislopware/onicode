@@ -932,7 +932,7 @@ export const make = Effect.gen(function* () {
 
   // Draft threads have no row, so a deletion another client makes leaves their terminals open.
   const closeDraftThreadTerminals = Effect.fn("ProjectService.closeDraftThreadTerminals")(
-    function* (workspaceRoot: string) {
+    function* (projectId: ProjectId, workspaceRoot: string) {
       if (Option.isNone(terminals)) return;
       const manager = terminals.value;
       // A live project nested inside the deleted one keeps its own drafts.
@@ -943,12 +943,14 @@ export const make = Effect.gen(function* () {
       );
       const threadIds = new Set(
         (yield* manager.list)
-          .filter(
-            // A draft on a worktree may belong to another project even when its folder is inside.
-            ({ cwd, worktreePath }) =>
-              worktreePath === null &&
-              isWithinRoot(path, cwd, workspaceRoot) &&
-              !nestedRoots.some((root) => isWithinRoot(path, cwd, root)),
+          .filter(({ projectId: owner, cwd, worktreePath }) =>
+            owner !== null
+              ? owner === projectId
+              : // Older clients send no project. A draft on a worktree may then belong to
+                // another project even when its folder is inside.
+                worktreePath === null &&
+                isWithinRoot(path, cwd, workspaceRoot) &&
+                !nestedRoots.some((root) => isWithinRoot(path, cwd, root)),
           )
           .map((terminal) => terminal.threadId),
       );
@@ -991,7 +993,7 @@ export const make = Effect.gen(function* () {
       if (isFirstDelete) {
         yield* clearProjectSettingsOverrides(projectId);
       }
-      yield* closeDraftThreadTerminals(existing.value.workspaceRoot);
+      yield* closeDraftThreadTerminals(projectId, existing.value.workspaceRoot);
       yield* projectEnrichment.invalidate([existing.value.workspaceRoot]);
       return yield* readCommitted(projectId);
     },

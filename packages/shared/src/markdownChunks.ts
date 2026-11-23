@@ -1,3 +1,5 @@
+import { decodeString } from "micromark-util-decode-string";
+
 import { FRONTMATTER_MAX_LINES, leadingFrontmatterLength } from "./markdownFrontmatter.ts";
 
 // About one screen of rendered Markdown; parsing costs up to ~40 ms per KB with tables and math.
@@ -296,4 +298,142 @@ export function cutSourceLines(text: string, targetChars = CHUNK_TARGET_CHARS): 
   }
   runs.push(text.slice(start));
   return runs;
+}
+
+/** GitHub's heading anchor for a heading's rendered text, before duplicates are numbered. */
+export function githubHeadingSlug(text: string): string {
+  return text
+    .trim()
+    .toLowerCase()
+    .replace(/[^\p{L}\p{M}\p{N}\p{Pc} -]/gu, "")
+    .replace(/ /g, "-");
+}
+
+/** Numbers repeated slugs as GitHub does: `a`, `a-1`, `a-2`, skipping any id already taken. */
+function headingIdNumberer(): (slug: string) => string {
+  const taken = new Set<string>();
+  const nextSuffix = new Map<string, number>();
+  return (slug) => {
+    let count = nextSuffix.get(slug) ?? 0;
+    let id = slug;
+    while (taken.has(id)) {
+      count += 1;
+      id = `${slug}-${count}`;
+    }
+    nextSuffix.set(slug, count);
+    taken.add(id);
+    return id;
+  };
+}
+
+const ATX_HEADING_TEXT = /^ {0,3}#{1,6}(?:[ \t]+(.*?))?(?:[ \t]+#+)?[ \t]*\r?$/;
+const SETEXT_UNDERLINE = /^ {0,3}(?:=+|-+)[ \t]*\r?$/;
+// Lines that start a block other than a paragraph, which a setext underline cannot follow, and
+// those of them that also end an open paragraph.
+const NON_PARAGRAPH_LINE = /^(?: {4}|\t| {0,3}(?:[-*+][ \t]|\d{1,9}[.)][ \t]|>|\|))/;
+const PARAGRAPH_INTERRUPT = /^ {0,3}(?:[-*+][ \t]|1[.)][ \t]|>)/;
+const CODE_SPAN = /(`+)([^`]|[^`][\s\S]*?[^`])\1(?!`)/g;
+
+const DECODED_UNDERSCORE = "\uE000";
+
+/** The text a heading's inline Markdown renders as, outside code spans. */
+function inlinePlainText(markdown: string): string {
+  return (
+    markdown
+      .replace(/!?\[((?:[^\]\\]|\\.)*)\](?:\([^)]*\)|\[[^\]]*\])/g, "$1")
+      .replace(/<((?:https?|mailto):[^<>\s]*)>/gi, "$1")
+      .replace(/<[^<>]*>/g, "")
+      // A decoded underscore is text, so it hides from the emphasis pass.
+      .replace(/&(?:[a-z][a-z\d]*|#\d+|#x[\da-f]+);/gi, (reference) =>
+        decodeString(reference).replaceAll("_", DECODED_UNDERSCORE),
+      )
+      // Emphasis underscores sit at word edges; snake_case ones are text.
+      .replace(/(^|[^\p{L}\p{N}_])_+|_+(?=[^\p{L}\p{N}_]|$)/gu, "$1")
+      .replaceAll(DECODED_UNDERSCORE, "_")
+  );
+}
+
+function headingPlainText(markdown: string): string {
+  let text = "";
+  let last = 0;
+  for (const match of markdown.matchAll(CODE_SPAN)) {
+    text += inlinePlainText(markdown.slice(last, match.index)) + (match[2] ?? "");
+    last = match.index + match[0].length;
+  }
+  return text + inlinePlainText(markdown.slice(last));
+}
+
+/**
+ * The slug of each ATX and setext heading in `text`, in order, as its rendered text gives it and
+ * before duplicates are numbered. Headings in fences, HTML blocks and frontmatter are left out.
+ */
+function headingSlugs(text: string): string[] {
+  const slugs: string[] = [];
+  const frontmatter = leadingFrontmatterLength(text);
+  let offset = 0;
+  let closes: ((line: string) => boolean) | null = null;
+  // Lines of the open paragraph, or null inside another block until a blank line.
+  let paragraph: string[] | null = [];
+  const add = (heading: string) => {
+    const slug = githubHeadingSlug(headingPlainText(heading));
+    if (slug) slugs.push(slug);
+  };
+  for (const line of text.split("\n")) {
+    const inFrontmatter = offset < frontmatter;
+    offset += line.length + 1;
+    if (inFrontmatter) continue;
+    if (closes !== null) {
+      if (closes(line)) {
+        closes = null;
+        paragraph = [];
+      }
+      continue;
+    }
+    if (line.trim() === "") {
+      paragraph = [];
+      continue;
+    }
+    const atx = ATX_HEADING_TEXT.exec(line);
+    if (atx) {
+      add(atx[1] ?? "");
+      paragraph = [];
+      continue;
+    }
+    if (paragraph !== null && paragraph.length > 0 && SETEXT_UNDERLINE.test(line)) {
+      add(paragraph.join("\n"));
+      paragraph = [];
+      continue;
+    }
+    closes = blockCloser(line);
+    if (closes !== null || THEMATIC_BREAK.test(line)) {
+      paragraph = [];
+    } else if (
+      paragraph !== null &&
+      !(paragraph.length > 0 ? PARAGRAPH_INTERRUPT : NON_PARAGRAPH_LINE).test(line)
+    ) {
+      paragraph.push(line.trim());
+    } else {
+      paragraph = null;
+    }
+  }
+  return slugs;
+}
+
+/**
+ * The piece holding the heading GitHub anchors as `id`, numbering duplicates across the whole
+ * file, with the id that piece's own render gives it, as each piece numbers duplicates anew.
+ */
+export function markdownHeadingPiece(
+  chunks: readonly MarkdownChunk[],
+  id: string,
+): { readonly index: number; readonly id: string } | null {
+  const fileId = headingIdNumberer();
+  for (const [index, chunk] of chunks.entries()) {
+    const pieceId = headingIdNumberer();
+    for (const slug of headingSlugs(chunk.text)) {
+      const ownId = pieceId(slug);
+      if (fileId(slug) === id) return { index, id: ownId };
+    }
+  }
+  return null;
 }

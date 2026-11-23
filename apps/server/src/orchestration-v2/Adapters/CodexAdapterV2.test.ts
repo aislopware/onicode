@@ -5228,6 +5228,125 @@ describe("CodexAdapterV2 post-settle continuation", () => {
       ),
   );
 
+  // Codex sends the whole item on its start and completion; either shows it once.
+  it.effect.each([
+    { frames: "start and completion", methods: ["item/started", "item/completed"] },
+    { frames: "completion alone", methods: ["item/completed"] },
+  ] as const)(
+    "shows a stop hook continuation from its $frames after the answer it reopened",
+    ({ methods }) =>
+      Effect.gen(function* () {
+        const nativeThreadId = "hook-prompt-thread";
+        const nativeTurnId = "hook-prompt-turn";
+        const hookPrompt = (method: "item/started" | "item/completed") => ({
+          type: "emit_inbound" as const,
+          label: `${method} hookPrompt`,
+          frame: {
+            method,
+            params: {
+              threadId: nativeThreadId,
+              turnId: nativeTurnId,
+              ...(method === "item/started"
+                ? { startedAtMs: 1782622441000 }
+                : { completedAtMs: 1782622441000 }),
+              item: {
+                type: "hookPrompt",
+                id: "hook-prompt-1",
+                fragments: [
+                  { hookRunId: "stop-hook", text: "Tests are still failing." },
+                  { hookRunId: "stop-hook", text: "Fix them before finishing." },
+                ],
+              },
+            },
+          },
+        });
+        const transcript = makeCodexReplayTranscript({
+          scenario: "hook-prompt-continuation",
+          entries: [
+            ...codexReplayPreamble({ nativeThreadId, nativeTurnId, prompt: "work" }),
+            {
+              type: "emit_inbound",
+              label: "item/completed final answer",
+              frame: {
+                method: "item/completed",
+                params: {
+                  threadId: nativeThreadId,
+                  turnId: nativeTurnId,
+                  completedAtMs: 1782622440500,
+                  item: {
+                    type: "agentMessage",
+                    id: "msg_final",
+                    text: "Done.",
+                    phase: "final_answer",
+                    delivery: null,
+                    questions: null,
+                  },
+                },
+              },
+            },
+            ...methods.map(hookPrompt),
+            {
+              type: "emit_inbound",
+              label: "turn/completed",
+              frame: {
+                method: "turn/completed",
+                params: {
+                  threadId: nativeThreadId,
+                  turn: makeCodexReplayTurn({ id: nativeTurnId, status: "completed" }),
+                },
+              },
+            },
+          ],
+        });
+        const harness = yield* makeCodexReplayHarness(transcript);
+        yield* harness.runtime.startTurn(
+          makeCodexTestTurnInput({
+            threadId: harness.threadId,
+            providerThread: harness.providerThread,
+            now: yield* DateTime.now,
+            attemptId: RunAttemptId.make("hook-prompt-attempt"),
+            text: "work",
+          }),
+        );
+        yield* harness.firstTerminal;
+        const answer = harness.events.findLast(
+          (event) =>
+            event.type === "turn_item.updated" && event.turnItem.type === "assistant_message",
+        );
+        const notices = harness.events.flatMap((event) =>
+          event.type === "turn_item.updated" && event.turnItem.type === "system_notice"
+            ? [event.turnItem]
+            : [],
+        );
+        assert.deepEqual(
+          [
+            ...new Map(
+              notices.map((notice) => [notice.id, [notice.title, notice.message]]),
+            ).values(),
+          ],
+          [
+            [
+              "A stop hook continued the turn",
+              "Tests are still failing.\nFix them before finishing.",
+            ],
+          ],
+        );
+        assert.isAbove(
+          notices[0]?.ordinal ?? 0,
+          answer?.type === "turn_item.updated" ? answer.turnItem.ordinal : Infinity,
+        );
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            IdAllocator.layer,
+            McpProviderSessions.layer,
+            NodeServices.layer,
+            NodeCrypto.layer,
+          ),
+        ),
+      ),
+  );
+
   it.effect("resumes a provider thread without requesting or decoding its history", () =>
     Effect.gen(function* () {
       const scenario = "codex-resume-metadata";

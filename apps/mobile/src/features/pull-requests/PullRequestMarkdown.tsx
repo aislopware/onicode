@@ -16,7 +16,9 @@ import {
 import { videoMimeType } from "@onicode/shared/video";
 import { createContext, useContext, useMemo, useState } from "react";
 import {
+  changeRequestFileBase,
   changeRequestReferenceAutolinker,
+  resolveChangeRequestFileHref,
   resolveChangeRequestMediaUrl,
 } from "@onicode/client-runtime/pull-request-references";
 import {
@@ -49,6 +51,7 @@ const LineBreaksContext = createContext(false);
 const GithubEmojiContext = createContext(false);
 const ChangeRequestUrlContext = createContext<string | null>(null);
 const FileLinkCheckoutContext = createContext<Parameters<typeof pullRequestFileLinkRoute>[1]>(null);
+const FileBaseContext = createContext<string | null>(null);
 
 export function PullRequestMarkdownRepository(props: {
   /** The change request the markdown belongs to, whose host decides what its text links. */
@@ -59,6 +62,8 @@ export function PullRequestMarkdownRepository(props: {
         /** The checkout the server read it through, where its file links open. */
         readonly workspaceRoot?: string | undefined;
         readonly borrowedCheckout?: boolean | undefined;
+        /** Path links the checkout cannot open show on the forge at this commit. */
+        readonly headSha?: string | undefined;
       }
     | null
     | undefined;
@@ -90,13 +95,19 @@ export function PullRequestMarkdownRepository(props: {
           workspaceRoot,
           borrowedCheckout: props.changeRequest?.borrowedCheckout,
         };
+  const fileBase =
+    props.changeRequest && (fileLinkCheckout === null || fileLinkCheckout.borrowedCheckout)
+      ? changeRequestFileBase(props.changeRequest)
+      : null;
   return (
     <AutolinksContext value={autolinks}>
       <GithubEmojiContext value={provider === "github" || provider === "gitlab"}>
         <LineBreaksContext value={lineBreaks}>
           <ChangeRequestUrlContext value={url ?? null}>
             <FileLinkCheckoutContext value={fileLinkCheckout}>
-              <PullRequestMediaContext value={media}>{props.children}</PullRequestMediaContext>
+              <FileBaseContext value={fileBase}>
+                <PullRequestMediaContext value={media}>{props.children}</PullRequestMediaContext>
+              </FileBaseContext>
             </FileLinkCheckoutContext>
           </ChangeRequestUrlContext>
         </LineBreaksContext>
@@ -257,10 +268,11 @@ function PullRequestMarkdownContent(props: {
     changeRequestUrl ? resolveChangeRequestMediaUrl(href, changeRequestUrl) : href;
   const openPullRequest = useOpenPullRequest();
   const fileLinkCheckout = useContext(FileLinkCheckoutContext);
+  const fileBase = useContext(FileBaseContext);
   const navigation = useNavigation();
   const openLink = (href: string) => {
     const file = pullRequestFileLinkRoute(href, fileLinkCheckout);
-    if (file === null) void openPullRequest(href);
+    if (file === null) void openPullRequest(resolveChangeRequestFileHref(href, fileBase) ?? href);
     else navigation.dispatch(StackActions.push("NewTaskFile", file));
   };
   const [preview, setPreview] = useState<FilePreviewSource | null>(null);

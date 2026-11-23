@@ -5709,6 +5709,48 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
           }).pipe(Effect.orDie, turnTerminalizationPermit.withPermits(1)),
         );
 
+        // A blocking Stop or SubagentStop hook reopens the turn after its final answer; without a
+        // newer entry, clients read that answer as the end of the turn and hide Thinking. Codex
+        // sends the whole item on both its start and completion.
+        const emitHookPrompt = Effect.fn("CodexAdapterV2.emitHookPrompt")(function* (
+          context: ActiveCodexTurnContext,
+          item: {
+            readonly id: string;
+            readonly fragments: ReadonlyArray<{ readonly text: string }>;
+          },
+          seenAt?: DateTime.Utc,
+        ) {
+          const { ordinal, startedAt } = yield* resolveItemPosition(context, item.id, seenAt);
+          yield* emitProviderEvent({
+            type: "turn_item.updated",
+            driver: CODEX_PROVIDER,
+            turnItem: {
+              id: idAllocator.derive.turnItemFromProviderItem({
+                driver: CODEX_PROVIDER,
+                nativeItemId: item.id,
+              }),
+              threadId: context.projectionThreadId,
+              runId: context.projectionRunId,
+              nodeId: context.providerNodeId,
+              providerThreadId: context.providerThread.id,
+              providerTurnId: context.providerTurnId,
+              nativeItemRef: codexNativeItemRef(item.id),
+              parentItemId: null,
+              ordinal,
+              type: "system_notice",
+              status: "completed",
+              title: "A stop hook continued the turn",
+              message: item.fragments
+                .map((fragment) => fragment.text.trim())
+                .filter(Boolean)
+                .join("\n"),
+              startedAt,
+              completedAt: startedAt,
+              updatedAt: startedAt,
+            },
+          });
+        });
+
         yield* client.handleServerNotification("item/started", (payload) =>
           Effect.gen(function* () {
             const context = yield* awaitActiveTurn(payload.turnId);
@@ -5751,6 +5793,11 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 payload.item.id,
                 DateTime.makeUnsafe(payload.startedAtMs),
               );
+            }
+
+            if (payload.item.type === "hookPrompt") {
+              yield* emitHookPrompt(context, payload.item);
+              return;
             }
 
             if (payload.item.type === "fileChange") {
@@ -5902,6 +5949,15 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 context,
                 payload.item.id,
                 "completed",
+                DateTime.makeUnsafe(payload.completedAtMs),
+              );
+              return;
+            }
+
+            if (payload.item.type === "hookPrompt") {
+              yield* emitHookPrompt(
+                context,
+                payload.item,
                 DateTime.makeUnsafe(payload.completedAtMs),
               );
               return;

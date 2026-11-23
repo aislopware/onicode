@@ -1,4 +1,4 @@
-import { useAtomValue } from "@effect/atom-react";
+import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import {
   extendMarkdownSplit,
   splitMarkdown,
@@ -10,6 +10,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { AsyncResult, Atom } from "effect/reactivity";
+import { useEffect } from "react";
 
 import { connectionAtomRuntime } from "~/connection/runtime";
 
@@ -27,9 +28,9 @@ interface Downloaded {
   readonly lines: number;
 }
 
-// Past either cap the main thread cannot hold or lay the text out.
-const tooLarge = (file: Downloaded) =>
-  file.lines > RENDERED_MAX_LINES || file.text.length > FULL_TEXT_MAX_BYTES;
+// Past this the main thread cannot hold the text. Past the line cap it still downloads, so the
+// plain viewer takes the finished text instead of downloading it again.
+const tooLarge = (file: Downloaded) => file.text.length > FULL_TEXT_MAX_BYTES;
 
 /** Bytes the 1 MB preview read would also refuse as text. */
 class FullFileTextBinaryError extends Schema.TaggedError<FullFileTextBinaryError>()(
@@ -81,22 +82,46 @@ const fullFileTextAtom = Atom.family((src: string) =>
 
 export type FullFileText = ShownFileText | "too-large" | "failed";
 
+/** The line a held reveal waits for in each file, so the swap that brings it shows at once. */
+const revealWaitAtom = Atom.family((src: string) =>
+  Atom.make<number | null>(null).pipe(Atom.withLabel(`full-file-reveal-wait:${src}`)),
+);
+
+/** Publishes the line a held reveal waits for while it waits. */
+export function useFullFileRevealWait(src: string, line: number | null) {
+  const setWait = useAtomSet(revealWaitAtom(src));
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- syncs the waiting line into the download's atom store
+  useEffect(() => {
+    setWait(line);
+    return () => setWait(null);
+  }, [setWait, line]);
+}
+
 /**
  * The text a swap shows. A streaming swap ends at a newline, so the last row does not flicker, and
- * shows only once it doubles the text shown, as each layout redoes the whole text.
+ * shows only once it doubles the text shown, as each layout redoes the whole text, or once it
+ * brings the line a reveal waits for. Past the line cap the finished text goes to the plain viewer.
  */
 export function nextShownFileText(
   previous: FullFileText | null,
   file: Downloaded,
   done: boolean,
-): FullFileText {
+  waitingLine: number | null = null,
+): FullFileText | null {
   if (done) {
     return { ...file, done, longLine: hasLineLongerThan(file.text, MAX_SHOWN_LINE_CHARS) };
   }
+  if (file.lines > RENDERED_MAX_LINES) return previous;
   const text = file.text.slice(0, file.text.lastIndexOf("\n") + 1);
+  // A streaming swap's whole lines are all of its newlines.
+  const bringsWaitingLine =
+    waitingLine !== null &&
+    waitingLine <= file.lines - 1 &&
+    (previous === null || typeof previous === "string" || (previous.lines ?? 0) - 1 < waitingLine);
   if (
     previous !== null &&
     typeof previous !== "string" &&
+    !bringsWaitingLine &&
     text.length < Math.max(1, 2 * previous.text.length)
   ) {
     return previous;
@@ -112,7 +137,7 @@ const shownFileTextAtom = Atom.family((src: string) =>
     if (!AsyncResult.isSuccess(result)) return null;
     if (tooLarge(result.value)) return "too-large";
     const previous = Option.getOrNull(get.self<FullFileText | null>());
-    return nextShownFileText(previous, result.value, !result.waiting);
+    return nextShownFileText(previous, result.value, !result.waiting, get(revealWaitAtom(src)));
   }).pipe(Atom.withLabel(`shown-file-text:${src}`)),
 );
 
@@ -134,11 +159,18 @@ interface MarkdownSplitState {
   readonly split: SplitMarkdown;
 }
 
-/** Splits a swap's text, cutting only the newly arrived tail when it extends the last swap's. */
+/**
+ * Splits a swap's text, cutting only the newly arrived tail when it extends the last swap's. A
+ * finished text past the line cap goes to the plain viewer, so it is not split.
+ */
 export function nextMarkdownSplit(
   previous: MarkdownSplitState | null,
-  text: string,
-): MarkdownSplitState {
+  shown: FullFileText | null,
+): MarkdownSplitState | null {
+  if (shown === null || typeof shown === "string" || (shown.lines ?? 0) > RENDERED_MAX_LINES) {
+    return null;
+  }
+  const { text } = shown;
   if (previous?.text === text) return previous;
   // One download only appends, so a longer text starts with the one split before.
   const split =
@@ -150,11 +182,12 @@ export function nextMarkdownSplit(
 
 /** Markdown pieces of each swap, kept as long as the text; splitting 12 MB at once takes 0.5 s. */
 const fullFileMarkdownAtom = Atom.family((src: string) =>
-  Atom.make((get): MarkdownSplitState | null => {
-    const shown = get(shownFileTextAtom(src));
-    if (shown === null || typeof shown === "string") return null;
-    return nextMarkdownSplit(Option.getOrNull(get.self<MarkdownSplitState | null>()), shown.text);
-  }).pipe(Atom.setIdleTTL(RECENT_FILE_TTL_MS), Atom.withLabel(`full-file-markdown:${src}`)),
+  Atom.make((get) =>
+    nextMarkdownSplit(
+      Option.getOrNull(get.self<MarkdownSplitState | null>()),
+      get(shownFileTextAtom(src)),
+    ),
+  ).pipe(Atom.setIdleTTL(RECENT_FILE_TTL_MS), Atom.withLabel(`full-file-markdown:${src}`)),
 );
 
 /** Markdown pieces of the shown text, or null while the preview shows ahead of the download. */

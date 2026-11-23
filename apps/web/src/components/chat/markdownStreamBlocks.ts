@@ -1,4 +1,4 @@
-import { githubHeadingSlug } from "./markdownFragments";
+import { githubHeadingSlug } from "@onicode/shared/markdownChunks";
 
 // Definitions, footnotes, raw HTML, container directives and display math can tie blocks together.
 const DOCUMENT_WIDE_SYNTAX = /^ {0,3}(?:\[[^\]\n]+\]:|<[A-Za-z!?/]|:::|\$\$)|\[\^/m;

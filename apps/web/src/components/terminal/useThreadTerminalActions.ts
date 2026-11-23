@@ -106,6 +106,7 @@ export function useThreadTerminalActions(threadRef: ScopedThreadRef | null) {
         terminalId,
         cwd: location.cwd,
         ...(location.worktreePath !== null ? { worktreePath: location.worktreePath } : {}),
+        projectId: project.id,
         env: projectScriptRuntimeEnv({
           project: { cwd: project.workspaceRoot },
           worktreePath: location.worktreePath,

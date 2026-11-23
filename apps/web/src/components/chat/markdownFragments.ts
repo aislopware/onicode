@@ -1,3 +1,4 @@
+import { githubHeadingSlug } from "@onicode/shared/markdownChunks";
 import type { MouseEvent as ReactMouseEvent } from "react";
 
 import { hastPlainTextDeep } from "./markdownHast.logic";
@@ -19,6 +20,11 @@ function normalizeSanitizedFragmentId(id: string): string {
     normalizedId = normalizedId.slice(SANITIZED_FRAGMENT_PREFIX.length);
   }
   return normalizedId;
+}
+
+/** The heading slug a `#fragment` href names, without the sanitizer's prefix. */
+export function markdownFragmentSlug(href: string): string {
+  return normalizeSanitizedFragmentId(decodeMarkdownFragmentId(href));
 }
 
 function findMarkdownFragmentTarget(anchor: HTMLAnchorElement, href: string): HTMLElement | null {
@@ -67,14 +73,6 @@ type HeadingHastNode = {
   properties?: Record<string, unknown>;
   children?: HeadingHastNode[];
 };
-
-export function githubHeadingSlug(text: string): string {
-  return text
-    .trim()
-    .toLowerCase()
-    .replace(/[^\p{L}\p{M}\p{N}\p{Pc} -]/gu, "")
-    .replace(/ /g, "-");
-}
 
 /**
  * Like the sanitizer's ids, they carry the `user-content-` prefix so they cannot clobber app
