@@ -3543,3 +3543,4 @@ de6315aea2	take	fix(server): Antigravity models keep their own thinking levels a
 44f0a5858e	take	fix(client-runtime): a leading env-setup eval no longer hides the command label (#41731)
 352262149c	take	fix(server): workflow step results no longer end in half an emoji (#41723)
 58b7878eb7	take	fix(desktop): form submissions opened in a new tab keep their data (#41708)
+832e359558	skip	already on main: the same one-line rename landed with the port of t3code@238881669a (ThreadSettlementService.test.ts)
