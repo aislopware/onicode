@@ -2185,9 +2185,10 @@ it.layer(layerTest)("OrchestrationV2LayerLive", (it) => {
 
       yield* endRun(busyRun);
       yield* endRun(idleRun);
+      // The queued run must start while the busy lock is still held; a stall here hangs the test.
+      yield* Fiber.join(queuedRunStarted);
       yield* TestClock.adjust("1 minute");
       yield* Fiber.join(busyLock);
-      yield* Fiber.join(queuedRunStarted);
 
       assert.deepEqual(order, ["idle thread's queued run started", "busy thread's lock released"]);
     }),
