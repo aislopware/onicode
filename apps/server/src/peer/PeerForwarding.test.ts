@@ -405,7 +405,17 @@ const makeLaptop = Effect.gen(function* () {
         ),
         Effect.provideService(McpSchema.McpServerClient, mcpClient),
       );
-  return { links: Context.get(linking, PeerLinks.PeerLinks), call };
+  const callAsClient = (name: string, args: Record<string, unknown>) =>
+    server.callTool({ name, arguments: args }).pipe(
+      Effect.provideService(McpInvocationContext.McpInvocationContext, {
+        ...scopeOf("outside-client"),
+        requestNamespace: "client:session-1",
+        thread: undefined,
+        client: { sessionId: "session-1", label: "claude.ai", access: "read-only" },
+      }),
+      Effect.provideService(McpSchema.McpServerClient, mcpClient),
+    );
+  return { links: Context.get(linking, PeerLinks.PeerLinks), call, callAsClient };
 });
 
 const failureOf = (result: McpSchema.CallToolResult) => {
@@ -663,19 +673,27 @@ it.effect("runs any tool that takes a linked environment there", () =>
       });
       expect(archived.isError).toBe(false);
       expect((yield* Ref.get(seen)).stops).toEqual([`thread.archive ${boxThread}`]);
-      // A cursorless read from an agent here gets the newest page there, as it does locally.
+      // A cursorless read from here gets the newest page there, as it does locally.
       const read = yield* a.call("thread:laptop-full", "oni_thread_read", {
         environmentId: box.environmentId,
         threadId: boxThread,
       });
       expect(read.isError).toBe(false);
-      // A client's read asks for the start, which some peers would otherwise serve newest first.
-      const clientRead = yield* a.call(CLI, "oni_thread_read", {
+      // An outside client's cursorless read gets the newest page there too.
+      const clientRead = yield* a.callAsClient("oni_thread_read", {
         environmentId: box.environmentId,
         threadId: boxThread,
       });
       expect(clientRead.isError).toBe(false);
+      // The CLI asks for the start and pages forward.
+      const cliRead = yield* a.call(CLI, "oni_thread_read", {
+        environmentId: box.environmentId,
+        threadId: boxThread,
+        afterPosition: -1,
+      });
+      expect(cliRead.isError).toBe(false);
       expect((yield* Ref.get(seen)).reads).toEqual([
+        { beforePosition: Number.MAX_SAFE_INTEGER, limit: 10, view: "messages" },
         { beforePosition: Number.MAX_SAFE_INTEGER, limit: 10, view: "messages" },
         { afterPosition: -1, limit: 10, view: "messages" },
       ]);

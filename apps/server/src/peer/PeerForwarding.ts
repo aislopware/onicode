@@ -290,29 +290,21 @@ const make = Effect.gen(function* () {
     Effect.flatMap((enabled) => (enabled ? Effect.void : Effect.fail(linkedEnvironmentsOff))),
   );
 
-  // A peer pages a client's cursorless read forward; an agent's gets the newest page, as it does here.
-  const newestPageForAgent = (scope: Scope, toolName: string, params: unknown) => {
-    if (toolName !== "oni_thread_read" || scope.thread === undefined) return undefined;
+  // Older peers page some cursorless reads forward; ask for the newest page, as a read here gets.
+  const newestPage = (toolName: string, params: unknown) => {
+    if (toolName !== "oni_thread_read") return undefined;
     const input = params as OrchestratorMcpThreadReadInput;
     return input.afterPosition === undefined && input.beforePosition === undefined
       ? { ...input, beforePosition: Number.MAX_SAFE_INTEGER }
       : undefined;
   };
 
-  // Some peers serve a linked client's cursorless read newest first; a client here reads forward.
-  const fromStartForClient = (input: OrchestratorMcpThreadReadInput) =>
-    input.afterPosition === undefined &&
-    input.beforePosition === undefined &&
-    input.itemId === undefined
-      ? { ...input, afterPosition: -1 }
-      : input;
-
   const call: PeerForwarding["Service"]["call"] = (scope, tool, environmentId, params) => {
     const forwardTool = (
       args: unknown,
     ): Effect.Effect<Tool.Success<typeof tool>, OrchestratorMcpFailure> =>
       forward(scope, tool.name, tool.parametersSchema, tool.successSchema, environmentId, args);
-    const newest = newestPageForAgent(scope, tool.name, params);
+    const newest = newestPage(tool.name, params);
     const forwarded: Effect.Effect<
       Tool.Success<typeof tool>,
       OrchestratorMcpFailure
@@ -325,10 +317,7 @@ const make = Effect.gen(function* () {
       : newest !== undefined
         ? readNewestOrRetry(forwardTool, newest, params)
         : tool.name === "oni_thread_read"
-          ? readFromStartOrRetry(
-              forwardTool,
-              fromStartForClient(params as OrchestratorMcpThreadReadInput),
-            )
+          ? readFromStartOrRetry(forwardTool, params as OrchestratorMcpThreadReadInput)
           : tool.name === "oni_thread_launch"
             ? launchOrRetryWithoutGeneratedTitle(forwardTool, params)
             : forwardTool(params);

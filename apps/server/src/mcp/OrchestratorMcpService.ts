@@ -3502,11 +3502,11 @@ const make = Effect.gen(function* () {
       const view = input.view ?? "messages";
       const limit = input.limit ?? DEFAULT_THREAD_READ_LIMIT;
       const maxChars = input.maxCharsPerItem ?? DEFAULT_THREAD_ITEM_MAX_CHARS;
-      // Client callers (the CLI, linked environments) page forward from a cursorless read: older
-      // linked environments stop when hasMore is false. Newer ones ask for the newest page.
+      // Older linked environments page a cursorless read forward and stop when hasMore is false;
+      // newer ones always send a cursor.
       const newestFirst =
         input.beforePosition !== undefined ||
-        (input.afterPosition === undefined && scope.thread !== undefined);
+        (input.afterPosition === undefined && scope.client?.linked !== true);
       const timeline = yield* threadManagement
         .getTimelinePage(input.threadId, {
           ...(input.afterPosition === undefined ? {} : { afterPosition: input.afterPosition }),
