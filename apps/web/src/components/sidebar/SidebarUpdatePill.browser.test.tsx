@@ -210,7 +210,7 @@ describe("SidebarUpdatePill restart prompt", () => {
       completed: false,
       state: downloadedUpdate(),
     }));
-    using _bridge = stubGlobal("desktopBridge", { installUpdate });
+    using _bridge = stubGlobal("desktopBridge", { installUpdate, onUpdateState: () => () => {} });
     setup(downloadedUpdate());
     await using screen = await render(
       <AppAtomRegistryProvider>
@@ -224,7 +224,8 @@ describe("SidebarUpdatePill restart prompt", () => {
     });
     await userEvent.click(page.getByRole("button", { name: "Restart to update" }));
     expect(installUpdate).toHaveBeenCalledOnce();
-    await expect.element(pill).not.toHaveAttribute("aria-disabled");
+    // An accepted install stays pending until the app quits or macOS reports a refusal.
+    await expect.element(pill).toHaveAttribute("aria-disabled");
     await expect.element(page.getByText("Onicode 0.0.51 is ready")).not.toBeInTheDocument();
     localStorage.removeItem("onicode:update-everything-result:v1");
   });
@@ -237,7 +238,7 @@ describe("SidebarUpdatePill restart prompt", () => {
       failed: false,
       state: mocks.update,
     }));
-    using _bridge = stubGlobal("desktopBridge", { installUpdate });
+    using _bridge = stubGlobal("desktopBridge", { installUpdate, onUpdateState: () => () => {} });
     setup({
       ...downloadedUpdate({ required: true }),
       status: "downloading",
