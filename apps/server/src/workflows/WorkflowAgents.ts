@@ -4,6 +4,7 @@ import type {
   ProviderInteractionMode,
   RuntimeMode,
 } from "@onicode/contracts";
+import { isWindowsDrivePath } from "@onicode/shared/path";
 import * as Context from "effect/Context";
 import type * as Duration from "effect/Duration";
 import type * as Effect from "effect/Effect";
@@ -67,7 +68,8 @@ export const launchOnContinue = new WorkflowAgentError({
 });
 
 /** A project named by its folder instead of its id. */
-export const isProjectPath = (project: string) => project.startsWith("/");
+export const isProjectPath = (project: string) =>
+  project.startsWith("/") || isWindowsDrivePath(project);
 
 /** Where agent steps run. The server implements it with threads; tests stand in for it. */
 export class WorkflowAgents extends Context.Service<

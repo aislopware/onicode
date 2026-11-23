@@ -3462,3 +3462,4 @@ f1e390665a	take	server metrics default reconnect is 3 devices; storm behind --st
 4280147f58	take	CLI --option examples per provider; outside-agents.md hunk dropped (Onicode removed that page with the outside-app MCP wizard)
 36413ad9f6	take	server metrics --quick profile and scenario guide
 1bc44f2732	skip	product analytics/telemetry, a removed surface
+5793cadee4	take	workflows find a project named by its Windows folder
