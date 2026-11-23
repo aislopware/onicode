@@ -906,7 +906,7 @@ it.layer(layerTest)("ThreadSearch filters before it ranks", (it) => {
         projections.apply,
         { discard: true },
       );
-      for (const query of ["wrenfinch", "_edit.tsx"]) {
+      for (const query of ["wrenfinch", "_edit.tsx", "[id]_edit.tsx"]) {
         const routes = yield* search.search({ query });
         assert.deepEqual(
           routes.matches.map((match) => [match.threadId, match.snippet]),
