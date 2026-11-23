@@ -123,6 +123,7 @@ async function runDevElectronStartup({
   desktopDir = "/repo/apps/desktop",
   spawnSync,
   spawn,
+  build = makeBuild(),
   ...context
 }) {
   const source = NodeFS.readFileSync(new URL("./dev-electron.mjs", import.meta.url), "utf8");
@@ -134,7 +135,14 @@ async function runDevElectronStartup({
         spawnSync: spawnSync ?? (() => undefined),
         spawn: spawn ?? (() => new NodeEvents.EventEmitter()),
       },
-      NodeFS: { watch: () => ({ close: () => undefined }) },
+      NodeCrypto: { hash: (_algorithm, data) => String(data) },
+      NodeFS: {
+        readFileSync: (file) => build.read(NodePath.relative(desktopDir, file)),
+        watch: (directory, _options, listener) => {
+          build.listeners.set(NodePath.relative(desktopDir, directory), listener);
+          return { close: () => undefined };
+        },
+      },
       NodeOS: { platform: () => "linux" },
       NodePath,
       desktopDir,
@@ -164,6 +172,24 @@ async function startupCleanupPattern(desktopDir) {
   });
   assert.isString(pattern);
   return pattern;
+}
+
+// The watched build in memory: every file reads as "v1" until written or removed.
+function makeBuild() {
+  const files = new Map();
+  const listeners = new Map();
+  return {
+    listeners,
+    read(file) {
+      const content = files.has(file) ? files.get(file) : "v1";
+      if (content === null) throw new Error(`ENOENT: ${file}`);
+      return content;
+    },
+    write(file, content) {
+      files.set(file, content);
+      listeners.get(NodePath.dirname(file))?.("change", NodePath.basename(file));
+    },
+  };
 }
 
 function makeFakeClock() {
@@ -204,6 +230,51 @@ function makeFakeClock() {
     },
   };
 }
+
+it("dev supervisor restarts Electron only for a complete build that differs from the one it loaded", async () => {
+  const clock = makeFakeClock();
+  const build = makeBuild();
+  const apps = [];
+  await runDevElectronStartup({
+    ...clock,
+    build,
+    spawn: () => {
+      const app = new NodeEvents.EventEmitter();
+      app.pid = 6000 + apps.length;
+      app.kill = (signal) => app.emit("exit", null, signal);
+      apps.push(app);
+      return app;
+    },
+  });
+  const settle = () => clock.advance(1_000);
+  assert.lengthOf(apps, 1);
+
+  // A late or no-op event for what the app already loaded.
+  build.write("dist-electron/main.cjs", "v1");
+  await settle();
+  assert.lengthOf(apps, 1, "restarted for a build it already loaded");
+
+  build.write("dist-electron/main.cjs", "v2");
+  await settle();
+  assert.lengthOf(apps, 2, "did not restart for a changed build");
+
+  build.write("dist-electron/preload.cjs", null);
+  build.write("dist-electron/main.cjs", "v3");
+  await settle();
+  assert.lengthOf(apps, 2, "restarted while a build file was missing");
+  build.write("dist-electron/preload.cjs", "v3");
+  await settle();
+  assert.lengthOf(apps, 3, "did not restart once the build was complete");
+
+  // A crash while the build is incomplete waits for the write that completes it.
+  build.write("../server/dist/bin.mjs", null);
+  apps.at(-1).emit("exit", 1, null);
+  await settle();
+  assert.lengthOf(apps, 3, "relaunched a crashed app with a build file missing");
+  build.write("../server/dist/bin.mjs", "v3");
+  await settle();
+  assert.lengthOf(apps, 4, "did not relaunch once the build was complete");
+});
 
 it("dev supervisor stops Electron and exits once its parent process goes away", async () => {
   const clock = makeFakeClock();

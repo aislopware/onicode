@@ -128,6 +128,17 @@ export function makeState(home: string, env: NodeJS.ProcessEnv = {}) {
       while: (error) => error._tag === "PlatformError" && error.reason._tag === "NotFound",
     }),
   );
+  // A server that is starting, or starting again, refuses requests with 503 until it serves.
+  const serving = Effect.gen(function* () {
+    const { origin } = yield* runtimeState;
+    yield* HttpClient.get(`${origin}/.well-known/onicode/environment`).pipe(
+      Effect.flatMap(HttpClientResponse.filterStatusOk),
+    );
+  }).pipe(
+    Effect.retry({ schedule: Schedule.spaced("250 millis"), times: 120 }),
+    Effect.mapError((cause) => new ScenarioError({ message: `The server never served: ${cause}` })),
+    Effect.provide(FetchHttpClient.layer),
+  );
   const connect = Effect.fn("scenario.connect")(function* (origin: string) {
     const issued = yield* cli(["auth", "session", "issue", "--token-only", "--label", "scenario"]);
     const client = yield* HttpApiClient.make(EnvironmentHttpApi, { baseUrl: origin });
@@ -207,6 +218,8 @@ export function makeState(home: string, env: NodeJS.ProcessEnv = {}) {
       cli(["thread", ...args, "--wait", "--json"], [0, 2]);
     const [first = "Start", ...rest] = input.messages;
     const replay = ["--provider", "devReplay", "--model", input.model ?? "multi-turn"];
+    // The CLI does not retry a start it could not deliver, since one it did deliver would repeat.
+    yield* serving;
     const started = yield* turn(["start", input.project, first, "--title", input.title, ...replay]);
     const { threadId } = yield* decodeLaunched(started.stdout);
     for (const message of rest) yield* turn(["send", threadId, message]);
