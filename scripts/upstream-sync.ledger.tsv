@@ -3516,3 +3516,4 @@ d08986ab55	take	taken; kept Onicode's driven-guest painting test beside the two 
 b5e1f91cba	take	taken; PR number in the sidebar takes its status colour (upstream look, Onicode had none of its own)
 c6bc43e247	take	taken as is
 feee7863ca	take	taken as is
+521262ecf9	skip	web-target pairing sign-in only: Onicode's desktop scenario harness is its own server's client and opens no pairing page; no scenario changed
