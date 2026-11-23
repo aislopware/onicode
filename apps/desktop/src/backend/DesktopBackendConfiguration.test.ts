@@ -3,6 +3,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import { currentDesktopBootstrapToken } from "@onicode/shared/desktopBootstrapToken";
 import * as HostProcess from "@onicode/shared/HostProcess";
+import { WindowsRegistry } from "@onicode/shared/managedPolicyFile";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -1006,6 +1007,14 @@ describe("DesktopBackendConfiguration", () => {
         Layer.provideMerge(DesktopWslServerTree.layerTest()),
         Layer.provideMerge(DesktopWslEnvironment.layer),
         Layer.provideMerge(DesktopManagedPolicy.layerTest()),
+        Layer.provideMerge(
+          Layer.succeed(
+            WindowsRegistry,
+            WindowsRegistry.of({
+              readMachineKey: () => Effect.die("no registry without System32\\wsl.exe"),
+            }),
+          ),
+        ),
         Layer.provideMerge(
           Layer.succeed(
             ChildProcessSpawner.ChildProcessSpawner,

@@ -1,10 +1,15 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as HostProcess from "@onicode/shared/HostProcess";
+import { SpawnExecutableResolution } from "@onicode/shared/shell";
+import * as ByteSize from "effect/ByteSize";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 
+import { ClaudeExecutableFileCheck } from "./ClaudeExecutable.ts";
 import { claudeOutdatedBuild, readClaudeInstalledBuild } from "./ClaudeInstalledBuild.ts";
 
 // The native installer's link layout is POSIX; Windows resolves `claude` through PATHEXT.
@@ -16,6 +21,7 @@ it.effect.skipIf(HostProcess.Platform.defaultValue() === "win32")(
       const path = yield* Path.Path;
       const root = yield* fileSystem.makeTempDirectoryScoped({ prefix: "oni-claude-link-" });
       const bin = path.join(root, "bin");
+      const early = path.join(root, "early");
       const link = path.join(bin, "claude");
       const install = Effect.fnUntraced(function* (version: string) {
         const file = path.join(root, "versions", version);
@@ -26,16 +32,67 @@ it.effect.skipIf(HostProcess.Platform.defaultValue() === "win32")(
         yield* fileSystem.symlink(file, link);
       });
       yield* fileSystem.makeDirectory(bin);
+      yield* fileSystem.makeDirectory(early);
       yield* install("1.0.0");
-      const read = readClaudeInstalledBuild("claude", { PATH: bin });
+      const read = readClaudeInstalledBuild("claude", { PATH: `${early}:${bin}` });
       const atInit = yield* read;
       assert.isDefined(atInit.executable);
-      const outdated = Effect.map(read, (current) =>
-        claudeOutdatedBuild({ atInit, current, runningVersion: "1.0.0" }),
-      );
+      const outdated = (since: typeof atInit) =>
+        Effect.map(read, (current) =>
+          claudeOutdatedBuild({ atInit: since, current, runningVersion: "1.0.0" }),
+        );
 
-      assert.isUndefined(yield* outdated);
+      assert.isUndefined(yield* outdated(atInit));
       yield* install("1.0.1");
-      assert.deepEqual(yield* outdated, { reason: "executable_replaced" });
+      assert.deepEqual(yield* outdated(atInit), { reason: "executable_replaced" });
+
+      // An installer that puts `claude` in an earlier PATH directory counts at once.
+      const afterUpdate = yield* read;
+      yield* fileSystem.writeFileString(path.join(early, "claude"), "#!/bin/sh\n");
+      yield* fileSystem.chmod(path.join(early, "claude"), 0o755);
+      assert.deepEqual(yield* outdated(afterUpdate), { reason: "executable_replaced" });
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
+it.effect("a Windows upgrade that replaces the package's claude.exe behind an unchanged shim", () =>
+  Effect.gen(function* () {
+    const shim = "C:\\WinGet\\Links\\claude.cmd";
+    const exe =
+      "C:\\WinGet\\Packages\\Anthropic.ClaudeCode_Microsoft.Winget.Source_8wekyb3d8bbwe\\claude.exe";
+    let exeModifiedMs = 1;
+    const info = (modifiedMs: number): FileSystem.File.Info => ({
+      type: "File",
+      mtime: Option.some(DateTime.toDateUtc(DateTime.makeUnsafe(modifiedMs))),
+      atime: Option.none(),
+      birthtime: Option.none(),
+      dev: 1n,
+      ino: Option.none(),
+      mode: 0o755,
+      nlink: Option.none(),
+      uid: Option.none(),
+      gid: Option.none(),
+      rdev: Option.none(),
+      size: ByteSize.bytes(1),
+      blksize: Option.none(),
+      blocks: Option.none(),
+    });
+    const read = readClaudeInstalledBuild("claude", { PATH: "C:\\WinGet\\Links" }).pipe(
+      Effect.provideService(HostProcess.Platform, "win32"),
+      Effect.provideService(SpawnExecutableResolution, () => shim),
+      Effect.provideService(ClaudeExecutableFileCheck, (file) => file === exe),
+      Effect.provide(
+        FileSystem.layerNoop({
+          stat: (file) => Effect.succeed(info(file === exe ? exeModifiedMs : 1)),
+          exists: () => Effect.succeed(false),
+        }),
+      ),
+    );
+    const atInit = yield* read;
+    assert.isTrue(atInit.executable?.startsWith(exe));
+    exeModifiedMs = 2;
+    assert.deepEqual(
+      claudeOutdatedBuild({ atInit, current: yield* read, runningVersion: "1.0.0" }),
+      { reason: "executable_replaced" },
+    );
+  }).pipe(Effect.provide(NodeServices.layer)),
 );

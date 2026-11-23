@@ -14,7 +14,11 @@ import { afterAll, expect } from "vite-plus/test";
 import * as NodeChildProcess from "node:child_process";
 
 import * as HostProcess from "@onicode/shared/HostProcess";
-import { ManagedPolicyFileError } from "@onicode/shared/managedPolicyFile";
+import {
+  ManagedPolicyFileError,
+  WindowsRegistry,
+  WindowsRegistryError,
+} from "@onicode/shared/managedPolicyFile";
 
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as DesktopManagedPolicy from "../app/DesktopManagedPolicy.ts";
@@ -137,6 +141,7 @@ const layerWslEnvironment = (home: string, inherited?: Record<string, string>) =
       Layer.mergeAll(
         layerFakeWslExe(home, inherited),
         DesktopManagedPolicy.layerTest(),
+        Layer.succeed(WindowsRegistry, registry([STORE_SERVICE])),
         Layer.effect(
           DesktopEnvironment.DesktopEnvironment,
           Effect.map(
@@ -577,39 +582,22 @@ describe("parseResolvedPath", () => {
 
 // Path.layer joins with POSIX separators here, so the test windir is a POSIX path.
 const WSL_EXE = "/windows/System32/wsl.exe";
-const STORE_SERVICE = "HKLM\\SYSTEM\\CurrentControlSet\\Services\\WSLService";
-const INBOX_SERVICE = "HKLM\\SYSTEM\\CurrentControlSet\\Services\\LxssManager";
+const STORE_SERVICE = "SYSTEM\\CurrentControlSet\\Services\\WSLService";
+const INBOX_SERVICE = "SYSTEM\\CurrentControlSet\\Services\\LxssManager";
 
-const registrySpawner = (keys: ReadonlyArray<string>) =>
-  ChildProcessSpawner.make((command) =>
-    Effect.succeed(
-      ChildProcessSpawner.makeHandle({
-        pid: ChildProcessSpawner.ProcessId(1),
-        stdout: Stream.empty,
-        stderr: Stream.empty,
-        all: Stream.empty,
-        exitCode: Effect.succeed(
-          ChildProcessSpawner.ExitCode(
-            command._tag === "StandardCommand" &&
-              command.command === "reg.exe" &&
-              keys.some((key) => command.args.includes(key))
-              ? 0
-              : 1,
-          ),
-        ),
-        isRunning: Effect.succeed(false),
-        kill: () => Effect.void,
-        stdin: Sink.drain,
-        getInputFd: () => Sink.drain,
-        getOutputFd: () => Stream.empty,
-        unref: Effect.succeed(Effect.void),
-      }),
-    ),
-  );
+// Keys absent from `keys` read as missing; `unreadable` ones fail as a blocked registry does.
+const registry = (keys: ReadonlyArray<string>, unreadable: ReadonlyArray<string> = []) =>
+  WindowsRegistry.of({
+    readMachineKey: (subkey) =>
+      unreadable.includes(subkey)
+        ? Effect.fail(new WindowsRegistryError({ code: 5 }))
+        : Effect.succeed(keys.includes(subkey) ? { values: [], subkeys: [] } : undefined),
+  });
 
 const isAvailable = (
   policy?: Parameters<typeof DesktopManagedPolicy.layerTest>[0],
   serviceKeys: ReadonlyArray<string> = [STORE_SERVICE],
+  unreadable: ReadonlyArray<string> = [],
 ) =>
   makeIsAvailable("win32", "/windows").pipe(
     Effect.provide(
@@ -619,7 +607,7 @@ const isAvailable = (
         DesktopManagedPolicy.layerTest(policy),
       ),
     ),
-    Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, registrySpawner(serviceKeys)),
+    Effect.provideService(WindowsRegistry, registry(serviceKeys, unreadable)),
   );
 
 describe("makeIsAvailable", () => {
@@ -627,6 +615,9 @@ describe("makeIsAvailable", () => {
     Effect.gen(function* () {
       assert.isFalse(yield* isAvailable(undefined, []));
       assert.isTrue(yield* isAvailable(undefined, [INBOX_SERVICE]));
+      // A registry the machine's policy will not let us read still offers WSL.
+      assert.isTrue(yield* isAvailable(undefined, [], [STORE_SERVICE, INBOX_SERVICE]));
+      assert.isTrue(yield* isAvailable(undefined, [], [INBOX_SERVICE]));
     }),
   );
 

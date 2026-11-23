@@ -63,6 +63,7 @@ import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
+import * as PlatformError from "effect/PlatformError";
 import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Fiber from "effect/Fiber";
@@ -16495,6 +16496,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           const runTurn = Effect.fnUntraced(function* (
             frames: ReadonlyArray<SDKMessage> = [],
             reportsVersion?: string,
+            beforeInit: Effect.Effect<void, PlatformError.PlatformError> = Effect.void,
           ) {
             ordinal += 1;
             yield* harness.runtime.startTurn(
@@ -16508,6 +16510,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                 providerTurnOrdinal: ordinal,
               }),
             );
+            yield* beforeInit;
             if (reportsVersion !== undefined) {
               yield* harness.offerAndWait(
                 claudeSdkFrame({
@@ -16525,20 +16528,48 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           });
 
           yield* runTurn([], "2.1.322");
-          yield* runTurn();
+          // A request that keeps the conversation's prompt cache warm for five minutes.
+          yield* runTurn([
+            claudeSdkFrame({
+              type: "stream_event",
+              event: {
+                type: "message_start",
+                message: {
+                  id: "msg_build_refresh_cache",
+                  usage: {
+                    input_tokens: 3,
+                    cache_creation_input_tokens: 10,
+                    cache_read_input_tokens: 0,
+                    output_tokens: 1,
+                    cache_creation: { ephemeral_1h_input_tokens: 0, ephemeral_5m_input_tokens: 10 },
+                  },
+                },
+              },
+              parent_tool_use_id: null,
+              session_id: WAKE_NATIVE_SESSION,
+              uuid: "00000000-0000-4000-8000-00000000b0f0",
+            }),
+          ]);
           assert.equal(harness.processQueues.length, 1);
 
           yield* install("second");
-          yield* runTurn([], "2.1.322");
+          // The build is part of the cached prefix: a new one waits for that cache to lapse.
+          yield* runTurn();
+          assert.equal(harness.processQueues.length, 1);
+          yield* TestClock.adjust("5 minutes");
+          // An update landing after the spawn, before its first `init`, is still newer.
+          yield* runTurn([], "2.1.322", install("second-b"));
           assert.equal(harness.processQueues.length, 2);
           assert.equal(harness.getOpenedOptions()?.resume, WAKE_NATIVE_SESSION);
+          yield* runTurn([], "2.1.322");
+          assert.equal(harness.processQueues.length, 3);
 
           // The relaunch fell back to the old build; retrying it every turn would never end.
           yield* publish("2.1.323");
           yield* runTurn([], "2.1.322");
-          assert.equal(harness.processQueues.length, 3);
+          assert.equal(harness.processQueues.length, 4);
           yield* runTurn();
-          assert.equal(harness.processQueues.length, 3);
+          assert.equal(harness.processQueues.length, 4);
 
           if (holds === "a background shell") {
             yield* runTurn([wakeTaskStarted]);
@@ -16561,8 +16592,38 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           yield* publish("2.1.324");
           yield* install("third");
           yield* runTurn();
-          assert.equal(harness.processQueues.length, 3);
+          assert.equal(harness.processQueues.length, 4);
           assert.isTrue(yield* harness.hasPendingBackgroundWork);
+
+          // Once the held work ends, the next turn moves to the newer build.
+          if (holds === "a turn Claude started by itself") return;
+          if (holds === "a background shell") {
+            yield* harness.offerAndWait(
+              claudeSdkFrame({
+                type: "system",
+                subtype: "background_tasks_changed",
+                tasks: [],
+                uuid: "00000000-0000-4000-8000-00000000b103",
+                session_id: WAKE_NATIVE_SESSION,
+              }),
+            );
+          } else {
+            yield* runTurn(
+              scheduleWakeupFrames({
+                toolUseId: "toolu_build_refresh_wakeup_stop",
+                uuids: [
+                  "00000000-0000-4000-8000-00000000b104",
+                  "00000000-0000-4000-8000-00000000b105",
+                ],
+                toolInput: { stop: true },
+                scheduledFor: 0,
+              }),
+            );
+            assert.equal(harness.processQueues.length, 4);
+          }
+          assert.isFalse(yield* harness.hasPendingBackgroundWork);
+          yield* runTurn();
+          assert.equal(harness.processQueues.length, 5);
         }).pipe(Effect.provideService(HostProcess.HomeDirectory, home));
       }).pipe(
         Effect.provide(
