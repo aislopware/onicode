@@ -247,6 +247,7 @@ export const resolveServerConfig = Effect.fn("config.resolveServerConfig")(funct
     readonly rejectRunningServer?: boolean;
     readonly selectAutomaticPort?: (
       preferred: number,
+      host: string | undefined,
     ) => Effect.Effect<number, NetService.NetError | CliError.UserError>;
   },
 ) {
@@ -286,22 +287,6 @@ export const resolveServerConfig = Effect.fn("config.resolveServerConfig")(funct
     () => "standalone",
   );
 
-  const port = yield* Option.match(
-    resolveOptionPrecedence(
-      normalizedFlags.port,
-      Option.fromUndefinedOr(env.port),
-      Option.fromUndefinedOr(bootstrap?.port),
-    ),
-    {
-      onSome: (value) => Effect.succeed(value),
-      onNone: () => {
-        if (mode === "desktop") {
-          return Effect.succeed(ServerConfig.DEFAULT_PORT);
-        }
-        return selectAutomaticPort(ServerConfig.DEFAULT_PORT);
-      },
-    },
-  );
   const dev = Option.getOrElse(
     resolveOptionPrecedence(normalizedFlags.dev, Option.fromUndefinedOr(env.dev)),
     () => false,
@@ -411,6 +396,22 @@ export const resolveServerConfig = Effect.fn("config.resolveServerConfig")(funct
   );
   const host = Option.getOrElse(explicitHost, () =>
     privateNetworkOnly || tailnetOnly ? "0.0.0.0" : mode === "desktop" ? "127.0.0.1" : undefined,
+  );
+  const port = yield* Option.match(
+    resolveOptionPrecedence(
+      normalizedFlags.port,
+      Option.fromUndefinedOr(env.port),
+      Option.fromUndefinedOr(bootstrap?.port),
+    ),
+    {
+      onSome: (value) => Effect.succeed(value),
+      onNone: () => {
+        if (mode === "desktop") {
+          return Effect.succeed(ServerConfig.DEFAULT_PORT);
+        }
+        return selectAutomaticPort(ServerConfig.DEFAULT_PORT, host);
+      },
+    },
   );
   const logLevel = Option.getOrElse(cliLogLevel, () => env.logLevel);
 
