@@ -3413,3 +3413,4 @@ f99808e786	take	taken; the lost store/transaction/retry-signal coverage and the 
 7180578cc9	take	taken as is
 1368854828	take	taken as is; builds on 597c8de32b (2476c53ce8)
 d63b9c4c76	take	taken as is
+f9f34aab78	take	fix(web): start without WebAssembly by initialising Words in a guard (#41361)
