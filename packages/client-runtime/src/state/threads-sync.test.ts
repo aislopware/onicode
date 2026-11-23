@@ -2687,6 +2687,7 @@ describe("EnvironmentThreads", () => {
         threadId: THREAD_ID,
         pendingRequestIds: [],
         unansweredRequestIds: [],
+        settledRequestIds: [PENDING_QUESTION.id],
       });
       expect(yield* Queue.size(announced)).toBe(0);
     }),

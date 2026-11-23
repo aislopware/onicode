@@ -297,6 +297,9 @@ it("puts dictation for a question that closed meanwhile into the thread draft", 
     threadRef.threadId,
   )([{ id: RuntimeRequestId.make("first"), status: "resolved" }]);
   expect(answer.settled()).toBe(true);
+  // A later projection that no longer lists the request, such as a deleted thread's, keeps it settled.
+  makeThreadRequestsResolvedAnnouncer(environmentId, threadRef.threadId)([]);
+  expect(answer.settled()).toBe(true);
   answer.commit("After it closed");
   expect(
     useComposerDraftStore

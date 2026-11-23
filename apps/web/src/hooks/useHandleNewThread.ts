@@ -340,12 +340,12 @@ export function createNewThreadHandler(router: AnyRouter) {
           .includes(project.environmentId);
       if (!consultProjectFile) return { envMode: envModeFor(null), applyProjectFile: () => {} };
       const cachedProjectFile = peekOniProjectFile(project.environmentId, project.workspaceRoot);
-      const projectFileRead = readOniProjectFile(project.environmentId, project.workspaceRoot, {
-        refresh: cachedProjectFile !== undefined && !cachedProjectFile.current,
-      });
       if (cachedProjectFile?.current) {
         return { envMode: envModeFor(cachedProjectFile.projectFile), applyProjectFile: () => {} };
       }
+      const projectFileRead = readOniProjectFile(project.environmentId, project.workspaceRoot, {
+        refresh: cachedProjectFile !== undefined,
+      });
       // A copy that is refetching or stale opens the draft, and the fresh read still lands.
       const envMode = envModeFor(cachedProjectFile?.projectFile ?? null);
       const applyProjectFile = (draftId: DraftId) => {

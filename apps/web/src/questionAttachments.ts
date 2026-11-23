@@ -312,9 +312,11 @@ export function returnLateAnswerToThreadDraft(
 
 onThreadRequestsResolved(
   ({ environmentId, threadId, pendingRequestIds, unansweredRequestIds, settledRequestIds }) => {
+    // Settled is one-way, and a later projection may no longer list an old request.
+    const settledKey = scopedThreadKey(scopeThreadRef(environmentId, threadId));
     settledRequestsByThread.set(
-      scopedThreadKey(scopeThreadRef(environmentId, threadId)),
-      new Set(settledRequestIds),
+      settledKey,
+      new Set([...(settledRequestsByThread.get(settledKey) ?? []), ...settledRequestIds]),
     );
     const unrestored = returnUnsentAnswersToThreadDraft(
       environmentId,
