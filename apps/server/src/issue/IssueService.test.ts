@@ -411,6 +411,23 @@ describe("IssueService", () => {
       }),
   );
 
+  it.effect("names the host when no project is on a GitHub issue URL's host", () =>
+    Effect.gen(function* () {
+      const service = yield* makeService({
+        projects: [project({ id: "folder" })],
+        trackers: [fakeTracker()],
+      });
+      const failure = yield* Effect.flip(
+        service.resolveUrl("https://github.com/acme/web/issues/1", "folder" as ProjectId),
+      );
+      expect(failure).toMatchObject({
+        _tag: "IssueOperationError",
+        operation: "resolveUrl",
+        detail: expect.stringContaining("github.com"),
+      });
+    }),
+  );
+
   it.effect("resolves both legacy Azure work item URLs through the bound project", () =>
     Effect.gen(function* () {
       const tracker = IssueTrackerKind.make("azure-devops");

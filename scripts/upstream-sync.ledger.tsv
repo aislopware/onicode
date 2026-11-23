@@ -3491,3 +3491,4 @@ a9bec41729	take	taken; test CONFLICT: upstream's JSZip tests adapted to Onicode'
 fa2ee196b5	take	taken with adaptation; CONFLICT: kept Onicode's threadTitleText row title; row estimate 67->75px and chunk dividers border-border to match Onicode's taller settings rows and SettingsGroup divider colour
 6aad800ecf	take	adapted: DocumentText sidecar VERSION 10 -> 11 so EPUB text cached with a skipped query-href chapter is extracted again
 0ea0db39e2	take	taken as is
+7f0e736cdb	take	adapted upstream's test: asserts the IssueOperationError and host instead of only that it is not tracker-unsupported
