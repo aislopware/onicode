@@ -418,6 +418,7 @@ export function nextClaudePromptCache(
 
 export function claudeProviderTurnTokenUsage(
   usage: {
+    readonly iterations?: SDKAssistantMessage["message"]["usage"]["iterations"] | undefined;
     readonly input_tokens?: number | null | undefined;
     readonly cache_creation_input_tokens?: number | null | undefined;
     readonly cache_read_input_tokens?: number | null | undefined;
@@ -429,9 +430,11 @@ export function claudeProviderTurnTokenUsage(
   requestedAt?: DateTime.Utc,
   knownPromptCache?: ClaudePromptCache,
 ) {
-  const inputTokens = claudeMessageInputTokens(usage);
-  const outputTokens = claudeTokenCount(usage.output_tokens) ?? 0;
-  const cachedInputTokens = claudeTokenCount(usage.cache_read_input_tokens) ?? 0;
+  // After an advisor call, the response totals can count the same context twice.
+  const sample = usage.iterations?.findLast((iteration) => iteration.type === "message") ?? usage;
+  const inputTokens = claudeMessageInputTokens(sample);
+  const outputTokens = claudeTokenCount(sample.output_tokens) ?? 0;
+  const cachedInputTokens = claudeTokenCount(sample.cache_read_input_tokens) ?? 0;
   // A read reports no TTL; the one this process saw the cache written with holds for the prefix
   // it read, even while the request writes a shorter suffix.
   const writtenTtlMs = claudePromptCacheTtlMs(usage.cache_creation);
@@ -468,15 +471,11 @@ type ClaudeMessageUsage = Parameters<typeof claudeProviderTurnTokenUsage>[0];
 // message_delta usage is per-message cumulative; null or absent fields retain message_start values and zeros replace them.
 function mergeClaudeStreamUsage(
   current: ClaudeMessageUsage,
-  delta: {
-    readonly input_tokens?: number | null | undefined;
-    readonly cache_creation_input_tokens?: number | null | undefined;
-    readonly cache_read_input_tokens?: number | null | undefined;
-    readonly output_tokens?: number | null | undefined;
-  },
+  delta: ClaudeMessageUsage,
 ): ClaudeMessageUsage {
   return {
     ...current,
+    iterations: delta.iterations ?? current.iterations,
     input_tokens:
       claudeTokenCount(delta.input_tokens) ?? claudeTokenCount(current.input_tokens) ?? 0,
     cache_creation_input_tokens:
@@ -7275,8 +7274,8 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                   context.streamUsage?.requestedAt,
                   knownPromptCache,
                 );
-          if (typeof usage !== "number") {
-            if (claudeMessageInputTokens(usage) <= 0) return;
+          if (typeof usage !== "number" && "inputTokens" in tokenUsage) {
+            if (tokenUsage.inputTokens <= 0) return;
             context.compactionTokens = undefined;
             const requestedAt = context.streamUsage?.requestedAt;
             if (requestedAt !== undefined) {
