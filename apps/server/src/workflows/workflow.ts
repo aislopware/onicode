@@ -13,7 +13,7 @@ import * as SchemaAST from "effect/SchemaAST";
 import * as SqlClient from "effect/sql/SqlClient";
 import { Activity, DurableClock, DurableDeferred, Workflow, WorkflowEngine } from "effect/workflow";
 
-import { engineTag, text } from "./labels.ts";
+import { detailCut, engineTag, text } from "./labels.ts";
 import { checkOptions, durationOf } from "./options.ts";
 import {
   EngineLink,
@@ -515,7 +515,7 @@ const waitClaimed = Effect.fnUntraced(function* <A, I>(
         name: `wait/${name}/again/${again}`,
         execute: Effect.gen(function* () {
           yield* run.store.waitReopened(run.runId, name, token);
-          yield* run.store.stepDetail(run.runId, name, problem.slice(0, 2000));
+          yield* run.store.stepDetail(run.runId, name, detailCut(problem));
           yield* deliverEarly(next, token);
         }),
       });

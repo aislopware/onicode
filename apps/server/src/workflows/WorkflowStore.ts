@@ -15,6 +15,8 @@ import * as PubSub from "effect/PubSub";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 
+import { detailCut } from "./labels.ts";
+
 export { WorkflowRun, WorkflowRunStatus, WorkflowStep };
 
 /** Where a signal goes: one wait of one run, or whichever run of a workflow waits on a channel. */
@@ -419,7 +421,7 @@ export const make = Effect.gen(function* () {
     }),
     runPaused: Effect.fn("WorkflowStore.runPaused")(function* (runId, detail, held) {
       const at = yield* now;
-      const reason = detail.slice(0, 2000);
+      const reason = detailCut(detail);
       yield* sql`
         UPDATE workflow_runs
         SET status = 'paused', detail = ${reason}, pauses = pauses + 1,
@@ -496,7 +498,7 @@ export const make = Effect.gen(function* () {
           Effect.andThen(
             sql`
               UPDATE workflow_steps
-              SET status = ${status}, detail = ${detail === null ? null : detail.slice(0, 2000)}, ended_at = ${at}
+              SET status = ${status}, detail = ${detail === null ? null : detailCut(detail)}, ended_at = ${at}
               WHERE run_id = ${runId} AND name = ${name}
             `,
             // A step that finished is progress: the next pause is the first in a row again.
