@@ -58,6 +58,8 @@ interface LiveEntry {
   readonly entry: ProviderInstanceConfig;
   readonly secrets: InstanceSecrets;
   readonly setPresentation: (entry: ProviderInstanceConfig) => void;
+  /** The host PATH it was built on, where its driver found its CLI or did not. */
+  readonly hostPath: string | undefined;
 }
 
 interface RegistryState {
@@ -257,6 +259,7 @@ const buildEntry = Effect.fn("ProviderInstanceRegistry.buildEntry")(function* <R
   readonly driversById: ReadonlyMap<ProviderDriverKind, AnyProviderDriver<R>>;
   readonly blockedReason: BlockedReason;
   readonly parentScope: Scope.Scope;
+  readonly readHostPath: () => string | undefined;
   readonly instanceId: ProviderInstanceId;
   readonly rawInstanceId: string;
   readonly entry: ProviderInstanceConfig;
@@ -275,6 +278,7 @@ const buildEntry = Effect.fn("ProviderInstanceRegistry.buildEntry")(function* <R
   const {
     driversById,
     parentScope,
+    readHostPath,
     instanceId,
     rawInstanceId,
     entry,
@@ -369,6 +373,7 @@ const buildEntry = Effect.fn("ProviderInstanceRegistry.buildEntry")(function* <R
   }
 
   const childScope = yield* Scope.fork(parentScope);
+  const hostPath = readHostPath();
 
   const createResult = yield* driver
     .create({
@@ -405,7 +410,7 @@ const buildEntry = Effect.fn("ProviderInstanceRegistry.buildEntry")(function* <R
   const { instance, setPresentation } = withLivePresentation(createResult.success, entry);
   return {
     kind: "live" as const,
-    live: { instance, scope: childScope, entry, secrets, setPresentation },
+    live: { instance, scope: childScope, entry, secrets, setPresentation, hostPath },
   };
 });
 
@@ -414,13 +419,14 @@ const makeReconcile = <R>(input: {
   readonly driversById: ReadonlyMap<ProviderDriverKind, AnyProviderDriver<R>>;
   readonly blockedReason: BlockedReason;
   readonly parentScope: Scope.Scope;
+  readonly readHostPath: () => string | undefined;
 }): ((
   configMap: ProviderInstanceConfigMap,
   rebuild?: ReadonlySet<ProviderInstanceId>,
   deferSecrets?: boolean,
   carried?: ReadonlyMap<ProviderInstanceId, InstanceSecrets>,
 ) => Effect.Effect<void, never, R | SecretResolver.SecretResolver>) => {
-  const { state, driversById, blockedReason, parentScope } = input;
+  const { state, driversById, blockedReason, parentScope, readHostPath } = input;
   return (configMap, rebuild = new Set(), deferSecrets = false, carried = new Map()) =>
     Effect.gen(function* () {
       const previousEntries = yield* Ref.get(state.entries);
@@ -518,6 +524,7 @@ const makeReconcile = <R>(input: {
           driversById,
           blockedReason,
           parentScope,
+          readHostPath,
           instanceId,
           rawInstanceId,
           entry,
@@ -603,16 +610,17 @@ export const makeProviderInstanceRegistry = Effect.fn(
   yield* Effect.addFinalizer(() => PubSub.shutdown(changes));
 
   const state: RegistryState = { entries, unavailable, secretsUnreadable, changes };
+  const hostEnvironment = yield* HostProcess.Environment;
+  const readHostPath = () => hostEnvironment.PATH ?? hostEnvironment.Path ?? hostEnvironment.path;
   const reconcileWithR = makeReconcile({
     state,
     driversById,
     blockedReason: input.blockedReason ?? (() => undefined),
     parentScope,
+    readHostPath,
   });
   const configMapRef = yield* Ref.make(input.configMap);
   const semaphore = yield* Semaphore.make(1);
-  const hostEnvironment = yield* HostProcess.Environment;
-  const readHostPath = () => hostEnvironment.PATH ?? hostEnvironment.Path ?? hostEnvironment.path;
   // Read before the first build, so a PATH that changes during a build still counts as a change.
   const initialBuild = yield* Deferred.make<void>();
   yield* Deferred.succeed(initialBuild, undefined);
@@ -727,7 +735,10 @@ export const makeProviderInstanceRegistry = Effect.fn(
             .withPermits(1)(
               Effect.gen(function* () {
                 const { instanceIds, complete } = yield* select;
-                yield* reconcileWithR(yield* Ref.get(configMapRef), new Set(instanceIds));
+                // An incomplete selection is made again, and names what it already rebuilt.
+                const live = yield* Ref.get(entries);
+                const stale = instanceIds.filter((id) => live.get(id)?.hostPath !== hostPath);
+                yield* reconcileWithR(yield* Ref.get(configMapRef), new Set(stale));
                 return complete;
               }),
             )

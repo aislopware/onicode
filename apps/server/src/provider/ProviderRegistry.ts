@@ -818,9 +818,20 @@ export const layer = Layer.effect(
       }
       return { instanceIds, complete };
     });
-    const refreshHostPath = readHostPath.pipe(
-      Effect.andThen(instanceRegistryMutator.rebuildOnHostPathChange(missingInstances)),
-    );
+    const rebuildMissing = instanceRegistryMutator.rebuildOnHostPathChange(missingInstances);
+    const refreshHostPath = readHostPath.pipe(Effect.andThen(rebuildMissing));
+    // A rebuild replaces instances, so a pass probes live ones it has not probed yet.
+    const probeUnprobed = Effect.fn("probeUnprobed")(function* (probed: Set<ProviderInstance>) {
+      yield* syncLiveSourcesAndContinue;
+      const unprobed = [...(yield* Ref.get(liveSubsRef)).values()].filter(
+        (instance) => !probed.has(instance),
+      );
+      for (const instance of unprobed) probed.add(instance);
+      yield* Effect.forEach(unprobed, (instance) => refreshOneSource(instance), {
+        concurrency: "unbounded",
+        discard: true,
+      });
+    });
     const refreshAllInFlightRef = yield* Ref.make<Option.Option<RefreshAllCompletion>>(
       Option.none(),
     );
@@ -851,12 +862,11 @@ export const layer = Layer.effect(
         yield* manifestService.current.pipe(
           Effect.flatMap(({ updatedAt }) =>
             Effect.gen(function* () {
-              yield* syncLiveSourcesAndContinue;
-              const probed = new Set((yield* Ref.get(liveSubsRef)).values());
-              yield* Effect.forEach(probed, (instance) => refreshOneSource(instance), {
-                concurrency: "unbounded",
-                discard: true,
-              });
+              const probed = new Set<ProviderInstance>();
+              yield* probeUnprobed(probed);
+              // The pass finished the first checks that a rebuild may have left for later.
+              yield* rebuildMissing;
+              yield* probeUnprobed(probed);
               const providers = yield* Ref.get(providersRef);
               yield* Ref.set(probedManifestUpdatedAt, updatedAt);
               return { providers, probed };
@@ -871,18 +881,12 @@ export const layer = Layer.effect(
         );
       }
       const pass = yield* Deferred.await(claimed.completion);
-      // The pass finished the first checks that the rebuild above left for later.
-      yield* refreshHostPath;
-      // A rebuild since the pass began replaced instances it probed, and those results are dropped.
-      const unprobed = (yield* instanceRegistry.listInstances).filter(
+      // A rebuild by a caller that joined late may have replaced instances the pass probed.
+      const replaced = (yield* instanceRegistry.listInstances).some(
         (instance) => !pass.probed.has(instance),
       );
-      if (unprobed.length === 0) return pass.providers;
-      yield* syncLiveSourcesAndContinue;
-      yield* Effect.forEach(unprobed, (instance) => refreshOneSource(instance), {
-        concurrency: "unbounded",
-        discard: true,
-      });
+      if (!replaced) return pass.providers;
+      yield* probeUnprobed(new Set(pass.probed));
       return yield* Ref.get(providersRef);
     });
 
@@ -904,7 +908,7 @@ export const layer = Layer.effect(
       }
       const providers = yield* refreshOneSource(instance);
       // Its first check may be what a rebuild was waiting for.
-      yield* refreshHostPath;
+      yield* rebuildMissing;
       const current = yield* instanceRegistry.getInstance(instanceId);
       if (current === undefined || current === instance) return providers;
       yield* syncLiveSourcesAndContinue;

@@ -2920,6 +2920,10 @@ it.layer(
           expect(paths).toEqual(
             mode.endsWith("missing") ? ["/early/bin", "/early/bin:/late/bin"] : ["/early/bin"],
           );
+          // Every instance is probed once, including one a rebuild replaced mid-pass.
+          expect(probes).toBe(
+            mode === "in-flight missing" ? 3 : mode === "first check installed" ? 1 : 2,
+          );
         }).pipe(
           Effect.provide(
             ProviderRegistry.layer.pipe(
