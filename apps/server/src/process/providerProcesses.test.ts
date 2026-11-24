@@ -13,8 +13,11 @@ import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Stream from "effect/Stream";
+import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import * as ServerConfig from "../config.ts";
+import * as ProcessLauncher from "./ProcessLauncher.ts";
 import * as ProviderProcesses from "./providerProcesses.ts";
 
 // Real child processes stand in for servers and CLIs; only PIDs captured at spawn are signalled.
@@ -121,6 +124,44 @@ describe.runIf(HostProcess.Platform.defaultValue() === "linux")("ProviderProcess
         ServerConfig.layerTest(process.cwd(), { prefix: "oni-restart-ownership-" }).pipe(
           Layer.provideMerge(NodeServices.layer),
         ),
+      ),
+    ),
+  );
+
+  it.live("registers a CLI spawned through the process launcher, but not the CLI's children", () =>
+    Effect.gen(function* () {
+      const { register } = Context.get(
+        yield* Layer.build(ProviderProcesses.layer),
+        ProviderProcesses.ProviderProcesses,
+      );
+      assert(register !== undefined);
+      const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+      const cli = yield* spawner.spawn(
+        ChildProcess.make("sh", ["-c", "sleep 1000 & echo $!; wait"]),
+      );
+      const child = Number(
+        yield* cli.stdout.pipe(
+          Stream.decodeText(),
+          Stream.splitLines,
+          Stream.take(1),
+          Stream.mkString,
+        ),
+      );
+      const parent = AcpSessionRuntime.makePosixProcessTreeController("linux").identity(
+        cli.pid,
+      )?.ppid;
+      expect(parent, "the launcher spawned the CLI").not.toBe(process.pid);
+
+      register(cli.pid)();
+      expect(() => register(child)).toThrow("Cannot identify spawned provider");
+    }).pipe(
+      Effect.scoped,
+      Effect.provideService(HostProcess.Platform, "linux"),
+      Effect.provide(
+        Layer.mergeAll(
+          ServerConfig.layerTest(process.cwd(), { prefix: "oni-launcher-ownership-" }),
+          ProcessLauncher.layerServer,
+        ).pipe(Layer.provideMerge(NodeServices.layer)),
       ),
     ),
   );

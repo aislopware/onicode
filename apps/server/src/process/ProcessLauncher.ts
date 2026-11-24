@@ -16,7 +16,7 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as HostProcess from "@onicode/shared/HostProcess";
 
 import * as NonBlockingSpawner from "./NonBlockingSpawner.ts";
-import type { LauncherEvent, LauncherSpawnRequest } from "./processLauncherWorker.ts";
+import type { LauncherEvent, LauncherRequest } from "./processLauncherWorker.ts";
 
 // A launcher that misses either is treated as hung; neither happens to a healthy one.
 const READY_TIMEOUT = "10 seconds";
@@ -39,14 +39,19 @@ class HostedChild
   started = false;
   /** No longer awaited: its spawn failed, timed out or it exited. */
   settled = false;
+  readonly id: number;
   readonly launcher: Launcher;
   /** The fds requested as pipes, each of which must arrive before the child counts as started. */
   readonly pipes: ReadonlyArray<number>;
+  /** Leads a process group of its own, which is what killing it signals. */
+  readonly groupLeader: boolean;
 
-  constructor(launcher: Launcher, stdio: NodeChildProcess.SpawnOptions["stdio"]) {
+  constructor(id: number, launcher: Launcher, options: NodeChildProcess.SpawnOptions) {
     super();
+    this.id = id;
     this.launcher = launcher;
-    this.pipes = stdioModes(stdio).flatMap((mode, fd) => (isPipe(mode) ? [fd] : []));
+    this.pipes = stdioModes(options.stdio).flatMap((mode, fd) => (isPipe(mode) ? [fd] : []));
+    this.groupLeader = options.detached === true;
   }
 
   kill(signal: NodeJS.Signals | number = "SIGTERM"): boolean {
@@ -60,13 +65,23 @@ class HostedChild
   }
 
   ref(): void {
-    this.referenced = true;
-    syncRef(this.launcher);
+    this.setReferenced(true);
   }
 
   unref(): void {
-    this.referenced = false;
+    this.setReferenced(false);
+  }
+
+  // An unreferenced child outlives the server, as a natively spawned one does, so neither the
+  // server nor the launcher kills it when they stop.
+  private setReferenced(referenced: boolean): void {
+    if (this.referenced === referenced) return;
+    this.referenced = referenced;
     syncRef(this.launcher);
+    const request: LauncherRequest = { type: "ref", id: this.id, referenced };
+    if (!this.launcher.closed && this.launcher.worker.connected) {
+      this.launcher.worker.send(request, () => {});
+    }
   }
 
   fail(error: Error): void {
@@ -122,13 +137,20 @@ const syncRef = (launcher: Launcher) => {
   }
 };
 
-const killGroup = (pid: number) => {
+const killChild = (child: HostedChild) => {
+  if (child.pid === undefined) return;
   try {
-    process.kill(-pid, "SIGKILL");
+    process.kill(child.groupLeader ? -child.pid : child.pid, "SIGKILL");
   } catch {
-    // The group is already gone.
+    // Already gone.
   }
 };
+
+// Pids of this server's launchers, whose children the server spawned.
+const launcherPids = new Set<number>();
+
+/** Whether a process with this parent was spawned by this server, directly or through its launcher. */
+export const isServerChild = (ppid: number) => ppid === process.pid || launcherPids.has(ppid);
 
 const launcherArguments = Effect.fn("ProcessLauncher.launcherArguments")(function* () {
   // A single executable has no sibling script, so it hosts the launcher as a hidden subcommand.
@@ -174,8 +196,8 @@ export const make = Effect.fn("ProcessLauncher.make")(function* (
       hung ? "The process launcher did not respond." : "The process launcher exited.",
     );
     for (const child of launcher.children.values()) {
-      if (child.settled) continue;
-      if (child.pid !== undefined) killGroup(child.pid);
+      if (child.settled || (child.started && !child.referenced)) continue;
+      killChild(child);
       if (child.started) {
         child.exit(null, "SIGKILL");
       } else {
@@ -223,7 +245,7 @@ export const make = Effect.fn("ProcessLauncher.make")(function* (
       case "spawn":
         // A lost handle would otherwise read as a command that printed nothing.
         if (child.pipes.some((fd) => child.stdio[fd] == null)) {
-          if (child.pid !== undefined) killGroup(child.pid);
+          killChild(child);
           for (const stream of child.stdio) stream?.destroy();
           child.fail(new Error("The process launcher did not hand over the command's pipes."));
           break;
@@ -276,9 +298,14 @@ export const make = Effect.fn("ProcessLauncher.make")(function* (
     worker.on("message", (event: LauncherEvent, socket: NodeNet.Socket | undefined) =>
       onEvent(launcher, event, socket),
     );
+    const pid = worker.pid;
+    if (pid !== undefined) launcherPids.add(pid);
     worker.on("error", () => close(launcher));
     worker.once("disconnect", () => close(launcher));
-    worker.once("exit", () => close(launcher));
+    worker.once("exit", () => {
+      if (pid !== undefined) launcherPids.delete(pid);
+      close(launcher);
+    });
     current = launcher;
     return launcher;
   };
@@ -299,10 +326,10 @@ export const make = Effect.fn("ProcessLauncher.make")(function* (
       return NodeChildProcess.spawn(command, [...commandArgs], options);
     }
     const id = ++nextId;
-    const child = new HostedChild(launcher, options.stdio);
+    const child = new HostedChild(id, launcher, options);
     launcher.children.set(id, child);
     syncRef(launcher);
-    const request: LauncherSpawnRequest = {
+    const request: LauncherRequest = {
       type: "spawn",
       id,
       command,
