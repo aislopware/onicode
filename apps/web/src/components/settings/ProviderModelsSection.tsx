@@ -19,6 +19,7 @@ import { Input } from "../ui/input";
 import { Switch } from "../ui/switch";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { CustomModelEditor } from "./CustomModelEditor";
+import { clearSearchOnEscape } from "./searchFieldEscape";
 
 const CUSTOM_MODEL_PLACEHOLDER_BY_KIND: Partial<Record<ProviderDriverKind, string>> = {
   [ProviderDriverKind.make("codex")]: "gpt-6.7-codex-ultra-preview",
@@ -386,6 +387,7 @@ export function ProviderModelsSection({
           <Input
             value={filter}
             onChange={(event) => setFilter(event.target.value)}
+            onKeyDown={(event) => clearSearchOnEscape(event, filter, () => setFilter(""))}
             placeholder={gt("Filter models")}
             size="sm"
             className="w-56 max-w-full"
