@@ -68,7 +68,7 @@ describe("installFileEditorDismissal", () => {
     let editor: Editor<"file" | "file-diff", undefined, undefined> | undefined;
     const createEditor: EditorFactory<undefined, undefined> = (...args) =>
       (editor = new Editor(...args));
-    await preloadHighlighter({ themes: Object.values(DEFAULT_THEMES), langs: ["typescript"] });
+    await using _highlighter = await loadSharedHighlighter(["typescript"]);
     await using screen = await render(
       <div data-testid="file-surface">
         <EditProvider createEditor={createEditor}>
