@@ -3671,3 +3671,4 @@ bc138a77d1	take	fix(mobile): a local preview link opens only http and https addr
 97b8c9c7c2	take	fix(mobile): a typed pairing code goes to the address shown in the form
 f89883c568	take	fix(web): a long commit name no longer runs under the PR code tab's icons; kept Onicode's solid toolbar border
 d00aaac85f	take	fix(antigravity): a tool's own arguments no longer mark it as an Onicode MCP call; kept Onicode's tool-returning antigravityOniMcpTool (the read-only sandbox branch needs the tool name)
+bba3918e3c	take	fix(server): saving project scripts requires task operation scope
