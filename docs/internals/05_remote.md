@@ -87,7 +87,8 @@ environment.
   derived forks, subagents, and spawned threads) carry an immutable `linkOrigin` stamp enforced in
   shared access rules ([`mcp/linkOrigin.ts`](../../apps/server/src/mcp/linkOrigin.ts)). Below full
   access, linked work can mutate only threads with the same origin, cannot touch projects, settings,
-  scheduled tasks, or further links, and skips project setup scripts. Full-access links are not
+  scheduled tasks, or further links, and skips project setup scripts and worktree layout commands
+  (a project that declares a layout gives such a thread no worktree). Full-access links are not
   fenced because their agents already run as the receiving OS user.
 - **A descriptor's environment id filters addresses; it does not prove identity.** Only addresses
   from the user's client count as a machine's, never a loopback one, and an address alone never
