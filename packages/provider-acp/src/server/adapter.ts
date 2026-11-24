@@ -902,6 +902,8 @@ export interface AcpAdapterV2SubagentUpdate {
   readonly childSessionId: string | null;
   readonly result: string | null;
   readonly suppressNormalTool?: boolean;
+  /** The parent keeps working while it runs; once reported, it sticks. */
+  readonly background?: boolean;
 }
 
 export interface AcpAdapterV2Options {
@@ -2111,6 +2113,7 @@ export function acpCompletedTurnShouldTerminalizeTool(
 
 interface ActiveAcpSubagent {
   task: OrchestrationV2Subagent;
+  background?: true;
   readonly childThreadId: ThreadId;
   readonly childRootNodeId: OrchestrationV2ExecutionNode["id"];
   readonly turnItemId: OrchestrationV2TurnItem["id"];
@@ -4156,6 +4159,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             toolSessionIds: new Map(),
           };
           subagent.task = task;
+          if (update.background === true) subagent.background = true;
           context.subagents.set(nativeTaskId, subagent);
 
           if (existing === undefined) {
@@ -4334,6 +4338,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
               childThreadId,
               prompt: subagent.task.prompt,
               result,
+              ...(subagent.background ? { background: true } : {}),
             },
           });
           if (acpSubagentStatusIsTerminal(taskStatus)) {
@@ -7344,6 +7349,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
               childThreadId: subagent.childThreadId,
               prompt: subagent.task.prompt,
               result,
+              ...(subagent.background ? { background: true } : {}),
             },
           });
           if (acpSubagentStatusIsTerminal(status)) {

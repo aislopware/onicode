@@ -1612,6 +1612,8 @@ interface CodexSubagentThreadContext {
   readonly turnItemId: OrchestrationV2TurnItem["id"];
   readonly turnItemOrdinal: number;
   task: OrchestrationV2Subagent;
+  // Codex children run beside their parent; only a `wait` call parks the parent on them.
+  background: boolean;
 }
 
 const approvalOwnerCodexTurn = (
@@ -3399,7 +3401,10 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             const completedAt = isOrchestrationV2WorkActive(status)
               ? null
               : (prior.completedAt ?? input.completedAt ?? now);
-            if (input.reopen) input.subagent.cardContext = input.subagent.parentContext;
+            if (input.reopen) {
+              input.subagent.cardContext = input.subagent.parentContext;
+              input.subagent.background = true;
+            }
             const task = {
               ...prior,
               status,
@@ -3450,6 +3455,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 prompt: task.prompt,
                 ...(task.progress === undefined ? {} : { progress: task.progress }),
                 result: task.result,
+                ...(input.subagent.background ? { background: true } : {}),
               },
             });
           });
@@ -3831,6 +3837,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               }),
               turnItemOrdinal,
               task,
+              background: true,
             } satisfies CodexSubagentThreadContext;
 
             yield* Ref.update(subagentThreads, (current) => {
@@ -4078,6 +4085,28 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 status,
                 ...(state.message === null ? {} : { result: state.message }),
               });
+            }
+          });
+
+        const setSubagentsAwaited =
+          /* Provider events include streaming deltas; avoid a span for each update. */
+          Effect.fnUntraced(function* (input: {
+            readonly receiverThreadIds: ReadonlyArray<string>;
+            readonly awaited: boolean;
+            // Children the finished call reports; their state update re-emits them.
+            readonly reported?: Readonly<Record<string, unknown>>;
+          }) {
+            const subagents = yield* Ref.get(subagentThreads);
+            for (const nativeThreadId of input.receiverThreadIds) {
+              const subagent = subagents.get(nativeThreadId);
+              if (subagent === undefined || subagent.background !== input.awaited) continue;
+              subagent.background = !input.awaited;
+              if (
+                isOrchestrationV2WorkActive(subagent.task.status) &&
+                (input.reported === undefined || !Object.hasOwn(input.reported, nativeThreadId))
+              ) {
+                yield* emitSubagentTaskUpdate({ subagent, status: subagent.task.status });
+              }
             }
           });
 
@@ -5910,6 +5939,13 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               return;
             }
 
+            if (payload.item.type === "collabAgentToolCall" && payload.item.tool === "wait") {
+              yield* setSubagentsAwaited({
+                receiverThreadIds: payload.item.receiverThreadIds,
+                awaited: true,
+              });
+            }
+
             yield* completeProviderRetry(context, yield* DateTime.now);
             if (payload.item.type !== "reasoning") {
               yield* resolveItemPosition(
@@ -6054,6 +6090,13 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               return;
             }
             if (payload.item.type === "collabAgentToolCall" && payload.item.tool !== "spawnAgent") {
+              if (payload.item.tool === "wait") {
+                yield* setSubagentsAwaited({
+                  receiverThreadIds: payload.item.receiverThreadIds,
+                  awaited: false,
+                  reported: payload.item.agentsStates,
+                });
+              }
               yield* updateSubagentStates({ item: payload.item });
               return;
             }
@@ -8192,6 +8235,12 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
           },
           (effect, turnInput) =>
             effect.pipe(
+              // A failed or stopped start never opens the turn that would clear its MCP startup.
+              Effect.onError(() =>
+                Effect.flatMap(getNativeThreadId(turnInput.providerThread), (threadId) =>
+                  startingMcpServers.delete(threadId) ? reportStartupPhase() : Effect.void,
+                ).pipe(Effect.ignore),
+              ),
               Effect.ensuring(
                 Effect.flatMap(getNativeThreadId(turnInput.providerThread), (threadId) =>
                   Ref.update(pendingRootTurns, (current) => {

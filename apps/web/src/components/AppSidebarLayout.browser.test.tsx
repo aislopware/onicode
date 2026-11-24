@@ -1,7 +1,7 @@
 import { page, userEvent } from "vite-plus/test/browser";
 import { describe, expect, it, vi } from "vite-plus/test";
 
-import { render } from "../../test/render";
+import { act, render } from "../../test/render";
 
 vi.mock(import("../state/server"), async (original) => {
   const actual = await original();
@@ -38,5 +38,34 @@ describe("sidebar toggle shortcut", () => {
     await userEvent.click(screen.getByRole("button", { name: "Outside" }));
     await userEvent.keyboard("{Control>}b{/Control}");
     await vi.waitFor(() => expect(wrapper.getAttribute("data-sidebar-state")).toBe("collapsed"));
+  });
+});
+
+describe("pull requests Escape", () => {
+  it("leaves the page only for an Escape no IME composition owns", async () => {
+    await using screen = await render(
+      <AppSidebarLayout>
+        <textarea aria-label="Review comment" />
+      </AppSidebarLayout>,
+      { router: "/pull-requests" },
+    );
+    const comment = screen.getByRole("textbox", { name: "Review comment" });
+    await userEvent.click(comment);
+    // Safari ends the composition just before the confirming keydown, reporting only keyCode 229.
+    for (const [init, leaves] of [
+      [{ isComposing: true }, false],
+      [{ keyCode: 229 }, false],
+      [{}, true],
+    ] as const) {
+      const event = new KeyboardEvent("keydown", {
+        key: "Escape",
+        ...init,
+        bubbles: true,
+        cancelable: true,
+      });
+      await act(() => comment.element().dispatchEvent(event));
+      expect(event.defaultPrevented, JSON.stringify(init)).toBe(leaves);
+    }
+    await vi.waitFor(() => expect(screen.router?.state.location.pathname).toBe("/"));
   });
 });

@@ -580,10 +580,12 @@ describe("ClaudeAdapterV2 runtime query policy", () => {
     const sdkAnswers: NonNullable<AskUserQuestionInput["answers"]> =
       ClaudeAdapterV2.claudeSdkUserInputAnswers({
         "Which approach?": ["Simple", "Safe"],
+        "Which extras?": [],
         "Deploy now?": "Yes",
       });
     assert.deepEqual(sdkAnswers, {
       "Which approach?": "Simple, Safe",
+      "Which extras?": "None selected",
       "Deploy now?": "Yes",
     });
     assert.isTrue(
@@ -5144,7 +5146,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           user_message_uuids: [harness.promptUuid(0)],
         }),
       );
-      const startSubagent = (name: string, uuid: string) =>
+      const startSubagent = (name: string, uuid: string, isBackgrounded = false) =>
         harness.offerAndWait(
           claudeSdkFrame({
             type: "system",
@@ -5153,14 +5155,32 @@ describe("ClaudeAdapterV2 background wake turns", () => {
             tool_use_id: `${name}-tool`,
             description: "Audit",
             subagent_type: "general-purpose",
-            is_backgrounded: false,
+            is_backgrounded: isBackgrounded,
             task_type: "local_agent",
             prompt: "Audit.",
             uuid,
             session_id: WAKE_NATIVE_SESSION,
           }),
         );
+      const subagentBackground = (taskId: string) => {
+        const event = harness.events.findLast(
+          (candidate) =>
+            candidate.type === "turn_item.updated" &&
+            candidate.turnItem.type === "subagent" &&
+            candidate.turnItem.nativeItemRef?.nativeId === taskId,
+        );
+        return event?.type === "turn_item.updated" && event.turnItem.type === "subagent"
+          ? event.turnItem.background
+          : "missing";
+      };
+      // Events reach the harness in order, so a later row being seen means earlier ones were.
+      const seen = (taskId: string) =>
+        harness.until(() => subagentBackground(taskId) !== "missing");
       yield* startSubagent("steer-foreground", "00000000-0000-4000-8000-000000039528");
+      yield* startSubagent("launched-background", "00000000-0000-4000-8000-000000039531", true);
+      yield* seen("launched-background-task");
+      assert.strictEqual(subagentBackground("steer-foreground-task"), undefined);
+      assert.strictEqual(subagentBackground("launched-background-task"), true);
       const steer = (createdBy: "agent" | "user") =>
         harness.runtime.steerTurn({
           threadId: harness.threadId,
@@ -5183,6 +5203,8 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       yield* steer("agent");
       yield* startSubagent("steer-after-notice", "00000000-0000-4000-8000-000000039529");
       assert.strictEqual(yield* Queue.size(moved), 0);
+      yield* seen("steer-after-notice-task");
+      assert.strictEqual(subagentBackground("steer-after-notice-task"), undefined);
       yield* steer("user");
       assert.deepEqual(yield* Queue.takeAll(moved), [
         "steer-foreground-tool",
@@ -5191,6 +5213,10 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       // Claude starts each subagent as its tool call finishes streaming, which can be after the steer.
       yield* startSubagent("steer-late", "00000000-0000-4000-8000-000000039530");
       assert.strictEqual(yield* Queue.take(moved), "steer-late-tool");
+      // The parent reads the steer while they run, so it no longer waits on them.
+      yield* seen("steer-late-task");
+      assert.strictEqual(subagentBackground("steer-foreground-task"), true);
+      assert.strictEqual(subagentBackground("steer-after-notice-task"), true);
       assert.strictEqual(yield* Queue.size(moved), 0);
       assert.lengthOf(harness.offeredMessages, 3);
     }).pipe(

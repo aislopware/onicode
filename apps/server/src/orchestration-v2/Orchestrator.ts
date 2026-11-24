@@ -81,6 +81,7 @@ import {
   TurnItemId,
   TrimmedNonEmptyString,
   managedRuntimeModeCeilingMessage,
+  USER_INPUT_NONE_SELECTED_ANSWER,
 } from "@onicode/contracts";
 import * as KeyedLock from "@onicode/shared/KeyedLock";
 import { modelSelectionsEqual } from "@onicode/shared/model";
@@ -158,6 +159,7 @@ import {
   delegatedTaskRuns,
   isRestartContinuationSource,
   runOutcome,
+  stopChecksRestartContinuation,
 } from "./RestartBackgroundNote.ts";
 import {
   delegatedTaskQuestionMessageId,
@@ -10962,6 +10964,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         childThreadId,
         prompt: command.task,
         result: null,
+        // Only a waiting delegation leaves the wake to its tool call; the rest run beside the parent.
+        ...(command.completionWake === "always" ? { background: true } : {}),
       };
       const emitEvent = emit(events, command);
 
@@ -11247,6 +11251,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       childThreadId: child.id,
       prompt: command.text,
       result: null,
+      background: true,
     };
     const emitEvent = emit(events, command);
     yield* emitEvent({
@@ -11429,6 +11434,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         remoteChild: command.remoteChild,
         prompt: command.task,
         result: null,
+        ...(command.completionWake === "always" ? { background: true } : {}),
       },
     });
   });
@@ -11676,9 +11682,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     const parentProjection = yield* projectionStore
       .getThreadRecords(
         command.parentThreadId,
-        ["subagents", "runs", "messages", "providerTurns"],
+        ["subagents", "runs", "messages", "providerTurns", "turnItems"],
         {
           omitSettledSubagents: { except: [command.taskId] },
+          turnItemTypes: ["subagent"],
+          turnItemNodeIds: [command.taskId],
         },
       )
       .pipe(
@@ -11742,6 +11750,25 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       occurredAt: now,
       payload: completionPlan?.task ?? updatedTask,
     });
+    // The wait gave up, so the parent works on beside the task.
+    const item = parentProjection.turnItems.find(
+      (candidate) => candidate.type === "subagent" && candidate.subagentId === task.id,
+    );
+    if (
+      command.completionWake === "always" &&
+      item?.type === "subagent" &&
+      item.background !== true
+    ) {
+      yield* emitEvent({
+        type: "turn-item.updated",
+        threadId: command.parentThreadId,
+        ...(item.runId === null ? {} : { runId: item.runId }),
+        ...(item.nodeId === null ? {} : { nodeId: item.nodeId }),
+        driver: task.driver,
+        occurredAt: now,
+        payload: { ...item, background: true, updatedAt: now },
+      });
+    }
     if (completionPlan === undefined) {
       return;
     }
@@ -12387,7 +12414,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             Array.isArray(answer) &&
             answer.length === 0
           ) {
-            replies.push(`${question.question}\nNone selected`);
+            replies.push(`${question.question}\n${USER_INPUT_NONE_SELECTED_ANSWER}`);
             continue;
           }
           const answered = isMessageQuestionAnswer(answer);
@@ -14567,8 +14594,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       // A resumed queue can have a lower ordinal than a pending continuation source.
       // Stop must reach those sources even when interrupting the resumed run succeeds.
       if (
-        (run.status === "cancelled" ||
-          (run.status === "failed" && run.restartContinuationOfRunId !== undefined)) &&
+        stopChecksRestartContinuation(run) &&
         (yield* awaitsRestartContinuation(run).pipe(mapDispatchError(input.command)))
       ) {
         yield* markStoppedRun({ ...input, thread, run });

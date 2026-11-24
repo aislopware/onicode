@@ -6,8 +6,11 @@ import type {
   OrchestrationV2Subagent,
   OrchestrationV2SubagentWorkflow,
   OrchestrationV2TurnItem,
+  RunId,
 } from "@onicode/contracts";
 import { isOrchestrationV2WorkActive, isProviderNativeSubagentThread } from "@onicode/contracts";
+import { resolveOniMcpToolDefinition } from "@onicode/shared/oniMcpToolPresentation";
+import { compactDynamicToolOutput } from "@onicode/shared/toolOutput";
 import { mFallback, msg } from "gt-i18n";
 import type { MFunctionType } from "gt-i18n/types";
 
@@ -97,6 +100,47 @@ export function isActiveSubagentStatus(status: RuntimeSubagentStatus): boolean {
 
 export function isLiveSubagentTurnItem(item: OrchestrationV2TurnItem): boolean {
   return item.type === "subagent" && isOrchestrationV2WorkActive(item.status);
+}
+
+/**
+ * Live subagents the run's parent waits on, read back from the newest entry past its task-list
+ * updates and delegate calls. A finished reply after them is the parent's status while it shows
+ * as its own row; zen hides that row, so the live row shows the reply instead of the count.
+ */
+export function countSubagentsBlockingRun<Entry>(
+  entries: ReadonlyArray<Entry>,
+  runId: RunId,
+  turnItemsOf: (entry: Entry) => ReadonlyArray<OrchestrationV2TurnItem> | null,
+  repliesShown: boolean,
+): number {
+  let running = 0;
+  let sawSubagent = false;
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const items = turnItemsOf(entries[index]!);
+    if (items === null) return running;
+    for (let itemIndex = items.length - 1; itemIndex >= 0; itemIndex -= 1) {
+      const item = items[itemIndex]!;
+      if (item.runId !== runId) return running;
+      if (item.type === "subagent") {
+        sawSubagent = true;
+        if (item.background !== true && isOrchestrationV2WorkActive(item.status)) running += 1;
+      } else if (item.type === "assistant_message") {
+        if (!repliesShown || sawSubagent || item.streaming) return running;
+      } else if (item.type !== "todo_list" && !isDelegateLaunch(item)) {
+        return running;
+      }
+    }
+  }
+  return running;
+}
+
+function isDelegateLaunch(item: OrchestrationV2TurnItem): boolean {
+  return (
+    item.type === "dynamic_tool" &&
+    (item.status === "running" || item.status === "completed") &&
+    resolveOniMcpToolDefinition(item.toolName)?.summaryAction === "delegate" &&
+    compactDynamicToolOutput(item.output)?.isError !== true
+  );
 }
 
 export function waitingOnSubagentsLabel(count: number, resolve: MFunctionType = mFallback): string {

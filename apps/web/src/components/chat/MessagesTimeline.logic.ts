@@ -3,6 +3,7 @@ import { msg } from "gt-react";
 import { worktreeSetupAgentStarted } from "@onicode/client-runtime/worktree-setup";
 import { resolveUserMessagePresentation } from "@onicode/client-runtime/user-message";
 import {
+  countSubagentsBlockingRun,
   isLiveSubagentTurnItem,
   waitingOnSubagentsLabel,
 } from "@onicode/client-runtime/state/subagentRuntime";
@@ -1514,26 +1515,14 @@ export function liveAnswerPreview(entries: ReadonlyArray<TimelineEntry>): string
   return null;
 }
 
-/** Reads entries before tool visibility filters them, so hidden newer parent work still counts. */
-function runningSubagentsAtRunTail(entries: ReadonlyArray<TimelineEntry>, runId: RunId): number {
-  let running = 0;
-  for (let index = entries.length - 1; index >= 0; index -= 1) {
-    const entry = entries[index]!;
-    // The run's own finished reply is the parent parking on the children, not new work.
-    if (
-      entry.kind === "message" &&
-      entry.message.role === "assistant" &&
-      !entry.message.streaming &&
-      entry.message.runId === runId
-    ) {
-      continue;
-    }
-    if (entry.kind !== "event") break;
-    const { item } = entry.projectedItem;
-    if (item.type !== "subagent" || item.runId !== runId) break;
-    if (isLiveSubagentTurnItem(item)) running += 1;
-  }
-  return running;
+function timelineEntryTurnItems(entry: TimelineEntry) {
+  const projected =
+    entry.kind === "message" || entry.kind === "event"
+      ? entry.projectedItem
+      : entry.kind === "work"
+        ? entry.entry.projectedItem
+        : undefined;
+  return projected === undefined ? null : [projected.item];
 }
 
 function timelineRowEntries(
@@ -2431,10 +2420,16 @@ export function deriveMessagesTimelineRows(
       }
       nextRows.push(...viewedImagesRows(groupId, failedGroupAnchor.createdAt, groupedEntries));
     } else {
+      // Entries before tool visibility filters them, so hidden newer parent work still counts.
       const waitingOn =
         unsettledRunId === null
           ? 0
-          : runningSubagentsAtRunTail(input.timelineEntries, unsettledRunId);
+          : countSubagentsBlockingRun(
+              input.timelineEntries,
+              unsettledRunId,
+              timelineEntryTurnItems,
+              input.toolCallVisibility !== "zen",
+            );
       nextRows.push({
         kind: "thinking",
         id: LIVE_ACTIVITY_ROW_ID,

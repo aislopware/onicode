@@ -1865,6 +1865,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
           childThreadId,
           prompt: call.prompt,
           result: call.result,
+          ...(call.background ? { background: true } : {}),
         },
       });
       yield* syncRosterAncestors(call.state);

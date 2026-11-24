@@ -46,6 +46,7 @@ import {
 } from "@onicode/contracts";
 import { delegatedTaskProgress } from "@onicode/provider-core/server/subagentProjection";
 import { derivePendingBackgroundWork } from "@onicode/shared/orchestrationV2PendingBackgroundWork";
+import { latestExecutedRun } from "@onicode/shared/orchestrationV2ThreadError";
 import { threadTranscriptHeader } from "@onicode/shared/threadTranscript";
 import { AgentScope } from "@onicode/shared/AgentScope";
 import {
@@ -75,7 +76,7 @@ import * as ProviderSessionManager from "./ProviderSessionManager.ts";
 import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
 import { DispatchModeLimit, exceededDispatchModeLimit } from "./DispatchModeLimit.ts";
 import { projectTurnItemForDetail } from "./WireProjection.ts";
-import { cancelledBeforeStart } from "./RestartBackgroundNote.ts";
+import { cancelledBeforeStart, stopChecksRestartContinuation } from "./RestartBackgroundNote.ts";
 import { contextBoundaryOrdinal, readFreshRunUserMessages } from "./contextBoundary.ts";
 import * as LegacyV1ThreadImporter from "./legacy/LegacyV1ThreadImporter.ts";
 import * as ServerSettings from "../serverSettings.ts";
@@ -1877,11 +1878,13 @@ const make = Effect.gen(function* () {
   });
 
   // Mirrors what Orchestrator's thread.stop would change; a clause missing here leaves that work running.
-  const childNeedsStop = (
+  const childNeedsStop = Effect.fn("ThreadManagementService.childNeedsStop")(function* (
     child: ProjectionRecords<"runs" | "providerThreads" | "turnItems" | "subagents">,
-  ): boolean => {
+  ) {
     if (child.thread.deletedAt !== null) return false;
     const latestRun = child.runs.findLast((run) => run.status !== "queued");
+    // Held queues resume out of ordinal order; limit recovery follows the run that ended last.
+    const executed = latestExecutedRun(child.runs);
     const hasStoppableRun = child.runs.some(
       (run) =>
         run.status === "preparing" ||
@@ -1890,13 +1893,10 @@ const make = Effect.gen(function* () {
         run.status === "queued" ||
         run.delegatedCompletion?.delivery != null,
     );
-    const hasPendingRecovery =
-      latestRun !== undefined &&
-      (latestRun.status === "cancelled" ||
-        (latestRun.status === "failed" &&
-          (latestRun.restartContinuationOfRunId !== undefined ||
-            child.thread.limitRecovery?.runId !== latestRun.id ||
-            child.thread.limitRecovery.autoResume !== false)));
+    const hasPendingLimitRecovery =
+      executed?.status === "failed" &&
+      (child.thread.limitRecovery?.runId !== executed.id ||
+        child.thread.limitRecovery.autoResume !== false);
     const hasPendingSubagent = child.subagents.some(
       (task) =>
         (task.origin === "provider_native" &&
@@ -1909,9 +1909,9 @@ const make = Effect.gen(function* () {
               task.completionDelivery?.state !== "delivered" &&
               task.completionDelivery?.state !== "disposed"))),
     );
-    return (
+    const needsStop =
       hasStoppableRun ||
-      hasPendingRecovery ||
+      hasPendingLimitRecovery ||
       child.thread.limitRecovery?.autoResume === true ||
       (child.thread.pullRequests ?? []).some((link) => link.watch !== undefined) ||
       derivePendingBackgroundWork({
@@ -1924,9 +1924,14 @@ const make = Effect.gen(function* () {
       child.turnItems.some(
         (item) => item.type === "link_request" && item.linkStatus === "pending",
       ) ||
-      hasPendingSubagent
+      hasPendingSubagent;
+    if (needsStop) return true;
+    const awaitingContinuation = yield* Effect.findFirst(
+      child.runs.filter(stopChecksRestartContinuation),
+      orchestrator.restartContinuationPending,
     );
-  };
+    return Option.isSome(awaitingContinuation);
+  });
 
   const stopDelegatedTasks: ThreadManagementServiceShape["stopDelegatedTasks"] = Effect.fn(
     "ThreadManagementService.stopDelegatedTasks",
@@ -1998,7 +2003,7 @@ const make = Effect.gen(function* () {
               turnItemStatuses: ["pending", "running", "waiting"],
             },
           );
-          shouldStop = childNeedsStop(child);
+          shouldStop = yield* childNeedsStop(child);
           hasAppOwnedChildren = child.subagents.some(
             (childTask) => childTask.origin === "app_owned",
           );

@@ -54,6 +54,7 @@ export function extractClaudeSubagentUpdate(
           ? "completed"
           : "running",
     result: null,
+    ...(background ? { background } : {}),
   };
 }
 

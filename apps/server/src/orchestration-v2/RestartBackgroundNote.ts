@@ -338,6 +338,16 @@ export function cancelledBeforeStart(
   return run.status === "cancelled" && neverStarted(run);
 }
 
+/** Runs Stop checks for a pending restart continuation, at any ordinal; the outbox decides. */
+export function stopChecksRestartContinuation(
+  run: Pick<OrchestrationV2Run, "status" | "restartContinuationOfRunId">,
+): boolean {
+  return (
+    run.status === "cancelled" ||
+    (run.status === "failed" && run.restartContinuationOfRunId !== undefined)
+  );
+}
+
 /** A follow-up task's runs: those tagged with it, and the untagged wakes for subagents they started. */
 export function delegatedTaskRuns(
   projection: {

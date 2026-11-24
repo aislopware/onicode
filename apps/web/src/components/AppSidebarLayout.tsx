@@ -25,6 +25,7 @@ import {
   shortcutLabelForCommand,
 } from "../keybindings";
 import { isEditableFocused } from "../lib/editableFocus";
+import { isImeKeyDown } from "../lib/imeKeyDown";
 import { isPreviewFocused } from "../lib/previewFocus";
 import { isTerminalFocused } from "../lib/terminalFocus";
 import { isModelPickerOpen } from "../modelPickerVisibility";
@@ -206,7 +207,7 @@ function registerPullRequestsEscapeCommand(router: AnyRouter): () => void {
     {},
     {
       observe: (event, consumed) => {
-        if (consumed || event.repeat || event.isComposing || event.key !== "Escape") return;
+        if (consumed || event.repeat || isImeKeyDown(event) || event.key !== "Escape") return;
         if (router.state.location.pathname !== "/pull-requests") return;
         event.preventDefault();
         const activeElement = document.activeElement;

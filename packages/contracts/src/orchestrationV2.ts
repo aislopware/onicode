@@ -2130,6 +2130,8 @@ export const OrchestrationV2TurnItem = Schema.Union([
     prompt: Schema.String,
     progress: Schema.optional(Schema.String),
     result: Schema.NullOr(Schema.String),
+    /** The parent keeps working while it runs. Absent means the parent waits on it, as older servers sent. */
+    background: Schema.optional(Schema.Boolean),
     /**
      * Wire-only copies of subagent `subagentId`'s model, on rows whose record a client may not
      * hold: older history pages and rows a fork inherits. The record wins when both are held.
@@ -3074,6 +3076,7 @@ export const OrchestrationV2TurnItemJson = Schema.Union([
     prompt: Schema.String,
     progress: Schema.optional(Schema.String),
     result: Schema.NullOr(Schema.String),
+    background: Schema.optional(Schema.Boolean),
     // Client caches store wire rows with this schema; see the `OrchestrationV2TurnItem` fields.
     model: Schema.optionalKey(Schema.String),
     modelSelection: Schema.optionalKey(ModelSelection),

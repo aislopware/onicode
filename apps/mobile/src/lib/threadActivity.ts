@@ -7,6 +7,7 @@ import { linkRequestTargetName } from "@onicode/client-runtime/link-request";
 import { turnItemIsWorkspacePreparation } from "@onicode/client-runtime/state/turn-item-presentation";
 import { formatSubagentDisplayTitle } from "@onicode/client-runtime/state/subagent-display";
 import {
+  countSubagentsBlockingRun,
   isLiveSubagentTurnItem,
   waitingOnSubagentsLabel,
 } from "@onicode/client-runtime/state/subagentRuntime";
@@ -2017,7 +2018,11 @@ export function deriveThreadFeedPresentation(
           row.activities[0]?.projectedItem.item.status === "running"),
     )
   ) {
-    const waitingOn = activeRunId === null ? 0 : runningSubagentsAtRunTail(feed, activeRunId);
+    // The feed before tool visibility filters it, so hidden newer parent work still counts.
+    const waitingOn =
+      activeRunId === null
+        ? 0
+        : countSubagentsBlockingRun(feed, activeRunId, feedEntryTurnItems, !zen);
     result.push(
       thinkingRow(
         activeWorkStartedAt,
@@ -2104,26 +2109,12 @@ function isWorkLogFeedRow(row: ThreadFeedEntry | undefined): boolean {
 
 export const LIVE_ACTIVITY_ROW_ID = "live-activity-row";
 
-/** Reads the feed before tool visibility filters it, so hidden newer parent work still counts. */
-function runningSubagentsAtRunTail(feed: ReadonlyArray<ThreadFeedEntry>, runId: RunId): number {
-  let running = 0;
-  for (let index = feed.length - 1; index >= 0; index -= 1) {
-    const entry = feed[index]!;
-    // The run's own finished reply is the parent parking on the children, not new work.
-    if (
-      entry.type === "message" &&
-      entry.message.role === "assistant" &&
-      !entry.message.streaming &&
-      entry.message.runId === runId
-    ) {
-      continue;
-    }
-    if (entry.type !== "activity-group" || entry.runId !== runId) break;
-    const items = entry.activities.map((activity) => activity.projectedItem.item);
-    if (items.some((item) => item.type !== "subagent")) break;
-    running += items.filter(isLiveSubagentTurnItem).length;
+function feedEntryTurnItems(entry: ThreadFeedEntry) {
+  if (entry.type === "activity-group") {
+    return entry.activities.map((activity) => activity.projectedItem.item);
   }
-  return running;
+  const projected = entry.type === "message" ? entry.message.projectedItem : undefined;
+  return projected === undefined ? null : [projected.item];
 }
 
 let cachedLiveRunFoldRow: Extract<ThreadFeedEntry, { readonly type: "run-fold" }> | null = null;

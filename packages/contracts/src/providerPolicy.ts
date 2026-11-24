@@ -78,6 +78,7 @@ export type ProviderApprovalOption = typeof ProviderApprovalOption.Type;
 
 export const ProviderUserInputAnswers = Schema.Record(Schema.String, Schema.Unknown);
 export type ProviderUserInputAnswers = typeof ProviderUserInputAnswers.Type;
+export const USER_INPUT_NONE_SELECTED_ANSWER = "None selected";
 
 export const UserInputAttachments = Schema.Record(
   Schema.String,

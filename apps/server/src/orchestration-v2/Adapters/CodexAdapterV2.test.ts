@@ -4611,6 +4611,82 @@ describe("CodexAdapterV2 post-settle continuation", () => {
     ),
   );
 
+  it.effect("stops reporting MCP servers starting when the thread's turn fails to start", () =>
+    Effect.gen(function* () {
+      const nativeThreadId = "mcp-startup-failed-start-thread";
+      const preamble = codexReplayPreamble({
+        nativeThreadId,
+        nativeTurnId: "mcp-startup-failed-start-turn",
+        prompt: "use the tools",
+      });
+      const turnStart =
+        preamble.findIndex(
+          (entry) => entry.type === "expect_outbound" && entry.label === "turn/start",
+        ) + 1;
+      const transcript = makeCodexReplayTranscript({
+        scenario: "codex-mcp-startup-failed-start",
+        entries: [
+          ...preamble.slice(0, turnStart),
+          {
+            type: "emit_inbound",
+            label: "mcp-docs-starting",
+            frame: {
+              method: "mcpServer/startupStatus/updated",
+              params: {
+                threadId: nativeThreadId,
+                name: "docs",
+                status: "starting",
+                error: null,
+                failureReason: null,
+              },
+            },
+          },
+          {
+            type: "emit_inbound",
+            label: "turn/start",
+            frame: { id: 3, error: { code: -32603, message: "Start failed" } },
+          },
+        ],
+      });
+      const reported = yield* Deferred.make<void>();
+      const harness = yield* makeCodexReplayHarness(
+        transcript,
+        (event) =>
+          event.type === "provider_session.updated" &&
+          event.providerSession.startupPhase !== undefined
+            ? Deferred.succeed(reported, undefined)
+            : Effect.void,
+        undefined,
+        undefined,
+        (entry) => (entry.label === "turn/start" ? Deferred.await(reported) : Effect.void),
+      );
+      const started = yield* harness.runtime
+        .startTurn(
+          makeCodexTestTurnInput({
+            threadId: harness.threadId,
+            providerThread: harness.providerThread,
+            now: yield* DateTime.now,
+            attemptId: RunAttemptId.make("mcp-startup-failed-start-attempt"),
+            text: "use the tools",
+          }),
+        )
+        .pipe(Effect.result);
+      assert.equal(started._tag, "Failure");
+      // The next turn start republishes this record; it must not name the failed start's servers.
+      assert.isUndefined(harness.runtime.providerSession.startupPhase);
+      assert.isUndefined(harness.runtime.providerSession.startupPhaseThreadId);
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          IdAllocator.layer,
+          McpProviderSessions.layer,
+          NodeServices.layer,
+          NodeCrypto.layer,
+        ),
+      ),
+    ),
+  );
+
   it.effect("stops asking for commands the user allowed for the session", () =>
     Effect.gen(function* () {
       const nativeThreadId = "session-approval-thread";
@@ -11692,6 +11768,92 @@ describe("CodexAdapterV2 post-settle continuation", () => {
           ),
         ),
       ),
+  );
+
+  it.effect("marks a Codex child foreground only while a wait call names it", () =>
+    Effect.gen(function* () {
+      const collab = (tool: "spawnAgent" | "wait", status: "inProgress" | "completed") => ({
+        type: "collabAgentToolCall",
+        id: `call-codex-${tool}`,
+        tool,
+        status,
+        senderThreadId: RESUME_NATIVE_THREAD,
+        receiverThreadIds: [RESUME_CHILD_THREAD],
+        agentsStates:
+          status === "completed"
+            ? { [RESUME_CHILD_THREAD]: { status: "running", message: `${tool} returned` } }
+            : {},
+      });
+      const frame = (
+        method: "item/started" | "item/completed",
+        item: ReturnType<typeof collab>,
+      ) => ({
+        type: "emit_inbound" as const,
+        frame: {
+          method,
+          params: {
+            item,
+            threadId: RESUME_NATIVE_THREAD,
+            turnId: RESUME_NATIVE_TURN,
+            ...(method === "item/started"
+              ? { startedAtMs: 1782622441000 }
+              : { completedAtMs: 1782622442000 }),
+          },
+        },
+      });
+      const harness = yield* makeCodexReplayHarness(
+        makeCodexReplayTranscript({
+          scenario: RESUME_SCENARIO,
+          entries: [
+            ...codexReplayPreamble({
+              nativeThreadId: RESUME_NATIVE_THREAD,
+              nativeTurnId: RESUME_NATIVE_TURN,
+              prompt: RESUME_PROMPT,
+            }),
+            frame("item/completed", collab("spawnAgent", "completed")),
+            frame("item/started", collab("wait", "inProgress")),
+            // The wait timed out with the child still running.
+            frame("item/completed", collab("wait", "completed")),
+          ],
+        }),
+      );
+      yield* harness.runtime.startTurn(
+        makeCodexTestTurnInput({
+          threadId: harness.threadId,
+          providerThread: harness.providerThread,
+          now: yield* DateTime.now,
+          attemptId: RunAttemptId.make("attempt-codex-wait"),
+          text: RESUME_PROMPT,
+        }),
+      );
+      // Each change of the flag, in order; a state update may re-emit the same value.
+      const transitions = () =>
+        harness.events
+          .flatMap((event) =>
+            event.type === "turn_item.updated" && event.turnItem.type === "subagent"
+              ? [event.turnItem.background]
+              : [],
+          )
+          .filter((background, index, all) => index === 0 || all[index - 1] !== background);
+      yield* harness.until(() =>
+        harness.events.some(
+          (event) =>
+            event.type === "turn_item.updated" &&
+            event.turnItem.type === "subagent" &&
+            event.turnItem.result === "wait returned",
+        ),
+      );
+      assert.deepEqual(transitions(), [true, undefined, true]);
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          IdAllocator.layer,
+          McpProviderSessions.layer,
+          NodeServices.layer,
+          NodeCrypto.layer,
+        ),
+      ),
+    ),
   );
 
   it.effect("preserves a subagent result across a trailing empty final and resume", () =>
