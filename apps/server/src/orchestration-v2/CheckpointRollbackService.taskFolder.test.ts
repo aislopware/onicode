@@ -289,6 +289,7 @@ const taskFolderThread = Effect.fn(function* (state: State, options: Options) {
     branch,
     projectStart: { refName: "main", baseRefName: "main" },
     startFromOrigin: false,
+    projectCommands: true,
   });
   const worktreePath = taskFolder.projectPath;
   const folders = {
@@ -774,6 +775,7 @@ it.live.each([{ projectIsRepository: true }, { projectIsRepository: false }])(
           root: taskFolder.root,
           force: true,
           forget: false,
+          projectCommands: true,
         });
         assert.deepEqual(removal.kept, []);
         assert.isFalse(yield* fileSystem.exists(taskFolder.root));
