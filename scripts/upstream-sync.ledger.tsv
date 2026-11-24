@@ -3605,3 +3605,4 @@ a5d86e6382	take	fix(web): Push on the default branch no longer commits files cha
 57ffba5dfb	take	fix(ssh): a second desktop no longer stops a remote server it did not launch (#41842)
 e632155b3a	take	CONFLICT: claudeProviderTurnTokenUsage; took upstream's last-message sample, kept Onicode's prompt-cache tracking and claudeTokenCount. Totals still drive the cache read check. ClaudeAdapterV2 565 tests pass.
 ededa85fe3	take	fix(server): closing an Android emulator with shutdown no longer leaves its session stuck open (#41840)
+8ef195587d	take	CONFLICT: took the update-all reason only; Onicode has no Stable/Nightly track switch, so the track-switch half is left out. Catalogs regenerated with upstream translations.

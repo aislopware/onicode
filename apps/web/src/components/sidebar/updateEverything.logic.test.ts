@@ -41,6 +41,20 @@ function machine(
   };
 }
 
+// A desktop-mode server the desktop app cannot control, such as a WSL backend or an older app.
+function withoutDesktopControl(base: UpdateEverythingMachine): UpdateEverythingMachine {
+  return {
+    ...base,
+    serverConfig: {
+      ...base.serverConfig!,
+      environment: {
+        ...base.serverConfig!.environment,
+        capabilities: { repositoryIdentity: true, serverSelfUpdate: "desktop-managed" },
+      },
+    },
+  };
+}
+
 describe("collectServerUpdateTargets", () => {
   it("updates remote servers that can move to the target and names every skipped one", () => {
     const { targets, skipped } = collectServerUpdateTargets(
@@ -62,6 +76,7 @@ describe("collectServerUpdateTargets", () => {
         machine("current", "0.0.50", "boot-service"),
         machine("current-offline", "0.0.50", "boot-service", { connected: false }),
         machine("manual", "0.0.40", undefined),
+        withoutDesktopControl(machine("wsl-backend", "0.0.40", "desktop-managed")),
       ],
       "0.0.50",
     );
@@ -76,6 +91,7 @@ describe("collectServerUpdateTargets", () => {
       ["no-scope", "no permission"],
       ["busy", "already updating"],
       ["manual", "needs a manual update"],
+      ["wsl-backend", "update Onicode on that machine"],
     ]);
   });
 
