@@ -13,6 +13,7 @@ import androidx.annotation.RequiresApi
 import androidx.core.content.FileProvider
 import androidx.core.view.WindowCompat
 import expo.modules.kotlin.Promise
+import expo.modules.kotlin.exception.CodedException
 import expo.modules.kotlin.functions.Queues
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
@@ -133,6 +134,10 @@ class OniNativeControlsModule : Module() {
   }
 }
 
+// JS translates by code; the English text is for JS that shows the message as is.
+private fun failSave(code: String, message: String): Nothing =
+  throw CodedException(code, message, null)
+
 // Android 10+ lets apps add their own media without a storage permission.
 @RequiresApi(Build.VERSION_CODES.Q)
 private fun saveImageToPictures(context: Context, source: Uri, mimeType: String, name: String) {
@@ -146,11 +151,13 @@ private fun saveImageToPictures(context: Context, source: Uri, mimeType: String,
   val target = resolver.insert(
     MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY),
     values
-  ) ?: error("Could not create the image in Pictures.")
+  ) ?: failSave("ERR_PICTURES_SAVE_FAILED", "Could not create the image in Pictures.")
   runCatching {
-    val input = resolver.openInputStream(source) ?: error("The image is no longer available.")
+    val input = resolver.openInputStream(source)
+      ?: failSave("ERR_IMAGE_MISSING", "The image is no longer available.")
     input.use { from ->
-      val output = resolver.openOutputStream(target) ?: error("Could not write the image.")
+      val output = resolver.openOutputStream(target)
+        ?: failSave("ERR_PICTURES_SAVE_FAILED", "Could not write the image.")
       output.use { from.copyTo(it) }
     }
     resolver.update(

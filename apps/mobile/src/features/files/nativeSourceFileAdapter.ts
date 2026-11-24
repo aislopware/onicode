@@ -4,7 +4,6 @@ import type {
   NativeReviewDiffToken,
 } from "../diffs/nativeReviewDiffSurface";
 import type { ResolvedMobileCodeSurface } from "../../lib/appearancePreferences";
-import { MOBILE_CODE_SURFACE, MOBILE_TYPOGRAPHY } from "../../lib/typography";
 import type { HighlightedLines } from "../../lib/highlights";
 
 export const NATIVE_SOURCE_CONTENT_WIDTH = 32_000;
@@ -23,10 +22,6 @@ export function createNativeSourceStyle(
     codeFontWeight: "regular",
     lineNumberFontSize: codeSurface.lineNumberFontSize,
     lineNumberFontWeight: "regular",
-    emptyStateFontSize: Math.round(
-      MOBILE_TYPOGRAPHY.label.fontSize * (codeSurface.fontSize / MOBILE_CODE_SURFACE.fontSize),
-    ),
-    emptyStateFontWeight: "medium",
   };
 }
 

@@ -146,6 +146,17 @@ do {
   check(view.editor.accessibilityLabel == "Ask anything", "VoiceOver label: \(String(describing: view.editor.accessibilityLabel))")
 }
 
+// Every key command keeps its English title until JS sends translated ones.
+do {
+  let view = makeEditor("")
+  view.setPromptRecallEnabled(true)
+  func titles() -> [String] { view.editor.keyCommands?.compactMap(\.discoverabilityTitle) ?? [] }
+  check(titles().contains("Send Message"), "Unset titles: \(titles())")
+  check(titles().contains("Previous Prompt"), "Unset titles: \(titles())")
+  view.setKeyCommandTitles(["previousPrompt": "Vorheriger Prompt"])
+  check(titles().contains("Vorheriger Prompt"), "Translated titles: \(titles())")
+}
+
 // Up and Down recall a prompt only from the first and last line, once JS enables recall.
 do {
   let view = makeEditor("first line\nsecond line")

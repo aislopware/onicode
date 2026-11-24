@@ -183,8 +183,6 @@ private struct ReviewDiffNativeStylePayload: Decodable {
   let fileHeaderSubtextFontWeight: String?
   let fileHeaderStatusFontSize: Double?
   let fileHeaderStatusFontWeight: String?
-  let emptyStateFontSize: Double?
-  let emptyStateFontWeight: String?
 }
 
 private struct ReviewDiffNativeStyle: Equatable {
@@ -217,8 +215,6 @@ private struct ReviewDiffNativeStyle: Equatable {
   let fileHeaderSubtextFontWeight: UIFont.Weight
   let fileHeaderStatusFontSize: CGFloat
   let fileHeaderStatusFontWeight: UIFont.Weight
-  let emptyStateFontSize: CGFloat
-  let emptyStateFontWeight: UIFont.Weight
 
   static func resolve(_ payload: ReviewDiffNativeStylePayload?) -> ReviewDiffNativeStyle {
     ReviewDiffNativeStyle(
@@ -250,9 +246,7 @@ private struct ReviewDiffNativeStyle: Equatable {
       fileHeaderSubtextFontSize: metric(payload?.fileHeaderSubtextFontSize, fallback: 11),
       fileHeaderSubtextFontWeight: fontWeight(payload?.fileHeaderSubtextFontWeight, fallback: .medium),
       fileHeaderStatusFontSize: metric(payload?.fileHeaderStatusFontSize, fallback: 10),
-      fileHeaderStatusFontWeight: fontWeight(payload?.fileHeaderStatusFontWeight, fallback: .semibold),
-      emptyStateFontSize: metric(payload?.emptyStateFontSize, fallback: 13),
-      emptyStateFontWeight: fontWeight(payload?.emptyStateFontWeight, fallback: .semibold)
+      fileHeaderStatusFontWeight: fontWeight(payload?.fileHeaderStatusFontWeight, fallback: .semibold)
     )
   }
 
@@ -325,9 +319,7 @@ private struct ReviewDiffNativeStyle: Equatable {
       fileHeaderSubtextFontSize: fileHeaderSubtextFontSize,
       fileHeaderSubtextFontWeight: fileHeaderSubtextFontWeight,
       fileHeaderStatusFontSize: fileHeaderStatusFontSize,
-      fileHeaderStatusFontWeight: fileHeaderStatusFontWeight,
-      emptyStateFontSize: emptyStateFontSize,
-      emptyStateFontWeight: emptyStateFontWeight
+      fileHeaderStatusFontWeight: fileHeaderStatusFontWeight
     )
   }
 }
@@ -872,6 +864,10 @@ public final class OniReviewDiffView: ExpoView, UIScrollViewDelegate {
     applyStyle()
   }
 
+  func setLabels(_ labels: [String: String]) {
+    contentView.labels = labels
+  }
+
   func setRowHeight(_ rowHeight: CGFloat) {
     rowHeightOverride = rowHeight.isFinite && rowHeight > 0 ? rowHeight : nil
     applyStyle()
@@ -1181,6 +1177,11 @@ private final class ReviewDiffContentView: UIView, UIGestureRecognizerDelegate {
       setNeedsDisplayForVisibleBounds()
     }
   }
+  var labels: [String: String] = [:] {
+    didSet {
+      if labels != oldValue { setNeedsDisplayForVisibleBounds() }
+    }
+  }
   var viewportWidth: CGFloat = 0 {
     didSet {
       if style.wordWrap, viewportWidth != oldValue {
@@ -1479,10 +1480,6 @@ private final class ReviewDiffContentView: UIView, UIGestureRecognizerDelegate {
 
   private var fileHeaderStatusFont: UIFont {
     UIFont.systemFont(ofSize: style.fileHeaderStatusFontSize, weight: style.fileHeaderStatusFontWeight)
-  }
-
-  private var emptyStateFont: UIFont {
-    UIFont.systemFont(ofSize: style.emptyStateFontSize, weight: style.emptyStateFontWeight)
   }
 
   private lazy var horizontalPanGesture: UIPanGestureRecognizer = {
@@ -2064,8 +2061,7 @@ private final class ReviewDiffContentView: UIView, UIGestureRecognizerDelegate {
     theme.background.setFill()
     context.fill(rect)
 
-    if rows.isEmpty {
-      drawEmptyState(rect)
+    guard !rows.isEmpty else {
       return
     }
 
@@ -2128,15 +2124,6 @@ private final class ReviewDiffContentView: UIView, UIGestureRecognizerDelegate {
       "scannedRows": lastRowIndex - firstRowIndex + 1,
       "totalRows": rows.count,
     ])
-  }
-
-  private func drawEmptyState(_ rect: CGRect) {
-    let message = "No native diff rows"
-    let attributes: [NSAttributedString.Key: Any] = [
-      .font: emptyStateFont,
-      .foregroundColor: theme.mutedText,
-    ]
-    message.draw(at: CGPoint(x: 16, y: rect.minY + 16), withAttributes: attributes)
   }
 
   private func drawRow(_ row: ReviewDiffNativeRow, rowIndex: Int, context: CGContext) {
@@ -2281,7 +2268,10 @@ private final class ReviewDiffContentView: UIView, UIGestureRecognizerDelegate {
     let chevronRect = CGRect(x: cardRect.minX + 10, y: cardRect.minY + 11, width: 16, height: 16)
     drawDisclosureChevron(rect: chevronRect, color: theme.mutedText, collapsed: isCollapsed)
 
-    let title = "Comment on \(row.commentRangeLabel ?? "line")"
+    let title = (labels["commentTitle"] ?? "Comment on {line}").replacingOccurrences(
+      of: "{line}",
+      with: row.commentRangeLabel ?? labels["commentLine"] ?? "line"
+    )
     drawSingleLineText(
       title,
       rect: CGRect(
@@ -2300,7 +2290,7 @@ private final class ReviewDiffContentView: UIView, UIGestureRecognizerDelegate {
 
     let body = row.commentText?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     drawMultilineText(
-      body.isEmpty ? "Comment" : body,
+      body.isEmpty ? labels["commentBody"] ?? "Comment" : body,
       rect: CGRect(
         x: cardRect.minX + 18,
         y: cardRect.minY + 42,

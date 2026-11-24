@@ -3,6 +3,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useMemo,
   useRef,
   useState,
   type ComponentType,
@@ -114,8 +115,6 @@ export interface NativeReviewDiffStyle {
   readonly fileHeaderSubtextFontWeight?: string;
   readonly fileHeaderStatusFontSize?: number;
   readonly fileHeaderStatusFontWeight?: string;
-  readonly emptyStateFontSize?: number;
-  readonly emptyStateFontWeight?: string;
 }
 
 export interface NativeReviewDiffViewProps extends ViewProps {
@@ -186,6 +185,11 @@ type NativeReviewDiffRawViewProps = Omit<
   NativeReviewDiffViewProps,
   "nativeViewRef" | "rowsJson" | "tokensJson" | "tokensPatchJson"
 > & {
+  readonly labels: {
+    readonly commentTitle: string;
+    readonly commentLine: string;
+    readonly commentBody: string;
+  };
   readonly refreshEnabled: boolean;
   readonly ref?: Ref<NativeReviewDiffViewRef>;
 };
@@ -337,6 +341,15 @@ function NativeReviewDiffContent(
     ...nativeProps
   } = props;
   const nativeRef = useRef<NativeReviewDiffViewRef>(null);
+  const messages = useMessages();
+  const labels = useMemo(
+    () => ({
+      commentTitle: messages(msg("Comment on {line}", { line: "{line}" })),
+      commentLine: messages(msg("line", { $context: "review comment range" })),
+      commentBody: messages(msg("Comment", { $context: "noun, an empty review comment" })),
+    }),
+    [messages],
+  );
   useNativeReviewDiffPayload(
     nativeRef,
     "setRowsJson",
@@ -409,6 +422,7 @@ function NativeReviewDiffContent(
   /* oxlint-disable react/refs -- The native view receives this ref; only event callbacks access its current value. */
   return createElement(RawNativeView, {
     ...nativeProps,
+    labels,
     refreshEnabled: props.onPullToRefresh !== undefined,
     onDebug: (event) => {
       if (event.nativeEvent.message === "rows-decode-failed") {

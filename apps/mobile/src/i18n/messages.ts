@@ -11,7 +11,7 @@ export function setActiveLocale(locale: string): void {
   activeLocale = locale;
 }
 
-function resolve(message: string, variables: Parameters<MessageResolver>[1] = {}): string {
+function lookup(message: string, variables: Parameters<MessageResolver>[1]) {
   const decoded = decodeOptions(message);
   const options = typeof decoded?.$_source === "string" ? decoded : variables;
   const source = typeof decoded?.$_source === "string" ? decoded.$_source : message;
@@ -19,6 +19,11 @@ function resolve(message: string, variables: Parameters<MessageResolver>[1] = {}
     activeLocale === DEFAULT_LOCALE
       ? undefined
       : getReactI18nCache().lookupTranslation(activeLocale, source, { ...options, $format: "ICU" });
+  return { source, options, target };
+}
+
+function resolve(message: string, variables: Parameters<MessageResolver>[1] = {}): string {
+  const { source, options, target } = lookup(message, variables);
   // Untranslated text is English, so it takes English plural rules.
   return typeof target === "string"
     ? gtFallback(target, { ...options, $locale: activeLocale, $_fallback: source })
@@ -31,6 +36,15 @@ function resolve(message: string, variables: Parameters<MessageResolver>[1] = {}
  */
 export const m = ((message, variables) =>
   typeof message === "string" ? resolve(message, variables) : message) as MessageResolver;
+
+/**
+ * A `msg()` string's ICU pattern in the current UI language, its variables unfilled. For native
+ * code that fills them in while JS is not running.
+ */
+export function messageTemplate(message: string): string {
+  const { source, target } = lookup(message, {});
+  return typeof target === "string" ? target : source;
+}
 
 /**
  * Keeps `msg()` text unresolved, for helpers whose result is cached past a language switch.

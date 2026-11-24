@@ -71,6 +71,11 @@ public class OniTerminalModule: Module {
       Prop("sharedGrid") { (view: OniTerminalView, sharedGrid: [Int]) in
         view.sharedGrid = sharedGrid
       }
+
+      Prop("labels") { (view: OniTerminalView, labels: [String: String]) in
+        view.labels = labels
+      }
+
       Events("onInput", "onResize", "onCapture", "onPaste")
 
       OnViewDidUpdateProps { (view: OniTerminalView) in

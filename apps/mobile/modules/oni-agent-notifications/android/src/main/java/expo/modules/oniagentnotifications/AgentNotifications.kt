@@ -84,6 +84,14 @@ object AgentNotifications {
     channels(context)
   }
 
+  /** Saves the app's language; blank or missing texts stay English. */
+  @Synchronized
+  fun setStrings(context: Context, strings: Map<String, String>) {
+    AgentNotificationText.save(context, strings)
+    // Creating a channel again only renames it.
+    if (store(context).getBoolean("enabled", false)) channels(context)
+  }
+
   @Synchronized
   fun clear(context: Context) {
     environments(store(context)).forEach { cancelActivity(context, it) }
@@ -349,7 +357,8 @@ object AgentNotifications {
         .putExtra(EXTRA_ENVIRONMENT, environmentId),
       PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
     )
-    val presentation = ActivityPresentation(data, active)
+    val text = AgentNotificationText.load(context)
+    val presentation = ActivityPresentation(data, active, text)
     val openThread = contentIntent(context, scheme, data["activity_path"], id)
     val builder = base(context, ACTIVITY_CHANNEL)
       .setOngoing(active).setOnlyAlertOnce(true).setSilent(true)
@@ -364,7 +373,7 @@ object AgentNotifications {
     val action = presentation.action
     if (action != null) {
       if (openThread != null) builder.addAction(0, action, openThread)
-      builder.addAction(0, "Dismiss", dismissIntent)
+      builder.addAction(0, text[AgentText.ACTION_DISMISS], dismissIntent)
     }
     manager(context).notify(ACTIVITY_TAG, id, builder.build())
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
@@ -404,12 +413,17 @@ object AgentNotifications {
 
   private fun channels(context: Context) {
     if (Build.VERSION.SDK_INT >= 26) {
+      val text = AgentNotificationText.load(context)
       manager(context).createNotificationChannels(
         listOf(
-          NotificationChannel(ALERT_CHANNEL, "Agent alerts", NotificationManager.IMPORTANCE_HIGH),
+          NotificationChannel(
+            ALERT_CHANNEL,
+            text[AgentText.ALERT_CHANNEL],
+            NotificationManager.IMPORTANCE_HIGH
+          ),
           NotificationChannel(
             ACTIVITY_CHANNEL,
-            "Ongoing agent activity",
+            text[AgentText.ACTIVITY_CHANNEL],
             NotificationManager.IMPORTANCE_LOW
           ),
         )

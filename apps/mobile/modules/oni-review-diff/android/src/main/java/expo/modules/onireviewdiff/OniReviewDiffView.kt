@@ -153,6 +153,10 @@ class OniReviewDiffView(context: Context, appContext: AppContext) : ExpoView(con
     canvasView.style = DiffStyle.fromJson(value, canvasView.style, resources.displayMetrics.density)
   }
 
+  fun setLabels(value: Map<String, String>) {
+    canvasView.labels = DiffLabels(value)
+  }
+
   fun setRowHeight(value: Float) {
     canvasView.style = canvasView.style.copy(rowHeightPx = dp(value))
   }
@@ -847,6 +851,11 @@ private class DiffCanvasView(context: Context) : View(context) {
       field = value
       invalidate()
     }
+  var labels = DiffLabels(emptyMap())
+    set(value) {
+      field = value
+      invalidate()
+    }
   var theme: DiffTheme = DiffTheme.fallback("light")
     set(value) {
       field = value
@@ -1265,9 +1274,9 @@ private class DiffCanvasView(context: Context) : View(context) {
       size = style.fileHeaderSubtextFontSizePx,
       weight = style.fileHeaderSubtextFontWeight,
     )
-    val title = "Comment on ${row.commentRangeLabel.ifEmpty { "line" }}"
+    val titleWidth = cardRect.right - chevronRect.right - 20f * density
     canvas.drawText(
-      ellipsize(title, textPaint, cardRect.right - chevronRect.right - 20f * density),
+      ellipsize(labels.commentTitle(row), textPaint, titleWidth),
       chevronRect.right + 10f * density,
       cardRect.top + 22f * density,
       textPaint,
@@ -1276,11 +1285,7 @@ private class DiffCanvasView(context: Context) : View(context) {
       textPaint.color = theme.text
       val bodyX = cardRect.left + 18f * density
       canvas.drawText(
-        ellipsize(
-          row.commentText.ifEmpty { "Comment" },
-          textPaint,
-          cardRect.right - bodyX - 18f * density
-        ),
+        ellipsize(labels.commentBody(row), textPaint, cardRect.right - bodyX - 18f * density),
         bodyX,
         cardRect.top + 58f * density,
         textPaint,
@@ -1447,6 +1452,17 @@ private class DiffCanvasView(context: Context) : View(context) {
     val displayPath: String,
     val rect: RectF
   )
+}
+
+/** Translated from JS; English where JS sends none. */
+private class DiffLabels(private val values: Map<String, String>) {
+  fun commentTitle(row: DiffRow): String = (values["commentTitle"] ?: "Comment on {line}").replace(
+    "{line}",
+    row.commentRangeLabel.ifEmpty { values["commentLine"] ?: "line" }
+  )
+
+  fun commentBody(row: DiffRow): String =
+    row.commentText.ifEmpty { values["commentBody"] ?: "Comment" }
 }
 
 private fun centeredBaseline(top: Int, bottom: Int, paint: Paint): Float {

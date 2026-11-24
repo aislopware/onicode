@@ -100,6 +100,9 @@ public class OniComposerEditorModule: Module {
       Prop("alternateSubmitTitle") { (view: OniComposerEditorView, title: String) in
         view.setAlternateSubmitTitle(title)
       }
+      Prop("keyCommandTitles") { (view: OniComposerEditorView, titles: [String: String]) in
+        view.setKeyCommandTitles(titles)
+      }
       Prop("enterBehavior") { (view: OniComposerEditorView, behavior: String) in
         view.setEnterBehavior(behavior)
       }

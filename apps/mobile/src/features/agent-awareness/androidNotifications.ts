@@ -4,6 +4,8 @@ import { Linking, Platform } from "react-native";
 
 interface AndroidAgentNotifications {
   configure(deviceId: string, scheme: string, ongoingEnabled: boolean): void;
+  /** Absent on native builds that predate it, whose notifications stay English. */
+  setStrings?(strings: Readonly<Record<string, string>>): void;
   clear(): void;
   clearEnvironment(environmentId: string): void;
   setThreadOnScreen(path: string | null): void;
@@ -30,6 +32,11 @@ export function configureAndroidAgentNotifications(
   ongoingEnabled: boolean,
 ): void {
   native?.configure(deviceId, appScheme(), ongoingEnabled);
+}
+
+/** Kept natively, so notifications shown while JS is not running use the app's language. */
+export function setAndroidNotificationStrings(strings: Readonly<Record<string, string>>): void {
+  native?.setStrings?.(strings);
 }
 
 export function clearAndroidAgentNotifications(): void {

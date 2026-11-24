@@ -2,6 +2,31 @@ import ImageIO
 import Photos
 import UIKit
 
+/// The viewer's copy in the app's language. A JS bundle that sends none gets English.
+struct OniImageViewerLabels {
+  private let values: [String: String]
+
+  init(_ values: [String: String]) { self.values = values }
+
+  var loadFailed: String { values["loadFailed"] ?? "This image could not be loaded." }
+  var retry: String { values["retry"] ?? "Try Again" }
+  var save: String { values["save"] ?? "Save to Photos" }
+  var saved: String { values["saved"] ?? "Saved to Photos" }
+  var saveFailedTitle: String { values["saveFailedTitle"] ?? "Could not save image" }
+  var saveFailed: String { values["saveFailed"] ?? "Photos could not save this image." }
+  var saveNotAllowed: String { values["saveNotAllowed"] ?? "Allow Onicode to add photos in Settings." }
+  var ok: String { values["ok"] ?? "OK" }
+  /// Nil keeps the system item's own label.
+  var close: String? { values["close"] }
+  var share: String? { values["share"] }
+
+  func position(_ position: Int, of total: Int) -> String {
+    (values["position"] ?? "{position} of {total}")
+      .replacingOccurrences(of: "{position}", with: String(position))
+      .replacingOccurrences(of: "{total}", with: String(total))
+  }
+}
+
 /// Full-screen image gallery modelled on Messages. It opens at once from the tapped thumbnail's
 /// own pixels and sharpens when the original arrives, so a slow or failed load never holds it back.
 final class OniNativeImageViewer: NSObject {
@@ -10,6 +35,7 @@ final class OniNativeImageViewer: NSObject {
   private let onFinish: () -> Void
   private weak var sources: OniPresentationSources?
   private let sourceIdentifiers: [String]
+  private let labels: OniImageViewerLabels
   private var titles: [String] = []
   private var urls: [URL?] = []
   /// The original bytes on disk, kept for sharing.
@@ -26,10 +52,11 @@ final class OniNativeImageViewer: NSObject {
   private var finished = false
 
   init(identifier: String, sources: OniPresentationSources, sourceIdentifiers: [String],
-       onFinish: @escaping () -> Void, completion: @escaping (Error?) -> Void) {
+       labels: OniImageViewerLabels, onFinish: @escaping () -> Void, completion: @escaping (Error?) -> Void) {
     self.identifier = identifier
     self.sources = sources
     self.sourceIdentifiers = sourceIdentifiers
+    self.labels = labels
     self.onFinish = onFinish
     self.completion = completion
     super.init()
@@ -40,7 +67,7 @@ final class OniNativeImageViewer: NSObject {
     self.titles = titles
     files = Array(repeating: nil, count: urls.count)
     currentIndex = selectedIndex
-    let viewer = OniImageViewerController(titles: titles, selectedIndex: selectedIndex)
+    let viewer = OniImageViewerController(titles: titles, selectedIndex: selectedIndex, labels: labels)
     viewer.sourceView = { [weak self] index in self?.sourceView(index) }
     viewer.fileForPage = { [weak self] index in self?.file(at: index) }
     viewer.onRetry = { [weak self] index in self?.load(index, retry: true) }
@@ -284,8 +311,8 @@ private final class OniImageViewerPage: UIView, UIScrollViewDelegate {
   private(set) var isFull = false
   var onRetry: (() -> Void)?
 
-  override init(frame: CGRect) {
-    super.init(frame: frame)
+  init(labels: OniImageViewerLabels) {
+    super.init(frame: .zero)
     scroll.delegate = self
     scroll.showsVerticalScrollIndicator = false
     scroll.showsHorizontalScrollIndicator = false
@@ -303,25 +330,25 @@ private final class OniImageViewerPage: UIView, UIScrollViewDelegate {
     spinner.color = .white
     spinner.hidesWhenStopped = true
     addSubview(spinner)
-    configureFailure()
+    configureFailure(labels)
   }
 
   @available(*, unavailable)
   required init?(coder: NSCoder) { nil }
 
-  private func configureFailure() {
+  private func configureFailure(_ labels: OniImageViewerLabels) {
     let icon = UIImageView(image: UIImage(systemName: "exclamationmark.triangle"))
     icon.tintColor = UIColor(white: 1, alpha: 0.8)
     icon.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 28, weight: .regular)
     let label = UILabel()
-    label.text = "This image could not be loaded."
+    label.text = labels.loadFailed
     label.textColor = UIColor(white: 1, alpha: 0.8)
     label.font = .preferredFont(forTextStyle: .subheadline)
     label.adjustsFontForContentSizeCategory = true
     label.textAlignment = .center
     label.numberOfLines = 0
     var configuration = UIButton.Configuration.gray()
-    configuration.title = "Try Again"
+    configuration.title = labels.retry
     configuration.cornerStyle = .capsule
     configuration.baseForegroundColor = .white
     configuration.baseBackgroundColor = UIColor(white: 1, alpha: 0.18)
@@ -481,6 +508,7 @@ final class OniImageViewerController: UIViewController, UIScrollViewDelegate, UI
   var onDismissed: () -> Void = {}
 
   private let titles: [String]
+  private let labels: OniImageViewerLabels
   private var currentIndex: Int
   private let backdrop = UIView()
   private let pager = UIScrollView()
@@ -499,14 +527,19 @@ final class OniImageViewerController: UIViewController, UIScrollViewDelegate, UI
   private var laidOutSize = CGSize.zero
   private var isLayingOut = false
   private lazy var saveItem = UIBarButtonItem(
-    title: "Save to Photos", image: UIImage(systemName: "square.and.arrow.down"),
+    title: labels.save, image: UIImage(systemName: "square.and.arrow.down"),
     primaryAction: UIAction { [weak self] _ in self?.save() })
-  private lazy var shareItem = UIBarButtonItem(
-    systemItem: .action, primaryAction: UIAction { [weak self] _ in self?.share() })
+  private lazy var shareItem: UIBarButtonItem = {
+    let item = UIBarButtonItem(
+      systemItem: .action, primaryAction: UIAction { [weak self] _ in self?.share() })
+    item.accessibilityLabel = labels.share
+    return item
+  }()
   private static let pageGap: CGFloat = 20
 
-  init(titles: [String], selectedIndex: Int) {
+  init(titles: [String], selectedIndex: Int, labels: OniImageViewerLabels) {
     self.titles = titles
+    self.labels = labels
     currentIndex = selectedIndex
     super.init(nibName: nil, bundle: nil)
   }
@@ -534,7 +567,7 @@ final class OniImageViewerController: UIViewController, UIScrollViewDelegate, UI
     pager.isHidden = true
     view.addSubview(pager)
     for index in titles.indices {
-      let page = OniImageViewerPage()
+      let page = OniImageViewerPage(labels: labels)
       page.imageView.accessibilityLabel = titles[index]
       page.onRetry = { [weak self] in self?.onRetry(index) }
       page.scroll.panGestureRecognizer.require(toFail: dismissPan)
@@ -557,8 +590,10 @@ final class OniImageViewerController: UIViewController, UIScrollViewDelegate, UI
   }
 
   private func configureChrome() {
-    navigationItem.leftBarButtonItem = UIBarButtonItem(
+    let closeItem = UIBarButtonItem(
       systemItem: .close, primaryAction: UIAction { [weak self] _ in self?.close() })
+    closeItem.accessibilityLabel = labels.close
+    navigationItem.leftBarButtonItem = closeItem
     if #unavailable(iOS 26.0) {
       // Before iOS 26 a navigation item has no subtitle, so the count sits under the title by hand.
       titleLabel.font = .preferredFont(forTextStyle: .headline)
@@ -588,7 +623,7 @@ final class OniImageViewerController: UIViewController, UIScrollViewDelegate, UI
   private func updateTitle() {
     updateActions()
     let title = titles[safe: currentIndex]
-    let counter = titles.count > 1 ? "\(currentIndex + 1) of \(titles.count)" : nil
+    let counter = titles.count > 1 ? labels.position(currentIndex + 1, of: titles.count) : nil
     navigationItem.title = title
     if #available(iOS 26.0, *) { navigationItem.subtitle = counter }
     titleLabel.text = title
@@ -868,11 +903,12 @@ final class OniImageViewerController: UIViewController, UIScrollViewDelegate, UI
       }
     }
     guard original != nil || image != nil else { return }
+    let labels = self.labels
     let cleanUp = { if let original { try? FileManager.default.removeItem(at: original.deletingLastPathComponent()) } }
     PHPhotoLibrary.requestAuthorization(for: .addOnly) { [weak self] status in
       guard status == .authorized || status == .limited else {
         cleanUp()
-        DispatchQueue.main.async { self?.showSaveError("Allow Onicode to add photos in Settings.") }
+        DispatchQueue.main.async { self?.showSaveError(labels.saveNotAllowed) }
         return
       }
       PHPhotoLibrary.shared().performChanges({
@@ -887,7 +923,7 @@ final class OniImageViewerController: UIViewController, UIScrollViewDelegate, UI
           if saved {
             self?.confirmSaved()
           } else {
-            self?.showSaveError(error?.localizedDescription ?? "Photos could not save this image.")
+            self?.showSaveError(error?.localizedDescription ?? labels.saveFailed)
           }
         }
       })
@@ -896,7 +932,7 @@ final class OniImageViewerController: UIViewController, UIScrollViewDelegate, UI
 
   private func confirmSaved() {
     UINotificationFeedbackGenerator().notificationOccurred(.success)
-    UIAccessibility.post(notification: .announcement, argument: "Saved to Photos")
+    UIAccessibility.post(notification: .announcement, argument: labels.saved)
     saveItem.image = UIImage(systemName: "checkmark")
     DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
       self?.saveItem.image = UIImage(systemName: "square.and.arrow.down")
@@ -904,8 +940,8 @@ final class OniImageViewerController: UIViewController, UIScrollViewDelegate, UI
   }
 
   private func showSaveError(_ message: String) {
-    let alert = UIAlertController(title: "Could not save image", message: message, preferredStyle: .alert)
-    alert.addAction(UIAlertAction(title: "OK", style: .default))
+    let alert = UIAlertController(title: labels.saveFailedTitle, message: message, preferredStyle: .alert)
+    alert.addAction(UIAlertAction(title: labels.ok, style: .default))
     present(alert, animated: true)
   }
 

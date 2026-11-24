@@ -46,6 +46,9 @@ class OniReviewDiffModule : Module() {
       Prop("styleJson") { view: OniReviewDiffView, styleJson: String ->
         view.setStyleJson(styleJson)
       }
+      Prop("labels") { view: OniReviewDiffView, labels: Map<String, String> ->
+        view.setLabels(labels)
+      }
       Prop("rowHeight") { view: OniReviewDiffView, rowHeight: Double ->
         view.setRowHeight(rowHeight.toFloat())
       }
