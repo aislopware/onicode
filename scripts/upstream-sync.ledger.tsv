@@ -3589,3 +3589,4 @@ b34d8b5bd5	take	fix(opencode): model list picks up config edits made while OpenC
 3839682275	take	fix(server): early requests get a 503 again instead of hanging until startup ends (#41627)
 8ef108f08a	take	fix(scripts): benchmark compares Windows runs against Windows noise floors (#41738)
 700a4644a4	take	fix(provider-core): agent sessions no longer inherit the AppImage runtime env (#30688); kept Onicode's live environmentView (shell snapshot arrives after drivers are built), so the AppImage scrub runs on read instead of on upstream's one-time copy
+9d0dd0f9c6	take	fix(web): Esc while resizing a spreadsheet column or row cancels without closing the sheet (#41790); test fixture uses zipFixture (Onicode dropped jszip)
