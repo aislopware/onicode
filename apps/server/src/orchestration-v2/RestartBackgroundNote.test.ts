@@ -216,7 +216,11 @@ it("does not repeat the note when a steer restarts the run on a new attempt", ()
       runs: [root, steered],
       providerTurns: [
         turnFor(root),
-        { runAttemptId: firstAttempt, providerThreadId: claudeThread, status: "completed" as const },
+        {
+          runAttemptId: firstAttempt,
+          providerThreadId: claudeThread,
+          status: "completed" as const,
+        },
       ],
       compactionMessageIds: () => new Set([MessageId.make("message:compact")]),
       run: steered,

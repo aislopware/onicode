@@ -201,8 +201,7 @@ function matchesExpectation(task: ScheduledTask, expected: ScheduledTaskExpectat
   const stored: ScheduledTaskExpectation = { ...task, threadMode: scheduledTaskThreadMode(task) };
   return CHECKED_FIELDS.every(
     (field) =>
-      expected[field] === undefined ||
-      NodeUtil.isDeepStrictEqual(stored[field], expected[field]),
+      expected[field] === undefined || NodeUtil.isDeepStrictEqual(stored[field], expected[field]),
   );
 }
 

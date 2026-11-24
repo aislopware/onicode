@@ -1491,7 +1491,11 @@ it.effect("an editor's save is refused once the fields it loaded changed elsewhe
       assert.deepInclude(saved, { enabled: false, prompt: "Triage and label" });
 
       // Where and how it runs is checked too.
-      const bound = { ...task, threadId: ThreadId.make("thread:a"), threadMode: "continue" } as const;
+      const bound = {
+        ...task,
+        threadId: ThreadId.make("thread:a"),
+        threadMode: "continue",
+      } as const;
       const { title, prompt, enabled, schedule, projectId, threadId, threadMode } = bound;
       const { workspaceStrategy, modelSelection } = bound;
       const edit = {
