@@ -3637,3 +3637,4 @@ ac3af66f21	take	taken as is
 28d6719114	take	test conflict: kept Onicode's Proxy-env case beside upstream's Windows tree-kill case
 ccf6ef5501	take	taken as is; Onicode's dispatchThreadStop and stop helpers match upstream, so childNeedsStop mirrors them
 a4029d4b91	take	test conflict: kept both citation tests (Onicode fold cases + upstream IME Escape)
+3c3246e8ce	take	kept Onicode's boundedRedactedText for the failure message: it already cuts surrogate-safe and also redacts credentials; took upstream's test and scenario (scenario on the desktop target, native Thread actions menu)
