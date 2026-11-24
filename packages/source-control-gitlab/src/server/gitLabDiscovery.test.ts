@@ -170,6 +170,15 @@ self-hosted.example.test
 `,
     exitCode: 0,
   },
+  {
+    name: "from an SCP remote whose login holds an at sign",
+    remoteUrl: "alice@corp.com@self-hosted.example.test:group/project.git",
+    host: "self-hosted.example.test",
+    stdout: `self-hosted.example.test
+  ✓ Logged in to self-hosted.example.test as gitlab-user
+`,
+    exitCode: 0,
+  },
 ] as const)("claims a self-hosted remote glab is signed in to $name", (scenario) =>
   Effect.gen(function* () {
     const remote = parseGitRemoteHost(scenario.remoteUrl);

@@ -567,7 +567,8 @@ export function isChangeRequestInProjectRepository(
   );
 }
 
-const SCP_REMOTE = /^[a-zA-Z0-9._-]+@([^:/]+):/;
+// ssh ends the login at the last `@` before the host.
+const SCP_REMOTE = /^[^/:\s]+@([^:/@\s]+):/;
 
 /** Null when the remote names no host, such as a local path. */
 export function parseGitRemoteHost(remoteUrl: string): GitRemoteHost | null {

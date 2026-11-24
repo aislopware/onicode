@@ -180,7 +180,7 @@ export const discovery = {
     const authority = /^[a-z][a-z0-9+.-]*:\/\/([^/]+)/iu.exec(remoteUrl.trim())?.[1];
     const remoteHost = authority
       ? authority.slice(authority.lastIndexOf("@") + 1)
-      : remoteUrl.trim().replace(/^[^@:/]+@/u, "");
+      : remoteUrl.trim().replace(/^[^:/]*@/u, "");
     const host = remoteHost.toLowerCase().startsWith(provider.name.toLowerCase())
       ? remoteHost.slice(0, provider.name.length)
       : provider.name;
