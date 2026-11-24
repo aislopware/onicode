@@ -1,9 +1,9 @@
 import { type PullRequestRef, PullRequestReviewCommentDraft } from "@onicode/contracts";
 import * as Schema from "effect/Schema";
 import { create } from "zustand";
-import { createJSONStorage, persist } from "zustand/middleware";
+import { persist, type StorageValue } from "zustand/middleware";
 
-import { resolveStorage } from "../../lib/storage";
+import { createDeferredStorage } from "../../lib/storage";
 import { randomUUID } from "../../lib/utils";
 
 export type PendingReviewComment = PullRequestReviewCommentDraft & { readonly id: string };
@@ -55,6 +55,15 @@ function restoreReviewDrafts(persisted: unknown): PersistedReviewDrafts {
   return { drafts, summaries };
 }
 
+// The summary is written on every keystroke, so writes are batched as composer drafts are.
+const reviewDraftStorage = createDeferredStorage<StorageValue<PersistedReviewDrafts>>(
+  typeof localStorage !== "undefined" ? localStorage : undefined,
+  (value) => JSON.stringify(value),
+);
+if (typeof window !== "undefined") {
+  window.addEventListener("beforeunload", () => reviewDraftStorage.flush());
+}
+
 export const usePullRequestReviewStore = create<PullRequestReviewStoreState>()(
   persist(
     (set) => ({
@@ -98,9 +107,16 @@ export const usePullRequestReviewStore = create<PullRequestReviewStoreState>()(
     }),
     {
       name: "onicode:pull-request-review-drafts:v1",
-      storage: createJSONStorage(() =>
-        resolveStorage(typeof localStorage !== "undefined" ? localStorage : undefined),
-      ),
+      storage: {
+        getItem: (name) => {
+          const raw = reviewDraftStorage.getItem(name);
+          return typeof raw === "string"
+            ? (JSON.parse(raw) as StorageValue<PersistedReviewDrafts>)
+            : null;
+        },
+        setItem: (name, value) => reviewDraftStorage.setItem(name, value),
+        removeItem: (name) => reviewDraftStorage.removeItem(name),
+      },
       partialize: ({ drafts, summaries }) => ({ drafts, summaries }),
       merge: (persisted, current) => ({ ...current, ...restoreReviewDrafts(persisted) }),
     },
