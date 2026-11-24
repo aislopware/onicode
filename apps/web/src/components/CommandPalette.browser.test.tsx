@@ -367,7 +367,7 @@ describe("CommandPalette open intents", () => {
     await userEvent.keyboard("{Escape}");
     await expect.element(palette).toHaveAttribute("data-palette-mode", "command");
     await expect
-      .element(page.getByPlaceholder("Search commands, projects, and threads..."))
+      .element(page.getByPlaceholder("Search commands, projects, and threads…"))
       .toHaveFocus();
 
     await act(() => {
