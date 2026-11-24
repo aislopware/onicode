@@ -1,19 +1,20 @@
 import type { ProviderInstanceEnvironment } from "@onicode/contracts";
+import { appImageRuntimeScrub } from "@onicode/shared/appImageRuntimeEnv";
 import * as HostProcess from "@onicode/shared/HostProcess";
 import * as Effect from "effect/Effect";
 
 import { expandHomeVariable } from "./pathExpansion.ts";
 
 /**
- * A copy of `base` that keeps reading it for every name the copy has not written or deleted.
- * Drivers build their environment once, and the desktop's shell snapshot (PATH, CA files) reaches
- * the host after that. `hidden` names read as unset from `base`. Names fold case on Windows.
- * It is a Proxy, which structured clone (postMessage) refuses: spread it first.
+ * A copy of `base` that keeps reading what it has not written: the desktop's shell snapshot reaches
+ * the host after drivers are built. `hidden` names read as unset; `rewrite` maps what `base` gives.
+ * Names fold case on Windows. It is a Proxy, which structured clone refuses: spread it first.
  */
 export const environmentView = (
   base: NodeJS.ProcessEnv,
   platform: NodeJS.Platform,
   hidden: (name: string) => boolean = () => false,
+  rewrite: (name: string, value: string) => string | undefined = (_name, value) => value,
 ): NodeJS.ProcessEnv => {
   const windows = platform === "win32";
   const fold = (name: string) => (windows ? name.toUpperCase() : name);
@@ -21,7 +22,7 @@ export const environmentView = (
   const local = new Map<string, { readonly name: string; readonly value: string | undefined }>();
   const own = (name: string) => {
     const value = Object.hasOwn(base, name) ? base[name] : undefined;
-    return typeof value === "string" ? value : undefined;
+    return typeof value === "string" ? rewrite(name, value) : undefined;
   };
   const read = (name: string | symbol) => {
     if (typeof name !== "string") return undefined;
@@ -67,13 +68,17 @@ export const mergeProviderInstanceEnvironment = Effect.fn(function* (
   environment: ProviderInstanceEnvironment | undefined,
   baseEnv: NodeJS.ProcessEnv = process.env,
 ) {
+  const platform = yield* HostProcess.Platform;
+  // Commands the agent runs inherit this env; the AppImage mount's libraries would shadow the system's.
+  const scrub = appImageRuntimeScrub(baseEnv);
+  const hostEnv =
+    scrub === undefined ? baseEnv : environmentView(baseEnv, platform, undefined, scrub);
   if (!environment || environment.length === 0) {
-    return baseEnv;
+    return hostEnv;
   }
 
   const home = yield* HostProcess.HomeDirectory;
-  const platform = yield* HostProcess.Platform;
-  const next = environmentView(baseEnv, platform);
+  const next = environmentView(hostEnv, platform);
   for (const variable of environment) {
     // An unresolved secret reference carries no value; the registry resolves it for the provider.
     if (typeof variable.value !== "string") continue;

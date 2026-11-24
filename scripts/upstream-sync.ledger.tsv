@@ -3588,3 +3588,4 @@ b34d8b5bd5	take	fix(opencode): model list picks up config edits made while OpenC
 6ac6817267	take	adopted upstream over Onicode's base-branch stamp key: packed-refs names instead of its stat survive repacks and fetches onto packed refs, and the stamp in the value leaves no superseded entries; kept Onicode's lstat of remote HEADs (symlinked symrefs), reftable placeholder handling, git-common-dir key and shared per-worktree stamp read, which upstream lacks
 3839682275	take	fix(server): early requests get a 503 again instead of hanging until startup ends (#41627)
 8ef108f08a	take	fix(scripts): benchmark compares Windows runs against Windows noise floors (#41738)
+700a4644a4	take	fix(provider-core): agent sessions no longer inherit the AppImage runtime env (#30688); kept Onicode's live environmentView (shell snapshot arrives after drivers are built), so the AppImage scrub runs on read instead of on upstream's one-time copy
