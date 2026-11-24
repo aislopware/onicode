@@ -3724,3 +3724,4 @@ d7ae1e1791	take	fix(web): report server rollback after an app update
 43a0e74fb9	take	fix(server): oni_thread_launch validates and normalizes modelSelection options
 f692811b95	take	applied to apps/server/src/service, where Onicode keeps upstream's cloud/serviceSelectionLock
 9842ca0c12	take	fix(web): an image no longer jumps while its pane is resized
+849d19447f	take	kept Onicode's clearSearchOnEscape helper over upstream's inline handler: upstream's new browser test passes against it, IME and held-Esc cases included (AppRouteModal already ignores a composing Esc); took the test with a Bearer authorization, which Onicode's voice requests need
