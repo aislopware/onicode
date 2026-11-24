@@ -15,7 +15,6 @@ import {
   AuthAccessWriteScope,
   type AuthMcpClientAccess,
   type EnvironmentId,
-  mcpClientScopes,
 } from "@onicode/contracts";
 import * as Result from "effect/Result";
 import { T, useGT, useMessages } from "gt-react-native";
@@ -115,7 +114,8 @@ function LinkSeveralSheet(props: {
   const gt = useGT();
   const m = useMessages();
   const insets = useSafeAreaInsets();
-  const routes = useLinkThroughRoutes(props.environmentId, true);
+  const [access, setAccess] = useState<AuthMcpClientAccess>("approval-required");
+  const routes = useLinkThroughRoutes(props.environmentId, true, access);
   // Machines this app has no entry for are still pickable when one of its environments links
   // to them at full access.
   const machines = useLinkableMachines(props.environmentId, true, [...routes.values()]);
@@ -136,7 +136,6 @@ function LinkSeveralSheet(props: {
   );
   const writable = useEnvironmentsWithScope(scoped, AuthAccessWriteScope);
   const [selected, setSelected] = useState(NO_MACHINES);
-  const [access, setAccess] = useState<AuthMcpClientAccess>("approval-required");
   const [outcomes, setOutcomes] = useState(NO_OUTCOMES);
   // Machines whose own session gave no code: a retry goes through a route when there is one.
   const [mintFailed, setMintFailed] = useState(NO_MACHINES);
@@ -155,28 +154,7 @@ function LinkSeveralSheet(props: {
     reportFailure: false,
     reportDefect: false,
   });
-  // The environment holding a link refuses a level this client's session there does not hold.
-  const viaIds = [...new Set([...routes.values()].map((route) => route.viaEnvironmentId))].join(
-    "\n",
-  );
-  const viaScoped = useMemo(
-    () =>
-      viaIds
-        .split("\n")
-        .filter((id) => id.length > 0)
-        .map((id) => ({ environmentId: id as EnvironmentId })),
-    [viaIds],
-  );
-  const pairScopes = useMemo(() => [AuthAccessWriteScope, ...mcpClientScopes(access)], [access]);
-  const pairsThrough = useEnvironmentsWithScope(viaScoped, pairScopes);
-  const candidates = linkBatchCandidates(
-    machines,
-    writable,
-    linksState,
-    routes,
-    mintFailed,
-    pairsThrough,
-  );
+  const candidates = linkBatchCandidates(machines, writable, linksState, routes, mintFailed);
   const selectable = candidates.flatMap(({ machine, blocked, via }) =>
     blocked === null && outcomes.get(machine.environmentId)?.kind !== "linked"
       ? [{ ...machine, via }]

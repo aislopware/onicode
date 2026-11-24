@@ -22,6 +22,7 @@ describe("cliRelease", () => {
     expect(cliArchiveTarCommand("win32", { SystemRoot: "D:\\Win" })).toBe(
       "D:\\Win\\System32\\tar.exe",
     );
+    expect(cliArchiveTarCommand("win32", { WINDIR: "D:\\Win" })).toBe("D:\\Win\\System32\\tar.exe");
     expect(cliArchiveTarCommand("win32", {})).toBe("C:\\Windows\\System32\\tar.exe");
   });
 

@@ -1,4 +1,5 @@
 import {
+  AuthAccessWriteScope,
   AuthOrchestrationOperateScope,
   AuthProvidersManageScope,
   EnvironmentId,
@@ -68,6 +69,10 @@ it("keeps pending and denied environments out of worker grants while retaining v
   expect(useEnvironmentsWithScope(environments, AuthOrchestrationOperateScope)).toEqual(
     new Set([primary]),
   );
+  // Each scope of a list is needed.
+  expect(
+    useEnvironmentsWithScope(environments, [AuthOrchestrationOperateScope, AuthAccessWriteScope]),
+  ).toEqual(new Set());
   appAtomRegistry.set(source(secondary), AsyncResult.waiting(AsyncResult.success(session(true))));
   expect(readEnvironmentScope(secondary, AuthOrchestrationOperateScope)).toBe(true);
   expect(useEnvironmentsWithScope(environments, AuthOrchestrationOperateScope)).toEqual(

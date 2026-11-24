@@ -16,6 +16,11 @@ import {
 import { resolveEditorCommand } from "@onicode/shared/editor";
 import * as HostProcess from "@onicode/shared/HostProcess";
 import { isCommandAvailable, resolveSpawnCommand } from "@onicode/shared/shell";
+import {
+  windowsPowerShellPath,
+  windowsRoot,
+  windowsSystem32Path,
+} from "@onicode/shared/windowsSystem";
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -198,14 +203,6 @@ function escapePowerShellStringLiteral(input: string): string {
   return `'${input.replace(/['\u2018-\u201b]/g, "$&$&")}'`;
 }
 
-function resolveWindowsRoot(env: NodeJS.ProcessEnv): string {
-  return env.SYSTEMROOT || env.windir || String.raw`C:\Windows`;
-}
-
-function resolvePowerShellPath(env: NodeJS.ProcessEnv = {}): string {
-  return `${resolveWindowsRoot(env)}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`;
-}
-
 // WSL automount roots vary; resolve PowerShell via PATH to match launchEditor's availability check.
 const WSL_POWERSHELL_COMMAND = "powershell.exe";
 
@@ -338,7 +335,7 @@ const fileManagerRevealKindForPlatform = Effect.fn(
 > {
   if (platform === "darwin") return "finder";
   if (platform === "win32") {
-    return (yield* isCommandAvailable(resolvePowerShellPath(env), { env }))
+    return (yield* isCommandAvailable(windowsPowerShellPath(env), { env }))
       ? "file-explorer"
       : undefined;
   }
@@ -535,7 +532,7 @@ const resolveEditorLaunch = Effect.fn("resolveEditorLaunch")(function* (
       ...powerShellFileManagerLaunch(
         target,
         `Invoke-Item -LiteralPath ${escapePowerShellStringLiteral(normalizeWindowsFileManagerPath(target))}`,
-        resolvePowerShellPath(env),
+        windowsPowerShellPath(env),
       ),
       detached: WINDOWS_POWERSHELL_DETACHED,
     };
@@ -607,7 +604,7 @@ const resolveFileManagerRevealLaunch = Effect.fn("resolveFileManagerRevealLaunch
       ...powerShellFileManagerLaunch(
         target,
         buildFileManagerRevealPowerShellSource(windowsTarget, path.dirname(windowsTarget)),
-        resolvePowerShellPath(env),
+        windowsPowerShellPath(env),
       ),
       detached: WINDOWS_POWERSHELL_DETACHED,
     };
@@ -703,7 +700,7 @@ const hasStockWindowsFolderVerb = Effect.fn("externalLauncher.hasStockWindowsFol
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
     const handle = yield* spawner.spawn(
       ChildProcess.make(
-        `${resolveWindowsRoot(env)}\\System32\\reg.exe`,
+        windowsSystem32Path(env, "reg.exe"),
         ["query", "HKCR\\Directory\\shell", "/ve"],
         { stdin: "ignore", stderr: "ignore" },
       ),
@@ -723,7 +720,7 @@ const hasStockWindowsFolderVerb = Effect.fn("externalLauncher.hasStockWindowsFol
 const revealWindowsItem = Effect.fn("externalLauncher.revealWindowsItem")(function* (
   target: string,
 ) {
-  const command = `${resolveWindowsRoot(yield* readBrowserLaunchEnv)}\\explorer.exe`;
+  const command = `${windowsRoot(yield* readBrowserLaunchEnv)}\\explorer.exe`;
   const args = [`/select,"${normalizeWindowsFileManagerPath(target)}"`];
   yield* (yield* WindowsVerbatimSpawn)(command, args).pipe(
     Effect.mapError(

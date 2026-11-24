@@ -2751,7 +2751,9 @@ it.layer(
                 Layer.provide(
                   Layer.mock(ProviderInstanceRegistryMutator.ProviderInstanceRegistryMutator)({
                     rebuildOnHostPathChange: (select) =>
-                      select.pipe(Effect.map((ids) => void rebuilt.push(ids))),
+                      select.pipe(
+                        Effect.map((selection) => void rebuilt.push(selection.instanceIds)),
+                      ),
                   }),
                 ),
                 Layer.provideMerge(
@@ -2776,7 +2778,7 @@ it.layer(
           yield* registry.refresh();
 
           assert.strictEqual(env.PATH, host.expectedPath);
-          assert.deepStrictEqual(rebuilt, [[ProviderInstanceId.make("missing")]]);
+          assert.deepStrictEqual(rebuilt[0], [ProviderInstanceId.make("missing")]);
         }).pipe(
           Effect.provideService(HostProcess.Platform, host.platform),
           Effect.provideService(HostProcess.Environment, env),
@@ -2792,7 +2794,8 @@ it.layer(
     it.effect.each([
       "missing",
       "in-flight missing",
-      "in-flight installed",
+      "first check missing",
+      "first check installed",
       "installed error",
       "acpRegistry",
     ] as const)("rebuilds and probes after a late login-shell PATH (%s)", (mode) => {
@@ -2809,14 +2812,15 @@ it.layer(
         );
         yield* fs.chmod(shell, 0o755);
         env.SHELL = shell;
-        const inFlight = mode.startsWith("in-flight");
+        const firstCheck = mode.startsWith("first check");
+        const inFlight = firstCheck || mode === "in-flight missing";
         // An installed CLI whose check fails until the late PATH may hold live sessions.
-        const installedEarly = mode === "in-flight installed" || mode === "installed error";
+        const installedEarly = mode === "first check installed" || mode === "installed error";
         const entered = yield* Deferred.make<void>();
         const release = yield* Deferred.make<void>();
         const paths: Array<string | undefined> = [];
-        // The installed row blocks its first check; the missing row a check after the first.
-        const blockAt = mode === "in-flight missing" ? 2 : 1;
+        const rebuildDone = yield* Deferred.make<void>();
+        const blockAt = firstCheck ? 1 : 2;
         let probes = 0;
         const driverKind = ProviderDriverKind.make(mode === "acpRegistry" ? "acpRegistry" : "pi");
         const instanceId = ProviderInstanceId.make("late-path");
@@ -2830,8 +2834,6 @@ it.layer(
               const path = env.PATH;
               paths.push(path);
               const late = path?.includes("/late/bin") === true;
-              // The old probe ends once the second refresh has rebuilt, so that refresh meets it.
-              if (late) yield* Deferred.succeed(release, undefined);
               // An ACP Registry agent reports missing for setup states unrelated to PATH.
               const installed = mode !== "acpRegistry" && (installedEarly || late);
               const ready = mode === "installed error" ? late : installed;
@@ -2903,6 +2905,12 @@ it.layer(
           yield* fs.writeFileString(pathFile, "/early/bin:/late/bin");
           yield* TestClock.adjust("11 seconds");
           const second = yield* registry.refresh().pipe(Effect.forkScoped);
+          // The blocked check ends once the second refresh has selected and joined the first's pass.
+          if (inFlight) {
+            yield* Deferred.await(rebuildDone);
+            // Completing it ran this fiber at once, ahead of the second refresh's next step.
+            yield* Effect.yieldNow;
+          }
           yield* Deferred.succeed(release, undefined);
           if (running) yield* Fiber.join(running);
           const providers = yield* Fiber.join(second);
@@ -2910,18 +2918,25 @@ it.layer(
             mode !== "acpRegistry",
           );
           expect(paths).toEqual(
-            mode === "missing" || mode === "in-flight missing"
-              ? ["/early/bin", "/early/bin:/late/bin"]
-              : ["/early/bin"],
+            mode.endsWith("missing") ? ["/early/bin", "/early/bin:/late/bin"] : ["/early/bin"],
           );
         }).pipe(
           Effect.provide(
             ProviderRegistry.layer.pipe(
               Layer.provide(
-                Layer.succeed(
-                  ProviderInstanceRegistryMutator.ProviderInstanceRegistryMutator,
-                  built.mutator,
-                ),
+                Layer.succeed(ProviderInstanceRegistryMutator.ProviderInstanceRegistryMutator, {
+                  ...built.mutator,
+                  rebuildOnHostPathChange: (select) =>
+                    built.mutator
+                      .rebuildOnHostPathChange(select)
+                      .pipe(
+                        Effect.tap(() =>
+                          env.PATH?.includes("/late/bin")
+                            ? Deferred.succeed(rebuildDone, undefined)
+                            : Effect.void,
+                        ),
+                      ),
+                }),
               ),
               Layer.provideMerge(
                 Layer.succeed(ProviderInstanceRegistry.ProviderInstanceRegistry, built.registry),
