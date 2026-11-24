@@ -106,6 +106,12 @@ describe("normalizeGitRemoteUrl", () => {
       "https://git.example.com/repo",
     );
     expect(normalizeGitRemoteUrl("/srv/git/Repo.git")).toBe("/srv/git/repo");
+    expect(normalizeGitRemoteUrl("https://alice@corp.com:s3cr3t@git.example.com/repo.git")).toBe(
+      "https://git.example.com/repo",
+    );
+    expect(normalizeGitRemoteUrl("ssh://alice@corp.com:s3cr3t@git.example.com/repo.git")).toBe(
+      "ssh://alice@corp.com@git.example.com/repo",
+    );
   });
 });
 
