@@ -223,14 +223,20 @@ function scanMarkdown(
   let openWrappers = 0;
   let wrapperStart = 0;
   // The last cut an open wrapper held back, which a piece too large to render falls back to.
-  let held: { line: number; resume: MarkdownSplitResume } | null = null;
+  let held: {
+    line: number;
+    index: number;
+    definitionCount: number;
+    resume: MarkdownSplitResume;
+  } | null = null;
   // The kind of line whose comment is still open; it does not continue into another kind.
   let commentIn: "html" | "text" | null = null;
   let inCommentBlock = false;
   let offset = from.start;
   let linesBefore = from.linesBefore;
   const textLines = (from.start > 0 ? text.slice(from.start) : text).split("\n");
-  for (const [index, line] of textLines.entries()) {
+  for (let index = 0; index < textLines.length; index++) {
+    const line = textLines[index] ?? "";
     const inFrontmatter = offset < frontmatter;
     const blockBefore = closes;
     if (inFrontmatter) {
@@ -267,7 +273,7 @@ function scanMarkdown(
           chars = 0;
           held = null;
         } else {
-          held = { line: lines.length, resume: at };
+          held = { line: lines.length, index, definitionCount: definitions.length, resume: at };
         }
       }
       closes = blockCloser(line);
@@ -314,16 +320,30 @@ function scanMarkdown(
     }
     lines.push(line);
     chars += line.length + 1;
-    // Cuts at the held cut and rescans from it, as extendMarkdownSplit would resume there. A last
-    // line may still become a cut itself, so it waits for its line break.
+    // Cuts at the held cut and rescans from it in place, as extendMarkdownSplit would resume
+    // there. A last line may still become a cut itself, so it waits for its line break.
     if (
       held !== null &&
       index < textLines.length - 1 &&
       chars - 1 > LARGE_MARKDOWN_CHUNK_MAX_CHARS
     ) {
       chunks.push({ text: lines.slice(0, held.line).join("\n"), lines: held.line });
-      const kept = definitions.join("\n").slice(0, held.resume.definitions);
-      return scanMarkdown(text, targetChars, chunks, kept, held.resume);
+      ({ afterBlankLine, afterDefinition, afterHeading, definitionChars } = held.resume);
+      resume = held.resume;
+      offset = held.resume.start;
+      linesBefore = held.resume.linesBefore;
+      definitions.length = held.definitionCount;
+      definitionsLength = held.resume.definitions;
+      lines = [];
+      chars = 0;
+      closes = null;
+      openWrappers = 0;
+      wrapperStart = 0;
+      commentIn = null;
+      inCommentBlock = false;
+      index = held.index - 1;
+      held = null;
+      continue;
     }
     afterBlankLine = inFrontmatter || line.trim() === "";
     afterHeading = closes === null && (ATX_HEADING.test(line) || THEMATIC_BREAK.test(line));
