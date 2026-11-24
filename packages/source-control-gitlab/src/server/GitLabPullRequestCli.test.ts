@@ -1762,6 +1762,44 @@ layer("GitLabPullRequestCli.layer", (it) => {
       }),
   );
 
+  it.effect("refuses a pinned review before posting anything once the head has moved", () =>
+    Effect.gen(function* () {
+      mockedExecute.mockReturnValueOnce(
+        Effect.succeed(
+          output(
+            JSON.stringify({
+              iid: 7,
+              title: "t",
+              web_url: "https://gitlab.com/acme/web/-/merge_requests/7",
+              source_branch: "feat",
+              target_branch: "main",
+              created_at: "2026-07-01T00:00:00Z",
+              updated_at: "2026-07-01T00:00:00Z",
+              diff_refs: { base_sha: "base", head_sha: "moved", start_sha: "start" },
+            }),
+          ),
+        ),
+      );
+      mockedExecute.mockReturnValue(Effect.succeed(output("{}")));
+      const cli = yield* GitLabPullRequestCli.GitLabPullRequestCli;
+
+      const error = yield* cli
+        .submitReview({
+          cwd: "/w",
+          repository: "acme/web",
+          number: 7,
+          verdict: "approve",
+          body: "Looks right.",
+          expectedHeadSha: "head",
+          comments: [{ path: "src/b.ts", position: { kind: "added", newLine: 12 }, body: "x" }],
+        })
+        .pipe(Effect.flip);
+
+      assert.strictEqual(error._tag, "GitLabMutationRefusedError");
+      expect(mockedExecute).toHaveBeenCalledTimes(1);
+    }),
+  );
+
   it.effect("sends a review as its comments, then its summary, then the verdict", () =>
     Effect.gen(function* () {
       mockedExecute.mockReturnValueOnce(

@@ -872,6 +872,7 @@ const make = Effect.gen(function* () {
           usageHistoryRetentionDays: "unlimited",
           enablePreviewTunnel: false,
           enableAgentBrowserAccess: false,
+          enableAgentBrowserUse: false,
           defaultRuntimeMode: "approval-required",
           observability: { ...managed.defaults.observability, errorReporting: false },
         };
