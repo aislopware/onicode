@@ -1264,6 +1264,11 @@ process.disconnect();
       const alias = yield* makeService(undefined, "1.2.3", aliasDir);
       expect(yield* alias.status).toMatchObject({ current: true });
       expect((yield* alias.status).otherBaseDir).toBeUndefined();
+      // A spelling the unit has to quote and escape is still current.
+      const spacedDir = path.join(linkDir, "Onicode 100%");
+      yield* fs.symlink(baseDir, spacedDir);
+      const spaced = yield* makeService(undefined, "1.2.3", spacedDir);
+      expect(yield* spaced.status).toMatchObject({ current: true });
       expect(yield* alias.restart).toBe("restarted");
       commands.length = 0;
       yield* alias.withStopped(Effect.void);
@@ -1271,6 +1276,40 @@ process.disconnect();
       expect((yield* alias.install()).baseDir).toBe(aliasDir);
       expect(yield* service.status).toMatchObject({ current: true });
       expect((yield* service.status).otherBaseDir).toBeUndefined();
+    }),
+  );
+
+  it.effect("keeps a symlinked home current when the install directory is inside it", () =>
+    Effect.gen(function* () {
+      const { fs, baseDir, makeService } = yield* makeHarness();
+      const path = yield* Path.Path;
+      const installed = yield* makeService(
+        undefined,
+        "1.2.3",
+        baseDir,
+        undefined,
+        undefined,
+        undefined,
+        path.join(baseDir, "bin"),
+      );
+      yield* installed.install();
+      const linkDir = yield* fs.makeTempDirectoryScoped({ prefix: "oni-symlink-home-" });
+      const aliasDir = path.join(linkDir, "alias");
+      yield* fs.symlink(baseDir, aliasDir);
+
+      // Read from the unit, or given at this spelling.
+      for (const installBinDir of [null, path.join(aliasDir, "bin")]) {
+        const alias = yield* makeService(
+          undefined,
+          "1.2.3",
+          aliasDir,
+          undefined,
+          undefined,
+          undefined,
+          installBinDir,
+        );
+        expect(yield* alias.status).toMatchObject({ current: true });
+      }
     }),
   );
 

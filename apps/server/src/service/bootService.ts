@@ -1571,10 +1571,29 @@ export const make = Effect.fn("service.boot_service.make")(function* (input: {
     const installedBaseDir = bootServiceBaseDirOf(unit);
     const otherBaseDir = yield* otherBaseDirOf(unit);
     // Another spelling of this home is current; repairing it would flip the unit between spellings.
-    const thisHomeUnit =
-      installedBaseDir !== undefined && otherBaseDir === undefined
-        ? unit.replaceAll(installedBaseDir, () => input.baseDir)
-        : unit;
+    // So the unit is rendered at its own spelling: its text escapes paths, and an install directory
+    // read from it is already at that spelling.
+    const expectedPlan = (): BootServicePlan => {
+      const own = planForUnit(unit);
+      if (
+        installedBaseDir === undefined ||
+        otherBaseDir !== undefined ||
+        installedBaseDir === input.baseDir
+      ) {
+        return own;
+      }
+      const rebase = (file: string) =>
+        file === input.baseDir || file.startsWith(input.baseDir + path.sep)
+          ? installedBaseDir + file.slice(input.baseDir.length)
+          : file;
+      return {
+        ...own,
+        baseDir: installedBaseDir,
+        logPath: rebase(own.logPath),
+        program: own.program.map(rebase),
+        ...(installBinDir ? { installBinDir: rebase(installBinDir) } : {}),
+      };
+    };
     const normalizeUnit = (contents: string) =>
       manager.kind === "launchd"
         ? contents.replace(/(<key>PATH<\/key>\n\s*<string>)[^<]*(<\/string>)/, "$1$2")
@@ -1595,8 +1614,8 @@ export const make = Effect.fn("service.boot_service.make")(function* (input: {
       problems,
       current:
         problems.length === 0 &&
-        !(manager.kind === "systemd" && systemdUnsafeValue(planForUnit(unit))) &&
-        normalizeUnit(thisHomeUnit) === normalizeUnit(manager.render(planForUnit(unit))) &&
+        !(manager.kind === "systemd" && systemdUnsafeValue(expectedPlan())) &&
+        normalizeUnit(unit) === normalizeUnit(manager.render(expectedPlan())) &&
         runtimeEntryExists &&
         Option.isSome(runtimeSentinel) &&
         runtimeSentinel.value.trim() === input.cliVersion &&

@@ -398,6 +398,32 @@ describe("DesktopBrowserHost", () => {
       }).pipe(Effect.scoped),
   );
 
+  it.effect("prods a new wait at once though the last one was dropped mid-backoff", () =>
+    Effect.gen(function* () {
+      const host = yield* makeDrawnHost;
+      const debuggee = makeDebuggee({
+        drawsOnlyWhenCaptured: () => false,
+        capturesStall: () => false,
+      });
+      host.attach(key, debuggee.tab);
+      yield* watchReplies(host);
+      yield* command(host, 1, "Runtime.evaluate");
+      yield* settle;
+      for (const wait of ["250 millis", "500 millis", "1 second"] as const)
+        yield* TestClock.adjust(wait);
+      expect(debuggee.nativeCaptures()).toBe(3);
+
+      // The turn gives up on it while the loop sleeps toward a 2 s prod.
+      yield* host.handleCommandLine(
+        encodeJson({ type: "turn", threadId: key.threadId, active: false }),
+      );
+      yield* command(host, 2, "Runtime.evaluate");
+      yield* settle;
+      yield* TestClock.adjust("250 millis");
+      expect(debuggee.nativeCaptures()).toBe(4);
+    }),
+  );
+
   it.effect("prods a guest its window stopped drawing until what waits on it settles", () =>
     Effect.gen(function* () {
       let drawsWhenCaptured = true;
