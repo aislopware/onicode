@@ -120,6 +120,8 @@ export interface AcpSessionRuntimeOptions {
   readonly cwd: string;
   readonly resumeSessionId?: string;
   readonly resumeMethod?: "load" | "resume";
+  /** Runs right before session/load or session/resume, once the agent is initialized. */
+  readonly onSessionResume?: Effect.Effect<void>;
   readonly sessionLoadTimeout?: Duration.Input;
   readonly sessionLoadReplayIdleGap?: Duration.Input;
   // Treat replay going quiet as loaded, for agents whose session/load may never reply.
@@ -2625,6 +2627,7 @@ export const make = Effect.fn("AcpSessionRuntime.make")(function* (
             ...additionalDirectories,
             mcpServers: sessionMcpServers(initializeResult),
           } satisfies EffectAcpSchema.LoadSessionRequest;
+          if (options.onSessionResume) yield* options.onSessionResume;
           sessionSetupResult = yield* runLoadSessionWithReplayIdle(loadPayload, initializeResult);
         } else if (initializeResult.agentCapabilities?.sessionCapabilities?.resume != null) {
           const resumePayload = {
@@ -2633,6 +2636,7 @@ export const make = Effect.fn("AcpSessionRuntime.make")(function* (
             ...additionalDirectories,
             mcpServers: sessionMcpServers(initializeResult),
           } satisfies EffectAcpSchema.ResumeSessionRequest;
+          if (options.onSessionResume) yield* options.onSessionResume;
           sessionSetupResult = yield* runLoggedRequest(
             "session/resume",
             resumePayload,

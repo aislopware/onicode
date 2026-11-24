@@ -255,6 +255,7 @@ export interface AcpAdapterV2RuntimeInput {
   readonly httpMcpServers?: ReadonlyArray<EffectAcpSchema.McpServer>;
   readonly processEnvironment?: NodeJS.ProcessEnv;
   readonly resumeSessionId?: string;
+  readonly onSessionResume?: Effect.Effect<void>;
   readonly interruptPromptOnCancel?: boolean;
   readonly sessionMeta?: NonNullable<AcpSessionRuntime.AcpSessionRuntimeOptions["sessionMeta"]>;
   readonly clientCapabilities: EffectAcpSchema.InitializeRequest["clientCapabilities"];
@@ -3191,7 +3192,13 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             ...(mcpContext.processEnvironment === undefined
               ? {}
               : { processEnvironment: mcpContext.processEnvironment }),
-            ...(resumeSessionId === undefined ? {} : { resumeSessionId }),
+            ...(resumeSessionId === undefined
+              ? {}
+              : {
+                  resumeSessionId,
+                  // A runtime spawned for a session loads it during start, after initialize.
+                  onSessionResume: Effect.suspend(() => reportStartupPhase("resume")),
+                }),
             interruptPromptOnCancel: flavor.interruptPromptOnCancel ?? false,
             clientCapabilities: {
               fs: {
@@ -8658,15 +8665,13 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           prepareTerminalEnvironment(mcpContext, sessionId);
           yield* Ref.set(loadingSessionId, sessionId);
           const activated = yield* Effect.gen(function* () {
-            if (spawnedForSession || canLoadSession || canResumeSession) {
-              yield* reportStartupPhase("resume");
-            }
             // A runtime spawned for this session opens it at startup instead of an empty session/new.
             if (spawnedForSession) {
               return yield* runtime
                 .start()
                 .pipe(Effect.tapError(() => Ref.set(runtimeRestartRequired, true)));
             }
+            if (canLoadSession || canResumeSession) yield* reportStartupPhase("resume");
             return canLoadSession && !(flavor.preferSessionResume === true && canResumeSession)
               ? yield* runtime.loadSession(sessionId, activationOptions)
               : canResumeSession
