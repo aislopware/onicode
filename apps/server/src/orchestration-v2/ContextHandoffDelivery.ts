@@ -95,17 +95,20 @@ export const notesWaitingMessageIds = (
       .map((message) => message.id),
   );
   for (const run of projection.runs) {
-    // A steering restart replaces the run's message with the text it sent.
-    if (
-      run.manualContinuationOfRunId === undefined ||
-      projection.attempts.some(
-        (attempt) => attempt.runId === run.id && attempt.reason === "steering_restart",
-      )
-    ) {
+    if (run.manualContinuationOfRunId === undefined) continue;
+    const replayed = unsentManualContinuationSource(run, projection);
+    if (replayed === undefined || !ids.has(replayed.userMessageId)) continue;
+    const attempts = projection.attempts.filter((attempt) => attempt.runId === run.id);
+    // A steering restart replaces the run's message with the text it sent; the attempts it
+    // superseded keep the message they replayed the source under.
+    if (!attempts.some((attempt) => attempt.reason === "steering_restart")) {
+      ids.add(run.userMessageId);
       continue;
     }
-    const replayed = unsentManualContinuationSource(run, projection);
-    if (replayed !== undefined && ids.has(replayed.userMessageId)) ids.add(run.userMessageId);
+    for (const attempt of attempts) {
+      if (attempt.reason !== "steering_restart" && attempt.userMessageId !== undefined)
+        ids.add(attempt.userMessageId);
+    }
   }
   return ids;
 };
