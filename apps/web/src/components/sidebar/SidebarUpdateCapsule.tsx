@@ -26,9 +26,11 @@ import {
   describeUpdateCapsule,
   formatUpdateElapsed,
   RUN_STATUS_LABELS,
+  resolveRestoredRetry,
   resolveUpdateRunMachineStatus,
   UPDATE_RESTART_DELAY_MS,
   type UpdateCapsuleView,
+  type UpdateEverythingMachine,
   type UpdateEverythingRun,
   type UpdateRunLocalState,
   type UpdateRunMachineView,
@@ -53,7 +55,10 @@ function useNow(intervalMs: number | null, origin: number): number {
   );
 }
 
-function useUpdateRunMachineViews(run: UpdateEverythingRun): ReadonlyArray<UpdateRunMachineView> {
+function useUpdateRunMachineViews(
+  run: UpdateEverythingRun,
+  current: ReadonlyArray<UpdateEverythingMachine>,
+): ReadonlyArray<UpdateRunMachineView> {
   const updateStates = useAtomValue(
     environmentUpdateStatesAtom(
       environmentIdsKey(run.machines.map(({ environmentId }) => environmentId)),
@@ -62,6 +67,7 @@ function useUpdateRunMachineViews(run: UpdateEverythingRun): ReadonlyArray<Updat
   return run.machines.map((machine, index) => ({
     machine,
     status: resolveUpdateRunMachineStatus(machine, run.phase, updateStates[index]!),
+    restoredRetry: resolveRestoredRetry(machine, current),
   }));
 }
 
@@ -173,14 +179,17 @@ function UpdateRunRow({
 
 export function SidebarUpdateCapsule({
   run,
+  current,
   local,
   onRestart,
 }: {
   readonly run: UpdateEverythingRun;
+  /** Every server as it is now, to rebuild the retry of a row restored after a relaunch. */
+  readonly current: ReadonlyArray<UpdateEverythingMachine>;
   readonly local: UpdateRunLocalState;
   readonly onRestart?: () => Promise<void>;
 }) {
-  const machines = useUpdateRunMachineViews(run);
+  const machines = useUpdateRunMachineViews(run, current);
   const hasActiveMachine = machines.some(
     ({ status }) => status !== "done" && status !== "failed" && status !== "waiting",
   );
@@ -240,8 +249,16 @@ export function SidebarUpdateCapsule({
         : gt("Dismiss");
   const runAction = () => {
     if (view.action === "later") postponeUpdateRestart();
-    else if (view.action === "retry") retryFailedUpdateRunServers(updateServer);
-    else dismissSettledUpdateRunMachines();
+    else if (view.action === "retry") {
+      retryFailedUpdateRunServers(
+        updateServer,
+        new Map(
+          machines.flatMap(({ machine, restoredRetry }) =>
+            restoredRetry === null ? [] : [[machine.environmentId, restoredRetry] as const],
+          ),
+        ),
+      );
+    } else dismissSettledUpdateRunMachines();
   };
 
   return (

@@ -6,8 +6,10 @@ import {
   collectServerUpdateTargets,
   describeUpdateCapsule,
   describeUpdateEverything,
+  resolveRestoredRetry,
   runUpdateEverything,
   type UpdateEverythingMachine,
+  type UpdateRunMachine,
 } from "./updateEverything.logic";
 
 function machine(
@@ -316,6 +318,7 @@ describe("describeUpdateCapsule", () => {
         providerFailure: null,
       },
       status: "failed" as const,
+      restoredRetry: null,
     };
     const run = { localVersion: null, phase: "servers" as const, restartAt: null, machines: [] };
 
@@ -326,7 +329,11 @@ describe("describeUpdateCapsule", () => {
       label: "remote failed",
       title: "Update failed",
     });
-    const slow = { machine: { ...failed.machine, result: null }, status: "downloading" as const };
+    const slow = {
+      ...failed,
+      machine: { ...failed.machine, result: null },
+      status: "downloading" as const,
+    };
     expect(describeUpdateCapsule(run, [slow], null, 5 * 60_000)).toMatchObject({
       tone: "slow",
       label: "remote",
@@ -335,10 +342,15 @@ describe("describeUpdateCapsule", () => {
     });
 
     const done = {
+      ...failed,
       machine: { ...failed.machine, result: "done" as const },
       status: "done" as const,
     };
-    const waiting = { machine: { ...failed.machine, result: null }, status: "waiting" as const };
+    const waiting = {
+      ...failed,
+      machine: { ...failed.machine, result: null },
+      status: "waiting" as const,
+    };
     expect(describeUpdateCapsule(run, [done, waiting], null, 0)).toMatchObject({
       glyph: "updating",
       progress: 0.5,
@@ -350,5 +362,48 @@ describe("describeUpdateCapsule", () => {
     expect(
       describeUpdateCapsule({ ...run, phase: "countdown", restartAt: 6_000 }, [done], null, 0),
     ).toMatchObject({ glyph: "countdown", progress: 1, label: "Restart in 5s", action: "later" });
+  });
+});
+
+describe("resolveRestoredRetry", () => {
+  // A row the relaunched app rebuilt from its saved handoff: no target, only the version.
+  const restored = (id: string): UpdateRunMachine => ({
+    environmentId: EnvironmentId.make(id),
+    label: id,
+    updatesProviders: false,
+    server: null,
+    handedOffVersion: "0.1.12",
+    startedAt: 0,
+    result: "failed",
+    failure: "Not back after 32 minutes",
+    providerFailure: null,
+  });
+
+  it("rebuilds the target from the server as it is now, so the capsule offers Retry", () => {
+    const retry = resolveRestoredRetry(restored("remote"), [
+      machine("other", "0.1.10", "boot-service"),
+      machine("remote", "0.1.10", "boot-service"),
+    ]);
+    expect(retry).toEqual({
+      environmentId: "remote",
+      serverLabel: "remote",
+      selfUpdate: "boot-service",
+      installation: undefined,
+      desktopAppUpdate: false,
+      targetVersion: "0.1.12",
+    });
+    const run = { localVersion: null, phase: "servers" as const, restartAt: null, machines: [] };
+    const view = { machine: restored("remote"), status: "failed" as const, restoredRetry: retry };
+    expect(describeUpdateCapsule(run, [view], null, 0).action).toBe("retry");
+    expect(describeUpdateCapsule(run, [{ ...view, restoredRetry: null }], null, 0).action).toBe(
+      "dismiss",
+    );
+  });
+
+  it("marks a server already on the target and offers nothing for one that is gone", () => {
+    expect(
+      resolveRestoredRetry(restored("remote"), [machine("remote", "0.1.12", "boot-service")]),
+    ).toBe("current");
+    expect(resolveRestoredRetry(restored("remote"), [])).toBeNull();
   });
 });

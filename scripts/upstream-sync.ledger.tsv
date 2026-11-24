@@ -3677,3 +3677,4 @@ bb0862ead4	take	fix(client): a long run of fence markers is read in one pass
 fb04b4d199	take	conflict: annotation refusal placed before Onicode's hover-is-not-use check
 29c852eada	take	conflicts: kept Onicode's lease-based task-folder removal and removal signature with projectCommands added; dropped relay/webhook code from ws.ts; kept both ws tests
 27c2d01a83	skip	limits workflow webhook hooks; Onicode has no webhook triggers or hooks (removed surface, see e414cfd4be): no webhookRoute.ts, no Workflows.deliver
+66259ff051	take	dropped trackSwitch parts (Onicode has one release channel); kept Onicode's capsule titles and compact layout
