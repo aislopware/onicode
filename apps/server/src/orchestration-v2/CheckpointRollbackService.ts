@@ -147,18 +147,6 @@ export const layer: Layer.Layer<
     const taskFolders = yield* TaskFolders.TaskFolders;
     const threadCommands = yield* ThreadCommandExecutor.ThreadCommandExecutor;
     const isManagedWorktreePath = yield* makeIsManagedWorktreePath;
-    // The restore writes this index, and the new worktree's background refresh briefly locks it.
-    const recreateWorktree = (input: {
-      readonly cwd: string;
-      readonly refName: string;
-      readonly path: string;
-    }) =>
-      gitWorkflow
-        .pruneWorktrees({ cwd: input.cwd })
-        .pipe(
-          Effect.andThen(gitWorkflow.createWorktree(input)),
-          Effect.andThen(gitWorkflow.settleIndexRefresh(input.path)),
-        );
 
     const execute = Effect.fn("orchestrationV2.checkpointRollback.execute")(function* (input: {
       readonly threadId: ThreadId;
@@ -274,11 +262,15 @@ export const layer: Layer.Layer<
           taskFolder,
           branch,
           recreate: (checkout) =>
-            recreateWorktree({
-              cwd: checkout.repositoryPath,
-              refName: branch,
-              path: checkout.worktreePath,
-            }),
+            gitWorkflow.pruneWorktrees({ cwd: checkout.repositoryPath }).pipe(
+              Effect.andThen(
+                gitWorkflow.createWorktree({
+                  cwd: checkout.repositoryPath,
+                  refName: branch,
+                  path: checkout.worktreePath,
+                }),
+              ),
+            ),
         });
       } else if (worktreePath != null && branch != null) {
         // Recreated only where the server would have made it, as turn start does.
@@ -293,11 +285,15 @@ export const layer: Layer.Layer<
         ) {
           const project = yield* projects.get(context.thread.projectId);
           if (Option.isSome(project)) {
-            const recreate = recreateWorktree({
-              cwd: project.value.workspaceRoot,
-              refName: branch,
-              path: worktreePath,
-            });
+            const recreate = gitWorkflow.pruneWorktrees({ cwd: project.value.workspaceRoot }).pipe(
+              Effect.andThen(
+                gitWorkflow.createWorktree({
+                  cwd: project.value.workspaceRoot,
+                  refName: branch,
+                  path: worktreePath,
+                }),
+              ),
+            );
             if (leftover) {
               if (!(yield* isolated)) return yield* sharedWorkspace();
               // Set aside, not removed: a checkout that fails puts the folder and its files back.
@@ -433,6 +429,14 @@ export const layer: Layer.Layer<
               target: rollbackTarget,
               providerThreadTurns,
             });
+      if (restoreFiles) {
+        // The restore writes each index, which a new worktree's background refresh briefly locks.
+        yield* Effect.forEach(
+          restoreTargets,
+          (target) => gitWorkflow.settleIndexRefresh(target.scope.cwd),
+          { concurrency: "unbounded", discard: true },
+        );
+      }
       // Deletion does not wait on the slow provider rewind; a thread deleted meanwhile keeps
       // its files, refs and history as deletion left them.
       if ((yield* projections.getThread(input.threadId)).deletedAt !== null) return;

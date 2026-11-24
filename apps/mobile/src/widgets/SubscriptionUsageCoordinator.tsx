@@ -11,6 +11,7 @@ import { environmentPresentations } from "../state/presentation";
 import { publishSubscriptionUsage } from "./publishSubscriptionUsage";
 import { buildSubscriptionUsageSnapshot } from "./subscriptionUsageSnapshot";
 import { createWidgetTheme } from "./widgetTheme";
+import { useSettledLocale } from "../i18n/I18nProvider";
 import type { MessageResolver } from "../i18n/messages";
 
 // Isolate quota changes from the much busier thread/config presentation stream.
@@ -49,12 +50,13 @@ export function SubscriptionUsageCoordinator() {
   const catalog = useAtomValue(environmentCatalog.catalogValueAtom);
   const resolve = useMessages();
   const locale = useLocale();
+  const languageReady = useSettledLocale() !== null;
   const is24Hour = useSystem24HourClock();
   const snapshot = useAtomValue(snapshotAtom(locale, resolve, is24Hour));
   const androidAppearance = Platform.OS === "android" ? themeAppearance : null;
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- publishes subscription usage and theme to the native home screen widget
   useEffect(() => {
-    if (!catalog.isReady || !appearanceReady) return;
+    if (!catalog.isReady || !appearanceReady || !languageReady) return;
     void Promise.resolve()
       .then(() =>
         publishSubscriptionUsage({
@@ -68,6 +70,7 @@ export function SubscriptionUsageCoordinator() {
   }, [
     catalog.isReady,
     appearanceReady,
+    languageReady,
     snapshot,
     themeMode,
     themeVariablesByAppearance,
