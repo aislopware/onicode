@@ -408,6 +408,35 @@ describe("DesktopRemoteUpdates", () => {
     );
   });
 
+  it.effect("downloads a deleted update file again before reporting prepared", () => {
+    const downloadedFile = "/cache/pending/Onicode-1.2.4-arm64.zip";
+    const harness = makeHarness();
+
+    return runRemoteUpdatesTest(harness, ({ reports, requests }) =>
+      Effect.gen(function* () {
+        harness.emit("update-available", { version: "1.2.4" });
+        harness.emit("update-downloaded", { version: "1.2.4", downloadedFile });
+        yield* settle;
+        harness.deletedFiles.add(downloadedFile);
+
+        yield* Queue.offer(requests, request("req-lost"));
+        yield* settle;
+        yield* TestClock.adjust(Duration.millis(300));
+        yield* settle;
+        assert.equal(harness.downloadCount(), 1);
+        assert.deepEqual(terminalReports(reports), []);
+
+        harness.deletedFiles.delete(downloadedFile);
+        harness.emit("update-downloaded", { version: "1.2.4", downloadedFile });
+        yield* settle;
+        assert.deepEqual(
+          terminalReports(reports).map((report) => report.outcome),
+          ["ready-to-install"],
+        );
+      }),
+    );
+  });
+
   it.effect("waits for the download reservation before reporting prepared", () => {
     const releaseDownload = Deferred.makeUnsafe<void>();
     const harness = makeHarness({ downloadUpdate: Deferred.await(releaseDownload) });

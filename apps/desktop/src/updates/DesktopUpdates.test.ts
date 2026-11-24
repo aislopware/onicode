@@ -644,7 +644,7 @@ describe("DesktopUpdates", () => {
   });
 
   it.effect.each([{ pinned: false }, { pinned: true }])(
-    "downloads again when the downloaded update file was deleted before install (pinned: $pinned)",
+    "handles a downloaded update file deleted before install (pinned: $pinned)",
     ({ pinned }) => {
       const downloadedFile = "/cache/pending/Onicode-1.2.4-arm64.zip";
       let installedFileExists: boolean | undefined;
@@ -669,12 +669,17 @@ describe("DesktopUpdates", () => {
           assert.equal(harness.downloadCount(), 1);
 
           harness.deletedFiles.add(downloadedFile);
-          const checksBefore = harness.checkCount();
           const result = yield* updates.installPrepared("1.2.4", { pinned });
+          if (pinned) {
+            // A remote commit has a short deadline; it fails and the next prepare downloads.
+            assert.isTrue(result.failed);
+            assert.equal(harness.downloadCount(), 1);
+            assert.equal(harness.quitAndInstalls(), 0);
+            assert.isNotNull(result.state.message);
+            return;
+          }
           assert.isTrue(result.accepted);
           assert.equal(harness.downloadCount(), 2);
-          // A pinned install fetches the same release again without looking for a newer one.
-          if (pinned) assert.equal(harness.checkCount(), checksBefore);
           assert.equal(harness.quitAndInstalls(), 1);
           assert.isTrue(installedFileExists);
         }),

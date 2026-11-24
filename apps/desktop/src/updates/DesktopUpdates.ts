@@ -163,6 +163,8 @@ export class DesktopUpdates extends Context.Service<
     readonly checkAndDownload: (reason: string) => Effect.Effect<DesktopUpdateCheckResult>;
     readonly download: Effect.Effect<DesktopUpdateActionResult>;
     readonly install: Effect.Effect<DesktopUpdateActionResult>;
+    /** Marks a retained download whose file is gone as lost, so it is downloaded again. */
+    readonly forgetLostDownload: Effect.Effect<boolean>;
     /** `pinned` installs exactly `expectedVersion`, without first looking for a newer release. */
     readonly installPrepared: (
       expectedVersion: string,
@@ -847,12 +849,23 @@ export const make = Effect.gen(function* () {
       (expectedVersion === undefined || retainedVersion === expectedVersion);
     // A cache cleaner can delete the archive; Squirrel.Mac would then fail every install attempt.
     if (retainsExpectedDownload && (yield* downloadedFileMissing)) {
+      // A pinned install is a remote commit with a short deadline; its prepare step downloads.
+      if (pinned) {
+        return {
+          accepted: false,
+          completed: false,
+          failed: true,
+          state: {
+            ...retained,
+            message: "The downloaded update file is gone. Update again to download it.",
+          },
+        };
+      }
       yield* logUpdaterWarning("the downloaded update file is gone; downloading it again", {
         version: retainedVersion,
       });
       yield* updateState(reduceDesktopUpdateStateOnDownloadLost);
-      // A pinned install fetches the same release again rather than looking for a newer one.
-      const download = yield* downloadAvailableUpdate(!pinned);
+      const download = yield* downloadAvailableUpdate(true);
       if (!download.completed) {
         return {
           accepted: download.accepted,
@@ -861,7 +874,7 @@ export const make = Effect.gen(function* () {
           state: yield* Ref.get(updateStateRef),
         };
       }
-      if (expectedVersion !== undefined && !pinned) {
+      if (expectedVersion !== undefined) {
         installVersion = (yield* Ref.get(updateStateRef)).downloadedVersion ?? expectedVersion;
       }
     } else if (
@@ -1126,8 +1139,21 @@ export const make = Effect.gen(function* () {
     };
   });
 
+  const forgetLostDownload = Effect.gen(function* () {
+    if (Option.isSome(yield* activeUpdateAction)) return false;
+    const version = (yield* Ref.get(updateStateRef)).downloadedVersion;
+    if (version === null || !(yield* downloadedFileMissing)) return false;
+    yield* logUpdaterWarning("the downloaded update file is gone; it will be downloaded again", {
+      version,
+    });
+    yield* Ref.set(downloadedFileRef, Option.none());
+    yield* updateState(reduceDesktopUpdateStateOnDownloadLost);
+    return true;
+  }).pipe(Effect.withSpan("desktop.updates.forgetLostDownload"));
+
   return DesktopUpdates.of({
     getState: Ref.get(updateStateRef),
+    forgetLostDownload,
     isActionActive: activeUpdateAction.pipe(Effect.map(Option.isSome)),
     isInstallActive: activeUpdateAction.pipe(
       Effect.map((action) => Option.isSome(action) && action.value === "install"),

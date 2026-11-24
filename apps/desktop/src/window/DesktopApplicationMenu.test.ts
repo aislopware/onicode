@@ -81,6 +81,7 @@ const layerDesktopUpdates = ({ checkResult }: MenuServices) =>
     getState: Effect.die("unexpected getState"),
     isActionActive: Effect.succeed(false),
     isInstallActive: Effect.succeed(false),
+    forgetLostDownload: Effect.succeed(false),
     subscribe: Effect.die("unexpected subscribe"),
     emitState: Effect.void,
     disabledReason: Effect.succeedNone,
