@@ -461,7 +461,7 @@
   "bc24c300d53d61c5": "{host} hat auf keiner gespeicherten Route geantwortet.",
   "b0dd3cd876937ca8": "Verbindungsprofil {connectionId} ist nicht verfügbar.",
   "5ce46783e79ca9d1": "Zugangsdaten der Verbindung {connectionId} sind nicht verfügbar.",
-  "0bda0cac7f5acc20": "Die verbundene Umgebung {actual} stimmt nicht mit {expected} überein.",
+  "421397f0269eb397": "Unter dieser Adresse läuft jetzt eine andere Onicode-Installation ({actual}, nicht {expected}). Entferne diese Verbindung und füge sie erneut hinzu.",
   "33c6c9e0fd567f24": "Dieser Rechner meldet dieses Gerät nicht über das Tailnet an. Kopple es stattdessen mit einem Code von diesem Rechner.",
   "ea0d3e4e51d5706f": "Die Zugangsdaten der Umgebung sind ungültig.",
   "7283ebfd16d09677": "Die Zugangsdaten der Umgebung gewähren nicht den erforderlichen Zugriff.",
