@@ -5524,7 +5524,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
       start: { checksPending: false, headSha: "ad70160aaa" },
       reads: [{ lint: "success", test: "success" }],
       told: [[]],
-      tellsPass: true,
+      tellsMore: true,
     },
     // The last watch stopped before its first read, so this head's failure is after its baseline.
     {
@@ -5533,8 +5533,31 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
       lastHeadSha: "0ld0000000",
       lastUnread: true,
       start: { checksPending: false, checksPassed: true, headSha: "ad70160aaa" },
+      reads: [
+        { lint: "success", test: "success" },
+        { lint: "success", test: "failure" },
+      ],
+      told: [[], ["test"]],
+    },
+    {
+      label: "passing then failed, last watch unread",
+      atStart: "passing",
+      lastHeadSha: "0ld0000000",
+      lastUnread: true,
+      start: { checksPending: false, checksPassed: true, headSha: "ad70160aaa" },
       reads: [{ lint: "success", test: "failure" }],
       told: [["test"]],
+    },
+    // A push that left the conflict in place is told again, though its CI had passed.
+    {
+      label: "rewatched passing but conflicting",
+      atStart: "passing",
+      lastHeadSha: "0ld0000000",
+      lastConflicting: true,
+      start: { checksPending: false, checksPassed: true, headSha: "ad70160aaa" },
+      reads: [{ lint: "success", test: "success" }],
+      told: [[]],
+      tellsMore: true,
     },
   ] as const)("reports only failures after a watch that starts on $label CI", (row) =>
     Effect.gen(function* () {
@@ -5611,6 +5634,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
           watch: {
             ...("lastUnread" in row ? last : told),
             headSha: row.lastHeadSha,
+            conflicting: "lastConflicting" in row,
             failedChecks: "lastUnread" in row ? [] : ["test"],
           },
         });
@@ -5645,6 +5669,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
                 at: "2026-10-02T12:00:00.000Z",
               }),
               headSha: "ad70160aaa",
+              ...("lastConflicting" in row && { mergeability: "conflicting" as const }),
               checks: Object.entries(reads[read]!).map(([name, status]) => ({
                 name,
                 status,
@@ -5674,7 +5699,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         yield* reactor.sweep;
         yield* worker.drain();
         const wakes = (yield* texts).slice(before);
-        assert.equal(wakes.length, names.length === 0 && !("tellsPass" in row) ? 0 : 1);
+        assert.equal(wakes.length, names.length === 0 && !("tellsMore" in row) ? 0 : 1);
         // The finished section lists every failing check, so only the failed one counts here.
         const failedSections = wakes.map((text) => text.split("- Every check has finished")[0]!);
         for (const name of ["lint", "test"]) {

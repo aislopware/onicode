@@ -1549,6 +1549,28 @@ it.effect("an editor's save is refused once the fields it loaded changed elsewhe
         })
         .pipe(Effect.flip);
       assert.include(raced.message, "The task's thread changed while saving");
+      // A move drops the thread, so one the first run binds meanwhile refuses it.
+      const { task: unmoved } = yield* service.upsert({
+        ...bound,
+        threadId: null,
+        unbindThread: true,
+        workspaceStrategy: worktree,
+      });
+      beforeCommit = service.upsert({ ...bound, workspaceStrategy: worktree }).pipe(Effect.orDie);
+      const moved = yield* service
+        .upsert({
+          ...edit,
+          threadId: null,
+          projectId: ProjectId.make("project:moved"),
+          workspaceStrategy: worktree,
+          expected: {
+            ...edit.expected,
+            threadId: unmoved.threadId,
+            workspaceStrategy: worktree,
+          },
+        })
+        .pipe(Effect.flip);
+      assert.include(moved.message, "The task's thread changed while saving");
       // A thread the first run bound meanwhile is kept, so it refuses nothing.
       yield* service.upsert(bound);
       const unbound = { ...edit, threadId: null, expected: { ...edit.expected, threadId: null } };

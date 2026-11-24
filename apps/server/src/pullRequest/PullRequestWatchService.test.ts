@@ -356,6 +356,18 @@ describe("PullRequestWatchService", () => {
         headSha: "aaaa111",
       });
       expect(yield* Ref.get(replaced.reads)).toEqual(["invalidate", "detail"]);
+      const passing = yield* makeHarness({
+        readChecksState: "passing",
+        readHeadSha: "aaaa111",
+        detailChecks: [check("test", "success")],
+        detailHeadSha: "aaaa111",
+      });
+      expect(yield* passing.seedClientWatch(start)).toEqual({
+        ...start,
+        checksPending: false,
+        checksPassed: true,
+        headSha: "aaaa111",
+      });
 
       const watch = {
         startedAt: "2026-08-20T00:00:00.000Z",
