@@ -403,6 +403,12 @@ describe("countSubagentsBlockingRun", () => {
     ["a background child", [child("a", "running", true), child("b", "running", false)], 1],
     // The parent wrote and launched more after A, so it was not parked on A.
     ["a reply between children", [child("a"), reply("m1"), child("b", "completed")], 0],
+    // A child the parent's wait names holds it wherever it sits in the run.
+    [
+      "an awaited child behind later work",
+      [child("a", "running", false), reply("m1"), child("b", "completed"), delegate("failed")],
+      1,
+    ],
     ["a trailing status reply", [child("a"), child("b"), reply("m2")], 2],
     ["the parent's task list and delegate calls", [child("a"), delegate("completed"), todo], 1],
     ["a running delegate call", [child("a"), delegate("running"), child("b")], 2],
@@ -421,5 +427,13 @@ describe("countSubagentsBlockingRun", () => {
     expect(
       countSubagentsBlockingRun([[child("a")], null, [child("b")]], runId, (items) => items, true),
     ).toBe(1);
+    expect(
+      countSubagentsBlockingRun(
+        [[child("a", "running", false)], null, [child("b")]],
+        runId,
+        (items) => items,
+        true,
+      ),
+    ).toBe(2);
   });
 });

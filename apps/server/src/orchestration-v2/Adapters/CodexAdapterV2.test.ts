@@ -11770,7 +11770,10 @@ describe("CodexAdapterV2 post-settle continuation", () => {
       ),
   );
 
-  it.effect("marks a Codex child foreground only while a wait call names it", () =>
+  it.effect.each([
+    { ends: "the wait returns", turnEnds: false },
+    { ends: "the turn ends inside the wait", turnEnds: true },
+  ])("marks a Codex child awaited only while a wait call names it, until $ends", ({ turnEnds }) =>
     Effect.gen(function* () {
       const collab = (tool: "spawnAgent" | "wait", status: "inProgress" | "completed") => ({
         type: "collabAgentToolCall",
@@ -11812,8 +11815,19 @@ describe("CodexAdapterV2 post-settle continuation", () => {
             }),
             frame("item/completed", collab("spawnAgent", "completed")),
             frame("item/started", collab("wait", "inProgress")),
-            // The wait timed out with the child still running.
-            frame("item/completed", collab("wait", "completed")),
+            turnEnds
+              ? {
+                  type: "emit_inbound" as const,
+                  frame: {
+                    method: "turn/completed",
+                    params: {
+                      threadId: RESUME_NATIVE_THREAD,
+                      turn: makeCodexReplayTurn({ id: RESUME_NATIVE_TURN, status: "completed" }),
+                    },
+                  },
+                }
+              : // The wait timed out with the child still running.
+                frame("item/completed", collab("wait", "completed")),
           ],
         }),
       );
@@ -11836,14 +11850,16 @@ describe("CodexAdapterV2 post-settle continuation", () => {
           )
           .filter((background, index, all) => index === 0 || all[index - 1] !== background);
       yield* harness.until(() =>
-        harness.events.some(
-          (event) =>
-            event.type === "turn_item.updated" &&
-            event.turnItem.type === "subagent" &&
-            event.turnItem.result === "wait returned",
-        ),
+        turnEnds
+          ? harness.events.some((event) => event.type === "turn.terminal")
+          : harness.events.some(
+              (event) =>
+                event.type === "turn_item.updated" &&
+                event.turnItem.type === "subagent" &&
+                event.turnItem.result === "wait returned",
+            ),
       );
-      assert.deepEqual(transitions(), [true, undefined, true]);
+      assert.deepEqual(transitions(), [true, false, true]);
     }).pipe(
       Effect.provide(
         Layer.mergeAll(

@@ -3455,7 +3455,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 prompt: task.prompt,
                 ...(task.progress === undefined ? {} : { progress: task.progress }),
                 result: task.result,
-                ...(input.subagent.background ? { background: true } : {}),
+                background: input.subagent.background,
               },
             });
           });
@@ -7417,6 +7417,16 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 );
               }
               yield* projectGeneratedImages(input.context, input.nativeTurnId);
+              // A wait the parent's turn ended inside never completes, so it no longer holds them.
+              if (input.context.subagent === null) {
+                for (const subagent of (yield* Ref.get(subagentThreads)).values()) {
+                  if (subagent.background) continue;
+                  subagent.background = true;
+                  if (isOrchestrationV2WorkActive(subagent.task.status)) {
+                    yield* emitSubagentTaskUpdate({ subagent, status: subagent.task.status });
+                  }
+                }
+              }
               if (input.status !== "completed") {
                 yield* clearImageWork(input.context);
               } else {

@@ -270,8 +270,10 @@ class WorkerChild
   kill(signal: NodeJS.Signals | number = "SIGTERM"): boolean {
     if (this.exited) return false;
     this.killed = true;
-    if (this.killsTree && this.pid !== undefined) this.worker.pool.killTree(this.pid, () => {});
-    else this.worker.post({ type: "kill", id: this.id, signal });
+    // Before the spawn ack the CLI may already run its shells; the ack ends the tree instead.
+    if (this.killsTree) {
+      if (this.pid !== undefined) this.worker.pool.killTree(this.pid, () => {});
+    } else this.worker.post({ type: "kill", id: this.id, signal });
     return true;
   }
 
@@ -387,6 +389,11 @@ class SpawnWorker {
         child.spawned = true;
         child.pid = message.pid;
         child.emit("spawn");
+        if (child.killed && child.killsTree && !child.exited) {
+          if (message.pid === undefined)
+            this.post({ type: "kill", id: child.id, signal: "SIGTERM" });
+          else this.pool.killTree(message.pid, () => {});
+        }
         break;
       case "error":
         if (!child.spawned) {

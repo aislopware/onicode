@@ -2130,7 +2130,7 @@ export const OrchestrationV2TurnItem = Schema.Union([
     prompt: Schema.String,
     progress: Schema.optional(Schema.String),
     result: Schema.NullOr(Schema.String),
-    /** The parent keeps working while it runs. Absent means the parent waits on it, as older servers sent. */
+    /** true: the parent works on beside it. false: the parent waits on it. Absent (older servers): waits if last in the run. */
     background: Schema.optional(Schema.Boolean),
     /**
      * Wire-only copies of subagent `subagentId`'s model, on rows whose record a client may not

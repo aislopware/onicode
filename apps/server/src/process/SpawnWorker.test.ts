@@ -202,6 +202,13 @@ describe("SpawnWorker", () => {
       });
       const exited = new Promise((resolve) => direct.once("exit", () => resolve(direct.killed)));
       expect(yield* Effect.promise(() => exited)).toBe(true);
+      // A kill before the spawn ack waits for the pid, so it still ends the tree.
+      const early = SpawnWorker.spawnPiped(process.execPath, ["-e", "process.stdin.resume()"], {});
+      using killTree = vi.spyOn(early.worker.pool, "killTree");
+      const earlyExited = new Promise((resolve) => early.once("exit", resolve));
+      early.kill();
+      yield* Effect.promise(() => earlyExited);
+      expect(killTree).toHaveBeenCalledWith(early.pid, expect.any(Function));
       // Claude's adapter passes its environment view, a Proxy, which postMessage cannot clone.
       const view = new Proxy({ ...process.env, SPAWN_WORKER_VIEW: "view value" }, {});
       const viewed = SpawnWorker.spawnPiped(

@@ -103,9 +103,9 @@ export function isLiveSubagentTurnItem(item: OrchestrationV2TurnItem): boolean {
 }
 
 /**
- * Live subagents the run's parent waits on, read back from the newest entry past its task-list
- * updates and delegate calls. A finished reply after them is the parent's status while it shows
- * as its own row; zen hides that row, so the live row shows the reply instead of the count.
+ * Live subagents the run's parent waits on: rows marked awaited anywhere in the run, and unflagged
+ * rows (older servers) in its tail past task lists and delegate calls. A finished reply there is the
+ * parent's status while shown as its own row; zen hides it, so the live row shows it instead.
  */
 export function countSubagentsBlockingRun<Entry>(
   entries: ReadonlyArray<Entry>,
@@ -114,20 +114,27 @@ export function countSubagentsBlockingRun<Entry>(
   repliesShown: boolean,
 ): number {
   let running = 0;
+  let inTail = true;
   let sawSubagent = false;
   for (let index = entries.length - 1; index >= 0; index -= 1) {
     const items = turnItemsOf(entries[index]!);
-    if (items === null) return running;
+    if (items === null) {
+      inTail = false;
+      continue;
+    }
     for (let itemIndex = items.length - 1; itemIndex >= 0; itemIndex -= 1) {
       const item = items[itemIndex]!;
       if (item.runId !== runId) return running;
       if (item.type === "subagent") {
         sawSubagent = true;
-        if (item.background !== true && isOrchestrationV2WorkActive(item.status)) running += 1;
+        const waits = item.background === false || (inTail && item.background === undefined);
+        if (waits && isOrchestrationV2WorkActive(item.status)) running += 1;
+      } else if (!inTail) {
+        continue;
       } else if (item.type === "assistant_message") {
-        if (!repliesShown || sawSubagent || item.streaming) return running;
+        if (!repliesShown || sawSubagent || item.streaming) inTail = false;
       } else if (item.type !== "todo_list" && !isDelegateLaunch(item)) {
-        return running;
+        inTail = false;
       }
     }
   }

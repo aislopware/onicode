@@ -167,6 +167,8 @@ const extractAntigravitySubagentUpdate: NonNullable<AcpAdapterV2Flavor["extractS
     status,
     childSessionId: null,
     result: status === "failed" ? (antigravitySubagentOutput(toolCall) ?? null) : null,
+    // A finished launch leaves its children running beside the parent.
+    ...(toolCall.status === "completed" ? { background: true } : {}),
   };
 };
 
