@@ -2118,7 +2118,11 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
       }),
     );
 
-    it.effect.each([{ layout: "plain" }, { layout: "symlinked into Downloads" }] as const)(
+    it.effect.each([
+      { layout: "plain" },
+      { layout: "symlinked into Downloads" },
+      { layout: "removed worktree recorded through a Downloads link" },
+    ] as const)(
       "does not file Onicode sandbox chats under the Codex project they were moved into ($layout base dir)",
       ({ layout }) =>
         Effect.gen(function* () {
@@ -2141,7 +2145,17 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
           const projectDir = path.join(homeDir, "code", "my-project");
           const sandboxDir = path.join(realBaseDir, "worktrees", "my-project", "wt-1");
           yield* fileSystem.makeDirectory(projectDir, { recursive: true });
-          yield* fileSystem.makeDirectory(sandboxDir, { recursive: true });
+          let sandboxCwd = sandboxDir;
+          if (layout === "removed worktree recorded through a Downloads link") {
+            // An archived thread's worktree is gone, so only its nearest existing parent resolves.
+            yield* fileSystem.makeDirectory(path.dirname(sandboxDir), { recursive: true });
+            yield* fileSystem.makeDirectory(path.join(homeDir, "Downloads"), { recursive: true });
+            const link = path.join(homeDir, "Downloads", "wt-link");
+            yield* fileSystem.symlink(path.dirname(sandboxDir), link);
+            sandboxCwd = path.join(link, "wt-1");
+          } else {
+            yield* fileSystem.makeDirectory(sandboxDir, { recursive: true });
+          }
 
           const projectId = "019a5f00-0000-7000-8000-000000000101";
           const chats = [
@@ -2152,7 +2166,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
             },
             {
               id: "019a5f00-0000-7000-8000-00000000010b",
-              cwd: sandboxDir,
+              cwd: sandboxCwd,
               message: "Started in a Onicode worktree",
             },
           ];

@@ -1704,8 +1704,9 @@ export const make = Effect.gen(function* () {
     if (projectRoots === undefined) return cwd;
     const resolved = path.resolve(expandHomePath(cwd.trim(), homeDir));
     if (!isExcludedProjectPath(resolved) || isExcludedProjectPath.isOniOwned(resolved)) return cwd;
-    // A sandbox recorded through another link (macOS `/var` for `/private/var`) is Onicode's too.
-    const realCwd = yield* fileSystem.realPath(resolved).pipe(Effect.orElseSucceed(() => resolved));
+    // A sandbox recorded through another link (macOS `/var` for `/private/var`) is Onicode's too,
+    // even once an archived thread's worktree is gone.
+    const realCwd = yield* resolveRealLocation(fileSystem, path, resolved);
     return isExcludedProjectPath.isOniOwned(realCwd) ? cwd : projectRoots[0]!;
   });
 
