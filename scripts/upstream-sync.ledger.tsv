@@ -3562,3 +3562,4 @@ e65b19d15e	take	kept Onicode's lease signature and deleted-thread re-read inside
 5e62206e7d	take	taken; isElectron gates dropped (desktop-only renderer, no env.ts), PickPreload keeps Onicode's shadow-root picking beside the page-world bridge
 78cffe29ec	take	taken; GitLab approval now also sends the expected head (GitLab answers 409 on a moved head), docs name only the desktop app
 46f360d8dd	take	taken; web and mobile reread only the names query (servers that answer only the full list are not reread, since listing asks every linked machine), hostedThreadLink import dropped
+eecb58c6d6	take	taken without the hosted pairing confirmation (PairingRouteSurface, its strings and remote-access doc: hosted web app removed); the settings fallback's new opt-ins (agent browser access off, approval-required) folded into Onicode's inline fallback, requireConnectDeviceApproval dropped (T3 Connect)

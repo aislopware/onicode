@@ -865,13 +865,14 @@ const make = Effect.gen(function* () {
       }
       if (decoded._tag === "Failure" || legacySettings._tag === "Failure") {
         const failure = decoded._tag === "Failure" ? decoded : legacySettings;
-        // The file may hold an opt-out we can no longer read; never resume threads or open
-        // the preview tunnel on a guess.
+        // The file may hold choices we can no longer read, so opt-in behaviour stays off.
         settings = {
           ...managed.defaults,
           continueThreadsAfterServerUpdate: false,
           usageHistoryRetentionDays: "unlimited",
           enablePreviewTunnel: false,
+          enableAgentBrowserAccess: false,
+          defaultRuntimeMode: "approval-required",
           observability: { ...managed.defaults.observability, errorReporting: false },
         };
         if (failure._tag === "Failure") {
