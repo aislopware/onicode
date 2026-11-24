@@ -28,7 +28,7 @@ export function pdfPageOffsets(ratios: readonly number[], width: number) {
 export function currentPdfPage(offsets: readonly number[], pageCount: number, scrollTop: number) {
   for (let index = 0; index < pageCount; index++)
     if (offsets[index + 1]! > scrollTop + PDF_PAGE_GAP + 1) return index;
-  return 0;
+  return Math.max(0, pageCount - 1);
 }
 
 /** Pages within one viewport above and two below the visible area stay mounted. */

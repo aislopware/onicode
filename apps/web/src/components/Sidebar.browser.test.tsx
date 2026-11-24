@@ -160,8 +160,8 @@ describe("sidebar project folder new thread", () => {
       environmentId: dev1,
       repositoryIdentity,
     };
-    vi.mocked(usePrimaryEnvironmentId).mockReturnValue(primary);
-    vi.mocked(useConnectedEnvironmentIds).mockReturnValue([primary, dev1]);
+    using _primary = vi.mocked(usePrimaryEnvironmentId).mockReturnValue(primary);
+    using _connected = vi.mocked(useConnectedEnvironmentIds).mockReturnValue([primary, dev1]);
     vi.mocked(useProjects).mockReturnValue([primaryCopy, dev1Copy]);
     const dev1Thread = makeThreadFixture({
       environmentId: dev1,

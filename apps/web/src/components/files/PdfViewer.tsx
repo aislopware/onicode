@@ -680,7 +680,10 @@ export default function PdfViewer(props: {
         tabIndex={0}
         className="relative min-h-0 min-w-0 w-full flex-1 overflow-auto scrollbar-gutter-stable bg-muted"
         onScroll={(event) => {
-          setScrolled({ top: event.currentTarget.scrollTop, width, pdf });
+          const top = event.currentTarget.scrollTop;
+          setScrolled((old) =>
+            old.top === top && old.width === width && old.pdf === pdf ? old : { top, width, pdf },
+          );
           saveView(event.currentTarget);
         }}
         onKeyDown={(event) => {

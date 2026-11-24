@@ -60,8 +60,9 @@ function ownsShortcut(id: symbol) {
   return entries.find(([, read]) => !read().targetRef && !read().ownsFocus)?.[0] === id;
 }
 
+const DIALOG_SELECTOR = '[role="dialog"], [role="alertdialog"]';
 const targetScope = (field: HTMLElement | null | undefined) =>
-  field?.closest('[role="dialog"]') ?? field;
+  field?.closest(DIALOG_SELECTOR) ?? field;
 
 // Keys an outside editor (the preview guest) relays arrive on window, so remember their editor.
 const relayedFrom = new WeakMap<Event, symbol>();
@@ -84,7 +85,7 @@ function inOtherShortcutTarget(id: symbol, event: Event) {
     if (others.some((field) => scope(field)?.contains(target))) return true;
   }
   const dialog = (target instanceof Element ? target : target.parentElement)?.closest(
-    '[role="dialog"]',
+    DIALOG_SELECTOR,
   );
   return !!dialog && !dialog.contains(own ?? null);
 }

@@ -315,18 +315,22 @@ describe("FileBrowserPanel", () => {
     );
     const search = page.getByRole("searchbox", { name: "Search repo files" });
     await userEvent.fill(search, "read");
-    for (const composition of [
-      { key: "Escape", isComposing: true, keyCode: 27 },
-      { key: "Escape", isComposing: false, keyCode: 229 },
+    for (const { endsComposition, ...composition } of [
+      { key: "Escape", isComposing: true, keyCode: 27, endsComposition: true },
+      { key: "Escape", isComposing: false, keyCode: 229, endsComposition: true },
+      { key: "Escape", isComposing: false, keyCode: 229, endsComposition: false },
     ]) {
       // Safari ends the composition just before the Escape keydown.
       await act(() => {
-        search.element().dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
+        if (endsComposition) {
+          search.element().dispatchEvent(new CompositionEvent("compositionend", { bubbles: true }));
+        }
         search
           .element()
           .dispatchEvent(new KeyboardEvent("keydown", { ...composition, bubbles: true }));
       });
       await expect.element(search).toHaveValue("read");
+      expect(onCloseSheet).not.toHaveBeenCalled();
     }
     expect(search.element().getAttribute("type")).toBe("text");
 
