@@ -3662,3 +3662,4 @@ a6c69be8df	take	fix(web,mobile): a parent parked on subagents no longer reads as
 74c6d21c7a	take	dropped the nightly-channel test next to the new one (Onicode has no channels); translations regenerated for Onicode's key and product name
 426dac0050	take	taken as is
 8b8ec75b01	take	taken as is
+4afdfefde0	skip	T3 release pipeline: Onicode's release.yml has no finalize version-bump job (releases go through better-update), and no workflow-credentials test or set-release-version script to change
