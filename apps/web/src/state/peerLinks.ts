@@ -1,4 +1,4 @@
-import { useAtomValue } from "@effect/atom-react";
+import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import {
   linkableMachines,
   linkedEnvironmentNames,
@@ -14,6 +14,7 @@ import {
 import { AuthAccessReadScope, AuthAccessWriteScope, type EnvironmentId } from "@onicode/contracts";
 import * as DateTime from "effect/DateTime";
 import { Atom } from "effect/reactivity";
+import { useContext, useEffect } from "react";
 
 import { useNowMinute } from "../hooks/useNowMinute";
 import { connectionAtomRuntime } from "../connection/runtime";
@@ -48,9 +49,11 @@ const noLinkNamesQueryAtom = Atom.make(null).pipe(Atom.withLabel("peer-links:nam
 /**
  * The machines `environmentId` links to, by name, while it offers links, and none otherwise.
  * Its agents can read threads there, and so can a client allowed to read threads on it.
+ * A `wanted` machine the names lack makes them reread.
  */
 export function useLinkedEnvironments(
   environmentId: EnvironmentId | null,
+  wanted?: EnvironmentId,
 ): ReadonlyMap<EnvironmentId, string> {
   const query = useAtomValue(
     environmentId === null ? noLinkNamesQueryAtom : linkNamesQueryAtom(environmentId),
@@ -66,6 +69,14 @@ export function useLinkedEnvironments(
       ? peerLinkEnvironment.list({ environmentId, input: {} })
       : null,
   );
+  const registry = useContext(RegistryContext);
+  // Older servers answer only the full list, which asks every linked machine, so only names reread.
+  const queried = query === "names" ? environmentId : null;
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- links made outside this client are not pushed, so meeting an unknown machine asks the server again
+  useEffect(() => {
+    if (queried === null || wanted === undefined) return;
+    peerLinkEnvironment.refreshNamesLacking(registry, queried, [wanted]);
+  }, [registry, queried, wanted]);
   return linkedEnvironmentNames({
     links:
       query === "names"
