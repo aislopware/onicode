@@ -402,7 +402,7 @@ export function resolveQuickAction(
         label: resolve(msg("Push", { $context: "verb, git action" })),
         disabled: false,
         kind: "run_action",
-        action: isDefaultRef ? "commit_push" : "push",
+        action: "push",
       };
     }
     return {
@@ -440,7 +440,7 @@ export function resolveQuickAction(
         label: resolve(msg("Push", { $context: "verb, git action" })),
         disabled: false,
         kind: "run_action",
-        action: isDefaultRef ? "commit_push" : "push",
+        action: "push",
       };
     }
     return {
