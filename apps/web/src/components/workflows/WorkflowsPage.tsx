@@ -104,11 +104,12 @@ export function WorkflowsPage() {
     event.preventDefault();
     const path = `${directory}/${search.file}`;
     const target = { environmentId: fileEnvironmentId, filePath: path, workspaceRoot: undefined };
-    void api.contextMenu
-      .show([{ id: COPY_PATH, label: gt("Copy path") }, ...fileMenu.buildItems(target)], {
-        x: event.clientX,
-        y: event.clientY,
-      })
+    const position = { x: event.clientX, y: event.clientY };
+    void fileMenu
+      .buildItems(target)
+      .then((items) =>
+        api.contextMenu.show([{ id: COPY_PATH, label: gt("Copy path") }, ...items], position),
+      )
       .then((picked) => {
         if (picked === null) return;
         if (picked === COPY_PATH) return void navigator.clipboard.writeText(path);

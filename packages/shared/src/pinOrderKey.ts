@@ -36,6 +36,11 @@ function pinOrderMidpoint(a: string, b: string): string {
   return PIN_ORDER_DIGITS.charAt(digitA) + pinOrderMidpoint(a.slice(1), "");
 }
 
+/** `key` with its last digit one lower; valid keys never end in the minimum digit. */
+function lowerSibling(key: string): string {
+  return key.slice(0, -1) + PIN_ORDER_DIGITS.charAt(PIN_ORDER_DIGITS.indexOf(key.at(-1)!) - 1);
+}
+
 /** Key that sorts strictly between two neighbors; null bounds mean "top of
     the pinned block" / "bottom of the keyed run". Returns null instead of
     throwing when existing keys are corrupt or out of order — callers fall
@@ -47,8 +52,13 @@ export function pinOrderKeyBetween(before: string | null, after: string | null):
   if (b !== "" && !isValidPinOrderKey(b)) return null;
   if (b !== "" && a >= b) return null;
   const tier = LEADING_ORDER_TIER;
-  if (b.startsWith(tier))
-    return tier + pinOrderMidpoint(a.slice(tier.length), b.slice(tier.length));
+  if (b.startsWith(tier)) {
+    const digits = b.slice(tier.length);
+    // Implied keys shrink as time passes, so the top of the tier sits just above `after`
+    // instead of at the midpoint: a key ahead of every future thread would stay above them.
+    const lower = a.slice(tier.length) || lowerSibling(digits);
+    return tier + pinOrderMidpoint(lower, digits);
+  }
   if (a.startsWith(tier)) return tier + pinOrderMidpoint(a.slice(tier.length), "");
   return pinOrderMidpoint(a, b);
 }

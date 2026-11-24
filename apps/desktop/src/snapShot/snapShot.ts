@@ -17,14 +17,14 @@ import {
 } from "@onicode/contracts";
 
 interface AccessibilityTreeNode {
-  readonly name?: string;
-  readonly value?: string;
+  readonly name?: string | null;
+  readonly value?: string | null;
   readonly children: ReadonlyArray<AccessibilityTreeNode>;
 }
 
-const MAX_ACCESSIBILITY_TREE_NODES = 10_000;
-// Some apps (seen in Microsoft Outlook) expose cyclic accessibility trees. xa11y's native tree()
-// recursion cannot be interrupted, and both walks recurse, so the depth must be capped.
+export const MAX_ACCESSIBILITY_TREE_NODES = 10_000;
+// Some apps (seen in Microsoft Outlook) expose cyclic accessibility trees, so every walk caps
+// depth as well as nodes.
 export const MAX_ACCESSIBILITY_TREE_DEPTH = 512;
 
 export const WINDOWS_MODIFIER_PAIR_VIRTUAL_KEYS: Record<

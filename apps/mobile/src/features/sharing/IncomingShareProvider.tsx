@@ -187,6 +187,8 @@ const incomingShareInbox = new IncomingShareInbox({
         removeOwnedFile: (uri) => {
           cleanupUris.add(uri);
         },
+        // Unlike the shared files, a scaled copy is not needed again if the draft fails to save.
+        removeScratchFile: (uri) => removeOwnedFile(uri),
       },
       id,
       createdAt,

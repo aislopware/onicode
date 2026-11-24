@@ -1,7 +1,7 @@
 import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
-import { render, stubGlobal } from "../../../test/render";
+import { act, render, stubGlobal } from "../../../test/render";
 import { AppRouteModal } from "../AppRouteModal";
 import { OpenSourceLicensesPanel } from "./OpenSourceLicenses";
 
@@ -40,6 +40,19 @@ it("Esc in the license search closes it without closing Settings", async () => {
   };
   await openSearch();
   await search.fill("react");
+
+  // The Esc that cancels an IME composition leaves the search and Settings open.
+  const composingEscape = new KeyboardEvent("keydown", {
+    key: "Escape",
+    keyCode: 229,
+    isComposing: true,
+    bubbles: true,
+    cancelable: true,
+  });
+  await act(() => search.element().dispatchEvent(composingEscape));
+  expect(composingEscape.defaultPrevented).toBe(false);
+  await expect.element(search).toHaveValue("react");
+  await expect.element(settings).toHaveAttribute("data-open");
 
   await userEvent.keyboard("{Escape}");
 

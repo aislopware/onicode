@@ -97,4 +97,11 @@ describe("Onicode device instructions", () => {
     );
     assert.notInclude(oniAcpPromptWithInstructions({ prompt: "Hi.", state }), "## Onicode devices");
   });
+
+  it("send ACP commands verbatim but instruct a prompt that opens with a path", () => {
+    const state = { interactionMode: "default", hasOniMcp: true, hasDeviceTools: false } as const;
+    assert.equal(oniAcpPromptWithInstructions({ prompt: " /review", state }), " /review");
+    const pathPrompt = "/Users/me/file.ts is broken";
+    assert.notEqual(oniAcpPromptWithInstructions({ prompt: pathPrompt, state }), pathPrompt);
+  });
 });

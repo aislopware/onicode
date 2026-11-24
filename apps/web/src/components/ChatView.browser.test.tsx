@@ -40,6 +40,7 @@ import {
   removePreparingComposerImages,
 } from "~/components/chat/preparingComposerImages";
 import { selectThreadDiffPanelSelection, useDiffPanelStore } from "~/diffPanelStore";
+import { createNewThreadHandler } from "~/hooks/useHandleNewThread";
 import { __setClientSettingsForTests } from "~/hooks/useSettings";
 // Without the app styles the composer overlay sits in flow, so its height loops the timeline.
 import "~/index.css";
@@ -49,6 +50,7 @@ import { usePromptStashStore } from "~/promptStashStore";
 import { useRightPanelStore } from "~/rightPanelStore";
 import { getRouter } from "~/router";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
+import { getProjectFileQueryAtom } from "~/components/files/projectFilesQueryState";
 import { environmentThreadDetails } from "~/state/threads";
 import {
   ENVIRONMENT_ID,
@@ -303,6 +305,7 @@ it.each([{ issueSummaries: false }, { issueSummaries: true }])(
       // AppRoot brings its own router.
       router: false,
     });
+    for (const thread of [first, linked, grouped]) await emitShellThread(thread.id);
     // The badge names the live title the tooltip shows, not the one stored when it was linked.
     const badge = page.getByRole("button", {
       name: `Issue ${issue.displayKey}: ${liveTitle}, Open`,
@@ -676,6 +679,7 @@ it.each([
 ] as const)(
   "Enter while an image compresses shows a cancellable banner, cancels on edit or Esc, and still sends after leaving a %s thread",
   async (kind) => {
+    await page.viewport(1400, 900);
     const thread = threadWithHistory(`upload-wait-${kind}`, 1);
     const other = threadWithHistory(`upload-wait-other-${kind}`, 1);
     const existing = kind.startsWith("existing");
@@ -1484,6 +1488,7 @@ it("/side says where the user is that a start failed after they left its thread"
 });
 
 it("changing the mode cancels a send held for a compressing image, and the next send uses it", async () => {
+  await page.viewport(1400, 900);
   const thread = threadWithHistory("held-send-mode", 1);
   using _environment = installFakeEnvironment([thread], { acceptCommands: true });
   __setClientSettingsForTests({
@@ -1576,4 +1581,73 @@ it("opening Settings without a page event closes the composer model picker and p
   await act(() => router.navigate({ to: "/settings" }));
   await expect.element(page.getByRole("dialog", { name: "Settings" })).toBeVisible();
   await expect.element(permissions).not.toBeInTheDocument();
+});
+
+it("a send held for onicode.json says it was not sent once the user leaves its draft", async () => {
+  const other = threadWithHistory("workspace-default-left", 1);
+  using _environment = installFakeEnvironment([other], { acceptCommands: true });
+  __setClientSettingsForTests({
+    ...DEFAULT_CLIENT_SETTINGS,
+    onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
+  });
+  using projectFile = holdRpc(
+    WS_METHODS.projectsReadFile,
+    Effect.succeed({
+      relativePath: "onicode.json",
+      contents: "",
+      byteLength: 0,
+      truncated: false,
+      exists: false,
+    }),
+  );
+  let launches = 0;
+  using _launch = answerRpc(ORCHESTRATION_V2_WS_METHODS.launchThread, () => {
+    launches += 1;
+    return Effect.never;
+  });
+  const router = getRouter(
+    createMemoryHistory({ initialEntries: [`/${ENVIRONMENT_ID}/${other.id}`] }),
+  );
+  await router.load();
+  await using _app = await render(<AppRoot router={router} />, {
+    // AppRoot brings its own router.
+    router: false,
+  });
+  await expect.element(page.getByText(`Answer 0 for ${other.id}.`)).toBeVisible();
+  // A new draft needs the project, which arrives with the shell snapshot.
+  await expect.element(page.getByText("render", { exact: true }).first()).toBeVisible();
+  // An earlier test's refused connection can leave this read retrying; start it on this socket.
+  appAtomRegistry.refresh(
+    getProjectFileQueryAtom(ENVIRONMENT_ID, "/workspace/render", "onicode.json"),
+  );
+  await projectFile.called;
+  const opened = await act(() =>
+    createNewThreadHandler(router)(scopeProjectRef(ENVIRONMENT_ID, PROJECT_ID)),
+  );
+  if (!opened) throw new Error("No draft opened");
+  // The kept draft would otherwise list in the next test's sidebar.
+  using _draft = {
+    [Symbol.dispose]: () => useComposerDraftStore.getState().clearDraftThread(opened.draftId),
+  };
+
+  const editor = page.getByTestId("composer-editor");
+  await userEvent.click(editor);
+  await insertText("Held for the project file");
+  await userEvent.keyboard("{Enter}");
+  await expect.element(page.getByRole("button", { name: "Submitting message" })).toBeVisible();
+  // The composer on screen is now this thread's, which the held send must not read.
+  await act(() =>
+    router.navigate({
+      to: "/$environmentId/$threadId",
+      params: { environmentId: ENVIRONMENT_ID, threadId: other.id },
+    }),
+  );
+  await expect.element(page.getByText(`Answer 0 for ${other.id}.`)).toBeVisible();
+  projectFile.release();
+
+  await expect.element(page.getByText("Message not sent")).toBeVisible();
+  expect(launches).toBe(0);
+  expect(useComposerDraftStore.getState().getComposerDraft(opened.draftId)?.prompt).toBe(
+    "Held for the project file",
+  );
 });

@@ -54,7 +54,8 @@ export interface CursorAuth {
 
 export interface CursorAuthOptions {
   readonly instanceId: ProviderInstanceId;
-  readonly displayName: string;
+  /** Names the API key a sign-in creates; read at sign-in so a rename applies. */
+  readonly displayName: () => string;
   readonly enabled: boolean;
   readonly apiKey?: string;
   readonly store: SdkCredentialStore;
@@ -206,7 +207,7 @@ export const makeCursorAuth = Effect.fn("makeCursorAuth")(function* (options: Cu
             openBrowser: false,
             store: pendingStore,
             signal,
-            apiKeyName: `Onicode - ${options.displayName}`,
+            apiKeyName: `Onicode - ${options.displayName()}`,
             onLoginUrl: (authorizationUrl) => {
               if (active === flow) Queue.offerUnsafe(urls, authorizationUrl);
             },

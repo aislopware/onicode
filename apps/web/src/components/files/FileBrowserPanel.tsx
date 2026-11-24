@@ -245,10 +245,10 @@ export default function FileBrowserPanel({
         workspaceRoot: cwd,
         isDirectory: item.kind === "directory",
       };
-      const fileMenuItems = fileContextMenu.buildItems(fileTarget);
       // The app menu owns focus; the tree's outside-click handler would dismiss it before click.
       context.close({ restoreFocus: !pointerIsFresh });
       void settlePromise(async () => {
+        const fileMenuItems = await fileContextMenu.buildItems(fileTarget);
         const clicked = await api.contextMenu.show(
           [
             ...fileMenuItems,

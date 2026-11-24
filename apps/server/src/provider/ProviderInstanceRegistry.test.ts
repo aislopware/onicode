@@ -352,13 +352,19 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
     (presentation) =>
       Effect.gen(function* () {
         let closed = 0;
+        const renames: Array<string | undefined> = [];
         const driver: typeof CodexDriver = {
           ...CodexDriver,
           create: (input) =>
             Effect.gen(function* () {
               const instance = yield* CodexDriver.create(input);
               yield* Effect.addFinalizer(() => Effect.sync(() => closed++));
-              return instance;
+              return {
+                ...instance,
+                rename: (displayName: string | undefined) => {
+                  renames.push(displayName);
+                },
+              };
             }),
         };
         const instanceId = ProviderInstanceId.make("account-a");
@@ -379,6 +385,8 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
         expect(yield* registry.getInstance(instanceId)).toBe(instance);
         yield* PubSub.take(changes);
         expect(yield* instance!.snapshot.getSnapshot).toMatchObject(presentation);
+        // The instance hears of a new name only.
+        expect(renames).toEqual("displayName" in presentation ? ["Renamed"] : []);
       }).pipe(Effect.provide(layerTest)),
   );
 

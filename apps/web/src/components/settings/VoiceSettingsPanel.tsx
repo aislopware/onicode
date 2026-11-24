@@ -147,6 +147,7 @@ import { useSearchableSetting } from "./settingsSearch";
 import { useOptionalSettingsScope, useSettingsScope } from "./SettingsScopeContext";
 import { useScopedModelDisabledReason } from "./useScopedModelAvailability";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
+import { clearSearchOnEscape } from "./searchFieldEscape";
 
 const OFF = "off";
 const DEVICE = "device";
@@ -1002,11 +1003,13 @@ function SpeechModelBrowser(props: {
             <SearchIcon aria-hidden />
           </InputGroupAddon>
           <InputGroupInput
-            type="search"
+            type="text"
+            role="searchbox"
             aria-label={gt("Search transcription models")}
             placeholder={gt("Search models")}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
+            onKeyDown={(event) => clearSearchOnEscape(event, search, () => setSearch(""))}
           />
         </InputGroup>
         <Menu>

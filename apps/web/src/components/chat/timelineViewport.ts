@@ -64,6 +64,8 @@ export interface TimelineViewport {
 
 const UP_KEYS = new Set(["PageUp", "Home", "ArrowUp"]);
 const DOWN_KEYS = new Set(["PageDown", "End", "ArrowDown", " "]);
+// Native media controls seek, change volume or play on these keys in their default action.
+const MEDIA_CONTROLS_SELECTOR = "audio[controls],video[controls]";
 // Wide enough for an overlay scrollbar, which takes no layout space (macOS Firefox).
 const SCROLLBAR_HIT_PX = 16;
 
@@ -117,6 +119,7 @@ export function attachTimelineViewport(
       event.metaKey ||
       event.shiftKey ||
       eventPathContainsSelector(event, TYPE_TO_FOCUS_EDITABLE_SELECTOR) ||
+      eventPathContainsSelector(event, MEDIA_CONTROLS_SELECTOR) ||
       document.querySelector(TYPE_TO_FOCUS_FLOATING_LAYER_SELECTOR) ||
       (scrollNode.contains(event.target) &&
         !isTimelineScrollTarget(event.target, scrollNode, direction === "up" ? -1 : 1))

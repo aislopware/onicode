@@ -14294,8 +14294,9 @@ describe("AcpAdapterV2", () => {
         assert.equal(slashTurn.status, "completed");
         assert.notInclude(slashTurn.prompt, "external_mcp_app_item-1");
 
+        // A prompt that opens with a path is not a command.
         const deliveredTurn = yield* runTurn({
-          text: "What did the app report?",
+          text: "/Users/me/app.ts: what did the app report?",
           note: "Created Jira issue PROJ-42",
         });
         assert.equal(deliveredTurn.status, "completed");
@@ -14617,7 +14618,7 @@ describe("AcpAdapterV2", () => {
         yield* Deferred.succeed(steer1.gate, { stopReason: "end_turn" });
 
         const steerChanged = yield* queueGate();
-        yield* steer(1, "Use updated note", "Note B");
+        yield* steer(1, "/Users/me/notes.md has the updated note", "Note B");
         yield* Deferred.await(steerChanged.started);
         assert.include(prompts.at(-1) ?? "", tag("Note B"));
         yield* Deferred.succeed(steerSlash.gate, { stopReason: "end_turn" });
@@ -14876,7 +14877,7 @@ describe("AcpAdapterV2", () => {
 
         // Next steer with Note B resends it and marks it delivered once accepted.
         steerOutcomes.push({ _tag: "accept" });
-        yield* steer(1, "Retry Note B", "Note B");
+        yield* steer(1, "/Users/me/notes.md has Note B", "Note B");
         assert.include(steeredTexts.at(-1) ?? "", tag("Note B"));
 
         // Repeated steer with Note B omits it.

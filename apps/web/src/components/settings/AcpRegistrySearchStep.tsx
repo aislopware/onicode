@@ -33,6 +33,7 @@ import { isConfiguredAcpRegistryAgent } from "./AddProviderInstanceDialog.logic"
 import { ProviderDriverKind } from "@onicode/contracts";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import { providerClients } from "./providerDriverMeta";
+import { clearSearchOnEscape } from "./searchFieldEscape";
 
 function errorMessage(error: unknown): string {
   return error instanceof Error && error.message.trim()
@@ -183,9 +184,11 @@ export function AcpRegistrySearchStep({
             maxLength={ACP_REGISTRY_SEARCH_QUERY_MAX_LENGTH}
             disabled={preparingId !== null}
             onChange={(event) => registry.type(event.currentTarget.value)}
+            onKeyDown={(event) => clearSearchOnEscape(event, query, () => registry.type(""))}
             placeholder={gt("Search agents…")}
+            role="searchbox"
             size="sm"
-            type="search"
+            type="text"
             value={query}
           />
         </InputGroup>
