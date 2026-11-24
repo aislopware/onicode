@@ -3594,3 +3594,4 @@ b34d8b5bd5	take	fix(opencode): model list picks up config edits made while OpenC
 3b3b662f3c	take	fix(server): a closed preview tab no longer stays the agent's current tab (#41818)
 d572ce9afe	take	fix(chat): preserve model choices when editing queued messages (#41814); kept Onicode's releaseHeldSteer (follow-up task on a released steer) and queuedRunTargetProviderThread; scenario ported
 d9c7e6f7fc	take	fix(web): dropped text is parsed like pasted text in the composer (#31098)
+a68a3539b8	take	fix(web): holding Esc in the Files search clears it without closing the sheet (#41815)

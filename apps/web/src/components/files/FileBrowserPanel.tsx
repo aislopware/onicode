@@ -125,7 +125,12 @@ function FileSearchField({
             event.stopPropagation();
             return;
           }
-          if (props.value) event.stopPropagation();
+          if (props.value || event.repeat) {
+            event.preventDefault();
+            event.stopPropagation();
+            if (props.value) props.onClose();
+            return;
+          }
           props.onClose();
           event.currentTarget.blur();
         }}
