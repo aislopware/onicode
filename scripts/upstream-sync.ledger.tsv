@@ -3685,3 +3685,4 @@ c9e22e5ff4	take	conflicts: imports kept beside Onicode's html-render bootstrap; 
 2fe7febc8d	take	adopted upstream over Onicode's writesEnvironment gate on workflow writes (#723): callers at an administrator's runtime-mode ceiling can drive runs, where Onicode's gate refused everyone under a ceiling; hook-path reads and the outside-agents doc dropped (removed surfaces)
 84a0c0516f	take	conflict: kept Onicode's receipt checks in intake test mocks
 a891304c84	take	taken as is
+de8551b05a	take	adapted: GitLab head pin already in Onicode (kept Onicode's pre-post head check from e6b2acf829: it also stops a summary or request-changes on a moved head); evals refusal and test rebased onto Onicode's no-unpushed harness; MCP tool list budget remeasured
