@@ -3615,3 +3615,4 @@ ae926f6579	take	CONFLICT test only: kept Onicode's preview zoom test beside upst
 6931171217	take	fix(server): snapshot and transcript reads report a deleted thread as missing (#41866)
 860da094fd	take	CONFLICT import; test harness fitted to Onicode's layerWsRpc (no session method, 4 args) and AcpRegistrySessions.findOwners. ws tests pass.
 b1c83e180f	skip	guest links removed in Onicode (apps/server/src/guest does not exist)
+4508c70681	take	CONFLICT pnpm-lock.yaml only: patch hash regenerated with vp i. Patch touches the web build of legend-list; mobile's react-native build is unchanged. MessagesTimeline browser tests 78 pass.
