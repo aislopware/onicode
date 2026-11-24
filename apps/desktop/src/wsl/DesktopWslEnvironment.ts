@@ -12,6 +12,7 @@ import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import * as HostProcess from "@onicode/shared/HostProcess";
+import { windowsSystem32Path } from "@onicode/shared/windowsSystem";
 import { WindowsRegistry } from "@onicode/shared/managedPolicyFile";
 import { buildRemoteNodeEnvScript } from "@onicode/ssh/tunnel";
 import { satisfiesSemverRange } from "@onicode/shared/semver";
@@ -180,22 +181,25 @@ const buildWslNodeEnvPreamble = (
 ensure_remote_node_path || true
 `;
 
+// By absolute path: a bare name is looked up in the working directory before PATH.
+const wslExe = Effect.map(HostProcess.Environment, (env) => windowsSystem32Path(env, "wsl.exe"));
+
 const runWslProcess = (
   args: ReadonlyArray<string>,
   stdin: Stream.Stream<Uint8Array, PlatformError.PlatformError>,
   timeout: Duration.Duration,
 ): Effect.Effect<ShellResult, never, ChildProcessSpawner.ChildProcessSpawner> => {
   const spawner = ChildProcessSpawner.ChildProcessSpawner;
-  const command = ChildProcess.make("wsl.exe", args, {
-    stdin,
-    stdout: "pipe",
-    stderr: "pipe",
-    killSignal: "SIGTERM",
-    forceKillAfter: PROCESS_TERMINATE_GRACE,
-  });
 
   return Effect.scoped(
     Effect.gen(function* () {
+      const command = ChildProcess.make(yield* wslExe, args, {
+        stdin,
+        stdout: "pipe",
+        stderr: "pipe",
+        killSignal: "SIGTERM",
+        forceKillAfter: PROCESS_TERMINATE_GRACE,
+      });
       const spawnerService = yield* spawner;
       const spawnResult = yield* spawnerService.spawn(command).pipe(
         Effect.match({
@@ -962,7 +966,7 @@ const probeWslDistros: Effect.Effect<
 > = Effect.scoped(
   Effect.gen(function* () {
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-    const command = ChildProcess.make("wsl.exe", ["--list", "--verbose"], {
+    const command = ChildProcess.make(yield* wslExe, ["--list", "--verbose"], {
       stdin: "ignore",
       stdout: "pipe",
       stderr: "ignore",
@@ -1005,7 +1009,7 @@ const preWarmImpl = (
   Effect.scoped(
     Effect.gen(function* () {
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-      const command = ChildProcess.make("wsl.exe", [...buildDistroArgs(distro), "--", "true"], {
+      const command = ChildProcess.make(yield* wslExe, [...buildDistroArgs(distro), "--", "true"], {
         stdin: "ignore",
         stdout: "ignore",
         stderr: "ignore",
@@ -1027,7 +1031,7 @@ export const windowsToWslPathImpl = (
     Effect.gen(function* () {
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
       const command = ChildProcess.make(
-        "wsl.exe",
+        yield* wslExe,
         // --exec skips the distro shell, which would expand `$`, `&` or `;` in folder names.
         [...buildDistroArgs(distro), "--exec", "wslpath", "-u", normalized],
         {
@@ -1062,7 +1066,7 @@ const getDistroIpImpl = (
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
       // WSL2's first hostname -I address is reachable directly from Windows without wslhost forwarding.
       const command = ChildProcess.make(
-        "wsl.exe",
+        yield* wslExe,
         [...buildDistroArgs(distro), "--", "sh", "-c", "hostname -I"],
         {
           stdin: "ignore",
@@ -1093,7 +1097,7 @@ const getUserHomeImpl = (
     Effect.gen(function* () {
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
       const command = ChildProcess.make(
-        "wsl.exe",
+        yield* wslExe,
         [
           ...buildDistroArgs(distro),
           "--",

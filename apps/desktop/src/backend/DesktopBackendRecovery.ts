@@ -197,7 +197,8 @@ async function recordScope(stateDir: string) {
     canonicalHome(stateDir),
     NodeFSP.realpath(NodeProcess.execPath),
     // An AppImage runs from a new mount path each launch; its file path is the stable install.
-    appImage ? NodeFSP.realpath(appImage) : undefined,
+    // It may have been moved while running, which realpath alone would throw on.
+    appImage ? canonicalHome(appImage) : undefined,
   ]);
   const prefix = NodeCrypto.createHash("sha256")
     .update(JSON.stringify([home, installation ?? executable]))

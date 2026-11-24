@@ -787,27 +787,45 @@ export const layer = Layer.effect(
     type RefreshAllCompletion = Deferred.Deferred<ReadonlyArray<ServerProvider>>;
     // A refresh is how a user asks Onicode to see a CLI installed since launch; a burst shares one
     // PATH read. It re-reads the login shell, since the desktop's capture is from launch and a
-    // headless server has none. Instances still missing their CLI are rebuilt on a new PATH. They
-    // cannot have live sessions, and installed ones keep theirs.
+    // headless server has none. Instances whose own check found no CLI are rebuilt on a new PATH.
+    // They cannot have live sessions, and installed ones keep theirs.
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
     const readHostPath = yield* refreshWindowsPath().pipe(
       Effect.andThen(refreshPathFromLoginShell()),
       Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
       Effect.cachedWithTTL(Duration.seconds(10)),
     );
-    const refreshHostPath = readHostPath.pipe(
-      Effect.andThen(
-        instanceRegistryMutator.rebuildOnHostPathChange(
-          Ref.get(providersRef).pipe(
-            Effect.map((providers) =>
-              providers
-                .filter((provider) => provider.enabled && !provider.installed)
-                .map((provider) => provider.instanceId),
-            ),
-          ),
+    // Runs behind the registry lock, so it reads instances without taking it.
+    const missingInstanceIds = instanceRegistry.listInstances.pipe(
+      Effect.flatMap((instances) =>
+        Effect.filter(instances, (instance) =>
+          // An ACP Registry agent also reports not installed for setup states unrelated to PATH.
+          !instance.enabled || instance.driverKind === ProviderDriverKind.make("acpRegistry")
+            ? Effect.succeed(false)
+            : Effect.gen(function* () {
+                // Before its first check an instance reads not installed whether or not it is.
+                if (yield* instance.snapshot.isAwaitingFirstCheck ?? Effect.succeed(false)) {
+                  return false;
+                }
+                const snapshot = yield* instance.snapshot.getSnapshot;
+                return snapshot.enabled && !snapshot.installed;
+              }),
         ),
       ),
+      Effect.map((instances) => instances.map((instance) => instance.instanceId)),
     );
+    // Returns the instances the new PATH replaced.
+    const refreshHostPath = Effect.gen(function* () {
+      const before = yield* instanceRegistry.listInstances;
+      yield* readHostPath;
+      yield* instanceRegistryMutator.rebuildOnHostPathChange(missingInstanceIds);
+      const after = yield* instanceRegistry.listInstances;
+      return after.filter(
+        (instance) =>
+          !before.includes(instance) &&
+          before.some((previous) => previous.instanceId === instance.instanceId),
+      );
+    });
     const refreshAllInFlightRef = yield* Ref.make<Option.Option<RefreshAllCompletion>>(
       Option.none(),
     );
@@ -816,7 +834,7 @@ export const layer = Layer.effect(
     const probedManifestUpdatedAt = yield* Ref.make(initialManifest.updatedAt);
 
     const refreshAll = Effect.fn("refreshAll")(function* () {
-      yield* refreshHostPath;
+      const rebuilt = yield* refreshHostPath;
       const claimed = yield* Ref.modify(
         refreshAllInFlightRef,
         (
@@ -857,7 +875,15 @@ export const layer = Layer.effect(
           Effect.forkDetach,
         );
       }
-      return yield* Deferred.await(claimed.completion);
+      const providers = yield* Deferred.await(claimed.completion);
+      if (claimed.owner || rebuilt.length === 0) return providers;
+      // A pass that started before the rebuild probes the replaced instances, whose results drop.
+      yield* syncLiveSourcesAndContinue;
+      yield* Effect.forEach(rebuilt, (instance) => refreshOneSource(instance), {
+        concurrency: "unbounded",
+        discard: true,
+      });
+      return yield* Ref.get(providersRef);
     });
 
     const refresh = Effect.fn("refresh")(function* (provider?: ProviderDriverKind) {

@@ -55,16 +55,19 @@ export function useEnvironmentScopeDenied(
   );
 }
 
+/** The environments whose session holds `scope`, or every scope in it; keep an array stable. */
 export function useEnvironmentsWithScope(
   environments: ReadonlyArray<{ readonly environmentId: EnvironmentId }>,
-  scope: AuthEnvironmentScope,
+  scope: AuthEnvironmentScope | ReadonlyArray<AuthEnvironmentScope>,
 ): ReadonlySet<EnvironmentId> {
   const permittedEnvironments = useMemo(
     () =>
       Atom.make((get) => {
         const permitted = new Set<EnvironmentId>();
+        const scopes = typeof scope === "string" ? [scope] : scope;
         for (const { environmentId } of environments) {
-          if (sessionHasScope(get(environmentSession.sessionStateAtom(environmentId)), scope)) {
+          const session = get(environmentSession.sessionStateAtom(environmentId));
+          if (scopes.every((held) => sessionHasScope(session, held))) {
             permitted.add(environmentId);
           }
         }

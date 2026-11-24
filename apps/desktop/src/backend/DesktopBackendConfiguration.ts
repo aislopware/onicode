@@ -3,6 +3,7 @@ import * as NodeOS from "node:os";
 import { parsePersistedServerObservabilitySettings } from "@onicode/shared/serverSettings";
 import { currentDesktopBootstrapToken } from "@onicode/shared/desktopBootstrapToken";
 import * as HostProcess from "@onicode/shared/HostProcess";
+import { windowsSystem32Path } from "@onicode/shared/windowsSystem";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
@@ -690,7 +691,7 @@ const resolveWslStartConfig = Effect.fn("desktop.backendConfiguration.resolveWsl
   const wslEnv = mergeWslEnv(parentEnvWithoutOniHome.WSLENV, forwardedEnvNames);
 
   const baseConfig = {
-    executablePath: "wsl.exe",
+    executablePath: windowsSystem32Path(env, "wsl.exe"),
     entryPath:
       preflight._tag === "Ready" ? preflight.windowsEntryPath : environment.backendEntryPath,
     cwd: environment.backendCwd,

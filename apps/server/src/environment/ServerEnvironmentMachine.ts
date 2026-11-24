@@ -1,5 +1,6 @@
 import { EnvironmentMachineKind } from "@onicode/contracts";
 import * as HostProcess from "@onicode/shared/HostProcess";
+import { windowsSystem32Path } from "@onicode/shared/windowsSystem";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Schema from "effect/Schema";
@@ -188,7 +189,7 @@ const detectLinuxMachineModel = Effect.fn("detectLinuxMachineModel")(function* (
 
 const detectWindowsMachineModel = Effect.fn("detectWindowsMachineModel")(function* () {
   const bios = yield* runProbe({
-    command: "reg",
+    command: windowsSystem32Path(yield* HostProcess.Environment, "reg.exe"),
     args: ["query", "HKLM\\HARDWARE\\DESCRIPTION\\System\\BIOS"],
   });
   const value = (name: string) =>

@@ -254,7 +254,8 @@ describe("renderCliShim", () => {
     });
     const lines = script.split("\r\n");
     expect(lines).toContain("setlocal EnableExtensions DisableDelayedExpansion");
-    expect(lines).toContain("chcp 65001 >nul");
+    expect(lines).toContain(String.raw`%SystemRoot%\System32\chcp.com 65001 >nul`);
+    expect(lines.filter((line) => /(?:^|[\s('])chcp\b/.test(line))).toEqual([]);
     expect(lines).toContain(
       'if exist "C:\\Apps\\R&whoami&X 100%%\\!CHANNEL!\\Onicode.exe" goto run',
     );

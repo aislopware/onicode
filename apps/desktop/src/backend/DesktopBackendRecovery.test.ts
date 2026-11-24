@@ -239,6 +239,8 @@ describe.runIf(NodeProcess.platform === "darwin" || NodeProcess.platform === "li
 
         const recovered: number[] = [];
         const errors: unknown[] = [];
+        // The AppImage was moved while it ran; its recorded path still names the install.
+        await NodeFSP.rm(appImage);
         const previousAppImage = NodeProcess.env.APPIMAGE;
         NodeProcess.env.APPIMAGE = appImage;
         cleanup.defer(() => {

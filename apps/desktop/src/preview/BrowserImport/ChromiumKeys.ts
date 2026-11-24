@@ -3,6 +3,7 @@
 import * as NodeCrypto from "node:crypto";
 
 import * as HostProcess from "@onicode/shared/HostProcess";
+import { windowsPowerShellPath } from "@onicode/shared/windowsSystem";
 
 import * as Effect from "effect/Effect";
 import * as Base64 from "effect/encoding/Base64";
@@ -167,10 +168,7 @@ export const unwrapWindowsDpapiKey = Effect.fn("ChromiumKeys.unwrapWindowsDpapiK
   return yield* Effect.scoped(
     Effect.gen(function* () {
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-      const windowsRoot = environment.SystemRoot ?? environment.WINDIR;
-      const powershell = windowsRoot
-        ? `${windowsRoot}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`
-        : "powershell.exe";
+      const powershell = windowsPowerShellPath(environment);
       const handle = yield* spawner
         .spawn(
           ChildProcess.make(

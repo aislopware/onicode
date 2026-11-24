@@ -168,6 +168,8 @@ async function install(name, version, entry) {
     console.log(JSON.stringify({ nodePath: process.execPath, platforms, tools: versions() })); return;
   }
   fs.mkdirSync(state, { recursive: true, mode: 0o700 });
+  // It holds the hub's session token; mkdir leaves a folder made by an older script as it was.
+  fs.chmodSync(state, 0o700);
   // Serialize starts and stops for this environment/host owner, including agent startup.
   const hostLock = path.join(state, 'runtime.lock');
   const releaseHost = await acquireLock(hostLock);
@@ -223,7 +225,8 @@ async function install(name, version, entry) {
       const log = fs.openSync(logFile, 'a', 0o600);
       fs.fchmodSync(log, 0o600);
       const logStart = fs.fstatSync(log).size;
-      const announcedToken = () => /\btoken=([\w.~-]+)/.exec(fs.readFileSync(logFile, 'utf8').slice(logStart))?.[1];
+      // logStart counts bytes, so cut before decoding.
+      const announcedToken = () => /\btoken=([\w.~-]+)/.exec(fs.readFileSync(logFile).subarray(logStart).toString('utf8'))?.[1];
       const child = spawn(process.execPath, [hubEntry, '--port', String(hubPort), '--host', '127.0.0.1', '--require-token', '--hide-sidebar', '--hide-boot-device', ...(hubPlatform ? ['--platform', hubPlatform] : [])], {
         cwd: state, detached: true, stdio: ['ignore', log, log], env: { ...process.env, EXPO_DEVICE_HUB_STATE_DIR: state, EXPO_DEVICE_HUB_EMULATOR_EXTRA_ARGS: emulatorExtraArgs, FORCE_COLOR: '0', NO_COLOR: '1' },
       });

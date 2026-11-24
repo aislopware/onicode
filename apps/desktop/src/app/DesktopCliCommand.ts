@@ -16,6 +16,7 @@ import * as ChildProcess from "effect/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
 import { pathSetup, readUserLoginShell } from "@onicode/shared/shell";
+import { windowsPowerShellPath } from "@onicode/shared/windowsSystem";
 
 import * as DesktopCliShim from "./DesktopCliShim.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
@@ -131,10 +132,9 @@ export const make = Effect.gen(function* () {
   const powershell = (overrides: Record<string, string>) =>
     Effect.scoped(
       Effect.gen(function* () {
-        const root = env.SystemRoot ?? env.WINDIR;
         const handle = yield* spawner.spawn(
           ChildProcess.make(
-            root ? `${root}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe` : "powershell.exe",
+            windowsPowerShellPath(env),
             ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", WINDOWS_USER_PATH_SCRIPT],
             { stdin: "ignore", stderr: "ignore", env: overrides, extendEnv: true },
           ),
