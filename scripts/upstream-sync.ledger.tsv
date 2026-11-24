@@ -3603,3 +3603,4 @@ ceb820e24e	take	fix(scripts): server benchmark keeps the rounds it finished when
 a5d86e6382	take	fix(web): Push on the default branch no longer commits files changed while confirming (#41844)
 0617173073	take	fix(cli): oni policy check expands ~ in the policy file path (#41848)
 57ffba5dfb	take	fix(ssh): a second desktop no longer stops a remote server it did not launch (#41842)
+e632155b3a	take	CONFLICT: claudeProviderTurnTokenUsage; took upstream's last-message sample, kept Onicode's prompt-cache tracking and claudeTokenCount. Totals still drive the cache read check. ClaudeAdapterV2 565 tests pass.
