@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import appCss from "~/index.css?inline";
-import { render, type Screen } from "../../test/render";
+import { act, render, type Screen } from "../../test/render";
 import { dispatchCommandPalette, handOverCommandPaletteOpener } from "../commandPaletteStore";
 import { useCommitOnBlur } from "../hooks/useCommitOnBlur";
 import {
@@ -15,6 +15,7 @@ import {
 } from "../lib/workspaceFocus";
 import { AppRouteModal, AppRouteModalClose } from "./AppRouteModal";
 import { startMainAppLocationTracking } from "./sidebar/mainAppLocation";
+import { Menu, MenuItem, MenuPopup, MenuTrigger } from "./ui/menu";
 
 vi.mock("./chat/GlobalVoiceInputIndicator", () => ({ GlobalVoiceInputIndicator: () => null }));
 // Passed through, so a test can see a deferred restore that would land after it ends.
@@ -640,5 +641,46 @@ describe("AppRouteModal", () => {
     // The app redirects a project page to its Settings page; here the test navigates there.
     await router.navigate({ href: "/settings/projects" });
     await expect.element(settings).toBeVisible();
+  });
+
+  it("stays open when a held Esc repeats after closing a nested menu", async () => {
+    await using _screen = await render(
+      <AppRouteModal label="Usage">
+        <Menu>
+          <MenuTrigger>All providers</MenuTrigger>
+          <MenuPopup>
+            <MenuItem>Claude</MenuItem>
+          </MenuPopup>
+        </Menu>
+      </AppRouteModal>,
+      { router: "/usage" },
+    );
+    const usage = page.getByRole("dialog", { name: "Usage" });
+    const trigger = page.getByRole("button", { name: "All providers" });
+    await expect.element(usage).toHaveFocus();
+
+    (trigger.element() as HTMLElement).focus();
+    await userEvent.keyboard("{Enter}");
+    await expect.element(page.getByRole("menu")).toBeVisible();
+
+    await userEvent.keyboard("{Escape}");
+    await expect.element(page.getByRole("menu")).not.toBeInTheDocument();
+    await expect.element(trigger).toHaveFocus();
+    await expect.element(usage).toHaveAttribute("data-open");
+
+    await act(() =>
+      trigger.element().dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Escape",
+          repeat: true,
+          bubbles: true,
+          cancelable: true,
+        }),
+      ),
+    );
+    await expect.element(usage).toHaveAttribute("data-open");
+
+    await userEvent.keyboard("{Escape}");
+    await expect.element(usage).not.toBeInTheDocument();
   });
 });
