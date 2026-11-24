@@ -6,4 +6,6 @@ export interface SheetProps {
   readonly onClose: () => void;
   /** Blocks the close button and the swipe, such as while a submit is in flight. */
   readonly dismissDisabled?: boolean;
+  /** Opens at the tall detent, for content that should be seen whole. */
+  readonly opensExpanded?: boolean;
 }

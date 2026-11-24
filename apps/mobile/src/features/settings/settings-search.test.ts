@@ -49,6 +49,7 @@ describe("filterSettingsSections", () => {
     { query: "KEYBOARD", expected: [["Interface", ["Keyboard"]]] },
     { query: "dark mode", expected: [["Interface", ["Appearance"]]] },
     { query: "microphone", expected: [["Interface", ["Voice"]]] },
+    { query: "funnel", expected: [["Connections", ["Environments"]]] },
     { query: "agent credits", expected: [["Server settings", ["Source control & issues"]]] },
     {
       query: "server settings",

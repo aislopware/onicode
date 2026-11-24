@@ -131,7 +131,9 @@ vi.mock("../../state/entities", () => ({
     { environmentId: "target", id: "target-project", title: "Target project" },
   ],
   useServerConfigs: () => new Map(),
-  useEnvironmentServerConfig: () => null,
+  useEnvironmentServerConfig: () => ({
+    environment: { platform: {}, capabilities: { webhookSchedules: true } },
+  }),
   useThreadShell: () => null,
 }));
 vi.mock("./settings-environment-filter", () => ({
@@ -273,6 +275,16 @@ describe("scheduled task batched edits", () => {
         schedule: { type: "interval", everyMs: 3_600_000 },
       }),
     });
+  });
+  it("keeps every webhook filter added before React commits", () => {
+    act(() => button("On webhook").click());
+    act(() => {
+      button("Add filter").click();
+      button("Add filter").click();
+    });
+    expect(
+      appAtomRegistry.get(scheduledTaskEditorSessionAtom)?.current?.draft.schedule.filters,
+    ).toHaveLength(2);
   });
   it("keeps the editor open when a link lands in the same batch as Save", async () => {
     const held = Promise.withResolvers<{ _tag: "Success" }>();

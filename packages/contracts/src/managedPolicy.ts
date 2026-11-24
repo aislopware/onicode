@@ -73,6 +73,7 @@ export const ManagedPolicyLimits = Schema.Struct({
   maxRuntimeMode: Schema.optionalKey(RuntimeMode),
   /** Clients the server accepts. Without `remote`, nothing off this machine can pair. */
   clients: Schema.optionalKey(Schema.NonEmptyArray(ManagedPolicyClient)),
+  webhookTasks: Schema.optionalKey(Schema.Boolean),
   browserCookieImport: Schema.optionalKey(Schema.Boolean),
   /** `false` turns the preview tunnel off: no client reaches this machine's loopback ports. */
   previewTunnel: Schema.optionalKey(Schema.Boolean),
@@ -85,6 +86,7 @@ export type ManagedPolicyLimits = typeof ManagedPolicyLimits.Type;
 export const ManagedPolicySummaryLimits = Schema.Struct({
   maxRuntimeMode: Schema.optionalKey(RuntimeMode),
   clients: Schema.optionalKey(Schema.NonEmptyArray(ManagedPolicyClient)),
+  webhookTasks: Schema.optionalKey(Schema.Boolean),
   browserCookieImport: Schema.optionalKey(Schema.Boolean),
   previewTunnel: Schema.optionalKey(Schema.Boolean),
   providers: Schema.optionalKey(
@@ -149,7 +151,7 @@ export function isManagedSettingPath(
   );
 }
 
-/** The one shape users see when policy refuses something: "Example Corp's policy does not allow importing browser cookies." */
+/** The one shape users see when policy refuses something: "Example Corp's policy does not allow webhook tasks." */
 export function managedPolicyDeniedMessage(organization: string, capability: string): string {
   return `${organization}'s policy does not allow ${capability}.`;
 }
@@ -193,6 +195,7 @@ export function clampManagedRuntimeMode(
 
 const CAPABILITY_LABELS = {
   remoteClients: "connecting from other devices",
+  webhookTasks: "webhook tasks",
   browserCookieImport: "importing browser cookies",
   previewTunnel: "opening this machine's local servers on other devices",
 } as const;

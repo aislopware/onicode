@@ -125,7 +125,11 @@ export function managedRuntimeModeDenial(
     : undefined;
 }
 
-export type ManagedCapability = "remoteClients" | "browserCookieImport" | "previewTunnel";
+export type ManagedCapability =
+  | "remoteClients"
+  | "browserCookieImport"
+  | "previewTunnel"
+  | "webhookTasks";
 
 function managedCapabilityDeniedMessage(
   organization: string,
@@ -144,6 +148,10 @@ function managedCapabilityDeniedMessage(
         msg("{organization}'s policy does not allow importing browser cookies.", {
           organization,
         }),
+      );
+    case "webhookTasks":
+      return resolve(
+        msg("{organization}'s policy does not allow webhook tasks.", { organization }),
       );
     case "previewTunnel":
       return resolve(

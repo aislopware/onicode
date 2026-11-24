@@ -237,6 +237,7 @@ import {
   IssueUnavailableError,
   IssueUpdateInput,
 } from "./issue.ts";
+import { PublicAccessStatus } from "./publicAccess.ts";
 import { PullRequestReviewGuideResult } from "./pullRequestReviewGuide.ts";
 import {
   PullRequestActionInput,
@@ -459,12 +460,24 @@ import {
   ScheduledTaskListInput,
   ScheduledTaskListResult,
   ScheduledTaskRunNowInput,
+  ScheduledTaskRotateWebhookTokenInput,
+  ScheduledTaskListWebhookDeliveriesInput,
+  ScheduledTaskListWebhookDeliveriesResult,
+  ScheduledTaskGetWebhookDeliveryInput,
+  ScheduledTaskGetWebhookDeliveryResult,
   ScheduledTaskRunNowResult,
   ScheduledTaskSetEnabledInput,
   ScheduledTaskUpsertInput,
   ScheduledTaskMutationResult,
 } from "./scheduledTask.ts";
 import { SecretRequestAnswerInput, SecretRequestError } from "./secretRequest.ts";
+import {
+  AgentSignInAnswerInput,
+  AgentSignInError,
+  AgentSignInRequest,
+  AgentTokenIssueInput,
+  AgentTokenIssueResult,
+} from "./agentSignIn.ts";
 import {
   ProjectCloneActionInput,
   ProjectCloneActionResult,
@@ -669,7 +682,14 @@ export const WS_METHODS = {
   scheduledTasksSetEnabled: "scheduledTasks.setEnabled",
   scheduledTasksDelete: "scheduledTasks.delete",
   scheduledTasksRunNow: "scheduledTasks.runNow",
+  scheduledTasksRotateWebhookToken: "scheduledTasks.rotateWebhookToken",
   secretsAnswerRequest: "secrets.answerRequest",
+  publicAccessSubscribeStatus: "publicAccess.subscribeStatus",
+  agentSignInsSubscribe: "agentSignIns.subscribe",
+  agentSignInsAnswer: "agentSignIns.answer",
+  agentTokensIssue: "agentTokens.issue",
+  scheduledTasksListWebhookDeliveries: "scheduledTasks.listWebhookDeliveries",
+  scheduledTasksGetWebhookDelivery: "scheduledTasks.getWebhookDelivery",
 
   pullRequestsList: "pullRequests.list",
   pullRequestsListStats: "pullRequests.listStats",
@@ -2493,10 +2513,63 @@ const WsScheduledTasksRunNowRpc = Rpc.make(WS_METHODS.scheduledTasksRunNow, {
   error: Schema.Union([ScheduledTaskError, EnvironmentAuthorizationError]),
 });
 
+const WsScheduledTasksRotateWebhookTokenRpc = Rpc.make(
+  WS_METHODS.scheduledTasksRotateWebhookToken,
+  {
+    payload: ScheduledTaskRotateWebhookTokenInput,
+    success: ScheduledTaskMutationResult,
+    error: Schema.Union([ScheduledTaskError, EnvironmentAuthorizationError]),
+  },
+);
+
+const WsPublicAccessSubscribeStatusRpc = Rpc.make(WS_METHODS.publicAccessSubscribeStatus, {
+  payload: Schema.Struct({}),
+  success: PublicAccessStatus,
+  stream: true,
+  error: EnvironmentAuthorizationError,
+});
+
+/** Pending outside-agent sign-ins, the whole list on each change. Needs access:write. */
+const WsAgentSignInsSubscribeRpc = Rpc.make(WS_METHODS.agentSignInsSubscribe, {
+  payload: Schema.Struct({}),
+  success: Schema.Array(AgentSignInRequest),
+  stream: true,
+  error: EnvironmentAuthorizationError,
+});
+
+const WsAgentSignInsAnswerRpc = Rpc.make(WS_METHODS.agentSignInsAnswer, {
+  payload: AgentSignInAnswerInput,
+  error: Schema.Union([AgentSignInError, EnvironmentAuthorizationError]),
+});
+
+const WsAgentTokensIssueRpc = Rpc.make(WS_METHODS.agentTokensIssue, {
+  payload: AgentTokenIssueInput,
+  success: AgentTokenIssueResult,
+  error: Schema.Union([AgentSignInError, EnvironmentAuthorizationError]),
+});
+
 const WsSecretsAnswerRequestRpc = Rpc.make(WS_METHODS.secretsAnswerRequest, {
   payload: SecretRequestAnswerInput,
   error: Schema.Union([SecretRequestError, EnvironmentAuthorizationError]),
 });
+
+const WsScheduledTasksListWebhookDeliveriesRpc = Rpc.make(
+  WS_METHODS.scheduledTasksListWebhookDeliveries,
+  {
+    payload: ScheduledTaskListWebhookDeliveriesInput,
+    success: ScheduledTaskListWebhookDeliveriesResult,
+    error: Schema.Union([ScheduledTaskError, EnvironmentAuthorizationError]),
+  },
+);
+
+const WsScheduledTasksGetWebhookDeliveryRpc = Rpc.make(
+  WS_METHODS.scheduledTasksGetWebhookDelivery,
+  {
+    payload: ScheduledTaskGetWebhookDeliveryInput,
+    success: ScheduledTaskGetWebhookDeliveryResult,
+    error: Schema.Union([ScheduledTaskError, EnvironmentAuthorizationError]),
+  },
+);
 
 const WsSubscribeAuthAccessRpc = Rpc.make(WS_METHODS.subscribeAuthAccess, {
   payload: Schema.Struct({}),
@@ -2533,6 +2606,10 @@ export const WsRpcGroup = RpcGroup.make(
   WsIssueTrackersListRpc,
   WsIssueTrackersConnectRpc,
   WsIssueTrackersBindProjectRpc,
+  WsPublicAccessSubscribeStatusRpc,
+  WsAgentSignInsSubscribeRpc,
+  WsAgentSignInsAnswerRpc,
+  WsAgentTokensIssueRpc,
   WsServerProbeRpc,
   WsServerGetConfigRpc,
   WsServerRefreshProvidersRpc,
@@ -2613,7 +2690,10 @@ export const WsRpcGroup = RpcGroup.make(
   WsScheduledTasksSetEnabledRpc,
   WsScheduledTasksDeleteRpc,
   WsScheduledTasksRunNowRpc,
+  WsScheduledTasksRotateWebhookTokenRpc,
   WsSecretsAnswerRequestRpc,
+  WsScheduledTasksListWebhookDeliveriesRpc,
+  WsScheduledTasksGetWebhookDeliveryRpc,
   WsServerReportClientActivityRpc,
   WsPullRequestsListRpc,
   WsPullRequestsListStatsRpc,

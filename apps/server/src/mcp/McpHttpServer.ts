@@ -16,8 +16,9 @@ import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import type * as Types from "effect/Types";
 import { AiError, McpProtocol, McpSchema, McpServer, Tool, Toolkit } from "effect/ai";
-import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
+import { HttpBody, HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
 import {
+  AuthSessionId,
   DeviceToolError,
   OrchestratorMcpFailure,
   PreviewAutomationError,
@@ -29,11 +30,13 @@ import {
 
 import packageJson from "../../package.json" with { type: "json" };
 import { parseBearerToken } from "../auth/EnvironmentAuth.ts";
+import * as SessionStore from "../auth/SessionStore.ts";
 import * as ServerConfig from "../config.ts";
 import { requestUrl } from "../requestUrl.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as DeviceService from "../device/DeviceService.ts";
 import * as HtmlRender from "../htmlRender/HtmlRender.ts";
+import * as MilestoneEvents from "../milestones/MilestoneEvents.ts";
 import * as ThreadCommandExecutor from "../orchestration-v2/ThreadCommandExecutor.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
@@ -47,6 +50,7 @@ import { HTML_RENDER_TOOL_NAME } from "@onicode/shared/htmlRender";
 import { resolveOniMcpToolId } from "@onicode/shared/oniMcpToolPresentation";
 import { compactOniMcpToolOutput } from "@onicode/shared/toolOutput";
 import * as McpProviderSessions from "@onicode/provider-core/server/McpProviderSessions";
+import * as McpWebhookTransport from "./McpWebhookTransport.ts";
 import { MCP_TOOL_EXPOSURE_HEADER } from "@onicode/provider-core/server/mcpSession";
 import * as OrchestratorMcpService from "./OrchestratorMcpService.ts";
 import { PreviewControlsToolkit } from "./toolkits/previewControls/tools.ts";
@@ -93,10 +97,35 @@ import * as HtmlHandlers from "./toolkits/html/handlers.ts";
 import { MessageToolkit } from "./toolkits/message/tools.ts";
 import * as MessageHandlers from "./toolkits/message/handlers.ts";
 import { HtmlPreviewTool, HtmlPreviewToolkit, HtmlRenderToolkit } from "./toolkits/html/tools.ts";
+import { IsPublicRequest } from "../publicAccess/publicRequest.ts";
 import { MCP_HTTP_PATH } from "../httpCors.ts";
 
-const unauthorized = (presentedToken: boolean) => {
-  const challenge = presentedToken ? 'Bearer error="invalid_token"' : "Bearer";
+/**
+ * Points an outside agent at the OAuth sign-in (RFC 9728), on whichever host it called. Launched
+ * agents cannot open a browser, and OAuth would mint them credentials outliving their session.
+ */
+const unauthorized = (input: {
+  readonly request: HttpServerRequest.HttpServerRequest;
+  readonly presentedToken: boolean;
+  readonly offerOAuth: boolean;
+}) => {
+  const metadataUrl = input.offerOAuth
+    ? Option.getOrUndefined(
+        Option.map(
+          requestUrl(input.request),
+          (url) => `${url.origin}/.well-known/oauth-protected-resource/mcp`,
+        ),
+      )
+    : undefined;
+  const challenge = [
+    "Bearer",
+    [
+      ...(metadataUrl === undefined ? [] : [`resource_metadata="${metadataUrl}"`]),
+      ...(input.presentedToken ? ['error="invalid_token"'] : []),
+    ].join(", "),
+  ]
+    .filter((part) => part.length > 0)
+    .join(" ");
   return HttpServerResponse.jsonUnsafe(
     {
       error: "invalid_mcp_credential",
@@ -149,6 +178,14 @@ const normalizeMcpHttpResponse = (
 
 // The first protocol is the fallback for clients that offer an unknown version.
 const mcpProtocols = [McpProtocol.v2025_06_18, McpProtocol.v2026_07_28] as const;
+
+/**
+ * Whether a streaming response may outlive its session's revocation. Only the stateless protocol
+ * checks `Mcp-Method` against the body; on 2025-06-18 any call could claim `events/stream`.
+ */
+export const streamsPastRevocation = (headers: Readonly<Record<string, string | undefined>>) =>
+  headers["mcp-protocol-version"] === McpProtocol.v2026_07_28.protocolVersion &&
+  headers["mcp-method"] === "events/stream";
 
 /**
  * Effect answers 400 to a notification a sessionless protocol does not define, because it requires
@@ -245,17 +282,50 @@ const linkedEnvironmentsOff = HttpServerResponse.jsonUnsafe(
   { status: 403, headers: { "cache-control": "no-store" } },
 );
 
+// Session tokens are `<payload>.<signature>`; registry tokens are a bare base64url secret.
+const looksLikeProviderToken = (token: string) => token.length > 0 && !token.includes(".");
+
 const makeMcpAuthMiddleware = Effect.gen(function* () {
   const registry = yield* McpSessionRegistry.McpSessionRegistry;
   const clients = yield* Effect.serviceOption(McpClientAuthenticator);
   const serverSettings = yield* ServerSettings.ServerSettingsService;
   const runtimeModeCeiling = serverSettings.managedPolicy?.limits?.maxRuntimeMode;
-  const linksEnabled = serverSettings.getSettings.pipe(
-    Effect.map((settings) => settings.linkedEnvironmentsEnabled),
-    Effect.orElseSucceed(() => false),
+  const settingsFlags = serverSettings.getSettings.pipe(
+    Effect.map((settings) => ({
+      linkedEnvironments: settings.linkedEnvironmentsEnabled,
+      workflows: settings.workflowsEnabled,
+    })),
+    Effect.orElseSucceed(() => ({
+      linkedEnvironments: false,
+      workflows: false,
+    })),
   );
   const pullRequests = yield* Effect.serviceOption(PullRequestService.PullRequestService);
   const projections = yield* Effect.serviceOption(ProjectionStore.ProjectionStoreV2);
+  const sessions = yield* Effect.serviceOption(SessionStore.SessionStore);
+  // Auth runs once per request, so a response that streams on ends when the outside client's
+  // session is revoked or expires. `events/stream` ends itself first with
+  // `notifications/events/terminated`, which cutting the body here would lose.
+  const endWithSession = (
+    response: HttpServerResponse.HttpServerResponse,
+    request: HttpServerRequest.HttpServerRequest,
+    client: McpInvocationContext.McpClientCaller | undefined,
+  ) => {
+    const body = response.body;
+    if (client === undefined || Option.isNone(sessions) || body._tag !== "Stream") return response;
+    if (streamsPastRevocation(request.headers)) return response;
+    const invalidated = sessions.value
+      .awaitInvalidation(AuthSessionId.make(client.sessionId))
+      .pipe(Effect.ignore);
+    return HttpServerResponse.setBody(
+      response,
+      HttpBody.stream(
+        Stream.interruptWhen(body.stream, invalidated),
+        body.contentType,
+        body.contentLength,
+      ),
+    );
+  };
   // Every request reads it, and a remote added mid-thread shows the tools within a minute.
   const forgeOfThread = yield* Cache.make({
     capacity: 1_000,
@@ -277,8 +347,10 @@ const makeMcpAuthMiddleware = Effect.gen(function* () {
   ) {
     const authorization = request.headers.authorization;
     const token = parseBearerToken(request) ?? "";
+    // Internal agent tokens never work through Funnel, only signed-in agents' do.
+    const publicRequest = yield* IsPublicRequest;
     const invocation =
-      (yield* registry.resolve(token)) ??
+      (publicRequest ? undefined : yield* registry.resolve(token)) ??
       (Option.isSome(clients) && token.length > 0
         ? yield* clients.value.authenticate(request)
         : undefined);
@@ -293,19 +365,30 @@ const makeMcpAuthMiddleware = Effect.gen(function* () {
                 ? "missing_bearer_token"
                 : "unknown_or_expired_token",
       });
-      return unauthorized(token.length > 0);
+      return unauthorized({
+        request,
+        presentedToken: token.length > 0,
+        offerOAuth: Option.isSome(clients) && !looksLikeProviderToken(token),
+      });
     }
     const asked = withModeLimit(withSenderThread(invocation, request), request);
     if (asked === undefined) return invalidModeLimit;
     const limited = McpInvocationContext.withRuntimeModeCeiling(asked, runtimeModeCeiling);
-    const linkedEnvironments = yield* linksEnabled;
+    const { linkedEnvironments, workflows } = yield* settingsFlags;
     if (limited.client?.linked === true && !linkedEnvironments) return linkedEnvironmentsOff;
     const origin = Option.getOrUndefined(Option.map(requestUrl(request), (url) => url.origin));
     const forge =
       limited.thread === undefined
         ? undefined
         : yield* Cache.get(forgeOfThread, limited.thread.threadId);
-    return { ...limited, linkedEnvironments, origin, ...(forge === undefined ? {} : { forge }) };
+    return {
+      ...limited,
+      linkedEnvironments,
+      workflows,
+      origin,
+      ...(publicRequest ? { publicRequest } : {}),
+      ...(forge === undefined ? {} : { forge }),
+    };
   });
   // Untraced: a span here would wrap the tool call; the HTTP server span already covers it.
   return Effect.fnUntraced(function* (httpEffect) {
@@ -319,6 +402,7 @@ const makeMcpAuthMiddleware = Effect.gen(function* () {
     return yield* httpEffect.pipe(
       Effect.provideService(McpInvocationContext.McpInvocationContext, admitted),
       Effect.map(normalizeMcpHttpResponse),
+      Effect.map((response) => endWithSession(response, request, admitted.client)),
       Effect.map((response) =>
         linkExpiresAt === undefined
           ? response
@@ -1282,4 +1366,67 @@ export const layerToolSearch = Layer.mergeAll(
   layerDeferredListing,
 ).pipe(Layer.provide(layerToolExposure));
 
-export const layer = layerMcpTransport(Layer.mergeAll(layerTools, layerToolSearch));
+/**
+ * A webhook subscription belongs to the outside client's session. Its id is the same for the
+ * session's whole life, and a client signs in again rather than refreshing a token, so a new
+ * sign-in is a new principal whose subscriptions the old session's end does not touch.
+ */
+const webhookPrincipal = Effect.serviceOption(McpInvocationContext.McpInvocationContext).pipe(
+  Effect.flatMap((scope) => {
+    const client = Option.getOrUndefined(scope)?.client;
+    return client === undefined
+      ? Effect.fail(
+          new McpSchema.Forbidden({
+            message: "Webhook delivery needs an outside client's sign-in",
+          }),
+        )
+      : Effect.succeed(client.sessionId);
+  }),
+);
+
+/** Webhooks reach public https, private/LAN and Tailscale addresses through a DNS-checked client. */
+const layerWebhookTransport = Layer.unwrap(
+  Effect.gen(function* () {
+    const transport = McpWebhookTransport.make(yield* McpWebhookTransport.allowedHosts);
+    return Layer.merge(
+      Layer.succeed(McpServer.CallbackGuard, {
+        allowsPlaintext: transport.allowsPlaintext,
+        check: Effect.fn("McpHttpServer.webhookCallbackCheck")(function* (url: URL) {
+          return yield* transport
+            .check(url)
+            .pipe(Effect.mapError((error) => new McpServer.CallbackRejected(error)));
+        }),
+      }),
+      transport.layerClient,
+    );
+  }).pipe(Effect.orDie),
+);
+
+/**
+ * Milestones as MCP events (SEP-3415) for outside clients to poll, stream or receive by webhook.
+ * Protocol-level, so no thread lists them.
+ */
+export const layerMilestoneEvents = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const annotations = Context.make(McpSchema.EnabledWhen, McpInvocationContext.hiddenFromThreads);
+    const events = yield* MilestoneEvents.make;
+    for (const options of events.threads) {
+      yield* McpServer.registerEvent({ ...options, annotations });
+    }
+    // Listed only while Labs → Workflows is on, since no run can reach them otherwise.
+    const workflowAnnotations = Context.make(
+      McpSchema.EnabledWhen,
+      McpInvocationContext.hiddenUnlessWorkflowEvents,
+    );
+    for (const options of events.workflows) {
+      yield* McpServer.registerEvent({ ...options, annotations: workflowAnnotations });
+    }
+  }),
+).pipe(
+  Layer.provide(McpServer.layerEventWebhooks({ principal: webhookPrincipal })),
+  Layer.provide(layerWebhookTransport),
+);
+
+export const layer = layerMcpTransport(
+  Layer.mergeAll(layerTools, layerToolSearch, layerMilestoneEvents),
+);

@@ -63,6 +63,17 @@ export const loadedPolicy = Effect.fn("ManagedPolicy.loadedPolicy")(function* (
   };
 });
 
+/**
+ * The organization whose policy switches `capability` off, or undefined when it is allowed.
+ * Only an explicit `false` restricts.
+ */
+export function deniedBy(
+  policy: Pick<ManagedPolicy["Service"], "document">,
+  capability: "webhookTasks",
+): string | undefined {
+  return policy.document?.limits?.[capability] === false ? policy.document.organization : undefined;
+}
+
 /** Build the service from a decoded document; fails when the document cannot be enforced. */
 export const fromDocument = Effect.fn("ManagedPolicy.fromDocument")(function* (
   path: string,
@@ -117,11 +128,19 @@ function summarizeLimits(
   document: ManagedPolicyDocument,
   lockedInstanceFields: Readonly<Record<string, ReadonlyArray<string>>>,
 ): LimitsSummary {
-  const { maxRuntimeMode, clients, browserCookieImport, previewTunnel, providers, updates } =
-    document.limits ?? {};
+  const {
+    maxRuntimeMode,
+    clients,
+    webhookTasks,
+    browserCookieImport,
+    previewTunnel,
+    providers,
+    updates,
+  } = document.limits ?? {};
   return {
     ...(maxRuntimeMode === undefined ? {} : { maxRuntimeMode }),
     ...(clients === undefined ? {} : { clients }),
+    ...(webhookTasks === undefined ? {} : { webhookTasks }),
     ...(browserCookieImport === undefined ? {} : { browserCookieImport }),
     ...(previewTunnel === undefined ? {} : { previewTunnel }),
     ...(providers?.allowedDrivers === undefined && Object.keys(lockedInstanceFields).length === 0

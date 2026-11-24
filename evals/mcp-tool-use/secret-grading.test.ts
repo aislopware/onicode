@@ -949,13 +949,13 @@ it.each<[string, Run["calls"][number], boolean]>([
 const saved = (file = F, step = 0) => ({
   step,
   tool: "request_secret",
-  input: { label: "Password" },
+  input: { label: "Password", delivery: "file" },
   output: JSON.stringify({ status: "saved", file }),
 });
 const declined = (step = 0) => ({
   step,
   tool: "request_secret",
-  input: { label: "Code" },
+  input: { label: "Code", delivery: "file" },
   output: JSON.stringify({ status: "declined" }),
 });
 
@@ -1766,7 +1766,7 @@ it("fails a value handed to request_secret that was not pasted in this thread", 
   };
   const save = (value: string) => ({
     tool: "request_secret",
-    input: { label: "Staging password", value },
+    input: { label: "Staging password", delivery: "file", value },
     output: JSON.stringify({ status: "saved", file: F }),
     step: 2,
   });

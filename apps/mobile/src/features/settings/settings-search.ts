@@ -14,6 +14,15 @@ const SETTINGS_SEARCH_TERMS = {
     msg("add environment", { $context: "settings search keyword" }),
     msg("remote", { $context: "settings search keyword" }),
     "tailscale",
+    msg("public access", { $context: "settings search keyword" }),
+    msg("public agents", { $context: "settings search keyword" }),
+    msg("public webhooks", { $context: "settings search keyword" }),
+    "funnel",
+    "mcp",
+    msg("use in another app", { $context: "settings search keyword" }),
+    msg("outside agents", { $context: "settings search keyword" }),
+    msg("agent sign-in", { $context: "settings search keyword" }),
+    msg("agent token", { $context: "settings search keyword" }),
   ],
   SettingsNotifications: [
     msg("push", { $context: "settings search keyword" }),
@@ -72,6 +81,7 @@ const SETTINGS_SEARCH_TERMS = {
     msg("schedule", { $context: "settings search keyword" }),
     "cron",
     msg("recurring", { $context: "settings search keyword" }),
+    msg("webhook", { $context: "settings search keyword" }),
   ],
   SettingsProjectOverview: [
     msg("project", { $context: "settings search keyword" }),

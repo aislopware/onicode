@@ -186,3 +186,37 @@ export function formatSessionList(
       .join(`${newline}${newline}`) + newline
   );
 }
+
+export function formatIssuedAgentToken(
+  issued: { readonly token: string; readonly expiresAt: DateTime.DateTime },
+  options?: { readonly json?: boolean },
+): string {
+  const expiresAt = toIsoString(issued.expiresAt);
+  if (options?.json) {
+    return `${JSON.stringify({ token: issued.token, expiresAt }, null, 2)}${newline}`;
+  }
+  return (
+    [
+      issued.token,
+      "",
+      `Send it to /mcp as "Authorization: Bearer <token>". It expires at ${expiresAt}.`,
+    ].join(newline) + newline
+  );
+}
+
+export function formatAgentCode(
+  issued: { readonly code: string; readonly expiresAt: DateTime.DateTime },
+  options?: { readonly json?: boolean },
+): string {
+  const expiresAt = toIsoString(issued.expiresAt);
+  if (options?.json) {
+    return `${JSON.stringify({ code: issued.code, expiresAt }, null, 2)}${newline}`;
+  }
+  return (
+    [
+      issued.code,
+      "",
+      `Enter it on the agent's sign-in page. It works once and expires at ${expiresAt}.`,
+    ].join(newline) + newline
+  );
+}

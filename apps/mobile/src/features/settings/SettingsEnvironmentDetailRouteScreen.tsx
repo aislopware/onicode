@@ -39,6 +39,7 @@ import { ConnectionEnvironmentRow } from "../connection/ConnectionEnvironmentRow
 import { EnvironmentHardwareSection } from "./EnvironmentHardwareSection";
 import { EnvironmentRoutesSection } from "./EnvironmentRoutesSection";
 import { OutdatedServerUpdateSection } from "./OutdatedServerUpdateSection";
+import { PublicAccessSection } from "./PublicAccessSection";
 import { ListActionRow as SettingsActionRow } from "../../components/ui/ListActionRow";
 import { SettingsScreen } from "./components/SettingsScreen";
 import { SettingsSection } from "./components/SettingsSection";
@@ -377,6 +378,23 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
                       }
                     />
                   </SettingsSection>
+                ) : null}
+                {connected && capabilities?.webhookSchedules === true ? (
+                  <>
+                    <PublicAccessSection environmentId={environmentId} />
+                    <SettingsSection title={gt("Other apps")}>
+                      <SettingsActionRow
+                        icon="cable.connector"
+                        label={gt("Use in another app (MCP)")}
+                        description={gt(
+                          "Connect Claude Code, Codex, ChatGPT and other apps to this environment.",
+                        )}
+                        onPress={() =>
+                          navigation.navigate("SettingsEnvironmentMcp", { environmentId })
+                        }
+                      />
+                    </SettingsSection>
+                  </>
                 ) : null}
                 {connected && config.remoteDesktop === true ? (
                   <SettingsSection title={gt("Remote desktop")}>

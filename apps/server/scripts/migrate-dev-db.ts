@@ -212,6 +212,7 @@ const RECOVERY_KINDS = Object.keys(
 
 const CLEARED_TABLES: ReadonlyArray<string> = [
   "scheduled_tasks",
+  "scheduled_task_webhook_deliveries",
   "orchestration_v2_effect_outbox",
   "orchestration_v2_thread_launch_workflows",
   "orchestration_command_receipts",
@@ -265,7 +266,16 @@ const copySourceSlice = Effect.fn("copyDevDbSourceSlice")(function* (sourcePath:
       const references = yield* sql<{ name: string; parent: string }>`
         SELECT m.name, f."table" AS parent FROM src.sqlite_master m, pragma_foreign_key_list(m.name, 'src') f
         WHERE m.type = 'table'`;
-      const cleared = new Set(CLEARED_TABLES);
+      // Workflow runs hold raw webhook requests, and the engine's messages work a dev server
+      // would go on with.
+      const cleared = new Set([
+        ...CLEARED_TABLES,
+        ...tables.flatMap(({ name }) =>
+          name.startsWith("workflow_") || name === "cluster_messages" || name === "cluster_replies"
+            ? [name]
+            : [],
+        ),
+      ]);
       for (let grew = true; grew;) {
         grew = false;
         for (const { name, parent } of references) {

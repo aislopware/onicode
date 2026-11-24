@@ -122,3 +122,32 @@ export function formatNextScheduledTaskRun(
   });
   return resolve(msg("Next run {date} at {time}", { date, time }));
 }
+
+const WEBHOOK_DELIVERY_LABELS: Record<string, string> = {
+  dispatch_failed: msg("Run failed"),
+  duplicate: msg("Duplicate", { $context: "webhook delivery outcome" }),
+  coalesced: msg("Coalesced"),
+  filtered: msg("Filtered", { $context: "webhook delivery outcome" }),
+  rejected_signature: msg("Bad signature"),
+  disabled: msg("Task paused"),
+  rate_limited: msg("Rate limited"),
+  expired: msg("Too old"),
+};
+
+/** What became of one webhook request. Outcomes added later show their server name. */
+export function webhookDeliveryLabel(
+  delivery: { readonly outcome: string; readonly pendingWindow?: boolean | undefined },
+  resolve: MessageResolver = m,
+): string {
+  if (delivery.outcome === "accepted") {
+    return delivery.pendingWindow
+      ? resolve(msg("Opened window"))
+      : resolve(msg("Ran", { $context: "webhook delivery outcome" }));
+  }
+  const label = WEBHOOK_DELIVERY_LABELS[delivery.outcome];
+  return label ? resolve(label) : delivery.outcome.replaceAll("_", " ");
+}
+
+export function webhookDeliveryFailed(outcome: string): boolean {
+  return outcome === "dispatch_failed" || outcome === "rejected_signature";
+}

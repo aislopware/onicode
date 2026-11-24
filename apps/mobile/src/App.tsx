@@ -33,6 +33,7 @@ import { pipe } from "effect/Function";
 import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import { ProjectChipIconRasterizer } from "./native/ProjectChipIconImages";
 import { ThreadArrangementHost } from "./features/threads/ThreadArrangementSheet";
+import { AgentSignInHost } from "./features/agent-access/AgentSignInHost";
 import * as Dialog from "./components/ui/Dialog";
 import { prepareNativeShowcaseCapture } from "./features/showcase/nativeShowcaseScene";
 import { installShowcaseCapture } from "./features/showcase/ShowcaseCaptureCoordinator";
@@ -335,6 +336,7 @@ function AppContent() {
                 />
                 <Dialog.Host />
                 <ThreadArrangementHost />
+                <AgentSignInHost />
                 <ShakeToReport />
                 <ProjectChipIconRasterizer />
               </NativeLayoutMetricsProvider>

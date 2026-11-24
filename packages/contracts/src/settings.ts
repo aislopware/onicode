@@ -1534,6 +1534,10 @@ export const ServerSettings = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed([])),
   ),
   hideTaggedThreads: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  /** Publishes scheduled-task and workflow webhook addresses through Tailscale Funnel. */
+  publicWebhooksEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  /** Publishes /mcp and its OAuth sign-in through Tailscale Funnel, for cloud assistants. */
+  publicAgentsEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   /**
    * Beta: links to the user's other machines, both ways. Off refuses new links, calls over links
    * and tasks on another machine; tasks already running there finish.
@@ -1993,6 +1997,8 @@ export const ServerSettingsPatch = Schema.Struct({
   snoozePresets: Schema.optionalKey(SnoozePresetSettings),
   hiddenThreadTags: Schema.optionalKey(Schema.Array(Schema.String)),
   hideTaggedThreads: Schema.optionalKey(Schema.Boolean),
+  publicWebhooksEnabled: Schema.optionalKey(Schema.Boolean),
+  publicAgentsEnabled: Schema.optionalKey(Schema.Boolean),
   linkedEnvironmentsEnabled: Schema.optionalKey(Schema.Boolean),
   workflowsEnabled: Schema.optionalKey(Schema.Boolean),
   promptSuggestionsEnabled: Schema.optionalKey(Schema.Boolean),
@@ -2100,7 +2106,12 @@ export function requiredScopesForServerSettingsPatch(
   let changesAccess = patch.tailnetSignIn !== undefined;
   for (const [key, value] of Object.entries(patch)) {
     if (value === undefined) continue;
-    if (key === "enablePreviewTunnel") {
+    // These publish the server beyond the tailnet.
+    if (
+      key === "enablePreviewTunnel" ||
+      key === "publicWebhooksEnabled" ||
+      key === "publicAgentsEnabled"
+    ) {
       changesAccess = true;
     } else if (
       key === "providers" ||

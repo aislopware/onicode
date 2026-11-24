@@ -56,6 +56,7 @@ import {
   failEnvironmentInternal,
 } from "./auth/http.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
+import { WEBHOOK_ROUTE_PREFIX } from "./scheduledTasks/ScheduledTaskService.ts";
 import * as TailnetAccess from "./tailnet/TailnetAccess.ts";
 import { apiCorsAllowedHeaders, apiCorsAllowedMethods, MCP_HTTP_PATH } from "./httpCors.ts";
 import { requestUrl } from "./requestUrl.ts";
@@ -443,19 +444,43 @@ const requestPath = (request: HttpServerRequest.HttpServerRequest) => {
   return queryIndex === -1 ? request.url : request.url.slice(0, queryIndex);
 };
 
+// The path the router matches, found its way (FindMyWay `find`): drop an absolute target's origin,
+// end at `?`, `;` or `#`, decode, collapse slashes, lower case. A signed route reached by any
+// other spelling would put its token in spans and logs.
+const routedPath = (url: string) => {
+  const target = url.startsWith("/") ? url : url.replace(/^https?:\/\/.*?\//, "/");
+  const end = target.search(/[?;#]/);
+  const path = end === -1 ? target : target.slice(0, end);
+  let decoded: string;
+  try {
+    decoded = decodeURI(path);
+  } catch {
+    decoded = path.replace(/%[0-7][0-9a-f]/gi, (escape) =>
+      String.fromCharCode(parseInt(escape.slice(1), 16)),
+    );
+  }
+  return decoded.replace(/\/{2,}/g, "/").toLowerCase();
+};
+
+const underPrefix = (path: string, prefix: string) =>
+  path === prefix || path.startsWith(`${prefix}/`);
+
 // Signed URLs carry bearer tokens in the path, which URL param redaction cannot reach.
 const isSignedUrlRequest = (request: HttpServerRequest.HttpServerRequest) => {
-  const path = requestPath(request);
+  const path = routedPath(request.url);
   return (
-    path.startsWith(`${ASSET_ROUTE_PREFIX}/`) ||
-    path.startsWith(`${ATTACHMENT_UPLOAD_ROUTE_PREFIX}/`)
+    underPrefix(path, WEBHOOK_ROUTE_PREFIX) ||
+    underPrefix(path, ASSET_ROUTE_PREFIX) ||
+    underPrefix(path, ATTACHMENT_UPLOAD_ROUTE_PREFIX)
   );
 };
 
+/** Requests whose URL must never reach a span: the trace proxy itself and signed URLs. */
+export const isUntracedRequest = (request: HttpServerRequest.HttpServerRequest) =>
+  requestPath(request) === OTLP_TRACES_PROXY_PATH || isSignedUrlRequest(request);
+
 // HttpRouter.serve builds routes privately; provide the server-wide TracerDisabledWhen to the served layer.
-const layerUntracedRequests = Layer.succeed(HttpMiddleware.TracerDisabledWhen)(
-  (request) => requestPath(request) === OTLP_TRACES_PROXY_PATH || isSignedUrlRequest(request),
-);
+const layerUntracedRequests = Layer.succeed(HttpMiddleware.TracerDisabledWhen)(isUntracedRequest);
 
 export const layerUnloggedSignedRequests = HttpRouter.middleware(
   (httpEffect) =>
@@ -489,6 +514,10 @@ export const layerAssetRoute = HttpRouter.add(
       return HttpServerResponse.text("Bad Request", { status: 400 });
     }
 
+    // The router also hands this route `/api/assets;…`, which carries no asset.
+    if (!url.value.pathname.startsWith(`${ASSET_ROUTE_PREFIX}/`)) {
+      return HttpServerResponse.text("Not Found", { status: 404 });
+    }
     const suffix = url.value.pathname.slice(`${ASSET_ROUTE_PREFIX}/`.length);
     const separatorIndex = suffix.indexOf("/");
     if (separatorIndex <= 0) {
@@ -547,7 +576,9 @@ export const layerAttachmentUploadRoute = HttpRouter.add(
       return HttpServerResponse.text("Bad Request", { status: 400 });
     }
 
-    const token = url.value.pathname.slice(`${ATTACHMENT_UPLOAD_ROUTE_PREFIX}/`.length);
+    const token = url.value.pathname.startsWith(`${ATTACHMENT_UPLOAD_ROUTE_PREFIX}/`)
+      ? url.value.pathname.slice(`${ATTACHMENT_UPLOAD_ROUTE_PREFIX}/`.length)
+      : "";
     if (!token) {
       return HttpServerResponse.text("Not Found", { status: 404 });
     }

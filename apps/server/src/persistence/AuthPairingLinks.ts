@@ -22,6 +22,8 @@ import {
  */
 export const MCP_APPROVAL_SUBJECT_PREFIX = "mcp-approval:";
 export const PEER_LINK_PAIRING_SUBJECT_PREFIX = `${MCP_APPROVAL_SUBJECT_PREFIX}peer-link:`;
+/** Codes an outside agent's consent page accepts. */
+export const AGENT_APPROVAL_SUBJECT_PREFIX = `${MCP_APPROVAL_SUBJECT_PREFIX}agent:`;
 
 export const AuthPairingLinkRecord = Schema.Struct({
   id: Schema.String,

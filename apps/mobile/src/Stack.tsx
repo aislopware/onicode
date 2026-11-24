@@ -108,6 +108,7 @@ import { SettingsDiagnosticsRouteScreen } from "./features/diagnostics/SettingsD
 import { BugReportSheet } from "./features/diagnostics/BugReportSheet";
 import { SettingsProviderAccountsRouteScreen } from "./features/settings/SettingsProviderAccountsRouteScreen";
 import { SettingsEnvironmentDetailRouteScreen } from "./features/settings/SettingsEnvironmentDetailRouteScreen";
+import { SettingsEnvironmentMcpRouteScreen } from "./features/settings/SettingsEnvironmentMcpRouteScreen";
 import {
   SettingsIssueTrackerRouteScreen,
   SettingsSourceControlProviderRouteScreen,
@@ -131,6 +132,10 @@ import {
   ScheduledTaskBranchPickerRouteScreen,
   ScheduledTaskThreadPickerRouteScreen,
 } from "./features/settings/ScheduledTaskPickerScreens";
+import {
+  SettingsScheduledTaskDeliveriesRouteScreen,
+  SettingsScheduledTaskDeliveryRouteScreen,
+} from "./features/settings/ScheduledTaskWebhookDeliveriesScreens";
 import { SettingsKeyboardRouteScreen } from "./features/settings/SettingsKeyboardRouteScreen";
 import { SettingsNotificationsRouteScreen } from "./features/settings/SettingsNotificationsRouteScreen";
 import { SettingsVoiceRouteScreen } from "./features/settings/SettingsVoiceRouteScreen";
@@ -172,6 +177,7 @@ const ROUTE_TITLES: Readonly<Record<string, string>> = {
   Settings: msg("Settings"),
   SettingsEnvironments: msg("Environments"),
   SettingsEnvironmentDetail: msg("Environment"),
+  SettingsEnvironmentMcp: msg("Use in another app"),
   SettingsEnvironmentNewThreads: msg("Threads"),
   SettingsEnvironmentSourceControl: msg("Source control & issues"),
   SettingsSourceControlProvider: msg("Provider", {
@@ -202,6 +208,8 @@ const ROUTE_TITLES: Readonly<Record<string, string>> = {
   SettingsScheduledTaskEdit: msg("Edit scheduled task"),
   SettingsScheduledTaskBranch: msg("Base branch"),
   SettingsScheduledTaskThread: msg("Destination"),
+  SettingsScheduledTaskDeliveries: msg("Deliveries"),
+  SettingsScheduledTaskDelivery: msg("Delivery"),
   SettingsClientStorage: msg("Client Storage"),
   SettingsDiagnostics: msg("Diagnostics"),
   SettingsUsageAccount: msg("Account"),
@@ -251,6 +259,11 @@ const SETTINGS_SCREENS = {
   SettingsEnvironmentDetail: createNativeStackScreen({
     screen: SettingsEnvironmentDetailRouteScreen,
     linking: "settings/environments/:environmentId",
+    options: settingsPage(),
+  }),
+  SettingsEnvironmentMcp: createNativeStackScreen({
+    screen: SettingsEnvironmentMcpRouteScreen,
+    linking: "settings/environments/:environmentId/mcp",
     options: settingsPage(),
   }),
   // Old links to New threads and Agent behavior open Threads, which absorbed them.
@@ -399,6 +412,14 @@ const SETTINGS_SCREENS = {
   SettingsScheduledTaskModel: createNativeStackScreen({
     screen: ScheduledTaskModelPickerRouteScreen,
     options: THREAD_SETTINGS_ROUTE,
+  }),
+  SettingsScheduledTaskDeliveries: createNativeStackScreen({
+    screen: SettingsScheduledTaskDeliveriesRouteScreen,
+    options: settingsPage(),
+  }),
+  SettingsScheduledTaskDelivery: createNativeStackScreen({
+    screen: SettingsScheduledTaskDeliveryRouteScreen,
+    options: settingsPage(),
   }),
   SettingsClientStorage: createNativeStackScreen({
     screen: SettingsClientStorageRouteScreen,

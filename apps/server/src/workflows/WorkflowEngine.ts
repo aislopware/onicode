@@ -10,6 +10,8 @@ import {
   Sharding,
   SingleRunner,
 } from "effect/cluster";
+import * as Digest from "effect/crypto/Digest";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -27,6 +29,8 @@ import { DurableDeferred, WorkflowEngine } from "effect/workflow";
 
 import { checkOutput, rejectionText } from "../orchestration-v2/runOutput.ts";
 import { isMissedFixedTimeRun, nextScheduledRunAt } from "../scheduledTasks/Schedule.ts";
+import { ScheduledTaskWebhookOrigin } from "../scheduledTasks/ScheduledTaskService.ts";
+import { constantTimeEquals } from "../scheduledTasks/webhookVerification.ts";
 import {
   END_STEP,
   type EngineWorkflow,
@@ -54,6 +58,7 @@ import {
   WorkflowForge,
 } from "./WorkflowForge.ts";
 import {
+  hookId as hookIdOf,
   WorkflowInputError,
   WorkflowNotRegisteredError,
   WorkflowRunNotFoundError,
@@ -75,6 +80,15 @@ const END_AFTER = ["5 minutes", "20 minutes", "80 minutes", "5 hours"] as const;
 // An ended run's engine journal only answers replays that will not come; the run's own rows stay.
 const PRUNE_AFTER = Duration.hours(1);
 const PRUNE_BATCH = 100;
+// Delivery ids that common senders put on a request and keep when they send it again.
+const DELIVERY_HEADERS = [
+  "x-github-delivery",
+  "x-gitea-delivery",
+  "x-gitlab-event-uuid",
+  "linear-delivery",
+  "webhook-id",
+  "idempotency-key",
+];
 const CANCEL_WAITS = Duration.seconds(30);
 // A stop that does not get through is tried less often, and given up a day after the cancel.
 const STOP_RETRY_MOST = Duration.hours(1);
@@ -118,6 +132,9 @@ const make = Effect.fn("WorkflowEngine.make")(function* (
   const agents = yield* WorkflowAgents;
   const stopTurn = plain(agents.interrupt);
   const threadModel = plain(agents.model);
+  const random = yield* SecureRandom.SecureRandom;
+  const digest = yield* Digest.Digest;
+  const readWebhookOrigin = yield* ScheduledTaskWebhookOrigin;
   const context = yield* Effect.context<WorkflowEngine.WorkflowEngine>();
   // The engine keeps 64-bit ids, which this SQLite client only reads when asked for BigInts.
   const withEngine = <A, E>(effect: Effect.Effect<A, E, WorkflowEngine.WorkflowEngine>) =>
@@ -331,7 +348,9 @@ const make = Effect.fn("WorkflowEngine.make")(function* (
   // A schedule taken out and put back is new again: its first run is one interval away.
   yield* store.triggersKeep(
     latestDefinitions.flatMap((definition) =>
-      definition.triggers.map((trigger) => `${definition.name}/${trigger.id}`),
+      definition.triggers.flatMap((trigger) =>
+        trigger.kind === "webhook" ? [] : [`${definition.name}/${trigger.id}`],
+      ),
     ),
   );
   /** Start what each schedule is due for, once, however long ago that was. */
@@ -556,6 +575,58 @@ const make = Effect.fn("WorkflowEngine.make")(function* (
       );
     }
   }).pipe(Effect.withSpan("Workflows.fireWatches"));
+
+  const hooks = yield* Effect.forEach(
+    latestDefinitions.flatMap((definition) =>
+      definition.triggers.flatMap((trigger) =>
+        trigger.kind === "webhook" ? [{ definition, trigger }] : [],
+      ),
+    ),
+    Effect.fnUntraced(function* ({ definition, trigger }) {
+      const hookId = hookIdOf(definition.name, trigger.name);
+      const token = yield* store.hookToken(hookId, yield* random.uuidV4());
+      return {
+        hookId,
+        token,
+        trigger,
+        workflow: definition.name,
+        name: trigger.name,
+        path: `/api/hooks/${encodeURIComponent(hookId)}/${token}`,
+      };
+    }),
+  );
+  const deliver: Workflows["Service"]["deliver"] = Effect.fn("Workflows.deliver")(
+    function* (delivery) {
+      const hook = hooks.find((candidate) => candidate.hookId === delivery.hookId);
+      // A wrong token reads the same as an unknown hook, so the URL does not say which exist.
+      const known =
+        hook !== undefined &&
+        (yield* constantTimeEquals(delivery.token, hook.token).pipe(
+          Effect.provideService(Digest.Digest, digest),
+          Effect.orElseSucceed(() => false),
+        ));
+      if (!known) return Option.none();
+      const authored = yield* Effect.try({
+        try: () => hook.trigger.key?.(delivery.request),
+        catch: (error) =>
+          new WorkflowInputError({
+            problem: `The key of hook ${hook.name} could not be read from the request: ${text(error)}`,
+          }),
+      });
+      // A sender's own delivery id is kept on its retry, so the retry is the same run.
+      const sent = DELIVERY_HEADERS.find((header) => delivery.request.headers[header]);
+      const key =
+        authored ??
+        (sent === undefined ? undefined : `${sent}:${delivery.request.headers[sent]}`) ??
+        delivery.deliveryId ??
+        (yield* random.uuidV4());
+      return Option.some(
+        yield* start(hook.workflow, delivery.request, {
+          idempotencyKey: `hook:${hook.hookId}:${key}`,
+        }),
+      );
+    },
+  );
 
   /** With `pause`, the sweep's own resume, which only resumes that pause and not a later one. */
   const resumeRun = Effect.fn("WorkflowEngine.resumeRun")(function* (
@@ -802,6 +873,7 @@ const make = Effect.fn("WorkflowEngine.make")(function* (
   );
   const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   const triggerText = (trigger: WorkflowDefinition["triggers"][number]) => {
+    if (trigger.kind === "webhook") return `webhook ${trigger.name}`;
     if (trigger.kind !== "schedule") {
       return `new ${trigger.kind === "issues" ? "issues" : "pull requests"} in ${trigger.project}`;
     }
@@ -1081,6 +1153,14 @@ const make = Effect.fn("WorkflowEngine.make")(function* (
 
   return Workflows.of({
     start,
+    hooks: Effect.map(readWebhookOrigin, ({ publicOrigin }) =>
+      hooks.map(({ workflow, name, path }) => ({
+        workflow,
+        name,
+        path,
+        url: publicOrigin === null ? null : `${publicOrigin}${path}`,
+      })),
+    ),
     // A cancelled run whose cleanup has not worked yet still needs its version to run it.
     unfinished: Effect.map(
       Effect.all([store.unfinished, store.runsToEnd(END_STEP, END_TRIES)]),
@@ -1091,6 +1171,7 @@ const make = Effect.fn("WorkflowEngine.make")(function* (
           .map((row) => ({ workflow: row.workflow, version: Number(row.version) })),
       ],
     ),
+    deliver,
     signal,
     answer,
     resume,

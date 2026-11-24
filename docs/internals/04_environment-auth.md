@@ -21,7 +21,7 @@ The environment issues its own sessions and enforces their capabilities. See
 - **Bearer sessions.** Every session is a bearer token. A [peer link](./05_remote.md#peer-links)'s
   session renews on use: its token is never reissued, so the session row alone holds the deadline,
   moved 30 days out at most once a day. Only an unexpired, unrevoked row moves, so an idle link
-  still ends and a revoke is final. Thread CLI sessions never renew.
+  still ends and a revoke is final. Outside-agent and thread CLI sessions never renew.
 - **Desktop bootstrap replaces earlier sessions.** Desktop restarts forget the previous local
   token, so its reusable bootstrap grant revokes earlier sessions for the same subject in the same
   [transaction](../../apps/server/src/persistence/AuthSessions.ts) that inserts the new one; a failed
@@ -49,18 +49,34 @@ The environment issues its own sessions and enforces their capabilities. See
 
 ## Non-standard principals
 
-- **`/mcp` admits only peer links and `onicode thread`.** A link signs in through a narrow OAuth
-  authorization-code flow ([McpOAuth](../../apps/server/src/auth/McpOAuth.ts)) that registers only
-  clients carrying the peer-link software ID, and approval spends a one-time pairing code from the
-  peer. Registration is stateless so unauthenticated callers cannot grow server state. `onicode
-  thread` gets a short-lived `thread-cli` session from the running server. An `mcp-client` session
-  without the signed peer-link claim is refused.
+- **`/mcp` admits outside agents, peer links, and `onicode thread`.** Outside agents (subject
+  `outside-agent`) and peer links (`mcp-client`, carrying a signed `peerLink` claim) sign in
+  through [`McpOAuth`](../../apps/server/src/auth/McpOAuth.ts); outside agents may also use static
+  bearer tokens. Client registration is stateless (HMAC-signed `client_id`) so unauthenticated
+  callers cannot grow server state. Legacy `mcp-client` sessions without the signed `peerLink`
+  claim stay rejected. `onicode thread` gets a short-lived `thread-cli` session from the running
+  server. On public requests ([`IsPublicRequest`](../../apps/server/src/publicAccess/publicRequest.ts)),
+  [`McpHttpServer`](../../apps/server/src/mcp/McpHttpServer.ts) skips internal provider thread
+  tokens so only signed-in outside-agent credentials work over Funnel.
 - **Grants are read-only or a runtime-mode ceiling, not raw scopes.** Every MCP tool must statically
   declare its access level in [`McpToolAccess.ts`](../../apps/server/src/mcp/McpToolAccess.ts).
-  Every other HTTP and WebSocket route rejects both subjects, except the read-only thread routes in
-  [linkThreadHttp](../../apps/server/src/peer/linkThreadHttp.ts) and client pairing, both restricted
-  to peer links. Inside MCP the credential sets the limits and tool parameters only pick targets
-  ([threadAccess](../../apps/server/src/mcp/threadAccess.ts)).
+  Every other HTTP and WebSocket route rejects `outside-agent`, `mcp-client`, and `thread-cli`
+  subjects, except the read-only thread routes in
+  [`linkThreadHttp`](../../apps/server/src/peer/linkThreadHttp.ts) and client pairing, both
+  restricted to peer links. Inside MCP the credential sets the limits and tool parameters only pick
+  targets ([`threadAccess`](../../apps/server/src/mcp/threadAccess.ts)).
+- **In-app approval and static agent tokens cannot widen authority.** Answering a pending sign-in
+  or issuing a static agent token requires `access:write`, intersects the requested access level
+  with the approving session's scopes, and checks managed policy server-side in
+  [`McpOAuth`](../../apps/server/src/auth/McpOAuth.ts). Single-use agent approval codes
+  (`mcp-approval:agent:<level>`) are purpose-bound, hidden from normal pairing listings, and
+  enforce the same narrowing and policy checks at mint time.
+- **The OAuth consent page is the only browser page the server serves.**
+  [`mcpOAuthHtml.ts`](../../apps/server/src/auth/mcpOAuthHtml.ts) serves static HTML with
+  `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'`,
+  no scripts, and `<meta http-equiv="refresh">` polling while waiting for in-app approval. Code
+  submissions redirect back to the consent page before redirecting off-origin to the client's
+  callback.
 - **Thread-only tools refuse outside callers in handlers.** Tools that act as a calling thread
   (`request_secret`, `delegate_task`) are hidden from these callers, but hiding is only discovery:
   handlers still refuse with `thread_credential_required`.
@@ -69,9 +85,10 @@ The environment issues its own sessions and enforces their capabilities. See
   enforces this itself, and the operation stays a human-triggered RPC/HTTP route rather than an MCP
   tool. The same route mints a code that links another environment at a chosen access level, and
   the linking side's RPC requires the caller to hold that level's scopes.
-- **The issuer comes from the request.** The issuer URL uses Host and `X-Forwarded-Proto`, so one
-  server answers links over loopback, the LAN, and Tailscale Serve. A proxy that rewrites Host or
-  drops the protocol header breaks linking.
+- **The issuer comes from the request.** The issuer URL uses `Host` and `X-Forwarded-Proto`, so one
+  server answers over loopback, the LAN, Tailscale Serve, and Tailscale Funnel (where the public
+  listener rewrites both headers to the Funnel origin). A proxy that rewrites `Host` or drops the
+  protocol header breaks OAuth.
 - **Tailnet identity counts only on a direct tailnet socket.**
   [TailnetAccess](../../apps/server/src/tailnet/TailnetAccess.ts) signs a device in by asking
   `tailscale whois` about the socket peer, trusted only when both ends are tailnet addresses.

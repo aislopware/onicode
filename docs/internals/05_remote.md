@@ -23,10 +23,33 @@ execution model. See [remote access](../user/remote-access.md) for setup.
   host listens on every IPv4 interface and closes connections unless both peer addresses are
   loopback, private, or tailnet, so a VPS's public address stays closed. It is not a firewall:
   Tailscale Serve arrives over loopback and a source-rewriting proxy looks private, so nothing may
-  proxy the public internet to the server. Tailnet-only mode applies a stricter filter and never
+  proxy the public internet to the main listener; internet-facing routes use the dedicated public
+  access listener below. Tailnet-only mode applies a stricter filter and never
   reports a LAN address.
 - Pull request routing trust covers the saved route set: adding or changing a route revokes trust;
   reordering does not.
+
+## Public access (Tailscale Funnel)
+
+[`PublicAccess`](../../apps/server/src/publicAccess/PublicAccess.ts) publishes webhook and outside-agent
+routes to the internet through Tailscale Funnel without exposing the main server:
+
+- **Dedicated loopback listener, never the main server.** Funnel forwards exclusively to a separate
+  `127.0.0.1` listener (reusing a port persisted in secrets across restarts so a stale Funnel route
+  cannot land on another process). Pointing Funnel at the main listener would leak loopback trust
+  to the internet.
+- **Live path gating.** Each request checks current `publicWebhooksEnabled` (`/api/hooks/*`) and
+  `publicAgentsEnabled` (`/mcp`, `/oauth/mcp/*`, `/.well-known/oauth-*`) settings before forwarding
+  to the main router, so turning a switch off stops its routes immediately and every other path
+  returns 404. The gate checks the raw request target, which the router dispatches unchanged, and
+  refuses any target a URL parser would rewrite (dot segments, encoded slashes, backslashes).
+- **Public request sanitisation.**
+  [`asPublicRequest`](../../apps/server/src/publicAccess/publicRequest.ts) strips all `tailscale-*`
+  headers (so internet callers cannot spoof tailnet identity), rewrites `Host` and
+  `X-Forwarded-Proto: https` to the Funnel origin for OAuth metadata and issuers, and sets
+  `IsPublicRequest` in the Effect context so `/mcp` skips internal provider thread tokens.
+- **Teardown order and policy gate.** Shutdown removes the Funnel route before closing the
+  listener. A managed policy omitting `remote` from `clients` keeps Funnel off.
 
 ## Remote desktop is peer to peer
 

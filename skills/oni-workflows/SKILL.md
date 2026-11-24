@@ -1,13 +1,13 @@
 ---
 name: oni-workflows
-description: Author, edit, run, and debug durable Onicode workflows (`~/.onicode/workflows/*.ts`). Use when asked to build or change a multi-step Onicode automation tying together agent threads, code steps, schedules, issue/PR trackers, or human approvals, or to inspect, resume, signal, or cancel workflow runs.
+description: Author, edit, run, and debug durable Onicode workflows (`~/.onicode/workflows/*.ts`). Use when asked to build or change a multi-step Onicode automation tying together agent threads, code steps, schedules, webhooks, issue/PR trackers, or human approvals, or to inspect, resume, signal, or cancel workflow runs.
 ---
 
 # Onicode workflows
 
 A workflow is a TypeScript function the Onicode server runs durably on Effect v4 (`effect/workflow`). Every step's result is stored, so restarts replay to where the run left off and a failing step pauses the run instead of losing it. Runs can sleep for days, wait on signals or pull requests, ask a person a question, and launch agents in ordinary threads.
 
-Use a workflow for multi-stage work that must not be lost or repeated (triage → fix → verify, nightly reports, reacting to new issues). For a single prompt on a timer, use a scheduled task instead.
+Use a workflow for multi-stage work that must not be lost or repeated (triage → fix → verify, nightly reports, webhook reactions, reacting to new issues). For a single prompt on a timer, use a scheduled task instead.
 
 ## Quick start
 
@@ -63,8 +63,8 @@ property of `Onicode`: take what you use at the top of the file, as the quick st
 - **Definitions & body**: `workflow`, `step`, `agent`, `ask`, `wait`, `sleep`, `title`, `stop`, `skip`, `invoke`
 - **Inside `step` / `onEnd` only**: `store`, `signal`, `signalAll`, `start`, `runs`, `cancel`
 - **Trackers & hosts**: `issues`, `pullRequests` (triggers, step calls, and `pullRequests.wait` in the body)
-- **Triggers**: `every`, `daily`
-- **Schemas**: `Tick`, `Issue`, `IssueDetail`, `PullRequest`, `PullRequestStanding`
+- **Triggers**: `every`, `daily`, `webhook`
+- **Schemas**: `Tick`, `WebhookRequest`, `Issue`, `IssueDetail`, `PullRequest`, `PullRequestStanding`
 
 ### Effect v4 `Schema` cheatsheet
 
@@ -307,14 +307,15 @@ Effect.fn(function* () {
 
 A workflow's `payload` schema must match what its `triggers` emit.
 
-| Trigger                                          | Payload       | Notes                                                                                                                                                                  |
-| ------------------------------------------------ | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `every("1 hour")`                                | `Tick`        | `{ scheduledAt }`. Minimum 1 minute. The first run comes one interval after the file loads, not at load. Downtime collapses into one run, not one per missed interval. |
-| `daily("09:00", { weekdays?: [1, 2, 3, 4, 5] })` | `Tick`        | Server local time; `0` is Sunday. Missed by more than 10 minutes is skipped.                                                                                           |
-| `issues.opened({ project, labels?, query? })`    | `Issue`       | Polls ~once a minute. Only issues opened after the workflow first loaded. Issue must carry all `labels`.                                                               |
-| `pullRequests.opened({ project, query? })`       | `PullRequest` | Polls ~once a minute. Only pull requests opened after the workflow first loaded.                                                                                       |
+| Trigger                                          | Payload          | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ------------------------------------------------ | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `every("1 hour")`                                | `Tick`           | `{ scheduledAt }`. Minimum 1 minute. The first run comes one interval after the file loads, not at load. Downtime collapses into one run, not one per missed interval.                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `daily("09:00", { weekdays?: [1, 2, 3, 4, 5] })` | `Tick`           | Server local time; `0` is Sunday. Missed by more than 10 minutes is skipped.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `webhook("name", { key? })`                      | `WebhookRequest` | `{ method, headers, query, body }` (lowercase header names, text `query`/`body`). Set `payload: WebhookRequest`, taken from `Onicode`; never write its shape out yourself. `onicode workflow hooks` prints each hook's URL (includes secret): the full URL with public webhooks on (Settings → Connections), else a path to put after this server's LAN or tailnet address. A retry that repeats a delivery header (`X-GitHub-Delivery`, `Idempotency-Key`, `webhook-id`, and the Gitea, GitLab and Linear ones) starts no second run; for other senders, `key: (r) => …` names the run from the request. Bodies over 1 MiB are refused. |
+| `issues.opened({ project, labels?, query? })`    | `Issue`          | Polls ~once a minute. Only issues opened after the workflow first loaded. Issue must carry all `labels`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `pullRequests.opened({ project, query? })`       | `PullRequest`    | Polls ~once a minute. Only pull requests opened after the workflow first loaded.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 
-Filter unwanted items in the body with `skip("not labelled for triage")` so they stay out of run lists.
+Filter unwanted items and deliveries in the body with `skip("not a push to main")` so they stay out of run lists. Verify webhook signatures inside a `step`.
 
 Start any workflow manually with `onicode workflow start <name> --input '<json>' --key <key>`. A `key` identifies one run of that workflow across all versions.
 
@@ -322,8 +323,8 @@ Start any workflow manually with `onicode workflow start <name> --input '<json>'
 
 1. **The body is replayed from the top.** After every wait or restart, the body runs again and completed primitives return their stored values. Put all side effects, I/O, clock reads, randomness, and `store`/API reads inside `step` or `agent`. Code between calls must be deterministic given `payload` and earlier results.
 2. **Names are journal keys.** Every named primitive (`step`, `agent`, `ask`, `wait`, `sleep`, `invoke`, `pullRequests.wait`) must have a unique name within the run, across all kinds. Loops need distinct names (``step(`check-${i}`, …)``). Never name a body step `"onEnd"` (reserved for cleanup). `invoke("x", …)` also takes `x/start`, and `title(…)` takes `title/0`, `title/1`, ….
-3. **Bump `version` when changing a live workflow.** Do not reorder, rename, or change the stored schema of steps in a version that still has unfinished runs. Register the updated body under a higher `version` and keep the old version in the file until its runs finish. Runs started by the CLI or a trigger use the highest version; `start` and `invoke` run the version of the definition you pass them, so point callers at the new definition when you bump. Keys still deduplicate across versions.
-4. **Never import `effect`, and take every `Onicode` name you use.** The globals are `Onicode`, `Effect`, `Schema`, `Option`, `Duration` and `Schedule`; `step`, `daily`, `Tick` and the rest come from `const { … } = Onicode;` at the top of the file, and one left out of that line is a `ReferenceError`. Shared helpers go in a subfolder (dotfiles and folders are ignored by the loader), and changing an imported helper requires a server restart.
+3. **Bump `version` when changing a live workflow.** Do not reorder, rename, or change the stored schema of steps in a version that still has unfinished runs. Register the updated body under a higher `version` and keep the old version in the file until its runs finish. Runs started by the CLI, a trigger or a webhook use the highest version; `start` and `invoke` run the version of the definition you pass them, so point callers at the new definition when you bump. Keys still deduplicate across versions.
+4. **Never import `effect`, and take every `Onicode` name you use.** The globals are `Onicode`, `Effect`, `Schema`, `Option`, `Duration` and `Schedule`; `step`, `daily`, `WebhookRequest` and the rest come from `const { … } = Onicode;` at the top of the file, and one left out of that line is a `ReferenceError`. Shared helpers go in a subfolder (dotfiles and folders are ignored by the loader), and changing an imported helper requires a server restart.
 5. **Payloads and step results must fit their `Schema`.** Everything journaled is serialized as JSON; a value that fails encoding fails the step.
 6. **Steps can run more than once.** A crash mid-step, a retry, or a manual resume re-runs the step. Make external side effects idempotent (derive idempotency keys from `payload` or `run.id`, keep one comment/post per step, wrap dependent store writes in `store.transaction`).
 
@@ -340,6 +341,7 @@ onicode workflow cancel <run> [--reason '<why>']
 onicode workflow questions
 onicode workflow signal '{"choice":"upgrade"}' --run <run> --wait approve-upgrade
 onicode workflow signal '<json>' --workflow <name> --channel <channel>
+onicode workflow hooks
 onicode workflow store list [prefix]
 onicode workflow store set <key> '<json>'
 onicode workflow store delete <key>

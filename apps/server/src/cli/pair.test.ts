@@ -553,7 +553,9 @@ describe("onicode pair", () => {
           const { args } = command as unknown as { readonly args: ReadonlyArray<string> };
           tailscaleCalls.push(args);
           const stdout =
-            args[0] === "status" ? `{"Self":{"DNSName":"pair-test.invalid.","CapMap":{}}}` : "";
+            args[0] === "status"
+              ? `{"Self":{"DNSName":"pair-test.invalid.","CapMap":{"funnel":null}}}`
+              : "";
           return Effect.succeed(
             ChildProcessSpawner.makeHandle({
               pid: ChildProcessSpawner.ProcessId(1),

@@ -126,6 +126,7 @@ import Migration0115 from "./Migrations/115_ReadableEscapedLinkLabels.ts";
 import Migration0116 from "./Migrations/116_DeferredSkillCommandIndex.ts";
 import Migration0117 from "./Migrations/117_SupersededRunAttemptIndex.ts";
 import Migration0118 from "./Migrations/118_ActiveShellIndexWorkflowStep.ts";
+import Migration0119 from "./Migrations/119_RestoreWebhooks.ts";
 
 const migrationEntries = [
   [1, "OrchestrationEvents", Migration0001],
@@ -247,6 +248,7 @@ const migrationEntries = [
   [116, "DeferredSkillCommandIndex", Migration0116],
   [117, "SupersededRunAttemptIndex", Migration0117],
   [118, "ActiveShellIndexWorkflowStep", Migration0118],
+  [119, "RestoreWebhooks", Migration0119],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

@@ -52,7 +52,9 @@ function taskScheduleLine(
   return (
     <>
       {scheduleLabel(task.schedule, timestampFormat, timeZone, task.nextRunAt, resolve)}
-      {task.enabled && task.nextRunAt !== null ? (
+      {task.blockedByPolicy !== undefined ? (
+        ` · ${task.blockedByPolicy}`
+      ) : task.enabled && task.nextRunAt !== null ? (
         <>
           {" · "}
           <T>
@@ -233,27 +235,30 @@ export function ThreadAutomationsPanel(props: {
                 <T>Edit automation</T>
               </TooltipPopup>
             </Tooltip>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <ThreadDetailsControl
-                    size="icon-xs"
-                    variant="ghost"
-                    part="icon"
-                    aria-label={gt("Run {title} now", { title: task.title })}
-                    disabled={
-                      !canOperate || busyTaskId !== null || task.lastRunStatus === "running"
-                    }
-                    onClick={() => void runNow(task)}
-                  >
-                    <PlayIcon className="size-3.5" />
-                  </ThreadDetailsControl>
-                }
-              />
-              <TooltipPopup>
-                <T>Run now</T>
-              </TooltipPopup>
-            </Tooltip>
+            {/* Webhook tasks need a request from their URL. */}
+            {task.schedule.type === "webhook" ? null : (
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <ThreadDetailsControl
+                      size="icon-xs"
+                      variant="ghost"
+                      part="icon"
+                      aria-label={gt("Run {title} now", { title: task.title })}
+                      disabled={
+                        !canOperate || busyTaskId !== null || task.lastRunStatus === "running"
+                      }
+                      onClick={() => void runNow(task)}
+                    >
+                      <PlayIcon className="size-3.5" />
+                    </ThreadDetailsControl>
+                  }
+                />
+                <TooltipPopup>
+                  <T>Run now</T>
+                </TooltipPopup>
+              </Tooltip>
+            )}
             <Switch
               checked={task.enabled}
               disabled={!canOperate || busyTaskId !== null}

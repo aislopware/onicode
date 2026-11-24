@@ -7,7 +7,7 @@ export * as Option from "effect/Option";
 export * as Schedule from "effect/Schedule";
 export * as Schema from "effect/Schema";
 
-export { daily, every, Tick } from "./triggers.ts";
+export { daily, every, Tick, webhook, WebhookRequest } from "./triggers.ts";
 export { issues, pullRequests } from "./forgeApi.ts";
 export { cancel, runs, signal, signalAll, start, store } from "./stepServices.ts";
 export { Issue, IssueDetail, PullRequest, PullRequestStanding } from "./WorkflowForge.ts";

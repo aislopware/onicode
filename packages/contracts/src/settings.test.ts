@@ -562,6 +562,8 @@ describe("requiredScopesForServerSettingsPatch", () => {
     { patch: {}, scopes: ["settings:write"] },
     { patch: { enablePreviewTunnel: false }, scopes: ["access:write"] },
     { patch: { tailnetSignIn: true }, scopes: ["settings:write", "access:write"] },
+    { patch: { publicWebhooksEnabled: true }, scopes: ["access:write"] },
+    { patch: { publicAgentsEnabled: false }, scopes: ["access:write"] },
     {
       patch: { enablePreviewTunnel: false, keepAwakeWhileAgentsWork: true },
       scopes: ["settings:write", "access:write"],

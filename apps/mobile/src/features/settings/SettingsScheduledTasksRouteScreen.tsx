@@ -1,4 +1,5 @@
 import { msg, T, useGT, useLocale, useMessages, Var } from "gt-react-native";
+import { managedCapabilityDenial } from "@onicode/client-runtime/contract-labels";
 import * as Dialog from "../../components/ui/Dialog";
 import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/reactivity";
@@ -7,7 +8,7 @@ import {
   clampManagedRuntimeMode,
   resolveProjectProviderInstanceEnabled,
 } from "@onicode/contracts";
-import { readEnvironmentScope } from "../../state/session";
+import { readEnvironmentScope, usePreparedConnection } from "../../state/session";
 import type {
   EnvironmentId,
   ProjectId,
@@ -15,7 +16,11 @@ import type {
   ScheduledTaskThreadMode,
   ScheduledTaskUpsertInput,
 } from "@onicode/contracts";
-import { resolveEnvironmentMachineKind, scheduledTaskThreadMode } from "@onicode/contracts";
+import {
+  MAX_WEBHOOK_FILTERS,
+  resolveEnvironmentMachineKind,
+  scheduledTaskThreadMode,
+} from "@onicode/contracts";
 import { useSelectWorkspaceDetail } from "../layout/workspace/useSelectWorkspaceDetail";
 import type { MenuAction } from "@react-native-menu/menu";
 import { DateTimePicker } from "@expo/ui/community/datetime-picker";
@@ -29,6 +34,15 @@ import {
   refusedScheduledTask,
   scheduledTaskExpected,
 } from "@onicode/client-runtime/scheduled-task-draft";
+import {
+  DEFAULT_WEBHOOK_PROMPT,
+  emptyWebhookFilterDraft,
+  parseWebhookFilterDrafts,
+  removeWebhookFilterDraft,
+  WEBHOOK_FILTER_OPS,
+  type WebhookFilterDraft,
+} from "@onicode/client-runtime/scheduled-task-webhook";
+import { webhookAddress } from "@onicode/client-runtime/webhook-address";
 import { scheduledTaskWorktreeBaseRef } from "@onicode/client-runtime/scheduled-task-worktree";
 import { scheduleTimeZoneLabel } from "@onicode/client-runtime/scheduled-task-time-zone";
 import type { MessageResolver } from "../../i18n/messages";
@@ -55,6 +69,7 @@ import type { ComposerEditorSelection } from "../../components/ComposerEditor";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { SegmentedControl } from "../../components/ui/SegmentedControl";
 import { ThemedSwitch } from "../../components/ui/ThemedSwitch";
+import { tryCopyTextWithHaptic } from "../../lib/copyTextWithHaptic";
 import { buildModelOptions } from "../../lib/modelOptions";
 import { withImplicitFastModeSelection } from "../../lib/providerOptions";
 import { useProjects, useEnvironmentServerConfig } from "../../state/entities";
@@ -78,6 +93,7 @@ import {
   scheduledTaskDefaultModel,
   scheduleFromDraft,
   unbindDraftFromThread,
+  webhookScheduleProblems,
   type ScheduledTaskDraft as Draft,
 } from "./scheduledTaskDraft";
 import { settingsTargetsForProject } from "./settings-environment-filter.logic";
@@ -105,6 +121,7 @@ type ScheduledTaskRoutes = {
   SettingsScheduledTaskModel: undefined;
   SettingsScheduledTaskBranch: undefined;
   SettingsScheduledTaskThread: undefined;
+  SettingsScheduledTaskDeliveries: { readonly environmentId: string; readonly taskId: string };
 };
 
 const DAYS = [1, 2, 3, 4, 5, 6, 0].map((index) => ({ index }));
@@ -129,6 +146,7 @@ function describeSchedule(
   locale: string,
   is24Hour: boolean | undefined,
 ): string {
+  if (task.schedule.type === "webhook") return resolve(msg("On webhook"));
   if (task.schedule.type === "once") {
     const runAt = new Date(task.schedule.runAt);
     return resolve(
@@ -194,6 +212,9 @@ function FormField(props: {
   readonly disabled?: boolean;
   readonly placeholder?: string;
   readonly borderTop?: boolean;
+  /** Typed as entered: paths, header names, templates and secrets. */
+  readonly verbatim?: boolean;
+  readonly secure?: boolean;
 }) {
   return (
     <View
@@ -209,6 +230,9 @@ function FormField(props: {
         onChangeText={props.onChange}
         textAlignVertical="center"
         keyboardType={props.keyboardType}
+        autoCapitalize={props.verbatim || props.secure ? "none" : undefined}
+        autoCorrect={props.verbatim || props.secure ? false : undefined}
+        secureTextEntry={props.secure}
         placeholder={props.placeholder}
         placeholderTextColorClassName="accent-foreground-muted"
         className="min-h-8 font-sans text-base text-foreground"
@@ -280,6 +304,109 @@ function SelectRow(props: {
         />
       </Pressable>
     </Menu>
+  );
+}
+
+function WebhookFilterRows(props: {
+  readonly filters: ReadonlyArray<WebhookFilterDraft>;
+  readonly disabled: boolean;
+  readonly onChange: (
+    update: (filters: ReadonlyArray<WebhookFilterDraft>) => ReadonlyArray<WebhookFilterDraft>,
+  ) => void;
+}) {
+  const gt = useGT();
+  const m = useMessages();
+  const update = (id: WebhookFilterDraft["id"], patch: Partial<WebhookFilterDraft>) =>
+    props.onChange((filters) =>
+      filters.map((filter) => (filter.id === id ? { ...filter, ...patch } : filter)),
+    );
+  return (
+    <>
+      {props.filters.map((filter, index) => (
+        <View key={filter.id}>
+          <View
+            className={
+              index === 0
+                ? "flex-row items-center gap-3 px-4 pt-3"
+                : "flex-row items-center gap-3 border-t border-border-subtle px-4 pt-3"
+            }
+          >
+            <Text className="min-w-0 flex-1 text-sm text-foreground-muted">
+              <T>
+                Filter <Var>{index + 1}</Var>
+              </T>
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={gt("Remove filter {number}", { number: index + 1 })}
+              disabled={props.disabled}
+              hitSlop={8}
+              onPress={() =>
+                props.onChange((filters) => removeWebhookFilterDraft(filters, filter.id))
+              }
+              className="active:opacity-70"
+            >
+              <SymbolView name="trash" size={16} tintColorClassName="accent-danger-foreground" />
+            </Pressable>
+          </View>
+          <FormField
+            label={gt("Path", { $context: "webhook payload field path" })}
+            value={filter.path}
+            placeholder="body.action"
+            disabled={props.disabled}
+            verbatim
+            onChange={(path) => update(filter.id, { path })}
+          />
+          <SelectRow
+            label={gt("Test", { $context: "noun, the comparison a webhook filter applies" })}
+            value={m(WEBHOOK_FILTER_OPS.find((option) => option.op === filter.op)?.label ?? "")}
+            actions={WEBHOOK_FILTER_OPS.map((option) => ({
+              id: option.op,
+              title: m(option.label),
+              state: option.op === filter.op ? ("on" as const) : undefined,
+            }))}
+            onSelect={(id) => {
+              const known = WEBHOOK_FILTER_OPS.find((option) => option.op === id);
+              if (known) update(filter.id, { op: known.op });
+            }}
+          />
+          {filter.op === "exists" ? null : (
+            <FormField
+              label={filter.op === "in" ? gt("Values, comma-separated") : gt("Value")}
+              value={filter.value}
+              // oxlint-disable-next-line onicode/no-untranslated-copy -- webhook action values
+              placeholder={filter.op === "in" ? "opened, reopened" : "opened"}
+              disabled={props.disabled}
+              verbatim
+              onChange={(value) => update(filter.id, { value })}
+            />
+          )}
+        </View>
+      ))}
+      {props.filters.length < MAX_WEBHOOK_FILTERS ? (
+        <Pressable
+          accessibilityRole="button"
+          disabled={props.disabled}
+          onPress={() =>
+            props.onChange((filters) =>
+              filters.length < MAX_WEBHOOK_FILTERS
+                ? [...filters, emptyWebhookFilterDraft()]
+                : filters,
+            )
+          }
+          className={
+            props.filters.length === 0
+              ? "min-h-14 flex-row items-center gap-3 px-4 py-3 active:opacity-70"
+              : "min-h-14 flex-row items-center gap-3 border-t border-border-subtle px-4 py-3 active:opacity-70"
+          }
+        >
+          <Text textRole="body" className="min-w-0 flex-1 text-foreground">
+            <T>Add filter</T>
+          </Text>
+          <SymbolView name="plus" size={16} tintColorClassName="accent-icon" />
+        </Pressable>
+      ) : null}
+    </>
   );
 }
 
@@ -679,6 +806,14 @@ function TaskForm({
   const shownSelection =
     draft.threadId === null ? draft.modelSelection : (boundThread?.modelSelection ?? null);
   const modelOptions = buildModelOptions(config, null, undefined, draft.projectId);
+  // Existing webhook tasks keep the option so they can still switch to a timer.
+  const webhookDenial = managedCapabilityDenial(config?.managedPolicy, "webhookTasks", m);
+  const webhookBlocked =
+    draft.schedule.mode === "webhook" && webhookDenial !== undefined && draft.enabled;
+  // The live row, for rotated URLs; null once a loaded list no longer has the task.
+  const liveTask = tasks.data
+    ? (tasks.data.tasks.find((task) => task.id === draft.task?.id) ?? null)
+    : draft.task;
   const canOperate = useAtomValue(
     serverEnvironment.upsertScheduledTask.permissionAtom(environmentId),
   );
@@ -707,6 +842,10 @@ function TaskForm({
   const offersOnce =
     config?.environment.capabilities.oneTimeSchedules === true ||
     draft.task?.schedule.type === "once";
+  // Older servers have no webhook schedules; a webhook task keeps the option to stay one.
+  const offersWebhook =
+    config?.environment.capabilities.webhookSchedules === true ||
+    draft.task?.schedule.type === "webhook";
   const offersThreadModes = config?.environment.capabilities.scheduledTaskThreadModes === true;
   const save = async () => {
     const current = readEditor();
@@ -719,9 +858,52 @@ function TaskForm({
       dictationPending ||
       taskMissing ||
       environmentUnavailable ||
-      automaticBaseRefLoading
+      automaticBaseRefLoading ||
+      (draft.schedule.mode === "webhook" && webhookDenial !== undefined && draft.enabled)
     )
       return;
+    if (draft.schedule.mode === "webhook" && !offersWebhook) {
+      Dialog.alert(
+        gt("Webhooks are not available here"),
+        gt(
+          "This environment runs an older {product}. Update it to run a task on a webhook, or pick another schedule.",
+          { product: "Onicode" },
+        ),
+      );
+      return;
+    }
+    if (draft.schedule.mode === "webhook") {
+      const parsedFilters = parseWebhookFilterDrafts(draft.schedule.filters, m);
+      if ("error" in parsedFilters) {
+        Dialog.alert(gt("Invalid filter"), parsedFilters.error);
+        return;
+      }
+      const problems = webhookScheduleProblems(draft.schedule);
+      const problem = problems.replayKey
+        ? gt("Duplicate request key must contain a valid request placeholder.")
+        : problems.coalesceKey
+          ? gt("Coalesce key must contain a valid request placeholder.")
+          : problems.coalesceWindow
+            ? gt("Coalesce window must be whole seconds from 10 to 3600.")
+            : null;
+      if (problem !== null) {
+        Dialog.alert(gt("Invalid webhook settings"), problem);
+        return;
+      }
+      // The task the save is checked against; a refused save brings the stored one.
+      const stored = draft.task;
+      if (
+        draft.schedule.signatureEnabled &&
+        (problems.signatureHeader ||
+          (!draft.schedule.signatureSecret.trim() && stored?.webhook?.hasSecret !== true))
+      ) {
+        Dialog.alert(
+          gt("Signing secret is required"),
+          gt("Enter the signature header and secret."),
+        );
+        return;
+      }
+    }
     const schedule = scheduleFromDraft(draft.schedule);
     if (draft.schedule.mode === "once" && !offersOnce) {
       Dialog.alert(
@@ -1050,6 +1232,10 @@ function TaskForm({
                     ]
                   : []),
                 { value: "interval", label: gt("Interval") },
+                ...((offersWebhook && webhookDenial === undefined) ||
+                draft.schedule.mode === "webhook"
+                  ? [{ value: "webhook" as const, label: gt("On webhook") }]
+                  : []),
               ]}
               selected={draft.schedule.mode}
               onSelect={(mode) => {
@@ -1057,6 +1243,10 @@ function TaskForm({
                 setRunAtPicker(null);
                 setDraft((current) => ({
                   ...current,
+                  prompt:
+                    mode === "webhook" && !current.prompt.trim()
+                      ? DEFAULT_WEBHOOK_PROMPT
+                      : current.prompt,
                   schedule: {
                     ...current.schedule,
                     mode,
@@ -1161,6 +1351,12 @@ function TaskForm({
                 }}
               />
             </>
+          ) : webhookBlocked ? (
+            <Text className="border-t border-border-subtle px-4 py-3 text-sm text-foreground-muted">
+              {gt("{reason} Switch the task to a timer, or turn it off, to save it.", {
+                reason: webhookDenial,
+              })}
+            </Text>
           ) : draft.schedule.mode === "once" ? (
             (["date", "time"] as const).map((field) => {
               const runAt = new Date(draft.schedule.runAt);
@@ -1214,6 +1410,18 @@ function TaskForm({
                 </View>
               );
             })
+          ) : draft.schedule.mode === "webhook" ? (
+            <WebhookScheduleDetails
+              environmentId={environmentId}
+              task={liveTask}
+              disabled={!canOperate || saving || environmentUnavailable}
+              onOpenDeliveries={(task) =>
+                navigation.navigate("SettingsScheduledTaskDeliveries", {
+                  environmentId: String(environmentId),
+                  taskId: String(task.id),
+                })
+              }
+            />
           ) : (
             <>
               <FormField
@@ -1260,6 +1468,14 @@ function TaskForm({
             <T>Time uses the environment's time zone, which may differ from your phone's.</T>
           </Text>
         ) : null}
+        {draft.schedule.mode === "webhook" && !webhookBlocked ? (
+          <WebhookSettingsSections
+            draft={draft}
+            hasStoredSecret={draft.task?.webhook?.hasSecret === true}
+            disabled={saving}
+            setDraft={setDraft}
+          />
+        ) : null}
       </View>
       <Button
         tone="primary"
@@ -1270,12 +1486,261 @@ function TaskForm({
           dictationPending ||
           taskMissing ||
           environmentUnavailable ||
-          automaticBaseRefLoading
+          automaticBaseRefLoading ||
+          // The server refuses an enabled webhook task under this policy.
+          webhookBlocked
         }
         onPress={() => void save()}
         label={saving ? gt("Saving…") : draft.task ? gt("Save changes") : gt("Create task")}
       />
     </View>
+  );
+}
+
+function WebhookScheduleDetails({
+  environmentId,
+  task,
+  disabled,
+  onOpenDeliveries,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly task: ScheduledTask | null;
+  readonly disabled: boolean;
+  readonly onOpenDeliveries: (task: ScheduledTask) => void;
+}) {
+  const gt = useGT();
+  const m = useMessages();
+  const [rotating, setRotating] = useState(false);
+  const rotate = useAtomCommand(serverEnvironment.rotateScheduledTaskWebhookToken, {
+    label: "scheduled task rotate webhook token",
+    reportFailure: false,
+  });
+  const preparedConnection = usePreparedConnection(environmentId);
+  const httpBaseUrl =
+    preparedConnection._tag === "Some" ? preparedConnection.value.httpBaseUrl : null;
+  const webhook = task?.schedule.type === "webhook" ? task.webhook : undefined;
+  const resolved = webhook ? webhookAddress(webhook, httpBaseUrl, m) : null;
+  return (
+    <>
+      <View className="gap-2 border-t border-border-subtle px-4 py-3">
+        <Text className="text-sm text-foreground-muted">
+          {gt(
+            "The prompt can use {body}, {headers}, {query}, {wholeBody} and {request}. The filled-in prompt is all the agent sees.",
+            {
+              body: "{{body.a.b}}",
+              headers: "{{headers.name}}",
+              query: "{{query.name}}",
+              wholeBody: "{{body}}",
+              request: "{{request}}",
+            },
+          )}
+        </Text>
+        {task === null || resolved === null ? (
+          <Text className="text-sm text-foreground-muted">
+            <T>Save the task to get its webhook URL.</T>
+          </Text>
+        ) : (
+          <>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={gt("Copy webhook URL")}
+              accessibilityHint={gt("Copies the URL to the clipboard")}
+              accessibilityState={{ disabled: !resolved.copyable }}
+              disabled={!resolved.copyable}
+              onPress={() => void tryCopyTextWithHaptic(resolved.address)}
+              className="gap-1 active:opacity-70"
+            >
+              <Text textRole="body" className="text-foreground">
+                {resolved.copyable ? gt("Webhook URL") : gt("Webhook path")}
+              </Text>
+              <Text className="text-sm text-foreground-muted" numberOfLines={2} selectable>
+                {resolved.address}
+              </Text>
+            </Pressable>
+            {resolved.note !== null ? (
+              <Text className="text-sm text-foreground-muted">{resolved.note}</Text>
+            ) : null}
+            <Button
+              label={rotating ? gt("Rotating…") : gt("Rotate URL")}
+              tone="danger"
+              size="compact"
+              disabled={disabled || rotating}
+              loading={rotating}
+              onPress={() =>
+                Dialog.alert(gt("Rotate URL?"), gt("The current URL stops working immediately."), [
+                  { text: gt("Cancel"), style: "cancel" },
+                  {
+                    text: gt("Rotate", { $context: "verb, replace the webhook URL" }),
+                    style: "destructive",
+                    onPress: () => {
+                      setRotating(true);
+                      void rotate({ environmentId, input: { id: task.id } }).then((result) => {
+                        setRotating(false);
+                        if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+                          Dialog.alert(
+                            gt("Could not rotate URL"),
+                            String(squashAtomCommandFailure(result)),
+                          );
+                        }
+                      });
+                    },
+                  },
+                ])
+              }
+            />
+          </>
+        )}
+      </View>
+      {task !== null && task.schedule.type === "webhook" ? (
+        <PickerRow
+          label={gt("Deliveries")}
+          value={gt("Recent requests")}
+          borderTop
+          disabled={disabled}
+          onPress={() => onOpenDeliveries(task)}
+        />
+      ) : null}
+    </>
+  );
+}
+
+function WebhookSettingsSections({
+  draft,
+  hasStoredSecret,
+  disabled,
+  setDraft,
+}: {
+  readonly draft: Draft;
+  readonly hasStoredSecret: boolean;
+  readonly disabled: boolean;
+  readonly setDraft: (update: (current: Draft) => Draft) => void;
+}) {
+  const gt = useGT();
+  const schedule = draft.schedule;
+  const setSchedule = (patch: Partial<Draft["schedule"]>) =>
+    setDraft((current) => ({ ...current, schedule: { ...current.schedule, ...patch } }));
+  return (
+    <>
+      <SettingsSection
+        title={gt("Filters", { $context: "section heading, webhook request filters" })}
+        footer={
+          schedule.filters.length > 0
+            ? gt(
+                "Runs only when every filter matches. Other requests are logged as filtered. Separate “is one of” values with commas; a value can't contain a comma.",
+              )
+            : gt("Without filters, every request runs the task.")
+        }
+      >
+        <WebhookFilterRows
+          filters={schedule.filters}
+          disabled={disabled}
+          onChange={(update) =>
+            setDraft((current) => ({
+              ...current,
+              schedule: { ...current.schedule, filters: update(current.schedule.filters) },
+            }))
+          }
+        />
+      </SettingsSection>
+      <SettingsSection
+        title={gt("Duplicate requests")}
+        footer={gt(
+          "Requests with the same duplicate key run only once within 7 days. Coalescing runs the latest payload when the window from the first delivery closes. Empty keys run normally.",
+        )}
+      >
+        <FormField
+          label={gt("Duplicate request key")}
+          value={schedule.replayKey}
+          placeholder="{{headers.delivery-id}}"
+          disabled={disabled}
+          verbatim
+          onChange={(replayKey) => setSchedule({ replayKey })}
+        />
+        <FormField
+          label={gt("Coalesce key template")}
+          value={schedule.coalesceKey}
+          placeholder="{{body.id}}"
+          disabled={disabled}
+          verbatim
+          borderTop
+          onChange={(coalesceKey) => setSchedule({ coalesceKey })}
+        />
+        <FormField
+          label={gt("Coalesce window (seconds, 10–3600)")}
+          value={schedule.coalesceWindowSeconds}
+          placeholder="120"
+          keyboardType="number-pad"
+          disabled={disabled}
+          borderTop
+          onChange={(coalesceWindowSeconds) => setSchedule({ coalesceWindowSeconds })}
+        />
+      </SettingsSection>
+      <SettingsSection
+        title={gt("Signature")}
+        footer={
+          schedule.signatureEnabled && hasStoredSecret
+            ? gt(
+                "Leave the secret blank to keep the saved one. Turn off the signature check to remove it.",
+              )
+            : gt("Reject requests without a valid HMAC-SHA256 signature of the body.")
+        }
+      >
+        <View className="min-h-14 flex-row items-center gap-3 px-4 py-3">
+          <Text textRole="body" className="min-w-0 flex-1 text-foreground">
+            {gt("Require signature")}
+          </Text>
+          <ThemedSwitch
+            accessibilityLabel={gt("Require signature")}
+            value={schedule.signatureEnabled}
+            disabled={disabled}
+            onValueChange={(signatureEnabled) => setSchedule({ signatureEnabled })}
+          />
+        </View>
+        {schedule.signatureEnabled ? (
+          <>
+            <FormField
+              label={gt("Header", { $context: "HTTP header that carries the signature" })}
+              value={schedule.signatureHeader}
+              disabled={disabled}
+              verbatim
+              borderTop
+              onChange={(signatureHeader) => setSchedule({ signatureHeader })}
+            />
+            <FormField
+              label={gt("Prefix", { $context: "text before the signature digest" })}
+              value={schedule.signaturePrefix}
+              placeholder={gt("None")}
+              disabled={disabled}
+              verbatim
+              borderTop
+              onChange={(signaturePrefix) => setSchedule({ signaturePrefix })}
+            />
+            <SelectRow
+              label={gt("Encoding", { $context: "how the signature digest is written" })}
+              value={schedule.signatureEncoding}
+              borderTop
+              actions={(["hex", "base64"] as const).map((encoding) => ({
+                id: encoding,
+                title: encoding,
+                state: schedule.signatureEncoding === encoding ? ("on" as const) : undefined,
+              }))}
+              onSelect={(id) => {
+                if (id === "hex" || id === "base64") setSchedule({ signatureEncoding: id });
+              }}
+            />
+            <FormField
+              label={gt("Secret", { $context: "shared secret that signs webhook requests" })}
+              value={schedule.signatureSecret}
+              placeholder={hasStoredSecret ? gt("Unchanged") : gt("Shared secret")}
+              disabled={disabled}
+              secure
+              borderTop
+              onChange={(signatureSecret) => setSchedule({ signatureSecret })}
+            />
+          </>
+        ) : null}
+      </SettingsSection>
+    </>
   );
 }
 
@@ -1319,6 +1784,7 @@ function EnvironmentTasks({
     reportFailure: false,
   });
   const selectDetail = useSelectWorkspaceDetail();
+  const navigation = useNavigation<NativeStackNavigationProp<ScheduledTaskRoutes>>();
   const failure = (title: string, result: AtomCommandResult<unknown, unknown>) => {
     if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
       Dialog.alert(title, String(squashAtomCommandFailure(result)));
@@ -1399,6 +1865,11 @@ function EnvironmentTasks({
                       })
                     : scheduleLabel(task)}
               </Text>
+              {task.blockedByPolicy ? (
+                <Text className="text-sm text-foreground-muted" numberOfLines={2}>
+                  {task.blockedByPolicy}
+                </Text>
+              ) : null}
               {task.lastRunError ? (
                 <Text className="text-sm text-danger-foreground" numberOfLines={2}>
                   <T>
@@ -1418,7 +1889,16 @@ function EnvironmentTasks({
                   title: task.enabled ? gt("Pause") : gt("Resume"),
                   attributes: { disabled: !canOperate },
                 },
-                { id: "run", title: gt("Run now"), attributes: { disabled: !canOperate } },
+                // A webhook task runs on a request; its deliveries show what came in.
+                ...(task.schedule.type === "webhook"
+                  ? [
+                      {
+                        id: "deliveries",
+                        title: gt("Deliveries"),
+                        attributes: { disabled: !canOperate },
+                      },
+                    ]
+                  : [{ id: "run", title: gt("Run now"), attributes: { disabled: !canOperate } }]),
                 {
                   id: "delete",
                   title: gt("Delete"),
@@ -1429,6 +1909,11 @@ function EnvironmentTasks({
                 const action = nativeEvent.event;
                 if (action === "edit") {
                   onEdit(task);
+                } else if (action === "deliveries") {
+                  navigation.navigate("SettingsScheduledTaskDeliveries", {
+                    environmentId: String(environmentId),
+                    taskId: String(task.id),
+                  });
                 } else if (action === "thread" && task.threadId !== null) {
                   selectDetail({
                     name: "Thread",

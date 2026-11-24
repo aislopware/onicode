@@ -3,7 +3,8 @@ import { m as resolveMessage } from "~/i18n/messages";
 import { managedCapabilityDenial } from "@onicode/client-runtime/contract-labels";
 import { AUTH_SCOPE_OPTIONS as PAIRING_SCOPE_OPTIONS } from "@onicode/shared/authScopeOptions";
 import { buildPairingAppLink } from "@onicode/shared/remote";
-import { PlusIcon, QrCodeIcon } from "lucide-react";
+import { openUseInAnotherApp } from "../mcp/UseInAnotherAppDialog";
+import { PlugIcon, PlusIcon, QrCodeIcon } from "lucide-react";
 import { type ReactNode, memo, useId, useRef, useState } from "react";
 import { T, useGT, useMessages } from "gt-react";
 import {
@@ -55,6 +56,7 @@ import { Button } from "../ui/button";
 import { Textarea } from "../ui/textarea";
 import type { ServerClientSessionRecord, ServerPairingLinkRecord } from "~/environments/primary";
 import { authEnvironment } from "~/state/auth";
+import { useEnvironment } from "~/state/environments";
 import { readEnvironmentScope } from "~/state/session";
 import { useManagedPolicy, usePrimaryManagedPolicy } from "~/state/managedPolicy";
 import { useAtomCommand } from "~/state/use-atom-command";
@@ -501,7 +503,10 @@ const ConnectedClientListRow = memo(function ConnectedClientListRow({
       : gt("Connected")
     : lastConnectedAt
       ? gt("Last connected at {time}", { time: formatAccessTimestamp(lastConnectedAt) })
-      : gt("Not connected yet.");
+      : // Agents use /mcp, which records no connection, so one in use may have none.
+        clientSession.client.deviceType === "bot"
+        ? gt("Added {time}", { time: formatAccessTimestamp(clientSession.issuedAt) })
+        : gt("Not connected yet.");
   const deviceInfoBits = [
     clientSession.client.deviceType !== "unknown"
       ? clientSession.client.deviceType[0]?.toUpperCase() + clientSession.client.deviceType.slice(1)
@@ -584,6 +589,8 @@ export const AuthorizedClientsHeaderAction = memo(function AuthorizedClientsHead
   const createPairingCredential = useAtomCommand(authEnvironment.createPairingCredential, {
     reportFailure: false,
   });
+  const supportsOutsideAgents =
+    useEnvironment(environmentId)?.serverConfig?.environment.capabilities.webhookSchedules === true;
   const [dialogOpen, setDialogOpen] = useState(false);
   const pairingDialogSessionRef = useRef(0);
   const [pairingLabel, setPairingLabel] = useState("");
@@ -647,7 +654,13 @@ export const AuthorizedClientsHeaderAction = memo(function AuthorizedClientsHead
   };
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex flex-wrap items-center justify-end gap-2">
+      {supportsOutsideAgents ? (
+        <Button size="xs" variant="outline" onClick={() => openUseInAnotherApp(environmentId)}>
+          <PlugIcon className="size-3" />
+          <T>Use in another app (MCP)</T>
+        </Button>
+      ) : null}
       <Button
         size="xs"
         variant="destructive-outline"

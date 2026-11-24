@@ -147,6 +147,10 @@
       "types": "./src/scheduledTaskDraft.ts",
       "default": "./src/scheduledTaskDraft.ts"
     },
+    "./scheduled-task-webhook": {
+      "types": "./src/scheduledTaskWebhook.ts",
+      "default": "./src/scheduledTaskWebhook.ts"
+    },
     "./scheduled-task-time-zone": {
       "types": "./src/scheduledTaskTimeZone.ts",
       "default": "./src/scheduledTaskTimeZone.ts"
@@ -250,6 +254,18 @@
     "./text-paste": {
       "types": "./src/textPaste.ts",
       "default": "./src/textPaste.ts"
+    },
+    "./agent-sign-in-failure": {
+      "types": "./src/agentSignInFailure.ts",
+      "default": "./src/agentSignInFailure.ts"
+    },
+    "./public-access-status": {
+      "types": "./src/publicAccessStatus.ts",
+      "default": "./src/publicAccessStatus.ts"
+    },
+    "./webhook-address": {
+      "types": "./src/webhookAddress.ts",
+      "default": "./src/webhookAddress.ts"
     },
     "./queued-run-edit": {
       "types": "./src/queuedRunEdit.ts",

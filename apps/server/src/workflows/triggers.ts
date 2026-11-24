@@ -1,5 +1,5 @@
 // What starts a run by itself. A trigger hands its workflow one value, so a workflow that lists
-// a trigger takes that value as its payload: `Tick` for a schedule, the item for a forge trigger.
+// a trigger takes that value as its payload: `Tick` for a schedule, `WebhookRequest` for a hook.
 import * as Duration from "effect/Duration";
 import * as Schema from "effect/Schema";
 
@@ -10,6 +10,15 @@ import type { Issue, PullRequest } from "./WorkflowForge.ts";
 /** The time a scheduled run was due, which is not the time it started. */
 export const Tick = Schema.Struct({ scheduledAt: Schema.String });
 export type Tick = typeof Tick.Type;
+
+/** A request to a workflow's hook URL, as it arrived. Header names are lower case. */
+export const WebhookRequest = Schema.Struct({
+  method: Schema.String,
+  headers: Schema.Record(Schema.String, Schema.String),
+  query: Schema.String,
+  body: Schema.String,
+});
+export type WebhookRequest = typeof WebhookRequest.Type;
 
 export interface ScheduleTrigger {
   readonly kind: "schedule";
@@ -23,6 +32,11 @@ export interface ScheduleTrigger {
         readonly weekdays?: ReadonlyArray<number>;
       };
 }
+export interface WebhookTrigger {
+  readonly kind: "webhook";
+  readonly name: string;
+  readonly key: ((request: WebhookRequest) => string | undefined) | undefined;
+}
 /** New issues or pull requests of a project, which the engine looks for by itself. */
 export interface OpenedTrigger {
   readonly kind: "issues" | "pullRequests";
@@ -33,7 +47,7 @@ export interface OpenedTrigger {
   readonly query?: string | undefined;
 }
 /** `Fires` is what the trigger gives the run it starts. */
-export type Trigger<Fires> = (ScheduleTrigger | OpenedTrigger) & {
+export type Trigger<Fires> = (ScheduleTrigger | WebhookTrigger | OpenedTrigger) & {
   readonly fires?: (value: Fires) => void;
 };
 
@@ -71,19 +85,35 @@ export const daily = (
   };
 };
 
-/** Refuses two triggers that would fire on the same thing. */
+/**
+ * A run for each request to this workflow's hook URL (`onicode workflow hooks` prints it). The run
+ * decides what the request means, `stop` included. Two requests for which `key` gives the same
+ * text are one run, which is how a sender's retries are told from new deliveries.
+ */
+export const webhook = (
+  name: string,
+  options?: { readonly key?: (request: WebhookRequest) => string | undefined },
+): Trigger<WebhookRequest> => {
+  checkOptions(`webhook("${name}")`, options, ["key"]);
+  return { kind: "webhook", name, key: options?.key };
+};
+
+/** Refuses two hooks of one name, or two triggers that would fire on the same thing. */
 export const checkTriggers = (
   workflow: string,
-  triggers: ReadonlyArray<ScheduleTrigger | OpenedTrigger>,
+  triggers: ReadonlyArray<ScheduleTrigger | WebhookTrigger | OpenedTrigger>,
 ) => {
   const seen = new Set<string>();
   for (const trigger of triggers) {
-    if (seen.has(trigger.id)) {
+    const id = trigger.kind === "webhook" ? `webhook:${trigger.name}` : trigger.id;
+    if (seen.has(id)) {
       throw new Error(
-        `workflow("${workflow}") lists the same ${trigger.kind === "schedule" ? "schedule" : "trigger"} twice. List it once.`,
+        trigger.kind === "webhook"
+          ? `workflow("${workflow}") has two hooks named "${trigger.name}". Give each its own name.`
+          : `workflow("${workflow}") lists the same ${trigger.kind === "schedule" ? "schedule" : "trigger"} twice. List it once.`,
       );
     }
-    seen.add(trigger.id);
+    seen.add(id);
   }
 };
 

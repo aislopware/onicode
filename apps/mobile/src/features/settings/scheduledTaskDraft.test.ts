@@ -27,6 +27,71 @@ describe("scheduleDraftForTask", () => {
     expect(draft.intervalMinutes).toBe("1");
     expect(scheduleFromDraft(draft)).toEqual({ type: "interval", everyMs: 60_000 });
   });
+
+  it("round-trips dedupe settings and rejects invalid keys and windows", () => {
+    const dedupe = {
+      replayKey: "{{headers.delivery-id}}",
+      coalesceKey: "{{body.id}}",
+      coalesceWindowSeconds: 3600,
+    };
+    const draft = scheduleDraftForTask({ schedule: { type: "webhook", signature: null, dedupe } });
+    expect(scheduleFromDraft(draft)).toMatchObject({ dedupe });
+    expect(
+      scheduleFromDraft({
+        ...draft,
+        replayKey: `  ${dedupe.replayKey}  `,
+        coalesceKey: `\t${dedupe.coalesceKey}\n`,
+      }),
+    ).toMatchObject({ dedupe });
+    // Blank keys clear what is stored.
+    expect(
+      scheduleFromDraft({
+        ...draft,
+        replayKey: " \n ",
+        coalesceKey: "",
+        coalesceWindowSeconds: "",
+      }),
+    ).toMatchObject({ dedupe: {} });
+    for (const coalesceWindowSeconds of ["9", "3601", "1.5", "abc"]) {
+      expect(scheduleFromDraft({ ...draft, coalesceWindowSeconds })).toBeNull();
+    }
+    expect(scheduleFromDraft({ ...draft, replayKey: "literal" })).toBeNull();
+    expect(scheduleFromDraft({ ...draft, coalesceKey: "{{body.bad" })).toBeNull();
+  });
+
+  it("sends a webhook secret only when typed, and clears it with the signature", () => {
+    const signature = {
+      header: "x-hub-signature-256",
+      encoding: "hex" as const,
+      prefix: "sha256=",
+    };
+    const draft = scheduleDraftForTask({ schedule: { type: "webhook", signature } });
+    expect(scheduleFromDraft(draft)).toEqual({ type: "webhook", signature, dedupe: {} });
+    expect(scheduleFromDraft({ ...draft, signatureSecret: " s3cret " })).toMatchObject({
+      signature: { ...signature, secret: "s3cret" },
+    });
+    expect(scheduleFromDraft({ ...draft, signatureEnabled: false })).toMatchObject({
+      signature: null,
+    });
+    expect(scheduleFromDraft({ ...draft, signatureHeader: " " })).toBeNull();
+  });
+
+  it("round-trips webhook filters and refuses an invalid one", () => {
+    const filters = [
+      { path: "headers.x-github-event", op: "equals", value: "pull_request" },
+      { path: "body.label.name", op: "in", value: ["needs review", "agent:fix"] },
+    ] as const;
+    const draft = scheduleDraftForTask({ schedule: { type: "webhook", signature: null, filters } });
+    // Untouched rows are left out, so the server keeps whatever is stored now.
+    expect(scheduleFromDraft(draft)).not.toHaveProperty("filters");
+    expect(scheduleFromDraft({ ...draft, filters: [] })).toMatchObject({ filters: [] });
+    expect(scheduleFromDraft({ ...draft, filters: draft.filters.slice(1) })).toMatchObject({
+      filters: filters.slice(1),
+    });
+    expect(
+      scheduleFromDraft({ ...draft, filters: [{ id: "f1", path: "", op: "exists", value: "" }] }),
+    ).toBeNull();
+  });
 });
 
 describe("scheduleFromDraft", () => {
@@ -218,6 +283,82 @@ describe("scheduled task worktree base", () => {
       threadId: "thread:picked",
       threadMode: "continue",
     });
+    // Reading the task again gives its filter rows new ids; that alone is not an edit.
+    const webhookTask = {
+      ...rootTask,
+      schedule: {
+        type: "webhook",
+        signature: null,
+        filters: [{ path: "body.action", op: "equals", value: "opened" }],
+      },
+    } satisfies ScheduledTask;
+    const signed = {
+      ...webhookTask,
+      schedule: {
+        ...webhookTask.schedule,
+        signature: { header: "x-signature", encoding: "base64", prefix: "" },
+      },
+    } satisfies ScheduledTask;
+    expect(
+      rebaseScheduledTaskDraft({ ...editDraft(webhookTask), prompt: "Review twice" }, signed),
+    ).toMatchObject({ schedule: { signatureEnabled: true, signatureHeader: "x-signature" } });
+    // Filters left alone take the stored ones even when another webhook setting was edited.
+    const refiltered = {
+      ...webhookTask,
+      schedule: {
+        ...webhookTask.schedule,
+        filters: [{ path: "body.action", op: "equals", value: "closed" }],
+      },
+    } satisfies ScheduledTask;
+    const replayEdited = editDraft(webhookTask);
+    const rebasedFilters = rebaseScheduledTaskDraft(
+      { ...replayEdited, schedule: { ...replayEdited.schedule, replayKey: "{{body.id}}" } },
+      refiltered,
+    ).schedule;
+    expect(rebasedFilters).toMatchObject({ replayKey: "{{body.id}}" });
+    expect(rebasedFilters.filters.map((filter) => filter.value)).toEqual(["closed"]);
+    expect(rebasedFilters.savedFilters.map((filter) => filter.value)).toEqual(["closed"]);
+    // Edited filters stay, and the other webhook settings take the stored ones.
+    const filterEdited = editDraft(webhookTask);
+    const rebasedSigned = rebaseScheduledTaskDraft(
+      {
+        ...filterEdited,
+        schedule: {
+          ...filterEdited.schedule,
+          filters: filterEdited.schedule.filters.map((row) => ({ ...row, value: "closed" })),
+        },
+      },
+      signed,
+    ).schedule;
+    expect(rebasedSigned).toMatchObject({ signatureEnabled: true, signatureHeader: "x-signature" });
+    expect(rebasedSigned.filters.map((filter) => filter.value)).toEqual(["closed"]);
+    // Filters left alone stay when an edited webhook meets a task made a timer elsewhere.
+    const timer = {
+      ...webhookTask,
+      schedule: { type: "interval", everyMs: 3_600_000 },
+    } satisfies ScheduledTask;
+    const keptOnTimer = rebaseScheduledTaskDraft(
+      { ...replayEdited, schedule: { ...replayEdited.schedule, replayKey: "{{body.id}}" } },
+      timer,
+    ).schedule;
+    expect(keptOnTimer.mode).toBe("webhook");
+    expect(keptOnTimer.filters.map((filter) => filter.value)).toEqual(["opened"]);
+    expect(keptOnTimer.savedFilters).toEqual([]);
+    // A value an "exists" filter ignores is no edit.
+    const existsTask = {
+      ...webhookTask,
+      schedule: { ...webhookTask.schedule, filters: [{ path: "body.action", op: "exists" }] },
+    } satisfies ScheduledTask;
+    const existsDraft = editDraft(existsTask);
+    expect(
+      hasScheduledTaskDraftChanges(existsDraft, {
+        ...existsDraft,
+        schedule: {
+          ...existsDraft.schedule,
+          filters: existsDraft.schedule.filters.map((row) => ({ ...row, value: "opened" })),
+        },
+      }),
+    ).toBe(false);
   });
 
   it("counts only edits the saved task would carry", () => {
@@ -230,6 +371,19 @@ describe("scheduled task worktree base", () => {
     expect(changed({ baseRef: "release", checkoutPath: "/x" })).toBe(false);
     expect(changed({ schedule: { ...draft.schedule, intervalMinutes: "5" } })).toBe(true);
     expect(changed({ schedule: { ...draft.schedule, mode: "once" } })).toBe(true);
+    expect(changed({ schedule: { ...draft.schedule, replayKey: "{{body.id}}" } })).toBe(false);
+    const webhook = { ...draft, schedule: { ...draft.schedule, mode: "webhook" as const } };
+    const webhookChanged = (schedule: Partial<typeof draft.schedule>) =>
+      hasScheduledTaskDraftChanges(webhook, {
+        ...webhook,
+        schedule: { ...webhook.schedule, ...schedule },
+      });
+    expect(webhookChanged({ signatureHeader: "x-other" })).toBe(false);
+    expect(webhookChanged({ signatureEnabled: true })).toBe(true);
+    expect(webhookChanged({ coalesceWindowSeconds: "60" })).toBe(true);
+    expect(
+      webhookChanged({ filters: [{ id: "f1", path: "body.action", op: "exists", value: "" }] }),
+    ).toBe(true);
   });
 
   it("leaves the base automatic for new tasks and tasks without a worktree", () => {

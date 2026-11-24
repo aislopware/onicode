@@ -1512,6 +1512,23 @@ export function createServerEnvironmentAtoms<R, E>(
       tag: WS_METHODS.serverGetStorageCleanupReport,
       idleTtlMs: 0,
     }),
+    publicAccessStatus: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
+      label: "environment-data:server:public-access-status",
+      tag: WS_METHODS.publicAccessSubscribeStatus,
+      idleTtlMs: 0,
+    }),
+    agentSignIns: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
+      label: "environment-data:server:agent-sign-ins",
+      tag: WS_METHODS.agentSignInsSubscribe,
+    }),
+    answerAgentSignIn: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:answer-agent-sign-in",
+      tag: WS_METHODS.agentSignInsAnswer,
+    }),
+    issueAgentToken: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:issue-agent-token",
+      tag: WS_METHODS.agentTokensIssue,
+    }),
     updateStateAtom,
     settingsValueAtom,
     hiddenThreadTagsAtom,
@@ -1643,6 +1660,14 @@ export function createServerEnvironmentAtoms<R, E>(
         const snapshot = liveWorkflowSnapshot(environmentId);
         return Atom.make((get) => snapshot(get)?.definition?.revision);
       },
+    }),
+    scheduledTaskWebhookDeliveries: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:server:scheduled-task:webhook-deliveries",
+      tag: WS_METHODS.scheduledTasksListWebhookDeliveries,
+    }),
+    scheduledTaskWebhookDelivery: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:server:scheduled-task:webhook-delivery",
+      tag: WS_METHODS.scheduledTasksGetWebhookDelivery,
     }),
     scheduledTasksLive: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "environment-data:server:scheduled-tasks:live",
@@ -1965,6 +1990,12 @@ export function createServerEnvironmentAtoms<R, E>(
       tag: WS_METHODS.workflowsDeleteDefinition,
       scheduler: workflowDefinitionScheduler,
       concurrency: workflowDefinitionConcurrency,
+    }),
+    rotateScheduledTaskWebhookToken: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:scheduled-task:rotate-webhook-token",
+      tag: WS_METHODS.scheduledTasksRotateWebhookToken,
+      scheduler: configScheduler,
+      concurrency: configConcurrency,
     }),
     // Off the config lane: answering a card must not queue behind settings
     // edits. One answer per card at a time.

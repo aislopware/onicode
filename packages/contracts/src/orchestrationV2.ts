@@ -21,6 +21,7 @@ import {
   EnvironmentId,
   NodeId,
   ForwardCompatibleNullable,
+  ForwardCompatibleOptional,
   ForwardCompatibleUnion,
   ForwardCompatibleUnionArray,
   hasUnknownUnionTag,
@@ -1845,6 +1846,13 @@ export const OrchestrationV2SecretRequestStatus = Schema.Literals([
 ]);
 export type OrchestrationV2SecretRequestStatus = typeof OrchestrationV2SecretRequestStatus.Type;
 
+/**
+ * `file`: the value goes to an owner-only file the agent's shell commands can read. `secretRef`:
+ * it stays in the secret store for a Onicode tool. Cards from before this field say neither.
+ */
+export const OrchestrationV2SecretRequestDelivery = Schema.Literals(["file", "secretRef"]);
+export type OrchestrationV2SecretRequestDelivery = typeof OrchestrationV2SecretRequestDelivery.Type;
+
 /** One input of a multi-value card. `secret: false` shows what the user types, such as an email. */
 export const OrchestrationV2SecretRequestField = Schema.Struct({
   name: TrimmedNonEmptyString,
@@ -1860,6 +1868,7 @@ const OrchestrationV2SecretRequestFields = {
   reason: Schema.String,
   url: Schema.optional(Schema.String),
   placeholder: Schema.optional(Schema.String),
+  delivery: ForwardCompatibleOptional(OrchestrationV2SecretRequestDelivery),
   fields: Schema.optional(Schema.Array(OrchestrationV2SecretRequestField)),
   secretStatus: OrchestrationV2SecretRequestStatus,
 } as const;
@@ -4083,6 +4092,7 @@ const OrchestrationV2InternalCommand = Schema.Union([
     reason: Schema.String,
     url: Schema.optional(Schema.String),
     placeholder: Schema.optional(Schema.String),
+    delivery: ForwardCompatibleOptional(OrchestrationV2SecretRequestDelivery),
     fields: Schema.optional(Schema.Array(OrchestrationV2SecretRequestField)),
     secretStatus: OrchestrationV2SecretRequestStatus,
   }),

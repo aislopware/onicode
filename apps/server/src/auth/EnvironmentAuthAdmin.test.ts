@@ -77,6 +77,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
         const environmentAuth = yield* EnvironmentAuth.EnvironmentAuth;
         const phone = yield* sessions.issue({ subject: "one-time-token" });
         const bot = yield* sessions.issue({ subject: "cli-issued-session" });
+        const outsideAgent = yield* sessions.issue({ subject: "outside-agent" });
         const startup = (ipAddress: string) =>
           sessions.issue({
             subject: EnvironmentAuth.INTERNAL_ADMINISTRATIVE_BOOTSTRAP_SUBJECT,
@@ -85,6 +86,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
         const startupPhone = yield* startup("192.168.1.20");
         const startupLocal = yield* startup("127.0.0.1");
         yield* environmentAuth.createPairingLink({ subject: "one-time-token" });
+        yield* environmentAuth.issuePairingCredential({ purpose: "agent", access: "read-only" });
 
         yield* Layer.build(EnvironmentAuth.layerRevokeClientsThePolicyDisallows).pipe(
           Effect.provide(ManagedPolicy.layerTest(desktopAndLocalOnly)),
@@ -94,6 +96,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
         const remaining = (yield* sessions.listActive()).map((session) => session.sessionId);
         assert.notInclude(remaining, phone.sessionId);
         assert.notInclude(remaining, startupPhone.sessionId);
+        assert.notInclude(remaining, outsideAgent.sessionId);
         assert.include(remaining, startupLocal.sessionId);
         assert.include(remaining, bot.sessionId);
         assert.lengthOf(yield* pairingLinks.listActive(), 0);

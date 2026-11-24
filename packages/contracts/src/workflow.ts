@@ -76,12 +76,22 @@ export const WorkflowQuestion = Schema.Struct({
 });
 export type WorkflowQuestion = typeof WorkflowQuestion.Type;
 
+/** Where a workflow takes requests. `path` holds the hook's secret. */
+export const WorkflowHook = Schema.Struct({
+  workflow: Schema.String,
+  name: Schema.String,
+  path: Schema.String,
+  /** The public URL while public webhooks are on, else null: put this server's address before `path`. */
+  url: Schema.NullOr(Schema.String),
+});
+export type WorkflowHook = typeof WorkflowHook.Type;
+
 /** What a client shows of workflows: recent runs, newest first, and the questions still open. */
 /** A workflow this server has registered, at its newest version, and what starts it. */
 export const WorkflowSummary = Schema.Struct({
   name: Schema.String,
   version: Schema.Number,
-  /** In words: "every 1h", "daily at 09:00", "new issues in my-app". Empty when only started by hand. */
+  /** In words: "every 1h", "webhook issues", "new issues in my-app". Empty when only started by hand. */
   triggers: Schema.Array(Schema.String),
 });
 export type WorkflowSummary = typeof WorkflowSummary.Type;

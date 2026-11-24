@@ -354,7 +354,7 @@ const make = Effect.gen(function* () {
       const rows = yield* pairingLinks.listActive({ now });
 
       return rows.map((row) =>
-        row.label
+        row.label?.trim()
           ? ({
               id: row.id,
               scopes: row.scopes,
@@ -419,10 +419,12 @@ const make = Effect.gen(function* () {
       (isDevStartupToken ? DEV_STARTUP_TTL_HOURS : DEFAULT_ONE_TIME_TOKEN_TTL_MINUTES);
     const now = yield* DateTime.now;
     const expiresAt = DateTime.add(now, { milliseconds: Duration.toMillis(ttl) });
+    // A blank label would fail to encode for every client reading the list.
+    const label = input?.label?.trim() ? input.label : undefined;
     const issued: IssuedBootstrapCredential = {
       id,
       credential,
-      ...(input?.label ? { label: input.label } : {}),
+      ...(label ? { label } : {}),
       expiresAt,
     };
     const subject = input?.subject ?? "one-time-token";
@@ -433,7 +435,7 @@ const make = Effect.gen(function* () {
         method: "one-time-token",
         scopes: input?.scopes ?? AuthStandardClientScopes,
         subject,
-        label: input?.label ?? null,
+        label: label ?? null,
         proofKeyThumbprint: null,
         createdAt: now,
         expiresAt: expiresAt,
@@ -444,7 +446,7 @@ const make = Effect.gen(function* () {
             new PairingCredentialIssueError({
               pairingLinkId: id,
               subject,
-              ...(input?.label ? { label: input.label } : {}),
+              ...(label ? { label } : {}),
               cause,
             }),
         ),
@@ -455,7 +457,7 @@ const make = Effect.gen(function* () {
         id,
         scopes: input?.scopes ?? AuthStandardClientScopes,
         subject,
-        ...(input?.label ? { label: input.label } : {}),
+        ...(label ? { label } : {}),
         createdAt: now,
         expiresAt,
       });

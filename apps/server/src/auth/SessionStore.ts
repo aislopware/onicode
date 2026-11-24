@@ -454,7 +454,7 @@ function toClientMetadata(record: {
   readonly os: string | null;
 }): AuthClientMetadata {
   return {
-    ...(record.label ? { label: record.label } : {}),
+    ...(record.label?.trim() ? { label: record.label } : {}),
     ...(record.ipAddress ? { ipAddress: record.ipAddress } : {}),
     ...(record.userAgent ? { userAgent: record.userAgent } : {}),
     deviceType: record.deviceType,
@@ -617,7 +617,9 @@ const make = Effect.gen(function* () {
         ),
       );
       const signature = yield* signer.sign(encodedPayload);
-      const client = input.client ?? createDefaultClientMetadata();
+      const { label, ...unlabeled } = input.client ?? createDefaultClientMetadata();
+      // A blank label would fail to encode for every client reading the list.
+      const client: AuthClientMetadata = label?.trim() ? { ...unlabeled, label } : unlabeled;
       const sessionRecord = {
         sessionId,
         subject: claims.sub,

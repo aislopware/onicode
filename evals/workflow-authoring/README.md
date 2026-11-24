@@ -6,7 +6,7 @@ API, or the way the server loads a definitions file changes.
 
 The model gets the skill's body and one task, and replies with a file. The grader loads that file
 with the server's loader, registers it in the real engine on a throwaway database, and drives it
-with a stand-in for agents: it starts runs, answers questions, restarts the
+with a stand-in for agents: it starts runs, delivers webhooks, answers questions, restarts the
 engine, and checks how each run ends. Nothing is judged by reading the code.
 
 ## Run

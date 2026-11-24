@@ -1780,7 +1780,7 @@ export const oniDefault = (
       };
     }
     case "request_secret": {
-      // Onicode names each request's file with 32 new hex characters, in its secrets dir.
+      // Onicode names a ref and a file with 32 hex characters, new for each request, in its secrets dir.
       const id = NodeCrypto.createHash("sha256")
         .update(`${sample.testCase.id}:${sample.secretRequests++}`)
         .digest("hex")
@@ -1800,7 +1800,9 @@ export const oniDefault = (
           files: Object.fromEntries(names.map((field) => [field, fileFor(fileId(field))])),
         };
       }
-      return { status: "saved", file: fileFor(id) };
+      return input.delivery === "file" || pastedSecret(name, input)
+        ? { status: "saved", file: fileFor(id) }
+        : { status: "saved", secretRef: `secret-ref:${id}` };
     }
     case "unlink_pull_request":
       return { ...pr(), wasLinked: sample.linked.delete(pr().url) };

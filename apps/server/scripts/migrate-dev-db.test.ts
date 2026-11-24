@@ -150,6 +150,21 @@ const createFixtureSource = Effect.fn("createMigrateDevDbFixtureSource")(functio
           VALUES ('session-1', 'user', '[]', '2026-08-01', '2027-08-01')`;
       }
       if (toMigrationInclusive === undefined) {
+        yield* sql`INSERT INTO scheduled_task_webhook_replay_keys
+          (task_id, replay_key, delivery_id, expires_at)
+          VALUES ('task-1', 'replay-1', 'delivery-1', 1900000000000)`;
+        yield* sql`INSERT INTO scheduled_task_webhook_pending
+          (delivery_id, task_id, coalesce_key, due_at, task_json, request_json, delivery_ids_json)
+          VALUES ('delivery-1', 'task-1', 'key-1', 1900000000000, '{}', '{}', '[]')`;
+        yield* sql`INSERT INTO scheduled_task_webhook_deliveries
+          (delivery_id, task_id, received_at, method, query, headers_json, body, body_bytes,
+            body_truncated, outcome, signature_verified, missing_fields_json)
+          VALUES ('delivery-1', 'task-1', '2026-08-01', 'POST', '', '{}', '{}', 2, 0, 'started', 0, '[]')`;
+        yield* sql`INSERT INTO workflow_hooks (hook_id, token) VALUES ('wf-inbound.push', 'secret')`;
+        yield* sql`INSERT INTO workflow_runs (run_id, workflow, version, engine_tag,
+          idempotency_key, title, status, started_at, updated_at, input_json)
+          VALUES ('run-1', 'inbound', 1, 'inbound/1', 'd1', 'Inbound', 'waiting', '2026-08-01',
+            '2026-08-01', '{}')`;
         yield* insertPeerLink(sql);
         yield* sql`INSERT INTO task_folders
           (root, real_root, project_id, project_root, anchor, project_path, project_is_worktree, created_at)
@@ -197,6 +212,8 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
           const [leftovers] = yield* sql<{
             auth: number;
             tasks: number;
+            webhooks: number;
+            workflowRuns: number;
             transfers: number;
             links: number;
             taskFolders: number;
@@ -204,6 +221,11 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
             SELECT
               (SELECT COUNT(*) FROM auth_sessions) AS auth,
               (SELECT COUNT(*) FROM scheduled_tasks) AS tasks,
+              (SELECT COUNT(*) FROM scheduled_task_webhook_replay_keys) +
+                (SELECT COUNT(*) FROM scheduled_task_webhook_pending) +
+                (SELECT COUNT(*) FROM scheduled_task_webhook_deliveries) +
+                (SELECT COUNT(*) FROM workflow_hooks) AS webhooks,
+              (SELECT COUNT(*) FROM workflow_runs) AS workflowRuns,
               (SELECT COUNT(*) FROM orchestration_v2_projection_context_transfers) AS transfers,
               (SELECT COUNT(*) FROM peer_environment_links) AS links,
               (SELECT COUNT(*) FROM task_folders) AS taskFolders`;
@@ -250,6 +272,8 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
       assert.deepStrictEqual(kept.leftovers, {
         auth: 0,
         tasks: 0,
+        webhooks: 0,
+        workflowRuns: 0,
         transfers: 0,
         links: 0,
         taskFolders: 0,
