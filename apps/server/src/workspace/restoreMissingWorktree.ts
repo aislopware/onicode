@@ -280,20 +280,25 @@ export const layerThreadWorktreeRestore = Layer.effect(
       restore: Effect.fn("ThreadWorktreeRestore.restore")(function* (thread: WorktreeThread) {
         // Cleanup removes a deleted thread's worktree under this lease, so the thread is read
         // again inside it: one deleted since the caller read it gets no new checkout.
-        const result = yield* thread.worktreePath === null
-          ? restore(thread)
-          : withWorkspaceLease(
-              fileSystem,
-              path,
-              thread.worktreePath,
-              projections.getThreadShell(thread.id).pipe(
-                Effect.orElseSucceed(() => thread),
-                Effect.flatMap((current) =>
-                  current === null ? Effect.undefined : restore(thread),
-                ),
-              ),
-            );
-        if (result !== undefined) recreated.set(thread.id, result);
+        // Published before the lease is released, so the next turn start under it finds it.
+        const restoreAndPublish = restore(thread).pipe(
+          Effect.tap((result) =>
+            Effect.sync(() => {
+              if (result !== undefined) recreated.set(thread.id, result);
+            }),
+          ),
+          Effect.asVoid,
+        );
+        if (thread.worktreePath === null) return yield* restoreAndPublish;
+        yield* withWorkspaceLease(
+          fileSystem,
+          path,
+          thread.worktreePath,
+          projections.getThreadShell(thread.id).pipe(
+            Effect.orElseSucceed(() => thread),
+            Effect.flatMap((current) => (current === null ? Effect.void : restoreAndPublish)),
+          ),
+        );
       }),
       takeRecreated: Effect.fn("ThreadWorktreeRestore.takeRecreated")(function* (
         threadId: ThreadId,
