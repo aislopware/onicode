@@ -354,3 +354,45 @@ it.each([
 
   expect(advance).toHaveBeenCalledTimes(row.sends);
 });
+
+it("a captured answer uploads the image and file that landed after its composer left", () => {
+  const captured = RuntimeRequestId.make("captured-late-attachments");
+  const key = questionAttachmentDraftId(environmentId, threadId, captured, "first");
+  const send = captureQuestionAnswerSend({
+    environmentId,
+    threadId,
+    requestId: captured,
+    questionKeys: [key],
+    questionIndex: () => 0,
+    advance: () => {},
+  });
+  const store = useComposerDraftStore.getState();
+  const file = (id: string, bytes: File | null) => ({
+    type: "file" as const,
+    id,
+    name: `${id}.txt`,
+    mimeType: "text/plain",
+    sizeBytes: 4,
+    file: bytes,
+  });
+  store.addImages(key, [
+    {
+      type: "image",
+      id: "late-image",
+      name: "late.png",
+      mimeType: "image/png",
+      sizeBytes: 5,
+      previewUrl: "blob:late-image",
+      file: new File(["image"], "late.png", { type: "image/png" }),
+    },
+  ]);
+  // A file whose bytes are gone waits to be attached again, so it cannot upload.
+  store.addFiles(key, [file("late-file", new File(["late"], "late.txt")), file("marker", null)]);
+
+  send();
+
+  expect(startUpload.mock.calls.map(([upload]) => upload.image.id)).toEqual([
+    "late-image",
+    "late-file",
+  ]);
+});
