@@ -3681,3 +3681,4 @@ fb04b4d199	take	conflict: annotation refusal placed before Onicode's hover-is-no
 596a2374d0	take	adapted: Onicode's proxy is HTTP with Basic auth (no SOCKS), so the macOS lsof owner check guards forwarded ports only; fixed upstream's lsof address for IPv6 (needs [::1], forwards bind ::1 too); SOCKS tests replaced by forward owner cases; lsof measured ~45 ms per forward connection; SECURITY.md and 05_remote updated
 a8ae922f87	take	conflict: kept Onicode's stored initial message beside upstream's thread linkOrigin; kept Onicode's descriptor bullet in 05_remote
 4948c9afbe	take	conflict: upstream's annotated() check kept ahead of Onicode's hover-is-not-use check
+c9e22e5ff4	take	conflicts: imports kept beside Onicode's html-render bootstrap; shared exports without upstream's telemetry/relay/dpop entries (removed surfaces); readiness-proof tests moved out of Onicode's single untraced-requests describe; desktopReadinessSecret is optional in the bootstrap contract
