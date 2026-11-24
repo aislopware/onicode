@@ -138,9 +138,34 @@ const layerFor = (state: State, options: Options) => {
   const layerWorkflow = Layer.unwrap(
     Effect.gen(function* () {
       const git = yield* GitVcsDriver.GitVcsDriver;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const indexLock = (cwd: string) =>
+        git
+          .execute({
+            operation: "rewind-test",
+            cwd,
+            args: ["rev-parse", "--git-path", "index.lock"],
+          })
+          .pipe(Effect.map((result) => path.resolve(cwd, result.stdout.trim())));
       return Layer.mock(GitWorkflow.GitWorkflowService)({
-        createWorktree: git.createWorktree,
+        // Holds the new checkout's index locked until its background refresh is settled.
+        createWorktree: (input) =>
+          git.createWorktree(input).pipe(
+            Effect.tap(({ worktree }) =>
+              indexLock(worktree.path).pipe(
+                Effect.flatMap((lock) => fileSystem.writeFileString(lock, "")),
+                Effect.orDie,
+              ),
+            ),
+          ),
         pruneWorktrees: git.pruneWorktrees,
+        settleIndexRefresh: (worktreePath) =>
+          git.settleIndexRefresh(worktreePath).pipe(
+            Effect.andThen(indexLock(worktreePath)),
+            Effect.flatMap((lock) => fileSystem.remove(lock)),
+            Effect.orDie,
+          ),
       });
     }),
   ).pipe(Layer.provide(layerGit));
