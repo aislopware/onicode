@@ -9,6 +9,7 @@ import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Queue from "effect/Queue";
 import * as Result from "effect/Result";
@@ -140,7 +141,10 @@ const challenge = (login: LoginListener, authInfo: Partial<Electron.AuthInfo>) =
 const makeTunnel = (
   /** A function answers each access request with its current value. */
   tunnelUrl: string | null | (() => string | null),
-  host: Layer.Layer<never> | Layer.Layer<ChildProcessSpawner.ChildProcessSpawner> = Layer.empty,
+  host:
+    | Layer.Layer<never>
+    | Layer.Layer<ChildProcessSpawner.ChildProcessSpawner>
+    | Layer.Layer<FileSystem.FileSystem> = Layer.empty,
   { answerAccess = true }: { readonly answerAccess?: boolean } = {},
 ) =>
   Effect.gen(function* () {
@@ -674,15 +678,22 @@ const closedWithoutReply = (port: number, host = "127.0.0.1") =>
       }),
   );
 
-it.effect("closes another OS user's connection to a forward without tunnelling it", () =>
+it.effect.each([
+  // This process owns the client, so a different user id here makes it another user's.
+  { case: "another OS user's connection", userId: (process.getuid?.() ?? 0) + 1, tables: "real" },
+  // No TCP row and no user id to compare must not match each other.
+  { case: "a connection with no TCP row and no user id", userId: undefined, tables: "empty" },
+] as const)("on linux closes $case to a forward without tunnelling it", ({ userId, tables }) =>
   Effect.gen(function* () {
     const endpoint = yield* listenEndpoint();
     const { tunnel } = yield* makeTunnel(
       `ws://127.0.0.1:${addressPort(endpoint.server)}/api/preview/tunnel`,
-      // This process owns the client, so a different user id here makes it another user's.
       Layer.mergeAll(
         Layer.succeed(HostProcess.Platform, "linux"),
-        Layer.succeed(HostProcess.UserId, (process.getuid?.() ?? 0) + 1),
+        Layer.succeed(HostProcess.UserId, userId),
+        tables === "empty"
+          ? FileSystem.layerNoop({ readFileString: () => Effect.succeed("") })
+          : Layer.empty,
       ),
     );
     const forward = yield* tunnel.forward({
@@ -756,7 +767,7 @@ it.effect.each(
     { platform: "win32", client: "unlisted", host: "127.0.0.1", end: "127.0.0.1", served: true },
   ].filter(({ host }) => !host.includes(":") || hasIpv6Loopback),
 )(
-  "on $platform serves a forward's $client client on $host: $served",
+  "on $platform serves a forward's $client client on $host (no user id=$unknownUser): $served",
   ({ platform, client, host, end, served, unknownUser }) =>
     Effect.gen(function* () {
       const endpoint = yield* listenEndpoint();
