@@ -17,6 +17,7 @@ const state = vi.hoisted(() => ({
   issuesSupported: false,
   prState: "open" as "open" | "merged",
   isDraft: false,
+  headSha: "shown-head",
   status: "success" as PullRequestCheck["status"],
   extraStatus: null as PullRequestCheck["status"] | null,
   mergeMethods: ["merge"] as Array<"merge" | "squash" | "rebase">,
@@ -59,6 +60,7 @@ const queryData = () => ({
   title: "Test PR",
   state: state.prState,
   isDraft: state.isDraft,
+  headSha: state.headSha,
   mergeability: "mergeable",
   headBranch: "feature",
   baseBranch: "main",
@@ -181,18 +183,20 @@ it("merges with the last selected merge method", async () => {
   const { container } = screen;
   state.mergeMethods = ["merge", "squash"];
   useUiStateStore.getState().setPullRequestMergeMethod("squash");
-  await act(async () => {
-    await screen.rerender(
-      <ThreadDetailsPrRow
-        environmentId={EnvironmentId.make("environment")}
-        pr={null}
-        number={1}
-        status={null}
-        project={repositoryProject}
-        onOpen={vi.fn()}
-      />,
-    );
-  });
+  const rerender = () =>
+    act(async () => {
+      await screen.rerender(
+        <ThreadDetailsPrRow
+          environmentId={EnvironmentId.make("environment")}
+          pr={null}
+          number={1}
+          status={null}
+          project={repositoryProject}
+          onOpen={vi.fn()}
+        />,
+      );
+    });
+  await rerender();
   const clickMerge = async (scope: ParentNode) =>
     await act(async () => {
       [...scope.querySelectorAll("button")]
@@ -202,10 +206,17 @@ it("merges with the last selected merge method", async () => {
   await clickMerge(container);
   const dialog = document.querySelector('[role="alertdialog"]')!;
   expect(dialog.textContent).toContain("using squash");
+  // A push that a background refresh picks up while the confirmation is open.
+  state.headSha = "pushed-head";
+  await rerender();
   await clickMerge(dialog);
   expect(state.perform).toHaveBeenCalledWith(
     expect.objectContaining({
-      input: expect.objectContaining({ action: "merge", mergeMethod: "squash" }),
+      input: expect.objectContaining({
+        action: "merge",
+        mergeMethod: "squash",
+        expectedHeadSha: "shown-head",
+      }),
     }),
   );
 });
@@ -262,6 +273,7 @@ async function setup() {
 
   state.issuesSupported = false;
   state.prState = "open";
+  state.headSha = "shown-head";
   state.isDraft = false;
   state.status = "success";
   state.extraStatus = null;

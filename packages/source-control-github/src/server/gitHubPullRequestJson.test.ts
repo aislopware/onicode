@@ -1698,6 +1698,7 @@ describe("review submission payload", () => {
     const payload = buildReviewSubmission({
       verdict: "request-changes",
       body: "Two things.",
+      expectedHeadSha: "0a1b2c3d4e5f",
       comments: [
         {
           path: "src/a.ts",
@@ -1712,6 +1713,7 @@ describe("review submission payload", () => {
       ],
     });
     expect(payload).toEqual({
+      commit_id: "0a1b2c3d4e5f",
       event: "REQUEST_CHANGES",
       body: "Two things.",
       comments: [

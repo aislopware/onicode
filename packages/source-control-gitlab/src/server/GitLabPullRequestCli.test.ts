@@ -1804,6 +1804,7 @@ layer("GitLabPullRequestCli.layer", (it) => {
         number: 7,
         verdict: "approve",
         body: "Looks right.",
+        expectedHeadSha: "head",
         comments: [
           {
             path: "src/b.ts",
@@ -1854,6 +1855,7 @@ layer("GitLabPullRequestCli.layer", (it) => {
       expect(JSON.parse(callAt(4).stdin ?? "").position).not.toHaveProperty("line_range");
       expect(argsOfCall(5)[1]).toContain("/notes");
       expect(argsOfCall(6)[1]).toContain("/approve");
+      expect(JSON.parse(callAt(6).stdin ?? "")).toEqual({ sha: "head" });
     }),
   );
 
