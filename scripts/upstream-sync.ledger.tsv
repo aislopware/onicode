@@ -3722,3 +3722,4 @@ b51399fb38	take	fix(web): a held Esc or a search of spaces no longer closes Sett
 b6a04be41c	take	fix(antigravity): keep child skills visible under an uppercase SKILL.MD (#42095); also covers Onicode's extra workspace roots
 d7ae1e1791	take	fix(web): report server rollback after an app update
 43a0e74fb9	take	fix(server): oni_thread_launch validates and normalizes modelSelection options
+f692811b95	take	applied to apps/server/src/service, where Onicode keeps upstream's cloud/serviceSelectionLock
