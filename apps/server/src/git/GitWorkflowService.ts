@@ -150,6 +150,7 @@ export class GitWorkflowService extends Context.Service<
     readonly pruneWorktrees: (input: {
       readonly cwd: string;
     }) => Effect.Effect<void, GitCommandError>;
+    readonly settleIndexRefresh: GitVcsDriver.GitVcsDriver["Service"]["settleIndexRefresh"];
     readonly deleteLocalBranch: (
       input: GitVcsDriver.GitDeleteLocalBranchInput,
     ) => Effect.Effect<void, GitCommandError>;
@@ -708,6 +709,7 @@ export const make = Effect.gen(function* () {
         Effect.andThen(git.pruneWorktrees(input)),
       );
     }),
+    settleIndexRefresh: git.settleIndexRefresh,
     deleteLocalBranch: Effect.fn("GitWorkflowService.deleteLocalBranch")(function (input) {
       return ensureGitCommand("GitWorkflowService.deleteLocalBranch", input.cwd).pipe(
         Effect.andThen(git.deleteLocalBranch(input)),
