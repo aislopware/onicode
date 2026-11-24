@@ -35,6 +35,10 @@ describe("issuesSearchFromUrl", () => {
       ["env", "3"],
     ]);
   });
+
+  it("cuts a long search before an emoji the limit would split", () => {
+    expect(issuesSearchFromUrl({ q: `${"a".repeat(199)}😀 rest` }).q).toBe("a".repeat(199));
+  });
 });
 
 describe("issueListTargets", () => {

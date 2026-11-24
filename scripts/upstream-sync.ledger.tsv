@@ -3759,3 +3759,4 @@ e9b227b021	take	taken as is
 2911f58ae3	take	taken; test reindented into Onicode's skipIf block
 fdce61c022	take	taken as is
 b2d51f35bb	take	repeat guard placed after Onicode's defaultPrevented Esc guard, so prevented keys keep propagating; upstream's Clerk branch stays out
+cb207e9f60	take	surrogate guard put in Onicode's bounded(), its uncapped text() for ids and keys stays; scenario ported
