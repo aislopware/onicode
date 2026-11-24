@@ -3583,3 +3583,4 @@ c5918e5d24	take	taken as is
 d244be81ba	take	taken as is
 258945f42f	skip	kept Onicode's single mcp__onicode__ Pi registration: the commit only lightens upstream's hidden mcp__t3_code__ alias tools, which Onicode dropped in 829d4cf43a (see 34a7ab3641)
 b34d8b5bd5	take	fix(opencode): model list picks up config edits made while OpenCode's server was stopped (#41813)
+7e6a871a00	take	fix(web): Lineage panel shows elapsed time for subagents on linked machines (#41798); AgentElapsed takes the parent environment for Onicode's server clock
