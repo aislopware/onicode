@@ -744,11 +744,20 @@ it.effect.each(
       served: false,
     },
     { platform: "darwin", client: "unlisted", host: "127.0.0.1", end: "127.0.0.1", served: false },
+    // No row and no user id to compare must not match each other.
+    {
+      platform: "darwin",
+      client: "unlisted",
+      host: "127.0.0.1",
+      end: "127.0.0.1",
+      served: false,
+      unknownUser: true,
+    },
     { platform: "win32", client: "unlisted", host: "127.0.0.1", end: "127.0.0.1", served: true },
   ].filter(({ host }) => !host.includes(":") || hasIpv6Loopback),
 )(
   "on $platform serves a forward's $client client on $host: $served",
-  ({ platform, client, host, end, served }) =>
+  ({ platform, client, host, end, served, unknownUser }) =>
     Effect.gen(function* () {
       const endpoint = yield* listenEndpoint();
       const commands: Array<string> = [];
@@ -767,7 +776,10 @@ it.effect.each(
         `ws://127.0.0.1:${addressPort(endpoint.server)}/api/preview/tunnel`,
         Layer.mergeAll(
           Layer.succeed(HostProcess.Platform, platform as NodeJS.Platform),
-          Layer.succeed(HostProcess.UserId, platform === "win32" ? undefined : ownUserId),
+          Layer.succeed(
+            HostProcess.UserId,
+            platform === "win32" || unknownUser === true ? undefined : ownUserId,
+          ),
           systemTools((command, args) => {
             commands.push(command);
             return command === "/usr/sbin/lsof" ? lsof(args) : "";

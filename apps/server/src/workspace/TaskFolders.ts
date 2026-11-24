@@ -1583,7 +1583,9 @@ const make = Effect.gen(function* () {
       });
     } else if (!(yield* exists(taskFolder.projectPath))) {
       const blocked =
-        layout === null ? yield* blockedOnTheWay(taskFolder.root, taskFolder.projectPath) : null;
+        layout === null || !projectCommands
+          ? yield* blockedOnTheWay(taskFolder.root, taskFolder.projectPath)
+          : null;
       if (blocked !== null) {
         return yield* new TaskFolderError({
           operation: "create",
