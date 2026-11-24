@@ -102,7 +102,9 @@ it.effect.each([
           ThreadCommandExecutor.layer,
           IdAllocator.layer,
           layerNoTaskFolders,
-          Layer.mock(GitWorkflowService.GitWorkflowService)({}),
+          Layer.mock(GitWorkflowService.GitWorkflowService)({
+            settleIndexRefresh: () => Effect.void,
+          }),
           Layer.mock(ProjectStore.ProjectStoreV2)({
             get: () => Effect.succeedSome({ workspaceRoot: parent } as never),
           }),

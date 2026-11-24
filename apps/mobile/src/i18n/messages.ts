@@ -38,12 +38,14 @@ export const m = ((message, variables) =>
   typeof message === "string" ? resolve(message, variables) : message) as MessageResolver;
 
 /**
- * A `msg()` string's ICU pattern in the current UI language, its variables unfilled. For native
- * code that fills them in while JS is not running.
+ * A `msg()` string's ICU pattern in the current UI language, its variables unfilled, or blank when
+ * untranslated. For native code that fills them in while JS is not running: it keeps the English,
+ * which takes English plural rules.
  */
 export function messageTemplate(message: string): string {
   const { source, target } = lookup(message, {});
-  return typeof target === "string" ? target : source;
+  if (typeof target === "string") return target;
+  return activeLocale === DEFAULT_LOCALE ? source : "";
 }
 
 /**

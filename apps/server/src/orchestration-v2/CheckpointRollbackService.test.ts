@@ -63,7 +63,7 @@ const layerCheckpointRollbackService = CheckpointRollbackService.layer.pipe(
       layerNoTaskFolders,
       Layer.mock(ServerConfig.ServerConfig)({ worktreesDir: "/synthetic-worktrees" } as never),
       ServerSettings.layerTest(),
-      Layer.mock(GitWorkflow.GitWorkflowService)({}),
+      Layer.mock(GitWorkflow.GitWorkflowService)({ settleIndexRefresh: () => Effect.void }),
       Layer.mock(ProjectStore.ProjectStoreV2)({ get: () => Effect.succeed(unrelatedProject) }),
     ),
   ),
@@ -517,7 +517,7 @@ it.effect.each([
                   restore: () => Effect.void,
                 })
               : layerNoTaskFolders,
-            Layer.mock(GitWorkflow.GitWorkflowService)({}),
+            Layer.mock(GitWorkflow.GitWorkflowService)({ settleIndexRefresh: () => Effect.void }),
             Layer.mock(CheckpointService.CheckpointServiceV2)({
               discardRepositorySnapshots: () => Effect.void,
               repositoryScopesIfReadable: () =>

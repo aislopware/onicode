@@ -88,7 +88,52 @@ const layerFor = (state: State, options: Options) => {
     Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "oni-rewind-" })),
     Layer.provide(layerNode),
   );
-  const layerGit = GitVcsDriver.layer.pipe(
+  // Holds every new checkout's index locked until its background refresh is settled.
+  const layerGit = Layer.effect(
+    GitVcsDriver.GitVcsDriver,
+    Effect.gen(function* () {
+      const git = yield* GitVcsDriver.GitVcsDriver;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const indexLock = (cwd: string) =>
+        git
+          .execute({
+            operation: "rewind-test",
+            cwd,
+            args: ["rev-parse", "--git-path", "index.lock"],
+          })
+          .pipe(Effect.map((result) => path.resolve(cwd, result.stdout.trim())));
+      return {
+        ...git,
+        createWorktree: (...args: Parameters<typeof git.createWorktree>) =>
+          git.createWorktree(...args).pipe(
+            Effect.tap(({ worktree }) =>
+              // The real refresh swaps its own lock in, so it ends first.
+              git.settleIndexRefresh(worktree.path).pipe(
+                Effect.andThen(indexLock(worktree.path)),
+                Effect.flatMap((lock) => fileSystem.writeFileString(lock, "refresh")),
+                Effect.orDie,
+              ),
+            ),
+          ),
+        settleIndexRefresh: (cwd: string) =>
+          indexLock(cwd).pipe(
+            Effect.flatMap((lock) =>
+              // A test's own lock stays.
+              fileSystem
+                .readFileString(lock)
+                .pipe(
+                  Effect.flatMap((held) =>
+                    held === "refresh" ? fileSystem.remove(lock) : Effect.void,
+                  ),
+                ),
+            ),
+            Effect.ignore,
+          ),
+      };
+    }),
+  ).pipe(
+    Layer.provide(GitVcsDriver.layer),
     Layer.provideMerge(layerConfig),
     Layer.provideMerge(layerNode),
   );
@@ -138,34 +183,10 @@ const layerFor = (state: State, options: Options) => {
   const layerWorkflow = Layer.unwrap(
     Effect.gen(function* () {
       const git = yield* GitVcsDriver.GitVcsDriver;
-      const fileSystem = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const indexLock = (cwd: string) =>
-        git
-          .execute({
-            operation: "rewind-test",
-            cwd,
-            args: ["rev-parse", "--git-path", "index.lock"],
-          })
-          .pipe(Effect.map((result) => path.resolve(cwd, result.stdout.trim())));
       return Layer.mock(GitWorkflow.GitWorkflowService)({
-        // Holds the new checkout's index locked until its background refresh is settled.
-        createWorktree: (input) =>
-          git.createWorktree(input).pipe(
-            Effect.tap(({ worktree }) =>
-              indexLock(worktree.path).pipe(
-                Effect.flatMap((lock) => fileSystem.writeFileString(lock, "")),
-                Effect.orDie,
-              ),
-            ),
-          ),
+        createWorktree: git.createWorktree,
         pruneWorktrees: git.pruneWorktrees,
-        settleIndexRefresh: (worktreePath) =>
-          git.settleIndexRefresh(worktreePath).pipe(
-            Effect.andThen(indexLock(worktreePath)),
-            Effect.flatMap((lock) => fileSystem.remove(lock)),
-            Effect.orDie,
-          ),
+        settleIndexRefresh: git.settleIndexRefresh,
       });
     }),
   ).pipe(Layer.provide(layerGit));
