@@ -3732,3 +3732,4 @@ a1ed691d8a	take	perf(server): terminals running a steady command stop polling th
 fc92aefd26	take	adopted upstream's acquireUseRelease over Onicode's onError + timeout closeCard: recording the pending card becomes uninterruptible, so an abort right after it opens still closes it; same behavior otherwise
 00070b8031	skip	kept Onicode's writeProjectSettings (beforeCommit): already saves create/update actions to the Settings overrides, plus model, env mode and auto-pull; it writes before the commit so a refused settings write commits nothing and its retry writes again, where upstream's onCommitted would leave a committed command with unsaved actions that a replayed retry never saves; covered by 'project defaults reach new threads…' and 'a refused settings write commits nothing…'
 9bce8843de	take	taken as is
+4f1dc5db12	take	taken as is
