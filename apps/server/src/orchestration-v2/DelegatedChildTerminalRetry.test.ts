@@ -17,6 +17,7 @@ import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
+import * as Metric from "effect/Metric";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
@@ -608,6 +609,21 @@ it.effect("stopping a delegated child with a queued message does not report the 
   }),
 );
 
+const delegatedCompletionsCounted = Metric.snapshot.pipe(
+  Effect.map((snapshots) =>
+    snapshots.reduce(
+      (total, snapshot) =>
+        snapshot.id === "oni_runs_total" &&
+        snapshot.type === "Counter" &&
+        snapshot.attributes?.["delegated"] === "true" &&
+        snapshot.attributes["outcome"] === "completed"
+          ? total + Number(snapshot.state.count)
+          : total,
+      0,
+    ),
+  ),
+);
+
 it.effect.each(["lands", "gives up", "gives up after a restart"] as const)(
   "a delegated child's task stays open until its turn-end capture %s",
   (capture) =>
@@ -675,8 +691,10 @@ it.effect.each(["lands", "gives up", "gives up after a restart"] as const)(
             if (Option.isSome(claimed) && claimed.value.id === effectId) break;
             yield* outbox.succeed({ effectId: Option.getOrThrow(claimed).id, workerId });
           }
+          const countedBefore = yield* delegatedCompletionsCounted;
           yield* outbox.fail({ effectId, workerId, error: "disk full" });
           yield* Fiber.join(taskEnded);
+          assert.equal((yield* delegatedCompletionsCounted) - countedBefore, 1);
           return;
         }
         yield* settle;

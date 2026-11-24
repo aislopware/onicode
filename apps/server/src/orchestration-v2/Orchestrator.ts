@@ -649,6 +649,20 @@ function wakeWorkStartedAt(
   return previous === undefined ? {} : { workStartedAt: orchestrationV2RunWorkStartedAt(previous) };
 }
 
+/** Undefined when no agent is named: two such messages may come from different agents. */
+function agentSenderKey(
+  message: Pick<
+    OrchestrationV2ConversationMessage,
+    "createdBy" | "senderThreadId" | "linkedSender"
+  >,
+): string | undefined {
+  if (message.createdBy !== "agent") return undefined;
+  if (message.senderThreadId !== undefined) return `thread:${message.senderThreadId}`;
+  return message.linkedSender === undefined
+    ? undefined
+    : `linked:${message.linkedSender.environmentId}:${message.linkedSender.threadId}`;
+}
+
 const threadPullRequestLinksEqual = Schema.toEquivalence(Schema.NullOr(ThreadLinkedPullRequest));
 
 /** Unfinished runs (including queued) or open requests block moving a thread to another project. */
@@ -6679,6 +6693,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ),
       );
 
+    const sourceTitle = sourceProjection.thread.title;
+    const targetTitle = targetProjection.thread.title;
     if (
       sourceProjection.thread.lineage.relationshipToParent !== "fork" ||
       sourceProjection.thread.lineage.parentThreadId !== command.targetThreadId
@@ -6686,21 +6702,21 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       return yield* new OrchestratorDispatchError({
         commandId: command.commandId,
         commandType: command.type,
-        cause: `Thread ${command.sourceThreadId} is not a fork of ${command.targetThreadId}.`,
+        cause: `Thread "${sourceTitle}" is not a fork of "${targetTitle}".`,
       });
     }
     if (sourceProjection.thread.deletedAt !== null) {
       return yield* new OrchestratorDispatchError({
         commandId: command.commandId,
         commandType: command.type,
-        cause: `Thread ${command.sourceThreadId} was deleted.`,
+        cause: `Thread "${sourceTitle}" was deleted.`,
       });
     }
     if (targetProjection.thread.deletedAt !== null || targetProjection.thread.archivedAt !== null) {
       return yield* new OrchestratorDispatchError({
         commandId: command.commandId,
         commandType: command.type,
-        cause: `Thread ${command.targetThreadId} is archived or deleted.`,
+        cause: `Thread "${targetTitle}" is archived or deleted.`,
       });
     }
     // Queued runs cannot consume merge-back context. Refuse under the target's
@@ -6724,7 +6740,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       return yield* new OrchestratorDispatchError({
         commandId: command.commandId,
         commandType: command.type,
-        cause: `Thread ${command.targetThreadId} already has pending context from another side chat or fork. Send a message there first.`,
+        cause: `Thread "${targetTitle}" already has pending context from another side chat or fork. Send a message there first.`,
       });
     }
 
@@ -6754,7 +6770,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       return yield* new OrchestratorDispatchError({
         commandId: command.commandId,
         commandType: command.type,
-        cause: `No fork transfer exists between ${command.targetThreadId} and ${command.sourceThreadId}.`,
+        cause: `No fork transfer exists between "${targetTitle}" and "${sourceTitle}".`,
       });
     }
 
@@ -8208,9 +8224,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     }
     // An agent's automatic send must not overtake its own earlier message still queued
     // (e.g. behind /compact), or the agent receives them out of send order.
+    const senderKey = agentSenderKey(command);
     if (
       command.deliveryIntent === "auto" &&
-      command.createdBy === "agent" &&
+      senderKey !== undefined &&
       (dispatchMode.type === "steer_active" || dispatchMode.type === "restart_active")
     ) {
       const missing = new Set(
@@ -8223,7 +8240,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       if (missing.size > 0) {
         for (const message of projection.messages) {
           if (!missing.delete(message.id)) continue;
-          if (message.createdBy === "agent" && message.senderThreadId === command.senderThreadId) {
+          if (agentSenderKey(message) === senderKey) {
             agentQueued = true;
             break;
           }
@@ -8233,10 +8250,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         const read = yield* projectionStore
           .getMessagesById(command.threadId, [...missing])
           .pipe(mapDispatchError(command));
-        agentQueued = [...read.values()].some(
-          (message) =>
-            message.createdBy === "agent" && message.senderThreadId === command.senderThreadId,
-        );
+        agentQueued = [...read.values()].some((message) => agentSenderKey(message) === senderKey);
       }
       if (agentQueued) {
         dispatchMode = { type: "queue_after_active" };
@@ -17915,6 +17929,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     Effect.fn("Orchestrator.handleRunUpdate")(
       function* (threadId: ThreadId, run: OrchestrationV2Run) {
         const captureAwaited = yield* awaitsCheckpointCapture(run);
+        if (run.status === "completed" && run.checkpointId === null && !captureAwaited) {
+          yield* eventSink.recordRunOutcome(run);
+        }
         // Take parent and child locks sequentially, never nested: delegation holds the parent
         // while writing child events, so nesting parent inside child would invert the order.
         // The keyed semaphores are neither reentrant nor deadlock-aware.

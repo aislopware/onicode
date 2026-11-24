@@ -50,6 +50,9 @@ class FakeLauncherProcess {
   }
 }
 
+// Windows has neither /bin/sh nor the execute bit a PATH search checks.
+const posixHost = HostProcess.Platform.defaultValue() !== "win32";
+
 const makeClient = (host: FakeLauncherProcess, currentVersion: string) =>
   ServiceLauncherClient.make({ currentVersion }).pipe(
     Effect.provideService(ServiceLauncherClient.ServiceLauncherHostProcess, host),
@@ -70,10 +73,14 @@ it.effect.each([3, SERVICE_LAUNCHER_PROTOCOL])(
       const installed = path.join(root, ".local/bin/onicode");
       for (const file of [exe("1.0.0"), exe("1.1.0")]) {
         yield* fs.makeDirectory(path.dirname(file), { recursive: true });
-        yield* fs.writeFileString(file, "");
+        yield* fs.writeFileString(file, "", { mode: 0o755 });
       }
-      yield* fs.makeDirectory(path.dirname(installed), { recursive: true });
-      yield* fs.symlink(exe("1.0.0"), installed);
+      const cwd = path.join(root, "work");
+      const inCwd = path.join(cwd, "onicode");
+      for (const link of [installed, inCwd]) {
+        yield* fs.makeDirectory(path.dirname(link), { recursive: true });
+        yield* fs.symlink(exe("1.0.0"), link);
+      }
 
       const pending = {
         id: "update-1",
@@ -102,7 +109,7 @@ it.effect.each([3, SERVICE_LAUNCHER_PROTOCOL])(
         ].join("\n"),
       );
       yield* fs.chmod(path.join(bin, "systemctl"), 0o755);
-      host.env["PATH"] = `${bin}:/usr/bin:/bin`;
+      host.env["PATH"] = `${bin}:.:/usr/bin:/bin`;
       const sentPrepared = yield* Deferred.make<void>();
       const send = host.send;
       host.send = (message, callback) => {
@@ -111,6 +118,7 @@ it.effect.each([3, SERVICE_LAUNCHER_PROTOCOL])(
       };
       const client = yield* makeClient(host, "1.1.0").pipe(
         Effect.provideService(HostProcess.Platform, "linux"),
+        Effect.provideService(HostProcess.WorkingDirectory, cwd),
       );
       const prepared = yield* Effect.forkChild(client.prepareTrial({ baseDir }), {
         startImmediately: true,
@@ -118,7 +126,7 @@ it.effect.each([3, SERVICE_LAUNCHER_PROTOCOL])(
       yield* Deferred.await(sentPrepared);
       // Nothing runs systemctl after "prepared", so the log is what ran before it. Windows has no
       // /bin/sh to run the stub with.
-      if (HostProcess.Platform.defaultValue() !== "win32") {
+      if (posixHost) {
         expect(yield* fs.readFileString(calls)).toContain(
           "--user set-property --runtime -- -.slice ManagedOOMMemoryPressure=kill",
         );
@@ -135,6 +143,9 @@ it.effect.each([3, SERVICE_LAUNCHER_PROTOCOL])(
       host.emit({ type: "committed", updateId: committed.id });
       expect(yield* Fiber.join(prepared)).toEqual(committed);
       assert.equal(yield* fs.readFileString(installed), posixLauncherScript(exe("1.1.0")));
+      if (posixHost) {
+        assert.equal(yield* fs.readFileString(inCwd), posixLauncherScript(exe("1.1.0")));
+      }
 
       // A later start replays the stored outcome; user pins made since then stay put.
       yield* fs.remove(installed);
@@ -244,7 +255,7 @@ it.effect("ignores launcher context inherited without an IPC channel", () =>
 );
 
 it.layer(NodeServices.layer)("self-update launchers", (it) => {
-  it.effect(
+  it.effect.skipIf(!posixHost)(
     "updates custom install and PATH launchers, including versions older than fromVersion",
     () =>
       Effect.gen(function* () {
@@ -257,7 +268,7 @@ it.layer(NodeServices.layer)("self-update launchers", (it) => {
         const onPath = path.join(root, "bin/onicode");
         for (const file of [exe("1.0.0"), exe("1.5.0"), exe("2.0.0")]) {
           yield* fs.makeDirectory(path.dirname(file), { recursive: true });
-          yield* fs.writeFileString(file, "");
+          yield* fs.writeFileString(file, "", { mode: 0o755 });
         }
         yield* fs.makeDirectory(path.dirname(installed), { recursive: true });
         yield* fs.writeFileString(installed, posixLauncherScript(exe("1.5.0")), { mode: 0o755 });
@@ -278,58 +289,60 @@ it.layer(NodeServices.layer)("self-update launchers", (it) => {
       }).pipe(Effect.provideService(HostProcess.Platform, "linux")),
   );
 
-  it.effect("still moves the PATH launcher when the install bin one cannot be rewritten", () =>
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const root = yield* fs.makeTempDirectoryScoped({ prefix: "oni-update-" });
-      const baseDir = path.join(root, ".onicode");
-      const exe = (version: string) => path.join(baseDir, "runtime/versions", version, "onicode");
-      const installed = path.join(root, ".local/bin/onicode");
-      const onPath = path.join(root, "bin/onicode");
-      for (const file of [exe("1.0.0"), exe("2.0.0")]) {
-        yield* fs.makeDirectory(path.dirname(file), { recursive: true });
-        yield* fs.writeFileString(file, "");
-      }
-      for (const link of [installed, onPath]) {
-        yield* fs.makeDirectory(path.dirname(link), { recursive: true });
-        yield* fs.symlink(exe("1.0.0"), link);
-      }
-      const warnings: unknown[] = [];
-      const logger = Logger.make(({ logLevel, message }) => {
-        if (logLevel === "Warn") warnings.push(message);
-      });
-      const failingFs = FileSystem.FileSystem.of({
-        ...fs,
-        rename: (source, destination) =>
-          destination === installed
-            ? Effect.fail(
-                new PlatformError.PlatformError(
-                  new PlatformError.SystemError({
-                    _tag: "PermissionDenied",
-                    module: "FileSystem",
-                    method: "rename",
-                    pathOrDescriptor: destination,
-                  }),
-                ),
-              )
-            : fs.rename(source, destination),
-      });
+  it.effect.skipIf(!posixHost)(
+    "still moves the PATH launcher when the install bin one cannot be rewritten",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const root = yield* fs.makeTempDirectoryScoped({ prefix: "oni-update-" });
+        const baseDir = path.join(root, ".onicode");
+        const exe = (version: string) => path.join(baseDir, "runtime/versions", version, "onicode");
+        const installed = path.join(root, ".local/bin/onicode");
+        const onPath = path.join(root, "bin/onicode");
+        for (const file of [exe("1.0.0"), exe("2.0.0")]) {
+          yield* fs.makeDirectory(path.dirname(file), { recursive: true });
+          yield* fs.writeFileString(file, "", { mode: 0o755 });
+        }
+        for (const link of [installed, onPath]) {
+          yield* fs.makeDirectory(path.dirname(link), { recursive: true });
+          yield* fs.symlink(exe("1.0.0"), link);
+        }
+        const warnings: unknown[] = [];
+        const logger = Logger.make(({ logLevel, message }) => {
+          if (logLevel === "Warn") warnings.push(message);
+        });
+        const failingFs = FileSystem.FileSystem.of({
+          ...fs,
+          rename: (source, destination) =>
+            destination === installed
+              ? Effect.fail(
+                  new PlatformError.PlatformError(
+                    new PlatformError.SystemError({
+                      _tag: "PermissionDenied",
+                      module: "FileSystem",
+                      method: "rename",
+                      pathOrDescriptor: destination,
+                    }),
+                  ),
+                )
+              : fs.rename(source, destination),
+        });
 
-      yield* ServiceLauncherClient.repointLaunchers({ baseDir, targetVersion: "2.0.0" }).pipe(
-        Effect.provideService(HostProcess.Environment, {
-          HOME: root,
-          PATH: path.dirname(onPath),
-        }),
-        Effect.provideService(FileSystem.FileSystem, failingFs),
-        Effect.provide(Logger.layer([logger], { mergeWithExisting: false })),
-      );
+        yield* ServiceLauncherClient.repointLaunchers({ baseDir, targetVersion: "2.0.0" }).pipe(
+          Effect.provideService(HostProcess.Environment, {
+            HOME: root,
+            PATH: path.dirname(onPath),
+          }),
+          Effect.provideService(FileSystem.FileSystem, failingFs),
+          Effect.provide(Logger.layer([logger], { mergeWithExisting: false })),
+        );
 
-      assert.lengthOf(warnings, 1);
-      assert.include(JSON.stringify(warnings), installed);
-      assert.equal(yield* fs.readLink(installed), exe("1.0.0"));
-      assert.equal(yield* fs.readFileString(onPath), posixLauncherScript(exe("2.0.0")));
-    }).pipe(Effect.provideService(HostProcess.Platform, "linux")),
+        assert.lengthOf(warnings, 1);
+        assert.include(JSON.stringify(warnings), installed);
+        assert.equal(yield* fs.readLink(installed), exe("1.0.0"));
+        assert.equal(yield* fs.readFileString(onPath), posixLauncherScript(exe("2.0.0")));
+      }).pipe(Effect.provideService(HostProcess.Platform, "linux")),
   );
 
   it.effect("leaves unowned install files and PATH symlinks untouched after self-update", () =>
@@ -344,7 +357,7 @@ it.layer(NodeServices.layer)("self-update launchers", (it) => {
       const target = path.join(baseDir, "runtime/versions/2.0.0/onicode");
       for (const file of [installed, foreign, target]) {
         yield* fs.makeDirectory(path.dirname(file), { recursive: true });
-        yield* fs.writeFileString(file, "user-owned file");
+        yield* fs.writeFileString(file, "user-owned file", { mode: 0o755 });
       }
       yield* fs.makeDirectory(path.dirname(onPath), { recursive: true });
       yield* fs.symlink(foreign, onPath);
@@ -398,33 +411,58 @@ it.layer(NodeServices.layer)("self-update launchers", (it) => {
     }).pipe(Effect.provideService(HostProcess.Platform, "linux")),
   );
 
-  it.effect("passes over a working-directory onicode the shell cannot run", () =>
+  it.effect.each([
+    {
+      name: "past a directory in an empty entry",
+      cwd: "blocked",
+      searchPath: (root: string) => `:${root}/bin`,
+      moved: "bin",
+    },
+    {
+      name: "past a directory in an absolute entry",
+      cwd: "work",
+      searchPath: (root: string) => `${root}/blocked:${root}/bin`,
+      moved: "bin",
+    },
+    {
+      name: "past a file it cannot execute",
+      cwd: "work",
+      searchPath: (root: string) => `${root}/unrunnable:${root}/bin`,
+      moved: "bin",
+    },
+    { name: "in the . entry", cwd: "work", searchPath: () => ".", moved: "work" },
+    { name: "in a relative entry", cwd: ".", searchPath: () => "work", moved: "work" },
+    {
+      name: "through a symlinked directory",
+      cwd: "work",
+      searchPath: (root: string) => `${root}/linked`,
+      moved: "real/bin",
+    },
+  ])("moves the onicode the shell finds $name", ({ cwd, searchPath, moved }) =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const root = yield* fs.makeTempDirectoryScoped({ prefix: "oni-update-" });
       const baseDir = path.join(root, ".onicode");
       const exe = (version: string) => path.join(baseDir, "runtime/versions", version, "onicode");
-      const cwd = path.join(root, "work");
-      const onPath = path.join(root, "bin/onicode");
       for (const file of [exe("1.0.0"), exe("2.0.0")]) {
         yield* fs.makeDirectory(path.dirname(file), { recursive: true });
         yield* fs.writeFileString(file, "", { mode: 0o755 });
       }
-      // A directory named onicode in the working directory, which the shell skips.
-      yield* fs.makeDirectory(path.join(cwd, "onicode"), { recursive: true });
-      yield* fs.makeDirectory(path.dirname(onPath), { recursive: true });
-      yield* fs.symlink(exe("1.0.0"), onPath);
+      yield* fs.makeDirectory(path.join(root, "blocked/onicode"), { recursive: true });
+      yield* fs.makeDirectory(path.join(root, "unrunnable"));
+      yield* fs.writeFileString(path.join(root, "unrunnable/onicode"), "", { mode: 0o644 });
+      const launcher = path.join(root, moved, "onicode");
+      yield* fs.makeDirectory(path.dirname(launcher), { recursive: true });
+      yield* fs.symlink(path.relative(path.dirname(launcher), exe("1.0.0")), launcher);
+      yield* fs.symlink("real/bin", path.join(root, "linked"));
 
       yield* ServiceLauncherClient.repointLaunchers({ baseDir, targetVersion: "2.0.0" }).pipe(
-        Effect.provideService(HostProcess.Environment, {
-          HOME: root,
-          PATH: `:${path.dirname(onPath)}`,
-        }),
-        Effect.provideService(HostProcess.WorkingDirectory, cwd),
+        Effect.provideService(HostProcess.Environment, { HOME: root, PATH: searchPath(root) }),
+        Effect.provideService(HostProcess.WorkingDirectory, path.join(root, cwd)),
       );
 
-      assert.equal(yield* fs.readFileString(onPath), posixLauncherScript(exe("2.0.0")));
+      assert.equal(yield* fs.readFileString(launcher), posixLauncherScript(exe("2.0.0")));
     }).pipe(Effect.provideService(HostProcess.Platform, "linux")),
   );
 });

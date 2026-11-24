@@ -117,38 +117,48 @@ describe("generated title staleness", () => {
     {
       name: "the first run has not finished",
       generated: known,
-      shell: { latestRunCompletedAt: null },
+      completedAt: null,
       stale: false,
     },
-    { name: "only the first message was read", generated: known, shell: {}, stale: true },
     {
-      name: "the user wrote after the title was generated",
+      name: "only the first message was read",
+      generated: known,
+      completedAt: at(-MINUTE_MS),
+      stale: true,
+    },
+    {
+      name: "the thread was resumed after the title was generated",
       generated: { ...known, coveredAt: at(-6 * MINUTE_MS) },
-      shell: {},
+      completedAt: at(-MINUTE_MS),
       stale: true,
     },
     {
       name: "only an agent wake ran since the title was generated",
       generated: { ...known, coveredAt: at(-3 * MINUTE_MS) },
-      shell: {},
+      completedAt: at(-MINUTE_MS),
       stale: false,
     },
     {
       name: "a run finished while the subject is unknown",
       generated: { ...unknown, coveredAt: at(-3 * MINUTE_MS) },
-      shell: {},
+      completedAt: at(-MINUTE_MS),
       stale: true,
     },
     {
       name: "the subject stayed unknown through every allowed refresh",
       generated: { ...unknown, refinements: 3, coveredAt: at(-3 * MINUTE_MS) },
-      shell: {},
+      completedAt: at(-MINUTE_MS),
       stale: false,
     },
-  ])("reads the thread again when $name: $stale", ({ generated, shell, stale }) => {
+  ])("reads the thread again when $name: $stale", ({ generated, completedAt, stale }) => {
     const thread = threadWith({ generatedTitle: generated });
     if (!canRefreshGeneratedTitle(thread)) throw new Error("fixture must own its title");
-    expect(generatedTitleIsStale(thread, shellWith(shell))).toBe(stale);
+    expect(
+      generatedTitleIsStale(thread, {
+        latestRunCompletedAt: completedAt,
+        latestResumingMessageAt: at(-5 * MINUTE_MS),
+      }),
+    ).toBe(stale);
     expect(awaitsTitleSubject(thread)).toBe(generated.needsRefinement && generated.refinements < 3);
   });
 });
@@ -247,6 +257,14 @@ describe("ThreadTitleRefreshService", () => {
       afterQuiet: 0,
     },
     {
+      name: "a thread an agent resumed after the title was generated is refreshed",
+      event: settled,
+      generated: { ...known, coveredAt: at(-3 * MINUTE_MS) },
+      resumedAt: at(-2 * MINUTE_MS),
+      atOnce: 1,
+      afterQuiet: 1,
+    },
+    {
       name: "a title that already covers the thread is left alone",
       event: settled,
       generated: { ...known, coveredAt: at() },
@@ -275,6 +293,8 @@ describe("ThreadTitleRefreshService", () => {
         }),
         Layer.mock(ProjectionStore.ProjectionStoreV2)({
           getThread: () => Effect.sync(() => threadWith({ generatedTitle: generated })),
+          getLatestResumingMessageAt: () =>
+            Effect.succeed(scenario.resumedAt ?? at(-5 * MINUTE_MS)),
           getThreadShell: () =>
             Effect.succeed(
               shellWith(waited && scenario.activeAfterWait ? { activeRunId: runId } : {}),

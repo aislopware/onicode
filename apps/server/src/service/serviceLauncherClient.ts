@@ -13,6 +13,7 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
 import packageJson from "../../package.json" with { type: "json" };
 import {
+  launcherOwnsVersionsDir,
   pinnedRuntimePaths,
   pinnedRuntimeVersionsDir,
   readPosixLauncherTarget,
@@ -184,34 +185,20 @@ export const repointLaunchers = Effect.fn("service.service_launcher_client.repoi
     if (installBinDir !== undefined) candidates.add(path.join(installBinDir, "onicode"));
     const searchPath = environment["PATH"] ?? "";
     const cwd = yield* HostProcess.WorkingDirectory;
-    for (const directory of searchPath.split(":")) {
+    for (const directory of searchPath.length === 0 ? [] : searchPath.split(":")) {
       // Like the shell, an empty entry of a nonempty PATH is the working directory.
-      if (directory.length === 0 && searchPath.length === 0) continue;
-      const candidate = path.join(directory || cwd, "onicode");
-      if (directory.length === 0) {
-        // The shell passes over a working-directory entry it cannot run and keeps searching.
-        const info = yield* fs.stat(candidate).pipe(Effect.option);
-        if (Option.isNone(info) || info.value.type !== "File" || (info.value.mode & 0o111) === 0) {
-          continue;
-        }
-        candidates.add(candidate);
-        break;
+      const candidate = path.resolve(cwd, directory, "onicode");
+      // The shell passes over an entry it cannot run and keeps searching.
+      const info = yield* fs.stat(candidate).pipe(Effect.option);
+      if (Option.isNone(info) || info.value.type !== "File" || (info.value.mode & 0o111) === 0) {
+        continue;
       }
-      if (
-        yield* fs.exists(candidate).pipe(
-          Effect.catch((cause) =>
-            Effect.logWarning("Could not check the onicode command on PATH", {
-              launchedAs: candidate,
-              cause,
-            }).pipe(Effect.as(false)),
-          ),
-        )
-      ) {
-        candidates.add(candidate);
-        break;
-      }
+      candidates.add(candidate);
+      break;
     }
     const versionsDir = pinnedRuntimeVersionsDir(path, input.baseDir);
+    const realPath = (file: string) => fs.realPath(file).pipe(Effect.orElseSucceed(() => file));
+    const realVersionsDir = yield* realPath(versionsDir);
     const target = pinnedRuntimePaths(path, input.baseDir, input.targetVersion, platform);
     for (const launchedAs of candidates) {
       yield* Effect.scoped(
@@ -227,15 +214,14 @@ export const repointLaunchers = Effect.fn("service.service_launcher_client.repoi
           );
           // A legacy symlink, or the script install.sh and `onicode update` write.
           const current = Option.isSome(linkTarget)
-            ? path.resolve(path.dirname(launchedAs), linkTarget.value)
+            ? path.resolve(yield* realPath(path.dirname(launchedAs)), linkTarget.value)
             : yield* readPosixLauncherTarget(launchedAs);
           if (current === undefined) return;
-          const relative = path.relative(versionsDir, current);
+          // Only its directory is resolved: an alias that links to another launcher is not owned.
+          const real = path.join(yield* realPath(path.dirname(current)), path.basename(current));
           if (
-            relative.length === 0 ||
-            relative === ".." ||
-            relative.startsWith(`..${path.sep}`) ||
-            path.isAbsolute(relative)
+            !launcherOwnsVersionsDir(path, versionsDir, current) &&
+            !launcherOwnsVersionsDir(path, realVersionsDir, real)
           )
             return;
           yield* writePosixLauncher({
@@ -267,6 +253,7 @@ export const make = Effect.fn("service.service_launcher_client.make")(function* 
   const path = yield* Path.Path;
   const environment = yield* HostProcess.Environment;
   const platform = yield* HostProcess.Platform;
+  const cwd = yield* HostProcess.WorkingDirectory;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   // The launcher that commits a remote update is the old one; its reload after commit
   // keeps oomd's watch only if the policy is mirrored before it.
@@ -379,6 +366,7 @@ export const make = Effect.fn("service.service_launcher_client.make")(function* 
                     Effect.provideService(Path.Path, path),
                     Effect.provideService(HostProcess.Environment, environment),
                     Effect.provideService(HostProcess.Platform, platform),
+                    Effect.provideService(HostProcess.WorkingDirectory, cwd),
                     Effect.as({
                       id: pending.id,
                       fromVersion: pending.fromVersion,

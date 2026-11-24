@@ -38,9 +38,18 @@ export const make = Effect.gen(function* () {
     if (thread.generatedTitle == null) return false;
     if (!canRefreshGeneratedTitle(thread)) return true;
     const shell = yield* projections.getThreadShell(threadId);
-    if (shell === null || !generatedTitleIsStale(thread, shell)) return true;
+    if (shell === null) return true;
     // A known subject waits until the user has stopped, so the title does not move mid-work.
     if (moment === "run-ended" ? !awaitsTitleSubject(thread) : shell.activeRunId !== null) {
+      return true;
+    }
+    const latestResumingMessageAt = yield* projections.getLatestResumingMessageAt(threadId);
+    if (
+      !generatedTitleIsStale(thread, {
+        latestRunCompletedAt: shell.latestRunCompletedAt ?? null,
+        latestResumingMessageAt,
+      })
+    ) {
       return true;
     }
     const now = yield* DateTime.now;

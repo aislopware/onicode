@@ -270,6 +270,8 @@ export interface EventSinkV2Shape {
     /** Bound RPC subscribers; internal workers must not drop their subscription under load. */
     readonly bounded?: boolean;
   }) => Stream.Stream<OrchestrationV2StoredEvent, EventSinkV2Error>;
+  /** Counts a completed run whose turn-end capture is over without writing its outcome. */
+  readonly recordRunOutcome: (run: OrchestrationV2Run) => Effect.Effect<void>;
   readonly latestSequence: (input?: {
     readonly threadId?: ThreadId;
   }) => Effect.Effect<number, EventSinkV2Error>;
@@ -1347,6 +1349,7 @@ const layerBase: Layer.Layer<
               }),
           ),
         ),
+      recordRunOutcome: runOutcomes.recordFinal,
       latestSequence: (input) =>
         eventStore.latestSequence(input).pipe(
           Effect.mapError(

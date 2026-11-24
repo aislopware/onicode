@@ -411,6 +411,23 @@ const resumed = (
     return { runtime, thread };
   });
 
+const mcpSession = {
+  environmentId: EnvironmentId.make("environment:opencode2-adapter"),
+  threadId,
+  providerSessionId: "mcp:opencode2-adapter",
+  providerInstanceId: instanceId,
+  endpoint: "http://127.0.0.1:3773/mcp",
+  authorizationHeader: "Bearer thread-credential",
+  browserToolsAvailable: false,
+};
+
+/** Set after a turn's prompt, so the replay needs no MCP registration. */
+const captureToolResults = Effect.gen(function* () {
+  const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
+  yield* mcpSessions.set(mcpSession);
+  yield* mcpSessions.captureToolResults(threadId);
+});
+
 const requestOf = (runtime: ProviderAdapter.ProviderAdapterV2SessionRuntime) =>
   runtime.events.pipe(
     Stream.filter(
@@ -1547,6 +1564,7 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       yield* watch.attached;
       // The child's nested Onicode MCP results live under the root thread and outlive its turn.
       const childResult = { message: "Child note" };
+      yield* captureToolResults;
       yield* mcpSessions.recordToolResult(threadId, "send_to_user", childResult, {
         sentMessage: childResult.message,
       });
@@ -5352,23 +5370,16 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       yield* Effect.addFinalizer(() => mcpSessions.clear(threadId));
       const server = "onicode-thread_opencode2-adapter";
       const messages = ["First mid-turn note", "Second mid-turn note"];
-      yield* Effect.forEach(messages, (message) =>
-        mcpSessions.recordToolResult(
-          threadId,
-          "send_to_user",
-          { message },
-          { sentMessage: message },
-        ),
-      );
       const tool = {
         sessionID: SESSION,
         assistantMessageID: "msg_assistant",
         id: "call-execute-send",
       };
-      const { runtime, thread } = yield* resumed([
+      const gate = makeProviderReplayGate(["script"]);
+      const entries = [
         out("session.prompt", { sessionID: SESSION, text: "<any>" }),
         promptAccepted,
-        event("session.tool.input.started", { ...tool, name: "execute" }),
+        event("session.tool.input.started", { ...tool, name: "execute" }, "script"),
         event("session.tool.called", { ...tool, input: { code: "<script>" }, executed: true }),
         event(
           "session.tool.success",
@@ -5412,13 +5423,25 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
           2,
         ),
         event("session.execution.succeeded", { sessionID: SESSION }),
-      ]);
+      ];
+      const { runtime, thread } = yield* resumed(entries, { replayGate: gate });
       const events = yield* runtime.events.pipe(
         Stream.takeUntil((event) => event.type === "turn.terminal"),
         Stream.runCollect,
         Effect.forkScoped,
       );
       yield* runtime.startTurn(turnInput(thread));
+      yield* Effect.promise(() => gate.waitForReached("script"));
+      yield* captureToolResults;
+      yield* Effect.forEach(messages, (message) =>
+        mcpSessions.recordToolResult(
+          threadId,
+          "send_to_user",
+          { message },
+          { sentMessage: message },
+        ),
+      );
+      gate.release("script");
       const collected = Array.from(yield* Fiber.join(events));
       const shown = collected.flatMap((event) =>
         event.type === "turn_item.updated" && event.turnItem.type === "dynamic_tool"
@@ -5456,16 +5479,11 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       // Subagent sessions call the root thread's server, which records under the root thread.
       const server = "onicode-thread_opencode2-adapter";
       const message = "Subagent mid-turn note";
-      yield* mcpSessions.recordToolResult(
-        threadId,
-        "send_to_user",
-        { message },
-        { sentMessage: message },
-      );
       const script = toolOf(MIDDLE, "call-execute-child");
-      const { runtime, thread } = yield* resumed([
+      const gate = makeProviderReplayGate(["script"]);
+      const entries = [
         ...nestedLaunch.slice(0, 7),
-        event("session.execution.started", { sessionID: MIDDLE }),
+        event("session.execution.started", { sessionID: MIDDLE }, "script"),
         event("session.tool.input.started", { ...script, name: "execute" }),
         event("session.tool.called", { ...script, input: { code: "<script>" }, executed: true }),
         event(
@@ -5498,13 +5516,23 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
           executed: false,
         }),
         event("session.execution.succeeded", { sessionID: SESSION }),
-      ]);
+      ];
+      const { runtime, thread } = yield* resumed(entries, { replayGate: gate });
       const events = yield* runtime.events.pipe(
         Stream.takeUntil((event) => event.type === "turn.terminal"),
         Stream.runCollect,
         Effect.forkScoped,
       );
       yield* runtime.startTurn(withLineage(thread));
+      yield* Effect.promise(() => gate.waitForReached("script"));
+      yield* captureToolResults;
+      yield* mcpSessions.recordToolResult(
+        threadId,
+        "send_to_user",
+        { message },
+        { sentMessage: message },
+      );
+      gate.release("script");
       const collected = Array.from(yield* Fiber.join(events));
       const subagentEvent = collected.find(
         (event) => event.type === "subagent.updated" && event.subagent.childThreadId !== null,
@@ -5710,15 +5738,7 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
   it.effect("re-registers Onicode MCP each turn and drops its instructions when adding fails", () =>
     Effect.gen(function* () {
       const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
-      yield* mcpSessions.set({
-        environmentId: EnvironmentId.make("environment:opencode2-adapter"),
-        threadId,
-        providerSessionId: "mcp:opencode2-adapter",
-        providerInstanceId: instanceId,
-        endpoint: "http://127.0.0.1:3773/mcp",
-        authorizationHeader: "Bearer thread-credential",
-        browserToolsAvailable: false,
-      });
+      yield* mcpSessions.set(mcpSession);
       yield* Effect.addFinalizer(() => mcpSessions.clear(threadId));
       const server = "onicode-thread_opencode2-adapter";
       const add = out("mcp.add", {
@@ -5769,6 +5789,7 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
         yield* Fiber.join(started);
         assert.equal((yield* Fiber.join(terminal))?.status, "completed");
       }
+      assert.isDefined(yield* mcpSessions.toolResultEpoch(threadId));
     }),
   );
 

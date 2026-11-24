@@ -44,6 +44,7 @@ import * as McpInvocationContext from "./McpInvocationContext.ts";
 import * as McpToolAccess from "./McpToolAccess.ts";
 import * as McpToolExposure from "./McpToolExposure.ts";
 import { HTML_RENDER_TOOL_NAME } from "@onicode/shared/htmlRender";
+import { resolveOniMcpToolId } from "@onicode/shared/oniMcpToolPresentation";
 import { compactOniMcpToolOutput } from "@onicode/shared/toolOutput";
 import * as McpProviderSessions from "@onicode/provider-core/server/McpProviderSessions";
 import { MCP_TOOL_EXPOSURE_HEADER } from "@onicode/provider-core/server/mcpSession";
@@ -952,8 +953,9 @@ const withToolResultCapture = Effect.fn("McpHttpServer.withToolResultCapture")(f
     ...server,
     addTool: Effect.fn("McpServer.addTool")(function (options) {
       const toolName = options.tool.name;
-      // html_render tracks its own path/hash recovery with publish cleanup in HtmlRender.
-      if (toolName === HTML_RENDER_TOOL_NAME) {
+      // html_render tracks its own path/hash recovery with publish cleanup in HtmlRender, and
+      // adapters only take back the tools this resolves, which leaves out tool_search.
+      if (toolName === HTML_RENDER_TOOL_NAME || resolveOniMcpToolId(toolName) === null) {
         return server.addTool(options);
       }
       return server.addTool({
@@ -968,9 +970,11 @@ const withToolResultCapture = Effect.fn("McpHttpServer.withToolResultCapture")(f
             thread === undefined
               ? undefined
               : yield* mcpSessions.value.toolResultEpoch(thread.threadId);
+          if (thread === undefined || epoch === undefined) {
+            return yield* options.handle(payload);
+          }
           return yield* options.handle(payload).pipe(
             Effect.onExit((exit) => {
-              if (thread === undefined) return Effect.void;
               if (exit._tag === "Success" && exit.value instanceof McpSchema.InputRequired) {
                 return Effect.void;
               }

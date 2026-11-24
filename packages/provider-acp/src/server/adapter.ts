@@ -2249,13 +2249,12 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
       ? Effect.succeed(
           acpMcpContext(undefined, self, flavor.mcpOverHttp, flavor.deferMcpTools, callLauncher),
         )
-      : mcpSessions
-          .read(threadId)
-          .pipe(
-            Effect.map((session) =>
-              acpMcpContext(session, self, flavor.mcpOverHttp, flavor.deferMcpTools, callLauncher),
-            ),
-          );
+      : mcpSessions.captureToolResults(threadId).pipe(
+          Effect.andThen(mcpSessions.read(threadId)),
+          Effect.map((session) =>
+            acpMcpContext(session, self, flavor.mcpOverHttp, flavor.deferMcpTools, callLauncher),
+          ),
+        );
   const driver = flavor.driver;
   const continuationRequests = options.continuationRequests;
 

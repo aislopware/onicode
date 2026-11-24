@@ -3720,8 +3720,45 @@ it.effect("delivers agent messages queued behind /compact before a later one ste
   }),
 );
 
+const linkedSender = (environmentId: string, threadId: string) => ({
+  environmentId: EnvironmentId.make(environmentId),
+  threadId: ThreadId.make(threadId),
+  title: "Linked sender",
+});
+
 // regression: #41455 one sender's queued message holds back another sender's automatic steer
-it.effect("an agent's automatic send steers past another sender's queued message", () =>
+it.effect.each([
+  {
+    name: "steers past another thread's queued message",
+    first: { senderThreadId: ThreadId.make("thread:sender-a") },
+    urgent: { senderThreadId: ThreadId.make("thread:sender-c") },
+    delivered: ["urgent"],
+  },
+  {
+    name: "steers past another linked environment's queued message",
+    first: { linkedSender: linkedSender("environment:a", "thread:sender") },
+    urgent: { linkedSender: linkedSender("environment:b", "thread:sender") },
+    delivered: ["urgent"],
+  },
+  {
+    name: "steers past an unnamed agent's queued message",
+    first: {},
+    urgent: { linkedSender: linkedSender("environment:a", "thread:sender") },
+    delivered: ["urgent"],
+  },
+  {
+    name: "steers past a queued message when neither agent is named",
+    first: {},
+    urgent: {},
+    delivered: ["urgent"],
+  },
+  {
+    name: "waits behind its own linked thread's queued message",
+    first: { linkedSender: linkedSender("environment:a", "thread:sender") },
+    urgent: { linkedSender: linkedSender("environment:a", "thread:sender") },
+    delivered: [],
+  },
+])("an agent's automatic send $name", (testCase) =>
   Effect.gen(function* () {
     const { started, steered, layer, startFirstTurn } = yield* nextTurnSelectionHarness(
       "agent-steer-past-other-sender",
@@ -3743,7 +3780,7 @@ it.effect("an agent's automatic send steers past another sender's queued message
         dispatchMode: { type: "queue_after_active" },
         createdBy: "agent",
         creationSource: "mcp",
-        senderThreadId: ThreadId.make("thread:sender-a"),
+        ...testCase.first,
       });
       yield* worker.drain();
       yield* orchestrator.dispatch({
@@ -3757,14 +3794,14 @@ it.effect("an agent's automatic send steers past another sender's queued message
         deliveryIntent: "auto",
         createdBy: "agent",
         creationSource: "mcp",
-        senderThreadId: ThreadId.make("thread:sender-c"),
+        ...testCase.urgent,
       });
       yield* worker.drain();
 
       assert.lengthOf(started, 1);
       assert.deepEqual(
         steered.map((text) => text.split("\n").at(-1)),
-        ["urgent"],
+        testCase.delivered,
       );
     }).pipe(Effect.provide(layer));
   }),

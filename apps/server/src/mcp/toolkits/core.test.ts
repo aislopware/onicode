@@ -418,6 +418,14 @@ it.effect("captures send_to_user results for providers that drop MCP outputs", (
   Effect.gen(function* () {
     const server = yield* McpServer.McpServer;
     const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
+    yield* mcpSessions.set({
+      ...scope.thread!,
+      environmentId: scope.environmentId,
+      endpoint: "http://127.0.0.1/mcp",
+      authorizationHeader: "Bearer token",
+      browserToolsAvailable: false,
+    });
+    yield* mcpSessions.captureToolResults(threadId);
     const draft = "### Status\n\nAll checks passed.";
     const result = yield* server
       .callTool({ name: "send_to_user", arguments: { message: draft } })
@@ -444,9 +452,20 @@ it.effect("captures send_to_user results for providers that drop MCP outputs", (
     expect(yield* mcpSessions.takeToolResult(threadId, "send_to_user", { message: "" })).toEqual({
       isError: true,
     });
+
+    // No adapter looks tool_search up, so a kept failure would stay until the session ends.
+    const invalidSearch = yield* server
+      .callTool({ name: "tool_search", arguments: {} })
+      .pipe(
+        Effect.provideService(McpInvocationContext.McpInvocationContext, scope),
+        Effect.provideService(McpSchema.McpServerClient, client),
+        Effect.flip,
+      );
+    expect(invalidSearch).toMatchObject({ _tag: "InvalidParams" });
+    expect(yield* mcpSessions.takeToolResult(threadId, "tool_search", {})).toBe(undefined);
   }).pipe(
     Effect.provide(
-      McpHttpServer.layerMessageToolkit.pipe(
+      Layer.mergeAll(McpHttpServer.layerMessageToolkit, McpHttpServer.layerToolSearch).pipe(
         Layer.provideMerge(McpHttpServer.layerInProcessMcpServer),
         Layer.provideMerge(McpProviderSessions.layer),
         Layer.provide(McpToolAccessTestkit.liveThreadsLayer),

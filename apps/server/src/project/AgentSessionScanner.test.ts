@@ -1403,17 +1403,35 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
       }),
     );
 
-    it.effect("finds the cwd on a later line when the first records carry none", () =>
+    it.effect.each([
+      {
+        name: "on a later line when the first records carry none",
+        contents: (line: string) =>
+          `{"type":"file-history-snapshot","messageId":"m1"}\n{"type":"queue-operation","operation":"enqueue"}\n${line}`,
+      },
+      {
+        name: "past the cwd of a truncated record",
+        contents: (line: string) =>
+          `{"cwd":"/partial","msg":\n{"padding":"${"x".repeat(16 * 1024)}",${line.slice(1)}`,
+      },
+      {
+        name: "in the last of duplicate keys",
+        contents: (line: string) => `{"cwd":"/first",${line.slice(1)}`,
+      },
+      {
+        name: "past a record whose keys exceed the scan limit",
+        contents: (line: string) => `{"${"k".repeat(600 * 1024)}":1}\n${line}`,
+      },
+    ])("finds the cwd $name", ({ contents }) =>
       Effect.gen(function* () {
         const path = yield* Path.Path;
         const claudeHomePath = yield* makeTempDir("onicode-claude-home-");
         const codexHomePath = yield* makeTempDir("onicode-codex-home-");
         const workspace = yield* makeTempDir("onicode-workspace-");
 
-        const contents = `{"type":"file-history-snapshot","messageId":"m1"}\n{"type":"queue-operation","operation":"enqueue"}\n${claudeSessionLine(workspace)}`;
         yield* writeTranscript({
           filePath: path.join(claudeHomePath, "projects", "-slug", "a.jsonl"),
-          contents,
+          contents: contents(claudeSessionLine(workspace)),
           mtimeMs: Date.parse("2026-01-01T00:00:00.000Z"),
         });
 

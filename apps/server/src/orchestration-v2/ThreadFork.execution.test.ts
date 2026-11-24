@@ -1852,7 +1852,10 @@ it.effect("merge-back rejects a second fork's context until the first is consume
       "Send a message without /clear to apply the merged context first.",
     );
     const rejected = yield* mergeBack("merge-back-guard-second", second).pipe(Effect.flip);
-    assert.include(String(rejected.cause), "pending context from another side chat or fork");
+    assert.include(
+      String(rejected.cause),
+      'Thread "Side chat parent" already has pending context from another side chat or fork.',
+    );
     yield* mergeBack("merge-back-guard-first-again", first);
     // That pending merge-back targets the parent, so it does not block one into `first`.
     const nested = { threadId: ThreadId.make("merge-back-guard-nested") };
@@ -1914,6 +1917,10 @@ it.effect("merge-back rejects a second fork's context until the first is consume
     });
     const intoArchived = yield* mergeNestedInto("merge-back-guard-into-archived");
     assert.equal(intoArchived._tag, "OrchestratorDispatchError");
+    assert.include(
+      String(intoArchived.cause),
+      'Thread "Side chat parent fork" is archived or deleted.',
+    );
     yield* orchestrator.dispatch({
       type: "thread.delete",
       commandId: CommandId.make("merge-back-guard-delete-first"),
@@ -1921,6 +1928,10 @@ it.effect("merge-back rejects a second fork's context until the first is consume
     });
     const intoDeleted = yield* mergeNestedInto("merge-back-guard-into-deleted");
     assert.equal(intoDeleted._tag, "OrchestratorDispatchError");
+    assert.include(
+      String(intoDeleted.cause),
+      'Thread "Side chat parent fork" is archived or deleted.',
+    );
   }).pipe(Effect.provide(forkCases[0]!.layer)),
 );
 

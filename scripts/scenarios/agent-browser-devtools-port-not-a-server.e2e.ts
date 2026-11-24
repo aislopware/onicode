@@ -56,8 +56,9 @@ test(
     try {
       await runPromise(
         Effect.all([
-          listen(thread.threadId, `${serverPort}`),
+          // First, so any scan that lists the server has also seen the DevTools port.
           listen(thread.threadId, `--remote-debugging-port=${devToolsPort}`),
+          listen(thread.threadId, `${serverPort}`),
         ]).pipe(Scope.provide(scope)),
       );
       await browser.setViewport({ width: 1920, height: 1000 });

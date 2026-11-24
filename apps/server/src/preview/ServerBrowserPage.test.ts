@@ -1039,20 +1039,16 @@ describe("server browser evaluate", () => {
 });
 
 describe("server browser type", () => {
-  // As on a desktop tab whose Playwright utility world never answers.
-  const stalledPage = (focusAnswer: () => Promise<unknown>, typed: string[]) =>
-    ({
-      locator: () => ({ last: () => ({ count: () => new Promise<number>(() => {}) }) }),
-      evaluate: focusAnswer,
-      keyboard: { type: async (text: string) => void typed.push(text) },
-    }) as unknown as Page;
-
   it("types into the focused field when Playwright's utility world never answers", async () => {
     vi.useFakeTimers();
     try {
       const typed: string[] = [];
       let outcome: unknown = "pending";
-      const page = stalledPage(async () => true, typed);
+      const page = {
+        locator: () => ({ last: () => ({ count: () => new Promise<number>(() => {}) }) }),
+        evaluate: async () => true,
+        keyboard: { type: async (text: string) => void typed.push(text) },
+      } as unknown as Page;
       void ServerBrowserPage.type(page, { text: "hello", timeoutMs: 300 }).then(
         () => (outcome = "typed"),
         (error: unknown) => (outcome = error),
@@ -1064,47 +1060,73 @@ describe("server browser type", () => {
       vi.useRealTimers();
     }
   });
+});
 
-  it("stops at its timeout without typing when the page never answers", async () => {
+describe("server browser unanswered page", () => {
+  it.each([
+    {
+      name: "type into the focused field",
+      run: (page: Page) => ServerBrowserPage.type(page, { text: "hello", timeoutMs: 300 }),
+      timeoutMs: 300,
+      outcome: "no text was typed",
+    },
+    {
+      name: "type into a target",
+      run: (page: Page) =>
+        ServerBrowserPage.type(page, { locator: "#field", text: "hello", timeoutMs: 300 }),
+      timeoutMs: 300,
+      outcome: "no text was typed",
+    },
+    {
+      name: "type into a cleared target",
+      run: (page: Page) =>
+        ServerBrowserPage.type(page, {
+          locator: "#field",
+          text: "hello",
+          clear: true,
+          timeoutMs: 300,
+        }),
+      timeoutMs: 300,
+      outcome: "no text was typed",
+    },
+    {
+      name: "select",
+      run: (page: Page) =>
+        ServerBrowserPage.select(page, { locator: "#field", values: ["a"], timeoutMs: 300 }),
+      timeoutMs: 300,
+      outcome: "nothing was selected",
+    },
+    {
+      name: "scroll the page",
+      run: (page: Page) => ServerBrowserPage.scroll(page, { deltaY: 10 }),
+      timeoutMs: 15_000,
+      outcome: "it may not have scrolled",
+    },
+    {
+      name: "scroll a target",
+      run: (page: Page) => ServerBrowserPage.scroll(page, { locator: "#field", deltaY: 10 }),
+      timeoutMs: 15_000,
+      outcome: "it may not have scrolled",
+    },
+  ])("stops $name at its timeout", async ({ run, timeoutMs, outcome }) => {
     vi.useFakeTimers();
     try {
-      const typed: string[] = [];
-      let outcome: unknown = "pending";
-      const page = stalledPage(() => new Promise(() => {}), typed);
-      void ServerBrowserPage.type(page, { text: "hello", timeoutMs: 300 }).then(
-        () => (outcome = "typed"),
-        (error: unknown) => (outcome = error),
-      );
-      await vi.advanceTimersByTimeAsync(300);
-      expect(outcome).toMatchObject({
-        tag: "PreviewAutomationTimeoutError",
-        detail: { timeoutMs: 300 },
-      });
-      expect(typed).toEqual([]);
-
-      // A target whose element is found but whose page then stops answering.
-      const fill = vi.fn(async () => {});
-      const hung = {
-        locator: () => ({ evaluate: () => new Promise(() => {}), fill }),
-        keyboard: { type: async (text: string) => void typed.push(text) },
+      const acted = vi.fn(async () => {});
+      const unanswered = () => new Promise(() => {});
+      const page = {
+        locator: () => ({ evaluate: unanswered, fill: acted, selectOption: acted }),
+        evaluate: unanswered,
+        keyboard: { type: acted },
       } as unknown as Page;
-      void ServerBrowserPage.type(hung, {
-        locator: "#field",
-        text: "hello",
-        clear: true,
-        timeoutMs: 300,
-      }).then(
-        () => (outcome = "typed"),
-        (error: unknown) => (outcome = error),
-      );
-      outcome = "pending";
-      await vi.advanceTimersByTimeAsync(300);
-      expect(outcome).toMatchObject({
+      let failure: unknown;
+      void run(page).catch((error: unknown) => (failure = error));
+      await vi.advanceTimersByTimeAsync(timeoutMs);
+      expect(failure).toMatchObject({
         tag: "PreviewAutomationTimeoutError",
-        detail: { timeoutMs: 300 },
+        message: expect.stringContaining(outcome),
+        detail: { timeoutMs },
       });
-      expect(fill).not.toHaveBeenCalled();
-      expect(typed).toEqual([]);
+      expect(acted).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
     }

@@ -591,6 +591,10 @@ export interface ProjectionStoreV2Shape {
     limit: number,
   ) => Effect.Effect<number, ProjectionStoreV2Error>;
   readonly getSubagentCount: (threadId: ThreadId) => Effect.Effect<number, ProjectionStoreV2Error>;
+  /** As settlement reads it: a user or MCP agent message, not an automatic wake. */
+  readonly getLatestResumingMessageAt: (
+    threadId: ThreadId,
+  ) => Effect.Effect<DateTime.Utc | null, ProjectionStoreV2Error>;
   readonly getRunCount: (threadId: ThreadId) => Effect.Effect<number, ProjectionStoreV2Error>;
   /** Child threads of the thread's app-owned tasks, in task order, without decoding the tasks. */
   readonly listAppOwnedChildThreadIds: (
@@ -8460,6 +8464,33 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
         )
       )`;
     };
+    const isResumingMessage = (alias: string) => {
+      const payload = sql.literal(`${alias}.payload_json`);
+      return sql`(
+        ${sql.literal(`${alias}.role`)} = 'user'
+        AND NOT ${isIdleCompactionMessage(alias)}
+        AND (
+          json_extract(${payload}, '$.createdBy') = 'user'
+          OR (
+            json_extract(${payload}, '$.createdBy') = 'agent'
+            AND json_extract(${payload}, '$.creationSource') = 'mcp'
+          )
+        )
+      )`;
+    };
+    const getLatestResumingMessageAt: ProjectionStoreV2Shape["getLatestResumingMessageAt"] = (
+      threadId,
+    ) =>
+      sql<{ readonly updated_at: string }>`
+        SELECT message.updated_at
+        FROM orchestration_v2_projection_messages message
+        WHERE message.thread_id = ${threadId} AND ${isResumingMessage("message")}
+        ORDER BY message.updated_at DESC, message.message_id DESC
+        LIMIT 1
+      `.pipe(
+        Effect.map(([row]) => (row === undefined ? null : DateTime.makeUnsafe(row.updated_at))),
+        Effect.mapError(controlReadError(threadId)),
+      );
     // Mirrors isSilentRunForShell.
     const isSilentShellRun = (alias: string) => {
       const run = sql.literal(alias);
@@ -9001,15 +9032,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
               (
                 SELECT message.updated_at
                 FROM orchestration_v2_projection_messages message
-                WHERE message.thread_id = t.thread_id AND message.role = 'user'
-                  AND NOT ${isIdleCompactionMessage("message")}
-                  AND (
-                    json_extract(message.payload_json, '$.createdBy') = 'user'
-                    OR (
-                      json_extract(message.payload_json, '$.createdBy') = 'agent'
-                      AND json_extract(message.payload_json, '$.creationSource') = 'mcp'
-                    )
-                  )
+                WHERE message.thread_id = t.thread_id AND ${isResumingMessage("message")}
                 ORDER BY message.updated_at DESC, message.message_id DESC
                 LIMIT 1
               ) AS latest_resuming_message_at
@@ -10117,6 +10140,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       getMessageCount: readOnReader(getMessageCount),
       getTranscriptByteFloor: readOnReader(getTranscriptByteFloor),
       getSubagentCount: readOnReader(getSubagentCount),
+      getLatestResumingMessageAt: readOnReader(getLatestResumingMessageAt),
       getRunCount: readOnReader(getRunCount),
       listAppOwnedChildThreadIds: readOnReader(listAppOwnedChildThreadIds),
       hasPendingDelegatedCompletion: readOnReader(hasPendingDelegatedCompletion),

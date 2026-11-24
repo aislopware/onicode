@@ -406,6 +406,8 @@ it.effect("sql: the resuming message time counts MCP sends and ignores agent not
     assert.isDefined(candidate);
     assert.equal(DateTime.formatIso(candidate.latestUserMessageAt!), DateTime.formatIso(now));
     assert.equal(DateTime.formatIso(candidate.latestResumingMessageAt!), DateTime.formatIso(sent));
+    const resumedAt = yield* store.getLatestResumingMessageAt(threadId);
+    assert.equal(DateTime.formatIso(resumedAt!), DateTime.formatIso(sent));
     const shellThread = (yield* store.getShellSnapshot()).threads.find(
       (thread) => thread.id === threadId,
     );

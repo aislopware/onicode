@@ -45,7 +45,24 @@ export const makeRunOutcomeRecorder = <E>(
   isSubagentThread: (threadId: ThreadId) => Effect.Effect<boolean, E>,
 ) => {
   const counted = new Set<string>();
-  // Untraced: both run for every committed batch inside the EventSink operation's span.
+  const outcomeOf = (run: OrchestrationV2Run, delegated: boolean): RunOutcome => ({
+    runId: run.id,
+    attributes: metricAttributes({
+      provider: run.providerInstanceId,
+      modelFamily: normalizeModelMetricLabel(run.modelSelection.model),
+      outcome: run.status,
+      delegated,
+    }),
+    queueWait:
+      run.startedAt === null ? undefined : DateTime.distance(run.requestedAt, run.startedAt),
+    duration:
+      run.startedAt === null || run.completedAt === null
+        ? undefined
+        : DateTime.distance(run.startedAt, run.completedAt),
+  });
+  const isDelegatedThread = (threadId: ThreadId) =>
+    isSubagentThread(threadId).pipe(Effect.orElseSucceed(() => false));
+  // Untraced: these run for every committed batch or run reaction inside that operation's span.
   // Never reads or writes `counted`, so a transaction that rolls back reserves nothing.
   const prepare = Effect.fnUntraced(function* (events: ReadonlyArray<OrchestrationV2StoredEvent>) {
     const outcomes: Array<RunOutcome> = [];
@@ -57,26 +74,14 @@ export const makeRunOutcomeRecorder = <E>(
       if (event.type !== "run.updated") continue;
       const run = event.payload;
       if (!OUTCOMES.has(run.status)) continue;
+      // Its turn-end capture can still settle it as stopped; one that gives up is `recordFinal`.
+      if (run.status === "completed" && run.checkpointId === null) continue;
       let delegated = run.delegatedTaskId !== undefined || delegatedThreads.get(run.threadId);
       if (delegated === undefined) {
-        delegated = yield* isSubagentThread(run.threadId).pipe(Effect.orElseSucceed(() => false));
+        delegated = yield* isDelegatedThread(run.threadId);
         delegatedThreads.set(run.threadId, delegated);
       }
-      outcomes.push({
-        runId: run.id,
-        attributes: metricAttributes({
-          provider: run.providerInstanceId,
-          modelFamily: normalizeModelMetricLabel(run.modelSelection.model),
-          outcome: run.status,
-          delegated,
-        }),
-        queueWait:
-          run.startedAt === null ? undefined : DateTime.distance(run.requestedAt, run.startedAt),
-        duration:
-          run.startedAt === null || run.completedAt === null
-            ? undefined
-            : DateTime.distance(run.startedAt, run.completedAt),
-      });
+      outcomes.push(outcomeOf(run, delegated));
     }
     return outcomes;
   });
@@ -102,5 +107,10 @@ export const makeRunOutcomeRecorder = <E>(
       }
     }
   }, Effect.uninterruptible);
-  return { prepare, record };
+  /** Counts a run no later update settles. It reads, so never call it under the publish lane. */
+  const recordFinal = Effect.fnUntraced(function* (run: OrchestrationV2Run) {
+    const delegated = run.delegatedTaskId !== undefined || (yield* isDelegatedThread(run.threadId));
+    yield* record([outcomeOf(run, delegated)]);
+  });
+  return { prepare, record, recordFinal };
 };

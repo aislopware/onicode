@@ -4,6 +4,7 @@ import { assert, describe, it } from "@effect/vitest";
 import {
   ANTIGRAVITY_DEFAULT_MODEL,
   ChatFileAttachment,
+  EnvironmentId,
   MessageId,
   NodeId,
   ProjectId,
@@ -1187,7 +1188,7 @@ describe("AntigravityAdapterV2 html_render pages", () => {
         type RuntimeService = AcpSessionRuntime.AcpSessionRuntime["Service"];
         let sessionUpdate: Parameters<RuntimeService["handleSessionUpdate"]>[0] | undefined;
         let promptIndex = 0;
-        let turn1Epoch = 0;
+        let turn1Epoch: number | undefined;
         const instanceId = ProviderInstanceId.make("antigravity-mcp-result-test");
         const threadId = ThreadId.make("thread-antigravity-mcp-result");
         const statusUpdate = "### Current Status\n\nAll checks are passing.";
@@ -1399,6 +1400,15 @@ describe("AntigravityAdapterV2 html_render pages", () => {
           cwd: process.cwd(),
         });
         const modelSelection = { instanceId, model: "gemini-test-low" } as const;
+        yield* mcpSessions.set({
+          environmentId: EnvironmentId.make("environment-antigravity-mcp-result"),
+          threadId,
+          providerSessionId: "mcp-session-antigravity-mcp-result",
+          providerInstanceId: instanceId,
+          endpoint: "http://127.0.0.1:43123/mcp",
+          authorizationHeader: "Bearer test-token",
+          browserToolsAvailable: false,
+        });
         const session = yield* adapter.openSession({
           threadId,
           providerSessionId: ProviderSessionId.make("provider-session-antigravity-mcp-result"),
