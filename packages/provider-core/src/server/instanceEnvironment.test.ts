@@ -78,6 +78,15 @@ describe("mergeProviderInstanceEnvironment", () => {
     }),
   );
 
+  it.effect("keeps reading an AppImage host's variables, without the mount's paths", () =>
+    Effect.gen(function* () {
+      const host: NodeJS.ProcessEnv = { APPDIR: "/tmp/.mount_Onicod", PATH: "/bin" };
+      const environment = yield* mergeProviderInstanceEnvironment(undefined, host);
+      host.PATH = "/tmp/.mount_Onicod/usr/bin:/opt/bin:/bin";
+      expect({ ...environment }).toEqual({ PATH: "/opt/bin:/bin" });
+    }),
+  );
+
   it.effect("overrides inherited environment values and preserves empty strings", () =>
     Effect.gen(function* () {
       expect(
@@ -103,6 +112,51 @@ describe("mergeProviderInstanceEnvironment", () => {
         PATH: "/bin",
       });
     }),
+  );
+
+  const appDir = "/tmp/.mount_Onicod-XXXX";
+  const systemLibraryPath = "/home/ada/lib:/home/ada/.local/lib";
+  it.effect.each([
+    {
+      label: "without configured variables",
+      environment: undefined,
+      libraryPath: `${appDir}/usr/lib;${systemLibraryPath}`,
+      keptLibraryPath: systemLibraryPath,
+    },
+    {
+      label: "alongside configured variables",
+      environment: [{ name: "CUSTOM_VALUE", value: "set", sensitive: false }],
+      libraryPath: `${appDir}/usr/lib;${systemLibraryPath}`,
+      keptLibraryPath: systemLibraryPath,
+    },
+    {
+      label: "keeping a lone current-directory entry",
+      environment: undefined,
+      libraryPath: `${appDir}/usr/lib:`,
+      keptLibraryPath: ":",
+    },
+  ])(
+    "drops the AppImage runtime from the inherited environment $label",
+    ({ environment, libraryPath, keptLibraryPath }) =>
+      Effect.gen(function* () {
+        const merged = yield* mergeProviderInstanceEnvironment(environment, {
+          APPIMAGE: "/home/ada/Onicode.AppImage",
+          APPDIR: appDir,
+          ARGV0: "/home/ada/Onicode.AppImage",
+          OWD: "/home/ada",
+          PATH: `${appDir}:${appDir}/usr/sbin::/usr/bin`,
+          LD_LIBRARY_PATH: libraryPath,
+          XDG_DATA_DIRS: `${appDir}/usr/share/:/usr/share`,
+          GSETTINGS_SCHEMA_DIR: `${appDir}/usr/share/glib-2.0/schemas`,
+        });
+
+        expect({ ...merged }).toEqual({
+          PATH: ":/usr/bin",
+          LD_LIBRARY_PATH: keptLibraryPath,
+          XDG_DATA_DIRS: "/usr/share",
+          ...(environment ? { CUSTOM_VALUE: "set" } : {}),
+        });
+      }),
   );
 
   it.effect("replaces every inherited spelling of a name on Windows, and only there", () =>

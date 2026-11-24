@@ -12,6 +12,7 @@ import * as Path from "effect/Path";
 
 import * as CursorAgentSdk from "./CursorAgentSdk.ts";
 import * as CursorAgentSdkProcessRunner from "./CursorAgentSdkProcessRunner.ts";
+import { scrubCursorWorkerEnvironment } from "./CursorAgentSdkWorker.ts";
 import {
   deserializeRunResult,
   deserializeWorkerError,
@@ -241,6 +242,23 @@ describe("CursorAgentSdkWorkerProtocol", () => {
     const nullProto = Object.create(null) as Record<string, unknown>;
     const restoredNullProto = deserializeWorkerError(serializeWorkerError(nullProto));
     assert.equal(restoredNullProto.message, "[Unserializable error]");
+  });
+});
+
+describe("scrubCursorWorkerEnvironment", () => {
+  it("removes the AppImage runtime env the worker inherited before agent shells see it", () => {
+    const env: NodeJS.ProcessEnv = {
+      APPIMAGE: "/home/ada/Onicode.AppImage",
+      APPDIR: "/tmp/.mount_Onicode-test",
+      ARGV0: "Onicode.AppImage",
+      OWD: "/home/ada",
+      ELECTRON_RUN_AS_NODE: "1",
+      LD_LIBRARY_PATH: "/tmp/.mount_Onicode-test/usr/lib",
+      PATH: "/tmp/.mount_Onicode-test/usr/bin:/usr/bin",
+      CURSOR_API_KEY: "key",
+    };
+    scrubCursorWorkerEnvironment(env);
+    assert.deepStrictEqual(env, { PATH: "/usr/bin", CURSOR_API_KEY: "key" });
   });
 });
 

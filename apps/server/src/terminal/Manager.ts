@@ -43,6 +43,7 @@ import {
 import { makeKeyedCoalescingWorker } from "@onicode/shared/KeyedCoalescingWorker";
 import * as KeyedLock from "@onicode/shared/KeyedLock";
 import { AgentScope } from "@onicode/shared/AgentScope";
+import { stripAppImageRuntimeEnv } from "@onicode/shared/appImageRuntimeEnv";
 import * as HostProcess from "@onicode/shared/HostProcess";
 import { SpawnExecutableResolution, mergePathEntries } from "@onicode/shared/shell";
 
@@ -1647,46 +1648,6 @@ function shouldExcludeTerminalEnvKey(key: string): boolean {
     return true;
   }
   return TERMINAL_ENV_BLOCKLIST.has(normalizedKey);
-}
-
-const APPIMAGE_RUNTIME_ENV_KEYS = ["APPIMAGE", "APPDIR", "ARGV0", "OWD"] as const;
-const APPIMAGE_PATH_LIKE_ENV_KEYS = [
-  "PATH",
-  "LD_LIBRARY_PATH",
-  "XDG_DATA_DIRS",
-  "GSETTINGS_SCHEMA_DIR",
-] as const;
-
-function isPathSegmentUnderAppDir(segment: string, appDir: string): boolean {
-  return segment === appDir || segment.startsWith(`${appDir}/`);
-}
-
-// AppImage mount paths would make PTY tools resolve against the mount instead of the user's system.
-function stripAppImageRuntimeEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  if (env.APPIMAGE === undefined && env.APPDIR === undefined) return env;
-
-  const scrubbed: NodeJS.ProcessEnv = { ...env };
-  for (const key of APPIMAGE_RUNTIME_ENV_KEYS) {
-    delete scrubbed[key];
-  }
-
-  const appDir = env.APPDIR?.replace(/\/+$/, "");
-  if (appDir) {
-    for (const key of APPIMAGE_PATH_LIKE_ENV_KEYS) {
-      const value = scrubbed[key];
-      if (value === undefined) continue;
-      const kept = value
-        .split(":")
-        .filter((segment) => segment.length > 0 && !isPathSegmentUnderAppDir(segment, appDir));
-      if (kept.length > 0) {
-        scrubbed[key] = kept.join(":");
-      } else {
-        delete scrubbed[key];
-      }
-    }
-  }
-
-  return scrubbed;
 }
 
 function createTerminalSpawnEnv(
