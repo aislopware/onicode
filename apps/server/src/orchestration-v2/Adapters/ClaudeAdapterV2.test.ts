@@ -22420,9 +22420,13 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       );
       assert.equal(new Set(turnIds).size, 2);
       assert.equal(new Set(cards.map((card) => card.subagentId)).size, 2);
+      const nodes = harness.events.flatMap((event) =>
+        event.type === "node.updated" && event.node.kind === "subagent" ? [event.node] : [],
+      );
       assert.equal(cards.filter((card) => card.status === "completed").length, 2);
+      assert.equal(nodes.filter((node) => node.status === "completed").length, 2);
       assert.deepEqual(
-        [...new Set(cards.map((card) => card.providerTurnId))],
+        [...new Set([...cards, ...nodes].map((record) => record.providerTurnId))],
         [cards[0]?.providerTurnId],
       );
     }).pipe(
