@@ -3652,3 +3652,4 @@ b761bf8f8d	take	taken as is; worklet-only style change
 e6b4825800	take	conflict: kept Onicode's model/context-window tracking in the session-update handler and ran upstream's update_steps plan rewrite before it; test block appended beside Onicode's extra-roots tests
 ba37a1afa1	take	taken as is; mobile shows no done/total checks count
 0969306eda	skip	webhooks: Onicode has no scheduled-task webhook triggers (removed surface)
+ff6b10e0a0	take	conflicts: Claude phase reporting wired into Onicode's resolved-executable open and clearTurnWatch; Codex resume phase inside Onicode's resume-only deadline; ChatView keeps Onicode's split instanceId/driver props; ACP also reports resume for a runtime spawned for the session (Onicode's replacement path); startupPhaseThreadId is optional, so older mobile decodes it
