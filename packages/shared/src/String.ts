@@ -24,7 +24,9 @@ export function wordCutEnd(text: string, limit: number): number {
   while (end > 0 && !isWhitespace(text, end)) end--;
   while (end > 0 && isWhitespace(text, end - 1)) end--;
   if (end > limit / 2) return end;
-  return isHighSurrogate(text.charCodeAt(limit - 1)) ? limit - 1 : limit;
+  end = isHighSurrogate(text.charCodeAt(limit - 1)) ? limit - 1 : limit;
+  while (end > 1 && isWhitespace(text, end - 1)) end--;
+  return end;
 }
 
 /** Where to start the end of `text` kept within `limit` UTF-16 units; `wordCutEnd` mirrored. */
@@ -37,5 +39,7 @@ export function wordCutStart(text: string, limit: number): number {
   }
   while (start < text.length && isWhitespace(text, start)) start++;
   if (start < from + limit / 2) return start;
-  return isLowSurrogate(text.charCodeAt(from)) ? from + 1 : from;
+  start = isLowSurrogate(text.charCodeAt(from)) ? from + 1 : from;
+  while (start < text.length - 1 && isWhitespace(text, start)) start++;
+  return start;
 }

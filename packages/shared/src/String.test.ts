@@ -24,6 +24,7 @@ describe("wordCutEnd", () => {
     expect(wordCutEnd("hi", 10)).toBe(2);
     expect(wordCutEnd(`hello world   ${"x".repeat(20)}`, 13)).toBe(11);
     expect(wordCutEnd(`first line\n${"y".repeat(20)}`, 14)).toBe(10);
+    expect(wordCutEnd("hi 😀x", 4)).toBe(2);
   });
 });
 
@@ -33,6 +34,7 @@ describe("wordCutStart", () => {
     // Starting after "three" would keep only 4 of 9.
     expect(wordCutStart("one two three four", 9)).toBe(9);
     expect(wordCutStart("more   hello world", 12)).toBe(7);
+    expect(wordCutStart("x😀 hi", 4)).toBe(4);
     const text = `${"这个问题出现在解析器中。".repeat(5)} 末尾`;
     expect(wordCutStart(text, 20)).toBe(text.length - 20);
     expect(wordCutStart("😀".repeat(10), 9)).toBe(12);
