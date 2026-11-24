@@ -557,6 +557,7 @@ function SidebarUpdateControl() {
       <SidebarMenuItem className="ml-auto shrink-0">
         <SidebarUpdateCapsule
           run={run}
+          current={everything.machines}
           local={local}
           {...(run.localVersion === null && action === "install" && window.desktopBridge
             ? {

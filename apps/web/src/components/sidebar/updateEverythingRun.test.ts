@@ -8,7 +8,7 @@ import { environmentCatalog } from "~/connection/catalog";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { serverEnvironment } from "~/state/server";
 import type { ServerUpdateOutcome, ServerUpdateTarget } from "../ServerUpdateAction";
-import type { UpdateEverythingRun } from "./updateEverything.logic";
+import type { RestoredRetry, UpdateEverythingRun } from "./updateEverything.logic";
 import {
   retryFailedUpdateRunServers,
   setUpdateEverythingRun,
@@ -157,6 +157,89 @@ describe("retryFailedUpdateRunServers", () => {
     ).toEqual([
       { environmentId: "already-updated", result: "done", retryable: false },
       { environmentId: "behind", result: null, retryable: true },
+    ]);
+  });
+
+  it("retries a row restored after a relaunch with the target it is given", () => {
+    const environmentId = EnvironmentId.make("restored");
+    const currentId = EnvironmentId.make("restored-current");
+    // Rendered as current, but the server went back to the old version before the click.
+    const staleId = EnvironmentId.make("restored-stale");
+    using _config = vi.spyOn(serverEnvironment, "configValueAtom").mockImplementation((id) =>
+      Atom.make({
+        environment: { serverVersion: id === currentId ? "9.9.9" : "9.9.8" },
+      } as unknown as ServerConfig),
+    );
+    setUpdateEverythingRun(() => ({
+      localVersion: null,
+      phase: "servers",
+      restartAt: null,
+      machines: [
+        {
+          environmentId,
+          label: "restored",
+          updatesProviders: false,
+          server: null,
+          handedOffVersion: "9.9.9",
+          startedAt: 0,
+          result: "failed",
+          failure: "Not back after 32 minutes",
+          providerFailure: null,
+        },
+        {
+          environmentId: currentId,
+          label: "restored-current",
+          updatesProviders: false,
+          server: null,
+          handedOffVersion: "9.9.9",
+          startedAt: 0,
+          result: "failed",
+          failure: "Not back after 32 minutes",
+          providerFailure: null,
+        },
+        {
+          environmentId: staleId,
+          label: "restored-stale",
+          updatesProviders: false,
+          server: null,
+          handedOffVersion: "9.9.9",
+          startedAt: 0,
+          result: "failed",
+          failure: "Not back after 32 minutes",
+          providerFailure: null,
+        },
+      ],
+    }));
+    const target: ServerUpdateTarget = {
+      environmentId,
+      serverLabel: "restored",
+      selfUpdate: "boot-service",
+      targetVersion: "9.9.9",
+    };
+    const update = vi.fn(
+      (_target: ServerUpdateTarget) => new Promise<ServerUpdateOutcome>(() => {}),
+    );
+
+    retryFailedUpdateRunServers(
+      update,
+      new Map<EnvironmentId, RestoredRetry>([
+        [environmentId, target],
+        [currentId, "current"],
+        [staleId, "current"],
+      ]),
+    );
+
+    let run: UpdateEverythingRun | null = null;
+    setUpdateEverythingRun((current) => {
+      run = current;
+      return null;
+    });
+    expect(update.mock.calls.map(([called]) => called)).toEqual([target]);
+    // Downloading again, not "restarting" from the old handoff, and retryable if it fails again.
+    expect((run as UpdateEverythingRun | null)?.machines).toMatchObject([
+      { result: null, server: target, handedOffVersion: null },
+      { result: "done", failure: null },
+      { result: "failed", failure: "Not back after 32 minutes" },
     ]);
   });
 });
