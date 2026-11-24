@@ -1801,6 +1801,59 @@ layer("GitLabPullRequestCli.layer", (it) => {
     }),
   );
 
+  it.effect(
+    "pins a review without line comments to the merge request's sha, not its diff refs",
+    () =>
+      Effect.gen(function* () {
+        const mergeRequest = (fields: Record<string, unknown>) =>
+          Effect.succeed(
+            output(
+              JSON.stringify({
+                iid: 7,
+                title: "t",
+                web_url: "https://gitlab.com/acme/web/-/merge_requests/7",
+                source_branch: "feat",
+                target_branch: "main",
+                created_at: "2026-07-01T00:00:00Z",
+                updated_at: "2026-07-01T00:00:00Z",
+                ...fields,
+              }),
+            ),
+          );
+        const cli = yield* GitLabPullRequestCli.GitLabPullRequestCli;
+        const review = {
+          cwd: "/w",
+          repository: "acme/web",
+          number: 7,
+          verdict: "approve" as const,
+          body: "Looks right.",
+          expectedHeadSha: "head",
+          comments: [],
+        };
+
+        // An empty diff has no diff refs, and right after a push they still name the old head.
+        for (const diffRefs of [
+          null,
+          { base_sha: "base", head_sha: "older", start_sha: "start" },
+        ]) {
+          mockedExecute.mockReset();
+          mockedExecute.mockReturnValueOnce(mergeRequest({ sha: "head", diff_refs: diffRefs }));
+          mockedExecute.mockReturnValue(Effect.succeed(output("{}")));
+          yield* cli.submitReview(review);
+          expect(argsOfCall(0)[1]).not.toContain("include_diverged_commits_count");
+          expect(argsOfCall(1)[1]).toContain("/notes");
+          expect(JSON.parse(callAt(2).stdin ?? "")).toEqual({ sha: "head" });
+        }
+
+        mockedExecute.mockReset();
+        mockedExecute.mockReturnValueOnce(mergeRequest({ sha: "moved", diff_refs: null }));
+        mockedExecute.mockReturnValue(Effect.succeed(output("{}")));
+        const error = yield* cli.submitReview(review).pipe(Effect.flip);
+        expect(error.message).toContain("the head is now moved, not head");
+        expect(mockedExecute).toHaveBeenCalledTimes(1);
+      }),
+  );
+
   it.effect("sends a review as its comments, then its summary, then the verdict", () =>
     Effect.gen(function* () {
       mockedExecute.mockReturnValueOnce(
