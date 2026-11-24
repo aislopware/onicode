@@ -396,6 +396,16 @@ describe("question answer paths", () => {
       "あ你안你✓Пé",
     ],
     [
+      "default font charset resets earlier charset",
+      String.raw`{\rtf1\ansi\ansicpg1252{\fonttbl{\f0\fcharset128\fcharset1 Default;}}\f0\'e9}`,
+      "é",
+    ],
+    [
+      "default font charset keeps font code page",
+      String.raw`{\rtf1\ansi\ansicpg1252{\fonttbl{\f0\cpg65001\fcharset1 Noto;}}\f0\'e2\'9c\'93}`,
+      "✓",
+    ],
+    [
       "multibyte unicode fallbacks",
       String.raw`{\rtf1\ansi\ansicpg936\uc2\u20320\'c4\'e3\'ba\'c3}`,
       "你好",
@@ -408,8 +418,8 @@ describe("question answer paths", () => {
     ],
     [
       "font system-default code page",
-      String.raw`{\rtf1\ansi{\fonttbl{\f0\fcharset204\cpg0 A;}}\f0 \'cf\'f0\'e8}`,
-      "При",
+      String.raw`{\rtf1\ansi{\fonttbl{\f0\fcharset204\cpg0 A;}{\f1\fcharset204\cpg1252\cpg0 B;}}\f0 \'cf\'f0\'e8\f1\'e2\'e5\'f2}`,
+      "Привет",
     ],
     [
       "ANSI font under another code page",

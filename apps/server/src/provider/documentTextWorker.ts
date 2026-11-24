@@ -678,13 +678,19 @@ function* rtf(source: string): Generator<string, void> {
             fontCharsets.delete(value);
           }
         } else if (control === "fcharset" && state.fontTable) {
-          // An unknown \fcharset keeps the document's code page.
-          const charsetPage = FONT_CODE_PAGES.get(value);
-          const label = charsetPage === undefined ? undefined : codePage(charsetPage);
-          if (label) fontCharsets.set(state.font, new TextDecoder(label));
-        } else if (control === "cpg" && state.fontTable && !state.fontFile && value !== 0) {
-          const label = codePage(value);
-          if (label) fontCodePages.set(state.font, new TextDecoder(label));
+          // \fcharset1 resets to the document code page; an unknown \fcharset keeps it unchanged.
+          if (value === 1) fontCharsets.delete(state.font);
+          else {
+            const charsetPage = FONT_CODE_PAGES.get(value);
+            const label = charsetPage === undefined ? undefined : codePage(charsetPage);
+            if (label) fontCharsets.set(state.font, new TextDecoder(label));
+          }
+        } else if (control === "cpg" && state.fontTable && !state.fontFile) {
+          if (value === 0) fontCodePages.delete(state.font);
+          else {
+            const label = codePage(value);
+            if (label) fontCodePages.set(state.font, new TextDecoder(label));
+          }
         }
         if (control === "deleted") state.deleted = value !== 0;
         else if (control === "v") state.hiddenText = value !== 0;
