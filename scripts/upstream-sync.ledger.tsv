@@ -3778,3 +3778,4 @@ e3ff780247	take	fix(projects): keep # in clone folders for SCP-style remotes (#4
 41675b3e4d	take	fix(web): floating preview no longer covers the last timeline rows on a narrow chat (#42286)
 9c8f6427ab	take	fix(web): a cached image no longer flashes at full size in the file preview (#42276)
 810fc8fe7f	take	fix(server): review range errors name the line missing from the diff (#42278); kept Onicode's expectedHeadSha head-moved guard before missing-line reporting
+51a721da44	take	fix(web): a held Esc in file or content search stops on the Command Palette (#42279)
