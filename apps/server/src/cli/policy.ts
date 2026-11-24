@@ -152,10 +152,11 @@ const templatesCommand = Command.make("templates", {
       if (profile._tag === "Invalid") {
         return yield* new CliError.UserError({ cause: document, userMessage: profile.reason });
       }
+      const outputDir = yield* expandHomePath(directory);
       const files = [
-        [path.join(directory, "windows", "onicode.admx"), windowsAdmx()],
-        [path.join(directory, "windows", "en-US", "onicode.adml"), windowsAdml()],
-        [path.join(directory, "macos", "onicode.mobileconfig"), profile.profile],
+        [path.join(outputDir, "windows", "onicode.admx"), windowsAdmx()],
+        [path.join(outputDir, "windows", "en-US", "onicode.adml"), windowsAdml()],
+        [path.join(outputDir, "macos", "onicode.mobileconfig"), profile.profile],
       ] as const;
       for (const [file, contents] of files) {
         yield* fs.makeDirectory(path.dirname(file), { recursive: true });
