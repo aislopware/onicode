@@ -1,3 +1,5 @@
+import { windowsSystem32Path } from "./windowsSystem.ts";
+
 const CLI_RELEASE_REPOSITORY = "aislopware/onicode";
 export const CLI_RELEASES_PAGE_URL = `https://github.com/${CLI_RELEASE_REPOSITORY}/releases`;
 export const CLI_RELEASE_CHECKSUMS_FILE = "SHA256SUMS";
@@ -29,8 +31,7 @@ export function cliArchiveTarCommand(
   env: Readonly<Record<string, string | undefined>>,
 ): string {
   if (platform !== "win32") return "tar";
-  const systemRoot = env["SystemRoot"] ?? env["windir"] ?? "C:\\Windows";
-  return `${systemRoot}\\System32\\tar.exe`;
+  return windowsSystem32Path(env, "tar.exe");
 }
 
 export function cliArchiveFileName(version: string, platformKey: CliArchivePlatformKey): string {

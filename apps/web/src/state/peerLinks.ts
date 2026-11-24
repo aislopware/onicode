@@ -11,7 +11,13 @@ import {
   linkThroughRoutes,
   offersLinkThrough,
 } from "@onicode/client-runtime/state/peerLinks";
-import { AuthAccessReadScope, AuthAccessWriteScope, type EnvironmentId } from "@onicode/contracts";
+import {
+  AuthAccessReadScope,
+  AuthAccessWriteScope,
+  type AuthMcpClientAccess,
+  type EnvironmentId,
+  mcpClientScopes,
+} from "@onicode/contracts";
 import * as DateTime from "effect/DateTime";
 import { Atom } from "effect/reactivity";
 import { useContext, useEffect } from "react";
@@ -123,12 +129,20 @@ export function useLinkableMachines(
 
 /**
  * The machines `sourceId` can link to through another environment's full-access link, by
- * environment id. Reads those environments' links only while `enabled`: listing them asks every
+ * environment id, preferring one whose session here may hand out `access`. Reads those environments' links only while `enabled`: listing them asks every
  * linked machine whether it answers.
  */
-export function useLinkThroughRoutes(sourceId: EnvironmentId, enabled: boolean) {
+export function useLinkThroughRoutes(
+  sourceId: EnvironmentId,
+  enabled: boolean,
+  access: AuthMcpClientAccess,
+) {
   const { environments } = useEnvironments();
   const writable = useEnvironmentsWithScope(environments, AuthAccessWriteScope);
+  const pairs = useEnvironmentsWithScope(environments, [
+    AuthAccessWriteScope,
+    ...mcpClientScopes(access),
+  ]);
   const nowMinute = useNowMinute(enabled);
   const hosts = environments.filter(
     (environment) =>
@@ -151,6 +165,7 @@ export function useLinkThroughRoutes(sourceId: EnvironmentId, enabled: boolean) 
         links: list?._tag === "Success" ? list.value.links : [],
       };
     }),
+    pairs,
     now: DateTime.makeUnsafe(nowMinute),
   });
 }

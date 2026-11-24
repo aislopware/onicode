@@ -784,7 +784,11 @@ export const layer = Layer.effect(
       );
     });
 
-    type RefreshAllCompletion = Deferred.Deferred<ReadonlyArray<ServerProvider>>;
+    interface RefreshAllPass {
+      readonly providers: ReadonlyArray<ServerProvider>;
+      readonly probed: ReadonlySet<ProviderInstance>;
+    }
+    type RefreshAllCompletion = Deferred.Deferred<RefreshAllPass>;
     // A refresh is how a user asks Onicode to see a CLI installed since launch; a burst shares one
     // PATH read. It re-reads the login shell, since the desktop's capture is from launch and a
     // headless server has none. Instances whose own check found no CLI are rebuilt on a new PATH.
@@ -796,36 +800,27 @@ export const layer = Layer.effect(
       Effect.cachedWithTTL(Duration.seconds(10)),
     );
     // Runs behind the registry lock, so it reads instances without taking it.
-    const missingInstanceIds = instanceRegistry.listInstances.pipe(
-      Effect.flatMap((instances) =>
-        Effect.filter(instances, (instance) =>
-          // An ACP Registry agent also reports not installed for setup states unrelated to PATH.
-          !instance.enabled || instance.driverKind === ProviderDriverKind.make("acpRegistry")
-            ? Effect.succeed(false)
-            : Effect.gen(function* () {
-                // Before its first check an instance reads not installed whether or not it is.
-                if (yield* instance.snapshot.isAwaitingFirstCheck ?? Effect.succeed(false)) {
-                  return false;
-                }
-                const snapshot = yield* instance.snapshot.getSnapshot;
-                return snapshot.enabled && !snapshot.installed;
-              }),
-        ),
-      ),
-      Effect.map((instances) => instances.map((instance) => instance.instanceId)),
-    );
-    // Returns the instances the new PATH replaced.
-    const refreshHostPath = Effect.gen(function* () {
-      const before = yield* instanceRegistry.listInstances;
-      yield* readHostPath;
-      yield* instanceRegistryMutator.rebuildOnHostPathChange(missingInstanceIds);
-      const after = yield* instanceRegistry.listInstances;
-      return after.filter(
-        (instance) =>
-          !before.includes(instance) &&
-          before.some((previous) => previous.instanceId === instance.instanceId),
-      );
+    const missingInstances = Effect.gen(function* () {
+      const instanceIds: Array<ProviderInstanceId> = [];
+      let complete = true;
+      for (const instance of yield* instanceRegistry.listInstances) {
+        // An ACP Registry agent also reports not installed for setup states unrelated to PATH.
+        if (!instance.enabled || instance.driverKind === ProviderDriverKind.make("acpRegistry")) {
+          continue;
+        }
+        // Before its first check an instance reads not installed whether or not it is.
+        if (yield* instance.snapshot.isAwaitingFirstCheck ?? Effect.succeed(false)) {
+          complete = false;
+          continue;
+        }
+        const snapshot = yield* instance.snapshot.getSnapshot;
+        if (snapshot.enabled && !snapshot.installed) instanceIds.push(instance.instanceId);
+      }
+      return { instanceIds, complete };
     });
+    const refreshHostPath = readHostPath.pipe(
+      Effect.andThen(instanceRegistryMutator.rebuildOnHostPathChange(missingInstances)),
+    );
     const refreshAllInFlightRef = yield* Ref.make<Option.Option<RefreshAllCompletion>>(
       Option.none(),
     );
@@ -834,7 +829,7 @@ export const layer = Layer.effect(
     const probedManifestUpdatedAt = yield* Ref.make(initialManifest.updatedAt);
 
     const refreshAll = Effect.fn("refreshAll")(function* () {
-      const rebuilt = yield* refreshHostPath;
+      yield* refreshHostPath;
       const claimed = yield* Ref.modify(
         refreshAllInFlightRef,
         (
@@ -846,7 +841,7 @@ export const layer = Layer.effect(
           if (Option.isSome(inFlight)) {
             return [{ owner: false, completion: inFlight.value }, inFlight];
           }
-          const completion = Deferred.makeUnsafe<ReadonlyArray<ServerProvider>>();
+          const completion = Deferred.makeUnsafe<RefreshAllPass>();
           return [{ owner: true, completion }, Option.some(completion)];
         },
       );
@@ -855,17 +850,17 @@ export const layer = Layer.effect(
         // Syncing first keeps a refresh right after a rebuild from probing the replaced instance.
         yield* manifestService.current.pipe(
           Effect.flatMap(({ updatedAt }) =>
-            syncLiveSourcesAndContinue.pipe(
-              Effect.andThen(Ref.get(liveSubsRef)),
-              Effect.flatMap((instances) =>
-                Effect.forEach(instances.values(), (instance) => refreshOneSource(instance), {
-                  concurrency: "unbounded",
-                  discard: true,
-                }),
-              ),
-              Effect.andThen(Ref.get(providersRef)),
-              Effect.tap(() => Ref.set(probedManifestUpdatedAt, updatedAt)),
-            ),
+            Effect.gen(function* () {
+              yield* syncLiveSourcesAndContinue;
+              const probed = new Set((yield* Ref.get(liveSubsRef)).values());
+              yield* Effect.forEach(probed, (instance) => refreshOneSource(instance), {
+                concurrency: "unbounded",
+                discard: true,
+              });
+              const providers = yield* Ref.get(providersRef);
+              yield* Ref.set(probedManifestUpdatedAt, updatedAt);
+              return { providers, probed };
+            }),
           ),
           Effect.onExit((exit) =>
             Ref.set(refreshAllInFlightRef, Option.none()).pipe(
@@ -875,11 +870,16 @@ export const layer = Layer.effect(
           Effect.forkDetach,
         );
       }
-      const providers = yield* Deferred.await(claimed.completion);
-      if (claimed.owner || rebuilt.length === 0) return providers;
-      // A pass that started before the rebuild probes the replaced instances, whose results drop.
+      const pass = yield* Deferred.await(claimed.completion);
+      // The pass finished the first checks that the rebuild above left for later.
+      yield* refreshHostPath;
+      // A rebuild since the pass began replaced instances it probed, and those results are dropped.
+      const unprobed = (yield* instanceRegistry.listInstances).filter(
+        (instance) => !pass.probed.has(instance),
+      );
+      if (unprobed.length === 0) return pass.providers;
       yield* syncLiveSourcesAndContinue;
-      yield* Effect.forEach(rebuilt, (instance) => refreshOneSource(instance), {
+      yield* Effect.forEach(unprobed, (instance) => refreshOneSource(instance), {
         concurrency: "unbounded",
         discard: true,
       });
@@ -902,7 +902,13 @@ export const layer = Layer.effect(
       if (!instance) {
         return yield* Ref.get(providersRef);
       }
-      return yield* refreshOneSource(instance);
+      const providers = yield* refreshOneSource(instance);
+      // Its first check may be what a rebuild was waiting for.
+      yield* refreshHostPath;
+      const current = yield* instanceRegistry.getInstance(instanceId);
+      if (current === undefined || current === instance) return providers;
+      yield* syncLiveSourcesAndContinue;
+      return yield* refreshOneSource(current);
     });
 
     const reloadSecretsAndRefresh = Effect.fn("reloadSecretsAndRefresh")(function* (

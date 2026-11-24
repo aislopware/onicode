@@ -1069,6 +1069,7 @@ describe("DesktopShellEnvironment", () => {
   it.effect("gives up on a Windows shell that survives the kill", () =>
     Effect.gen(function* () {
       const commands: Array<string> = [];
+      const folders = new Set<string | undefined>();
       // Both PowerShell probes spawn pwsh, time out, then spawn powershell. Each probe's timeout
       // is armed before its spawn runs, so waiting for the spawns keeps the clock in step.
       const spawned = yield* Effect.forEach([0, 1, 2, 3], () => Deferred.make<void>());
@@ -1079,6 +1080,7 @@ describe("DesktopShellEnvironment", () => {
         processSpawner: ChildProcessSpawner.make((command) => {
           const spawn = spawned[commands.length];
           commands.push(command._tag === "StandardCommand" ? command.command : "");
+          folders.add(command._tag === "StandardCommand" ? command.options.cwd : undefined);
           return (spawn ? Deferred.succeed(spawn, undefined) : Effect.void).pipe(
             Effect.andThen(
               Effect.acquireRelease(Effect.succeed(makeHungProcess()), () => Effect.never),
@@ -1093,6 +1095,7 @@ describe("DesktopShellEnvironment", () => {
       yield* TestClock.adjust("5 seconds");
       yield* Fiber.join(fiber);
       assert.deepEqual([...new Set(commands)], ["pwsh.exe", "powershell.exe"]);
+      assert.deepEqual([...folders], ["C:\\Windows\\System32\\"]);
     }),
   );
 

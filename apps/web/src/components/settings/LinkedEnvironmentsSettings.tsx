@@ -261,7 +261,8 @@ export function LinkEnvironmentDialog({
   const setOpen = onOpenChange;
   // Named in the title: from the map, nothing else on screen says which machine is linking.
   const source = useEnvironment(environmentId);
-  const routes = useLinkThroughRoutes(environmentId, open);
+  const [access, setAccess] = useState<AuthMcpClientAccess>("approval-required");
+  const routes = useLinkThroughRoutes(environmentId, open, access);
   // Machines this app has no entry for are still pickable when one of its environments links
   // to them at full access.
   const machines = useLinkableMachines(environmentId, open, [...routes.values()]);
@@ -274,7 +275,6 @@ export function LinkEnvironmentDialog({
   const [choice, setChoice] = useState<string | null>(prefill?.choice ?? null);
   const [address, setAddress] = useState(prefill?.address ?? "");
   const [pairingCode, setPairingCode] = useState("");
-  const [access, setAccess] = useState<AuthMcpClientAccess>("approval-required");
   const [busy, setBusy] = useState(false);
   // Machines whose minting already failed, so the dialog asks for a code instead.
   const [mintFailed, setMintFailed] = useState<ReadonlySet<EnvironmentId>>(new Set());
@@ -323,9 +323,24 @@ export function LinkEnvironmentDialog({
     Option.isSome(connected) &&
     mayMint &&
     !mintFailed.has(targetId);
+  const prefilledPairs = useAtomValue(
+    peerLinkEnvironment.pairLink.permissionAtom(
+      prefilledThrough?.viaEnvironmentId ?? null,
+      prefilledThrough === null
+        ? undefined
+        : { environmentId: prefilledThrough.environmentId, access },
+    ),
+  );
+  // The map picks its route before an access level is chosen; another may hand that level out.
   // Minting with this client's own session there comes first: it needs no third machine.
   const throughCandidate =
-    prefilledThrough ?? (targetId === null || canMint ? null : (routes.get(targetId) ?? null));
+    prefilledThrough === null
+      ? targetId === null || canMint
+        ? null
+        : (routes.get(targetId) ?? null)
+      : prefilledPairs
+        ? prefilledThrough
+        : (routes.get(prefilledThrough.environmentId) ?? prefilledThrough);
   const via = useEnvironment(throughCandidate?.viaEnvironmentId ?? null);
   // The environment holding the link refuses a level this client's session there does not hold.
   const mayPairThrough = useAtomValue(
@@ -532,7 +547,7 @@ export function LinkEnvironmentDialog({
               void submit();
             }}
           >
-            {machines.length > 0 && (through === null || through !== prefilledThrough) ? (
+            {machines.length > 0 && (through === null || prefilledThrough === null) ? (
               <LinkMachineSelect
                 machines={machines}
                 value={selected}

@@ -216,10 +216,16 @@ export const offersLinkThrough = (
 ): boolean =>
   offersLinkedEnvironments(config) && config?.environment.capabilities.linkPairingForLink === true;
 
+export interface LinkThroughOffer extends LinkThroughRoute {
+  /** This client's session on the linking environment may hand out the chosen access. */
+  readonly pairs: boolean;
+}
+
 /**
  * The machines `sourceEnvironmentId` can link to without a pasted code: those another of the
  * client's environments reaches over a full-access link that answers. `hosts` are environments
- * the client is connected to and manages access on, the only ones it may ask.
+ * the client is connected to and manages access on, the only ones it may ask. Those in `pairs`,
+ * where its session may hand out the chosen access, come first.
  */
 export function linkThroughRoutes(input: {
   readonly sourceEnvironmentId: EnvironmentId;
@@ -228,18 +234,21 @@ export function linkThroughRoutes(input: {
     readonly config: Pick<ServerConfig, "environment" | "settings"> | null;
     readonly links: ReadonlyArray<PeerLinkSummary>;
   }>;
+  readonly pairs: ReadonlySet<EnvironmentId>;
   readonly now: DateTime.Utc;
-}): ReadonlyMap<EnvironmentId, LinkThroughRoute> {
-  const routes = new Map<EnvironmentId, LinkThroughRoute>();
+}): ReadonlyMap<EnvironmentId, LinkThroughOffer> {
+  const routes = new Map<EnvironmentId, LinkThroughOffer>();
   for (const host of input.hosts) {
     if (host.environmentId === input.sourceEnvironmentId || !offersLinkThrough(host.config)) {
       continue;
     }
+    const pairs = input.pairs.has(host.environmentId);
     for (const link of host.links) {
+      const known = routes.get(link.environmentId);
       if (
         link.environmentId === input.sourceEnvironmentId ||
         link.access !== "full-access" ||
-        routes.has(link.environmentId) ||
+        (known !== undefined && (known.pairs || !pairs)) ||
         peerLinkHealth(link, input.now).kind !== "reachable"
       ) {
         continue;
@@ -249,6 +258,7 @@ export function linkThroughRoutes(input: {
         environmentId: link.environmentId,
         label: link.label,
         urls: link.urls,
+        pairs,
       });
     }
   }

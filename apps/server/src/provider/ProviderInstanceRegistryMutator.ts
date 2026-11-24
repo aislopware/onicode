@@ -14,9 +14,13 @@ export interface ProviderInstanceRegistryMutatorShape {
   /**
    * Rebuilds the instances `select` names from the host environment, once per change of the host
    * PATH since instances were built on it. Drivers find their CLI on the PATH they were built on.
+   * A selection that is not `complete` leaves the PATH for the next call to select again.
    */
   readonly rebuildOnHostPathChange: (
-    select: Effect.Effect<ReadonlyArray<ProviderInstanceId>>,
+    select: Effect.Effect<{
+      readonly instanceIds: ReadonlyArray<ProviderInstanceId>;
+      readonly complete: boolean;
+    }>,
   ) => Effect.Effect<void>;
   /**
    * Rebuilds the instances that read `reference` with `value`, keeping the other secrets a live

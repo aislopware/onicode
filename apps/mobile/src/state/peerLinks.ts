@@ -9,7 +9,12 @@ import {
   linkThroughRoutes,
   offersLinkThrough,
 } from "@onicode/client-runtime/state/peerLinks";
-import { AuthAccessWriteScope, type EnvironmentId } from "@onicode/contracts";
+import {
+  AuthAccessWriteScope,
+  type AuthMcpClientAccess,
+  type EnvironmentId,
+  mcpClientScopes,
+} from "@onicode/contracts";
 import * as DateTime from "effect/DateTime";
 import { Atom } from "effect/reactivity";
 import { useContext, useEffect, useEffectEvent, useMemo } from "react";
@@ -111,10 +116,14 @@ export function useLinkableMachines(
 
 /**
  * The machines `sourceId` can link to through another environment's full-access link, by
- * environment id. Reads those environments' links only while `enabled`: listing them asks every
+ * environment id, preferring one whose session here may hand out `access`. Reads those environments' links only while `enabled`: listing them asks every
  * linked machine whether it answers.
  */
-export function useLinkThroughRoutes(sourceId: EnvironmentId, enabled: boolean) {
+export function useLinkThroughRoutes(
+  sourceId: EnvironmentId,
+  enabled: boolean,
+  access: AuthMcpClientAccess,
+) {
   const { environments } = useEnvironments();
   const offering = environments.filter(
     (environment) =>
@@ -126,6 +135,8 @@ export function useLinkThroughRoutes(sourceId: EnvironmentId, enabled: boolean) 
   const offeringKey = offering.map((environment) => environment.environmentId).join("\n");
   const scoped = idsOf(offeringKey).map((environmentId) => ({ environmentId }));
   const writable = useEnvironmentsWithScope(scoped, AuthAccessWriteScope);
+  const pairScopes = useMemo(() => [AuthAccessWriteScope, ...mcpClientScopes(access)], [access]);
+  const pairs = useEnvironmentsWithScope(scoped, pairScopes);
   const hosts = offering.filter((environment) => writable.has(environment.environmentId));
   const lists = useAtomValue(peerLinkListsAtom(hosts.map((host) => host.environmentId).join("\n")));
   const nowMinuteMs = useNowMinuteMs();
@@ -139,6 +150,7 @@ export function useLinkThroughRoutes(sourceId: EnvironmentId, enabled: boolean) 
         links: list?._tag === "Success" ? list.value.links : [],
       };
     }),
+    pairs,
     now: DateTime.makeUnsafe(nowMinuteMs),
   });
 }

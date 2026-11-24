@@ -211,8 +211,11 @@ describe("linkThroughRoutes", () => {
             link("lapsed", { expiresAt: now }),
           ],
         },
-        { environmentId: id("later"), config: config(true), links: [link("open")] },
+        // One that may not hand out the chosen access yields to one that may.
+        { environmentId: id("limited"), config: config(true), links: [link("pairs")] },
+        { environmentId: id("later"), config: config(true), links: [link("open"), link("pairs")] },
       ],
+      pairs: new Set([id("via"), id("later")]),
       now,
     });
     expect([...routes.values()]).toEqual([
@@ -221,7 +224,9 @@ describe("linkThroughRoutes", () => {
         environmentId: id("open"),
         label: "open",
         urls: ["https://open.example"],
+        pairs: true,
       },
+      expect.objectContaining({ viaEnvironmentId: id("later"), environmentId: id("pairs") }),
     ]);
   });
 });

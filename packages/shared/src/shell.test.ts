@@ -422,7 +422,7 @@ describe("readEnvironmentFromWindowsShell", () => {
       expect(execFile).toHaveBeenCalledWith(
         "pwsh.exe",
         expect.arrayContaining(["-NoLogo", "-NoProfile", "-NonInteractive", "-Command"]),
-        { encoding: "utf8", timeout: 5000 },
+        { cwd: "C:\\Windows\\System32\\", encoding: "utf8", timeout: 5000 },
       );
       expect(execFile.mock.calls[0]?.[1].at(-1)).toContain(
         "[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes([string]$value))",
@@ -509,7 +509,7 @@ describe("readEnvironmentFromWindowsShell", () => {
       expect(execFile).toHaveBeenCalledWith(
         "pwsh.exe",
         expect.arrayContaining(["-NoLogo", "-NonInteractive", "-Command"]),
-        { encoding: "utf8", timeout: 5000 },
+        { cwd: "C:\\Windows\\System32\\", encoding: "utf8", timeout: 5000 },
       );
       expect(execFile.mock.calls[0]?.[1]).not.toContain("-NoProfile");
     }),
@@ -538,10 +538,12 @@ describe("readEnvironmentFromWindowsShell", () => {
         PATH: "C:\\Tools",
       });
       expect(execFile).toHaveBeenNthCalledWith(1, "pwsh.exe", expect.any(Array), {
+        cwd: "C:\\Windows\\System32\\",
         encoding: "utf8",
         timeout: 5000,
       });
       expect(execFile).toHaveBeenNthCalledWith(2, "powershell.exe", expect.any(Array), {
+        cwd: "C:\\Windows\\System32\\",
         encoding: "utf8",
         timeout: 5000,
       });

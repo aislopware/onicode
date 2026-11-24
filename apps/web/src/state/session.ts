@@ -43,22 +43,26 @@ export function sessionHasScope(
 }
 
 const environmentsWithScopeAtom = Atom.family((key: string) => {
-  const [scope, idsKey = ""] = key.split(/\n(.*)/s) as [AuthEnvironmentScope, string?];
+  const [scopesKey, idsKey = ""] = key.split(/\n(.*)/s) as [string, string?];
+  const scopes = scopesKey.split(" ") as AuthEnvironmentScope[];
   const ids = idsKey === "" ? [] : (idsKey.split("\n") as EnvironmentId[]);
   const statesAtom = environmentSessionStatesAtom(idsKey);
   return Atom.make((get) => {
     const states = get(statesAtom);
-    return new Set(ids.filter((_, index) => sessionHasScope(states[index]!, scope)));
+    return new Set(
+      ids.filter((_, index) => scopes.every((scope) => sessionHasScope(states[index]!, scope))),
+    );
   }).pipe(Atom.withLabel(`web-environments-with-scope:${key}`));
 });
 
+/** The environments whose session holds `scope`, or every scope in it. */
 export function useEnvironmentsWithScope(
   environments: ReadonlyArray<{ readonly environmentId: EnvironmentId }>,
-  scope: AuthEnvironmentScope,
+  scope: AuthEnvironmentScope | ReadonlyArray<AuthEnvironmentScope>,
 ): ReadonlySet<EnvironmentId> {
   return useAtomValue(
     environmentsWithScopeAtom(
-      `${scope}\n${environmentIdsKey(environments.map(({ environmentId }) => environmentId))}`,
+      `${typeof scope === "string" ? scope : scope.join(" ")}\n${environmentIdsKey(environments.map(({ environmentId }) => environmentId))}`,
     ),
   );
 }

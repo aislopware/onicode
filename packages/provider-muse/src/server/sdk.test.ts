@@ -323,6 +323,9 @@ describe("Muse launch", () => {
       expect((yield* onWindows("C:\\Muse\\muse.bat", { SYSTEMROOT: "C:\\Windows" })).command).toBe(
         "C:\\Windows\\System32\\cmd.exe",
       );
+      expect((yield* onWindows("C:\\Muse\\muse.bat", {})).command).toBe(
+        "C:\\Windows\\System32\\cmd.exe",
+      );
       expect(yield* onWindows(undefined)).toEqual({ command: "muse", args: [] });
     }),
   );

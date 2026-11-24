@@ -53,10 +53,11 @@ export const linkBatchCandidates = (
   machines: ReadonlyArray<LinkableMachine>,
   writable: ReadonlySet<EnvironmentId>,
   links: LinkListState,
-  routes: ReadonlyMap<EnvironmentId, { readonly viaEnvironmentId: EnvironmentId }> = new Map(),
+  routes: ReadonlyMap<
+    EnvironmentId,
+    { readonly viaEnvironmentId: EnvironmentId; readonly pairs: boolean }
+  > = new Map(),
   mintFailed: ReadonlySet<EnvironmentId> = new Set(),
-  /** Environments whose session here may hand out the chosen access through their links. */
-  pairsThrough: ReadonlySet<EnvironmentId> = new Set(),
 ): ReadonlyArray<LinkBatchCandidate> =>
   machines.map((machine) => {
     const blocked: LinkBatchBlock | null =
@@ -77,9 +78,11 @@ export const linkBatchCandidates = (
       (blocked === null && !mintFailed.has(machine.environmentId))
         ? undefined
         : routes.get(machine.environmentId);
-    return route === undefined || !pairsThrough.has(route.viaEnvironmentId)
-      ? { machine, blocked, via: null }
-      : { machine, blocked: null, via: route.viaEnvironmentId };
+    if (route === undefined) return { machine, blocked, via: null };
+    // A machine known only through its route is blocked by the route, not by its connection.
+    return route.pairs
+      ? { machine, blocked: null, via: route.viaEnvironmentId }
+      : { machine, blocked: blocked === "not_connected" ? "no_access" : blocked, via: null };
   });
 
 export const linkBatchBlockLabel = (

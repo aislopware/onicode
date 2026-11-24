@@ -9,6 +9,7 @@ import {
   readUserLoginShell,
   setWindowsPath,
 } from "@onicode/shared/shell";
+import { windowsSystem32Path } from "@onicode/shared/windowsSystem";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -260,6 +261,7 @@ const runCommandOutput = Effect.fn("desktop.shellEnvironment.runCommandOutput")(
   readonly timeout: Duration.Duration;
   readonly terminateGrace?: Duration.Duration;
   readonly shell?: boolean;
+  readonly cwd?: string;
 }): Effect.fn.Return<
   string,
   DesktopShellEnvironmentCommandTimeoutError,
@@ -271,6 +273,7 @@ const runCommandOutput = Effect.fn("desktop.shellEnvironment.runCommandOutput")(
       const child = yield* spawner.spawn(
         ChildProcess.make(input.command, input.args, {
           shell: input.shell ?? false,
+          ...(input.cwd === undefined ? {} : { cwd: input.cwd }),
           env: input.env,
           extendEnv: false,
           stdin: "ignore",
@@ -390,12 +393,15 @@ const readWindowsEnvironment = Effect.fn("desktop.shellEnvironment.readWindowsEn
       buildWindowsEnvironmentCaptureCommand(names),
     ];
 
+    // Windows looks for a bare name in the working directory before PATH.
+    const cwd = windowsSystem32Path(env, "");
     for (const command of WINDOWS_SHELL_CANDIDATES) {
       const output = yield* runCommandOutput({
         probe: options.loadProfile ? "powershell-profile" : "powershell-no-profile",
         command,
         args,
         env,
+        cwd,
         timeout: budget.timeout,
         terminateGrace: budget.terminateGrace,
       }).pipe(orEmptyOnTimeout);

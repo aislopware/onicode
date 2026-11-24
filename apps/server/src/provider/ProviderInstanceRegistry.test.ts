@@ -1047,13 +1047,17 @@ describe("ProviderInstanceRegistry secret environment", () => {
     const env: NodeJS.ProcessEnv = { PATH: "/usr/bin" };
     return Effect.gen(function* () {
       const { mutator } = yield* fixture.make;
-      const rebuild = mutator.rebuildOnHostPathChange(Effect.succeed([instanceId]));
+      const selection = { instanceIds: [instanceId], complete: true };
+      const rebuild = mutator.rebuildOnHostPathChange(Effect.succeed(selection));
 
       yield* rebuild;
       expect(fixture.created).toHaveLength(1);
 
       // The desktop app sends the login shell's PATH after the server has built its instances.
       env.PATH = "/usr/bin:/home/me/.local/bin";
+      // An incomplete selection leaves the PATH for the next refresh.
+      yield* mutator.rebuildOnHostPathChange(Effect.succeed({ instanceIds: [], complete: false }));
+      expect(fixture.created).toHaveLength(1);
       yield* rebuild;
       yield* rebuild;
       expect(fixture.created).toHaveLength(2);
@@ -1066,7 +1070,7 @@ describe("ProviderInstanceRegistry secret environment", () => {
         .rebuildOnHostPathChange(
           Deferred.succeed(selecting, undefined).pipe(
             Effect.andThen(Deferred.await(release)),
-            Effect.as([instanceId]),
+            Effect.as(selection),
           ),
         )
         .pipe(Effect.forkChild({ startImmediately: true }));
@@ -1087,7 +1091,7 @@ describe("ProviderInstanceRegistry secret environment", () => {
         .rebuildOnHostPathChange(
           Deferred.succeed(dropped, undefined).pipe(
             Effect.andThen(Deferred.await(resume)),
-            Effect.as([instanceId]),
+            Effect.as(selection),
           ),
         )
         .pipe(Effect.forkChild({ startImmediately: true }));

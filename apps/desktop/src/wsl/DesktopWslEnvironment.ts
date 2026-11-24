@@ -12,7 +12,7 @@ import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import * as HostProcess from "@onicode/shared/HostProcess";
-import { windowsSystem32Path } from "@onicode/shared/windowsSystem";
+import { windowsRoot, windowsSystem32Path } from "@onicode/shared/windowsSystem";
 import { WindowsRegistry } from "@onicode/shared/managedPolicyFile";
 import { buildRemoteNodeEnvScript } from "@onicode/ssh/tunnel";
 import { satisfiesSemverRange } from "@onicode/shared/semver";
@@ -1266,8 +1266,7 @@ export const layer = Layer.effect(
     const environment = yield* DesktopEnvironment.DesktopEnvironment;
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
     const fileSystem = yield* FileSystem.FileSystem;
-    // Not Config: Windows variable names are case-insensitive only on the live process.env.
-    const windir = (yield* HostProcess.Environment).WINDIR ?? "C:\\Windows";
+    const windir = windowsRoot(yield* HostProcess.Environment);
 
     const provideSpawner = <A, E>(
       effect: Effect.Effect<A, E, ChildProcessSpawner.ChildProcessSpawner>,

@@ -706,7 +706,11 @@ export const makeProviderInstanceRegistry = Effect.fn(
         undefined,
       ).pipe(Effect.asVoid);
   const rebuildOnHostPathChange = Effect.fn("ProviderInstanceRegistry.rebuildOnHostPathChange")(
-    function* (select: Effect.Effect<ReadonlyArray<ProviderInstanceId>>) {
+    function* (
+      select: Parameters<
+        ProviderInstanceRegistryMutator.ProviderInstanceRegistryMutatorShape["rebuildOnHostPathChange"]
+      >[0],
+    ) {
       const hostPath = readHostPath();
       // Claiming a new PATH and starting its rebuild in the registry's scope are one step, so a
       // refresh dropped meanwhile (its client left) cannot strand the others on a half-done rebuild.
@@ -722,8 +726,9 @@ export const makeProviderInstanceRegistry = Effect.fn(
           const worker = yield* semaphore
             .withPermits(1)(
               Effect.gen(function* () {
-                const instanceIds = yield* select;
+                const { instanceIds, complete } = yield* select;
                 yield* reconcileWithR(yield* Ref.get(configMapRef), new Set(instanceIds));
+                return complete;
               }),
             )
             .pipe(
@@ -731,7 +736,7 @@ export const makeProviderInstanceRegistry = Effect.fn(
               // A rebuild that did not finish leaves the PATH for the next refresh to claim.
               Effect.onExit((exit) =>
                 Ref.update(hostPathBuild, (current) =>
-                  Exit.isSuccess(exit)
+                  Exit.isSuccess(exit) && exit.value
                     ? { ...current, builtPath: hostPath }
                     : current.built === built
                       ? { ...current, path: current.builtPath }
@@ -741,7 +746,7 @@ export const makeProviderInstanceRegistry = Effect.fn(
               Effect.forkIn(parentScope),
             );
           // Observed rather than completed inside the worker: a closed scope never starts it.
-          worker.addObserver((exit) => Deferred.doneUnsafe(built, exit));
+          worker.addObserver((exit) => Deferred.doneUnsafe(built, Exit.asVoid(exit)));
         }),
       );
       // Waits for the PATH's rebuild, and for one a newer PATH started meanwhile, so a refresh

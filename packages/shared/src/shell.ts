@@ -14,6 +14,7 @@ import * as Path from "effect/Path";
 
 import type { ShellEnvironmentPatch } from "@onicode/contracts";
 import * as HostProcess from "./HostProcess.ts";
+import { windowsSystem32Path } from "./windowsSystem.ts";
 import * as Context from "effect/Context";
 const SHELL_ENV_NAME_PATTERN = /^[A-Z0-9_]+$/;
 const WINDOWS_PATH_DELIMITER = ";";
@@ -438,7 +439,7 @@ export const CommandAvailability = Context.Reference<CommandAvailabilityChecker>
 const execWindowsEnvironmentProbe = (
   file: string,
   args: ReadonlyArray<string>,
-  options: { encoding: "utf8"; timeout: number },
+  options: { cwd: string; encoding: "utf8"; timeout: number },
 ) =>
   Effect.callback<Option.Option<string>>((resume) => {
     let child: NodeChildProcess.ChildProcess;
@@ -479,8 +480,11 @@ export const readEnvironmentFromWindowsShell = Effect.fn("shell.readEnvironmentF
       "-Command",
       command,
     ];
+    // Windows looks for a bare name in the working directory before PATH.
+    const cwd = windowsSystem32Path(yield* HostProcess.Environment, "");
     for (const shell of WINDOWS_SHELL_CANDIDATES) {
       const output = yield* execFile(shell, args, {
+        cwd,
         encoding: "utf8",
         timeout: WINDOWS_SHELL_PROBE_TIMEOUT_MS,
       }).pipe(Effect.timeoutOption(WINDOWS_SHELL_PROBE_DEADLINE), Effect.map(Option.flatten));

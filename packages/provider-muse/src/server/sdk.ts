@@ -16,6 +16,7 @@ import { environmentView } from "@onicode/provider-core/server/instanceEnvironme
 import { envTrampoline, supportsEnvChdir } from "@onicode/shared/envTrampoline";
 import * as HostProcess from "@onicode/shared/HostProcess";
 import { SpawnExecutableResolution } from "@onicode/shared/shell";
+import { windowsSystem32Path } from "@onicode/shared/windowsSystem";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
@@ -128,7 +129,7 @@ export const museLaunch = Effect.fn("museLaunch")(function* (
   return {
     command:
       windowsEnvironmentValue(env, "ComSpec") ??
-      (systemRoot ? `${systemRoot}\\System32\\cmd.exe` : "cmd.exe"),
+      windowsSystem32Path({ SystemRoot: systemRoot }, "cmd.exe"),
     // /d prevents AutoRun stdout; bare @ preserves quoted paths that cmd /c would unquote.
     args: [
       "/d",
