@@ -32,7 +32,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { Platform, Pressable, View } from "react-native";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
-import { KeyboardController } from "react-native-keyboard-controller";
+import { KeyboardController, KeyboardStickyView } from "react-native-keyboard-controller";
 
 import {
   AuthOrchestrationOperateScope,
@@ -1047,52 +1047,54 @@ export function NewTaskDraftScreen(props: {
     const missingModelReason = noModelReason(selectedEnvironmentServerConfig, selectedProject.id);
     return (
       <ThreadScreenFallback header={<AppBar title={gt("New thread")} onBack={goBack} />}>
-        <View className="flex-1 justify-end gap-3 p-4">
-          {environmentControl}
-          <Text className="text-foreground-muted">
-            {!environmentConnected || !selectedEnvironmentServerConfig ? (
-              <T>
-                Your draft is saved on this device. Connect to an environment to choose its first
-                model.
-              </T>
-            ) : missingModelReason === "checking" ? (
-              <T>
-                Your draft is saved on this device. <Var>{selectedEnvironmentLabel}</Var> is still
-                checking its providers. Models show here when it finishes.
-              </T>
-            ) : missingModelReason === "policy" ? (
-              <T>
-                Your draft is saved on this device. <Var>{selectedEnvironmentLabel}</Var> has a
-                ready provider, but its managed policy does not allow it.
-              </T>
-            ) : missingModelReason === "project" ? (
-              <T>
-                Your draft is saved on this device. <Var>{selectedEnvironmentLabel}</Var> has a
-                ready provider that is turned off for this project. Turn it on in the project's
-                provider settings to choose a model.
-              </T>
-            ) : missingModelReason === "environment" ? (
-              <T>
-                Your draft is saved on this device. <Var>{selectedEnvironmentLabel}</Var> has a
-                ready provider that is turned off. Turn it on in its provider settings to choose a
-                model.
-              </T>
-            ) : (
-              <T>
-                Your draft is saved on this device. <Var>{selectedEnvironmentLabel}</Var> has no
-                model available. Install or sign in to a provider there to choose one.
-              </T>
-            )}
-          </Text>
-          <ComposerEditor
-            draftKey={flow.draftKey}
-            value={flow.prompt}
-            onChangeText={flow.setPrompt}
-            placeholder={gt("Ask anything")}
-            multiline
-            style={{ minHeight: 64 }}
-          />
-        </View>
+        <KeyboardStickyView pointerEvents="box-none" style={{ flex: 1 }}>
+          <View pointerEvents="box-none" className="flex-1 justify-end gap-3 p-4">
+            {environmentControl}
+            <Text className="text-foreground-muted">
+              {!environmentConnected || !selectedEnvironmentServerConfig ? (
+                <T>
+                  Your draft is saved on this device. Connect to an environment to choose its first
+                  model.
+                </T>
+              ) : missingModelReason === "checking" ? (
+                <T>
+                  Your draft is saved on this device. <Var>{selectedEnvironmentLabel}</Var> is still
+                  checking its providers. Models show here when it finishes.
+                </T>
+              ) : missingModelReason === "policy" ? (
+                <T>
+                  Your draft is saved on this device. <Var>{selectedEnvironmentLabel}</Var> has a
+                  ready provider, but its managed policy does not allow it.
+                </T>
+              ) : missingModelReason === "project" ? (
+                <T>
+                  Your draft is saved on this device. <Var>{selectedEnvironmentLabel}</Var> has a
+                  ready provider that is turned off for this project. Turn it on in the project's
+                  provider settings to choose a model.
+                </T>
+              ) : missingModelReason === "environment" ? (
+                <T>
+                  Your draft is saved on this device. <Var>{selectedEnvironmentLabel}</Var> has a
+                  ready provider that is turned off. Turn it on in its provider settings to choose a
+                  model.
+                </T>
+              ) : (
+                <T>
+                  Your draft is saved on this device. <Var>{selectedEnvironmentLabel}</Var> has no
+                  model available. Install or sign in to a provider there to choose one.
+                </T>
+              )}
+            </Text>
+            <ComposerEditor
+              draftKey={flow.draftKey}
+              value={flow.prompt}
+              onChangeText={flow.setPrompt}
+              placeholder={gt("Ask anything")}
+              multiline
+              style={{ minHeight: 64 }}
+            />
+          </View>
+        </KeyboardStickyView>
       </ThreadScreenFallback>
     );
   }
