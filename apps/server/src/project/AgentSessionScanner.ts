@@ -963,21 +963,37 @@ export const make = Effect.gen(function* () {
           normalizeProjectPathForComparison,
         ),
       );
-      const ancestors = (yield* withRealLocations([
+      const normalizedAncestors = (directories: ReadonlyArray<string>) =>
+        Effect.map(withRealLocations(directories), (forms) =>
+          forms.map((ancestor) => normalizeForWorktreeMatch(ancestor, foldWorktreeCase)),
+        );
+      const scratchAncestors = yield* normalizedAncestors([
         path.join(homeDir, "Downloads"),
         path.join(homeDir, "Documents", "Codex"),
+      ]);
+      const oniAncestors = yield* normalizedAncestors([
         serverConfig.baseDir,
         ...managedWorktreesDirectories(settings, serverConfig.worktreesDir, path, homeDir),
-      ])).map((ancestor) => normalizeForWorktreeMatch(ancestor, foldWorktreeCase));
-
-      return (candidatePath: string) => {
+      ]);
+      const isOniOwned = (candidatePath: string) => {
         const normalized = normalizeForWorktreeMatch(candidatePath, foldWorktreeCase);
         return (
-          roots.has(normalizeProjectPathForComparison(candidatePath)) ||
-          ancestors.some((ancestor) => normalized.startsWith(ancestor)) ||
+          oniAncestors.some((ancestor) => normalized.startsWith(ancestor)) ||
           normalized.includes("/.onicode/worktrees/")
         );
       };
+
+      return Object.assign(
+        (candidatePath: string) => {
+          const normalized = normalizeForWorktreeMatch(candidatePath, foldWorktreeCase);
+          return (
+            roots.has(normalizeProjectPathForComparison(candidatePath)) ||
+            scratchAncestors.some((ancestor) => normalized.startsWith(ancestor)) ||
+            isOniOwned(candidatePath)
+          );
+        },
+        { isOniOwned },
+      );
     },
   );
   type IsExcludedProjectPath = Effect.Success<ReturnType<typeof loadExcludedProjectPath>>;
@@ -1679,16 +1695,19 @@ export const make = Effect.gen(function* () {
     }).pipe(Effect.orElseSucceed((): ReadonlyMap<string, ReadonlyArray<string>> => new Map()));
   });
 
-  // Only chats left in an excluded folder, such as Codex's scratch folder, take their project's root.
-  const projectCwd = (
+  // Only chats left in a scratch folder, such as Codex's, take their project's root; Onicode's own stay excluded.
+  const projectCwd = Effect.fnUntraced(function* (
     isExcludedProjectPath: IsExcludedProjectPath,
     cwd: string,
     projectRoots: ReadonlyArray<string> | undefined,
-  ) =>
-    projectRoots !== undefined &&
-    isExcludedProjectPath(path.resolve(expandHomePath(cwd.trim(), homeDir)))
-      ? projectRoots[0]!
-      : cwd;
+  ) {
+    if (projectRoots === undefined) return cwd;
+    const resolved = path.resolve(expandHomePath(cwd.trim(), homeDir));
+    if (!isExcludedProjectPath(resolved) || isExcludedProjectPath.isOniOwned(resolved)) return cwd;
+    // A sandbox recorded through another link (macOS `/var` for `/private/var`) is Onicode's too.
+    const realCwd = yield* fileSystem.realPath(resolved).pipe(Effect.orElseSucceed(() => resolved));
+    return isExcludedProjectPath.isOniOwned(realCwd) ? cwd : projectRoots[0]!;
+  });
 
   const discoverCodexTranscripts = Effect.fn("AgentSessionScanner.discoverCodexTranscripts")(
     function* (homePath: string, providerInstanceId: ProviderInstanceId, operationBudget: number) {
@@ -1858,7 +1877,7 @@ export const make = Effect.gen(function* () {
             sameTranscriptIdentity(imported.source, transcript.identity),
         )?.cwd ?? (yield* readCwd(source, transcript, budget));
       if (rolloutCwd === null || rolloutCwd === false) continue;
-      const cwd = projectCwd(isExcludedProjectPath, rolloutCwd, transcript.projectRoots);
+      const cwd = yield* projectCwd(isExcludedProjectPath, rolloutCwd, transcript.projectRoots);
       const key = `${transcript.providerInstanceId}\0${cwd}`;
       const existing = byOwnerAndCwd.get(key);
       if (existing) {
@@ -2381,7 +2400,11 @@ export const make = Effect.gen(function* () {
 
           if (Option.isNone(snapshot.cwd)) return neverImportable();
           const expandedCwd = expandHomePath(
-            projectCwd(isExcludedProjectPath, snapshot.cwd.value, transcript.projectRoots).trim(),
+            (yield* projectCwd(
+              isExcludedProjectPath,
+              snapshot.cwd.value,
+              transcript.projectRoots,
+            )).trim(),
             homeDir,
           );
           if (!path.isAbsolute(expandedCwd)) return neverImportable();
