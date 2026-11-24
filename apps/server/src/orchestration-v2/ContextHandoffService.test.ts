@@ -357,8 +357,9 @@ it.effect("a portable fork carries no context its source discarded for a fresh s
     const supersededForkId = ThreadId.make("thread:fork-history-superseded-fork");
     const parentRun = forkTestRun(parentId, 1, "PARENT_WORK");
     const scheduledRun = forkTestRun(parentId, 2, "SCHEDULED_SIDE_RUN", "scheduled-fresh");
-    const forkFresh = forkTestRun(freshForkId, 1, "FRESH_START", "fresh");
-    const forkLater = forkTestRun(freshForkId, 2, "FORK_FOLLOW_UP");
+    const forkBefore = forkTestRun(freshForkId, 1, "BEFORE_CLEAR");
+    const forkFresh = forkTestRun(freshForkId, 2, "FRESH_START", "fresh");
+    const forkLater = forkTestRun(freshForkId, 3, "FORK_FOLLOW_UP");
     // Its fresh first run was cancelled before starting, so only the transfer records the discard.
     const supersededRun = forkTestRun(supersededForkId, 1, "AFTER_DISCARD");
     const forkedFromParent = { type: "run", threadId: parentId, runId: parentRun.run.id } as const;
@@ -376,6 +377,7 @@ it.effect("a portable fork carries no context its source discarded for a fresh s
     });
     const parent = projection(forkTestThread(parentId), [parentRun, scheduledRun]);
     const freshFork = projection(forkTestThread(freshForkId, forkedFromParent), [
+      forkBefore,
       forkFresh,
       forkLater,
     ]);
