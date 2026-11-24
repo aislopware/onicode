@@ -2384,6 +2384,49 @@ layer("GitLabPullRequestCli.layer", (it) => {
     }),
   );
 
+  it.effect("finds a merge request's commit among the merge requests GitLab relates it to", () =>
+    Effect.gen(function* () {
+      const inside = "1".repeat(40);
+      const elsewhere = "2".repeat(40);
+      mockedExecute.mockImplementation(({ args }) => {
+        if (args[1]?.includes(`/commits/${inside}/`)) {
+          return Effect.succeed(output(mergeRequests(2, 6)));
+        }
+        if (args[1]?.includes(`/commits/${elsewhere}/`)) {
+          return Effect.succeed(output(mergeRequests(1, 8)));
+        }
+        return Effect.fail(
+          new GitLabCli.GitLabCliCommandError({
+            operation: "execute",
+            command: "glab",
+            cwd: "/w",
+            cause: new VcsProcessExitError({
+              operation: "GitLabCli.execute",
+              command: "glab",
+              cwd: "/w",
+              exitCode: 1,
+              detail: "404 Commit Not Found",
+              failureKind: "not-found",
+            }),
+          }),
+        );
+      });
+      const cli = yield* GitLabPullRequestCli.GitLabPullRequestCli;
+      const has = (commit: string) =>
+        cli.mergeRequestHasCommit({ cwd: "/w", repository: "acme/web", number: 7, commit });
+
+      assert.isTrue(yield* has(inside));
+      expect(argsOfCall(0)[1]).toBe(
+        `projects/acme%2Fweb/repository/commits/${inside}/merge_requests?per_page=100`,
+      );
+      assert.isFalse(yield* has(elsewhere));
+      assert.isFalse(yield* has("3".repeat(40)));
+      const refused = yield* Effect.flip(has("../../merge_requests/8"));
+      assert.strictEqual(refused._tag, "GitLabDiffCommitError");
+      expect(mockedExecute).toHaveBeenCalledTimes(3);
+    }),
+  );
+
   it.effect.each([
     { answer: sourceBranchJson({}), expected: true },
     { answer: "not json", expected: false },

@@ -75,6 +75,17 @@ export function allowsSinglePullRequestMerge(input: {
   );
 }
 
+/**
+ * Where the host auto-merges stacks, a stacked layer's auto-merge request is the stack's, which
+ * only the stack menu cancels; until membership is known the layer may be stacked.
+ */
+export function allowsSinglePullRequestAutoMergeCancel(input: {
+  stackAutoMerge: boolean;
+  canMergeSinglePullRequest: boolean;
+}): boolean {
+  return !input.stackAutoMerge || input.canMergeSinglePullRequest;
+}
+
 export function resolvePullRequestMergeMethod(
   allowed: ReadonlyArray<PullRequestMergeMethod>,
   current: PullRequestMergeMethod | null,

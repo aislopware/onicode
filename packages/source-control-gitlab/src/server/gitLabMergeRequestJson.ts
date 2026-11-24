@@ -809,6 +809,19 @@ export function decodeLabelNameJson(raw: string): Result.Result<string | null, D
   return Result.map(decodeLabel(raw), (label) => trimmed(label.name));
 }
 
+const decodeIidEntry = Schema.decodeUnknownExit(Schema.Struct({ iid: Schema.Number }));
+
+export function decodeMergeRequestIidsJson(
+  raw: string,
+): Result.Result<ReadonlyArray<number>, DecodeFailure> {
+  return Result.map(decodeUnknownList(raw), (entries) =>
+    entries.flatMap((entry) => {
+      const decoded = decodeIidEntry(entry);
+      return Exit.isSuccess(decoded) ? [decoded.value.iid] : [];
+    }),
+  );
+}
+
 export interface GitLabProjectLabel extends PullRequestLabel {
   readonly description: string | null;
   readonly archived: boolean;

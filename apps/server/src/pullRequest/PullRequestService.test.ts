@@ -5437,6 +5437,87 @@ it.effect("reads a commit's diff only for a commit the change request lists", ()
   }),
 );
 
+it.effect("asks the host about a commit older than a full page of listed commits", () =>
+  Effect.gen(function* () {
+    const older = "e".repeat(40);
+    const outsider = "d".repeat(40);
+    const asked: Array<string> = [];
+    const read: Array<string | undefined> = [];
+    const service = yield* makeService({
+      projects: [project({ id: "p1", title: "web", workspaceRoot: "/a", repository: "acme/web" })],
+      providers: [
+        fakePullRequestProvider(SourceControlProviderKind.make("github"), {
+          ...activityListing(
+            ...Array.from({ length: 100 }, (_, index) => index.toString(16).padStart(40, "0")),
+          ),
+          hasCommit: (input) =>
+            Effect.sync(() => {
+              asked.push(input.commit);
+              return input.commit === older;
+            }),
+          getDiff: (input) =>
+            Effect.sync(() => {
+              read.push(input.commit);
+              return {
+                patch: "diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n+x\n",
+                truncated: false,
+                nextCursor: null,
+              };
+            }),
+        }),
+      ],
+    });
+    const ref = { projectId: "p1" as ProjectId, repository: "acme/web", number: 1 };
+
+    yield* service.diff({ ...ref, commit: older.toUpperCase() });
+    for (const commit of [outsider, older.slice(0, 7)]) {
+      const error = yield* service.diff({ ...ref, commit }).pipe(Effect.flip);
+      assert.strictEqual(error.reason, "not-found");
+    }
+    assert.deepStrictEqual(asked, [older, outsider]);
+    assert.deepStrictEqual(read, [older]);
+  }),
+);
+
+it.effect("serves a listed commit's cached diff past the activity's lifetime without it", () =>
+  Effect.gen(function* () {
+    const listed = "a".repeat(40);
+    let activityReads = 0;
+    const service = yield* makeService({
+      projects: [project({ id: "p1", title: "web", workspaceRoot: "/a", repository: "acme/web" })],
+      providers: [
+        fakePullRequestProvider(SourceControlProviderKind.make("github"), {
+          getChangeRequestActivity: () =>
+            ++activityReads === 1
+              ? activityListing(listed).getChangeRequestActivity()
+              : Effect.die("A listed commit must not reread the activity"),
+          getDiff: () =>
+            Effect.succeed({
+              patch: "diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n+x\n",
+              truncated: false,
+              nextCursor: null,
+            }),
+          getDiffFileContents: () => Effect.succeed({ oldContents: "old", newContents: "new" }),
+        }),
+      ],
+    });
+    const ref = {
+      projectId: "p1" as ProjectId,
+      repository: "acme/web",
+      number: 1,
+      commit: listed,
+    };
+    const file = { changeType: "change" as const, oldPath: "a.ts", newPath: "a.ts" };
+
+    yield* service.diff(ref);
+    yield* service.diffFileContents({ ...ref, ...file });
+    yield* TestClock.adjust("61 seconds");
+    yield* service.diff(ref);
+    yield* service.diffFileContents({ ...ref, ...file });
+    assert.strictEqual(activityReads, 1);
+  }),
+);
+
 it.effect.each(["commit", "credential", "expiry", "refresh"] as const)(
   "keeps cold metadata membership in its original scope through an in-flight %s",
   (boundary) =>

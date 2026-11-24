@@ -43,7 +43,7 @@ const make = Effect.gen(function* () {
     fail(server, "The agent session has ended. Send a message, then sign in again.");
 
   const resolve = Effect.fn("McpSignIn.resolve")(function* (input: ProviderMcpSignInStartInput) {
-    const projection = yield* threadManagement.getThreadRecords(input.threadId, [
+    const projection = yield* threadManagement.getLiveThreadRecords(input.threadId, [
       "providerThreads",
     ]);
     const providerThread = projection.providerThreads.find(

@@ -2,12 +2,13 @@ import type {
   OrchestrationV2SearchThreadInput,
   OrchestrationV2SearchThreadResult,
 } from "@onicode/contracts";
-import type {
-  ActiveThreadListEntry,
-  ProjectionRecordField,
-  ProjectionRecordFilter,
-  ProjectionRecords,
-  ShellSnapshotOptions,
+import {
+  type ActiveThreadListEntry,
+  type ProjectionRecordField,
+  type ProjectionRecordFilter,
+  type ProjectionRecords,
+  ProjectionStoreThreadNotFoundError,
+  type ShellSnapshotOptions,
 } from "./ProjectionStore.ts";
 import {
   type ChatAttachment,
@@ -444,6 +445,8 @@ export interface ThreadManagementServiceShape {
     readonly itemId: TurnItemId;
   }) => Effect.Effect<OrchestrationV2GetTurnItemResult, Orchestrator.OrchestratorV2Error>;
   readonly getThreadRecords: Orchestrator.OrchestratorV2["Service"]["getThreadRecords"];
+  /** For a client reading one thread by id: a deleted thread, kept for its forks, is not found. */
+  readonly getLiveThreadRecords: Orchestrator.OrchestratorV2["Service"]["getThreadRecords"];
   readonly getThreadProjection: (
     threadId: ThreadId,
   ) => Effect.Effect<OrchestrationV2ThreadProjection, Orchestrator.OrchestratorV2Error>;
@@ -749,8 +752,26 @@ const make = Effect.gen(function* () {
       Effect.andThen(orchestrator.getThreadProjection(threadId)),
     );
 
-  const getCheckpointContext: ThreadManagementServiceShape["getCheckpointContext"] = (threadId) =>
+  const getLiveThreadRecords: ThreadManagementServiceShape["getLiveThreadRecords"] = (
+    threadId,
+    fields,
+    filter,
+  ) =>
     ensureProjectionTranscript(threadId).pipe(
+      Effect.andThen(orchestrator.getThreadRecords(threadId, fields, filter)),
+      Effect.filterOrFail(
+        (records) => records.thread.deletedAt === null,
+        () =>
+          new Orchestrator.OrchestratorProjectionError({
+            threadId,
+            cause: new ProjectionStoreThreadNotFoundError({ threadId }),
+          }),
+      ),
+    );
+
+  // Only checkpoint diffs read this; run finalization and rewind read the store directly.
+  const getCheckpointContext: ThreadManagementServiceShape["getCheckpointContext"] = (threadId) =>
+    getLiveThreadRecords(threadId, []).pipe(
       Effect.andThen(orchestrator.getCheckpointContext(threadId)),
     );
 
@@ -2073,6 +2094,7 @@ const make = Effect.gen(function* () {
         );
       },
     ),
+    getLiveThreadRecords,
     getThreadProjection,
     getCheckpointContext,
     getThreadSnapshot,

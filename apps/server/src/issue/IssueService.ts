@@ -804,7 +804,7 @@ const make = Effect.gen(function* () {
       const { tracker, link } = parsed;
       // A link names its server's port; a binding does only when its remote or web URL did.
       const authority = new URL(url).host.toLowerCase();
-      const { supported } = yield* listProjects({ host: link.host, authority });
+      const { supported, unimplemented } = yield* listProjects({ host: link.host, authority });
       const onHost = supported.filter((project) => project.tracker === tracker);
       const onAuthority = onHost.filter((project) => project.host === authority);
       const onTracker = onAuthority.length > 0 ? onAuthority : onHost;
@@ -839,6 +839,10 @@ const make = Effect.gen(function* () {
       if (standalone === null) {
         const found = serve(onTracker);
         if (found === null) {
+          // A project is on the host, but no tracker serves it here, as with its feature flag off.
+          if ([authority, link.host].some((host) => unimplemented.get(host)?.tracker === tracker)) {
+            return yield* new IssueUnavailableError({ reason: "tracker-unsupported", tracker });
+          }
           return yield* new IssueOperationError({
             operation: "resolveUrl",
             detail: `No project in Onicode is on ${link.host}. Add any ${link.host} project to read its issues.`,
@@ -858,7 +862,11 @@ const make = Effect.gen(function* () {
       const ordered = [...preferred(exact), ...preferred(onTracker)];
       const accounts = [...new Set(ordered.map((project) => project.accountId))];
       if (accounts.length === 0) {
-        return yield* new IssueUnavailableError({ reason: "tracker-unsupported" });
+        const { displayName, scopeNoun } = standalone.api.standalone;
+        return yield* new IssueOperationError({
+          operation: "resolveUrl",
+          detail: `No project in Onicode reads ${displayName} issues. Connect a ${displayName} account in Settings and bind a project to one of its ${scopeNoun}s to read this issue.`,
+        });
       }
       let failure: IssueError | null = null;
       for (const accountId of accounts) {

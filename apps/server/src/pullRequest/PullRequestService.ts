@@ -139,6 +139,8 @@ const COMMIT_DIFF_CACHE_TTL = Duration.minutes(10);
 const LIST_STATS_CACHE_TTL = Duration.seconds(60);
 const FILES_VIEWED_CACHE_TTL = Duration.seconds(15);
 const DIFF_STALE_WINDOW = Duration.minutes(10);
+// GitHub and GitLab list a change request's newest 100 commits in its activity.
+const ACTIVITY_COMMIT_PAGE_SIZE = 100;
 const DIFF_SWEEP_INTERVAL = Duration.minutes(1);
 const VIEWER_CACHE_TTL = Duration.minutes(10);
 const STALE_DETAIL_WINDOW = Duration.minutes(10);
@@ -644,6 +646,7 @@ function withRateLimitBackoff(
     ...(api.getDiffFileContents === undefined
       ? {}
       : { getDiffFileContents: wrap("getDiffFileContents", api.getDiffFileContents) }),
+    ...(api.hasCommit === undefined ? {} : { hasCommit: wrap("hasCommit", api.hasCommit) }),
     ...(api.getFilesViewed === undefined
       ? {}
       : { getFilesViewed: wrap("getFilesViewed", api.getFilesViewed) }),
@@ -3795,33 +3798,79 @@ export const make = Effect.gen(function* () {
   };
   // A host reads a commit's diff from the repository, not from the change request, so a named
   // commit is forwarded only as the one oid the change request's own commit list gives for it.
+  // Past a full page the host is asked about one full oid. A commit found is trusted for as long
+  // as its diff is cached, so serving that diff rereads no activity and survives a host outage.
+  const listedCommitCache = yield* Cache.makeWith(
+    (key: string) => {
+      const [reference, wanted] = JSON.parse(key) as [string, string];
+      const ref = refOfCacheKey(reference);
+      return activity(ref).pipe(
+        Effect.flatMap(({ commits }): Effect.Effect<Option.Option<string>, PullRequestError> => {
+          const listed = commits.filter((commit) => commit.oid.toLowerCase().startsWith(wanted));
+          const [commit] = listed;
+          if (commit !== undefined) {
+            return Effect.succeed(listed.length === 1 ? Option.some(commit.oid) : Option.none());
+          }
+          if (
+            commits.length < ACTIVITY_COMMIT_PAGE_SIZE ||
+            !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(wanted)
+          ) {
+            return Effect.succeedNone;
+          }
+          return requireProject(ref).pipe(
+            Effect.flatMap((project) => {
+              const hasCommit = project.api.hasCommit;
+              if (hasCommit === undefined) return Effect.succeedNone;
+              return hasCommit({
+                cwd: project.project.workspaceRoot,
+                repository: project.repository,
+                host: project.host,
+                number: ref.number,
+                commit: wanted,
+              }).pipe(
+                Effect.mapError(toPullRequestError("diff")),
+                Effect.map((contained) => (contained ? Option.some(wanted) : Option.none())),
+              );
+            }),
+          );
+        }),
+      );
+    },
+    {
+      capacity: DIFF_CACHE_CAPACITY,
+      timeToLive: (exit) =>
+        Exit.isSuccess(exit) && Option.isSome(exit.value) ? COMMIT_DIFF_CACHE_TTL : Duration.zero,
+    },
+  );
+  const listedCommit = (input: PullRequestRef, wanted: string) =>
+    Cache.get(listedCommitCache, JSON.stringify([refCacheKey(input), wanted]));
   const withListedCommit = <I extends PullRequestRef & { readonly commit?: string | undefined }>(
     operation: string,
     input: I,
-    read: (input: I) => Effect.Effect<PullRequestActivity, PullRequestError>,
+    listed: (input: I, wanted: string) => Effect.Effect<Option.Option<string>, PullRequestError>,
   ): Effect.Effect<I, PullRequestError> => {
     const wanted = input.commit?.toLowerCase();
     if (wanted === undefined) return Effect.succeed(input);
-    return read(input).pipe(
-      Effect.flatMap(({ commits }) => {
-        const listed = /^[0-9a-f]{7,64}$/.test(wanted)
-          ? commits.filter((commit) => commit.oid.toLowerCase().startsWith(wanted))
-          : [];
-        const [commit] = listed;
-        return commit !== undefined && listed.length === 1
-          ? Effect.succeed({ ...input, commit: commit.oid })
-          : Effect.fail(
-              new PullRequestOperationError({
-                operation,
-                detail: "This commit is not part of the change request.",
-                reason: "not-found",
-              }),
-            );
-      }),
+    const notListed = () =>
+      Effect.fail(
+        new PullRequestOperationError({
+          operation,
+          detail: "This commit is not part of the change request.",
+          reason: "not-found",
+        }),
+      );
+    if (!/^[0-9a-f]{7,64}$/.test(wanted)) return notListed();
+    return listed(input, wanted).pipe(
+      Effect.flatMap(
+        Option.match({
+          onNone: notListed,
+          onSome: (commit) => Effect.succeed({ ...input, commit }),
+        }),
+      ),
     );
   };
   const diff: PullRequestService["Service"]["diff"] = (input) =>
-    withListedCommit("diff", input, activity).pipe(
+    withListedCommit("diff", input, listedCommit).pipe(
       Effect.flatMap((input) => {
         const { key, read } = readDiff(input);
         return staleDiff.serve(key, read.pipe(Effect.map((read) => read.value)));
@@ -4242,9 +4291,9 @@ export const make = Effect.gen(function* () {
     return walk(undefined);
   };
   // PR read access does not grant arbitrary repository reads with the project credential; restrict to changed files.
-  const listedActivity = credentialCached(activity);
+  const credentialListedCommit = credentialCached(listedCommit);
   const diffFileContents: PullRequestService["Service"]["diffFileContents"] = (input) =>
-    withListedCommit("diffFileContents", input, listedActivity).pipe(
+    withListedCommit("diffFileContents", input, credentialListedCommit).pipe(
       Effect.flatMap((input) =>
         changesFile(input).pipe(
           Effect.flatMap((changed) =>

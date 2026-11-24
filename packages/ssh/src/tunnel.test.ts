@@ -1361,8 +1361,8 @@ child.on("exit", (code) => process.exit(code ?? 1));`,
 // On Linux kill -0 accepts a thread ID and kill <tid> signals its whole process,
 // but ps lists only thread-group leaders. After a reboot the managed pid file can
 // name a thread or a whole process that is not our server.
-describe.runIf(HostProcess.Platform.defaultValue() === "linux")("stale managed pid file", () => {
-  const FAKE_SERVER = `const fs = require("node:fs");
+// A node-script runner for the launch scripts: it answers HTTP and publishes its runtime record.
+const FAKE_SERVER = `const fs = require("node:fs");
 const http = require("node:http");
 const path = require("node:path");
 const args = process.argv.slice(2);
@@ -1389,6 +1389,8 @@ server.listen(Number(flag("--port") ?? 0), "127.0.0.1", () => {
   console.log(port);
 });
 `;
+
+describe.runIf(HostProcess.Platform.defaultValue() === "linux")("stale managed pid file", () => {
   const target = { alias: "devbox", hostname: "devbox", username: null, port: null } as const;
   const staleIds = ["a thread of an unrelated process", "an unrelated process"] as const;
 
@@ -1903,6 +1905,89 @@ const canBind = (port) =>
       assert.notInclude(result.stderr, "File exists");
       assert.isTrue(yield* fs.exists(`${target}/ssh-launch/test-state`), result.stderr);
     }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.live.skipIf(windowsHost)(
+    "a second desktop's launch and pairing leave the first desktop's server running",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const root = yield* fs.makeTempDirectoryScoped({ prefix: "oni-two-desktops-" });
+        const home = `${root}/home`;
+        const target = { alias: "devbox", hostname: "devbox", username: null, port: null } as const;
+        const stateKey = yield* remoteStateKey(target);
+        const stateDir = `${home}/.onicode/ssh-launch/${stateKey}`;
+        yield* fs.makeDirectory(stateDir, { recursive: true });
+        yield* fs.writeFileString(`${stateDir}/port`, `${yield* freeLoopbackPort}\n`);
+        const launchedPids = new Set<number>();
+        yield* Effect.addFinalizer(() =>
+          Effect.sync(() => {
+            for (const pid of launchedPids) if (isAlive(pid)) process.kill(pid, "SIGKILL");
+          }),
+        );
+        // Two desktops install the server script at different paths, so their runners differ.
+        const desktopScript = (desktop: "a" | "b") =>
+          Effect.gen(function* () {
+            const script = `${root}/desktop-${desktop}.cjs`;
+            yield* fs.writeFileString(
+              script,
+              `if (process.argv[2] === "auth") {\n  console.log('{"credential":"PAIR"}');\n  process.exit(0);\n}\n${FAKE_SERVER}`,
+            );
+            return script;
+          });
+        const connect = (desktop: "a" | "b") =>
+          Effect.gen(function* () {
+            const launch = `${root}/launch-${desktop}.sh`;
+            yield* fs.writeFileString(
+              launch,
+              SshTunnel.buildRemoteLaunchScript({ nodeScriptPath: yield* desktopScript(desktop) }),
+            );
+            const result = yield* runScript(home, [launch, stateKey, desktop.repeat(32)]);
+            assert.equal(result.exitCode, 0, result.stderr);
+            const runtime = yield* fs.readFileString(
+              `${home}/.onicode/userdata/server-runtime.json`,
+            );
+            const pid = Number((JSON.parse(runtime) as { pid: number }).pid);
+            launchedPids.add(pid);
+            return pid;
+          });
+        const pair = (desktop: "a" | "b") =>
+          Effect.gen(function* () {
+            let script = "";
+            const spawner = ChildProcessSpawner.make((command) =>
+              Effect.gen(function* () {
+                const stdin =
+                  command._tag === "StandardCommand" ? command.options.stdin : undefined;
+                if (
+                  typeof stdin === "object" &&
+                  "stream" in stdin &&
+                  Stream.isStream(stdin.stream)
+                ) {
+                  script = yield* stdin.stream.pipe(Stream.decodeText(), Stream.mkString);
+                }
+                return makeSuccessfulProcess('{"credential":"PAIR"}\n');
+              }),
+            );
+            yield* SshTunnel.issueRemotePairingToken(target, undefined, {
+              nodeScriptPath: yield* desktopScript(desktop),
+            }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner));
+            const pairing = `${root}/pair-${desktop}.sh`;
+            yield* fs.writeFileString(pairing, script);
+            const result = yield* runScript(home, [pairing]);
+            assert.equal(result.exitCode, 0, result.stderr);
+            assert.include(result.stdout, "PAIR");
+          });
+
+        const serverPid = yield* connect("a");
+        yield* pair("b");
+        assert.equal(yield* connect("b"), serverPid);
+        assert.equal(
+          yield* connect("a"),
+          serverPid,
+          "the first desktop's reconnect restarted its server",
+        );
+        assert.isTrue(isAlive(serverPid));
+      }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
   it.live.skipIf(windowsHost)("a newer client still replaces an older managed server", () =>

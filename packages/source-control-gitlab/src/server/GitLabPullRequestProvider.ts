@@ -390,7 +390,8 @@ export const make = Effect.gen(function* () {
       Effect.all(
         [
           recoverRead(cli.listNotes(input), { comments: [], truncated: true }),
-          recoverRead(cli.listCommits(input), []),
+          // Not optional: a commit's diff is read only for a commit this list names.
+          cli.listCommits(input),
           recoverRead(cli.listDiscussions(input), {
             threads: [],
             diffRefsByThreadId: new Map(),
@@ -503,6 +504,8 @@ export const make = Effect.gen(function* () {
 
     getDiffFileContents: (input) =>
       cli.getMergeRequestDiffFileContents(input).pipe(Effect.mapError(fail("getDiffFileContents"))),
+
+    hasCommit: (input) => cli.mergeRequestHasCommit(input).pipe(Effect.mapError(fail("hasCommit"))),
 
     getFileRevisions: (input) =>
       cli.getFileRevisions(input).pipe(

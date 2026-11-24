@@ -52,6 +52,7 @@ import {
   decodeDiscussionsJson,
   decodeMaintainerEditsPermissionJson,
   decodeLabelNameJson,
+  decodeMergeRequestIidsJson,
   decodeLabelPermissionJson,
   decodeMergeMessagesJson,
   decodeMergeRequestDetailJson,
@@ -485,6 +486,15 @@ export class GitLabPullRequestCli extends Context.Service<
       readonly repository: string;
       readonly number: number;
     }) => Effect.Effect<ReadonlyArray<PullRequestCommit>, GitLabPullRequestCliError>;
+
+    /** Whether the merge request contains a commit its activity's newest commits leave out. */
+    readonly mergeRequestHasCommit: (input: {
+      readonly cwd: string;
+      readonly host?: string | undefined;
+      readonly repository: string;
+      readonly number: number;
+      readonly commit: string;
+    }) => Effect.Effect<boolean, GitLabPullRequestCliError>;
 
     readonly getMergeRequestDiff: (input: {
       readonly cwd: string;
@@ -2592,6 +2602,43 @@ export const make = Effect.gen(function* () {
         ...(omittedFileStats.length === 0 ? {} : { omittedFileStats }),
       };
     }),
+
+    // GitLab relates a commit to the merge requests that contain it and answers 404 for a commit
+    // it does not know.
+    mergeRequestHasCommit: Effect.fn("GitLabPullRequestCli.mergeRequestHasCommit")(
+      function* (input) {
+        if (!isCommitSha(input.commit)) {
+          return yield* new GitLabDiffCommitError({ command: "glab", cwd: input.cwd });
+        }
+        return yield* api({
+          cwd: input.cwd,
+          host: input.host,
+          path: `projects/${projectPath(input.repository)}/repository/commits/${input.commit}/merge_requests?${query(
+            [["per_page", String(MAX_PAGE_SIZE)]],
+          )}`,
+        }).pipe(
+          Effect.flatMap((result) => {
+            const decoded = decodeMergeRequestIidsJson(result.stdout.trim());
+            return Result.isSuccess(decoded)
+              ? Effect.succeed(decoded.success.includes(input.number))
+              : Effect.fail(
+                  new GitLabMergeRequestReadError({
+                    command: "glab",
+                    cwd: input.cwd,
+                    operation: "mergeRequestHasCommit",
+                    cause: decoded.failure,
+                  }),
+                );
+          }),
+          Effect.catchTags({
+            GitLabCliCommandError: (error) =>
+              isVcsProcessExitError(error.cause) && error.cause.failureKind === "not-found"
+                ? Effect.succeed(false)
+                : Effect.fail(error),
+          }),
+        );
+      },
+    ),
 
     getMergeRequestDiffFileContents: Effect.fn(
       "GitLabPullRequestCli.getMergeRequestDiffFileContents",

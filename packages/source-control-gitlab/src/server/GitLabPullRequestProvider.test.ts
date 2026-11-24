@@ -579,6 +579,16 @@ describe("optional activity reads", () => {
       error: new GitLabCli.GitLabCliUnavailableError(context),
       reason: "missing-tool",
     },
+    {
+      operation: "listCommits",
+      error: new GitLabPullRequestCli.GitLabMergeRequestReadError({
+        command: "glab",
+        cwd: "/w",
+        operation: "listCommits",
+        cause: null,
+      }),
+      reason: "failed",
+    },
   ] as const)(
     "reports $reason instead of successful partial activity",
     ({ operation, error, reason }) =>

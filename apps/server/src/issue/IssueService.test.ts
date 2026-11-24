@@ -319,6 +319,21 @@ describe("IssueService", () => {
         key: "7",
       });
 
+      // A project's host whose tracker is not offered here, as TanStack Source with its flag off.
+      const unoffered = yield* makeService({
+        projects: [
+          project({ id: "lab", repository: "acme/web", provider: "gitlab", host: "gitlab.com" }),
+        ],
+        trackers: [fakeTracker()],
+      });
+      expect(
+        yield* Effect.flip(unoffered.resolveUrl("https://gitlab.com/acme/web/-/issues/3")),
+      ).toMatchObject({
+        _tag: "IssueUnavailableError",
+        reason: "tracker-unsupported",
+        tracker: "gitlab",
+      });
+
       // A fork lists its upstream's issues and its own, counted once, and may write to both.
       const fork = project({ id: "fork", repository: "acme/web" });
       const forked = yield* makeService({
@@ -994,6 +1009,12 @@ describe("IssueService with a standalone tracker", () => {
       expect(refused).toMatchObject({
         _tag: "IssueUnavailableError",
         reason: "tracker-unsupported",
+      });
+      expect(
+        yield* Effect.flip(unbound.resolveUrl("https://linear.app/acme/issue/ENG-1/issue-title")),
+      ).toMatchObject({
+        _tag: "IssueOperationError",
+        detail: expect.stringContaining("Connect a Linear account in Settings and bind a project"),
       });
 
       // A project with no remote at all can still be bound, and then has only the standalone one.

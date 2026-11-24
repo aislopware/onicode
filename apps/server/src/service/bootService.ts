@@ -879,8 +879,15 @@ export const make = Effect.fn("service.boot_service.make")(function* (input: {
     ),
   ).join(":");
 
+  // The config provider copies the environment, so names lose Windows' case-insensitivity;
+  // MSYS and Cygwin launch with upper-case names such as `SYSTEMROOT`.
   const windowsVariable = (name: string) =>
-    platform === "win32" ? Config.String(name).pipe(Config.withDefault("")) : Config.succeed("");
+    platform === "win32"
+      ? Config.String(name).pipe(
+          Config.orElse(() => Config.String(name.toUpperCase())),
+          Config.withDefault(""),
+        )
+      : Config.succeed("");
   const windowsSession: WindowsSession = {
     localAppData: yield* windowsVariable("LOCALAPPDATA"),
     userId: `${yield* windowsVariable("USERDOMAIN")}\\${yield* windowsVariable("USERNAME")}`,

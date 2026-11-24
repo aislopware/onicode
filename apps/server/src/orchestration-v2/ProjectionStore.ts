@@ -585,7 +585,10 @@ export interface ProjectionStoreV2Shape {
     options: ProjectionTimelinePageOptions,
   ) => Effect.Effect<ProjectionTimelinePage, ProjectionStoreV2Error>;
   readonly getMessageCount: (threadId: ThreadId) => Effect.Effect<number, ProjectionStoreV2Error>;
-  /** Bytes of tool output a transcript export is sure to hold, or 0 when it can fit in `limit`. */
+  /**
+   * Bytes of tool output a transcript export is sure to hold, or 0 when it can fit in `limit`.
+   * A deleted thread is not found.
+   */
   readonly getTranscriptByteFloor: (
     threadId: ThreadId,
     limit: number,
@@ -6876,10 +6879,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
     // result, are a floor for the export. Other stored bytes are not: decoding drops fields. A
     // rolled back run is the only way the export hides a tool row, and rows a fork inherits only
     // add to it. The output sum parses payloads, so it runs only when the tool rows exceed `limit`.
-    const getTranscriptByteFloor: ProjectionStoreV2Shape["getTranscriptByteFloor"] = (
-      threadId,
-      limit,
-    ) =>
+    const transcriptToolOutputBytes = (threadId: ThreadId, limit: number) =>
       sql<{ bytes: number }>`
         WITH tool_rows AS (
           SELECT payload_json FROM orchestration_v2_projection_turn_items
@@ -6903,10 +6903,21 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             FROM tool_rows
           )
         END AS bytes
-      `.pipe(
-        Effect.map((rows) => rows[0]?.bytes ?? 0),
+      `.pipe(Effect.map((rows) => rows[0]?.bytes ?? 0));
+    const getTranscriptByteFloor: ProjectionStoreV2Shape["getTranscriptByteFloor"] = Effect.fn(
+      "ProjectionStore.getTranscriptByteFloor",
+    )(function* (threadId, limit) {
+      const rows = yield* sql<{ deleted: number }>`
+          SELECT deleted_at IS NOT NULL AS deleted
+          FROM orchestration_v2_projection_threads WHERE thread_id = ${threadId}
+        `.pipe(Effect.mapError(controlReadError(threadId)));
+      if (rows[0]?.deleted === 1) {
+        return yield* new ProjectionStoreThreadNotFoundError({ threadId });
+      }
+      return yield* transcriptToolOutputBytes(threadId, limit).pipe(
         Effect.mapError(controlReadError(threadId)),
       );
+    });
     const getRunCount: ProjectionStoreV2Shape["getRunCount"] = (threadId) =>
       sql<{
         count: number;
@@ -6952,15 +6963,28 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
         Effect.mapError(controlReadError(threadId)),
       );
 
+    // Deletion keeps the rows; a deleted thread's item stays readable while a live fork shows it.
     const getTurnItem: ProjectionStoreV2Shape["getTurnItem"] = ({ threadId, itemId }) =>
-      sql<{ payload_json: string }>`SELECT payload_json
-        FROM orchestration_v2_projection_turn_items
-        WHERE turn_item_id = ${itemId} AND thread_id = ${threadId}`.pipe(
-        Effect.flatMap((rows) =>
-          rows[0] === undefined
-            ? Effect.succeed(null)
-            : decodeTurnItemPayload(rows[0].payload_json),
-        ),
+      sql<{ payload_json: string; deleted: number; run_ordinal: number }>`SELECT item.payload_json,
+          thread.deleted_at IS NOT NULL AS deleted, COALESCE(run.ordinal, -1) AS run_ordinal
+        FROM orchestration_v2_projection_turn_items AS item
+        LEFT JOIN orchestration_v2_projection_threads AS thread ON thread.thread_id = item.thread_id
+        LEFT JOIN orchestration_v2_projection_runs AS run ON run.run_id = item.run_id
+        WHERE item.turn_item_id = ${itemId} AND item.thread_id = ${threadId}`.pipe(
+        Effect.flatMap(([row]) => {
+          if (row === undefined) return Effect.succeed(null);
+          const shown =
+            row.deleted === 0
+              ? Effect.succeed(true)
+              : lastRunsShownByLiveForks(threadId, threadId).pipe(
+                  Effect.map(({ with_fork }) => with_fork !== null && row.run_ordinal <= with_fork),
+                );
+          return shown.pipe(
+            Effect.flatMap((visible) =>
+              visible ? decodeTurnItemPayload(row.payload_json) : Effect.succeed(null),
+            ),
+          );
+        }),
         Effect.mapError(controlReadError(threadId)),
       );
 

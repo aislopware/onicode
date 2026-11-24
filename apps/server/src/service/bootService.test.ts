@@ -382,7 +382,7 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
                 USERPROFILE: home,
                 LOCALAPPDATA: path.join(home, "AppData", "Local"),
                 USERDOMAIN: "PC",
-                windir: "D:\\WinNT",
+                SYSTEMROOT: "D:\\WinNT",
                 USERNAME: "theo",
                 ...(environmentPath === undefined || environmentPath === ""
                   ? {}
