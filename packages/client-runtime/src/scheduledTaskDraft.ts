@@ -54,8 +54,10 @@ export function rebaseScheduledTaskDestination<
   readonly threadId: TThread | ThreadId | null;
   readonly threadMode: ScheduledTaskThreadMode;
 } {
-  const projectEdited = draft.projectId !== loaded.projectId;
-  const threadEdited = draft.threadId !== loaded.threadId;
+  const loadedProjectId: string = loaded.projectId;
+  const loadedThreadId: string | null = loaded.threadId;
+  const projectEdited = draft.projectId !== loadedProjectId;
+  const threadEdited = draft.threadId !== loadedThreadId;
   const pickedThread = threadEdited && draft.threadId !== null;
   const currentMode = scheduledTaskThreadMode(current);
   const threadMode =
