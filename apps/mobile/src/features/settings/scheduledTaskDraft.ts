@@ -262,7 +262,7 @@ function scheduleSignature(schedule: ScheduleDraft) {
   return [
     scheduleSettingsSignature(schedule),
     schedule.mode === "webhook"
-      ? schedule.filters.map(({ path, op, value }) => [path, op, value])
+      ? schedule.filters.map(({ path, op, value }) => [path, op, op === "exists" ? "" : value])
       : null,
   ];
 }
@@ -372,12 +372,16 @@ export function rebaseScheduledTaskDraft(
   const modelUntouched =
     JSON.stringify(draft.modelSelection) === JSON.stringify(loaded.modelSelection);
   const nextSchedule = scheduleDraftForTask(current);
-  const keptFilters = filtersEdited(draft.schedule);
+  const editedFilters = filtersEdited(draft.schedule);
   // Edited filters belong to a webhook trigger, so they keep the task one.
   const takeStoredSchedule =
     JSON.stringify(scheduleSettingsSignature(draft.schedule)) ===
       JSON.stringify(scheduleSettingsSignature(scheduleDraftForTask(loaded))) &&
-    !(keptFilters && nextSchedule.mode !== "webhook");
+    !(editedFilters && nextSchedule.mode !== "webhook");
+  // A webhook the user kept over a stored timer keeps its filters too.
+  const keepFilters =
+    editedFilters ||
+    (!takeStoredSchedule && draft.schedule.mode === "webhook" && nextSchedule.mode !== "webhook");
   return {
     ...draft,
     ...(draft.title === loaded.title ? { title: current.title } : {}),
@@ -386,7 +390,7 @@ export function rebaseScheduledTaskDraft(
     schedule: {
       ...(takeStoredSchedule ? nextSchedule : draft.schedule),
       // Edited filter rows stay; untouched ones take what is stored now.
-      filters: keptFilters ? draft.schedule.filters : nextSchedule.filters,
+      filters: keepFilters ? draft.schedule.filters : nextSchedule.filters,
       savedFilters: nextSchedule.savedFilters,
     },
     ...rebaseScheduledTaskDestination(draft, loaded, current),

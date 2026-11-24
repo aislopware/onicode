@@ -349,22 +349,28 @@ export function taskToDraft(task: ScheduledTask): DraftState {
   };
 }
 
-const SCHEDULE_FIELDS = [
-  "scheduleMode",
-  "intervalMinutes",
-  "timeOfDay",
-  "runAt",
-  "savedRunAt",
-  "weekdays",
-  "signatureEnabled",
-  "signatureHeader",
-  "signatureEncoding",
-  "signaturePrefix",
-  "signatureSecret",
-  "replayKey",
-  "coalesceKey",
-  "coalesceWindowSeconds",
-] as const;
+// Fields a mode leaves behind when the user switches away and back are not edits.
+function scheduleSettingsSignature(draft: DraftState): string {
+  const mode = draft.scheduleMode;
+  const webhook = mode === "webhook";
+  const signed = webhook && draft.signatureEnabled;
+  return JSON.stringify([
+    mode,
+    mode === "interval" ? draft.intervalMinutes : null,
+    mode === "fixed" ? [draft.timeOfDay, [...draft.weekdays].toSorted((a, b) => a - b)] : null,
+    mode === "once" ? [draft.runAt, draft.savedRunAt] : null,
+    webhook ? draft.signatureEnabled : null,
+    signed
+      ? [
+          draft.signatureHeader,
+          draft.signatureEncoding,
+          draft.signaturePrefix,
+          draft.signatureSecret,
+        ]
+      : null,
+    webhook ? [draft.replayKey, draft.coalesceKey, draft.coalesceWindowSeconds] : null,
+  ]);
+}
 
 const WORKSPACE_FIELDS = [
   "workspaceMode",
@@ -396,13 +402,20 @@ export function rebaseDraft(draft: DraftState, current: ScheduledTask): DraftSta
   const filtersEdited =
     draft.scheduleMode === "webhook" &&
     webhookFilterDraftsChanged(draft.savedFilters, draft.filters);
+  // Edited filters belong to a webhook trigger, so they keep the task one.
+  const takeStoredSchedule =
+    scheduleSettingsSignature(draft) === scheduleSettingsSignature(loaded) &&
+    !(filtersEdited && now.scheduleMode !== "webhook");
+  // A webhook the user kept over a stored timer keeps its filters too.
+  const keepFilters =
+    filtersEdited ||
+    (!takeStoredSchedule && draft.scheduleMode === "webhook" && now.scheduleMode !== "webhook");
   return {
     ...draft,
     ...(untouched("title") ? { title: now.title } : {}),
     ...(untouched("prompt") ? { prompt: now.prompt } : {}),
     ...(untouched("enabled") ? { enabled: now.enabled } : {}),
-    // Edited filters belong to a webhook trigger, so they keep the task one.
-    ...(SCHEDULE_FIELDS.every(untouched) && !(filtersEdited && now.scheduleMode !== "webhook")
+    ...(takeStoredSchedule
       ? {
           scheduleMode: now.scheduleMode,
           intervalMinutes: now.intervalMinutes,
@@ -439,7 +452,7 @@ export function rebaseDraft(draft: DraftState, current: ScheduledTask): DraftSta
     ...(untouched("runtimeMode") ? { runtimeMode: now.runtimeMode } : {}),
     ...(untouched("interactionMode") ? { interactionMode: now.interactionMode } : {}),
     // Edited filter rows stay; untouched ones take what is stored now.
-    ...(filtersEdited ? {} : { filters: now.filters }),
+    ...(keepFilters ? {} : { filters: now.filters }),
     savedFilters: now.savedFilters,
     saved: now.saved,
   };

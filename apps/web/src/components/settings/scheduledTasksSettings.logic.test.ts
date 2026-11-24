@@ -217,6 +217,26 @@ describe("a scheduled task save refused by another client's change", () => {
     );
     expect(refiltered.scheduleMode).toBe("webhook");
     expect(refiltered.filters.map((row) => row.value)).toEqual(["closed"]);
+    // Fields a trip through another mode left behind are no edit either.
+    const viaOnce = {
+      ...hookDraft,
+      title: "Renamed",
+      runAt: "2030-01-01T09:00",
+      savedRunAt: "2030-01-01T09:00:00+00:00",
+    };
+    const deduped = {
+      ...hook,
+      schedule: { ...hook.schedule, dedupe: { replayKey: "{{body.id}}" } },
+    };
+    expect(rebaseDraft(viaOnce, deduped).replayKey).toBe("{{body.id}}");
+    // Filters left alone stay when an edited webhook meets a task made a timer elsewhere.
+    const replayEdited = rebaseDraft(
+      { ...hookDraft, replayKey: "{{body.id}}" },
+      { ...hook, schedule: { type: "interval", everyMs: 3_600_000 } },
+    );
+    expect(replayEdited.scheduleMode).toBe("webhook");
+    expect(replayEdited.filters.map((row) => row.value)).toEqual(["opened"]);
+    expect(replayEdited.savedFilters).toEqual([]);
     // Filters left behind by a trip through the webhook mode are no edit.
     const roundTrip = { ...taskToDraft(loaded), title: "Renamed", filters: hookDraft.filters };
     expect(rebaseDraft(roundTrip, current).timeOfDay).toBe("10:30");

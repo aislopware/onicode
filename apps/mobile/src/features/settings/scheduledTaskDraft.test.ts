@@ -332,6 +332,33 @@ describe("scheduled task worktree base", () => {
     ).schedule;
     expect(rebasedSigned).toMatchObject({ signatureEnabled: true, signatureHeader: "x-signature" });
     expect(rebasedSigned.filters.map((filter) => filter.value)).toEqual(["closed"]);
+    // Filters left alone stay when an edited webhook meets a task made a timer elsewhere.
+    const timer = {
+      ...webhookTask,
+      schedule: { type: "interval", everyMs: 3_600_000 },
+    } satisfies ScheduledTask;
+    const keptOnTimer = rebaseScheduledTaskDraft(
+      { ...replayEdited, schedule: { ...replayEdited.schedule, replayKey: "{{body.id}}" } },
+      timer,
+    ).schedule;
+    expect(keptOnTimer.mode).toBe("webhook");
+    expect(keptOnTimer.filters.map((filter) => filter.value)).toEqual(["opened"]);
+    expect(keptOnTimer.savedFilters).toEqual([]);
+    // A value an "exists" filter ignores is no edit.
+    const existsTask = {
+      ...webhookTask,
+      schedule: { ...webhookTask.schedule, filters: [{ path: "body.action", op: "exists" }] },
+    } satisfies ScheduledTask;
+    const existsDraft = editDraft(existsTask);
+    expect(
+      hasScheduledTaskDraftChanges(existsDraft, {
+        ...existsDraft,
+        schedule: {
+          ...existsDraft.schedule,
+          filters: existsDraft.schedule.filters.map((row) => ({ ...row, value: "opened" })),
+        },
+      }),
+    ).toBe(false);
   });
 
   it("counts only edits the saved task would carry", () => {
