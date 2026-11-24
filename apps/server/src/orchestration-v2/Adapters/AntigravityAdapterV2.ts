@@ -50,6 +50,7 @@ import {
   classifyAntigravitySubagentToolCall,
   extractAntigravityUserInputQuestion,
   makeAntigravityReadRepair,
+  makeAntigravityUpdateStepsPlans,
   makeAntigravityUserInputResponse,
   normalizeAntigravityToolCall,
 } from "../../provider/acp/AntigravityProtocol.ts";
@@ -214,6 +215,7 @@ export function makeAntigravityAcpAdapterFlavor(
         .pipe(Effect.provideService(Scope.Scope, scope));
       // Repair keeps state across updates, so each runtime must have one session-update handler.
       const reads = makeAntigravityReadRepair();
+      const plans = makeAntigravityUpdateStepsPlans();
       // Served reads are reported from the read handler, so they take turns with agent updates.
       const updates = yield* Semaphore.make(1);
       let projectUpdate: Parameters<typeof runtime.handleSessionUpdate>[0] | undefined;
@@ -245,7 +247,8 @@ export function makeAntigravityAcpAdapterFlavor(
         handleSessionUpdate: (handler) => {
           projectUpdate = handler;
           return runtime.handleSessionUpdate((notification) => {
-            const repaired = reads.repair(notification);
+            const repaired = plans(reads.repair(notification));
+            if (repaired === undefined) return Effect.void;
             const update = repaired.update;
             if (update.sessionUpdate === "config_option_update") {
               recordActiveModel(
