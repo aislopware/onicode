@@ -8,6 +8,7 @@ import {
   type IssueListInput,
   type ProjectId,
 } from "@onicode/contracts";
+import { splitsSurrogatePair } from "@onicode/shared/assistantCitations";
 
 import { sourceControlClients } from "@onicode/client-runtime/source-control-clients";
 import type { IssueListTarget } from "@onicode/client-runtime/state/issues";
@@ -22,7 +23,10 @@ const text = (value: unknown): string | undefined => {
   return typeof raw === "string" && raw.trim() ? raw.trim() : undefined;
 };
 // Only free text is capped: a shortened id or issue key names something else.
-const bounded = (value: unknown) => text(value)?.slice(0, 200);
+const bounded = (value: unknown) => {
+  const full = text(value);
+  return full?.slice(0, splitsSurrogatePair(full, 200) ? 199 : 200);
+};
 
 const labels = (raw: unknown): ReadonlyArray<string> | undefined => {
   const names = (Array.isArray(raw) ? raw : [raw]).flatMap((name) => bounded(name) ?? []);
