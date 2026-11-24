@@ -67,10 +67,10 @@ export const make = Effect.gen(function* () {
           {
             messageRunIds: [runId],
             turnItemStatuses: ["pending", "running", "waiting"],
-            // The latest run, active runs that hold background work, and rolled-back runs whose
-            // items it ignores.
-            runStatuses: ["preparing", "starting", "running", "rolled_back"],
-            includeLatestRun: true,
+            // The run that ran last, queued and active runs, and rolled-back runs whose items it
+            // ignores.
+            runStatuses: ["queued", "preparing", "starting", "running", "waiting", "rolled_back"],
+            includeLatestExecutedRun: true,
             // Without an active provider thread there is no session to compact.
             providerThreadIds: activeProviderThreadIds,
             providerTurnThreadIds: activeProviderThreadIds,

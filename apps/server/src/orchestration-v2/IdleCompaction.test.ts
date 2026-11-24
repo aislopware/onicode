@@ -14,6 +14,7 @@ import {
   ThreadId,
   TurnItemId,
 } from "@onicode/contracts";
+import { latestExecutedRun } from "@onicode/shared/orchestrationV2ThreadError";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -405,7 +406,10 @@ describe("IdleCompactionService", () => {
     },
   );
 
-  it.effect("keeps the latest run's compaction when an earlier run reports completed again", () =>
+  it.effect.each([
+    { case: "keeps the latest run's compaction when an earlier run reports completed again" },
+    { case: "compacts an earlier run resumed after a later one was interrupted", resumed: true },
+  ])("$case", ({ resumed }) =>
     Effect.gen(function* () {
       yield* TestClock.setTime(NOW_MS);
       const base = records({ cacheExpiresInMs: 10 * MINUTE_MS });
@@ -417,6 +421,7 @@ describe("IdleCompactionService", () => {
         id: laterRunId,
         ordinal: 2,
         userMessageId: laterMessageId,
+        ...(resumed ? { status: "interrupted" as const, completedAt: at(-MINUTE_MS) } : {}),
       };
       const cancelledRun = {
         ...earlierRun,
@@ -472,6 +477,23 @@ describe("IdleCompactionService", () => {
           getThreadRecords: (_threadId, _keys, options) =>
             Effect.succeed({
               ...data,
+              // As the store reads them: the asked statuses, plus the run that ran last or the
+              // highest one started.
+              runs: data.runs.filter(
+                (run) =>
+                  options?.runStatuses === undefined ||
+                  options.runStatuses.includes(run.status) ||
+                  (options.includeLatestExecutedRun === true &&
+                    run === latestExecutedRun(data.runs)) ||
+                  (options.includeLatestRun === true &&
+                    run ===
+                      data.runs
+                        .filter(
+                          (candidate) =>
+                            candidate.status !== "cancelled" || candidate.startedAt !== null,
+                        )
+                        .at(-1)),
+              ),
               messages: data.messages.filter(
                 (message) =>
                   options?.messageRunIds === undefined ||
@@ -492,7 +514,7 @@ describe("IdleCompactionService", () => {
         yield* Deferred.await(streamDone);
         yield* TestClock.adjust(9 * MINUTE_MS);
       }).pipe(Effect.provide(dependencies));
-      expect(dispatched).toEqual(["server:idle-compact:idle-thread:run-2"]);
+      expect(dispatched).toEqual([`server:idle-compact:idle-thread:run-${resumed ? 1 : 2}`]);
     }),
   );
 });
