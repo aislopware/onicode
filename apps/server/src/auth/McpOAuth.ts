@@ -152,7 +152,7 @@ interface PendingCode {
   readonly codeChallenge: string;
   readonly resource: string;
   readonly access: AuthMcpClientAccess;
-  readonly revocation: number;
+  readonly approvedAtRevocationCount: number;
   readonly expiresAtMs: number;
 }
 
@@ -347,7 +347,7 @@ const make = Effect.gen(function* () {
   const mintCode = Effect.fn("McpOAuth.mintCode")(function* (
     authorization: AuthorizationRequest,
     access: AuthMcpClientAccess,
-    revocation: number,
+    approvedAtRevocationCount: number,
   ) {
     const now = yield* Clock.currentTimeMillis;
     const code = Buffer.from(yield* random.randomBytes(32)).toString("base64url");
@@ -360,7 +360,7 @@ const make = Effect.gen(function* () {
         codeChallenge: authorization.codeChallenge,
         resource: authorization.resource,
         access,
-        revocation,
+        approvedAtRevocationCount,
         expiresAtMs: now + AUTHORIZATION_CODE_TTL_MS,
       });
       return next;
@@ -370,7 +370,9 @@ const make = Effect.gen(function* () {
 
   const approve: McpOAuth["Service"]["approve"] = Effect.fn("McpOAuth.approve")(function* (input) {
     const { decision } = input;
-    const revocation = yield* environmentAuth.otherClientsRevocation;
+    // Read before the code is spent: "revoke all others" then ends this sign-in whether it lands
+    // before the check or after the code is handed out.
+    const approvedAtRevocationCount = yield* environmentAuth.otherSessionRevocationCount;
     yield* environmentAuth.consumeMcpApprovalCode(decision.code, decision.access).pipe(
       Effect.catchIf(EnvironmentAuth.isServerAuthInternalError, (cause) =>
         Effect.logError("MCP approval code check failed.", { cause }).pipe(
@@ -384,7 +386,7 @@ const make = Effect.gen(function* () {
         ),
       ),
     );
-    const code = yield* mintCode(input.authorization, decision.access, revocation);
+    const code = yield* mintCode(input.authorization, decision.access, approvedAtRevocationCount);
     yield* Effect.logInfo("Approved an MCP client sign-in.", {
       client: input.authorization.client.name,
       access: decision.access,
@@ -431,8 +433,7 @@ const make = Effect.gen(function* () {
         pending.redirectUri !== redirectUri ||
         pending.resource !== urls.resource ||
         !sameResource(urls, token.resource) ||
-        !(yield* pkceVerifies(verifier, pending.codeChallenge)) ||
-        pending.revocation !== (yield* environmentAuth.otherClientsRevocation)
+        !(yield* pkceVerifies(verifier, pending.codeChallenge))
       ) {
         return yield* fail("invalid_grant", "The authorization code is invalid or expired.");
       }
@@ -442,21 +443,19 @@ const make = Effect.gen(function* () {
           access: pending.access,
           purpose: "peer-link",
           client: deriveAuthClientMetadata({ request }),
+          approvedAtRevocationCount: pending.approvedAtRevocationCount,
         })
         .pipe(
           Effect.catch((cause) =>
-            Effect.logError("Could not issue an MCP client session.", { cause }).pipe(
-              Effect.andThen(
-                Effect.fail(fail("invalid_grant", "The session could not be issued.")),
-              ),
-            ),
+            cause._tag === "ServerAuthInvalidCredentialError"
+              ? Effect.fail(fail("invalid_grant", "The authorization code is invalid or expired."))
+              : Effect.logError("Could not issue an MCP client session.", { cause }).pipe(
+                  Effect.andThen(
+                    Effect.fail(fail("invalid_grant", "The session could not be issued.")),
+                  ),
+                ),
           ),
         );
-      // Other clients revoked while it was issued: that sweep may have missed it.
-      if (pending.revocation !== (yield* environmentAuth.otherClientsRevocation)) {
-        yield* environmentAuth.revokeSession(issued.sessionId).pipe(Effect.ignore({ log: true }));
-        return yield* fail("invalid_grant", "The authorization code is invalid or expired.");
-      }
       return {
         access_token: issued.token,
         token_type: "Bearer",

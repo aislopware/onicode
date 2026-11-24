@@ -12,6 +12,7 @@ import * as ServerConfig from "../config.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as EnvironmentAuth from "./EnvironmentAuth.ts";
+import * as PairingGrantStore from "./PairingGrantStore.ts";
 
 import * as ServerSecretStore from "./ServerSecretStore.ts";
 import * as SessionStore from "./SessionStore.ts";
@@ -443,6 +444,37 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodePlatformCrypto.layer))(
             }),
           ),
         ),
+    );
+
+    it.effect("issues no session to an exchange that revoking all others overtook", () =>
+      Effect.gen(function* () {
+        const pairingLinks = yield* PairingGrantStore.PairingGrantStore;
+        let afterSpend: Effect.Effect<void> = Effect.void;
+        const serverAuth = yield* EnvironmentAuth.make.pipe(
+          Effect.provideService(PairingGrantStore.PairingGrantStore, {
+            ...pairingLinks,
+            consume: (credential, input) =>
+              pairingLinks.consume(credential, input).pipe(Effect.tap(() => afterSpend)),
+          }),
+          Effect.provide(
+            Layer.merge(
+              ManagedPolicy.layerTest(),
+              ServerSecretStore.layer.pipe(Layer.provideMerge(layerServerConfig())),
+            ),
+          ),
+        );
+        const owner = yield* serverAuth.issueSession();
+        const pairing = yield* serverAuth.issuePairingCredential();
+        afterSpend = serverAuth.revokeOtherClientSessions(owner.sessionId).pipe(Effect.orDie);
+        const exchanged = yield* serverAuth
+          .exchangeBootstrapCredentialForAccessToken(pairing.credential, undefined, requestMetadata)
+          .pipe(Effect.isSuccess);
+
+        expect(exchanged).toBe(false);
+        expect((yield* serverAuth.listSessions()).map((session) => session.sessionId)).toEqual([
+          owner.sessionId,
+        ]);
+      }).pipe(Effect.provide(layerEnvironmentAuth())),
     );
 
     it.effect("admits only peer links and the thread CLI as MCP clients", () =>
