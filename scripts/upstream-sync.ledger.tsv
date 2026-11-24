@@ -3592,3 +3592,4 @@ b34d8b5bd5	take	fix(opencode): model list picks up config edits made while OpenC
 9d0dd0f9c6	take	fix(web): Esc while resizing a spreadsheet column or row cancels without closing the sheet (#41790); test fixture uses zipFixture (Onicode dropped jszip)
 364ca47868	take	fix(server): workflow failure reasons no longer end in a broken character (#41808); detailCut lives in Onicode's labels.ts
 3b3b662f3c	take	fix(server): a closed preview tab no longer stays the agent's current tab (#41818)
+d572ce9afe	take	fix(chat): preserve model choices when editing queued messages (#41814); kept Onicode's releaseHeldSteer (follow-up task on a released steer) and queuedRunTargetProviderThread; scenario ported

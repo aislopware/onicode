@@ -5,6 +5,7 @@ import {
   ChatAttachmentId,
   ComposerContextId,
   MessageId,
+  ProviderInstanceId,
   RunId,
   ThreadId,
   type ScopedThreadRef,
@@ -38,6 +39,7 @@ import { readAttachmentUpload, useAttachmentUploadStore } from "../../lib/attach
 interface RunStatus {
   readonly id: RunId;
   readonly status: string;
+  readonly modelSelection?: { readonly instanceId: ProviderInstanceId; readonly model: string };
   readonly activeAttemptId?: string;
 }
 
@@ -128,7 +130,13 @@ type ComposerRefs = Pick<
 >;
 
 function projection(runs: ReadonlyArray<RunStatus>, messages: ReadonlyArray<unknown>) {
-  return { runs, messages } as unknown as ThreadStructure;
+  return {
+    runs,
+    messages,
+    thread: {
+      modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "current-model" },
+    },
+  } as unknown as ThreadStructure;
 }
 
 function setRuns(ref: ScopedThreadRef, status: string) {
@@ -147,7 +155,10 @@ function Harness(props: {
     routeThreadRef: props.threadRef,
     threadDraftTarget: props.threadRef,
     activeThreadId: props.threadRef.threadId,
-    serverProjection: projection([{ id: RUN, status: props.runStatus }], props.messages),
+    serverProjection: projection(
+      [{ id: RUN, status: props.runStatus, modelSelection: savedContent("").modelSelection }],
+      props.messages,
+    ),
     promptRef: { current: "" },
     composerRef: { current: null },
     currentRouteThreadKeyRef: { current: scopedThreadKey(props.threadRef) },
@@ -232,6 +243,7 @@ async function beginChangedEdit(hook: { current: HookResult | null }) {
 }
 
 const savedContent = (prompt: string) => ({
+  modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
   prompt,
   images: [],
   files: [],
@@ -556,7 +568,7 @@ describe("useQueuedRunEdit", () => {
     await beginChangedEdit(hook);
     const target = requireHook(hook).draftTarget;
     await act(() => useComposerDraftStore.getState().setPrompt(target, ""));
-    expect(useComposerDraftStore.getState().getComposerDraft(target)).toBeNull();
+    expect(useComposerDraftStore.getState().getComposerDraft(target)?.prompt).toBe("");
 
     await screen.rerender(view(THREAD_B, "queued", hook));
     expect(resolveDictationDraftTarget(target)).toBe(target);
@@ -774,3 +786,41 @@ describe("useQueuedRunEdit", () => {
     ).toBe("newer");
   });
 });
+
+it.each([false, true])(
+  "pins a following queued message only after a model pick: %s",
+  async (pick) => {
+    const { hook } = setup();
+    mocks.editQueuedRun.mockResolvedValue({ _tag: "Success" });
+    await using _screen = await render(
+      view(THREAD_A, "queued", hook, [
+        { id: MessageId.make("message-1"), followsThreadSelection: true },
+      ]),
+    );
+    await beginChangedEdit(hook);
+    const selection = { instanceId: ProviderInstanceId.make("codex"), model: "chosen-model" };
+    const target = requireHook(hook).draftTarget;
+    expect(useComposerDraftStore.getState().getComposerDraft(target)?.activeProvider).toBeNull();
+    if (pick)
+      await act(() =>
+        useComposerDraftStore.getState().setModelSelection(target, selection, { explicit: true }),
+      );
+    await requireHook(hook).saveEdit(
+      { ...savedContent("changed"), modelSelection: selection },
+      () => {},
+    );
+    expect(mocks.editQueuedRun).toHaveBeenCalledWith(
+      expect.objectContaining({
+        input: expect.objectContaining(
+          pick ? { modelSelection: selection } : { threadId: THREAD_A.threadId },
+        ),
+      }),
+    );
+    if (!pick)
+      expect(mocks.editQueuedRun.mock.calls[0]?.[0]).toEqual(
+        expect.objectContaining({
+          input: expect.not.objectContaining({ modelSelection: expect.anything() }),
+        }),
+      );
+  },
+);

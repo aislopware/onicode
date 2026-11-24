@@ -1683,7 +1683,9 @@ function queuedRunTargetProviderThread(input: {
   // A run queued before a fresh run started is bound to the conversation that run left behind.
   const followsLatestContext =
     !input.freshContext &&
-    (input.followsCurrent || providerThreadPredatesBoundary(storedProviderThread, contextBoundary));
+    (input.followsCurrent ||
+      storedProviderThread.providerInstanceId !== input.providerInstanceId ||
+      providerThreadPredatesBoundary(storedProviderThread, contextBoundary));
   return followsLatestContext
     ? activeProviderThread?.providerInstanceId === input.providerInstanceId &&
       !providerThreadPredatesBoundary(activeProviderThread, contextBoundary)
@@ -3087,10 +3089,13 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       const queuedProviderThread: OrchestrationV2ProviderThread = targetProviderThread ?? {
         id: idAllocator.derive.providerThread({
           driver: targetAdapter.driver,
-          // The queue reserved `pending:<run>` for this run; another run may have taken it.
+          // The queue reserved `pending:<run>` for this run; another run may have taken it. An edit
+          // that moved the run to another instance of the same driver must not replace that row.
           nativeThreadId: freshContext
             ? `pending:${queuedRun.id}:fresh`
-            : `pending:${queuedRun.id}`,
+            : storedProviderThread.providerInstanceId === queuedRun.providerInstanceId
+              ? `pending:${queuedRun.id}`
+              : `pending:${queuedRun.id}:${queuedRun.providerInstanceId}`,
         }),
         driver: targetAdapter.driver,
         providerInstanceId: queuedRun.providerInstanceId,
@@ -13400,10 +13405,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         cause: "Automatic completion deliveries cannot be edited.",
       });
     }
+    const modelSelection = command.modelSelection ?? queuedRunModelSelection(projection, queuedRun);
     yield* ensureGoalCommandSupported(
       command,
       { text: command.text, attachments: command.attachments ?? queuedMessage.attachments },
-      queuedRunModelSelection(projection, queuedRun).instanceId,
+      modelSelection.instanceId,
     );
     const editProblem =
       queuedRun.outputSchema === undefined
@@ -13425,8 +13431,33 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
 
     const now = yield* DateTime.now;
     const emitEvent = emit(events, command);
+    const editedRun =
+      command.modelSelection === undefined
+        ? queuedRun
+        : { ...queuedRun, modelSelection, providerInstanceId: modelSelection.instanceId };
+    // A command cannot steer, so an edit into one keeps it queued where it is.
+    const releasesSteer =
+      queuedRun.steerWhenReadyRunId !== undefined &&
+      (isSlashCommand({
+        text: command.text,
+        attachments: command.attachments ?? queuedMessage.attachments,
+      }) ||
+        (yield* limitForbidsParkedSteer));
+    if (editedRun !== queuedRun && !releasesSteer) {
+      yield* emitEvent({
+        type: "run.updated",
+        threadId: command.threadId,
+        runId: queuedRun.id,
+        ...(queuedRun.rootNodeId === null ? {} : { nodeId: queuedRun.rootNodeId }),
+        providerInstanceId: editedRun.providerInstanceId,
+        occurredAt: now,
+        payload: editedRun,
+      });
+    }
     const editedAttachments =
       command.attachments === undefined ? {} : { attachments: command.attachments };
+    const { followsThreadSelection: _followsThreadSelection, ...pinnedMessage } = queuedMessage;
+    const editedMessage = command.modelSelection === undefined ? queuedMessage : pinnedMessage;
     yield* emitEvent({
       type: "message.updated",
       threadId: command.threadId,
@@ -13435,7 +13466,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       providerInstanceId: queuedRun.providerInstanceId,
       occurredAt: now,
       payload: {
-        ...queuedMessage,
+        ...editedMessage,
         text: command.text,
         ...editedAttachments,
         ...(command.context ? { context: command.context } : {}),
@@ -13459,18 +13490,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         },
       });
     }
-    // A command cannot steer, so an edit into one keeps it queued where it is.
-    if (
-      queuedRun.steerWhenReadyRunId !== undefined &&
-      (isSlashCommand({
-        text: command.text,
-        attachments: command.attachments ?? queuedMessage.attachments,
-      }) ||
-        (yield* limitForbidsParkedSteer))
-    ) {
-      const { steerWhenReadyRunId: _, ...queued } = queuedRun;
+    if (releasesSteer) {
+      const { steerWhenReadyRunId: _, ...queued } = editedRun;
       yield* releaseHeldSteer(command, events, queued, {
-        ...queuedMessage,
+        ...editedMessage,
         text: command.text,
         ...editedAttachments,
         ...(command.context ? { context: command.context } : {}),
