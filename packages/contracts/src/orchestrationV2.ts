@@ -3549,7 +3549,10 @@ export const OrchestrationV2Command = Schema.Union([
     until: Schema.optional(PullRequestWatchUntil),
     /** Whether CI was pending with no failure yet when the watch started, so any failure is news. */
     checksPending: Schema.optional(Schema.Boolean),
-    /** The head `checksPending` was read on; a new watch without an ended one starts from it. */
+    /**
+     * The head `checksPending` was read on. A first watch starts from it; watching again does only
+     * when CI finished on a head the last watch never saw.
+     */
     headSha: Schema.optional(TrimmedNonEmptyString),
     link: Schema.optional(
       Schema.Struct({
