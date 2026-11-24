@@ -197,7 +197,8 @@ export function evaluatePullRequestWatch(
       ? running && failed.length > 0
       : newlyFailed.length > 0;
     if (passedNow && (!passed || gateGrew)) {
-      // Like a failure, CI running at the start can finish green before the first read.
+      // CI running at the start that has since settled green is news. The start rollup can be
+      // pending only on optional checks, so a passed gate alone is not.
       if (!checksBaseline || (watch.checksPending === true && settled)) {
         changes.push(
           // A rerun outside the gate passed too, so all of them did.
