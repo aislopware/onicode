@@ -1,13 +1,14 @@
 import { resolveQueuedEditExit } from "@onicode/client-runtime/queued-run-edit";
-import type {
-  ChatAttachment,
-  ChatFileAttachment,
-  ChatImageAttachment,
-  ComposerContextId,
-  ComposerContextRecord,
-  EnvironmentId,
-  OrchestrationMessageContext,
-  ResponseContextRecord,
+import {
+  type ChatAttachment,
+  type ChatFileAttachment,
+  type ChatImageAttachment,
+  type ComposerContextId,
+  type ComposerContextRecord,
+  type EnvironmentId,
+  type OrchestrationMessageContext,
+  PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
+  type ResponseContextRecord,
 } from "@onicode/contracts";
 import * as Equal from "effect/Equal";
 import {
@@ -81,6 +82,21 @@ export function matchRestorableQueuedAttachment(input: {
     match.contextIds.find((candidate) => candidate === input.record.contextId) ??
     match.contextIds[0]!;
   return { attachment: match.attachment, contextId };
+}
+
+/** Counts the queued attachments one paste restores, which the edit shows once it re-renders. */
+export function trackPastedRestores() {
+  let restored = 0;
+  const hasRoom = (reserved: number) => reserved < PROVIDER_SEND_TURN_MAX_ATTACHMENTS;
+  return {
+    hasRoom,
+    /** Whether the attachment fits the message's limit. */
+    restore: (_attachment: Pick<ChatAttachment, "id">, reserved: number) => {
+      if (reserved + restored >= PROVIDER_SEND_TURN_MAX_ATTACHMENTS) return false;
+      restored += 1;
+      return true;
+    },
+  };
 }
 
 /** Staged attachments upload as soon as they are added, so a dropped edit must release them. */
