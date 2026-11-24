@@ -3755,3 +3755,4 @@ e9b227b021	take	taken as is
 7105792176	take	taken as is
 0e34fe98f2	take	taken as is
 38bfe53622	take	fix(antigravity): show plugin names in the skill picker
+8b70e73371	take	adopted upstream over Onicode's parent-held draftText: typing no longer re-renders the Code tab; kept Onicode's path anchor and captured agentComment: a push to the same file keeps the typed text where upstream drops it, and focus and dropped-file handling stay; upstream's test is covered by the existing refresh test

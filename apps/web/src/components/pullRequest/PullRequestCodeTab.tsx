@@ -61,6 +61,7 @@ import {
   useEffectEvent,
   useRef,
   useState,
+  type ComponentProps,
   type ReactNode,
 } from "react";
 import { msg, T, useGT, useMessages, Var } from "gt-react";
@@ -392,6 +393,28 @@ interface DraftAnchor {
   readonly agentComment: ReviewCommentContext | null;
 }
 
+// The viewer remounts a file's annotations when a refresh re-keys it, so draft text lives outside.
+const draftCommentTexts = new WeakMap<DraftAnchor, string>();
+
+function PullRequestDraftCommentAnnotation({
+  draft,
+  ...props
+}: Omit<ComponentProps<typeof DiffCommentAnnotation>, "text" | "onTextChange"> & {
+  readonly draft: DraftAnchor;
+}) {
+  const [text, setText] = useState(() => draftCommentTexts.get(draft) ?? "");
+  return (
+    <DiffCommentAnnotation
+      {...props}
+      text={text}
+      onTextChange={(next) => {
+        setText(next);
+        draftCommentTexts.set(draft, next);
+      }}
+    />
+  );
+}
+
 export interface PullRequestAgentSelectionInput {
   readonly comment: ReviewCommentContext;
   readonly request: string;
@@ -510,9 +533,7 @@ function PullRequestCodeTab({
     range: SelectedLineRange;
   } | null>(null);
   const [draft, setDraft] = useState<DraftAnchor | null>(null);
-  // Held here: a page refresh remounts the file, and with it the editor, which then must not
-  // take focus from wherever the user went.
-  const [draftText, setDraftText] = useState("");
+  // Held here: an editor a page refresh remounts must not take focus from wherever the user went.
   const [focusedDraft, setFocusedDraft] = useState<DraftAnchor | null>(null);
   const [threadPending, setThreadPending] = useState(false);
   const [orphansOpen, setOrphansOpen] = useState(false);
@@ -1147,7 +1168,6 @@ function PullRequestCodeTab({
       : null;
     // A draft that could only go to the agent needs something to send.
     if (!canCommentOnLines && agentComment === null) return;
-    setDraftText("");
     setDraft({
       path,
       oldPath: previousPath === path ? null : previousPath,
@@ -1396,14 +1416,13 @@ function PullRequestCodeTab({
         />
       ))}
       {annotation.metadata.draft && draft && canSelectLines ? (
-        <DiffCommentAnnotation
+        <PullRequestDraftCommentAnnotation
+          draft={draft}
           environmentId={environmentId}
           projectId={reference.projectId}
           ownerKey={JSON.stringify([environmentId, reviewKey, draft])}
           kind="draft"
           rangeLabel={`${draft.path}:${getReviewPositionAnchor(draft.position).line}`}
-          text={draftText}
-          onTextChange={setDraftText}
           focusOnMount={focusedDraft !== draft}
           onFocus={() => setFocusedDraft(draft)}
           completionScope={canCommentOnLines ? completionScope : null}
