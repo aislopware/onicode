@@ -2944,13 +2944,19 @@ function OpenCommandPaletteDialog(props: {
       return;
     }
 
-    if (event.key === "Backspace" && query === "" && isSubmenu) {
+    if (event.ctrlKey || event.shiftKey || event.altKey || event.metaKey) return;
+
+    if (
+      event.key === "Backspace" &&
+      query === "" &&
+      isSubmenu &&
+      !event.repeat &&
+      !isImeKeyDown(event.nativeEvent)
+    ) {
       event.preventDefault();
       popView();
       return;
     }
-
-    if (event.ctrlKey || event.shiftKey || event.altKey || event.metaKey) return;
 
     if (event.key === "Tab" && isBrowsing && !relativePathNeedsActiveProject) {
       if (isImeKeyDown(event.nativeEvent)) return;
