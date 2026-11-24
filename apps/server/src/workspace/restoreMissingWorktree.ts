@@ -1,4 +1,9 @@
-import { ThreadId, type ProjectId, type TerminalCwdNotFoundError } from "@onicode/contracts";
+import {
+  ThreadId,
+  type Project,
+  type ProjectId,
+  type TerminalCwdNotFoundError,
+} from "@onicode/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -42,6 +47,11 @@ class WorktreeRecreateNoBaseError extends Schema.TaggedError<WorktreeRecreateNoB
 
 // `git worktree remove` skips pnpm junctions on Windows, leaving these behind without a checkout.
 const LEFTOVER_WORKTREE_ENTRIES = new Set(["node_modules", ".next"]);
+
+export interface RecreatedWorktree {
+  readonly project: Project;
+  readonly worktreePath: string;
+}
 
 interface WorktreeThread {
   readonly id: ThreadId;
@@ -241,6 +251,7 @@ export const makeRestoreMissingWorktree = Effect.gen(function* () {
           : new WorktreeRecreateError({ worktreePath, branch, cause }),
       ),
     );
+    return { project, worktreePath };
   });
 });
 
@@ -250,6 +261,8 @@ export class ThreadWorktreeRestore extends Context.Service<
     readonly restore: (
       thread: WorktreeThread,
     ) => Effect.Effect<void, WorktreeRecreateError | WorktreeRecreateNoBaseError>;
+    /** A checkout this service recreated for the thread whose setup has not run yet. */
+    readonly takeRecreated: (threadId: ThreadId) => Effect.Effect<RecreatedWorktree | undefined>;
   }
 >()("onicode/workspace/restoreMissingWorktree/ThreadWorktreeRestore") {}
 
@@ -261,16 +274,33 @@ export const layerThreadWorktreeRestore = Layer.effect(
     const path = yield* Path.Path;
     const projections = yield* ProjectionStoreV2;
     const restore = yield* makeRestoreMissingWorktree;
+    // Sends restore before dispatch, so turn start finds the checkout present and runs setup from here.
+    const recreated = new Map<ThreadId, RecreatedWorktree>();
     return {
       restore: Effect.fn("ThreadWorktreeRestore.restore")(function* (thread: WorktreeThread) {
-        if (thread.worktreePath === null) return yield* restore(thread);
         // Cleanup removes a deleted thread's worktree under this lease, so the thread is read
         // again inside it: one deleted since the caller read it gets no new checkout.
-        const restoreLive = projections.getThreadShell(thread.id).pipe(
-          Effect.orElseSucceed(() => thread),
-          Effect.flatMap((current) => (current === null ? Effect.void : restore(thread))),
-        );
-        return yield* withWorkspaceLease(fileSystem, path, thread.worktreePath, restoreLive);
+        const result = yield* thread.worktreePath === null
+          ? restore(thread)
+          : withWorkspaceLease(
+              fileSystem,
+              path,
+              thread.worktreePath,
+              projections.getThreadShell(thread.id).pipe(
+                Effect.orElseSucceed(() => thread),
+                Effect.flatMap((current) =>
+                  current === null ? Effect.undefined : restore(thread),
+                ),
+              ),
+            );
+        if (result !== undefined) recreated.set(thread.id, result);
+      }),
+      takeRecreated: Effect.fn("ThreadWorktreeRestore.takeRecreated")(function* (
+        threadId: ThreadId,
+      ) {
+        const result = recreated.get(threadId);
+        recreated.delete(threadId);
+        return result;
       }),
     };
   }),
@@ -311,6 +341,7 @@ export const makePrepareTerminalLaunch = Effect.fn(
           current === null
             ? Effect.fail(error)
             : restoreMissingWorktree(thread).pipe(
+                Effect.asVoid,
                 Effect.catch((cause) =>
                   Effect.logWarning("failed to recreate missing worktree", {
                     threadId: thread.id,

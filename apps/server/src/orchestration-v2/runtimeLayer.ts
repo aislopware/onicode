@@ -182,6 +182,11 @@ const layerRunExecutionServiceProvided = RunExecutionService.layer.pipe(
   ),
 );
 
+// One instance for thread management and turn start, which hands over send-time recreations.
+const layerThreadWorktreeRestoreProvided = layerThreadWorktreeRestore.pipe(
+  Layer.provide(ProjectionStore.layer),
+);
+
 const layerProviderTurnStartServiceProvided = ProviderTurnStartService.layer.pipe(
   Layer.provide(
     Layer.mergeAll(
@@ -194,6 +199,7 @@ const layerProviderTurnStartServiceProvided = ProviderTurnStartService.layer.pip
       layerRunExecutionServiceProvided,
       layerRuntimePolicyProvided,
       TurnItemPositionStore.layer,
+      layerThreadWorktreeRestoreProvided,
     ),
   ),
 );
@@ -291,7 +297,7 @@ const layerThreadManagementProvided = ThreadManagementService.layerWithLegacyImp
       layerLegacyV1ThreadImporterProvided,
       layerCommandReceiptStoreProvided,
       layerProviderSessionManagerProvided,
-      layerThreadWorktreeRestore.pipe(Layer.provide(ProjectionStore.layer)),
+      layerThreadWorktreeRestoreProvided,
     ),
   ),
 );
