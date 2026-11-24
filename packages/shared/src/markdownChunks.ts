@@ -37,26 +37,42 @@ const WRAPPED_MAX_CHARS = 32 * 1024;
 // A wrapper may start a piece of its own, so back-to-back wrappers stay apart.
 const WRAPPER_START = /^<(?:details|table)(?=[\s>]|$)/i;
 
-function withoutComments(line: string): string {
+/** The line outside comments, and whether a comment is still open at its end. */
+function withoutComments(line: string, inComment: boolean): [kept: string, inComment: boolean] {
   let kept = "";
   let at = 0;
-  for (let open = line.indexOf("<!--"); open !== -1; open = line.indexOf("<!--", at)) {
-    const close = line.indexOf("-->", open + 4);
-    if (close === -1) return kept + line.slice(at, open);
-    kept += line.slice(at, open);
+  if (inComment) {
+    const close = line.indexOf("-->");
+    if (close === -1) return ["", true];
     at = close + 3;
   }
-  return kept + line.slice(at);
+  for (let open = line.indexOf("<!--", at); open !== -1; open = line.indexOf("<!--", at)) {
+    kept += line.slice(at, open);
+    // `<!-->` and `<!--->` are whole comments.
+    const short = /^<!---?>/.exec(line.slice(open, open + 6))?.[0].length;
+    if (short !== undefined) {
+      at = open + short;
+      continue;
+    }
+    const close = line.indexOf("-->", open + 4);
+    if (close === -1) return [kept, true];
+    at = close + 3;
+  }
+  return [kept + line.slice(at), false];
 }
 
-function openedWrappers(line: string, closersOnly: boolean): number {
+function openedWrappers(text: string, closersOnly: boolean): number {
   let opened = 0;
-  for (const [, closing] of withoutComments(line).matchAll(WRAPPER_TAG)) {
+  for (const [, closing] of text.matchAll(WRAPPER_TAG)) {
     if (closing) opened -= 1;
     else if (!closersOnly) opened += 1;
   }
   return opened;
 }
+
+const COMMENT_START = /^ {0,3}<!--/;
+const INDENTED_CODE = /^(?: {4}|\t)/;
+const INLINE_CODE = /(`+)(?:[^`]|[^`][\s\S]*?[^`])\1(?!`)/g;
 
 /** Returns how to recognize the end of a block that `line` opens, or null for none. */
 function blockCloser(line: string): ((line: string) => boolean) | null {
@@ -75,7 +91,9 @@ function blockCloser(line: string): ((line: string) => boolean) | null {
   for (const [open, close] of SPANNING_BLOCKS) {
     const opener = open.exec(line)?.[0];
     if (opener === undefined) continue;
-    return close.test(line.slice(opener.length)) ? null : (next) => close.test(next);
+    // `<!-->` and `<!--->` end where they start.
+    const rest = line.slice(opener.endsWith("<!--") ? opener.length - 2 : opener.length);
+    return close.test(rest) ? null : (next) => close.test(next);
   }
   // Other HTML blocks (CommonMark types 6 and 7) run until a blank line.
   return HTML_BLOCK_START.test(line) ? closesAtBlankLine : null;
@@ -203,6 +221,8 @@ function scanMarkdown(
   // A cut needs no open wrapper, so a resumed scan starts with none.
   let openWrappers = 0;
   let wrapperStart = 0;
+  let inComment = false;
+  let inCommentBlock = false;
   let offset = from.start;
   let linesBefore = from.linesBefore;
   const textLines = (from.start > 0 ? text.slice(from.start) : text).split("\n");
@@ -255,16 +275,29 @@ function scanMarkdown(
         definitionChars += line.length + 1;
       }
     }
-    // HTML block lines open and close wrappers; a closer may also end a paragraph line. Lines in
-    // fences, comments and other spanning blocks count nothing.
-    if (
-      !inFrontmatter &&
-      (closes === closesAtBlankLine || (blockBefore === null && closes === null))
-    ) {
-      const htmlLine = closes === closesAtBlankLine || /^ {0,3}</.test(line);
-      const wasOpen = openWrappers > 0;
-      openWrappers = Math.max(0, openWrappers + openedWrappers(line, !htmlLine));
-      if (!wasOpen && openWrappers > 0) wrapperStart = chars;
+    // Tags outside comments open and close wrappers on HTML block and comment block lines; a
+    // closer may also end a paragraph line, outside code spans. Fences, indented code and other
+    // spanning blocks, such as a one-line <pre>, count nothing.
+    if (!inFrontmatter) {
+      const opensComment = blockBefore === null && COMMENT_START.test(line);
+      const htmlLine = closes === closesAtBlankLine || inCommentBlock || opensComment;
+      const textLine =
+        !htmlLine &&
+        blockBefore === null &&
+        closes === null &&
+        !/^ {0,3}</.test(line) &&
+        !INDENTED_CODE.test(line);
+      if (htmlLine || textLine) {
+        const [kept, stillInComment] = withoutComments(line, inComment);
+        const wasOpen = openWrappers > 0;
+        const counted = htmlLine ? kept : kept.replace(INLINE_CODE, "");
+        openWrappers = Math.max(0, openWrappers + openedWrappers(counted, !htmlLine));
+        if (!wasOpen && openWrappers > 0) wrapperStart = chars;
+        inComment = stillInComment;
+      }
+      inCommentBlock = (inCommentBlock || opensComment) && closes !== null;
+      // A comment left open spans only its HTML block.
+      if (closes === null && !inCommentBlock) inComment = false;
     }
     lines.push(line);
     chars += line.length + 1;

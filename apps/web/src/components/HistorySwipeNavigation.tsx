@@ -61,10 +61,12 @@ function isVerticalScroll(travelX: number, travelY: number): boolean {
   );
 }
 
-// A modal's backdrop and viewport cover the page around its card, which alone has the role.
+// A modal's backdrop and viewport cover the page around its card, which alone has the role, and
+// menus, selects and other popups have no dialog role at all.
 const MODAL_OR_PREVIEW_SELECTOR = [
   '[role="dialog"]',
   '[role="alertdialog"]',
+  '[data-slot$="-popup"]',
   ...["dialog", "alert-dialog", "command-dialog", "sheet", "popover"].flatMap((modal) => [
     `[data-slot="${modal}-backdrop"]`,
     `[data-slot="${modal}-viewport"]`,

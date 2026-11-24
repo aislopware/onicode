@@ -1788,6 +1788,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
           standalone={standalone}
           className={className}
           style={authoredSizeStyle}
+          frameStyle={authoredImageFrameStyle(width, height)}
           imageProps={imageProps}
           srcFragment={markdownImageSourceFragment(classifiedSrc)}
           originalUrl={resolveProtocolRelativeMediaUrl(directUri)}
@@ -1815,7 +1816,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
             alt={altText}
             copyMarkdown={copyMarkdown}
             originalUrl={originalUrl}
-            style={authoredSizeStyle}
+            style={authoredImageFrameStyle(width, height)}
             actionsSource={actionsSource}
           />
         );
@@ -1853,6 +1854,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
           srcFragment={markdownImageSourceFragment(classifiedSrc)}
           standalone={standalone}
           style={authoredSizeStyle}
+          frameStyle={authoredImageFrameStyle(width, height)}
           workspaceRoot={cwd}
           workspaceMutationId={workspaceMutationId}
           onImageExpand={imageExpand}

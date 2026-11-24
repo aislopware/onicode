@@ -76,13 +76,14 @@ function ArchivedThreadChunk(props: {
                 previous,
                 entry.isIntersecting,
                 entry.boundingClientRect.height,
-                node.childElementCount,
+                Number(node.dataset.mountedRows),
               ),
             ),
           { root: node.closest("[data-settings-page-scroll]"), rootMargin: "1200px 0px" },
         );
       }}
       className="*:not-first:border-t *:not-first:border-border"
+      data-mounted-rows={view.near ? rowCount : 0}
       style={view.near ? undefined : { height: view.rowHeight * rowCount }}
     >
       {view.near ? props.renderRows() : null}
