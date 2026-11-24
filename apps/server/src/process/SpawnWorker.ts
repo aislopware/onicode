@@ -183,6 +183,7 @@ class WorkerChild
   spawned = false;
   exited = false;
   killsTree = false;
+  killSignal: NodeJS.Signals | number = "SIGTERM";
   readonly #writes = new Map<number, Array<(error?: Error | null) => void>>();
   readonly #finals = new Map<number, (error?: Error | null) => void>();
   readonly #paused = new Set<number>();
@@ -270,6 +271,7 @@ class WorkerChild
   kill(signal: NodeJS.Signals | number = "SIGTERM"): boolean {
     if (this.exited) return false;
     this.killed = true;
+    this.killSignal = signal;
     // Before the spawn ack the CLI may already run its shells; the ack ends the tree instead.
     if (this.killsTree) {
       if (this.pid !== undefined) this.worker.pool.killTree(this.pid, () => {});
@@ -387,13 +389,14 @@ class SpawnWorker {
       case "spawn":
         this.launching--;
         child.spawned = true;
+        // A spawn listener's kill finds the pid itself; end only a kill sent before the ack.
+        if (child.killed && child.killsTree && !child.exited) {
+          if (message.pid === undefined) {
+            this.post({ type: "kill", id: child.id, signal: child.killSignal });
+          } else this.pool.killTree(message.pid, () => {});
+        }
         child.pid = message.pid;
         child.emit("spawn");
-        if (child.killed && child.killsTree && !child.exited) {
-          if (message.pid === undefined)
-            this.post({ type: "kill", id: child.id, signal: "SIGTERM" });
-          else this.pool.killTree(message.pid, () => {});
-        }
         break;
       case "error":
         if (!child.spawned) {

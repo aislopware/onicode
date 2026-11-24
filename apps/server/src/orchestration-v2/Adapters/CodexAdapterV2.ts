@@ -1614,6 +1614,8 @@ interface CodexSubagentThreadContext {
   task: OrchestrationV2Subagent;
   // Codex children run beside their parent; only a `wait` call parks the parent on them.
   background: boolean;
+  // The turn whose `wait` names it; one app-server serves several threads and nested children.
+  awaitedBy: ActiveCodexTurnContext | null;
 }
 
 const approvalOwnerCodexTurn = (
@@ -3404,6 +3406,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             if (input.reopen) {
               input.subagent.cardContext = input.subagent.parentContext;
               input.subagent.background = true;
+              input.subagent.awaitedBy = null;
             }
             const task = {
               ...prior,
@@ -3838,6 +3841,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               turnItemOrdinal,
               task,
               background: true,
+              awaitedBy: null,
             } satisfies CodexSubagentThreadContext;
 
             yield* Ref.update(subagentThreads, (current) => {
@@ -4093,6 +4097,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
           Effect.fnUntraced(function* (input: {
             readonly receiverThreadIds: ReadonlyArray<string>;
             readonly awaited: boolean;
+            readonly waiter?: ActiveCodexTurnContext;
             // Children the finished call reports; their state update re-emits them.
             readonly reported?: Readonly<Record<string, unknown>>;
           }) {
@@ -4101,6 +4106,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               const subagent = subagents.get(nativeThreadId);
               if (subagent === undefined || subagent.background !== input.awaited) continue;
               subagent.background = !input.awaited;
+              subagent.awaitedBy = input.awaited ? (input.waiter ?? null) : null;
               if (
                 isOrchestrationV2WorkActive(subagent.task.status) &&
                 (input.reported === undefined || !Object.hasOwn(input.reported, nativeThreadId))
@@ -5943,6 +5949,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               yield* setSubagentsAwaited({
                 receiverThreadIds: payload.item.receiverThreadIds,
                 awaited: true,
+                waiter: context,
               });
             }
 
@@ -7417,14 +7424,13 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 );
               }
               yield* projectGeneratedImages(input.context, input.nativeTurnId);
-              // A wait the parent's turn ended inside never completes, so it no longer holds them.
-              if (input.context.subagent === null) {
-                for (const subagent of (yield* Ref.get(subagentThreads)).values()) {
-                  if (subagent.background) continue;
-                  subagent.background = true;
-                  if (isOrchestrationV2WorkActive(subagent.task.status)) {
-                    yield* emitSubagentTaskUpdate({ subagent, status: subagent.task.status });
-                  }
+              // A wait the turn ended inside never completes, so it no longer holds its children.
+              for (const subagent of (yield* Ref.get(subagentThreads)).values()) {
+                if (subagent.awaitedBy !== input.context) continue;
+                subagent.background = true;
+                subagent.awaitedBy = null;
+                if (isOrchestrationV2WorkActive(subagent.task.status)) {
+                  yield* emitSubagentTaskUpdate({ subagent, status: subagent.task.status });
                 }
               }
               if (input.status !== "completed") {

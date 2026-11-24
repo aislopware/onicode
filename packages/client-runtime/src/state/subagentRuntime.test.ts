@@ -421,6 +421,7 @@ describe("countSubagentsBlockingRun", () => {
   it("leaves the trailing status reply to the live row when replies are hidden", () => {
     expect(count([child("a"), reply("m2")], false)).toBe(0);
     expect(count([child("a")], false)).toBe(1);
+    expect(count([child("a", "running", false), reply("m2")], false)).toBe(0);
   });
 
   it("stops at an entry that holds no turn item", () => {

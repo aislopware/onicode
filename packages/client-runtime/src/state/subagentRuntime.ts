@@ -110,36 +110,50 @@ export function isLiveSubagentTurnItem(item: OrchestrationV2TurnItem): boolean {
 export function countSubagentsBlockingRun<Entry>(
   entries: ReadonlyArray<Entry>,
   runId: RunId,
-  turnItemsOf: (entry: Entry) => ReadonlyArray<OrchestrationV2TurnItem> | null,
+  // One item or a list, so a caller walking every entry of a long run allocates nothing.
+  turnItemsOf: (
+    entry: Entry,
+  ) => OrchestrationV2TurnItem | ReadonlyArray<OrchestrationV2TurnItem> | null,
   repliesShown: boolean,
 ): number {
   let running = 0;
   let inTail = true;
   let sawSubagent = false;
-  for (let index = entries.length - 1; index >= 0; index -= 1) {
-    const items = turnItemsOf(entries[index]!);
-    if (items === null) {
+  // False once the walk is done: another run's item, or a zen reply the live row shows.
+  const visit = (item: OrchestrationV2TurnItem): boolean => {
+    if (item.runId !== runId) return false;
+    if (item.type === "subagent") {
+      sawSubagent = true;
+      const waits = item.background === false || (inTail && item.background === undefined);
+      if (waits && isOrchestrationV2WorkActive(item.status)) running += 1;
+    } else if (!inTail) {
+      return true;
+    } else if (item.type === "assistant_message") {
+      if (!repliesShown && !sawSubagent) return false;
+      if (!repliesShown || sawSubagent || item.streaming) inTail = false;
+    } else if (item.type !== "todo_list" && !isDelegateLaunch(item)) {
       inTail = false;
-      continue;
     }
-    for (let itemIndex = items.length - 1; itemIndex >= 0; itemIndex -= 1) {
-      const item = items[itemIndex]!;
-      if (item.runId !== runId) return running;
-      if (item.type === "subagent") {
-        sawSubagent = true;
-        const waits = item.background === false || (inTail && item.background === undefined);
-        if (waits && isOrchestrationV2WorkActive(item.status)) running += 1;
-      } else if (!inTail) {
-        continue;
-      } else if (item.type === "assistant_message") {
-        if (!repliesShown || sawSubagent || item.streaming) inTail = false;
-      } else if (item.type !== "todo_list" && !isDelegateLaunch(item)) {
-        inTail = false;
+    return true;
+  };
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const found = turnItemsOf(entries[index]!);
+    if (found === null) {
+      inTail = false;
+    } else if (!isTurnItemList(found)) {
+      if (!visit(found)) return running;
+    } else {
+      for (let itemIndex = found.length - 1; itemIndex >= 0; itemIndex -= 1) {
+        if (!visit(found[itemIndex]!)) return running;
       }
     }
   }
   return running;
 }
+
+const isTurnItemList = (
+  found: OrchestrationV2TurnItem | ReadonlyArray<OrchestrationV2TurnItem>,
+): found is ReadonlyArray<OrchestrationV2TurnItem> => Array.isArray(found);
 
 function isDelegateLaunch(item: OrchestrationV2TurnItem): boolean {
   return (

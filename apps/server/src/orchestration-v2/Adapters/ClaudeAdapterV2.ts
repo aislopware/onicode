@@ -9104,6 +9104,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           const background =
             input.background === true ||
             (yield* Ref.get(backgroundedSubagentTaskIds)).has(input.taskId) ||
+            input.owner !== undefined ||
             (yield* isNestedSubagentTask(input.taskId)) ||
             (!isReopen && existingSubagent?.background === true);
           const movesToCurrentRun =

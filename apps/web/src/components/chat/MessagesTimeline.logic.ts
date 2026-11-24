@@ -1522,7 +1522,7 @@ function timelineEntryTurnItems(entry: TimelineEntry) {
       : entry.kind === "work"
         ? entry.entry.projectedItem
         : undefined;
-  return projected === undefined ? null : [projected.item];
+  return projected === undefined ? null : projected.item;
 }
 
 function timelineRowEntries(
