@@ -3683,3 +3683,4 @@ a8ae922f87	take	conflict: kept Onicode's stored initial message beside upstream'
 4948c9afbe	take	conflict: upstream's annotated() check kept ahead of Onicode's hover-is-not-use check
 c9e22e5ff4	take	conflicts: imports kept beside Onicode's html-render bootstrap; shared exports without upstream's telemetry/relay/dpop entries (removed surfaces); readiness-proof tests moved out of Onicode's single untraced-requests describe; desktopReadinessSecret is optional in the bootstrap contract
 2fe7febc8d	take	adopted upstream over Onicode's writesEnvironment gate on workflow writes (#723): callers at an administrator's runtime-mode ceiling can drive runs, where Onicode's gate refused everyone under a ceiling; hook-path reads and the outside-agents doc dropped (removed surfaces)
+84a0c0516f	take	conflict: kept Onicode's receipt checks in intake test mocks
