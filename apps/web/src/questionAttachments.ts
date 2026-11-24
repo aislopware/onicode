@@ -310,9 +310,12 @@ export function captureQuestionAnswerSend(input: {
   readonly questionIndex: () => number | undefined;
   readonly advance: () => void;
 }): () => void {
-  const { environmentId, questionKeys, questionIndex, advance } = input;
+  const { environmentId, threadId, requestId, questionKeys, questionIndex, advance } = input;
   const indexAtPress = questionIndex();
+  // Settling prunes the stored position, so a closed question's index alone can still match.
+  const settled = () => isUserInputRequestSettled(environmentId, threadId, requestId);
   return () => {
+    if (settled()) return;
     const drafts = useComposerDraftStore.getState();
     const attachmentIds = questionKeys.flatMap((key) => {
       const draft = drafts.getComposerDraft(key);
@@ -326,7 +329,7 @@ export function captureQuestionAnswerSend(input: {
     // An answer goes only with its attachments uploaded; a live composer waits on that too.
     // A move to another question since the press, or a live press that advanced first, wins.
     void awaitAttachmentUploads(attachmentIds).then(() => {
-      if (questionIndex() === indexAtPress) advance();
+      if (!settled() && questionIndex() === indexAtPress) advance();
     });
   };
 }
