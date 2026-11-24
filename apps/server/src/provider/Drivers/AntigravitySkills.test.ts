@@ -418,6 +418,11 @@ it.layer(NodeServices.layer)("discoverAntigravitySkills", (it) => {
           "---\nname: deploy\n---\n",
         );
         yield* writeSkill(path.join(projectSkills, "internal"), "---\nname: internal\n---\n");
+        const releasePath = yield* writeSkill(
+          path.join(projectSkills, "public"),
+          "---\nname: release\n---\n",
+        );
+        yield* writeSkill(path.join(projectSkills, "excluded"), "---\nname: excluded-root\n---\n");
 
         // agy does not expand ~, so a ~/ entry loads nothing.
         yield* writeSkill(
@@ -460,6 +465,9 @@ it.layer(NodeServices.layer)("discoverAntigravitySkills", (it) => {
             entries: [
               { path: "tools/skills/deploy/SKILL.md", exclude: null },
               { path: "tools/skills/internal/SKILL.md", exclude: ["internal"] },
+              { path: "tools/skills/public", include_only: ["public"] },
+              { path: "tools/skills/excluded", exclude: ["excluded"] },
+              { path: "tools/skills/excluded", include_only: ["public"] },
             ],
           }),
         );
@@ -473,6 +481,7 @@ it.layer(NodeServices.layer)("discoverAntigravitySkills", (it) => {
             enabled: true,
           },
           { name: "linter", path: inheritedPath, scope: "user", enabled: true },
+          { name: "release", path: releasePath, scope: "project", enabled: true },
           {
             name: "yagni",
             description: "Keep it simple.",
