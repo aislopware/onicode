@@ -3585,3 +3585,4 @@ d244be81ba	take	taken as is
 b34d8b5bd5	take	fix(opencode): model list picks up config edits made while OpenCode's server was stopped (#41813)
 7e6a871a00	take	fix(web): Lineage panel shows elapsed time for subagents on linked machines (#41798); AgentElapsed takes the parent environment for Onicode's server clock
 3ddfa73687	take	fix(mobile): draft task titles no longer end in a broken character (#41787); iOS scenario ported
+6ac6817267	take	adopted upstream over Onicode's base-branch stamp key: packed-refs names instead of its stat survive repacks and fetches onto packed refs, and the stamp in the value leaves no superseded entries; kept Onicode's lstat of remote HEADs (symlinked symrefs), reftable placeholder handling, git-common-dir key and shared per-worktree stamp read, which upstream lacks
