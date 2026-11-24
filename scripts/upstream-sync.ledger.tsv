@@ -3610,3 +3610,4 @@ ededa85fe3	take	fix(server): closing an Android emulator with shutdown no longer
 4162207ddd	take	fix(web): file menu opens remote files over SSH instead of on the server (#29771)
 74382f2530	take	fix(server): a foreground Claude subagent shows the model it ran on, not its parent's (#39729)
 30c5df0971	take	fix(server): a commit's diff is read only for commits the change request lists (#41863)
+aab127d7fb	take	fix(shared): repository keys for one-segment URL remotes name only the repository (#41862)
