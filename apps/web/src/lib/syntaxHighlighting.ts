@@ -22,10 +22,12 @@ setCustomExtension("xslt", "xml");
 export const PREFERRED_HIGHLIGHTER: HighlighterTypes = "highlights";
 
 const highlighterPromiseCache = new Map<string, Promise<DiffsHighlighter>>();
+// disposeHighlighter() ends the shared instance these promises resolved to.
+const resolvedHighlighters = new WeakMap<Promise<DiffsHighlighter>, DiffsHighlighter>();
 
 export function getSyntaxHighlighterPromise(language: string): Promise<DiffsHighlighter> {
   const cached = highlighterPromiseCache.get(language);
-  if (cached) return cached;
+  if (cached && !resolvedHighlighters.get(cached)?.isDisposed) return cached;
 
   const promise = getSharedHighlighter({
     // Both palettes, so switching appearance never needs a new highlighter.
@@ -40,5 +42,9 @@ export function getSyntaxHighlighterPromise(language: string): Promise<DiffsHigh
     return getSyntaxHighlighterPromise("text");
   });
   highlighterPromiseCache.set(language, promise);
+  void promise.then(
+    (highlighter) => resolvedHighlighters.set(promise, highlighter),
+    () => {},
+  );
   return promise;
 }

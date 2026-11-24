@@ -7831,7 +7831,7 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
           return entrySeconds.filter((seconds) => seconds >= indexSecond);
         });
         // A refresh still inside the checkout's second finishes in the background.
-        yield* driver.settleIndexRefreshes;
+        yield* driver.settleIndexRefresh(worktreePath);
         assert.deepEqual(yield* racyEntries, []);
         assert.isFalse(yield* fs.exists(`${indexPath}.oni-refresh`));
         assert.isFalse(yield* fs.exists(`${indexPath}.lock`));
