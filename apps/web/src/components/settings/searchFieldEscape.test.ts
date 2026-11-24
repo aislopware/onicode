@@ -35,7 +35,7 @@ describe("clearSearchOnEscape", () => {
 
   it("lets Esc through from an empty field unless it is held", () => {
     expect(press({}, "")).toEqual({ prevented: false, stopped: false, cleared: false });
-    expect(press({ repeat: true }, "")).toEqual({ prevented: true, stopped: true, cleared: true });
+    expect(press({ repeat: true }, "")).toEqual({ prevented: true, stopped: true, cleared: false });
   });
 
   it("leaves the Esc that cancels an IME composition and other keys alone", () => {
