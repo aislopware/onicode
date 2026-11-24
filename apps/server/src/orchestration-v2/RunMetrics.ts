@@ -109,6 +109,7 @@ export const makeRunOutcomeRecorder = <E>(
   }, Effect.uninterruptible);
   /** Counts a run no later update settles. It reads, so never call it under the publish lane. */
   const recordFinal = Effect.fnUntraced(function* (run: OrchestrationV2Run) {
+    if (counted.has(run.id)) return;
     const delegated = run.delegatedTaskId !== undefined || (yield* isDelegatedThread(run.threadId));
     yield* record([outcomeOf(run, delegated)]);
   });

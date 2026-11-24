@@ -1288,7 +1288,7 @@ export const make = Effect.gen(function* () {
             const createReader = () =>
               createTranscriptJsonReader(reserveSelected, selectCwdPath, {
                 onTopLevelString: (key, value) => {
-                  if (key === "cwd" && value.trim().length > 0) topLevelCwd ??= value;
+                  if (key === "cwd" && value.trim().length > 0) topLevelCwd = value;
                 },
               });
             let reader = createReader();
@@ -1329,7 +1329,8 @@ export const make = Effect.gen(function* () {
                   withinLimit(() => reader.write(text));
                 }
                 if (newline === -1) {
-                  if (topLevelCwd === null) return undefined;
+                  // The last record is parsed whole; only a longer one is taken from its cwd so far.
+                  if (topLevelCwd === null || bytesRead === size) return undefined;
                   return reserveRecord() ? topLevelCwd : null;
                 }
                 if (!reserveRecord()) return null;

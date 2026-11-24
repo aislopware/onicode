@@ -1419,6 +1419,10 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
         contents: (line: string) => `{"cwd":"/first",${line.slice(1)}`,
       },
       {
+        name: "in the last of duplicate keys without a newline",
+        contents: (line: string) => `{"cwd":"/first",${line.slice(1, line.indexOf("\n"))}`,
+      },
+      {
         name: "past a record whose keys exceed the scan limit",
         contents: (line: string) => `{"${"k".repeat(600 * 1024)}":1}\n${line}`,
       },
@@ -1480,6 +1484,11 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
         yield* writeTranscript({
           filePath: path.join(claudeHomePath, "projects", "-no-cwd", "a.jsonl"),
           contents: `{"type":"summary"}\n`,
+          mtimeMs: Date.parse("2026-05-02T00:00:00.000Z"),
+        });
+        yield* writeTranscript({
+          filePath: path.join(claudeHomePath, "projects", "-cut-off", "a.jsonl"),
+          contents: `{"cwd":${JSON.stringify(claudeHomePath)},"message":"cut`,
           mtimeMs: Date.parse("2026-05-02T00:00:00.000Z"),
         });
         yield* writeTranscript({

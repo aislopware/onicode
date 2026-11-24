@@ -1174,6 +1174,7 @@ export const select = async (
 ): Promise<PreviewAutomationSelectResult> => {
   const locator = targetLocator(page, input)!;
   const timeout = input.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const deadline = Date.now() + timeout;
   const options = await pageAnswer(
     locator.evaluate(
       (element) =>
@@ -1204,7 +1205,9 @@ export const select = async (
       tag: "PreviewAutomationTargetNotEditableError",
       message: "This element is not a <select>. Click a custom dropdown, then click its option.",
     });
-  return { selected: await locator.selectOption(values, { timeout }) };
+  return {
+    selected: await locator.selectOption(values, { timeout: Math.max(1, deadline - Date.now()) }),
+  };
 };
 
 export const drag = async (

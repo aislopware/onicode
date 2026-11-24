@@ -43,7 +43,9 @@ export const make = Effect.gen(function* () {
     if (moment === "run-ended" ? !awaitsTitleSubject(thread) : shell.activeRunId !== null) {
       return true;
     }
-    const latestResumingMessageAt = yield* projections.getLatestResumingMessageAt(threadId);
+    const latestResumingMessageAt = awaitsTitleSubject(thread)
+      ? null
+      : yield* projections.getLatestResumingMessageAt(threadId);
     if (
       !generatedTitleIsStale(thread, {
         latestRunCompletedAt: shell.latestRunCompletedAt ?? null,
