@@ -1,6 +1,7 @@
 import type { RepositoryIdentity, SourceControlProviderError } from "@onicode/contracts";
 import { parseGitRemoteHost } from "@onicode/source-control-core/shared/definition";
 import { repositoryPathFromRemoteUrl } from "@onicode/source-control-core/server/SourceControlProvider";
+import { withoutRemoteUrlCredentials } from "@onicode/shared/cloneUrl";
 import { canonicalRepositoryPath, normalizeGitRemoteUrl } from "@onicode/shared/git";
 import { isSshRemoteUrl } from "@onicode/shared/sourceControl";
 import * as Cache from "effect/Cache";
@@ -77,7 +78,8 @@ function parseRemoteFetchUrls(
     ) {
       continue;
     }
-    remotes.set(remoteName, remoteUrl);
+    // The identity names the remote, not the login used to reach it.
+    remotes.set(remoteName, withoutRemoteUrlCredentials(remoteUrl));
   }
   return remotes;
 }
