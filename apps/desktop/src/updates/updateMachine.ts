@@ -210,6 +210,22 @@ export function reduceDesktopUpdateStateOnDownloadComplete(
   };
 }
 
+export function reduceDesktopUpdateStateOnDownloadLost(
+  state: DesktopUpdateState,
+): DesktopUpdateState {
+  if (state.downloadedVersion === null) return state;
+  return {
+    ...state,
+    status: "available",
+    availableVersion: state.downloadedVersion,
+    downloadedVersion: null,
+    downloadPercent: null,
+    message: null,
+    errorContext: null,
+    canRetry: false,
+  };
+}
+
 export function reduceDesktopUpdateStateOnInstallFailure(
   state: DesktopUpdateState,
   message: string,
