@@ -248,6 +248,7 @@ it.layer(NodeServices.layer)("discoverAntigravitySkills", (it) => {
       );
       yield* fileSystem.makeDirectory(path.join(root, ".not-a-skill"));
       yield* fileSystem.writeFileString(path.join(root, "README.md"), "Not a skill.");
+      yield* fileSystem.writeFileString(path.join(root, "SKILL.MD"), "---\nname: uppercase\n---\n");
       const skillPath = yield* writeSkill(
         path.join(root, ".native-hidden-skill"),
         "---\nname: native-name\ndescription: >\n  Review the code\n  and run tests.\n---\n",
@@ -423,6 +424,9 @@ it.layer(NodeServices.layer)("discoverAntigravitySkills", (it) => {
           "---\nname: release\n---\n",
         );
         yield* writeSkill(path.join(projectSkills, "excluded"), "---\nname: excluded-root\n---\n");
+        const explicitRoot = path.join(projectSkills, "explicit");
+        yield* writeSkill(path.join(explicitRoot, "child"), "---\nname: not-discovered\n---\n");
+        yield* fileSystem.writeFileString(path.join(explicitRoot, "SKILL.MD"), "---\n---\n");
 
         // agy does not expand ~, so a ~/ entry loads nothing.
         yield* writeSkill(
@@ -468,6 +472,7 @@ it.layer(NodeServices.layer)("discoverAntigravitySkills", (it) => {
               { path: "tools/skills/public", include_only: ["public"] },
               { path: "tools/skills/excluded", exclude: ["excluded"] },
               { path: "tools/skills/excluded", include_only: ["public"] },
+              { path: "tools/skills/explicit" },
             ],
           }),
         );
@@ -511,6 +516,18 @@ it.layer(NodeServices.layer)("discoverAntigravitySkills", (it) => {
         path.join(extraRoot, ".agents", "skills", "extra-only"),
         "---\nname: extra-only\n---\n",
       );
+      yield* fileSystem.writeFileString(
+        path.join(extraRoot, ".agents", "skills", "SKILL.MD"),
+        "---\nname: uppercase\n---\n",
+      );
+      const extraAgent = yield* writeSkill(
+        path.join(extraRoot, ".agent", "skills", "extra-agent"),
+        "---\nname: extra-agent\n---\n",
+      );
+      yield* fileSystem.writeFileString(
+        path.join(extraRoot, ".agent", "skills", "SKILL.MD"),
+        "---\nname: uppercase\n---\n",
+      );
       const extraGemini = yield* writeSkill(
         path.join(extraRoot, ".gemini", "skills", "extra-gemini"),
         "---\nname: extra-gemini\n---\n",
@@ -531,6 +548,7 @@ it.layer(NodeServices.layer)("discoverAntigravitySkills", (it) => {
           extraRoots: [extraRoot, input.cwd, extraRoot],
         }),
         [
+          { name: "extra-agent", path: extraAgent, scope: "project", enabled: true },
           { name: "extra-gemini", path: extraGemini, scope: "project", enabled: true },
           { name: "extra-only", path: extraAgents, scope: "project", enabled: true },
           { name: "from-config", path: fromConfig, scope: "project", enabled: true },
