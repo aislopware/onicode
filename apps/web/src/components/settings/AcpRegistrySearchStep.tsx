@@ -183,6 +183,7 @@ export function AcpRegistrySearchStep({
             aria-label={gt("Search ACP Registry")}
             maxLength={ACP_REGISTRY_SEARCH_QUERY_MAX_LENGTH}
             disabled={preparingId !== null}
+            enterKeyHint="search"
             onChange={(event) => registry.type(event.currentTarget.value)}
             onKeyDown={(event) => clearSearchOnEscape(event, query, () => registry.type(""))}
             placeholder={gt("Search agents…")}
