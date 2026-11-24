@@ -14,6 +14,7 @@ import {
 import { resolveProjectSettings } from "@onicode/shared/projectSettings";
 import { flattenTemporaryWorktreeBranchName, isTemporaryWorktreeBranch } from "@onicode/shared/git";
 import * as HostProcess from "@onicode/shared/HostProcess";
+import { windowsSystem32Path } from "@onicode/shared/windowsSystem";
 import * as KeyedLock from "@onicode/shared/KeyedLock";
 import { parseOniProjectFile } from "@onicode/shared/oniProjectFile";
 import * as Context from "effect/Context";
@@ -318,7 +319,7 @@ const make = Effect.gen(function* () {
       processes
         .run({
           operation: "TaskFolders.worktreeLayout",
-          command: onWindows ? "cmd.exe" : "sh",
+          command: onWindows ? windowsSystem32Path(hostEnvironment, "cmd.exe") : "sh",
           args: onWindows ? ["/d", "/s", "/c", command] : ["-c", command],
           cwd: taskFolder.projectRoot,
           env: {
