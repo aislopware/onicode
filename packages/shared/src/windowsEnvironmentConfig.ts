@@ -1,5 +1,7 @@
+import * as Config from "effect/Config";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 
 /**
  * A Windows variable from the configured environment, in any case. The default provider copies
@@ -7,6 +9,9 @@ import * as Effect from "effect/Effect";
  */
 export const windowsEnvironmentVariable = Effect.fn("windowsEnvironmentVariable")(
   function* (name: string) {
+    // The plain read first: it honours fallback providers the walk below cannot see.
+    const exact = yield* Config.option(Config.String(name));
+    if (Option.isSome(exact)) return exact.value;
     const provider = yield* ConfigProvider.ConfigProvider;
     const find: (
       path: ReadonlyArray<string>,

@@ -5121,7 +5121,11 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
     const store = yield* ProjectionStore.ProjectionStoreV2;
     const { threadId } = input;
     const createdAt = DateTime.makeUnsafe("2026-09-27T00:00:00.000Z");
-    const modelSelection = input.runs[0]!.modelSelection;
+    // A thread with no runs keeps the picker's selection, which nothing ran on.
+    const modelSelection = input.runs[0]?.modelSelection ?? {
+      instanceId: ProviderInstanceId.make("codex"),
+      model: "gpt-6.2-picker",
+    };
     yield* store.apply({
       id: EventId.make(`event:${threadId}:thread`),
       type: "thread.created",
@@ -5388,30 +5392,33 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
     }),
   );
 
-  it.effect("create_pr credits no model when no run reached the provider", () =>
+  it.effect.each([
+    {
+      name: "no run reached the provider",
+      runs: [
+        {
+          modelSelection: {
+            instanceId: ProviderInstanceId.make("codex"),
+            model: "gpt-6.2-sol",
+          },
+          text: "Try the refused model",
+          startFailed: true as const,
+        },
+      ],
+    },
+    // Only imported history, which has no runs, credits the thread's own selection.
+    { name: "the thread has no history", runs: [] },
+  ])("create_pr credits no model when $name", ({ runs }) =>
     Effect.gen(function* () {
-      const threadId = ThreadId.make("thread:pr-thread-refused");
+      const threadId = ThreadId.make(`thread:pr-thread-uncredited-${runs.length}`);
       const prompt = yield* createPrPrompt(
-        (worktreePath) =>
-          seedPrThread({
-            threadId,
-            worktreePath,
-            runs: [
-              {
-                modelSelection: {
-                  instanceId: ProviderInstanceId.make("codex"),
-                  model: "gpt-6.2-sol",
-                },
-                text: "Try the refused model",
-                startFailed: true,
-              },
-            ],
-          }),
+        (worktreePath) => seedPrThread({ threadId, worktreePath, runs }),
         threadId,
       );
 
-      expect(prompt).toContain("Try the refused model");
+      for (const run of runs) expect(prompt).toContain(run.text);
       expect(prompt).not.toContain("Change produced by");
+      expect(prompt).not.toContain("gpt-6.2-picker");
     }),
   );
 
