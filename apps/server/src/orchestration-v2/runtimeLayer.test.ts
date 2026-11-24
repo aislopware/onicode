@@ -5504,6 +5504,18 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
       reads: [{ lint: "success", test: "failure" }],
       told: [["test"]],
     },
+    // Watching again on a head the last watch never read, whose pass the start already read.
+    {
+      label: "rewatched passing",
+      atStart: "passing",
+      lastHeadSha: "0ld0000000",
+      start: { checksPending: false, headSha: "ad70160aaa" },
+      reads: [
+        { lint: "success", test: "success" },
+        { lint: "success", test: "failure" },
+      ],
+      told: [[], ["test"]],
+    },
   ] as const)("reports only failures after a watch that starts on $label CI", (row) =>
     Effect.gen(function* () {
       const { label, atStart, reads, told } = row;
@@ -5558,6 +5570,34 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         },
         stack: null,
       });
+      if ("lastHeadSha" in row) {
+        yield* orchestrator.dispatch({
+          type: "thread.pull-request.watch",
+          commandId: CommandId.make(`pr-watch-start-last-${label}`),
+          threadId,
+          ...key,
+          watching: true,
+        });
+        const last = (yield* orchestrator.getThreadShell(threadId))?.pullRequests?.[0]?.watch;
+        assert.isDefined(last);
+        if (last === undefined) return;
+        const { awaitingBaseline: _baseline, ...told } = last;
+        yield* orchestrator.dispatch({
+          type: "thread.pull-request-watch.sync",
+          commandId: CommandId.make(`pr-watch-start-last-read-${label}`),
+          threadId,
+          ...key,
+          startedAt: last.startedAt,
+          watch: { ...told, headSha: row.lastHeadSha, failedChecks: ["test"] },
+        });
+        yield* orchestrator.dispatch({
+          type: "thread.pull-request.watch",
+          commandId: CommandId.make(`pr-watch-start-last-end-${label}`),
+          threadId,
+          ...key,
+          watching: false,
+        });
+      }
       // Without `start`, a client start, which carries no CI state of its own.
       yield* orchestrator.dispatch({
         type: "thread.pull-request.watch",
