@@ -53,7 +53,6 @@ function enrichedStyle(
   const monospace = Platform.OS === "ios" ? "Menlo" : "monospace";
   // Android only bolds fallback glyphs when the bold family is asked for at a bold weight (app.config.ts).
   const boldFontWeight = Platform.OS === "android" ? "bold" : undefined;
-  // Keep the radius modest: iOS clips square table-cell borders without stroking the corner arcs.
   const block = {
     marginTop: 4,
     marginBottom: 12,
@@ -161,15 +160,20 @@ function enrichedStyle(
       gapWidth: 12 * fontScale,
     },
     thematicBreak: { color: style.dividerColor, height: 1, marginTop: 8, marginBottom: 8 },
+    // As desktop draws tables: lines between rows only, outer columns flush with the prose, one step smaller.
     table: {
       ...body,
       ...block,
+      fontSize: style.fontSize * (14 / 15),
+      lineHeight: style.lineHeight * (14 / 15),
       headerFontFamily: style.boldFontFamily,
       headerTextColor: style.strongColor,
-      headerBackgroundColor: style.codeBlockBackgroundColor,
+      headerBackgroundColor: "transparent",
       rowEvenBackgroundColor: "transparent",
       rowOddBackgroundColor: "transparent",
-      cellPaddingHorizontal: 10,
+      borderRadius: 0,
+      lines: "rows",
+      cellPaddingHorizontal: 12,
       cellPaddingVertical: 7,
     },
     taskList: {
