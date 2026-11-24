@@ -11,6 +11,7 @@ import {
   type WorkspaceScanFoldersResult,
 } from "@onicode/contracts";
 import { expandHomePath } from "@onicode/provider-core/server/pathExpansion";
+import { splitsSurrogatePair } from "@onicode/shared/assistantCitations";
 import * as HostProcess from "@onicode/shared/HostProcess";
 import { fromLenientJson } from "@onicode/shared/schemaJson";
 import { ONICODE_PROJECT_FILE_NAME } from "@onicode/contracts";
@@ -80,7 +81,11 @@ export class WorkspaceFolders extends Context.Service<
 const DETECTION_CONCURRENCY = 8;
 // What `ProjectTrackedFolder.name` allows.
 const FOLDER_NAME_MAX = 128;
-const boundedName = (name: string) => name.slice(0, FOLDER_NAME_MAX).trim();
+const boundedName = (name: string) => {
+  const trimmed = name.trimStart();
+  const end = splitsSurrogatePair(trimmed, FOLDER_NAME_MAX) ? FOLDER_NAME_MAX - 1 : FOLDER_NAME_MAX;
+  return trimmed.slice(0, end).trimEnd();
+};
 const CODE_WORKSPACE_EXTENSION = ".code-workspace";
 
 const decodeCodeWorkspace = Schema.decodeUnknownEffect(
