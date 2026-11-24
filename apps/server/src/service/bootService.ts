@@ -1049,9 +1049,23 @@ export const make = Effect.fn("service.boot_service.make")(function* (input: {
         );
       }),
     ).pipe(Effect.mapError((cause) => new BootServiceInstallError({ cause })));
+  // Moves a path inside one spelling of this home to another, whatever its separators.
+  const rebaseHome = (file: string, from: string, to: string) => {
+    const relative = path.relative(from, file);
+    if (relative === "") return to;
+    return relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)
+      ? file
+      : path.join(to, relative);
+  };
   const planForUnit = (unit: string): BootServicePlan => {
+    const unitInstallBinDir = serviceUnitEnvironmentValueOf(unit, "ONICODE_INSTALL_BIN_DIR");
+    const unitBaseDir = bootServiceBaseDirOf(unit);
+    // Install refuses another home's unit, so the unit's home is this one at some spelling.
     const effectiveInstallBinDir =
-      installBinDir || serviceUnitEnvironmentValueOf(unit, "ONICODE_INSTALL_BIN_DIR");
+      installBinDir ||
+      (unitInstallBinDir && unitBaseDir
+        ? rebaseHome(unitInstallBinDir, unitBaseDir, input.baseDir)
+        : unitInstallBinDir);
     return effectiveInstallBinDir ? { ...plan, installBinDir: effectiveInstallBinDir } : plan;
   };
   const requireManager = Effect.suspend(() =>
@@ -1571,8 +1585,7 @@ export const make = Effect.fn("service.boot_service.make")(function* (input: {
     const installedBaseDir = bootServiceBaseDirOf(unit);
     const otherBaseDir = yield* otherBaseDirOf(unit);
     // Another spelling of this home is current; repairing it would flip the unit between spellings.
-    // So the unit is rendered at its own spelling: its text escapes paths, and an install directory
-    // read from it is already at that spelling.
+    // So the unit is rendered at its own spelling, since its text escapes paths.
     const expectedPlan = (): BootServicePlan => {
       const own = planForUnit(unit);
       if (
@@ -1582,16 +1595,13 @@ export const make = Effect.fn("service.boot_service.make")(function* (input: {
       ) {
         return own;
       }
-      const rebase = (file: string) =>
-        file === input.baseDir || file.startsWith(input.baseDir + path.sep)
-          ? installedBaseDir + file.slice(input.baseDir.length)
-          : file;
+      const rebase = (file: string) => rebaseHome(file, input.baseDir, installedBaseDir);
       return {
         ...own,
         baseDir: installedBaseDir,
         logPath: rebase(own.logPath),
         program: own.program.map(rebase),
-        ...(installBinDir ? { installBinDir: rebase(installBinDir) } : {}),
+        ...(own.installBinDir ? { installBinDir: rebase(own.installBinDir) } : {}),
       };
     };
     const normalizeUnit = (contents: string) =>
@@ -1605,6 +1615,7 @@ export const make = Effect.fn("service.boot_service.make")(function* (input: {
           ? [...(yield* readSchtasksProblems(Option.some(unit)))]
           : [];
     if (yield* fs.exists(restartPendingPath)) problems.push("restart-pending");
+    const expected = expectedPlan();
     return {
       supported: true,
       installed: true,
@@ -1614,8 +1625,8 @@ export const make = Effect.fn("service.boot_service.make")(function* (input: {
       problems,
       current:
         problems.length === 0 &&
-        !(manager.kind === "systemd" && systemdUnsafeValue(expectedPlan())) &&
-        normalizeUnit(unit) === normalizeUnit(manager.render(expectedPlan())) &&
+        !(manager.kind === "systemd" && systemdUnsafeValue(expected)) &&
+        normalizeUnit(unit) === normalizeUnit(manager.render(expected)) &&
         runtimeEntryExists &&
         Option.isSome(runtimeSentinel) &&
         runtimeSentinel.value.trim() === input.cliVersion &&
