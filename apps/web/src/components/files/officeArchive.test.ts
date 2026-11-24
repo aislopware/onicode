@@ -17,6 +17,7 @@ function wordFile(
   parts: Partial<Record<"styles" | "numbering" | "header" | "footer" | "footnotes", string>> = {},
   section = "",
   extraRels = "",
+  files: Record<string, string> = {},
 ) {
   return zipFixture({
     "[Content_Types].xml": `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>`,
@@ -27,6 +28,7 @@ function wordFile(
       .map((part) => relationship(part, `${part}.xml`))
       .join("")}${extraRels}</Relationships>`,
     ...Object.fromEntries(Object.entries(parts).map(([part, xml]) => [`word/${part}.xml`, xml])),
+    ...files,
     "word/document.xml": `<w:document ${W} ${V} ${R}><w:body>${body}<w:sectPr>${section}<w:pgSz w:w="12240" w:h="15840"/></w:sectPr></w:body></w:document>`,
   }).buffer;
 }
@@ -161,6 +163,22 @@ describe("Word preview limits", () => {
     expect(result.truncated).toBe(false);
     expect(result.part("word/document.xml")).toContain("Body text");
     expect(result.part("word/_rels/document.xml.rels")).not.toContain("badLink");
+  });
+
+  // Read as the part list reads it, so the header is counted and its reference kept.
+  it("keeps a header whose part name has a literal ?", async () => {
+    const header = `<w:hdr ${W}>${paragraph("Header")}</w:hdr>`;
+    const result = await prepared(
+      wordFile(
+        paragraph("Body text"),
+        {},
+        `<w:headerReference w:type="default" r:id="header"/>`,
+        relationship("header", "header.xml?v=1"),
+        { "word/header.xml?v=1": header },
+      ),
+    );
+    expect(result.part("word/document.xml")).toContain("w:headerReference");
+    expect(result.part("word/header.xml?v=1")).toBe(header);
   });
 
   // Trimming these spaces would alias the target to the document itself.

@@ -4,7 +4,11 @@ import { markdownTree } from "~/markdown/wordsHast";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import { render, stubGlobal } from "../../../test/render";
-import { ChatMarkdownAssetImage, markdownImageCopy } from "./ChatMarkdownMedia";
+import {
+  authoredImageFrameStyle,
+  ChatMarkdownAssetImage,
+  markdownImageCopy,
+} from "./ChatMarkdownMedia";
 
 // Every evaluation of the URL query is one mint: the first read, then one per refresh.
 const assetQuery = vi.hoisted(() => ({ mints: 0 }));
@@ -107,12 +111,18 @@ describe("ChatMarkdownAssetImage", () => {
         kind="video"
         alt="clip"
         workspaceMutationId={workspaceMutationId}
+        // A height-only video keeps its 16:9 width instead of filling the row squashed.
+        style={{ maxHeight: "min(30rem, 120px)" }}
+        frameStyle={authoredImageFrameStyle(undefined, "120")}
       />
     );
     await using screen = await render(video("mutation-1"));
     await expect
       .element(screen.getByLabelText("clip"))
       .toHaveAttribute("src", "http://localhost:1/asset/mint-2/clip.mp4");
+    expect(screen.getByLabelText("clip").element().getAttribute("style")).toContain(
+      "max-width: min(100%, 30rem, 213.333",
+    );
 
     await screen.rerender(video("mutation-2"));
     await expect

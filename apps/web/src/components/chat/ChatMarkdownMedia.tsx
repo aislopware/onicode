@@ -491,7 +491,7 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
         alt={props.alt}
         copyMarkdown={props.copyMarkdown}
         originalUrl={props.originalUrl}
-        style={props.style}
+        style={props.frameStyle ?? props.style}
         mediaIdentity={JSON.stringify([props.environmentId, props.resource, props.srcFragment])}
         // Servers that report the file's revision let an unchanged video stay loaded.
         revision={(assetUrl._tag === "Success" ? assetUrl.fileRevision : undefined) ?? urlRevision}
