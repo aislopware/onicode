@@ -3713,3 +3713,4 @@ f516cf9de8	take	taken as is (OpenCode-only)
 b28b13bd1f	take	taken as is
 30bda7ede9	take	taken as is
 0a7864c887	take	adopted upstream's viewingAtom tracker option over Onicode's attendedThreadShell wrapper (shared in client-runtime, no per-thread atom family); kept Onicode's userPresentAtom as the signal (visible+focused+recent input beats upstream's visible+focused for a host left running); mobile's app-active gate moved onto viewingAtom too
+15afd7f9c8	take	taken as is; Onicode keeps peer remote delegation, same stop/restart paths
