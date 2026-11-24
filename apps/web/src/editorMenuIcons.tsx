@@ -89,6 +89,8 @@ export async function editorMenuIcons(
         rasterized.set(editor, entry);
       }
       const icon = await entry.icon;
+      // A failed render may be transient; try again on the next menu open.
+      if (icon === null && rasterized.get(editor) === entry) rasterized.delete(editor);
       return icon === null ? null : ([editor, icon] as const);
     }),
   );

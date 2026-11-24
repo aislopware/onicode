@@ -171,7 +171,8 @@ async function readCapturedWindowAccessibility(
   const flatRead = window
     .capture({
       maxDepth: MAX_ACCESSIBILITY_TREE_DEPTH,
-      maxNodes: MAX_ACCESSIBILITY_TREE_NODES,
+      // accessibleWindowText counts the root that wraps these nodes.
+      maxNodes: MAX_ACCESSIBILITY_TREE_NODES - 1,
       timeout: ACCESSIBILITY_TIMEOUT_MS,
     })
     .then(({ nodes, truncated }) => {

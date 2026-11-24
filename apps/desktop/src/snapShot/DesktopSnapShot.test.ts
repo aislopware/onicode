@@ -18,7 +18,7 @@ import * as Schema from "effect/Schema";
 import * as TestClock from "effect/testing/TestClock";
 import type * as Electron from "electron";
 import type { PortalShortcutState } from "./PortalCaptureShortcut.ts";
-import { beforeEach, vi } from "vite-plus/test";
+import { beforeEach, expect, vi } from "vite-plus/test";
 
 beforeEach(() => {
   portalShortcutInstances.length = 0;
@@ -1521,6 +1521,12 @@ it.each([
         format: "flat-text",
         text: `Editor\n${text}`,
         truncated: cutByNodes,
+      });
+      // The flat text walk spends one of its node budget on the root it wraps the capture in.
+      expect(window.capture).toHaveBeenCalledWith({
+        maxDepth: 512,
+        maxNodes: 9_999,
+        timeout: 3_000,
       });
     } finally {
       vi.unstubAllEnvs();

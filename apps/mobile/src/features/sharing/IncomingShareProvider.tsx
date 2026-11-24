@@ -27,6 +27,7 @@ import {
 import { createIncomingSharePayloadReader } from "./incoming-share-native";
 import { IncomingShareInbox, IncomingShareUnsupportedError } from "./incoming-share-inbox";
 import { persistComposerAttachmentFile } from "../../lib/composerImages";
+import { discardRenderedImage } from "../../lib/composerImageFit";
 import { subscribeAppActive } from "../../lib/appState";
 import { coalescedRun } from "../../lib/coalescedRun";
 import { rootNavigationRef } from "../../lib/rootNavigation";
@@ -187,8 +188,8 @@ const incomingShareInbox = new IncomingShareInbox({
         removeOwnedFile: (uri) => {
           cleanupUris.add(uri);
         },
-        // Unlike the shared files, a scaled copy is not needed again if the draft fails to save.
-        removeScratchFile: (uri) => removeOwnedFile(uri),
+        // Our own render, outside the share copies the ownership check accepts on Android.
+        removeScratchFile: discardRenderedImage,
       },
       id,
       createdAt,

@@ -20,5 +20,5 @@ export function clearSearchOnEscape(
   if (query === "" && !event.repeat) return;
   event.preventDefault();
   event.stopPropagation();
-  clear();
+  if (query !== "") clear();
 }
