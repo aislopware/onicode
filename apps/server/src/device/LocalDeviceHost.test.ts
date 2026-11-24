@@ -72,6 +72,10 @@ const agentFixture = Effect.fn("agentFixture")(function* (
     yield* fs.writeFileString(entryPath, "");
     yield* fs.writeFileString(path.join(installDir, ".install-complete"), version!);
   }
+  // An older server left the hub's folder open to others.
+  const hubStateDir = path.join(baseDir, "userdata", "device", "hub");
+  yield* fs.makeDirectory(hubStateDir, { recursive: true });
+  yield* fs.chmod(hubStateDir, 0o755);
   if (previousDaemon) {
     yield* fs.makeDirectory(stateDir, { recursive: true });
     yield* fs.writeFileString(path.join(stateDir, "daemon.json"), JSON.stringify(previousDaemon));
@@ -504,10 +508,13 @@ describe("AgentDevice startup", () => {
       const path = yield* Path.Path;
       const { host, hub, baseDir } = yield* agentFixture(() => Effect.succeed(processOutput(0)));
       expect(hub.spawnedArgs[0]).toContain("--require-token");
-      expect(hub.spawnedEnvironments[0]?.EXPO_DEVICE_HUB_STATE_DIR).toBe(
-        path.join(baseDir, "userdata", "device", "hub"),
-      );
+      const hubStateDir = path.join(baseDir, "userdata", "device", "hub");
+      expect(hub.spawnedEnvironments[0]?.EXPO_DEVICE_HUB_STATE_DIR).toBe(hubStateDir);
       expect((yield* host.current)?.hub.token).toBe("hub-token");
+      if (HostProcess.Platform.defaultValue() !== "win32") {
+        const fs = yield* FileSystem.FileSystem;
+        expect((yield* fs.stat(hubStateDir)).mode & 0o077).toBe(0);
+      }
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 

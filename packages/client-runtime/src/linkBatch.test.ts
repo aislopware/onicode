@@ -52,12 +52,11 @@ describe("linkBatchCandidates", () => {
         { viaEnvironmentId: id("hub") },
       ]),
     );
+    const hub = new Set([id("hub")]);
     expect(
-      linkBatchCandidates(machines, writable, "loaded", routes).map(({ machine, blocked, via }) => [
-        machine.label,
-        blocked,
-        via,
-      ]),
+      linkBatchCandidates(machines, writable, "loaded", routes, new Set(), hub).map(
+        ({ machine, blocked, via }) => [machine.label, blocked, via],
+      ),
     ).toEqual([
       ["ready", null, null],
       ["linked", "linked", null],
@@ -67,8 +66,22 @@ describe("linkBatchCandidates", () => {
     ]);
     // A machine that gave this client no code is retried through the route.
     expect(
-      linkBatchCandidates(machines, writable, "loaded", routes, new Set([id("ready")]))[0]?.via,
+      linkBatchCandidates(machines, writable, "loaded", routes, new Set([id("ready")]), hub)[0]
+        ?.via,
     ).toBe(id("hub"));
+    // The linked environment refuses an access level this client's session there does not hold.
+    expect(
+      linkBatchCandidates(machines, writable, "loaded", routes).map(({ blocked, via }) => [
+        blocked,
+        via,
+      ]),
+    ).toEqual([
+      [null, null],
+      ["linked", null],
+      ["not_connected", null],
+      ["no_access", null],
+      ["no_address", null],
+    ]);
   });
 
   it("offers no machine until the linking environment's links have loaded", () => {

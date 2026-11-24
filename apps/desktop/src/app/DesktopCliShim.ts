@@ -44,7 +44,9 @@ export const renderCliShim = (input: {
     const utf8 = [target.executable, target.entry, input.shimPath, input.oniHome].some((value) =>
       [...value].some((character) => character.codePointAt(0)! > 0x7f),
     );
-    const restore = utf8 ? ["chcp %oni_codepage% >nul"] : [];
+    // By absolute path: cmd looks a bare name up in the working directory first.
+    const chcp = String.raw`%SystemRoot%\System32\chcp.com`;
+    const restore = utf8 ? [`${chcp} %oni_codepage% >nul`] : [];
     return [
       "@echo off",
       `rem ${MARKER}`,
@@ -53,8 +55,8 @@ export const renderCliShim = (input: {
       // Ctrl-C skips codepage restoration, so switch to UTF-8 only for non-ASCII install paths.
       ...(utf8
         ? [
-            `for /f "tokens=2 delims=:." %%c in ('chcp') do set "oni_codepage=%%c"`,
-            "chcp 65001 >nul",
+            `for /f "tokens=2 delims=:." %%c in ('${chcp}') do set "oni_codepage=%%c"`,
+            `${chcp} 65001 >nul`,
           ]
         : []),
       `set "ONICODE_CLI_PATH=${cmdText(input.shimPath)}"`,

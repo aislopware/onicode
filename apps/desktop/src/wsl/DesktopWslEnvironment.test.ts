@@ -14,6 +14,7 @@ import { afterAll, expect } from "vite-plus/test";
 import * as NodeChildProcess from "node:child_process";
 
 import * as HostProcess from "@onicode/shared/HostProcess";
+import { windowsSystem32Path } from "@onicode/shared/windowsSystem";
 import {
   ManagedPolicyFileError,
   WindowsRegistry,
@@ -95,6 +96,8 @@ const readField = (stdout: string, field: string) => {
   return line.slice(field.length + 1).trim();
 };
 
+const WSL = windowsSystem32Path(HostProcess.Environment.defaultValue(), "wsl.exe");
+
 const SERVER_ENTRY_SOURCE = '#!/bin/sh\necho "onicode wsl runtime test server 0.0.0"\n';
 
 // Emulates `wsl.exe [-d <distro>] [--cd <dir>] [--|--exec] <argv>` in a distro with automount off.
@@ -103,7 +106,7 @@ const layerFakeWslExe = (home: string, inherited: Record<string, string> = {}) =
     ChildProcessSpawner.ChildProcessSpawner,
     Effect.map(ChildProcessSpawner.ChildProcessSpawner, (local) =>
       ChildProcessSpawner.make((command) => {
-        if (!ChildProcess.isStandardCommand(command) || command.command !== "wsl.exe") {
+        if (!ChildProcess.isStandardCommand(command) || command.command !== WSL) {
           return local.spawn(command);
         }
         const args = command.args.map((word) =>
@@ -670,7 +673,7 @@ describe("windowsToWslPathImpl", () => {
       assert.lengthOf(spawned, 1);
       const [command] = spawned;
       assert(command?._tag === "StandardCommand");
-      assert.strictEqual(command.command, "wsl.exe");
+      assert.strictEqual(command.command, WSL);
       assert.deepStrictEqual(command.args, [
         "-d",
         "Ubuntu",

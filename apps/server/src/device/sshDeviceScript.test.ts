@@ -298,9 +298,17 @@ http.createServer((_request, response) => response.end("ok")).listen(Number(args
 });`,
         );
 
+        // An older script left the folder open to others, and earlier runs logged multi-byte text.
+        await NodeFSP.mkdir(state, { recursive: true });
+        await NodeFSP.chmod(state, 0o755);
+        await NodeFSP.writeFile(NodePath.join(state, "hub.log"), `${"é".repeat(64)}\n`, {
+          mode: 0o600,
+        });
+
         const started = run("start");
         expect(started.stderr).toBe("");
         expect(JSON.parse(started.stdout).hubToken).toBe("printed-token");
+        expect((await NodeFSP.stat(state)).mode & 0o077).toBe(0);
         expect(
           JSON.parse(await NodeFSP.readFile(NodePath.join(state, "hub.json"), "utf8")).token,
         ).toBe("printed-token");

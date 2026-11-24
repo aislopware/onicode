@@ -795,7 +795,7 @@ describe("DesktopBackendConfiguration", () => {
         const configuration = yield* DesktopBackendConfiguration.DesktopBackendConfiguration;
         const config = yield* configuration.resolveWsl({ port: 5050, distro: null });
 
-        assert.equal(config.executablePath, "wsl.exe");
+        assert.equal(config.executablePath, String.raw`C:\Windows\System32\wsl.exe`);
         assert.equal(config.bootstrap.port, 5050);
         assert.equal(config.bootstrap.host, "0.0.0.0");
         assert.equal(config.bootstrap.tailscaleServeEnabled, false);
@@ -887,7 +887,7 @@ describe("DesktopBackendConfiguration", () => {
           const config = yield* configuration.resolvePrimary;
           const failure = Option.getOrThrow(config.preflightFailure);
 
-          assert.equal(config.executablePath, "wsl.exe");
+          assert.equal(config.executablePath, String.raw`C:\Windows\System32\wsl.exe`);
           assert.isTrue(failure.fatal);
           assert.include(failure.reason, "Removed-Distro");
         }).pipe(

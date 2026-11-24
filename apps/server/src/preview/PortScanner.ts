@@ -935,7 +935,7 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
       const recoverWindowsProbeFailure = recoverProcessProbeFailure("windows-listeners");
       const listeners = yield* WindowsTcpListeners.queryWindowsTcpListeners(
         processRunner,
-        "netstat.exe",
+        windowsSystem32Path(yield* HostProcess.Environment, "netstat.exe"),
       ).pipe(
         Effect.map((snapshot) =>
           snapshot === null ? null : discoveredWindowsListeners(snapshot, terminalOwners),

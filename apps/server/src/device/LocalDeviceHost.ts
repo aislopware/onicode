@@ -467,6 +467,8 @@ export const make = Effect.fn("LocalDeviceHost.make")(function* () {
     // The hub records its token in this folder, kept with the rest of the server's state.
     const hubStateDir = path.join(config.stateDir, "device", "hub");
     yield* fs.makeDirectory(hubStateDir, { recursive: true, mode: 0o700 }).pipe(Effect.ignore);
+    // mkdir leaves a folder an older server made as it was.
+    yield* fs.chmod(hubStateDir, 0o700).pipe(Effect.ignore);
     const port = yield* net.reserveLoopbackPort("127.0.0.1").pipe(
       Effect.mapError(
         (cause) =>

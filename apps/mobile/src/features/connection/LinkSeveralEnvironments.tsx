@@ -15,6 +15,7 @@ import {
   AuthAccessWriteScope,
   type AuthMcpClientAccess,
   type EnvironmentId,
+  mcpClientScopes,
 } from "@onicode/contracts";
 import * as Result from "effect/Result";
 import { T, useGT, useMessages } from "gt-react-native";
@@ -154,7 +155,28 @@ function LinkSeveralSheet(props: {
     reportFailure: false,
     reportDefect: false,
   });
-  const candidates = linkBatchCandidates(machines, writable, linksState, routes, mintFailed);
+  // The environment holding a link refuses a level this client's session there does not hold.
+  const viaIds = [...new Set([...routes.values()].map((route) => route.viaEnvironmentId))].join(
+    "\n",
+  );
+  const viaScoped = useMemo(
+    () =>
+      viaIds
+        .split("\n")
+        .filter((id) => id.length > 0)
+        .map((id) => ({ environmentId: id as EnvironmentId })),
+    [viaIds],
+  );
+  const pairScopes = useMemo(() => [AuthAccessWriteScope, ...mcpClientScopes(access)], [access]);
+  const pairsThrough = useEnvironmentsWithScope(viaScoped, pairScopes);
+  const candidates = linkBatchCandidates(
+    machines,
+    writable,
+    linksState,
+    routes,
+    mintFailed,
+    pairsThrough,
+  );
   const selectable = candidates.flatMap(({ machine, blocked, via }) =>
     blocked === null && outcomes.get(machine.environmentId)?.kind !== "linked"
       ? [{ ...machine, via }]

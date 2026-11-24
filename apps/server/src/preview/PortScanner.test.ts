@@ -692,6 +692,8 @@ effectIt.effect("ignores a partial Windows netstat snapshot when one query exits
                 processOutput('"node.exe","1234","Console","1","50,000 K"\r\n'),
               );
             }
+            // Run by absolute path, not found through PATH or the working directory.
+            expect(input.command).toBe(String.raw`C:\Windows\System32\netstat.exe`);
             const isIpv6 = input.args.includes("tcpv6");
             return Effect.succeed({
               stdout: isIpv6

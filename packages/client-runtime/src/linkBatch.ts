@@ -55,6 +55,8 @@ export const linkBatchCandidates = (
   links: LinkListState,
   routes: ReadonlyMap<EnvironmentId, { readonly viaEnvironmentId: EnvironmentId }> = new Map(),
   mintFailed: ReadonlySet<EnvironmentId> = new Set(),
+  /** Environments whose session here may hand out the chosen access through their links. */
+  pairsThrough: ReadonlySet<EnvironmentId> = new Set(),
 ): ReadonlyArray<LinkBatchCandidate> =>
   machines.map((machine) => {
     const blocked: LinkBatchBlock | null =
@@ -75,7 +77,7 @@ export const linkBatchCandidates = (
       (blocked === null && !mintFailed.has(machine.environmentId))
         ? undefined
         : routes.get(machine.environmentId);
-    return route === undefined
+    return route === undefined || !pairsThrough.has(route.viaEnvironmentId)
       ? { machine, blocked, via: null }
       : { machine, blocked: null, via: route.viaEnvironmentId };
   });

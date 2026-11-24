@@ -79,9 +79,11 @@ import {
 } from "./providerStatusCache.ts";
 import { COMPACT_SLASH_COMMAND } from "@onicode/provider-core/server/snapshotProbe";
 import type {
+  AnyProviderDriver,
   ProviderInstance,
   ProviderWorkspaceSnapshot,
 } from "@onicode/provider-core/server/driver";
+import * as SecretResolver from "@onicode/secret-provider-core/server/SecretResolver";
 import * as ProviderInstanceRegistry from "./ProviderInstanceRegistry.ts";
 import * as ProviderInstanceRegistryMutator from "./ProviderInstanceRegistryMutator.ts";
 import * as ProviderRegistry from "./ProviderRegistry.ts";
@@ -2784,6 +2786,160 @@ it.layer(
         );
       }),
     );
+
+    // A new PATH rebuilds only instances whose own probe found their CLI missing, and the
+    // refresh that rebuilt one probes the new instance.
+    it.effect.each([
+      "missing",
+      "in-flight missing",
+      "in-flight installed",
+      "installed error",
+      "acpRegistry",
+    ] as const)("rebuilds and probes after a late login-shell PATH (%s)", (mode) => {
+      const env: NodeJS.ProcessEnv = { PATH: "/early/bin" };
+      return Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const dir = yield* fs.makeTempDirectoryScoped({ prefix: "oni-late-path-" });
+        const pathFile = `${dir}/path`;
+        const shell = `${dir}/sh`;
+        yield* fs.writeFileString(pathFile, "/early/bin");
+        yield* fs.writeFileString(
+          shell,
+          `#!/bin/sh\nPATH="$(cat ${pathFile})" exec /bin/sh -c "$2"\n`,
+        );
+        yield* fs.chmod(shell, 0o755);
+        env.SHELL = shell;
+        const inFlight = mode.startsWith("in-flight");
+        // An installed CLI whose check fails until the late PATH may hold live sessions.
+        const installedEarly = mode === "in-flight installed" || mode === "installed error";
+        const entered = yield* Deferred.make<void>();
+        const release = yield* Deferred.make<void>();
+        const paths: Array<string | undefined> = [];
+        // The installed row blocks its first check; the missing row a check after the first.
+        const blockAt = mode === "in-flight missing" ? 2 : 1;
+        let probes = 0;
+        const driverKind = ProviderDriverKind.make(mode === "acpRegistry" ? "acpRegistry" : "pi");
+        const instanceId = ProviderInstanceId.make("late-path");
+        const driver: AnyProviderDriver = {
+          driverKind,
+          metadata: { displayName: "PATH fixture" },
+          configSchema: Schema.Unknown,
+          defaultConfig: () => ({}),
+          create: (input) =>
+            Effect.gen(function* () {
+              const path = env.PATH;
+              paths.push(path);
+              const late = path?.includes("/late/bin") === true;
+              // The old probe ends once the second refresh has rebuilt, so that refresh meets it.
+              if (late) yield* Deferred.succeed(release, undefined);
+              // An ACP Registry agent reports missing for setup states unrelated to PATH.
+              const installed = mode !== "acpRegistry" && (installedEarly || late);
+              const ready = mode === "installed error" ? late : installed;
+              const snapshot: ServerProvider = {
+                instanceId,
+                driver: driverKind,
+                enabled: true,
+                installed: false,
+                status: "warning",
+                auth: { status: "unknown" },
+                version: null,
+                checkedAt: "2026-10-03T00:00:00.000Z",
+                models: [],
+                slashCommands: [],
+                skills: [],
+              };
+              const current = yield* Ref.make(snapshot);
+              const checked = yield* Ref.make(false);
+              return {
+                instanceId: input.instanceId,
+                driverKind,
+                enabled: true,
+                displayName: undefined,
+                continuationIdentity: { driverKind, continuationKey: `${driverKind}:late-path` },
+                snapshot: {
+                  resolveMaintenance: () =>
+                    Effect.succeed(
+                      makeManualOnlyProviderMaintenanceCapabilities({
+                        provider: driverKind,
+                        packageName: null,
+                      }),
+                    ),
+                  getSnapshot: Ref.get(current),
+                  isAwaitingFirstCheck: Ref.get(checked).pipe(Effect.map((done) => !done)),
+                  refresh: Effect.gen(function* () {
+                    probes += 1;
+                    if (inFlight && probes === blockAt) {
+                      yield* Deferred.succeed(entered, undefined);
+                      yield* Deferred.await(release);
+                    }
+                    const result: ServerProvider = {
+                      ...snapshot,
+                      installed,
+                      status: ready ? "ready" : "error",
+                    };
+                    yield* Ref.set(current, result);
+                    yield* Ref.set(checked, true);
+                    return result;
+                  }),
+                  streamChanges: Stream.empty,
+                  applyUsageLimits: () => Effect.void,
+                },
+                orchestrationAdapter: {} as ProviderInstance["orchestrationAdapter"],
+                textGeneration: {} as ProviderInstance["textGeneration"],
+              } satisfies ProviderInstance;
+            }),
+        };
+        const built = yield* ProviderInstanceRegistry.makeProviderInstanceRegistry({
+          drivers: [driver],
+          configMap: { [instanceId]: { driver: driverKind, enabled: true } },
+        }).pipe(Effect.provide(Layer.mock(SecretResolver.SecretResolver)({})));
+        yield* Effect.gen(function* () {
+          const registry = yield* ProviderRegistry.ProviderRegistry;
+          if (mode === "in-flight missing") yield* registry.refresh();
+          const running = inFlight ? yield* registry.refresh().pipe(Effect.forkScoped) : undefined;
+          if (running) yield* Deferred.await(entered);
+          else yield* registry.refresh();
+          // The profile gains the CLI's folder after launch; a refresh past the PATH cache reads it.
+          yield* fs.writeFileString(pathFile, "/early/bin:/late/bin");
+          yield* TestClock.adjust("11 seconds");
+          const second = yield* registry.refresh().pipe(Effect.forkScoped);
+          yield* Deferred.succeed(release, undefined);
+          if (running) yield* Fiber.join(running);
+          const providers = yield* Fiber.join(second);
+          expect(providers.find((row) => row.instanceId === instanceId)?.installed).toBe(
+            mode !== "acpRegistry",
+          );
+          expect(paths).toEqual(
+            mode === "missing" || mode === "in-flight missing"
+              ? ["/early/bin", "/early/bin:/late/bin"]
+              : ["/early/bin"],
+          );
+        }).pipe(
+          Effect.provide(
+            ProviderRegistry.layer.pipe(
+              Layer.provide(
+                Layer.succeed(
+                  ProviderInstanceRegistryMutator.ProviderInstanceRegistryMutator,
+                  built.mutator,
+                ),
+              ),
+              Layer.provideMerge(
+                Layer.succeed(ProviderInstanceRegistry.ProviderInstanceRegistry, built.registry),
+              ),
+              Layer.provideMerge(
+                ServerConfig.layerTest(process.cwd(), { prefix: "oni-late-path-" }),
+              ),
+              Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+            ),
+          ),
+        );
+      }).pipe(
+        Effect.scoped,
+        Effect.provideService(HostProcess.Platform, "linux"),
+        Effect.provideService(HostProcess.Environment, env),
+        Effect.provide(NodeServices.layer),
+      );
+    });
 
     it.effect("publishes a new label for an instance the registry kept live", () =>
       Effect.gen(function* () {
