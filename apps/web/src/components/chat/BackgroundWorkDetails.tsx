@@ -11,7 +11,7 @@ import {
 import { T, useGT } from "gt-react";
 import { useState } from "react";
 
-import { InlineButton } from "../ui/button";
+import { Button, InlineButton } from "../ui/button";
 import {
   Dialog,
   DialogHeader,
@@ -98,14 +98,16 @@ export function BackgroundWorkDetails(props: {
                     </div>
                   ) : null}
                   {childThreadId ? (
-                    <InlineButton
+                    <Button
+                      size="sm"
+                      variant="outline"
                       onClick={() => {
                         setOpen(false);
                         props.onOpenThread(childThreadId);
                       }}
                     >
                       <T>Open subagent</T>
-                    </InlineButton>
+                    </Button>
                   ) : null}
                 </section>
               );
