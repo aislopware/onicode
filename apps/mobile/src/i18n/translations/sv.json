@@ -2660,6 +2660,7 @@
   "dff9e061996e7b1d": "Aktivera automatisk merge?",
   "dafc4bac6e5e37b0": "Inaktivera automatisk merge?",
   "88c7a80c40bbfe56": "Merga {layers} in i {base} med {kind, select, squash {squash} merge {merge} rebase {rebase} fastForward {fast-forward} other {{method}}}. Lager ovanför #{number} förblir öppna.",
+  "892f08d21b8e48a9": "Merga {layers} in i {base} med {kind, select, squash {squash} merge {merge} rebase {rebase} fastForward {fast-forward} other {{method}}} när kraven är uppfyllda. Det kan ske direkt.",
   "700223fdcaa96bb7": "Merga #{number} med {kind, select, squash {squash} merge {merge} rebase {rebase} fastForward {fast-forward} other {{method}}} när kraven är uppfyllda. Det kan ske direkt.",
   "de93a05a4db7ab76": "Hindra leverantören från att automatiskt merga den här {term, select, mr {merge requesten} cr {ändringsbegäran} other {pull requesten}}.",
   "385ba70d2783260b": "Merga #{number} in i {branch} med {kind, select, squash {squash} merge {merge} rebase {rebase} fastForward {fast-forward} other {{method}}}.",

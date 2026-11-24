@@ -2660,6 +2660,7 @@
   "dff9e061996e7b1d": "Enable auto-merge?",
   "dafc4bac6e5e37b0": "Disable auto-merge?",
   "88c7a80c40bbfe56": "Merge {layers} into {base} using {kind, select, squash {squash} merge {merge} rebase {rebase} fastForward {fast-forward} other {{method}}}. Layers above #{number} stay open.",
+  "892f08d21b8e48a9": "Merge {layers} into {base} using {kind, select, squash {squash} merge {merge} rebase {rebase} fastForward {fast-forward} other {{method}}} once their requirements are met. This may happen immediately.",
   "700223fdcaa96bb7": "Merge #{number} using {kind, select, squash {squash} merge {merge} rebase {rebase} fastForward {fast-forward} other {{method}}} when its requirements are met. This may happen immediately.",
   "de93a05a4db7ab76": "Stop the provider from automatically merging this {term, select, mr {merge request} cr {change request} other {pull request}}.",
   "385ba70d2783260b": "Merge #{number} into {branch} using {kind, select, squash {squash} merge {merge} rebase {rebase} fastForward {fast-forward} other {{method}}}.",

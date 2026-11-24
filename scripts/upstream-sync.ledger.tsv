@@ -3596,3 +3596,4 @@ d572ce9afe	take	fix(chat): preserve model choices when editing queued messages (
 d9c7e6f7fc	take	fix(web): dropped text is parsed like pasted text in the composer (#31098)
 a68a3539b8	take	fix(web): holding Esc in the Files search clears it without closing the sheet (#41815)
 f46fa62d59	take	feat(github): issues follow GitHub's issue statuses (#41795); issues.graphql.ts regenerated with Onicode's IssueSummary
+69d8f4217f	take	feat: auto-merge a stack through GitHub's includeStack (#41809); catalogs regenerated, translations taken from upstream, Onicode's ellipsis kept, agentContextBudget tool-list size adjusted by upstream's delta

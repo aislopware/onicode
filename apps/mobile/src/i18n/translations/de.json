@@ -2660,6 +2660,7 @@
   "dff9e061996e7b1d": "Auto-Merge aktivieren?",
   "dafc4bac6e5e37b0": "Auto-Merge deaktivieren?",
   "88c7a80c40bbfe56": "{layers} per {kind, select, squash {Squash} merge {Merge} rebase {Rebase} fastForward {Fast-Forward} other {{method}}} in {base} mergen. Ebenen über #{number} bleiben offen.",
+  "892f08d21b8e48a9": "{layers} per {kind, select, squash {Squash} merge {Merge} rebase {Rebase} fastForward {Fast-Forward} other {{method}}} in {base} mergen, sobald die Anforderungen erfüllt sind. Das kann sofort passieren.",
   "700223fdcaa96bb7": "#{number} per {kind, select, squash {Squash} merge {Merge} rebase {Rebase} fastForward {Fast-Forward} other {{method}}} mergen, sobald die Anforderungen erfüllt sind. Das kann sofort passieren.",
   "de93a05a4db7ab76": "{term, select, mr {Verhindern, dass der Anbieter diesen Merge Request automatisch mergt.} cr {Verhindern, dass der Anbieter diese Änderungsanfrage automatisch mergt.} other {Verhindern, dass der Anbieter diesen Pull Request automatisch mergt.}}",
   "385ba70d2783260b": "#{number} per {kind, select, squash {Squash} merge {Merge} rebase {Rebase} fastForward {Fast-Forward} other {{method}}} in {branch} mergen.",

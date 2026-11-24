@@ -2656,6 +2656,7 @@
   "dff9e061996e7b1d": "Ativar o merge automático?",
   "dafc4bac6e5e37b0": "Desativar o merge automático?",
   "88c7a80c40bbfe56": "Mesclar {layers} em {base} usando {kind, select, squash {squash} merge {merge} rebase {rebase} fastForward {fast-forward} other {{method}}}. As camadas acima de #{number} continuam abertas.",
+  "892f08d21b8e48a9": "Mesclar {layers} em {base} usando {kind, select, squash {squash} merge {merge} rebase {rebase} fastForward {fast-forward} other {{method}}} quando os requisitos forem atendidos. Isso pode acontecer imediatamente.",
   "700223fdcaa96bb7": "Mesclar #{number} usando {kind, select, squash {squash} merge {merge} rebase {rebase} fastForward {fast-forward} other {{method}}} quando os requisitos forem atendidos. Isso pode acontecer imediatamente.",
   "de93a05a4db7ab76": "Impede que o provedor mescle {term, select, mr {este merge request} cr {esta solicitação de alteração} other {este pull request}} automaticamente.",
   "385ba70d2783260b": "Mesclar #{number} em {branch} usando {kind, select, squash {squash} merge {merge} rebase {rebase} fastForward {fast-forward} other {{method}}}.",

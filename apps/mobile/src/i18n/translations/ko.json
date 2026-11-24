@@ -2657,6 +2657,7 @@
   "dff9e061996e7b1d": "자동 병합을 사용할까요?",
   "dafc4bac6e5e37b0": "자동 병합을 끌까요?",
   "88c7a80c40bbfe56": "{layers}을(를) {kind, select, squash {스쿼시} merge {병합} rebase {리베이스} fastForward {빨리 감기} other {{method}}} 방식으로 {base}에 병합합니다. #{number} 위의 레이어는 열린 상태로 유지됩니다.",
+  "892f08d21b8e48a9": "요구 사항이 충족되면 {layers}을(를) {kind, select, squash {스쿼시} merge {병합} rebase {리베이스} fastForward {빨리 감기} other {{method}}} 방식으로 {base}에 병합합니다. 바로 병합될 수도 있습니다.",
   "700223fdcaa96bb7": "요구 사항이 충족되면 #{number}을(를) {kind, select, squash {스쿼시} merge {병합} rebase {리베이스} fastForward {빨리 감기} other {{method}}} 방식으로 병합합니다. 바로 병합될 수도 있습니다.",
   "de93a05a4db7ab76": "제공자가 이 {term, select, mr {병합 요청을} cr {변경 요청을} other {풀 리퀘스트를}} 자동으로 병합하지 않도록 중지합니다.",
   "385ba70d2783260b": "#{number}을(를) {kind, select, squash {스쿼시} merge {병합} rebase {리베이스} fastForward {빨리 감기} other {{method}}} 방식으로 {branch}에 병합합니다.",

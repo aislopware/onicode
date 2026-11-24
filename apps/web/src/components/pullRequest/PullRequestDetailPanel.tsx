@@ -708,6 +708,7 @@ export function PullRequestDetailPanel({
     stackError: nativeStackQuery.error,
   });
   const stackOwnsMerge = supportsStackActions && nativeStack !== null;
+  const stackAutoMerge = supportsStackActions && detail?.capabilities.stackAutoMerge === true;
   const mergeBlockedReason = canMergeSinglePullRequest
     ? null
     : nativeStackQuery.error
@@ -1638,6 +1639,12 @@ export function PullRequestDetailPanel({
                   stale={!nativeStackQuery.isFresh}
                   canMerge={supportsStackActions && can("merge") && allowedMergeMethods.length > 0}
                   canRebase={supportsStackActions && detail.viewerPermissions.stackRebase === true}
+                  canAutoMerge={
+                    stackAutoMerge && can("enable-auto-merge") && allowedMergeMethods.length > 0
+                  }
+                  preferAutoMerge={checksState !== null && checksState !== "passing"}
+                  autoMergeArmed={stackAutoMerge && autoMergeArmed}
+                  canCancelAutoMerge={stackAutoMerge && can("disable-auto-merge")}
                   onActed={() => {
                     refreshDetail();
                     onActed?.();

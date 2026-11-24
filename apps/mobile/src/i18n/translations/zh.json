@@ -2657,6 +2657,7 @@
   "dff9e061996e7b1d": "启用自动合并？",
   "dafc4bac6e5e37b0": "停用自动合并？",
   "88c7a80c40bbfe56": "使用{kind, select, squash {压缩合并} merge {合并} rebase {变基} fastForward {快进} other {{method}}}方式将 {layers} 合并到 {base}。#{number} 以上的层保持开放。",
+  "892f08d21b8e48a9": "满足要求时使用{kind, select, squash {压缩合并} merge {合并} rebase {变基} fastForward {快进} other {{method}}}方式将 {layers} 合并到 {base}。这可能会立即发生。",
   "700223fdcaa96bb7": "满足要求时使用{kind, select, squash {压缩合并} merge {合并} rebase {变基} fastForward {快进} other {{method}}}方式合并 #{number}。这可能会立即发生。",
   "de93a05a4db7ab76": "阻止提供方自动合并此 {term, select, mr {merge request} cr {change request} other {pull request}}。",
   "385ba70d2783260b": "使用{kind, select, squash {压缩合并} merge {合并} rebase {变基} fastForward {快进} other {{method}}}方式将 #{number} 合并到 {branch}。",

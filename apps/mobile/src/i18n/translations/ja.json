@@ -2653,6 +2653,7 @@
   "dff9e061996e7b1d": "自動マージを有効にしますか？",
   "dafc4bac6e5e37b0": "自動マージを無効にしますか？",
   "88c7a80c40bbfe56": "{layers} を{kind, select, squash {スカッシュ} merge {マージ} rebase {リベース} fastForward {早送り} other {{method}}}で {base} にマージします。#{number} より上の層はオープンのままです。",
+  "892f08d21b8e48a9": "要件が満たされたら、{layers} を{kind, select, squash {スカッシュ} merge {マージ} rebase {リベース} fastForward {早送り} other {{method}}}で {base} にマージします。すぐにマージされる場合があります。",
   "700223fdcaa96bb7": "要件が満たされたら、#{number} を{kind, select, squash {スカッシュ} merge {マージ} rebase {リベース} fastForward {早送り} other {{method}}}でマージします。すぐにマージされる場合があります。",
   "de93a05a4db7ab76": "{term, select, mr {プロバイダーによるこのマージリクエストの自動マージを停止します。} cr {プロバイダーによるこの変更リクエストの自動マージを停止します。} other {プロバイダーによるこのプルリクエストの自動マージを停止します。}}",
   "385ba70d2783260b": "#{number} を{kind, select, squash {スカッシュ} merge {マージ} rebase {リベース} fastForward {早送り} other {{method}}}で {branch} にマージします。",
