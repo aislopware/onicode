@@ -41,10 +41,11 @@ test(
 
     const chat = screen.getByRole("region", "Conversation");
     await expect(chat.getByText("Created the requested probe file.")).toBeVisible();
-    await expect(chat.getByRole("group", "3 additions, 0 deletions")).toBeVisible();
+    const changes = screen.getByRole("button", /^Changes vs main \+3 −0$/);
+    await expect(changes).toBeVisible();
     expect(await git("status", "--porcelain")).toBe("");
 
-    await chat.getByRole("button", "Open diff").tap();
+    await changes.tap();
     const diff = screen.getByRole("region", "Workspace panel: Diff");
     // A file opens expanded or collapsed by its size, so either label is the file being listed.
     await expect(diff.getByRole("button", /^(Expand|Collapse) added\.ts$/)).toBeVisible();
