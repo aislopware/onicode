@@ -243,18 +243,17 @@ export const discoverAntigravitySkills = Effect.fn("discoverAntigravitySkills")(
   const resolvedCwd = path.resolve(input.cwd);
   const extraWorkspaceRoots = [
     ...new Set((input.extraRoots ?? []).map((root) => path.resolve(root))),
-  ].filter((root) => root !== resolvedCwd);
+  ]
+    .filter((root) => root !== resolvedCwd)
+    .toSorted();
+  // Native precedence, highest first (agy 1.5.15): cwd, extra roots in path order, then user roots.
   const roots = [
-    { directory: configSkills, scope: "user" },
-    { directory: path.resolve(input.cwd, ".gemini", "skills"), scope: "project" },
-    { directory: cliSkills, scope: "user" },
-    { directory: path.resolve(input.cwd, ".agents", "skills"), scope: "project", agentRoot: true },
-    { directory: path.resolve(input.cwd, ".agent", "skills"), scope: "project", agentRoot: true },
-    ...extraWorkspaceRoots.flatMap((root) => [
-      { directory: path.resolve(root, ".gemini", "skills"), scope: "project" },
-      { directory: path.resolve(root, ".agents", "skills"), scope: "project", agentRoot: true },
-      { directory: path.resolve(root, ".agent", "skills"), scope: "project", agentRoot: true },
+    ...[resolvedCwd, ...extraWorkspaceRoots].flatMap((root) => [
+      { directory: path.resolve(root, ".agent", "skills"), scope: "project" },
+      { directory: path.resolve(root, ".agents", "skills"), scope: "project" },
     ]),
+    { directory: cliSkills, scope: "user" },
+    { directory: configSkills, scope: "user" },
   ];
   const budget: ScanBudget = {
     remainingBytes: MAX_SCAN_BYTES,
@@ -285,7 +284,7 @@ export const discoverAntigravitySkills = Effect.fn("discoverAntigravitySkills")(
   const scanDirectory = Effect.fn("scanAntigravitySkillDirectory")(function* (
     directory: string,
     scope: string,
-    mode: "directory" | "agent-root" | "child" | "manifest",
+    mode: "root" | "plugin" | "child" | "manifest",
     filter: SkillEntryFilter = EMPTY_SKILL_FILTER,
     pluginName?: string,
   ): Effect.fn.Return<void, AntigravitySkillsProbeError, FileSystem.FileSystem> {
@@ -315,13 +314,18 @@ export const discoverAntigravitySkills = Effect.fn("discoverAntigravitySkills")(
     budget.remainingEntries -= entries.length;
 
     const sortedEntries = entries.toSorted();
-    const skillFileName = sortedEntries.find((entry) => entry.toLowerCase() === "skill.md");
-    if (skillFileName !== undefined && (mode !== "agent-root" || skillFileName.endsWith(".md"))) {
-      if (matchesSkillFilter(path.basename(directory), filter)) {
-        yield* addSkillFile(path.join(directory, skillFileName), scope, pluginName);
+    if (mode === "child" || mode === "manifest") {
+      // agy takes the first case-insensitive match and drops the folder if it is not `.md`.
+      const skillFileName = sortedEntries.find((entry) => entry.toLowerCase() === "skill.md");
+      if (skillFileName !== undefined) {
+        if (matchesSkillFilter(path.basename(directory), filter)) {
+          yield* addSkillFile(path.join(directory, skillFileName), scope, pluginName);
+        }
+        return;
       }
-      return;
     }
+    // Automatic roots never load their own SKILL.md; a plugin's skills folder opens it by name.
+    if (mode === "plugin") yield* addSkillFile(path.join(directory, "SKILL.md"), scope, pluginName);
     if (mode !== "child") {
       const children = sortedEntries
         .filter((entry) => matchesSkillFilter(entry, filter))
@@ -393,7 +397,7 @@ export const discoverAntigravitySkills = Effect.fn("discoverAntigravitySkills")(
   });
 
   for (const root of roots) {
-    yield* scanDirectory(root.directory, root.scope, root.agentRoot ? "agent-root" : "directory");
+    yield* scanDirectory(root.directory, root.scope, "root");
   }
 
   for (const config of [
@@ -467,7 +471,7 @@ export const discoverAntigravitySkills = Effect.fn("discoverAntigravitySkills")(
       yield* scanDirectory(
         path.join(pluginDirectory, "skills"),
         "user",
-        "directory",
+        "plugin",
         EMPTY_SKILL_FILTER,
         plugin,
       );

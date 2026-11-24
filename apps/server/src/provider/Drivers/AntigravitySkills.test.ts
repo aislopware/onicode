@@ -72,13 +72,17 @@ it.layer(NodeServices.layer)("discoverAntigravitySkills", (it) => {
       const input = yield* makeWorkspace();
       const roots = [
         { directory: path.join(input.userHome, ".gemini", "config", "skills"), scope: "user" },
-        { directory: path.join(input.cwd, ".gemini", "skills"), scope: "project" },
         {
           directory: path.join(input.userHome, ".gemini", "antigravity-cli", "skills"),
           scope: "user",
         },
         { directory: path.join(input.cwd, ".agents", "skills"), scope: "project" },
+        { directory: path.join(input.cwd, ".agent", "skills"), scope: "project" },
       ];
+      yield* writeSkill(
+        path.join(input.cwd, ".gemini", "skills", "not-native"),
+        "---\nname: not-native\n---\n",
+      );
       const expected = [];
       for (const [index, root] of roots.entries()) {
         const name = `review-${index}`;
@@ -94,7 +98,7 @@ it.layer(NodeServices.layer)("discoverAntigravitySkills", (it) => {
     }),
   );
 
-  it.effect("reads skills from enabled plugins in the instance's Antigravity profile", () =>
+  it.effect("reads skills from enabled plugins, including a SKILL.md in the skills folder", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
@@ -118,29 +122,44 @@ it.layer(NodeServices.layer)("discoverAntigravitySkills", (it) => {
         JSON.stringify({ plugins: { off: { enabled: false } } }),
       );
       yield* fileSystem.writeFileString(path.join(plugins, ".DS_Store"), "x");
+      const rootSkill = yield* writeSkill(
+        path.join(plugins, "demo", "skills"),
+        "---\nname: demo-root\n---\n",
+      );
+      yield* writeSkill(
+        path.join(plugins, "demo", "skills", "copy"),
+        "---\nname: demo-root\n---\n",
+      );
       const input = { ...workspace, profileDirectory };
 
       assert.deepEqual(
-        (yield* discoverAntigravitySkills(input)).map(({ name, displayName }) => ({
-          name,
-          displayName,
-        })),
-        [{ name: "demo-skill", displayName: "demo:demo-skill" }],
+        (yield* discoverAntigravitySkills(input)).map((skill) => [
+          skill.name,
+          skill.path,
+          skill.displayName,
+        ]),
+        [
+          ["demo-root", rootSkill, "demo:demo-root"],
+          [
+            "demo-skill",
+            path.join(plugins, "demo", "skills", "demo-skill", "SKILL.md"),
+            "demo:demo-skill",
+          ],
+        ],
       );
     }),
   );
 
-  it.effect("uses native root order for duplicate names", () =>
+  it.effect("uses native root precedence for duplicate names", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const input = yield* makeWorkspace();
       const roots = [
-        path.join(input.userHome, ".gemini", "config", "skills"),
-        path.join(input.cwd, ".gemini", "skills"),
-        path.join(input.userHome, ".gemini", "antigravity-cli", "skills"),
-        path.join(input.cwd, ".agents", "skills"),
         path.join(input.cwd, ".agent", "skills"),
+        path.join(input.cwd, ".agents", "skills"),
+        path.join(input.userHome, ".gemini", "antigravity-cli", "skills"),
+        path.join(input.userHome, ".gemini", "config", "skills"),
       ];
       for (const [index, root] of roots.entries()) {
         yield* writeSkill(
@@ -158,21 +177,31 @@ it.layer(NodeServices.layer)("discoverAntigravitySkills", (it) => {
     }),
   );
 
-  it.effect("loads a root skill without scanning its children", () =>
+  it.effect("scans an automatic root's children and ignores a SKILL.md in the root", () =>
     Effect.gen(function* () {
-      const fileSystem = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const input = yield* makeWorkspace();
-      const root = path.join(input.cwd, ".agents", "skills");
-      const skillPath = yield* writeSkill(root, "---\nname: root-skill\n---\n");
-      yield* writeSkill(path.join(root, "child"), "---\nname: child-skill\n---\n");
+      const roots = [
+        { directory: path.join(input.userHome, ".gemini", "config", "skills"), scope: "user" },
+        {
+          directory: path.join(input.userHome, ".gemini", "antigravity-cli", "skills"),
+          scope: "user",
+        },
+        { directory: path.join(input.cwd, ".agents", "skills"), scope: "project" },
+        { directory: path.join(input.cwd, ".agent", "skills"), scope: "project" },
+      ];
+      const expected = [];
+      for (const [index, root] of roots.entries()) {
+        yield* writeSkill(root.directory, `---\nname: root-${index}\n---\n`);
+        const name = `child-${index}`;
+        const skillPath = yield* writeSkill(
+          path.join(root.directory, name),
+          `---\nname: ${name}\n---\n`,
+        );
+        expected.push({ name, path: skillPath, scope: root.scope, enabled: true });
+      }
 
-      assert.deepEqual(yield* discoverAntigravitySkills(input), [
-        { name: "root-skill", path: skillPath, scope: "project", enabled: true },
-      ]);
-
-      yield* fileSystem.writeFileString(skillPath, "---\nname: [invalid\n---\n");
-      assert.deepEqual(yield* discoverAntigravitySkills(input), []);
+      assert.deepEqual(yield* discoverAntigravitySkills(input), expected);
     }),
   );
 
@@ -276,7 +305,7 @@ it.layer(NodeServices.layer)("discoverAntigravitySkills", (it) => {
       const input = yield* makeWorkspace();
       const root = path.join(input.cwd, ".agents", "skills");
       yield* writeSkill(
-        path.join(input.userHome, ".gemini", "config", "skills", "review"),
+        path.join(input.cwd, ".agent", "skills", "review"),
         "---\nname: [invalid\n---\n",
       );
       const nativeOrder = [" space-copy", "!-copy", "ø-copy", "a-copy"];
@@ -501,7 +530,7 @@ it.layer(NodeServices.layer)("discoverAntigravitySkills", (it) => {
       }),
   );
 
-  it.effect("reads project skills and skills.json from extraRoots after cwd", () =>
+  it.effect("reads project skills and skills.json from extraRoots in path order after cwd", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
@@ -531,9 +560,18 @@ it.layer(NodeServices.layer)("discoverAntigravitySkills", (it) => {
         path.join(extraRoot, ".agent", "skills", "SKILL.MD"),
         "---\nname: uppercase\n---\n",
       );
-      const extraGemini = yield* writeSkill(
+      yield* writeSkill(
         path.join(extraRoot, ".gemini", "skills", "extra-gemini"),
         "---\nname: extra-gemini\n---\n",
+      );
+      const earlierRoot = path.join(path.dirname(input.cwd), "another-workspace");
+      yield* writeSkill(
+        path.join(extraRoot, ".agent", "skills", "both-extras"),
+        "---\nname: both-extras\n---\n",
+      );
+      const earlierExtra = yield* writeSkill(
+        path.join(earlierRoot, ".agents", "skills", "both-extras"),
+        "---\nname: both-extras\n---\n",
       );
       const fromConfig = yield* writeSkill(
         path.join(extraRoot, "tools", "skills", "from-config"),
@@ -548,11 +586,11 @@ it.layer(NodeServices.layer)("discoverAntigravitySkills", (it) => {
       assert.deepEqual(
         yield* discoverAntigravitySkills({
           ...input,
-          extraRoots: [extraRoot, input.cwd, extraRoot],
+          extraRoots: [extraRoot, input.cwd, extraRoot, earlierRoot],
         }),
         [
+          { name: "both-extras", path: earlierExtra, scope: "project", enabled: true },
           { name: "extra-agent", path: extraAgent, scope: "project", enabled: true },
-          { name: "extra-gemini", path: extraGemini, scope: "project", enabled: true },
           { name: "extra-only", path: extraAgents, scope: "project", enabled: true },
           { name: "from-config", path: fromConfig, scope: "project", enabled: true },
           {

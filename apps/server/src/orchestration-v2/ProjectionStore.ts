@@ -766,7 +766,7 @@ export interface ProjectionStoreV2Shape {
   >;
   readonly getTurnStartHistory: (
     threadId: ThreadId,
-    runIds?: ReadonlyArray<RunId>,
+    runIds?: ReadonlyArray<RunId | null>,
   ) => Effect.Effect<ReadonlyArray<OrchestrationV2TurnItem>, ProjectionStoreV2Error>;
   readonly getThreadProjection: (
     threadId: ThreadId,
@@ -5766,12 +5766,22 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       "ProjectionStore.getTurnStartHistory",
     )(
       function* (threadId, runIds) {
+        const nonNullRunIds = runIds?.filter((id): id is RunId => id !== null);
+        const includeNullRunId = runIds?.includes(null) === true;
+        const runIdFilter =
+          runIds === undefined
+            ? sql`1`
+            : includeNullRunId
+              ? nonNullRunIds!.length === 0
+                ? sql`run_id IS NULL`
+                : sql`(run_id IN ${sql.in(nonNullRunIds!)} OR run_id IS NULL)`
+              : sql`run_id IN ${sql.in(nonNullRunIds!)}`;
         const rows = yield* sql<PayloadRow>`
           SELECT payload_json FROM orchestration_v2_projection_turn_items
           WHERE thread_id = ${threadId}
             AND type IN ('user_message','assistant_message','command_execution','error',
               'run_interrupt_result','file_change','proposed_plan')
-            AND ${runIds === undefined ? sql`1` : sql`run_id IN ${sql.in(runIds)}`}
+            AND ${runIdFilter}
           ORDER BY ordinal ASC, turn_item_id ASC
         `;
         return yield* decodeRows(decodeTurnItemPayload, threadId)(rows);

@@ -1373,14 +1373,87 @@ it.effect.each(["the project's own", "the environment's inherited"] as const)(
 
 it.effect("a project update or create that is refused tells the agent why", () =>
   Effect.gen(function* () {
-    const harness = clientLaunchHarness({ runtimeModeCeiling: "full-access", launched: [] });
+    const fileSystem = yield* FileSystem.FileSystem;
+    const claudeAgent = ProviderInstanceId.make("claudeAgent");
+    const unregistered = ProviderInstanceId.make("unregistered-provider");
+    const existingDir = yield* fileSystem.realPath(
+      yield* fileSystem.makeTempDirectoryScoped({ prefix: "oni-project-model-" }),
+    );
+    const refreshed: Array<string> = [];
+    const providers: ServerProvider[] = [
+      {
+        instanceId: claudeAgent,
+        driver: ProviderDriverKind.make("claudeAgent"),
+        enabled: true,
+        installed: true,
+        status: "ready",
+        version: null,
+        auth: { status: "authenticated" },
+        checkedAt: "2026-01-01T00:00:00Z",
+        models: [{ slug: "claude-opus", name: "Opus", isCustom: false, capabilities: null }],
+        slashCommands: [],
+        skills: [],
+        workspaceSnapshots: [
+          {
+            cwd: existingDir,
+            checkedAt: "2026-01-01T00:00:00Z",
+            slashCommands: [],
+            skills: [],
+            models: [
+              { slug: "claude-opus", name: "Opus", isCustom: false, capabilities: null },
+              { slug: "folder-local", name: "Local", isCustom: false, capabilities: null },
+            ],
+          },
+        ],
+      },
+    ];
+    const harness = clientLaunchHarness({
+      runtimeModeCeiling: "full-access",
+      launched: [],
+      providers,
+    });
     const detail = "Project monograms must contain at most two characters.";
+    const savedProject = (id: ProjectId, workspaceRoot: string, model: ModelSelection | null) => ({
+      id,
+      title: "Api",
+      workspaceRoot,
+      repositoryIdentity: null,
+      faviconPath: null,
+      defaultModelSelection: model,
+      defaultThreadEnvMode: null,
+      autoPull: false,
+      projectIcon: null,
+      scripts: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      deletedAt: null,
+    });
     const dependencies = Layer.merge(
       harness.dependencies,
-      Layer.mock(Project.ProjectService)({
-        update: (input) =>
-          Effect.fail(new Project.ProjectInvalidError({ projectId: input.projectId, detail })),
-      }),
+      Layer.mergeAll(
+        Layer.mock(ProviderRegistry.ProviderRegistry)({
+          getProviders: Effect.succeed(providers),
+          refreshWorkspaceSnapshot: (input) =>
+            Effect.sync(() => {
+              refreshed.push(input.cwd);
+              return providers;
+            }),
+        }),
+        Layer.mock(Project.ProjectService)({
+          create: (input) =>
+            Effect.succeed(
+              savedProject(input.projectId, existingDir, input.defaultModelSelection ?? null),
+            ),
+          update: (input) =>
+            input.projectIcon !== undefined
+              ? Effect.fail(new Project.ProjectInvalidError({ projectId: input.projectId, detail }))
+              : Effect.succeed(
+                  savedProject(input.projectId, existingDir, input.defaultModelSelection ?? null),
+                ),
+          getById: () => Effect.succeedNone,
+          workspaceScanDirectory: (cwd) => Effect.succeed(cwd),
+        }),
+      ),
     );
     const toolkit = yield* ProjectToolkit.pipe(
       Effect.provide(
@@ -1397,6 +1470,63 @@ it.effect("a project update or create that is refused tells the agent why", () =
 
     expect(refused.at(-1)?.result).toMatchObject({ code: "invalid_request", message: detail });
 
+    // Every thread started with a default its provider does not advertise would fail.
+    const unadvertised = { instanceId: claudeAgent, model: "claude-unadvertised" };
+    const unadvertisedUpdate = yield* toolkit
+      .handle("oni_project_update", {
+        projectId: harness.projectId,
+        defaultModelSelection: unadvertised,
+      })
+      .pipe(Stream.unwrap, Stream.runCollect, Effect.provide(dependencies));
+    expect(unadvertisedUpdate.at(-1)?.result).toMatchObject({ code: "model_unavailable" });
+    const unadvertisedCreate = yield* toolkit
+      .handle("oni_project_create", {
+        title: "Api",
+        workspaceRoot: "/repos/api",
+        defaultModelSelection: unadvertised,
+      })
+      .pipe(Stream.unwrap, Stream.runCollect, Effect.provide(dependencies));
+    expect(unadvertisedCreate.at(-1)?.result).toMatchObject({ code: "model_unavailable" });
+    expect(refreshed).toEqual([]);
+
+    // Project defaults are persisted without dispatching, so an unregistered instance must be refused here.
+    const unknownSelection = { instanceId: unregistered, model: "claude-opus" };
+    const unknownUpdate = yield* toolkit
+      .handle("oni_project_update", {
+        projectId: harness.projectId,
+        defaultModelSelection: unknownSelection,
+      })
+      .pipe(Stream.unwrap, Stream.runCollect, Effect.provide(dependencies));
+    expect(unknownUpdate.at(-1)?.result).toMatchObject({ code: "provider_unavailable" });
+    const unknownCreate = yield* toolkit
+      .handle("oni_project_create", {
+        title: "Api",
+        workspaceRoot: existingDir,
+        defaultModelSelection: unknownSelection,
+      })
+      .pipe(Stream.unwrap, Stream.runCollect, Effect.provide(dependencies));
+    expect(unknownCreate.at(-1)?.result).toMatchObject({ code: "provider_unavailable" });
+
+    // Workspace snapshots are keyed by normalized cwd, so trailing slashes must resolve before lookup.
+    const folderLocal = { instanceId: claudeAgent, model: "folder-local" };
+    const normalizedCreate = yield* toolkit
+      .handle("oni_project_create", {
+        title: "Api",
+        workspaceRoot: `${existingDir}/`,
+        defaultModelSelection: folderLocal,
+      })
+      .pipe(Stream.unwrap, Stream.runCollect, Effect.provide(dependencies));
+    expect(normalizedCreate.at(-1)?.result).toMatchObject({ workspaceRoot: existingDir });
+    const normalizedUpdate = yield* toolkit
+      .handle("oni_project_update", {
+        projectId: harness.projectId,
+        workspaceRoot: `${existingDir}/`,
+        defaultModelSelection: folderLocal,
+      })
+      .pipe(Stream.unwrap, Stream.runCollect, Effect.provide(dependencies));
+    expect(normalizedUpdate.at(-1)?.result).toMatchObject({ workspaceRoot: existingDir });
+    expect(refreshed).toEqual([]);
+
     // A project started from its title has no folder yet for tracked folders to be checked against.
     const dropped = yield* toolkit
       .handle("oni_project_create", {
@@ -1405,5 +1535,5 @@ it.effect("a project update or create that is refused tells the agent why", () =
       })
       .pipe(Stream.unwrap, Stream.runCollect, Effect.provide(dependencies));
     expect(dropped.at(-1)?.result).toMatchObject({ code: "invalid_request" });
-  }),
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );

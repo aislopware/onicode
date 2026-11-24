@@ -731,6 +731,8 @@ interface ProviderInstanceCardProps {
   readonly onRunUpdate?: (() => void) | undefined;
   readonly onInstallRecommended?: (() => void) | undefined;
   readonly isUpdating?: boolean | undefined;
+  /** Present while the server runs this instance's update and can stop it. */
+  readonly onCancelUpdate?: (() => Promise<void>) | undefined;
   readonly onAcceptUrlAuth?: ((action: AcpRegistryUrlAuthAction) => void) | undefined;
   readonly environmentId?: EnvironmentId | undefined;
   readonly secretSources?: ReadonlyArray<SecretSource>;
@@ -802,6 +804,7 @@ export function ProviderInstanceCard({
   onRunUpdate,
   onInstallRecommended,
   isUpdating = false,
+  onCancelUpdate,
   onAcceptUrlAuth,
   environmentId,
   acpProjects = EMPTY_ACP_PROJECTS,
@@ -838,6 +841,13 @@ export function ProviderInstanceCard({
         ? updateState.message
         : null) ?? gt("Starting update"))
     : null;
+  const [isCancellingUpdate, setIsCancellingUpdate] = useState(false);
+  const cancelUpdate = onCancelUpdate
+    ? async () => {
+        setIsCancellingUpdate(true);
+        await onCancelUpdate().finally(() => setIsCancellingUpdate(false));
+      }
+    : undefined;
   const updateProblem =
     !isUpdating && (updateState?.status === "failed" || updateState?.status === "unchanged")
       ? updateState.message
@@ -1129,6 +1139,19 @@ export function ProviderInstanceCard({
             >
               {updateProgress ?? updateProblem}
             </p>
+          ) : null}
+          {updateProgress && cancelUpdate ? (
+            <Button
+              type="button"
+              size="xs"
+              variant="outline"
+              className="w-full"
+              disabled={isCancellingUpdate}
+              onClick={() => void cancelUpdate()}
+            >
+              {isCancellingUpdate ? <Spinner /> : <XIcon />}
+              {isCancellingUpdate ? gt("Stopping the update") : gt("Cancel update")}
+            </Button>
           ) : null}
           {onRunVersionAction && updateCommand ? (
             <div className="flex items-center gap-2 text-3xs font-medium uppercase tracking-wider text-muted-foreground">

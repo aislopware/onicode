@@ -184,6 +184,13 @@ Provider updates do not restart running chats. An existing session can keep
 using the previous CLI until it ends. If discovery fails, check the provider
 status and refresh it again.
 
+While an update runs, new chats with that provider wait for it to finish. If an
+installer hangs, open the provider's update status and choose **Cancel update**
+(on mobile, **Cancel … update** on the environment's page). Onicode asks the
+installer to stop and frees the provider once it exits. A cancelled installer
+can leave the CLI half-updated; run the update again, or reinstall the CLI if
+it no longer starts.
+
 ## Mobile updates
 
 To update an environment from your phone, open **Settings → Environments** and

@@ -1436,7 +1436,8 @@ const make = Effect.gen(function* () {
     const requestedAt = yield* DateTime.now;
     const { run } = yield* waitForThread({ ...input, timeoutMs: SETTLE_AFTER_RUN_WAIT_MS });
     if (run?.status !== "completed") return;
-    // A message steered into this run and read after the request supersedes it.
+    // A message steered into this run supersedes the request when read after it, or when never
+    // read, since it then runs next.
     const { turnItems } = yield* getProjectThreadRecords(input, ["turnItems"], {
       turnItemRunIds: [run.id],
       turnItemTypes: ["user_message"],
@@ -1446,8 +1447,9 @@ const make = Effect.gen(function* () {
         (item) =>
           item.type === "user_message" &&
           (item.inputIntent === "steer" || item.inputIntent === "promoted_queued_to_steer") &&
-          item.completedAt !== null &&
-          !DateTime.isLessThan(DateTime.makeUnsafe(item.completedAt), requestedAt),
+          (item.status === "pending" ||
+            (item.completedAt !== null &&
+              !DateTime.isLessThan(DateTime.makeUnsafe(item.completedAt), requestedAt))),
       )
     )
       return;
@@ -1464,6 +1466,13 @@ const make = Effect.gen(function* () {
         )
       )
         return true;
+      // requeueUnreadSteers closes an unread notification and starts its wake in one commit; wait
+      // for that so the wake is judged below like any automatic follow-up.
+      const unreadNotifications = yield* getProjectThreadRecords(input, ["turnItems"], {
+        turnItemRunIds: [run.id],
+        turnItemTypes: ["notification"],
+      });
+      if (unreadNotifications.turnItems.some((item) => item.status === "pending")) return false;
       const later = records.runs.filter((candidate) => candidate.ordinal > run.ordinal);
       const cancelledMessageIds = later
         .filter((candidate) => candidate.status === "cancelled")
@@ -1555,7 +1564,8 @@ const make = Effect.gen(function* () {
         event.type === "provider-thread.updated"
           ? !backgroundWorkHoldsCompletion(event.payload.pendingBackgroundTasks ?? [])
           : event.type === "turn-item.updated"
-            ? turnItemUpdateCanEndBackgroundWork(event.payload)
+            ? turnItemUpdateCanEndBackgroundWork(event.payload) ||
+              (event.payload.type === "notification" && event.payload.status !== "pending")
             : event.type !== "runtime-request.updated" || event.payload.status !== "pending",
       ),
     );

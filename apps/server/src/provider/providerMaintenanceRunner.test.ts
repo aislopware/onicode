@@ -1212,22 +1212,29 @@ describe("providerMaintenanceRunner", () => {
         const exit = yield* Deferred.make<ChildProcessSpawner.ExitCode>();
         const finished = yield* Deferred.make<ServerProviderUpdateState>();
         const spawner = ChildProcessSpawner.make(() =>
-          Deferred.succeed(spawned, undefined).pipe(
-            Effect.as(
-              ChildProcessSpawner.makeHandle({
-                pid: ChildProcessSpawner.ProcessId(1),
-                exitCode: Deferred.await(exit),
-                isRunning: Effect.succeed(true),
-                kill: () => Effect.sync(() => kills.push("kill")),
-                unref: Effect.succeed(Effect.void),
-                stdin: Sink.drain,
-                stdout: Stream.make(encoder.encode("added 1 package")),
-                stderr: Stream.empty,
-                all: Stream.empty,
-                getInputFd: () => Sink.drain,
-                getOutputFd: () => Stream.empty,
-              }),
+          Effect.acquireRelease(
+            Deferred.succeed(spawned, undefined).pipe(
+              Effect.as(
+                ChildProcessSpawner.makeHandle({
+                  pid: ChildProcessSpawner.ProcessId(1),
+                  exitCode: Deferred.await(exit),
+                  isRunning: Effect.succeed(true),
+                  kill: () => Effect.sync(() => kills.push("kill")),
+                  unref: Effect.succeed(Effect.void),
+                  stdin: Sink.drain,
+                  stdout: Stream.make(encoder.encode("added 1 package")),
+                  stderr: Stream.empty,
+                  all: Stream.empty,
+                  getInputFd: () => Sink.drain,
+                  getOutputFd: () => Stream.empty,
+                }),
+              ),
             ),
+            (handle) =>
+              Deferred.isDone(exit).pipe(
+                Effect.flatMap((exited) => (exited ? Effect.void : handle.kill())),
+                Effect.ignore,
+              ),
           ),
         );
 
@@ -1282,22 +1289,29 @@ describe("providerMaintenanceRunner", () => {
       const respawned = yield* Deferred.make<void>();
       const exit = yield* Deferred.make<ChildProcessSpawner.ExitCode>();
       const spawner = ChildProcessSpawner.make(() =>
-        Deferred.succeed((spawns += 1) === 1 ? spawned : respawned, undefined).pipe(
-          Effect.as(
-            ChildProcessSpawner.makeHandle({
-              pid: ChildProcessSpawner.ProcessId(1),
-              exitCode: Deferred.await(exit),
-              isRunning: Effect.succeed(true),
-              kill: () => Effect.sync(() => kills.push("kill")),
-              unref: Effect.succeed(Effect.void),
-              stdin: Sink.drain,
-              stdout: Stream.empty,
-              stderr: Stream.empty,
-              all: Stream.empty,
-              getInputFd: () => Sink.drain,
-              getOutputFd: () => Stream.empty,
-            }),
+        Effect.acquireRelease(
+          Deferred.succeed((spawns += 1) === 1 ? spawned : respawned, undefined).pipe(
+            Effect.as(
+              ChildProcessSpawner.makeHandle({
+                pid: ChildProcessSpawner.ProcessId(1),
+                exitCode: Deferred.await(exit),
+                isRunning: Effect.succeed(true),
+                kill: () => Effect.sync(() => kills.push("kill")),
+                unref: Effect.succeed(Effect.void),
+                stdin: Sink.drain,
+                stdout: Stream.empty,
+                stderr: Stream.empty,
+                all: Stream.empty,
+                getInputFd: () => Sink.drain,
+                getOutputFd: () => Stream.empty,
+              }),
+            ),
           ),
+          (handle) =>
+            Deferred.isDone(exit).pipe(
+              Effect.flatMap((exited) => (exited ? Effect.void : handle.kill())),
+              Effect.ignore,
+            ),
         ),
       );
 
@@ -1328,6 +1342,469 @@ describe("providerMaintenanceRunner", () => {
           Layer.mergeAll(
             layerNonWindowsPlatform,
             layerLatestVersionHttpClient("9.9.9"),
+            Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner),
+          ),
+        ),
+      );
+    }),
+  );
+
+  // A hung installer would hold its installation until restart; Cancel signals it as shutdown does.
+  it.effect("a cancelled update stops its installer gently and frees the installation", () =>
+    Effect.gen(function* () {
+      const kills: Array<unknown> = [];
+      let spawns = 0;
+      const spawned = yield* Deferred.make<void>();
+      // Like the Node spawner, closing the command's scope signals the process and awaits its exit.
+      const spawner = ChildProcessSpawner.make(() => {
+        spawns += 1;
+        if (spawns > 1) {
+          return Effect.succeed(mockHandle({ stdout: "updated" }));
+        }
+        const exit = Deferred.makeUnsafe<ChildProcessSpawner.ExitCode>();
+        return Effect.acquireRelease(
+          Deferred.succeed(spawned, undefined).pipe(
+            Effect.as(
+              ChildProcessSpawner.makeHandle({
+                pid: ChildProcessSpawner.ProcessId(1),
+                exitCode: Deferred.await(exit),
+                isRunning: Effect.succeed(true),
+                kill: (options) =>
+                  Effect.sync(() =>
+                    kills.push([options?.killSignal ?? "SIGTERM", options?.forceKillAfter]),
+                  ).pipe(
+                    Effect.andThen(Deferred.succeed(exit, ChildProcessSpawner.ExitCode(143))),
+                    Effect.asVoid,
+                  ),
+                unref: Effect.succeed(Effect.void),
+                stdin: Sink.drain,
+                stdout: Stream.empty,
+                stderr: Stream.empty,
+                all: Stream.empty,
+                getInputFd: () => Sink.drain,
+                getOutputFd: () => Stream.empty,
+              }),
+            ),
+          ),
+          (handle) =>
+            Deferred.isDone(exit).pipe(
+              Effect.flatMap((exited) =>
+                exited ? Effect.void : handle.kill().pipe(Effect.andThen(handle.exitCode)),
+              ),
+              Effect.ignore,
+            ),
+        );
+      });
+
+      yield* Effect.gen(function* () {
+        const { registry } = yield* makeRegistry(baseOpenCodeProvider);
+        const updater = yield* makeTestRunner(registry);
+        const gate = yield* ProviderInstallationGate.ProviderInstallationGate;
+        const update = yield* updater.updateProvider(OPENCODE_DRIVER).pipe(Effect.forkScoped);
+        yield* Deferred.await(spawned);
+        const work = yield* gate
+          .execute(OPENCODE_INSTANCE_ID, Effect.succeed("provider work ran"))
+          .pipe(Effect.forkScoped);
+
+        const cancelled = yield* updater.cancelProviderUpdate({ provider: OPENCODE_DRIVER });
+        const answered = yield* Fiber.join(update);
+
+        assert.deepStrictEqual(kills, [["SIGTERM", undefined]]);
+        assert.strictEqual(yield* Fiber.join(work), "provider work ran");
+        for (const { providers } of [cancelled, answered]) {
+          const state = providers[0]?.updateState;
+          assert.deepStrictEqual([state?.status, state?.message], ["failed", "Update cancelled."]);
+        }
+        // Nothing is running now, so a second cancel changes nothing.
+        yield* updater.cancelProviderUpdate({ provider: OPENCODE_DRIVER });
+        assert.strictEqual(kills.length, 1);
+        // The command lock and the cross-server lease are free, so a retry runs.
+        const retry = yield* updater.updateProvider(OPENCODE_DRIVER).pipe(Effect.exit);
+        assert.isTrue(Exit.isSuccess(retry));
+        assert.strictEqual(kills.length, 1);
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            ProviderInstallationGate.layer,
+            layerNonWindowsPlatform,
+            layerLatestVersionHttpClient("9.9.9"),
+            Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner),
+          ),
+        ),
+      );
+    }),
+  );
+
+  it.effect("cancelling a queued update spawns no installer and frees the target", () =>
+    Effect.gen(function* () {
+      const spawnedCommands: Array<string> = [];
+      const firstSpawned = yield* Deferred.make<void>();
+      const firstExit = yield* Deferred.make<ChildProcessSpawner.ExitCode>();
+      const secondQueued = yield* Deferred.make<void>();
+      const spawner = ChildProcessSpawner.make((command) => {
+        const childProcess = command as unknown as {
+          readonly command: string;
+          readonly args: ReadonlyArray<string>;
+        };
+        const invoked = [childProcess.command, ...childProcess.args].join(" ");
+        spawnedCommands.push(invoked);
+        if (invoked.includes("opencode-ai")) {
+          return Effect.acquireRelease(
+            Deferred.succeed(firstSpawned, undefined).pipe(
+              Effect.as(
+                ChildProcessSpawner.makeHandle({
+                  pid: ChildProcessSpawner.ProcessId(1),
+                  exitCode: Deferred.await(firstExit),
+                  isRunning: Effect.succeed(true),
+                  kill: () =>
+                    Deferred.succeed(firstExit, ChildProcessSpawner.ExitCode(143)).pipe(
+                      Effect.asVoid,
+                    ),
+                  unref: Effect.succeed(Effect.void),
+                  stdin: Sink.drain,
+                  stdout: Stream.empty,
+                  stderr: Stream.empty,
+                  all: Stream.empty,
+                  getInputFd: () => Sink.drain,
+                  getOutputFd: () => Stream.empty,
+                }),
+              ),
+            ),
+            (handle) =>
+              Deferred.isDone(firstExit).pipe(
+                Effect.flatMap((exited) =>
+                  exited ? Effect.void : handle.kill().pipe(Effect.andThen(handle.exitCode)),
+                ),
+                Effect.ignore,
+              ),
+          );
+        }
+        return Effect.succeed(mockHandle({ stdout: "updated" }));
+      });
+
+      yield* Effect.gen(function* () {
+        const { registry } = yield* makeRegistry([baseOpenCodeProvider, baseProvider]);
+        const updater = yield* makeTestRunner({
+          ...registry,
+          setProviderMaintenanceActionState: Effect.fn(
+            "providerMaintenanceRunner.test.trackQueued",
+          )(function* (input) {
+            const providers = yield* registry.setProviderMaintenanceActionState(input);
+            if (input.instanceId === CODEX_INSTANCE_ID && input.state?.status === "queued") {
+              yield* Deferred.succeed(secondQueued, undefined);
+            }
+            return providers;
+          }),
+        });
+
+        const first = yield* updater.updateProvider(OPENCODE_DRIVER).pipe(Effect.forkScoped);
+        yield* Deferred.await(firstSpawned);
+        const second = yield* updater.updateProvider(CODEX_DRIVER).pipe(Effect.forkScoped);
+        yield* Deferred.await(secondQueued);
+
+        const cancelled = yield* updater.cancelProviderUpdate({ provider: CODEX_DRIVER });
+        const secondResult = yield* Fiber.join(second);
+
+        assert.deepStrictEqual(spawnedCommands, ["npm install -g opencode-ai@latest"]);
+        for (const { providers } of [cancelled, secondResult]) {
+          const codex = providers.find((entry) => entry.instanceId === CODEX_INSTANCE_ID);
+          assert.deepStrictEqual(
+            [codex?.updateState?.status, codex?.updateState?.message],
+            ["failed", "Update cancelled."],
+          );
+        }
+        assert.strictEqual(
+          cancelled.providers.find((entry) => entry.instanceId === OPENCODE_INSTANCE_ID)
+            ?.updateState?.status,
+          "running",
+        );
+
+        yield* Deferred.succeed(firstExit, ChildProcessSpawner.ExitCode(0));
+        const firstResult = yield* Fiber.join(first);
+        assert.strictEqual(
+          firstResult.providers.find((entry) => entry.instanceId === OPENCODE_INSTANCE_ID)
+            ?.updateState?.status,
+          "succeeded",
+        );
+
+        const retry = yield* updater.updateProvider(CODEX_DRIVER);
+        assert.strictEqual(
+          retry.providers.find((entry) => entry.instanceId === CODEX_INSTANCE_ID)?.updateState
+            ?.status,
+          "succeeded",
+        );
+        assert.deepStrictEqual(spawnedCommands, [
+          "npm install -g opencode-ai@latest",
+          "npm install -g @openai/codex@latest",
+        ]);
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            layerNonWindowsPlatform,
+            layerLatestVersionHttpClient("0.0.0"),
+            Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner),
+          ),
+        ),
+      );
+    }),
+  );
+
+  it.effect("cancelling an update while its final state is written keeps the finished state", () =>
+    Effect.gen(function* () {
+      const kills: Array<string> = [];
+      const spawned = yield* Deferred.make<void>();
+      const exit = yield* Deferred.make<ChildProcessSpawner.ExitCode>();
+      const writingFinal = yield* Deferred.make<void>();
+      const allowFinal = yield* Deferred.make<void>();
+      const spawner = ChildProcessSpawner.make(() =>
+        Effect.acquireRelease(
+          Deferred.succeed(spawned, undefined).pipe(
+            Effect.as(
+              ChildProcessSpawner.makeHandle({
+                pid: ChildProcessSpawner.ProcessId(1),
+                exitCode: Deferred.await(exit),
+                isRunning: Effect.succeed(true),
+                kill: () =>
+                  Effect.sync(() => kills.push("kill")).pipe(
+                    Effect.andThen(Deferred.succeed(exit, ChildProcessSpawner.ExitCode(143))),
+                    Effect.asVoid,
+                  ),
+                unref: Effect.succeed(Effect.void),
+                stdin: Sink.drain,
+                stdout: Stream.empty,
+                stderr: Stream.empty,
+                all: Stream.empty,
+                getInputFd: () => Sink.drain,
+                getOutputFd: () => Stream.empty,
+              }),
+            ),
+          ),
+          (handle) =>
+            Deferred.isDone(exit).pipe(
+              Effect.flatMap((exited) =>
+                exited ? Effect.void : handle.kill().pipe(Effect.andThen(handle.exitCode)),
+              ),
+              Effect.ignore,
+            ),
+        ),
+      );
+
+      yield* Effect.gen(function* () {
+        const { registry, updateStatesRef } = yield* makeRegistry(baseNativeCliProvider);
+        const updater = yield* makeTestRunner({
+          ...registry,
+          setProviderMaintenanceActionState: (input) =>
+            input.state?.status === "succeeded"
+              ? Deferred.succeed(writingFinal, undefined).pipe(
+                  Effect.andThen(Deferred.await(allowFinal)),
+                  Effect.andThen(registry.setProviderMaintenanceActionState(input)),
+                )
+              : registry.setProviderMaintenanceActionState(input),
+        });
+
+        const update = yield* updater.updateProvider(NATIVE_CLI_DRIVER).pipe(Effect.forkScoped);
+        yield* Deferred.await(spawned);
+        yield* Deferred.succeed(exit, ChildProcessSpawner.ExitCode(0));
+        yield* Deferred.await(writingFinal);
+
+        const cancel = yield* updater
+          .cancelProviderUpdate({ provider: NATIVE_CLI_DRIVER })
+          .pipe(Effect.forkScoped({ startImmediately: true }));
+        yield* Deferred.succeed(allowFinal, undefined);
+        const [cancelled, answered] = yield* Effect.all([Fiber.join(cancel), Fiber.join(update)]);
+
+        assert.deepStrictEqual(kills, []);
+        for (const { providers } of [cancelled, answered]) {
+          assert.strictEqual(providers[0]?.updateState?.status, "succeeded");
+        }
+        const states = yield* Ref.get(updateStatesRef);
+        assert.strictEqual(states.at(-1)?.status, "succeeded");
+        assert.isFalse(states.some((state) => state.message === "Update cancelled."));
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            layerNonWindowsPlatform,
+            layerLatestVersionHttpClient("1.0.0"),
+            Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner),
+          ),
+        ),
+      );
+    }),
+  );
+
+  it.effect(
+    "an interrupted cancel caller still records cancellation for the update and concurrent cancels",
+    () =>
+      Effect.gen(function* () {
+        const kills: Array<string> = [];
+        const spawned = yield* Deferred.make<void>();
+        const killStarted = yield* Deferred.make<void>();
+        const allowExit = yield* Deferred.make<void>();
+        const exit = yield* Deferred.make<ChildProcessSpawner.ExitCode>();
+        const spawner = ChildProcessSpawner.make(() =>
+          Effect.acquireRelease(
+            Deferred.succeed(spawned, undefined).pipe(
+              Effect.as(
+                ChildProcessSpawner.makeHandle({
+                  pid: ChildProcessSpawner.ProcessId(1),
+                  exitCode: Deferred.await(exit),
+                  isRunning: Effect.succeed(true),
+                  kill: () =>
+                    Effect.sync(() => kills.push("kill")).pipe(
+                      Effect.andThen(Deferred.succeed(killStarted, undefined)),
+                      Effect.andThen(Deferred.await(allowExit)),
+                      Effect.andThen(Deferred.succeed(exit, ChildProcessSpawner.ExitCode(143))),
+                      Effect.asVoid,
+                    ),
+                  unref: Effect.succeed(Effect.void),
+                  stdin: Sink.drain,
+                  stdout: Stream.empty,
+                  stderr: Stream.empty,
+                  all: Stream.empty,
+                  getInputFd: () => Sink.drain,
+                  getOutputFd: () => Stream.empty,
+                }),
+              ),
+            ),
+            (handle) =>
+              Deferred.isDone(exit).pipe(
+                Effect.flatMap((exited) =>
+                  exited ? Effect.void : handle.kill().pipe(Effect.andThen(handle.exitCode)),
+                ),
+                Effect.ignore,
+              ),
+          ),
+        );
+
+        yield* Effect.gen(function* () {
+          const { registry } = yield* makeRegistry(baseOpenCodeProvider);
+          const updater = yield* makeTestRunner(registry);
+
+          const update = yield* updater.updateProvider(OPENCODE_DRIVER).pipe(Effect.forkScoped);
+          yield* Deferred.await(spawned);
+          const firstCancel = yield* updater
+            .cancelProviderUpdate({ provider: OPENCODE_DRIVER })
+            .pipe(Effect.forkScoped);
+          yield* Deferred.await(killStarted);
+          const secondCancel = yield* updater
+            .cancelProviderUpdate({ provider: OPENCODE_DRIVER })
+            .pipe(Effect.forkScoped({ startImmediately: true }));
+
+          yield* Fiber.interrupt(firstCancel);
+          yield* Deferred.succeed(allowExit, undefined);
+
+          const [secondCancelled, answered] = yield* Effect.all([
+            Fiber.join(secondCancel),
+            Fiber.join(update),
+          ]);
+          assert.deepStrictEqual(kills, ["kill"]);
+          for (const { providers } of [secondCancelled, answered]) {
+            const state = providers[0]?.updateState;
+            assert.deepStrictEqual(
+              [state?.status, state?.message],
+              ["failed", "Update cancelled."],
+            );
+          }
+        }).pipe(
+          Effect.provide(
+            Layer.mergeAll(
+              layerNonWindowsPlatform,
+              layerLatestVersionHttpClient("0.0.0"),
+              Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner),
+            ),
+          ),
+        );
+      }),
+  );
+
+  it.effect("a new update cannot race the cancelled state write or be overwritten by it", () =>
+    Effect.gen(function* () {
+      let spawns = 0;
+      const firstSpawned = yield* Deferred.make<void>();
+      const firstExit = yield* Deferred.make<ChildProcessSpawner.ExitCode>();
+      const writingCancel = yield* Deferred.make<void>();
+      const allowCancelWrite = yield* Deferred.make<void>();
+      const spawner = ChildProcessSpawner.make(() => {
+        spawns += 1;
+        if (spawns > 1) {
+          return Effect.succeed(mockHandle({ stdout: "updated" }));
+        }
+        return Effect.acquireRelease(
+          Deferred.succeed(firstSpawned, undefined).pipe(
+            Effect.as(
+              ChildProcessSpawner.makeHandle({
+                pid: ChildProcessSpawner.ProcessId(1),
+                exitCode: Deferred.await(firstExit),
+                isRunning: Effect.succeed(true),
+                kill: () =>
+                  Deferred.succeed(firstExit, ChildProcessSpawner.ExitCode(143)).pipe(
+                    Effect.asVoid,
+                  ),
+                unref: Effect.succeed(Effect.void),
+                stdin: Sink.drain,
+                stdout: Stream.empty,
+                stderr: Stream.empty,
+                all: Stream.empty,
+                getInputFd: () => Sink.drain,
+                getOutputFd: () => Stream.empty,
+              }),
+            ),
+          ),
+          (handle) =>
+            Deferred.isDone(firstExit).pipe(
+              Effect.flatMap((exited) =>
+                exited ? Effect.void : handle.kill().pipe(Effect.andThen(handle.exitCode)),
+              ),
+              Effect.ignore,
+            ),
+        );
+      });
+
+      yield* Effect.gen(function* () {
+        const { registry, providersRef, updateStatesRef } =
+          yield* makeRegistry(baseOpenCodeProvider);
+        const updater = yield* makeTestRunner({
+          ...registry,
+          setProviderMaintenanceActionState: (input) =>
+            input.state?.message === "Update cancelled."
+              ? Deferred.succeed(writingCancel, undefined).pipe(
+                  Effect.andThen(Deferred.await(allowCancelWrite)),
+                  Effect.andThen(registry.setProviderMaintenanceActionState(input)),
+                )
+              : registry.setProviderMaintenanceActionState(input),
+        });
+
+        const first = yield* updater.updateProvider(OPENCODE_DRIVER).pipe(Effect.forkScoped);
+        yield* Deferred.await(firstSpawned);
+        const cancel = yield* updater
+          .cancelProviderUpdate({ provider: OPENCODE_DRIVER })
+          .pipe(Effect.forkScoped);
+        yield* Deferred.await(writingCancel);
+
+        const duringCancelWrite = yield* updater.updateProvider(OPENCODE_DRIVER).pipe(Effect.exit);
+        assert.isTrue(Exit.isFailure(duringCancelWrite));
+        if (Exit.isFailure(duringCancelWrite)) {
+          const error = Cause.squash(duringCancelWrite.cause);
+          assert.isTrue(isServerProviderUpdateError(error));
+          if (isServerProviderUpdateError(error)) {
+            assert.include(error.reason, "already running");
+          }
+        }
+
+        yield* Deferred.succeed(allowCancelWrite, undefined);
+        yield* Fiber.join(cancel);
+        yield* Fiber.join(first);
+
+        const next = yield* updater.updateProvider(OPENCODE_DRIVER);
+        assert.strictEqual(next.providers[0]?.updateState?.status, "succeeded");
+        assert.strictEqual((yield* Ref.get(providersRef))[0]?.updateState?.status, "succeeded");
+        assert.strictEqual((yield* Ref.get(updateStatesRef)).at(-1)?.status, "succeeded");
+        assert.strictEqual(spawns, 2);
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            layerNonWindowsPlatform,
+            layerLatestVersionHttpClient("0.0.0"),
             Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner),
           ),
         ),

@@ -159,6 +159,7 @@ describe("command permissions", () => {
     { method: WS_METHODS.providerMcpSignInStart, scope: AuthProvidersManageScope },
     { method: WS_METHODS.providerMcpSignInComplete, scope: AuthProvidersManageScope },
     { method: WS_METHODS.providerSessionMcpOAuthCallback, scope: AuthProvidersManageScope },
+    { method: WS_METHODS.serverCancelProviderUpdate, scope: AuthProvidersManageScope },
   ])("requires the destination $scope grant for $method", ({ method, scope }) =>
     Effect.gen(function* () {
       const registry = yield* setup;

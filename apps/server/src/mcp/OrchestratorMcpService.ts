@@ -429,7 +429,7 @@ function antigravitySuffixedModel(provider: ServerProvider, model: string) {
 }
 
 /** A folder's own provider config can add models that only its workspace snapshot lists. */
-export const withWorkspaceModels = (
+const withWorkspaceModels = (
   providers: ReadonlyArray<ServerProvider>,
   cwd: string | undefined,
 ): ReadonlyArray<ServerProvider> =>
@@ -445,7 +445,7 @@ export const withWorkspaceModels = (
 const withV = (version: string) => (version.startsWith("v") ? version : `v${version}`);
 
 /** A provider that lists no models accepts any slug. */
-export const requireAdvertisedModel = (provider: ServerProvider, model: string) => {
+const requireAdvertisedModel = (provider: ServerProvider, model: string) => {
   if (provider.models.length === 0 || advertisedModel(provider, model) !== undefined) {
     return Effect.void;
   }
@@ -535,7 +535,7 @@ function invalidOptionSelections(
 }
 
 /** Validate and normalize requested options against the model's advertised option descriptors. */
-export const validateModelOptions = (
+const validateModelOptions = (
   provider: ServerProvider,
   model: string,
   options: ReadonlyArray<ProviderOptionSelection> | undefined,
@@ -553,6 +553,64 @@ export const validateModelOptions = (
       )
     : Effect.succeed(normalized);
 };
+
+/**
+ * Checks an agent's model choice against what its provider advertises in `cwd`, re-reading that
+ * folder's own provider config once before refusing. By default an unregistered provider is left
+ * to dispatch to refuse; callers that persist without dispatching pass `requireRegisteredProvider`.
+ */
+export const validateModelSelection = Effect.fn("mcp.validateModelSelection")(function* (
+  selection: ModelSelection,
+  cwd: string | undefined,
+  options?: { readonly requireRegisteredProvider?: boolean },
+) {
+  const registry = yield* ProviderRegistry.ProviderRegistry;
+  const check = (
+    providers: ReadonlyArray<ServerProvider>,
+  ): Effect.Effect<ModelSelection, OrchestratorMcpFailure> => {
+    const provider = withWorkspaceModels(providers, cwd).find(
+      (candidate) => candidate.instanceId === selection.instanceId,
+    );
+    if (provider === undefined) {
+      return options?.requireRegisteredProvider === true
+        ? Effect.fail(
+            failure(
+              "provider_unavailable",
+              `Provider instance ${selection.instanceId} is not registered.`,
+            ),
+          )
+        : Effect.succeed(selection);
+    }
+    return requireAdvertisedModel(provider, selection.model).pipe(
+      Effect.andThen(validateModelOptions(provider, selection.model, selection.options)),
+      Effect.map((options) =>
+        options === undefined || options === selection.options
+          ? selection
+          : { ...selection, options },
+      ),
+    );
+  };
+  const checked = check(yield* registry.getProviders);
+  if (cwd === undefined) return yield* checked;
+  return yield* checked.pipe(
+    Effect.catchIf(
+      (error) => error.code === "model_unavailable",
+      () =>
+        ProjectService.ProjectService.pipe(
+          Effect.flatMap((projects) => projects.workspaceScanDirectory(cwd)),
+          Effect.flatMap((scanCwd) =>
+            registry.refreshWorkspaceSnapshot({
+              instanceId: selection.instanceId,
+              cwd,
+              scanCwd,
+              modelsOnly: true,
+            }),
+          ),
+          Effect.flatMap(check),
+        ),
+    ),
+  );
+});
 
 function taskStatusForRun(
   run: Pick<OrchestrationV2Run, "status" | "restartCancelledBackgroundWork"> | undefined,

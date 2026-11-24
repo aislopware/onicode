@@ -44,7 +44,9 @@ vi.mock("node:fs", async (importOriginal) => {
       try {
         return actual.renameSync(...args);
       } catch (error) {
-        if (["EEXIST", "ENOTEMPTY"].includes((error as NodeJS.ErrnoException).code ?? "")) {
+        // Windows reports a held lease as EPERM, EACCES or EBUSY.
+        const contended = ["EEXIST", "ENOTEMPTY", "EPERM", "EACCES", "EBUSY"];
+        if (contended.includes((error as NodeJS.ErrnoException).code ?? "")) {
           leaseObserver.contended(String(args[1]));
         }
         throw error;

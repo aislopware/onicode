@@ -496,6 +496,7 @@ export const layer: Layer.Layer<
           const appContext = yield* McpAppModelContext.forProvider(
             mcpAppModelContext,
             input.threadId,
+            run.id,
           );
           // The reactor cancels only a queued wake; one steered here can be answered first.
           // Read last: an answer that commits while the offer is prepared still stops it.

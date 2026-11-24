@@ -388,6 +388,12 @@ const parseProcEnvironThread = (raw: string): ThreadId | null => {
   return value ? ThreadId.make(value) : null;
 };
 
+/** Whether a parent pid is this server or one of its process launchers. */
+export const IsServerChild = Context.Reference<(ppid: number) => boolean>(
+  "onicode/PortScanner/IsServerChild",
+  { defaultValue: () => ProcessLauncher.isServerChild },
+);
+
 /**
  * A listener with an agent thread in its environment. An agent CLI is spawned directly by this
  * server or its Linux process launcher and has that environment too, but its own ports are not
@@ -554,6 +560,7 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
   const listenerDiscovery = (yield* HostProcess.Environment)[PORT_DISCOVERY_ENV] !== "0";
   const httpClient = (yield* HttpClient.HttpClient).pipe(HttpClient.withScope);
   const backgroundPolicy = yield* BackgroundPolicy.BackgroundPolicy;
+  const isServerChild = yield* IsServerChild;
   const stateRef = yield* Ref.make<ScannerState>({
     listeners: new Map(),
     terminalProcesses: new Map(),
@@ -605,10 +612,7 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
         Effect.map(parseProcStatParent),
         Effect.orElseSucceed(() => null),
       );
-      return [
-        pid,
-        { threadId, isAgentCli: parent !== null && ProcessLauncher.isServerChild(parent) },
-      ] as const;
+      return [pid, { threadId, isAgentCli: parent !== null && isServerChild(parent) }] as const;
     });
     const read: ReadonlyMap<number, AgentListener | null> =
       unread.length === 0
@@ -623,9 +627,7 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
                 maxOutputBytes: PS_MAX_OUTPUT_BYTES,
               })
               .pipe(
-                Effect.map((result) =>
-                  parsePsEnvironmentThreads(result.stdout, ProcessLauncher.isServerChild),
-                ),
+                Effect.map((result) => parsePsEnvironmentThreads(result.stdout, isServerChild)),
                 Effect.orElseSucceed(() => {
                   requestAgentScan();
                   return new Map();
@@ -1197,7 +1199,9 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
           Effect.orElseSucceed(() => new Map<number, string>()),
         );
     // `ps -E` prints the environment after the arguments, so the arguments alone are read
-    // separately and only what follows them counts as environment.
+    // separately and only what follows them counts as environment. It appends nothing for a
+    // process it may not read, such as SIP-protected /bin/zsh. The two reads are not atomic:
+    // a process that execs between them can still misread its new arguments as environment.
     const [withEnvironment, argumentsOnly] = yield* Effect.all(
       [readCommandLines(true), readCommandLines(false)],
       { concurrency: 2 },
@@ -1205,7 +1209,7 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
     const variables = new Map<number, ReadonlyMap<string, string>>();
     for (const [pid, line] of withEnvironment) {
       const commandLine = argumentsOnly.get(pid);
-      if (commandLine !== undefined && line.startsWith(commandLine)) {
+      if (commandLine !== undefined && line.startsWith(`${commandLine} `)) {
         variables.set(pid, parseEnvironmentVariables(line.slice(commandLine.length), /\s+/, names));
       }
     }
@@ -1274,12 +1278,7 @@ export const make = Effect.gen(function* PortDiscoveryMake() {
     const table = yield* readProcessTable;
     // It exited after the scan, so there is nothing left to stop.
     if (!table.has(input.pid)) return;
-    const group = stoppableProcessGroup(
-      table,
-      input.pid,
-      process.pid,
-      ProcessLauncher.isServerChild,
-    );
+    const group = stoppableProcessGroup(table, input.pid, process.pid, isServerChild);
     if (group === null) return yield* new PreviewStopLocalServerError({ reason: "shared-group" });
     // False when the whole group already exited.
     const signalGroup = (signal: "SIGTERM" | "SIGKILL") =>

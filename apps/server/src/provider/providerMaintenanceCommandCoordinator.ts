@@ -6,6 +6,7 @@ import * as NodePath from "node:path";
 import * as KeyedLock from "@onicode/shared/KeyedLock";
 import { lock } from "proper-lockfile";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Ref from "effect/Ref";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
@@ -15,8 +16,16 @@ export interface ProviderMaintenanceCommandCoordinatorShape<E> {
     readonly targetKey: string;
     readonly lockKey: string;
     readonly onQueued?: Effect.Effect<void, E, R>;
+    readonly onInterrupt?: (cancelled: boolean) => Effect.Effect<void, never, R>;
     readonly run: Effect.Effect<A, E, R>;
   }) => Effect.Effect<A, E, R>;
+  /** Interrupts the target's command, queued or running, and waits for its finalizers. */
+  readonly cancel: (targetKey: string) => Effect.Effect<void>;
+}
+
+interface RunningTarget {
+  readonly fiber: Fiber.Fiber<unknown, unknown>;
+  cancelled: boolean;
 }
 
 class MachineLockError extends Schema.TaggedError<MachineLockError>()("MachineLockError", {
@@ -77,23 +86,33 @@ const withMachineLock = <A, E, R>(
 export const makeProviderMaintenanceCommandCoordinator = Effect.fn(
   "makeProviderMaintenanceCommandCoordinator",
 )(function* <E>(input: { readonly makeAlreadyRunningError: (targetKey: string) => E }) {
-  const runningTargetsRef = yield* Ref.make<ReadonlySet<string>>(new Set());
+  const runningTargetsRef = yield* Ref.make<ReadonlyMap<string, RunningTarget>>(new Map());
   const locks = yield* KeyedLock.make<string>();
 
-  const acquireTarget = Effect.fn("acquireTarget")(function* (targetKey: string) {
-    return yield* Ref.modify(runningTargetsRef, (runningTargets) => {
-      if (runningTargets.has(targetKey)) {
-        return [false, runningTargets] as const;
-      }
-      const next = new Set(runningTargets);
-      next.add(targetKey);
-      return [true, next] as const;
-    });
+  const acquireTarget = Effect.fn("acquireTarget")(function* (
+    targetKey: string,
+    fiber: Fiber.Fiber<unknown, unknown>,
+  ) {
+    return yield* Ref.modify(
+      runningTargetsRef,
+      (
+        runningTargets,
+      ): readonly [RunningTarget | undefined, ReadonlyMap<string, RunningTarget>] => {
+        if (runningTargets.has(targetKey)) {
+          return [undefined, runningTargets];
+        }
+        const entry: RunningTarget = { fiber, cancelled: false };
+        return [entry, new Map(runningTargets).set(targetKey, entry)];
+      },
+    );
   });
 
-  const releaseTarget = (targetKey: string) =>
+  const releaseTarget = (targetKey: string, entry: RunningTarget) =>
     Ref.update(runningTargetsRef, (runningTargets) => {
-      const next = new Set(runningTargets);
+      if (runningTargets.get(targetKey) !== entry) {
+        return runningTargets;
+      }
+      const next = new Map(runningTargets);
       next.delete(targetKey);
       return next;
     });
@@ -103,20 +122,39 @@ export const makeProviderMaintenanceCommandCoordinator = Effect.fn(
       targetKey,
       lockKey,
       onQueued,
+      onInterrupt,
       run,
     }) {
-      const acquired = yield* acquireTarget(targetKey);
-      if (!acquired) {
-        return yield* Effect.fail(input.makeAlreadyRunningError(targetKey));
-      }
+      return yield* Effect.uninterruptibleMask((restore) =>
+        Effect.gen(function* () {
+          const entry = yield* Effect.withFiber((fiber) => acquireTarget(targetKey, fiber));
+          if (!entry) {
+            return yield* Effect.fail(input.makeAlreadyRunningError(targetKey));
+          }
 
-      return yield* (onQueued ?? Effect.void).pipe(
-        Effect.andThen(locks.withLock(lockKey, withMachineLock(lockKey, run))),
-        Effect.ensuring(releaseTarget(targetKey)),
+          return yield* restore(
+            (onQueued ?? Effect.void).pipe(
+              Effect.andThen(locks.withLock(lockKey, withMachineLock(lockKey, run))),
+            ),
+          ).pipe(
+            Effect.onInterrupt(() => (onInterrupt ? onInterrupt(entry.cancelled) : Effect.void)),
+            Effect.ensuring(releaseTarget(targetKey, entry)),
+          );
+        }),
       );
     });
 
+  const cancel = Effect.fn("providerMaintenanceCommandCoordinator.cancel")(function* (
+    targetKey: string,
+  ) {
+    const entry = (yield* Ref.get(runningTargetsRef)).get(targetKey);
+    if (entry === undefined) return;
+    entry.cancelled = true;
+    yield* Fiber.interrupt(entry.fiber);
+  });
+
   return {
     withCommandLock,
+    cancel,
   } satisfies ProviderMaintenanceCommandCoordinatorShape<E>;
 });

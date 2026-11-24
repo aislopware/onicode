@@ -11072,6 +11072,11 @@ describe("AcpAdapterV2", () => {
       end: "untimed",
       untilMarker: [true, false, true, "marker"],
     },
+    {
+      ends: "the prompt settles inside the poll while the child keeps the turn open",
+      end: "settles",
+      untilMarker: [true, false, "marker"],
+    },
   ] as const)(
     "marks a Grok child awaited only while a blocking poll names it, until $ends",
     ({ end, untilMarker }) =>
@@ -11079,6 +11084,7 @@ describe("AcpAdapterV2", () => {
         const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
         const selfInvocation = yield* resolveSelfInvocation();
         const mockAgentPath = yield* bundledMockAgentPath;
+        const promptSettled = yield* Deferred.make<void>();
         const instanceId = ProviderInstanceId.make("acp-grok-poll");
         const threadId = ThreadId.make("thread-acp-grok-poll");
         const childSessionId = "019f44a6-4820-7402-925d-bc862ee71200";
@@ -11107,12 +11113,18 @@ describe("AcpAdapterV2", () => {
             },
           });
         const adapter = yield* makeAcpAdapterV2({
+          testHooks: {
+            afterPromptSettledWithBackgroundWork: () =>
+              Deferred.succeed(promptSettled, undefined).pipe(Effect.asVoid),
+          },
           instanceId,
           selfInvocation,
           continuationRequests: { offer: () => Effect.void },
           flavor: {
             driver: ACP_TEST_DRIVER,
             capabilities: AcpProviderCapabilitiesV2,
+            // Grok's own flavor defers, so the running child keeps the turn open past the prompt.
+            deferFinalizeForBackgroundWork: end === "settles",
             extractSubagentUpdate: extractXAiAcpSubagentUpdate,
             extractSubagentWait: extractXAiAwaitedSubagentIds,
             makeRuntime: makeMockRuntime({
@@ -11205,7 +11217,27 @@ describe("AcpAdapterV2", () => {
         });
         yield* runtime.startTurn(turnInput);
         const seen: Array<ProviderAdapter.ProviderAdapterV2Event> = [];
-        while (seen.at(-1)?.type !== "turn.terminal") seen.push(yield* Queue.take(events));
+        let ended = (event: ProviderAdapter.ProviderAdapterV2Event | undefined): boolean =>
+          event?.type === "turn.terminal";
+        if (end === "settles") {
+          yield* Deferred.await(promptSettled);
+          // Emitted after the settle, so every event the settle emitted comes before it.
+          yield* sessionUpdateHandler!({
+            sessionId: "mock-session-1",
+            update: {
+              sessionUpdate: "tool_call",
+              toolCallId: "tool-call-after-settle",
+              title: "Read",
+              kind: "read",
+              status: "completed",
+              rawInput: { path: "README.md" },
+            },
+          });
+          ended = (event) =>
+            event?.type === "turn_item.updated" &&
+            event.turnItem.nativeItemRef?.nativeId === "tool-call-after-settle";
+        }
+        while (!ended(seen.at(-1))) seen.push(yield* Queue.take(events));
         // Each change, in order; a status update may re-emit the same value.
         const changes = <A>(values: ReadonlyArray<A>) =>
           values.filter((value, index) => index === 0 || values[index - 1] !== value);
@@ -12316,6 +12348,375 @@ describe("AcpAdapterV2", () => {
       assert.isTrue(bufferedTextSeen, "continuation must drain the wake buffer after the user run");
       assert.isFalse(yield* hasPendingBackgroundWork);
     }).pipe(Effect.provide(layerTest)),
+  );
+
+  it.effect("serializes non-agent-work continuation wake drain against live session updates", () =>
+    Effect.gen(function* () {
+      const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+      const idAllocator = yield* IdAllocator.IdAllocatorV2;
+      const selfInvocation = yield* resolveSelfInvocation();
+      const mockAgentPath = yield* bundledMockAgentPath;
+      const drainEntered = yield* Deferred.make<void>();
+      const releaseDrain = yield* Deferred.make<void>();
+      const continuationRequests: Array<ProviderContinuationRequests.ProviderContinuationRequest> =
+        [];
+      type RuntimeService = AcpSessionRuntime.AcpSessionRuntime["Service"];
+      let sessionUpdateHandler: Parameters<RuntimeService["handleSessionUpdate"]>[0] | undefined;
+      const instanceId = ProviderInstanceId.make("acp-test");
+      const adapter = yield* makeAcpAdapterV2({
+        instanceId,
+        selfInvocation,
+        testHooks: {
+          onContinuationWakeDrain: () =>
+            Deferred.succeed(drainEntered, undefined).pipe(
+              Effect.andThen(Deferred.await(releaseDrain)),
+            ),
+        },
+        flavor: {
+          driver: ACP_TEST_DRIVER,
+          capabilities: AcpProviderCapabilitiesV2,
+          deferFinalizeForBackgroundWork: true,
+          enablePostSettleContinuation: true,
+          makeRuntime: makeMockRuntime({
+            childProcessSpawner,
+            mockAgentPath,
+            wrapRuntime: (runtime) => ({
+              ...runtime,
+              handleSessionUpdate: (handler) =>
+                Effect.sync(() => {
+                  sessionUpdateHandler = handler;
+                }).pipe(Effect.andThen(runtime.handleSessionUpdate(handler))),
+            }),
+          }),
+        },
+        continuationRequests: {
+          offer: (request) =>
+            Effect.sync(() => {
+              continuationRequests.push(request);
+            }),
+        },
+      });
+      const threadId = ThreadId.make("thread-acp-continuation-wake-drain-race");
+      const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        cwd: process.cwd(),
+      });
+      const modelSelection = { instanceId, model: "default" } as const;
+      const runtime = yield* adapter.openSession({
+        threadId,
+        providerSessionId: ProviderSessionId.make(
+          "provider-session-acp-continuation-wake-drain-race",
+        ),
+        modelSelection,
+        runtimePolicy,
+      });
+      const events = yield* Queue.unbounded<ProviderAdapter.ProviderAdapterV2Event>();
+      yield* runtime.events.pipe(
+        Stream.runForEach((event) => Queue.offer(events, event)),
+        Effect.forkScoped,
+      );
+      const providerThread = yield* runtime.ensureThread({
+        threadId,
+        modelSelection,
+        runtimePolicy,
+      });
+      yield* runtime.startTurn(
+        makeTurnInput({
+          threadId,
+          providerThread,
+          instanceId,
+          runtimePolicy,
+          now: yield* DateTime.now,
+        }),
+      );
+      const firstProviderTurnId = idAllocator.derive.providerTurn({
+        driver: ACP_TEST_DRIVER,
+        nativeTurnId: acpScopedNativeId(instanceId, "mock-session-1:turn:1"),
+      });
+      let firstTerminalStatus: string | null = null;
+      while (firstTerminalStatus === null) {
+        const event = yield* Queue.take(events);
+        if (event.type === "turn.terminal" && event.providerTurnId === firstProviderTurnId) {
+          firstTerminalStatus = event.status;
+        }
+      }
+      assert.equal(firstTerminalStatus, "completed");
+      assert.isDefined(sessionUpdateHandler, "session update handler must be wired");
+
+      yield* sessionUpdateHandler!({
+        sessionId: "mock-session-1",
+        update: {
+          sessionUpdate: "tool_call",
+          toolCallId: "tool-race-1",
+          title: "Read",
+          kind: "read",
+          status: "in_progress",
+          rawInput: { path: "README.md" },
+        },
+      });
+      yield* sessionUpdateHandler!({
+        sessionId: "mock-session-1",
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: "Wake summary." },
+        },
+      });
+      assert.lengthOf(continuationRequests, 1);
+
+      const continuationFiber = yield* runtime
+        .startTurn(
+          makeTurnInput({
+            threadId,
+            providerThread,
+            instanceId,
+            runtimePolicy,
+            now: yield* DateTime.now,
+            ordinal: 2,
+            messageCreatedBy: "agent",
+            messageCreationSource: "provider",
+            messageText: "Background task completed.",
+          }),
+        )
+        .pipe(Effect.forkScoped);
+      yield* Deferred.await(drainEntered);
+
+      const liveUpdateFiber = yield* sessionUpdateHandler!({
+        sessionId: "mock-session-1",
+        update: {
+          sessionUpdate: "tool_call_update",
+          toolCallId: "tool-race-1",
+          status: "completed",
+          rawOutput: { type: "Text", text: "LIVE_RESULT" },
+        },
+      }).pipe(Effect.forkScoped({ startImmediately: true }));
+      assert.isUndefined(
+        liveUpdateFiber.pollUnsafe(),
+        "live session updates must wait for continuation wake drain to release runtimeCallbackPermit",
+      );
+
+      yield* Deferred.succeed(releaseDrain, undefined);
+      yield* Fiber.join(continuationFiber);
+      yield* Fiber.join(liveUpdateFiber);
+      yield* TestClock.adjust("3 seconds");
+
+      const continuationProviderTurnId = idAllocator.derive.providerTurn({
+        driver: ACP_TEST_DRIVER,
+        nativeTurnId: acpScopedNativeId(instanceId, "mock-session-1:turn:2"),
+      });
+      let continuationTerminalStatus: string | null = null;
+      const toolItems: Array<OrchestrationV2TurnItem> = [];
+      while (continuationTerminalStatus === null) {
+        const event = yield* Queue.take(events);
+        if (
+          event.type === "turn_item.updated" &&
+          event.turnItem.providerTurnId === continuationProviderTurnId &&
+          event.turnItem.nativeItemRef?.nativeId === "tool-race-1"
+        ) {
+          toolItems.push(event.turnItem);
+        }
+        if (event.type === "turn.terminal" && event.providerTurnId === continuationProviderTurnId) {
+          continuationTerminalStatus = event.status;
+        }
+      }
+      assert.equal(continuationTerminalStatus, "completed");
+      assert.deepEqual(
+        toolItems.map((item) => item.status),
+        ["running", "completed"],
+      );
+      const finalTool = toolItems.at(-1);
+      assert.equal(finalTool?.type, "dynamic_tool");
+      if (finalTool?.type === "dynamic_tool") {
+        assert.deepEqual(finalTool.output, { type: "Text", text: "LIVE_RESULT" });
+      }
+    }).pipe(Effect.provide(layerTest)),
+  );
+
+  it.effect(
+    "serializes live session updates arriving between continuation activeTurn publish and wake drain",
+    () =>
+      Effect.gen(function* () {
+        const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+        const idAllocator = yield* IdAllocator.IdAllocatorV2;
+        const selfInvocation = yield* resolveSelfInvocation();
+        const mockAgentPath = yield* bundledMockAgentPath;
+        const turnPublished = yield* Deferred.make<void>();
+        const releasePublish = yield* Deferred.make<void>();
+        const continuationRequests: Array<ProviderContinuationRequests.ProviderContinuationRequest> =
+          [];
+        type RuntimeService = AcpSessionRuntime.AcpSessionRuntime["Service"];
+        let sessionUpdateHandler: Parameters<RuntimeService["handleSessionUpdate"]>[0] | undefined;
+        const instanceId = ProviderInstanceId.make("acp-test");
+        const adapter = yield* makeAcpAdapterV2({
+          instanceId,
+          selfInvocation,
+          testHooks: {
+            onContinuationTurnPublished: () =>
+              Deferred.succeed(turnPublished, undefined).pipe(
+                Effect.andThen(Deferred.await(releasePublish)),
+              ),
+          },
+          flavor: {
+            driver: ACP_TEST_DRIVER,
+            capabilities: AcpProviderCapabilitiesV2,
+            deferFinalizeForBackgroundWork: true,
+            enablePostSettleContinuation: true,
+            makeRuntime: makeMockRuntime({
+              childProcessSpawner,
+              mockAgentPath,
+              wrapRuntime: (runtime) => ({
+                ...runtime,
+                handleSessionUpdate: (handler) =>
+                  Effect.sync(() => {
+                    sessionUpdateHandler = handler;
+                  }).pipe(Effect.andThen(runtime.handleSessionUpdate(handler))),
+              }),
+            }),
+          },
+          continuationRequests: {
+            offer: (request) =>
+              Effect.sync(() => {
+                continuationRequests.push(request);
+              }),
+          },
+        });
+        const threadId = ThreadId.make("thread-acp-continuation-publish-race");
+        const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          cwd: process.cwd(),
+        });
+        const modelSelection = { instanceId, model: "default" } as const;
+        const runtime = yield* adapter.openSession({
+          threadId,
+          providerSessionId: ProviderSessionId.make(
+            "provider-session-acp-continuation-publish-race",
+          ),
+          modelSelection,
+          runtimePolicy,
+        });
+        const events = yield* Queue.unbounded<ProviderAdapter.ProviderAdapterV2Event>();
+        yield* runtime.events.pipe(
+          Stream.runForEach((event) => Queue.offer(events, event)),
+          Effect.forkScoped,
+        );
+        const providerThread = yield* runtime.ensureThread({
+          threadId,
+          modelSelection,
+          runtimePolicy,
+        });
+        yield* runtime.startTurn(
+          makeTurnInput({
+            threadId,
+            providerThread,
+            instanceId,
+            runtimePolicy,
+            now: yield* DateTime.now,
+          }),
+        );
+        const firstProviderTurnId = idAllocator.derive.providerTurn({
+          driver: ACP_TEST_DRIVER,
+          nativeTurnId: acpScopedNativeId(instanceId, "mock-session-1:turn:1"),
+        });
+        let firstTerminalStatus: string | null = null;
+        while (firstTerminalStatus === null) {
+          const event = yield* Queue.take(events);
+          if (event.type === "turn.terminal" && event.providerTurnId === firstProviderTurnId) {
+            firstTerminalStatus = event.status;
+          }
+        }
+        assert.equal(firstTerminalStatus, "completed");
+        assert.isDefined(sessionUpdateHandler, "session update handler must be wired");
+
+        yield* sessionUpdateHandler!({
+          sessionId: "mock-session-1",
+          update: {
+            sessionUpdate: "tool_call",
+            toolCallId: "tool-race-publish-1",
+            title: "Read",
+            kind: "read",
+            status: "in_progress",
+            rawInput: { path: "README.md" },
+          },
+        });
+        yield* sessionUpdateHandler!({
+          sessionId: "mock-session-1",
+          update: {
+            sessionUpdate: "agent_message_chunk",
+            content: { type: "text", text: "Wake summary." },
+          },
+        });
+        assert.lengthOf(continuationRequests, 1);
+
+        const continuationFiber = yield* runtime
+          .startTurn(
+            makeTurnInput({
+              threadId,
+              providerThread,
+              instanceId,
+              runtimePolicy,
+              now: yield* DateTime.now,
+              ordinal: 2,
+              messageCreatedBy: "agent",
+              messageCreationSource: "provider",
+              messageText: "Background task completed.",
+            }),
+          )
+          .pipe(Effect.forkScoped);
+        yield* Deferred.await(turnPublished);
+
+        const liveUpdateFiber = yield* sessionUpdateHandler!({
+          sessionId: "mock-session-1",
+          update: {
+            sessionUpdate: "tool_call_update",
+            toolCallId: "tool-race-publish-1",
+            status: "completed",
+            rawOutput: { type: "Text", text: "LIVE_RESULT" },
+          },
+        }).pipe(Effect.forkScoped({ startImmediately: true }));
+        assert.isUndefined(
+          liveUpdateFiber.pollUnsafe(),
+          "live session updates must wait while continuation publishes activeTurn and drains wakeBuffer",
+        );
+
+        yield* Deferred.succeed(releasePublish, undefined);
+        yield* Fiber.join(continuationFiber);
+        yield* Fiber.join(liveUpdateFiber);
+        yield* TestClock.adjust("3 seconds");
+
+        const continuationProviderTurnId = idAllocator.derive.providerTurn({
+          driver: ACP_TEST_DRIVER,
+          nativeTurnId: acpScopedNativeId(instanceId, "mock-session-1:turn:2"),
+        });
+        let continuationTerminalStatus: string | null = null;
+        const toolItems: Array<OrchestrationV2TurnItem> = [];
+        while (continuationTerminalStatus === null) {
+          const event = yield* Queue.take(events);
+          if (
+            event.type === "turn_item.updated" &&
+            event.turnItem.providerTurnId === continuationProviderTurnId &&
+            event.turnItem.nativeItemRef?.nativeId === "tool-race-publish-1"
+          ) {
+            toolItems.push(event.turnItem);
+          }
+          if (
+            event.type === "turn.terminal" &&
+            event.providerTurnId === continuationProviderTurnId
+          ) {
+            continuationTerminalStatus = event.status;
+          }
+        }
+        assert.equal(continuationTerminalStatus, "completed");
+        assert.deepEqual(
+          toolItems.map((item) => item.status),
+          ["running", "completed"],
+        );
+        const finalTool = toolItems.at(-1);
+        assert.equal(finalTool?.type, "dynamic_tool");
+        if (finalTool?.type === "dynamic_tool") {
+          assert.deepEqual(finalTool.output, { type: "Text", text: "LIVE_RESULT" });
+        }
+      }).pipe(Effect.provide(layerTest)),
   );
 
   it.effect.each(["unpolled", "polled"] as const)(

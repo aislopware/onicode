@@ -5637,7 +5637,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     const gitDirArgs = ["--git-dir", gitCommonDir] as const;
     // Read occupancy first so a concurrent worktree addition changes the cached stamp.
     const worktrees = yield* Cache.get(worktreeBranchPathsCache, gitCommonDir);
-    const [refsResult, defaultRefResult, remoteNamesResult] = yield* Effect.all(
+    const [refsResult, remoteNamesResult] = yield* Effect.all(
       [
         executeGitWithStableDiagnostics(
           "GitVcsDriver.listRefs.snapshotRefs",
@@ -5653,22 +5653,6 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
             timeoutMs: 30_000,
             maxOutputBytes: 16 * 1024 * 1024,
             fallbackErrorDetail: "Git ref snapshot enumeration failed.",
-          },
-        ),
-        executeGit(
-          "GitVcsDriver.listRefs.defaultRef",
-          fetchCwd,
-          [
-            ...gitDirArgs,
-            "rev-parse",
-            "--verify",
-            "--quiet",
-            "--symbolic-full-name",
-            "refs/remotes/origin/HEAD",
-          ],
-          {
-            timeoutMs: 5_000,
-            allowNonZeroExit: true,
           },
         ),
         executeGit("GitVcsDriver.listRefs.remoteNames", fetchCwd, [...gitDirArgs, "remote"], {
@@ -5688,10 +5672,26 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         `GitVcsDriver.listRefs: remote name lookup returned code ${remoteNamesResult.exitCode} for ${gitCommonDir}: ${remoteNamesResult.stderr.trim()}. Falling back to an empty remote name list.`,
       );
     }
-    const originDefaultBranch =
-      defaultRefResult.exitCode === 0
-        ? parseDefaultBranchFromRemoteHeadRef(defaultRefResult.stdout, "origin")
-        : null;
+    // Each remote HEAD's target. Like `rev-parse --verify`, for-each-ref skips a dangling one.
+    const remoteHeadTargets = new Map<string, string>();
+    for (const line of refsResult.stdout.split("\n")) {
+      const [fullRefName, , symbolicTarget] = line.split("\t");
+      if (
+        fullRefName?.startsWith("refs/remotes/") &&
+        fullRefName.endsWith("/HEAD") &&
+        symbolicTarget
+      ) {
+        remoteHeadTargets.set(
+          fullRefName.slice("refs/remotes/".length, -"/HEAD".length),
+          symbolicTarget,
+        );
+      }
+    }
+    const remoteDefaultBranch = (remoteName: string) => {
+      const target = remoteHeadTargets.get(remoteName);
+      return target === undefined ? null : parseDefaultBranchFromRemoteHeadRef(target, remoteName);
+    };
+    const originDefaultBranch = remoteDefaultBranch("origin");
     // Same fallback as resolvePrimaryDefaultBranchName: without an origin, the first remote is primary.
     const [firstRemoteName] = remoteNamesInGitOrder;
     const fallbackRemoteName =
@@ -5701,9 +5701,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         ? firstRemoteName
         : null;
     const defaultBranch =
-      fallbackRemoteName === null
-        ? originDefaultBranch
-        : yield* resolveDefaultBranchName(fetchCwd, fallbackRemoteName, gitDirArgs);
+      fallbackRemoteName === null ? originDefaultBranch : remoteDefaultBranch(fallbackRemoteName);
     const defaultRemoteName = fallbackRemoteName ?? "origin";
     const localBranches: Array<{ readonly ref: VcsRef; readonly lastCommit: number }> = [];
     const remoteBranches: Array<{ readonly ref: VcsRef; readonly lastCommit: number }> = [];

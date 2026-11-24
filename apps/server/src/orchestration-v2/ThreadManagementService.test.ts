@@ -1199,6 +1199,8 @@ it.effect.each([
   { status: "completed" as const, followUp: "held-notification", settles: true },
   { status: "completed" as const, followUp: "user", settles: false },
   { status: "completed" as const, followUp: "steered-notification", settles: false },
+  // A notification steered in unread; requeueUnreadSteers closes it and runs its wake.
+  { status: "completed" as const, followUp: "unread-notification", settles: true },
   // Send now cancels the queued run; its message joins the run that asked to settle.
   { status: "completed" as const, followUp: "promoted-to-steer", settles: true },
   // A delegated-completion wake cancelled unstarted because the turn already took the result.
@@ -1237,6 +1239,7 @@ it.effect.each([
     const dispatched: Array<string> = [];
     // The notification starts after the completed run was observed, before settlement commits.
     let raced = false;
+    let unreadNotification = followUp === "unread-notification";
     const layerTest = ThreadManagementService.layer.pipe(
       Layer.provide(Layer.mock(ProviderSessionManager.ProviderSessionManagerV2)({})),
       Layer.provide(
@@ -1268,7 +1271,18 @@ it.effect.each([
                 ({
                   thread: { id: threadId, projectId, deletedAt: null },
                   runs: raced ? [...runs, nextRun] : runs,
-                  turnItems: [],
+                  turnItems: [
+                    {
+                      runId,
+                      type: "notification" as const,
+                      status: unreadNotification ? "pending" : "cancelled",
+                    },
+                  ].filter(
+                    (item) =>
+                      followUp === "unread-notification" &&
+                      (filter?.turnItemTypes === undefined ||
+                        filter.turnItemTypes.includes(item.type)),
+                  ),
                   messages: [
                     { id: MessageId.make("original"), runId, role: "user" as const },
                     {
@@ -1309,7 +1323,7 @@ it.effect.each([
                   cause: "Thread is waiting on background work or an approval",
                 });
               }
-              if (followUp !== "none" && !blocked && !raced) {
+              if (followUp !== "none" && followUp !== "unread-notification" && !blocked && !raced) {
                 raced = true;
                 rejectedCommandId = command.commandId;
                 return yield* new Orchestrator.OrchestratorDispatchError({
@@ -1371,7 +1385,22 @@ it.effect.each([
               },
             } as unknown as OrchestrationV2StoredEvent);
     }
-    if (followUp !== "none" && !blocked) {
+    if (followUp === "unread-notification") {
+      yield* Effect.raceFirst(Deferred.await(subscribed), Fiber.await(fiber));
+      expect(dispatched).toEqual([]);
+      unreadNotification = false;
+      raced = true;
+      nextRun.status = "completed";
+      sequence = 1;
+      yield* Queue.offer(turnItemEvents, {
+        sequence,
+        event: {
+          type: "turn-item.updated",
+          threadId,
+          payload: { type: "notification", status: "cancelled" },
+        },
+      } as unknown as OrchestrationV2StoredEvent);
+    } else if (followUp !== "none" && !blocked) {
       yield* Deferred.await(subscribed);
       expect(dispatched).toEqual([]);
       nextRun.status =
@@ -1401,10 +1430,16 @@ it.effect.each([
   }),
 );
 
-// The agent reads a message steered in after it asked to settle and ends on a question.
-it.effect.each(["steer", "promoted_queued_to_steer"] as const)(
-  "settleAfterRun keeps the thread open after a %s read once the settle was requested",
-  (inputIntent) =>
+// The agent reads a message steered in after it asked to settle and ends on a question, or never
+// reads it and requeueUnreadSteers runs it next.
+it.effect.each([
+  { type: "user_message", inputIntent: "steer", read: true },
+  { type: "user_message", inputIntent: "promoted_queued_to_steer", read: true },
+  { type: "user_message", inputIntent: "steer", read: false },
+  { type: "user_message", inputIntent: "promoted_queued_to_steer", read: false },
+] as const)(
+  "settleAfterRun keeps the thread open after a $inputIntent (read: $read) once the settle was requested",
+  ({ type, inputIntent, read }) =>
     Effect.gen(function* () {
       const projectId = ProjectId.make("project:thread-management:settle-after-steer");
       const threadId = ThreadId.make("thread:thread-management:settle-after-steer");
@@ -1418,7 +1453,7 @@ it.effect.each(["steer", "promoted_queued_to_steer"] as const)(
             getThreadEventSequence: () => Effect.succeed(0),
             restartContinuationPending: () => Effect.succeed(false),
             streamStoredEventsFrom: () => Stream.empty,
-            getThreadRecords: () =>
+            getThreadRecords: (_threadId, _fields, filter) =>
               Effect.succeed({
                 thread: { id: threadId, projectId, deletedAt: null },
                 runs: [{ id: runId, ordinal: 1, status: "completed", userMessageId: "original" }],
@@ -1429,13 +1464,16 @@ it.effect.each(["steer", "promoted_queued_to_steer"] as const)(
                 turnItems: [
                   {
                     runId,
-                    type: "user_message",
-                    inputIntent,
-                    status: "completed",
-                    createdAt: "1970-01-01T00:01:30.000Z",
-                    completedAt: "1970-01-01T00:01:30.000Z",
+                    type,
+                    ...(type === "user_message" ? { inputIntent } : {}),
+                    status: read ? "completed" : "pending",
+                    createdAt: "1970-01-01T00:00:30.000Z",
+                    completedAt: read ? "1970-01-01T00:01:30.000Z" : null,
                   },
-                ],
+                ].filter(
+                  (item) =>
+                    filter?.turnItemTypes === undefined || filter.turnItemTypes.includes(item.type),
+                ),
               } as unknown as OrchestrationV2ThreadProjection),
             dispatch: (command) =>
               Effect.sync(() => {

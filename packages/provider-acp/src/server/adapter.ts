@@ -929,6 +929,8 @@ export interface AcpAdapterV2Options {
     readonly afterPromptWireSettled?: () => Effect.Effect<void>;
     readonly afterPromptSettledWithBackgroundWork?: () => Effect.Effect<void>;
     readonly afterPromptCallback?: () => Effect.Effect<void>;
+    readonly onContinuationTurnPublished?: () => Effect.Effect<void>;
+    readonly onContinuationWakeDrain?: () => Effect.Effect<void>;
     readonly onNativeResponseLifecycle?: (event: {
       readonly generation?: number;
       readonly requestId?: string;
@@ -10568,91 +10570,103 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
               inactivityWatchdog: undefined,
               executedModel: yield* readCurrentSessionModel,
             };
-            const carryover = yield* Ref.getAndSet(carryoverSubagents, null);
-            let rehydratedCarryoverSubagents: ReadonlyArray<ActiveAcpSubagent> = [];
-            if (carryover !== null && carryover.sessionId === requestedSessionId) {
-              rehydratedCarryoverSubagents = carryover.subagents;
-              for (const subagent of carryover.subagents) {
-                const nativeId = subagent.task.nativeTaskRef?.nativeId ?? null;
-                if (nativeId !== null) {
-                  context.subagents.set(nativeId, subagent);
-                }
-                if (subagent.childSessionId !== null) {
-                  context.subagentsBySessionId.set(subagent.childSessionId, subagent);
+            const publishActiveTurn = Effect.gen(function* () {
+              const carryover = yield* Ref.getAndSet(carryoverSubagents, null);
+              let rehydratedCarryoverSubagents: ReadonlyArray<ActiveAcpSubagent> = [];
+              if (carryover !== null && carryover.sessionId === requestedSessionId) {
+                rehydratedCarryoverSubagents = carryover.subagents;
+                for (const subagent of carryover.subagents) {
+                  const nativeId = subagent.task.nativeTaskRef?.nativeId ?? null;
+                  if (nativeId !== null) {
+                    context.subagents.set(nativeId, subagent);
+                  }
+                  if (subagent.childSessionId !== null) {
+                    context.subagentsBySessionId.set(subagent.childSessionId, subagent);
+                  }
                 }
               }
-            }
-            yield* Ref.set(activeTurn, context);
-            yield* Ref.set(stoppedRunQuarantine, false);
-            const runningTurn = providerTurnPayload(context, "running", null);
-            yield* emitProviderEvent({
-              type: "provider_turn.updated",
-              driver,
-              threadId: turnInput.threadId,
-              providerTurn: runningTurn,
-            });
-            const activeProviderThread: OrchestrationV2ProviderThread = {
-              ...turnInput.providerThread,
-              providerSessionId: input.providerSessionId,
-              status: "active",
-              contextUsage: context.contextUsage,
-              nativeMetadata: context.nativeMetadata,
-              updatedAt: startedAt,
-            };
-            yield* Ref.update(providerThreadByNativeSessionId, (current) =>
-              new Map(current).set(requestedSessionId, activeProviderThread),
-            );
-            yield* emitProviderEvent({
-              type: "provider_thread.updated",
-              driver,
-              providerThread: activeProviderThread,
-            });
-            yield* rememberSnapshotMessage({
-              createdBy: turnInput.message.createdBy,
-              creationSource: turnInput.message.creationSource,
-              ...(turnInput.message.scheduledTaskId === undefined
-                ? {}
-                : { scheduledTaskId: turnInput.message.scheduledTaskId }),
-              ...(turnInput.message.senderThreadId === undefined
-                ? {}
-                : { senderThreadId: turnInput.message.senderThreadId }),
-              id: turnInput.message.messageId,
-              threadId: turnInput.threadId,
-              runId: turnInput.runId,
-              nodeId: turnInput.rootNodeId,
-              role: "user",
-              text: turnInput.message.text,
-              attachments: [...turnInput.message.attachments],
-              streaming: false,
-              createdAt: startedAt,
-              updatedAt: startedAt,
-            });
-            if (followsAgentWorkState)
-              yield* runtimeCallbackPermit.withPermit(syncNativeChildren(context));
-            const attached = turnAttached;
-            turnAttached = yield* Deferred.make<boolean>();
-            yield* Deferred.succeed(attached, true);
-            // Every attach ends the deferred-terminal contract, but only the
-            // queued provider continuation owns wake traffic. A user turn may
-            // start before that continuation and must leave its buffer intact.
-            yield* projectDeferredCarryoverTerminals(rehydratedCarryoverSubagents);
-            // Retain projected terminals during wake drain so monotonic guards reject replayed spawns.
-            if (isContinuationTurn) {
-              yield* Ref.set(continuationRequested, false);
-              yield* Ref.update(wakeReports, ({ reports, offered }) => ({
-                reports: new Map([...reports].filter(([key]) => !offered.has(key))),
-                offered: noWakeReports.offered,
-              }));
-              const takeWakeBuffer = Ref.modify(wakeBuffer, (current) => {
-                const next: Array<EffectAcpSchema.SessionNotification> = [];
-                return [
-                  current.filter((notification) => notification.sessionId === requestedSessionId),
-                  next,
-                ] as const;
+              yield* Ref.set(activeTurn, context);
+              yield* Ref.set(stoppedRunQuarantine, false);
+              if (isContinuationTurn) {
+                yield* options.testHooks?.onContinuationTurnPublished?.() ?? Effect.void;
+              }
+              const runningTurn = providerTurnPayload(context, "running", null);
+              yield* emitProviderEvent({
+                type: "provider_turn.updated",
+                driver,
+                threadId: turnInput.threadId,
+                providerTurn: runningTurn,
+              });
+              const activeProviderThread: OrchestrationV2ProviderThread = {
+                ...turnInput.providerThread,
+                providerSessionId: input.providerSessionId,
+                status: "active",
+                contextUsage: context.contextUsage,
+                nativeMetadata: context.nativeMetadata,
+                updatedAt: startedAt,
+              };
+              yield* Ref.update(providerThreadByNativeSessionId, (current) =>
+                new Map(current).set(requestedSessionId, activeProviderThread),
+              );
+              yield* emitProviderEvent({
+                type: "provider_thread.updated",
+                driver,
+                providerThread: activeProviderThread,
+              });
+              yield* rememberSnapshotMessage({
+                createdBy: turnInput.message.createdBy,
+                creationSource: turnInput.message.creationSource,
+                ...(turnInput.message.scheduledTaskId === undefined
+                  ? {}
+                  : { scheduledTaskId: turnInput.message.scheduledTaskId }),
+                ...(turnInput.message.senderThreadId === undefined
+                  ? {}
+                  : { senderThreadId: turnInput.message.senderThreadId }),
+                id: turnInput.message.messageId,
+                threadId: turnInput.threadId,
+                runId: turnInput.runId,
+                nodeId: turnInput.rootNodeId,
+                role: "user",
+                text: turnInput.message.text,
+                attachments: [...turnInput.message.attachments],
+                streaming: false,
+                createdAt: startedAt,
+                updatedAt: startedAt,
               });
               if (followsAgentWorkState) {
-                yield* runtimeCallbackPermit.withPermit(
-                  Effect.gen(function* () {
+                yield* isContinuationTurn
+                  ? syncNativeChildren(context)
+                  : runtimeCallbackPermit.withPermit(syncNativeChildren(context));
+              }
+              const attached = turnAttached;
+              turnAttached = yield* Deferred.make<boolean>();
+              yield* Deferred.succeed(attached, true);
+              // Every attach ends the deferred-terminal contract, but only the
+              // queued provider continuation owns wake traffic. A user turn may
+              // start before that continuation and must leave its buffer intact.
+              yield* projectDeferredCarryoverTerminals(rehydratedCarryoverSubagents);
+            });
+            if (isContinuationTurn) {
+              // Publish activeTurn and drain buffered wake frames under one permit so live updates cannot cut ahead.
+              yield* runtimeCallbackPermit.withPermit(
+                Effect.gen(function* () {
+                  yield* publishActiveTurn;
+                  // Retain projected terminals during wake drain so monotonic guards reject replayed spawns.
+                  yield* Ref.set(continuationRequested, false);
+                  yield* Ref.update(wakeReports, ({ reports, offered }) => ({
+                    reports: new Map([...reports].filter(([key]) => !offered.has(key))),
+                    offered: noWakeReports.offered,
+                  }));
+                  const takeWakeBuffer = Ref.modify(wakeBuffer, (current) => {
+                    const next: Array<EffectAcpSchema.SessionNotification> = [];
+                    return [
+                      current.filter(
+                        (notification) => notification.sessionId === requestedSessionId,
+                      ),
+                      next,
+                    ] as const;
+                  });
+                  if (followsAgentWorkState) {
                     const liveWork = agentWork;
                     yield* Effect.forEach(yield* takeWakeBuffer, handleSessionUpdate, {
                       discard: true,
@@ -10660,55 +10674,52 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                     agentWork = liveWork;
                     context.workAccepted = true;
                     yield* settleIdleWork(context);
-                  }),
-                );
-                return;
-              }
-              const drainedWakeCount = yield* takeWakeBuffer.pipe(
-                Effect.tap((drained) =>
-                  Effect.forEach(drained, handleSessionUpdate, {
+                    return;
+                  }
+                  const drained = yield* takeWakeBuffer;
+                  yield* options.testHooks?.onContinuationWakeDrain?.() ?? Effect.void;
+                  yield* Effect.forEach(drained, handleSessionUpdate, {
                     concurrency: 1,
                     discard: true,
-                  }),
-                ),
-                Effect.map((drained) => drained.length),
-              );
-              // A root woken after foreground idle ends on its next idle report.
-              if (drainedWakeCount > 0 && rootForegroundWork !== undefined) {
-                yield* runtimeCallbackPermit.withPermit(
-                  Effect.suspend(() => {
-                    if (rootForegroundWork === "idle") return finalizeTurn(context, "completed");
-                    context.workAccepted = true;
-                    return Effect.void;
-                  }),
-                );
-                return;
-              }
-              yield* settlePrompt(context, "completed");
-              // The replayed reply ended before the prompt counted as settled.
-              yield* idleReportedSubagents(context);
-              if (drainedWakeCount === 0) {
-                if (continuationWasRequested && defersFinalizeForBackgroundWork) {
-                  if (hasDeferredBackgroundWork(context)) {
-                    yield* rearmDeferredFinalize(context);
-                  } else {
-                    yield* scheduleDeferredFinalize(context);
+                  });
+                  const drainedWakeCount = drained.length;
+                  // A root woken after foreground idle ends on its next idle report.
+                  if (drainedWakeCount > 0 && rootForegroundWork !== undefined) {
+                    if (rootForegroundWork === "idle") {
+                      yield* finalizeTurn(context, "completed");
+                    } else {
+                      context.workAccepted = true;
+                    }
+                    return;
                   }
-                } else {
-                  yield* finalizeTurn(context, "completed");
-                }
-                return;
-              }
-              if (!context.finalized) {
-                yield* schedulePostSettleHoldExpiry(context);
-                if (hasDeferredBackgroundWork(context)) {
-                  yield* rearmDeferredFinalize(context);
-                } else {
-                  yield* scheduleDeferredFinalize(context);
-                }
-              }
+                  yield* settlePrompt(context, "completed");
+                  // The replayed reply ended before the prompt counted as settled.
+                  yield* idleReportedSubagents(context);
+                  if (drainedWakeCount === 0) {
+                    if (continuationWasRequested && defersFinalizeForBackgroundWork) {
+                      if (hasDeferredBackgroundWork(context)) {
+                        yield* rearmDeferredFinalize(context);
+                      } else {
+                        yield* scheduleDeferredFinalize(context);
+                      }
+                    } else {
+                      yield* finalizeTurn(context, "completed");
+                    }
+                    return;
+                  }
+                  if (!context.finalized) {
+                    yield* schedulePostSettleHoldExpiry(context);
+                    if (hasDeferredBackgroundWork(context)) {
+                      yield* rearmDeferredFinalize(context);
+                    } else {
+                      yield* scheduleDeferredFinalize(context);
+                    }
+                  }
+                }),
+              );
               return;
             }
+            yield* publishActiveTurn;
             const checkPromptOutcome =
               flavor.watchPromptOutcome === undefined
                 ? undefined

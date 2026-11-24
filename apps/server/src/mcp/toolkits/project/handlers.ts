@@ -1,14 +1,12 @@
 import {
   CommandId,
   MessageId,
-  type ModelSelection,
   ThreadId,
   OrchestratorMcpFailure,
   type OrchestrationV2ThreadLaunchWorkspaceStrategy,
   ProjectId,
   type TaskFolderError,
   type Project as ProjectRecord,
-  type ServerProvider,
   ONICODE_PROJECT_FILE_NAME,
   trimAsciiWhitespace,
 } from "@onicode/contracts";
@@ -17,7 +15,10 @@ import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
+import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
+import { expandHomePath } from "@onicode/provider-core/server/pathExpansion";
+import * as HostProcess from "@onicode/shared/HostProcess";
 import { OrchestratorRuntimeModeAboveCeilingError } from "../../../orchestration-v2/Orchestrator.ts";
 import { outputRequestProblem } from "../../../orchestration-v2/runOutput.ts";
 import * as ThreadLaunch from "../../../orchestration-v2/ThreadLaunchService.ts";
@@ -222,6 +223,21 @@ const withSavedProjectSettings = Effect.gen(function* () {
   };
 });
 
+/** Matches ProjectService's normalization so snapshot lookups hit and bogus paths do not scan. */
+const modelValidationCwd = Effect.fn("mcp.projectModelValidationCwd")(function* (
+  workspaceRoot: string,
+) {
+  const path = yield* Path.Path;
+  const fileSystem = yield* FileSystem.FileSystem;
+  const normalized = path.resolve(expandHomePath(workspaceRoot, yield* HostProcess.HomeDirectory));
+  if (workspaceRoot.trim() !== workspaceRoot) return undefined;
+  const isDirectory = yield* fileSystem.stat(normalized).pipe(
+    Effect.map((info) => info.type === "Directory"),
+    Effect.orElseSucceed(() => false),
+  );
+  return isDirectory ? normalized : undefined;
+});
+
 // A project started from its title saves no defaults, so its record is accurate when the read fails.
 const withSavedProjectSettingsAfterCreate = withSavedProjectSettings.pipe(
   Effect.orElseSucceed(() => (project: ProjectRecord) => project),
@@ -333,55 +349,16 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
                 ),
               }
             : input.workspaceStrategy;
-        let validatedModelSelection = input.modelSelection;
-        if (!replaying && input.modelSelection !== undefined) {
-          const requestedSelection = input.modelSelection;
-          const { instanceId, model } = requestedSelection;
-          const registry = yield* ProviderRegistry.ProviderRegistry;
-          // The thread runs in this folder, whose own provider config can add models.
-          const cwd =
-            workspaceStrategy?.type === "existing_worktree"
-              ? workspaceStrategy.worktreePath
-              : project?.workspaceRoot;
-          const validateSelection = Effect.fn("mcp.validateLaunchModelSelection")(function* (
-            providers: ReadonlyArray<ServerProvider>,
-          ): Effect.fn.Return<ModelSelection, OrchestratorMcpFailure> {
-            const provider = OrchestrationMcp.withWorkspaceModels(providers, cwd).find(
-              (candidate) => candidate.instanceId === instanceId,
-            );
-            if (provider === undefined) return requestedSelection;
-            yield* OrchestrationMcp.requireAdvertisedModel(provider, model);
-            const options = yield* OrchestrationMcp.validateModelOptions(
-              provider,
-              model,
-              requestedSelection.options,
-            );
-            return options === undefined || options === requestedSelection.options
-              ? requestedSelection
-              : { ...requestedSelection, options };
-          });
-          const checked = validateSelection(yield* registry.getProviders);
-          validatedModelSelection = yield* cwd === undefined
-            ? checked
-            : checked.pipe(
-                Effect.catchIf(
-                  (error) => error.code === "model_unavailable",
-                  () =>
-                    Project.ProjectService.pipe(
-                      Effect.flatMap((projects) => projects.workspaceScanDirectory(cwd)),
-                      Effect.flatMap((scanCwd) =>
-                        registry.refreshWorkspaceSnapshot({
-                          instanceId,
-                          cwd,
-                          scanCwd,
-                          modelsOnly: true,
-                        }),
-                      ),
-                      Effect.flatMap(validateSelection),
-                    ),
-                ),
+        const validatedModelSelection =
+          replaying || input.modelSelection === undefined
+            ? input.modelSelection
+            : yield* OrchestrationMcp.validateModelSelection(
+                input.modelSelection,
+                // The thread runs in this folder, whose own provider config can add models.
+                workspaceStrategy?.type === "existing_worktree"
+                  ? workspaceStrategy.worktreePath
+                  : project?.workspaceRoot,
               );
-        }
         const projectSettings =
           replaying || project === undefined
             ? undefined
@@ -601,9 +578,23 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
             ...(created.commitError === undefined ? {} : { commitError: created.commitError }),
           };
         }
+        const defaultModelSelection =
+          input.defaultModelSelection == null
+            ? input.defaultModelSelection
+            : yield* OrchestrationMcp.validateModelSelection(
+                input.defaultModelSelection,
+                yield* modelValidationCwd(workspaceRoot),
+                { requireRegisteredProvider: true },
+              );
         const commandId = yield* newCommandId();
         const created = yield* projects
-          .create({ ...input, workspaceRoot, commandId, projectId: ProjectId.make(commandId) })
+          .create({
+            ...input,
+            ...(defaultModelSelection === undefined ? {} : { defaultModelSelection }),
+            workspaceRoot,
+            commandId,
+            projectId: ProjectId.make(commandId),
+          })
           .pipe(Effect.mapError(projectFailure));
         // Creation saved the requested defaults, so the bare record would report them as unset.
         return (yield* withSavedProjectSettings)(created);
@@ -612,11 +603,28 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
     // registered workspace is still refused.
     { linkedCallers: "allowed" },
   ),
-  oni_project_update: McpToolAccess.writesEnvironment((input) =>
+  oni_project_update: McpToolAccess.writesEnvironment(({ defaultModelSelection, ...input }) =>
     Effect.gen(function* () {
       const projects = yield* Project.ProjectService;
+      const checkedDefault =
+        defaultModelSelection == null
+          ? defaultModelSelection
+          : yield* OrchestrationMcp.validateModelSelection(
+              defaultModelSelection,
+              input.workspaceRoot !== undefined
+                ? yield* modelValidationCwd(input.workspaceRoot)
+                : yield* projects.getById(input.projectId).pipe(
+                    Effect.map((project) => Option.getOrUndefined(project)?.workspaceRoot),
+                    Effect.orElseSucceed(() => undefined),
+                  ),
+              { requireRegisteredProvider: true },
+            );
       const updated = yield* projects
-        .update({ ...input, commandId: yield* newCommandId() })
+        .update({
+          ...input,
+          ...(checkedDefault === undefined ? {} : { defaultModelSelection: checkedDefault }),
+          commandId: yield* newCommandId(),
+        })
         .pipe(Effect.mapError(projectFailure));
       return (yield* withSavedProjectSettings)(updated);
     }),

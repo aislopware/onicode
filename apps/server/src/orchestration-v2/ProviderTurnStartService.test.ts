@@ -524,6 +524,7 @@ function makeLocalCommandHarness(input: {
   readonly openFailure?: unknown;
   readonly ensureThreadFailure?: unknown;
   readonly historyReadFailureAfterFallback?: unknown;
+  readonly recoveryHistory?: ReadonlyArray<OrchestrationV2ThreadProjection["turnItems"][number]>;
   readonly resumeFailure?: ProviderAdapter.ProviderAdapterV2Error;
   readonly interruptOpen?: boolean;
   readonly interruptRunBeforeOpenFailure?: boolean;
@@ -1272,7 +1273,9 @@ function makeLocalCommandHarness(input: {
             } as never)
           : runInput.session.startTurn(runInput as never)
         ).pipe(Effect.orDie)
-      : input.failReadsAfterRunning === true || input.previousTurn !== undefined
+      : input.failReadsAfterRunning === true ||
+          input.previousTurn !== undefined ||
+          input.recoveryHistory !== undefined
         ? Effect.suspend(() =>
             providerBusy ? Effect.die("The previous provider turn is still running.") : Effect.void,
           )
@@ -1332,21 +1335,39 @@ function makeLocalCommandHarness(input: {
   const createWorktree = vi.fn<GitWorkflow.GitWorkflowService["Service"]["createWorktree"]>(() =>
     Effect.succeed({} as never),
   );
-  const getThreadRecords = vi.fn<ProjectionStore.ProjectionStoreV2Shape["getThreadRecords"]>((id) =>
-    Effect.succeed(id === parentThreadId ? parentRecords : projection),
+  const getThreadRecords = vi.fn<ProjectionStore.ProjectionStoreV2Shape["getThreadRecords"]>(
+    (id, _fields, filter) =>
+      Effect.succeed(
+        id === parentThreadId
+          ? parentRecords
+          : input.recoveryHistory === undefined
+            ? projection
+            : {
+                ...projection,
+                turnItems: input.recoveryHistory.filter(
+                  (item) =>
+                    (filter?.turnItemRunIds === undefined ||
+                      filter.turnItemRunIds.includes(item.runId)) &&
+                    (filter?.turnItemTypes === undefined ||
+                      filter.turnItemTypes.includes(item.type)),
+                ),
+              },
+      ),
   );
   const prepareProviderHandoff = vi.fn<
     ContextHandoffService.ContextHandoffServiceV2["Service"]["prepareProviderHandoff"]
   >((handoff) =>
-    input.sideChat?.nativeForkFrom === undefined
+    input.sideChat?.nativeForkFrom === undefined && input.recoveryHistory === undefined
       ? Effect.die("history read must fail first")
       : Effect.succeed({
           ...handoff,
-          id: ContextHandoffId.make("side-chat-fork-context"),
+          id: ContextHandoffId.make(
+            input.recoveryHistory !== undefined ? "recovery-handoff" : "side-chat-fork-context",
+          ),
           createdByProviderInstanceId: handoff.toProviderInstanceId,
           status: "ready",
           summaryMessageId: null,
-          summaryText: "PARENT_HISTORY",
+          summaryText: input.recoveryHistory !== undefined ? "RECOVERY_HISTORY" : "PARENT_HISTORY",
           updatedAt: handoff.createdAt,
         }),
   );
@@ -1380,6 +1401,23 @@ function makeLocalCommandHarness(input: {
           ),
         }),
   );
+  const getTurnStartHistory = vi.fn<ProjectionStore.ProjectionStoreV2Shape["getTurnStartHistory"]>(
+    (_threadId, runIds) =>
+      input.recoveryHistory !== undefined
+        ? Effect.succeed(
+            runIds === undefined
+              ? input.recoveryHistory
+              : input.recoveryHistory.filter((item) => runIds.includes(item.runId)),
+          )
+        : input.sideChat !== undefined || input.previousTurn !== undefined
+          ? Effect.succeed([])
+          : Effect.fail(
+              new ProjectionStore.ProjectionStoreReadError({
+                threadId,
+                cause: input.historyReadFailureAfterFallback,
+              }),
+            ),
+  );
   const getRun = vi.fn<ProjectionStore.ProjectionStoreV2Shape["getRun"]>((_threadId, id) =>
     Effect.as(
       failReadIfRunning,
@@ -1405,7 +1443,9 @@ function makeLocalCommandHarness(input: {
             }),
         }),
         IdAllocator.layer,
-        Layer.mock(TurnItemPositionStore.TurnItemPositionStoreV2)({}),
+        Layer.mock(TurnItemPositionStore.TurnItemPositionStoreV2)({
+          allocate: () => Effect.succeed(1),
+        }),
         Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({
           runForThread: input.runSetup ?? (() => Effect.succeed({ status: "no-script" })),
         }),
@@ -1445,15 +1485,7 @@ function makeLocalCommandHarness(input: {
           getTurnStartContext,
           getRuntimeRecoveryProjection,
           getRun,
-          getTurnStartHistory: () =>
-            input.sideChat !== undefined || input.previousTurn !== undefined
-              ? Effect.succeed([])
-              : Effect.fail(
-                  new ProjectionStore.ProjectionStoreReadError({
-                    threadId,
-                    cause: input.historyReadFailureAfterFallback,
-                  }),
-                ),
+          getTurnStartHistory,
         }),
         Layer.mock(ProviderSessionManager.ProviderSessionManagerV2)({
           open,
@@ -1487,6 +1519,7 @@ function makeLocalCommandHarness(input: {
     interruptRun,
     getThreadRecords,
     getTurnStartContext,
+    getTurnStartHistory,
     getRuntimeRecoveryProjection,
     getRun,
     setProjection: (next: OrchestrationV2ThreadProjection) => {
@@ -3655,6 +3688,98 @@ effectIt.effect("fails the run instead of replacing a native thread another clie
         failure: { class: "provider_error", message: detail },
       },
     ]);
+  }),
+);
+
+effectIt.effect("recovery handoff reads only post-boundary runs from turn start history", () =>
+  Effect.gen(function* () {
+    const now = yield* DateTime.now;
+    const preClearRunId = RunId.make("pre-clear-run");
+    const clearRunId = RunId.make("clear-run");
+    const postClearRunId = RunId.make("post-clear-run");
+    const makeUserItem = (id: string, itemRunId: RunId, ordinal: number, text: string) => ({
+      id: TurnItemId.make(id),
+      threadId: ThreadId.make("native-account-thread"),
+      runId: itemRunId,
+      nodeId: null,
+      providerThreadId: ProviderThreadId.make("new-provider-thread"),
+      providerTurnId: null,
+      nativeItemRef: null,
+      parentItemId: null,
+      ordinal,
+      status: "completed" as const,
+      title: null,
+      startedAt: now,
+      completedAt: now,
+      updatedAt: now,
+      type: "user_message" as const,
+      createdBy: "user" as const,
+      creationSource: "server" as const,
+      messageId: MessageId.make(`msg:${id}`),
+      text,
+      inputIntent: "turn_start" as const,
+      attachments: [],
+    });
+    const preClearItem = makeUserItem("pre-clear-item", preClearRunId, 1, "Before clear");
+    const clearItem = makeUserItem("clear-item", clearRunId, 2, "After clear");
+    const postClearItem = makeUserItem("post-clear-item", postClearRunId, 3, "Follow-up");
+    const harness = makeLocalCommandHarness({
+      text: "Continue",
+      resumeFailure: new ProviderAdapter.ProviderAdapterEventStreamError({
+        driver: ProviderDriverKind.make("codex"),
+        providerSessionId: ProviderSessionId.make("resume-provider-session"),
+        cause: "native thread is gone",
+      }),
+      recoveryHistory: [preClearItem, clearItem, postClearItem],
+    });
+    const current = harness.projection();
+    const currentRun = current.runs[0]!;
+    harness.setProjection({
+      ...current,
+      runs: [
+        {
+          ...currentRun,
+          id: preClearRunId,
+          ordinal: 1,
+          activeAttemptId: null,
+          status: "completed",
+          startedAt: now,
+          completedAt: now,
+        },
+        {
+          ...currentRun,
+          id: clearRunId,
+          ordinal: 2,
+          activeAttemptId: null,
+          status: "completed",
+          freshContext: true,
+          startedAt: now,
+          completedAt: now,
+        },
+        {
+          ...currentRun,
+          id: postClearRunId,
+          ordinal: 3,
+          activeAttemptId: null,
+          status: "completed",
+          startedAt: now,
+          completedAt: now,
+        },
+        { ...currentRun, ordinal: 4 },
+      ],
+    });
+
+    yield* harness.start;
+
+    expect(harness.getTurnStartHistory).toHaveBeenCalledWith(current.thread.id, [
+      clearRunId,
+      postClearRunId,
+    ]);
+    expect(harness.prepareProviderHandoff).toHaveBeenCalledWith(
+      expect.objectContaining({
+        items: [clearItem, postClearItem],
+      }),
+    );
   }),
 );
 

@@ -19,6 +19,8 @@ import {
   RuntimeRequestId,
   ThreadId,
   TurnItemId,
+  type ModelSelection,
+  type ServerProvider,
   type OrchestrationV2ServerCommand,
   type OrchestrationV2ProjectedTurnItem,
   type OrchestrationV2ThreadShell,
@@ -84,7 +86,14 @@ const decodeThreadSearchResult = Schema.decodeUnknownEffect(
   ThreadToolkit.tools.oni_thread_search.successSchema,
 );
 
+// oni_thread_configure checks a model against the providers.
+const layerModelCatalog = Layer.mergeAll(
+  Layer.mock(ProviderRegistry.ProviderRegistry)({}),
+  Layer.mock(ProjectService.ProjectService)({}),
+);
+
 const layerThreadToolkit = McpHttpServer.layerThreadToolkit.pipe(
+  Layer.provide(layerModelCatalog),
   Layer.provide(Layer.mock(ThreadSearch.ThreadSearch)({})),
   Layer.provide(Layer.mock(ScheduledTaskService.ScheduledTaskService)({})),
   Layer.provide(Layer.mock(PeerForwarding.PeerForwarding)({})),
@@ -887,6 +896,7 @@ it.effect("search names the calling thread, so an agent can tell its own match a
       McpHttpServer.layerThreadToolkit.pipe(
         Layer.provideMerge(McpHttpServer.layerInProcessMcpServer),
         Layer.provide(NodeCrypto.layer),
+        Layer.provide(layerModelCatalog),
         Layer.provide(McpToolAccessTestkit.liveThreadsLayer),
         Layer.provide(
           Layer.mock(ThreadSearch.ThreadSearch)({
@@ -981,6 +991,146 @@ it.effect("a read-only client reads threads and is refused every write before it
   ),
 );
 const dispatched: Array<string> = [];
+
+it.effect("oni_thread_configure refuses a model or option its provider does not advertise", () => {
+  const codex = ProviderInstanceId.make("codex");
+  const shell = McpToolAccessTestkit.liveThreadShell(threadId);
+  const projection = McpToolAccessTestkit.idleThreadProjection(shell);
+  const provider: ServerProvider = {
+    instanceId: codex,
+    driver: ProviderDriverKind.make("codex"),
+    enabled: true,
+    installed: true,
+    status: "ready",
+    version: null,
+    auth: { status: "authenticated" },
+    checkedAt: "2026-01-01T00:00:00Z",
+    models: [
+      {
+        slug: "gpt-5",
+        name: "GPT-5",
+        isCustom: false,
+        capabilities: {
+          optionDescriptors: [
+            {
+              id: "effort",
+              role: "reasoning",
+              label: "Effort",
+              type: "select",
+              options: [
+                { id: "high", label: "High" },
+                { id: "xhigh", label: "Extra High" },
+              ],
+            },
+            { id: "ultracode", label: "Ultracode", type: "boolean" },
+          ],
+        },
+      },
+    ],
+    slashCommands: [],
+    skills: [],
+  };
+  const configured: Array<OrchestrationV2ServerCommand> = [];
+  return Effect.gen(function* () {
+    const server = yield* McpServer.McpServer;
+    const configure = (model: string, options?: ModelSelection["options"]) =>
+      server
+        .callTool({
+          name: "oni_thread_configure",
+          arguments: { modelSelection: { instanceId: codex, model, ...(options && { options }) } },
+        })
+        .pipe(
+          Effect.provideService(McpInvocationContext.McpInvocationContext, scope),
+          Effect.provideService(McpSchema.McpServerClient, client),
+        );
+
+    expect(declaredFailure(yield* configure("gpt-unadvertised"))).toMatchObject({
+      code: "model_unavailable",
+      message: expect.stringContaining("Model gpt-unadvertised is not advertised"),
+    });
+    expect(
+      declaredFailure(yield* configure("gpt-5", [{ id: "thought_level", value: "high" }])),
+    ).toMatchObject({
+      code: "invalid_request",
+      message: expect.stringContaining("Unknown option thought_level"),
+    });
+    expect(configured).toEqual([]);
+
+    // The project folder's own provider config lists a model only a fresh scan finds.
+    expect((yield* configure("folder-local")).isError).toBe(false);
+    expect((yield* configure("gpt-5", [{ id: "effort", value: "ultracode" }])).isError).toBe(false);
+    expect(
+      configured.map((command) => ("modelSelection" in command ? command.modelSelection : null)),
+    ).toEqual([
+      { instanceId: codex, model: "folder-local" },
+      {
+        instanceId: codex,
+        model: "gpt-5",
+        options: [
+          { id: "effort", value: "xhigh" },
+          { id: "ultracode", value: true },
+        ],
+      },
+    ]);
+  }).pipe(
+    Effect.provide(
+      McpHttpServer.layerThreadToolkit.pipe(
+        Layer.provideMerge(McpHttpServer.layerInProcessMcpServer),
+        Layer.provide(NodeCrypto.layer),
+        Layer.provide(
+          Layer.mock(ProviderRegistry.ProviderRegistry)({
+            getProviders: Effect.succeed([provider]),
+            refreshWorkspaceSnapshot: ({ cwd }) =>
+              Effect.succeed([
+                {
+                  ...provider,
+                  workspaceSnapshots: [
+                    {
+                      cwd,
+                      checkedAt: "2026-01-01T00:00:00Z",
+                      slashCommands: [],
+                      skills: [],
+                      models: [
+                        ...provider.models,
+                        {
+                          slug: "folder-local",
+                          name: "Local",
+                          isCustom: false,
+                          capabilities: null,
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ]),
+          }),
+        ),
+        Layer.provide(
+          Layer.mock(ProjectService.ProjectService)({
+            getById: () => Effect.succeedSome({ workspaceRoot: "/projects/x" } as never),
+            workspaceScanDirectory: (cwd) => Effect.succeed(cwd),
+          }),
+        ),
+        Layer.provide(
+          Layer.mock(ThreadManagement.ThreadManagementService)({
+            getThreadShell: () => Effect.succeed(shell),
+            getProjectThreadRecords: () => Effect.succeed(projection),
+            dispatch: (command) =>
+              Effect.sync(() => {
+                configured.push(command);
+                return { sequence: configured.length } as never;
+              }),
+          }),
+        ),
+        Layer.provide(Layer.mock(ThreadSearch.ThreadSearch)({})),
+        Layer.provide(Layer.mock(ScheduledTaskService.ScheduledTaskService)({})),
+        Layer.provide(Layer.mock(PeerForwarding.PeerForwarding)({})),
+        Layer.provide(Layer.mock(PeerLinkRequests.PeerLinkRequests)({})),
+        Layer.provide(Layer.mock(PeerLinks.PeerLinks)({})),
+      ),
+    ),
+  );
+});
 
 it.effect("hides act-as-caller tools from a client caller", () =>
   Effect.gen(function* () {
@@ -1128,6 +1278,7 @@ it.effect.each([
       McpHttpServer.layerThreadToolkit.pipe(
         Layer.provideMerge(McpHttpServer.layerInProcessMcpServer),
         Layer.provide(NodeCrypto.layer),
+        Layer.provide(layerModelCatalog),
         Layer.provide(Layer.mock(ThreadManagement.ThreadManagementService)({})),
         Layer.provide(Layer.mock(ThreadSearch.ThreadSearch)({})),
         Layer.provide(Layer.mock(PeerForwarding.PeerForwarding)({})),
@@ -1167,6 +1318,7 @@ it.effect("run_scheduled_task_now reports why a started run failed to dispatch",
       McpHttpServer.layerThreadToolkit.pipe(
         Layer.provideMerge(McpHttpServer.layerInProcessMcpServer),
         Layer.provide(NodeCrypto.layer),
+        Layer.provide(layerModelCatalog),
         Layer.provide(Layer.mock(ThreadManagement.ThreadManagementService)({})),
         Layer.provide(Layer.mock(ThreadSearch.ThreadSearch)({})),
         Layer.provide(Layer.mock(PeerForwarding.PeerForwarding)({})),

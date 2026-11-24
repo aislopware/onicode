@@ -10215,22 +10215,32 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       mergeBackSourceProjection === null || mergeBackSourceRun === null
         ? []
         : yield* Effect.gen(function* () {
+            const sourceThreadId = mergeBackSourceProjection.thread.id;
             const sourceRuns = mergeBackSourceProjection.runs.filter(
               (run) => run.ordinal <= mergeBackSourceRun.ordinal,
             );
-            const rawItems = yield* readHandoffItems(
-              mergeBackSourceProjection.thread.id,
-              sourceRuns.map((run) => run.id),
-            );
             // Everything since the fork's latest /clear merges back, its scheduled sessions too.
+            // Fresh runs' prompts alone place it, so rows from before it are never read.
             const conversation = conversationRuns(
               {
                 runs: sourceRuns,
-                turnItems: rawItems,
+                turnItems: yield* readFreshRunUserMessages(
+                  projectionStore,
+                  sourceThreadId,
+                  sourceRuns,
+                ).pipe(
+                  Effect.mapError(
+                    (cause) => new OrchestratorProjectionError({ threadId: sourceThreadId, cause }),
+                  ),
+                ),
                 providerThreads: mergeBackSourceProjection.providerThreads,
               },
               undefined,
               { withScheduledRuns: true },
+            );
+            const rawItems = yield* readHandoffItems(
+              sourceThreadId,
+              sourceRuns.flatMap((run) => (conversation.runIds.has(run.id) ? [run.id] : [])),
             );
             return visibleConversationItems(
               mergeBackSourceProjection,
@@ -14942,6 +14952,35 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       });
     }
     if (
+      subagent?.origin === "app_owned" &&
+      subagent.childThreadId === null &&
+      subagent.remoteChild !== undefined &&
+      subagent.runId === command.runId
+    ) {
+      // A peer-delegated task ends here; its follower then stops the thread in the linked environment.
+      return yield* subagent.result === null
+        ? dispatchRemoteDelegatedTaskComplete(
+            {
+              type: "delegated_task.remote.complete",
+              commandId: command.commandId,
+              parentThreadId: command.threadId,
+              taskId: subagent.id,
+              status: "interrupted",
+              result: "Stopped.",
+            },
+            events,
+          )
+        : dispatchRemoteDelegatedTaskStop(
+            {
+              type: "delegated_task.remote.stop",
+              commandId: command.commandId,
+              parentThreadId: command.threadId,
+              taskId: subagent.id,
+            },
+            events,
+          );
+    }
+    if (
       subagent === undefined ||
       subagent.runId !== command.runId ||
       subagent.origin !== "provider_native" ||
@@ -17862,6 +17901,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
               ({ event }) =>
                 event.type === "subagent.updated" &&
                 event.payload.completionDelivery?.state === "claimed",
+            )) ||
+          (command.type === "subagent.stop" &&
+            committed.storedEvents.some(
+              ({ event }) =>
+                event.type === "subagent.updated" && event.payload.remoteChild !== undefined,
             ))
         ) {
           yield* offerDelegatedCompletionDeliveriesAfterCommit(command.threadId, restore);

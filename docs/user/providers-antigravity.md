@@ -97,13 +97,15 @@ or send `/clear` when you need a fresh context.
 
 ### Skills and attachments
 
-Put project skills in `.agents/skills`. Onicode also reads `.gemini/skills` and the
-legacy `.agent/skills` directory. Among these project locations, the first copy
-wins in this order: `.gemini/skills`, `.agents/skills`, `.agent/skills`. See
+Put each project skill in its own folder, as `.agents/skills/<name>/SKILL.md`.
+Antigravity also reads the legacy `.agent/skills` directory, but not
+`.gemini/skills`, and ignores a `SKILL.md` placed directly in a skills folder.
+When two skills share a name, the project copy wins over your own, and
+`.agent/skills` wins over `.agents/skills`. See
 [commands and skills](./composer.md#commands-and-skills) for invoking them.
 
 Skills for every project go in `~/.gemini/config/skills` or
-`~/.gemini/antigravity-cli/skills`. Antigravity does not read `~/.agents/skills`
+`~/.gemini/antigravity-cli/skills`; the second wins on a name clash. Antigravity does not read `~/.agents/skills`
 on its own; to share a folder like that one, list it in `~/.gemini/config/skills.json`
 (or a project's `.agents/skills.json`), and Onicode shows the skills it declares,
 honoring `inherits`, `include_only`, and `exclude`. Use absolute paths there:
