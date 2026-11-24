@@ -2591,6 +2591,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
           webContents: wc,
           debugger: control.debugger,
           cookiesCleared: () => runPromise(browserSession.cookiesCleared(wc.session)),
+          annotating: () => Ref.getUnsafe(pickSessionsRef).has(tabId),
         });
         // CDP cannot recover a failure that happened before it attached.
         const { navStatus } = afterAttach;
