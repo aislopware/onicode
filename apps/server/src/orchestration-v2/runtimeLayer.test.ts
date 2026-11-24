@@ -5647,6 +5647,17 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
       reads: [{ lint: "success", test: "failure" }],
       told: [["test"]],
     },
+    // The last watch's unfinished check baseline is complete with the start's passing read.
+    {
+      label: "passing beside a run awaiting approval, last check baseline unfinished",
+      atStart: "passing",
+      lastHeadSha: "ad70160aaa",
+      lastAwaitingApproval: true,
+      lastChecksBaseline: true,
+      start: { checksPending: false, checksPassed: true, headSha: "ad70160aaa" },
+      reads: [{ lint: "success", test: "failure" }],
+      told: [["test"]],
+    },
     // A push that left the conflict in place is told again, though its CI had passed.
     {
       label: "rewatched passing but conflicting",
@@ -5736,6 +5747,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
             conflicting: "lastConflicting" in row,
             failedChecks: "lastUnread" in row ? [] : ["test"],
             ...("lastPassed" in row && { passed: true }),
+            ...("lastChecksBaseline" in row && { awaitingBaseline: "checks" as const }),
             ...("lastAwaitingApproval" in row && {
               awaitingApproval: ["https://ci.example/runs/1"],
               approvalAnnounced: true,

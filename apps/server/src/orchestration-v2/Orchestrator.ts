@@ -5837,7 +5837,12 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                         conflicting: lastWatch.conflicting,
                         rebaseRequired: lastWatch.rebaseRequired,
                       }),
-                      awaitingBaseline: ended ? lastWatch?.awaitingBaseline : "all",
+                      // A passing start read is a complete check baseline; a conflict one stays.
+                      awaitingBaseline: !ended
+                        ? "all"
+                        : startReadPassed && lastWatch?.awaitingBaseline === "checks"
+                          ? undefined
+                          : lastWatch?.awaitingBaseline,
                       ...(!passedSinceLastWatch &&
                         lastWatch?.owedChecks !== undefined && {
                           owedChecks: lastWatch.owedChecks,
