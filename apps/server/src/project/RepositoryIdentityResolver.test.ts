@@ -257,6 +257,35 @@ it.layer(NodeServices.layer)("RepositoryIdentityResolverLive", (it) => {
     }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
   );
 
+  it.effect("keeps a login embedded in a remote URL out of the identity", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const cwd = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "oni-repository-identity-credentials-test-",
+      });
+
+      yield* git(cwd, ["init"]);
+      yield* git(cwd, [
+        "remote",
+        "add",
+        "origin",
+        "https://me:origin-secret@github.com/me/onicode.git",
+      ]);
+      yield* git(cwd, [
+        "remote",
+        "add",
+        "upstream",
+        "https://x-access-token:upstream-secret@github.com/Onicode/onicode.git?token=query-secret",
+      ]);
+
+      const resolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
+      const identity = yield* resolver.resolve(cwd);
+      expect(identity?.locator.remoteUrl).toBe("https://github.com/Onicode/onicode.git");
+      expect(identity?.origin?.remoteUrl).toBe("https://github.com/me/onicode.git");
+      expect(JSON.stringify(identity)).not.toContain("secret");
+    }).pipe(Effect.provide(RepositoryIdentityResolver.layer)),
+  );
+
   it.effect.each(["repo", "repo ", ...lineBreakSuffixes.map((suffix) => `repo${suffix}`)])(
     "returns the git top-level root path when resolving from a nested workspace in %j",
     (rootName) =>

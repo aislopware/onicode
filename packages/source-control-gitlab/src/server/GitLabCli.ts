@@ -18,6 +18,7 @@ import {
 } from "@onicode/contracts";
 
 import * as HostProcess from "@onicode/shared/HostProcess";
+import { parseGitRemoteHost } from "@onicode/source-control-core/shared/definition";
 import * as SourceControlHost from "@onicode/source-control-core/server/SourceControlHost";
 import {
   decodeGitLabMergeRequestJson,
@@ -322,7 +323,7 @@ export class GitLabCli extends Context.Service<
     readonly execute: (input: {
       readonly cwd: string;
       readonly host?: string | undefined;
-      /** A host taken from caller input, not from a project remote. See `ENVIRONMENT_TOKEN_VARIABLES`. */
+      /** A host named in the arguments instead of through `host`. See `ENVIRONMENT_TOKEN_VARIABLES`. */
       readonly callerNamedHost?: string | undefined;
       readonly args: ReadonlyArray<string>;
       readonly timeoutMs?: number;
@@ -521,11 +522,12 @@ const UNREACHABLE =
 
 /**
  * These are the login for glab's default host (GITLAB_HOST, GITLAB_URI or GL_HOST, else
- * gitlab.com). glab before 1.126 sends them to any host a command names, so a host a caller names
- * runs without them and falls back to that host's own `glab auth login`.
+ * gitlab.com). glab before 1.126 sends them to any host a command names, so a command for any
+ * other host runs without them and falls back to that host's own `glab auth login`. With no host
+ * named, glab picks one from the checkout's remotes.
  */
 const ENVIRONMENT_TOKEN_VARIABLES = ["GITLAB_TOKEN", "GITLAB_ACCESS_TOKEN", "OAUTH_TOKEN"] as const;
-const WITHOUT_ENVIRONMENT_TOKEN = Object.fromEntries(
+export const WITHOUT_ENVIRONMENT_TOKEN = Object.fromEntries(
   ENVIRONMENT_TOKEN_VARIABLES.map((name) => [name, ""]),
 );
 
@@ -543,26 +545,73 @@ const hostOf = (value: string, apiScheme: "http" | "https") => {
   }
 };
 
+// A per-host api_protocol in glab's config is not read; there, explicit ports still differ.
+const apiSchemeOf = (environment: NodeJS.ProcessEnv) =>
+  environment.GLAB_API_PROTOCOL?.trim().toLowerCase() === "http" ? "http" : "https";
+
+/** glab's default host as `hostOf` spells it, or undefined when it does not parse. */
+export const defaultHost = (environment: NodeJS.ProcessEnv) =>
+  // Like glab, the first set variable wins, even a blank one.
+  hostOf(
+    [environment.GITLAB_HOST, environment.GITLAB_URI, environment.GL_HOST].find(Boolean) ??
+      "gitlab.com",
+    apiSchemeOf(environment),
+  );
+
+/** Whether the environment token is the login for `host`. */
+export const isDefaultHost = (host: string, environment: NodeJS.ProcessEnv) => {
+  const fallback = defaultHost(environment);
+  return fallback !== undefined && hostOf(host, apiSchemeOf(environment)) === fallback;
+};
+
+export const hasEnvironmentToken = (environment: NodeJS.ProcessEnv) =>
+  ENVIRONMENT_TOKEN_VARIABLES.some((name) => environment[name]?.trim());
+
 /** @public */
 export const make = Effect.gen(function* () {
   const { process } = yield* SourceControlHost.SourceControlHost;
   const fileSystem = yield* FileSystem.FileSystem;
   const environment = yield* HostProcess.Environment;
-  // A per-host api_protocol in glab's config is not read; there, explicit ports still differ.
-  const apiScheme =
-    environment.GLAB_API_PROTOCOL?.trim().toLowerCase() === "http" ? "http" : "https";
-  // Like glab, the first set variable wins, even a blank one.
-  const defaultHost = hostOf(
-    [environment.GITLAB_HOST, environment.GITLAB_URI, environment.GL_HOST].find(Boolean) ??
-      "gitlab.com",
-    apiScheme,
-  );
+  const apiScheme = apiSchemeOf(environment);
+  const defaultGitLabHost = defaultHost(environment);
+  const defaultHostname = defaultGitLabHost?.replace(/:\d+$/, "");
 
-  const environmentTokenFor = (callerNamedHost: string | undefined) =>
-    callerNamedHost !== undefined &&
-    (defaultHost === undefined || hostOf(callerNamedHost, apiScheme) !== defaultHost)
-      ? WITHOUT_ENVIRONMENT_TOKEN
-      : {};
+  const environmentTokenFor = (namedHost: string) =>
+    isDefaultHost(namedHost, environment) ? {} : WITHOUT_ENVIRONMENT_TOKEN;
+
+  // With no host named, glab picks one from the checkout's remotes.
+  const checkoutHasOtherHost = (cwd: string) =>
+    process
+      .run({
+        operation: "GitLabCli.remotes",
+        command: "git",
+        args: ["remote", "-v"],
+        cwd,
+        allowNonZeroExit: true,
+      })
+      .pipe(
+        Effect.map((result) =>
+          result.stdout.split("\n").some((line) => {
+            const remote = parseGitRemoteHost(line.trim().split(/\s+/)[1] ?? "");
+            return remote !== null && remote.hostname !== defaultHostname;
+          }),
+        ),
+        Effect.orElseSucceed(() => true),
+      );
+
+  const environmentTokenForRun = (input: Parameters<GitLabCli["Service"]["execute"]>[0]) => {
+    const named = [input.host, input.callerNamedHost].filter((host) => host !== undefined);
+    if (named.length > 0) {
+      return Effect.succeed(
+        named.every((host) => isDefaultHost(host, environment)) ? {} : WITHOUT_ENVIRONMENT_TOKEN,
+      );
+    }
+    return hasEnvironmentToken(environment)
+      ? checkoutHasOtherHost(input.cwd).pipe(
+          Effect.map((other) => (other ? WITHOUT_ENVIRONMENT_TOKEN : {})),
+        )
+      : Effect.succeed({});
+  };
 
   // GitLab answers a signed-out read of a private project with the 404 of a missing one.
   const signedIn = (cwd: string, host: string) =>
@@ -590,7 +639,7 @@ export const make = Effect.gen(function* () {
     input: Parameters<GitLabCli["Service"]["execute"]>[0],
     mapError: (error: VcsError) => GitLabCliError,
   ) =>
-    Effect.suspend(() => {
+    Effect.flatMap(environmentTokenForRun(input), (token) => {
       // The error keeps no stderr, so an unreachable GitLab is recognised while stderr is at hand.
       let unreachable = false;
       return process
@@ -602,7 +651,7 @@ export const make = Effect.gen(function* () {
           env: {
             // glab may otherwise prefer a different checkout remote.
             ...(input.host === undefined ? {} : { GITLAB_HOST: input.host }),
-            ...environmentTokenFor(input.callerNamedHost),
+            ...token,
           },
           classifyFailure: (stderr) => {
             const failureKind = classifyGlabFailure(stderr);
@@ -797,7 +846,7 @@ export const make = Effect.gen(function* () {
           )
             return Effect.fail(error);
           const cause = error.cause;
-          const checkedHost = host ?? defaultHost;
+          const checkedHost = host ?? defaultGitLabHost;
           return (
             checkedHost === undefined ? Effect.succeed(true) : signedIn(input.cwd, checkedHost)
           ).pipe(
