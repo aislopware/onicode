@@ -5656,6 +5656,12 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
               ? command.headSha
               : undefined;
           const lastWatch = readHead === undefined ? ended : undefined;
+          // The caller read CI passing where the last watch saw it unfinished or failing.
+          const passedSinceLastWatch =
+            command.type === "thread.pull-request.watch" &&
+            command.checksPassed === true &&
+            lastWatch !== undefined &&
+            !lastWatch.passed;
           const watch =
             command.type === "thread.pull-request-watch.sync"
               ? existing.watch?.startedAt === command.startedAt
@@ -5675,29 +5681,33 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                       // Watching again must not repeat check or conflict news the last watch told.
                       ...(readHead !== undefined && { passed: true }),
                       ...(lastWatch && {
-                        headSha: lastWatch.headSha,
+                        headSha: lastWatch.headSha ?? command.headSha ?? null,
                         // A fresh read found CI running with nothing failing, so the failures the
                         // last watch told are history: a rerun failing on this head is news.
                         failedChecks:
-                          command.type === "thread.pull-request.watch" &&
-                          command.checksPending === true
+                          passedSinceLastWatch ||
+                          (command.type === "thread.pull-request.watch" &&
+                            command.checksPending === true)
                             ? []
                             : lastWatch.failedChecks,
-                        passed: lastWatch.passed,
-                        passedChecks: lastWatch.passedChecks,
+                        passed: passedSinceLastWatch || lastWatch.passed,
+                        passedChecks: passedSinceLastWatch ? [] : lastWatch.passedChecks,
                         conflicting: lastWatch.conflicting,
                         rebaseRequired: lastWatch.rebaseRequired,
                       }),
                       awaitingBaseline: ended ? lastWatch?.awaitingBaseline : "all",
-                      ...(lastWatch?.owedChecks !== undefined && {
-                        owedChecks: lastWatch.owedChecks,
-                      }),
-                      ...(lastWatch?.awaitingApproval !== undefined && {
-                        awaitingApproval: lastWatch.awaitingApproval,
-                      }),
-                      ...(lastWatch?.approvalAnnounced !== undefined && {
-                        approvalAnnounced: lastWatch.approvalAnnounced,
-                      }),
+                      ...(!passedSinceLastWatch &&
+                        lastWatch?.owedChecks !== undefined && {
+                          owedChecks: lastWatch.owedChecks,
+                        }),
+                      ...(!passedSinceLastWatch &&
+                        lastWatch?.awaitingApproval !== undefined && {
+                          awaitingApproval: lastWatch.awaitingApproval,
+                        }),
+                      ...(!passedSinceLastWatch &&
+                        lastWatch?.approvalAnnounced !== undefined && {
+                          approvalAnnounced: lastWatch.approvalAnnounced,
+                        }),
                       // CI pending with no failure yet at the start may fail before the first
                       // read. A caller's fresh read beats the link's last sync; a finished-checks
                       // answer kept from the last watch may be an older head's.
@@ -5706,9 +5716,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                         ? command.checksPending
                         : existing.snapshot?.checksState === "pending" ||
                           lastWatch?.checksPending === true) && { checksPending: true }),
-                      ...(lastWatch?.checksAwaitedSince !== undefined && {
-                        checksAwaitedSince: lastWatch.checksAwaitedSince,
-                      }),
+                      ...(!passedSinceLastWatch &&
+                        lastWatch?.checksAwaitedSince !== undefined && {
+                          checksAwaitedSince: lastWatch.checksAwaitedSince,
+                        }),
                       remarksThrough: startedAt,
                       remarkIds: [],
                       wakes: 0,

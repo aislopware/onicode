@@ -5559,6 +5559,33 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
       reads: [{ lint: "success", test: "success" }],
       told: [[]],
     },
+    // That watch's start read a head, so a push before the first read is still news.
+    {
+      label: "passing, then pushed and failed, last watch read no head",
+      atStart: "passing",
+      lastHeadSha: null,
+      lastUnread: true,
+      start: { checksPending: false, checksPassed: true, headSha: "0ld0000000" },
+      reads: [{ lint: "success", test: "failure" }],
+      told: [["test"]],
+    },
+    // CI the last watch saw failing passed before this start read it, so the pass is not news.
+    {
+      label: "passing after the last watch failed without a head",
+      atStart: "passing",
+      lastHeadSha: null,
+      start: { checksPending: false, checksPassed: true, headSha: "ad70160aaa" },
+      reads: [{ lint: "success", test: "success" }],
+      told: [[]],
+    },
+    {
+      label: "passing after a rerun on the head the last watch failed",
+      atStart: "passing",
+      lastHeadSha: "ad70160aaa",
+      start: { checksPending: false, checksPassed: true, headSha: "ad70160aaa" },
+      reads: [{ lint: "success", test: "success" }],
+      told: [[]],
+    },
     // A push that left the conflict in place is told again, though its CI had passed.
     {
       label: "rewatched passing but conflicting",
