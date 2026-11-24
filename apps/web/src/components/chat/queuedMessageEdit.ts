@@ -86,14 +86,15 @@ export function matchRestorableQueuedAttachment(input: {
 
 /** Counts the queued attachments one paste restores, which the edit shows once it re-renders. */
 export function trackPastedRestores() {
-  let restored = 0;
-  const hasRoom = (reserved: number) => reserved < PROVIDER_SEND_TURN_MAX_ATTACHMENTS;
+  const restored = new Set<string>();
+  const hasRoom = (reserved: number) =>
+    reserved + restored.size < PROVIDER_SEND_TURN_MAX_ATTACHMENTS;
   return {
     hasRoom,
-    /** Whether the attachment fits the message's limit. */
-    restore: (_attachment: Pick<ChatAttachment, "id">, reserved: number) => {
-      if (reserved + restored >= PROVIDER_SEND_TURN_MAX_ATTACHMENTS) return false;
-      restored += 1;
+    /** Whether the attachment fits the message's limit; more chips of it take no more slots. */
+    restore: (attachment: Pick<ChatAttachment, "id">, reserved: number) => {
+      if (!restored.has(attachment.id) && !hasRoom(reserved)) return false;
+      restored.add(attachment.id);
       return true;
     },
   };
