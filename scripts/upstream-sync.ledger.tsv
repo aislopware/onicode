@@ -3574,3 +3574,4 @@ be0619a294	skip	T3 release pipeline: record-build-tag action and mobile-eas-prev
 5856c6ec68	take	taken with adaptation: windir fallback applied to Onicode's apps/server/src/service/bootService.ts (cloud/ removed)
 fdcb71a476	take	taken; kept Onicode's ellipsis placeholder
 cd128e7774	take	taken; kept Onicode's acpFailedBeforePrompt beside upstream's refusedBeforePrompt flag (they cover different errors); scenario ported to the desktop harness
+f82de6567c	take	taken as is
