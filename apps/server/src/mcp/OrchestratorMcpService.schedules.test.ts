@@ -146,6 +146,15 @@ it.effect("an MCP edit keeps a concurrent pause or edit of the fields it leaves 
       schedule: { everyMs: 300_000 },
     });
 
+    // Another client keeps one thread while an agent's edit works its mode out from the old one.
+    const unbound = yield* stored();
+    const remoded = yield* edit(
+      schedules.upsert({ ...unbound, requireExisting: true, threadMode: "fresh_session" }),
+      { freshSession: false },
+    );
+    expect(remoded._tag).toBe("Failure");
+    expect(yield* stored()).toMatchObject({ threadMode: "fresh_session" });
+
     // With nothing in between, the same edit saves.
     const saved = yield* edit(Effect.void, { title: "Renamed" });
     expect(saved._tag).toBe("Success");

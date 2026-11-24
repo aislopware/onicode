@@ -210,6 +210,21 @@ describe("a scheduled task save refused by another client's change", () => {
       savedThreadId: "thread:bound",
       threadMode: "fresh_session",
     });
+
+    // Nor may it undo a move, a workspace change or a model change.
+    const moved = {
+      ...current,
+      projectId: ProjectId.make("moved"),
+      workspaceStrategy: { type: "existing_worktree", worktreePath: "/checkout" },
+      modelSelection: { instanceId: ProviderInstanceId.make("claude"), model: "opus" },
+    } as const;
+    expect(rebaseDraft(edited, moved)).toMatchObject({
+      projectId: "moved",
+      workspaceMode: "existing_worktree",
+      existingWorktreePath: "/checkout",
+      modelKey: "claude:opus",
+      baseModelSelection: moved.modelSelection,
+    });
   });
 });
 

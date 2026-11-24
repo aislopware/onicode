@@ -1445,7 +1445,9 @@ it.effect("an editor's save is refused once the fields it loaded changed elsewhe
         Layer.mergeAll(
           ManagedPolicy.layerTest(),
           Layer.mock(ThreadLaunchService.ThreadLaunchService)({}),
-          Layer.mock(ThreadManagementService.ThreadManagementService)({}),
+          Layer.mock(ThreadManagementService.ThreadManagementService)({
+            getThreadShell: () => Effect.succeed(threadShell(ProjectId.make("project:test"))),
+          }),
           Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
             namedProjectsRoot: "/projects",
             isScratchProject: () => Effect.succeed(false),
@@ -1487,6 +1489,45 @@ it.effect("an editor's save is refused once the fields it loaded changed elsewhe
       yield* service.upsert({ ...save, enabled: false, expected: { ...loaded, enabled: false } });
       const saved = (yield* service.list()).tasks.find((entry) => entry.id === task.id)!;
       assert.deepInclude(saved, { enabled: false, prompt: "Triage and label" });
+
+      // Where and how it runs is checked too.
+      const bound = { ...task, threadId: ThreadId.make("thread:a"), threadMode: "continue" } as const;
+      const { title, prompt, enabled, schedule, projectId, threadId, threadMode } = bound;
+      const { workspaceStrategy, modelSelection } = bound;
+      const edit = {
+        ...bound,
+        prompt: "Triage and close",
+        expected: {
+          title,
+          prompt,
+          enabled,
+          schedule,
+          projectId,
+          threadId,
+          threadMode,
+          workspaceStrategy,
+          modelSelection,
+        },
+      } as const;
+      for (const change of [
+        { threadId: ThreadId.make("thread:b") },
+        { threadMode: "fresh_session" },
+        { projectId: ProjectId.make("project:moved") },
+        { workspaceStrategy: { type: "existing_worktree", worktreePath: "/checkout" } },
+        { modelSelection: { ...modelSelection, model: "gpt-5.5" } },
+      ] as const) {
+        yield* service.upsert(bound);
+        const { task: changed } = yield* service.upsert({ ...bound, ...change });
+        const stale = yield* service.upsert(edit).pipe(Effect.flip);
+        assert.include(stale.message, "changed while saving", JSON.stringify(change));
+        assert.deepEqual((yield* service.list()).tasks, [changed]);
+      }
+      // A thread the first run bound meanwhile is kept, so it refuses nothing.
+      yield* service.upsert(bound);
+      const unbound = { ...edit, threadId: null, expected: { ...edit.expected, threadId: null } };
+      const { task: kept } = yield* service.upsert(unbound);
+      assert.deepInclude(kept, { prompt: "Triage and close", threadId: bound.threadId });
+      yield* service.upsert({ ...task, unbindThread: true, enabled: false });
 
       // A checked save cannot bring back a task deleted meanwhile, even without requireExisting.
       yield* service.delete({ id: task.id });

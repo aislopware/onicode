@@ -13,6 +13,7 @@ import {
   createDraft,
   editDraft,
   hasScheduledTaskDraftChanges,
+  moveDraftToThread,
   rebaseScheduledTaskDraft,
   scheduledTaskDefaultModel,
   DEFAULT_SCHEDULE,
@@ -195,6 +196,26 @@ describe("scheduled task worktree base", () => {
     const bound = { ...current, threadId: ThreadId.make("thread:bound") } satisfies ScheduledTask;
     expect(rebaseScheduledTaskDraft(edited, bound)).toMatchObject({
       threadId: "thread:bound",
+      threadMode: "continue",
+    });
+    // Nor may it undo a move, a workspace change or a model change.
+    const moved = {
+      ...current,
+      projectId: ProjectId.make("moved"),
+      workspaceStrategy: { type: "existing_worktree", worktreePath: "/checkout" },
+      modelSelection: { instanceId: ProviderInstanceId.make("claude"), model: "opus" },
+    } satisfies ScheduledTask;
+    expect(rebaseScheduledTaskDraft(edited, moved)).toMatchObject({
+      projectId: "moved",
+      workspace: "existing_worktree",
+      checkoutPath: "/checkout",
+      modelSelection: moved.modelSelection,
+    });
+    // A thread the user picked stays, with its project and mode.
+    const thread = { id: ThreadId.make("thread:picked"), projectId: rootTask.projectId };
+    expect(rebaseScheduledTaskDraft(moveDraftToThread(edited, thread), moved)).toMatchObject({
+      projectId: rootTask.projectId,
+      threadId: "thread:picked",
       threadMode: "continue",
     });
   });
