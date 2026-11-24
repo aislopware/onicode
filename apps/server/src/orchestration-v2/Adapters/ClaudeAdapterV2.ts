@@ -9166,7 +9166,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 status: input.status,
                 countsForRun: false,
                 providerThreadId: input.context.input.providerThread.id,
-                providerTurnId: input.context.providerTurnId,
+                providerTurnId: subagent.providerTurnId,
                 nativeItemRef: {
                   driver: CLAUDE_PROVIDER,
                   nativeId: input.taskId,
