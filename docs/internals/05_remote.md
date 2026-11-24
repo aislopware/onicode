@@ -125,8 +125,9 @@ through `/api/preview/tunnel` on the environment's own origin:
 - **Media tickets.** Desktop main holds no environment credentials, so the renderer supplies a media
   ticket per connection (also tracking route switches).
 - **Forwarded ports and mobile preview are unauthenticated on purpose.** Forwards listen on plain
-  loopback like `ssh -L` (on Linux restricted to this OS user via `/proc/net/tcp`). Mobile device
-  preview opens its own SOCKS listener; on iOS
+  loopback like `ssh -L`, on Linux and macOS restricted to connections the system attributes to this
+  OS user (`/proc/net/tcp`, `lsof`); one whose owner cannot be read is refused, and Windows has no
+  owner check. Mobile device preview opens its own SOCKS listener; on iOS
   [`OniHttpRewriter`](../../apps/mobile/modules/oni-preview-tunnel/ios/OniHttpRewriter.swift) swaps
   loopback names for a stand-in host in plain HTTP heads and text bodies, since iOS never proxies
   loopback hosts.

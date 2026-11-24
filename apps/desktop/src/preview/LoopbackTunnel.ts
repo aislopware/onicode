@@ -26,6 +26,7 @@ import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import * as Semaphore from "effect/Semaphore";
+import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import * as Socket from "effect/socket/Socket";
 
 import * as ElectronApp from "../electron/ElectronApp.ts";
@@ -36,6 +37,7 @@ const ACCESS_TIMEOUT = "15 seconds";
 const PROBE_TIMEOUT = "3 seconds";
 const MAX_FORWARD_CONNECTIONS = 64;
 const CONNECT_TIMEOUT = "10 seconds";
+const OWNER_LOOKUP_TIMEOUT = "5 seconds";
 // Chromium accepts response heads up to this size.
 const MAX_HEAD_BYTES = 256 * 1024;
 const HEAD_END = Buffer.from("\r\n\r\n");
@@ -339,6 +341,31 @@ const connectionOwner = (
   return undefined;
 };
 
+interface ConnectionEnd {
+  readonly address: string;
+  readonly port: number;
+}
+
+/** One end as `lsof` takes and prints it: brackets around IPv6 only. */
+const lsofEnd = ({ address, port }: ConnectionEnd) =>
+  address.includes(":") ? `[${address}]:${port}` : `${address}:${port}`;
+
+/**
+ * The owner of the client's socket in `lsof -F un`, which prints a process as `p<pid>` and
+ * `u<uid>`, then each of its sockets as `n<local>-><remote>`. Without root it lists this user's
+ * processes only, so another user's client has no row.
+ */
+const lsofConnectionOwner = (output: string, client: ConnectionEnd, listener: ConnectionEnd) => {
+  const socket = `n${lsofEnd(client)}->${lsofEnd(listener)}`;
+  let owner: number | undefined;
+  for (const line of output.split("\n").map((line) => line.trim())) {
+    if (line.startsWith("p")) owner = undefined;
+    else if (line.startsWith("u")) owner = Number(line.slice(1));
+    else if (line === socket) return owner;
+  }
+  return undefined;
+};
+
 const pump =
   /* Runs for the life of the connection; a span per direction adds no diagnostic value. */
   Effect.fnUntraced(function* (
@@ -433,6 +460,7 @@ const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const platform = yield* HostProcess.Platform;
   const userId = yield* HostProcess.UserId;
+  const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const random = yield* SecureRandom.SecureRandom;
   const net = yield* NetService.NetService;
   const listenerScope = yield* Effect.scope;
@@ -592,24 +620,55 @@ const make = Effect.gen(function* () {
       (effect) => Effect.ignoreCause(effect),
     );
 
-  // A forward is plain TCP with no credentials to check, so on Linux it serves only clients of
-  // this OS user; macOS can't name a socket's owner, and any app there may reach a forward.
+  /** What the command printed, or nothing when it could not run or took too long. */
+  const commandOutput = (command: string, args: ReadonlyArray<string>) =>
+    spawner.string(ChildProcess.make(command, args, { stdin: "ignore", stderr: "ignore" })).pipe(
+      Effect.timeoutOption(OWNER_LOOKUP_TIMEOUT),
+      Effect.map(Option.getOrElse(() => "")),
+      Effect.orElseSucceed(() => ""),
+    );
+
+  const isOwnLinuxConnection = Effect.fn("LoopbackTunnel.isOwnLinuxConnection")(function* (
+    client: ConnectionEnd,
+    listener: ConnectionEnd,
+  ) {
+    const tables = yield* Effect.forEach(TCP_TABLES, (path) =>
+      fileSystem.readFileString(path).pipe(Effect.orElseSucceed(() => "")),
+    );
+    const owner = connectionOwner(tables, client, listener);
+    return owner !== undefined && owner === userId;
+  });
+
+  const isOwnMacConnection = Effect.fn("LoopbackTunnel.isOwnMacConnection")(function* (
+    client: ConnectionEnd,
+    listener: ConnectionEnd,
+  ) {
+    const sockets = yield* commandOutput("/usr/sbin/lsof", [
+      "-nP",
+      `-iTCP@${lsofEnd(client)}`,
+      "-F",
+      "un",
+    ]);
+    const owner = lsofConnectionOwner(sockets, client, listener);
+    return owner !== undefined && owner === userId;
+  });
+
+  // A forward is plain TCP with no credentials to check, so on Linux and macOS it serves only
+  // clients of this OS user, and a connection whose owner cannot be read is refused. Windows and
+  // other platforms have no owner check.
   const isOwnConnection = Effect.fn("LoopbackTunnel.isOwnConnection")(function* () {
-    if (platform !== "linux") return true;
+    if (platform !== "linux" && platform !== "darwin") return true;
     const connection = yield* Effect.serviceOption(NodeSocket.NetSocket);
     if (Option.isNone(connection)) return false;
     const { remoteAddress, remotePort, localAddress, localPort } = connection.value;
     if (!remoteAddress || !remotePort || !localAddress || !localPort) return false;
-    const tables = yield* Effect.forEach(TCP_TABLES, (path) =>
-      fileSystem.readFileString(path).pipe(Effect.orElseSucceed(() => "")),
-    );
-    return (
-      connectionOwner(
-        tables,
-        { address: remoteAddress, port: remotePort },
-        { address: localAddress, port: localPort },
-      ) === userId
-    );
+    // A dual-stack socket reports an IPv4 peer as ::ffff:a.b.c.d; the lookups print it plain.
+    const plain = (address: string) => address.replace(/^::ffff:/i, "");
+    const client = { address: plain(remoteAddress), port: remotePort };
+    const listener = { address: plain(localAddress), port: localPort };
+    return platform === "linux"
+      ? yield* isOwnLinuxConnection(client, listener)
+      : yield* isOwnMacConnection(client, listener);
   });
 
   /** Serves one connection to a forwarded port; closes it when the environment is out of reach. */
