@@ -168,26 +168,41 @@ export const listen: Effect.Effect<
         );
         if (Option.isSome(prepared) && prepared.value.status !== "failed") {
           const state = yield* updates.getState;
-          if (
-            prepared.value.status === "prepared" &&
-            state.downloadedVersion === prepared.value.downloadedVersion
-          ) {
+          const preparedFileLost =
+            prepared.value.status === "prepared" && (yield* updates.forgetLostDownload);
+          // A lost archive prepares again, downloading it first, unless a commit already claimed it.
+          const prepareAgain =
+            preparedFileLost &&
+            (yield* Ref.modify(preparedUpdateRef, (current) =>
+              Option.isSome(current) &&
+              current.value.requestId === prepared.value.requestId &&
+              current.value.status === "prepared"
+                ? ([true, Option.none()] as const)
+                : ([false, current] as const),
+            ));
+          if (!prepareAgain) {
+            if (
+              !preparedFileLost &&
+              prepared.value.status === "prepared" &&
+              state.downloadedVersion === prepared.value.downloadedVersion
+            ) {
+              yield* publishReport(
+                state,
+                { outcome: "ready-to-install", preparedRequestId: prepared.value.requestId },
+                request.requestId,
+              );
+              return;
+            }
             yield* publishReport(
               state,
-              { outcome: "ready-to-install", preparedRequestId: prepared.value.requestId },
+              {
+                outcome: "failed",
+                reason: "A prepared desktop update is already in progress.",
+              },
               request.requestId,
             );
             return;
           }
-          yield* publishReport(
-            state,
-            {
-              outcome: "failed",
-              reason: "A prepared desktop update is already in progress.",
-            },
-            request.requestId,
-          );
-          return;
         }
         yield* Ref.set(activeRequestIdRef, Option.some(request.requestId));
         yield* logInfo("remote update requested", { requestId: request.requestId });
@@ -240,11 +255,8 @@ export const listen: Effect.Effect<
                 yield* retryLater(state);
                 return false;
               }
-              // A cache cleaner may have deleted the archive; download it again before preparing.
-              if (yield* updates.forgetLostDownload) {
-                yield* retryLater(yield* updates.getState);
-                return false;
-              }
+              // A cache cleaner may have deleted the archive; its "available" state change downloads it again.
+              if (yield* updates.forgetLostDownload) return false;
               if (state.downloadedVersion === null) {
                 yield* publishReport(
                   state,

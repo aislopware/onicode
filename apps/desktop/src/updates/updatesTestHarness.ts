@@ -37,6 +37,7 @@ export interface UpdatesHarnessOptions {
   readonly installRecord?: string | undefined;
   readonly policy?: DesktopUpdatePolicy.UpdatePolicy;
   readonly appVersion?: string;
+  readonly fileExists?: (path: string) => Effect.Effect<boolean> | undefined;
 }
 
 export function makeHarness(options: UpdatesHarnessOptions = {}) {
@@ -199,7 +200,7 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
             }),
           );
     },
-    exists: (path) => Effect.succeed(!deletedFiles.has(path)),
+    exists: (path) => options.fileExists?.(path) ?? Effect.succeed(!deletedFiles.has(path)),
     makeDirectory: () => Effect.void,
     writeFileString: (path, data) =>
       Effect.sync(() => {

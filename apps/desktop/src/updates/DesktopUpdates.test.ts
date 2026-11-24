@@ -676,6 +676,7 @@ describe("DesktopUpdates", () => {
             assert.equal(harness.downloadCount(), 1);
             assert.equal(harness.quitAndInstalls(), 0);
             assert.isNotNull(result.state.message);
+            assert.equal((yield* updates.getState).status, "available");
             return;
           }
           assert.isTrue(result.accepted);
@@ -686,6 +687,53 @@ describe("DesktopUpdates", () => {
       ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
     },
   );
+
+  it.effect("keeps a download whose loss was checked while a check started", () => {
+    const downloadedFile = "/cache/pending/Onicode-1.2.4-arm64.zip";
+    const existsStarted = Deferred.makeUnsafe<void>();
+    const releaseExists = Deferred.makeUnsafe<void>();
+    const releaseCheck = Deferred.makeUnsafe<void>();
+    let gateExists = false;
+    const harness = makeHarness({
+      checkForUpdates: Effect.suspend(() =>
+        gateExists
+          ? Deferred.await(releaseCheck)
+          : Effect.sync(() => harness.emit("update-available", { version: "1.2.4" })),
+      ),
+      downloadUpdate: Effect.sync(() =>
+        harness.emit("update-downloaded", { version: "1.2.4", downloadedFile }),
+      ),
+      fileExists: (path) =>
+        gateExists && path === downloadedFile
+          ? Deferred.succeed(existsStarted, undefined).pipe(
+              Effect.andThen(Deferred.await(releaseExists)),
+              Effect.as(false),
+            )
+          : undefined,
+    });
+
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* updates.configure;
+        yield* updates.check("poll");
+        yield* updates.download;
+        yield* flushCallbacks;
+
+        gateExists = true;
+        const forgetting = yield* Effect.forkChild(updates.forgetLostDownload);
+        yield* Deferred.await(existsStarted);
+        const checking = yield* Effect.forkChild(updates.check("poll"));
+        yield* flushCallbacks;
+        yield* Deferred.succeed(releaseExists, undefined);
+
+        assert.isFalse(yield* Fiber.join(forgetting));
+        assert.equal((yield* updates.getState).downloadedVersion, "1.2.4");
+        yield* Deferred.succeed(releaseCheck, undefined);
+        yield* Fiber.join(checking);
+      }),
+    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+  });
 
   it.effect("restores download state and permits retry after interruption", () =>
     Effect.gen(function* () {
