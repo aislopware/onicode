@@ -2709,9 +2709,9 @@ const CLAUDE_SLEEP_TIMER_REPORT = /^[ \t]*(?:$|(?:date|echo|printf|true|:)(?:[ \
 // A background command that only sleeps for a finite time, then at most prints the time or a
 // note, is a timer the agent set to check back, which Claude wakes it for when it ends. Any other
 // step (`sleep 5 && npm run dev`) may never end, so that command is not a timer.
-function isClaudeSleepTimer(command: string | undefined): boolean {
-  const start = command === undefined ? null : CLAUDE_SLEEP_TIMER_START.exec(command);
-  if (command === undefined || start === null) return false;
+function isClaudeSleepTimer(command: string): boolean {
+  const start = CLAUDE_SLEEP_TIMER_START.exec(command);
+  if (start === null) return false;
   const steps = splitClaudeSleepTimerSteps(command.slice(start[0].length));
   return steps !== undefined && steps.every((step) => CLAUDE_SLEEP_TIMER_REPORT.test(step));
 }
@@ -4479,6 +4479,26 @@ function claudePendingBackgroundTasksFromRoster(
 ): ReadonlyArray<OrchestrationV2PendingBackgroundTask> {
   return Array.from(roster.values(), (task) =>
     awaitedTaskIds.has(task.taskId) ? { ...task, awaited: true as const } : task,
+  );
+}
+
+interface ClaudeBackgroundTaskListing {
+  readonly task: OrchestrationV2PendingBackgroundTask;
+  /** The whole command, which the task holds only a preview of. */
+  readonly command: string | undefined;
+}
+
+// The agent ends its turn on a monitor or timer, so one counts as awaited once, when first listed.
+function claudeListingStartsWait(
+  { task, command }: ClaudeBackgroundTaskListing,
+  previous: OrchestrationV2PendingBackgroundTask | undefined,
+): boolean {
+  if (task.kind === "monitor") return previous?.kind !== "monitor";
+  return (
+    task.kind === "command" &&
+    command !== undefined &&
+    previous?.command === undefined &&
+    isClaudeSleepTimer(command)
   );
 }
 
@@ -7819,25 +7839,32 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           /* Provider events include streaming deltas; avoid a span for each update. */
           Effect.fnUntraced(function* (
             nativeThreadId: string,
-            tasks: ReadonlyArray<OrchestrationV2PendingBackgroundTask>,
+            listings: ReadonlyArray<ClaudeBackgroundTaskListing>,
           ) {
-            yield* Ref.update(pendingBackgroundTasksByNativeThread, (current) => {
-              const updated = new Map(current);
-              if (tasks.length === 0) {
-                updated.delete(nativeThreadId);
-              } else {
-                updated.set(
-                  nativeThreadId,
-                  new Map(
-                    tasks.map((task) => {
-                      const previous = current.get(nativeThreadId)?.get(task.taskId);
-                      return [task.taskId, { ...previous, ...task }] as const;
-                    }),
-                  ),
+            const tasks = listings.map(({ task }) => task);
+            const startedWaits = yield* Ref.modify(
+              pendingBackgroundTasksByNativeThread,
+              (current) => {
+                const previous = rosterForNativeThread(current, nativeThreadId);
+                const updated = new Map(current);
+                if (tasks.length === 0) {
+                  updated.delete(nativeThreadId);
+                } else {
+                  updated.set(
+                    nativeThreadId,
+                    new Map(
+                      tasks.map((task) => [task.taskId, { ...previous.get(task.taskId), ...task }]),
+                    ),
+                  );
+                }
+                const startedWaits = listings.flatMap((listing) =>
+                  claudeListingStartsWait(listing, previous.get(listing.task.taskId))
+                    ? [listing.task.taskId]
+                    : [],
                 );
-              }
-              return updated;
-            });
+                return [startedWaits, updated] as const;
+              },
+            );
             yield* rememberOpaqueTasks(tasks);
             if (tasks.length > 0) {
               yield* markWakeEligibleOpaqueBackgroundTasks(
@@ -7856,25 +7883,25 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               else updated.set(nativeThreadId, kept);
               return updated;
             });
+            yield* addTaskIdsToNativeThreadSet(
+              awaitedBackgroundTasksByNativeThread,
+              nativeThreadId,
+              startedWaits,
+            );
           });
 
         const upsertPendingBackgroundTask =
           /* Provider events include streaming deltas; avoid a span for each update. */
           Effect.fnUntraced(function* (
             nativeThreadId: string,
-            task: OrchestrationV2PendingBackgroundTask,
+            listing: ClaudeBackgroundTaskListing,
           ) {
+            const { task } = listing;
             const startedWait = yield* Ref.modify(
               pendingBackgroundTasksByNativeThread,
               (current) => {
                 const roster = new Map(rosterForNativeThread(current, nativeThreadId));
-                const previous = roster.get(task.taskId);
-                const startedWait =
-                  task.kind === "monitor"
-                    ? previous?.kind !== "monitor"
-                    : task.kind === "command" &&
-                      previous?.command === undefined &&
-                      isClaudeSleepTimer(task.command);
+                const startedWait = claudeListingStartsWait(listing, roster.get(task.taskId));
                 roster.set(task.taskId, task);
                 return [startedWait, new Map(current).set(nativeThreadId, roster)] as const;
               },
@@ -11664,10 +11691,11 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           });
         });
 
-        const backgroundTaskLaunch = (
+        const listBackgroundTask = (
           activeContext: ActiveClaudeTurnContext | null,
           toolUseId: string | undefined,
-        ): Pick<OrchestrationV2PendingBackgroundTask, "command" | "itemId" | "sourceThreadId"> => {
+          task: OrchestrationV2PendingBackgroundTask,
+        ): ClaudeBackgroundTaskListing => {
           // A background subagent keeps launching shells after the root turn settles.
           const launch =
             toolUseId === undefined
@@ -11678,14 +11706,18 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             launch?.toolName === "Monitor"
               ? firstStringInputField(launch.input, ["command"])
               : undefined;
-          if (launch === undefined || command === undefined) return {};
+          if (launch === undefined || command === undefined) return { task, command: undefined };
           return {
-            command: backgroundWorkTextPreview(command),
-            itemId: idAllocator.derive.turnItemFromProviderItem({
-              driver: CLAUDE_PROVIDER,
-              nativeItemId: launch.nativeItemId,
-            }),
-            sourceThreadId: launch.threadId,
+            task: {
+              command: backgroundWorkTextPreview(command),
+              itemId: idAllocator.derive.turnItemFromProviderItem({
+                driver: CLAUDE_PROVIDER,
+                nativeItemId: launch.nativeItemId,
+              }),
+              sourceThreadId: launch.threadId,
+              ...task,
+            },
+            command,
           };
         };
 
@@ -11702,7 +11734,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             if (!Array.isArray(roster)) {
               return false;
             }
-            const nextTasks: OrchestrationV2PendingBackgroundTask[] = [];
+            const listings: ClaudeBackgroundTaskListing[] = [];
             const listedTaskIds = new Set(
               roster.flatMap((entry) => {
                 const taskId =
@@ -11731,13 +11763,10 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               const task = parseClaudeBackgroundTaskEntry(entry, monitorTasks, toolUseIds);
               if (task !== null) {
                 // A foreground command Claude moved to the background first appears here.
-                nextTasks.push({
-                  ...backgroundTaskLaunch(input.activeContext, task.nativeItemId),
-                  ...task,
-                });
+                listings.push(listBackgroundTask(input.activeContext, task.nativeItemId, task));
               }
             }
-            yield* replacePendingBackgroundTasks(input.nativeThreadId, nextTasks);
+            yield* replacePendingBackgroundTasks(input.nativeThreadId, listings);
             rosterChanged = true;
           } else if (message.type === "system" && message.subtype === "task_started") {
             if (!isClaudeNonSubagentTask(message)) {
@@ -11758,22 +11787,26 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             if (message.is_backgrounded === false) {
               return false;
             }
-            yield* upsertPendingBackgroundTask(input.nativeThreadId, {
-              ...backgroundTaskLaunch(input.activeContext, message.tool_use_id),
-              ...claudePendingBackgroundTask({
-                taskId: message.task_id,
-                taskType: claudeTaskTypeFromSdkMessage(message),
-                startedByMonitor: yield* isClaudeMonitorTask({
-                  nativeThreadId: input.nativeThreadId,
+            yield* upsertPendingBackgroundTask(
+              input.nativeThreadId,
+              listBackgroundTask(
+                input.activeContext,
+                message.tool_use_id,
+                claudePendingBackgroundTask({
                   taskId: message.task_id,
-                  toolUseId: message.tool_use_id,
+                  taskType: claudeTaskTypeFromSdkMessage(message),
+                  startedByMonitor: yield* isClaudeMonitorTask({
+                    nativeThreadId: input.nativeThreadId,
+                    taskId: message.task_id,
+                    toolUseId: message.tool_use_id,
+                  }),
+                  description:
+                    typeof message.description === "string" ? message.description : undefined,
+                  parentTaskId: Reflect.get(message, "parent_task_id"),
+                  toolUseId,
                 }),
-                description:
-                  typeof message.description === "string" ? message.description : undefined,
-                parentTaskId: Reflect.get(message, "parent_task_id"),
-                toolUseId,
-              }),
-            });
+              ),
+            );
             rosterChanged = true;
           } else if (message.type === "system" && message.subtype === "task_notification") {
             yield* endClaudeMonitorTasks((taskId) => taskId === message.task_id);

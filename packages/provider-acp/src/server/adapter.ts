@@ -723,6 +723,8 @@ export interface AcpAdapterV2Flavor {
   readonly extractSubagentUpdate?: (
     toolCall: AcpToolCallState,
   ) => AcpAdapterV2SubagentUpdate | undefined;
+  /** The child sessions a running tool call holds the parent on until the call returns. */
+  readonly extractSubagentWait?: (toolCall: AcpToolCallState) => ReadonlyArray<string>;
   readonly isProvisionalSubagentTool?: (toolCall: AcpToolCallState) => boolean;
   readonly normalizeToolCall?: (toolCall: AcpToolCallState) => AcpToolCallState;
   readonly isCancelledToolCall?: (payload: unknown) => boolean;
@@ -2114,6 +2116,8 @@ export function acpCompletedTurnShouldTerminalizeTool(
 interface ActiveAcpSubagent {
   task: OrchestrationV2Subagent;
   background?: true;
+  // Running wait calls on this child, by tool call id, with the run each holds.
+  readonly waitCalls: Map<string, NonNullable<OrchestrationV2Subagent["awaitedByRunId"]>>;
   readonly childThreadId: ThreadId;
   readonly childRootNodeId: OrchestrationV2ExecutionNode["id"];
   readonly turnItemId: OrchestrationV2TurnItem["id"];
@@ -2157,6 +2161,11 @@ function acpSubagentStatusIsTerminal(status: OrchestrationV2Subagent["status"]):
 
 function acpSubagentStatusBlocksTurnSettlement(status: OrchestrationV2Subagent["status"]): boolean {
   return status === "running" || status === "pending";
+}
+
+function acpSubagentRowBackground(subagent: ActiveAcpSubagent) {
+  if (subagent.waitCalls.size > 0) return { background: false };
+  return subagent.background ? { background: true } : {};
 }
 
 function acpSubagentHasPendingBackgroundWork(subagent: ActiveAcpSubagent): boolean {
@@ -4150,6 +4159,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             childItemOrdinals: new Map(),
             nextChildOrdinal: 101,
             terminalStatusProjected: false,
+            waitCalls: new Map(),
             toolState: {
               tools: new Map(),
               toolUpdatesSkipped: new Map(),
@@ -4261,8 +4271,11 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             yield* emitSubagentAssistant(subagent, update.result);
           }
           const result = update.result ?? subagent.task.result ?? (subagent.assistantText || null);
+          const { awaitedByRunId: _awaitedByRunId, ...unawaited } = subagent.task;
+          const awaitedByRunId = subagent.waitCalls.values().next().value;
           subagent.task = {
-            ...subagent.task,
+            ...unawaited,
+            ...(awaitedByRunId === undefined ? {} : { awaitedByRunId }),
             status: taskStatus,
             result,
             completedAt: acpSubagentStatusIsTerminal(taskStatus) ? now : null,
@@ -4338,11 +4351,46 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
               childThreadId,
               prompt: subagent.task.prompt,
               result,
-              ...(subagent.background ? { background: true } : {}),
+              ...acpSubagentRowBackground(subagent),
             },
           });
           if (acpSubagentStatusIsTerminal(taskStatus)) {
             subagent.terminalStatusProjected = true;
+          }
+        });
+
+        // `waits` names the children a running call holds; null ends the call, undefined ends all.
+        const updateSubagentWaits = Effect.fnUntraced(function* (
+          context: ActiveAcpTurn,
+          toolCallId: string | undefined,
+          waits: ReadonlyArray<string> | null,
+        ) {
+          for (const subagent of context.subagents.values()) {
+            const wasAwaited = subagent.waitCalls.size > 0;
+            if (waits !== null && toolCallId !== undefined) {
+              if (subagent.childSessionId !== null && waits.includes(subagent.childSessionId)) {
+                subagent.waitCalls.set(toolCallId, context.input.runId);
+              }
+            } else if (toolCallId === undefined) {
+              subagent.waitCalls.clear();
+            } else {
+              subagent.waitCalls.delete(toolCallId);
+            }
+            if (
+              wasAwaited === subagent.waitCalls.size > 0 ||
+              !acpSubagentStatusBlocksTurnSettlement(subagent.task.status)
+            )
+              continue;
+            yield* emitSubagent(context, {
+              nativeTaskId: subagent.task.nativeTaskRef?.nativeId ?? subagent.task.id,
+              prompt: subagent.task.prompt,
+              title: subagent.task.title,
+              model: subagent.task.model,
+              status: subagent.task.status === "pending" ? "pending" : "running",
+              childSessionId: subagent.childSessionId,
+              result: subagent.task.result,
+              suppressNormalTool: true,
+            });
           }
         });
 
@@ -4899,6 +4947,16 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             (toolCall.status === "failed" && context.stoppedToolCallIds.has(toolCall.toolCallId)
               ? "interrupted"
               : undefined);
+          if (flavor.extractSubagentWait !== undefined) {
+            const callStatus = stoppedStatus ?? toolStatus(toolCall.status);
+            yield* updateSubagentWaits(
+              context,
+              toolCall.toolCallId,
+              callStatus === "pending" || callStatus === "running"
+                ? flavor.extractSubagentWait(toolCall)
+                : null,
+            );
+          }
           if (
             followsAgentWorkState &&
             projectedStatus === undefined &&
@@ -7349,7 +7407,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
               childThreadId: subagent.childThreadId,
               prompt: subagent.task.prompt,
               result,
-              ...(subagent.background ? { background: true } : {}),
+              ...acpSubagentRowBackground(subagent),
             },
           });
           if (acpSubagentStatusIsTerminal(status)) {
@@ -9327,6 +9385,8 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             yield* Fiber.interrupt(watchdog).pipe(Effect.forkDetach, Effect.asVoid);
           }
           yield* cancelOutcomeResume(context);
+          // A wait the turn ended inside never returns, so it no longer holds its children.
+          yield* updateSubagentWaits(context, undefined, null);
           const directStopQuarantine = yield* Ref.get(stoppedRunQuarantine);
           if (flavor.subagentsIdleOnTurnCompletion === true) {
             for (const subagent of context.subagents.values()) {
@@ -10156,6 +10216,8 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                   if (defersFinalizeForBackgroundWork && !context.interrupted) {
                     context.promptSettled = true;
                     context.promptSettledStatus = status;
+                    // The prompt ended, so no call of it holds the parent any more.
+                    yield* updateSubagentWaits(context, undefined, null);
                     for (const [taskId, completion] of context.backgroundCommands) {
                       if (completion === null) continue;
                       yield* finishRegisteredBackgroundTool({ taskId, ...completion });

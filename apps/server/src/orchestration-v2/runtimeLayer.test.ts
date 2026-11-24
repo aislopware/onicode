@@ -2772,13 +2772,16 @@ it.layer(layerTest)("OrchestrationV2LayerLive", (it) => {
     }),
   );
 
-  it.effect("sends an async answer's files as attachments on the answer message", () =>
+  it.effect.each([
+    { name: "typed", answers: { color: "", sizes: ["Small"], note: "" }, files: ["color"] },
+    { name: "files-only", answers: undefined, files: ["unknown", "sizes", "color"] },
+  ])("sends an async answer's files as attachments on the answer message ($name)", (row) =>
     Effect.gen(function* () {
       const orchestrator = yield* Orchestrator.OrchestratorV2;
-      const threadId = ThreadId.make("runtime-async-question-files");
+      const threadId = ThreadId.make(`runtime-async-question-files-${row.name}`);
       yield* orchestrator.dispatch({
         type: "thread.create",
-        commandId: CommandId.make("runtime-async-question-files-create"),
+        commandId: CommandId.make(`runtime-async-question-files-create-${row.name}`),
         createdBy: "user",
         creationSource: "web",
         threadId,
@@ -2790,26 +2793,46 @@ it.layer(layerTest)("OrchestrationV2LayerLive", (it) => {
         branch: null,
         worktreePath: process.cwd(),
       });
-      const { requestId } = yield* seedPendingQuestion(threadId, null, { type: "message" });
-      const screenshot = {
+      const { requestId, itemId } = yield* seedPendingQuestion(threadId, null, {
+        type: "message",
+      });
+      const fileFor = (questionId: string) => ({
         type: "image" as const,
         id: createAttachmentId(threadId)!,
-        name: "screen.png",
+        name: `${questionId}.png`,
         mimeType: "image/png",
         sizeBytes: 3,
-      };
+      });
       yield* orchestrator.dispatch({
         type: "runtime-request.respond",
-        commandId: CommandId.make("runtime-async-question-files-answer"),
+        commandId: CommandId.make(`runtime-async-question-files-answer-${row.name}`),
         threadId,
         requestId,
-        answers: { color: "", sizes: ["Small"], note: "" },
-        attachmentsByQuestionId: { color: [screenshot] },
+        ...(row.answers === undefined ? {} : { answers: row.answers }),
+        attachmentsByQuestionId: Object.fromEntries(
+          row.files.map((questionId) => [questionId, [fileFor(questionId)]]),
+        ),
       });
       const answered = yield* orchestrator.getThreadProjection(threadId);
       assert.equal(answered.messages.length, 1);
-      assert.equal(answered.messages[0]?.text, "Which color?\n\nWhich sizes?\nSmall");
-      assert.deepEqual(answered.messages[0]?.attachments, [screenshot]);
+      assert.equal(
+        answered.messages[0]?.text,
+        `Which color?\n\nWhich sizes?${row.answers === undefined ? "" : "\nSmall"}`,
+      );
+      const asked = ["color", "sizes"].filter((questionId) => row.files.includes(questionId));
+      assert.deepEqual(
+        answered.messages[0]?.attachments?.map((file) => file.name),
+        asked.map((questionId) => `${questionId}.png`),
+      );
+      const answeredItem = answered.turnItems.find((item) => item.id === itemId);
+      assert.equal(answeredItem?.type, "user_input_request");
+      if (answeredItem?.type === "user_input_request") {
+        assert.deepEqual(answeredItem.questionAnswer?.answers, row.answers ?? {});
+        assert.sameMembers(
+          Object.keys(answeredItem.questionAnswer?.attachmentsByQuestionId ?? {}),
+          asked,
+        );
+      }
     }),
   );
 

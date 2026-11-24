@@ -836,6 +836,21 @@ function statusFromGetOutputTool(
   return "running";
 }
 
+/**
+ * The subagents an output call waits for: a positive `timeout_ms` blocks until they finish, while
+ * none or 0 only reads their status. `wait_commands_or_subagents` waits 30 s by default.
+ */
+export function extractXAiAwaitedSubagentIds(toolCall: AcpToolCallState): ReadonlyArray<string> {
+  const rawInput = unknownRecord(toolCall.data.rawInput);
+  if (!isXAiGetSubagentOutputTool(toolCall, rawInput)) return [];
+  const timeout = rawInput?.timeout_ms;
+  const waits =
+    typeof timeout === "number"
+      ? timeout > 0
+      : timeout === undefined && titleKey(toolCall) === "wait_commands_or_subagents";
+  return waits ? taskIdsFromGetOutputTool(toolCall, rawInput) : [];
+}
+
 /** Spawn ACKs return immediately; keep subagents running until a child or hydration terminal. */
 export function extractXAiAcpSubagentUpdate(
   toolCall: AcpToolCallState,

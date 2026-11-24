@@ -1532,6 +1532,7 @@ describe("source control tools", () => {
         thread: branchThread,
         pullRequests: {
           diff: (input) => Effect.succeed(pages[input.cursor ?? "first"]!),
+          summary: () => Effect.succeed({ state: "open", headSha: "fed9876" } as never),
           submitReview: (input) => Effect.sync(() => void reviews.push(input)),
         },
       });
@@ -1567,6 +1568,23 @@ describe("source control tools", () => {
         })
         .pipe(Effect.flip);
       expect(error.message).toContain("a.ts line 40 (new side) is not in this PR's diff");
+      // Pinned to a head that moved, the line is gone because of the new commits.
+      const moved = yield* harness
+        .call("pull_request_review", {
+          verdict: "comment",
+          expectedHeadSha: "abc1234",
+          comments: [{ path: "a.ts", line: 40, body: "Here?" }],
+        })
+        .pipe(Effect.flip);
+      expect(moved.message).toContain("The head is now fed9876, not abc1234");
+      const current = yield* harness
+        .call("pull_request_review", {
+          verdict: "comment",
+          expectedHeadSha: "fed9876",
+          comments: [{ path: "a.ts", line: 40, body: "Here?" }],
+        })
+        .pipe(Effect.flip);
+      expect(current.message).toContain("a.ts line 40 (new side) is not in this PR's diff");
       expect(reviews).toHaveLength(1);
     }),
   );

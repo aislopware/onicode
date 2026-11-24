@@ -165,13 +165,19 @@ export const optionOnNotFound = <A, R>(
     }),
   );
 
-// A path through a file (ENOTDIR) or a symlink loop names no file either.
+// Codes Node maps to no specific reason: an over-long name, or characters Windows rejects.
+const INVALID_PATH_CODES = new Set<unknown>(["ENAMETOOLONG", "EINVAL"]);
+
+// A path through a file (ENOTDIR), a symlink loop, or a name no filesystem takes names no file either.
 const optionOnMissing = <A, R>(
   effect: Effect.Effect<A, PlatformError.PlatformError, R>,
 ): Effect.Effect<Option.Option<A>, PlatformError.PlatformError, R> =>
   optionOnNotFound(effect).pipe(
     Effect.catchIf(
-      (error) => error.reason._tag === "BadResource",
+      (error) =>
+        error.reason._tag === "BadResource" ||
+        (error.reason._tag === "Unknown" &&
+          INVALID_PATH_CODES.has((error.reason.cause as { readonly code?: unknown })?.code)),
       () => Effect.succeedNone,
     ),
   );

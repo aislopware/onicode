@@ -11771,105 +11771,181 @@ describe("CodexAdapterV2 post-settle continuation", () => {
   );
 
   it.effect.each([
-    { ends: "the wait returns", turnEnds: false },
-    { ends: "the turn ends inside the wait", turnEnds: true },
-  ])("marks a Codex child awaited only while a wait call names it, until $ends", ({ turnEnds }) =>
-    Effect.gen(function* () {
-      const collab = (tool: "spawnAgent" | "wait", status: "inProgress" | "completed") => ({
-        type: "collabAgentToolCall",
-        id: `call-codex-${tool}`,
-        tool,
-        status,
-        senderThreadId: RESUME_NATIVE_THREAD,
-        receiverThreadIds: [RESUME_CHILD_THREAD],
-        agentsStates:
-          status === "completed"
-            ? { [RESUME_CHILD_THREAD]: { status: "running", message: `${tool} returned` } }
-            : {},
-      });
-      const frame = (
-        method: "item/started" | "item/completed",
-        item: ReturnType<typeof collab>,
-      ) => ({
-        type: "emit_inbound" as const,
-        frame: {
-          method,
-          params: {
-            item,
-            threadId: RESUME_NATIVE_THREAD,
-            turnId: RESUME_NATIVE_TURN,
-            ...(method === "item/started"
-              ? { startedAtMs: 1782622441000 }
-              : { completedAtMs: 1782622442000 }),
+    { ends: "the wait returns", turnEnds: false, otherThreadTurn: false },
+    { ends: "the turn ends inside the wait", turnEnds: true, otherThreadTurn: false },
+    // One app-server serves several threads; another thread's turn end frees nothing here.
+    {
+      ends: "the wait returns after another thread's turn",
+      turnEnds: false,
+      otherThreadTurn: true,
+    },
+  ])(
+    "marks a Codex child awaited only while a wait call names it, until $ends",
+    ({ turnEnds, otherThreadTurn }) =>
+      Effect.gen(function* () {
+        const OTHER_NATIVE_THREAD = "native-codex-other-thread";
+        const OTHER_NATIVE_TURN = "native-codex-other-turn";
+        const otherPreamble = codexReplayPreamble({
+          nativeThreadId: OTHER_NATIVE_THREAD,
+          nativeTurnId: OTHER_NATIVE_TURN,
+          prompt: "Other work",
+        });
+        const otherThreadEntries: Array<CodexReplay.CodexAppServerReplayEntry> = [
+          ...otherPreamble.slice(3, 5).map((entry) => withReplayRequestId(entry, 4)),
+          ...otherPreamble.slice(5, 7).map((entry) => withReplayRequestId(entry, 5)),
+          otherPreamble[7]!,
+          {
+            type: "emit_inbound",
+            label: "other-turn-completed",
+            frame: {
+              method: "turn/completed",
+              params: {
+                threadId: OTHER_NATIVE_THREAD,
+                turn: makeCodexReplayTurn({ id: OTHER_NATIVE_TURN, status: "completed" }),
+              },
+            },
           },
-        },
-      });
-      const harness = yield* makeCodexReplayHarness(
-        makeCodexReplayTranscript({
-          scenario: RESUME_SCENARIO,
-          entries: [
-            ...codexReplayPreamble({
-              nativeThreadId: RESUME_NATIVE_THREAD,
-              nativeTurnId: RESUME_NATIVE_TURN,
-              prompt: RESUME_PROMPT,
-            }),
-            frame("item/completed", collab("spawnAgent", "completed")),
-            frame("item/started", collab("wait", "inProgress")),
-            turnEnds
-              ? {
-                  type: "emit_inbound" as const,
-                  frame: {
-                    method: "turn/completed",
-                    params: {
-                      threadId: RESUME_NATIVE_THREAD,
-                      turn: makeCodexReplayTurn({ id: RESUME_NATIVE_TURN, status: "completed" }),
+        ];
+        const waitReleased = yield* Deferred.make<void>();
+        const collab = (tool: "spawnAgent" | "wait", status: "inProgress" | "completed") => ({
+          type: "collabAgentToolCall",
+          id: `call-codex-${tool}`,
+          tool,
+          status,
+          senderThreadId: RESUME_NATIVE_THREAD,
+          receiverThreadIds: [RESUME_CHILD_THREAD],
+          agentsStates:
+            status === "completed"
+              ? { [RESUME_CHILD_THREAD]: { status: "running", message: `${tool} returned` } }
+              : {},
+        });
+        const frame = (
+          method: "item/started" | "item/completed",
+          item: ReturnType<typeof collab>,
+        ) => ({
+          type: "emit_inbound" as const,
+          frame: {
+            method,
+            params: {
+              item,
+              threadId: RESUME_NATIVE_THREAD,
+              turnId: RESUME_NATIVE_TURN,
+              ...(method === "item/started"
+                ? { startedAtMs: 1782622441000 }
+                : { completedAtMs: 1782622442000 }),
+            },
+          },
+        });
+        const harness = yield* makeCodexReplayHarness(
+          makeCodexReplayTranscript({
+            scenario: RESUME_SCENARIO,
+            entries: [
+              ...codexReplayPreamble({
+                nativeThreadId: RESUME_NATIVE_THREAD,
+                nativeTurnId: RESUME_NATIVE_TURN,
+                prompt: RESUME_PROMPT,
+              }),
+              frame("item/completed", collab("spawnAgent", "completed")),
+              frame("item/started", collab("wait", "inProgress")),
+              ...(otherThreadTurn ? otherThreadEntries : []),
+              turnEnds
+                ? {
+                    type: "emit_inbound" as const,
+                    frame: {
+                      method: "turn/completed",
+                      params: {
+                        threadId: RESUME_NATIVE_THREAD,
+                        turn: makeCodexReplayTurn({ id: RESUME_NATIVE_TURN, status: "completed" }),
+                      },
                     },
+                  }
+                : // The wait timed out with the child still running.
+                  {
+                    ...frame("item/completed", collab("wait", "completed")),
+                    label: "wait-completed",
                   },
-                }
-              : // The wait timed out with the child still running.
-                frame("item/completed", collab("wait", "completed")),
-          ],
-        }),
-      );
-      yield* harness.runtime.startTurn(
-        makeCodexTestTurnInput({
+            ],
+          }),
+          undefined,
+          undefined,
+          undefined,
+          (entry) =>
+            otherThreadTurn && entry.label === "wait-completed"
+              ? Deferred.await(waitReleased)
+              : Effect.void,
+        );
+        const turnInput = makeCodexTestTurnInput({
           threadId: harness.threadId,
           providerThread: harness.providerThread,
           now: yield* DateTime.now,
           attemptId: RunAttemptId.make("attempt-codex-wait"),
           text: RESUME_PROMPT,
-        }),
-      );
-      // Each change of the flag, in order; a state update may re-emit the same value.
-      const transitions = () =>
-        harness.events
-          .flatMap((event) =>
-            event.type === "turn_item.updated" && event.turnItem.type === "subagent"
-              ? [event.turnItem.background]
-              : [],
-          )
-          .filter((background, index, all) => index === 0 || all[index - 1] !== background);
-      yield* harness.until(() =>
-        turnEnds
-          ? harness.events.some((event) => event.type === "turn.terminal")
-          : harness.events.some(
-              (event) =>
-                event.type === "turn_item.updated" &&
-                event.turnItem.type === "subagent" &&
-                event.turnItem.result === "wait returned",
-            ),
-      );
-      assert.deepEqual(transitions(), [true, false, true]);
-    }).pipe(
-      Effect.provide(
-        Layer.mergeAll(
-          IdAllocator.layer,
-          McpProviderSessions.layer,
-          NodeServices.layer,
-          NodeCrypto.layer,
+        });
+        yield* harness.runtime.startTurn(turnInput);
+        // Each change of the flag, in order; a state update may re-emit the same value.
+        const transitions = () =>
+          harness.events
+            .flatMap((event) =>
+              event.type === "turn_item.updated" && event.turnItem.type === "subagent"
+                ? [event.turnItem.background]
+                : [],
+            )
+            .filter((background, index, all) => index === 0 || all[index - 1] !== background);
+        // The run whose wait holds the parent, which clients count even when it launched no row.
+        const awaitedByRuns = () =>
+          harness
+            .subagentUpdates()
+            .map((event) => event.subagent.awaitedByRunId)
+            .filter((runId, index, all) => index === 0 || all[index - 1] !== runId);
+        if (otherThreadTurn) {
+          const otherThreadId = ThreadId.make("thread-codex-other");
+          const otherProviderThread = yield* harness.runtime.ensureThread({
+            threadId: otherThreadId,
+            modelSelection: CODEX_TEST_MODEL_SELECTION,
+            runtimePolicy: CODEX_TEST_RUNTIME_POLICY,
+          });
+          // Forked: the replay holds the wait's end until this thread's turn is checked.
+          const otherTurn = yield* harness.runtime
+            .startTurn(
+              makeCodexTestTurnInput({
+                threadId: otherThreadId,
+                providerThread: otherProviderThread,
+                now: yield* DateTime.now,
+                attemptId: RunAttemptId.make("attempt-codex-other"),
+                text: "Other work",
+              }),
+            )
+            .pipe(Effect.forkChild({ startImmediately: true }));
+          yield* harness.until(() =>
+            harness.events.some((event) => event.type === "turn.terminal"),
+          );
+          assert.deepEqual(transitions(), [true, false]);
+          assert.deepEqual(awaitedByRuns(), [undefined, turnInput.runId]);
+          yield* Deferred.succeed(waitReleased, undefined);
+          yield* Fiber.join(otherTurn);
+        }
+        yield* harness.until(() =>
+          turnEnds
+            ? harness.events.some((event) => event.type === "turn.terminal")
+            : harness.events.some(
+                (event) =>
+                  event.type === "turn_item.updated" &&
+                  event.turnItem.type === "subagent" &&
+                  event.turnItem.result === "wait returned",
+              ),
+        );
+        assert.deepEqual(transitions(), [true, false, true]);
+        assert.deepEqual(awaitedByRuns(), [undefined, turnInput.runId, undefined]);
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            IdAllocator.layer,
+            McpProviderSessions.layer,
+            NodeServices.layer,
+            NodeCrypto.layer,
+          ),
         ),
       ),
-    ),
   );
 
   it.effect("preserves a subagent result across a trailing empty final and resume", () =>

@@ -281,6 +281,7 @@ export interface ThreadFeedLatestRun {
   readonly providerStartingLabel?: string;
   readonly providerStartingLabelMsg?: string;
   readonly providerStarting?: { readonly driver: string };
+  readonly awaitedEarlierSubagents?: number;
 }
 
 /** Long Android headers can ANR despite one-line display; cap labels only, preserving expanded and copied text. */
@@ -1514,7 +1515,8 @@ function latestRunsEqual(left: ThreadFeedLatestRun | null, right: ThreadFeedLate
       left.turnEnded === right.turnEnded &&
       left.providerStartingLabel === right.providerStartingLabel &&
       left.providerStartingLabelMsg === right.providerStartingLabelMsg &&
-      left.providerStarting?.driver === right.providerStarting?.driver)
+      left.providerStarting?.driver === right.providerStarting?.driver &&
+      left.awaitedEarlierSubagents === right.awaitedEarlierSubagents)
   );
 }
 
@@ -2022,7 +2024,13 @@ export function deriveThreadFeedPresentation(
     const waitingOn =
       activeRunId === null
         ? 0
-        : countSubagentsBlockingRun(feed, activeRunId, feedEntryTurnItems, !zen);
+        : countSubagentsBlockingRun(
+            feed,
+            activeRunId,
+            feedEntryTurnItems,
+            !zen,
+            latestRun?.awaitedEarlierSubagents,
+          );
     result.push(
       thinkingRow(
         activeWorkStartedAt,

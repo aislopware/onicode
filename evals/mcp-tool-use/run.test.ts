@@ -1589,19 +1589,32 @@ it.effect(
       // The server pushes an unpushed branch itself, so the first create opens the PR.
       assert.isNotTrue((yield* call("a", "pull_request_create", create)).is_error);
 
-      const short = yield* call("c", "pull_request_merge", {
+      // As PullRequestService: the full head or a hex prefix of at least 7 characters.
+      const moved = yield* call("c", "pull_request_merge", {
+        number: 7,
+        expectedHeadSha: "c3a91f3",
+      });
+      assert.isTrue(moved.is_error);
+      assert.include(String(moved.content), `The head is now ${head}`);
+      const short = yield* call("c2", "pull_request_merge", {
         number: 7,
         expectedHeadSha: "c3a91f2",
       });
-      assert.isTrue(short.is_error);
-      assert.include(String(short.content), `The head is now ${head}`);
+      assert.isNotTrue(short.is_error);
       const full = yield* call("d", "pull_request_merge", { number: 7, expectedHeadSha: head });
       assert.isNotTrue(full.is_error);
 
       const unpinned = yield* call("e", "pull_request_review", { number: 7, verdict: "approve" });
       assert.include(String(unpinned.content), "Approving needs expectedHeadSha");
-      const stale = { number: 7, verdict: "approve", expectedHeadSha: "c3a91f2" };
+      const blank = { number: 7, verdict: "approve", expectedHeadSha: " " };
+      assert.include(
+        String((yield* call("e2", "pull_request_review", blank)).content),
+        "Approving needs expectedHeadSha",
+      );
+      const stale = { number: 7, verdict: "approve", expectedHeadSha: "c3a91f3" };
       assert.isTrue((yield* call("f", "pull_request_review", stale)).is_error);
+      const prefix = { number: 7, verdict: "approve", expectedHeadSha: "C3A91F27" };
+      assert.isNotTrue((yield* call("f2", "pull_request_review", prefix)).is_error);
       const pinned = { number: 7, verdict: "approve", expectedHeadSha: head };
       assert.isNotTrue((yield* call("g", "pull_request_review", pinned)).is_error);
       assert.isNotTrue(

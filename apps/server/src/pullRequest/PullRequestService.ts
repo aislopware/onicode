@@ -1,3 +1,4 @@
+import { isHeadSha } from "@onicode/shared/git";
 import { isSshRemoteUrl } from "@onicode/shared/sourceControl";
 import { parseDiffFilePaths } from "@onicode/source-control-core/server/diffFileRevisions";
 import * as Cache from "effect/Cache";
@@ -772,12 +773,6 @@ function httpRemoteHost(remoteUrl: string): string | null {
     return null;
   }
 }
-
-/** Whether `expected` names `head`: the full SHA, or a hex prefix of at least 7 characters. */
-export const isHeadSha = (head: string, expected: string) => {
-  const wanted = expected.toLowerCase();
-  return /^[0-9a-f]{7,}$/.test(wanted) ? head.toLowerCase().startsWith(wanted) : head === expected;
-};
 
 // Capture before the provider read so a slow response keeps its original freshness through caches.
 const observeRead = Effect.fnUntraced(function* <A, E, R>(read: Effect.Effect<A, E, R>) {

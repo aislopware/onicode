@@ -272,7 +272,14 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
               ),
             )
         : cwd;
-    const catalog = yield* routeModelCatalog(yield* scopedModelCatalog, workingDirectory);
+    // The investigated checkout holds the change under review, not the user's files.
+    const settingsCwd = investigate?.projectCwd ?? workingDirectory;
+    const configDir = claudeEnvironment.CLAUDE_CONFIG_DIR?.trim();
+    // The CLI would resolve a relative config dir in the folder it runs in.
+    const runEnvironment = configDir
+      ? { ...claudeEnvironment, CLAUDE_CONFIG_DIR: path.resolve(settingsCwd, configDir) }
+      : claudeEnvironment;
+    const catalog = yield* routeModelCatalog(yield* scopedModelCatalog, settingsCwd);
     const resolvedModelSelection = {
       ...modelSelection,
       model: resolveClaudeModelSlug(catalog, modelSelection.model),
@@ -311,7 +318,6 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
       fastModeDescriptor?.type === "boolean" ? fastModeDescriptor.currentValue : undefined;
     const launchArgSettings = yield* readClaudeLaunchArgSettings({
       settings: claudeSettings,
-      // The investigated checkout holds the change under review, not the user's files.
       cwd: investigate?.projectCwd ?? cwd,
       fileSystem,
       path,
@@ -323,7 +329,7 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
     const settings = {
       ...(investigate
         ? investigationSettings(
-            yield* readClaudeUserSettings(claudeSettings, workingDirectory, claudeEnvironment).pipe(
+            yield* readClaudeUserSettings(claudeSettings, settingsCwd, runEnvironment).pipe(
               Effect.provideService(FileSystem.FileSystem, fileSystem),
               Effect.provideService(Path.Path, path),
             ),
@@ -354,7 +360,7 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
 
     // `claude -p` accepts images only as content blocks of a stream-json user message.
     const apiModelId = resolveClaudeCatalogApiModelId(catalog, resolvedModelSelection);
-    const textOnlyKey = `${workingDirectory}\n${apiModelId}`;
+    const textOnlyKey = `${settingsCwd}\n${apiModelId}`;
     const imageBlocks = textOnlyModels.has(textOnlyKey)
       ? []
       : yield* readImageBlocks(attachments, prompt);
@@ -409,10 +415,10 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
           "--permission-mode",
           "dontAsk",
         ],
-        { env: claudeEnvironment },
+        { env: runEnvironment },
       );
       const command = ChildProcess.make(spawnCommand.command, spawnCommand.args, {
-        env: claudeEnvironment,
+        env: runEnvironment,
         cwd: workingDirectory,
         shell: spawnCommand.shell,
         stdin: {

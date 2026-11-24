@@ -79,6 +79,7 @@ import {
 import { MAX_AGENT_TERMINAL_OUTPUT_CHARS } from "@onicode/provider-acp/server/runtimeModel";
 import {
   extractXAiAcpSubagentUpdate,
+  extractXAiAwaitedSubagentIds,
   makeGrokAdapterV2,
   makeXAiPromptCompletionRuntime,
   normalizeXAiAcpToolCallState,
@@ -11056,6 +11057,145 @@ describe("AcpAdapterV2", () => {
           );
         }
         assert.isFalse(yield* runtime.hasPendingBackgroundWork!);
+      }).pipe(Effect.provide(layerTest), Effect.scoped),
+  );
+
+  it.effect.each([
+    { ends: "the poll returns", pollReturns: true },
+    { ends: "the prompt ends inside the poll", pollReturns: false },
+  ])(
+    "marks a Grok child awaited only while a blocking poll names it, until $ends",
+    ({ pollReturns }) =>
+      Effect.gen(function* () {
+        const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+        const selfInvocation = yield* resolveSelfInvocation();
+        const mockAgentPath = yield* bundledMockAgentPath;
+        const instanceId = ProviderInstanceId.make("acp-grok-poll");
+        const threadId = ThreadId.make("thread-acp-grok-poll");
+        const childSessionId = "019f44a6-4820-7402-925d-bc862ee71200";
+        type RuntimeService = AcpSessionRuntime.AcpSessionRuntime["Service"];
+        let sessionUpdateHandler: Parameters<RuntimeService["handleSessionUpdate"]>[0] | undefined;
+        const poll = (toolCallId: string, rawInput: Record<string, unknown>) =>
+          sessionUpdateHandler!({
+            sessionId: "mock-session-1",
+            update: {
+              sessionUpdate: "tool_call",
+              toolCallId,
+              title: "get_command_or_subagent_output",
+              kind: "other",
+              status: "pending",
+              rawInput: { task_ids: [childSessionId], ...rawInput },
+            },
+          });
+        const pollReturned = (toolCallId: string) =>
+          sessionUpdateHandler!({
+            sessionId: "mock-session-1",
+            update: {
+              sessionUpdate: "tool_call_update",
+              toolCallId,
+              status: "completed",
+              rawOutput: { type: "Text", text: "Status: running" },
+            },
+          });
+        const adapter = yield* makeAcpAdapterV2({
+          instanceId,
+          selfInvocation,
+          continuationRequests: { offer: () => Effect.void },
+          flavor: {
+            driver: ACP_TEST_DRIVER,
+            capabilities: AcpProviderCapabilitiesV2,
+            extractSubagentUpdate: extractXAiAcpSubagentUpdate,
+            extractSubagentWait: extractXAiAwaitedSubagentIds,
+            makeRuntime: makeMockRuntime({
+              childProcessSpawner,
+              mockAgentPath,
+              wrapRuntime: (runtime) => ({
+                ...runtime,
+                handleSessionUpdate: (handler) =>
+                  Effect.sync(() => {
+                    sessionUpdateHandler = handler;
+                  }).pipe(Effect.andThen(runtime.handleSessionUpdate(handler))),
+                prompt: () =>
+                  Effect.gen(function* () {
+                    yield* sessionUpdateHandler!({
+                      sessionId: "mock-session-1",
+                      update: {
+                        sessionUpdate: "tool_call",
+                        toolCallId: "tool-call-spawn",
+                        title: "spawn_subagent",
+                        kind: "other",
+                        status: "completed",
+                        rawInput: { description: "Researcher", prompt: "Research" },
+                        rawOutput: {
+                          type: "Text",
+                          text: `Subagent started in background.\nsubagent_id: ${childSessionId}`,
+                        },
+                      },
+                    });
+                    // Without a timeout the poll only reads the child's status.
+                    yield* poll("tool-call-peek", {});
+                    yield* pollReturned("tool-call-peek");
+                    yield* poll("tool-call-wait", { timeout_ms: 15_000 });
+                    if (pollReturns) yield* pollReturned("tool-call-wait");
+                    return { stopReason: "end_turn" as const };
+                  }),
+              }),
+            }),
+          },
+        });
+        const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          cwd: process.cwd(),
+        });
+        const modelSelection = { instanceId, model: "default" } as const;
+        const runtime = yield* adapter.openSession({
+          threadId,
+          providerSessionId: ProviderSessionId.make("provider-session-acp-grok-poll"),
+          modelSelection,
+          runtimePolicy,
+        });
+        const events = yield* Queue.unbounded<ProviderAdapter.ProviderAdapterV2Event>();
+        yield* runtime.events.pipe(
+          Stream.runForEach((event) => Queue.offer(events, event)),
+          Effect.forkScoped,
+        );
+        const providerThread = yield* runtime.ensureThread({
+          threadId,
+          modelSelection,
+          runtimePolicy,
+        });
+        const turnInput = makeTurnInput({
+          threadId,
+          providerThread,
+          instanceId,
+          runtimePolicy,
+          now: yield* DateTime.now,
+        });
+        yield* runtime.startTurn(turnInput);
+        const seen: Array<ProviderAdapter.ProviderAdapterV2Event> = [];
+        while (seen.at(-1)?.type !== "turn.terminal") seen.push(yield* Queue.take(events));
+        // Each change, in order; a status update may re-emit the same value.
+        const changes = <A>(values: ReadonlyArray<A>) =>
+          values.filter((value, index) => index === 0 || values[index - 1] !== value);
+        assert.deepEqual(
+          changes(
+            seen.flatMap((event) =>
+              event.type === "turn_item.updated" && event.turnItem.type === "subagent"
+                ? [event.turnItem.background]
+                : [],
+            ),
+          ),
+          [true, false, true],
+        );
+        assert.deepEqual(
+          changes(
+            seen.flatMap((event) =>
+              event.type === "subagent.updated" ? [event.subagent.awaitedByRunId] : [],
+            ),
+          ),
+          [undefined, turnInput.runId, undefined],
+        );
       }).pipe(Effect.provide(layerTest), Effect.scoped),
   );
 

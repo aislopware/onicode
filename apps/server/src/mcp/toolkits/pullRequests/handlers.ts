@@ -17,6 +17,7 @@ import {
   TrimmedNonEmptyString,
   pullRequestConversationThreads,
 } from "@onicode/contracts";
+import { isHeadSha } from "@onicode/shared/git";
 import * as Cause from "effect/Cause";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
@@ -450,8 +451,7 @@ const make = Effect.gen(function* () {
       const headSha =
         layer.number !== ref.number
           ? layer.headSha
-          : layer.headSha !== undefined &&
-              PullRequestService.isHeadSha(layer.headSha, input.expectedHeadSha)
+          : layer.headSha !== undefined && isHeadSha(layer.headSha, input.expectedHeadSha)
             ? layer.headSha
             : input.expectedHeadSha;
       if (headSha === undefined)
@@ -487,6 +487,7 @@ const make = Effect.gen(function* () {
   const reviewComments = Effect.fn("PullRequestsToolkit.reviewComments")(function* (
     ref: PullRequestRef,
     comments: ReadonlyArray<ReviewLineComment>,
+    expectedHeadSha: string | undefined,
   ) {
     const placed = new Map<ReviewLineComment, PullRequestReviewCommentDraft>();
     const unplaced = () => comments.filter((comment) => !placed.has(comment));
@@ -515,6 +516,17 @@ const make = Effect.gen(function* () {
     }
     const missing = unplaced()[0];
     if (missing !== undefined) {
+      // A line can be missing because the head moved, which the agent fixes by reading it again.
+      if (expectedHeadSha !== undefined) {
+        const { headSha } = yield* pullRequests
+          .summary(ref, { bypassCache: true })
+          .pipe(Effect.mapError(forgeFailure));
+        if (headSha !== undefined && !isHeadSha(headSha, expectedHeadSha)) {
+          return yield* new PullRequestForgeError({
+            detail: `The head is now ${headSha}, not ${expectedHeadSha}. Review the new commits first.`,
+          });
+        }
+      }
       return yield* new PullRequestForgeError({
         detail: `${missing.path} line ${missing.startLine ?? missing.line} (${missing.side ?? "new"} side) is not in this PR's diff. Comment on a changed line or one shown around it.`,
       });
@@ -1210,7 +1222,7 @@ const make = Effect.gen(function* () {
           });
         }
         const { target, ref } = yield* locate(input);
-        const comments = yield* reviewComments(ref, input.comments ?? []);
+        const comments = yield* reviewComments(ref, input.comments ?? [], input.expectedHeadSha);
         yield* pullRequests
           .submitReview({
             ...ref,

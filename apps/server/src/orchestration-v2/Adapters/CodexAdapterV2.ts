@@ -3408,8 +3408,11 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               input.subagent.background = true;
               input.subagent.awaitedBy = null;
             }
+            const { awaitedByRunId: _awaitedByRunId, ...unawaited } = prior;
+            const awaitedByRunId = input.subagent.awaitedBy?.projectionRunId ?? null;
             const task = {
-              ...prior,
+              ...unawaited,
+              ...(awaitedByRunId === null ? {} : { awaitedByRunId }),
               status,
               ...(input.reopen
                 ? {

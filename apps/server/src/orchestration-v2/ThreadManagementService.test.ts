@@ -1552,11 +1552,18 @@ it.effect.each([
                   activeAttemptId: "attempt",
                   providerThreadId,
                 },
-                // A queued follow-up neither supersedes the request nor becomes the target.
+                // A follow-up that never ran neither supersedes the request nor becomes the target.
                 {
                   id: RunId.make("run:queued-follow-up"),
                   ordinal: 2,
                   status: "queued",
+                  providerThreadId,
+                },
+                {
+                  id: RunId.make("run:steered-follow-up"),
+                  ordinal: 3,
+                  status: "cancelled",
+                  startedAt: null,
                   providerThreadId,
                 },
               ],

@@ -43,6 +43,7 @@ import {
   extractXAiAcpSubagentUpdate,
   extractXAiAskUserQuestionIdentity,
   extractXAiAskUserQuestions,
+  extractXAiAwaitedSubagentIds,
   extractXAiBackgroundTaskCompletion,
   extractXAiKilledBackgroundTasks,
   extractXAiMonitorTaskId,
@@ -442,6 +443,7 @@ export function makeGrokAcpAdapterFlavor(
       }),
     registerExtensions: registerGrokAcpExtensions,
     extractSubagentUpdate: extractXAiAcpSubagentUpdate,
+    extractSubagentWait: extractXAiAwaitedSubagentIds,
     extractSubagentEndNotice: extractXAiAcpSubagentEndNotice,
     normalizeToolCall: normalizeXAiAcpToolCallState,
     extractProposedPlanMarkdown: (toolCall) =>

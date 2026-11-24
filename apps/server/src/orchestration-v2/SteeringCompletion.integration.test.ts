@@ -557,6 +557,8 @@ const nextTurnSelectionHarness = Effect.fn("nextTurnSelectionHarness")(function*
   const capabilitiesGate = { entered: Effect.void as Effect.Effect<void> };
   // Pauses a steer that changes the selection after it read the target run, holding the lock.
   const selectionGate = { entered: Effect.void as Effect.Effect<void> };
+  // Pauses an automatic promotion that chose its steers, before it asks for the thread's lock.
+  const stopReadGate = { entered: Effect.void as Effect.Effect<void> };
   const adapter: ProviderAdapter.ProviderAdapterV2["Service"] = {
     instanceId,
     driver,
@@ -694,6 +696,10 @@ const nextTurnSelectionHarness = Effect.fn("nextTurnSelectionHarness")(function*
           store
             .getProviderControlContext(threadId, target)
             .pipe(Effect.tap(() => Effect.suspend(afterSteerTargetRead))),
+        hasRunInterruptRequest: (threadId, runId) =>
+          store
+            .hasRunInterruptRequest(threadId, runId)
+            .pipe(Effect.tap(() => Effect.suspend(() => stopReadGate.entered))),
       }),
     },
   );
@@ -752,6 +758,7 @@ const nextTurnSelectionHarness = Effect.fn("nextTurnSelectionHarness")(function*
     startFirstTurn,
     capabilitiesGate,
     selectionGate,
+    stopReadGate,
   };
 });
 
@@ -2382,95 +2389,102 @@ it.effect("releases a steer whose hold was written after its turn left it", () =
   }),
 );
 
-it.effect("starts the queue when Resume lands before a held steer is released", () =>
-  Effect.gen(function* () {
-    const { layer, startFirstTurn, started } = yield* nextTurnSelectionHarness(
-      "resume-before-steer-release",
-      false,
-      true,
-      Effect.void,
-      true,
-      undefined,
-      undefined,
-      [],
-      false,
-    );
-    yield* Effect.gen(function* () {
-      const orchestrator = yield* Orchestrator.OrchestratorV2;
-      const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
-      const sink = yield* EventSink.EventSinkV2;
-      const locks = yield* ThreadCommandExecutor.ThreadCommandExecutor;
-      const threadId = yield* startFirstTurn;
-      yield* writeCompaction(threadId, "running");
-      const target = (yield* orchestrator.getThreadProjection(threadId)).runs[0]!;
-      yield* orchestrator.dispatch({
-        type: "message.dispatch",
-        commandId: CommandId.make("steer"),
-        threadId,
-        messageId: MessageId.make("message:steered"),
-        text: "steered",
-        attachments: [],
-        dispatchMode: { type: "steer_active", targetRunId: target.id },
-        createdBy: "user",
-        creationSource: "web",
-      });
-      const held = (yield* orchestrator.getThreadProjection(threadId)).runs[1]!;
-      assert.equal(held.steerWhenReadyRunId, target.id);
-
-      // Holding the thread's lock puts the release's read first and Resume ahead of its command.
-      const locked = yield* Deferred.make<void>();
-      const unlock = yield* Deferred.make<void>();
-      const holder = yield* locks
-        .withLock(
-          threadId,
-          Deferred.succeed(locked, undefined).pipe(Effect.andThen(Deferred.await(unlock))),
-        )
-        .pipe(Effect.forkChild);
-      yield* Deferred.await(locked);
-      const now = yield* DateTime.now;
-      // Recovery stopped the turn and held what was queued behind it.
-      yield* sink.write({
-        commandId: CommandId.make("command:runtime-reconcile:resume-before-steer-release"),
-        events: [
-          {
-            id: EventId.make("recovery-holds-steer"),
-            type: "run.updated",
-            threadId,
-            runId: held.id,
-            occurredAt: now,
-            payload: { ...held, queueHeld: true },
-          },
-          {
-            id: EventId.make("recovery-cancels-target"),
-            type: "run.updated",
-            threadId,
-            runId: target.id,
-            occurredAt: now,
-            payload: { ...target, status: "cancelled", completedAt: now },
-          },
-        ],
-      });
-      yield* orchestrator.recoverDelegatedTasks;
-      const resume = yield* orchestrator
-        .dispatch({ type: "queue.resume", commandId: CommandId.make("resume"), threadId })
-        .pipe(Effect.forkChild({ startImmediately: true }));
-      yield* Deferred.succeed(unlock, undefined);
-      yield* Fiber.join(holder);
-      const resumed = yield* Fiber.join(resume);
-      yield* sink.stream({ afterSequence: resumed.sequence, eventType: "run.updated" }).pipe(
-        Stream.filter(
-          (stored) =>
-            stored.event.type === "run.updated" &&
-            stored.event.runId === held.id &&
-            stored.event.payload.status !== "queued",
-        ),
-        Stream.take(1),
-        Stream.runDrain,
+it.effect.each(["released", "refused"] as const)(
+  "starts the queue when Resume lands before a held steer is %s",
+  (ending) =>
+    Effect.gen(function* () {
+      const { layer, startFirstTurn, started, stopReadGate } = yield* nextTurnSelectionHarness(
+        `resume-before-steer-${ending}`,
+        false,
+        true,
+        Effect.void,
+        true,
+        undefined,
+        undefined,
+        [],
+        false,
       );
-      yield* worker.drain();
-      assert.equal(started.at(-1)?.runId, held.id);
-    }).pipe(Effect.provide(layer));
-  }),
+      yield* Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+        const sink = yield* EventSink.EventSinkV2;
+        const locks = yield* ThreadCommandExecutor.ThreadCommandExecutor;
+        const threadId = yield* startFirstTurn;
+        yield* writeCompaction(threadId, "running");
+        const target = (yield* orchestrator.getThreadProjection(threadId)).runs[0]!;
+        yield* orchestrator.dispatch({
+          type: "message.dispatch",
+          commandId: CommandId.make("steer"),
+          threadId,
+          messageId: MessageId.make("message:steered"),
+          text: "steered",
+          attachments: [],
+          dispatchMode: { type: "steer_active", targetRunId: target.id },
+          createdBy: "user",
+          creationSource: "web",
+        });
+        const held = (yield* orchestrator.getThreadProjection(threadId)).runs[1]!;
+        assert.equal(held.steerWhenReadyRunId, target.id);
+
+        const paused = yield* Deferred.make<void>();
+        const proceed = yield* Deferred.make<void>();
+        const pause = Deferred.succeed(paused, undefined).pipe(
+          Effect.andThen(Deferred.await(proceed)),
+        );
+        if (ending === "released") {
+          // Holding the thread's lock puts the release's read first and Resume ahead of its command.
+          yield* locks.withLock(threadId, pause).pipe(Effect.forkChild);
+        } else {
+          // The turn can take the steer now, but ends before the promotion reaches it.
+          stopReadGate.entered = pause;
+          yield* writeCompaction(threadId, "completed");
+        }
+        yield* Deferred.await(paused);
+        stopReadGate.entered = Effect.void;
+        const now = yield* DateTime.now;
+        // Recovery stopped the turn and held what was queued behind it.
+        yield* sink.write({
+          commandId: CommandId.make(`command:runtime-reconcile:resume-before-steer-${ending}`),
+          events: [
+            {
+              id: EventId.make("recovery-holds-steer"),
+              type: "run.updated",
+              threadId,
+              runId: held.id,
+              occurredAt: now,
+              payload: { ...held, queueHeld: true },
+            },
+            {
+              id: EventId.make("recovery-cancels-target"),
+              type: "run.updated",
+              threadId,
+              runId: target.id,
+              occurredAt: now,
+              payload: { ...target, status: "cancelled", completedAt: now },
+            },
+          ],
+        });
+        yield* orchestrator.recoverDelegatedTasks;
+        const resume = yield* orchestrator
+          .dispatch({ type: "queue.resume", commandId: CommandId.make("resume"), threadId })
+          .pipe(Effect.forkChild({ startImmediately: true }));
+        if (ending === "refused") yield* Fiber.await(resume);
+        yield* Deferred.succeed(proceed, undefined);
+        const resumed = yield* Fiber.join(resume);
+        yield* sink.stream({ afterSequence: resumed.sequence, eventType: "run.updated" }).pipe(
+          Stream.filter(
+            (stored) =>
+              stored.event.type === "run.updated" &&
+              stored.event.runId === held.id &&
+              stored.event.payload.status !== "queued",
+          ),
+          Stream.take(1),
+          Stream.runDrain,
+        );
+        yield* worker.drain();
+        assert.equal(started.at(-1)?.runId, held.id);
+      }).pipe(Effect.provide(layer));
+    }),
 );
 
 it.effect("resumes a stopped queue for a steer that missed a completed turn", () =>

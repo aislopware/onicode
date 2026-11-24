@@ -12,6 +12,12 @@ import * as Result from "effect/Result";
 import { foldLatinDiacritics } from "./path.ts";
 
 export const WORKTREE_BRANCH_PREFIX = "onicode";
+
+/** Whether `expected` names `head`: the full SHA, or a hex prefix of at least 7 characters. */
+export const isHeadSha = (head: string, expected: string) => {
+  const wanted = expected.toLowerCase();
+  return /^[0-9a-f]{7,}$/.test(wanted) ? head.toLowerCase().startsWith(wanted) : head === expected;
+};
 const TEMP_WORKTREE_HEX_TOKEN = "[0-9a-f]{8}";
 const TEMP_WORKTREE_BRANCH_PATTERN = new RegExp(
   `^${WORKTREE_BRANCH_PREFIX}[-/]${TEMP_WORKTREE_HEX_TOKEN}$`,

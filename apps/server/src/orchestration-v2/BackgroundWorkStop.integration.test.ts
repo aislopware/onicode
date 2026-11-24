@@ -41,6 +41,8 @@ const stopEarlierBackgroundWork = ({
   failedStart = false,
   stopWithQueue,
   olderStart = false,
+  resumedOlder = false,
+  steeredTail = false,
   backgroundWorkAfterStop,
   stalledRun,
   workflowMember = false,
@@ -50,6 +52,10 @@ const stopEarlierBackgroundWork = ({
   readonly backgroundWorkAfterStop?: "running" | "unknown";
   readonly stopWithQueue?: "thread.stop" | "run.interrupt";
   readonly olderStart?: boolean;
+  /** The held older run was resumed, so it ended after the runs queued behind it. */
+  readonly resumedOlder?: boolean;
+  /** The queued message was steered into the latest run, so its own run never started. */
+  readonly steeredTail?: boolean;
   readonly workflowMember?: boolean;
   readonly stalledRun?: "missing-session-terminal" | "returned-interrupt" | "superseded-attempt";
 }) =>
@@ -994,7 +1000,9 @@ const stopEarlierBackgroundWork = ({
               threadId,
               runId: queued.id,
               occurredAt: now,
-              payload: { ...queued, queueHeld: true },
+              payload: steeredTail
+                ? { ...queued, status: "cancelled", queuePosition: null, completedAt: now }
+                : { ...queued, queueHeld: true },
             },
             {
               id: EventId.make("latest-run-settled"),
@@ -1026,6 +1034,26 @@ const stopEarlierBackgroundWork = ({
         });
       }
 
+      if (resumedOlder) {
+        const older = (yield* orchestrator.getThreadProjection(threadId)).runs.find(
+          (run) => run.id === watcherRun.runId,
+        )!;
+        yield* sink.write({
+          events: [
+            {
+              id: EventId.make("older-run-ended-last"),
+              type: "run.updated",
+              threadId,
+              runId: older.id,
+              occurredAt: now,
+              payload: { ...older, completedAt: DateTime.add(now, { seconds: 1 }) },
+            },
+          ],
+        });
+      }
+
+      const stopTarget =
+        olderStart || resumedOlder ? watcherRun : failedStart ? failedRun : latestRun;
       yield* orchestrator.dispatch(
         stopWithQueue === "thread.stop"
           ? {
@@ -1037,11 +1065,7 @@ const stopEarlierBackgroundWork = ({
               type: "run.interrupt",
               commandId: CommandId.make("stop-background-work"),
               threadId,
-              runId: olderStart
-                ? watcherRun.runId
-                : failedStart
-                  ? failedRun.runId
-                  : latestRun.runId,
+              runId: stopTarget.runId,
               ...(stopWithQueue === undefined ? {} : { holdQueue: true }),
             },
       );
@@ -1050,17 +1074,28 @@ const stopEarlierBackgroundWork = ({
       assert.sameDeepMembers(
         interrupts.map((interrupt) => [interrupt.providerThread.id, interrupt.providerTurnId]),
         [
-          ...(olderStart || failedStart ? [] : [[otherProviderThreadId, latestRun.providerTurnId]]),
-          [codexProviderThread.id, reviewerRun.providerTurnId],
+          ...(olderStart || resumedOlder || failedStart
+            ? []
+            : [[otherProviderThreadId, latestRun.providerTurnId]]),
+          [
+            codexProviderThread.id,
+            resumedOlder ? watcherRun.providerTurnId : reviewerRun.providerTurnId,
+          ],
         ],
       );
       const after = yield* orchestrator.getThreadProjection(threadId);
+      assert.deepEqual(
+        after.turnItems.flatMap((item) =>
+          item.type === "run_interrupt_request" ? [item.runId] : [],
+        ),
+        [stopTarget.runId],
+      );
       if (olderStart) {
         assert.equal(after.runs.find((run) => run.id === watcherRun.runId)?.status, "interrupted");
       }
       if (stopWithQueue !== undefined) {
-        assert.equal(after.runs.at(-1)?.status, "queued");
-        assert.equal(after.runs.at(-1)?.queueHeld, true);
+        assert.equal(after.runs.at(-1)?.status, steeredTail ? "cancelled" : "queued");
+        if (!steeredTail) assert.equal(after.runs.at(-1)?.queueHeld, true);
         assert.lengthOf(started, 1);
       }
       assert.deepEqual(
@@ -1135,6 +1170,11 @@ it.effect.each(["thread.stop", "run.interrupt"] as const)(
 it.effect.each(["thread.stop", "run.interrupt"] as const)(
   "%s reaches later background work when an older run is starting",
   (stopType) => stopEarlierBackgroundWork({ stopWithQueue: stopType, olderStart: true }),
+);
+
+it.effect.each([{ resumedOlder: true }, { steeredTail: true }])(
+  "Stop targets the run that ran last, not the highest ordinal (%o)",
+  (row) => stopEarlierBackgroundWork({ stopWithQueue: "thread.stop", ...row }),
 );
 
 it.effect.each(["missing-session-terminal", "returned-interrupt", "superseded-attempt"] as const)(

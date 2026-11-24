@@ -8020,7 +8020,8 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                       findCursorEndIndex(indexed, decodeThreadHistoryCursor(cursor)),
                       indexed.length - 1,
                     );
-              while (workMode !== undefined) {
+              while (true) {
+                if (workMode === undefined) break;
                 const { page } = selection;
                 const span = [...page.items.slice(0, 1), ...page.items.slice(-1)].map(
                   (row) => row.canonicalPosition,

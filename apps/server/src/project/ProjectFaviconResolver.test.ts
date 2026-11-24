@@ -4,6 +4,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
+import * as PlatformError from "effect/PlatformError";
 import { TestClock } from "effect/testing";
 
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
@@ -355,6 +356,44 @@ it.layer(layerTest)("ProjectFaviconResolverLive", (it) => {
 
         expect(yield* resolver.resolvePath(cwd)).toBe(path.join(cwd, "favicon.svg"));
       }),
+    );
+
+    it.effect.each(["ENAMETOOLONG", "EINVAL"])(
+      "tries the next icon link when the filesystem rejects a declared one's name (%s)",
+      (code) =>
+        Effect.gen(function* () {
+          const fileSystem = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const cwd = yield* makeTempDir;
+          yield* writeTextFile(
+            cwd,
+            "app/root.tsx",
+            `export const links = () => [
+  { rel: "icon", href: "<%= BASE_URL %>favicon.ico" },
+  { rel: "icon", href: "/brand.svg" },
+];`,
+          );
+          yield* writeTextFile(cwd, "brand.svg", "<svg>brand</svg>");
+          const resolver = yield* makeResolverWithFileSystem(
+            FileSystem.FileSystem.of({
+              ...fileSystem,
+              stat: (filePath) =>
+                filePath.includes("<%=")
+                  ? Effect.fail(
+                      PlatformError.systemError({
+                        _tag: "Unknown",
+                        module: "FileSystem",
+                        method: "stat",
+                        pathOrDescriptor: filePath,
+                        cause: Object.assign(new Error(code), { code }),
+                      }),
+                    )
+                  : fileSystem.stat(filePath),
+            }),
+          );
+
+          expect(yield* resolver.resolvePath(cwd)).toBe(path.join(cwd, "brand.svg"));
+        }),
     );
 
     it.effect("skips icon metadata paths outside the workspace", () =>
