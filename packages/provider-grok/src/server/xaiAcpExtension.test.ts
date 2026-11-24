@@ -170,6 +170,7 @@ describe("XAiAcpExtension", () => {
       childSessionId: "019f44a6-4820-7402-925d-bc862ee711dd",
       result: null,
       suppressNormalTool: true,
+      background: true,
     });
   });
 

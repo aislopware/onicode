@@ -902,6 +902,7 @@ export function extractXAiAcpSubagentUpdate(
     childSessionId,
     result: asyncSpawnAck ? null : legacyResult,
     suppressNormalTool: true,
+    ...(asyncSpawnAck ? { background: true } : {}),
   };
 }
 

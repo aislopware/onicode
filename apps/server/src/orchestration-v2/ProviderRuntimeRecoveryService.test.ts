@@ -841,6 +841,7 @@ it.effect(
           status: "ready",
           extensionStatuses: [{ key: "watch", text: "Watching" }],
           startupPhase: "mcp",
+          startupPhaseThreadId: threadId,
         },
         // Stopped mid-startup, its phase still saved.
         {
@@ -972,12 +973,18 @@ it.effect(
       assert.deepEqual(
         events.flatMap((event) =>
           event.type === "provider-session.updated"
-            ? [[event.payload.extensionStatuses, "startupPhase" in event.payload]]
+            ? [
+                [
+                  event.payload.extensionStatuses,
+                  "startupPhase" in event.payload,
+                  "startupPhaseThreadId" in event.payload,
+                ],
+              ]
             : [],
         ),
         [
-          [[], false],
-          [undefined, false],
+          [[], false, false],
+          [undefined, false, false],
         ],
       );
       assert.deepEqual(

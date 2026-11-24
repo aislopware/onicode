@@ -260,5 +260,6 @@ export function extractCopilotSubagentUpdate(
     model: typeof input.model === "string" ? input.model : null,
     status,
     result: status !== "running" && typeof output === "string" ? output : null,
+    ...(background ? { background } : {}),
   };
 }

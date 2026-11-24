@@ -1,14 +1,21 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
+  MessageId,
+  NodeId,
+  PlanId,
   ProviderDriverKind,
   ProviderInstanceId,
+  RunId,
   ThreadId,
+  TurnItemId,
   type OrchestrationV2Subagent,
   type OrchestrationV2SubagentWorkflow,
+  type OrchestrationV2TurnItem,
 } from "@onicode/contracts";
 import * as DateTime from "effect/DateTime";
 
 import {
+  countSubagentsBlockingRun,
   deriveWorkflowGroups,
   isWorkflowScriptMessage,
   projectedSubagentsToRuntime,
@@ -328,5 +335,91 @@ describe("resolveWorkflowOpening", () => {
     expect(
       isWorkflowScriptMessage({ role: "user", text: `${"/**/".repeat(200)}const x = 1;` }),
     ).toBe(false);
+  });
+});
+
+describe("countSubagentsBlockingRun", () => {
+  const runId = RunId.make("parent-run");
+  const base = (id: string) => ({
+    id: TurnItemId.make(id),
+    threadId: ThreadId.make("parent-thread"),
+    runId,
+    nodeId: null,
+    providerThreadId: null,
+    providerTurnId: null,
+    nativeItemRef: null,
+    parentItemId: null,
+    ordinal: 0,
+    title: null,
+    startedAt: at("2026-08-01T10:00:00.000Z"),
+    completedAt: null,
+    updatedAt: at("2026-08-01T10:00:00.000Z"),
+  });
+  const child = (
+    id: string,
+    status: "running" | "completed" = "running",
+    background?: boolean,
+  ): OrchestrationV2TurnItem => ({
+    ...base(id),
+    status,
+    type: "subagent",
+    subagentId: NodeId.make(id),
+    origin: "provider_native",
+    driver: ProviderDriverKind.make("claudeAgent"),
+    providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+    childThreadId: null,
+    prompt: id,
+    result: null,
+    ...(background === undefined ? {} : { background }),
+  });
+  const reply = (id: string): OrchestrationV2TurnItem => ({
+    ...base(id),
+    status: "completed",
+    type: "assistant_message",
+    messageId: MessageId.make(id),
+    text: `Status ${id}`,
+    streaming: false,
+  });
+  const todo: OrchestrationV2TurnItem = {
+    ...base("todo"),
+    status: "completed",
+    type: "todo_list",
+    planId: PlanId.make("plan"),
+    steps: [{ id: "step-1", text: "Review", status: "running" }],
+  };
+  const delegate = (status: "running" | "completed" | "failed"): OrchestrationV2TurnItem => ({
+    ...base(`delegate-${status}`),
+    status,
+    type: "dynamic_tool",
+    toolName: "onicode.delegate_task",
+    input: { task: "Review" },
+    ...(status === "running" ? {} : { output: { taskId: "delegated" } }),
+  });
+  const count = (items: ReadonlyArray<OrchestrationV2TurnItem>, repliesShown = true) =>
+    countSubagentsBlockingRun(items, runId, (item) => [item], repliesShown);
+
+  it.each([
+    ["a foreground child, or one from a server that sends no flag", [child("a")], 1],
+    ["a background child", [child("a", "running", true), child("b", "running", false)], 1],
+    // The parent wrote and launched more after A, so it was not parked on A.
+    ["a reply between children", [child("a"), reply("m1"), child("b", "completed")], 0],
+    ["a trailing status reply", [child("a"), child("b"), reply("m2")], 2],
+    ["the parent's task list and delegate calls", [child("a"), delegate("completed"), todo], 1],
+    ["a running delegate call", [child("a"), delegate("running"), child("b")], 2],
+    ["a failed delegate call", [child("a"), delegate("failed")], 0],
+    ["another run's child", [{ ...child("a"), runId: RunId.make("other-run") }], 0],
+  ] as const)("counts %s", (_name, items, expected) => {
+    expect(count(items)).toBe(expected);
+  });
+
+  it("leaves the trailing status reply to the live row when replies are hidden", () => {
+    expect(count([child("a"), reply("m2")], false)).toBe(0);
+    expect(count([child("a")], false)).toBe(1);
+  });
+
+  it("stops at an entry that holds no turn item", () => {
+    expect(
+      countSubagentsBlockingRun([[child("a")], null, [child("b")]], runId, (items) => items, true),
+    ).toBe(1);
   });
 });

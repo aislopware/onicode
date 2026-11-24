@@ -1372,7 +1372,7 @@ describe("buildThreadFeed", () => {
     });
     const startedAt = "2026-06-20T00:00:01.000Z";
     const latestRun = { runId, status: "running" as const, startedAt, completedAt: null };
-    const present = (tail: ReadonlyArray<OrchestrationV2TurnItem>) =>
+    const present = (tail: ReadonlyArray<OrchestrationV2TurnItem>, zen = false) =>
       deriveThreadFeedPresentation(
         buildThreadFeed([
           projected(userMessage(), 0),
@@ -1385,23 +1385,25 @@ describe("buildThreadFeed", () => {
         new Set(),
         new Set(),
         startedAt,
+        false,
+        undefined,
+        zen ? { toolCallVisibility: "zen", revealedMessageId: null } : undefined,
       );
     const thinkingLabel = (rows: ReadonlyArray<ThreadFeedEntry>) => {
       const row = rows.find((entry) => entry.type === "thinking");
       return row?.type === "thinking" ? row.label : undefined;
     };
-    expect(
-      thinkingLabel(
-        present([
-          {
-            ...assistantMessage("2026-06-20T00:00:05.000Z"),
-            id: TurnItemId.make("status"),
-            messageId: MessageId.make("status"),
-            text: "Subagents launched; waiting for them to report back.",
-          },
-        ]),
-      ),
-    ).toBe("Waiting on 2 subagents");
+    const status: OrchestrationV2TurnItem = {
+      ...assistantMessage("2026-06-20T00:00:05.000Z"),
+      id: TurnItemId.make("status"),
+      messageId: MessageId.make("status"),
+      text: "Subagents launched; waiting for them to report back.",
+    };
+    expect(thinkingLabel(present([status]))).toBe("Waiting on 2 subagents");
+    // Zen hides the status row and the children, so the live row carries the status.
+    expect(thinkingLabel(present([status], true))).toBe(
+      "Subagents launched; waiting for them to report back.",
+    );
     expect(
       thinkingLabel(
         present([

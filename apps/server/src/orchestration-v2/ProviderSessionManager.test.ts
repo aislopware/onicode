@@ -2075,10 +2075,10 @@ it.effect.each(["completes", "is interrupted"] as const)(
 );
 
 it.effect.each([
-  { then: "unloads its native thread", reattaches: false },
-  { then: "leaves the native thread it attached again loaded", reattaches: true },
+  { outcome: "unloads its native thread", reattaches: false },
+  { outcome: "leaves the native thread it attached again loaded", reattaches: true },
 ])(
-  "ProviderSessionManagerV2 retires a thread from a process a sibling works on, $then, and still idles out",
+  "ProviderSessionManagerV2 retires a thread from a process a sibling works on, $outcome, and still idles out",
   ({ reattaches }) =>
     Effect.gen(function* () {
       const state = yield* Ref.make(emptyState);
@@ -2452,7 +2452,12 @@ it.effect(
         yield* Queue.offer(oldQueue!, {
           type: "provider_session.updated",
           driver: CODEX_DRIVER,
-          providerSession: { ...runtime.providerSession, extensionStatuses: statuses },
+          providerSession: {
+            ...runtime.providerSession,
+            extensionStatuses: statuses,
+            startupPhase: "mcp",
+            startupPhaseThreadId: threadId,
+          },
         });
         yield* Effect.all([
           firstClient.events.pipe(Stream.runHead),
@@ -2489,11 +2494,12 @@ it.effect(
           statuses,
         );
         yield* manager.close(providerSessionId);
-        assert.deepEqual(
-          (yield* projectionStore.getThreadProjection(threadId)).providerSessions.at(-1)
-            ?.extensionStatuses,
-          [],
+        const released = (yield* projectionStore.getThreadProjection(threadId)).providerSessions.at(
+          -1,
         );
+        assert.deepEqual(released?.extensionStatuses, []);
+        assert.isFalse(released !== undefined && "startupPhase" in released);
+        assert.isFalse(released !== undefined && "startupPhaseThreadId" in released);
         const replacement = yield* manager.open({
           threadId,
           providerSessionId,

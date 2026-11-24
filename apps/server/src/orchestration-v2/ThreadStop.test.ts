@@ -724,6 +724,152 @@ it.effect(
     }).pipe(Effect.provide(layerTest)),
 );
 
+it.effect.each(["usage limit", "restart continuation"] as const)(
+  "stopDelegatedTasks stops a child whose resumed older run ended last with a %s pending",
+  (ending) =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const projections = yield* ProjectionStore.ProjectionStoreV2;
+      const sql = yield* SqlClient.SqlClient;
+      const threads = yield* ThreadManagementService.ThreadManagementService;
+      const parentThreadId = ThreadId.make("thread:stop-resumed-child-parent");
+      yield* createWatchingThread(parentThreadId, 31);
+      yield* send(parentThreadId, "parent", "start_immediately");
+      const childId = yield* delegate(parentThreadId, "child with a resumed older run");
+      const now = yield* DateTime.now;
+      const later = DateTime.add(now, { seconds: 1 });
+      const older = (yield* orchestrator.getThreadProjection(childId)).runs[0]!;
+      yield* projections.apply({
+        id: EventId.make("event:stop-resumed-child:older-completed"),
+        type: "run.updated",
+        threadId: childId,
+        runId: older.id,
+        occurredAt: now,
+        payload: { ...older, status: "completed", startedAt: now, completedAt: now },
+      });
+      for (const task of (yield* orchestrator.getThreadProjection(parentThreadId)).subagents) {
+        yield* projections.apply({
+          id: EventId.make(`event:stop-resumed-child:task:${task.id}`),
+          type: "subagent.updated",
+          threadId: parentThreadId,
+          runId: task.runId!,
+          nodeId: task.id,
+          providerInstanceId: instanceId,
+          occurredAt: now,
+          payload: {
+            ...task,
+            status: "completed",
+            result: "done",
+            completedAt: now,
+            completionDelivery: { state: "acknowledged", observedByRunId: null },
+          },
+        });
+      }
+      yield* send(childId, "newer", "start_immediately");
+      const newer = (yield* orchestrator.getThreadProjection(childId)).runs.at(-1)!;
+      yield* projections.apply({
+        id: EventId.make("event:stop-resumed-child:newer-completed"),
+        type: "run.updated",
+        threadId: childId,
+        runId: newer.id,
+        occurredAt: now,
+        payload: { ...newer, status: "completed", startedAt: now, completedAt: now },
+      });
+      // The older run resumed from a held queue, so it ended last while the newer one is the tail.
+      yield* projections.apply({
+        id: EventId.make("event:stop-resumed-child:older-ended"),
+        type: "run.updated",
+        threadId: childId,
+        runId: older.id,
+        occurredAt: later,
+        payload: {
+          ...older,
+          status: ending === "usage limit" ? "failed" : "cancelled",
+          startedAt: now,
+          completedAt: later,
+        },
+      });
+      if (ending === "usage limit") {
+        yield* projections.apply({
+          id: EventId.make("event:stop-resumed-child:usage-limit"),
+          type: "turn-item.updated",
+          threadId: childId,
+          runId: older.id,
+          nodeId: older.rootNodeId!,
+          providerInstanceId: instanceId,
+          occurredAt: later,
+          payload: {
+            id: TurnItemId.make("turn-item:stop-resumed-child:usage-limit"),
+            type: "error",
+            threadId: childId,
+            runId: older.id,
+            nodeId: older.rootNodeId!,
+            providerThreadId: null,
+            providerTurnId: null,
+            nativeItemRef: null,
+            parentItemId: null,
+            ordinal: 1000,
+            status: "failed",
+            title: "Usage limit reached",
+            startedAt: later,
+            completedAt: later,
+            updatedAt: later,
+            failure: {
+              class: "usage_limit",
+              message: "Plan limit reached.",
+              code: "usageLimitExceeded",
+              retryable: null,
+              resetAt: DateTime.formatIso(DateTime.add(now, { minutes: 5 })),
+            },
+          },
+        });
+      } else {
+        const at = DateTime.formatIso(later);
+        yield* sql`
+          INSERT INTO orchestration_v2_effect_outbox (
+            effect_id, command_id, thread_id, effect_type, payload_json, status,
+            attempt_count, available_at, created_at, updated_at
+          ) VALUES (
+            ${`effect:restart-continuation:${older.id}`}, 'command:restart', ${childId},
+            'provider-runtime.continue',
+            ${encodeEffectRequest({ type: "provider-runtime.continue", sourceRunId: older.id })},
+            'pending', 0, ${at}, ${at}, ${at}
+          )
+        `;
+      }
+
+      yield* threads.stopDelegatedTasks({
+        threadId: parentThreadId,
+        commandId: CommandId.make("stop-resumed-child"),
+      });
+
+      if (ending === "usage limit") {
+        const recovery = (yield* orchestrator.getThreadProjection(childId)).thread.limitRecovery;
+        assert.equal(recovery?.runId, older.id);
+        assert.isFalse(recovery?.autoResume);
+        return;
+      }
+      assert.isTrue(
+        (yield* orchestrator.getThreadProjection(childId)).turnItems.some(
+          (item) => item.type === "run_interrupt_request" && item.runId === older.id,
+        ),
+      );
+      yield* orchestrator.dispatch({
+        type: "message.dispatch",
+        commandId: CommandId.make("stop-resumed-child:continuation"),
+        threadId: childId,
+        messageId: MessageId.make("message:stop-resumed-child:continuation"),
+        text: "Continue.",
+        attachments: [],
+        dispatchMode: { type: "start_immediately" },
+        createdBy: "agent",
+        creationSource: "server",
+        restartContinuationOfRunId: older.id,
+      });
+      assert.deepEqual((yield* threadState(childId)).runs, ["cancelled", "completed"]);
+    }).pipe(Effect.provide(layerTest)),
+);
+
 it.effect("a repeated Stop that changes nothing still stops the delegated tasks", () =>
   Effect.gen(function* () {
     const orchestrator = yield* Orchestrator.OrchestratorV2;

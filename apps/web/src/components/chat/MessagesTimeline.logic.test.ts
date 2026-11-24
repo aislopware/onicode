@@ -2,6 +2,7 @@ import { ThreadId, type WorktreeSetupSnapshot } from "@onicode/contracts";
 import {
   CheckpointRef,
   NodeId,
+  PlanId,
   ProviderDriverKind,
   ProviderInstanceId,
   ProviderTurnId,
@@ -5102,7 +5103,10 @@ describe("parent run waiting on foreground subagents", () => {
     result: null,
   });
 
-  const liveRow = (later: ReadonlyArray<OrchestrationV2TurnItem>, toolCallVisibility?: "hideAll") =>
+  const liveRow = (
+    later: ReadonlyArray<OrchestrationV2TurnItem>,
+    toolCallVisibility?: "hideAll" | "zen",
+  ) =>
     deriveMessagesTimelineRows({
       timelineEntries: deriveTimelineEntriesFromVisibleTurnItems({
         visibleTurnItems: (
@@ -5175,6 +5179,19 @@ describe("parent run waiting on foreground subagents", () => {
     };
     expect(liveRow([status])).toEqual({ ...thinking, label: "Waiting on 2 subagents" });
     expect(liveRow([{ ...status, runId: RunId.make("other-run") }])).toEqual(thinking);
+    // Zen hides the status row, so the live row shows the status instead of the count.
+    expect(liveRow([status], "zen")).toEqual(thinking);
+  });
+
+  it("names the running children past the parent's task-list update", () => {
+    const todo: OrchestrationV2TurnItem = {
+      ...base("todo", 5),
+      status: "completed",
+      type: "todo_list",
+      planId: PlanId.make("plan"),
+      steps: [{ id: "step-1", text: "Wait for the children", status: "running" }],
+    };
+    expect(liveRow([todo])).toEqual({ ...thinking, label: "Waiting on 2 subagents" });
   });
 
   it("keeps Thinking when a hidden newer parent command follows the children", () => {

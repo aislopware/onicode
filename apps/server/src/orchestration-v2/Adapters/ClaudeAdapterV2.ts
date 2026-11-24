@@ -145,6 +145,7 @@ import {
   type ThreadId,
   resolveIdleCompaction,
   isDelegatedAppThread,
+  USER_INPUT_NONE_SELECTED_ANSWER,
 } from "@onicode/contracts";
 
 import { FILE_HEADERS_ONLY, formatPatch, structuredPatch } from "diff";
@@ -5951,6 +5952,8 @@ interface ActiveClaudeSubagent {
   resultItemOrdinal: number | null;
   lastAssistantText: string | null;
   lastAssistantMessageId: string | null;
+  // The parent works on beside it: a background launch or move, or an early launch result.
+  readonly background?: true;
 }
 
 interface ClaudeLiveQueryContext {
@@ -6196,7 +6199,8 @@ export function claudeSdkUserInputAnswers(
     Object.entries(answers).map(([question, answer]) => [
       question,
       Array.isArray(answer)
-        ? answer.filter((value): value is string => typeof value === "string").join(", ")
+        ? answer.filter((value): value is string => typeof value === "string").join(", ") ||
+          USER_INPUT_NONE_SELECTED_ANSWER
         : typeof answer === "string"
           ? answer
           : String(answer ?? ""),
@@ -6968,6 +6972,17 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                         registry.get(taskId)?.runToolUseId === toolUseId
                           ? Ref.update(backgroundedSubagentTaskIds, (current) =>
                               new Set(current).add(taskId),
+                            ).pipe(
+                              Effect.andThen(
+                                live.lastTurn === null
+                                  ? Effect.void
+                                  : updateClaudeSubagentNode({
+                                      context: live.lastTurn,
+                                      taskId,
+                                      status: "running",
+                                      onlyIfRunningInRun: registry.get(taskId)!.task.runId,
+                                    }),
+                              ),
                             )
                           : Effect.void,
                       ),
@@ -8990,6 +9005,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           // The process that ran it exited, which confirms the outcome as a native one would.
           readonly processExited?: true;
           readonly onlyIfRunningInRun?: RunId | null;
+          readonly background?: true;
         }) {
           const registeredSubagent = (yield* Ref.get(sessionSubagentsByTaskId)).get(input.taskId);
           const existingSubagent =
@@ -9084,6 +9100,10 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                     )
                   : undefined));
           const model = input.model ?? priorTask?.model ?? null;
+          const background =
+            input.background === true ||
+            (yield* Ref.get(backgroundedSubagentTaskIds)).has(input.taskId) ||
+            (!isReopen && existingSubagent?.background === true);
           const movesToCurrentRun =
             input.reopen === true && input.status === "running" && existingSubagent !== undefined;
           const task = {
@@ -9167,6 +9187,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               input.reopen === true ? null : (existingSubagent?.lastAssistantText ?? null),
             lastAssistantMessageId:
               input.reopen === true ? null : (existingSubagent?.lastAssistantMessageId ?? null),
+            ...(background ? { background: true as const } : {}),
           } satisfies ActiveClaudeSubagent;
           // Ingestion can terminalize after lookup; reopen only that generation to preserve newer results.
           const accepted = yield* Ref.modify(sessionSubagentsByTaskId, (current) => {
@@ -9354,6 +9375,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               prompt: task.prompt,
               ...(task.progress === undefined ? {} : { progress: task.progress }),
               result: task.result,
+              ...(subagent.background ? { background: true } : {}),
             },
           });
 
@@ -13154,7 +13176,18 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               subagent !== undefined &&
               findToolCall(context, toolResult.tool_use_id) === undefined
             ) {
-              if (!claudeToolResultSettlesSubagent(toolResult, output)) continue;
+              if (!claudeToolResultSettlesSubagent(toolResult, output)) {
+                if (subagent.background !== true) {
+                  yield* updateClaudeSubagentNode({
+                    context,
+                    taskId: subagent.task.nativeTaskRef?.nativeId ?? String(subagent.task.id),
+                    status: "running",
+                    onlyIfRunningInRun: subagent.task.runId,
+                    background: true,
+                  });
+                }
+                continue;
+              }
               const result = claudeSubagentResultText(output);
               yield* updateClaudeSubagentNode({
                 context,

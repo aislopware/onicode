@@ -1954,6 +1954,7 @@ describe("AcpRegistryAdapterV2", () => {
       if (earlyItem?.type !== "turn_item.updated" || earlyItem.turnItem.type !== "subagent")
         throw new Error("Missing early parent item");
       assert.equal(earlyItem.turnItem.result, "First review result.");
+      assert.isTrue(earlyItem.turnItem.background, "run_in_background leaves the parent working");
       assert.isTrue(yield* session.runtime.hasPendingBackgroundWork!);
       gate.release("child-output");
       const childOutput = yield* session.throughMarker("child output");

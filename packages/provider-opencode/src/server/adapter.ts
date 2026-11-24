@@ -1746,6 +1746,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
               childThreadId: context.childThreadId,
               prompt,
               result: context.result,
+              ...(context.launch === null ? {} : { background: true }),
             },
           });
         });

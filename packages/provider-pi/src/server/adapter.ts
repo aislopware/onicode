@@ -1588,6 +1588,7 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
           readonly status: OrchestrationV2Subagent["status"];
           readonly progress?: string | undefined;
           readonly result: string | null;
+          readonly background?: true;
         },
       ) {
         const emittedAt = yield* DateTime.now;
@@ -1648,6 +1649,7 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
             prompt: task.task,
             ...progress,
             result: task.result,
+            ...(task.background ? { background: true } : {}),
           },
         });
       });
@@ -1680,6 +1682,7 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
             model,
             status,
             result: null,
+            background: true,
           });
         }
         const runStatus = piAsyncSubagentStatus(recordString(run, "state"));

@@ -474,6 +474,15 @@ describe("thread execution presentation", () => {
       })?.providerStartingLabel;
     expect(sharedPhase(v2Projection.thread.id)).toBe("Starting Claude MCP servers");
     expect(sharedPhase(ThreadId.make("another-thread"))).toBe("Starting Claude");
+    // Older servers keep the phase on a session they released; a dead session describes no start.
+    for (const status of ["stopped", "error"] as const) {
+      expect(
+        deriveThreadActivityRun({
+          ...starting,
+          providerSessions: [{ ...session, status, startupPhase: "mcp" }],
+        })?.providerStartingLabel,
+      ).toBe("Starting Claude");
+    }
     expect(
       deriveThreadActivityRun({ ...starting, providerSessions: [] })?.providerStartingLabel,
     ).toBe("Starting");

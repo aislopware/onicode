@@ -1399,6 +1399,17 @@ it.effect("wakes the parent once when its delegated task asks a question", () =>
       creationSource: "mcp",
     });
     const task = (yield* projections.getThreadProjection(parentThreadId)).subagents[0]!;
+    const taskBackground = Effect.map(
+      projections.getThreadProjection(parentThreadId),
+      (projection) => {
+        const item = projection.turnItems.find(
+          (candidate) => candidate.type === "subagent" && candidate.subagentId === task.id,
+        );
+        return item?.type === "subagent" ? item.background : "missing";
+      },
+    );
+    // A waiting delegation parks the parent on the task.
+    assert.strictEqual(yield* taskBackground, undefined);
     const childRun = (yield* projections.getThreadRecords(task.childThreadId!, ["runs"])).runs[0]!;
     const now = yield* DateTime.now;
     const requestEvent = (
@@ -1598,6 +1609,7 @@ it.effect("wakes the parent once when its delegated task asks a question", () =>
       taskId: task.id,
       completionWake: "always",
     });
+    assert.strictEqual(yield* taskBackground, true);
     const upgradedQuestion = requestEvent(
       "event:upgraded-question",
       "request:upgraded-question",

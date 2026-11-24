@@ -86,6 +86,10 @@ Traps that have broken multiple adapters:
   report after Onicode's turn settles. Route subagent updates by subagent (not active run), request
   continuations when needed, and report pending background work so idle cleanup does not kill the
   session.
+- **Waiting versus working parent.** Set `background` on a subagent row once the parent works on
+  while it runs: a background launch, a launch call that returned early, a steer that moved it
+  aside. Clients read a live row without it as the parent waiting, and say "Waiting on N
+  subagents" instead of Thinking.
 - **Terminal settlement.** Every terminal path (completion, Stop, provider error, process exit) must
   settle open tool calls, subagents, and pending requests.
 - **Usage limits.** Classify quota/rate-limit errors as `usage_limit` (with reset time when

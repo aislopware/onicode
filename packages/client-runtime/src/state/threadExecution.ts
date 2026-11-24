@@ -162,14 +162,18 @@ export function presentProviderStarting(input: {
   };
 }
 
-// A session shared by several threads names the one thread its phase describes.
+// A session shared by several threads names the one thread its phase describes. Older servers
+// keep the phase on a released session, which describes no start.
 function startupPhaseFor(
   projection: ThreadStructure,
   session: OrchestrationV2ProviderSession | undefined,
 ) {
-  return session?.startupPhaseThreadId === undefined ||
+  if (session === undefined || session.status === "stopped" || session.status === "error") {
+    return undefined;
+  }
+  return session.startupPhaseThreadId === undefined ||
     session.startupPhaseThreadId === projection.thread.id
-    ? session?.startupPhase
+    ? session.startupPhase
     : undefined;
 }
 
