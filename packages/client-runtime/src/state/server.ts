@@ -1843,6 +1843,10 @@ export function createServerEnvironmentAtoms<R, E>(
       label: "environment-data:server:update-provider",
       tag: WS_METHODS.serverUpdateProvider,
     }),
+    cancelProviderUpdate: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:cancel-provider-update",
+      tag: WS_METHODS.serverCancelProviderUpdate,
+    }),
     updateServer,
     stageServerUpdate: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:stage-update",

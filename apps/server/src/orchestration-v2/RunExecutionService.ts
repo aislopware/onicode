@@ -2249,6 +2249,7 @@ export const layer: Layer.Layer<
         const appContext = yield* McpAppModelContext.forProvider(
           mcpAppModelContext,
           input.run.threadId,
+          input.run.id,
         );
         const turnInput = {
           appThread: input.appThread,

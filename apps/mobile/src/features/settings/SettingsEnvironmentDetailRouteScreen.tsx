@@ -12,9 +12,14 @@ import {
   TAILNET_APP_CAPABILITY,
   resolveEnvironmentMachineKind,
   type EnvironmentId,
+  type ProviderInstanceId,
   type ServerProvider,
 } from "@onicode/contracts";
-import { settlePromise, squashAtomCommandFailure } from "@onicode/client-runtime/state/runtime";
+import {
+  isAtomCommandInterrupted,
+  settlePromise,
+  squashAtomCommandFailure,
+} from "@onicode/client-runtime/state/runtime";
 import { managedUpdatesDenial } from "@onicode/client-runtime/contract-labels";
 import { sessionPermissionsUnavailableMessage } from "@onicode/shared/authScopeOptions";
 import * as Cause from "effect/Cause";
@@ -82,10 +87,15 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
       .serverUpdateRequired === true;
   const updateServer = useAtomCommand(serverEnvironment.updateServer);
   const updateProvider = useAtomCommand(serverEnvironment.updateProvider);
+  const cancelProviderUpdate = useAtomCommand(serverEnvironment.cancelProviderUpdate);
   const refreshProviders = useAtomCommand(serverEnvironment.refreshProviders);
   const updateSettings = useAtomCommand(serverEnvironment.updateSettings);
   const [connectionExpanded, setConnectionExpanded] = useState(false);
   const [pending, setPending] = useState<string | null>(null);
+  const [cancellingProviderIds, setCancellingProviderIds] = useState<
+    ReadonlySet<ProviderInstanceId>
+  >(() => new Set());
+  const cancellingProviderIdsRef = useRef<Set<ProviderInstanceId>>(new Set());
   const pendingRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -198,6 +208,37 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
       });
       if (AsyncResult.isFailure(result)) throw squashAtomCommandFailure(result);
     });
+  }
+
+  // Not gated on `busy`: the update being cancelled is what keeps the screen busy.
+  async function requestProviderUpdateCancel(provider: ServerProvider) {
+    if (
+      cancellingProviderIdsRef.current.has(provider.instanceId) ||
+      !readEnvironmentScope(environmentId, AuthProvidersManageScope)
+    )
+      return;
+    cancellingProviderIdsRef.current.add(provider.instanceId);
+    setCancellingProviderIds((previous) => new Set(previous).add(provider.instanceId));
+    const result = await cancelProviderUpdate({
+      environmentId,
+      input: { provider: provider.driver, instanceId: provider.instanceId },
+    }).finally(() => {
+      cancellingProviderIdsRef.current.delete(provider.instanceId);
+      setCancellingProviderIds((previous) => {
+        if (!previous.has(provider.instanceId)) return previous;
+        const next = new Set(previous);
+        next.delete(provider.instanceId);
+        return next;
+      });
+    });
+    if (AsyncResult.isFailure(result) && !isAtomCommandInterrupted(result)) {
+      const cause = squashAtomCommandFailure(result);
+      setError(
+        cause instanceof Error
+          ? (errorDisplayMessage(cause, m) ?? cause.message)
+          : gt("The action could not be completed. Try again."),
+      );
+    }
   }
 
   return (
@@ -500,6 +541,21 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
                             disabled={busy || !canManageProviders}
                             loading={pending === provider.instanceId}
                             onPress={() => requestProviderUpdate(provider)}
+                          />
+                        ) : null}
+                        {capabilities?.providerUpdateCancel === true &&
+                        (provider.updateState?.status === "queued" ||
+                          provider.updateState?.status === "running") ? (
+                          <SettingsActionRow
+                            icon="xmark.circle.fill"
+                            label={gt("Cancel {provider} update", {
+                              provider: provider.displayName ?? provider.driver,
+                            })}
+                            disabled={
+                              !canManageProviders || cancellingProviderIds.has(provider.instanceId)
+                            }
+                            loading={cancellingProviderIds.has(provider.instanceId)}
+                            onPress={() => void requestProviderUpdateCancel(provider)}
                           />
                         ) : null}
                       </View>

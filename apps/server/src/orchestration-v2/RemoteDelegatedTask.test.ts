@@ -251,7 +251,7 @@ it.layer(layerTest)("a delegated task in a linked environment", (it) => {
       const index = yield* (yield* ProjectionStore.ProjectionStoreV2).listActiveShellIndex();
       assert.isTrue(index.find((entry) => entry.id === parent.threadId)?.hasRemoteTasks);
       assert.isFalse(index.find((entry) => entry.id === other.threadId)?.hasRemoteTasks);
-      // Nothing here can cancel the task there, so it must not block archiving.
+      // A peer may never answer a stop, so a task there must not block archiving.
       yield* orchestrator.dispatch({
         type: "thread.archive",
         commandId: CommandId.make("command:archive:records"),
@@ -450,6 +450,80 @@ it.layer(layerTest)("a delegated task in a linked environment", (it) => {
       const offered = yield* Ref.get(offers.seen);
       assert.equal(offered.length, 1);
       assert.equal(offered[0]?.threadId, parent.threadId);
+    }),
+  );
+
+  it.effect("stops a running or finished remote task through subagent.stop", () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const projections = yield* ProjectionStore.ProjectionStoreV2;
+      const parent = yield* seedLiveParent("subagent-stop");
+      yield* orchestrator.dispatch({
+        type: "delegated_task.remote.request",
+        commandId: CommandId.make("command:remote-delegate:subagent-stop-running"),
+        parentThreadId: parent.threadId,
+        parentRunId: parent.runId,
+        parentNodeId: parent.rootNodeId,
+        task: "Run a check.",
+        driver: ProviderDriverKind.make("remote"),
+        modelSelection,
+        remoteChild,
+        completionWake: "always",
+      });
+      const running = (yield* orchestrator.getThreadProjection(parent.threadId)).subagents[0]!;
+      const offers = yield* Offers;
+      yield* Ref.set(offers.seen, []);
+      yield* orchestrator.dispatch({
+        type: "subagent.stop",
+        commandId: CommandId.make("command:subagent-stop:running"),
+        threadId: parent.threadId,
+        runId: parent.runId,
+        subagentId: running.id,
+      });
+
+      const afterRunningStop = yield* orchestrator.getThreadProjection(parent.threadId);
+      const stopped = afterRunningStop.subagents.find((candidate) => candidate.id === running.id);
+      assert.equal(stopped?.status, "interrupted");
+      assert.equal(stopped?.result, "Stopped.");
+      assert.equal(
+        afterRunningStop.turnItems.find(
+          (candidate) => candidate.type === "subagent" && candidate.subagentId === running.id,
+        )?.status,
+        "interrupted",
+      );
+      const openFor = projections.getOpenRemoteDelegatedTasks.pipe(
+        Effect.map((open) => open.filter((entry) => entry.parentThreadId === parent.threadId)),
+      );
+      // Still open until its follower stops the thread in the linked environment.
+      assert.deepEqual(yield* openFor, [{ parentThreadId: parent.threadId, taskId: running.id }]);
+      let wake = yield* Queue.take(offers.next);
+      while (wake.threadId !== parent.threadId) wake = yield* Queue.take(offers.next);
+
+      // Once stopped there, a later subagent.stop keeps the result and owes another remote stop.
+      yield* orchestrator.dispatch({
+        type: "delegated_task.remote.complete",
+        commandId: CommandId.make("command:subagent-stop:ack"),
+        parentThreadId: parent.threadId,
+        taskId: running.id,
+        status: "interrupted",
+        result: "Stopped.",
+        stoppedThere: "stopped",
+      });
+      assert.deepEqual(yield* openFor, []);
+      yield* orchestrator.dispatch({
+        type: "subagent.stop",
+        commandId: CommandId.make("command:subagent-stop:finished"),
+        threadId: parent.threadId,
+        runId: parent.runId,
+        subagentId: running.id,
+      });
+      const afterFinishedStop = (yield* orchestrator.getThreadProjection(
+        parent.threadId,
+      )).subagents.find((candidate) => candidate.id === running.id);
+      assert.equal(afterFinishedStop?.result, "Stopped.");
+      assert.equal(afterFinishedStop?.remoteChild?.stoppedThere, false);
+      assert.equal(afterFinishedStop?.remoteChild?.stopCount, 1);
+      assert.deepEqual(yield* openFor, [{ parentThreadId: parent.threadId, taskId: running.id }]);
     }),
   );
 });

@@ -1,4 +1,4 @@
-import type { ThreadId, TurnItemId } from "@onicode/contracts";
+import type { RunId, ThreadId, TurnItemId } from "@onicode/contracts";
 import * as Context from "effect/Context";
 import * as NodeSqliteClient from "@onicode/shared/nodeSqliteClient";
 import * as DateTime from "effect/DateTime";
@@ -32,19 +32,22 @@ export class McpAppModelContext extends Context.Service<
       readonly tool: string;
       readonly text: string;
     }) => Effect.Effect<void, McpAppModelContextError>;
+    /** The notes of the conversation `runId` continues. */
     readonly forThread: (
       threadId: ThreadId,
+      runId: RunId,
     ) => Effect.Effect<ReadonlyArray<McpAppModelContextEntry>, McpAppModelContextError>;
   }
 >()("onicode/mcpApps/McpAppModelContext") {}
 
-/** The thread's notes as a provider turn or steer sends them; a failed read sends none. */
+/** The run's notes as a provider turn or steer sends them; a failed read sends none. */
 export const forProvider = Effect.fn("McpAppModelContext.forProvider")(function* (
   modelContext: McpAppModelContext["Service"],
   threadId: ThreadId,
+  runId: RunId,
 ) {
   const entries = yield* modelContext
-    .forThread(threadId)
+    .forThread(threadId, runId)
     .pipe(
       Effect.catch((cause) =>
         Effect.logWarning("Failed to read MCP app model context.", { cause }).pipe(
@@ -89,11 +92,41 @@ export const layer = Layer.effect(
       `.pipe(Effect.mapError(fail));
     });
 
-    const forThread = Effect.fn("McpAppModelContext.forThread")(function* (threadId: ThreadId) {
+    const forThread = Effect.fn("McpAppModelContext.forThread")(function* (
+      threadId: ThreadId,
+      runId: RunId,
+    ) {
       // Match by id across fork lineage; later source rollbacks leave the fork's copy intact,
-      // while a started /clear (fresh, not scheduled) run on this thread drops older notes.
+      // while a started /clear (fresh, not scheduled) run on this thread drops older notes. A
+      // scheduled fresh session sees only its own notes, and the main conversation none of them.
       return yield* sql<McpAppModelContextEntry>`
-        WITH boundary AS (
+        WITH scheduled AS (
+          -- Mirrors scheduledFreshRunOrdinals: a run's first prompt says if a schedule sent it.
+          SELECT s.ordinal
+          FROM orchestration_v2_projection_runs AS s
+          WHERE s.thread_id = ${threadId}
+            AND json_extract(s.payload_json, '$.freshContext') = 1
+            AND (
+              SELECT json_extract(ti.payload_json, '$.scheduledTaskId')
+              FROM orchestration_v2_projection_turn_items AS ti
+              WHERE ti.run_id = s.run_id AND ti.type = 'user_message'
+              ORDER BY ti.ordinal
+              LIMIT 1
+            ) IS NOT NULL
+        ),
+        target AS (
+          -- Mirrors scheduledConversationStart: a session's provider threads name its first run.
+          SELECT (
+            SELECT pt.first_run_ordinal
+            FROM orchestration_v2_projection_runs AS r
+            JOIN orchestration_v2_projection_provider_threads AS pt
+              ON pt.provider_thread_id = r.provider_thread_id
+            WHERE r.run_id = ${runId}
+              AND r.thread_id = ${threadId}
+              AND pt.first_run_ordinal IN (SELECT ordinal FROM scheduled)
+          ) AS session
+        ),
+        boundary AS (
           SELECT COALESCE(MAX(b.ordinal), 0) AS min_ordinal
           FROM orchestration_v2_projection_runs AS b
           WHERE b.thread_id = ${threadId}
@@ -105,32 +138,35 @@ export const layer = Layer.effect(
               AND json_extract(b.payload_json, '$.startedAt') IS NULL
               AND json_extract(b.payload_json, '$.restartContinuationOfRunId') IS NULL
             )
-            -- Mirrors scheduledRunIds: the run's first prompt says whether a schedule sent it.
-            AND (
-              SELECT json_extract(ti.payload_json, '$.scheduledTaskId')
-              FROM orchestration_v2_projection_turn_items AS ti
-              WHERE ti.run_id = b.run_id AND ti.type = 'user_message'
-              ORDER BY ti.ordinal
-              LIMIT 1
-            ) IS NULL
+            -- Mirrors conversationRuns: the run starts afresh even before its session is known.
+            AND (b.ordinal NOT IN (SELECT ordinal FROM scheduled) OR b.run_id = ${runId})
         )
         SELECT context.item_id AS "itemId", context.server, context.tool, context.text
         FROM mcp_app_model_context AS context
+        CROSS JOIN target
         CROSS JOIN boundary
         JOIN orchestration_v2_projection_turn_items AS item
           ON item.turn_item_id = context.item_id
         LEFT JOIN orchestration_v2_projection_runs AS run
           ON run.run_id = item.run_id
+        LEFT JOIN orchestration_v2_projection_provider_threads AS session_thread
+          ON run.thread_id = context.thread_id
+          AND session_thread.provider_thread_id = run.provider_thread_id
+          AND session_thread.first_run_ordinal IN (SELECT ordinal FROM scheduled)
         WHERE context.thread_id = ${threadId}
           AND (
             run.status IS NULL
             OR run.status <> 'rolled_back'
             OR run.thread_id <> context.thread_id
           )
-          AND (
-            boundary.min_ordinal = 0
-            OR (run.thread_id = context.thread_id AND run.ordinal >= boundary.min_ordinal)
-          )
+          AND CASE
+            WHEN target.session IS NOT NULL THEN session_thread.first_run_ordinal = target.session
+            ELSE session_thread.first_run_ordinal IS NULL
+              AND (
+                boundary.min_ordinal = 0
+                OR (run.thread_id = context.thread_id AND run.ordinal >= boundary.min_ordinal)
+              )
+          END
         ORDER BY context.updated_at, context.item_id
       `.pipe(NodeSqliteClient.readOnly, Effect.mapError(fail));
     });

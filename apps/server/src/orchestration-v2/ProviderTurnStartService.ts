@@ -1504,11 +1504,14 @@ export const layer: Layer.Layer<
             type: "provider_resume_fallback",
           });
           const createdAt = yield* DateTime.now;
-          const history = yield* projectionStore.getTurnStartHistory(input.threadId);
           const conversation = conversationRuns(
             {
               runs: projection.runs,
-              turnItems: history,
+              turnItems: yield* readFreshRunUserMessages(
+                projectionStore,
+                input.threadId,
+                projection.runs,
+              ),
               providerThreads: projection.providerThreads,
             },
             run,
@@ -1525,6 +1528,15 @@ export const layer: Layer.Layer<
           );
           // A steering restart's earlier attempt received the run's own prompt; only the steer is new.
           const restarted = attempt.reason === "steering_restart";
+          const historyRunIds: ReadonlyArray<RunId | null> = [
+            ...coveredRunIds,
+            ...(restarted ? [run.id] : []),
+            ...(conversation.boundary === 0 ? [null] : []),
+          ];
+          const history =
+            historyRunIds.length === 0
+              ? []
+              : yield* projectionStore.getTurnStartHistory(input.threadId, historyRunIds);
           const handoff = yield* contextHandoffService.prepareProviderHandoff({
             threadId: projection.thread.id,
             targetRunId: run.id,

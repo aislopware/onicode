@@ -627,7 +627,15 @@ it.effect("marks the default branch of a primary remote that is not named origin
       // "other" sorts ahead of "trunk" by name when their commit times tie.
       yield* git(cwd, ["commit", "--allow-empty", "-m", "newer"]);
       yield* git(cwd, ["checkout", "-b", "feature", "trunk"]);
-      const driver = yield* GitVcsDriver.GitVcsDriver;
+      const delegate = yield* ChildProcessSpawner.ChildProcessSpawner;
+      const spawnedArgs: Array<ReadonlyArray<string>> = [];
+      const spawner = ChildProcessSpawner.make((command) => {
+        if (ChildProcess.isStandardCommand(command)) spawnedArgs.push(command.args.map(String));
+        return delegate.spawn(command);
+      });
+      const driver = yield* makeGitVcsDriverCore().pipe(
+        Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+      );
 
       const status = yield* driver.statusDetailsLocal(cwd);
       yield* git(cwd, ["checkout", "trunk"]);
@@ -635,8 +643,14 @@ it.effect("marks the default branch of a primary remote that is not named origin
       yield* git(cwd, ["checkout", "feature"]);
       assert.isFalse(status.isDefaultBranch);
 
+      spawnedArgs.length = 0;
       const refs = (yield* driver.listRefs({ cwd, refresh: true, includeMatchingRemoteRefs: true }))
         .refs;
+      // The ref listing already names each remote HEAD's target.
+      assert.deepStrictEqual(
+        spawnedArgs.filter((args) => args.some((arg) => /^refs\/remotes\/.+\/HEAD$/.test(arg))),
+        [],
+      );
       assert.isTrue(refs.find((ref) => ref.name === "trunk")?.isDefault);
       assert.isTrue(refs.find((ref) => ref.name === "upstream/trunk")?.isDefault);
       const names = refs.map((ref) => ref.name);

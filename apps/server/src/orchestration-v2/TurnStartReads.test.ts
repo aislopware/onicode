@@ -288,6 +288,25 @@ it.effect.each(["sqlite"] as const)(
       assert.deepEqual(yield* store.getTurnStartHistory(threadId, [oldRunId]), [item]);
       assert.deepEqual(yield* store.getTurnStartHistory(threadId, [runId]), []);
       assert.deepEqual(yield* store.getTurnStartHistory(threadId, []), []);
+      const importedItem = {
+        ...item,
+        id: TurnItemId.make("imported-turn-item"),
+        runId: null,
+        ordinal: 0,
+      };
+      yield* store.apply({
+        id: EventId.make("imported-turn-item-event"),
+        type: "turn-item.updated",
+        threadId,
+        occurredAt: now,
+        payload: importedItem,
+      });
+      assert.deepEqual(yield* store.getTurnStartHistory(threadId, [null]), [importedItem]);
+      assert.deepEqual(yield* store.getTurnStartHistory(threadId, [oldRunId, null]), [
+        importedItem,
+        item,
+      ]);
+      assert.deepEqual(yield* store.getTurnStartHistory(threadId, [oldRunId]), [item]);
       const resultId = TurnItemId.make("interrupt-result");
       assert.isTrue(yield* store.hasUnpairedRunInterruptRequest(threadId, item.id, resultId));
       assert.isFalse(yield* store.hasUnpairedRunInterruptRequest(threadId, resultId, item.id));

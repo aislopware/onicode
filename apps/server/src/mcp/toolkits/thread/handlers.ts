@@ -8,11 +8,13 @@ import {
   type OrchestrationV2Command,
 } from "@onicode/contracts";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import { modelSelectionCommandType } from "@onicode/shared/model";
 import { topOfPinnedRunOrderKey } from "@onicode/shared/pinOrderKey";
 
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
+import * as OrchestrationMcp from "../../OrchestratorMcpService.ts";
 import {
   dispatchFailure,
   newCommandId,
@@ -23,6 +25,7 @@ import {
 import type * as ThreadManagement from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as ThreadMessageIntake from "../../../orchestration-v2/ThreadMessageIntake.ts";
 import * as ThreadSearch from "../../../orchestration-v2/ThreadSearch.ts";
+import * as Project from "../../../project/ProjectService.ts";
 import * as ScheduledTasks from "../../../scheduledTasks/ScheduledTaskService.ts";
 import { queuedRunsInDeliveryOrder } from "../../../orchestration-v2/QueuedRunOrder.ts";
 import { ThreadToolkit } from "./tools.ts";
@@ -232,11 +235,20 @@ export const layer = McpToolAccess.toLayer(ThreadToolkit, {
     ),
     writesThread((input) =>
       Effect.gen(function* () {
-        const modelSelection = yield* required(input.modelSelection, "modelSelection");
+        const requested = yield* required(input.modelSelection, "modelSelection");
         const {
           threads,
           projection: { thread },
         } = yield* readThread(input.threadId);
+        // The thread runs in this folder, whose own provider config can add models.
+        const cwd =
+          thread.worktreePath ??
+          (yield* Project.ProjectService.pipe(
+            Effect.flatMap((projects) => projects.getById(thread.projectId)),
+            Effect.map((project) => Option.getOrUndefined(project)?.workspaceRoot),
+            Effect.orElseSucceed(() => undefined),
+          ));
+        const modelSelection = yield* OrchestrationMcp.validateModelSelection(requested, cwd);
         const type = modelSelectionCommandType(thread.providerInstanceId, modelSelection);
         const result = yield* threads
           .dispatch({ type, threadId: thread.id, commandId: yield* newCommandId(), modelSelection })

@@ -37,6 +37,8 @@ const untrackedRpcAckMethods = new Set<string>([
 ]);
 const longRunningRpcAckMethods = new Set<string>([
   WS_METHODS.serverUpdateProvider,
+  // Answers once the installer exits, which can take a moment after it is signalled.
+  WS_METHODS.serverCancelProviderUpdate,
   WS_METHODS.serverRefreshProviders,
   WS_METHODS.serverUpdateServer,
   WS_METHODS.vcsRefreshStatus,

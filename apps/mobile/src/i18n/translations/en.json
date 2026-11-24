@@ -3451,6 +3451,7 @@
   "ba210d5161bffe73": "Update succeeded",
   "fd9f65b64402a21b": "Update unchanged",
   "8a30994baa079bb1": "Update {provider}",
+  "2e96248bb82ba6c5": "Cancel {provider} update",
   "765b349b61bb515d": "This environment is no longer saved on this device.",
   "7489306a36fff015": "Connect this environment to manage it.",
   "d127f26d5bae862d": [

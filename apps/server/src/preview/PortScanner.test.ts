@@ -1109,6 +1109,89 @@ effectIt.effect("stops only a job's own process group", () =>
   }),
 );
 
+effectIt.effect(
+  "excludes Linux agent CLIs spawned through ProcessLauncher (including after restarts) while keeping their dev servers",
+  () => {
+    let launcherPid = 9_000;
+    const firstDevPort = 43_201;
+    const secondDevPort = 43_202;
+    let lsofStdout =
+      `p4300\ncagy\nn127.0.0.1:43200\n` +
+      `p4301\ncclaude\nn127.0.0.1:43199\n` +
+      `p4242\ncnode\nn127.0.0.1:${firstDevPort}\n`;
+    const procFiles: Record<string, string> = {
+      "/proc/4300/environ": `${PortScanner.AGENT_THREAD_ENV}=thread-agy\0`,
+      "/proc/4300/stat": `4300 (agy) S ${launcherPid} 4300 4300 0`,
+      "/proc/4301/environ": `${PortScanner.AGENT_THREAD_ENV}=thread-claude\0`,
+      "/proc/4301/stat": `4301 (claude) S ${process.pid} 4301 4301 0`,
+      "/proc/4242/environ": `${PortScanner.AGENT_THREAD_ENV}=thread-agy\0`,
+      "/proc/4242/stat": "4242 (node) S 4300 4300 4300 0",
+    };
+    const missing = FileSystem.makeNoop({});
+    const layer = layerScanner.pipe(
+      Layer.provide(
+        Layer.mergeAll(
+          FileSystem.layerNoop({
+            readFileString: (path) => {
+              const content = procFiles[path];
+              return content === undefined ? missing.readFileString(path) : Effect.succeed(content);
+            },
+          }),
+          Layer.succeed(ProcessRunner.ProcessRunner, {
+            run: (input) =>
+              input.command === "lsof"
+                ? Effect.succeed(processOutput(lsofStdout))
+                : Effect.succeed(
+                    processOutput(
+                      `${launcherPid} ${process.pid} ${process.pid}\n` +
+                        `4300 ${launcherPid} 4300\n` +
+                        "4242 4300 4300\n",
+                    ),
+                  ),
+          }),
+          Layer.succeed(
+            PortScanner.IsServerChild,
+            (ppid) => ppid === process.pid || ppid === launcherPid,
+          ),
+          Layer.succeed(HostProcess.Platform, "linux"),
+          FetchHttpClient.layer.pipe(
+            Layer.provide(Layer.succeed(FetchHttpClient.Fetch, () => Promise.reject(new Error()))),
+          ),
+        ),
+      ),
+    );
+
+    return Effect.gen(function* () {
+      // A regressed guard must not signal whatever really holds these pids.
+      const signal = vi.spyOn(ProcessGroup, "signalProcessGroup").mockImplementation(() => {
+        throw Object.assign(new Error("No such process"), { code: "ESRCH" });
+      });
+      yield* Effect.addFinalizer(() => Effect.sync(() => signal.mockRestore()));
+      const scanner = yield* PortScanner.PortDiscovery;
+      expect(yield* scanner.scan()).toMatchObject([
+        { port: firstDevPort, pid: 4242, agent: { threadId: "thread-agy" } },
+      ]);
+
+      // Refuses to stop a server sharing the ProcessLauncher-spawned agent CLI's process group.
+      const stop = yield* Effect.flip(scanner.stopServer({ pid: 4242, port: firstDevPort }));
+      expect(stop.reason).toBe("shared-group");
+      expect(signal).not.toHaveBeenCalled();
+
+      // After ProcessLauncher restarts with a new helper PID, new agent CLIs are still excluded.
+      launcherPid = 9_001;
+      procFiles["/proc/4400/environ"] = `${PortScanner.AGENT_THREAD_ENV}=thread-agy-2\0`;
+      procFiles["/proc/4400/stat"] = `4400 (agy) S ${launcherPid} 4400 4400 0`;
+      procFiles["/proc/4401/environ"] = `${PortScanner.AGENT_THREAD_ENV}=thread-agy-2\0`;
+      procFiles["/proc/4401/stat"] = "4401 (node) S 4400 4401 4401 0";
+      lsofStdout = `p4400\ncagy\nn127.0.0.1:43210\np4401\ncnode\nn127.0.0.1:${secondDevPort}\n`;
+
+      expect(yield* scanner.scan()).toMatchObject([
+        { port: secondDevPort, pid: 4401, agent: { threadId: "thread-agy-2" } },
+      ]);
+    }).pipe(Effect.scoped, Effect.provide(layer));
+  },
+);
+
 effectIt.effect.each([
   {
     case: "its parent's arguments",
@@ -1122,11 +1205,22 @@ effectIt.effect.each([
     parent: { command: "/bin/bash -c node server.js & wait", env: "" },
     stops: [],
   },
+  {
+    // The tool shell is the command and still runs; its job only inherited the name.
+    case: "one a parent whose environment ps cannot read may carry",
+    leader: { command: "node server.js", env: "COMMAND=cmd-a" },
+    parent: { command: "/bin/zsh -c set -m; node server.js & wait", env: "", sip: true },
+    stops: [],
+  },
 ])("on macOS, a stop names the command in the leader's environment, not $case", (scenario) => {
   const port = 43_127;
-  // macOS `ps -E` prints the environment after the arguments; plain `ps` prints only the arguments.
-  const command = (row: { command: string; env: string }, withEnvironment: boolean) =>
-    withEnvironment
+  // macOS `ps -E` prints the environment after the arguments, or nothing after a SIP-protected
+  // process's; plain `ps` prints only the arguments.
+  const command = (
+    row: { command: string; env: string; sip?: boolean },
+    withEnvironment: boolean,
+  ) =>
+    withEnvironment && !row.sip
       ? `${row.command} PATH=/usr/bin ${PortScanner.AGENT_THREAD_ENV}=thread-a ${row.env}`.trim()
       : row.command;
   const layer = layerScanner.pipe(

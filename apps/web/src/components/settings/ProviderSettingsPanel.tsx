@@ -599,6 +599,13 @@ export function EnvironmentProviderSettings({
   const updateProvider = useAtomCommand(serverEnvironment.updateProvider, {
     reportFailure: false,
   });
+  const supportsUpdateCancel = useAtomValue(
+    serverEnvironment.configValueAtom(environmentId),
+    (config) => config?.environment.capabilities.providerUpdateCancel === true,
+  );
+  const cancelProviderUpdateCommand = useAtomCommand(serverEnvironment.cancelProviderUpdate, {
+    reportFailure: false,
+  });
   const uninstallAcpRegistryManagedBinary = useAtomCommand(
     serverEnvironment.uninstallAcpRegistryManagedBinary,
     { reportFailure: false },
@@ -730,6 +737,31 @@ export function EnvironmentProviderSettings({
         next.delete(candidate.instanceId);
         return next;
       });
+    },
+  );
+
+  const cancelProviderUpdate = useStableCallback(
+    async (candidate: Pick<ProviderSettingsUpdateCandidate, "driver" | "instanceId">) => {
+      if (!readEnvironmentScope(environmentId, AuthProvidersManageScope)) return;
+      const result = await cancelProviderUpdateCommand({
+        environmentId,
+        input: { provider: candidate.driver, instanceId: candidate.instanceId },
+      });
+      if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+        const error = squashAtomCommandFailure(result);
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: gt("Could not cancel the {provider} update", {
+              provider: PROVIDER_DISPLAY_NAMES[candidate.driver] ?? candidate.driver,
+            }),
+            description:
+              error instanceof Error
+                ? (errorDisplayMessage(error, resolveNow) ?? error.message)
+                : gt("The provider update could not be stopped."),
+          }),
+        );
+      }
     },
   );
 
@@ -966,6 +998,7 @@ export function EnvironmentProviderSettings({
   const actions: ProviderInstanceRowActions = {
     acceptUrlAuthentication,
     runProviderUpdate,
+    cancelProviderUpdate: supportsUpdateCancel ? cancelProviderUpdate : undefined,
     updateInstance,
     enableInstance,
     deleteInstance,
@@ -1261,6 +1294,10 @@ interface ProviderInstanceRowActions {
     candidate: Pick<ProviderSettingsUpdateCandidate, "driver" | "instanceId">,
     targetVersion?: string,
   ) => Promise<void>;
+  /** Absent for servers from before `server.cancelProviderUpdate`. */
+  readonly cancelProviderUpdate:
+    | ((candidate: Pick<ProviderSettingsUpdateCandidate, "driver" | "instanceId">) => Promise<void>)
+    | undefined;
   readonly updateInstance: (
     instanceId: ProviderInstanceId,
     previous: ProviderInstanceConfig,
@@ -1345,6 +1382,7 @@ function ProviderInstanceRow({
       : undefined;
   const isInstanceUpdateRunning =
     isUpdateDispatching || (liveProvider !== undefined && isProviderUpdateActive(liveProvider));
+  const cancelUpdate = actions.cancelProviderUpdate;
   const hiddenModels = modelPreferences?.hiddenModels ?? NO_MODELS;
   const modelOrder = modelPreferences?.modelOrder ?? NO_MODELS;
   const favoriteModels = Arr.filterMap(favorites, (favorite) =>
@@ -1516,6 +1554,14 @@ function ProviderInstanceRow({
           : undefined
       }
       isUpdating={isInstanceUpdateRunning}
+      onCancelUpdate={
+        !readOnly &&
+        cancelUpdate !== undefined &&
+        liveProvider !== undefined &&
+        isProviderUpdateActive(liveProvider)
+          ? () => cancelUpdate(liveProvider)
+          : undefined
+      }
     />
   );
 }

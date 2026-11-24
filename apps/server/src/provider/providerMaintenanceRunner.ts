@@ -65,7 +65,17 @@ export interface ProviderMaintenanceRunnerShape {
           readonly targetVersion?: string | undefined;
         },
   ) => Effect.Effect<ServerProviderUpdatedPayload, ServerProviderUpdateError>;
+  /** Stops the instance's queued or running update; a no-op when none is. */
+  readonly cancelProviderUpdate: (target: {
+    readonly provider: ProviderDriverKind;
+    readonly instanceId?: ProviderInstanceId | undefined;
+  }) => Effect.Effect<ServerProviderUpdatedPayload>;
 }
+
+const updateTargetKey = (
+  provider: ProviderDriverKind,
+  instanceId: ProviderInstanceId | undefined,
+) => `instance:${instanceId ?? defaultInstanceIdForDriver(provider)}`;
 
 export class ProviderMaintenanceRunner extends Context.Service<
   ProviderMaintenanceRunner,
@@ -131,7 +141,6 @@ const runProviderMaintenanceCommandWithSpawner = Effect.fn("ProviderMaintenanceR
                 }),
             ),
           );
-        yield* Effect.addFinalizer(() => child.kill().pipe(Effect.ignore));
 
         const pendingProgress = yield* Ref.make<string | null>(null);
         const onProgress = input.onProgress;
@@ -406,7 +415,7 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
         ? defaultInstanceIdForDriver(provider)
         : (target.instanceId ?? defaultInstanceIdForDriver(provider));
     const targetVersion = typeof target === "string" ? undefined : target.targetVersion;
-    const targetKey = `instance:${instanceId}`;
+    const targetKey = updateTargetKey(provider, instanceId);
     const capabilities = yield* providerRegistry.getProviderMaintenanceCapabilitiesForInstance(
       instanceId,
       provider,
@@ -661,33 +670,38 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
       },
     );
 
+    let cancelled = false;
+    const markUpdateInterrupted = Effect.fn("ProviderMaintenanceRunner.markUpdateInterrupted")(
+      function* (wasCancelled: boolean) {
+        cancelled = wasCancelled;
+        // A finished state stays, even if shutdown or cancel lands while it is being written.
+        if (yield* Ref.get(settled)) return;
+        yield* setUpdateState(
+          makeUpdateState({
+            status: "failed",
+            startedAt: yield* Ref.get(startedAtRef),
+            finishedAt: yield* nowIso,
+            message: wasCancelled ? "Update cancelled." : "Update stopped before it finished.",
+          }),
+        );
+      },
+    );
     // Installers cannot be safely killed mid-install, so the update outlives a disconnecting caller.
     const updateFiber = yield* commandCoordinator
       .withCommandLock({
         targetKey,
         lockKey: update.lockKey,
         onQueued: setQueuedState,
+        // Server shutdown or cancel interrupts the update; a "running" state would spin until restart.
+        onInterrupt: (wasCancelled) => markUpdateInterrupted(wasCancelled).pipe(Effect.ignore),
         run: runProviderUpdate(),
       })
-      .pipe(
-        // Server shutdown interrupts the update; a "running" state would spin until restart.
-        Effect.onInterrupt(() =>
-          Effect.gen(function* () {
-            // A finished state stays, even if shutdown lands while it is being written.
-            if (yield* Ref.get(settled)) return;
-            yield* setUpdateState(
-              makeUpdateState({
-                status: "failed",
-                startedAt: yield* Ref.get(startedAtRef),
-                finishedAt: yield* nowIso,
-                message: "Update stopped before it finished.",
-              }),
-            );
-          }).pipe(Effect.ignore),
-        ),
-        Effect.forkIn(serviceScope),
-      );
+      .pipe(Effect.forkIn(serviceScope));
     return yield* Fiber.join(updateFiber).pipe(
+      Effect.catchCauseIf(
+        (cause) => cancelled && Cause.hasInterruptsOnly(cause),
+        () => Effect.map(providerRegistry.getProviders, (providers) => ({ providers })),
+      ),
       Effect.mapError((error) =>
         isServerProviderUpdateError(error)
           ? new ServerProviderUpdateError({
@@ -699,8 +713,18 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
     );
   });
 
+  // Closing the command scope signals the installer (SIGTERM without escalation on POSIX;
+  // `taskkill /T /F` on Windows) and waits for exit, so locks release only once nothing writes.
+  const cancelProviderUpdate: ProviderMaintenanceRunnerShape["cancelProviderUpdate"] = Effect.fn(
+    "ProviderMaintenanceRunner.cancelProviderUpdate",
+  )(function* ({ provider, instanceId }) {
+    yield* commandCoordinator.cancel(updateTargetKey(provider, instanceId));
+    return { providers: yield* providerRegistry.getProviders };
+  });
+
   return ProviderMaintenanceRunner.of({
     updateProvider,
+    cancelProviderUpdate,
   });
 });
 

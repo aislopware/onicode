@@ -391,12 +391,17 @@ it.effect("a portable fork carries no context its source discarded for a fresh s
       [freshForkId, freshFork],
       [supersededForkId, supersededFork],
     ]);
+    // Runs whose every row was read, not only their prompts.
+    const fullyRead = new Set<RunId | null>();
     const store: Parameters<typeof ContextHandoffService.readForkHistoryItems>[0] = {
       getThreadRecords: (threadId, _fields, filter) => {
         const found = projections.get(threadId);
         if (found === undefined)
           return Effect.fail(new ProjectionStoreThreadNotFoundError({ threadId }));
         const runIds = filter?.turnItemRunIds;
+        if (filter?.turnItemTypes === undefined) {
+          for (const runId of runIds ?? []) fullyRead.add(runId);
+        }
         return Effect.succeed({
           ...found,
           turnItems: found.turnItems.filter(
@@ -412,6 +417,7 @@ it.effect("a portable fork carries no context its source discarded for a fresh s
       texts(yield* ContextHandoffService.readForkHistoryItems(store, freshFork, forkLater.run)),
       ["FRESH_START", "FORK_FOLLOW_UP"],
     );
+    assert.isFalse(fullyRead.has(forkBefore.run.id));
     assert.deepEqual(
       texts(
         yield* ContextHandoffService.readForkHistoryItems(store, supersededFork, supersededRun.run),

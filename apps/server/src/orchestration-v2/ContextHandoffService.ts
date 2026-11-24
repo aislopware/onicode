@@ -29,6 +29,7 @@ import { createOrchestrationV2TurnItemVisibility } from "@onicode/shared/orchest
 import {
   conversationRuns,
   forkContextSuperseded,
+  readFreshRunUserMessages,
   scheduledConversationStarts,
 } from "./contextBoundary.ts";
 import type { ProjectionStoreV2Shape } from "./ProjectionStore.ts";
@@ -171,18 +172,25 @@ const readOwnHistoryItems = Effect.fn("orchestrationV2.contextHandoff.readOwnHis
     withScheduledRuns: boolean,
   ) {
     const runs = source.runs.filter((run) => run.ordinal <= throughRun.ordinal);
-    const { turnItems } = yield* projectionStore.getThreadRecords(source.thread.id, ["turnItems"], {
-      turnItemRunIds: [
-        ...runs.map((run) => run.id),
-        ...(source.thread.historyOrigin === "v1_import" ? [null] : []),
-      ],
-    });
-    const projection = { runs, turnItems, providerThreads: source.providerThreads };
+    // Fresh runs' prompts alone place the boundary, so rows a fresh session dropped are never read.
+    const projection = {
+      runs,
+      turnItems: yield* readFreshRunUserMessages(projectionStore, source.thread.id, runs),
+      providerThreads: source.providerThreads,
+    };
     const conversation = conversationRuns(
       projection,
       runs.find((run) => run.ordinal === throughRun.ordinal),
       { withScheduledRuns },
     );
+    const { turnItems } = yield* projectionStore.getThreadRecords(source.thread.id, ["turnItems"], {
+      turnItemRunIds: [
+        ...runs.flatMap((run) => (conversation.runIds.has(run.id) ? [run.id] : [])),
+        ...(source.thread.historyOrigin === "v1_import" && conversation.boundary === 0
+          ? [null]
+          : []),
+      ],
+    });
     const kept = turnItems.filter((item) =>
       item.runId === null ? conversation.boundary === 0 : conversation.runIds.has(item.runId),
     );

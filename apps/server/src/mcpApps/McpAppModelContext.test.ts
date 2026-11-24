@@ -1,4 +1,4 @@
-import { ThreadId, TurnItemId } from "@onicode/contracts";
+import { RunId, ThreadId, TurnItemId } from "@onicode/contracts";
 import { assert, it } from "@effect/vitest";
 import * as NodeSqliteClient from "@onicode/shared/nodeSqliteClient";
 import * as Effect from "effect/Effect";
@@ -53,13 +53,18 @@ layer("McpAppModelContext", (it) => {
       yield* set(forkId, "item-kept", "from the fork");
       yield* set(forkId, "item-rolled-back", "inherited before the rollback");
 
-      const texts = (thread: ThreadId) =>
-        store.forThread(thread).pipe(Effect.map((entries) => entries.map((entry) => entry.text)));
-      assert.deepEqual(yield* texts(threadId), ["kept"]);
-      assert.deepEqual(yield* texts(forkId), ["from the fork", "inherited before the rollback"]);
+      const texts = (thread: ThreadId, runId: string) =>
+        store
+          .forThread(thread, RunId.make(runId))
+          .pipe(Effect.map((entries) => entries.map((entry) => entry.text)));
+      assert.deepEqual(yield* texts(threadId, "run-a"), ["kept"]);
+      assert.deepEqual(yield* texts(forkId, "run-fork"), [
+        "from the fork",
+        "inherited before the rollback",
+      ]);
 
       yield* set(threadId, "item-kept", "");
-      assert.deepEqual(yield* texts(threadId), []);
+      assert.deepEqual(yield* texts(threadId, "run-a"), []);
     }),
   );
 
@@ -104,11 +109,79 @@ layer("McpAppModelContext", (it) => {
         text: "fresh post-clear note",
       });
 
-      const entries = yield* store.forThread(clearedThread);
+      const entries = yield* store.forThread(clearedThread, RunId.make("run-after-clear"));
       assert.deepEqual(
         entries.map((entry) => entry.text),
         ["fresh post-clear note"],
       );
+    }),
+  );
+
+  it.effect("keeps a scheduled fresh session's notes apart from the main conversation", () =>
+    Effect.gen(function* () {
+      yield* runMigrations();
+      const sql = yield* SqlClient.SqlClient;
+      const store = yield* McpAppModelContext.McpAppModelContext;
+      const scheduledThread = ThreadId.make("thread-scheduled-context");
+
+      yield* sql`
+        INSERT INTO orchestration_v2_projection_runs
+          (run_id, thread_id, ordinal, provider, provider_thread_id, status, requested_at, payload_json)
+        VALUES
+          ('run-main', ${scheduledThread}, 1, 'codex', 'pt-main', 'completed', '2026-01-01', '{"startedAt":"2026-01-01"}'),
+          ('run-scheduled', ${scheduledThread}, 2, 'codex', 'pt-scheduled', 'completed', '2026-01-02', '{"freshContext":true,"startedAt":"2026-01-02"}'),
+          ('run-main-later', ${scheduledThread}, 3, 'codex', 'pt-main', 'running', '2026-01-03', '{"startedAt":"2026-01-03"}')
+      `;
+      yield* sql`
+        INSERT INTO orchestration_v2_projection_provider_threads
+          (provider_thread_id, thread_id, provider, status, first_run_ordinal, updated_at, payload_json)
+        VALUES
+          ('pt-main', ${scheduledThread}, 'codex', 'active', 1, '2026-01-03', '{}'),
+          ('pt-scheduled', ${scheduledThread}, 'codex', 'active', 2, '2026-01-02', '{}')
+      `;
+      yield* sql`
+        INSERT INTO orchestration_v2_projection_turn_items
+          (turn_item_id, thread_id, run_id, ordinal, type, status, updated_at, payload_json)
+        VALUES
+          ('item-main-app', ${scheduledThread}, 'run-main', 1, 'dynamic_tool', 'completed', '2026-01-01', '{}'),
+          ('item-session-prompt', ${scheduledThread}, 'run-scheduled', 2, 'user_message', 'completed', '2026-01-02', '{"scheduledTaskId":"sched-1"}'),
+          ('item-scheduled-app', ${scheduledThread}, 'run-scheduled', 3, 'dynamic_tool', 'completed', '2026-01-02', '{}')
+      `;
+      for (const [itemId, text] of [
+        ["item-main-app", "main note"],
+        ["item-scheduled-app", "scheduled note"],
+      ] as const) {
+        yield* store.set({
+          threadId: scheduledThread,
+          itemId: TurnItemId.make(itemId),
+          server: "todos",
+          tool: "list_todos",
+          text,
+        });
+      }
+
+      const texts = (runId: string) =>
+        store
+          .forThread(scheduledThread, RunId.make(runId))
+          .pipe(Effect.map((entries) => entries.map((entry) => entry.text)));
+      assert.deepEqual(yield* texts("run-main-later"), ["main note"]);
+      assert.deepEqual(yield* texts("run-scheduled"), ["scheduled note"]);
+
+      // Another thread's run with a matching first_run_ordinal must not select this thread's scheduled session.
+      const otherThread = ThreadId.make("thread-scheduled-other");
+      yield* sql`
+        INSERT INTO orchestration_v2_projection_runs
+          (run_id, thread_id, ordinal, provider, provider_thread_id, status, requested_at, payload_json)
+        VALUES
+          ('run-other-thread', ${otherThread}, 2, 'codex', 'pt-other', 'running', '2026-01-03', '{"startedAt":"2026-01-03"}')
+      `;
+      yield* sql`
+        INSERT INTO orchestration_v2_projection_provider_threads
+          (provider_thread_id, thread_id, provider, status, first_run_ordinal, updated_at, payload_json)
+        VALUES
+          ('pt-other', ${otherThread}, 'codex', 'active', 2, '2026-01-03', '{}')
+      `;
+      assert.deepEqual(yield* texts("run-other-thread"), ["main note"]);
     }),
   );
 });

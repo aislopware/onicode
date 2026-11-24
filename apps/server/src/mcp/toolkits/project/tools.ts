@@ -23,6 +23,7 @@ import {
   SourceControlCloneRepositoryResult,
 } from "@onicode/contracts";
 import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
 import * as DocumentText from "../../../provider/DocumentText.ts";
 import * as ServerConfig from "../../../config.ts";
 import * as ProviderRegistry from "../../../provider/ProviderRegistry.ts";
@@ -87,7 +88,13 @@ const ProjectCreateTool = Tool.make("oni_project_create", {
     workspaceRoot: Schema.optional(ProjectCreatePayload.fields.workspaceRoot),
   }),
   success: Schema.Struct({ ...Project.fields, commitError: Schema.optional(Schema.String) }),
-  dependencies: [...shared.dependencies, ManagedProjectFolders.ManagedProjectFolders],
+  dependencies: [
+    ...shared.dependencies,
+    ManagedProjectFolders.ManagedProjectFolders,
+    ProviderRegistry.ProviderRegistry,
+    FileSystem.FileSystem,
+    Path.Path,
+  ],
 }).annotate(Tool.Destructive, true);
 const ProjectUpdateTool = Tool.make("oni_project_update", {
   ...shared,
@@ -97,6 +104,12 @@ const ProjectUpdateTool = Tool.make("oni_project_update", {
     projectId: ProjectId,
     ...ProjectUpdatePayload.fields,
   }),
+  dependencies: [
+    ...shared.dependencies,
+    ProviderRegistry.ProviderRegistry,
+    FileSystem.FileSystem,
+    Path.Path,
+  ],
 }).annotate(Tool.Destructive, true);
 const ProjectDeleteTool = Tool.make("oni_project_delete", {
   ...shared,
