@@ -2,7 +2,6 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   AuthMcpClientAccess,
-  AuthSessionId,
   EnvironmentHttpApi,
   MCP_PEER_LINK_SOFTWARE_ID,
   mcpClientScopes,
@@ -351,6 +350,45 @@ it.live("signs in with a pairing code and issues a token only /mcp accepts", () 
   ),
 );
 
+it.live("issues no session for a sign-in approved before all other sessions were revoked", () =>
+  withRoutes((handler, auth) =>
+    Effect.gen(function* () {
+      const clientId = yield* registeredClientId(handler);
+      const params = authorizeParams(clientId);
+      const approved = yield* decide(handler, params, {
+        _tag: "pairing-code",
+        access: "auto",
+        code: (yield* auth.issuePairingCredential()).credential,
+      });
+      const code = new URL(approved.redirectTo!).searchParams.get("code")!;
+      const owner = yield* auth.issueSession();
+      yield* auth.revokeOtherClientSessions(owner.sessionId);
+
+      const response = yield* handler(
+        at(
+          "/oauth/mcp/token",
+          form({
+            grant_type: "authorization_code",
+            code,
+            redirect_uri: params.redirect_uri,
+            client_id: clientId,
+            code_verifier: verifier,
+            resource: `${ORIGIN}/mcp`,
+          }),
+        ),
+      );
+      expect(response.status).toBe(400);
+      expect(yield* json<unknown>(response)).toEqual({
+        error: "invalid_grant",
+        error_description: "The authorization code is invalid or expired.",
+      });
+      expect((yield* auth.listSessions()).map((session) => session.sessionId)).toEqual([
+        owner.sessionId,
+      ]);
+    }),
+  ),
+);
+
 it.live("rejects a wrong PKCE verifier and spends the code", () =>
   withRoutes((handler, auth) =>
     Effect.gen(function* () {
@@ -380,37 +418,6 @@ it.live("rejects a wrong PKCE verifier and spends the code", () =>
       expect(wrong.status).toBe(400);
       expect(yield* json<unknown>(wrong)).toMatchObject({ error: "invalid_grant" });
       expect((yield* exchange(verifier)).status).toBe(400);
-    }),
-  ),
-);
-
-it.live("refuses a code approved before other clients were revoked", () =>
-  withRoutes((handler, auth) =>
-    Effect.gen(function* () {
-      const clientId = yield* registeredClientId(handler);
-      const pairing = yield* auth.issuePairingCredential();
-      const params = authorizeParams(clientId);
-      const approved = yield* decide(handler, params, {
-        _tag: "pairing-code",
-        access: "auto",
-        code: pairing.credential,
-      });
-      yield* auth.revokeOtherClientSessions(AuthSessionId.make("current-session"));
-      const response = yield* handler(
-        at(
-          "/oauth/mcp/token",
-          form({
-            grant_type: "authorization_code",
-            code: new URL(approved.redirectTo!).searchParams.get("code")!,
-            redirect_uri: params.redirect_uri,
-            client_id: clientId,
-            code_verifier: verifier,
-            resource: `${ORIGIN}/mcp`,
-          }),
-        ),
-      );
-      expect(response.status).toBe(400);
-      expect(yield* json<unknown>(response)).toMatchObject({ error: "invalid_grant" });
     }),
   ),
 );
