@@ -374,9 +374,6 @@ const appActiveAtom = Atom.make((get) => {
 const wakeAwareVisitShell = Atom.family((key: string) => {
   const ref = parseThreadKey(key);
   return Atom.make((get) => {
-    // A phone put away stays connected for a while, and a result that lands then has been shown
-    // to no one. The tracker stays mounted, so an open it has yet to send is not lost.
-    if (!get(appActiveAtom)) return null;
     const shell = get(environmentThreadShells.threadShellAtom(ref));
     if (shell === null) return null;
     const nowMs = Date.now();
@@ -397,6 +394,9 @@ const threadVisitTracker = createThreadVisitTracker({
   threadShellAtom: (ref) => wakeAwareVisitShell(threadKey(ref)),
   sessionGenerationAtom: environmentCatalog.sessionGenerationAtom,
   visit: threadEnvironment.visit,
+  // A phone put away stays connected for a while, and a result that lands then has been shown
+  // to no one.
+  viewingAtom: appActiveAtom,
 });
 
 // Past the composer's 180 ms height animation.
