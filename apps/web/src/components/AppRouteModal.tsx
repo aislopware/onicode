@@ -159,6 +159,11 @@ export function AppRouteModal({ label, children }: { label: string; children: Re
           details.allowPropagation();
           return;
         }
+        // Base UI's dismiss handler fires on held Esc repeats after a nested popup closes.
+        if (details.reason === "escape-key" && details.event.repeat) {
+          details.cancel();
+          return;
+        }
         // Closing unmounts a focused field without a blur, so commit-on-blur rows would
         // drop what was typed. Blur first so they commit.
         blurFocusedWithin(popupRef.current);

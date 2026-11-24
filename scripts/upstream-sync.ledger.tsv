@@ -3755,6 +3755,7 @@ e9b227b021	take	taken as is
 7105792176	take	taken as is
 0e34fe98f2	take	taken as is
 38bfe53622	take	fix(antigravity): show plugin names in the skill picker
-8b70e73371	take	adopted upstream over Onicode's parent-held draftText: typing no longer re-renders the Code tab; kept Onicode's path anchor and captured agentComment: a push to the same file keeps the typed text where upstream drops it, and focus and dropped-file handling stay; upstream's test is covered by the existing refresh test
+8b70e73371	take	adopted upstream over Onicode's parent-held draftText: typing no longer re-renders the Code tab; kept Onicode's path anchor and captured agentComment: a push to the same file keeps the typed text where upstream drops it, and focus and dropped-file handling stay
 2911f58ae3	take	taken; test reindented into Onicode's skipIf block
 fdce61c022	take	taken as is
+b2d51f35bb	take	repeat guard placed after Onicode's defaultPrevented Esc guard, so prevented keys keep propagating; upstream's Clerk branch stays out
