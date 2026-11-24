@@ -141,6 +141,12 @@ it.effect(
       const homeShared = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "oni-v2-project-home-"));
       NodeFS.mkdirSync(NodePath.join(workspaceRoot, "api", ".git"), { recursive: true });
       NodeFS.mkdirSync(NodePath.join(workspaceRoot, "notes"));
+      // Names are cut to 128 UTF-16 units, never between the halves of an emoji.
+      const named = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "oni-v2-project-names-"));
+      const straddling = NodePath.join(named, `${"a".repeat(127)}🚀`);
+      const fitting = NodePath.join(named, `${"b".repeat(126)}🚀`);
+      const padded = NodePath.join(named, `${" ".repeat(127)}🚀`);
+      for (const folder of [straddling, fitting, padded]) NodeFS.mkdirSync(folder);
       yield* runCli([
         "project",
         "add",
@@ -149,6 +155,12 @@ it.effect(
         `${shared}${NodePath.sep}`,
         "--track",
         `~/${NodePath.basename(homeShared)}`,
+        "--track",
+        straddling,
+        "--track",
+        fitting,
+        "--track",
+        padded,
         "--base-dir",
         baseDir,
       ]).pipe(Effect.provideService(HostProcess.HomeDirectory, NodeOS.tmpdir()));
@@ -156,6 +168,9 @@ it.effect(
         { path: NodePath.join(workspaceRoot, "api"), name: "api", discovered: true },
         { path: shared, name: NodePath.basename(shared) },
         { path: homeShared, name: NodePath.basename(homeShared) },
+        { path: straddling, name: "a".repeat(127) },
+        { path: fitting, name: `${"b".repeat(126)}🚀` },
+        { path: padded, name: "🚀" },
       ]);
     }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );

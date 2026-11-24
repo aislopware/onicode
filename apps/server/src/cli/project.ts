@@ -8,6 +8,7 @@ import {
   ProjectId,
 } from "@onicode/contracts";
 import { expandHomePath } from "@onicode/provider-core/server/pathExpansion";
+import { splitsSurrogatePair } from "@onicode/shared/assistantCitations";
 import * as HostProcess from "@onicode/shared/HostProcess";
 import * as Console from "effect/Console";
 import * as SecureRandom from "effect/crypto/SecureRandom";
@@ -402,9 +403,10 @@ const projectAddCommand = Command.make("add", {
         const named = flags.track
           .map((folder) => {
             const resolved = path.resolve(expandHomePath(folder, home));
+            const name = (path.basename(resolved) || resolved).trimStart();
             return {
               path: resolved,
-              name: (path.basename(resolved) || resolved).slice(0, 128).trim(),
+              name: name.slice(0, splitsSurrogatePair(name, 128) ? 127 : 128).trim(),
             };
           })
           .filter(
