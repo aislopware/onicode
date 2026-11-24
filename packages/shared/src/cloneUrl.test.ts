@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { cloneUrlForProtocol, cloneUrlProtocol, cloneUrlRepositoryPath } from "./cloneUrl.ts";
+import {
+  cloneUrlForProtocol,
+  cloneUrlProtocol,
+  cloneUrlRepositoryPath,
+  withoutRemoteUrlCredentials,
+} from "./cloneUrl.ts";
 
 describe("cloneUrlForProtocol", () => {
   it.each([
@@ -220,5 +225,26 @@ describe("cloneUrlRepositoryPath", () => {
     expect(cloneUrlRepositoryPath("git@host.example:team/repo%20name.git")).toBe(
       "host.example/team/repo%20name",
     );
+  });
+});
+
+describe("withoutRemoteUrlCredentials", () => {
+  it.each([
+    [
+      "https://alice@corp.com:s3cr3t@git.example.com/repo.git?t=1",
+      "https://git.example.com/repo.git",
+    ],
+    ["ssh://git:s3cr3t@git.example.com/owner/repo.git", "ssh://git@git.example.com/owner/repo.git"],
+    [
+      "ssh://alice@corp.com:s3cr3t@git.example.com/repo.git",
+      "ssh://alice@corp.com@git.example.com/repo.git",
+    ],
+    ["ftp://deploy:s3cr3t@git.example.com/team/repo.git", "ftp://git.example.com/team/repo.git"],
+    ["git+https://user:s3cr3t@host.example/repo.git", "git+https://host.example/repo.git"],
+    ["ssh://git@git.example.com/owner/repo.git", "ssh://git@git.example.com/owner/repo.git"],
+    ["git@github.com:owner/repo.git", "git@github.com:owner/repo.git"],
+    ["/srv/git/repo.git", "/srv/git/repo.git"],
+  ])("keeps no password or login token in %s", (url, expected) => {
+    expect(withoutRemoteUrlCredentials(url)).toBe(expected);
   });
 });
