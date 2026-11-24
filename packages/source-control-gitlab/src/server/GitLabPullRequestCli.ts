@@ -340,6 +340,7 @@ export type GitLabPullRequestCliError =
 /** GitLab's `per_page` limit. */
 const MAX_PAGE_SIZE = 100;
 const COMMIT_PAGE_SIZE = 100;
+const MERGE_REQUESTS_OF_COMMIT_PAGES = 10;
 /**
  * GitLab 15.7 through 17.10 answer the merge request `/diffs` endpoint with a 500 for any
  * `per_page` above 30 (fixed in 17.11), so those pages stay at a size every version accepts.
@@ -2604,39 +2605,45 @@ export const make = Effect.gen(function* () {
     }),
 
     // GitLab relates a commit to the merge requests that contain it and answers 404 for a commit
-    // it does not know.
+    // it does not know. An empty page ends the list even where the host caps page size.
     mergeRequestHasCommit: Effect.fn("GitLabPullRequestCli.mergeRequestHasCommit")(
       function* (input) {
         if (!isCommitSha(input.commit)) {
           return yield* new GitLabDiffCommitError({ command: "glab", cwd: input.cwd });
         }
-        return yield* api({
-          cwd: input.cwd,
-          host: input.host,
-          path: `projects/${projectPath(input.repository)}/repository/commits/${input.commit}/merge_requests?${query(
-            [["per_page", String(MAX_PAGE_SIZE)]],
-          )}`,
-        }).pipe(
-          Effect.flatMap((result) => {
-            const decoded = decodeMergeRequestIidsJson(result.stdout.trim());
-            return Result.isSuccess(decoded)
-              ? Effect.succeed(decoded.success.includes(input.number))
-              : Effect.fail(
-                  new GitLabMergeRequestReadError({
-                    command: "glab",
-                    cwd: input.cwd,
-                    operation: "mergeRequestHasCommit",
-                    cause: decoded.failure,
-                  }),
-                );
-          }),
-          Effect.catchTags({
-            GitLabCliCommandError: (error) =>
-              isVcsProcessExitError(error.cause) && error.cause.failureKind === "not-found"
-                ? Effect.succeed(false)
-                : Effect.fail(error),
-          }),
-        );
+        for (let page = 1; page <= MERGE_REQUESTS_OF_COMMIT_PAGES; page++) {
+          const result = yield* api({
+            cwd: input.cwd,
+            host: input.host,
+            path: `projects/${projectPath(input.repository)}/repository/commits/${input.commit}/merge_requests?${query(
+              [
+                ["per_page", String(MAX_PAGE_SIZE)],
+                ["page", String(page)],
+              ],
+            )}`,
+          }).pipe(
+            Effect.asSome,
+            Effect.catchTags({
+              GitLabCliCommandError: (error) =>
+                isVcsProcessExitError(error.cause) && error.cause.failureKind === "not-found"
+                  ? Effect.succeedNone
+                  : Effect.fail(error),
+            }),
+          );
+          if (Option.isNone(result)) return false;
+          const decoded = decodeMergeRequestIidsJson(result.value.stdout.trim());
+          if (!Result.isSuccess(decoded)) {
+            return yield* new GitLabMergeRequestReadError({
+              command: "glab",
+              cwd: input.cwd,
+              operation: "mergeRequestHasCommit",
+              cause: decoded.failure,
+            });
+          }
+          if (decoded.success.includes(input.number)) return true;
+          if (decoded.success.length === 0) return false;
+        }
+        return false;
       },
     ),
 

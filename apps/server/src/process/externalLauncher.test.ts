@@ -1305,7 +1305,8 @@ it.effect.each([
       const editor = EDITORS.find((editor) => editor.id === "idea")!;
       const resolved = yield* resolveEditorCommand(editor, {
         HOME: home,
-        LOCALAPPDATA: home,
+        // A copied Windows environment keeps this spelling.
+        LocalAppData: home,
         PATH: path.join(home, "empty"),
         PATHEXT: ".COM;.EXE;.BAT;.CMD",
       }).pipe(

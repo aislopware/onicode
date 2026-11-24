@@ -15,6 +15,7 @@ import {
 } from "@onicode/contracts";
 import { resolveEditorCommand } from "@onicode/shared/editor";
 import * as HostProcess from "@onicode/shared/HostProcess";
+import { windowsEnvironmentVariable } from "@onicode/shared/windowsEnvironmentConfig";
 import { isCommandAvailable, resolveSpawnCommand } from "@onicode/shared/shell";
 import {
   windowsPowerShellPath,
@@ -119,8 +120,29 @@ const CommandLookupEnvConfig = Config.all({
   "ProgramFiles(x86)": Config.String("ProgramFiles(x86)").pipe(Config.option),
 }).pipe(Config.map(compactEnv));
 
-const readBrowserLaunchEnv = BrowserLaunchEnvConfig.pipe(Effect.orElseSucceed(() => ({})));
-const readCommandLookupEnv = CommandLookupEnvConfig.pipe(Effect.orElseSucceed(() => ({})));
+// Windows names ignore case, which the config provider's copy of the environment does not.
+const withWindowsNames = Effect.fn("externalLauncher.withWindowsNames")(function* (
+  read: Effect.Effect<NodeJS.ProcessEnv>,
+  names: ReadonlyArray<string>,
+) {
+  const env = yield* read;
+  if ((yield* HostProcess.Platform) !== "win32") return env;
+  const found = yield* Effect.forEach(names, (name) =>
+    windowsEnvironmentVariable(name).pipe(
+      Effect.map((value) => (value === undefined ? [] : [[name, value] as const])),
+    ),
+  );
+  return { ...env, ...Object.fromEntries(found.flat()) };
+});
+
+const readBrowserLaunchEnv = withWindowsNames(
+  BrowserLaunchEnvConfig.pipe(Effect.orElseSucceed(() => ({}))),
+  ["SystemRoot", "windir"],
+);
+const readCommandLookupEnv = withWindowsNames(
+  CommandLookupEnvConfig.pipe(Effect.orElseSucceed(() => ({}))),
+  ["PATHEXT", "LOCALAPPDATA", "ProgramFiles", "ProgramW6432", "ProgramFiles(x86)"],
+);
 
 function parseTargetPathAndPosition(target: string): Option.Option<TargetPathAndPosition> {
   const match = TARGET_WITH_POSITION_PATTERN.exec(target);

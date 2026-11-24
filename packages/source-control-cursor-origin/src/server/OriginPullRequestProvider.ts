@@ -772,7 +772,8 @@ export const make = Effect.gen(function* () {
     ),
 
     getChangeRequestActivity: (input) => {
-      // A part that cannot be read shows as empty and truncated rather than failing the rest.
+      // A conversation part that cannot be read shows as empty and truncated rather than failing
+      // the rest. Commits are not optional: a commit's diff is read only for a commit they name.
       const part = (operation: string, suffix: string) => ({
         cwd: input.cwd,
         operation,
@@ -799,14 +800,10 @@ export const make = Effect.gen(function* () {
             unread,
             true,
           ),
-          recover(
-            readPages(
-              part("listCommits", "/commits"),
-              OriginCommitListSchema,
-              (page) => page.commits,
-            ),
-            unread,
-            true,
+          readPages(
+            part("listCommits", "/commits"),
+            OriginCommitListSchema,
+            (page) => page.commits,
           ),
           // The detail is read alongside, so this is usually its cached answer.
           recover(getPull(input), null),

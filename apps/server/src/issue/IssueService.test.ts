@@ -319,20 +319,25 @@ describe("IssueService", () => {
         key: "7",
       });
 
-      // A project's host whose tracker is not offered here, as TanStack Source with its flag off.
+      // A project's host whose tracker is not offered here, as TanStack Source with its flag off,
+      // whether the host is public or vouched for by the project alone.
       const unoffered = yield* makeService({
         projects: [
           project({ id: "lab", repository: "acme/web", provider: "gitlab", host: "gitlab.com" }),
+          project({ id: "own", repository: "acme/web", provider: "gitlab", host: "git.acme.test" }),
         ],
         trackers: [fakeTracker()],
       });
-      expect(
-        yield* Effect.flip(unoffered.resolveUrl("https://gitlab.com/acme/web/-/issues/3")),
-      ).toMatchObject({
-        _tag: "IssueUnavailableError",
-        reason: "tracker-unsupported",
-        tracker: "gitlab",
-      });
+      for (const url of [
+        "https://gitlab.com/acme/web/-/issues/3",
+        "https://git.acme.test/acme/web/-/issues/3",
+      ]) {
+        expect(yield* Effect.flip(unoffered.resolveUrl(url))).toMatchObject({
+          _tag: "IssueUnavailableError",
+          reason: "tracker-unsupported",
+          tracker: "gitlab",
+        });
+      }
 
       // A fork lists its upstream's issues and its own, counted once, and may write to both.
       const fork = project({ id: "fork", repository: "acme/web" });

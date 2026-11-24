@@ -14,6 +14,7 @@ import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
 import { ChildProcessSpawner } from "effect/process";
 import { decodeJsonResult } from "@onicode/shared/schemaJson";
 import * as HostProcess from "@onicode/shared/HostProcess";
+import { windowsEnvironmentVariable } from "@onicode/shared/windowsEnvironmentConfig";
 import * as SourceControlHost from "@onicode/source-control-core/server/SourceControlHost";
 import { collectUint8StreamText } from "@onicode/provider-core/server/collectStreamText";
 import type { SourceControlProviderContext } from "@onicode/source-control-core/server/SourceControlProvider";
@@ -222,14 +223,13 @@ export function matchForgejoLogin(
       : undefined;
 }
 
-const ForgejoKeysConfig = Config.all({
-  dataHome: Config.String("XDG_DATA_HOME").pipe(Config.option),
-  appData: Config.String("APPDATA").pipe(Config.option),
-});
+const ForgejoKeysConfig = Config.String("XDG_DATA_HOME").pipe(Config.option);
 
 export const make = Effect.gen(function* () {
   // Optional strings cannot fail to decode.
-  const { dataHome, appData } = yield* Effect.suspend(() => ForgejoKeysConfig).pipe(Effect.orDie);
+  const dataHome = yield* Effect.suspend(() => ForgejoKeysConfig).pipe(Effect.orDie);
+  // Only Windows reads it, and there its name ignores case.
+  const appData = yield* windowsEnvironmentVariable("APPDATA");
   const { process } = yield* SourceControlHost.SourceControlHost;
   const fileSystem = yield* FileSystem.FileSystem;
   const httpClient = yield* HttpClient.HttpClient;
@@ -270,7 +270,7 @@ export const make = Effect.gen(function* () {
       platform: yield* HostProcess.Platform,
       home: yield* HostProcess.HomeDirectory,
       ...(Option.isSome(dataHome) ? { dataHome: dataHome.value } : {}),
-      ...(Option.isSome(appData) ? { appData: appData.value } : {}),
+      ...(appData === undefined ? {} : { appData }),
     })) {
       const exists = yield* fileSystem.exists(path).pipe(
         Effect.mapError(

@@ -61,7 +61,7 @@ function stripMarkup(input: string, keepBold = false): string {
       .replace(/<\/(?:p|div|li|h[1-6]|ul|ol|blockquote)>/gi, "\n")
       .replace(/<\/?(?:strong|b)\b[^>]*>/gi, "**")
       .replace(/<[^>]*>/g, "")
-      .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1"),
+      .replace(/\[([^[\]]+)\]\([^)]+\)/g, "$1"),
   );
   return keepBold ? markdown : markdown.replace(/\*\*([^*]+)\*\*/g, "$1");
 }

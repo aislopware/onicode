@@ -6918,77 +6918,6 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     return [...messagesQueuedAhead(projection, queuedRunId), ...ahead.flat()];
   });
 
-  // How a running turn takes a steer on this selection, or why it cannot.
-  const planSteerDelivery = Effect.fn("Orchestrator.planSteerDelivery")(function* (input: {
-    readonly command: Extract<
-      OrchestrationV2Command,
-      { readonly type: "message.dispatch" | "queued-message.promote-to-steer" }
-    >;
-    readonly targetRun: OrchestrationV2Run;
-    readonly capabilities: OrchestrationV2ProviderSession["capabilities"];
-    readonly modelSelection: ModelSelection;
-    readonly attachments: ReadonlyArray<ChatAttachment>;
-    readonly forceRestart: boolean;
-  }) {
-    const { targetRun } = input;
-    const selectionChanged = !modelSelectionsEqual(targetRun.modelSelection, input.modelSelection);
-    const providerInstanceChanged =
-      targetRun.providerInstanceId !== input.modelSelection.instanceId;
-    const selectionTransition =
-      selectionChanged && !providerInstanceChanged
-        ? yield* providerAdapters.get(targetRun.providerInstanceId).pipe(
-            Effect.flatMap((adapter) =>
-              adapter.planSelectionTransition({
-                current: targetRun.modelSelection,
-                target: input.modelSelection,
-                sessionCapabilities: input.capabilities,
-              }),
-            ),
-            Effect.mapError(
-              (cause) =>
-                new OrchestratorProviderAdapterError({
-                  commandId: input.command.commandId,
-                  providerInstanceId: targetRun.providerInstanceId,
-                  cause,
-                }),
-            ),
-          )
-        : null;
-    if (selectionTransition?.type === "reject") {
-      return { type: "refused", cause: selectionTransition.reason } as const;
-    }
-    // A selection the provider applies on its next turn joins the running
-    // turn as a steer and waits for the next turn. Restarting the turn for it
-    // would end the turn's native subagents, which a steer must never do.
-    const selectionMustApplyNow =
-      selectionChanged &&
-      (providerInstanceChanged || selectionTransition?.type !== "apply_on_next_turn");
-    const attachmentsNeedRestart =
-      input.attachments.length > 0 &&
-      input.capabilities.turns.activeSteeringAcceptsAttachments === false;
-    return yield* commandPolicy
-      .decideSteeringExecution({
-        commandId: input.command.commandId,
-        threadId: input.command.threadId,
-        providerInstanceId: targetRun.providerInstanceId,
-        capabilities: input.capabilities,
-        forceRestart: input.forceRestart || selectionMustApplyNow || attachmentsNeedRestart,
-      })
-      .pipe(
-        Effect.map(
-          (steeringPolicy) =>
-            ({
-              type: "deliver",
-              steeringPolicy,
-              selectionChanged,
-              providerInstanceChanged,
-              selectionTransition,
-            }) as const,
-        ),
-        Effect.catch((cause) => Effect.succeed({ type: "refused", cause } as const)),
-      );
-  });
-
   const dispatchSteerIntoRun = Effect.fn("Orchestrator.dispatchSteerIntoRun")(function* (input: {
     readonly command: Extract<
       OrchestrationV2Command,
@@ -7124,23 +7053,36 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     const session = sessionOption.value;
     const now = yield* DateTime.now;
     const emitEvent = emit(input.events, input.command);
-    const delivery = yield* planSteerDelivery({
-      command: input.command,
-      targetRun,
-      capabilities: session.providerSession.capabilities,
-      modelSelection: input.modelSelection,
-      attachments: input.attachments,
-      forceRestart: input.forceRestart,
-    });
-    if (delivery.type === "refused") {
+    const selectionChanged = !modelSelectionsEqual(targetRun.modelSelection, input.modelSelection);
+    const providerInstanceChanged =
+      targetRun.providerInstanceId !== input.modelSelection.instanceId;
+    const selectionTransition =
+      selectionChanged && !providerInstanceChanged
+        ? yield* providerAdapters.get(targetRun.providerInstanceId).pipe(
+            Effect.flatMap((adapter) =>
+              adapter.planSelectionTransition({
+                current: targetRun.modelSelection,
+                target: input.modelSelection,
+                sessionCapabilities: session.providerSession.capabilities,
+              }),
+            ),
+            Effect.mapError(
+              (cause) =>
+                new OrchestratorProviderAdapterError({
+                  commandId: input.command.commandId,
+                  providerInstanceId: targetRun.providerInstanceId,
+                  cause,
+                }),
+            ),
+          )
+        : null;
+    if (selectionTransition?.type === "reject") {
       return yield* new OrchestratorDispatchError({
         commandId: input.command.commandId,
         commandType: input.command.type,
-        cause: delivery.cause,
+        cause: selectionTransition.reason,
       });
     }
-    const { selectionChanged, providerInstanceChanged, selectionTransition, steeringPolicy } =
-      delivery;
     const appendSteeringMessage = Effect.fn("Orchestrator.appendSteeringMessage")(
       function* (messageInput: {
         readonly runId: OrchestrationV2Run["id"];
@@ -7238,6 +7180,25 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           ),
         });
       },
+    );
+
+    // A selection the provider applies on its next turn joins the running
+    // turn as a steer and waits for the next turn. Restarting the turn for it
+    // would end the turn's native subagents, which a steer must never do.
+    const selectionMustApplyNow =
+      selectionChanged &&
+      (providerInstanceChanged || selectionTransition?.type !== "apply_on_next_turn");
+    const attachmentsNeedRestart =
+      input.attachments.length > 0 &&
+      session.providerSession.capabilities.turns.activeSteeringAcceptsAttachments === false;
+    const steeringPolicy = yield* mapDispatchError(input.command)(
+      commandPolicy.decideSteeringExecution({
+        commandId: input.command.commandId,
+        threadId: input.command.threadId,
+        providerInstanceId: targetRun.providerInstanceId,
+        capabilities: session.providerSession.capabilities,
+        forceRestart: input.forceRestart || selectionMustApplyNow || attachmentsNeedRestart,
+      }),
     );
 
     if (steeringPolicy === "active_steering") {
@@ -13083,38 +13044,15 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       });
       return;
     }
-    // A parked steer the turn can never take waits as its own run instead of failing every signal.
-    if (
-      target !== undefined &&
-      queuedRun.steerWhenReadyRunId === target.id &&
-      String(command.commandId).startsWith("command:deferred-steer:")
-    ) {
-      const providerThread = projection.providerThreads.find(
-        (candidate) => candidate.id === target.providerThreadId,
-      );
-      const session =
-        providerThread === undefined || providerThread.providerSessionId === null
-          ? undefined
-          : yield* providerSessions
-              .get(providerThread.providerSessionId)
-              .pipe(mapDispatchError(command));
-      if (session !== undefined && Option.isSome(session)) {
-        const delivery = yield* planSteerDelivery({
-          command,
-          targetRun: target,
-          capabilities: session.value.providerSession.capabilities,
-          modelSelection,
-          attachments: queuedMessage.attachments,
-          forceRestart: false,
-        });
-        if (delivery.type === "refused") {
-          const { steerWhenReadyRunId: _target, ...queued } = queuedRun;
-          yield* releaseHeldSteer(command, events, queued, queuedMessage);
-          return undefined;
-        }
-      }
-    }
-    yield* emitEvent({
+    // A parked steer the turn refuses for any reason waits as its own run instead of failing
+    // every signal. Its promotion writes to scratch refs so a refusal leaves nothing behind.
+    const releasesOnRefusal =
+      queuedRun.steerWhenReadyRunId === command.targetRunId &&
+      String(command.commandId).startsWith("command:deferred-steer:");
+    const promotedEvents = releasesOnRefusal ? yield* Ref.make(yield* Ref.get(events)) : events;
+    const promotedEffects = releasesOnRefusal ? yield* Ref.make(yield* Ref.get(effects)) : effects;
+    const emitPromoted = emit(promotedEvents, command);
+    yield* emitPromoted({
       type: "run.updated",
       threadId: command.threadId,
       runId: queuedRun.id,
@@ -13128,7 +13066,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         completedAt: now,
       },
     });
-    yield* emitEvent({
+    yield* emitPromoted({
       type: "run-attempt.updated",
       threadId: command.threadId,
       runId: queuedRun.id,
@@ -13141,7 +13079,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         completedAt: now,
       },
     });
-    yield* emitEvent({
+    yield* emitPromoted({
       type: "node.updated",
       threadId: command.threadId,
       runId: queuedRun.id,
@@ -13155,10 +13093,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       },
     });
 
-    yield* dispatchSteerIntoRun({
+    const refusal = yield* dispatchSteerIntoRun({
       command,
-      events,
-      effects,
+      events: promotedEvents,
+      effects: promotedEffects,
       projection,
       modelSelection,
       targetRunId: command.targetRunId,
@@ -13184,7 +13122,24 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ? { followsThreadSelection: true as const }
         : {}),
       forceRestart: false,
+    }).pipe(
+      Effect.as(undefined),
+      Effect.catch((cause) => (releasesOnRefusal ? Effect.succeed(cause) : Effect.fail(cause))),
+    );
+    if (refusal === undefined) {
+      if (releasesOnRefusal) {
+        yield* Ref.set(events, yield* Ref.get(promotedEvents));
+        yield* Ref.set(effects, yield* Ref.get(promotedEffects));
+      }
+      return;
+    }
+    yield* Effect.logInfo("Queued a deferred steer its turn refused", {
+      threadId: command.threadId,
+      runId: queuedRun.id,
+      cause: refusal,
     });
+    const { steerWhenReadyRunId: _target, ...queued } = queuedRun;
+    yield* releaseHeldSteer(command, events, queued, queuedMessage);
   });
 
   // Writes the run without its mark and gives it the follow-up task a queued message would have.
@@ -18268,7 +18223,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             : { providerTurnAttemptIds: [run.activeAttemptId] }),
         },
       );
-      // The promote decides again under its lock; holding here saves a command per running report.
+      // These reads only filter: the promote decides again under its locks, and skipping here
+      // saves a command per running report.
       if (
         !records.providerTurns.some(
           (turn) => turn.runAttemptId === run.activeAttemptId && turn.status === "running",
@@ -18277,16 +18233,23 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       )
         return;
       for (const queued of pending) {
-        yield* dispatchWithReceiptEffect({
-          type: "queued-message.promote-to-steer",
-          // A promote can hold the steer again, so every signal dispatches its own command.
-          commandId: CommandId.make(
-            `command:deferred-steer:${queued.id}:${run.id}:${stored.sequence}`,
-          ),
+        // A refused promote releases the steer, which can start a follow-up on the parent.
+        yield* withSubagentParentLock(
           threadId,
-          queuedRunId: queued.id,
-          targetRunId: run.id,
-        }).pipe(
+          threadDispatch.withLock(
+            threadId,
+            dispatchWithReceiptEffect({
+              type: "queued-message.promote-to-steer",
+              // A promote can hold the steer again, so every signal dispatches its own command.
+              commandId: CommandId.make(
+                `command:deferred-steer:${queued.id}:${run.id}:${stored.sequence}`,
+              ),
+              threadId,
+              queuedRunId: queued.id,
+              targetRunId: run.id,
+            }),
+          ),
+        ).pipe(
           Effect.catchCause((cause) =>
             Effect.logWarning("Failed to deliver a deferred steer", {
               threadId,
@@ -18297,7 +18260,6 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         );
       }
     },
-    (effect, stored) => threadDispatch.withLock(stored.event.threadId, effect),
     Effect.catchCause((cause) =>
       Effect.logWarning("Failed to deliver deferred steering", { cause }),
     ),

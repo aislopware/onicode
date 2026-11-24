@@ -6,6 +6,7 @@ import {
 } from "@onicode/shared/pullRequestAnchor";
 import { projectChangeRequestUrl } from "@onicode/client-runtime/change-request-links";
 import { normalizeThreadPullRequestKey } from "@onicode/client-runtime/thread-pull-requests";
+import { allowsSinglePullRequestAutoMergeCancel } from "@onicode/client-runtime/pull-request-stack-actions";
 import { useAtomValue } from "@effect/atom-react";
 import { usePullRequestStack } from "~/state/usePullRequestStack";
 import { scopeProjectRef, scopeThreadRef } from "@onicode/client-runtime/environment";
@@ -151,7 +152,6 @@ import {
   resolvePullRequestPrimaryControl,
   allowedPullRequestMergeMethods,
   allowsSinglePullRequestMerge,
-  allowsSinglePullRequestAutoMergeCancel,
   canDeletePullRequestBranch,
   isPullRequestConflicting,
   resolveBaseFreshness,

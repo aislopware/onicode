@@ -5437,46 +5437,81 @@ it.effect("reads a commit's diff only for a commit the change request lists", ()
   }),
 );
 
-it.effect("asks the host about a commit older than a full page of listed commits", () =>
-  Effect.gen(function* () {
-    const older = "e".repeat(40);
-    const outsider = "d".repeat(40);
-    const asked: Array<string> = [];
-    const read: Array<string | undefined> = [];
-    const service = yield* makeService({
-      projects: [project({ id: "p1", title: "web", workspaceRoot: "/a", repository: "acme/web" })],
-      providers: [
-        fakePullRequestProvider(SourceControlProviderKind.make("github"), {
-          ...activityListing(
-            ...Array.from({ length: 100 }, (_, index) => index.toString(16).padStart(40, "0")),
-          ),
-          hasCommit: (input) =>
-            Effect.sync(() => {
-              asked.push(input.commit);
-              return input.commit === older;
-            }),
-          getDiff: (input) =>
-            Effect.sync(() => {
-              read.push(input.commit);
-              return {
-                patch: "diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n+x\n",
-                truncated: false,
-                nextCursor: null,
-              };
-            }),
-        }),
-      ],
-    });
-    const ref = { projectId: "p1" as ProjectId, repository: "acme/web", number: 1 };
+it.effect.each([
+  { commitsTruncated: undefined, asks: true },
+  { commitsTruncated: true, asks: true },
+  { commitsTruncated: false, asks: false },
+])(
+  "asks the host about an unlisted commit unless the list holds every commit ($commitsTruncated)",
+  ({ commitsTruncated, asks }) =>
+    Effect.gen(function* () {
+      const older = "e".repeat(40);
+      const outsider = "d".repeat(40);
+      const unreadable = "c".repeat(40);
+      const asked: Array<string> = [];
+      const read: Array<string | undefined> = [];
+      const listing = activityListing("a".repeat(40), "b".repeat(40));
+      const service = yield* makeService({
+        projects: [
+          project({ id: "p1", title: "web", workspaceRoot: "/a", repository: "acme/web" }),
+        ],
+        providers: [
+          fakePullRequestProvider(SourceControlProviderKind.make("github"), {
+            getChangeRequestActivity: () =>
+              listing
+                .getChangeRequestActivity()
+                .pipe(
+                  Effect.map((activity) =>
+                    commitsTruncated === undefined ? activity : { ...activity, commitsTruncated },
+                  ),
+                ),
+            hasCommit: (input) =>
+              Effect.suspend(() => {
+                asked.push(input.commit);
+                return input.commit === unreadable
+                  ? Effect.fail(
+                      new PullRequestProviderError({
+                        provider: SourceControlProviderKind.make("github"),
+                        operation: "hasCommit",
+                        reason: "failed",
+                        detail: "HTTP 502",
+                      }),
+                    )
+                  : Effect.succeed(input.commit === older);
+              }),
+            getDiff: (input) =>
+              Effect.sync(() => {
+                read.push(input.commit);
+                return {
+                  patch: "diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n+x\n",
+                  truncated: false,
+                  nextCursor: null,
+                };
+              }),
+            getDiffFileContents: () => Effect.succeed({ oldContents: "old", newContents: "new" }),
+          }),
+        ],
+      });
+      const ref = { projectId: "p1" as ProjectId, repository: "acme/web", number: 1 };
+      const file = { changeType: "change" as const, oldPath: "a.ts", newPath: "a.ts" };
 
-    yield* service.diff({ ...ref, commit: older.toUpperCase() });
-    for (const commit of [outsider, older.slice(0, 7)]) {
-      const error = yield* service.diff({ ...ref, commit }).pipe(Effect.flip);
-      assert.strictEqual(error.reason, "not-found");
-    }
-    assert.deepStrictEqual(asked, [older, outsider]);
-    assert.deepStrictEqual(read, [older]);
-  }),
+      const found = yield* service.diff({ ...ref, commit: older.toUpperCase() }).pipe(Effect.exit);
+      assert.strictEqual(found._tag, asks ? "Success" : "Failure");
+      for (const commit of [outsider, older.slice(0, 7)]) {
+        const error = yield* service.diff({ ...ref, commit }).pipe(Effect.flip);
+        assert.strictEqual(error.reason, "not-found");
+      }
+      const failed = yield* service
+        .diffFileContents({ ...ref, ...file, commit: unreadable })
+        .pipe(Effect.flip);
+      assert.strictEqual(failed._tag, "PullRequestOperationError");
+      assert.strictEqual(
+        failed._tag === "PullRequestOperationError" ? failed.operation : null,
+        "diffFileContents",
+      );
+      assert.deepStrictEqual(asked, asks ? [older, outsider, unreadable] : []);
+      assert.deepStrictEqual(read, asks ? [older] : []);
+    }),
 );
 
 it.effect("serves a listed commit's cached diff past the activity's lifetime without it", () =>

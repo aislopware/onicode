@@ -119,6 +119,10 @@
       "types": "./src/windowsSystem.ts",
       "import": "./src/windowsSystem.ts"
     },
+    "./windowsEnvironmentConfig": {
+      "types": "./src/windowsEnvironmentConfig.ts",
+      "import": "./src/windowsEnvironmentConfig.ts"
+    },
     "./envTrampoline": {
       "types": "./src/envTrampoline.ts",
       "import": "./src/envTrampoline.ts"

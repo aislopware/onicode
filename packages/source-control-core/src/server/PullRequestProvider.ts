@@ -292,6 +292,8 @@ export interface ProviderChangeRequestActivity {
   readonly reviewThreads: ReadonlyArray<PullRequestReviewThread>;
   readonly overviewThreads?: ReadonlyArray<PullRequestOverviewThread>;
   readonly commits: ReadonlyArray<PullRequestCommit>;
+  /** False only when `commits` is known to hold every commit; absent when the host cannot tell. */
+  readonly commitsTruncated?: boolean;
   readonly reactions?: ReadonlyArray<PullRequestReaction>;
 }
 
@@ -533,7 +535,7 @@ export interface PullRequestProviderApi {
 
   /**
    * Whether the change request contains a commit, named by its full oid, that its activity's
-   * commit page leaves out. A commit the host does not know is not contained.
+   * commit list does not name. A commit the host does not know is not contained.
    */
   readonly hasCommit?: (
     input: ProviderRepositoryRef & { readonly number: number; readonly commit: string },

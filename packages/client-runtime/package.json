@@ -651,6 +651,10 @@
       "types": "./src/pullRequestChecks.ts",
       "default": "./src/pullRequestChecks.ts"
     },
+    "./pull-request-stack-actions": {
+      "types": "./src/pullRequestStackActions.ts",
+      "default": "./src/pullRequestStackActions.ts"
+    },
     "./pull-request-editing": {
       "types": "./src/pullRequestEditing.ts",
       "default": "./src/pullRequestEditing.ts"

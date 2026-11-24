@@ -587,7 +587,7 @@ export interface ProjectionStoreV2Shape {
   readonly getMessageCount: (threadId: ThreadId) => Effect.Effect<number, ProjectionStoreV2Error>;
   /**
    * Bytes of tool output a transcript export is sure to hold, or 0 when it can fit in `limit`.
-   * A deleted thread is not found.
+   * A deleted thread, like a missing one, is not found.
    */
   readonly getTranscriptByteFloor: (
     threadId: ThreadId,
@@ -6879,45 +6879,46 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
     // result, are a floor for the export. Other stored bytes are not: decoding drops fields. A
     // rolled back run is the only way the export hides a tool row, and rows a fork inherits only
     // add to it. The output sum parses payloads, so it runs only when the tool rows exceed `limit`.
-    const transcriptToolOutputBytes = (threadId: ThreadId, limit: number) =>
-      sql<{ bytes: number }>`
-        WITH tool_rows AS (
-          SELECT payload_json FROM orchestration_v2_projection_turn_items
-          WHERE thread_id = ${threadId}
-            AND type IN ('command_execution', 'dynamic_tool')
-            AND (run_id IS NULL OR run_id NOT IN (
-              SELECT run_id FROM orchestration_v2_projection_runs
-              WHERE thread_id = ${threadId} AND status = 'rolled_back'
-            ))
-        )
-        SELECT CASE
-          WHEN (SELECT COALESCE(SUM(octet_length(payload_json)), 0) FROM tool_rows) <= ${limit}
-            THEN 0
-          ELSE (
-            -- json_valid is false past SQLite's nesting limit, where json_tree would fail.
-            SELECT COALESCE(SUM(CASE WHEN json_valid(payload_json) THEN (
-              SELECT COALESCE(SUM(octet_length(leaf.value)), 0)
-              FROM json_tree(tool_rows.payload_json, '$.output') AS leaf
-              WHERE leaf.type = 'text'
-            ) ELSE 0 END), 0)
-            FROM tool_rows
-          )
-        END AS bytes
-      `.pipe(Effect.map((rows) => rows[0]?.bytes ?? 0));
     const getTranscriptByteFloor: ProjectionStoreV2Shape["getTranscriptByteFloor"] = Effect.fn(
       "ProjectionStore.getTranscriptByteFloor",
-    )(function* (threadId, limit) {
-      const rows = yield* sql<{ deleted: number }>`
+    )(
+      function* (threadId, limit) {
+        const [thread] = yield* sql<{ deleted: number }>`
           SELECT deleted_at IS NOT NULL AS deleted
           FROM orchestration_v2_projection_threads WHERE thread_id = ${threadId}
-        `.pipe(Effect.mapError(controlReadError(threadId)));
-      if (rows[0]?.deleted === 1) {
-        return yield* new ProjectionStoreThreadNotFoundError({ threadId });
-      }
-      return yield* transcriptToolOutputBytes(threadId, limit).pipe(
-        Effect.mapError(controlReadError(threadId)),
-      );
-    });
+        `;
+        if (thread === undefined || thread.deleted === 1) {
+          return yield* new ProjectionStoreThreadNotFoundError({ threadId });
+        }
+        const [floor] = yield* sql<{ bytes: number }>`
+          WITH tool_rows AS (
+            SELECT payload_json FROM orchestration_v2_projection_turn_items
+            WHERE thread_id = ${threadId}
+              AND type IN ('command_execution', 'dynamic_tool')
+              AND (run_id IS NULL OR run_id NOT IN (
+                SELECT run_id FROM orchestration_v2_projection_runs
+                WHERE thread_id = ${threadId} AND status = 'rolled_back'
+              ))
+          )
+          SELECT CASE
+            WHEN (SELECT COALESCE(SUM(octet_length(payload_json)), 0) FROM tool_rows) <= ${limit}
+              THEN 0
+            ELSE (
+              -- json_valid is false past SQLite's nesting limit, where json_tree would fail.
+              SELECT COALESCE(SUM(CASE WHEN json_valid(payload_json) THEN (
+                SELECT COALESCE(SUM(octet_length(leaf.value)), 0)
+                FROM json_tree(tool_rows.payload_json, '$.output') AS leaf
+                WHERE leaf.type = 'text'
+              ) ELSE 0 END), 0)
+              FROM tool_rows
+            )
+          END AS bytes
+        `;
+        return floor?.bytes ?? 0;
+      },
+      (effect, threadId, _limit) =>
+        sql.withTransaction(effect).pipe(Effect.mapError(controlReadError(threadId))),
+    );
     const getRunCount: ProjectionStoreV2Shape["getRunCount"] = (threadId) =>
       sql<{
         count: number;
@@ -6964,37 +6965,65 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       );
 
     // Deletion keeps the rows; a deleted thread's item stays readable while a live fork shows it.
-    const getTurnItem: ProjectionStoreV2Shape["getTurnItem"] = ({ threadId, itemId }) =>
-      sql<{ payload_json: string; deleted: number; run_ordinal: number }>`SELECT item.payload_json,
-          thread.deleted_at IS NOT NULL AS deleted, COALESCE(run.ordinal, -1) AS run_ordinal
-        FROM orchestration_v2_projection_turn_items AS item
-        LEFT JOIN orchestration_v2_projection_threads AS thread ON thread.thread_id = item.thread_id
-        LEFT JOIN orchestration_v2_projection_runs AS run ON run.run_id = item.run_id
-        WHERE item.turn_item_id = ${itemId} AND item.thread_id = ${threadId}`.pipe(
-        Effect.flatMap(([row]) => {
-          if (row === undefined) return Effect.succeed(null);
-          const shown =
-            row.deleted === 0
-              ? Effect.succeed(true)
-              : lastRunsShownByLiveForks(threadId, threadId).pipe(
-                  Effect.map(({ with_fork }) => with_fork !== null && row.run_ordinal <= with_fork),
-                );
-          return shown.pipe(
-            Effect.flatMap((visible) =>
-              visible ? decodeTurnItemPayload(row.payload_json) : Effect.succeed(null),
-            ),
-          );
-        }),
-        Effect.mapError(controlReadError(threadId)),
-      );
+    // An item outside any thread row belongs to no readable thread.
+    const getTurnItem: ProjectionStoreV2Shape["getTurnItem"] = Effect.fn(
+      "ProjectionStore.getTurnItem",
+    )(
+      function* ({ threadId, itemId }) {
+        const [row] = yield* sql<{ payload_json: string; deleted: number }>`SELECT
+            item.payload_json, thread.deleted_at IS NOT NULL AS deleted
+          FROM orchestration_v2_projection_turn_items AS item
+          JOIN orchestration_v2_projection_threads AS thread ON thread.thread_id = item.thread_id
+          WHERE item.turn_item_id = ${itemId} AND item.thread_id = ${threadId}`;
+        if (row === undefined) return null;
+        const item = yield* decodeTurnItemPayload(row.payload_json);
+        return row.deleted === 0 || (yield* isShownByLiveFork(threadId, item)) ? item : null;
+      },
+      (effect, { threadId }) => effect.pipe(Effect.mapError(controlReadError(threadId))),
+    );
+
+    // The same test `readTimelineIndex` applies to a fork's inherited rows, for each run fork whose
+    // history a live thread still shows.
+    const isShownByLiveFork = Effect.fn("ProjectionStore.isShownByLiveFork")(
+      function* (threadId: ThreadId, item: OrchestrationV2TurnItem) {
+        const forks = yield* sql<{ fork_id: ThreadId; through: number }>`
+          ${threadsShowingHistory(threadId)}
+          SELECT DISTINCT fork_id, through FROM showing WHERE deleted_at IS NULL
+        `;
+        if (forks.length === 0) return false;
+        const source = yield* getThreadRecords(threadId, ["runs", "attempts", "turnItems"], {
+          turnItemTypes: ["run_interrupt_request"],
+          messageRoles: [],
+        });
+        const isInheritedVisible = createInheritedTurnItemVisibility({
+          runs: source.runs,
+          attempts: source.attempts,
+          items: source.turnItems,
+        });
+        if (!isInheritedVisible(item)) return false;
+        for (const fork of forks) {
+          const { thread } = yield* getThreadRecords(fork.fork_id, []);
+          if (
+            isTurnItemAtOrBeforeRun({
+              historyOrigin: source.thread.historyOrigin,
+              itemRunId: item.runId,
+              runOrdinalById: forkInheritedRunOrdinals(source.runs, thread.createdAt),
+              sourceRunOrdinal: fork.through,
+            })
+          )
+            return true;
+        }
+        return false;
+      },
+      (effect) => sql.withTransaction(effect),
+    );
 
     // A run fork shows its source's history through the fork run without copying it, and every
-    // run fork below it shows that history too. Returns the last source run live forks show, with
-    // and without `leavingForkId`.
-    const lastRunsShownByLiveForks = (threadId: ThreadId, leavingForkId: ThreadId) =>
-      sql<{ with_fork: number | null; without_fork: number | null }>`
-        WITH RECURSIVE showing(thread_id, deleted_at, through) AS (
-          SELECT fork.thread_id, fork.deleted_at, fork_run.ordinal
+    // run fork below it shows that history too. Each `showing` row is a thread that shows it, with
+    // the run fork of `threadId` it comes through and that fork's run.
+    const threadsShowingHistory = (threadId: ThreadId) => sql`
+        WITH RECURSIVE showing(fork_id, thread_id, deleted_at, through) AS (
+          SELECT fork.thread_id, fork.thread_id, fork.deleted_at, fork_run.ordinal
           FROM orchestration_v2_projection_context_transfers AS transfer
           JOIN orchestration_v2_projection_threads AS fork
             ON fork.thread_id = transfer.target_thread_id
@@ -7007,7 +7036,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             AND json_extract(fork.payload_json, '$.forkedFrom.threadId') = ${threadId}
             AND json_extract(fork.payload_json, '$.lineage.sideChat') IS NOT 1
           UNION
-          SELECT child.thread_id, child.deleted_at, showing.through
+          SELECT showing.fork_id, child.thread_id, child.deleted_at, showing.through
           FROM showing
           JOIN orchestration_v2_projection_context_transfers AS transfer
             ON transfer.source_thread_id = showing.thread_id AND transfer.type = 'fork'
@@ -7016,7 +7045,12 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
           WHERE json_extract(child.payload_json, '$.forkedFrom.type') = 'run'
             AND json_extract(child.payload_json, '$.forkedFrom.threadId') = showing.thread_id
             AND json_extract(child.payload_json, '$.lineage.sideChat') IS NOT 1
-        )
+        )`;
+
+    // The last source run live forks show, with and without `leavingForkId`.
+    const lastRunsShownByLiveForks = (threadId: ThreadId, leavingForkId: ThreadId) =>
+      sql<{ with_fork: number | null; without_fork: number | null }>`
+        ${threadsShowingHistory(threadId)}
         SELECT
           MAX(through) AS with_fork,
           MAX(CASE WHEN thread_id <> ${leavingForkId} THEN through END) AS without_fork
@@ -8275,8 +8309,12 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                 Number.isSafeInteger(options.beforePosition))
                 ? yield* openLocalTimeline(threadId)
                 : null;
+            if (local !== null && local.records.thread.deletedAt !== null)
+              return yield* new ProjectionStoreThreadNotFoundError({ threadId });
             const whole = Effect.gen(function* () {
               const index = yield* readSnapshotTimelineIndex(threadId, false);
+              if (index.records.thread.deletedAt !== null)
+                return yield* new ProjectionStoreThreadNotFoundError({ threadId });
               const attachmentOwners =
                 options.attachmentId === undefined
                   ? undefined

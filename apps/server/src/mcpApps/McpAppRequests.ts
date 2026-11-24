@@ -171,11 +171,14 @@ const make = Effect.gen(function* () {
     const seen = new Set<ThreadId>();
     let current: ThreadId | null = threadId;
     while (current !== null && !seen.has(current)) {
+      // Only `threadId` must be live: a fork keeps showing the deleted threads it came from.
+      const records: { readonly thread: OrchestrationV2AppThread } = yield* (
+        current === threadId
+          ? threadManagement.getLiveThreadRecords(current, [])
+          : threadManagement.getThreadRecords(current, [])
+      ).pipe(Effect.mapError((cause) => fail(threadId, "request-failed", cause)));
       if (current === ancestorId) return true;
       seen.add(current);
-      const records: { readonly thread: OrchestrationV2AppThread } = yield* threadManagement
-        .getThreadRecords(current, [])
-        .pipe(Effect.mapError((cause) => fail(threadId, "request-failed", cause)));
       const { lineage } = records.thread;
       current = lineage.relationshipToParent === "fork" ? lineage.parentThreadId : null;
     }

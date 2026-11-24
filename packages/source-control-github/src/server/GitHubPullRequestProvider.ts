@@ -235,6 +235,8 @@ export function loginAvatarUrl(login: string, host: string): string | null {
 const SEARCH_COVERAGE_TTL = Duration.hours(1);
 const SEARCH_COVERAGE_CAPACITY = 4096;
 const SEARCH_COVERAGE_CONCURRENCY = 4;
+// The activity reads a pull request's newest 100 commits.
+const ACTIVITY_COMMIT_PAGE_SIZE = 100;
 
 /**
  * Whether GitHub search covers a repository. `cwd` only says where to ask, so equality ignores
@@ -577,6 +579,8 @@ export const make = Effect.gen(function* () {
               additions === undefined ? {} : { additions, deletions },
             ]),
           );
+          const commits =
+            reviewThreads.commits.length > 0 ? reviewThreads.commits : pullRequest.commits;
           return {
             author: withAvatar(
               pullRequest.author,
@@ -586,10 +590,7 @@ export const make = Effect.gen(function* () {
             ),
             reviewers: reviewThreads.reviewers,
             reactions: reviewThreads.reactions,
-            commits: (reviewThreads.commits.length > 0
-              ? reviewThreads.commits
-              : pullRequest.commits
-            ).map((commit) => ({
+            commits: commits.map((commit) => ({
               ...commit,
               ...commitStats.get(commit.oid),
               authors: commit.authors?.map(
@@ -602,6 +603,7 @@ export const make = Effect.gen(function* () {
                   ) ?? author,
               ),
             })),
+            commitsTruncated: commits.length >= ACTIVITY_COMMIT_PAGE_SIZE,
             comments: [...pullRequest.comments, ...reviewThreads.comments]
               .map((comment) => ({
                 ...comment,

@@ -15,6 +15,7 @@ import { HttpClient } from "effect/http";
 import * as Schema from "effect/Schema";
 
 import { CLI_RELEASE_BASE_URL_ENV } from "@onicode/shared/cliRelease";
+import { windowsEnvironmentVariable } from "@onicode/shared/windowsEnvironmentConfig";
 
 import * as ProcessRunner from "../processRunner.ts";
 import { acquireServiceSelectionLock } from "./serviceSelectionLock.ts";
@@ -818,9 +819,15 @@ export const make = Effect.fn("service.boot_service.make")(function* (input: {
   const releaseBaseUrl = Option.getOrUndefined(
     yield* Config.String(CLI_RELEASE_BASE_URL_ENV).pipe(Config.option),
   );
-  const homeDir = yield* Config.String(platform === "win32" ? "USERPROFILE" : "HOME").pipe(
-    Config.withDefault(""),
-  );
+  // Windows names ignore case, which the config provider's copy of the environment does not.
+  const windowsVariable = (name: string) =>
+    platform === "win32"
+      ? windowsEnvironmentVariable(name).pipe(Effect.map((value) => value ?? ""))
+      : Effect.succeed("");
+  const homeDir =
+    platform === "win32"
+      ? yield* windowsVariable("USERPROFILE")
+      : yield* Config.String("HOME").pipe(Config.withDefault(""));
   const xdgConfigHome = yield* Config.String("XDG_CONFIG_HOME").pipe(Config.withDefault(""));
   const installerPath = yield* Config.String("PATH").pipe(Config.withDefault(""));
   const installBinDir = Option.getOrUndefined(
@@ -879,15 +886,6 @@ export const make = Effect.fn("service.boot_service.make")(function* (input: {
     ),
   ).join(":");
 
-  // The config provider copies the environment, so names lose Windows' case-insensitivity;
-  // MSYS and Cygwin launch with upper-case names such as `SYSTEMROOT`.
-  const windowsVariable = (name: string) =>
-    platform === "win32"
-      ? Config.String(name).pipe(
-          Config.orElse(() => Config.String(name.toUpperCase())),
-          Config.withDefault(""),
-        )
-      : Config.succeed("");
   const windowsSession: WindowsSession = {
     localAppData: yield* windowsVariable("LOCALAPPDATA"),
     userId: `${yield* windowsVariable("USERDOMAIN")}\\${yield* windowsVariable("USERNAME")}`,

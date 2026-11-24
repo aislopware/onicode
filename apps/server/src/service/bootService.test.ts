@@ -379,11 +379,12 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
                   ? {}
                   : { ONICODE_INSTALL_BIN_DIR: serviceInstallBinDir }),
                 ...(xdgConfigHome === undefined ? {} : { XDG_CONFIG_HOME: xdgConfigHome }),
-                USERPROFILE: home,
-                LOCALAPPDATA: path.join(home, "AppData", "Local"),
+                // Windows names in a case its environment answers to and a copy does not.
+                UserProfile: home,
+                LocalAppData: path.join(home, "AppData", "Local"),
                 USERDOMAIN: "PC",
                 SYSTEMROOT: "D:\\WinNT",
-                USERNAME: "theo",
+                UserName: "theo",
                 ...(environmentPath === undefined || environmentPath === ""
                   ? {}
                   : { PATH: environmentPath }),

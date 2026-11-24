@@ -8,6 +8,7 @@ import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 import * as HostProcess from "./HostProcess.ts";
 import { isCommandAvailable, resolveCommandPath, resolveCommandPaths } from "./shell.ts";
+import { windowsEnvironmentValue } from "./windowsSystem.ts";
 
 type Editor = (typeof EDITORS)[number];
 
@@ -133,15 +134,16 @@ export const resolveEditorCommand = Effect.fn("editor.resolveEditorCommand")(fun
       candidates.push(path.join(toolbox.dir, command));
     }
   } else if (platform === "win32") {
+    const localAppData = windowsEnvironmentValue(env, "LOCALAPPDATA");
     const roots = [
-      ...(env.LOCALAPPDATA ? [path.join(env.LOCALAPPDATA, "Programs")] : []),
-      ...[env.ProgramFiles, env["ProgramFiles(x86)"], env.ProgramW6432].filter(
-        (root): root is string => !!root,
-      ),
+      ...(localAppData ? [path.join(localAppData, "Programs")] : []),
+      ...["ProgramFiles", "ProgramFiles(x86)", "ProgramW6432"]
+        .map((name) => windowsEnvironmentValue(env, name))
+        .filter((root): root is string => !!root),
     ];
     if (jetbrains) {
-      if (env.LOCALAPPDATA) {
-        toolbox = { dir: path.join(env.LOCALAPPDATA, "JetBrains/Toolbox/scripts"), suffix: ".cmd" };
+      if (localAppData) {
+        toolbox = { dir: path.join(localAppData, "JetBrains/Toolbox/scripts"), suffix: ".cmd" };
         candidates.push(path.join(toolbox.dir, `${command}.cmd`));
       }
       for (const directory of roots.flatMap((root) => [root, path.join(root, "JetBrains")])) {

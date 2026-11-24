@@ -139,8 +139,6 @@ const COMMIT_DIFF_CACHE_TTL = Duration.minutes(10);
 const LIST_STATS_CACHE_TTL = Duration.seconds(60);
 const FILES_VIEWED_CACHE_TTL = Duration.seconds(15);
 const DIFF_STALE_WINDOW = Duration.minutes(10);
-// GitHub and GitLab list a change request's newest 100 commits in its activity.
-const ACTIVITY_COMMIT_PAGE_SIZE = 100;
 const DIFF_SWEEP_INTERVAL = Duration.minutes(1);
 const VIEWER_CACHE_TTL = Duration.minutes(10);
 const STALE_DETAIL_WINDOW = Duration.minutes(10);
@@ -2131,7 +2129,12 @@ export const make = Effect.gen(function* () {
       ),
     );
 
-  const activityUncached: PullRequestService["Service"]["activity"] = (input) =>
+  const activityUncached = (
+    input: PullRequestRef,
+  ): Effect.Effect<
+    { readonly activity: PullRequestActivity; readonly commitsTruncated: boolean | undefined },
+    PullRequestError
+  > =>
     requireProject(input).pipe(
       Effect.flatMap((project) =>
         project.api
@@ -2143,21 +2146,24 @@ export const make = Effect.gen(function* () {
           })
           .pipe(
             Effect.mapError(toPullRequestError("activity")),
-            Effect.map((activity): PullRequestActivity => ({
-              ...(activity.author === undefined ? {} : { author: activity.author }),
-              ...(activity.reviewers === undefined ? {} : { reviewers: activity.reviewers }),
-              comments: activity.comments,
-              commentCount: activity.commentCount,
-              commentsTruncated: activity.commentsTruncated,
-              ...(activity.reviewThreadsTruncated === undefined
-                ? {}
-                : { reviewThreadsTruncated: activity.reviewThreadsTruncated }),
-              reviewThreads: activity.reviewThreads,
-              ...(activity.overviewThreads === undefined
-                ? {}
-                : { overviewThreads: activity.overviewThreads }),
-              commits: activity.commits,
-              ...(activity.reactions === undefined ? {} : { reactions: activity.reactions }),
+            Effect.map((activity) => ({
+              commitsTruncated: activity.commitsTruncated,
+              activity: {
+                ...(activity.author === undefined ? {} : { author: activity.author }),
+                ...(activity.reviewers === undefined ? {} : { reviewers: activity.reviewers }),
+                comments: activity.comments,
+                commentCount: activity.commentCount,
+                commentsTruncated: activity.commentsTruncated,
+                ...(activity.reviewThreadsTruncated === undefined
+                  ? {}
+                  : { reviewThreadsTruncated: activity.reviewThreadsTruncated }),
+                reviewThreads: activity.reviewThreads,
+                ...(activity.overviewThreads === undefined
+                  ? {}
+                  : { overviewThreads: activity.overviewThreads }),
+                commits: activity.commits,
+                ...(activity.reactions === undefined ? {} : { reactions: activity.reactions }),
+              } satisfies PullRequestActivity,
             })),
           ),
       ),
@@ -3708,10 +3714,8 @@ export const make = Effect.gen(function* () {
       ),
     );
   };
-  const activity: PullRequestService["Service"]["activity"] = (input) => {
-    const key = refCacheKey(input);
-    return Cache.get(activityCache, key);
-  };
+  const activity: PullRequestService["Service"]["activity"] = (input) =>
+    Cache.get(activityCache, refCacheKey(input)).pipe(Effect.map((read) => read.activity));
 
   const diffCache = yield* Cache.makeWith(
     (key: string) => {
@@ -3796,44 +3800,44 @@ export const make = Effect.gen(function* () {
     );
     return { key, read };
   };
-  // A host reads a commit's diff from the repository, not from the change request, so a named
-  // commit is forwarded only as the one oid the change request's own commit list gives for it.
-  // Past a full page the host is asked about one full oid. A commit found is trusted for as long
-  // as its diff is cached, so serving that diff rereads no activity and survives a host outage.
+  // Hosts read a commit's diff from the repository, so only an oid the change request lists (or,
+  // when the list may be partial, one the host confirms) is forwarded. A found commit is trusted
+  // while its diff is cached, so serving that diff rereads no activity and survives an outage.
   const listedCommitCache = yield* Cache.makeWith(
     (key: string) => {
       const [reference, wanted] = JSON.parse(key) as [string, string];
       const ref = refOfCacheKey(reference);
-      return activity(ref).pipe(
-        Effect.flatMap(({ commits }): Effect.Effect<Option.Option<string>, PullRequestError> => {
-          const listed = commits.filter((commit) => commit.oid.toLowerCase().startsWith(wanted));
-          const [commit] = listed;
-          if (commit !== undefined) {
-            return Effect.succeed(listed.length === 1 ? Option.some(commit.oid) : Option.none());
-          }
-          if (
-            commits.length < ACTIVITY_COMMIT_PAGE_SIZE ||
-            !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(wanted)
-          ) {
-            return Effect.succeedNone;
-          }
-          return requireProject(ref).pipe(
-            Effect.flatMap((project) => {
-              const hasCommit = project.api.hasCommit;
-              if (hasCommit === undefined) return Effect.succeedNone;
-              return hasCommit({
-                cwd: project.project.workspaceRoot,
-                repository: project.repository,
-                host: project.host,
-                number: ref.number,
-                commit: wanted,
-              }).pipe(
-                Effect.mapError(toPullRequestError("diff")),
-                Effect.map((contained) => (contained ? Option.some(wanted) : Option.none())),
-              );
-            }),
-          );
-        }),
+      return Cache.get(activityCache, refCacheKey(ref)).pipe(
+        Effect.flatMap(
+          ({
+            activity: { commits },
+            commitsTruncated,
+          }): Effect.Effect<Option.Option<string>, PullRequestError | PullRequestProviderError> => {
+            const listed = commits.filter((commit) => commit.oid.toLowerCase().startsWith(wanted));
+            const [commit] = listed;
+            if (commit !== undefined) {
+              return Effect.succeed(listed.length === 1 ? Option.some(commit.oid) : Option.none());
+            }
+            if (commitsTruncated === false || !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(wanted)) {
+              return Effect.succeedNone;
+            }
+            return requireProject(ref).pipe(
+              Effect.flatMap((project) => {
+                const hasCommit = project.api.hasCommit;
+                if (hasCommit === undefined) return Effect.succeedNone;
+                return hasCommit({
+                  cwd: project.project.workspaceRoot,
+                  repository: project.repository,
+                  host: project.host,
+                  number: ref.number,
+                  commit: wanted,
+                }).pipe(
+                  Effect.map((contained) => (contained ? Option.some(wanted) : Option.none())),
+                );
+              }),
+            );
+          },
+        ),
       );
     },
     {
@@ -3847,7 +3851,10 @@ export const make = Effect.gen(function* () {
   const withListedCommit = <I extends PullRequestRef & { readonly commit?: string | undefined }>(
     operation: string,
     input: I,
-    listed: (input: I, wanted: string) => Effect.Effect<Option.Option<string>, PullRequestError>,
+    listed: (
+      input: I,
+      wanted: string,
+    ) => Effect.Effect<Option.Option<string>, PullRequestError | PullRequestProviderError>,
   ): Effect.Effect<I, PullRequestError> => {
     const wanted = input.commit?.toLowerCase();
     if (wanted === undefined) return Effect.succeed(input);
@@ -3861,6 +3868,9 @@ export const make = Effect.gen(function* () {
       );
     if (!/^[0-9a-f]{7,64}$/.test(wanted)) return notListed();
     return listed(input, wanted).pipe(
+      Effect.catchTags({
+        PullRequestProviderError: (error) => Effect.fail(toPullRequestError(operation)(error)),
+      }),
       Effect.flatMap(
         Option.match({
           onNone: notListed,

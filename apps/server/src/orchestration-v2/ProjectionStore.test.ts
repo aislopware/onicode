@@ -2907,6 +2907,9 @@ const snapshotsReadDeletedThreadAsMissing = Effect.gen(function* () {
     Effect.asVoid(store.getThreadSnapshot(threadId)),
     Effect.asVoid(store.getThreadSnapshotWindow(threadId, { rowLimit: 10 })),
     Effect.asVoid(store.getTranscriptByteFloor(threadId, 1)),
+    Effect.asVoid(store.getTranscriptByteFloor(ThreadId.make("thread:records:never-created"), 1)),
+    Effect.asVoid(store.getTimelinePage(threadId, { limit: 10 })),
+    Effect.asVoid(store.getTimelinePage(threadId, { limit: 10, attachmentId: "attachment:none" })),
   ]) {
     assert.equal((yield* Effect.flip(read))._tag, "ProjectionStoreThreadNotFoundError");
   }
@@ -2920,10 +2923,16 @@ const deletedThreadItemsReadOnlyThroughLiveForks = Effect.gen(function* () {
   const forkId = ThreadId.make("thread:records:deleted-items-fork");
   const created: { readonly payload: object } = recordsThreadCreated(threadId);
   yield* store.apply(created as never);
-  const itemIds = [1, 2].map((ordinal) =>
+  const ordinals = [1, 2, 3];
+  const itemIds = ordinals.map((ordinal) =>
     TurnItemId.make(`turn-item:records:deleted-items:${ordinal}`),
   );
-  for (const ordinal of [1, 2]) {
+  // Run 1 is rolled back before the fork at run 2, which is rolled back after it.
+  const rolledBackAt = new Map([
+    [1, recordsAt(1)],
+    [2, recordsAt(3)],
+  ]);
+  for (const ordinal of ordinals) {
     const runId = RunId.make(`run:records:deleted-items:${ordinal}`);
     const nodeId = NodeId.make(`node:records:deleted-items:${ordinal}`);
     yield* store.apply({
@@ -2944,10 +2953,10 @@ const deletedThreadItemsReadOnlyThroughLiveForks = Effect.gen(function* () {
         userMessageId: MessageId.make(`message:records:deleted-items:${ordinal}`),
         rootNodeId: nodeId,
         activeAttemptId: null,
-        status: "completed",
+        status: rolledBackAt.has(ordinal) ? "rolled_back" : "completed",
         requestedAt: recordsAt(ordinal),
         startedAt: recordsAt(ordinal),
-        completedAt: recordsAt(ordinal),
+        completedAt: rolledBackAt.get(ordinal) ?? recordsAt(ordinal),
         checkpointId: null,
         contextHandoffId: null,
       },
@@ -2983,7 +2992,8 @@ const deletedThreadItemsReadOnlyThroughLiveForks = Effect.gen(function* () {
   const forkCreated: { readonly payload: object } = recordsThreadCreated(forkId);
   const forkPayload = {
     ...forkCreated.payload,
-    forkedFrom: { type: "run", threadId, runId: RunId.make("run:records:deleted-items:1") },
+    forkedFrom: { type: "run", threadId, runId: RunId.make("run:records:deleted-items:2") },
+    createdAt: recordsAt(2),
   };
   yield* store.apply({ ...forkCreated, payload: forkPayload } as never);
   yield* store.apply({
@@ -3023,14 +3033,15 @@ const deletedThreadItemsReadOnlyThroughLiveForks = Effect.gen(function* () {
     Effect.forEach(itemIds, (itemId) =>
       store.getTurnItem({ threadId, itemId }).pipe(Effect.map((item) => item !== null)),
     );
-  assert.deepEqual(yield* readable(), [true, true]);
+  assert.deepEqual(yield* readable(), [true, true, true]);
 
   yield* deleteThread(threadId, created.payload, 4);
-  // The live fork still shows the first run, and its client reads that run's items by source id.
-  assert.deepEqual(yield* readable(), [true, false]);
+  // The live fork still shows the run it forked at, and its client reads that run's items by
+  // source id. It never received run 1.
+  assert.deepEqual(yield* readable(), [false, true, false]);
 
   yield* deleteThread(forkId, forkPayload, 5);
-  assert.deepEqual(yield* readable(), [false, false]);
+  assert.deepEqual(yield* readable(), [false, false, false]);
 });
 
 const queryPlan = Effect.fn("queryPlan")(function* (statement: string | undefined) {

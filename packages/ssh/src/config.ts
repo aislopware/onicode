@@ -1,5 +1,7 @@
 import type { DesktopDiscoveredSshHost } from "@onicode/contracts";
 
+import * as HostProcess from "@onicode/shared/HostProcess";
+import { windowsEnvironmentVariable } from "@onicode/shared/windowsEnvironmentConfig";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -365,15 +367,12 @@ const readKnownHosts = Effect.fnUntraced(function* (filePath: string) {
 export const discoverSshHosts = Effect.fnUntraced(
   function* (input: { readonly homeDir?: string }) {
     const path = yield* Path.Path;
-    const env = yield* Config.all({
-      home: Config.String("HOME").pipe(Config.option),
-      userProfile: Config.String("USERPROFILE").pipe(Config.option),
-    });
-    const homeDir =
-      input?.homeDir ??
-      Option.getOrUndefined(env.home) ??
-      Option.getOrUndefined(env.userProfile) ??
-      "";
+    const home = yield* Config.String("HOME").pipe(Config.option);
+    const userProfile =
+      (yield* HostProcess.Platform) === "win32"
+        ? yield* windowsEnvironmentVariable("USERPROFILE")
+        : Option.getOrUndefined(yield* Config.String("USERPROFILE").pipe(Config.option));
+    const homeDir = input?.homeDir ?? Option.getOrUndefined(home) ?? userProfile ?? "";
     if (homeDir.trim().length === 0) {
       return [];
     }

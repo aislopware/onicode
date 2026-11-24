@@ -46,6 +46,7 @@ describe("subagentCardDetail", () => {
     ["[docs](https://en.wikipedia.org/wiki/Mercury_(planet))", "docs"],
     ["[report](outputs/report%20(final).md)", "report"],
     ["[report](outputs/report\\(final.md)", "report"],
+    ["Compare [ this with [report](outputs/report.md)", "Compare [ this with report"],
   ])("strips image and link markup from %s", (detail, expected) => {
     expect(subagentCardDetail(detail)).toBe(expected);
   });

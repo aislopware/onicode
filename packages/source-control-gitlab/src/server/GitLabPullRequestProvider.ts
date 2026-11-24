@@ -390,7 +390,8 @@ export const make = Effect.gen(function* () {
       Effect.all(
         [
           recoverRead(cli.listNotes(input), { comments: [], truncated: true }),
-          // Not optional: a commit's diff is read only for a commit this list names.
+          // Not optional: a commit's diff is read only for a commit this list names. A host may
+          // cap its page below the size asked, so the list never claims to hold every commit.
           cli.listCommits(input),
           recoverRead(cli.listDiscussions(input), {
             threads: [],
