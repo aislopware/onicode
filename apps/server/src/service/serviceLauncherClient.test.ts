@@ -3,7 +3,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Logger from "effect/Logger";
 import * as PlatformError from "effect/PlatformError";
-import { assert, expect, it } from "@effect/vitest";
+import { assert, describe, expect, it } from "@effect/vitest";
 import * as HostProcess from "@onicode/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as Deferred from "effect/Deferred";
@@ -374,95 +374,97 @@ it.layer(NodeServices.layer)("self-update launchers", (it) => {
     }).pipe(Effect.provideService(HostProcess.Platform, "linux")),
   );
 
-  it.effect.each([
-    { name: "leading", searchPath: (missing: string) => `:${missing}`, moved: true },
-    { name: "trailing", searchPath: (missing: string) => `${missing}:`, moved: true },
-    { name: "whole", searchPath: () => "", moved: false },
-  ])("treats a $name empty PATH entry like the shell does", ({ searchPath, moved }) =>
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const root = yield* fs.makeTempDirectoryScoped({ prefix: "oni-update-" });
-      const baseDir = path.join(root, ".onicode");
-      const exe = (version: string) => path.join(baseDir, "runtime/versions", version, "onicode");
-      const cwd = path.join(root, "work");
-      const inCwd = path.join(cwd, "onicode");
-      for (const file of [exe("1.0.0"), exe("2.0.0")]) {
-        yield* fs.makeDirectory(path.dirname(file), { recursive: true });
-        yield* fs.writeFileString(file, "", { mode: 0o755 });
-      }
-      yield* fs.makeDirectory(cwd);
-      yield* fs.symlink(exe("1.0.0"), inCwd);
+  describe.skipIf(!posixHost)("a POSIX PATH", () => {
+    it.effect.each([
+      { name: "leading", searchPath: (missing: string) => `:${missing}`, moved: true },
+      { name: "trailing", searchPath: (missing: string) => `${missing}:`, moved: true },
+      { name: "whole", searchPath: () => "", moved: false },
+    ])("treats a $name empty PATH entry like the shell does", ({ searchPath, moved }) =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const root = yield* fs.makeTempDirectoryScoped({ prefix: "oni-update-" });
+        const baseDir = path.join(root, ".onicode");
+        const exe = (version: string) => path.join(baseDir, "runtime/versions", version, "onicode");
+        const cwd = path.join(root, "work");
+        const inCwd = path.join(cwd, "onicode");
+        for (const file of [exe("1.0.0"), exe("2.0.0")]) {
+          yield* fs.makeDirectory(path.dirname(file), { recursive: true });
+          yield* fs.writeFileString(file, "", { mode: 0o755 });
+        }
+        yield* fs.makeDirectory(cwd);
+        yield* fs.symlink(exe("1.0.0"), inCwd);
 
-      yield* ServiceLauncherClient.repointLaunchers({ baseDir, targetVersion: "2.0.0" }).pipe(
-        Effect.provideService(HostProcess.Environment, {
-          HOME: root,
-          PATH: searchPath(path.join(root, "missing")),
-        }),
-        Effect.provideService(HostProcess.WorkingDirectory, cwd),
-      );
+        yield* ServiceLauncherClient.repointLaunchers({ baseDir, targetVersion: "2.0.0" }).pipe(
+          Effect.provideService(HostProcess.Environment, {
+            HOME: root,
+            PATH: searchPath(path.join(root, "missing")),
+          }),
+          Effect.provideService(HostProcess.WorkingDirectory, cwd),
+        );
 
-      // A nonempty PATH searches the working directory there; an empty PATH searches nothing.
-      if (moved) {
-        assert.equal(yield* fs.readFileString(inCwd), posixLauncherScript(exe("2.0.0")));
-      } else {
-        assert.equal(yield* fs.readLink(inCwd), exe("1.0.0"));
-      }
-    }).pipe(Effect.provideService(HostProcess.Platform, "linux")),
-  );
+        // A nonempty PATH searches the working directory there; an empty PATH searches nothing.
+        if (moved) {
+          assert.equal(yield* fs.readFileString(inCwd), posixLauncherScript(exe("2.0.0")));
+        } else {
+          assert.equal(yield* fs.readLink(inCwd), exe("1.0.0"));
+        }
+      }).pipe(Effect.provideService(HostProcess.Platform, "linux")),
+    );
 
-  it.effect.each([
-    {
-      name: "past a directory in an empty entry",
-      cwd: "blocked",
-      searchPath: (root: string) => `:${root}/bin`,
-      moved: "bin",
-    },
-    {
-      name: "past a directory in an absolute entry",
-      cwd: "work",
-      searchPath: (root: string) => `${root}/blocked:${root}/bin`,
-      moved: "bin",
-    },
-    {
-      name: "past a file it cannot execute",
-      cwd: "work",
-      searchPath: (root: string) => `${root}/unrunnable:${root}/bin`,
-      moved: "bin",
-    },
-    { name: "in the . entry", cwd: "work", searchPath: () => ".", moved: "work" },
-    { name: "in a relative entry", cwd: ".", searchPath: () => "work", moved: "work" },
-    {
-      name: "through a symlinked directory",
-      cwd: "work",
-      searchPath: (root: string) => `${root}/linked`,
-      moved: "real/bin",
-    },
-  ])("moves the onicode the shell finds $name", ({ cwd, searchPath, moved }) =>
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const root = yield* fs.makeTempDirectoryScoped({ prefix: "oni-update-" });
-      const baseDir = path.join(root, ".onicode");
-      const exe = (version: string) => path.join(baseDir, "runtime/versions", version, "onicode");
-      for (const file of [exe("1.0.0"), exe("2.0.0")]) {
-        yield* fs.makeDirectory(path.dirname(file), { recursive: true });
-        yield* fs.writeFileString(file, "", { mode: 0o755 });
-      }
-      yield* fs.makeDirectory(path.join(root, "blocked/onicode"), { recursive: true });
-      yield* fs.makeDirectory(path.join(root, "unrunnable"));
-      yield* fs.writeFileString(path.join(root, "unrunnable/onicode"), "", { mode: 0o644 });
-      const launcher = path.join(root, moved, "onicode");
-      yield* fs.makeDirectory(path.dirname(launcher), { recursive: true });
-      yield* fs.symlink(path.relative(path.dirname(launcher), exe("1.0.0")), launcher);
-      yield* fs.symlink("real/bin", path.join(root, "linked"));
+    it.effect.each([
+      {
+        name: "past a directory in an empty entry",
+        cwd: "blocked",
+        searchPath: (root: string) => `:${root}/bin`,
+        moved: "bin",
+      },
+      {
+        name: "past a directory in an absolute entry",
+        cwd: "work",
+        searchPath: (root: string) => `${root}/blocked:${root}/bin`,
+        moved: "bin",
+      },
+      {
+        name: "past a file it cannot execute",
+        cwd: "work",
+        searchPath: (root: string) => `${root}/unrunnable:${root}/bin`,
+        moved: "bin",
+      },
+      { name: "in the . entry", cwd: "work", searchPath: () => ".", moved: "work" },
+      { name: "in a relative entry", cwd: ".", searchPath: () => "work", moved: "work" },
+      {
+        name: "through a symlinked directory",
+        cwd: "work",
+        searchPath: (root: string) => `${root}/linked`,
+        moved: "real/bin",
+      },
+    ])("moves the onicode the shell finds $name", ({ cwd, searchPath, moved }) =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const root = yield* fs.makeTempDirectoryScoped({ prefix: "oni-update-" });
+        const baseDir = path.join(root, ".onicode");
+        const exe = (version: string) => path.join(baseDir, "runtime/versions", version, "onicode");
+        for (const file of [exe("1.0.0"), exe("2.0.0")]) {
+          yield* fs.makeDirectory(path.dirname(file), { recursive: true });
+          yield* fs.writeFileString(file, "", { mode: 0o755 });
+        }
+        yield* fs.makeDirectory(path.join(root, "blocked/onicode"), { recursive: true });
+        yield* fs.makeDirectory(path.join(root, "unrunnable"));
+        yield* fs.writeFileString(path.join(root, "unrunnable/onicode"), "", { mode: 0o644 });
+        const launcher = path.join(root, moved, "onicode");
+        yield* fs.makeDirectory(path.dirname(launcher), { recursive: true });
+        yield* fs.symlink(path.relative(path.dirname(launcher), exe("1.0.0")), launcher);
+        yield* fs.symlink("real/bin", path.join(root, "linked"));
 
-      yield* ServiceLauncherClient.repointLaunchers({ baseDir, targetVersion: "2.0.0" }).pipe(
-        Effect.provideService(HostProcess.Environment, { HOME: root, PATH: searchPath(root) }),
-        Effect.provideService(HostProcess.WorkingDirectory, path.join(root, cwd)),
-      );
+        yield* ServiceLauncherClient.repointLaunchers({ baseDir, targetVersion: "2.0.0" }).pipe(
+          Effect.provideService(HostProcess.Environment, { HOME: root, PATH: searchPath(root) }),
+          Effect.provideService(HostProcess.WorkingDirectory, path.join(root, cwd)),
+        );
 
-      assert.equal(yield* fs.readFileString(launcher), posixLauncherScript(exe("2.0.0")));
-    }).pipe(Effect.provideService(HostProcess.Platform, "linux")),
-  );
+        assert.equal(yield* fs.readFileString(launcher), posixLauncherScript(exe("2.0.0")));
+      }).pipe(Effect.provideService(HostProcess.Platform, "linux")),
+    );
+  });
 });

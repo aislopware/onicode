@@ -1294,6 +1294,7 @@ export const make = Effect.gen(function* () {
             let reader = createReader();
             let decoder = new TextDecoder();
             let recordStarted = false;
+            let recordBytes = 0;
             const reserveRecord = () => {
               if (
                 recordsRead === MAX_METADATA_RECORDS_PER_TRANSCRIPT ||
@@ -1314,6 +1315,7 @@ export const make = Effect.gen(function* () {
               reader = createReader();
               decoder = new TextDecoder();
               recordStarted = false;
+              recordBytes = 0;
               selectedBytes = 0;
               topLevelCwd = null;
               return extractCwd(value, source);
@@ -1325,12 +1327,14 @@ export const make = Effect.gen(function* () {
                 const end = newline === -1 ? chunk.byteLength : newline;
                 if (end > start) {
                   recordStarted = true;
+                  recordBytes += end - start;
                   const text = decoder.decode(chunk.subarray(start, end), { stream: true });
                   withinLimit(() => reader.write(text));
                 }
                 if (newline === -1) {
-                  // The last record is parsed whole; only a longer one is taken from its cwd so far.
-                  if (topLevelCwd === null || bytesRead === size) return undefined;
+                  // Only a record longer than a chunk is taken from its cwd so far, and never the last.
+                  const short = bytesRead === size || recordBytes < METADATA_READ_BYTES;
+                  if (topLevelCwd === null || short) return undefined;
                   return reserveRecord() ? topLevelCwd : null;
                 }
                 if (!reserveRecord()) return null;
