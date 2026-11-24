@@ -337,7 +337,8 @@ export function useThreadComposerState(input: {
       : queuedRunEdit === null
         ? selectedThreadKey
         : queuedEditDraftKey(selectedThreadKey, queuedRunEdit.runId);
-  const selectedDraft = useComposerDraftSettings(selectedThreadKey);
+  const selectedDraft = useComposerDraftSettings(composerDraftKey);
+  const threadDraftSettings = useComposerDraftSettings(selectedThreadKey);
   const selectedThreadQueueCount = selectedThreadQueuedMessages.length;
   const selectedThread = selectedThreadShell;
   const modelSelection = selectedDraft.modelSelection ?? selectedThread?.modelSelection ?? null;
@@ -349,7 +350,7 @@ export function useThreadComposerState(input: {
       : modelSelection,
     serverConfig?.providers ?? [],
   );
-  const runtimeMode = selectedDraft.runtimeMode ?? selectedThread?.runtimeMode ?? null;
+  const runtimeMode = threadDraftSettings.runtimeMode ?? selectedThread?.runtimeMode ?? null;
   // Plan mode is not offered to users; every send runs in build mode.
   const interactionMode = selectedThread ? DEFAULT_PROVIDER_INTERACTION_MODE : null;
   const canSwitchThreadProvider = threadAllowsProviderSwitch({
@@ -580,6 +581,9 @@ export function useThreadComposerState(input: {
         threadId: thread.id,
         runId: edit.runId,
         text: restoreAttachmentOnlyBootstrapPrompt(text, payload.attachments.length > 0),
+        ...(!edit.followsThreadSelection || draft.modelSelection
+          ? { modelSelection: draft.modelSelection ?? thread.modelSelection }
+          : {}),
         edit: {
           messageId: edit.messageId,
           attachments: payload.attachments,
