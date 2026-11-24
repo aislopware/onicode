@@ -1,8 +1,8 @@
-import { DEFAULT_THEMES, preloadHighlighter } from "@pierre/diffs";
 import { Editor, type EditorFactory } from "@pierre/diffs/edit";
 import { EditProvider, File } from "@pierre/diffs/react";
 import { describe, expect, it, vi } from "vite-plus/test";
 
+import { loadSharedHighlighter } from "../../../test/highlighter";
 import { render } from "../../../test/render";
 
 import { isMacPlatform } from "~/lib/utils";
@@ -14,7 +14,7 @@ describe("installFileEditorDismissal", () => {
     const createEditor: EditorFactory<undefined, undefined> = (...args) =>
       (editor = new Editor(...args));
     // File paints nothing until the shared highlighter has loaded; once it has, mount renders synchronously.
-    await preloadHighlighter({ themes: Object.values(DEFAULT_THEMES), langs: ["typescript"] });
+    await using _highlighter = await loadSharedHighlighter(["typescript"]);
     await using screen = await render(
       <>
         <p>Assistant reply</p>
@@ -68,7 +68,7 @@ describe("installFileEditorDismissal", () => {
     let editor: Editor<"file" | "file-diff", undefined, undefined> | undefined;
     const createEditor: EditorFactory<undefined, undefined> = (...args) =>
       (editor = new Editor(...args));
-    await preloadHighlighter({ themes: Object.values(DEFAULT_THEMES), langs: ["typescript"] });
+    await using _highlighter = await loadSharedHighlighter(["typescript"]);
     const contents = Array.from(
       { length: 12 },
       (_, index) => `const server${index} = "a line long enough to run under the find bar";\n`,

@@ -932,6 +932,8 @@ const make = Effect.gen(function* () {
     const status = yield* git.execute({
       operation: "StorageCleanup.localChanges",
       cwd,
+      // A refreshed index written here would lock it against a check running beside this one.
+      env: { GIT_OPTIONAL_LOCKS: "0" },
       args: [
         "status",
         "--porcelain=v1",
@@ -1232,6 +1234,8 @@ const make = Effect.gen(function* () {
   ) {
     if (!anyWorktreePolicy(serverSettings, worktreeCleanupEnabled))
       return { waiting: false, kept: [] };
+    // Otherwise a worktree made just now reads as locked and is kept until the next pass.
+    yield* git.settleIndexRefreshes;
     let waiting = false;
     const kept: string[] = [];
     const roots: Array<string> = [];
