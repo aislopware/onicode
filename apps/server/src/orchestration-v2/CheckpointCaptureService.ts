@@ -263,9 +263,15 @@ export const layer: Layer.Layer<
                 turnItemTypes: ["run_interrupt_request", "run_interrupt_result"],
                 turnItemRunIds: [currentRun.id],
               })).turnItems;
+          // A Stop that reached a completed turn with no provider turn to interrupt came after the
+          // turn ended: the turn stays completed, as Stop reported no active run.
           const stopRequest = stopSignals.some((item) => item.type === "run_interrupt_result")
             ? undefined
-            : stopSignals.find((item) => item.type === "run_interrupt_request");
+            : stopSignals.find(
+                (item) =>
+                  item.type === "run_interrupt_request" &&
+                  (item.providerTurnId !== null || currentRun.status === "waiting"),
+              );
           // Null keeps the status the run settled with; the checkpoint is all that is missing.
           const settledStatus =
             stopRequest !== undefined

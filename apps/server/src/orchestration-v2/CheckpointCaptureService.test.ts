@@ -14,6 +14,7 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   ProviderThreadId,
+  ProviderTurnId,
   RunAttemptId,
   RunId,
   ThreadId,
@@ -509,16 +510,25 @@ it.layer(layerProjectionStoreTest)("CheckpointCaptureServiceV2", (it) => {
 
   // Stop can be accepted while the provider's successful terminal is being written: the run is
   // then `waiting` with a stored request and no result, and capture is what settles it.
-  it.effect("ends a waiting run as interrupted when Stop was accepted before capture", () =>
+  it.effect.each([
+    { label: "ends a waiting run as interrupted", status: "waiting", stoppedTurn: false },
+    { label: "ends a completed run as interrupted", status: "completed", stoppedTurn: true },
+    // Stop came after the turn ended: there was no provider turn left to interrupt.
+    { label: "keeps a completed run completed", status: "completed", stoppedTurn: false },
+  ] as const)("$label when Stop was accepted before capture", ({ status, stoppedTurn }) =>
     Effect.gen(function* () {
       const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
       const ids = yield* IdAllocator.IdAllocatorV2;
       const now = yield* DateTime.now;
-      const stopThreadId = ThreadId.make("thread:checkpoint-capture-stop-race");
-      const stopRunId = RunId.make("run:checkpoint-capture-stop-race");
-      const stopScopeId = CheckpointScopeId.make("scope:checkpoint-capture-stop-race");
+      const stopThreadId = ThreadId.make(
+        `thread:checkpoint-capture-stop-race-${status}-${stoppedTurn}`,
+      );
+      const stopRunId = RunId.make(`run:checkpoint-capture-stop-race-${status}-${stoppedTurn}`);
+      const stopScopeId = CheckpointScopeId.make(
+        `scope:checkpoint-capture-stop-race-${status}-${stoppedTurn}`,
+      );
       yield* projectionStore.apply({
-        id: EventId.make("event:checkpoint-capture-stop-race:thread"),
+        id: EventId.make(`event:checkpoint-capture-stop-race-${status}-${stoppedTurn}:thread`),
         type: "thread.created",
         threadId: stopThreadId,
         occurredAt: now,
@@ -551,7 +561,7 @@ it.layer(layerProjectionStoreTest)("CheckpointCaptureServiceV2", (it) => {
         },
       });
       yield* projectionStore.apply({
-        id: EventId.make("event:checkpoint-capture-stop-race:run"),
+        id: EventId.make(`event:checkpoint-capture-stop-race-${status}-${stoppedTurn}:run`),
         type: "run.updated",
         threadId: stopThreadId,
         runId: stopRunId,
@@ -565,19 +575,21 @@ it.layer(layerProjectionStoreTest)("CheckpointCaptureServiceV2", (it) => {
           providerInstanceId,
           modelSelection,
           providerThreadId,
-          userMessageId: MessageId.make("message:checkpoint-capture-stop-race"),
+          userMessageId: MessageId.make(
+            `message:checkpoint-capture-stop-race-${status}-${stoppedTurn}`,
+          ),
           rootNodeId,
           activeAttemptId: null,
-          status: "waiting",
+          status,
           requestedAt: now,
           startedAt: now,
-          completedAt: null,
+          completedAt: status === "completed" ? now : null,
           checkpointId: null,
           contextHandoffId: null,
         },
       });
       yield* projectionStore.apply({
-        id: EventId.make("event:checkpoint-capture-stop-race:node"),
+        id: EventId.make(`event:checkpoint-capture-stop-race-${status}-${stoppedTurn}:node`),
         type: "node.updated",
         threadId: stopThreadId,
         runId: stopRunId,
@@ -603,7 +615,9 @@ it.layer(layerProjectionStoreTest)("CheckpointCaptureServiceV2", (it) => {
         },
       });
       yield* projectionStore.apply({
-        id: EventId.make("event:checkpoint-capture-stop-race:provider-thread"),
+        id: EventId.make(
+          `event:checkpoint-capture-stop-race-${status}-${stoppedTurn}:provider-thread`,
+        ),
         type: "provider-thread.updated",
         threadId: stopThreadId,
         nodeId: rootNodeId,
@@ -629,7 +643,7 @@ it.layer(layerProjectionStoreTest)("CheckpointCaptureServiceV2", (it) => {
         },
       });
       yield* projectionStore.apply({
-        id: EventId.make("event:checkpoint-capture-stop-race:scope"),
+        id: EventId.make(`event:checkpoint-capture-stop-race-${status}-${stoppedTurn}:scope`),
         type: "checkpoint-scope.created",
         threadId: stopThreadId,
         runId: stopRunId,
@@ -664,7 +678,7 @@ it.layer(layerProjectionStoreTest)("CheckpointCaptureServiceV2", (it) => {
         capturedAt: now,
       };
       yield* projectionStore.apply({
-        id: EventId.make("event:checkpoint-capture-stop-race:baseline"),
+        id: EventId.make(`event:checkpoint-capture-stop-race-${status}-${stoppedTurn}:baseline`),
         type: "checkpoint.captured",
         threadId: stopThreadId,
         nodeId: rootNodeId,
@@ -674,7 +688,9 @@ it.layer(layerProjectionStoreTest)("CheckpointCaptureServiceV2", (it) => {
         payload: baseline,
       });
       yield* projectionStore.apply({
-        id: EventId.make("event:checkpoint-capture-stop-race:interrupt-request"),
+        id: EventId.make(
+          `event:checkpoint-capture-stop-race-${status}-${stoppedTurn}:interrupt-request`,
+        ),
         type: "turn-item.updated",
         threadId: stopThreadId,
         runId: stopRunId,
@@ -687,7 +703,7 @@ it.layer(layerProjectionStoreTest)("CheckpointCaptureServiceV2", (it) => {
           runId: stopRunId,
           nodeId: rootNodeId,
           providerThreadId,
-          providerTurnId: null,
+          providerTurnId: stoppedTurn ? ProviderTurnId.make("provider-turn:stop-race") : null,
           nativeItemRef: null,
           parentItemId: null,
           ordinal: 1,
@@ -739,16 +755,18 @@ it.layer(layerProjectionStoreTest)("CheckpointCaptureServiceV2", (it) => {
 
       const events = yield* Ref.get(committed);
       const runUpdated = events.find((event) => event.type === "run.updated");
+      const interrupts = status === "waiting" || stoppedTurn;
       assert.equal(
         runUpdated?.type === "run.updated" ? runUpdated.payload.status : undefined,
-        "interrupted",
+        interrupts ? "interrupted" : "completed",
       );
-      assert.isTrue(
+      assert.equal(
         events.some(
           (event) =>
             event.type === "turn-item.updated" && event.payload.type === "run_interrupt_result",
         ),
-        "the accepted Stop request must be paired with a result",
+        interrupts,
+        "an accepted Stop request is paired with a result",
       );
     }).pipe(Effect.provide(IdAllocator.layer)),
   );

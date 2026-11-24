@@ -11,6 +11,7 @@ import {
 } from "./PullRequestSpeedActions";
 import { memo, type RefCallback } from "react";
 
+import { useOpenLink } from "~/browser/useOpenLink";
 import { cn } from "~/lib/utils";
 import { getSourceControlPresentationForKind } from "~/sourceControlPresentation";
 
@@ -108,6 +109,7 @@ function PullRequestRowImpl({
   onCloseSweepStart?: (entry: EnvironmentPullRequestEntry, event: PointerEvent) => void;
 }) {
   const { Icon, providerName, terminology } = getSourceControlPresentationForKind(entry.provider);
+  const openLink = useOpenLink(null);
   return (
     <div
       ref={statsRef}
@@ -155,6 +157,7 @@ function PullRequestRowImpl({
                   openLabel: openOnHostLabel(sourceControlClients.get(entry.provider)),
                   position: { x: event.clientX, y: event.clientY },
                   source: contextMenuSourceOf(event),
+                  open: openLink,
                 });
               }}
             >

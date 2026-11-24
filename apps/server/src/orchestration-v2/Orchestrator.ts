@@ -1978,18 +1978,52 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
 
   // Commands decide as if the latest run were still `waiting` until its turn-end capture commits:
   // the capture keeps the thread's effect lane, and steers and queued turns must line up behind it.
-  const holdRunAwaitingCapture = Effect.fn("Orchestrator.holdRunAwaitingCapture")(function* (
-    projection: OrchestrationV2ThreadProjection,
-  ) {
+  const holdRunAwaitingCapture = Effect.fn("Orchestrator.holdRunAwaitingCapture")(function* <
+    P extends { readonly runs: ReadonlyArray<OrchestrationV2Run> },
+  >(projection: P) {
     const latest = latestStartedRun(projection.runs);
     if (latest === undefined || !(yield* awaitsCheckpointCapture(latest))) return projection;
-    return {
+    const held: P = {
       ...projection,
       runs: projection.runs.map((run) =>
         run.id === latest.id ? { ...run, status: "waiting" as const, completedAt: null } : run,
       ),
     };
+    return held;
   });
+
+  // The held run is only what commands decide on: a write of it keeps the stored turn end.
+  const unholdRunUpdates =
+    /* This helper runs for individual orchestration events; the enclosing operation owns the span. */
+    Effect.fnUntraced(function* (events: ReadonlyArray<OrchestrationV2DomainEvent>) {
+      const unheld: Array<OrchestrationV2DomainEvent> = [];
+      for (const event of events) {
+        if (
+          event.type !== "run.updated" ||
+          event.payload.status !== "waiting" ||
+          event.payload.completedAt !== null
+        ) {
+          unheld.push(event);
+          continue;
+        }
+        const stored = yield* projectionStore
+          .getRun(event.threadId, event.payload.id)
+          .pipe(Effect.orElseSucceed(() => undefined));
+        unheld.push(
+          stored !== undefined && (yield* awaitsCheckpointCapture(stored))
+            ? {
+                ...event,
+                payload: {
+                  ...event.payload,
+                  status: stored.status,
+                  completedAt: stored.completedAt,
+                },
+              }
+            : event,
+        );
+      }
+      return unheld;
+    });
 
   // Command reads omit settled tasks, but a completion notice counts its whole cohort.
   const notificationTasks = (
@@ -2109,7 +2143,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       options: { readonly updateDelegatedCompletionOnly?: boolean } = {},
     ) {
       const withIds = yield* Effect.forEach(events, (event) => makeSystemEvent(event));
-      yield* eventSink.writeWithEffects({ events: withIds, effects, ...options });
+      yield* eventSink.writeWithEffects({
+        events: yield* unholdRunUpdates(withIds),
+        effects,
+        ...options,
+      });
     });
 
   const completionDeliveryRun = (
@@ -2694,17 +2732,39 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     { readonly runId: RunId; readonly options: QueueStartOptions | undefined }
   >();
 
+  // A user's start that lands while the latest run awaits its turn-end capture is put off, not
+  // dropped: the start the capture repeats takes the user's pick and limit override.
+  const queueStartsAwaitingCapture = new Map<ThreadId, QueueStartOptions>();
+
   const startNextQueuedRunOnce = Effect.fn("Orchestrator.startNextQueuedRun")(
-    function* (threadId: ThreadId, options?: QueueStartOptions) {
+    function* (threadId: ThreadId, requested?: QueueStartOptions) {
       if (!(yield* projectionStore.canStartQueuedRun(threadId))) return;
       let projection = yield* readCommandProjection(threadId);
-      if (
-        projection.thread.archivedAt !== null ||
-        projection.thread.deletedAt !== null ||
-        projection.runs.some(isActiveRun)
-      ) {
+      if (projection.thread.archivedAt !== null || projection.thread.deletedAt !== null) {
+        queueStartsAwaitingCapture.delete(threadId);
         return;
       }
+      if (projection.runs.some(isActiveRun)) {
+        if (requested?.userStarted === true && (yield* latestRunAwaitsCapture(threadId))) {
+          queueStartsAwaitingCapture.set(threadId, {
+            userStarted: true,
+            ...(requested.queuedRunId === undefined ? {} : { queuedRunId: requested.queuedRunId }),
+          });
+        }
+        return;
+      }
+      const awaited = queueStartsAwaitingCapture.get(threadId);
+      queueStartsAwaitingCapture.delete(threadId);
+      const options =
+        awaited === undefined ||
+        requested?.userStarted === true ||
+        (awaited.queuedRunId !== undefined &&
+          !projection.runs.some(
+            (run) =>
+              run.id === awaited.queuedRunId && run.status === "queued" && run.queueHeld !== true,
+          ))
+          ? requested
+          : { ...requested, ...awaited };
 
       if (yield* cancelStaleQuestionWakes(projection)) {
         projection = yield* readCommandProjection(threadId);
@@ -3813,6 +3873,14 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             ),
             Effect.orElseSucceed(() => false),
           );
+
+  const latestRunAwaitsCapture = Effect.fn("Orchestrator.latestRunAwaitsCapture")(function* (
+    threadId: ThreadId,
+  ) {
+    const { runs } = yield* projectionStore.getThreadRecords(threadId, ["runs"]);
+    const latest = latestStartedRun(runs);
+    return latest !== undefined && (yield* awaitsCheckpointCapture(latest));
+  });
 
   const awaitLatestRunCapture = Effect.fn("Orchestrator.awaitLatestRunCapture")(
     function* (threadId: ThreadId) {
@@ -15937,11 +16005,15 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         });
         return { ...read, messages: [...read.messages, ...messages] };
       });
-      const controls: DelegatedChildControls = yield* withHeldMessages(
-        yield* projectionStore.getDelegatedChildControls(childThreadId, {
-          taskIds,
-          windowSize: DELEGATED_CHILD_RUN_WINDOW,
-        }),
+      // A child's run awaiting its turn-end capture is still working: the capture can turn a
+      // Stop into its outcome, requeue an unread steer, and owns the workspace until it lands.
+      const controls: DelegatedChildControls = yield* holdRunAwaitingCapture(
+        yield* withHeldMessages(
+          yield* projectionStore.getDelegatedChildControls(childThreadId, {
+            taskIds,
+            windowSize: DELEGATED_CHILD_RUN_WINDOW,
+          }),
+        ),
       );
       const progress = delegatedTaskProgress(controls);
       // The latest result may have ended before the runs read above; then read them all.
@@ -15949,7 +16021,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         controls.runsFloor !== undefined &&
         (progress.resultRun === undefined || !ranSince(progress.resultRun, controls.runsFloor))
       ) {
-        const all = yield* withHeldMessages(yield* readAllDelegatedChildControls(childThreadId));
+        const all = yield* holdRunAwaitingCapture(
+          yield* withHeldMessages(yield* readAllDelegatedChildControls(childThreadId)),
+        );
         return { controls: all, progress: delegatedTaskProgress(all) };
       }
       return { controls, progress };
@@ -17084,7 +17158,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         return yield* dispatchUnsupported(command);
     }
     return {
-      events: yield* Ref.get(events),
+      events: yield* unholdRunUpdates(yield* Ref.get(events)),
       effects: yield* Ref.get(effects),
       ...(cancelUnsettledEffects === undefined ? {} : { cancelUnsettledEffects }),
       ...(updateDelegatedCompletionOnlyRunId === undefined

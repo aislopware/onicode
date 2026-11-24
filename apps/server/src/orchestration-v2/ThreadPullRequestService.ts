@@ -583,6 +583,10 @@ export const make = Effect.gen(function* () {
       case "checkpoint.captured":
         return enqueueThread(event.threadId, true);
       case "run.updated":
+        // A turn that completes before its checkpoint capture is read fresh once that capture lands.
+        if (event.payload.status === "completed" && event.payload.checkpointId === null) {
+          return enqueueThread(event.threadId, false);
+        }
         if (
           event.payload.status === "completed" ||
           event.payload.status === "failed" ||

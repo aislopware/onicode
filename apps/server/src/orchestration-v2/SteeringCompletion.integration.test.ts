@@ -1701,6 +1701,144 @@ it.effect("keeps a message queued when send now races with a running turn", () =
   }),
 );
 
+// The turn has ended and its checkpoint capture has not landed yet.
+const endFirstTurnBeforeCapture = Effect.fn("endFirstTurnBeforeCapture")(function* (
+  events: Queue.Queue<ProviderAdapter.ProviderAdapterV2Event>,
+  threadId: ThreadId,
+  first: ProviderAdapter.ProviderAdapterV2TurnInput,
+) {
+  const orchestrator = yield* Orchestrator.OrchestratorV2;
+  const ended = yield* orchestrator.streamDomainEvents.pipe(
+    Stream.filter(
+      (event) =>
+        event.type === "run.updated" &&
+        event.payload.id === first.runId &&
+        event.payload.status === "completed",
+    ),
+    Stream.take(1),
+    Stream.runDrain,
+    Effect.forkScoped,
+  );
+  const turn = (yield* orchestrator.getThreadProjection(threadId)).providerTurns[0]!;
+  yield* Queue.offer(events, {
+    type: "provider_turn.updated",
+    driver,
+    providerTurn: { ...turn, status: "completed", completedAt: yield* DateTime.now },
+  });
+  yield* Queue.offer(events, {
+    type: "turn.terminal",
+    driver,
+    providerThreadId: turn.providerThreadId,
+    providerTurnId: turn.id,
+    runOrdinal: first.runOrdinal,
+    status: "completed",
+    failure: null,
+    threadDisposition: "reusable",
+  });
+  yield* Fiber.join(ended);
+  return (yield* orchestrator.getThreadProjection(threadId)).runs.find(
+    (run) => run.id === first.runId,
+  )!;
+});
+
+it.effect("sends the picked queued message when Send now lands before the turn's capture", () =>
+  Effect.gen(function* () {
+    const { events, started, layer, startFirstTurn } = yield* nextTurnSelectionHarness(
+      "send-queued-during-capture",
+    );
+    yield* Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+      const threadId = yield* startFirstTurn;
+      for (const text of ["second", "third"]) {
+        yield* orchestrator.dispatch({
+          type: "message.dispatch",
+          commandId: CommandId.make(`queue-${text}`),
+          threadId,
+          messageId: MessageId.make(`message:${text}`),
+          text,
+          attachments: [],
+          dispatchMode: { type: "queue_after_active" },
+          createdBy: "user",
+          creationSource: "web",
+        });
+      }
+      yield* endFirstTurnBeforeCapture(events, threadId, started[0]!);
+      const nextStarted = yield* orchestrator.streamDomainEvents.pipe(
+        Stream.filter(
+          (event) =>
+            event.type === "run.updated" &&
+            event.payload.id !== started[0]!.runId &&
+            event.payload.status !== "queued",
+        ),
+        Stream.take(1),
+        Stream.runDrain,
+        Effect.forkScoped,
+      );
+      yield* orchestrator.dispatch({
+        type: "queued-run.start",
+        commandId: CommandId.make("send-third-now"),
+        threadId,
+        runId: (yield* orchestrator.getThreadProjection(threadId)).runs.find(
+          (run) => run.userMessageId === MessageId.make("message:third"),
+        )!.id,
+      });
+      yield* worker.drain();
+      yield* Fiber.join(nextStarted);
+      yield* worker.drain();
+      assert.deepEqual(
+        started.map((turn) => turn.message.messageId),
+        [MessageId.make("message:first"), MessageId.make("message:third")],
+      );
+    }).pipe(Effect.provide(layer));
+  }),
+);
+
+it.effect("keeps the turn end of a run archived before its capture lands", () =>
+  Effect.gen(function* () {
+    const { events, started, layer, startFirstTurn } =
+      yield* nextTurnSelectionHarness("archive-during-capture");
+    yield* Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const threadId = yield* startFirstTurn;
+      const first = started[0]!;
+      const running = (yield* orchestrator.getThreadProjection(threadId)).runs.find(
+        (run) => run.id === first.runId,
+      )!;
+      // An open delegation cohort is what archive disposes, rewriting the run.
+      yield* (yield* EventSink.EventSinkV2).write({
+        events: [
+          {
+            id: EventId.make("event:archive-during-capture:cohort"),
+            type: "run.updated",
+            threadId,
+            runId: first.runId,
+            occurredAt: yield* DateTime.now,
+            payload: {
+              ...running,
+              delegatedCompletion: { disposition: "open", nextGeneration: 1, delivery: null },
+            },
+          },
+        ],
+      });
+      const ended = yield* endFirstTurnBeforeCapture(events, threadId, first);
+      assert.isNotNull(ended.completedAt);
+      yield* orchestrator.dispatch({
+        type: "thread.archive",
+        commandId: CommandId.make("archive"),
+        threadId,
+      });
+      const archived = (yield* orchestrator.getThreadProjection(threadId)).runs.find(
+        (run) => run.id === first.runId,
+      )!;
+      assert.deepEqual(
+        [archived.status, archived.completedAt, archived.delegatedCompletion?.disposition],
+        ["completed", ended.completedAt, "disposed"],
+      );
+    }).pipe(Effect.provide(layer));
+  }),
+);
+
 // regression: #19210 a provider that can restart the turn must still steer, since restarting ends its native subagents
 it.effect(
   "steers a changed turn-scoped selection into a running turn the provider could restart",
