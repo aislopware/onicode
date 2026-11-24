@@ -3673,3 +3673,4 @@ f89883c568	take	fix(web): a long commit name no longer runs under the PR code ta
 d00aaac85f	take	fix(antigravity): a tool's own arguments no longer mark it as an Onicode MCP call; kept Onicode's tool-returning antigravityOniMcpTool (the read-only sandbox branch needs the tool name)
 bba3918e3c	take	fix(server): saving project scripts requires task operation scope
 f8b3ff0dff	take	fix(source-control): TanStack Source issue requests require a numeric issue key
+bb0862ead4	take	fix(client): a long run of fence markers is read in one pass
