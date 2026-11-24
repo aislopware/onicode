@@ -1,4 +1,5 @@
 import { errorDisplayMessage } from "@onicode/client-runtime/errors";
+import { allowsSinglePullRequestAutoMergeCancel } from "@onicode/client-runtime/pull-request-stack-actions";
 import * as Dialog from "../../components/ui/Dialog";
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import { squashAtomCommandFailure } from "@onicode/client-runtime/state/runtime";
@@ -152,16 +153,22 @@ export function PullRequestMergeControls(props: {
                   ? { label: gt("Checking stack…"), icon: PullRequestGlyph.merged }
                   : null;
   const autoAction = pr.autoMergeEnabled ? "disable-auto-merge" : "enable-auto-merge";
+  const hostStackAutoMerge = stack.supportsStackActions && pr.capabilities.stackAutoMerge === true;
+  // A cancel needs no pinned heads, so it keeps the stack scope even while the stack refreshes.
+  const cancelsStackAutoMerge = stack.stack !== null && hostStackAutoMerge;
   // A stack auto-merge request on this layer also covers the open layers below it.
-  const stackAutoMerge =
-    stack.stack !== null &&
-    stack.supportsStackActions &&
-    stack.isFresh &&
-    pr.capabilities.stackAutoMerge === true;
+  const stackAutoMerge = stack.stack !== null && stack.isFresh && hostStackAutoMerge;
   const canAutoMerge =
     !busy &&
-    (autoAction === "disable-auto-merge" ||
-      (stack.stack ? stackAutoMerge && scope !== null && !scope.reason : canMergeSingle)) &&
+    (autoAction === "disable-auto-merge"
+      ? cancelsStackAutoMerge ||
+        allowsSinglePullRequestAutoMergeCancel({
+          stackAutoMerge: hostStackAutoMerge,
+          canMergeSinglePullRequest: canMergeSingle,
+        })
+      : stack.stack
+        ? stackAutoMerge && scope !== null && !scope.reason
+        : canMergeSingle) &&
     permissions.canWrite &&
     canPerformPullRequestAction(pr, autoAction);
 
@@ -186,12 +193,9 @@ export function PullRequestMergeControls(props: {
         ...(action !== "disable-auto-merge" && shownHeadSha
           ? { expectedHeadSha: shownHeadSha }
           : {}),
-        // A cancel needs no pinned heads, so it keeps the stack scope even while the stack refreshes.
         ...(stack.stack &&
         ((action === "enable-auto-merge" && stackAutoMerge) ||
-          (action === "disable-auto-merge" &&
-            stack.supportsStackActions &&
-            pr.capabilities.stackAutoMerge === true))
+          (action === "disable-auto-merge" && cancelsStackAutoMerge))
           ? { stackNumber: stack.stack.number }
           : {}),
         ...(action === "enable-auto-merge" && method && stackAutoMerge && scope

@@ -3132,7 +3132,7 @@ export const layerWsRpc = (
               });
             }
             const thread = yield* threadManagement
-              .getThreadRecords(input.resource.threadId, [])
+              .getLiveThreadRecords(input.resource.threadId, [])
               .pipe(
                 Effect.mapError(
                   (cause) =>

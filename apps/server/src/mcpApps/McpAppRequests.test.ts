@@ -69,7 +69,30 @@ function makeLayer(input: {
   readonly item: OrchestrationV2TurnItem | null;
   readonly mcpApps?: ProviderAdapter.ProviderAdapterV2McpApps;
   readonly live?: boolean;
+  readonly deleted?: ReadonlyArray<ThreadId>;
 }) {
+  const threadRecords = (id: ThreadId) =>
+    Effect.succeed({
+      thread: {
+        lineage:
+          deepParent(id) !== null
+            ? {
+                parentThreadId: deepParent(id),
+                relationshipToParent: "fork",
+                rootThreadId: threadId,
+              }
+            : id === forkId
+              ? {
+                  parentThreadId: threadId,
+                  relationshipToParent: "fork",
+                  rootThreadId: threadId,
+                }
+              : { parentThreadId: null, relationshipToParent: null, rootThreadId: id },
+      },
+      providerThreads: [
+        { id: providerThreadId, providerSessionId } as OrchestrationV2ProviderThread,
+      ],
+    } as never);
   return McpAppRequests.layer.pipe(
     Layer.provide(
       Layer.mergeAll(
@@ -85,28 +108,11 @@ function makeLayer(input: {
           getTurnItem: () => Effect.succeed(input.item),
         }),
         Layer.mock(ThreadManagementService.ThreadManagementService)({
-          getThreadRecords: (id: ThreadId) =>
-            Effect.succeed({
-              thread: {
-                lineage:
-                  deepParent(id) !== null
-                    ? {
-                        parentThreadId: deepParent(id),
-                        relationshipToParent: "fork",
-                        rootThreadId: threadId,
-                      }
-                    : id === forkId
-                      ? {
-                          parentThreadId: threadId,
-                          relationshipToParent: "fork",
-                          rootThreadId: threadId,
-                        }
-                      : { parentThreadId: null, relationshipToParent: null, rootThreadId: id },
-              },
-              providerThreads: [
-                { id: providerThreadId, providerSessionId } as OrchestrationV2ProviderThread,
-              ],
-            } as never),
+          getThreadRecords: threadRecords,
+          getLiveThreadRecords: (id: ThreadId) =>
+            input.deleted?.includes(id)
+              ? Effect.fail(new Error("thread deleted") as never)
+              : threadRecords(id),
         }),
         Layer.mock(ProviderSessionManager.ProviderSessionManagerV2)({
           get: () =>
@@ -253,7 +259,7 @@ describe("McpAppRequests", () => {
     }).pipe(Effect.provide(makeLayer({ item: appItem({ oniMcpApp: app }), live: false }))),
   );
 
-  it.effect("stores a fork's model context under the fork, and refuses unrelated threads", () =>
+  it.effect("stores a fork's model context under the live fork, and refuses other threads", () =>
     Effect.gen(function* () {
       const requests = yield* McpAppRequests.McpAppRequests;
       const content = [{ type: "text", text: "Seen from the fork" }];
@@ -283,6 +289,27 @@ describe("McpAppRequests", () => {
         content,
       });
       assert.isTrue(storedContext.has(`${deepForkId(70)}/${itemId}`));
-    }).pipe(Effect.provide(makeLayer({ item: appItem({ oniMcpApp: app }), live: false }))),
+      assert.equal(
+        yield* reason(
+          requests.updateModelContext({
+            threadId,
+            itemId,
+            conversationThreadId: deepForkId(1),
+            content,
+          }),
+        ),
+        "request-failed",
+      );
+      assert.isFalse(storedContext.has(`${deepForkId(1)}/${itemId}`));
+    }).pipe(
+      Effect.provide(
+        makeLayer({
+          item: appItem({ oniMcpApp: app }),
+          live: false,
+          // The app's thread and a fork between it and the deep fork are deleted.
+          deleted: [threadId, deepForkId(1)],
+        }),
+      ),
+    ),
   );
 });

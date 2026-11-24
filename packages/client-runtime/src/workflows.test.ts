@@ -579,5 +579,8 @@ describe("workflowOneLine", () => {
     expect(workflowOneLine("- See [the issue](https://x.test/2) first")).toBe(
       "See the issue first",
     );
+    expect(workflowOneLine("Compare [ this with [the issue](https://x.test/2) first")).toBe(
+      "Compare [ this with the issue first",
+    );
   });
 });

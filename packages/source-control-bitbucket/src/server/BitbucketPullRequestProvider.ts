@@ -267,7 +267,8 @@ export const make = Effect.gen(function* () {
         [
           api.getPullRequest(target),
           recoverRead(api.listComments(target), { comments: [], threads: [], truncated: true }),
-          recoverRead(api.listCommits(target), []),
+          // Not optional: a commit's diff is read only for a commit this list names.
+          api.listCommits(target),
         ],
         { concurrency: 3 },
       ).pipe(

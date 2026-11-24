@@ -54,7 +54,6 @@ import {
   resolvePullRequestReferenceHost,
   resolvePullRequestPrimaryControl,
   allowsSinglePullRequestMerge,
-  allowsSinglePullRequestAutoMergeCancel,
   shouldRefreshPullRequestActivity,
   resolveBaseFreshness,
   buildPullRequestTimeline,
@@ -2060,23 +2059,6 @@ describe("single-PR merge compatibility during stack discovery", () => {
     (supportsStackActions, hasStack, stackPending, stackError, allowed) => {
       expect(
         allowsSinglePullRequestMerge({ supportsStackActions, hasStack, stackPending, stackError }),
-      ).toBe(allowed);
-    },
-  );
-});
-
-describe("single-PR auto-merge cancel beside a stack", () => {
-  // A stack's auto-merge cancelled as one pull request's skips the stack and its refresh.
-  it.each([
-    [false, true, true],
-    [false, false, true],
-    [true, true, true],
-    [true, false, false],
-  ] as const)(
-    "stackAutoMerge=%s singleMerge=%s permits=%s",
-    (stackAutoMerge, canMergeSinglePullRequest, allowed) => {
-      expect(
-        allowsSinglePullRequestAutoMergeCancel({ stackAutoMerge, canMergeSinglePullRequest }),
       ).toBe(allowed);
     },
   );

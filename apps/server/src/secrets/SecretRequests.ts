@@ -353,7 +353,7 @@ const make = Effect.gen(function* () {
     "SecretRequests.saveToFile",
   )(function* (input) {
     const records = yield* threadManagement
-      .getThreadRecords(input.threadId, ["turnItems"], {
+      .getLiveThreadRecords(input.threadId, ["turnItems"], {
         turnItemTypes: ["secret_request"],
         messageRoles: [],
       })

@@ -62,15 +62,15 @@ it.effect.each([
   }),
 );
 
-for (const operation of [
-  "getMergeability",
-  "listChecks",
-  "getRepositoryPermission",
-  "listComments",
-  "listCommits",
+for (const [operation, optional] of [
+  ["getMergeability", true],
+  ["listChecks", true],
+  ["getRepositoryPermission", true],
+  ["listComments", true],
+  ["listCommits", false],
 ] as const) {
   it.effect.each(["response", "body read"])(
-    `preserves rate limits from ${operation} on %s errors while recovering other optional-read failures`,
+    `preserves rate limits from ${operation} on %s errors while ${optional ? "recovering" : "failing on"} other read failures`,
     (variant) =>
       Effect.gen(function* () {
         const pullRequest = Result.getOrThrow(
@@ -128,7 +128,7 @@ for (const operation of [
               failure: { reason: "rate-limited", retryAt: 120_000 },
             });
           } else {
-            expect(result._tag).toBe("Success");
+            expect(result._tag).toBe(optional ? "Success" : "Failure");
           }
         }
       }),

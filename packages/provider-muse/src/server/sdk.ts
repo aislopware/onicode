@@ -16,7 +16,7 @@ import { environmentView } from "@onicode/provider-core/server/instanceEnvironme
 import { envTrampoline, supportsEnvChdir } from "@onicode/shared/envTrampoline";
 import * as HostProcess from "@onicode/shared/HostProcess";
 import { SpawnExecutableResolution } from "@onicode/shared/shell";
-import { windowsSystem32Path } from "@onicode/shared/windowsSystem";
+import { windowsEnvironmentValue, windowsSystem32Path } from "@onicode/shared/windowsSystem";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
@@ -107,13 +107,6 @@ export const museWorkspaceRoot = Effect.fn("museWorkspaceRoot")(function* (path:
   return museVerbatimPath(canonical);
 });
 
-function windowsEnvironmentValue(environment: NodeJS.ProcessEnv, name: string) {
-  const key = Object.keys(environment).find(
-    (candidate) => candidate.toUpperCase() === name.toUpperCase(),
-  );
-  return key === undefined ? undefined : environment[key];
-}
-
 /** Resolve Windows launchers with PATHEXT and run .cmd/.bat under cmd.exe; SDK spawn has no shell. */
 export const museLaunch = Effect.fn("museLaunch")(function* (
   binaryPath: string,
@@ -126,15 +119,7 @@ export const museLaunch = Effect.fn("museLaunch")(function* (
     (yield* Effect.promise(async () => resolveExecutable(binaryPath, "win32", env))) ?? binaryPath;
   if (!/\.(?:cmd|bat)$/i.test(resolved)) return { command: resolved, args: [] };
   return {
-    command:
-      windowsEnvironmentValue(env, "ComSpec") ??
-      windowsSystem32Path(
-        {
-          SystemRoot: windowsEnvironmentValue(env, "SystemRoot"),
-          windir: windowsEnvironmentValue(env, "windir"),
-        },
-        "cmd.exe",
-      ),
+    command: windowsEnvironmentValue(env, "ComSpec") ?? windowsSystem32Path(env, "cmd.exe"),
     // /d prevents AutoRun stdout; bare @ preserves quoted paths that cmd /c would unquote.
     args: [
       "/d",

@@ -1112,6 +1112,8 @@ RUNNER_FILE="$STATE_DIR/run-onicode.pairing.$$"
 @@ONICODE_ENSURE_ONI_HOME_SCRIPT@@
 mkdir -p "$STATE_DIR"
 trap 'rm -f "$RUNNER_FILE"' EXIT
+# dash runs no EXIT trap for a signal it does not trap, such as a dropped SSH session's.
+trap 'exit 1' HUP INT PIPE TERM
 cat >"$RUNNER_FILE" <<'SH'
 @@ONICODE_RUNNER_SCRIPT@@
 SH

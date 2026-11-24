@@ -93,6 +93,8 @@ const readChildren = (olderRun: string, rootThreadSession = ROOT) =>
       NativeChildWorkQuery.layer.pipe(
         Layer.provide(
           Layer.mock(ThreadManagement.ThreadManagementService)({
+            getLiveThreadRecords: () =>
+              Effect.succeed(records(olderRun, rootThreadSession) as never),
             getThreadRecords: () => Effect.succeed(records(olderRun, rootThreadSession) as never),
           }),
         ),

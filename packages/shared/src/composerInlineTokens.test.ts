@@ -169,6 +169,13 @@ describe("collectComposerInlineTokens", () => {
     expect(tokens[0]?.value).toBe(`src/${label}`);
   });
 
+  it("reads a file link after an unclosed bracket", () => {
+    const link = "[a\\[1\\].ts](a%5B1%5D.ts)";
+    expect(collectComposerInlineTokens(`Compare [ this with ${link} `)).toMatchObject([
+      { type: "mention", value: "a[1].ts", source: link },
+    ]);
+  });
+
   it("leaves a file link past the label cap as plain text", () => {
     const label = `${"a".repeat(509)}.tsx`;
     expect(collectComposerInlineTokens(`see [${label}](src/${label}) ok`)).toEqual([]);

@@ -4610,13 +4610,27 @@ const claudeAdapter: ProviderAdapter.ProviderAdapterV2["Service"] = {
   openSession: () => Effect.die("the Claude instance never starts a turn here"),
 };
 
-it.effect("queues a parked steer edited to a provider its turn cannot restart for", () =>
+it.effect.each([
+  {
+    target: "a provider its turn cannot restart for",
+    key: "unrestartable",
+    canRestart: false,
+    selection: claudeSelection,
+  },
+  // The turn can restart, but the restart cannot open an instance that is gone.
+  {
+    target: "an instance that is no longer registered",
+    key: "unregistered",
+    canRestart: true,
+    selection: { instanceId: ProviderInstanceId.make("removed"), model: "removed-model" },
+  },
+])("queues a parked steer edited to $target", ({ key, canRestart, selection }) =>
   Effect.scoped(
     Effect.gen(function* () {
       const { started, steered, interrupted, layer, startFirstTurn, events } =
         yield* nextTurnSelectionHarness(
-          "parked-steer-unrestartable",
-          false,
+          `parked-steer-${key}`,
+          canRestart,
           true,
           Effect.void,
           true,
@@ -4660,8 +4674,8 @@ it.effect("queues a parked steer edited to a provider its turn cannot restart fo
           commandId: CommandId.make("edit"),
           threadId,
           runId: parked.id,
-          text: "steer on claude",
-          modelSelection: claudeSelection,
+          text: "steer elsewhere",
+          modelSelection: selection,
         });
         const released = yield* orchestrator.streamDomainEvents.pipe(
           Stream.filter(
@@ -4683,8 +4697,8 @@ it.effect("queues a parked steer edited to a provider its turn cannot restart fo
         const queued = projection.runs.find((run) => run.id === parked.id)!;
         assert.equal(queued.status, "queued");
         assert.isUndefined(queued.steerWhenReadyRunId);
-        assert.deepEqual(queued.modelSelection, claudeSelection);
-        assert.equal(queued.providerInstanceId, claudeSelection.instanceId);
+        assert.deepEqual(queued.modelSelection, selection);
+        assert.equal(queued.providerInstanceId, selection.instanceId);
         assert.equal(
           projection.runs.find((run) => run.id === started[0]!.runId)?.status,
           "running",

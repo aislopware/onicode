@@ -9,7 +9,7 @@ import * as NodePath from "node:path";
 import * as NodeUtil from "node:util";
 import { acquireServiceSelectionLock } from "./service/serviceSelectionLock.ts";
 import { RESTORE_OOMD_WATCH_SCRIPT } from "./service/userManagerOom.ts";
-import { windowsSystem32Path } from "@onicode/shared/windowsSystem";
+import { windowsEnvironmentValue, windowsSystem32Path } from "@onicode/shared/windowsSystem";
 import { isNoCopyOnWrite, markNoCopyOnWrite } from "./noCopyOnWrite.ts";
 
 import type {
@@ -285,10 +285,13 @@ async function serviceUnitFromEnvironment(
   const unitName = env[SERVICE_UNIT_ENV]?.trim();
   if (!unitName) return undefined;
   if (unitName.endsWith(".xml")) {
-    const localAppData = env.LOCALAPPDATA?.trim();
+    const localAppData = windowsEnvironmentValue(env, "LOCALAPPDATA")?.trim();
     if (!localAppData) return undefined;
     const path = NodePath.win32.join(localAppData, "onicode", unitName);
-    const taskName = serviceTaskName(env.USERDOMAIN ?? "", env.USERNAME ?? "");
+    const taskName = serviceTaskName(
+      windowsEnvironmentValue(env, "USERDOMAIN") ?? "",
+      windowsEnvironmentValue(env, "USERNAME") ?? "",
+    );
     return { path, reload: () => registerServiceTask(path, taskName) };
   }
   const home = env.HOME?.trim();

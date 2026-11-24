@@ -5114,6 +5114,8 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       readonly status?: "rolled_back";
       /** The start failed before the provider took the prompt, as a refused model does. */
       readonly startFailed?: true;
+      /** A steer restarted the run onto this selection after its first attempt reached another. */
+      readonly restartedFrom?: ModelSelection;
     }>;
   }) {
     const store = yield* ProjectionStore.ProjectionStoreV2;
@@ -5187,41 +5189,63 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
           contextHandoffId: null,
         },
       });
-      yield* store.apply({
-        id: EventId.make(`event:${threadId}:attempt:${ordinal}`),
-        type: "run-attempt.updated",
-        threadId,
-        runId,
-        occurredAt: createdAt,
-        payload: {
+      const attempts = [
+        ...(spec.restartedFrom === undefined
+          ? []
+          : [
+              {
+                id: RunAttemptId.make(`attempt:${threadId}:${ordinal}:superseded`),
+                providerInstanceId: spec.restartedFrom.instanceId,
+                reason: "initial" as const,
+                status: "superseded" as const,
+                delivered: true,
+              },
+            ]),
+        {
           id: attemptId,
-          runId,
-          attemptOrdinal: 1,
-          rootNodeId: nodeId,
           providerInstanceId: spec.modelSelection.instanceId,
-          providerThreadId,
-          providerTurnId: null,
-          reason: "initial",
-          status: spec.startFailed ? "failed" : "completed",
-          startedAt: createdAt,
-          completedAt: createdAt,
+          reason:
+            spec.restartedFrom === undefined ? ("initial" as const) : ("steering_restart" as const),
+          status: spec.startFailed ? ("failed" as const) : ("completed" as const),
+          delivered: !spec.startFailed,
         },
-      });
-      if (!spec.startFailed) {
+      ];
+      for (const [attemptIndex, attempt] of attempts.entries()) {
         yield* store.apply({
-          id: EventId.make(`event:${threadId}:provider-turn:${ordinal}`),
+          id: EventId.make(`event:${threadId}:attempt:${attempt.id}`),
+          type: "run-attempt.updated",
+          threadId,
+          runId,
+          occurredAt: createdAt,
+          payload: {
+            id: attempt.id,
+            runId,
+            attemptOrdinal: attemptIndex + 1,
+            rootNodeId: nodeId,
+            providerInstanceId: attempt.providerInstanceId,
+            providerThreadId,
+            providerTurnId: null,
+            reason: attempt.reason,
+            status: attempt.status,
+            startedAt: createdAt,
+            completedAt: createdAt,
+          },
+        });
+        if (!attempt.delivered) continue;
+        yield* store.apply({
+          id: EventId.make(`event:${threadId}:provider-turn:${attempt.id}`),
           type: "provider-turn.updated",
           threadId,
           runId,
           nodeId,
           occurredAt: createdAt,
           payload: {
-            id: ProviderTurnId.make(`provider-turn:${threadId}:${ordinal}`),
+            id: ProviderTurnId.make(`provider-turn:${attempt.id}`),
             providerThreadId,
             nodeId,
-            runAttemptId: attemptId,
+            runAttemptId: attempt.id,
             nativeTurnRef: null,
-            ordinal,
+            ordinal: ordinal * 10 + attemptIndex,
             status: "completed",
             startedAt: createdAt,
             completedAt: createdAt,
@@ -5338,6 +5362,15 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
                 text: "Switch models and review",
                 startFailed: true,
               },
+              {
+                modelSelection: {
+                  instanceId: ProviderInstanceId.make("codex"),
+                  model: "gpt-6.2-luna",
+                },
+                text: "Steer onto another model",
+                startFailed: true,
+                restartedFrom: { instanceId, model: "claude-opus-5-5" },
+              },
             ],
           }),
         threadId,
@@ -5350,6 +5383,35 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       expect(prompt).not.toContain("claude_removed");
       expect(prompt).not.toContain("claude-haiku-5-5");
       expect(prompt).not.toContain("gpt-6.2-sol");
+      expect(prompt).toContain("Steer onto another model");
+      expect(prompt).not.toContain("gpt-6.2-luna");
+    }),
+  );
+
+  it.effect("create_pr credits no model when no run reached the provider", () =>
+    Effect.gen(function* () {
+      const threadId = ThreadId.make("thread:pr-thread-refused");
+      const prompt = yield* createPrPrompt(
+        (worktreePath) =>
+          seedPrThread({
+            threadId,
+            worktreePath,
+            runs: [
+              {
+                modelSelection: {
+                  instanceId: ProviderInstanceId.make("codex"),
+                  model: "gpt-6.2-sol",
+                },
+                text: "Try the refused model",
+                startFailed: true,
+              },
+            ],
+          }),
+        threadId,
+      );
+
+      expect(prompt).toContain("Try the refused model");
+      expect(prompt).not.toContain("Change produced by");
     }),
   );
 

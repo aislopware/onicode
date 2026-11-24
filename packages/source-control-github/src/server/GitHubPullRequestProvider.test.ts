@@ -753,6 +753,7 @@ describe("getChangeRequest commits", () => {
       });
 
       expect(detail.commits.map((commit) => commit.oid)).toEqual(["graphql-newest"]);
+      expect(detail.commitsTruncated).toBe(false);
       expect(detail.commits[0]).toMatchObject({
         messageHeadline: "the newest commit gh pr view drops",
         additions: 18,

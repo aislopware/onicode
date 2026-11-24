@@ -74,6 +74,7 @@ const withService = <A, E>(
     readonly stored: Map<string, Uint8Array>;
     readonly dispatched: Array<OrchestrationV2ServerCommand>;
     readonly moveThread: (to: ProjectId) => void;
+    readonly setThreadDeleted: (deleted: boolean) => void;
     /** The next removal from the store fails, as a read-only disk would. */
     readonly failNextRemove: () => void;
   }) => Effect.Effect<A, E>,
@@ -98,10 +99,43 @@ const withService = <A, E>(
     const dispatched: Array<OrchestrationV2ServerCommand> = [];
     let secretStatus = "pending";
     let threadProjectId = projectId;
+    let threadDeleted = false;
     let failedRecords = options.failedRecords ?? 0;
     let failNextRemove = false;
     let failReadAfterSave = options.failedReadAfterSave ?? false;
     const requestThreadId = options.threadId ?? threadId;
+    // Reads yield like a real store, so two answers can both see a pending card.
+    // Reads yield like a real store, so two answers can both see a pending card.
+    const readRecords = () =>
+      Effect.yieldNow.pipe(
+        Effect.andThen(() => {
+          if (!failReadAfterSave || secretStatus !== "saved") return Effect.void;
+          failReadAfterSave = false;
+          return Effect.fail(new Error("database busy") as never);
+        }),
+        Effect.map(
+          () =>
+            ({
+              thread: { projectId: threadProjectId },
+              runs: [{ id: "run-1", status: options.runStatus ?? "running" }],
+              turnItems: [
+                {
+                  id: turnItemId,
+                  threadId: requestThreadId,
+                  runId: "run-1",
+                  nodeId: "node-root",
+                  type: "secret_request",
+                  label: "GitHub token",
+                  reason: "Used as GH_TOKEN.",
+                  url: "https://github.com/settings/tokens",
+                  delivery: options.delivery ?? "file",
+                  ...(options.fields === undefined ? {} : { fields: options.fields }),
+                  secretStatus,
+                },
+              ],
+            }) as never,
+        ),
+      );
     const layerDependencies = Layer.mergeAll(
       NodeCrypto.layer,
       NodeServices.layer,
@@ -156,37 +190,9 @@ const withService = <A, E>(
         }),
       ),
       Layer.mock(ThreadManagementService.ThreadManagementService)({
-        // Reads yield like a real store, so two answers can both see a pending card.
-        getThreadRecords: () =>
-          Effect.yieldNow.pipe(
-            Effect.andThen(() => {
-              if (!failReadAfterSave || secretStatus !== "saved") return Effect.void;
-              failReadAfterSave = false;
-              return Effect.fail(new Error("database busy") as never);
-            }),
-            Effect.map(
-              () =>
-                ({
-                  thread: { projectId: threadProjectId },
-                  runs: [{ id: "run-1", status: options.runStatus ?? "running" }],
-                  turnItems: [
-                    {
-                      id: turnItemId,
-                      threadId: requestThreadId,
-                      runId: "run-1",
-                      nodeId: "node-root",
-                      type: "secret_request",
-                      label: "GitHub token",
-                      reason: "Used as GH_TOKEN.",
-                      url: "https://github.com/settings/tokens",
-                      delivery: options.delivery ?? "file",
-                      ...(options.fields === undefined ? {} : { fields: options.fields }),
-                      secretStatus,
-                    },
-                  ],
-                }) as never,
-            ),
-          ),
+        getThreadRecords: () => readRecords(),
+        getLiveThreadRecords: () =>
+          threadDeleted ? Effect.fail(new Error("thread deleted") as never) : readRecords(),
         dispatch: (command) => {
           if (command.type === "secret_request.record" && failedRecords > 0) {
             failedRecords -= 1;
@@ -212,6 +218,9 @@ const withService = <A, E>(
         dispatched,
         moveThread: (to) => {
           threadProjectId = to;
+        },
+        setThreadDeleted: (deleted) => {
+          threadDeleted = deleted;
         },
         failNextRemove: () => {
           failNextRemove = true;
@@ -418,8 +427,8 @@ it.effect("a save whose record failed can be saved again", () =>
   ),
 );
 
-it.effect("a saved answer is only delivered in the project it was entered for", () =>
-  withFiles(({ service, moveThread, fs }) =>
+it.effect("a saved answer is delivered only to a live thread in its own project", () =>
+  withFiles(({ service, moveThread, setThreadDeleted, fs }) =>
     Effect.gen(function* () {
       yield* service.answer({
         threadId,
@@ -430,6 +439,10 @@ it.effect("a saved answer is only delivered in the project it was entered for", 
       const elsewhere = yield* service.saveToFile({ threadId, turnItemId }).pipe(Effect.flip);
       assert.include(elsewhere.message, "does not exist");
       moveThread(projectId);
+      setThreadDeleted(true);
+      const deleted = yield* service.saveToFile({ threadId, turnItemId }).pipe(Effect.flip);
+      assert.equal(deleted.reason, "load_failed");
+      setThreadDeleted(false);
       const file = singleFile(yield* service.saveToFile({ threadId, turnItemId }));
       assert.equal(yield* fs.readFileString(file), "ghp_secret");
     }),

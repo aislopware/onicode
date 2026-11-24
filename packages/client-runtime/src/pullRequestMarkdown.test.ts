@@ -310,9 +310,10 @@ describe("media on custom hosts", () => {
     expect(split(body)).toEqual([expect.objectContaining({ kind: "attachment", media })]);
   });
 
-  it("keeps inline links and media examples in code as prose", () => {
-    const body =
-      "See [recording](https://drop.example.com/a.mp4) for context.\n\n```md\nhttps://drop.example.com/a.png\n```";
+  it.each([
+    "See [recording](https://drop.example.com/a.mp4) for context.\n\n```md\nhttps://drop.example.com/a.png\n```",
+    "[ see [recording](https://drop.example.com/a.mp4)",
+  ])("keeps inline links and media examples in code as prose: %s", (body) => {
     expect(split(body)).toEqual([
       { id: "markdown:0", kind: "markdown", text: body, sourceOffset: 0 },
     ]);

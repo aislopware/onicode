@@ -771,11 +771,16 @@ const make = Effect.gen(function* () {
     const url = parseUrl(value);
     if (url === null) return Effect.succeed(null);
     return listProjects({ host: url.hostname, authority: url.host.toLowerCase() }).pipe(
-      Effect.map(({ supported }) => {
-        for (const project of supported) {
+      Effect.map(({ supported, unimplemented }) => {
+        // A tracker not served here still names the link, so it can say why it cannot resolve.
+        const trackers = new Set([
+          ...supported.map((project) => project.tracker),
+          ...[...unimplemented.values()].map((entry) => entry.tracker),
+        ]);
+        for (const tracker of trackers) {
           const parsed = sourceControlDefinitions.parseIssueUrl(
             value,
-            SourceControlProviderKind.make(project.tracker),
+            SourceControlProviderKind.make(tracker),
           );
           if (parsed !== null) return parsed;
         }

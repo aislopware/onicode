@@ -799,7 +799,7 @@ export function workflowOneLine(text: string): string {
       .find((candidate) => candidate !== "" && !/^(#|```|\|)/.test(candidate))
       ?.replace(/^([-*>]|\d+\.)\s+/, "") ?? "";
   const plain = line
-    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/\[([^[\]]*)\]\([^)]*\)/g, "$1")
     .replace(/`([^`]*)`/g, "$1")
     .replace(/(\*\*|__|\*|_)(\S(?:.*?\S)?)\1/g, "$2");
   const end = plain.search(/[.!?](\s|$)/);

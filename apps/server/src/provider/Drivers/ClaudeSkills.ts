@@ -9,6 +9,7 @@ import * as HostProcess from "@onicode/shared/HostProcess";
 import { tokenizeCliArgs } from "@onicode/shared/cliArgs";
 import { fromLenientJson } from "@onicode/shared/schemaJson";
 import { SKILL_MENTION_PATTERN } from "@onicode/shared/composerInlineTokens";
+import { windowsEnvironmentValue } from "@onicode/shared/windowsSystem";
 import { parse as parseYamlDocument } from "yaml";
 
 import { expandHomePath } from "@onicode/provider-core/server/pathExpansion";
@@ -112,14 +113,6 @@ function parseSkillFrontmatter(contents: string): SkillFrontmatter {
   };
 }
 
-// A caller-supplied environment is a plain object, without Windows' case-insensitive keys.
-function windowsEnvironmentValue(environment: NodeJS.ProcessEnv, name: string) {
-  const key = name.toLowerCase();
-  return Object.entries(environment)
-    .find(([candidate]) => candidate.toLowerCase() === key)?.[1]
-    ?.trim();
-}
-
 function claudeManagedDirectory(
   path: Path.Path,
   platform: NodeJS.Platform,
@@ -129,7 +122,7 @@ function claudeManagedDirectory(
     return "/Library/Application Support/ClaudeCode";
   }
   if (platform === "win32") {
-    const programFiles = windowsEnvironmentValue(environment, "ProgramFiles");
+    const programFiles = windowsEnvironmentValue(environment, "ProgramFiles")?.trim();
     return programFiles ? path.join(programFiles, "ClaudeCode") : undefined;
   }
   return "/etc/claude-code";
@@ -142,7 +135,7 @@ function claudeManagedSettingsPaths(
 ): ReadonlyArray<string> {
   const managedDirectory = claudeManagedDirectory(path, platform, environment);
   const programData =
-    platform === "win32" ? windowsEnvironmentValue(environment, "ProgramData") : undefined;
+    platform === "win32" ? windowsEnvironmentValue(environment, "ProgramData")?.trim() : undefined;
   return [
     ...(programData ? [path.join(programData, "ClaudeCode", "managed-settings.json")] : []),
     ...(managedDirectory ? [path.join(managedDirectory, "managed-settings.json")] : []),

@@ -38,7 +38,7 @@ const make = Effect.gen(function* () {
 
   const getNativeChildWork = Effect.fn("NativeChildWorkQuery.getNativeChildWork")(
     function* (input: OrchestrationV2GetNativeChildWorkInput) {
-      const { thread } = yield* threads.getThreadRecords(input.threadId, []);
+      const { thread } = yield* threads.getLiveThreadRecords(input.threadId, []);
       const parentThreadId = thread.lineage.parentThreadId;
       if (
         !isProviderNativeSubagentThread(thread) ||

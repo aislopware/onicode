@@ -261,19 +261,19 @@ const PR_THREAD_CONTEXT_BYTES = 16_000;
 const NO_THREAD_CONTEXT = { history: undefined, producedBy: undefined };
 const PR_THREAD_COMMAND_OUTPUT_CHARS = 2_000;
 const isSourceControlProviderError = Schema.is(SourceControlProviderError);
-// A run starts before its provider takes the prompt, and a refused start never reached the model.
+// A run's selection is its active attempt's: a steer's restart rewrites it, and the projection
+// keeps no model for the attempt it superseded. A refused start never reached the model.
 const runsTheProviderTook = (
-  records: Pick<OrchestrationV2ThreadProjection, "runs" | "attempts" | "providerTurns">,
+  records: Pick<OrchestrationV2ThreadProjection, "runs" | "providerTurns">,
 ) => {
   const attemptIds = new Set(
     records.providerTurns.flatMap((turn) =>
       turn.runAttemptId !== null && isDeliveredProviderTurn(turn) ? [turn.runAttemptId] : [],
     ),
   );
-  const runIds = new Set(
-    records.attempts.flatMap((attempt) => (attemptIds.has(attempt.id) ? [attempt.runId] : [])),
+  return records.runs.filter(
+    (run) => run.activeAttemptId !== null && attemptIds.has(run.activeAttemptId),
   );
-  return records.runs.filter((run) => runIds.has(run.id));
 };
 
 /**
@@ -904,24 +904,29 @@ export const make = Effect.gen(function* () {
       // A thread can switch models mid-way, and a fork inherits its ancestors' history; credit
       // every model behind a turn still visible here. Ancestor runs are best-effort.
       const visibleRunIds = new Set(visibleTurnItems.flatMap(({ item }) => item.runId ?? []));
-      const ancestorRuns = yield* Effect.forEach(
+      const ancestors = yield* Effect.forEach(
         new Set(
           visibleTurnItems.flatMap(({ item }) => (item.threadId === threadId ? [] : item.threadId)),
         ),
         (ancestorId) =>
-          threads.getThreadRecords(ancestorId, ["runs", "attempts", "providerTurns"]).pipe(
-            Effect.map(runsTheProviderTook),
-            Effect.orElseSucceed(() => []),
-          ),
+          threads
+            .getThreadRecords(ancestorId, ["runs", "providerTurns"])
+            .pipe(Effect.orElseSucceed(() => ({ runs: [], providerTurns: [] }))),
       );
+      const records = [projection, ...ancestors];
       // Visibility already hides local rollbacks; an ancestor's later rollback leaves the fork's
       // inherited work in place. A queued run shows its message before it starts.
-      const runSelections = [...runsTheProviderTook(projection), ...ancestorRuns.flat()]
+      const runSelections = records
+        .flatMap(runsTheProviderTook)
         .filter((run) => visibleRunIds.has(run.id))
         .map((run) => run.modelSelection);
+      // An imported thread has no runs; its selection is the imported session's model.
+      const fallbackSelections = records.every(({ runs }) => runs.length === 0)
+        ? [thread.modelSelection]
+        : [];
       const providers = yield* providerRegistry.getProviders;
       const producedBy = Arr.dedupeWith(
-        (runSelections.length > 0 ? runSelections : [thread.modelSelection]).map(
+        (runSelections.length > 0 ? runSelections : fallbackSelections).map(
           ({ instanceId, model }) => {
             // The instance's displayName is a user label (often an account), not the harness.
             // Default instances are named after their driver; a removed custom one names nothing.
