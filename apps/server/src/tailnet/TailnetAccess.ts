@@ -117,7 +117,9 @@ export class TailnetAccess extends Context.Service<
       readonly client: AuthClientMetadata;
     }) => Effect.Effect<
       AuthAccessTokenResult,
-      TailnetSignInRefusedError | EnvironmentAuth.ServerAuthInternalError
+      | TailnetSignInRefusedError
+      | EnvironmentAuth.ServerAuthInvalidCredentialError
+      | EnvironmentAuth.ServerAuthInternalError
     >;
   }
 >()("onicode/tailnet/TailnetAccess") {}
@@ -212,6 +214,8 @@ const make = Effect.gen(function* () {
     if (!ManagedLimits.allowsRemoteClients(managedPolicy)) {
       return yield* refuse("managed-policy");
     }
+    // Read before the switch is: turning sign-in off and revoking others then ends this one too.
+    const approvedAtRevocationCount = yield* auth.otherSessionRevocationCount;
     if (!(yield* signInEnabled())) return yield* refuse("disabled");
     const remoteAddress = stripMappedIpv4(peer.remoteAddress);
     const localAddress = stripMappedIpv4(peer.localAddress);
@@ -250,6 +254,7 @@ const make = Effect.gen(function* () {
         label: caller.name,
         ...(client.os === undefined && caller.os !== undefined ? { os: caller.os } : {}),
       },
+      approvedAtRevocationCount,
     });
   });
 

@@ -341,7 +341,12 @@ export class EnvironmentAuth extends Context.Service<
       readonly subject: string;
       readonly scopes: ReadonlyArray<AuthEnvironmentScope>;
       readonly client: AuthClientMetadata;
-    }) => Effect.Effect<AuthAccessTokenResult, ServerAuthInternalError>;
+      /** As in `issueMcpClientSession`, read before the caller was authorized. */
+      readonly approvedAtRevocationCount: number;
+    }) => Effect.Effect<
+      AuthAccessTokenResult,
+      ServerAuthInvalidCredentialError | ServerAuthInternalError
+    >;
     readonly createPairingLink: (input?: {
       readonly ttl?: Duration.Duration;
       readonly label?: string;
@@ -658,9 +663,18 @@ export const make = Effect.gen(function* () {
       );
     };
 
-  const issueAccessToken: EnvironmentAuth["Service"]["issueAccessToken"] = (input) =>
-    sessions.issue(input).pipe(
-      Effect.mapError((cause) => new ServerAuthAuthenticatedAccessTokenIssueError({ cause })),
+  const issueAccessToken: EnvironmentAuth["Service"]["issueAccessToken"] = ({
+    approvedAtRevocationCount,
+    ...input
+  }) =>
+    issueUnlessOthersRevokedSince(
+      approvedAtRevocationCount,
+      sessions
+        .issue(input)
+        .pipe(
+          Effect.mapError((cause) => new ServerAuthAuthenticatedAccessTokenIssueError({ cause })),
+        ),
+    ).pipe(
       Effect.flatMap(toAccessTokenResult),
       Effect.withSpan("EnvironmentAuth.issueAccessToken"),
     );

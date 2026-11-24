@@ -471,6 +471,17 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodePlatformCrypto.layer))(
           .pipe(Effect.isSuccess);
 
         expect(exchanged).toBe(false);
+
+        // A tailnet sign-in approved before the revocation asks for its session after it.
+        const approved = yield* serverAuth
+          .issueAccessToken({
+            subject: `${EnvironmentAuth.TAILNET_SESSION_SUBJECT_PREFIX}node`,
+            scopes: ["orchestration:read"],
+            client: requestMetadata,
+            approvedAtRevocationCount: 0,
+          })
+          .pipe(Effect.isSuccess);
+        expect(approved).toBe(false);
         expect((yield* serverAuth.listSessions()).map((session) => session.sessionId)).toEqual([
           owner.sessionId,
         ]);

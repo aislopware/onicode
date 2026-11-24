@@ -117,6 +117,7 @@ const layerAccess = (input: {
   readonly whoisUserId?: number;
   readonly policy?: ManagedPolicyDocument;
   readonly whoisArgs?: Array<ReadonlyArray<string>>;
+  readonly otherSessionRevocationCount?: () => number;
   readonly issued?: Array<
     Parameters<EnvironmentAuth.EnvironmentAuth["Service"]["issueAccessToken"]>[0]
   >;
@@ -134,6 +135,9 @@ const layerAccess = (input: {
           HttpClient.make(() => Effect.die("sign-in probes nothing")),
         ),
         Layer.mock(EnvironmentAuth.EnvironmentAuth)({
+          otherSessionRevocationCount: Effect.sync(
+            () => input.otherSessionRevocationCount?.() ?? 0,
+          ),
           issueAccessToken: (request) => {
             input.issued?.push(request);
             return Effect.succeed({
@@ -209,6 +213,30 @@ describe("TailnetAccess.signIn", () => {
         ],
       );
     }).pipe(Effect.provide(layerAccess({ tailnetSignIn: true, whoisArgs, issued })));
+  });
+
+  it.effect("issues as of the revocations before it asked who the caller is", () => {
+    const whoisArgs: Array<ReadonlyArray<string>> = [];
+    const issued: Array<
+      Parameters<EnvironmentAuth.EnvironmentAuth["Service"]["issueAccessToken"]>[0]
+    > = [];
+    return Effect.gen(function* () {
+      yield* signIn(tailnetPeer);
+      assert.deepEqual(
+        issued.map((request) => request.approvedAtRevocationCount),
+        [0],
+      );
+    }).pipe(
+      Effect.provide(
+        layerAccess({
+          tailnetSignIn: true,
+          whoisArgs,
+          issued,
+          // "Revoke all others" runs while whois does.
+          otherSessionRevocationCount: () => whoisArgs.length,
+        }),
+      ),
+    );
   });
 
   it.effect("refuses another user's device", () =>
