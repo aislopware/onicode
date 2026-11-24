@@ -3657,3 +3657,4 @@ ff6b10e0a0	take	conflicts: Claude phase reporting wired into Onicode's resolved-
 3555296ca0	take	taken as is
 cf90d1a466	take	conflict: Onicode already resolved the temp dir with realPath and names the mode standalone; took the host-platform expectation
 d73e41a3fa	take	fix(web): Esc in pull request search clears it instead of leaving the page (#41931)
+3dd4f14280	take	fix(web): IME keys no longer cancel or send a pull request review reply (#41932)
