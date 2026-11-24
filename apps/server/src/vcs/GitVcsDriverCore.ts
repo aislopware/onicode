@@ -1053,18 +1053,29 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
   const random = yield* SecureRandom.SecureRandom;
   const hostPlatform = yield* HostProcess.Platform;
   const serviceScope = yield* Effect.scope;
-  // A worktree's index refresh can still take its lock after the worktree is handed out.
-  // Background index swaps of new worktrees, by worktree path.
+  // Background index swaps of new worktrees, by worktree path. Git reports physical paths, so
+  // keys resolve symlinks, and ignore case on Windows.
   const indexRefreshes = yield* FiberMap.make<string>();
+  const indexRefreshKey = (worktreePath: string) =>
+    fileSystem.realPath(worktreePath).pipe(
+      Effect.orElseSucceed(() => path.resolve(worktreePath)),
+      Effect.map((key) => (hostPlatform === "win32" ? key.toLowerCase() : key)),
+    );
   // A swap holds index.lock for a moment; a check that meets the lock waits for this one.
   const settleIndexRefresh = (worktreePath: string) =>
-    FiberMap.get(indexRefreshes, path.resolve(worktreePath)).pipe(
+    indexRefreshKey(worktreePath).pipe(
+      Effect.flatMap((key) => FiberMap.get(indexRefreshes, key)),
       Effect.flatMap(
         Option.match({
           onNone: () => Effect.void,
           onSome: (fiber) => Effect.asVoid(Fiber.await(fiber)),
         }),
       ),
+    );
+  // A swap would write into the folders of a worktree being removed.
+  const stopIndexRefresh = (worktreePath: string) =>
+    indexRefreshKey(worktreePath).pipe(
+      Effect.flatMap((key) => FiberMap.remove(indexRefreshes, key)),
     );
   const automaticFetchInterval = yield* VcsAutomaticFetchInterval;
   type StatusFetchState = {
@@ -2941,7 +2952,10 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         ),
       );
       // Status can succeed while locked, repeatedly running LFS clean filters without caching.
-      if ((yield* locked) && (yield* settleIndexRefresh(cwd).pipe(Effect.andThen(locked)))) {
+      if (
+        (yield* locked) &&
+        (yield* settleIndexRefresh(root ?? cwd).pipe(Effect.andThen(locked)))
+      ) {
         return yield* lockError;
       }
     }
@@ -6044,9 +6058,14 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         ),
       );
     }).pipe(
-      Effect.ensuring(fileSystem.remove(copyPath).pipe(Effect.ignore)),
+      // A stopped refresh kills Git, which cannot then remove its lock on the copy.
+      Effect.ensuring(
+        Effect.forEach([copyPath, `${copyPath}.lock`], (file) =>
+          fileSystem.remove(file).pipe(Effect.ignore),
+        ),
+      ),
       Effect.ignore({ log: "Debug" }),
-      FiberMap.run(indexRefreshes, path.resolve(worktreePath)),
+      FiberMap.run(indexRefreshes, yield* indexRefreshKey(worktreePath)),
     );
   });
 
@@ -6898,8 +6917,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     // folder than this path. Resolving it once keeps Git, the Windows deletion
     // in removeLinkedWorktree, and the leftover cleanup below on one directory.
     const target = path.resolve(input.cwd, input.path);
-    // A new worktree's index swap would write into the folders being removed.
-    yield* FiberMap.remove(indexRefreshes, target);
+    yield* stopIndexRefresh(target);
     const result = yield* removeLinkedWorktree({
       operation: "GitVcsDriver.removeWorktree",
       cwd: input.cwd,
@@ -7314,6 +7332,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     }),
     clearWorktreeCheckoutCache: checkoutCache?.clear ?? Effect.void,
     settleIndexRefresh,
+    stopIndexRefresh,
     fetchRefIntoBranch: Effect.fnUntraced(function* (input) {
       return yield* withListRefsInvalidation(input.cwd, fetchRefIntoBranch(input));
     }),

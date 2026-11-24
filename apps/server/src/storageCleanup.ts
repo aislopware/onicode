@@ -1983,6 +1983,7 @@ const make = Effect.gen(function* () {
               const changes = yield* localChangesReason(worktreePath, settings);
               if (changes !== null) return keep(changes);
             }
+            yield* git.stopIndexRefresh(worktreePath);
             const repository = yield* worktreeRepository(worktreePath);
             // Forced removal already discards local files; do not widen its final-check window.
             if (settings.worktreeKeepWhen === "tracked-changes" && !submodules.force)
