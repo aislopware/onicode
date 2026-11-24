@@ -93,8 +93,10 @@ const compactEnv = (input: Record<string, Option.Option<string>>): NodeJS.Proces
   );
 
 const BrowserLaunchEnvConfig = Config.all({
+  SystemRoot: Config.String("SystemRoot").pipe(Config.option),
   SYSTEMROOT: Config.String("SYSTEMROOT").pipe(Config.option),
   windir: Config.String("windir").pipe(Config.option),
+  WINDIR: Config.String("WINDIR").pipe(Config.option),
   WSL_DISTRO_NAME: Config.String("WSL_DISTRO_NAME").pipe(Config.option),
   WSL_INTEROP: Config.String("WSL_INTEROP").pipe(Config.option),
   SSH_CONNECTION: Config.String("SSH_CONNECTION").pipe(Config.option),

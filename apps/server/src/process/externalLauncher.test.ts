@@ -721,7 +721,7 @@ it.effect.each([
       Effect.provide(
         layerTest({
           platform: "win32",
-          env: { PATH: binDir, PATHEXT: ".COM;.EXE;.BAT;.CMD", SYSTEMROOT: "C:\\Windows" },
+          env: { PATH: binDir, PATHEXT: ".COM;.EXE;.BAT;.CMD", WINDIR: "D:\\Win" },
           existingPaths: ["C:/Users/onicode/my project/a,b.ts"],
           onSpawn: (command) => spawned.push(command),
           spawnResult: (command) => (command.command.endsWith("reg.exe") ? registry : undefined),
@@ -731,12 +731,12 @@ it.effect.each([
 
     assert.deepEqual(
       spawned.map((command) => command.command),
-      ["C:\\Windows\\System32\\reg.exe"],
+      ["D:\\Win\\System32\\reg.exe"],
     );
     if (native) {
       assert.isTrue(Exit.isSuccess(exit));
       assert.deepEqual(verbatim, [
-        ["C:\\Windows\\explorer.exe", ['/select,"C:\\Users\\onicode\\my project\\a,b.ts"']],
+        ["D:\\Win\\explorer.exe", ['/select,"C:\\Users\\onicode\\my project\\a,b.ts"']],
       ]);
     } else {
       assert.deepEqual(verbatim, []);
@@ -747,7 +747,7 @@ it.effect.each([
         assert.instanceOf(error, ExternalLauncher.ExternalLauncherCommandNotFoundError);
         assert.equal(
           (error as ExternalLauncher.ExternalLauncherCommandNotFoundError).command,
-          "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+          "D:\\Win\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
         );
       }
     }

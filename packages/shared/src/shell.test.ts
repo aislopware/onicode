@@ -415,14 +415,14 @@ describe("readEnvironmentFromWindowsShell", () => {
       expect(
         yield* readEnvironmentFromWindowsShell(["PATH"], {}, (...args) =>
           Effect.sync(() => Option.liftThrowable(execFile)(...args)),
-        ),
+        ).pipe(Effect.provideService(HostProcess.Environment, { SystemRoot: "D:\\Win" })),
       ).toEqual({
         PATH: "C:\\Users\\Jürgen\\Grüße;C:\\Tools",
       });
       expect(execFile).toHaveBeenCalledWith(
         "pwsh.exe",
         expect.arrayContaining(["-NoLogo", "-NoProfile", "-NonInteractive", "-Command"]),
-        { cwd: "C:\\Windows\\System32\\", encoding: "utf8", timeout: 5000 },
+        { cwd: "D:\\Win\\System32\\", encoding: "utf8", timeout: 5000 },
       );
       expect(execFile.mock.calls[0]?.[1].at(-1)).toContain(
         "[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes([string]$value))",
@@ -502,14 +502,14 @@ describe("readEnvironmentFromWindowsShell", () => {
       expect(
         yield* readEnvironmentFromWindowsShell(["PATH"], { loadProfile: true }, (...args) =>
           Effect.sync(() => Option.liftThrowable(execFile)(...args)),
-        ),
+        ).pipe(Effect.provideService(HostProcess.Environment, { SystemRoot: "D:\\Win" })),
       ).toEqual({
         PATH: "C:\\Tools",
       });
       expect(execFile).toHaveBeenCalledWith(
         "pwsh.exe",
         expect.arrayContaining(["-NoLogo", "-NonInteractive", "-Command"]),
-        { cwd: "C:\\Windows\\System32\\", encoding: "utf8", timeout: 5000 },
+        { cwd: "D:\\Win\\System32\\", encoding: "utf8", timeout: 5000 },
       );
       expect(execFile.mock.calls[0]?.[1]).not.toContain("-NoProfile");
     }),
@@ -533,17 +533,17 @@ describe("readEnvironmentFromWindowsShell", () => {
       expect(
         yield* readEnvironmentFromWindowsShell(["PATH"], {}, (...args) =>
           Effect.sync(() => Option.liftThrowable(execFile)(...args)),
-        ),
+        ).pipe(Effect.provideService(HostProcess.Environment, { SystemRoot: "D:\\Win" })),
       ).toEqual({
         PATH: "C:\\Tools",
       });
       expect(execFile).toHaveBeenNthCalledWith(1, "pwsh.exe", expect.any(Array), {
-        cwd: "C:\\Windows\\System32\\",
+        cwd: "D:\\Win\\System32\\",
         encoding: "utf8",
         timeout: 5000,
       });
       expect(execFile).toHaveBeenNthCalledWith(2, "powershell.exe", expect.any(Array), {
-        cwd: "C:\\Windows\\System32\\",
+        cwd: "D:\\Win\\System32\\",
         encoding: "utf8",
         timeout: 5000,
       });

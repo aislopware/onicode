@@ -125,11 +125,16 @@ export const museLaunch = Effect.fn("museLaunch")(function* (
   const resolved =
     (yield* Effect.promise(async () => resolveExecutable(binaryPath, "win32", env))) ?? binaryPath;
   if (!/\.(?:cmd|bat)$/i.test(resolved)) return { command: resolved, args: [] };
-  const systemRoot = windowsEnvironmentValue(env, "SystemRoot");
   return {
     command:
       windowsEnvironmentValue(env, "ComSpec") ??
-      windowsSystem32Path({ SystemRoot: systemRoot }, "cmd.exe"),
+      windowsSystem32Path(
+        {
+          SystemRoot: windowsEnvironmentValue(env, "SystemRoot"),
+          windir: windowsEnvironmentValue(env, "windir"),
+        },
+        "cmd.exe",
+      ),
     // /d prevents AutoRun stdout; bare @ preserves quoted paths that cmd /c would unquote.
     args: [
       "/d",

@@ -1055,9 +1055,11 @@ describe("ProviderInstanceRegistry secret environment", () => {
 
       // The desktop app sends the login shell's PATH after the server has built its instances.
       env.PATH = "/usr/bin:/home/me/.local/bin";
-      // An incomplete selection leaves the PATH for the next refresh.
-      yield* mutator.rebuildOnHostPathChange(Effect.succeed({ instanceIds: [], complete: false }));
-      expect(fixture.created).toHaveLength(1);
+      // An incomplete selection leaves the PATH for the next refresh, which keeps what it built.
+      yield* mutator.rebuildOnHostPathChange(
+        Effect.succeed({ instanceIds: [instanceId], complete: false }),
+      );
+      expect(fixture.created).toHaveLength(2);
       yield* rebuild;
       yield* rebuild;
       expect(fixture.created).toHaveLength(2);
@@ -1101,12 +1103,13 @@ describe("ProviderInstanceRegistry secret environment", () => {
         Effect.andThen(Effect.sync(() => fixture.created.length)),
         Effect.forkChild({ startImmediately: true }),
       );
-      // A PATH that changes again while a waiter waits is rebuilt before that waiter returns.
+      // A PATH that changes again while a waiter waits is built on before that waiter returns,
+      // here by the dropped rebuild itself, which reads the PATH as it builds.
       env.PATH = "/usr/bin:/nix/bin";
       const newer = yield* rebuild.pipe(Effect.forkChild({ startImmediately: true }));
       yield* Deferred.succeed(resume, undefined);
       yield* Fiber.join(newer);
-      expect(yield* Fiber.join(afterDrop)).toBe(5);
+      expect(yield* Fiber.join(afterDrop)).toBe(4);
 
       // A failed rebuild fails its waiters, and the PATH reverts to the last one that built.
       env.PATH = "/usr/bin:/snap/bin";
@@ -1132,7 +1135,7 @@ describe("ProviderInstanceRegistry secret environment", () => {
       expect(Exit.isFailure(yield* Fiber.join(brokenNewer))).toBe(true);
       env.PATH = "/usr/bin:/snap/bin";
       yield* rebuild;
-      expect(fixture.created).toHaveLength(6);
+      expect(fixture.created).toHaveLength(5);
     }).pipe(Effect.provideService(HostProcess.Environment, env));
   });
 
