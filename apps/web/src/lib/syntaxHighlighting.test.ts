@@ -1,4 +1,9 @@
-import { disposeHighlighter, getFiletypeFromFileName } from "@pierre/diffs";
+import {
+  disposeHighlighter,
+  getFiletypeFromFileName,
+  HighlighterDisposedError,
+  isHighlighterNull,
+} from "@pierre/diffs";
 import { describe, expect, it } from "vite-plus/test";
 
 import { getSyntaxHighlighterPromise } from "./syntaxHighlighting";
@@ -56,4 +61,14 @@ it("loads a new highlighter once the shared one is disposed", async () => {
   expect((await getSyntaxHighlighterPromise("text")).isDisposed).toBe(false);
   await disposeHighlighter();
   expect((await getSyntaxHighlighterPromise("text")).isDisposed).toBe(false);
+  // A promise still loading when the highlighter is disposed ends with it and loads no other.
+  const language = getSyntaxHighlighterPromise("vhdl");
+  await disposeHighlighter();
+  await expect(language).rejects.toThrow(HighlighterDisposedError);
+  expect(isHighlighterNull()).toBe(true);
+  const text = getSyntaxHighlighterPromise("text");
+  await disposeHighlighter();
+  await expect(text).rejects.toThrow(HighlighterDisposedError);
+  expect((await getSyntaxHighlighterPromise("text")).isDisposed).toBe(false);
+  expect((await getSyntaxHighlighterPromise("vhdl")).isDisposed).toBe(false);
 });
