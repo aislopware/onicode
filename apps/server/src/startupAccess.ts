@@ -140,6 +140,15 @@ const isIpv4Family = (family: string | number): boolean => family === "IPv4" || 
 
 const isIpv6Family = (family: string | number): boolean => family === "IPv6" || family === 6;
 
+// A startup URL names the address the server bound; `localhost` can resolve to the other
+// address family, where this server is not listening.
+const loopbackAddressFor = (host: string | undefined): string =>
+  host !== undefined && normalizeHost(host) === "::" ? "::1" : "127.0.0.1";
+
+/** The origin a browser on this machine uses to reach a server bound to `host`. */
+export const resolveLocalOrigin = (host: string | undefined, port: number): string =>
+  `http://${formatHostForUrl(host && !isWildcardHost(host) ? normalizeHost(host) : loopbackAddressFor(host))}:${port}`;
+
 const resolveHeadlessConnectionHost = (
   host: string | undefined,
   interfaces: NetworkInterfacesMap,
@@ -148,7 +157,7 @@ const resolveHeadlessConnectionHost = (
   platform: NodeJS.Platform,
 ): string => {
   if (!host) {
-    return "localhost";
+    return loopbackAddressFor(host);
   }
 
   if (!isWildcardHost(host)) {
@@ -176,7 +185,7 @@ const resolveHeadlessConnectionHost = (
       ) ??
       ipv4.find(({ machineLocal }) => !machineLocal) ??
       ipv4[0];
-    return preferred?.entry.address ?? "localhost";
+    return preferred?.entry.address ?? loopbackAddressFor(host);
   }
   // Only `::` listens on IPv6; a link-local address needs a zone a URL cannot carry.
   const ipv6 =
@@ -188,7 +197,7 @@ const resolveHeadlessConnectionHost = (
   // A container, VM or host-only adapter is advertised only when nothing else has an address.
   const preferred =
     [...ipv4, ...ipv6].find(({ machineLocal }) => !machineLocal) ?? ipv4[0] ?? ipv6[0];
-  return preferred ? normalizeHost(preferred.entry.address) : "localhost";
+  return preferred ? normalizeHost(preferred.entry.address) : loopbackAddressFor(host);
 };
 
 export const resolveHeadlessConnectionString = (

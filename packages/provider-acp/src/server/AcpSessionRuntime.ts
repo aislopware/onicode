@@ -31,6 +31,7 @@ import * as EffectAcpProtocol from "effect-acp/protocol";
 import { resolveSpawnCommand } from "@onicode/shared/shell";
 import { AgentScope, AgentScopeThreadId, RAISE_OOM_SCORE_LINE } from "@onicode/shared/AgentScope";
 import * as HostProcess from "@onicode/shared/HostProcess";
+import { windowsSystem32Path } from "@onicode/shared/windowsSystem";
 
 import {
   PROCESS_TABLE_PS_ARGS,
@@ -1053,7 +1054,12 @@ const terminateWindowsProcessTreeWithTaskkill = (
     Effect.gen(function* () {
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
       const taskkill = yield* spawner.spawn(
-        ChildProcess.make("taskkill", ["/PID", String(pid), "/T", "/F"]),
+        ChildProcess.make(windowsSystem32Path(yield* HostProcess.Environment, "taskkill.exe"), [
+          "/PID",
+          String(pid),
+          "/T",
+          "/F",
+        ]),
       );
       const outputFiber = yield* Stream.decodeText(taskkill.all).pipe(
         Stream.mkString,

@@ -12,6 +12,7 @@ import * as Stream from "effect/Stream";
 import * as ChildProcess from "effect/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as HostProcess from "@onicode/shared/HostProcess";
+import { windowsSystem32Path } from "@onicode/shared/windowsSystem";
 import { resolveSpawnCommand } from "@onicode/shared/shell";
 import {
   MAX_TOOL_OUTPUT_IMAGES,
@@ -277,7 +278,12 @@ export const makePiRpcConnection = Effect.fnUntraced(function* (options: PiRpcSp
   const terminateWindowsTree = Effect.gen(function* () {
     if (hasExited()) return;
     const taskkill = yield* spawner.spawn(
-      ChildProcess.make("taskkill", ["/PID", String(child.pid), "/T", "/F"]),
+      ChildProcess.make(windowsSystem32Path(yield* HostProcess.Environment, "taskkill.exe"), [
+        "/PID",
+        String(child.pid),
+        "/T",
+        "/F",
+      ]),
     );
     yield* taskkill.exitCode;
   }).pipe(Effect.scoped, Effect.ignore);

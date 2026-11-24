@@ -3,6 +3,7 @@ import { m } from "../i18n/messages";
 import { thrownErrorMessage } from "@onicode/client-runtime/errors";
 import { useGT, useMessages } from "gt-react";
 import { ChildThreadApprovals } from "./chat/ChildThreadApprovals";
+import { draftSupportedRuntimeModes } from "./chat/runtimeModeConfig";
 import { workspaceAreaProps } from "../lib/workspaceFocus";
 import { sourceControlClients } from "@onicode/client-runtime/source-control-clients";
 import { resolveNewThreadModelSelection } from "@onicode/shared/usageLimits";
@@ -4072,9 +4073,11 @@ export default function ChatView(props: ChatViewProps) {
                                           <ComposerContextPermissions
                                             environmentId={environmentId}
                                             runtimeMode={runtimeMode}
-                                            supportedRuntimeModes={
-                                              activeProviderStatus?.supportedRuntimeModes
-                                            }
+                                            supportedRuntimeModes={draftSupportedRuntimeModes(
+                                              activeProviderStatus?.supportedRuntimeModes,
+                                              multipleModelSelections,
+                                              providerStatuses,
+                                            )}
                                             onRuntimeModeChange={handleRuntimeModeChangeStable}
                                           />
                                         ),

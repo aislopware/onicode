@@ -3543,3 +3543,27 @@ de6315aea2	take	fix(server): Antigravity models keep their own thinking levels a
 44f0a5858e	take	fix(client-runtime): a leading env-setup eval no longer hides the command label (#41731)
 352262149c	take	fix(server): workflow step results no longer end in half an emoji (#41723)
 58b7878eb7	take	fix(desktop): form submissions opened in a new tab keep their data (#41708)
+832e359558	skip	already on main: the same one-line rename landed with the port of t3code@238881669a (ThreadSettlementService.test.ts)
+17dd10ebc9	take	fix(server): a desktop backend whose launcher died exits even if shutdown hangs (#41687)
+d4d08aed56	take	taken; http.ts import conflict kept Onicode's refreshMcpAppCsp/htmlRender imports; two Onicode-only tests adapted (CSP-refresh snapshot expects the document bootstrap; favicon link test matches Onicode's opened-file result)
+ae3352e051	take	fix(server): checkpoints work when a Git path ends in a space (#41725)
+b654fc27ba	take	fix(server): automatic port selection checks the address the server binds (#41730)
+8217726c10	take	taken; conflict: Onicode moved fanout publication into publishPrivateObjects, which skips the private lfs directory; publishLfsObjects runs before it
+5ab8dc4bfc	take	fix(mobile): show every image when Markdown puts one per line (#30280)
+0d6fe2141a	take	taken; contracts keep Onicode's attempt userMessageId beside the new optional startedModes (old mobile ignores it); upstream's webhook-only parts (WEBHOOK_ROUTE_PREFIX, summarizeScheduledTask webhook URL) dropped; replay test uses an interval schedule and mocks Onicode's base-branch lookup
+7dd35d324d	take	taken without its guest-link part (guest links are removed): the link-code rule only; docs keep Onicode's text with the new rule, without T3 Connect or the dev credential section; 06_t3-connect.md missing (removed)
+2dd323463a	take	taken; htmlRender keeps Onicode's precomputed BOOTSTRAP and HEAD_OPEN with upstream's linear patterns; 413 test without the removed browser-session route; cloud/http.test.ts missing (removed); speech routes keep their own larger limit
+844d491ff8	take	taken without the Codex welcome return URL and the startup browser pairing URL (no web UI in Onicode); kept Onicode's headless address choice (LAN/tailnet/IPv6 preference) with upstream's bound-loopback fallback instead of localhost; three Onicode-only expectations updated
+32653fe18c	take	fix(ssh): Windows password sign-in uses a helper each ssh client starts directly (#41753)
+f30874fef7	take	taken without its webhook-token parts (webhooks and relay removed: webhookRoute, webhookUrlToken, HookForwarder, MCP/ThreadSearch redaction); GitLab: kept Onicode's host matching (GITLAB_URI/GL_HOST, API-scheme ports, //host references, unreachable errors) and adopted upstream's explicit --host and checkout-remote token withholding into it; tunnel log made owner-only without ONICODE_NO_BROWSER (no browser in Onicode)
+9ec2d4b067	take	fix(cli): theme set publishes the file named on the command line (#41737)
+e65b19d15e	take	kept Onicode's lease signature and deleted-thread re-read inside the lease; one shared ThreadWorktreeRestore layer so the send-time hand-over reaches turn start; task-folder restores still run no setup
+9563012455	skip	kept Onicode's host-PATH rebuild (4c0b3478fc, #316): it rebuilds missing instances on any PATH change, including the login-shell re-read on headless servers and Windows registry PATH, where upstream's watcher only follows the desktop shell snapshot; upstream's in-flight race cases queued as a follow-up
+5e62206e7d	take	taken; isElectron gates dropped (desktop-only renderer, no env.ts), PickPreload keeps Onicode's shadow-root picking beside the page-world bridge
+78cffe29ec	take	taken; GitLab approval now also sends the expected head (GitLab answers 409 on a moved head), docs name only the desktop app
+46f360d8dd	take	taken; web and mobile reread only the names query (servers that answer only the full list are not reread, since listing asks every linked machine), hostedThreadLink import dropped
+eecb58c6d6	take	taken without the hosted pairing confirmation (PairingRouteSurface, its strings and remote-access doc: hosted web app removed); the settings fallback's new opt-ins (agent browser access off, approval-required) folded into Onicode's inline fallback, requireConnectDeviceApproval dropped (T3 Connect)
+7c95302f7a	skip	T3's release pipeline: EAS preview/production, Vercel web/marketing deploys, npm trusted publisher, record-build-tag. kept Onicode's setup-ci-deps for now: setup-vp saves its toolchain cache in the post step, after project code ran, so saving it before install is a follow-up
+784da01b29	take	fix(web): Esc in Find in PDF clears it without closing the sheet (#41749)
+e3b79cd0bf	take	taken; the cloud/ boot service and pinned runtime hunks applied to Onicode's service/ copies, Onicode's issue-link fallback in useOpenPullRequest also opens web links only
+0858096472	take	fix: Forgejo and GitCafe merges carry the expected head commit (#41773)

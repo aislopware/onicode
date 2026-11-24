@@ -8,6 +8,10 @@ The environment issues its own sessions and enforces their capabilities. See
 - **Narrowing only.** Pairing delegates a set of scopes. Exchanging a bootstrap credential can
   narrow a grant, never widen it. Creating another pairing link requires both `access:write` and
   every scope being delegated. Client labels and device metadata have no authorization role.
+- **`access:write` hands out what the session holds and revokes anything.** Every route that
+  returns a credential to the caller requires `access:write` and every scope that credential
+  carries: a pairing link and a link code from a linked environment.
+  Revoking is not capped by the caller's scopes.
 - **Why the default grant includes access management.** `terminal:operate` and
   `orchestration:operate` already grant OS-user execution (which can invoke `onicode auth session issue`),
   so withholding access management from the default grant would not be a real boundary. Narrower
@@ -56,7 +60,8 @@ The environment issues its own sessions and enforces their capabilities. See
 - **Peer-link client pairing.** Only a full-access peer link may mint a one-time client pairing on
   the linked environment (its agents can already run `onicode auth pairing create`). The linked side
   enforces this itself, and the operation stays a human-triggered RPC/HTTP route rather than an MCP
-  tool.
+  tool. The same route mints a code that links another environment at a chosen access level, and
+  the linking side's RPC requires the caller to hold that level's scopes.
 - **The issuer comes from the request.** The issuer URL uses Host and `X-Forwarded-Proto`, so one
   server answers links over loopback, the LAN, and Tailscale Serve. A proxy that rewrites Host or
   drops the protocol header breaks linking.

@@ -11,7 +11,9 @@ import {
   AuthSourceControlWriteScope,
   AuthTerminalOperateScope,
   type AuthEnvironmentScope,
+  mcpClientScopes,
 } from "./auth.ts";
+import { PeerLinkLinkPairingInput } from "./peerLink.ts";
 import { ORCHESTRATION_V2_WS_METHODS } from "./orchestrationV2.ts";
 import { WS_METHODS } from "./rpc.ts";
 
@@ -111,6 +113,7 @@ const decodeStackedAction = Schema.decodeUnknownSync(GitRunStackedActionInput);
 const isMcpSignInAction = Schema.is(
   Schema.Struct({ action: Schema.Literals(["authenticate", "clear-auth"]) }),
 );
+const decodeLinkPairing = Schema.decodeUnknownSync(PeerLinkLinkPairingInput);
 
 export function clientRpcRequiredScopes(
   method: string,
@@ -132,6 +135,11 @@ export function clientRpcRequiredScopes(
   // Signing in or out of an MCP server changes a stored credential, as provider.mcpSignIn does.
   if (method === WS_METHODS.providerSessionMcpServerAction && isMcpSignInAction(input))
     return [AuthOrchestrationOperateScope, AuthProvidersManageScope];
+  // Handing out access takes holding it: the caller gets back a credential it can spend itself.
+  if (method === WS_METHODS.peerLinksPairLink && input !== undefined) {
+    const held = mcpClientScopes(decodeLinkPairing(input).access);
+    return [AuthAccessWriteScope, ...held];
+  }
   return Object.hasOwn(CLIENT_GUARDED_RPC_SCOPES, method)
     ? [CLIENT_GUARDED_RPC_SCOPES[method as ClientGuardedRpcTag]]
     : [];

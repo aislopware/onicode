@@ -34,7 +34,7 @@ Send `/compact` to compact a thread yourself.
 Leave **Server URL** empty to let Onicode start OpenCode locally. A password in
 provider settings applies to both that server and Onicode's connection. With no
 password setting, the local server uses `OPENCODE_SERVER_PASSWORD` from its
-environment.
+environment, and with neither Onicode generates a password for it.
 
 To use an existing OpenCode server, set **Server URL** and its password in provider
 settings. Onicode uses only that configured password for an external server; it

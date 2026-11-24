@@ -22,6 +22,7 @@ import {
   type ThreadPullRequestKey,
 } from "@onicode/contracts";
 import type { ReviewGuideStackLayer } from "@onicode/provider-core/server/textGeneration";
+import { withoutRemoteUrlCredentials } from "@onicode/shared/cloneUrl";
 import { resolveProjectSettings } from "@onicode/shared/projectSettings";
 import { sourceControlDefinitions } from "../sourceControl/sourceControlDefinitions.ts";
 
@@ -170,7 +171,11 @@ const make = Effect.gen(function* () {
                 args,
               })
               .pipe(
-                Effect.map((result) => result.stdout.split("\n")[0]?.trim() === locator.remoteUrl),
+                Effect.map(
+                  (result) =>
+                    withoutRemoteUrlCredentials(result.stdout.split("\n")[0]?.trim() ?? "") ===
+                    locator.remoteUrl,
+                ),
                 Effect.orElseSucceed(() => false),
               ),
           { concurrency: "unbounded" },

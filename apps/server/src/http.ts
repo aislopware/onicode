@@ -6,6 +6,7 @@ import {
 } from "@onicode/contracts";
 import {
   injectMcpAppCookieBootstrap,
+  injectMcpAppDocumentBootstrap,
   injectMcpAppThemeBootstrap,
   refreshMcpAppCsp,
 } from "@onicode/shared/mcpApp";
@@ -14,6 +15,7 @@ import {
   findStoredHtmlRenderBootstrap,
 } from "@onicode/shared/htmlRender";
 import { decodeOtlpTraceRecords } from "@onicode/shared/observability";
+import * as ByteSize from "effect/ByteSize";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -32,6 +34,7 @@ import {
   HttpServerRequest,
   HttpServerRespondable,
 } from "effect/http";
+import * as HttpIncomingMessage from "effect/http/HttpIncomingMessage";
 import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 import { OtlpTracer, OtlpSerialization } from "effect/observability";
 
@@ -73,6 +76,13 @@ const isSafeInlineMediaMimeType = (mimeType: string): boolean =>
   DOWNLOAD_MIME_TYPE_PATTERN.test(mimeType) && /^(?:audio|video)\//i.test(mimeType);
 const isSafeInlineDocumentMimeType = (mimeType: string): boolean =>
   mimeType.toLowerCase() === "application/pdf" || mimeType.toLowerCase() === "text/html";
+
+// XML types render as documents, so they get the same policy as SVG.
+const isScriptableXmlPath = (filePath: string): boolean =>
+  Option.match(Mime.getType(filePath), {
+    onNone: () => false,
+    onSome: (mimeType) => /(?:\/xml(?:$|-)|\+xml$)/.test(mimeType),
+  });
 
 export function downloadContentDisposition(fileName?: string): string {
   if (fileName === undefined) {
@@ -131,7 +141,7 @@ export function assetResponseHeaders(
                 "Content-Security-Policy": HTML_CONTENT_SECURITY_POLICY,
               }
             : {}),
-    ...(!options?.download && lowerPath.endsWith(".svg")
+    ...(!options?.download && isScriptableXmlPath(lowerPath)
       ? { "Content-Security-Policy": SVG_CONTENT_SECURITY_POLICY }
       : {}),
   };
@@ -190,6 +200,8 @@ export const assetFileResponse = Effect.fn("assetFileResponse")(function* (
       refreshMcpAppCsp,
       injectMcpAppThemeBootstrap,
       injectMcpAppCookieBootstrap,
+      // Applied last so it is the document's first script.
+      injectMcpAppDocumentBootstrap,
       (html) => new TextEncoder().encode(html),
     );
     headers["Content-Length"] = String(body.byteLength);
@@ -299,6 +311,12 @@ export const assetFileResponse = Effect.fn("assetFileResponse")(function* (
   }
   return yield* HttpServerResponse.file(asset.path, { status, offset, bytesToRead, headers });
 });
+
+// The default body limit for API routes. Routes that take more set their own limit.
+export const API_MAX_BODY_BYTES = 1024 * 1024;
+export const layerApiBodyLimit = HttpRouter.middleware(
+  Effect.provideService(HttpIncomingMessage.MaxBodySize, ByteSize.bytes(API_MAX_BODY_BYTES)),
+).layer;
 
 export const layerHttpCompression = HttpRouter.middleware(HttpMiddleware.compression(), {
   global: true,

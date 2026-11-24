@@ -646,6 +646,7 @@ export class GitLabPullRequestCli extends Context.Service<
       readonly verdict: PullRequestReviewVerdict;
       readonly body: string;
       readonly comments: ReadonlyArray<PullRequestReviewCommentDraft>;
+      readonly expectedHeadSha?: string;
     }) => Effect.Effect<void, GitLabPullRequestCliError>;
 
     readonly replyToDiscussion: (input: {
@@ -3014,6 +3015,23 @@ export const make = Effect.gen(function* () {
       // leaves earlier ones posted. Requesting changes (GitLab 18.9+) goes first so an older
       // server fails before any comment lands; approval goes last so a half-sent review never
       // approves.
+      const postsBeforeApproval =
+        input.verdict === "request-changes" ||
+        input.comments.length > 0 ||
+        input.body.trim().length > 0;
+      // Only /approve takes a SHA, so a pinned review checks the head before posting anything.
+      const pinnedRefs =
+        input.expectedHeadSha !== undefined && postsBeforeApproval
+          ? Option.some(yield* getDiffRefs(input))
+          : Option.none<GitLabDiffRefs>();
+      if (Option.isSome(pinnedRefs) && pinnedRefs.value.headSha !== input.expectedHeadSha) {
+        return yield* new GitLabMutationRefusedError({
+          command: "glab",
+          cwd: input.cwd,
+          operation: "submitReview",
+          reasons: [`the head is now ${pinnedRefs.value.headSha}, not ${input.expectedHeadSha}`],
+        });
+      }
       if (input.verdict === "request-changes") {
         // GitLab keeps the verdict on the reviewer, so the viewer joins the reviewers first.
         const viewer = yield* viewerUsername(input);
@@ -3034,7 +3052,7 @@ export const make = Effect.gen(function* () {
         });
       }
       if (input.comments.length > 0) {
-        const refs = yield* getDiffRefs(input);
+        const refs = Option.isSome(pinnedRefs) ? pinnedRefs.value : yield* getDiffRefs(input);
         const rangedFileHeaders = input.comments.flatMap((comment) =>
           comment.startPosition !== undefined &&
           (comment.startPosition.kind !== "context" || comment.position.kind !== "context")
@@ -3094,6 +3112,11 @@ export const make = Effect.gen(function* () {
           host: input.host,
           path: `${mergeRequest}/approve`,
           method: "POST",
+          // GitLab answers 409 when the head is no longer this commit.
+          ...(input.expectedHeadSha === undefined
+            ? {}
+            : // @effect-diagnostics-next-line globalJsonInEffect:off
+              { stdin: JSON.stringify({ sha: input.expectedHeadSha }) }),
         });
       }
     }),

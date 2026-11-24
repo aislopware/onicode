@@ -108,6 +108,8 @@ vi.mock(import("~/state/peerLinks"), async (original) => {
   ).pipe(AtomModule.swr({ staleTime: 10_000, revalidateOnMount: true }));
   server.list = list;
   const denied = AtomModule.make(false);
+  // Linking through another environment needs the session there to hold the access it hands out.
+  const allowed = AtomModule.make(true);
   return {
     ...actual,
     useLinkThroughRoutes: (() => server.routes) as never,
@@ -120,6 +122,7 @@ vi.mock(import("~/state/peerLinks"), async (original) => {
       list: (() => list) as never,
       link: { ...actual.peerLinkEnvironment.link, permissionAtom: () => denied },
       unlink: { ...actual.peerLinkEnvironment.unlink, permissionAtom: () => denied },
+      pairLink: { ...actual.peerLinkEnvironment.pairLink, permissionAtom: () => allowed },
     },
   };
 });
