@@ -5,6 +5,7 @@ import {
   type ServerConfig,
   ProviderInstanceId,
   ScheduledTaskId,
+  type ModelSelection,
   type ScheduledTask,
   ThreadId,
 } from "@onicode/contracts";
@@ -21,6 +22,7 @@ import {
   scheduledTaskDefaultModel,
   defaultScheduledTaskProjectId,
   hasDraftChanges,
+  modelSelectionKey,
   editorLeaveDecision,
   matchesScheduledTaskScope,
   scheduleFromDraft,
@@ -222,8 +224,7 @@ describe("a scheduled task save refused by another client's change", () => {
       projectId: "moved",
       workspaceMode: "existing_worktree",
       existingWorktreePath: "/checkout",
-      modelKey: "claude:opus",
-      baseModelSelection: moved.modelSelection,
+      modelSelection: moved.modelSelection,
     });
   });
 });
@@ -275,11 +276,18 @@ describe("unsaved scheduled task edits", () => {
     expect(hasDraftChanges(draft, current, "codex:gpt-5")).toBe(expected);
   });
   it("counts picking the model already shown as the default as no change", () => {
-    const blank = { ...draft, modelKey: "" };
-    expect(hasDraftChanges(blank, { ...draft, modelKey: "codex:gpt-5" }, "codex:gpt-5")).toBe(
-      false,
+    const codex = ProviderInstanceId.make("codex");
+    const shown = modelSelectionKey({ instanceId: codex, model: "gpt-5" });
+    const blank = { ...draft, modelSelection: null };
+    const pick = (model: string, options?: ModelSelection["options"]) => ({
+      ...draft,
+      modelSelection: { instanceId: codex, model, ...(options ? { options } : {}) },
+    });
+    expect(hasDraftChanges(blank, pick("gpt-5"), shown)).toBe(false);
+    expect(hasDraftChanges(blank, pick("gpt-6"), shown)).toBe(true);
+    expect(hasDraftChanges(blank, pick("gpt-5", [{ id: "effort", value: "high" }]), shown)).toBe(
+      true,
     );
-    expect(hasDraftChanges(blank, { ...draft, modelKey: "codex:gpt-6" }, "codex:gpt-5")).toBe(true);
   });
 });
 

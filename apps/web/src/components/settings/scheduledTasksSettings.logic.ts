@@ -128,11 +128,9 @@ export interface DraftState {
   readonly baseRef: string;
   readonly startFromOrigin: boolean;
   readonly existingWorktreePath: string;
-  readonly modelKey: string;
+  readonly modelSelection: ModelSelection | null;
   readonly runtimeMode: RuntimeMode;
   readonly interactionMode: ProviderInteractionMode;
-  /** Retain the source selection's provider options when the picker leaves instanceId:model unchanged. */
-  readonly baseModelSelection: ModelSelection | null;
   /** The task as the form loaded it, so a save is refused once another client changed it. */
   readonly saved: ScheduledTask | null;
 }
@@ -223,10 +221,9 @@ export function taskToDraft(task: ScheduledTask): DraftState {
       task.workspaceStrategy.type === "existing_worktree"
         ? task.workspaceStrategy.worktreePath
         : "",
-    modelKey: `${task.modelSelection.instanceId}:${task.modelSelection.model}`,
+    modelSelection: task.modelSelection,
     runtimeMode: task.runtimeMode,
     interactionMode: task.interactionMode,
-    baseModelSelection: task.modelSelection,
     saved: task,
   };
 }
@@ -293,12 +290,19 @@ export function rebaseDraft(draft: DraftState, current: ScheduledTask): DraftSta
           existingWorktreePath: now.existingWorktreePath,
         }
       : {}),
-    ...(untouched("modelKey") ? { modelKey: now.modelKey } : {}),
-    baseModelSelection: now.baseModelSelection,
+    ...(draft.modelSelection === null ||
+    modelSelectionKey(draft.modelSelection) === modelSelectionKey(draft.saved.modelSelection)
+      ? { modelSelection: now.modelSelection }
+      : {}),
     ...(untouched("runtimeMode") ? { runtimeMode: now.runtimeMode } : {}),
     ...(untouched("interactionMode") ? { interactionMode: now.interactionMode } : {}),
     saved: now.saved,
   };
+}
+
+/** Identity of a model selection, its options included, for change detection. */
+export function modelSelectionKey(selection: ModelSelection): string {
+  return `${selection.instanceId}:${selection.model}:${JSON.stringify(selection.options ?? [])}`;
 }
 
 // Fields a mode leaves behind when the user switches away and back are not edits.
@@ -306,7 +310,9 @@ function relevantDraftFields(draft: DraftState, defaultModelKey: string) {
   const { weekdays: _weekdays, saved: _saved, ...fields } = draft;
   return {
     ...fields,
-    modelKey: draft.modelKey || defaultModelKey,
+    modelSelection: draft.modelSelection
+      ? modelSelectionKey(draft.modelSelection)
+      : defaultModelKey,
     intervalMinutes: draft.scheduleMode === "interval" ? draft.intervalMinutes : "",
     timeOfDay: draft.scheduleMode === "fixed" ? draft.timeOfDay : "",
     runAt: draft.scheduleMode === "once" ? draft.runAt : "",

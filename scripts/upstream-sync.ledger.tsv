@@ -3568,3 +3568,4 @@ eecb58c6d6	take	taken without the hosted pairing confirmation (PairingRouteSurfa
 e3b79cd0bf	take	taken; the cloud/ boot service and pinned runtime hunks applied to Onicode's service/ copies, Onicode's issue-link fallback in useOpenPullRequest also opens web links only
 0858096472	take	fix: Forgejo and GitCafe merges carry the expected head commit (#41773)
 69c23c25e8	take	taken as is
+6205330563	take	taken with adaptation: kept Onicode's saved/rebase and unsaved-change check, now keyed on the full selection incl. options; no webhook fields
