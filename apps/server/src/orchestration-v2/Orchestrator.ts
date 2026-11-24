@@ -17746,14 +17746,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       if (stored.event.type !== "run.updated") return;
       const threadId = stored.event.threadId;
       const run = stored.event.payload;
-      if (yield* awaitsCheckpointCapture(run)) yield* reactOnceCaptureGivesUp(stored, run);
+      const captureAwaited = yield* awaitsCheckpointCapture(run);
       // Take parent and child locks sequentially, never nested: delegation holds the parent
       // while writing child events, so nesting parent inside child would invert the order.
       // The keyed semaphores are neither reentrant nor deadlock-aware.
-      if (
-        delegatedTaskTerminalStatus(run.status) !== null &&
-        !(yield* awaitsCheckpointCapture(run))
-      ) {
+      if (delegatedTaskTerminalStatus(run.status) !== null && !captureAwaited) {
         // Before the parent hears of the failure: a pending continuation keeps the task open.
         if (run.status === "failed" && run.restartContinuationOfRunId !== undefined) {
           yield* threadDispatch.withLock(threadId, retryContinuationStart(threadId, run.id)).pipe(
@@ -17828,6 +17825,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           );
       }
       yield* updateDelegatedParentTask(threadId, run.id);
+      if (captureAwaited) yield* reactOnceCaptureGivesUp(stored, run);
     },
     (effect, stored) =>
       effect.pipe(

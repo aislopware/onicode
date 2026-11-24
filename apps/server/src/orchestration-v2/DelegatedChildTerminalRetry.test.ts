@@ -1,4 +1,4 @@
-import { assert, it } from "@effect/vitest";
+import { assert, it, vi } from "@effect/vitest";
 import {
   CommandId,
   MessageId,
@@ -14,6 +14,7 @@ import * as IdAllocator from "@onicode/provider-core/server/IdAllocator";
 import * as ProviderAdapter from "@onicode/provider-core/server/ProviderAdapter";
 import { checkpointWorkspace } from "@onicode/provider-testing/replayWorkspace";
 import * as DateTime from "effect/DateTime";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Option from "effect/Option";
@@ -618,6 +619,21 @@ it.effect.each(["lands", "gives up"] as const)(
       return yield* Effect.gen(function* () {
         const { orchestrator, watch, settle, task, childThreadId } = yield* start;
         const childRun = (yield* orchestrator.getThreadProjection(childThreadId)).runs[0]!;
+        const outbox = yield* EffectOutbox.EffectOutboxV2;
+        const effectId = RunExecutionService.checkpointCaptureEffectId(
+          childRun.id,
+          childRun.activeAttemptId,
+        );
+        // The run's reaction has seen the capture pending.
+        const captureWatched = yield* Deferred.make<void>();
+        const awaitSettled = outbox.awaitSettled;
+        using _watch = vi
+          .spyOn(outbox, "awaitSettled")
+          .mockImplementation((id) =>
+            (id === effectId ? Deferred.succeed(captureWatched, undefined) : Effect.void).pipe(
+              Effect.andThen(awaitSettled(id)),
+            ),
+          );
         const childEnded = yield* watch(
           (event) =>
             event.type === "run.updated" &&
@@ -647,11 +663,7 @@ it.effect.each(["lands", "gives up"] as const)(
               event.payload.id === task.id &&
               event.payload.status === "completed",
           );
-          const outbox = yield* EffectOutbox.EffectOutboxV2;
-          const effectId = RunExecutionService.checkpointCaptureEffectId(
-            childRun.id,
-            childRun.activeAttemptId,
-          );
+          yield* Deferred.await(captureWatched);
           const workerId = "capture-gives-up";
           for (;;) {
             const claimed = yield* outbox.claimNext({ workerId });
