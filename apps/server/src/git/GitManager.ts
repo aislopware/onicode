@@ -35,7 +35,9 @@ import {
   type VcsStatusLocalResult,
   type VcsStatusRemoteResult,
   VcsStatusResult,
+  isDeliveredProviderTurn,
   ModelSelection,
+  type OrchestrationV2ThreadProjection,
   type OrchestrationV2TurnItem,
   type ProjectId,
   PROVIDER_DISPLAY_NAMES,
@@ -259,6 +261,20 @@ const PR_THREAD_CONTEXT_BYTES = 16_000;
 const NO_THREAD_CONTEXT = { history: undefined, producedBy: undefined };
 const PR_THREAD_COMMAND_OUTPUT_CHARS = 2_000;
 const isSourceControlProviderError = Schema.is(SourceControlProviderError);
+// A run starts before its provider takes the prompt, and a refused start never reached the model.
+const runsTheProviderTook = (
+  records: Pick<OrchestrationV2ThreadProjection, "runs" | "attempts" | "providerTurns">,
+) => {
+  const attemptIds = new Set(
+    records.providerTurns.flatMap((turn) =>
+      turn.runAttemptId !== null && isDeliveredProviderTurn(turn) ? [turn.runAttemptId] : [],
+    ),
+  );
+  const runIds = new Set(
+    records.attempts.flatMap((attempt) => (attemptIds.has(attempt.id) ? [attempt.runId] : [])),
+  );
+  return records.runs.filter((run) => runIds.has(run.id));
+};
 
 /**
  * Throttled lookups fail fast, so a flat failure TTL would retry faster than a healthy
@@ -876,7 +892,8 @@ export const make = Effect.gen(function* () {
   const readThreadContext = Effect.fnUntraced(
     function* (threadId: ThreadId | undefined) {
       if (threadId === undefined) return NO_THREAD_CONTEXT;
-      const { thread, runs, visibleTurnItems } = yield* threads.getThreadProjection(threadId);
+      const projection = yield* threads.getThreadProjection(threadId);
+      const { thread, visibleTurnItems } = projection;
       const selected = selectHistory({
         messages: visibleTurnItems.flatMap(
           ({ item }) => historicalMessage(limitCommandOutput(item)) ?? [],
@@ -892,15 +909,15 @@ export const make = Effect.gen(function* () {
           visibleTurnItems.flatMap(({ item }) => (item.threadId === threadId ? [] : item.threadId)),
         ),
         (ancestorId) =>
-          threads.getThreadRecords(ancestorId, ["runs"]).pipe(
-            Effect.map((records) => records.runs),
+          threads.getThreadRecords(ancestorId, ["runs", "attempts", "providerTurns"]).pipe(
+            Effect.map(runsTheProviderTook),
             Effect.orElseSucceed(() => []),
           ),
       );
       // Visibility already hides local rollbacks; an ancestor's later rollback leaves the fork's
       // inherited work in place. A queued run shows its message before it starts.
-      const runSelections = [...runs, ...ancestorRuns.flat()]
-        .filter((run) => visibleRunIds.has(run.id) && run.startedAt !== null)
+      const runSelections = [...runsTheProviderTook(projection), ...ancestorRuns.flat()]
+        .filter((run) => visibleRunIds.has(run.id))
         .map((run) => run.modelSelection);
       const providers = yield* providerRegistry.getProviders;
       const producedBy = Arr.dedupeWith(

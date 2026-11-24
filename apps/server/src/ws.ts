@@ -2605,7 +2605,7 @@ export const layerWsRpc = (
           /* Request instrumentation already owns the span; keep this helper in that context. */
           Effect.fnUntraced(
             function* (input) {
-              const projection = yield* threadManagement.getThreadRecords(input.threadId, [
+              const projection = yield* threadManagement.getLiveThreadRecords(input.threadId, [
                 "providerThreads",
               ]);
               const providerThread =

@@ -713,7 +713,6 @@ RUNNER_CHANGED=0
 if [ ! -f "$RUNNER_FILE" ] || ! cmp -s "$RUNNER_NEXT" "$RUNNER_FILE"; then
   RUNNER_CHANGED=1
 fi
-mv "$RUNNER_NEXT" "$RUNNER_FILE"
 # Desktops with the same connection details share this record. A server
 # another desktop launched is only borrowed: it is neither replaced nor
 # claimed here, and that desktop's ID stays on record.
@@ -724,9 +723,22 @@ if [ -n "$LAUNCHER_ID" ] && [ -n "$RECORDED_LAUNCHER" ] && [ "$RECORDED_LAUNCHER
 elif [ -n "$LAUNCHER_ID" ]; then
   printf '%s\\n' "$LAUNCHER_ID" >"$STATE_DIR/launcher"
 fi
+# The recorded runner is the launcher's: replacing it would read as an update on
+# that desktop's next reconnect and restart its server. A borrowing launch runs
+# its own copy until it starts or adopts a server.
+LAUNCH_RUNNER="$RUNNER_NEXT"
+install_runner() {
+  if [ "$LAUNCH_RUNNER" = "$RUNNER_NEXT" ]; then
+    mv "$RUNNER_NEXT" "$RUNNER_FILE"
+    LAUNCH_RUNNER="$RUNNER_FILE"
+  fi
+}
+if [ "$FOREIGN_LAUNCHER" -eq 0 ]; then
+  install_runner
+fi
 pick_port() {
   if [ "$ONICODE_ARCHIVE_MODE" = "1" ]; then
-    "$RUNNER_FILE" __ssh-helper pick-port "$PORT_FILE" "@@ONICODE_DEFAULT_REMOTE_PORT@@" "@@ONICODE_REMOTE_PORT_SCAN_WINDOW@@"
+    "$LAUNCH_RUNNER" __ssh-helper pick-port "$PORT_FILE" "@@ONICODE_DEFAULT_REMOTE_PORT@@" "@@ONICODE_REMOTE_PORT_SCAN_WINDOW@@"
     return
   fi
   node - "$PORT_FILE" "@@ONICODE_DEFAULT_REMOTE_PORT@@" "@@ONICODE_REMOTE_PORT_SCAN_WINDOW@@" <<'NODE'
@@ -735,7 +747,7 @@ NODE
 }
 wait_ready() {
   if [ "$ONICODE_ARCHIVE_MODE" = "1" ]; then
-    "$RUNNER_FILE" __ssh-helper wait-ready "$REMOTE_PORT" "$1" "@@ONICODE_READY_PROBE_TIMEOUT_MS@@"
+    "$LAUNCH_RUNNER" __ssh-helper wait-ready "$REMOTE_PORT" "$1" "@@ONICODE_READY_PROBE_TIMEOUT_MS@@"
     return
   fi
   node - "$REMOTE_PORT" "$1" "@@ONICODE_READY_PROBE_TIMEOUT_MS@@" <<'NODE'
@@ -761,7 +773,7 @@ server_running() {
 # An older client replacing a same-or-newer server would run below the database's migrations.
 keeps_running_server() {
   [ "$ONICODE_ARCHIVE_MODE" = "1" ] &&
-    "$RUNNER_FILE" __ssh-helper keep-server "$DEFAULT_RUNTIME_FILE" "$REMOTE_PID" >/dev/null 2>&1
+    "$LAUNCH_RUNNER" __ssh-helper keep-server "$DEFAULT_RUNTIME_FILE" "$REMOTE_PID" >/dev/null 2>&1
 }
 @@ONICODE_MANAGED_SERVER_RUNNING_SCRIPT@@
 # The server publishes its runtime record only after it answers, so one that
@@ -781,7 +793,7 @@ managed_server_stopping() {
 # it stops or idles behind another server.
 home_owned() {
   if [ "$ONICODE_ARCHIVE_MODE" = "1" ]; then
-    "$RUNNER_FILE" __ssh-helper home-owned "$DEFAULT_SERVER_HOME" 2>/dev/null
+    "$LAUNCH_RUNNER" __ssh-helper home-owned "$DEFAULT_SERVER_HOME" 2>/dev/null
     return
   fi
   node - "$DEFAULT_SERVER_HOME" 2>/dev/null <<'NODE'
@@ -810,7 +822,7 @@ NODE
 }
 resolve_default_runtime_port() {
   if [ "$ONICODE_ARCHIVE_MODE" = "1" ]; then
-    "$RUNNER_FILE" __ssh-helper runtime-port "$DEFAULT_RUNTIME_FILE"
+    "$LAUNCH_RUNNER" __ssh-helper runtime-port "$DEFAULT_RUNTIME_FILE"
     return
   fi
   node - "$DEFAULT_RUNTIME_FILE" <<'NODE'
@@ -837,7 +849,7 @@ NODE
 # This script ships with the SSH client; older clients do not honor this marker.
 update_remaining() {
   if [ "$ONICODE_ARCHIVE_MODE" = "1" ]; then
-    "$RUNNER_FILE" __ssh-helper update-remaining "$DEFAULT_SERVER_HOME/runtime/@@ONICODE_UPDATE_MARKER_FILE@@"
+    "$LAUNCH_RUNNER" __ssh-helper update-remaining "$DEFAULT_SERVER_HOME/runtime/@@ONICODE_UPDATE_MARKER_FILE@@"
     return
   fi
   node - "$DEFAULT_SERVER_HOME/runtime/@@ONICODE_UPDATE_MARKER_FILE@@" <<'NODE'
@@ -920,6 +932,7 @@ if adopt_default_server && [ -n "$ADOPTED_PID" ] && [ -n "$LAUNCHER_ID" ]; then
     rm -f "$SIBLING_DIR/pid"
     printf '%s\\n' "$LAUNCHER_ID" >"$STATE_DIR/launcher"
     FOREIGN_LAUNCHER=0
+    install_runner
     RUNNER_CHANGED=1
     if cmp -s "$RUNNER_FILE" "$SIBLING_DIR/run-onicode.sh"; then
       RUNNER_CHANGED=0
@@ -1042,6 +1055,7 @@ if [ -z "$REMOTE_PORT" ]; then
   # earlier launch can still hold the old log open and keep writing to it.
   rm -f "$LOG_FILE"
   (umask 077 && : >"$LOG_FILE")
+  install_runner
   nohup "$RUNNER_FILE" serve --host 127.0.0.1 --port "$REMOTE_PORT" --base-dir "$DEFAULT_SERVER_HOME" >>"$LOG_FILE" 2>&1 < /dev/null &
   REMOTE_PID="$!"
   printf '%s\\n' "$REMOTE_PID" >"$PID_FILE"
@@ -1093,9 +1107,11 @@ printf '{"remotePort":%s,"serverKind":"%s"}\\n' "$REMOTE_PORT" "\${REMOTE_MANAGE
 const REMOTE_PAIRING_SCRIPT = `set -eu
 STATE_DIR="$HOME/.onicode/ssh-launch/@@ONICODE_STATE_KEY@@"
 DEFAULT_SERVER_HOME="$HOME/.onicode"
-RUNNER_FILE="$STATE_DIR/run-onicode.sh"
+# Not the launch's run-onicode.sh: a changed runner there reads as an update and restarts the server.
+RUNNER_FILE="$STATE_DIR/run-onicode.pairing.$$"
 @@ONICODE_ENSURE_ONI_HOME_SCRIPT@@
 mkdir -p "$STATE_DIR"
+trap 'rm -f "$RUNNER_FILE"' EXIT
 cat >"$RUNNER_FILE" <<'SH'
 @@ONICODE_RUNNER_SCRIPT@@
 SH

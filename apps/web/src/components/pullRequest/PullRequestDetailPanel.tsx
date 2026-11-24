@@ -151,6 +151,7 @@ import {
   resolvePullRequestPrimaryControl,
   allowedPullRequestMergeMethods,
   allowsSinglePullRequestMerge,
+  allowsSinglePullRequestAutoMergeCancel,
   canDeletePullRequestBranch,
   isPullRequestConflicting,
   resolveBaseFreshness,
@@ -1461,10 +1462,12 @@ export function PullRequestDetailPanel({
     can(detail.isDraft ? "ready" : "draft") &&
     !(detail.isDraft && primaryAction === "ready");
   const showsAutoMerge =
-    canMergeSinglePullRequest &&
     detail?.state === "open" &&
-    ((autoMergeArmed && can("disable-auto-merge")) ||
-      (!autoMergeArmed &&
+    ((autoMergeArmed &&
+      can("disable-auto-merge") &&
+      allowsSinglePullRequestAutoMergeCancel({ stackAutoMerge, canMergeSinglePullRequest })) ||
+      (canMergeSinglePullRequest &&
+        !autoMergeArmed &&
         primaryAction !== "enable-auto-merge" &&
         !detail.isDraft &&
         !conflicting &&

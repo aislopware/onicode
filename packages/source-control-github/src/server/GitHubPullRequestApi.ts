@@ -651,6 +651,15 @@ export class GitHubPullRequestApi extends Context.Service<
       GitHubPullRequestApiError
     >;
 
+    /** Whether the pull request contains a commit its activity's newest commits leave out. */
+    readonly pullRequestHasCommit: (input: {
+      readonly cwd: string;
+      readonly repository: string;
+      readonly host: string;
+      readonly number: number;
+      readonly commit: string;
+    }) => Effect.Effect<boolean, GitHubPullRequestApiError>;
+
     readonly getPullRequestFilesViewed: (input: {
       readonly cwd: string;
       readonly repository: string;
@@ -1050,6 +1059,10 @@ const decodeMergeBase = Schema.decodeUnknownOption(
   Schema.fromJsonString(
     Schema.Struct({ merge_base_commit: Schema.Struct({ sha: Schema.String }) }),
   ),
+);
+
+const decodeComparison = Schema.decodeUnknownOption(
+  Schema.fromJsonString(Schema.Struct({ ahead_by: Schema.Number, behind_by: Schema.Number })),
 );
 
 // GitHub has no fast-forward-only merge; the service refuses methods a host does not advertise.
@@ -1465,6 +1478,61 @@ export const make = Effect.gen(function* () {
         }),
       );
   };
+
+  // A pull request's commits are those its head reaches and its base does not, which holds for
+  // any state and merge method. Page 2 of a compare leaves out the file list.
+  const pullRequestHasCommit: GitHubPullRequestApi["Service"]["pullRequestHasCommit"] = Effect.fn(
+    "GitHubPullRequestApi.pullRequestHasCommit",
+  )(function* (input) {
+    if (!isCommitSha(input.commit)) {
+      return yield* new GitHubDiffCommitError({ cwd: input.cwd });
+    }
+    const { owner, name } = parseRepositorySelector(input.repository);
+    const refsResponse = yield* api.rest({
+      host: input.host,
+      operation: "pullRequestHasCommit",
+      path: `repos/${owner}/${name}/pulls/${input.number}`,
+      timeout: DIFF_TIMEOUT,
+    });
+    const refs = decodeRevisionRefs(refsResponse.body);
+    const base = Option.isSome(refs) ? refs.value.base?.sha : undefined;
+    const head = Option.isSome(refs) ? refs.value.head?.sha : undefined;
+    if (base === undefined || head === undefined || !isCommitSha(base) || !isCommitSha(head)) {
+      return yield* new GitHubDiffRevisionsUnavailableError({
+        cwd: input.cwd,
+        number: input.number,
+        commit: input.commit,
+      });
+    }
+    const compare = (from: string, to: string) =>
+      api
+        .rest({
+          host: input.host,
+          operation: "pullRequestHasCommit",
+          path: `repos/${owner}/${name}/compare/${from}...${to}?per_page=1&page=2`,
+          timeout: DIFF_TIMEOUT,
+        })
+        .pipe(
+          Effect.flatMap((response) =>
+            Effect.fromOption(decodeComparison(response.body)).pipe(
+              Effect.mapError(() =>
+                readError(
+                  input.cwd,
+                  "pullRequestHasCommit",
+                  new Error("GitHub's comparison was unreadable."),
+                ),
+              ),
+            ),
+          ),
+        );
+    return yield* Effect.all([compare(base, input.commit), compare(input.commit, head)], {
+      concurrency: 2,
+    }).pipe(
+      Effect.map(([fromBase, toHead]) => fromBase.ahead_by > 0 && toHead.behind_by === 0),
+      // GitHub does not know the commit.
+      Effect.catchTags({ GitHubApiNotFoundError: () => Effect.succeed(false) }),
+    );
+  });
 
   const getPullRequestDiffFileContents: GitHubPullRequestApi["Service"]["getPullRequestDiffFileContents"] =
     Effect.fn("GitHubPullRequestApi.getPullRequestDiffFileContents")(function* (input) {
@@ -2423,6 +2491,8 @@ export const make = Effect.gen(function* () {
     }),
 
     getPullRequestDiffFileContents,
+
+    pullRequestHasCommit,
 
     getReviewThreadComments: Effect.fn("GitHubPullRequestApi.getReviewThreadComments")(
       function (input) {

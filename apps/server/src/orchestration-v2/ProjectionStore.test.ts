@@ -2904,13 +2904,133 @@ const snapshotsReadDeletedThreadAsMissing = Effect.gen(function* () {
   } as never);
 
   for (const read of [
-    store.getThreadSnapshot(threadId),
-    store.getThreadSnapshotWindow(threadId, { rowLimit: 10 }),
+    Effect.asVoid(store.getThreadSnapshot(threadId)),
+    Effect.asVoid(store.getThreadSnapshotWindow(threadId, { rowLimit: 10 })),
+    Effect.asVoid(store.getTranscriptByteFloor(threadId, 1)),
   ]) {
     assert.equal((yield* Effect.flip(read))._tag, "ProjectionStoreThreadNotFoundError");
   }
   // Forks of the thread still read its rows.
   assert.equal((yield* store.getThreadProjection(threadId)).thread.id, threadId);
+});
+
+const deletedThreadItemsReadOnlyThroughLiveForks = Effect.gen(function* () {
+  const store = yield* ProjectionStore.ProjectionStoreV2;
+  const threadId = ThreadId.make("thread:records:deleted-items");
+  const forkId = ThreadId.make("thread:records:deleted-items-fork");
+  const created: { readonly payload: object } = recordsThreadCreated(threadId);
+  yield* store.apply(created as never);
+  const itemIds = [1, 2].map((ordinal) =>
+    TurnItemId.make(`turn-item:records:deleted-items:${ordinal}`),
+  );
+  for (const ordinal of [1, 2]) {
+    const runId = RunId.make(`run:records:deleted-items:${ordinal}`);
+    const nodeId = NodeId.make(`node:records:deleted-items:${ordinal}`);
+    yield* store.apply({
+      id: EventId.make(`event:${runId}:created`),
+      type: "run.created",
+      threadId,
+      runId,
+      nodeId,
+      driver,
+      occurredAt: recordsAt(ordinal),
+      payload: {
+        id: runId,
+        threadId,
+        ordinal,
+        providerInstanceId,
+        modelSelection,
+        providerThreadId: null,
+        userMessageId: MessageId.make(`message:records:deleted-items:${ordinal}`),
+        rootNodeId: nodeId,
+        activeAttemptId: null,
+        status: "completed",
+        requestedAt: recordsAt(ordinal),
+        startedAt: recordsAt(ordinal),
+        completedAt: recordsAt(ordinal),
+        checkpointId: null,
+        contextHandoffId: null,
+      },
+    });
+    yield* store.apply({
+      id: EventId.make(`event:${runId}:item`),
+      type: "turn-item.updated",
+      threadId,
+      runId,
+      occurredAt: recordsAt(ordinal),
+      payload: {
+        id: itemIds[ordinal - 1]!,
+        threadId,
+        runId,
+        nodeId: null,
+        providerThreadId: null,
+        providerTurnId: null,
+        nativeItemRef: null,
+        parentItemId: null,
+        ordinal,
+        status: "completed",
+        title: null,
+        startedAt: recordsAt(ordinal),
+        completedAt: recordsAt(ordinal),
+        updatedAt: recordsAt(ordinal),
+        type: "assistant_message",
+        messageId: MessageId.make(`message:records:deleted-items:assistant-${ordinal}`),
+        text: `Answer ${ordinal}`,
+        streaming: false,
+      },
+    });
+  }
+  const forkCreated: { readonly payload: object } = recordsThreadCreated(forkId);
+  const forkPayload = {
+    ...forkCreated.payload,
+    forkedFrom: { type: "run", threadId, runId: RunId.make("run:records:deleted-items:1") },
+  };
+  yield* store.apply({ ...forkCreated, payload: forkPayload } as never);
+  yield* store.apply({
+    id: EventId.make(`event:${forkId}:transfer`),
+    type: "context-transfer.created",
+    threadId: forkId,
+    occurredAt: recordsAt(3),
+    payload: {
+      id: ContextTransferId.make("transfer:records:deleted-items"),
+      type: "fork",
+      sourceThreadId: threadId,
+      targetThreadId: forkId,
+      sourcePoint: { threadId },
+      basePoint: null,
+      sourceProviderInstanceId: providerInstanceId,
+      targetProviderInstanceId: null,
+      targetRunId: null,
+      status: "pending",
+      resolution: null,
+      createdBy: "user",
+      error: null,
+      createdAt: recordsAt(3),
+      updatedAt: recordsAt(3),
+      consumedAt: null,
+    },
+  });
+  const deleteThread = (id: ThreadId, payload: object, second: number) =>
+    store.apply({
+      id: EventId.make(`event:${id}:deleted`),
+      type: "thread.deleted",
+      threadId: id,
+      providerInstanceId,
+      occurredAt: recordsAt(second),
+      payload: { ...payload, deletedAt: recordsAt(second) },
+    } as never);
+  const readable = () =>
+    Effect.forEach(itemIds, (itemId) =>
+      store.getTurnItem({ threadId, itemId }).pipe(Effect.map((item) => item !== null)),
+    );
+  assert.deepEqual(yield* readable(), [true, true]);
+
+  yield* deleteThread(threadId, created.payload, 4);
+  // The live fork still shows the first run, and its client reads that run's items by source id.
+  assert.deepEqual(yield* readable(), [true, false]);
+
+  yield* deleteThread(forkId, forkPayload, 5);
+  assert.deepEqual(yield* readable(), [false, false]);
 });
 
 const queryPlan = Effect.fn("queryPlan")(function* (statement: string | undefined) {
@@ -4011,6 +4131,10 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
   it.effect(
     "snapshot reads report a deleted thread as missing",
     () => snapshotsReadDeletedThreadAsMissing,
+  );
+  it.effect(
+    "a deleted thread's items read only through a live fork that shows them",
+    () => deletedThreadItemsReadOnlyThroughLiveForks,
   );
   it.effect(
     "worktree path and title lookups skip deleted threads, and can include archived ones",

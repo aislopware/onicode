@@ -1695,3 +1695,43 @@ it.effect(
       }).pipe(Effect.provide(layerTest));
     }),
 );
+
+it.effect("client reads of a deleted thread's checkpoints and records find no thread", () =>
+  Effect.gen(function* () {
+    const live = ThreadId.make("thread:checkpoints:live");
+    const deleted = ThreadId.make("thread:checkpoints:deleted");
+    const layerTest = ThreadManagementService.layer.pipe(
+      Layer.provide(Layer.mock(ProviderSessionManager.ProviderSessionManagerV2)({})),
+      Layer.provide(
+        Layer.mock(Orchestrator.OrchestratorV2)({
+          getThreadRecords: (threadId) =>
+            Effect.succeed({
+              thread: {
+                id: threadId,
+                deletedAt: threadId === deleted ? DateTime.makeUnsafe(0) : null,
+              },
+              providerThreads: [],
+            } as never),
+          getCheckpointContext: () =>
+            Effect.succeed({ runs: [], checkpointScopes: [], checkpoints: [] }),
+        }),
+      ),
+      Layer.provide(ServerSettings.layerTest()),
+      Layer.provide(layerReceiptsTest),
+    );
+    yield* Effect.gen(function* () {
+      const threads = yield* ThreadManagementService.ThreadManagementService;
+      expect((yield* threads.getCheckpointContext(live)).checkpoints).toEqual([]);
+      expect((yield* threads.getLiveThreadRecords(live, ["providerThreads"])).thread.id).toBe(live);
+      for (const read of [
+        Effect.asVoid(threads.getCheckpointContext(deleted)),
+        Effect.asVoid(threads.getLiveThreadRecords(deleted, ["providerThreads"])),
+      ]) {
+        expect(yield* Effect.flip(read)).toMatchObject({
+          _tag: "OrchestratorProjectionError",
+          cause: { _tag: "ProjectionStoreThreadNotFoundError" },
+        });
+      }
+    }).pipe(Effect.provide(layerTest));
+  }),
+);

@@ -48,10 +48,11 @@ const foldApostrophes = (text: string) => `replace(replace(${text}, '’', '''')
 const readableText = (row: string) =>
   `COALESCE(${row}.search_text, json_extract(${row}.payload_json, '$.text'))`;
 
-// A file mention stores `__init__.py` as `[\_\_init\_\_.py](...)`; the index
-// holds the label as it reads, so search can find the name as typed. Brackets
-// stay escaped only when unbalanced, so the label still ends at its own `](`.
-const LINK_LABEL = /(!?\[)((?:\\.|[^\\\]\n])*)(\]\([^)\s]*\))/g;
+// A file mention stores `__init__.py` as `[\_\_init\_\_.py](...)`; the index holds
+// the label as it reads, so search finds the name as typed. Brackets stay escaped
+// only when unbalanced, so the label still ends at its own `](`; an unescaped `[`
+// must close, as in ThreadSearch, so an unclosed one before a link starts no label.
+const LINK_LABEL = /(!?\[)((?:\\.|[^\\[\]\n]|\[(?:\\.|[^\\[\]\n])*\])*)(\]\([^)\s]*\))/g;
 const MARKDOWN_ESCAPE = /\\([!-/:-@[-`{-~])/g;
 const BALANCED_BRACKETS = /^(?:[^[\]]|\[[^[\]]*\])*$/;
 

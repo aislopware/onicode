@@ -531,6 +531,14 @@ export interface PullRequestProviderApi {
     },
   ) => Effect.Effect<ProviderDiffFileContents, PullRequestProviderError>;
 
+  /**
+   * Whether the change request contains a commit, named by its full oid, that its activity's
+   * commit page leaves out. A commit the host does not know is not contained.
+   */
+  readonly hasCommit?: (
+    input: ProviderRepositoryRef & { readonly number: number; readonly commit: string },
+  ) => Effect.Effect<boolean, PullRequestProviderError>;
+
   readonly getFilesViewed?: (
     input: ProviderRepositoryRef & { readonly number: number },
   ) => Effect.Effect<ProviderFilesViewed, PullRequestProviderError>;

@@ -380,7 +380,7 @@ export function PullRequestActionsMenu({
                 {inlineConfirm.isArmed("merge") ? gt("Confirm merge?") : gt("Merge now")}
               </MenuItem>
             ) : null}
-            {autoMergeArmed && can("disable-auto-merge") ? (
+            {showsAutoMerge && autoMergeArmed ? (
               <MenuItem disabled={actionPending} onClick={() => void perform("disable-auto-merge")}>
                 <PullRequestGlyph.merged className="size-3.5" />
                 <T>Disable auto-merge</T>

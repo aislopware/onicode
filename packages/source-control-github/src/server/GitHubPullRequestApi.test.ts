@@ -3590,6 +3590,53 @@ layer("GitHubPullRequestApi.layer", (it) => {
     }),
   );
 
+  it.effect("finds a pull request's commit as one its head reaches and its base does not", () =>
+    Effect.gen(function* () {
+      const inside = "1".repeat(40);
+      const onBase = "2".repeat(40);
+      const elsewhere = "3".repeat(40);
+      const unknown = "4".repeat(40);
+      const comparison = (ahead: number, behind: number) =>
+        encodeJson({ ahead_by: ahead, behind_by: behind });
+      const answers: Record<string, string> = {
+        "repos/acme/web/pulls/7": pullRequestRefs,
+        [`repos/acme/web/compare/a1b2c3d...${inside}?per_page=1&page=2`]: comparison(3, 0),
+        [`repos/acme/web/compare/${inside}...b1c2d3e?per_page=1&page=2`]: comparison(2, 0),
+        [`repos/acme/web/compare/a1b2c3d...${onBase}?per_page=1&page=2`]: comparison(0, 4),
+        [`repos/acme/web/compare/${onBase}...b1c2d3e?per_page=1&page=2`]: comparison(9, 0),
+        [`repos/acme/web/compare/a1b2c3d...${elsewhere}?per_page=1&page=2`]: comparison(1, 4),
+        [`repos/acme/web/compare/${elsewhere}...b1c2d3e?per_page=1&page=2`]: comparison(5, 1),
+      };
+      mockedExecute.mockImplementation((call) => {
+        const answer = call.kind === "rest" ? answers[call.path] : undefined;
+        return answer === undefined
+          ? Effect.fail(
+              new GitHubRequestPolicy.GitHubApiNotFoundError({
+                host: "github.com",
+                operation: "pullRequestHasCommit",
+              }),
+            )
+          : Effect.succeed(output(answer));
+      });
+      const cli = yield* GitHubPullRequestApi.GitHubPullRequestApi;
+      const has = (commit: string) =>
+        cli.pullRequestHasCommit({
+          cwd: "/w",
+          repository: "acme/web",
+          host: "github.com",
+          number: 7,
+          commit,
+        });
+
+      assert.isTrue(yield* has(inside));
+      assert.isFalse(yield* has(onBase));
+      assert.isFalse(yield* has(elsewhere));
+      assert.isFalse(yield* has(unknown));
+      const refused = yield* Effect.flip(has("../../pulls/8"));
+      assert.strictEqual(refused._tag, "GitHubDiffCommitError");
+    }),
+  );
+
   it.effect("reports unusable diff revisions as a structured error", () =>
     Effect.gen(function* () {
       mockedExecute.mockReturnValueOnce(Effect.succeed(output("not-a-sha\tstill-not-a-sha\n")));

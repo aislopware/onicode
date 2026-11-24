@@ -4610,6 +4610,92 @@ const claudeAdapter: ProviderAdapter.ProviderAdapterV2["Service"] = {
   openSession: () => Effect.die("the Claude instance never starts a turn here"),
 };
 
+it.effect("queues a parked steer edited to a provider its turn cannot restart for", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const { started, steered, interrupted, layer, startFirstTurn, events } =
+        yield* nextTurnSelectionHarness(
+          "parked-steer-unrestartable",
+          false,
+          true,
+          Effect.void,
+          true,
+          undefined,
+          undefined,
+          [claudeAdapter],
+        );
+      yield* Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+        const threadId = yield* startFirstTurn;
+        const turn = (yield* orchestrator.getThreadProjection(threadId)).providerTurns[0]!;
+        yield* (yield* EventSink.EventSinkV2).write({
+          events: [
+            {
+              id: EventId.make("turn-not-ready"),
+              type: "provider-turn.updated",
+              threadId,
+              occurredAt: yield* DateTime.now,
+              payload: { ...turn, status: "pending" },
+            },
+          ],
+        });
+        yield* orchestrator.dispatch({
+          type: "message.dispatch",
+          commandId: CommandId.make("steer"),
+          threadId,
+          messageId: MessageId.make("message:steer"),
+          text: "steer",
+          attachments: [],
+          dispatchMode: { type: "steer_active", targetRunId: started[0]!.runId },
+          createdBy: "user",
+          creationSource: "web",
+        });
+        const parked = (yield* orchestrator.getThreadProjection(threadId)).runs.find(
+          (run) => run.status === "queued",
+        )!;
+        assert.equal(parked.steerWhenReadyRunId, started[0]!.runId);
+        yield* orchestrator.dispatch({
+          type: "queued-run.edit",
+          commandId: CommandId.make("edit"),
+          threadId,
+          runId: parked.id,
+          text: "steer on claude",
+          modelSelection: claudeSelection,
+        });
+        const released = yield* orchestrator.streamDomainEvents.pipe(
+          Stream.filter(
+            (event) =>
+              event.type === "run.updated" &&
+              event.payload.id === parked.id &&
+              event.payload.steerWhenReadyRunId === undefined,
+          ),
+          Stream.take(1),
+          Stream.runDrain,
+          Effect.forkScoped,
+        );
+        yield* Queue.offer(events, { type: "provider_turn.updated", driver, providerTurn: turn });
+        yield* Fiber.join(released);
+        yield* worker.drain();
+
+        // No longer a deferred steer, so later turn reports do not promote it again.
+        const projection = yield* orchestrator.getThreadProjection(threadId);
+        const queued = projection.runs.find((run) => run.id === parked.id)!;
+        assert.equal(queued.status, "queued");
+        assert.isUndefined(queued.steerWhenReadyRunId);
+        assert.deepEqual(queued.modelSelection, claudeSelection);
+        assert.equal(queued.providerInstanceId, claudeSelection.instanceId);
+        assert.equal(
+          projection.runs.find((run) => run.id === started[0]!.runId)?.status,
+          "running",
+        );
+        assert.deepEqual(steered, []);
+        assert.deepEqual(interrupted, []);
+      }).pipe(Effect.provide(layer));
+    }),
+  ),
+);
+
 // Queues a scheduled delivery behind the Codex turn, stops that turn (Stop holds the queue), then
 // switches the thread to Claude: a thread changes instance only while no run is active.
 const scheduledDeliveryAfterClaudeSwitch = (name: string, text: string) =>

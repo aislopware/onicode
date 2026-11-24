@@ -37,9 +37,13 @@ import {
   EventId,
   GitCommandError,
   MessageId,
+  NodeId,
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
+  ProviderThreadId,
+  ProviderTurnId,
+  RunAttemptId,
   RunId,
   SourceControlProviderError as SourceControlProviderFailure,
   TextGenerationError,
@@ -5108,6 +5112,8 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       readonly modelSelection: ModelSelection;
       readonly text: string;
       readonly status?: "rolled_back";
+      /** The start failed before the provider took the prompt, as a refused model does. */
+      readonly startFailed?: true;
     }>;
   }) {
     const store = yield* ProjectionStore.ProjectionStoreV2;
@@ -5154,6 +5160,9 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       const ordinal = index + 1;
       const runId = RunId.make(`run:${threadId}:${ordinal}`);
       const messageId = MessageId.make(`message:${threadId}:${ordinal}`);
+      const attemptId = RunAttemptId.make(`attempt:${threadId}:${ordinal}`);
+      const nodeId = NodeId.make(`node:${threadId}:${ordinal}`);
+      const providerThreadId = ProviderThreadId.make(`provider-thread:${threadId}`);
       yield* store.apply({
         id: EventId.make(`event:${threadId}:run:${ordinal}`),
         type: "run.updated",
@@ -5169,8 +5178,8 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
           providerThreadId: null,
           userMessageId: messageId,
           rootNodeId: null,
-          activeAttemptId: null,
-          status: spec.status ?? "completed",
+          activeAttemptId: attemptId,
+          status: spec.status ?? (spec.startFailed ? "failed" : "completed"),
           requestedAt: createdAt,
           startedAt: createdAt,
           completedAt: createdAt,
@@ -5178,6 +5187,47 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
           contextHandoffId: null,
         },
       });
+      yield* store.apply({
+        id: EventId.make(`event:${threadId}:attempt:${ordinal}`),
+        type: "run-attempt.updated",
+        threadId,
+        runId,
+        occurredAt: createdAt,
+        payload: {
+          id: attemptId,
+          runId,
+          attemptOrdinal: 1,
+          rootNodeId: nodeId,
+          providerInstanceId: spec.modelSelection.instanceId,
+          providerThreadId,
+          providerTurnId: null,
+          reason: "initial",
+          status: spec.startFailed ? "failed" : "completed",
+          startedAt: createdAt,
+          completedAt: createdAt,
+        },
+      });
+      if (!spec.startFailed) {
+        yield* store.apply({
+          id: EventId.make(`event:${threadId}:provider-turn:${ordinal}`),
+          type: "provider-turn.updated",
+          threadId,
+          runId,
+          nodeId,
+          occurredAt: createdAt,
+          payload: {
+            id: ProviderTurnId.make(`provider-turn:${threadId}:${ordinal}`),
+            providerThreadId,
+            nodeId,
+            runAttemptId: attemptId,
+            nativeTurnRef: null,
+            ordinal,
+            status: "completed",
+            startedAt: createdAt,
+            completedAt: createdAt,
+          },
+        });
+      }
       yield* store.apply({
         id: EventId.make(`event:${threadId}:item:${ordinal}`),
         type: "turn-item.updated",
@@ -5280,6 +5330,14 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
                 },
                 text: "Polish the file",
               },
+              {
+                modelSelection: {
+                  instanceId: ProviderInstanceId.make("codex"),
+                  model: "gpt-6.2-sol",
+                },
+                text: "Switch models and review",
+                startFailed: true,
+              },
             ],
           }),
         threadId,
@@ -5291,6 +5349,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       expect(prompt).not.toContain("Work account");
       expect(prompt).not.toContain("claude_removed");
       expect(prompt).not.toContain("claude-haiku-5-5");
+      expect(prompt).not.toContain("gpt-6.2-sol");
     }),
   );
 
