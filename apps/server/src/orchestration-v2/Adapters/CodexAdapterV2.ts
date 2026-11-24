@@ -1599,6 +1599,9 @@ interface DeferredCodexRootTerminal {
 
 interface CodexSubagentThreadContext {
   parentContext: ActiveCodexTurnContext;
+  // The parent turn that owns the card. parentContext follows the live parent turn, but
+  // clients group a card by run and provider turn, so it moves only when the child reopens.
+  cardContext: ActiveCodexTurnContext;
   readonly providerThread: OrchestrationV2ProviderThread;
   readonly childThread: OrchestrationV2AppThread;
   readonly subagentNodeId: OrchestrationV2ExecutionNode["id"];
@@ -3337,13 +3340,14 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             const completedAt = isOrchestrationV2WorkActive(status)
               ? null
               : (prior.completedAt ?? input.completedAt ?? now);
+            if (input.reopen) input.subagent.cardContext = input.subagent.parentContext;
             const task = {
               ...prior,
               status,
               ...(input.reopen
                 ? {
-                    runId: input.subagent.parentContext.projectionRunId,
-                    parentNodeId: input.subagent.parentContext.itemParentNodeId,
+                    runId: input.subagent.cardContext.projectionRunId,
+                    parentNodeId: input.subagent.cardContext.itemParentNodeId,
                   }
                 : {}),
               startedAt: input.startedAt ?? prior.startedAt,
@@ -3369,7 +3373,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 runId: task.runId,
                 nodeId: task.id,
                 providerThreadId: task.providerThreadId,
-                providerTurnId: input.subagent.parentContext.providerTurnId,
+                providerTurnId: input.subagent.cardContext.providerTurnId,
                 nativeItemRef: task.nativeTaskRef,
                 parentItemId: null,
                 ordinal: input.subagent.turnItemOrdinal,
@@ -3754,6 +3758,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             });
             const subagent = {
               parentContext: input.context,
+              cardContext: input.context,
               providerThread,
               childThread,
               subagentNodeId,
@@ -7390,15 +7395,15 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                   driver: CODEX_PROVIDER,
                   node: {
                     id: input.context.subagent.subagentNodeId,
-                    threadId: input.context.subagent.parentContext.projectionThreadId,
-                    runId: input.context.subagent.parentContext.projectionRunId,
-                    parentNodeId: input.context.subagent.parentContext.itemParentNodeId,
-                    rootNodeId: input.context.subagent.parentContext.rootNodeId,
+                    threadId: input.context.subagent.cardContext.projectionThreadId,
+                    runId: input.context.subagent.cardContext.projectionRunId,
+                    parentNodeId: input.context.subagent.cardContext.itemParentNodeId,
+                    rootNodeId: input.context.subagent.cardContext.rootNodeId,
                     kind: "subagent",
                     status: input.status,
                     countsForRun: false,
                     providerThreadId: input.context.providerThread.id,
-                    providerTurnId: input.context.subagent.parentContext.providerTurnId,
+                    providerTurnId: input.context.subagent.cardContext.providerTurnId,
                     nativeItemRef: input.context.subagent.task.nativeTaskRef,
                     runtimeRequestId: null,
                     checkpointScopeId: null,
