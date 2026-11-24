@@ -3716,3 +3716,4 @@ b28b13bd1f	take	taken as is
 15afd7f9c8	take	taken as is; Onicode keeps peer remote delegation, same stop/restart paths
 59fe770e01	take	taken as is; storage key rebranded to onicode:
 2cc8e73014	take	taken; test conflict resolved by keeping both cases
+75443857dc	take	taken; merged into Onicode's close() (skipped-close tracking) and existing router
