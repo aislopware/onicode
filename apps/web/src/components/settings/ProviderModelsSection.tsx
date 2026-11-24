@@ -20,6 +20,7 @@ import { Switch } from "../ui/switch";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { CustomModelEditor } from "./CustomModelEditor";
 import { clearSearchOnEscape } from "./searchFieldEscape";
+import { isImeKeyDown } from "../../lib/imeKeyDown";
 
 const CUSTOM_MODEL_PLACEHOLDER_BY_KIND: Partial<Record<ProviderDriverKind, string>> = {
   [ProviderDriverKind.make("codex")]: "gpt-6.7-codex-ultra-preview",
@@ -504,7 +505,7 @@ export function ProviderModelsSection({
               if (error) setError(null);
             }}
             onKeyDown={(event) => {
-              if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+              if (isImeKeyDown(event.nativeEvent)) return;
               if (event.key === "Escape") {
                 event.preventDefault();
                 event.stopPropagation();

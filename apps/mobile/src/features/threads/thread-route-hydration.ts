@@ -46,7 +46,8 @@ export function threadRouteIsHydrating(input: {
 /**
  * Replacing the route with a draft can't be undone, so a thread that may still arrive keeps its
  * route: a reconnecting environment often delivers it moments later, and Reconnect starts a
- * fresh connecting attempt.
+ * fresh connecting attempt. One that is not on this device or is switched off ("available"), or
+ * that this app cannot talk to, takes no draft either.
  */
 export function threadRouteOpensDraft(input: {
   readonly connectionState: EnvironmentConnectionPhase;
@@ -55,7 +56,11 @@ export function threadRouteOpensDraft(input: {
   if (input.detailStatus === "deleted") {
     return true;
   }
-  return input.connectionState !== "reconnecting" && input.connectionState !== "connecting";
+  return (
+    input.connectionState === "connected" ||
+    input.connectionState === "offline" ||
+    input.connectionState === "error"
+  );
 }
 
 /**

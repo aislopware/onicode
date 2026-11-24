@@ -26,6 +26,7 @@ import {
 import { Input } from "../ui/input";
 import { ScrollArea } from "../ui/scroll-area";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
+import { isImeKeyDown } from "../../lib/imeKeyDown";
 
 const DEFAULT_ICON = "folder-code";
 
@@ -180,12 +181,7 @@ function ProjectIconPickerBody({
               placeholder={gt("Search all Lucide icons")}
               onChange={(event) => setQuery(event.currentTarget.value)}
               onKeyDown={(event) => {
-                if (
-                  event.key !== "Escape" ||
-                  event.nativeEvent.isComposing ||
-                  event.keyCode === 229
-                )
-                  return;
+                if (event.key !== "Escape" || isImeKeyDown(event.nativeEvent)) return;
                 if (!query && !event.repeat) return;
                 event.stopPropagation();
                 setQuery("");

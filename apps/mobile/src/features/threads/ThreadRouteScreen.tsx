@@ -346,13 +346,13 @@ function LiveThreadRouteController(props: ThreadRouteScreenProps) {
     return <UnavailableThreadDraftRedirect environmentId={environmentId} />;
   }
 
+  // Reconnecting cannot help an environment this app does not support; its settings say why.
+  const canReconnect = routeEnvironmentRuntime !== null && routeConnectionState !== "unsupported";
   return withInspectorHeader(
     <ThreadUnavailableScreen
-      actionLabel={
-        routeEnvironmentRuntime === null ? gt("Manage environments") : gt("Reconnect environment")
-      }
+      actionLabel={canReconnect ? gt("Reconnect environment") : gt("Manage environments")}
       onAction={() => {
-        if (routeEnvironmentRuntime !== null) {
+        if (canReconnect) {
           onReconnectEnvironment(environmentId);
           return;
         }

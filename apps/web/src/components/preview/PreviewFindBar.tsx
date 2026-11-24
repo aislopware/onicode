@@ -5,6 +5,7 @@ import { Button } from "../ui/button";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "../ui/input-group";
 import { cn } from "~/lib/utils";
 import { previewBridge } from "./previewBridge";
+import { isImeKeyDown } from "../../lib/imeKeyDown";
 
 interface PreviewFindBarProps {
   readonly tabId: string;
@@ -63,7 +64,7 @@ export function PreviewFindBar({ tabId, focusRequestId, onClose }: PreviewFindBa
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
+    if (isImeKeyDown(event.nativeEvent)) return;
     if (event.key === "Enter") {
       event.preventDefault();
       event.stopPropagation();
@@ -90,9 +91,11 @@ export function PreviewFindBar({ tabId, focusRequestId, onClose }: PreviewFindBa
         aria-label={gt("Find in page")}
         className="w-full"
       >
+        {/* Native search inputs clear on Escape even during IME composition. */}
         <InputGroupInput
           ref={inputRef}
-          type="search"
+          type="text"
+          role="searchbox"
           size="sm"
           value={query}
           aria-label={gt("Find in page")}

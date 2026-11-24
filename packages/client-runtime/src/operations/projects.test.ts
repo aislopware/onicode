@@ -147,6 +147,8 @@ describe("add project shared logic", () => {
     expect(getCloneDirectoryName("~/git/what?.git")).toBe("what?");
     expect(getCloneDirectoryName("../firmware#2.git")).toBe("firmware#2");
     expect(getCloneDirectoryName("C:\\src\\firmware#2.git")).toBe("firmware#2");
+    expect(getCloneDirectoryName("repos/firmware#2.git")).toBe("firmware#2");
+    expect(getCloneDirectoryName("firmware#2")).toBe("firmware#2");
     expect(getCloneDirectoryName("github.com:owner/repo.git?ref=main")).toBe("repo");
   });
 
@@ -160,6 +162,7 @@ describe("add project shared logic", () => {
     );
     expect(getCloneDirectoryPath("https://github.com/owner/../../repo", true)).toBe("repo");
     expect(getCloneDirectoryPath("/srv/git/repo.git", true)).toBe("repo");
+    expect(getCloneDirectoryPath("/srv/git/firmware#2.git", true, "firmware#2")).toBe("firmware#2");
     expect(
       getCloneDirectoryPath(
         "git@ssh.dev.azure.com:v3/org/Project/My%20Repo",

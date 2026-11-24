@@ -240,10 +240,9 @@ export function getAddProjectInitialQuery(baseDirectory: string | null | undefin
 
 export function getCloneDirectoryName(repositoryOrRemoteUrl: string | null | undefined): string {
   const trimmed = (repositoryOrRemoteUrl ?? "").trim();
-  // A local path keeps `#` and `?` in its name; in a URL they start a query or fragment.
-  const isLocalPath =
-    !trimmed.includes("://") && (isHostPath(trimmed) || isExplicitRelativePath(trimmed));
-  const withoutQuery = isLocalPath ? trimmed : (trimmed.split(/[?#]/)[0] ?? "");
+  // Only a URL or `host:path` has a query or fragment; a local path keeps `#` and `?` in its name.
+  const isRemote = trimmed.includes("://") || (!isHostPath(trimmed) && /^[^/\\]+:/.test(trimmed));
+  const withoutQuery = isRemote ? (trimmed.split(/[?#]/)[0] ?? "") : trimmed;
   const schemeIndex = withoutQuery.indexOf("://");
   const hasHost = schemeIndex >= 0 || /^[^/\\:]+@[^/\\:]+:/.test(withoutQuery);
   const pathPart = schemeIndex >= 0 ? withoutQuery.slice(schemeIndex + "://".length) : withoutQuery;

@@ -124,6 +124,7 @@ import { LinkSeveralEnvironmentsDialog } from "./LinkSeveralEnvironments";
 import { savedBackendStatus } from "./SavedEnvironmentRows";
 import { clearSearchOnEscape } from "./searchFieldEscape";
 import { SettingsSearchTarget } from "./settingsLayout";
+import { isImeKeyDown } from "../../lib/imeKeyDown";
 
 type GT = ReturnType<typeof useGT>;
 type Messages = ReturnType<typeof useMessages>;
@@ -810,8 +811,11 @@ function FleetCanvas({
     if (event.key === "+" || event.key === "=") zoom(1.25);
     else if (event.key === "-") zoom(0.8);
     else if (event.key === "0") fit();
-    else if (event.key === "Escape") onSelect(null);
-    else return;
+    else if (event.key === "Escape" && (selection !== null || event.repeat)) {
+      // An unhandled Escape closes the settings page.
+      event.stopPropagation();
+      onSelect(null);
+    } else return;
     event.preventDefault();
   };
 
@@ -844,7 +848,7 @@ function FleetCanvas({
               onChange={(event) => setQuery(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Enter") {
-                  if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+                  if (isImeKeyDown(event.nativeEvent)) return;
                   event.preventDefault();
                   goToFirstMatch();
                 } else clearSearchOnEscape(event, query, () => setQuery(""));

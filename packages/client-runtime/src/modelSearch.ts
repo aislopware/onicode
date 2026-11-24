@@ -11,7 +11,7 @@ export type ModelPickerSearchableModel = {
 };
 
 const MODEL_PICKER_FAVORITE_SCORE_BOOST = 24;
-const MODEL_PICKER_EXACT_NAME_SCORE = -1000;
+const MODEL_PICKER_EXACT_SCORE = -1000;
 
 function getModelPickerSearchFields(model: ModelPickerSearchableModel): string[] {
   return [
@@ -69,9 +69,10 @@ export function scoreModelPickerSearch(
   const normalizedQuery = tokens.join(" ");
   if (
     normalizedQuery === normalizeModelName(model.name) ||
-    normalizedQuery === normalizeModelName(model.shortName ?? "")
+    normalizedQuery === normalizeModelName(model.shortName ?? "") ||
+    `/${normalizeModelName(model.slug ?? "")}`.endsWith(`/${normalizedQuery}`)
   ) {
-    return MODEL_PICKER_EXACT_NAME_SCORE;
+    return MODEL_PICKER_EXACT_SCORE;
   }
 
   const fields = getModelPickerSearchFields(model);

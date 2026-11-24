@@ -57,10 +57,11 @@ export function SidebarThreadHeader({
     <div className="flex items-center gap-1">
       <div className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-within:bg-sidebar-row-hover focus-within:text-sidebar-foreground has-focus-visible:outline-ring-inset">
         <SearchIcon className="size-4 shrink-0 text-(--sidebar-icon-color)" />
+        {/* Native search inputs clear on Escape even during IME composition. */}
         <SidebarInput
           ref={searchInputRef}
           nativeInput
-          type="search"
+          type="text"
           value={searchQuery}
           onChange={(event) => onSearchQueryChange(event.currentTarget.value)}
           onKeyDown={onSearchKeyDown}

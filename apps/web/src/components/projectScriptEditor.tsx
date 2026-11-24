@@ -1,11 +1,10 @@
 import { thrownErrorMessage } from "@onicode/client-runtime/errors";
-import {
-  AuthOrchestrationOperateScope,
-  AuthSettingsWriteScope,
-  type EnvironmentId,
-  type ProjectScript,
-  type ProjectScriptIcon,
-  type ResolvedKeybindingsConfig,
+import { useAtomValue } from "@effect/atom-react";
+import type {
+  EnvironmentId,
+  ProjectScript,
+  ProjectScriptIcon,
+  ResolvedKeybindingsConfig,
 } from "@onicode/contracts";
 import {
   isAtomCommandInterrupted,
@@ -29,7 +28,7 @@ import {
 } from "~/lib/projectScriptKeybindings";
 import { keybindingFromKeyboardEvent } from "~/components/settings/KeybindingsSettings.logic";
 import { commandForProjectScript, nextProjectScriptId } from "~/projectScripts";
-import { readEnvironmentScope, useEnvironmentScope } from "~/state/session";
+import { projectScriptsPermissionAtom } from "~/state/server";
 import { useComposerMenuState } from "./chat/useComposerMenuState";
 import {
   AlertDialog,
@@ -138,7 +137,6 @@ export function editorRequestForScript(
 
 export function ProjectScriptEditorDialog({
   environmentId,
-  editScope = AuthOrchestrationOperateScope,
   request,
   scripts,
   onSubmit,
@@ -146,7 +144,6 @@ export function ProjectScriptEditorDialog({
   onClose,
 }: {
   environmentId: EnvironmentId;
-  editScope?: typeof AuthOrchestrationOperateScope | typeof AuthSettingsWriteScope;
   request: ProjectScriptEditorRequest | null;
   scripts: ReadonlyArray<ProjectScript>;
   onSubmit: (
@@ -156,8 +153,7 @@ export function ProjectScriptEditorDialog({
   onDelete: (scriptId: string) => void;
   onClose: () => void;
 }) {
-  const gt = useGT();
-  const canEditActions = useEnvironmentScope(environmentId, editScope);
+  const canEditActions = useAtomValue(projectScriptsPermissionAtom(environmentId));
   // Scope errors by request so late saves cannot overwrite a newer request's error.
   const [errorState, setErrorState] = useState<{
     readonly request: ProjectScriptEditorRequest;
@@ -200,7 +196,6 @@ export function ProjectScriptEditorDialog({
             <ProjectScriptEditorForm
               key={shown.key}
               environmentId={environmentId}
-              editScope={editScope}
               request={shown.request}
               scripts={scripts}
               validationError={validationError}
@@ -237,10 +232,6 @@ export function ProjectScriptEditorDialog({
               disabled={!canEditActions}
               onClick={() => {
                 if (!request?.scriptId) return;
-                if (!readEnvironmentScope(environmentId, editScope)) {
-                  setValidationError(gt("This connection cannot change project actions."));
-                  return;
-                }
                 setDeleteConfirmOpen(false);
                 onClose();
                 onDelete(request.scriptId);
@@ -257,7 +248,6 @@ export function ProjectScriptEditorDialog({
 
 function ProjectScriptEditorForm({
   environmentId,
-  editScope,
   request,
   scripts,
   validationError,
@@ -267,7 +257,6 @@ function ProjectScriptEditorForm({
   onClose,
 }: {
   environmentId: EnvironmentId;
-  editScope: typeof AuthOrchestrationOperateScope | typeof AuthSettingsWriteScope;
   request: ProjectScriptEditorRequest;
   scripts: ReadonlyArray<ProjectScript>;
   validationError: string | null;
@@ -281,8 +270,7 @@ function ProjectScriptEditorForm({
 }) {
   const gt = useGT();
   const m = useMessages();
-  const canEditActions = useEnvironmentScope(environmentId, editScope);
-  const canWriteSettings = useEnvironmentScope(environmentId, AuthSettingsWriteScope);
+  const canEditActions = useAtomValue(projectScriptsPermissionAtom(environmentId));
   const formId = React.useId();
   const [name, setName] = useState(request.initial.name);
   const [command, setCommand] = useState(request.initial.command);
@@ -319,8 +307,7 @@ function ProjectScriptEditorForm({
   };
 
   const captureKeybinding = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (!readEnvironmentScope(environmentId, editScope)) return;
-    if (!readEnvironmentScope(environmentId, AuthSettingsWriteScope)) return;
+    if (!canEditActions) return;
     if (event.key === "Tab") return;
     event.preventDefault();
     if (event.key === "Backspace" || event.key === "Delete") {
@@ -335,17 +322,12 @@ function ProjectScriptEditorForm({
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (pendingSubmissionRef.current !== null) return;
-    if (!readEnvironmentScope(environmentId, editScope)) {
+    if (!canEditActions) {
       setValidationError(gt("This connection cannot change project actions."));
       return;
     }
     const changesKeybinding =
       (keybinding.trim() || null) !== (request.initial.keybinding?.trim() || null);
-    const canChangeKeybinding = readEnvironmentScope(environmentId, AuthSettingsWriteScope);
-    if (changesKeybinding && !canChangeKeybinding) {
-      setValidationError(gt("This connection cannot change keyboard shortcuts."));
-      return;
-    }
     const trimmedName = name.trim();
     const trimmedCommand = command.trim();
     if (trimmedName.length === 0) {
@@ -379,7 +361,7 @@ function ProjectScriptEditorForm({
         waitForSetup: runOnWorktreeCreate && waitForSetup,
         runOnSettle,
         stopOnSettle,
-        ...((request.scriptId === null && canChangeKeybinding) || changesKeybinding
+        ...(request.scriptId === null || changesKeybinding
           ? { keybinding: keybindingRule?.key ?? null }
           : {}),
         previewUrl: trimmedPreviewUrl.length > 0 ? trimmedPreviewUrl : null,
@@ -486,7 +468,6 @@ function ProjectScriptEditorForm({
                 <T>Keybinding</T>
               </Label>
               <Input
-                disabled={!canWriteSettings}
                 id="script-keybinding"
                 placeholder={gt("Press shortcut")}
                 value={keybinding}

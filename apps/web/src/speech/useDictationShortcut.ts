@@ -6,6 +6,7 @@ import { isCommandPaletteOpen } from "../commandPaletteBus";
 import { useClientSettings } from "../hooks/useSettings";
 import { resolveShortcutCommand, shortcutLabelForCommand } from "../keybindings";
 import { getTerminalFocusOwner } from "../lib/terminalFocus";
+import { isImeKeyDown } from "../lib/imeKeyDown";
 
 const HOLD_THRESHOLD_MS = 300;
 
@@ -131,7 +132,7 @@ export function useDictationShortcut(input: ShortcutInput) {
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (!ownsShortcut(id.current)) return;
-      if (event.isComposing || event.keyCode === 229) return;
+      if (isImeKeyDown(event)) return;
       const { speech } = current.current;
       if (event.defaultPrevented || isCommandPaletteOpen()) return;
       if (

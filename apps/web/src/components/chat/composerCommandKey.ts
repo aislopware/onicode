@@ -33,6 +33,7 @@ import {
   listOutdentForTab,
 } from "../../composer-list-continuation";
 import type { Dispatch, RefObject, SetStateAction } from "react";
+import { isImeKeyDown } from "../../lib/imeKeyDown";
 
 /**
  * The composer's key handling inside the editor: send shortcuts, the slash/mention menu,
@@ -236,7 +237,7 @@ export function composerCommandKeyHandler(input: {
     const { trigger } = resolveActiveComposerTrigger();
     const menuIsActive = !isLiteralPendingAnswer && trigger !== null;
     if (key === "Escape") {
-      if (event.isComposing || event.keyCode === 229) return false;
+      if (isImeKeyDown(event)) return false;
       if (!menuIsActive && promptSuggestion !== null && promptRef.current.length === 0) {
         dismissPromptSuggestion();
         return true;
@@ -274,8 +275,7 @@ export function composerCommandKeyHandler(input: {
       !event.altKey &&
       !event.metaKey &&
       !event.ctrlKey &&
-      !event.isComposing &&
-      event.keyCode !== 229
+      !isImeKeyDown(event)
     ) {
       // The typing guard must see this draft, so an approval that lands next is not answered with it.
       return applyPromptReplacement(0, 0, acceptedSuggestion);

@@ -5,11 +5,11 @@ import { StrictMode } from "react";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
-vi.mock(import("~/state/session"), async (original) => ({
-  ...(await original()),
-  readEnvironmentScope: () => true,
-  useEnvironmentScope: () => true,
-}));
+vi.mock(import("~/state/server"), async (original) => {
+  const { Atom } = await import("effect/reactivity");
+  const allowed = Atom.make(true);
+  return { ...(await original()), projectScriptsPermissionAtom: () => allowed };
+});
 
 import {
   EMPTY_PROJECT_SCRIPT_INPUT,

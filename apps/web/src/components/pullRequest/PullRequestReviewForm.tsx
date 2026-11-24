@@ -26,6 +26,7 @@ import {
 } from "./PullRequestMarkdownTextarea";
 
 import type { ChangeRequestTermKind } from "./changeRequestTerm";
+import { isImeKeyDown } from "../../lib/imeKeyDown";
 
 const VERDICTS: ReadonlyArray<{
   readonly value: PullRequestReviewVerdict;
@@ -183,7 +184,7 @@ export function PullRequestReviewForm({
         aria-label={gt("Review summary")}
         onValueChange={(next) => setSummary(reviewKey, next)}
         onKeyDown={(event) => {
-          if (event.nativeEvent.isComposing || event.keyCode === 229 || event.repeat) return;
+          if (isImeKeyDown(event.nativeEvent) || event.repeat) return;
           if (
             selectedVerdict !== undefined &&
             isCommentSubmitShortcut(event, body, pending || speech.preparing, true)

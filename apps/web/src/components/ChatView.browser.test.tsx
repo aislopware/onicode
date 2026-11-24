@@ -46,7 +46,7 @@ import { __setClientSettingsForTests } from "~/hooks/useSettings";
 import "~/index.css";
 import { environmentContextRecord } from "~/lib/composerContextRecords";
 import { startWorkspaceFocus } from "~/lib/workspaceFocus";
-import { usePromptStashStore } from "~/promptStashStore";
+import { usePromptStashStore, writePromptStashStorageForTest } from "~/promptStashStore";
 import { useRightPanelStore } from "~/rightPanelStore";
 import { getRouter } from "~/router";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
@@ -176,6 +176,9 @@ vi.mock(import("~/rpc/requestLatencyState"), async (original) => ({
 it.each([{ issueSummaries: false }, { issueSummaries: true }])(
   "opens a linked Linear issue from an inactive thread's sidebar badge (summaries: $issueSummaries)",
   async ({ issueSummaries }) => {
+    // Each variant reads its own workspace: the app's issue cache outlives a test, and the other
+    // variant leaves this issue shipped.
+    const workspace = issueSummaries ? "example" : "example-details";
     const first = threadWithHistory("issue-first", 1);
     const linked = threadWithHistory("issue-linked", 1);
     const issueRef = {
@@ -187,7 +190,7 @@ it.each([{ issueSummaries: false }, { issueSummaries: true }])(
     } satisfies IssueRef;
     const issue: ThreadIssueLink = {
       ...issueRef,
-      url: "https://linear.app/example/issue/WEB-123/add-keyboard-support",
+      url: `https://linear.app/${workspace}/issue/WEB-123/add-keyboard-support`,
       source: "manual",
       linkedAt: "2026-01-01T00:00:00.000Z",
       displayKey: issueRef.key,
@@ -197,7 +200,7 @@ it.each([{ issueSummaries: false }, { issueSummaries: true }])(
       ...issue,
       key: "WEB-124",
       displayKey: "WEB-124",
-      url: "https://linear.app/example/issue/WEB-124/keep-tabs-visible",
+      url: `https://linear.app/${workspace}/issue/WEB-124/keep-tabs-visible`,
       title: "Keep tabs visible",
     };
     const grouped = threadWithHistory("issue-grouped", 1);
@@ -261,7 +264,7 @@ it.each([{ issueSummaries: false }, { issueSummaries: true }])(
     };
     // Rows read the light summary; the panel the row opens reads the detail. Both keep the
     // workspace the linked URL names, so another workspace's WEB-123 is never read in its place.
-    const readRef = { ...issueRef, workspace: "example" };
+    const readRef = { ...issueRef, workspace };
     using _summary = answerRpc(WS_METHODS.issuesSummary, (input: IssueRef) => {
       expect(issueSummaries).toBe(true);
       const read = detailFor(input);
@@ -459,6 +462,8 @@ it("reads only the linked issues a thread shows", async () => {
 });
 
 it("a machine chip stashed in one thread restores with its machine in another", async () => {
+  await page.viewport(1400, 900);
+  writePromptStashStorageForTest("[]");
   const other = threadWithHistory("thread-stash-restore", 1);
   const asking = threadWithQuestion("thread-stash-question", "Which file should change?");
   using _environment = installFakeEnvironment([other, asking]);
@@ -516,6 +521,8 @@ it("a machine chip stashed in one thread restores with its machine in another", 
 });
 
 it("a question that opens while a stashed file is checked keeps a machine stash", async () => {
+  await page.viewport(1400, 900);
+  writePromptStashStorageForTest("[]");
   const thread = threadWithHistory("thread-stash-late-question", 1);
   const asking = threadWithQuestion("thread-stash-late-question", "Which file should change?");
   const [request] = asking.runtimeRequests ?? [];
@@ -571,6 +578,7 @@ it("a question that opens while a stashed file is checked keeps a machine stash"
 });
 
 it("a new draft does not load its reserved thread before the server lists it", async () => {
+  await page.viewport(1400, 900);
   using _environment = installFakeEnvironment([]);
   using fetchSpy = vi.spyOn(globalThis, "fetch");
   __setClientSettingsForTests({
@@ -608,6 +616,7 @@ it.each([
 ] as const)(
   "an image-only first send of a new thread that is %s keeps the new draft",
   async (outcome, end, title) => {
+    await page.viewport(1400, 900);
     using _environment = installFakeEnvironment([]);
     __setClientSettingsForTests({
       ...DEFAULT_CLIENT_SETTINGS,
@@ -852,6 +861,7 @@ it("a file picked after the phone composer collapses still attaches", async () =
 });
 
 it("opens the thread actions menu for an older settled thread the shell leaves out", async () => {
+  await page.viewport(1400, 900);
   const thread = { ...threadWithHistory("older-settled", 1), olderSettled: true as const };
   using _environment = installFakeEnvironment([thread]);
   __setClientSettingsForTests({
@@ -877,6 +887,7 @@ it("opens the thread actions menu for an older settled thread the shell leaves o
 });
 
 it("retains each thread's diff selection when returning from another thread or Settings", async () => {
+  await page.viewport(1400, 900);
   const a = threadWithHistory("diff-selection-a", 1);
   const b = threadWithHistory("diff-selection-b", 1);
   using _environment = installFakeEnvironment([a, b]);
@@ -941,6 +952,8 @@ it("retains each thread's diff selection when returning from another thread or S
 });
 
 it("a stashed prompt ending in a file chip restores with the chip", async () => {
+  await page.viewport(1400, 900);
+  writePromptStashStorageForTest("[]");
   using _environment = installFakeEnvironment([]);
   __setClientSettingsForTests({
     ...DEFAULT_CLIENT_SETTINGS,
@@ -975,6 +988,7 @@ it("a stashed prompt ending in a file chip restores with the chip", async () => 
 });
 
 it("a rejected send leaves the timeline when a new draft was typed meanwhile", async () => {
+  await page.viewport(1400, 900);
   const thread = threadWithHistory("rejected-send", 1);
   using _environment = installFakeEnvironment([thread], {
     acceptCommands: true,
@@ -1011,6 +1025,7 @@ it("a rejected send leaves the timeline when a new draft was typed meanwhile", a
 });
 
 it("Enter on an empty prompt resumes an interrupted thread", async () => {
+  await page.viewport(1400, 900);
   const history = threadWithHistory("interrupted", 1);
   const interruptedRun = { ...history.runs[0]!, status: "interrupted" as const };
   const thread = { ...history, runs: [interruptedRun] };
@@ -1085,6 +1100,7 @@ it("opening a thread or returning to the window on a touch tablet does not focus
 });
 
 it("a mounted thread view lets go of the thread structures it has replaced", async () => {
+  await page.viewport(1400, 900);
   // Items are shared with the fixture, so a reopen's snapshot also carries the earlier updates.
   const history = threadWithHistory("updated", 3);
   const items = [...history.items];
@@ -1543,6 +1559,7 @@ it("changing the mode cancels a send held for a compressing image, and the next 
 });
 
 it("opening Settings without a page event closes the composer model picker and permissions menu", async () => {
+  await page.viewport(1400, 900);
   using _environment = installFakeEnvironment([]);
   __setClientSettingsForTests({
     ...DEFAULT_CLIENT_SETTINGS,
@@ -1584,6 +1601,7 @@ it("opening Settings without a page event closes the composer model picker and p
 });
 
 it("a send held for onicode.json says it was not sent once the user leaves its draft", async () => {
+  await page.viewport(1400, 900);
   const other = threadWithHistory("workspace-default-left", 1);
   using _environment = installFakeEnvironment([other], { acceptCommands: true });
   __setClientSettingsForTests({

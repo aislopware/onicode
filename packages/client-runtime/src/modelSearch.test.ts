@@ -166,6 +166,19 @@ describe("rankModelPickerSearch", () => {
   it("finds a model by its full or bare ID when the name is written differently", () => {
     expect(search("opencode-go/deepseek-v4.1-flash")).toEqual(["DeepSeek V4.1 Flash 1017"]);
     expect(search("deepseek-v4.1-flash")).toEqual(["DeepSeek V4.1 Flash 1017"]);
+    // A favorite whose ID only starts with the query does not outrank the exact ID.
+    const models = [
+      {
+        driverKind: "opencode",
+        providerDisplayName: "OpenCode",
+        name: "DeepSeek V4.1 Flash Preview",
+        slug: "opencode-go/deepseek-v4.1-flash-preview",
+        isFavorite: true,
+      },
+      ...catalog,
+    ];
+    expect(search("opencode-go/deepseek-v4.1-flash", models)[0]).toBe("DeepSeek V4.1 Flash 1017");
+    expect(search("deepseek-v4.1-flash", models)[0]).toBe("DeepSeek V4.1 Flash 1017");
   });
 
   it("ranks a favorite above newer models in the same family", () => {

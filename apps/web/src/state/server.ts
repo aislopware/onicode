@@ -40,6 +40,15 @@ export const environmentUpdateStatesAtom = environmentAtomList(
   "web-environment-update-states",
   serverEnvironment.updateStateAtom,
 );
+/** Whether a connection may save project scripts, which takes more than other settings. */
+export const projectScriptsPermissionAtom = (environmentId: EnvironmentId) =>
+  serverEnvironment.updateSettings.permissionAtom(environmentId, {
+    patch: { defaultProjectScripts: [] },
+  });
+export const projectScriptsPermissionsAtom = environmentAtomList(
+  "web-project-scripts-permissions",
+  projectScriptsPermissionAtom,
+);
 export const updateOutdatedServer = createOutdatedServerUpdateCommand(connectionAtomRuntime);
 export const environmentServerConfigsAtom = createEnvironmentServerConfigsAtom({
   catalogValueAtom: environmentCatalog.catalogValueAtom,

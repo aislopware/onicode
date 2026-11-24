@@ -39,6 +39,7 @@ export function useConnectionDiagnosis(
       state,
       clientVersion: Constants.expoConfig?.version,
       serverVersion: presentation.serverConfig?.environment.serverVersion,
+      primary: presentation.entry.target._tag === "PrimaryConnectionTarget",
     },
     messages,
   );

@@ -429,11 +429,7 @@ export const make = Effect.fn("RpcSessionFactory.make")(function* (
     ).pipe(
       Effect.filterOrElse(
         (config) => config.environment.environmentId === connection.environmentId,
-        (config) =>
-          environmentMismatchError({
-            expected: connection.environmentId,
-            actual: config.environment.environmentId,
-          }),
+        () => environmentMismatchError(),
       ),
       Effect.withSpan("environment.initialSync"),
     );

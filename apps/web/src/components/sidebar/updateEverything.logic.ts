@@ -24,6 +24,8 @@ export interface UpdateEverythingMachine {
   readonly connectionError?: string | null;
   /** The saved connection is switched off in Settings, so it never connects. */
   readonly turnedOff?: boolean;
+  /** This client and the server cannot talk; Settings names it "Client not supported". */
+  readonly unsupported?: boolean;
   readonly hostedByThisApp: boolean;
   readonly canMaintain: boolean;
   readonly updateState: ServerUpdateState;
@@ -129,6 +131,15 @@ function unavailableReason(
   machine: UpdateEverythingMachine,
   resolve: MessageResolver,
 ): string | null {
+  // A server restarting mid-update is disconnected for a while; that is not why it is skipped.
+  if (machine.updateState.status === "running") return resolve(msg("already updating"));
+  if (machine.unsupported === true) {
+    return resolve(
+      msg("client not supported", {
+        $context: "why a server update was skipped: this app and that server cannot connect",
+      }),
+    );
+  }
   if (machine.turnedOff === true) {
     return resolve(
       msg("turned off", {
@@ -136,7 +147,7 @@ function unavailableReason(
       }),
     );
   }
-  if (!machine.connected) return machine.connectionError ?? resolve(msg("not connected"));
+  if (!machine.connected) return machine.connectionError || resolve(msg("not connected"));
   if (machine.serverConfig === null)
     return resolve(
       msg("still loading", {
@@ -144,7 +155,6 @@ function unavailableReason(
       }),
     );
   if (!machine.canMaintain) return resolve(msg("no permission"));
-  if (machine.updateState.status === "running") return resolve(msg("already updating"));
   return null;
 }
 

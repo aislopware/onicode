@@ -11,6 +11,7 @@ import { m, type MessageResolver } from "~/i18n/messages";
 import { cn } from "~/lib/utils";
 import { type PromptStashEntry } from "../../promptStashStore";
 import { ComposerBanner } from "./ComposerBanner";
+import { isImeKeyDown } from "../../lib/imeKeyDown";
 
 const SNIPPET_MAX_CHARS = 90;
 
@@ -91,7 +92,7 @@ export const ComposerStashMenu = memo(function ComposerStashMenu(props: {
   });
 
   const handleKeyDown = useEffectEvent((event: KeyboardEvent) => {
-    if (event.isComposing || event.keyCode === 229) return;
+    if (isImeKeyDown(event)) return;
     const drawer = drawerRef.current;
     if (!drawer) return;
     const target = event.target;

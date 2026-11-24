@@ -42,6 +42,7 @@ import { observeResize } from "~/lib/observeResize";
 import { cn } from "~/lib/utils";
 import { textDirection } from "~/textDirection";
 import { useClientSettings } from "../../hooks/useSettings";
+import { isImeKeyDown } from "../../lib/imeKeyDown";
 
 interface ChatHeaderProps {
   activeThreadEnvironmentId: EnvironmentId;
@@ -228,7 +229,7 @@ export const ChatHeader = memo(function ChatHeader({
     openMenu({ x: event.clientX, y: event.clientY }, contextMenuSourceOf(event));
   };
   const handleRenameKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
-    if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+    if (isImeKeyDown(event.nativeEvent)) return;
     if (event.key === "Enter") {
       renameCommittedRef.current = true;
       commitRename(event.currentTarget.value);

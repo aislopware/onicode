@@ -172,6 +172,10 @@ function SortableRouteRow({
   return (
     <li
       ref={setNodeRef}
+      // This Escape cancels the drag; Settings stays open.
+      onKeyDown={(event) => {
+        if (event.key === "Escape" && (isDragging || event.repeat)) event.preventDefault();
+      }}
       style={{ transform: CSS.Translate.toString(transform), transition }}
       className={cn(
         "flex items-center gap-2 py-2 motion-reduce:transition-none!",

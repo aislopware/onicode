@@ -1,3 +1,5 @@
+import { isImeKeyDown } from "../../lib/imeKeyDown";
+
 const PAGE_SCROLL_ANIMATION_MS = 150;
 const PAGE_SCROLL_ACCELERATION_MS = 400;
 const PAGE_SCROLL_MAX_MULTIPLIER = 2;
@@ -55,8 +57,7 @@ export function getTimelinePageScrollKey({
   }
   if (
     defaultPrevented ||
-    isComposing ||
-    keyCode === 229 ||
+    isImeKeyDown({ isComposing, keyCode }) ||
     altKey ||
     ctrlKey ||
     metaKey ||

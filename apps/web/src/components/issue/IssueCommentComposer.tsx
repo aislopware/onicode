@@ -13,6 +13,7 @@ import { ComposerSurface } from "../chat/ComposerSurface";
 import { readableFailure } from "../pullRequest/pullRequestDetail.logic";
 import { Spinner } from "../ui/spinner";
 import { toastManager } from "../ui/toast";
+import { isImeKeyDown } from "../../lib/imeKeyDown";
 
 /** The thread composer's card, floating over the issue's timeline, with a comment as its message. */
 export function IssueCommentComposer({
@@ -86,7 +87,7 @@ export function IssueCommentComposer({
               readOnly={speech.freezesEditor}
               onChange={(event) => setBody(event.target.value)}
               onKeyDown={(event) => {
-                if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+                if (isImeKeyDown(event.nativeEvent)) return;
                 if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && !event.shiftKey) {
                   event.preventDefault();
                   if (!event.repeat) submitAfterDictation();

@@ -1,5 +1,6 @@
 import { resolveEventKeys } from "@onicode/shared/keybindingMatching";
 import { isMacPlatform } from "../../lib/utils";
+import { isImeKeyDown } from "../../lib/imeKeyDown";
 import { SELECTION_MULTI_CLICK_INTERVAL_MS } from "../../lib/selectionActions";
 import { collectWrappedTerminalLinkLine, extractTerminalLinks } from "../../terminal-links";
 import {
@@ -387,7 +388,7 @@ export function isTerminalCompositionKey(
   event: Pick<KeyboardEvent, "isComposing" | "key" | "keyCode">,
   composing: boolean,
 ): boolean {
-  return event.isComposing || composing || event.key === "Process" || event.keyCode === 229;
+  return isImeKeyDown(event) || composing || event.key === "Process";
 }
 
 function isTerminalAltGraphText(event: Pick<KeyboardEvent, "getModifierState" | "key">): boolean {

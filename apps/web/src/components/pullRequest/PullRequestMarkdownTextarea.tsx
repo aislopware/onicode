@@ -28,6 +28,7 @@ import { Popover, PopoverPopup } from "../ui/popover";
 import { Textarea, type TextareaProps } from "../ui/textarea";
 import { PULL_REQUEST_STATE_PRESENTATION } from "./pullRequestIcons";
 import { PullRequestActorAvatar, resolvePullRequestState } from "./pullRequestPresentation";
+import { isImeKeyDown } from "../../lib/imeKeyDown";
 
 /** The repository whose users `@` completes and whose issues and change requests `#` does. */
 export interface PullRequestCompletionScope {
@@ -249,8 +250,7 @@ export function PullRequestMarkdownTextarea({
           onBlur?.(event);
         }}
         onKeyDown={(event) => {
-          // Some IMEs confirm a composition with an Enter that reports keyCode 229 but not isComposing.
-          if (open && !event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229) {
+          if (open && !isImeKeyDown(event.nativeEvent)) {
             const handled = (() => {
               if (event.key === "Escape") {
                 setDismissedAt(trigger.rangeStart);

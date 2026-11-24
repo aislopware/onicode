@@ -49,6 +49,7 @@ import { useDirectoryEntries } from "./useDirectoryEntries";
 import { useProjectPathSearch } from "~/state/queries";
 import { isMacPlatform } from "~/lib/utils";
 import { type PreviewAction, subscribePreviewAction } from "../preview/previewActionBus";
+import { isImeKeyDown } from "../../lib/imeKeyDown";
 
 interface FileBrowserPanelProps {
   environmentId: EnvironmentId;
@@ -121,7 +122,7 @@ function FileSearchField({
         onKeyDown={(event) => {
           if (event.key !== "Escape") return;
           // Base UI's dismiss checks only isComposing, so an IME's 229 Escape would close the sheet.
-          if (event.nativeEvent.isComposing || event.keyCode === 229) {
+          if (isImeKeyDown(event.nativeEvent)) {
             event.stopPropagation();
             return;
           }

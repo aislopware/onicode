@@ -1,4 +1,5 @@
 import { thrownErrorMessage } from "@onicode/client-runtime/errors";
+import { moveChartBarFocus } from "./chartBarFocus";
 import { ProcessSignalActions } from "./ProcessSignalActions";
 import { AuthEnvironmentMaintainScope } from "@onicode/contracts";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
@@ -415,8 +416,17 @@ function ResourceHistoryChart({
           <span className="h-1.5 w-3 rounded-full bg-warning/80" /> <T>I/O writes</T>
         </span>
       </div>
-      <div className="flex h-32 items-end gap-1 overflow-hidden rounded-lg border border-border px-2 pt-3 pb-2">
-        {buckets.map((bucket) => {
+      <div
+        className="flex h-32 items-end gap-1 overflow-hidden rounded-lg border border-border px-2 pt-3 pb-2"
+        onKeyDown={moveChartBarFocus}
+      >
+        {buckets.map((bucket, index) => {
+          const readings = [
+            gt("CPU avg {percent}%", { percent: bucket.avgCpuPercent.toFixed(1) }),
+            gt("CPU peak {percent}%", { percent: bucket.maxCpuPercent.toFixed(1) }),
+            gt("Read {bytes}", { bytes: formatBytes(bucket.ioReadBytes) }),
+            gt("Write {bytes}", { bytes: formatBytes(bucket.ioWriteBytes) }),
+          ];
           const cpuHeight = resourceHistoryBarHeight({
             value: bucket.avgCpuPercent,
             max: maxCpu,
@@ -436,7 +446,12 @@ function ResourceHistoryChart({
             <Tooltip key={DateTime.formatIso(bucket.startedAt)}>
               <TooltipTrigger
                 render={
-                  <div className="grid h-full min-w-1 flex-1 grid-cols-3 items-end gap-px">
+                  <div
+                    role="img"
+                    aria-label={readings.join(", ")}
+                    tabIndex={index === 0 ? 0 : -1}
+                    className="grid h-full min-w-1 flex-1 grid-cols-3 items-end gap-px rounded-sm outline-none focus-visible:outline-ring-inset"
+                  >
                     <span
                       className="block rounded-t-sm bg-foreground/65"
                       style={{ height: `${cpuHeight}%` }}
@@ -454,14 +469,9 @@ function ResourceHistoryChart({
               />
               <TooltipPopup side="top" className="text-left">
                 <div className="space-y-0.5">
-                  <div>
-                    {gt("CPU avg {percent}%", { percent: bucket.avgCpuPercent.toFixed(1) })}
-                  </div>
-                  <div>
-                    {gt("CPU peak {percent}%", { percent: bucket.maxCpuPercent.toFixed(1) })}
-                  </div>
-                  <div>{gt("Read {bytes}", { bytes: formatBytes(bucket.ioReadBytes) })}</div>
-                  <div>{gt("Write {bytes}", { bytes: formatBytes(bucket.ioWriteBytes) })}</div>
+                  {readings.map((reading) => (
+                    <div key={reading}>{reading}</div>
+                  ))}
                 </div>
               </TooltipPopup>
             </Tooltip>

@@ -20,6 +20,7 @@ import { Button } from "~/components/ui/button";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "~/components/ui/input-group";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { cn } from "~/lib/utils";
+import { isImeKeyDown } from "../../lib/imeKeyDown";
 
 interface Props {
   url: string;
@@ -182,7 +183,7 @@ export function PreviewChromeRow({
                     setInputFocused(false);
                   }}
                   onKeyDown={(event) => {
-                    if (event.nativeEvent.isComposing || event.keyCode === 229) {
+                    if (isImeKeyDown(event.nativeEvent)) {
                       // A trusted Enter would still submit the form implicitly.
                       if (event.key === "Enter") event.preventDefault();
                       return;

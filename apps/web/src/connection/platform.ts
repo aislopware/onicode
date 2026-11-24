@@ -219,6 +219,8 @@ export const provisionDesktopSshEnvironment = Effect.fn(
   if (expectedEnvironmentId !== undefined && descriptor.environmentId !== expectedEnvironmentId) {
     return yield* new ConnectionBlockedError({
       reason: "configuration",
+      hop: "server",
+      environmentMismatch: true,
       detail: m(
         msg(
           "That host reaches {label}, a different machine. Add it as its own environment instead.",
@@ -287,6 +289,8 @@ export const prepareDesktopSshEnvironment = Effect.fn("web.connectionPlatform.ss
       if (descriptor.environmentId !== input.expectedEnvironmentId) {
         return yield* new ConnectionBlockedError({
           reason: "configuration",
+          hop: "server",
+          environmentMismatch: true,
           detail: m(
             msg(
               "That host reaches {label}, a different machine. Add it as its own environment instead.",

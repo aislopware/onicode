@@ -86,10 +86,7 @@ const make = Effect.gen(function* () {
               Effect.provideService(HttpClient.HttpClient, httpClient),
             );
       if (descriptor.environmentId !== input.expectedEnvironmentId) {
-        return yield* environmentMismatchError({
-          expected: input.expectedEnvironmentId,
-          actual: descriptor.environmentId,
-        });
+        return yield* environmentMismatchError();
       }
       return descriptor;
     },

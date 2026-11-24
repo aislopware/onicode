@@ -18,14 +18,13 @@ function press(
   clearSearchOnEscape(
     {
       key: init.key ?? "Escape",
-      keyCode: init.keyCode ?? 27,
       repeat: init.repeat ?? false,
       defaultPrevented: init.defaultPrevented ?? false,
       altKey: false,
       ctrlKey: false,
       metaKey: init.metaKey ?? false,
       shiftKey: init.shiftKey ?? false,
-      nativeEvent: { isComposing: init.isComposing ?? false },
+      nativeEvent: { isComposing: init.isComposing ?? false, keyCode: init.keyCode ?? 27 },
       preventDefault: () => {
         outcome.prevented = true;
       },

@@ -85,6 +85,11 @@ function markdownDestination(url: string): string {
   return `<${url.replace(/&/g, "\\&").replace(/</g, "%3C").replace(/>/g, "%3E").replace(/\|/g, "%7C").replace(/\n/g, "")}>`;
 }
 
+// Tags that end an open `<p>`, whose line endings are spaces.
+const PARAGRAPH_END =
+  /^<\/?(?:p|div|details|summary|table|thead|tbody|tr|td|th|ul|ol|li|dl|dt|dd|h[1-6]|hr|pre|blockquote|section|article|address|aside|dialog|fieldset|figcaption|figure|footer|form|header|hgroup|main|menu|nav|search)(?=[\s/>]|$)/i;
+const PARAGRAPH_START = /^<p(?=[\s/>]|$)/i;
+
 const ANCHOR_TAG = /^<\/?a[\s/>]/i;
 
 /** Replacements for the anchor tags still ahead, and how many emitted links are open. */
@@ -196,8 +201,14 @@ export function markdownHtmlContent(
     anchorMarkdown(tags.map((tag) => tag[0]).filter((tag) => ANCHOR_TAG.test(tag)));
   let result = "";
   let end = 0;
+  let inParagraph = false;
+  const textTo = (to?: number) => {
+    const text = content.slice(end, to);
+    return inParagraph ? text.replace(/[ \t]*\r?\n[ \t]*/g, " ") : text;
+  };
   for (const match of tags) {
-    const text = content.slice(end, match.index);
+    const text = textTo(match.index);
+    if (PARAGRAPH_END.test(match[0])) inParagraph = PARAGRAPH_START.test(match[0]);
     result += anchors.open > 0 ? escapeLinkLabel(text) : text;
     const replacement = htmlTagMarkdown(match[0], anchors, options);
     if (replacement === "[" && bangBefore(result, result.length))
@@ -208,7 +219,7 @@ export function markdownHtmlContent(
         : replacement;
     end = match.index + match[0].length;
   }
-  const text = content.slice(end);
+  const text = textTo();
   return result + (anchors.open > 0 ? escapeLinkLabel(text) : text);
 }
 
@@ -224,7 +235,7 @@ function htmlTagMarkdown(
     else if (replacement) anchors.open -= 1;
     return replacement;
   }
-  if (/^<img\b/i.test(tag)) {
+  if (/^<img(?=[\s/>]|$)/i.test(tag)) {
     const src = attribute(tag, "src");
     if (!src) return "";
     const alt = (attribute(tag, "alt") ?? "").replace(/[\\[\]&]/g, "\\$&");
@@ -234,10 +245,10 @@ function htmlTagMarkdown(
   const cellBreak = "&#10;";
   // A blank line inside an open link label would end the paragraph before its "]".
   const blockBreak = anchors.open > 0 ? " " : options.inTableCell ? cellBreak : "\n\n";
-  if (/^<summary\b/i.test(tag)) return `${blockBreak}**`;
+  if (/^<summary(?=[\s/>]|$)/i.test(tag)) return `${blockBreak}**`;
   if (/^<\/summary\s*>/i.test(tag)) return `**${blockBreak}`;
-  if (/^<br\b/i.test(tag)) return options.inTableCell ? cellBreak : "  \n";
-  if (/^<\/?(?:p|div|details)\b/i.test(tag)) return blockBreak;
+  if (/^<br(?=[\s/>]|$)/i.test(tag)) return options.inTableCell ? cellBreak : "  \n";
+  if (/^<\/?(?:p|div|details)(?=[\s/>]|$)/i.test(tag)) return blockBreak;
   return "";
 }
 

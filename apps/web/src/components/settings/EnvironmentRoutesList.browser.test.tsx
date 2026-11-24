@@ -8,7 +8,7 @@ import {
 import { EnvironmentId } from "@onicode/contracts";
 import * as Option from "effect/Option";
 import { expect, it, vi } from "vite-plus/test";
-import { userEvent } from "vite-plus/test/browser";
+import { page, userEvent } from "vite-plus/test/browser";
 
 vi.mock(import("~/state/session"), async (importOriginal) => ({
   ...(await importOriginal()),
@@ -20,8 +20,11 @@ vi.mock(import("~/state/use-atom-command"), async (importOriginal) => ({
   useAtomCommand: (() => async () => ({ _tag: "Success" })) as never,
 }));
 
+vi.mock("../chat/GlobalVoiceInputIndicator", () => ({ GlobalVoiceInputIndicator: () => null }));
+
 import { render } from "../../../test/render";
 import type { EnvironmentPresentation } from "~/state/environments";
+import { AppRouteModal } from "../AppRouteModal";
 import { EnvironmentRoutesList } from "./EnvironmentRoutesList";
 
 const ENVIRONMENT_ID = EnvironmentId.make("environment-1");
@@ -90,6 +93,28 @@ it("shows a route added after a reorder was saved, once another route is removed
   await expect
     .element(screen.getByRole("button", { name: "Remove desk.example.com route" }))
     .toBeVisible();
+});
+
+it("Esc cancels a keyboard reorder, and only the next one closes Settings", async () => {
+  await using _screen = await render(
+    <AppRouteModal label="Settings">{routesList([LAN, TAILNET])}</AppRouteModal>,
+    { router: "/settings/connections" },
+  );
+  const settings = page.getByRole("dialog", { name: "Settings" });
+  const handle = page.getByRole("button", { name: "Reorder LAN, position 1" });
+  // The modal's inert layer takes pointer presses in this harness; the reorder is a keyboard one.
+  await expect.element(handle).toBeVisible();
+  (handle.element() as HTMLElement).focus();
+  await userEvent.keyboard(" ");
+  await expect.element(handle).toHaveAttribute("aria-pressed", "true");
+  await userEvent.keyboard("{ArrowDown}");
+
+  await userEvent.keyboard("{Escape}");
+  await expect.element(handle).not.toHaveAttribute("aria-pressed");
+  await expect.element(settings).toHaveAttribute("data-open");
+
+  await userEvent.keyboard("{Escape}");
+  await expect.element(settings).not.toBeInTheDocument();
 });
 
 it("does not offer to remove the only route a found-automatically route depends on", async () => {

@@ -16,6 +16,7 @@ import {
 import { PeerLinkLinkPairingInput } from "./peerLink.ts";
 import { ORCHESTRATION_V2_WS_METHODS } from "./orchestrationV2.ts";
 import { WS_METHODS } from "./rpc.ts";
+import { requiredScopesForServerSettingsUpdate } from "./settings.ts";
 
 /** Incremental client enforcement; the server still authorizes every request. */
 export const CLIENT_GUARDED_RPC_SCOPES = {
@@ -26,6 +27,7 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
   [WS_METHODS.previewClose]: AuthPreviewOperateScope,
   // Stopping a server signals its processes, as closing a terminal does.
   [WS_METHODS.previewStopLocalServer]: AuthTerminalOperateScope,
+  [WS_METHODS.serverUpdateSettings]: AuthSettingsWriteScope,
   [WS_METHODS.serverRunStorageCleanup]: AuthSettingsWriteScope,
   // Restarts the server, as an update does.
   [WS_METHODS.serverReclaimDatabaseSpace]: AuthEnvironmentMaintainScope,
@@ -135,6 +137,14 @@ export function clientRpcRequiredScopes(
       (payload.action === "create_pr" || payload.action === "commit_push_pr")
     )
       return [AuthSourceControlWriteScope, AuthOrchestrationReadScope];
+  }
+  if (method === WS_METHODS.serverUpdateSettings && input !== undefined) {
+    const scopes = requiredScopesForServerSettingsUpdate(
+      input as Parameters<typeof requiredScopesForServerSettingsUpdate>[0],
+    );
+    // Only script writes wait for the grants here. Other settings writes go out before grants
+    // load (shared settings sync relies on it), and the server checks them with the same rule.
+    return scopes.includes(AuthOrchestrationOperateScope) ? scopes : [];
   }
   // Signing in or out of an MCP server changes a stored credential, as provider.mcpSignIn does.
   if (method === WS_METHODS.providerSessionMcpServerAction && isMcpSignInAction(input))

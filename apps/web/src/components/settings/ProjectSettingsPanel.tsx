@@ -69,6 +69,7 @@ import {
 import { useSettingsProjectGroups } from "./useSettingsProjectGroups";
 import { readUnloadedThreadCount } from "../../state/olderSettledShelf";
 import { settingsScopeEnvironmentLabels } from "./settingsScopeAxis";
+import { isImeKeyDown } from "../../lib/imeKeyDown";
 
 const ProjectIconPickerDialog = lazy(() =>
   import("./ProjectIconPickerDialog").then((module) => ({
@@ -596,7 +597,7 @@ function ProjectDetail({
                   void renameGroup(event.currentTarget.value, wasEdited);
                 }}
                 onKeyDown={(event) => {
-                  if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+                  if (isImeKeyDown(event.nativeEvent)) return;
                   if (event.key === "Enter") event.currentTarget.blur();
                 }}
               />

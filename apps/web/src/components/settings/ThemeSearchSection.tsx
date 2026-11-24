@@ -32,6 +32,7 @@ import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../
 import { Spinner } from "../ui/spinner";
 import { msg, T, useGT, useMessages, Var } from "gt-react";
 import { m } from "../../i18n/messages";
+import { isImeKeyDown } from "../../lib/imeKeyDown";
 
 const DOWNLOAD_FORMAT = new Intl.NumberFormat(undefined, {
   notation: "compact",
@@ -327,7 +328,7 @@ export function ThemeSearchSection({
           autoFocus
           onChange={(event) => changeQuery(event.currentTarget.value)}
           onKeyDown={(event) => {
-            if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+            if (isImeKeyDown(event.nativeEvent)) return;
             if (event.key === "Escape" && (query || event.repeat)) {
               event.preventDefault();
               event.stopPropagation();

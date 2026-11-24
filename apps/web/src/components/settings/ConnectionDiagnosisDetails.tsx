@@ -40,6 +40,7 @@ export function useConnectionDiagnosis(environment: EnvironmentPresentation) {
             state,
             clientVersion: APP_VERSION,
             serverVersion: environment.serverConfig?.environment.serverVersion,
+            primary: environment.entry.target._tag === "PrimaryConnectionTarget",
           },
           m,
         )

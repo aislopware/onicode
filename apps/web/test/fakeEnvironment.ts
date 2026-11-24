@@ -573,14 +573,21 @@ const handlers: Record<string, (input: never) => unknown> = {
   [WS_METHODS.subscribeServerConfig]: () => subscribeServerConfig(),
 };
 
+// Ends calls still unanswered when an environment is disposed: the app's query cache outlives the
+// test, and a read it left pending would never be asked again in the next one.
+let unanswered = Deferred.makeUnsafe<never>();
+
 // Unanswered calls stay pending, like a server that has not replied yet.
 const client = new Proxy(handlers, {
-  get: (target, method: string) =>
-    target[method] ??
-    (() => {
-      const rpc = WsRpcGroup.requests.get(method);
-      return rpc && RpcSchema.isStreamSchema(rpc.successSchema) ? Stream.never : Effect.never;
-    }),
+  get: (target, method: string) => {
+    const rpc = WsRpcGroup.requests.get(method);
+    const streams = rpc !== undefined && RpcSchema.isStreamSchema(rpc.successSchema);
+    const handler = target[method] ?? (() => (streams ? Stream.never : Effect.never));
+    return (input: never) =>
+      streams
+        ? handler(input)
+        : Effect.raceFirst(handler(input) as Effect.Effect<unknown>, Deferred.await(unanswered));
+  },
 });
 
 const session: EnvironmentConnectionLease["session"] = {
@@ -657,6 +664,7 @@ export function installFakeEnvironment(
     readonly issueSummaries?: boolean;
   },
 ): Disposable {
+  unanswered = Deferred.makeUnsafe<never>();
   threads = fixtures;
   baseServerConfig = {
     ...makeServerConfig(
@@ -697,6 +705,8 @@ export function installFakeEnvironment(
   return {
     [Symbol.dispose]: () => {
       globalThis.fetch = realFetch;
+      // Stays done until the next install, so a call made in between ends at once too.
+      Deferred.doneUnsafe(unanswered, Effect.die("The test that made this call ended"));
       threads = [];
       baseServerConfig = makeServerConfig([CODEX_PROVIDER]);
       publishServerConfig();

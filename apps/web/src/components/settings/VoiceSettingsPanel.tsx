@@ -148,6 +148,7 @@ import { useOptionalSettingsScope, useSettingsScope } from "./SettingsScopeConte
 import { useScopedModelDisabledReason } from "./useScopedModelAvailability";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
 import { clearSearchOnEscape } from "./searchFieldEscape";
+import { isImeKeyDown } from "../../lib/imeKeyDown";
 
 const OFF = "off";
 const DEVICE = "device";
@@ -442,7 +443,7 @@ function DictionaryEditor(props: {
             aria-label={gt("Add a word or phrase to the {label}", { label })}
             onChange={(event) => setTermDraft(event.target.value)}
             onKeyDown={(event) => {
-              if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+              if (isImeKeyDown(event.nativeEvent)) return;
               if (event.key !== "Enter" || event.shiftKey) return;
               event.preventDefault();
               addTerm();
@@ -479,7 +480,7 @@ function DictionaryEditor(props: {
                   onChange={(event) => setAliasDraft({ term, value: event.target.value })}
                   onBlur={() => setAliasDraft(null)}
                   onKeyDown={(event) => {
-                    if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+                    if (isImeKeyDown(event.nativeEvent)) return;
                     if (event.key === "Escape") {
                       event.stopPropagation();
                       // Unmounting the focused input lets the dialog move focus to a control whose

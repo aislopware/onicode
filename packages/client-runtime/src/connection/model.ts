@@ -99,6 +99,8 @@ export class ConnectionBlockedError extends Schema.TaggedError<ConnectionBlocked
     ...ConnectionFailureFields,
 
     serverUpdateRequired: Schema.optionalKey(Schema.Boolean),
+    /** A different Onicode than the saved environment answered. */
+    environmentMismatch: Schema.optionalKey(Schema.Boolean),
   },
 ) {
   override get message(): string {

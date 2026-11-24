@@ -1,5 +1,8 @@
 import { act, render } from "../../../test/render";
 import {
+  type AuthEnvironmentScope,
+  AuthOrchestrationOperateScope,
+  AuthSettingsWriteScope,
   DEFAULT_SERVER_SETTINGS,
   EnvironmentId,
   ProjectId,
@@ -11,6 +14,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 
 import type { NewProjectScriptInput } from "../projectScriptEditor";
 
+const session = vi.hoisted(() => ({ scopes: new Set<string>() }));
 const commands = vi.hoisted(() => ({
   updateSettings: vi.fn(),
   upsertKeybinding: vi.fn(),
@@ -19,7 +23,7 @@ const commands = vi.hoisted(() => ({
 
 vi.mock(import("../../state/session"), async (original) => ({
   ...(await original()),
-  readEnvironmentScope: () => true,
+  readEnvironmentScope: (_environmentId, scope) => session.scopes.has(scope),
 }));
 vi.mock(import("../../state/entities"), async (original) => ({
   ...(await original()),
@@ -127,8 +131,11 @@ async function submitInAct(
   });
   return result!;
 }
-function setup() {
+function setup(
+  scopes: readonly AuthEnvironmentScope[] = [AuthSettingsWriteScope, AuthOrchestrationOperateScope],
+) {
   vi.clearAllMocks();
+  session.scopes = new Set(scopes);
   for (const command of Object.values(commands))
     command.mockResolvedValue(AsyncResult.success(undefined));
 }
@@ -159,4 +166,17 @@ describe("useProjectScriptSettings", () => {
       expect(commands.upsertKeybinding).not.toHaveBeenCalled();
     },
   );
+
+  it("lets a settings-only connection reset a project's actions but not save them", async () => {
+    setup([AuthSettingsWriteScope]);
+    await using screen = await renderSettings(lintBinding);
+
+    expect((await submitInAct(screen.settings.submit, { name: "Fix" }))._tag).toBe("Failure");
+    expect(commands.updateSettings).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await screen.settings.persist(() => null);
+    });
+    expect(commands.updateSettings).toHaveBeenCalledOnce();
+  });
 });

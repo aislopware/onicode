@@ -71,6 +71,7 @@ import {
 } from "../../providerInstances";
 import { providerModelKey, sortProviderModelItems } from "../../modelOrdering";
 import { modelPickerOptionsForInstance } from "./ProviderModelPicker.logic";
+import { isImeKeyDown } from "../../lib/imeKeyDown";
 
 type ModelPickerItem = {
   slug: string;
@@ -939,13 +940,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   };
 
   const onWindowKeyDown = (event: globalThis.KeyboardEvent) => {
-    if (
-      event.defaultPrevented ||
-      event.repeat ||
-      event.isComposing ||
-      event.keyCode === 229 ||
-      isCommandPaletteOpen()
-    ) {
+    if (event.defaultPrevented || event.repeat || isImeKeyDown(event) || isCommandPaletteOpen()) {
       return;
     }
 
@@ -1073,7 +1068,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                   setSearchQuery(e.target.value);
                 }}
                 onKeyDown={(e) => {
-                  if (e.nativeEvent.isComposing || e.keyCode === 229) {
+                  if (isImeKeyDown(e.nativeEvent)) {
                     (
                       e as typeof e & { preventBaseUIHandler?: () => void }
                     ).preventBaseUIHandler?.();

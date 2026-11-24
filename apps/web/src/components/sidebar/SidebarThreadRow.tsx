@@ -134,6 +134,7 @@ import { observeVisibleAnimation } from "~/lib/visibleAnimation";
 import { useThreadHasUnsentDraft } from "../../composerDraftStore";
 import { ThreadDetailsIssueRows } from "../chat/ThreadDetailsIssueRows";
 import { IssueGlyph, issueStatePresentation } from "../issue/issuePresentation";
+import { isImeKeyDown } from "../../lib/imeKeyDown";
 
 // The fields thread rows show. Provider status pushes refresh `checkedAt`,
 // status and auth on every provider; leaving those out keeps each
@@ -650,7 +651,7 @@ function ThreadRenameInput(props: {
   const gt = useGT();
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
     event.stopPropagation();
-    if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+    if (isImeKeyDown(event.nativeEvent)) return;
     if (event.key === "Enter") {
       event.preventDefault();
       settledRef.current = true;

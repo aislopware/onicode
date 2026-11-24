@@ -1,4 +1,3 @@
-import type { EnvironmentId } from "@onicode/contracts";
 import { msg } from "gt-i18n";
 import type { RemoteEnvironmentAuthError } from "../authorization/remote.ts";
 import { detailFromError, translatableDetail } from "../errors/translatable.ts";
@@ -37,18 +36,12 @@ export function isHostCredentialRefusal(error: ConnectionAttemptError): boolean 
   );
 }
 
-export function environmentMismatchError(input: {
-  readonly expected: EnvironmentId;
-  readonly actual: EnvironmentId;
-}): ConnectionBlockedError {
+export function environmentMismatchError(): ConnectionBlockedError {
   return new ConnectionBlockedError({
     reason: "configuration",
-    ...translatableDetail(
-      msg(
-        "This address now runs a different Onicode install ({actual}, not {expected}). Remove this connection and add it again.",
-        { actual: input.actual, expected: input.expected },
-      ),
-    ),
+    ...translatableDetail(msg("A different Onicode install answers at this address.")),
+    hop: "server",
+    environmentMismatch: true,
   });
 }
 

@@ -2,7 +2,6 @@ import { m } from "../i18n/messages";
 import { thrownErrorMessage } from "@onicode/client-runtime/errors";
 import { ThreadDetailsControl } from "./chat/ThreadDetailsControl";
 import {
-  AuthSettingsWriteScope,
   type EnvironmentId,
   type ProjectScript,
   type OniProjectFileScript,
@@ -20,8 +19,7 @@ import { T, useGT, useMessages, Var } from "gt-react";
 
 import { commandForProjectScript, primaryProjectScript } from "~/projectScripts";
 import { shortcutLabelForCommand } from "~/keybindings";
-import { serverEnvironment } from "~/state/server";
-import { readEnvironmentScope } from "~/state/session";
+import { projectScriptsPermissionAtom, serverEnvironment } from "~/state/server";
 import {
   EMPTY_PROJECT_SCRIPT_INPUT,
   editorRequestForScript,
@@ -100,6 +98,7 @@ export default function ProjectScriptsControl({
   const keybindings =
     useAtomValue(serverEnvironment.configValueAtom(environmentId))?.keybindings ??
     DEFAULT_RESOLVED_KEYBINDINGS;
+  const canEditActions = useAtomValue(projectScriptsPermissionAtom(environmentId));
   const [actionsMenuOpen, setActionsMenuOpen] = useState({
     presentation,
     scripts: false,
@@ -114,7 +113,7 @@ export default function ProjectScriptsControl({
   const primaryScript =
     (preferredScriptId ? scripts.find((script) => script.id === preferredScriptId) : undefined) ??
     primaryProjectScript(scripts);
-  const importableScripts = fileScripts.filter(
+  const importableScripts = (canEditActions ? fileScripts : NO_FILE_SCRIPTS).filter(
     (fileScript) =>
       !scripts.some(
         (script) =>
@@ -148,7 +147,7 @@ export default function ProjectScriptsControl({
       waitForSetup: fileScript.runOnWorktreeCreate === true && fileScript.async === false,
       runOnSettle: fileScript.runOnSettle ?? false,
       stopOnSettle: fileScript.stopOnSettle ?? false,
-      ...(readEnvironmentScope(environmentId, AuthSettingsWriteScope) ? { keybinding: null } : {}),
+      keybinding: null,
       previewUrl: fileScript.previewUrl ?? null,
       autoOpenPreview: fileScript.previewUrl ? (fileScript.autoOpenPreview ?? false) : false,
     };
@@ -221,44 +220,51 @@ export default function ProjectScriptsControl({
             <MenuItemLabel>{projectScriptMenuLabel(script, messages)}</MenuItemLabel>
             <span className="relative ms-auto flex h-6 min-w-6 items-center justify-end">
               {shortcutLabel &&
-                (presentation === "menu" ? (
+                (!canEditActions ? (
+                  <MenuShortcut className="ms-0">{shortcutLabel}</MenuShortcut>
+                ) : presentation === "menu" ? (
                   <MenuShortcut className="ms-0 mr-7">{shortcutLabel}</MenuShortcut>
                 ) : (
+                  // The edit button takes the shortcut's place on hover.
                   <span className="transition-opacity group-hover:opacity-0 group-focus-visible:opacity-0">
                     <MenuShortcut className="ms-0">{shortcutLabel}</MenuShortcut>
                   </span>
                 ))}
-              <span
-                className={`absolute right-0 top-1/2 flex -translate-y-1/2 ${presentation === "menu" ? "" : "opacity-0 pointer-events-none transition-opacity group-hover:opacity-100 group-hover:pointer-events-auto group-focus-visible:opacity-100 group-focus-visible:pointer-events-auto"}`}
-              >
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-xs"
-                  className="size-6"
-                  aria-label={gt("Edit {name}", { name: script.name })}
-                  onPointerDown={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                  }}
-                  onClick={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    openEditDialog(script);
-                  }}
+              {canEditActions && (
+                <span
+                  className={`absolute right-0 top-1/2 flex -translate-y-1/2 ${presentation === "menu" ? "" : "opacity-0 pointer-events-none transition-opacity group-hover:opacity-100 group-hover:pointer-events-auto group-focus-visible:opacity-100 group-focus-visible:pointer-events-auto"}`}
                 >
-                  <SettingsIcon className="size-3.5" />
-                </Button>
-              </span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-xs"
+                    className="size-6"
+                    aria-label={gt("Edit {name}", { name: script.name })}
+                    onPointerDown={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                    }}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      openEditDialog(script);
+                    }}
+                  >
+                    <SettingsIcon className="size-3.5" />
+                  </Button>
+                </span>
+              )}
             </span>
           </MenuItem>
         );
       })}
       {importMenuItems}
-      <MenuItem density={presentation === "menu" ? "touch" : "default"} onClick={openAddDialog}>
-        <PlusIcon className="size-4" />
-        <MenuItemLabel>{isPanel ? gt("Add project script") : gt("Add action")}</MenuItemLabel>
-      </MenuItem>
+      {canEditActions && (
+        <MenuItem density={presentation === "menu" ? "touch" : "default"} onClick={openAddDialog}>
+          <PlusIcon className="size-4" />
+          <MenuItemLabel>{isPanel ? gt("Add project script") : gt("Add action")}</MenuItemLabel>
+        </MenuItem>
+      )}
     </>
   );
 
@@ -299,15 +305,17 @@ export default function ProjectScriptsControl({
               <MenuSubPopup>{scriptItems}</MenuSubPopup>
             </MenuSub>
           ) : (
-            <MenuItem
-              density={presentation === "menu" ? "touch" : "default"}
-              onClick={openAddDialog}
-            >
-              <PlusIcon className="size-4" />
-              <MenuItemLabel>
-                <T>Add project action…</T>
-              </MenuItemLabel>
-            </MenuItem>
+            canEditActions && (
+              <MenuItem
+                density={presentation === "menu" ? "touch" : "default"}
+                onClick={openAddDialog}
+              >
+                <PlusIcon className="size-4" />
+                <MenuItemLabel>
+                  <T>Add project action…</T>
+                </MenuItemLabel>
+              </MenuItem>
+            )
           )}
         </>
       ) : primaryScript ? (
@@ -464,7 +472,7 @@ export default function ProjectScriptsControl({
             <MenuPopup align="end">{scriptItems}</MenuPopup>
           </Menu>
         )
-      ) : (
+      ) : canEditActions ? (
         <Tooltip>
           <TooltipTrigger
             render={
@@ -494,7 +502,7 @@ export default function ProjectScriptsControl({
             {isPanel ? gt("Add project script") : gt("Add action")}
           </TooltipPopup>
         </Tooltip>
-      )}
+      ) : null}
 
       <ProjectScriptEditorDialog
         environmentId={environmentId}

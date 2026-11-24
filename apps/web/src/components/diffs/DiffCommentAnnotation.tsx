@@ -17,6 +17,7 @@ import {
 import { textDirection } from "~/textDirection";
 
 import { isCommentSubmitShortcut } from "./commentSubmitShortcut";
+import { isImeKeyDown } from "../../lib/imeKeyDown";
 
 interface DiffCommentSecondaryAction {
   readonly label: string;
@@ -153,7 +154,7 @@ export function DiffCommentAnnotation({
         }}
         onKeyDown={(event) => {
           // Unclaimed, an IME Escape would close the right panel sheet or leave the pull requests page.
-          if (event.nativeEvent.isComposing || event.keyCode === 229) {
+          if (isImeKeyDown(event.nativeEvent)) {
             event.stopPropagation();
             return;
           }

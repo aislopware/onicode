@@ -12,7 +12,7 @@ import {
 import { scopeProjectRef } from "@onicode/client-runtime/environment";
 import { type ComponentProps } from "react";
 import { describe, expect, it, vi } from "vite-plus/test";
-import { page, userEvent } from "vite-plus/test/browser";
+import { cdp, page, userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
 import { act, render } from "../../../test/render";
@@ -517,6 +517,21 @@ describe("PreviewView", () => {
     await expect.element(address).not.toHaveFocus();
     act(() => dispatchPreviewAction("focus-url"));
     await expect.element(address).toHaveFocus();
+  });
+
+  it("keeps the find query when Escape cancels an IME composition", async () => {
+    setup();
+    await using _screen = await render(
+      <PreviewView threadRef={TEST_THREAD_REF} tabId="tab-1" visible />,
+    );
+    act(() => dispatchPreviewAction("find"));
+    const find = page.getByRole("searchbox", { name: "Find in page" });
+    await userEvent.fill(find, "read");
+    // Only a trusted key runs the input's native Escape.
+    await cdp().send("Input.imeSetComposition", { text: "に", selectionStart: 1, selectionEnd: 1 });
+    await expect.element(find).toHaveValue("readに");
+    await userEvent.keyboard("{Escape}");
+    await expect.element(find).toHaveValue("readに");
   });
 
   it("does not reopen find when the user returns to a tab they left with find open", async () => {

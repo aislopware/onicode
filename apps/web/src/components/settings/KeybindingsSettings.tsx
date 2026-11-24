@@ -100,6 +100,7 @@ import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsL
 import { keybindingSearchAnchorId, useSearchableSetting } from "./settingsSearch";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { isImeKeyDown } from "../../lib/imeKeyDown";
 
 function KeybindingPill({ shortcut }: { shortcut: KeybindingShortcut }) {
   const isMac = navigator.platform.toLowerCase().includes("mac");
@@ -157,8 +158,7 @@ function KeybindingsSearchInput({
         value={query}
         onChange={(event) => onChange(event.currentTarget.value)}
         onKeyDown={(event) => {
-          if (event.key !== "Escape" || event.nativeEvent.isComposing || event.keyCode === 229)
-            return;
+          if (event.key !== "Escape" || isImeKeyDown(event.nativeEvent)) return;
           event.preventDefault();
           if (query.length > 0) {
             event.stopPropagation();
