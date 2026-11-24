@@ -209,6 +209,16 @@ describe("SpawnWorker", () => {
       early.kill();
       yield* Effect.promise(() => earlyExited);
       expect(killTree).toHaveBeenCalledWith(early.pid, expect.any(Function));
+      // A kill from a spawn listener ends the tree once, not again after the listener returns.
+      const onSpawn = SpawnWorker.spawnPiped(
+        process.execPath,
+        ["-e", "process.stdin.resume()"],
+        {},
+      );
+      killTree.mockClear();
+      onSpawn.once("spawn", () => onSpawn.kill());
+      yield* Effect.promise(() => new Promise((resolve) => onSpawn.once("exit", resolve)));
+      expect(killTree).toHaveBeenCalledTimes(1);
       // Claude's adapter passes its environment view, a Proxy, which postMessage cannot clone.
       const view = new Proxy({ ...process.env, SPAWN_WORKER_VIEW: "view value" }, {});
       const viewed = SpawnWorker.spawnPiped(

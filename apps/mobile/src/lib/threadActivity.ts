@@ -2109,12 +2109,23 @@ function isWorkLogFeedRow(row: ThreadFeedEntry | undefined): boolean {
 
 export const LIVE_ACTIVITY_ROW_ID = "live-activity-row";
 
+// Settled groups keep their identity across deltas, so each is mapped once.
+const activityGroupTurnItems = new WeakMap<
+  ThreadFeedEntry,
+  ReadonlyArray<OrchestrationV2TurnItem>
+>();
+
 function feedEntryTurnItems(entry: ThreadFeedEntry) {
   if (entry.type === "activity-group") {
-    return entry.activities.map((activity) => activity.projectedItem.item);
+    let items = activityGroupTurnItems.get(entry);
+    if (items === undefined) {
+      items = entry.activities.map((activity) => activity.projectedItem.item);
+      activityGroupTurnItems.set(entry, items);
+    }
+    return items;
   }
   const projected = entry.type === "message" ? entry.message.projectedItem : undefined;
-  return projected === undefined ? null : [projected.item];
+  return projected === undefined ? null : projected.item;
 }
 
 let cachedLiveRunFoldRow: Extract<ThreadFeedEntry, { readonly type: "run-fold" }> | null = null;
