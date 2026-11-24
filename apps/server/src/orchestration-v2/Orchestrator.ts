@@ -17196,7 +17196,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         return yield* dispatchUnsupported(command);
     }
     return {
-      events: yield* unholdRunUpdates(yield* Ref.get(events)),
+      events: yield* unholdRunUpdates(yield* Ref.get(events)).pipe(mapDispatchError(command)),
       effects: yield* Ref.get(effects),
       ...(cancelUnsettledEffects === undefined ? {} : { cancelUnsettledEffects }),
       ...(updateDelegatedCompletionOnlyRunId === undefined
