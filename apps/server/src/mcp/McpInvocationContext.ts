@@ -125,10 +125,12 @@ export const withRuntimeModeCeiling = (
   scope: McpInvocationScope,
   ceiling: RuntimeMode | undefined,
 ): McpInvocationScope => {
-  if (ceiling === undefined || scope.client === undefined) return scope;
+  if (ceiling === undefined) return scope;
+  if (scope.client === undefined) return { ...scope, runtimeModeCeiling: ceiling };
   const asked = scope.client.narrowedTo;
   return {
     ...scope,
+    runtimeModeCeiling: ceiling,
     client: {
       ...scope.client,
       narrowedTo: {
@@ -156,6 +158,8 @@ export interface McpInvocationScope {
   readonly workflows?: boolean;
   /** True for a request that came through Funnel. */
   readonly publicRequest?: boolean;
+  /** The broadest runtime mode an administrator lets a thread run in here. Unset is full access. */
+  readonly runtimeModeCeiling?: RuntimeMode | undefined;
   /**
    * The origin this `/mcp` request reached, e.g. a peer over Tailscale. Remote clients cannot
    * see the URL they were configured with, so links they must fetch carry it. Unset in-process.
