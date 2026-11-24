@@ -281,6 +281,7 @@ export const make = Effect.gen(function* () {
       ignoredFileSearch: true,
       triage: true,
       oneTimeSchedules: true,
+      webhookSchedules: true,
       freshContext: true,
       steersAfterCompaction: true,
       scheduledTaskThreadModes: true,

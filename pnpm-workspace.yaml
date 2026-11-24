@@ -229,8 +229,8 @@ patchedDependencies:
   # The spawner takes an injected spawn function (and uses it for taskkill) so Windows launches
   # can run on worker threads: apps/server/src/process/SpawnWorker.ts.
   "@effect/platform-node-shared@4.1.5": patches/@effect__platform-node-shared@4.1.5.patch
-  # A SQL transaction or savepoint provides its context without merging a copy of every service
-  # it already extends.
+  # The MCP Events extension (SEP-3415) on effect/ai, until Effect ships it, plus avoiding double
+  # context copies inside SQL transactions and savepoints.
   effect@4.1.5: patches/effect@4.1.5.patch
   # Electron net requests never emit "socket", so upstream's idle timeout never fires and a
   # stalled update download hangs forever.

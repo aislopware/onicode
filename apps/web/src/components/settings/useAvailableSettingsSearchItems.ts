@@ -41,6 +41,10 @@ export function useAvailableSettingsSearchItems() {
         environment.connection.phase === "connected" &&
         environment.serverConfig?.environment.capabilities.fastWorktreeCheckout === true,
     ) === true;
+  const hasPublicAccessEnvironment =
+    environments.some(
+      (environment) => environment.serverConfig?.environment.capabilities.webhookSchedules === true,
+    ) === true;
   const hasTextGeneratorsEnvironment =
     environments.some(
       (environment) =>
@@ -68,6 +72,7 @@ export function useAvailableSettingsSearchItems() {
     hasThreadAutoSettlement,
     hasPeerLinkHost,
     hasFastWorktreeCheckoutEnvironment,
+    hasPublicAccessEnvironment,
     hasTextGeneratorsEnvironment,
     hasPrimaryEnvironment: primaryEnvironmentId !== null,
     hasSecretProvidersEnvironment,

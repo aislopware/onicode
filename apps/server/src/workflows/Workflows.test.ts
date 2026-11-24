@@ -20,7 +20,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 
-import { daily, every, Tick } from "./triggers.ts";
+import { daily, every, Tick, webhook, WebhookRequest } from "./triggers.ts";
 import { issues, pullRequests } from "./forgeApi.ts";
 import { text } from "./labels.ts";
 import { cancel, runs, signal, signalAll, start, store } from "./stepServices.ts";
@@ -38,6 +38,8 @@ import {
 } from "./workflow.ts";
 import { type AgentResult, WorkflowAgentError, WorkflowAgents } from "./WorkflowAgents.ts";
 import WorkflowsMigration from "../persistence/Migrations/114_Workflows.ts";
+import { workflowHooks } from "../persistence/Migrations/119_RestoreWebhooks.ts";
+import { ScheduledTaskWebhookOrigin } from "../scheduledTasks/ScheduledTaskService.ts";
 import * as WorkflowEngine from "./WorkflowEngine.ts";
 import {
   Issue,
@@ -679,10 +681,28 @@ const triggered = [
     { version: 1, payload: Tick, triggers: [daily("09:00", { weekdays: [1, 2, 3, 4, 5] })] },
     () => Effect.void,
   ),
-  workflow("inbound", { version: 1, payload: Schema.String }, (body) =>
-    body === "ping" ? skip("only a ping") : Effect.succeed(body),
+  workflow(
+    "inbound",
+    {
+      version: 1,
+      payload: WebhookRequest,
+      triggers: [
+        webhook("push", {
+          key: (request) =>
+            request.headers["x-delivery"] ??
+            (JSON.parse(request.body) as { readonly delivery?: string }).delivery,
+        }),
+      ],
+    },
+    (request) => (request.body === "ping" ? skip("only a ping") : Effect.succeed(request.body)),
   ),
 ];
+const hookRequest = (body: string, headers: Record<string, string> = {}) => ({
+  method: "POST",
+  headers,
+  query: "",
+  body,
+});
 
 const PROJECT = "/home/me/app";
 const triage = workflow(
@@ -854,7 +874,7 @@ const harness = Effect.fnUntraced(function* (store?: typeof WorkflowStore.layer)
   const path = yield* Path.Path;
   const directory = yield* fileSystem.makeTempDirectoryScoped({ prefix: "oni-workflows-" });
   const database = NodeSqliteClient.layer({ filename: path.join(directory, "state.sqlite") });
-  yield* Effect.provide(WorkflowsMigration, database);
+  yield* Effect.provide(Effect.andThen(WorkflowsMigration, workflowHooks), database);
   const counts = yield* Ref.make<Record<string, number>>({});
   const failures = yield* Ref.make(0);
   const latch: Latch = {
@@ -1026,7 +1046,9 @@ it.effect("a signal to a paused run is kept for the resume and does not run the 
         );
         // Nothing wakes the paused run, so its watchers hear of the claim from the store, before
         // they hear of a run started after it.
-        const after = yield* workflows.start("inbound", "hello", { idempotencyKey: "after" });
+        const after = yield* workflows.start("inbound", hookRequest("hello"), {
+          idempotencyKey: "after",
+        });
         const written = new Set<string>();
         while (!written.has(after.runId)) {
           for (const update of yield* changes) {
@@ -2202,7 +2224,7 @@ it.effect("a watcher is sent the runs again when one changes", () =>
         assert.deepInclude(first.workflows, {
           name: "inbound",
           version: 1,
-          triggers: [],
+          triggers: ["webhook push"],
         });
         const { runId } = yield* workflows.start(
           "review",
@@ -2225,7 +2247,9 @@ it.effect("a watcher is sent the runs again when one changes", () =>
           listed !== undefined && "runs" in listed ? listed.runs.map((run) => run.runId) : [],
           [runId],
         );
-        const other = yield* workflows.start("inbound", "hello", { idempotencyKey: "w1" });
+        const other = yield* workflows.start("inbound", hookRequest("hello"), {
+          idempotencyKey: "w1",
+        });
         let done = false;
         while (!done) {
           for (const update of yield* changes) {
@@ -2411,6 +2435,11 @@ it.effect("a step or sleep with an option it cannot read says which and what it 
   }),
 );
 
+it("hooks of different workflows never share an id", () => {
+  assert.notEqual(Workflows.hookId("a.b", "c"), Workflows.hookId("a", "b.c"));
+  assert.equal(Workflows.hookId("inbound", "push"), "wf-inbound.push");
+});
+
 it.effect("a start under a key is one run, and a run that skips ends as skipped", () =>
   Effect.gen(function* () {
     // A start cut off after its row and before the engine heard of it, as a server exit would.
@@ -2438,20 +2467,24 @@ it.effect("a start under a key is one run, and a run that skips ends as skipped"
     const stranded = yield* boot(
       Effect.gen(function* () {
         const workflows = yield* Workflows.Workflows;
-        const first = yield* workflows.start("inbound", "hello", { idempotencyKey: "d1" });
+        const first = yield* workflows.start("inbound", hookRequest("hello"), {
+          idempotencyKey: "d1",
+        });
         assert.deepStrictEqual(
-          yield* workflows.start("inbound", "hello", { idempotencyKey: "d1" }),
+          yield* workflows.start("inbound", hookRequest("hello"), { idempotencyKey: "d1" }),
           first,
         );
         const done = yield* workflows.waitFor(first.runId, status("completed"));
         assert.equal(done.result, "hello");
 
-        const ping = yield* workflows.start("inbound", "ping", { idempotencyKey: "d2" });
+        const ping = yield* workflows.start("inbound", hookRequest("ping"), {
+          idempotencyKey: "d2",
+        });
         const skipped = yield* workflows.waitFor(ping.runId, status("skipped"));
         assert.equal(skipped.detail, "only a ping");
 
         const starting = yield* Effect.forkChild(
-          workflows.start("inbound", "stranded", { idempotencyKey: "d3" }),
+          workflows.start("inbound", hookRequest("stranded"), { idempotencyKey: "d3" }),
         );
         const runId = yield* Deferred.await(reached);
         yield* Fiber.interrupt(starting);
@@ -2516,6 +2549,66 @@ it.effect("pull requests opened across several pages each start a run", () =>
         assert.notInclude(forge.pagesRead, 2);
       }),
       [greet],
+    );
+  }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
+);
+
+it.effect("a request to a hook starts a run, its retry is the same run, and a bad token none", () =>
+  Effect.gen(function* () {
+    const { boot } = yield* harness();
+    const token = yield* boot(
+      Effect.gen(function* () {
+        const workflows = yield* Workflows.Workflows;
+        const [hook] = yield* workflows.hooks;
+        assert.equal(hook?.workflow, "inbound");
+        assert.isNull(hook?.url);
+        const [hookId, token] = hook!.path.split("/").slice(-2).map(decodeURIComponent);
+        const deliver = (body: string, delivery: string, withToken = token!) =>
+          workflows.deliver({
+            hookId: hookId!,
+            token: withToken,
+            request: hookRequest(body, { "x-delivery": delivery }),
+          });
+
+        assert.isTrue(Option.isNone(yield* deliver("hello", "d1", "not the token")));
+        const first = Option.getOrThrow(yield* deliver("hello", "d1"));
+        assert.deepStrictEqual(Option.getOrThrow(yield* deliver("hello", "d1")), first);
+        const done = yield* workflows.waitFor(first.runId, status("completed"));
+        assert.equal(done.result, "hello");
+
+        const ping = Option.getOrThrow(yield* deliver("ping", "d2"));
+        const skipped = yield* workflows.waitFor(ping.runId, status("skipped"));
+        assert.equal(skipped.detail, "only a ping");
+
+        const send = (headers: Record<string, string>, body: string) =>
+          workflows.deliver({
+            hookId: hookId!,
+            token: token!,
+            request: hookRequest(body, headers),
+          });
+        // With no key from the workflow, the id the sender keeps on its retry makes it one run.
+        const github = { "x-github-delivery": "g1" };
+        const sent = Option.getOrThrow(yield* send(github, "{}"));
+        assert.deepStrictEqual(Option.getOrThrow(yield* send(github, "{}")), sent);
+        // A key the workflow cannot read off the request turns the request down.
+        const unreadable = yield* send({}, "not json").pipe(Effect.flip);
+        assert.equal(unreadable._tag, "WorkflowInputError");
+        return token;
+      }),
+    );
+    // The URL a sender was given still works after a restart, and is whole once hooks are public.
+    yield* boot(
+      Effect.gen(function* () {
+        const workflows = yield* Workflows.Workflows;
+        const [hook] = yield* workflows.hooks;
+        assert.isTrue(hook?.path.endsWith(`/${token}`));
+        assert.equal(hook?.url, `https://box.tail.ts.net${hook?.path}`);
+      }),
+    ).pipe(
+      Effect.provideService(
+        ScheduledTaskWebhookOrigin,
+        Effect.succeed({ publicOrigin: "https://box.tail.ts.net" }),
+      ),
     );
   }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
 );

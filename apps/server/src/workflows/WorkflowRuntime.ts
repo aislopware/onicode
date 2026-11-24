@@ -637,6 +637,10 @@ export const make = Effect.fn("WorkflowRuntime.make")(function* <E, R>(
     }),
     questions: Effect.flatMap(current, (live) => live.questions),
     unfinished: Effect.flatMap(current, (live) => live.unfinished),
+    hooks: Effect.flatMap(current, (live) => live.hooks),
+    deliver: Effect.fn("Workflows.deliver")(function* (...input) {
+      return yield* (yield* current).deliver(...input);
+    }),
     stored: Effect.fn("Workflows.stored")(function* (...input) {
       return yield* (yield* current).stored(...input);
     }),
@@ -899,6 +903,10 @@ export const gate = Effect.fn("WorkflowRuntime.gate")(function* <E, R>(
     }),
     questions: Effect.flatMap(current, (service) => service.questions),
     unfinished: Effect.flatMap(current, (service) => service.unfinished),
+    hooks: Effect.flatMap(current, (service) => service.hooks),
+    deliver: Effect.fn("Workflows.deliver")(function* (...input) {
+      return yield* (yield* current).deliver(...input);
+    }),
     stored: Effect.fn("Workflows.stored")(function* (...input) {
       return yield* (yield* current).stored(...input);
     }),

@@ -15,7 +15,9 @@ import {
   AuthMcpApprovalDecisionRequest,
   AuthMcpApprovalError,
   AuthMcpApprovalRedirect,
+  AuthMcpAuthorizationServerMetadata,
   AuthMcpClientRegistration,
+  AuthMcpProtectedResourceMetadata,
   AuthMcpRegisteredClient,
   AuthMcpRegistrationError,
   AuthMcpTokenError,
@@ -469,12 +471,32 @@ class EnvironmentAuthHttpApi extends HttpApiGroup.make("auth")
 
 class EnvironmentMcpOAuthHttpApi extends HttpApiGroup.make("mcpOAuth")
   .add(
+    HttpApiEndpoint.get("protectedResource", "/.well-known/oauth-protected-resource", {
+      success: AuthMcpProtectedResourceMetadata,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("mcpProtectedResource", "/.well-known/oauth-protected-resource/mcp", {
+      success: AuthMcpProtectedResourceMetadata,
+    }),
+  )
+  .add(
+    HttpApiEndpoint.get("authorizationServer", "/.well-known/oauth-authorization-server", {
+      success: AuthMcpAuthorizationServerMetadata,
+    }),
+  )
+  .add(
     HttpApiEndpoint.post("register", "/oauth/mcp/register", {
       payload: AuthMcpClientRegistration,
       success: AuthMcpRegisteredClient,
       error: AuthMcpRegistrationError,
     }),
   )
+  // The consent pages: HTML the server renders itself, the one browser surface it serves.
+  .add(HttpApiEndpoint.get("authorize", "/oauth/mcp/authorize"))
+  .add(HttpApiEndpoint.get("consent", "/oauth/mcp/consent"))
+  .add(HttpApiEndpoint.get("consentCodeForm", "/oauth/mcp/consent/code"))
+  .add(HttpApiEndpoint.post("consentCode", "/oauth/mcp/consent/code"))
   .add(
     HttpApiEndpoint.post("decision", "/oauth/mcp/decision", {
       payload: AuthMcpApprovalDecisionRequest,
@@ -829,6 +851,26 @@ class EnvironmentPeerLinkHttpApi extends HttpApiGroup.make("peerLink").add(
     ],
   }),
 ) {}
+// Path tokens and optional body signatures authenticate webhooks; read raw bytes to verify signatures.
+const WebhookParams = Schema.Struct({
+  hookId: TrimmedNonEmptyString,
+  token: TrimmedNonEmptyString,
+});
+const WebhookAccepted = Schema.Struct({ deliveryId: TrimmedNonEmptyString }).pipe(
+  HttpApiSchema.status(202),
+);
+const webhookEndpoint = {
+  params: WebhookParams,
+  success: WebhookAccepted,
+} as const;
+const WEBHOOK_PATH = "/api/hooks/:hookId/:token";
+
+class EnvironmentWebhooksHttpApi extends HttpApiGroup.make("webhooks")
+  .add(HttpApiEndpoint.post("webhookPost", WEBHOOK_PATH, webhookEndpoint))
+  .add(HttpApiEndpoint.put("webhookPut", WEBHOOK_PATH, webhookEndpoint))
+  .add(HttpApiEndpoint.patch("webhookPatch", WEBHOOK_PATH, webhookEndpoint))
+  .add(HttpApiEndpoint.get("webhookGet", WEBHOOK_PATH, webhookEndpoint))
+  .annotate(HttpApi.RedactedNames, { params: ["token"] }) {}
 
 export class EnvironmentHttpApi extends HttpApi.make("environment")
   .add(EnvironmentMetadataHttpApi)
@@ -839,4 +881,5 @@ export class EnvironmentHttpApi extends HttpApi.make("environment")
   .add(EnvironmentProjectsHttpApi)
   .add(EnvironmentVoiceHttpApi)
   .add(EnvironmentPushHttpApi)
-  .add(EnvironmentPeerLinkHttpApi) {}
+  .add(EnvironmentPeerLinkHttpApi)
+  .add(EnvironmentWebhooksHttpApi) {}

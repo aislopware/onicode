@@ -1,4 +1,4 @@
-import { deadlineStore, minuteTick } from "@onicode/client-runtime/clock";
+import { deadlineStore, minuteTick, secondTick } from "@onicode/client-runtime/clock";
 import { useState, useSyncExternalStore } from "react";
 
 /** Re-renders once when `deadlineMs` (epoch ms) is reached; `null` never passes. */
@@ -35,4 +35,9 @@ export function useNowMinuteMs(): number {
   return minuteTickToEpochMs(
     useSyncExternalStore(minuteTick.subscribe, minuteTick.getSnapshot, minuteTick.getSnapshot),
   );
+}
+
+/** Epoch ms floored to the second, advancing each wall-clock second, for live countdowns. */
+export function useNowSecond(): number {
+  return useSyncExternalStore(secondTick.subscribe, secondTick.getSnapshot, secondTick.getSnapshot);
 }

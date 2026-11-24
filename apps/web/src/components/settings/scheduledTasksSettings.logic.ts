@@ -1,4 +1,4 @@
-import { isListedThreadLineage } from "@onicode/contracts";
+import { isListedThreadLineage, isWebhookDedupeTemplate } from "@onicode/contracts";
 import {
   EnvironmentId,
   type ProjectId,
@@ -16,6 +16,12 @@ import {
 } from "@onicode/contracts";
 import type { EnvironmentThreadShell } from "@onicode/client-runtime/state/models";
 import { rebaseScheduledTaskDestination } from "@onicode/client-runtime/scheduled-task-draft";
+import {
+  parseWebhookFilterDrafts,
+  webhookFilterDrafts,
+  webhookFilterDraftsChanged,
+  type WebhookFilterDraft,
+} from "@onicode/client-runtime/scheduled-task-webhook";
 import { scheduleTimeZoneLabel } from "@onicode/client-runtime/scheduled-task-time-zone";
 import type { TimestampFormat } from "@onicode/contracts/settings";
 import { msg } from "gt-react";
@@ -46,6 +52,7 @@ export function scheduleLabel(
   resolve: MessageResolver = m,
   locale: string = getActiveLocale(),
 ): string {
+  if (schedule.type === "webhook") return resolve(msg("On webhook"));
   if (schedule.type === "once") {
     return resolve(
       msg("Once, {time}", { time: formatDateTimeTimestamp(schedule.runAt, timestampFormat) }),
@@ -103,7 +110,7 @@ export function validateScheduledTasksSearch(raw: Record<string, unknown>) {
   };
 }
 
-export type ScheduleMode = "fixed" | "once" | "interval";
+export type ScheduleMode = "fixed" | "once" | "interval" | "webhook";
 export type WorkspaceMode = "root" | "worktree" | "existing_worktree";
 
 export interface DraftState {
@@ -131,9 +138,27 @@ export interface DraftState {
   readonly modelSelection: ModelSelection | null;
   readonly runtimeMode: RuntimeMode;
   readonly interactionMode: ProviderInteractionMode;
+  readonly signatureEnabled: boolean;
+  readonly signatureHeader: string;
+  readonly signatureEncoding: "hex" | "base64";
+  readonly signaturePrefix: string;
+  /** Write-only: empty keeps the secret already stored on the server. */
+  readonly signatureSecret: string;
+  readonly replayKey: string;
+  readonly coalesceKey: string;
+  readonly coalesceWindowSeconds: string;
+  readonly filters: ReadonlyArray<WebhookFilterDraft>;
+  /** The filter rows the form opened with. */
+  readonly savedFilters: ReadonlyArray<WebhookFilterDraft>;
   /** The task as the form loaded it, so a save is refused once another client changed it. */
   readonly saved: ScheduledTask | null;
 }
+
+export const WEBHOOK_SIGNATURE_DEFAULTS = {
+  signatureHeader: "x-hub-signature-256",
+  signatureEncoding: "hex",
+  signaturePrefix: "sha256=",
+} as const;
 
 /** Formats a date as a `datetime-local` input value in the browser's time zone. */
 export function toDateTimeLocalValue(date: Date): string {
@@ -147,6 +172,7 @@ export function scheduleDraftErrors(draft: DraftState, resolve: MessageResolver 
   ];
   if (draft.scheduleMode === "fixed" && !draft.timeOfDay)
     return invalidRunTime(resolve(msg("Pick a time.")));
+  if (draft.scheduleMode === "webhook") return webhookDraftErrors(draft, resolve);
   if (draft.scheduleMode !== "once") return [];
   const runAt = new Date(draft.runAt);
   if (Number.isNaN(runAt.getTime())) return invalidRunTime(resolve(msg("Pick a date and time.")));
@@ -154,6 +180,53 @@ export function scheduleDraftErrors(draft: DraftState, resolve: MessageResolver 
   if (toDateTimeLocalValue(runAt) !== draft.runAt)
     return invalidRunTime(resolve(msg("That time does not exist in your time zone.")));
   return [];
+}
+
+function webhookDraftErrors(draft: DraftState, resolve: MessageResolver) {
+  const errors: Array<{ title: string; description: string }> = [];
+  for (const [description, value] of [
+    [msg("Duplicate request key must contain a valid request placeholder."), draft.replayKey],
+    [msg("Coalesce key must contain a valid request placeholder."), draft.coalesceKey],
+  ] as const) {
+    if (value.trim() && !isWebhookDedupeTemplate(value.trim()))
+      errors.push({
+        title: resolve(msg("Invalid webhook settings")),
+        description: resolve(description),
+      });
+  }
+  const window = draft.coalesceWindowSeconds.trim();
+  if (window && (!Number.isInteger(Number(window)) || Number(window) < 10 || Number(window) > 3600))
+    errors.push({
+      title: resolve(msg("Invalid webhook settings")),
+      description: resolve(msg("Coalesce window must be whole seconds from 10 to 3600.")),
+    });
+  return errors;
+}
+
+const WEBHOOK_DELIVERY_LABELS: Record<string, string> = {
+  dispatch_failed: msg("Run failed"),
+  duplicate: msg("Duplicate", { $context: "webhook delivery outcome" }),
+  coalesced: msg("Coalesced"),
+  filtered: msg("Filtered", { $context: "webhook delivery outcome" }),
+  rejected_signature: msg("Bad signature"),
+  disabled: msg("Task paused"),
+  rate_limited: msg("Rate limited"),
+};
+
+export function webhookDeliveryLabel(
+  delivery: {
+    readonly outcome: string;
+    readonly pendingWindow?: boolean | undefined;
+  },
+  resolve: MessageResolver = m,
+) {
+  if (delivery.outcome === "accepted") {
+    return delivery.pendingWindow
+      ? resolve(msg("Opened window"))
+      : resolve(msg("Ran", { $context: "webhook delivery outcome" }));
+  }
+  const label = WEBHOOK_DELIVERY_LABELS[delivery.outcome];
+  return label ? resolve(label) : delivery.outcome.replaceAll("_", " ");
 }
 
 export function scheduleFromDraft(draft: DraftState): ScheduledTaskUpsertSchedule | null {
@@ -176,6 +249,36 @@ export function scheduleFromDraft(draft: DraftState): ScheduledTaskUpsertSchedul
           : new Date(draft.runAt).toISOString(),
     };
   }
+  if (draft.scheduleMode === "webhook") {
+    const replayKey = draft.replayKey.trim();
+    const coalesceKey = draft.coalesceKey.trim();
+    const coalesceWindowSeconds = draft.coalesceWindowSeconds.trim()
+      ? Number(draft.coalesceWindowSeconds)
+      : undefined;
+    const parsedFilters = parseWebhookFilterDrafts(draft.filters);
+    if (!("filters" in parsedFilters)) return null;
+    const secret = draft.signatureSecret.trim();
+    return {
+      type: "webhook",
+      signature: draft.signatureEnabled
+        ? {
+            header: draft.signatureHeader.trim(),
+            encoding: draft.signatureEncoding,
+            prefix: draft.signaturePrefix,
+            ...(secret ? { secret } : {}),
+          }
+        : null,
+      dedupe: {
+        ...(replayKey ? { replayKey } : {}),
+        ...(coalesceKey ? { coalesceKey } : {}),
+        ...(coalesceWindowSeconds === undefined ? {} : { coalesceWindowSeconds }),
+      },
+      // Only edited filters are sent; the server keeps the stored ones otherwise.
+      ...(webhookFilterDraftsChanged(draft.savedFilters, draft.filters)
+        ? { filters: parsedFilters.filters }
+        : {}),
+    };
+  }
   if (draft.scheduleMode === "interval") {
     const everyMs = Math.round(Number(draft.intervalMinutes) * 60_000);
     return { type: "interval", everyMs };
@@ -190,6 +293,7 @@ export function scheduleFromDraft(draft: DraftState): ScheduledTaskUpsertSchedul
 
 export function taskToDraft(task: ScheduledTask): DraftState {
   const schedule = task.schedule;
+  const filters = webhookFilterDrafts(schedule.type === "webhook" ? schedule.filters : undefined);
   const weekdays =
     schedule.type === "fixed_time" && schedule.weekdays && schedule.weekdays.length > 0
       ? new Set(schedule.weekdays)
@@ -224,6 +328,23 @@ export function taskToDraft(task: ScheduledTask): DraftState {
     modelSelection: task.modelSelection,
     runtimeMode: task.runtimeMode,
     interactionMode: task.interactionMode,
+    ...(schedule.type === "webhook" && schedule.signature !== null
+      ? {
+          signatureEnabled: true,
+          signatureHeader: schedule.signature.header,
+          signatureEncoding: schedule.signature.encoding,
+          signaturePrefix: schedule.signature.prefix,
+        }
+      : { signatureEnabled: false, ...WEBHOOK_SIGNATURE_DEFAULTS }),
+    signatureSecret: "",
+    replayKey: schedule.type === "webhook" ? (schedule.dedupe?.replayKey ?? "") : "",
+    coalesceKey: schedule.type === "webhook" ? (schedule.dedupe?.coalesceKey ?? "") : "",
+    coalesceWindowSeconds:
+      schedule.type === "webhook" && schedule.dedupe?.coalesceWindowSeconds !== undefined
+        ? String(schedule.dedupe.coalesceWindowSeconds)
+        : "",
+    filters,
+    savedFilters: filters,
     saved: task,
   };
 }
@@ -235,6 +356,14 @@ const SCHEDULE_FIELDS = [
   "runAt",
   "savedRunAt",
   "weekdays",
+  "signatureEnabled",
+  "signatureHeader",
+  "signatureEncoding",
+  "signaturePrefix",
+  "signatureSecret",
+  "replayKey",
+  "coalesceKey",
+  "coalesceWindowSeconds",
 ] as const;
 
 const WORKSPACE_FIELDS = [
@@ -276,6 +405,14 @@ export function rebaseDraft(draft: DraftState, current: ScheduledTask): DraftSta
           runAt: now.runAt,
           savedRunAt: now.savedRunAt,
           weekdays: now.weekdays,
+          signatureEnabled: now.signatureEnabled,
+          signatureHeader: now.signatureHeader,
+          signatureEncoding: now.signatureEncoding,
+          signaturePrefix: now.signaturePrefix,
+          signatureSecret: now.signatureSecret,
+          replayKey: now.replayKey,
+          coalesceKey: now.coalesceKey,
+          coalesceWindowSeconds: now.coalesceWindowSeconds,
         }
       : {}),
     projectId: destination.projectId,
@@ -296,6 +433,11 @@ export function rebaseDraft(draft: DraftState, current: ScheduledTask): DraftSta
       : {}),
     ...(untouched("runtimeMode") ? { runtimeMode: now.runtimeMode } : {}),
     ...(untouched("interactionMode") ? { interactionMode: now.interactionMode } : {}),
+    // Edited filter rows stay; untouched ones take what is stored now.
+    ...(webhookFilterDraftsChanged(draft.savedFilters, draft.filters)
+      ? {}
+      : { filters: now.filters }),
+    savedFilters: now.savedFilters,
     saved: now.saved,
   };
 }
@@ -310,7 +452,15 @@ export function modelSelectionKey(selection: ModelSelection): string {
 
 // Fields a mode leaves behind when the user switches away and back are not edits.
 function relevantDraftFields(draft: DraftState, defaultModelKey: string) {
-  const { weekdays: _weekdays, saved: _saved, ...fields } = draft;
+  const {
+    weekdays: _weekdays,
+    saved: _saved,
+    filters: _filters,
+    savedFilters: _savedFilters,
+    ...fields
+  } = draft;
+  const webhook = draft.scheduleMode === "webhook";
+  const signed = webhook && draft.signatureEnabled;
   return {
     ...fields,
     modelSelection: draft.modelSelection
@@ -320,6 +470,14 @@ function relevantDraftFields(draft: DraftState, defaultModelKey: string) {
     timeOfDay: draft.scheduleMode === "fixed" ? draft.timeOfDay : "",
     runAt: draft.scheduleMode === "once" ? draft.runAt : "",
     savedRunAt: draft.scheduleMode === "once" ? draft.savedRunAt : "",
+    signatureEnabled: signed,
+    signatureHeader: signed ? draft.signatureHeader : "",
+    signatureEncoding: signed ? draft.signatureEncoding : "",
+    signaturePrefix: signed ? draft.signaturePrefix : "",
+    signatureSecret: signed ? draft.signatureSecret : "",
+    replayKey: webhook ? draft.replayKey : "",
+    coalesceKey: webhook ? draft.coalesceKey : "",
+    coalesceWindowSeconds: webhook ? draft.coalesceWindowSeconds : "",
     baseRef: draft.workspaceMode === "worktree" ? draft.baseRef : "",
     startFromOrigin: draft.workspaceMode === "worktree" ? draft.startFromOrigin : false,
     existingWorktreePath:
@@ -355,8 +513,12 @@ export function hasDraftChanges(
     current.scheduleMode === "fixed" &&
     (initial.weekdays.size !== current.weekdays.size ||
       [...initial.weekdays].some((day) => !current.weekdays.has(day)));
+  const filtersChanged =
+    current.scheduleMode === "webhook" &&
+    webhookFilterDraftsChanged(initial.filters, current.filters);
   return (
     weekdaysChanged ||
+    filtersChanged ||
     (Object.keys(before) as Array<keyof typeof before>).some((key) => before[key] !== after[key])
   );
 }

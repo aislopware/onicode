@@ -230,13 +230,15 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("PairingGrantStor
       yield* grants.consume(peerLink.credential, {
         allowedSubject: `${PEER_LINK_PAIRING_SUBJECT_PREFIX}auto`,
       });
-      for (const input of [{}, { label: "Synthetic phone" }]) {
+      // A blank label would fail to encode for every client reading the list.
+      for (const input of [{}, { label: "Synthetic phone" }, { label: " " }]) {
         const issued = yield* grants.issueOneTimeToken(input);
         const change = yield* Queue.take(changes);
         expect(change?.type).toBe("pairingLinkUpserted");
         if (change?.type !== "pairingLinkUpserted")
           throw new Error("Expected a pairing link update");
         expect(change.pairingLink.id).toBe(issued.id);
+        expect(change.pairingLink.label).toBe(input.label?.trim() || undefined);
         expect(change.pairingLink).not.toHaveProperty("credential");
         const listed = (yield* grants.listActive()).find((link) => link.id === issued.id);
         expect(listed).toEqual(change.pairingLink);

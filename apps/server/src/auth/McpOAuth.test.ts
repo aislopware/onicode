@@ -1,15 +1,20 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
+  AuthMcpAuthorizationRequest,
   AuthMcpClientAccess,
   EnvironmentHttpApi,
   MCP_PEER_LINK_SOFTWARE_ID,
+  mcpApprovalCode,
+  type ManagedPolicyDocument,
   mcpClientScopes,
 } from "@onicode/contracts";
 import { expect, it } from "@effect/vitest";
 import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Etag from "effect/http/Etag";
 import * as HttpPlatform from "effect/http/HttpPlatform";
@@ -17,7 +22,11 @@ import * as HttpRouter from "effect/http/HttpRouter";
 import * as HttpServerRequest from "effect/http/HttpServerRequest";
 import * as HttpApi from "effect/http-api/HttpApi";
 import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
+import * as Option from "effect/Option";
+import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
+import * as TestClock from "effect/testing/TestClock";
 
 import * as ServerConfig from "../config.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
@@ -37,32 +46,83 @@ class AuthTestApi extends HttpApi.make("environment")
   .add(EnvironmentHttpApi.groups.mcpOAuth) {}
 
 const layerConfig = ServerConfig.layerTest(process.cwd(), { prefix: "oni-mcp-oauth-test-" });
-const layerEnvironmentAuth = EnvironmentAuth.layer.pipe(
-  Layer.provide(ManagedPolicy.layerTest()),
-  Layer.provide(Sqlite.layerMemory),
-  Layer.provideMerge(ServerSecretStore.layer),
-  Layer.provideMerge(ServerEnvironment.layerIdentity),
-  Layer.provide(layerConfig),
-);
-const makeLayerRoutes = (capture: (auth: EnvironmentAuth.EnvironmentAuth["Service"]) => void) =>
+const layerEnvironmentAuth = (policy?: ManagedPolicyDocument) =>
+  EnvironmentAuth.layer.pipe(
+    Layer.provide(ManagedPolicy.layerTest(policy)),
+    Layer.provide(Sqlite.layerMemory),
+    Layer.provideMerge(ServerSecretStore.layer),
+    Layer.provideMerge(ServerEnvironment.layerIdentity),
+    Layer.provide(layerConfig),
+  );
+interface Captured {
+  readonly auth: EnvironmentAuth.EnvironmentAuth["Service"];
+  readonly oauth: McpOAuth.McpOAuth["Service"];
+}
+
+/** Holds McpOAuth's first approval-code check until `release`, so a test can act while it runs. */
+interface ApprovalCodeGate {
+  readonly entered: Deferred.Deferred<void>;
+  readonly release: Deferred.Deferred<void>;
+  readonly checks: Ref.Ref<number>;
+}
+const makeApprovalCodeGate = Effect.all({
+  entered: Deferred.make<void>(),
+  release: Deferred.make<void>(),
+  checks: Ref.make(0),
+});
+const layerApprovalCodeGate = (gate: ApprovalCodeGate | undefined) =>
+  Layer.effect(
+    EnvironmentAuth.EnvironmentAuth,
+    Effect.map(EnvironmentAuth.EnvironmentAuth, (auth) =>
+      gate === undefined
+        ? auth
+        : EnvironmentAuth.EnvironmentAuth.of({
+            ...auth,
+            consumeMcpApprovalCode: (code, access, purpose) =>
+              Ref.getAndUpdate(gate.checks, (checks) => checks + 1).pipe(
+                Effect.flatMap((earlier) =>
+                  earlier === 0
+                    ? Deferred.succeed(gate.entered, undefined).pipe(
+                        Effect.andThen(Deferred.await(gate.release)),
+                      )
+                    : Effect.void,
+                ),
+                Effect.andThen(auth.consumeMcpApprovalCode(code, access, purpose)),
+              ),
+          }),
+    ),
+  );
+
+interface RouteOptions {
+  readonly policy?: ManagedPolicyDocument;
+  readonly gate?: ApprovalCodeGate;
+}
+
+const makeLayerRoutes = (
+  capture: (captured: Captured) => void,
+  { policy, gate }: RouteOptions = {},
+) =>
   Layer.mergeAll(
     Layer.effectDiscard(
-      EnvironmentAuth.EnvironmentAuth.pipe(Effect.tap((auth) => Effect.sync(() => capture(auth)))),
+      Effect.all({ auth: EnvironmentAuth.EnvironmentAuth, oauth: McpOAuth.McpOAuth }).pipe(
+        Effect.tap((captured) => Effect.sync(() => capture(captured))),
+      ),
     ),
     HttpApiBuilder.layer(AuthTestApi).pipe(
       Layer.provide(AuthHttp.layer),
       Layer.provide(TailnetAccess.layerUnavailable),
-      Layer.provide(
-        McpOAuthHttp.layer.pipe(
-          Layer.provide(McpOAuth.layer),
-          Layer.provide(ServerSettings.layerTest({ linkedEnvironmentsEnabled: true })),
-        ),
-      ),
+      Layer.provide(McpOAuthHttp.layer),
       Layer.provide(AuthHttp.layerAuthenticatedAuth),
       Layer.provide(ServerHttp.layerApiBodyLimit),
     ),
   ).pipe(
-    Layer.provideMerge(layerEnvironmentAuth),
+    Layer.provideMerge(
+      McpOAuth.layer.pipe(
+        Layer.provide(ServerSettings.layerTest({ linkedEnvironmentsEnabled: true })),
+        Layer.provide(layerApprovalCodeGate(gate)),
+      ),
+    ),
+    Layer.provideMerge(layerEnvironmentAuth(policy)),
     Layer.provide(layerConfig),
     Layer.provideMerge(
       HttpPlatform.layer.pipe(
@@ -75,6 +135,7 @@ const makeLayerRoutes = (capture: (auth: EnvironmentAuth.EnvironmentAuth["Servic
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 const ORIGIN = "https://box.example.ts.net";
+const decodeAuthorizationRequest = Schema.decodeEffect(AuthMcpAuthorizationRequest);
 const REDIRECT = "http://localhost/callback";
 const verifier = "a".repeat(43) + "-verifier-for-tests";
 const challenge = "DeB41nTVkPwpbbYecrnqtVq7VXLezustdHAK4SWt13c";
@@ -93,22 +154,27 @@ const form = (body: Record<string, string>) => ({
 type Handler = (request: Request) => Effect.Effect<Response>;
 
 const withRoutes = <A, E>(
-  use: (handler: Handler, auth: EnvironmentAuth.EnvironmentAuth["Service"]) => Effect.Effect<A, E>,
+  use: (
+    handler: Handler,
+    auth: EnvironmentAuth.EnvironmentAuth["Service"],
+    oauth: McpOAuth.McpOAuth["Service"],
+  ) => Effect.Effect<A, E>,
+  options?: RouteOptions,
 ) =>
   Effect.gen(function* () {
     const random = yield* SecureRandom.SecureRandom;
     const context = Context.make(SecureRandom.SecureRandom, random);
-    let routerAuth: EnvironmentAuth.EnvironmentAuth["Service"] | undefined;
-    const layerRoutes = makeLayerRoutes((auth) => {
-      routerAuth = auth;
-    });
+    let captured: Captured | undefined;
+    const layerRoutes = makeLayerRoutes((services) => {
+      captured = services;
+    }, options);
     return yield* Effect.acquireUseRelease(
       Effect.sync(() => HttpRouter.toWebHandler(layerRoutes, { disableLogger: true })),
       (web) =>
         Effect.gen(function* () {
           const handler: Handler = (request) => Effect.promise(() => web.handler(request, context));
           yield* handler(at("/api/auth/session"));
-          return yield* use(handler, routerAuth!);
+          return yield* use(handler, captured!.auth, captured!.oauth);
         }),
       (web) => Effect.promise(() => web.dispose()),
     );
@@ -189,7 +255,7 @@ it.effect("answers 413 to a body over the API limit", () =>
   ),
 );
 
-it.effect("registers only peer links and never redirects for an unverified client", () =>
+it.effect("registers any client and never redirects for an unverified one", () =>
   withRoutes((handler, auth) =>
     Effect.gen(function* () {
       for (const refused of [
@@ -204,11 +270,7 @@ it.effect("registers only peer links and never redirects for an unverified clien
         expect(yield* json<unknown>(response)).toMatchObject({ error: "invalid_redirect_uri" });
       }
       for (const softwareId of [null, "claude-code"]) {
-        const outsideAgent = yield* register(handler, REDIRECT, softwareId);
-        expect(outsideAgent.status).toBe(400);
-        expect(yield* json<unknown>(outsideAgent)).toMatchObject({
-          error: "invalid_client_metadata",
-        });
+        expect((yield* register(handler, REDIRECT, softwareId)).status).toBe(201);
       }
 
       const registered = yield* register(handler);
@@ -232,6 +294,34 @@ it.effect("registers only peer links and never redirects for an unverified clien
       );
       expect(unregistered.status).toBe(400);
       expect(unregistered.redirectTo).toBeUndefined();
+
+      // A bad request redirects back only to a loopback app; anyone can register an https one.
+      const authorize = (params: Record<string, string>) =>
+        handler(at(`/oauth/mcp/authorize?${new URLSearchParams(params)}`));
+      const unsupported = yield* authorize({
+        ...authorizeParams(clientId),
+        response_type: "token",
+      });
+      expect(unsupported.status).toBe(302);
+      expect(new URL(unsupported.headers.get("location")!).searchParams.get("error")).toBe(
+        "unsupported_response_type",
+      );
+      const httpsRedirect = "https://bot.example/callback";
+      const { client_id: httpsClientId } = yield* register(handler, httpsRedirect, null).pipe(
+        Effect.flatMap(json<{ client_id: string }>),
+      );
+      for (const params of [
+        { response_type: "token" },
+        { code_challenge_method: "plain" },
+        { resource: "https://elsewhere.example/mcp" },
+      ]) {
+        const shown = yield* authorize({
+          ...authorizeParams(httpsClientId, httpsRedirect),
+          ...params,
+        });
+        expect(shown.status, JSON.stringify(params)).toBe(400);
+        expect(shown.headers.get("location")).toBeNull();
+      }
 
       for (const resource of [`${ORIGIN}/mcp#section`, `${ORIGIN}/mcp#`]) {
         const wrongTarget = yield* decide(
@@ -488,6 +578,387 @@ it.live("a code minted with an access level's scopes approves that access", () =
         });
         expect(approval.status, access).toBe(200);
       }
+    }),
+  ),
+);
+
+const outsideClientId = (handler: Handler) =>
+  register(handler, REDIRECT, null).pipe(
+    Effect.flatMap((response) => json<{ client_id: string }>(response)),
+    Effect.map((body) => body.client_id),
+  );
+
+/** Starts an outside agent's sign-in and returns the consent page's id. */
+const beginSignIn = (handler: Handler, clientId: string) =>
+  handler(at(`/oauth/mcp/authorize?${new URLSearchParams(authorizeParams(clientId))}`)).pipe(
+    Effect.map((response) => {
+      expect(response.status).toBe(303);
+      const location = new URL(response.headers.get("location")!, ORIGIN);
+      expect(location.pathname).toBe("/oauth/mcp/consent");
+      return location.searchParams.get("id")!;
+    }),
+  );
+
+const consent = (handler: Handler, id: string) =>
+  handler(at(`/oauth/mcp/consent?id=${encodeURIComponent(id)}`));
+
+const submitCode = (handler: Handler, id: string, code: string) =>
+  handler(at("/oauth/mcp/consent/code", form({ id, code })));
+
+const exchangeFor = (handler: Handler, clientId: string, callback: URL) =>
+  handler(
+    at(
+      "/oauth/mcp/token",
+      form({
+        grant_type: "authorization_code",
+        code: callback.searchParams.get("code")!,
+        redirect_uri: authorizeParams(clientId).redirect_uri,
+        client_id: clientId,
+        code_verifier: verifier,
+        resource: `${ORIGIN}/mcp`,
+      }),
+    ),
+  ).pipe(Effect.flatMap((response) => json<{ access_token: string; scope: string }>(response)));
+
+it.live("an outside agent signs in once the app approves the code its page shows", () =>
+  withRoutes((handler, auth, oauth) =>
+    Effect.gen(function* () {
+      const clientId = yield* outsideClientId(handler);
+      // Only a peer link decides with a pairing code; an outside agent goes through the page.
+      const decided = yield* decide(handler, authorizeParams(clientId), {
+        _tag: "pairing-code",
+        access: "auto",
+        code: (yield* auth.issuePairingCredential()).credential,
+      });
+      expect(decided.status).toBe(400);
+
+      const id = yield* beginSignIn(handler, clientId);
+      const waiting = yield* consent(handler, id);
+      expect(waiting.status).toBe(200);
+      expect(waiting.headers.get("content-security-policy")).toContain("default-src 'none'");
+      const page = yield* Effect.promise(() => waiting.text());
+      const [pending] = Option.getOrThrow(yield* Stream.runHead(oauth.signIns));
+      expect(pending).toMatchObject({ id, clientName: "Workstation", loopbackRedirect: true });
+      expect(page).toContain(pending!.matchCode);
+
+      // An approving device grants no more than its own session holds.
+      const overreach = yield* oauth
+        .answerSignIn({
+          id,
+          answer: { _tag: "approve", access: "approval-required" },
+          grantorScopes: mcpClientScopes("read-only"),
+        })
+        .pipe(Effect.flip);
+      expect(overreach.reason).toBe("scope_required");
+      yield* oauth.answerSignIn({
+        id,
+        answer: { _tag: "approve", access: "approval-required" },
+        grantorScopes: mcpClientScopes("approval-required"),
+      });
+      expect(Option.getOrThrow(yield* Stream.runHead(oauth.signIns))).toEqual([]);
+      const finished = yield* consent(handler, id);
+      expect(finished.status).toBe(302);
+      const callback = new URL(finished.headers.get("location")!);
+      expect(callback.searchParams.get("state")).toBe("state-1");
+      expect(callback.searchParams.get("iss")).toBe(ORIGIN);
+      expect((yield* consent(handler, id)).status).toBe(404);
+      const again = yield* oauth
+        .answerSignIn({ id, answer: { _tag: "deny" }, grantorScopes: [] })
+        .pipe(Effect.flip);
+      expect(again.reason).toBe("not_found");
+
+      const token = yield* exchangeFor(handler, clientId, callback);
+      expect(token.scope).toBe("orchestration:read orchestration:operate");
+      const bearer = HttpServerRequest.fromWeb(
+        at("/mcp", { headers: { authorization: `Bearer ${token.access_token}` } }),
+      );
+      expect(yield* auth.authenticateMcpClient(bearer)).toMatchObject({
+        label: "Workstation",
+        access: "approval-required",
+        peerLink: false,
+      });
+      // Its token works only on /mcp.
+      const ticket = yield* handler(
+        at("/api/auth/websocket-ticket", {
+          method: "POST",
+          headers: { authorization: `Bearer ${token.access_token}` },
+        }),
+      );
+      expect(ticket.status).toBe(401);
+    }),
+  ),
+);
+
+it.live("denying, or five wrong codes, ends an outside agent's sign-in", () =>
+  withRoutes((handler, _auth, oauth) =>
+    Effect.gen(function* () {
+      const clientId = yield* outsideClientId(handler);
+      const denied = yield* beginSignIn(handler, clientId);
+      yield* oauth.answerSignIn({ id: denied, answer: { _tag: "deny" }, grantorScopes: [] });
+      const deniedPage = yield* consent(handler, denied);
+      expect(new URL(deniedPage.headers.get("location")!).searchParams.get("error")).toBe(
+        "access_denied",
+      );
+
+      const guessed = yield* beginSignIn(handler, clientId);
+      for (const left of [4, 3, 2, 1]) {
+        const wrong = yield* submitCode(handler, guessed, "SUPERVISED-NOTACODE");
+        expect(wrong.status).toBe(400);
+        expect(yield* Effect.promise(() => wrong.text())).toContain(
+          left === 1 ? "One try is left" : `${left} tries are left`,
+        );
+      }
+      expect((yield* submitCode(handler, guessed, "garbage")).status).toBe(303);
+      const ended = yield* consent(handler, guessed);
+      expect(new URL(ended.headers.get("location")!).searchParams.get("error")).toBe(
+        "access_denied",
+      );
+    }),
+  ),
+);
+
+it.effect("codes posted together are checked one at a time, within the try limit", () =>
+  Effect.gen(function* () {
+    const gate = yield* makeApprovalCodeGate;
+    yield* withRoutes(
+      (handler) =>
+        Effect.gen(function* () {
+          const id = yield* beginSignIn(handler, yield* outsideClientId(handler));
+          const first = yield* submitCode(handler, id, "SUPERVISED-NOTACODE").pipe(
+            Effect.forkChild,
+          );
+          yield* Deferred.await(gate.entered);
+          const others = yield* Effect.all(
+            Array.from({ length: 9 }, () => submitCode(handler, id, "SUPERVISED-NOTACODE")),
+            { concurrency: "unbounded" },
+          );
+          // Each lands back on the waiting page without a check or a try of its own.
+          expect(others.map((response) => response.status)).toEqual(
+            Array.from({ length: 9 }, () => 200),
+          );
+          yield* Deferred.succeed(gate.release, undefined);
+          const checked = yield* Fiber.join(first);
+          expect(checked.status).toBe(400);
+          expect(yield* Effect.promise(() => checked.text())).toContain("4 tries are left");
+          expect(yield* Ref.get(gate.checks)).toBe(1);
+        }),
+      { gate },
+    );
+  }),
+);
+
+it.live("an answer from the app wins over a code still being checked", () =>
+  Effect.gen(function* () {
+    const gate = yield* makeApprovalCodeGate;
+    yield* withRoutes(
+      (handler, auth, oauth) =>
+        Effect.gen(function* () {
+          const clientId = yield* outsideClientId(handler);
+          const id = yield* beginSignIn(handler, clientId);
+          const agentCode = auth
+            .issuePairingCredential({ purpose: "agent", access: "read-only" })
+            .pipe(Effect.map((issued) => mcpApprovalCode("read-only", issued.credential)));
+          const checking = yield* agentCode;
+          const spare = yield* agentCode;
+          const first = yield* submitCode(handler, id, checking).pipe(Effect.forkChild);
+          yield* Deferred.await(gate.entered);
+          // A second code waits on the first rather than being spent beside it.
+          expect((yield* submitCode(handler, id, spare)).status).toBe(200);
+          yield* oauth.answerSignIn({ id, answer: { _tag: "deny" }, grantorScopes: [] });
+          yield* Deferred.succeed(gate.release, undefined);
+          expect((yield* Fiber.join(first)).status).toBe(303);
+          const ended = yield* consent(handler, id);
+          expect(new URL(ended.headers.get("location")!).searchParams.get("error")).toBe(
+            "access_denied",
+          );
+
+          const next = yield* beginSignIn(handler, clientId);
+          expect((yield* submitCode(handler, next, spare)).status).toBe(303);
+          const approved = new URL((yield* consent(handler, next)).headers.get("location")!);
+          expect(approved.searchParams.get("code")).not.toBeNull();
+        }),
+      { gate },
+    );
+  }),
+);
+
+it.live("a refused code leaves a finished sign-in to the page's own load", () =>
+  withRoutes((handler, _auth, oauth) =>
+    Effect.gen(function* () {
+      const id = yield* beginSignIn(handler, yield* outsideClientId(handler));
+      for (let post = 0; post < 30; post += 1) {
+        yield* submitCode(handler, "no-such-sign-in", "SUPERVISED-NOTACODE");
+      }
+      yield* oauth.answerSignIn({ id, answer: { _tag: "deny" }, grantorScopes: [] });
+
+      // Over the rate limit. CSP's form-action would stop a redirect off-origin from this POST.
+      const refused = yield* submitCode(handler, id, "SUPERVISED-NOTACODE");
+      expect(refused.status).toBe(303);
+      expect(refused.headers.get("location")).toContain("/oauth/mcp/consent?id=");
+      const ended = yield* consent(handler, id);
+      expect(new URL(ended.headers.get("location")!).searchParams.get("error")).toBe(
+        "access_denied",
+      );
+    }),
+  ),
+);
+
+it.live("a code check finishes though its request is interrupted", () =>
+  Effect.gen(function* () {
+    const gate = yield* makeApprovalCodeGate;
+    yield* withRoutes(
+      (handler, auth, oauth) =>
+        Effect.gen(function* () {
+          const id = yield* beginSignIn(handler, yield* outsideClientId(handler));
+          const issued = yield* auth.issuePairingCredential({
+            purpose: "agent",
+            access: "read-only",
+          });
+          const check = yield* oauth
+            .approveSignInWithCode({ id, code: mcpApprovalCode("read-only", issued.credential) })
+            .pipe(Effect.forkChild);
+          yield* Deferred.await(gate.entered);
+          const interrupting = yield* Fiber.interrupt(check).pipe(
+            Effect.forkChild({ startImmediately: true }),
+          );
+          yield* Deferred.succeed(gate.release, undefined);
+          yield* Fiber.join(interrupting);
+
+          const approved = new URL((yield* consent(handler, id)).headers.get("location")!);
+          expect(approved.searchParams.get("code")).not.toBeNull();
+        }),
+      { gate },
+    );
+  }),
+);
+
+it.effect("an expired sign-in leaves the waiting list when it expires", () =>
+  withRoutes((handler, _auth, oauth) =>
+    Effect.gen(function* () {
+      const authorization = yield* oauth.validateAuthorization({
+        urls: { issuer: ORIGIN, resource: `${ORIGIN}/mcp` },
+        request: yield* decodeAuthorizationRequest(
+          authorizeParams(yield* outsideClientId(handler)),
+        ),
+      });
+      const signIn = yield* oauth.beginSignIn(authorization);
+      const subscribed = yield* Deferred.make<void>();
+      const seen = yield* oauth.signIns.pipe(
+        Stream.tap(() => Deferred.succeed(subscribed, undefined)),
+        Stream.take(2),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+      yield* Deferred.await(subscribed);
+      yield* TestClock.adjust("10 minutes");
+      expect(Option.getOrThrow(yield* Stream.runHead(oauth.signIns))).toEqual([]);
+      expect(
+        Array.from(yield* Fiber.join(seen), (requests) => requests.map((request) => request.id)),
+      ).toEqual([[signIn.id], []]);
+      expect((yield* consent(handler, signIn.id)).status).toBe(404);
+    }),
+  ),
+);
+
+it.live("an agent code approves a sign-in at its level, and a peer-link code does not", () =>
+  withRoutes((handler, auth, oauth) =>
+    Effect.gen(function* () {
+      const clientId = yield* outsideClientId(handler);
+      const id = yield* beginSignIn(handler, clientId);
+      const peerCode = yield* auth.issuePairingCredential({
+        purpose: "peer-link",
+        access: "read-only",
+      });
+      expect(
+        (yield* submitCode(handler, id, mcpApprovalCode("read-only", peerCode.credential))).status,
+      ).toBe(400);
+
+      const agentCode = yield* auth.issuePairingCredential({
+        purpose: "agent",
+        access: "read-only",
+      });
+      expect(agentCode).toMatchObject({ purpose: "agent", access: "read-only" });
+      const typed = mcpApprovalCode("read-only", agentCode.credential).toLowerCase();
+      expect((yield* submitCode(handler, id, ` ${typed} `)).status).toBe(303);
+      const finished = yield* consent(handler, id);
+      expect(finished.status).toBe(302);
+      const token = yield* exchangeFor(
+        handler,
+        clientId,
+        new URL(finished.headers.get("location")!),
+      );
+      expect(token.scope).toBe("orchestration:read");
+
+      const tokenRequest = {
+        label: "Cron job",
+        access: "full-access",
+        client: { deviceType: "bot" },
+      } as const;
+      const overreach = yield* oauth
+        .issueAgentToken({ ...tokenRequest, grantorScopes: mcpClientScopes("auto") })
+        .pipe(Effect.flip);
+      expect(overreach.reason).toBe("scope_required");
+      const issued = yield* oauth.issueAgentToken({
+        ...tokenRequest,
+        grantorScopes: mcpClientScopes("full-access"),
+      });
+      expect(
+        yield* auth.authenticateMcpClient(
+          HttpServerRequest.fromWeb(
+            at("/mcp", { headers: { authorization: `Bearer ${issued.token}` } }),
+          ),
+        ),
+      ).toMatchObject({ label: "Cron job", access: "full-access", peerLink: false });
+    }),
+  ),
+);
+
+it.live("a policy that keeps remote clients out refuses outside agents", () =>
+  withRoutes(
+    (handler, _auth, oauth) =>
+      Effect.gen(function* () {
+        const clientId = yield* outsideClientId(handler);
+        const page = yield* handler(
+          at(`/oauth/mcp/authorize?${new URLSearchParams(authorizeParams(clientId))}`),
+        );
+        expect(page.status).toBe(403);
+        expect(yield* Effect.promise(() => page.text())).toContain(
+          "Example Corp does not allow outside agents",
+        );
+        const token = yield* oauth
+          .issueAgentToken({
+            label: "Cron job",
+            access: "read-only",
+            client: { deviceType: "bot" },
+            grantorScopes: mcpClientScopes("full-access"),
+          })
+          .pipe(Effect.flip);
+        expect(token.reason).toBe("policy_denied");
+      }),
+    {
+      policy: {
+        schemaVersion: 1,
+        organization: "Example Corp",
+        limits: { clients: ["desktop", "local"] },
+      },
+    },
+  ),
+);
+
+it.effect("serves discovery metadata for the host it was called on", () =>
+  withRoutes((handler) =>
+    Effect.gen(function* () {
+      const resource = yield* json<{ resource: string; authorization_servers: string[] }>(
+        yield* handler(at("/.well-known/oauth-protected-resource/mcp")),
+      );
+      expect(resource).toMatchObject({
+        resource: `${ORIGIN}/mcp`,
+        authorization_servers: [ORIGIN],
+      });
+      const server = yield* json<{ authorization_endpoint: string }>(
+        yield* handler(at("/.well-known/oauth-authorization-server")),
+      );
+      expect(server.authorization_endpoint).toBe(`${ORIGIN}/oauth/mcp/authorize`);
     }),
   ),
 );

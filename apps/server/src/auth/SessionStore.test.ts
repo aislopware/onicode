@@ -8,6 +8,7 @@ import * as Fiber from "effect/Fiber";
 import * as Deferred from "effect/Deferred";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import * as SqlClient from "effect/sql/SqlClient";
 
@@ -325,6 +326,22 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("SessionStore.lay
         },
       });
       const clientWebSocket = yield* sessions.issueWebSocketToken(client.sessionId);
+      // A blank label would fail to encode for every client reading the list.
+      const change = yield* sessions.streamChanges.pipe(
+        Stream.runHead,
+        Effect.forkChild({ startImmediately: true }),
+      );
+      const blank = yield* sessions.issue({
+        subject: "outside-agent",
+        client: { label: " ", deviceType: "bot" },
+      });
+      const upserted = Option.getOrThrow(yield* Fiber.join(change));
+      if (upserted.type !== "clientUpserted") throw new Error("Expected a client update");
+      expect(upserted.clientSession.client).toEqual({ deviceType: "bot" });
+      expect(
+        (yield* sessions.listActive()).find((entry) => entry.sessionId === blank.sessionId)?.client,
+      ).toEqual({ deviceType: "bot" });
+      yield* sessions.revoke(blank.sessionId);
 
       yield* sessions.markConnected(client.sessionId);
       const beforeRevoke = yield* sessions.listActive();

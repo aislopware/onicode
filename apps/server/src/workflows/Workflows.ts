@@ -1,5 +1,6 @@
 import {
   type WorkflowCounts,
+  type WorkflowHook,
   WorkflowQuestion,
   type WorkflowRunReference,
   type WorkflowRunsSnapshot,
@@ -9,10 +10,21 @@ import * as Context from "effect/Context";
 import type * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
+import type { WebhookRequest } from "./triggers.ts";
 import type * as WorkflowStore from "./WorkflowStore.ts";
+
+/** Hook ids of workflows start with this; a scheduled task's hook id never does. */
+export const HOOK_PREFIX = "wf-";
+
+// The dot between the two parts is never in either, so no two hooks share an id.
+const hookPart = (part: string) => encodeURIComponent(part).replaceAll(".", "%2E");
+/** The id of the hook `name` of `workflow`, which its URL and its secret are kept by. */
+export const hookId = (workflow: string, name: string) =>
+  `${HOOK_PREFIX}${hookPart(workflow)}.${hookPart(name)}`;
 
 export class WorkflowNotRegisteredError extends Schema.TaggedError<WorkflowNotRegisteredError>()(
   "WorkflowNotRegisteredError",
@@ -108,6 +120,18 @@ export class Workflows extends Context.Service<
     readonly unfinished: Effect.Effect<
       ReadonlyArray<{ readonly workflow: string; readonly version: number }>
     >;
+    /** The hook URLs of the registered workflows. */
+    readonly hooks: Effect.Effect<ReadonlyArray<WorkflowHook>, WorkflowInputError>;
+    /**
+     * Start the run a request to a hook asks for. Nothing, for a hook or token that is not known.
+     * `deliveryId` names the delivery when its carrier vouches for one, so its retry is one run.
+     */
+    readonly deliver: (delivery: {
+      readonly hookId: string;
+      readonly token: string;
+      readonly request: WebhookRequest;
+      readonly deliveryId?: string;
+    }) => Effect.Effect<Option.Option<{ readonly runId: string }>, WorkflowError>;
     /** What workflows keep in the store under keys starting with `prefix`, for a person to see. */
     readonly stored: (
       prefix: string,
@@ -157,6 +181,10 @@ export const disabled = Workflows.of({
   }),
   questions: Effect.succeed([]),
   unfinished: Effect.succeed([]),
+  hooks: Effect.succeed([]),
+  deliver: Effect.fn("Workflows.deliver")(function* () {
+    return yield* Effect.succeed(Option.none<{ readonly runId: string }>());
+  }),
   stored: Effect.fn("Workflows.stored")(function* () {
     return yield* Effect.succeed<ReadonlyArray<{ key: string; value: Schema.Json }>>([]);
   }),
@@ -179,7 +207,10 @@ const refuseOff = Effect.fn("Workflows.off")(function* () {
   return yield* new WorkflowInputError({ problem: OFF });
 });
 
-/** The service while workflows are off: every request is refused. */
+/**
+ * The service while workflows are off: every request is refused, and a hook answers as one that
+ * is not there.
+ */
 export const off = Workflows.of({
   ...disabled,
   start: refuseOff,
@@ -190,6 +221,7 @@ export const off = Workflows.of({
   get: refuseOff,
   list: refuseOff,
   questions: refuseOff(),
+  hooks: refuseOff(),
   stored: refuseOff,
   storeSet: refuseOff,
   storeDelete: refuseOff,

@@ -15,6 +15,7 @@ import {
   RunId,
   RuntimeRequestId,
   ScheduledTaskId,
+  SecretRef,
   ThreadId,
   TrimmedNonEmptyString,
   TurnItemId,
@@ -72,7 +73,7 @@ const OrchestratorMcpSchedule = Schema.Union([
   OrchestratorMcpScheduleFromJsonString,
 ]).annotate({
   description:
-    "Trigger: {type:'interval',everyMs}, {type:'fixed_time',timeOfDay,weekdays?}, or {type:'once',runAt}.",
+    "Trigger: {type:'interval',everyMs}, {type:'fixed_time',timeOfDay,weekdays?}, {type:'once',runAt}, or {type:'webhook'}.",
 });
 
 const OrchestratorMcpTargetOptionsFromRecord = Schema.Record(
@@ -775,6 +776,14 @@ export const OrchestratorMcpScheduledTask = Schema.Struct({
   schedule: ScheduledTaskSchedule,
   nextRunAt: Schema.NullOr(IsoDateTime),
   lastRunStatus: ScheduledTaskRunStatus,
+  webhookUrl: Schema.optional(Schema.String).annotate({
+    description:
+      "Webhook URL, returned only on creation to callers allowed to run the task, while public webhooks are on in Settings → Connections. Lists and updates omit it; the user copies the address from Settings → Scheduled tasks.",
+  }),
+  webhookSignature: Schema.optional(Schema.Literals(["none", "set"])),
+  blockedByPolicy: Schema.optional(Schema.String).annotate({
+    description: "Present when an administrator's policy stops this task from running.",
+  }),
 });
 export type OrchestratorMcpScheduledTask = typeof OrchestratorMcpScheduledTask.Type;
 
@@ -856,9 +865,12 @@ export const OrchestratorMcpRequestSecretInput = Schema.Struct({
     description: "Sign-in or setup page for the value. Shown as a button.",
   }),
   placeholder: Schema.optional(TrimmedNonEmptyString),
+  delivery: Schema.optional(Schema.Literals(["secretRef", "file"])).annotate({
+    description: "secretRef (default) for a Onicode tool; file for a command.",
+  }),
   fields: Schema.optional(RequestSecretFields).annotate({
     description:
-      "Values only the user has, in one card, e.g. email + password. Returns `files` by name.",
+      'Values only the user has, in one card, e.g. email + password, with delivery "file". Returns `files` by name.',
   }),
   value: Schema.optional(PastedSecretValue).annotate({
     description: "Pasted in this thread; no card.",
@@ -874,6 +886,12 @@ export const OrchestratorMcpRequestSecretInput = Schema.Struct({
 export type OrchestratorMcpRequestSecretInput = typeof OrchestratorMcpRequestSecretInput.Type;
 
 export const OrchestratorMcpRequestSecretResult = Schema.Union([
+  Schema.Struct({
+    status: Schema.Literal("saved"),
+    secretRef: SecretRef.annotate({
+      description: "One-use. Pass to a tool that accepts a secretRef. You never see the value.",
+    }),
+  }),
   Schema.Struct({
     status: Schema.Literal("saved").annotate({ description: "file holds the value." }),
     file: Schema.String.annotate({

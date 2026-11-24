@@ -66,6 +66,7 @@ export interface SettingsSearchItem {
   readonly wslAvailableOnly?: boolean;
   readonly peerLinksOnly?: boolean;
   readonly fastWorktreeCheckoutOnly?: boolean;
+  readonly publicAccessOnly?: boolean;
   readonly textGeneratorsOnly?: boolean;
   readonly secondary?: boolean;
   readonly requiresThreadAutoSettlement?: boolean;
@@ -80,6 +81,7 @@ export interface SettingsSearchAvailability {
   readonly hasThreadAutoSettlement: boolean;
   readonly hasPeerLinkHost?: boolean;
   readonly hasFastWorktreeCheckoutEnvironment?: boolean;
+  readonly hasPublicAccessEnvironment?: boolean;
   /** An environment without a provider allow-list, which hides text generators. */
   readonly hasTextGeneratorsEnvironment?: boolean;
   readonly hasPrimaryEnvironment?: boolean;
@@ -565,7 +567,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: msg("Workflows"),
     to: "/settings/labs",
     scope: "environment",
-    searchTerms: [msg("beta workflow durable runs automation steps schedule folder")],
+    searchTerms: [msg("beta workflow durable runs automation steps schedule webhook folder")],
   },
   {
     id: "prompt-suggestions-beta",
@@ -1111,6 +1113,9 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "scheduled-tasks",
     title: msg("Scheduled tasks"),
     to: "/settings/scheduled-tasks",
+    searchTerms: [
+      msg("automations schedule interval once webhook url deliveries signature filters"),
+    ],
   },
   {
     id: "agent-browser-access",
@@ -1457,6 +1462,17 @@ export const SETTINGS_SEARCH_ITEMS = [
     ],
   },
   {
+    id: "public-access",
+    title: msg("Public access"),
+    to: "/settings/access",
+    publicAccessOnly: true,
+    searchTerms: [
+      msg(
+        "tailscale funnel internet public webhook url github chatgpt claude cloud agents mcp oauth",
+      ),
+    ],
+  },
+  {
     id: "connections-environment",
     title: msg("This machine"),
     to: "/settings/access",
@@ -1703,6 +1719,7 @@ export function filterAvailableSettingsSearchItems(
       (!item.peerLinksOnly || availability.hasPeerLinkHost === true) &&
       (!item.fastWorktreeCheckoutOnly ||
         availability.hasFastWorktreeCheckoutEnvironment === true) &&
+      (!item.publicAccessOnly || availability.hasPublicAccessEnvironment === true) &&
       (!item.textGeneratorsOnly || availability.hasTextGeneratorsEnvironment === true) &&
       (!item.secretProvidersOnly || availability.hasSecretProvidersEnvironment === true),
   );

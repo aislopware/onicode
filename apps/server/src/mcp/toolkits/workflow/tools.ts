@@ -1,9 +1,10 @@
-import { OrchestratorMcpFailure, TrimmedNonEmptyString } from "@onicode/contracts";
+import { OrchestratorMcpFailure, TrimmedNonEmptyString, WorkflowHook } from "@onicode/contracts";
 import * as Schema from "effect/Schema";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import { McpSchema, Tool, Toolkit } from "effect/ai";
 
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
+import * as ServerSettings from "../../../serverSettings.ts";
 import * as Workflows from "../../../workflows/Workflows.ts";
 import { WorkflowRun, WorkflowRunStatus, WorkflowStep } from "../../../workflows/WorkflowStore.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
@@ -17,10 +18,11 @@ const ExactName = Schema.String.check(
 
 const WorkflowTool = Tool.make("oni_workflow", {
   description:
-    "Durable workflow runs on this server. start: `workflow`, `input`, `idempotencyKey` (same key, same run). list: runs, by `status`. read: one run and its steps. questions: what runs ask a person. store: what workflows keep, under keys starting with `key`; store_set a `key` to `value`; store_delete. signal: wake a wait with `value`, addressed by `runId` and `wait`, or by `workflow` and `channel`; answers a question as `{choice, reason?}`. resume: run a paused run's failed step again. cancel.",
+    "Durable workflow runs on this server. start: `workflow`, `input`, `idempotencyKey` (same key, same run). list: runs, by `status`. read: one run and its steps. questions: what runs ask a person. hooks: the URL paths that start runs. store: what workflows keep, under keys starting with `key`; store_set a `key` to `value`; store_delete. signal: wake a wait with `value`, addressed by `runId` and `wait`, or by `workflow` and `channel`; answers a question as `{choice, reason?}`. resume: run a paused run's failed step again. cancel.",
   parameters: Schema.Struct({
     action: Schema.Literals([
       ...WORKFLOW_READ_ACTIONS,
+      "hooks",
       "start",
       "signal",
       "resume",
@@ -51,6 +53,7 @@ const WorkflowTool = Tool.make("oni_workflow", {
     steps: Schema.optional(Schema.Array(WorkflowStep)),
     runs: Schema.optional(Schema.Array(WorkflowRun)),
     questions: Schema.optional(Schema.Array(Workflows.WorkflowQuestion)),
+    hooks: Schema.optional(Schema.Array(WorkflowHook)),
     entries: Schema.optional(
       Schema.Array(Schema.Struct({ key: Schema.String, value: Schema.Json })),
     ),
@@ -63,6 +66,7 @@ const WorkflowTool = Tool.make("oni_workflow", {
     Workflows.Workflows,
     ThreadManagementService.ThreadManagementService,
     SecureRandom.SecureRandom,
+    ServerSettings.ServerSettingsService,
   ],
 })
   .annotate(Tool.Title, "Workflow runs")

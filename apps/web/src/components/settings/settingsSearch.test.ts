@@ -94,6 +94,20 @@ describe("searchSettings", () => {
     }
   });
 
+  it("finds Public access only while a server offers it", () => {
+    for (const enabled of [false, true]) {
+      const ids = filterAvailableSettingsSearchItems({
+        hasEnvironment: true,
+        hasProviderSettingsEnvironment: true,
+        canManageLocalBackend: false,
+        isWslSettingsRowVisible: false,
+        hasThreadAutoSettlement: false,
+        hasPublicAccessEnvironment: enabled,
+      }).map((item) => item.id);
+      expect(ids.includes("public-access")).toBe(enabled);
+    }
+  });
+
   it("finds where subagents and side chats open by any of its names", () => {
     for (const query of ["side panel", "subagent", "side chat", "linked thread", "middle click"]) {
       expect(searchSettings(query).map((item) => item.id)).toContain("side-thread-open-target");

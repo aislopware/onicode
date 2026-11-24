@@ -245,8 +245,8 @@ export const AuthPairingCredentialResult = Schema.Struct({
   credential: TrimmedNonEmptyString,
   label: Schema.optionalKey(TrimmedNonEmptyString),
   expiresAt: Schema.DateTimeUtc,
-  purpose: Schema.optionalKey(Schema.Literal("peer-link")),
-  /** The level a peer-link code is bound to. Older servers omit it. */
+  purpose: Schema.optionalKey(Schema.Literals(["peer-link", "agent"])),
+  /** The level a peer-link or agent code is bound to. Older servers omit it. */
   access: Schema.optionalKey(AuthMcpClientAccess),
 });
 export type AuthPairingCredentialResult = typeof AuthPairingCredentialResult.Type;
@@ -386,6 +386,12 @@ export const AuthCreatePairingCredentialInput = Schema.Union([
     access: AuthMcpClientAccess,
     purpose: Schema.Literal("peer-link"),
   }),
+  /** A code an outside agent's sign-in page accepts, granting this level. */
+  Schema.Struct({
+    ...pairingCredentialFields,
+    access: AuthMcpClientAccess,
+    purpose: Schema.Literal("agent"),
+  }),
 ]);
 export type AuthCreatePairingCredentialInput = typeof AuthCreatePairingCredentialInput.Type;
 
@@ -415,14 +421,62 @@ export const mcpClientScopes = (access: AuthMcpClientAccess): ReadonlyArray<Auth
 export const pairingCredentialScopes = (
   input: AuthCreatePairingCredentialInput | undefined,
 ): ReadonlyArray<AuthGrantScope> =>
-  input?.purpose === "peer-link"
+  input?.purpose === "peer-link" || input?.purpose === "agent"
     ? mcpClientScopes(input.access)
     : (input?.scopes ?? AuthStandardClientScopes);
 
+const MCP_APPROVAL_CODE_PREFIXES = {
+  "read-only": "READONLY",
+  "approval-required": "SUPERVISED",
+  "auto-accept-edits": "EDITS",
+  auto: "AUTO",
+  "full-access": "FULL",
+} as const satisfies Record<AuthMcpClientAccess, string>;
+
+/** How an agent code reads: its level, then the pairing code, as in `SUPERVISED-7KQ2…`. */
+export const mcpApprovalCode = (access: AuthMcpClientAccess, credential: string): string =>
+  `${MCP_APPROVAL_CODE_PREFIXES[access]}-${credential}`;
+
+/** The level and pairing code an agent code names, or undefined for anything else. */
+export function parseMcpApprovalCode(
+  code: string,
+): { readonly access: AuthMcpClientAccess; readonly credential: string } | undefined {
+  const match = /^([A-Z]+)-([0-9A-Z]+)$/u.exec(code.trim().toUpperCase().replace(/\s+/gu, ""));
+  if (match === null) return undefined;
+  const access = AuthMcpClientAccess.literals.find(
+    (level) => MCP_APPROVAL_CODE_PREFIXES[level] === match[1],
+  );
+  return access === undefined ? undefined : { access, credential: match[2]! };
+}
+
+export const AuthMcpProtectedResourceMetadata = Schema.Struct({
+  resource: Schema.String,
+  authorization_servers: Schema.Array(Schema.String),
+  scopes_supported: Schema.Array(AuthEnvironmentScope),
+  bearer_methods_supported: Schema.Array(Schema.Literal("header")),
+  resource_name: Schema.String,
+});
+export type AuthMcpProtectedResourceMetadata = typeof AuthMcpProtectedResourceMetadata.Type;
+
+export const AuthMcpAuthorizationServerMetadata = Schema.Struct({
+  issuer: Schema.String,
+  authorization_endpoint: Schema.String,
+  token_endpoint: Schema.String,
+  registration_endpoint: Schema.String,
+  revocation_endpoint: Schema.String,
+  response_types_supported: Schema.Array(Schema.Literal("code")),
+  grant_types_supported: Schema.Array(Schema.Literal("authorization_code")),
+  code_challenge_methods_supported: Schema.Array(Schema.Literal("S256")),
+  token_endpoint_auth_methods_supported: Schema.Array(Schema.Literal("none")),
+  scopes_supported: Schema.Array(AuthEnvironmentScope),
+  authorization_response_iss_parameter_supported: Schema.Boolean,
+});
+export type AuthMcpAuthorizationServerMetadata = typeof AuthMcpAuthorizationServerMetadata.Type;
+
 /**
  * The `software_id` another Onicode environment registers with when it links
- * to this one; registration refuses every other client. The session it gets is
- * a peer link: the work it starts here stays within that link.
+ * to this one. Its session is then a peer link: the work it starts here stays
+ * within that link. Claiming it only ever adds limits.
  */
 export const MCP_PEER_LINK_SOFTWARE_ID = "onicode-peer-link";
 

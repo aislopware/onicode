@@ -74,7 +74,7 @@ Administrative Templates > Onicode. Set **Organization** whenever you set any ot
 Locks and provider fields go in the two JSON policies, as the same objects a policy file would hold.
 Machines pick up a change at the next Group Policy refresh; run `gpupdate /target:computer /force`
 to apply it now, then restart Onicode.
-Setting **Allow importing browser cookies** to **Disabled** turns that
+Setting **Allow webhook tasks** or **Allow importing browser cookies** to **Disabled** turns that
 feature off. Setting any other Onicode policy to
 **Disabled** restricts nothing, the same as **Not Configured**.
 
@@ -165,6 +165,7 @@ A few settings need care:
   "limits": {
     "maxRuntimeMode": "auto-accept-edits",
     "clients": ["desktop"],
+    "webhookTasks": false,
     "browserCookieImport": false,
     "previewTunnel": false,
     "providers": {
@@ -223,7 +224,8 @@ this machine, and the two local kinds differ only in how Onicode was started. On
 desktop app, keep `desktop` in the list, or the app cannot start.
 
 Without `remote`, the server listens only on a loopback address, creates no pairing links, signs
-out devices that paired earlier. It does not start with a host other than a loopback
+out devices that paired earlier, keeps [public access](./remote-access.md#public-access) off, and
+refuses [outside agents](./outside-agents.md). It does not start with a host other than a loopback
 address or `localhost`. A [background service](./background-service.md) installed before
 `ONICODE_LAN` existed keeps private-network access, so without `remote` it refuses to start.
 Run `onicode up --no-lan` when its `service.env` sets no `ONICODE_HOST`, or set
@@ -243,6 +245,9 @@ so restart Onicode after that.
 
 ### Other capabilities
 
+- `webhookTasks: false`: scheduled tasks and [workflows](./workflows.md#triggers) cannot use
+  webhook triggers, and **Public webhooks** cannot be turned on in Settings. Existing webhook tasks
+  stay but do not run, and cannot be turned back on. Users can still edit or delete them.
 - `browserCookieImport: false`: users cannot import cookies from another browser into Onicode's
   browser.
 - `previewTunnel: false`: other devices cannot load this machine's `localhost` pages themselves.

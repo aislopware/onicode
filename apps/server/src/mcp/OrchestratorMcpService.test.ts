@@ -3951,11 +3951,11 @@ describe("OrchestratorMcpService provider resolution", () => {
     const projectId = ProjectId.make("project:scheduled");
     const boundThreadId = ThreadId.make("thread:scheduled-bound");
     const task = (overrides: Partial<ScheduledTask>): ScheduledTask => ({
-      id: ScheduledTaskId.make("scheduled-task:hourly"),
-      title: "Hourly",
-      prompt: "Check the build",
+      id: ScheduledTaskId.make("scheduled-task:webhook"),
+      title: "On push",
+      prompt: "Do {{body.instruction}}",
       enabled: true,
-      schedule: { type: "interval", everyMs: 3_600_000 },
+      schedule: { type: "webhook", signature: null },
       projectId,
       threadId: null,
       workspaceStrategy: { type: "root" },
@@ -3971,6 +3971,11 @@ describe("OrchestratorMcpService provider resolution", () => {
       lastRunStatus: "never",
       lastRunError: null,
       runCount: 0,
+      webhook: {
+        path: "/hooks/scheduled-task/secret",
+        url: "https://onicode.example/hooks/secret",
+        hasSecret: false,
+      },
       ...overrides,
     });
     const supervisedClient: McpInvocationScope = {
@@ -4050,6 +4055,52 @@ describe("OrchestratorMcpService provider resolution", () => {
         ),
       );
 
+    it.effect("lists a webhook task without its URL to a caller that may run it", () =>
+      Effect.gen(function* () {
+        const upserted = yield* Ref.make(0);
+        const listed = yield* OrchestratorMcpService.OrchestratorMcpService.pipe(
+          Effect.flatMap((mcp) => mcp.listScheduledTasks(supervisedClient, { projectId })),
+          Effect.provide(service([task({})], null, upserted)),
+        );
+        assert.deepEqual(
+          listed.tasks.map((summary) => [summary.webhookUrl, summary.webhookSignature]),
+          [[undefined, "none"]],
+        );
+      }),
+    );
+
+    it.effect("returns a webhook URL when creating a task, not when updating it", () =>
+      Effect.gen(function* () {
+        const upserted = yield* Ref.make(0);
+        const hook = task({});
+        const timer = task({
+          schedule: { type: "interval", everyMs: 3_600_000 },
+          webhook: undefined,
+        });
+        const created = yield* OrchestratorMcpService.OrchestratorMcpService.pipe(
+          Effect.flatMap((mcp) =>
+            mcp.scheduleTask(supervisedClient, {
+              projectId,
+              prompt: hook.prompt,
+              schedule: { type: "webhook" },
+            }),
+          ),
+          Effect.provide(service([hook], null, upserted)),
+        );
+        assert.equal(created.webhookUrl, "https://onicode.example/hooks/secret");
+        const converted = yield* OrchestratorMcpService.OrchestratorMcpService.pipe(
+          Effect.flatMap((mcp) =>
+            mcp.updateScheduledTask(supervisedClient, {
+              scheduledTaskId: timer.id,
+              schedule: { type: "webhook" },
+            }),
+          ),
+          Effect.provide(service([timer], null, upserted, hook)),
+        );
+        assert.equal(converted.webhookUrl, undefined);
+      }),
+    );
+
     it.effect("checks a bound task against its thread's current modes", () =>
       Effect.gen(function* () {
         const upserted = yield* Ref.make(0);
@@ -4062,6 +4113,8 @@ describe("OrchestratorMcpService provider resolution", () => {
         const mcp = yield* OrchestratorMcpService.OrchestratorMcpService.pipe(
           Effect.provide(layer),
         );
+        const listed = yield* mcp.listScheduledTasks(supervisedClient, { projectId });
+        assert.equal(listed.tasks[0]?.webhookUrl, undefined);
         const error = yield* mcp
           .updateScheduledTask(supervisedClient, {
             scheduledTaskId: bound.id,
@@ -4156,6 +4209,7 @@ describe("OrchestratorMcpService provider resolution", () => {
         });
         assert.equal(yield* Ref.get(upserted), 1);
         assert.equal(updated.scheduledTaskId, bound.id);
+        assert.equal(updated.webhookUrl, undefined);
       }),
     );
   });

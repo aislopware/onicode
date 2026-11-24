@@ -6,6 +6,8 @@ import * as StorageCleanup from "./storageCleanup.ts";
 import * as PullRequestSyncReactor from "./orchestration-v2/PullRequestSyncReactor.ts";
 import * as PullRequestWatchReactor from "./orchestration-v2/PullRequestWatchReactor.ts";
 import * as DelegatedTaskQuestionReactor from "./orchestration-v2/DelegatedTaskQuestionReactor.ts";
+import * as MilestoneHub from "./milestones/MilestoneHub.ts";
+import * as OrchestrationMilestones from "./milestones/OrchestrationMilestones.ts";
 // Effect wraps this raw Node HTTP server after its startup and write-error guards attach.
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeHttp from "node:http";
@@ -20,7 +22,7 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
-import { FetchHttpClient, HttpRouter, HttpServer } from "effect/http";
+import { FetchHttpClient, HttpMiddleware, HttpRouter, HttpServer } from "effect/http";
 import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 
 import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
@@ -172,8 +174,14 @@ import * as RemoteOpenTargets from "./environment/RemoteOpenTargets.ts";
 import * as AuthHttp from "./auth/http.ts";
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
 import * as CodexManagedTokenBroker from "./provider/CodexManagedTokenBroker.ts";
+import * as WebhookRoute from "./scheduledTasks/webhookRoute.ts";
 import * as McpOAuth from "./auth/McpOAuth.ts";
 import * as McpOAuthHttp from "./auth/mcpOAuthHttp.ts";
+import {
+  ScheduledTaskWebhookOrigin,
+  ScheduledTaskWebhookOrigins,
+} from "./scheduledTasks/ScheduledTaskService.ts";
+import * as PublicAccess from "./publicAccess/PublicAccess.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
 import * as EnvironmentAuthPolicy from "./auth/EnvironmentAuthPolicy.ts";
 import * as ServerSelfUpdate from "./service/selfUpdate.ts";
@@ -224,6 +232,7 @@ import {
   readTailscaleServeRoutesTo,
   readTailscaleStatus,
   tailscaleOperatorHint,
+  layerTailscaleFunnel,
 } from "@onicode/tailscale";
 import * as ServerActivation from "./serverActivation.ts";
 
@@ -584,7 +593,27 @@ const layerTaskFolders = TaskFolders.layer.pipe(
   Layer.provide(layerGitWorkflow),
 );
 
+// One shared value: a second build would hold its own status and never see Funnel come on.
+const layerPublicAccessState = PublicAccess.layer.pipe(Layer.provide(ManagedPolicy.layer));
+
+const layerScheduledTaskWebhookOrigin = Layer.mergeAll(
+  Layer.effect(
+    ScheduledTaskWebhookOrigin,
+    Effect.gen(function* () {
+      const access = yield* PublicAccess.PublicAccess;
+      return Effect.map(access.webhookOrigin, (publicOrigin) => ({ publicOrigin }));
+    }),
+  ),
+  Layer.effect(
+    ScheduledTaskWebhookOrigins,
+    Effect.gen(function* () {
+      return (yield* PublicAccess.PublicAccess).webhookOrigins;
+    }),
+  ),
+).pipe(Layer.provide(layerPublicAccessState));
+
 const layerOrchestrationV2Runtime = RuntimeLayer.layerProduction.pipe(
+  Layer.provide(layerScheduledTaskWebhookOrigin),
   Layer.provide(
     WorkflowForge.layer.pipe(
       Layer.provide(layerIssueService),
@@ -719,6 +748,11 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   ).pipe(Layer.provide(DelegatedTaskQuestionReactor.layer), Layer.provide(ProjectionStoreV2.layer)),
   Layer.effectDiscard(
     Effect.gen(function* () {
+      yield* (yield* OrchestrationMilestones.OrchestrationMilestones).start();
+    }),
+  ).pipe(Layer.provide(OrchestrationMilestones.layer), Layer.provide(ProjectionStoreV2.layer)),
+  Layer.effectDiscard(
+    Effect.gen(function* () {
       const service = yield* PushNotifications.PushNotifications;
       yield* service.start();
     }),
@@ -735,6 +769,8 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   Layer.effectDiscard(ProjectSettingsOverrideSweep.sweep),
 ).pipe(
   Layer.provideMerge(layerOrchestrationApplication),
+  // One hub, which the feeders above and the workflow store inside the runtime publish to.
+  Layer.provideMerge(MilestoneHub.layer),
   Layer.provideMerge(layerTaskFolders),
   Layer.provideMerge(RuntimeLayer.layerEventInfrastructure),
   Layer.provideMerge(Layer.merge(ProjectStore.layer, ThreadSearch.layer)),
@@ -808,9 +844,12 @@ const layerRuntimeCoreDependencies = layerRuntimeCoreDependenciesBase.pipe(
   Layer.provideMerge(layerRepositoryIdentityResolver),
   Layer.provideMerge(CodexManagedTokenBroker.layer),
   Layer.provideMerge(layerServerEnvironment),
+  // Agent sign-ins: begun over HTTP, answered over WebSocket, one instance for both.
+  Layer.provideMerge(McpOAuth.layer),
   Layer.provideMerge(layerAuth),
   Layer.provideMerge(Layer.mergeAll(AssetSigner.layer, WorkspacePreviewRevisions.layer)),
   Layer.provideMerge(ServerSecretStore.layer),
+  Layer.provideMerge(layerPublicAccessState),
 );
 
 const layerRuntimeDependencies = layerRuntimeCoreDependencies.pipe(
@@ -843,7 +882,7 @@ const layerMakeRoutes = Layer.mergeAll(
   Layer.mergeAll(
     HttpApiBuilder.layer(EnvironmentHttpApi).pipe(
       Layer.provide(AuthHttp.layer),
-      Layer.provide(McpOAuthHttp.layer.pipe(Layer.provide(McpOAuth.layer))),
+      Layer.provide(McpOAuthHttp.layer),
       Layer.provide(PeerClientPairingHttp.layer.pipe(Layer.provide(PeerClientPairing.layerIssuer))),
       Layer.provide(OrchestrationHttp.layer),
       Layer.provide(PullRequestHttp.layer),
@@ -851,6 +890,7 @@ const layerMakeRoutes = Layer.mergeAll(
       Layer.provide(speechHttpApiLayer),
       Layer.provide(PushHttp.layer),
       Layer.provide(ServerHttp.layerServerEnvironmentHttpApi),
+      Layer.provide(WebhookRoute.layer),
       Layer.provide(AuthHttp.layerAuthenticatedAuth),
       Layer.provide(ServerHttp.layerApiBodyLimit),
     ),
@@ -1138,6 +1178,31 @@ const layerMakeServer = Layer.unwrap(
           ),
         ).pipe(Layer.provide(NetService.layer))
       : Layer.empty;
+    // Funnel forwards only to this listener, never to the main one, whose loopback trust it would
+    // otherwise inherit. It hands the main router only the public paths, as public requests, and
+    // follows the public access settings from activation until shutdown.
+    const mainRouter = yield* Deferred.make<HttpRouter.HttpRouter>();
+    const layerCaptureRouter = Layer.effectDiscard(
+      HttpRouter.HttpRouter.pipe(Effect.flatMap((router) => Deferred.succeed(mainRouter, router))),
+    );
+    const layerPublicAccess = Layer.effectDiscard(
+      Effect.forkScoped(
+        Effect.gen(function* () {
+          yield* awaitActivation;
+          // Taken after the build, so every global middleware is in it. Route failures are
+          // untyped there; as defects the server still answers them with a 500.
+          // @effect-diagnostics-next-line anyUnknownInErrorContext:off
+          const app = (yield* Deferred.await(mainRouter)).asHttpEffect().pipe(Effect.orDie);
+          // Traced like the main listener, so no span holds a webhook token.
+          yield* PublicAccess.run(app).pipe(
+            Effect.provideService(HttpMiddleware.TracerDisabledWhen, ServerHttp.isUntracedRequest),
+          );
+        }).pipe(
+          Effect.catchCause((cause) => Effect.logWarning("Public access stopped", { cause })),
+        ),
+      ),
+    );
+
     const layerRuntimeServices = ServerRuntimeStartup.layerWithOptions({
       activate: Deferred.succeed(activation, undefined).pipe(Effect.asVoid),
       abort: (error) => Deferred.die(activation, error).pipe(Effect.asVoid),
@@ -1151,10 +1216,13 @@ const layerMakeServer = Layer.unwrap(
       ).pipe(Effect.asVoid),
     }).pipe(Layer.provideMerge(layerRuntimeDependencies), Layer.provide(layerLauncher));
 
-    const layerRoutes = HttpRouter.serve(layerMakeRoutes.pipe(Layer.provide(layerLauncher)), {
-      disableLogger: !config.logWebSocketEvents,
-      routerConfig: HTTP_ROUTER_CONFIG,
-    }).pipe(
+    const layerRoutes = HttpRouter.serve(
+      Layer.merge(layerMakeRoutes, layerCaptureRouter).pipe(Layer.provide(layerLauncher)),
+      {
+        disableLogger: !config.logWebSocketEvents,
+        routerConfig: HTTP_ROUTER_CONFIG,
+      },
+    ).pipe(
       withUntracedRequests,
       withRootRequestSpans,
       Layer.tap(() => Deferred.succeed(routesReady, undefined).pipe(Effect.orDie)),
@@ -1165,10 +1233,12 @@ const layerMakeServer = Layer.unwrap(
       layerDesktopReadySignal,
       layerRuntimeState.pipe(Layer.provide(layerLauncher)),
       layerTailscaleServe,
+      layerPublicAccess,
       HeapSnapshot.layer,
     );
 
     return layerServerApplication.pipe(
+      Layer.provide(layerTailscaleFunnel),
       Layer.provideMerge(layerRuntimeServices),
       Layer.provideMerge(
         McpSessionRegistry.layer.pipe(

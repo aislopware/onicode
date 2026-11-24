@@ -1,5 +1,6 @@
 import { expect, it } from "@effect/vitest";
 import { describe, vi } from "vite-plus/test";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeHttpPlatform from "@effect/platform-node/NodeHttpPlatform";
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -11,9 +12,21 @@ import * as Logger from "effect/Logger";
 import * as Path from "effect/Path";
 import * as References from "effect/References";
 import * as Tracer from "effect/Tracer";
-import { HttpClient, HttpClientRequest, HttpRouter, HttpServerResponse } from "effect/http";
+import {
+  HttpClient,
+  HttpClientRequest,
+  HttpRouter,
+  HttpServerRequest,
+  HttpServerResponse,
+} from "effect/http";
 import { ASSET_ROUTE_PREFIX } from "./assets/AssetAccess.ts";
-import { ATTACHMENT_UPLOAD_ROUTE_PREFIX } from "./assets/AttachmentUpload.ts";
+import * as AssetSigner from "./assets/AssetSigner.ts";
+import {
+  ATTACHMENT_UPLOAD_ROUTE_PREFIX,
+  issueAttachmentUploadUrl,
+} from "./assets/AttachmentUpload.ts";
+import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
+import * as DocumentText from "./provider/DocumentText.ts";
 import { openMediaFile } from "./assets/MediaFile.ts";
 
 import {
@@ -270,6 +283,43 @@ describe("API CORS", () => {
   });
 });
 
+describe("signed routes", () => {
+  it.live("serve a token only after the prefix's slash", () =>
+    Effect.gen(function* () {
+      const { relativeUrl } = yield* issueAttachmentUploadUrl({
+        name: "screenshot.png",
+        mimeType: "image/png",
+        sizeBytes: 6,
+      });
+      const post = (url: string) =>
+        HttpClient.execute(
+          HttpClientRequest.post(url).pipe(
+            HttpClientRequest.bodyUint8Array(new Uint8Array(6), "image/png"),
+          ),
+        ).pipe(Effect.map((response) => response.status));
+      const token = relativeUrl.slice(`${ATTACHMENT_UPLOAD_ROUTE_PREFIX}/`.length);
+      expect(yield* post(`${ATTACHMENT_UPLOAD_ROUTE_PREFIX};${token}`)).toBe(404);
+      expect(yield* post(relativeUrl)).not.toBe(404);
+    }).pipe(
+      Effect.provide(
+        HttpRouter.serve(ServerHttp.layerAttachmentUploadRoute, {
+          disableListenLog: true,
+          disableLogger: true,
+        }).pipe(
+          Layer.provideMerge(NodeHttpServer.layerTest),
+          Layer.provideMerge(AssetSigner.layer),
+          Layer.provideMerge(ServerSecretStore.layer),
+          Layer.provideMerge(
+            ServerConfig.layerTest(process.cwd(), { prefix: "oni-signed-routes-" }),
+          ),
+          Layer.provideMerge(DocumentText.layer),
+          Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+        ),
+      ),
+    ),
+  );
+});
+
 describe("untraced requests", () => {
   it.effect("keeps signed URLs out of HTTP server spans and request logs", () =>
     Effect.gen(function* () {
@@ -303,6 +353,7 @@ describe("untraced requests", () => {
             HttpServerResponse.empty(),
           );
           yield* router.add("GET", "/api/environment", HttpServerResponse.empty());
+          yield* router.add("POST", "/api/hooks/:hookId/:token", HttpServerResponse.empty());
         }),
       ).pipe(Layer.provide(ServerHttp.layerUnloggedSignedRequests));
       const services = yield* Layer.build(
@@ -322,11 +373,32 @@ describe("untraced requests", () => {
         HttpClientRequest.post(`${ATTACHMENT_UPLOAD_ROUTE_PREFIX}/payload.signature`),
         HttpClientRequest.post(`${ATTACHMENT_UPLOAD_ROUTE_PREFIX}/payload.signature?v=1`),
         HttpClientRequest.head(`${ASSET_ROUTE_PREFIX}/payload.signature/image.png`),
+        // Spellings the router still matches: repeated slashes, other case, encoded letters.
+        HttpClientRequest.get("/api//assets/payload.signature/image.png"),
+        HttpClientRequest.get("/API/Assets/payload.signature/image.png"),
+        HttpClientRequest.get("/api/%61ssets/payload.signature/image.png"),
+        // The router ends the path at `;`, so a malformed escape after it still matches.
+        HttpClientRequest.get("/api/%61ssets/payload.signature/image.png;%ZZ"),
+        // `;` ends the path, so the bare prefix's fallback route takes these.
+        HttpClientRequest.get(`${ASSET_ROUTE_PREFIX};payload.signature/image.png`),
+        HttpClientRequest.post(`${ATTACHMENT_UPLOAD_ROUTE_PREFIX};payload.signature`),
+        // The router decodes UTF-8 before lowering case, and the Kelvin sign lowers to `k`.
+        HttpClientRequest.post("/api/hoo%E2%84%AAs/hook/token"),
       ]) {
         expect((yield* client.execute(request)).status).toBe(204);
       }
       expect(serverSpans).toEqual([]);
       expect(loggedUrls).toEqual([]);
+      // Absolute-form targets Node could not parse reach the router as written; it drops the origin.
+      for (const url of [
+        "http://:1/api/hooks/hook/token",
+        "http://bad:99999/api/hooks/hook/token",
+      ]) {
+        const request = HttpServerRequest.fromWeb(new Request("http://box.example/")).modify({
+          url,
+        });
+        expect(ServerHttp.isUntracedRequest(request)).toBe(true);
+      }
 
       expect((yield* client.execute(HttpClientRequest.get("/api/environment"))).status).toBe(204);
       expect(serverSpans).toEqual(["GET"]);

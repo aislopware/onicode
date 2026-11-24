@@ -1,4 +1,4 @@
-import { WorkflowRunStatus } from "@onicode/contracts";
+import { WorkflowHook, WorkflowRunStatus } from "@onicode/contracts";
 import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -20,6 +20,7 @@ import {
 const RunResult = Schema.Struct({ run: WorkflowRun, steps: Schema.Array(WorkflowStep) });
 const RunsResult = Schema.Struct({ runs: Schema.Array(WorkflowRun) });
 const QuestionsResult = Schema.Struct({ questions: Schema.Array(Workflows.WorkflowQuestion) });
+const HooksResult = Schema.Struct({ hooks: Schema.Array(WorkflowHook) });
 const SignalResult = Schema.Struct({ delivery: Schema.Literals(["delivered", "buffered"]) });
 
 const decodeJson = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Json));
@@ -372,6 +373,27 @@ const storeDeleteCommand = Command.make("delete", {
   ),
 );
 
+const hooksCommand = Command.make("hooks", {
+  ...projectLocationFlags,
+  json: jsonFlag,
+}).pipe(
+  Command.withDescription(
+    "List the URLs that start runs. Each holds its hook's secret. Without public webhooks, put this server's LAN or tailnet address before the path.",
+  ),
+  Command.withHandler((flags) =>
+    withThreadTools(
+      flags,
+      Effect.fn("cli.workflow.hooks")(function* (tools) {
+        const { hooks } = yield* tools.call("oni_workflow", { action: "hooks" }, HooksResult);
+        if (flags.json) return yield* printJson(hooks);
+        for (const hook of hooks) {
+          yield* Console.log(`${hook.workflow}  ${hook.name}  ${hook.url ?? hook.path}`);
+        }
+      }),
+    ).pipe(reportThreadErrors),
+  ),
+);
+
 const storeCommand = Command.make("store").pipe(
   Command.withDescription("See and change what workflows keep between runs."),
   Command.withSubcommands([storeListCommand, storeSetCommand, storeDeleteCommand]),
@@ -387,6 +409,7 @@ export const workflowCommand = Command.make("workflow").pipe(
     cancelCommand,
     signalCommand,
     questionsCommand,
+    hooksCommand,
     storeCommand,
   ]),
 );

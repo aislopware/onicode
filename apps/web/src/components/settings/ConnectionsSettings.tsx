@@ -145,6 +145,7 @@ import {
   NetworkAccessDescription,
   PairingClientsList,
 } from "./AuthorizedClientsSettings";
+import { PublicAccessSettings } from "./PublicAccessSettings";
 import { ITEM_ROW_CLASSNAME } from "./itemRows";
 import { EmptyRemoteEnvironments, SavedBackendListRow } from "./SavedEnvironmentRows";
 import { AddEnvironmentDialog } from "./AddEnvironmentDialog";
@@ -1451,6 +1452,10 @@ function ConnectionsSettingsContent({
               </details>
             ) : null}
           </SettingsSection>
+
+          {accessServerConfig?.environment.capabilities.webhookSchedules === true ? (
+            <PublicAccessSettings environmentId={accessEnvironmentId} />
+          ) : null}
 
           {isPrimaryAccess && desktopBridge?.remoteDesktop ? (
             <RemoteDesktopHostSettings

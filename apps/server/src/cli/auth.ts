@@ -1,8 +1,11 @@
 import {
   AuthAccessWriteScope,
+  AuthMcpClientAccess,
   AuthRevokePairingLinkInput,
   AuthSessionId,
   AuthStandardClientScopes,
+  mcpApprovalCode,
+  TrimmedNonEmptyString,
 } from "@onicode/contracts";
 import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
@@ -16,11 +19,14 @@ import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
 
 import {
   formatIssuedPairingCredential,
+  formatAgentCode,
+  formatIssuedAgentToken,
   formatIssuedSession,
   formatPairingCredentialList,
   formatSessionList,
 } from "../cliAuthFormat.ts";
 import * as ServerConfig from "../config.ts";
+import * as ManagedLimits from "../policy/managedLimits.ts";
 import { authScopesFlag } from "./authScopes.ts";
 import {
   authLocationFlags,
@@ -276,7 +282,87 @@ const sessionCommand = Command.make("session").pipe(
   Command.withSubcommands([sessionIssueCommand, sessionListCommand, sessionRevokeCommand]),
 );
 
+const agentAccessFlag = Flag.Literals("access", AuthMcpClientAccess.literals).pipe(
+  Flag.withDescription(
+    "What the agent may do: read-only, approval-required, auto-accept-edits, auto or full-access.",
+  ),
+  Flag.withDefault("approval-required" as const),
+);
+
+const agentTokenCommand = Command.make("token", {
+  ...authLocationFlags,
+  label: Flag.String("label").pipe(
+    Flag.withSchema(TrimmedNonEmptyString),
+    Flag.withDescription("Name the agent shows under Settings → Connections."),
+  ),
+  access: agentAccessFlag,
+  json: jsonFlag,
+}).pipe(
+  Command.withDescription(
+    "Issue a bearer token for an agent that sends a static Authorization header to /mcp.",
+  ),
+  Command.withHandler((flags) =>
+    runWithEnvironmentAuth(
+      flags,
+      (environmentAuth) =>
+        Effect.gen(function* () {
+          const forbiddenBy = yield* environmentAuth.outsideAgentsForbiddenBy;
+          if (forbiddenBy !== null) {
+            return yield* new ManagedLimits.ManagedPolicyRefusedError({
+              organization: forbiddenBy,
+              action: "outside agents",
+              detail: "so this server cannot issue agent tokens",
+            });
+          }
+          const issued = yield* environmentAuth.issueMcpClientSession({
+            label: flags.label,
+            access: flags.access,
+            purpose: "outside-agent",
+            client: { deviceType: "bot" },
+          });
+          yield* Console.log(formatIssuedAgentToken(issued, { json: flags.json }));
+        }),
+      { quietLogs: flags.json },
+    ),
+  ),
+);
+
+const agentCodeCommand = Command.make("code", {
+  ...authLocationFlags,
+  access: agentAccessFlag,
+  json: jsonFlag,
+}).pipe(
+  Command.withDescription("Issue a one-time code that approves an agent's sign-in page."),
+  Command.withHandler((flags) =>
+    runWithEnvironmentAuth(
+      flags,
+      (environmentAuth) =>
+        Effect.gen(function* () {
+          const issued = yield* environmentAuth.issuePairingCredential({
+            purpose: "agent",
+            access: flags.access,
+          });
+          yield* Console.log(
+            formatAgentCode(
+              {
+                code: mcpApprovalCode(flags.access, issued.credential),
+                expiresAt: issued.expiresAt,
+              },
+              { json: flags.json },
+            ),
+          );
+        }),
+      { quietLogs: flags.json },
+    ),
+  ),
+);
+
+const agentCommand = Command.make("agent").pipe(
+  Command.withDescription("Let outside agents, such as Claude Code or ChatGPT, use /mcp."),
+  Command.withSubcommands([agentTokenCommand, agentCodeCommand]),
+);
+
 export const authCommand = Command.make("auth").pipe(
   Command.withDescription("Manage the local auth control plane for headless deployments."),
-  Command.withSubcommands([pairingCommand, sessionCommand]),
+  Command.withSubcommands([pairingCommand, sessionCommand, agentCommand]),
 );

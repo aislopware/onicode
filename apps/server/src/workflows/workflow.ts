@@ -28,6 +28,7 @@ import {
   type OpenedTrigger,
   type ScheduleTrigger,
   type Trigger,
+  type WebhookTrigger,
 } from "./triggers.ts";
 import type { WorkflowAgents } from "./WorkflowAgents.ts";
 import { unavailable, WorkflowForge } from "./WorkflowForge.ts";
@@ -558,7 +559,7 @@ export const stop = (reason: string): Effect.Effect<never, WorkflowStop> =>
   Effect.fail(new WorkflowStop({ reason }));
 
 /**
- * End the run because it was not this workflow's to do: an issue it does not handle, a pull
+ * End the run because it was not this workflow's to do: a webhook delivery it ignores, a pull
  * request it opened itself. It ends as `skipped`, which lists leave out unless asked. Use `stop`
  * for a run that did something and then decided to end.
  */
@@ -595,7 +596,7 @@ export interface WorkflowDefinition<P = never, A = unknown> {
   readonly returns: Schema.Codec<unknown, unknown>;
   /** How long a paused run rests before it is resumed by itself, per pause in a row. */
   readonly resumeAfter: ReadonlyArray<Duration.Input>;
-  readonly triggers: ReadonlyArray<ScheduleTrigger | OpenedTrigger>;
+  readonly triggers: ReadonlyArray<ScheduleTrigger | WebhookTrigger | OpenedTrigger>;
   /** Fails with the reason as text: by here nothing reads the error but a person. */
   readonly onEnd:
     | ((payload: never, end: RunEnd) => Effect.Effect<void, string, InStep>)

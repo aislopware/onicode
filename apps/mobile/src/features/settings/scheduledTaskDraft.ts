@@ -1,5 +1,5 @@
 import { rebaseScheduledTaskDestination } from "@onicode/client-runtime/scheduled-task-draft";
-import { scheduledTaskThreadMode } from "@onicode/contracts";
+import { isWebhookDedupeTemplate, scheduledTaskThreadMode } from "@onicode/contracts";
 import type {
   ModelSelection,
   ServerConfig,
@@ -12,6 +12,12 @@ import type {
 } from "@onicode/contracts";
 
 import { DEFAULT_SERVER_SETTINGS } from "@onicode/contracts";
+import {
+  parseWebhookFilterDrafts,
+  webhookFilterDrafts,
+  webhookFilterDraftsChanged,
+  type WebhookFilterDraft,
+} from "@onicode/client-runtime/scheduled-task-webhook";
 import {
   resolveProjectSettings,
   type LegacyProjectSettingsFields,
@@ -46,12 +52,24 @@ export function scheduledTaskDefaultModel(
 }
 
 export type ScheduleDraft = {
-  readonly mode: "fixed_time" | "once" | "interval";
+  readonly mode: "fixed_time" | "once" | "interval" | "webhook";
   readonly timeOfDay: string;
   /** ISO time for a one-time run. Empty until the user picks the "Once" mode. */
   readonly runAt: string;
   readonly weekdays: ReadonlyArray<number>;
   readonly intervalMinutes: string;
+  readonly signatureEnabled: boolean;
+  readonly signatureHeader: string;
+  readonly signatureEncoding: "hex" | "base64";
+  readonly signaturePrefix: string;
+  /** Write-only: empty keeps the secret already stored on the server. */
+  readonly signatureSecret: string;
+  readonly replayKey: string;
+  readonly coalesceKey: string;
+  readonly coalesceWindowSeconds: string;
+  readonly filters: ReadonlyArray<WebhookFilterDraft>;
+  /** The filter rows the form opened with. */
+  readonly savedFilters: ReadonlyArray<WebhookFilterDraft>;
 };
 
 export const DEFAULT_SCHEDULE: ScheduleDraft = {
@@ -60,6 +78,16 @@ export const DEFAULT_SCHEDULE: ScheduleDraft = {
   runAt: "",
   weekdays: [1, 2, 3, 4, 5],
   intervalMinutes: "15",
+  signatureEnabled: false,
+  signatureHeader: "x-hub-signature-256",
+  signatureEncoding: "hex",
+  signaturePrefix: "sha256=",
+  signatureSecret: "",
+  replayKey: "",
+  coalesceKey: "",
+  coalesceWindowSeconds: "",
+  filters: [],
+  savedFilters: [],
 };
 
 export function scheduleDraftForTask(task: Pick<ScheduledTask, "schedule">): ScheduleDraft {
@@ -80,6 +108,28 @@ export function scheduleDraftForTask(task: Pick<ScheduledTask, "schedule">): Sch
         mode: "interval",
         intervalMinutes: String(Math.max(1, task.schedule.everyMs / 60_000)),
       };
+    case "webhook": {
+      const { signature, dedupe, filters } = task.schedule;
+      const drafts = webhookFilterDrafts(filters);
+      return {
+        ...DEFAULT_SCHEDULE,
+        mode: "webhook",
+        ...(signature === null
+          ? {}
+          : {
+              signatureEnabled: true,
+              signatureHeader: signature.header,
+              signatureEncoding: signature.encoding,
+              signaturePrefix: signature.prefix,
+            }),
+        replayKey: dedupe?.replayKey ?? "",
+        coalesceKey: dedupe?.coalesceKey ?? "",
+        coalesceWindowSeconds:
+          dedupe?.coalesceWindowSeconds === undefined ? "" : String(dedupe.coalesceWindowSeconds),
+        filters: drafts,
+        savedFilters: drafts,
+      };
+    }
   }
 }
 
@@ -87,7 +137,56 @@ export function parseIntervalMinutes(value: string): number {
   return Number(value.trim().replace(",", "."));
 }
 
+/** Whole seconds from 10 to 3600, or undefined for blank; null when invalid. */
+function parseCoalesceWindow(value: string): number | undefined | null {
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  const seconds = Number(trimmed);
+  return Number.isInteger(seconds) && seconds >= 10 && seconds <= 3600 ? seconds : null;
+}
+
+/** Which of the webhook settings would stop the save, so the form can say which. */
+export function webhookScheduleProblems(draft: ScheduleDraft) {
+  const invalidKey = (key: string) => key.trim() !== "" && !isWebhookDedupeTemplate(key.trim());
+  return {
+    replayKey: invalidKey(draft.replayKey),
+    coalesceKey: invalidKey(draft.coalesceKey),
+    coalesceWindow: parseCoalesceWindow(draft.coalesceWindowSeconds) === null,
+    signatureHeader: draft.signatureEnabled && !draft.signatureHeader.trim(),
+  };
+}
+
 export function scheduleFromDraft(draft: ScheduleDraft): ScheduledTaskUpsertSchedule | null {
+  if (draft.mode === "webhook") {
+    if (Object.values(webhookScheduleProblems(draft)).some(Boolean)) return null;
+    const parsedFilters = parseWebhookFilterDrafts(draft.filters);
+    if (!("filters" in parsedFilters)) return null;
+    const replayKey = draft.replayKey.trim();
+    const coalesceKey = draft.coalesceKey.trim();
+    const coalesceWindowSeconds = parseCoalesceWindow(draft.coalesceWindowSeconds) ?? undefined;
+    const secret = draft.signatureSecret.trim();
+    return {
+      type: "webhook",
+      // No secret is sent unless typed, so the server keeps the stored one.
+      signature: draft.signatureEnabled
+        ? {
+            header: draft.signatureHeader.trim(),
+            encoding: draft.signatureEncoding,
+            prefix: draft.signaturePrefix,
+            ...(secret ? { secret } : {}),
+          }
+        : null,
+      dedupe: {
+        ...(replayKey ? { replayKey } : {}),
+        ...(coalesceKey ? { coalesceKey } : {}),
+        ...(coalesceWindowSeconds === undefined ? {} : { coalesceWindowSeconds }),
+      },
+      // Only edited filters are sent; the server keeps the stored ones otherwise.
+      ...(webhookFilterDraftsChanged(draft.savedFilters, draft.filters)
+        ? { filters: parsedFilters.filters }
+        : {}),
+    };
+  }
   if (draft.mode === "once") {
     const runAt = new Date(draft.runAt);
     return Number.isNaN(runAt.getTime()) ? null : { type: "once", runAt: runAt.toISOString() };
@@ -132,8 +231,31 @@ export type ScheduledTaskDraft = {
 };
 
 // Fields a mode leaves behind when the user switches away and back are not edits.
+function scheduleSignature(schedule: ScheduleDraft) {
+  const { mode } = schedule;
+  const webhook = mode === "webhook";
+  const signed = webhook && schedule.signatureEnabled;
+  return [
+    mode,
+    mode === "fixed_time" ? schedule.timeOfDay : null,
+    mode === "once" ? schedule.runAt : null,
+    mode === "fixed_time" ? [...schedule.weekdays].sort((a, b) => a - b) : null,
+    mode === "interval" ? schedule.intervalMinutes : null,
+    webhook ? schedule.signatureEnabled : null,
+    signed
+      ? [
+          schedule.signatureHeader,
+          schedule.signatureEncoding,
+          schedule.signaturePrefix,
+          schedule.signatureSecret,
+        ]
+      : null,
+    webhook ? [schedule.replayKey, schedule.coalesceKey, schedule.coalesceWindowSeconds] : null,
+    webhook ? schedule.filters.map(({ path, op, value }) => [path, op, value]) : null,
+  ];
+}
+
 function draftSignature(draft: ScheduledTaskDraft): string {
-  const { mode } = draft.schedule;
   const worktree = draft.workspace === "worktree";
   return JSON.stringify([
     draft.title,
@@ -145,11 +267,7 @@ function draftSignature(draft: ScheduledTaskDraft): string {
     [...(draft.modelSelection?.options ?? [])]
       .sort((a, b) => a.id.localeCompare(b.id))
       .map((option) => [option.id, option.value]),
-    mode,
-    mode === "fixed_time" ? draft.schedule.timeOfDay : null,
-    mode === "once" ? draft.schedule.runAt : null,
-    mode === "fixed_time" ? [...draft.schedule.weekdays].sort((a, b) => a - b) : null,
-    mode === "interval" ? draft.schedule.intervalMinutes : null,
+    scheduleSignature(draft.schedule),
     draft.threadMode,
     draft.workspace,
     worktree ? draft.baseRef : null,
@@ -241,8 +359,10 @@ export function rebaseScheduledTaskDraft(
     draft.startFromOrigin === opened.startFromOrigin;
   const modelUntouched =
     JSON.stringify(draft.modelSelection) === JSON.stringify(loaded.modelSelection);
+  // By signature: filter rows get fresh ids each time a task is read.
   const scheduleUntouched =
-    JSON.stringify(draft.schedule) === JSON.stringify(scheduleDraftForTask(loaded));
+    JSON.stringify(scheduleSignature(draft.schedule)) ===
+    JSON.stringify(scheduleSignature(scheduleDraftForTask(loaded)));
   return {
     ...draft,
     ...(draft.title === loaded.title ? { title: current.title } : {}),

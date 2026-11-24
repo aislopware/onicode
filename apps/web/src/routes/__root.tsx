@@ -20,6 +20,8 @@ import { BugReportDialogHost } from "../components/BugReportDialog";
 import { CommandPalette } from "../components/CommandPalette";
 import { CustomSnoozeDialogHost } from "../components/CustomSnoozeDialog";
 import { AddProjectToMachineDialogHost } from "../components/AddProjectToMachineDialog";
+import { AgentSignInDialogHost } from "../components/mcp/AgentSignInDialogHost";
+import { UseInAnotherAppDialogHost } from "../components/mcp/UseInAnotherAppDialog";
 import { ConfirmDialogHost } from "../components/ConfirmDialogHost";
 import { DevReplayHost } from "../components/DevReplayHost";
 import { FirstRunGate } from "../components/onboarding/FirstRunGate";
@@ -168,6 +170,8 @@ function RootRouteBranch() {
       <CustomSnoozeDialogHost />
       <ProjectCloneToastCoordinator />
       <AddProjectToMachineDialogHost />
+      <UseInAnotherAppDialogHost />
+      <AgentSignInDialogHost />
       {import.meta.env.DEV && primaryEnvironmentAuthenticated ? <DevReplayHost /> : null}
     </>
   );

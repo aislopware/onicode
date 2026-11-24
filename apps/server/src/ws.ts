@@ -16,6 +16,7 @@ import * as PeerThreadRelay from "./peer/PeerThreadRelay.ts";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Base64 from "effect/encoding/Base64";
+import * as Redacted from "effect/Redacted";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
@@ -38,6 +39,8 @@ import {
   type AuthEnvironmentScope,
   ProviderDriverKind,
   WorkflowRequestError,
+  AuthOrchestrationOperateScope,
+  type ScheduledTaskListResult,
   AuthSessionId,
   type DiscoveredLocalServerList,
   type EditorId,
@@ -254,6 +257,8 @@ import * as ProcessResourceMonitor from "./diagnostics/ProcessResourceMonitor.ts
 import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
 import * as HostHardware from "./resourceTelemetry/HostHardware.ts";
 import * as HostResources from "./resourceTelemetry/HostResources.ts";
+import * as McpOAuth from "./auth/McpOAuth.ts";
+import * as PublicAccess from "./publicAccess/PublicAccess.ts";
 import * as UsageService from "./usage/UsageService.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
 import * as TriageService from "./triage/TriageService.ts";
@@ -1395,6 +1400,8 @@ export const layerWsRpc = (
       const mcpAppRequests = yield* McpAppRequests.McpAppRequests;
       const providerSessionRequests = yield* ProviderSessionRequests.ProviderSessionRequests;
       const mcpSignIn = yield* McpSignIn.McpSignIn;
+      const publicAccess = yield* PublicAccess.PublicAccess;
+      const mcpOAuth = yield* McpOAuth.McpOAuth;
       const threadLaunch = yield* ThreadLaunchService.ThreadLaunchService;
       const commandOutputHub = yield* CommandOutputHub.CommandOutputHub;
       const threadViewers = yield* ThreadViewers.ThreadViewers;
@@ -1529,6 +1536,14 @@ export const layerWsRpc = (
       const hostHardware = yield* HostHardware.HostHardware;
       const processResourceMonitor = yield* ProcessResourceMonitor.ProcessResourceMonitor;
       const resourceTelemetry = yield* ResourceTelemetry.ResourceTelemetry;
+      // Webhook URLs start agents; expose them only to operate-scoped sessions while keeping tasks readable.
+      const withVisibleWebhookUrls = (result: ScheduledTaskListResult): ScheduledTaskListResult =>
+        currentSession.scopes.includes(AuthOrchestrationOperateScope)
+          ? result
+          : {
+              ...result,
+              tasks: result.tasks.map(({ webhook: _webhook, ...task }) => task),
+            };
       const authorizeEffect = <A, E, R>(
         requiredScope: AuthEnvironmentScope,
         effect: Effect.Effect<A, E, R>,
@@ -2297,7 +2312,8 @@ export const layerWsRpc = (
         [WS_METHODS.workflowsSaveDefinition]: (input) =>
           workflowDefinitions.save(input.name, input.source),
         [WS_METHODS.workflowsDeleteDefinition]: (input) => workflowDefinitions.remove(input.name),
-        [WS_METHODS.scheduledTasksSubscribe]: (_input) => scheduledTasks.subscribeList(),
+        [WS_METHODS.scheduledTasksSubscribe]: (_input) =>
+          scheduledTasks.subscribeList().pipe(Stream.map(withVisibleWebhookUrls)),
         [WS_METHODS.scheduledTasksUpsert]: (input) => scheduledTasks.upsert(input),
         [WS_METHODS.scheduledTasksSetEnabled]: (input) =>
           Effect.annotateCurrentSpan({ "scheduled_task.id": input.id }).pipe(
@@ -2311,9 +2327,38 @@ export const layerWsRpc = (
           Effect.annotateCurrentSpan({ "scheduled_task.id": input.id }).pipe(
             Effect.andThen(scheduledTasks.runNow(input)),
           ),
+        [WS_METHODS.scheduledTasksRotateWebhookToken]: (input) =>
+          Effect.annotateCurrentSpan({ "scheduled_task.id": input.id }).pipe(
+            Effect.andThen(scheduledTasks.rotateWebhookToken(input)),
+          ),
+        [WS_METHODS.publicAccessSubscribeStatus]: () => publicAccess.changes,
+        [WS_METHODS.agentSignInsSubscribe]: () => mcpOAuth.signIns,
+        [WS_METHODS.agentSignInsAnswer]: (input) =>
+          mcpOAuth.answerSignIn({ ...input, grantorScopes: currentSession.scopes }),
+        [WS_METHODS.agentTokensIssue]: (input) =>
+          mcpOAuth
+            .issueAgentToken({
+              ...input,
+              client: { deviceType: "bot" },
+              grantorScopes: currentSession.scopes,
+            })
+            .pipe(
+              Effect.map((issued) => ({
+                token: Redacted.make(issued.token),
+                expiresAt: issued.expiresAt,
+              })),
+            ),
         [WS_METHODS.secretsAnswerRequest]: (input) =>
           Effect.annotateCurrentSpan({ "orchestration_v2.thread_id": input.threadId }).pipe(
             Effect.andThen(secretRequests.answer(input)),
+          ),
+        [WS_METHODS.scheduledTasksListWebhookDeliveries]: (input) =>
+          Effect.annotateCurrentSpan({ "scheduled_task.id": input.id }).pipe(
+            Effect.andThen(scheduledTasks.listWebhookDeliveries(input)),
+          ),
+        [WS_METHODS.scheduledTasksGetWebhookDelivery]: (input) =>
+          Effect.annotateCurrentSpan({ "scheduled_task.id": input.id }).pipe(
+            Effect.andThen(scheduledTasks.getWebhookDelivery(input)),
           ),
         [WS_METHODS.serverProbe]: (_input) =>
           Effect.map(DateTime.now, (now) => ({ serverTime: DateTime.formatIso(now) })),

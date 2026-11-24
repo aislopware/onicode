@@ -13,6 +13,9 @@ const todos = [
   { file: "src/b.ts", line: 9, text: "remove after the migration" },
 ];
 
+const SUCCEEDED = JSON.stringify({ status: "succeeded", service: "billing" });
+const FAILED = JSON.stringify({ status: "failed", service: "checkout-api" });
+
 export const cases: ReadonlyArray<Case> = [
   {
     id: "scheduled-agent-then-approval",
@@ -118,6 +121,86 @@ export const cases: ReadonlyArray<Case> = [
               return second?.thread === `thread-${first?.key}`
                 ? []
                 : ["The fix did not continue the first agent's thread."];
+            }),
+          ),
+      },
+    ],
+  },
+  {
+    id: "webhook-filter-and-dedupe",
+    source:
+      "Scheduled-task webhooks keep filters and replay keys as settings; a workflow has to write both.",
+    task: [
+      "Write a workflow named `deploy-watch` started by a webhook named `deploys`.",
+      'The request body is JSON shaped `{ "status": string, "service": string }`.',
+      "A sender may deliver the same event more than once; the header `x-delivery-id` identifies an event, and one event must be one run.",
+      "Anything whose status is not `failed` is ignored: the run ends there, which is not a failure.",
+      "For a failed deploy, an agent in the project with id `proj-1` investigates. Its brief must name the service.",
+    ].join("\n"),
+    scenarios: [
+      {
+        name: "deliveries",
+        agent: () => ({ reply: "The migration timed out." }),
+        check: (world) =>
+          world.server(
+            Effect.fn(function* (workflows) {
+              if (defined(world, "deploy-watch") === undefined) return missing("deploy-watch");
+              const hook = (yield* workflows.hooks).find((entry) => entry.name === "deploys");
+              if (hook === undefined) return ["It has no webhook named deploys."];
+              const [hookId, token] = hook.path.split("/").slice(-2).map(decodeURIComponent);
+              const deliver = (delivery: string, body: string) =>
+                workflows
+                  .deliver({
+                    hookId: hookId!,
+                    token: token!,
+                    request: {
+                      method: "POST",
+                      headers: { "content-type": "application/json", "x-delivery-id": delivery },
+                      query: "",
+                      body,
+                    },
+                  })
+                  .pipe(Effect.map(Option.getOrThrow));
+              const problems: Array<string> = [];
+
+              const fine = yield* deliver("d1", SUCCEEDED);
+              const ignored = yield* world.reaches(
+                workflows,
+                fine.runId,
+                "skipped",
+                "stopped",
+                "completed",
+                "paused",
+              );
+              if (Option.isNone(ignored) || ignored.value.status === "paused") {
+                problems.push("A deploy that did not fail left its run paused or unfinished.");
+              }
+              if (world.turns.length > 0)
+                problems.push("It started an agent for a deploy that did not fail.");
+
+              const failed = yield* deliver("d2", FAILED);
+              const again = yield* deliver("d2", FAILED);
+              if (again.runId !== failed.runId)
+                problems.push("A redelivered event started a second run.");
+              const done = yield* world.reaches(
+                workflows,
+                failed.runId,
+                "completed",
+                "paused",
+                "stopped",
+              );
+              if (Option.isNone(done) || done.value.status !== "completed") {
+                problems.push(
+                  `A failed deploy's run did not complete: ${Option.getOrUndefined(done)?.detail ?? "never ended"}`,
+                );
+              }
+              const turn = world.turns[0];
+              if (turn === undefined)
+                return [...problems, "It started no agent for a failed deploy."];
+              if (turn.project !== "proj-1") problems.push("The agent did not start in proj-1.");
+              if (!turn.prompt.includes("checkout-api"))
+                problems.push("The brief does not name the service.");
+              return problems;
             }),
           ),
       },

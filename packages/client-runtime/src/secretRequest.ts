@@ -20,18 +20,25 @@ export type SecretRequestItem = Extract<
   { readonly type: "secret_request" }
 >;
 
-/** The agent's commands read the values from files, so the card must not promise more. */
+/**
+ * A `file` request lets the agent's commands read the value, so its card must not promise more.
+ * Cards from before delivery was recorded could have been either, so they promise only the common part.
+ */
 export const secretRequestPrivacyNote = (
-  item: Pick<SecretRequestItem, "fields">,
+  item: Pick<SecretRequestItem, "delivery" | "fields">,
   resolve: MFunctionType = mFallback,
 ) =>
-  item.fields === undefined
-    ? resolve(
-        msg("Kept out of chat, in a private file this agent's commands can read for 24 hours"),
-      )
-    : resolve(
-        msg("Kept out of chat, in private files this agent's commands can read for 24 hours"),
-      );
+  item.delivery === "secretRef"
+    ? resolve(msg("Stored securely, never shown to the agent"))
+    : item.delivery === undefined
+      ? resolve(msg("Kept out of chat"))
+      : item.fields === undefined
+        ? resolve(
+            msg("Kept out of chat, in a private file this agent's commands can read for 24 hours"),
+          )
+        : resolve(
+            msg("Kept out of chat, in private files this agent's commands can read for 24 hours"),
+          );
 const SECRET_REQUEST_DEFAULT_PLACEHOLDER = msg("Paste the secret");
 /** For a desktop card: the phone's keyboard reaches a password manager, a desktop field does not. */
 export const SECRET_REQUEST_PHONE_NOTE = msg(

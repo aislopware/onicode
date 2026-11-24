@@ -32,6 +32,6 @@ it("a body that keeps the time in a module variable fails the replay case", asyn
 
 it("an answer to another task fails with the reason", async () => {
   expect(
-    await grade(fixture("scheduled-agent-then-approval"), entry("replay-keeps-what-it-read")),
+    await grade(fixture("webhook-filter-and-dedupe"), entry("replay-keeps-what-it-read")),
   ).toEqual(["restart while waiting: No workflow named stamp is defined."]);
 });

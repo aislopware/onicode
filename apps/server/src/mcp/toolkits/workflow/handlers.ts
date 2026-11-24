@@ -1,7 +1,8 @@
-import { OrchestratorMcpFailure } from "@onicode/contracts";
+import { managedCapabilityDenial, OrchestratorMcpFailure } from "@onicode/contracts";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 
+import * as ServerSettings from "../../../serverSettings.ts";
 import * as Workflows from "../../../workflows/Workflows.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import { WORKFLOW_READ_ACTIONS, WorkflowToolkit } from "./tools.ts";
@@ -44,6 +45,17 @@ export const layer = McpToolAccess.toLayer(WorkflowToolkit, {
     McpToolAccess.writesEnvironment((input) =>
       Effect.gen(function* () {
         const workflows = yield* Workflows.Workflows;
+        if (input.action === "hooks") {
+          const { managedPolicy } = yield* ServerSettings.ServerSettingsService;
+          const policyDenial = managedCapabilityDenial(managedPolicy, "webhookTasks");
+          if (policyDenial !== undefined) {
+            return yield* new OrchestratorMcpFailure({
+              code: "capability_denied",
+              message: policyDenial,
+            });
+          }
+          return { hooks: yield* workflows.hooks.pipe(Effect.mapError(refused)) };
+        }
         if (input.action === "start") {
           const name = yield* required(input.workflow, "workflow");
           const idempotencyKey = yield* required(input.idempotencyKey, "idempotencyKey");

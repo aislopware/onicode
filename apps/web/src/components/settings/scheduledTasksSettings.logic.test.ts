@@ -227,6 +227,26 @@ describe("a scheduled task save refused by another client's change", () => {
       modelSelection: moved.modelSelection,
     });
   });
+
+  it("takes stored webhook filters the user left alone and still sends the ones they edited", () => {
+    const loaded = {
+      ...legacyTask,
+      schedule: {
+        type: "webhook",
+        signature: null,
+        filters: [{ path: "body.action", op: "equals", value: "opened" }],
+      },
+    } as const;
+    const stored = [{ path: "headers.x-event", op: "exists" }] as const;
+    const current = { ...loaded, schedule: { ...loaded.schedule, filters: stored } } as const;
+
+    const untouched = rebaseDraft({ ...taskToDraft(loaded), title: "Renamed" }, current);
+    expect(untouched.filters).toMatchObject(stored);
+    expect(scheduleFromDraft(untouched)).not.toHaveProperty("filters");
+
+    const rebased = rebaseDraft({ ...taskToDraft(loaded), filters: [] }, current);
+    expect(scheduleFromDraft(rebased)).toMatchObject({ filters: [] });
+  });
 });
 
 describe("fixed-time scheduled tasks", () => {
@@ -272,6 +292,11 @@ describe("unsaved scheduled task edits", () => {
       { ...draft, existingWorktreePath: "/x" },
       false,
     ],
+    [
+      "webhook settings edited and switched back",
+      { ...draft, replayKey: "{{body.id}}", signatureEnabled: true },
+      false,
+    ],
   ])("%s has changes: %s", (_label, current, expected) => {
     expect(hasDraftChanges(draft, current, "codex:gpt-5")).toBe(expected);
   });
@@ -297,6 +322,20 @@ describe("unsaved scheduled task edits", () => {
       { id: "effort", value: "high" },
     ]);
     expect(hasDraftChanges(effortThenFast, fastThenEffort, shown)).toBe(false);
+  });
+  it("compares webhook filter rows by content", () => {
+    const webhook = taskToDraft({
+      ...legacyTask,
+      schedule: {
+        type: "webhook",
+        signature: null,
+        filters: [{ path: "body.action", op: "equals", value: "opened" }],
+      },
+    });
+    const readded = { ...webhook, filters: webhook.filters.map((filter) => ({ ...filter })) };
+    expect(hasDraftChanges(webhook, readded, "codex:gpt-5")).toBe(false);
+    const retargeted = { ...webhook, filters: [{ ...webhook.filters[0]!, value: "closed" }] };
+    expect(hasDraftChanges(webhook, retargeted, "codex:gpt-5")).toBe(true);
   });
 });
 
@@ -361,6 +400,93 @@ describe("one-time scheduled tasks", () => {
       type: "once",
       runAt: "2026-11-01T09:35:00.000Z",
     });
+  });
+});
+
+describe("webhook scheduled tasks", () => {
+  const signature = { header: "x-signature", encoding: "base64", prefix: "" } as const;
+  const webhookTask: ScheduledTask = {
+    ...legacyTask,
+    schedule: { type: "webhook", signature },
+    webhook: { path: "/api/hooks/legacy-task/token", url: null, hasSecret: true },
+  };
+
+  it("round-trips dedupe settings, clears them, and rejects invalid windows", () => {
+    const dedupe = {
+      replayKey: "{{headers.delivery-id}}",
+      coalesceKey: "{{body.id}}",
+      coalesceWindowSeconds: 10,
+    };
+    const draft = taskToDraft({
+      ...webhookTask,
+      schedule: { type: "webhook", signature: null, dedupe },
+    });
+    expect(scheduleFromDraft(draft)).toMatchObject({ dedupe });
+    expect(
+      scheduleFromDraft({
+        ...draft,
+        replayKey: " \n ",
+        coalesceKey: " \t ",
+        coalesceWindowSeconds: "",
+      }),
+    ).toMatchObject({ dedupe: {} });
+    expect(
+      scheduleFromDraft({
+        ...draft,
+        replayKey: `  ${dedupe.replayKey}  `,
+        coalesceKey: `\t${dedupe.coalesceKey}\n`,
+      }),
+    ).toMatchObject({ dedupe });
+    expect(scheduleFromDraft({ ...draft, coalesceWindowSeconds: "" })).toMatchObject({
+      dedupe: { replayKey: dedupe.replayKey, coalesceKey: dedupe.coalesceKey },
+    });
+    for (const coalesceWindowSeconds of ["9", "3601", "1.5", "abc"]) {
+      expect(scheduleFromDraft({ ...draft, coalesceWindowSeconds })).toBeNull();
+    }
+    expect(scheduleFromDraft({ ...draft, replayKey: "literal" })).toBeNull();
+    expect(scheduleFromDraft({ ...draft, coalesceKey: "{{body.bad" })).toBeNull();
+  });
+
+  it("keeps a stored secret when the secret field is left blank, and clears the signature when turned off", () => {
+    const draft = taskToDraft(webhookTask);
+    expect(draft.scheduleMode).toBe("webhook");
+    expect(draft.signatureSecret).toBe("");
+    expect(scheduleFromDraft(draft)).toEqual({ type: "webhook", signature, dedupe: {} });
+    expect(scheduleFromDraft({ ...draft, signatureSecret: " new " })).toEqual({
+      type: "webhook",
+      signature: { ...signature, secret: "new" },
+      dedupe: {},
+    });
+    expect(scheduleFromDraft({ ...draft, signatureEnabled: false })).toEqual({
+      type: "webhook",
+      signature: null,
+      dedupe: {},
+    });
+  });
+
+  it("sends filters only when the form changed them", () => {
+    const filters = [
+      { path: "headers.x-github-event", op: "equals", value: "pull_request" },
+      { path: "body.action", op: "in", value: ["opened", "reopened"] },
+    ] as const;
+    const draft = taskToDraft({
+      ...webhookTask,
+      schedule: { type: "webhook", signature, filters },
+    });
+    expect(draft.filters.map((filter) => filter.op)).toEqual(["equals", "in"]);
+    // A title-only save leaves the key out, so the server keeps whatever is stored now.
+    expect(scheduleFromDraft({ ...draft, title: "Renamed" })).not.toHaveProperty("filters");
+    expect(scheduleFromDraft({ ...draft, filters: draft.filters.slice(0, 1) })).toMatchObject({
+      filters: filters.slice(0, 1),
+    });
+    // Removing every row is a change, so it clears the stored filters.
+    expect(scheduleFromDraft({ ...draft, filters: [] })).toMatchObject({ filters: [] });
+    expect(
+      scheduleFromDraft({
+        ...draft,
+        filters: [{ id: "f1", path: "body.action", op: "in", value: " , " }],
+      }),
+    ).toBeNull();
   });
 });
 
@@ -445,6 +571,9 @@ it("appends the server zone only to fixed-time schedule labels", () => {
   );
   expect(scheduleLabel({ type: "interval", everyMs: 60_000 }, "24-hour", "Etc/UTC")).toBe(
     "Every 1 min",
+  );
+  expect(scheduleLabel({ type: "webhook", signature: null }, "24-hour", "Etc/UTC")).toBe(
+    "On webhook",
   );
 });
 

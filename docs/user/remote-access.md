@@ -226,6 +226,42 @@ tailscale serve --https=443 --set-path=/ off
 If that port is already in use, choose another with
 `--tailscale-serve-port`. See `onicode pair --help` for other pairing options.
 
+### Public access
+
+By default, Onicode is only reachable on your machine, local network, or tailnet. To let external
+services or cloud apps reach specific endpoints on an environment, open **Settings → Sharing &
+access** (under **Connections**) on desktop — or **Settings → Environments →** the machine on
+mobile — and use the switches under **Public access**. Both switches are off by default:
+
+- **Public webhooks** publishes `/api/hooks/…` so services on the internet, such as GitHub, can
+  call the webhook addresses of [scheduled tasks](./project-settings.md#webhook-automations) and
+  [workflows](./workflows.md#triggers).
+- **Public agents** publishes `/mcp` and its sign-in endpoints so cloud apps, such as ChatGPT and
+  Claude, can connect as [outside agents](./outside-agents.md). Every app still needs your
+  approval.
+
+Turning either switch on starts [Tailscale Funnel](https://tailscale.com/kb/1223/funnel) at an
+address such as `https://<machine>.<tailnet>.ts.net:8443`. Turning one switch off stops its routes
+immediately; turning both off removes the Funnel route. Nothing else of Onicode's API is ever
+public.
+
+Funnel needs:
+
+- Tailscale installed, running, and logged in on the machine.
+- HTTPS certificates turned on for the tailnet, under **DNS** in the Tailscale admin console.
+- The `funnel` node attribute for this machine in the tailnet policy file, under **Access
+  controls**. Without it Tailscale refuses, and Settings says so.
+- Port 8443 free of other `tailscale serve` or `tailscale funnel` routes on the machine.
+- On Linux, [operator permission](https://tailscale.com/docs/reference/troubleshooting/linux/linux-operator-permission)
+  for the user running Onicode (for example, `sudo tailscale set --operator=$USER`).
+
+If public access cannot start, Settings shows why. Fix the cause; Onicode tries again every 30
+seconds. There is no hosted relay: requests sent while the machine is offline or the switch is off
+fail, and nothing is held for later.
+
+A [managed policy](./managed-policy.md#clients) whose `clients` leaves out `remote` keeps public
+access off. A policy with `webhookTasks: false` also blocks **Public webhooks**.
+
 ## Desktop-managed SSH
 
 In the desktop app, open **Settings → Environments → Add environment**, choose
@@ -651,9 +687,10 @@ any other thread on desktop, and a shorter read-only list on mobile.
 ## Manage or revoke access
 
 On the host, **Settings → Sharing & access** lets authorized administrators create
-pairing links and revoke client sessions. Revoking an unused link prevents new
-pairings; revoke a device's session to remove its existing access. Command-line
-management is available through `onicode auth --help`.
+pairing links, connect [outside agents](./outside-agents.md), and revoke client and agent
+sessions. Revoking an unused link prevents new pairings; revoke a session under **Authorized
+clients** to remove its access immediately. Command-line management is available through
+`onicode auth --help`.
 
 When the app connects to more than one environment, choose one at the top of the
 page. A desktop app with **Local environment** off can manage a background

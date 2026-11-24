@@ -16,6 +16,7 @@ export function Sheet(props: SheetProps) {
     <FormSheet
       isOpen={isOpen}
       detents={[0.5, 0.9]}
+      initialDetentIndex={props.opensExpanded ? 1 : 0}
       prefersGrabberVisible={false}
       preventNativeDismiss={props.dismissDisabled}
       nativeContainerStyle={containerStyle}

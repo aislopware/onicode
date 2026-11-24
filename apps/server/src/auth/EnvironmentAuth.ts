@@ -43,6 +43,7 @@ import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ManagedLimits from "../policy/managedLimits.ts";
 import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
 import {
+  AGENT_APPROVAL_SUBJECT_PREFIX,
   MCP_APPROVAL_SUBJECT_PREFIX,
   PEER_LINK_PAIRING_SUBJECT_PREFIX,
 } from "../persistence/AuthPairingLinks.ts";
@@ -71,10 +72,21 @@ export interface IssuedBearerSession {
 }
 
 // MCP client tokens are restricted to /mcp; HTTP API and WebSocket RPC would bypass their access cap.
-// Peer links carry the signed peer-link claim; outside-agent sessions from before have neither.
+// Peer links carry the signed peer-link claim. Outside agents get their own subject: sessions
+// issued under "mcp-client" without the claim, from before outside agents were removed, stay out.
 const PEER_LINK_SUBJECT = "mcp-client";
 const THREAD_CLI_SUBJECT = "thread-cli";
-const MCP_CLIENT_SUBJECTS: ReadonlySet<string> = new Set([PEER_LINK_SUBJECT, THREAD_CLI_SUBJECT]);
+const OUTSIDE_AGENT_SUBJECT = "outside-agent";
+const MCP_CLIENT_SUBJECTS: ReadonlySet<string> = new Set([
+  PEER_LINK_SUBJECT,
+  THREAD_CLI_SUBJECT,
+  OUTSIDE_AGENT_SUBJECT,
+]);
+const MCP_SESSION_SUBJECTS = {
+  "peer-link": PEER_LINK_SUBJECT,
+  "thread-cli": THREAD_CLI_SUBJECT,
+  "outside-agent": OUTSIDE_AGENT_SUBJECT,
+} as const;
 const MCP_CLIENT_SESSION_TTL = Duration.days(30);
 // A peer link's session moves back out to its full lifetime when a call finds it this far
 // short, so a used link never expires and a busy one writes at most once per step.
@@ -387,6 +399,8 @@ export class EnvironmentAuth extends Context.Service<
     readonly listClientSessions: (
       currentSessionId: AuthSessionId,
     ) => Effect.Effect<ReadonlyArray<AuthClientSession>, ServerAuthInternalError>;
+    /** Null when outside agents may sign in; otherwise the organization that forbids it. */
+    readonly outsideAgentsForbiddenBy: Effect.Effect<string | null>;
     readonly revokeClientSession: (
       currentSessionId: AuthSessionId,
       targetSessionId: AuthSessionId,
@@ -417,7 +431,7 @@ export class EnvironmentAuth extends Context.Service<
     readonly issueMcpClientSession: (input: {
       readonly label: string;
       readonly access: AuthMcpClientAccess;
-      readonly purpose: "peer-link" | "thread-cli";
+      readonly purpose: keyof typeof MCP_SESSION_SUBJECTS;
       readonly client: AuthClientMetadata;
       /**
        * `otherSessionRevocationCount` read before the sign-in was approved. The session is
@@ -436,6 +450,7 @@ export class EnvironmentAuth extends Context.Service<
     readonly consumeMcpApprovalCode: (
       code: string,
       access: AuthMcpClientAccess,
+      purpose?: "peer-link" | "agent",
     ) => Effect.Effect<void, ServerAuthMcpApprovalCodeError | ServerAuthInternalError>;
   }
 >()("onicode/auth/EnvironmentAuth") {}
@@ -801,12 +816,14 @@ export const make = Effect.gen(function* () {
       subject:
         input?.purpose === "peer-link"
           ? `${PEER_LINK_PAIRING_SUBJECT_PREFIX}${input.access}`
-          : "one-time-token",
+          : input?.purpose === "agent"
+            ? `${AGENT_APPROVAL_SUBJECT_PREFIX}${input.access}`
+            : "one-time-token",
       ...(input?.label ? { label: input.label } : {}),
     }).pipe(
       Effect.map((issued) => ({
         ...toPairingCredential(issued),
-        ...(input?.purpose === "peer-link" ? { access: input.access, purpose: input.purpose } : {}),
+        ...(input?.purpose === undefined ? {} : { access: input.access, purpose: input.purpose }),
       })),
       Effect.withSpan("EnvironmentAuth.issuePairingCredential"),
     );
@@ -942,11 +959,12 @@ export const make = Effect.gen(function* () {
           if (
             !(
               (session.subject === PEER_LINK_SUBJECT && session.peerLink === true) ||
-              session.subject === THREAD_CLI_SUBJECT
+              session.subject === THREAD_CLI_SUBJECT ||
+              session.subject === OUTSIDE_AGENT_SUBJECT
             )
           ) {
             return yield* new ServerAuthInvalidCredentialError({
-              diagnostic: "Only linked environments and the thread CLI are accepted here.",
+              diagnostic: "Only agents signed in to this environment are accepted here.",
             });
           }
           const client = {
@@ -983,7 +1001,7 @@ export const make = Effect.gen(function* () {
   const issueMcpClientSession: EnvironmentAuth["Service"]["issueMcpClientSession"] = (input) => {
     const issue = sessions
       .issue({
-        subject: input.purpose === "peer-link" ? PEER_LINK_SUBJECT : THREAD_CLI_SUBJECT,
+        subject: MCP_SESSION_SUBJECTS[input.purpose],
         scopes: mcpClientScopes(input.access),
         ttl: MCP_CLIENT_SESSION_TTL,
         ...(input.access === "read-only" ? {} : { runtimeModeCeiling: input.access }),
@@ -1008,10 +1026,11 @@ export const make = Effect.gen(function* () {
   const consumeMcpApprovalCode: EnvironmentAuth["Service"]["consumeMcpApprovalCode"] = (
     code,
     access,
+    purpose = "peer-link",
   ) =>
     consumeBootstrapGrant(code.trim(), {
       requiredScopes: mcpClientScopes(access),
-      allowedSubject: `${PEER_LINK_PAIRING_SUBJECT_PREFIX}${access}`,
+      allowedSubject: `${purpose === "agent" ? AGENT_APPROVAL_SUBJECT_PREFIX : PEER_LINK_PAIRING_SUBJECT_PREFIX}${access}`,
     }).pipe(
       Effect.catchTags({
         ServerAuthInvalidCredentialError: () =>
@@ -1042,6 +1061,11 @@ export const make = Effect.gen(function* () {
     listSessions,
     revokeSession,
     listClientSessions,
+    outsideAgentsForbiddenBy: Effect.succeed(
+      ManagedLimits.allowsRemoteClients(managedPolicy)
+        ? null
+        : (managedPolicy.document?.organization ?? "Your organization"),
+    ),
     revokeClientSession,
     revokeOtherClientSessions,
     issueAccessToken,
@@ -1077,6 +1101,7 @@ const revokePairedClientsThePolicyDisallows = Effect.fn(
   const sessions = (yield* stores.sessions.listActive()).filter(
     (session) =>
       session.subject === LINK_PAIRED_SUBJECT ||
+      session.subject === OUTSIDE_AGENT_SUBJECT ||
       session.subject.startsWith(TAILNET_SESSION_SUBJECT_PREFIX) ||
       // The startup link also pairs clients on this machine; only a device elsewhere goes.
       (session.subject === INTERNAL_ADMINISTRATIVE_BOOTSTRAP_SUBJECT &&
@@ -1086,8 +1111,9 @@ const revokePairedClientsThePolicyDisallows = Effect.fn(
   const links = (yield* stores.pairingLinks.listActive()).filter(
     (link) =>
       link.subject === LINK_PAIRED_SUBJECT ||
-      // Peer-link codes let an environment elsewhere sign in, as plain codes do.
-      link.subject.startsWith(PEER_LINK_PAIRING_SUBJECT_PREFIX),
+      // Peer-link and agent codes let something elsewhere sign in, as plain codes do.
+      link.subject.startsWith(PEER_LINK_PAIRING_SUBJECT_PREFIX) ||
+      link.subject.startsWith(AGENT_APPROVAL_SUBJECT_PREFIX),
   );
   yield* Effect.forEach(sessions, (session) => stores.sessions.revoke(session.sessionId), {
     discard: true,

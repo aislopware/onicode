@@ -28,7 +28,15 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as Tracer from "effect/Tracer";
 import { McpSchema, McpServer, Tool, Toolkit } from "effect/ai";
-import { HttpBody, HttpClient, HttpClientRequest, HttpRouter, HttpServer } from "effect/http";
+import {
+  HttpBody,
+  HttpClient,
+  HttpClientRequest,
+  HttpRouter,
+  HttpServer,
+  HttpServerRequest,
+} from "effect/http";
+import { IsPublicRequest } from "../publicAccess/publicRequest.ts";
 import * as NetAddress from "effect/net/NetAddress";
 
 import * as ProjectService from "../project/ProjectService.ts";
@@ -1068,6 +1076,21 @@ it.effect("terminates HTTP MCP sessions with DELETE", () =>
   ).pipe(Effect.provide(NodeHttpServer.layerTest)),
 );
 
+// 2025-06-18 never checks Mcp-Method against the body, so a forged events/stream must still end.
+it.each([
+  { version: "2026-07-28", method: "events/stream", outlives: true },
+  { version: "2025-06-18", method: "events/stream", outlives: false },
+  { version: undefined, method: "events/stream", outlives: false },
+  { version: "2026-07-28", method: "tools/call", outlives: false },
+])("lets only a $version $method stream outlive revocation", ({ version, method, outlives }) => {
+  expect(
+    McpHttpServer.streamsPastRevocation({
+      "mcp-method": method,
+      ...(version === undefined ? {} : { "mcp-protocol-version": version }),
+    }),
+  ).toBe(outlives);
+});
+
 it.effect("answers 2026-07-28 discovery and keeps 2025-06-18 as the initialize fallback", () =>
   Effect.scoped(
     Effect.gen(function* () {
@@ -1285,6 +1308,18 @@ it.effect("admits provider and client session credentials", () =>
           }),
         ),
         Layer.provide(ServerHttp.layerApiCors),
+        // Stands in for the Funnel listener, which marks its requests the same way.
+        Layer.provide(
+          HttpRouter.middleware(
+            (httpEffect) =>
+              Effect.flatMap(HttpServerRequest.HttpServerRequest, (request) =>
+                request.headers["x-test-funnel"] === "1"
+                  ? Effect.provideService(httpEffect, IsPublicRequest, true)
+                  : httpEffect,
+              ),
+            { global: true },
+          ),
+        ),
       );
       const traced = recordSpans();
       yield* HttpRouter.serve(serverLayer, { disableListenLog: true, disableLogger: true }).pipe(
@@ -1292,11 +1327,12 @@ it.effect("admits provider and client session credentials", () =>
         Effect.withTracer(traced.tracer),
       );
       const httpClient = yield* HttpClient.HttpClient;
-      const call = (token: string | undefined) =>
+      const call = (token: string | undefined, options?: { readonly funnel?: boolean }) =>
         Effect.gen(function* () {
           const headers = {
             accept: "application/json, text/event-stream",
             ...(token === undefined ? {} : { authorization: `Bearer ${token}` }),
+            ...(options?.funnel ? { "x-test-funnel": "1" } : {}),
           };
           const initialize = yield* httpClient.post("/mcp", {
             headers,
@@ -1340,13 +1376,21 @@ it.effect("admits provider and client session credentials", () =>
         "provider-session",
         "client:session-1",
       ]);
+      seen.length = 0;
+
+      // Internal agent tokens never work through Funnel; signed-in agents' tokens do.
+      expect((yield* call(providerToken, { funnel: true })).status).toBe(401);
+      expect((yield* call(clientToken, { funnel: true })).status).toBe(200);
 
       const missing = yield* call(undefined);
       expect(missing.status).toBe(401);
-      expect(missing.headers["www-authenticate"]).toBe("Bearer");
+      expect(missing.headers["www-authenticate"]).toMatch(
+        /^Bearer resource_metadata="http:\/\/[^"]+\/\.well-known\/oauth-protected-resource\/mcp"$/,
+      );
 
       const expiredClient = yield* call("stale-payload.stale-signature");
-      expect(expiredClient.headers["www-authenticate"]).toBe('Bearer error="invalid_token"');
+      expect(expiredClient.headers["www-authenticate"]).toContain("resource_metadata=");
+      expect(expiredClient.headers["www-authenticate"]).toContain('error="invalid_token"');
 
       const spansBeforeRejection = traced.spans.length;
       const deadProvider = yield* call("deadProviderToken");

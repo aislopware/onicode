@@ -200,6 +200,8 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   triage: Schema.optionalKey(Schema.Boolean),
   /** Server accepts `{ type: "once" }` scheduled tasks; older servers reject them on save. */
   oneTimeSchedules: Schema.optionalKey(Schema.Boolean),
+  /** Server accepts `{ type: "webhook" }` scheduled tasks; older Onicode servers reject them on save. */
+  webhookSchedules: Schema.optionalKey(Schema.Boolean),
   /** Server honors `freshContext` on sends; older servers ignore it and keep the old context. */
   freshContext: Schema.optionalKey(Schema.Boolean),
   /** Server holds a steer sent into an automatic compaction until it ends; older servers send it at once. */

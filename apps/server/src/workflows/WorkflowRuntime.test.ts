@@ -131,6 +131,11 @@ it.effect(
           'Onicode.workflow("twice", { version: 1, payload: Onicode.Tick, triggers: [Onicode.every("5 minutes"), Onicode.every("5 minutes")] }, () => Effect.void);\n',
         );
         assert.include(doubled.problems[0]?.message ?? "", "lists the same schedule twice");
+        const twoHooks = yield* definitions.save(
+          "hooks.ts",
+          'Onicode.workflow("hooks", { version: 1, payload: Onicode.WebhookRequest, triggers: [Onicode.webhook("in"), Onicode.webhook("in")] }, () => Effect.void);\n',
+        );
+        assert.include(twoHooks.problems[0]?.message ?? "", 'two hooks named "in"');
         assert.include((yield* definitions.remove("hold.ts")).problems[0]?.message ?? "", "hold@1");
         assert.deepStrictEqual(
           (yield* definitions.read).files.map((file) => file.name),

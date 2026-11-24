@@ -122,6 +122,8 @@ import * as PeerLinks from "./peer/PeerLinks.ts";
 import * as TailnetAccess from "./tailnet/TailnetAccess.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
 import * as PreviewManager from "./preview/Manager.ts";
+import * as McpOAuth from "./auth/McpOAuth.ts";
+import * as PublicAccess from "./publicAccess/PublicAccess.ts";
 import * as ProcessDiagnostics from "./diagnostics/ProcessDiagnostics.ts";
 import * as ProcessResourceMonitor from "./diagnostics/ProcessResourceMonitor.ts";
 import * as ProjectCloneTracker from "./project/ProjectCloneTracker.ts";
@@ -901,6 +903,8 @@ const layerUnusedConfigRpcServices = Layer.mergeAll(
   Layer.mock(IssueService.IssueService)({}),
   Layer.mock(ThreadIssueService.ThreadIssueService)({}),
   Layer.mock(IssueTrackerConnections.IssueTrackerConnections)({}),
+  Layer.mock(PublicAccess.PublicAccess)({}),
+  Layer.mock(McpOAuth.McpOAuth)({}),
   Layer.mock(PullRequestSyncReactor.PullRequestSyncReactor)({}),
   Layer.mock(RepositoryIdentityResolver.RepositoryIdentityResolver)({}),
   Layer.mock(ResourceTelemetry.ResourceTelemetry)({}),
