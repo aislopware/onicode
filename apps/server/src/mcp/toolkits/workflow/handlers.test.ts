@@ -13,36 +13,35 @@ import * as McpToolAccessTestkit from "../../McpToolAccess.testkit.ts";
 import * as WorkflowHandlers from "./handlers.ts";
 import { WorkflowToolkit } from "./tools.ts";
 
+const fullAccess = { sessionId: "session-1", label: "onicode CLI", access: "full-access" } as const;
+
 const handlersWith = (
   workflows: Partial<Workflows.Workflows["Service"]>,
-  options: {
-    readonly client?: Partial<McpInvocationContext.McpClientCaller>;
+  options: Partial<McpInvocationContext.McpInvocationScope> & {
     readonly managedPolicy?: ManagedPolicySummary;
   } = {},
-) =>
-  McpToolAccess.HandlersLayer.layer(WorkflowHandlers.layer).pipe(
+) => {
+  const { managedPolicy, ...scope } = options;
+  return McpToolAccess.HandlersLayer.layer(WorkflowHandlers.layer).pipe(
     Layer.provideMerge(
       Layer.mergeAll(
         NodeCrypto.layer,
         McpToolAccessTestkit.liveThreadsLayer,
-        ServerSettings.layerTest({}, options.managedPolicy),
+        ServerSettings.layerTest({}, managedPolicy),
         Layer.succeed(McpInvocationContext.McpInvocationContext, {
           environmentId: EnvironmentId.make("environment:workflow"),
           requestNamespace: "client:workflow",
           thread: undefined,
-          client: {
-            sessionId: "session-1",
-            label: "onicode CLI",
-            access: "full-access",
-            ...options.client,
-          },
+          client: fullAccess,
           capabilities: new Set(["orchestration" as const]),
           issuedAt: 0,
+          ...scope,
         }),
         Layer.mock(Workflows.Workflows)(workflows),
       ),
     ),
   );
+};
 
 const lastResult = (input: Record<string, unknown>) =>
   Effect.gen(function* () {
@@ -176,7 +175,7 @@ it.effect.each([
                 return [];
               }),
             },
-            { client },
+            { client: { ...fullAccess, ...client } },
           ),
         ),
       );
@@ -205,5 +204,29 @@ it.effect("withholds hook URLs when the policy turns webhook tasks off", () =>
       code: "capability_denied",
       message: "Example Corp's policy does not allow webhook tasks.",
     });
+  }),
+);
+
+const emptyRun = { run: undefined, steps: [], references: [] } as never;
+
+it.effect("under an administrator's ceiling, a caller at the ceiling starts runs", () =>
+  Effect.gen(function* () {
+    const start = { action: "start", workflow: "release", idempotencyKey: "trial" };
+    const workflows = {
+      start: () => Effect.succeed({ runId: "run-1" }),
+      get: () => Effect.succeed(emptyRun),
+    };
+    const narrowedTo = (runtimeMode: "auto" | "approval-required") => ({
+      runtimeModeCeiling: "auto" as const,
+      client: { ...fullAccess, narrowedTo: { runtimeMode, interactionMode: "default" as const } },
+    });
+    expect(
+      yield* lastResult(start).pipe(Effect.provide(handlersWith(workflows, narrowedTo("auto")))),
+    ).not.toMatchObject({ code: "capability_denied" });
+    expect(
+      yield* lastResult(start).pipe(
+        Effect.provide(handlersWith(workflows, narrowedTo("approval-required"))),
+      ),
+    ).toMatchObject({ code: "capability_denied" });
   }),
 );
